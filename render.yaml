@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: pet-paradise-manager
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    healthCheckPath: /health
+    envVars:
+      - key: PPM_HOST
+        value: 0.0.0.0
+      - key: PPM_DATA_DIR
+        value: /var/data
+    disk:
+      name: pet-paradise-data
+      mountPath: /var/data
+      sizeGB: 1
