@@ -45,6 +45,45 @@ BRANCHES = {
     },
 }
 
+DEFAULT_VETERINARIANS = [
+    ("DEL PERO", "LIVORNO"),
+    ("RAZZAUTI", "LIVORNO"),
+    ("LEMMI", "LIVORNO"),
+    ("AURELIA", "LIVORNO"),
+    ("BARSACCHI E SANDRI", "LIVORNO"),
+    ("CAMPO DI MARTE", "LIVORNO"),
+    ("CAMPO D'AVIAZIONE", "VIAREGGIO"),
+    ("GLI AMICI DI BLU", "VIAREGGIO"),
+    ("FERRANDELLO", "PIETRASANTA"),
+    ("VARIGNANO", "VIAREGGIO"),
+    ("DANTE DELLE ROSE", "EMPOLI"),
+    ("PARLANTI", "EMPOLI"),
+    ("CARDIOVET", "LIVORNO"),
+    ("NESTI", "LIVORNO"),
+    ("IL TIRRENO", "LIVORNO"),
+    ("CIMAROSA", "LIVORNO"),
+    ("ACQUAVIVA", "LIVORNO"),
+    ("LA MARMORA", "LIVORNO"),
+    ("ACCADEMIA", "LIVORNO"),
+    ("ARDENZA", "LIVORNO"),
+    ("SANMINIANIMAL", "EMPOLI"),
+    ("GIULIA FRATI", "EMPOLI"),
+    ("GENNARI", "EMPOLI"),
+    ("BARTOLI", "EMPOLI"),
+    ("BELLUCCI", "EMPOLI"),
+    ("CROCE AZZURRA", "EMPOLI"),
+    ("LA FENICE", "EMPOLI"),
+    ("MATTEINI", "EMPOLI"),
+    ("FREDIANI", "EMPOLI"),
+    ("IL POGGETTO", "FIRENZE"),
+    ("COMASSI", "LIVORNO"),
+    ("SAN PIERO A GRADO", "PISA"),
+    ("BARBARICINA", "PISA"),
+    ("LUCY", "EMPOLI"),
+    ("ARIOSTO", "FIRENZE"),
+    ("COMACCHIO", "LIVORNO"),
+]
+
 
 def db():
     conn = sqlite3.connect(DB_PATH)
@@ -160,6 +199,7 @@ def init_db():
             "tag_da_richiamare": "TEXT",
             "payment_status": "TEXT DEFAULT 'Da saldare'",
             "invoice_number": "TEXT",
+            "ddt_share_token": "TEXT",
             "signature_data": "TEXT",
             "owner_phone_2": "TEXT",
             "owner_street": "TEXT",
@@ -173,8 +213,20 @@ def init_db():
         for name, definition in extra_columns.items():
             if name not in existing:
                 c.execute(f"ALTER TABLE practices ADD COLUMN {name} {definition}")
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_practices_ddt_share_token ON practices(ddt_share_token)")
         c.execute("UPDATE practices SET payment_status='Da saldare' WHERE payment_status IS NULL OR payment_status=''")
         c.execute("UPDATE practices SET payment_status='Pagato', status='Consegnato' WHERE status='Pagato'")
+        stamp = now()
+        for clinic, city in DEFAULT_VETERINARIANS:
+            exists = c.execute(
+                "SELECT 1 FROM veterinarians WHERE UPPER(clinic_name)=UPPER(?) AND COALESCE(notes,'') LIKE ?",
+                (clinic, f"%{city}%"),
+            ).fetchone()
+            if not exists:
+                c.execute(
+                    "INSERT INTO veterinarians(clinic_name,doctor_name,phone,notes,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                    (clinic, "", "", f"Comune: {city}", stamp, stamp),
+                )
         if not c.execute("SELECT 1 FROM users WHERE username='admin'").fetchone():
             c.execute(
                 "INSERT INTO users(username,password_hash,display_name,role) VALUES(?,?,?,?)",
@@ -288,6 +340,31 @@ document.addEventListener('input', function(e){
   if(e.target && (e.target.name === 'deposit' || e.target.name === 'total_service')) updateRemainingBalance();
 });
 document.addEventListener('DOMContentLoaded', function(){ updatePreventivoTotal(); updateRemainingBalance(); });
+async function sharePracticePdf(url, title){
+  const absoluteUrl = new URL(url, window.location.href).toString();
+  try{
+    if(navigator.share){
+      try{
+        const response = await fetch(absoluteUrl);
+        const blob = await response.blob();
+        const filename = absoluteUrl.includes('ddt-bozza') ? 'DCS-bozza.pdf' : 'DDT-pratica.pdf';
+        const file = new File([blob], filename, {type:'application/pdf'});
+        if(navigator.canShare && navigator.canShare({files:[file]})){
+          await navigator.share({title:title, text:title, files:[file]});
+          return;
+        }
+      }catch(fileError){}
+      await navigator.share({title:title, text:title, url:absoluteUrl});
+      return;
+    }
+  }catch(error){}
+  try{
+    await navigator.clipboard.writeText(absoluteUrl);
+    alert('Link PDF copiato. Puoi incollarlo in WhatsApp, email o messaggio.');
+  }catch(error){
+    window.open(absoluteUrl, '_blank');
+  }
+}
 </script>
 """
 
@@ -357,6 +434,8 @@ class App(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path
         if path == "/health": return self.send_text("ok")
+        match = re.fullmatch(r"/pubblici/ddt/([A-Za-z0-9_-]+)\.pdf", path)
+        if match: return self.public_ddt(match.group(1))
         if path == "/login": return self.login_page()
         if path == "/logout": return self.logout()
         user = self.require_user()
@@ -421,12 +500,13 @@ class App(BaseHTTPRequestHandler):
         with db() as c:
             counts={r["status"]:r["n"] for r in c.execute("SELECT status,count(*) n FROM practices GROUP BY status")}
             payment_counts={r["payment_status"]:r["n"] for r in c.execute("SELECT COALESCE(payment_status,'Da saldare') payment_status,count(*) n FROM practices GROUP BY COALESCE(payment_status,'Da saldare')")}
+            catalog_count=c.execute("SELECT count(*) n FROM practices WHERE send_catalog='Si'").fetchone()["n"]
             recent=c.execute("SELECT * FROM practices ORDER BY updated_at DESC LIMIT 8").fetchall()
             incomplete=c.execute("SELECT count(*) n FROM practices WHERE data_complete=0 AND status!='Consegnata'").fetchone()["n"]
         cards=''.join(f'<a class="card stat" href="/pratiche?stato={quote(s)}"><span>{esc(s)}</span><b>{counts.get(s,0)}</b></a>' for s in STATES)
         payment_cards=''.join(f'<a class="card stat" href="/pratiche?pagamento={quote(s)}"><span>{esc(s)}</span><b>{payment_counts.get(s,0)}</b></a>' for s in PAYMENT_STATES)
         rows=self.practice_rows(recent)
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Buongiorno, {esc(user['display_name'])}</h1><div class="sub">Situazione operativa aggiornata</div></div><a class="btn" href="/nuova">+ Nuova pratica</a></div>{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}<h2>Avanzamento pratiche</h2><section class="grid stats">{cards}</section><div style="height:20px"></div><h2>Pagamenti</h2><section class="grid stats">{payment_cards}</section><div style="height:24px"></div><div class="titlebar"><h2>Attività recenti</h2><a href="/pratiche">Vedi archivio →</a></div><div class="tablebox"><table><thead><tr><th>Pratica</th><th>Animale</th><th>Proprietario</th><th>Sede</th><th>Etichette</th><th>Stato</th></tr></thead><tbody>{rows}</tbody></table></div></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Buongiorno, {esc(user['display_name'])}</h1><div class="sub">Situazione operativa aggiornata</div></div><a class="btn" href="/nuova">+ Nuova pratica</a></div>{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}<h2>Avanzamento pratiche</h2><section class="grid stats">{cards}</section><div style="height:20px"></div><h2>Pagamenti</h2><section class="grid stats">{payment_cards}<a class="card stat" href="/pratiche?catalogo=Si"><span>Inviare catalogo</span><b>{catalog_count}</b></a></section><div style="height:24px"></div><div class="titlebar"><h2>Attività recenti</h2><a href="/pratiche">Vedi archivio →</a></div><div class="tablebox"><table><thead><tr><th>Pratica</th><th>Animale</th><th>Proprietario</th><th>Sede</th><th>Etichette</th><th>Stato</th></tr></thead><tbody>{rows}</tbody></table></div></main>'''
         self.send_html(layout("Dashboard",body,user))
 
     def diagnostics(self,user):
@@ -450,6 +530,7 @@ class App(BaseHTTPRequestHandler):
             ("tag_calco", "CALCO", "tag-yellow"),
             ("tag_avvisare", "AVVISARE", "tag-pink"),
             ("tag_da_richiamare", "DA RICHIAMARE", "tag-blue"),
+            ("send_catalog", "INVIARE CATALOGO", "tag-orange"),
         ]
         html_badges = ''.join(f'<span class="badge {cls}">{label}</span> ' for key,label,cls in tags if key in r.keys() and r[key])
         return html_badges or '<span class="sub">-</span>'
@@ -463,12 +544,13 @@ class App(BaseHTTPRequestHandler):
         return ''.join(f'''<tr><td><a href="/pratiche/{r['id']}"><b>{esc(r['practice_number'])}</b></a></td><td>{esc(r['animal_name'] or 'Da inserire')}<br><small>{esc(r['species'])}{(' · '+esc(r['estimated_weight'])+' kg') if r['estimated_weight'] else ''}</small></td><td>{esc((r['owner_first_name'] or '')+' '+(r['owner_last_name'] or ''))}<br><small>{esc(r['owner_phone'])}</small></td><td>{esc(r['destination_branch'])}</td><td>{self.tag_badges(r)}</td><td>{self.status_badges(r)}</td></tr>''' for r in rows)
 
     def archive(self,user):
-        q=parse_qs(urlparse(self.path).query); term=q.get("q",[""])[0]; state=q.get("stato",[""])[0]; payment=q.get("pagamento",[""])[0]
+        q=parse_qs(urlparse(self.path).query); term=q.get("q",[""])[0]; state=q.get("stato",[""])[0]; payment=q.get("pagamento",[""])[0]; catalog=q.get("catalogo",[""])[0]
         sql="SELECT * FROM practices WHERE 1=1"; args=[]
         if term:
             like=f"%{term}%"; sql+=" AND (practice_number LIKE ? OR animal_name LIKE ? OR owner_first_name||' '||owner_last_name LIKE ? OR owner_phone LIKE ? OR owner_phone_2 LIKE ? OR microchip LIKE ? OR clinic_name LIKE ? OR veterinarian_name LIKE ? OR CAST(ddt_number AS TEXT) LIKE ?)"; args += [like]*9
         if state: sql+=" AND status=?"; args.append(state)
         if payment: sql+=" AND COALESCE(payment_status,'Da saldare')=?"; args.append(payment)
+        if catalog == "Si": sql+=" AND send_catalog='Si'"
         sql+=" ORDER BY created_at DESC"
         with db() as c: rows=c.execute(sql,args).fetchall()
         opts='<option value="">Tutti gli stati</option>'+''.join(f'<option {"selected" if state==s else ""}>{esc(s)}</option>' for s in STATES)
@@ -522,7 +604,7 @@ class App(BaseHTTPRequestHandler):
         tag_select=lambda name,label,cls: f'''<div class="field"><label><span class="badge {cls}">{label}</span></label><select name="{name}"><option value="" {"selected" if not raw(name) else ""}>No</option><option value="Si" {"selected" if raw(name)=="Si" else ""}>Si</option></select></div>'''
         with db() as c:
             vets=c.execute("SELECT * FROM veterinarians WHERE active=1 ORDER BY clinic_name, doctor_name").fetchall()
-        vet_options='<option value="">Nessun veterinario selezionato</option>'+''.join(f'<option value="{v["id"]}" {"selected" if str(raw("veterinarian_id"))==str(v["id"]) else ""}>{esc(v["clinic_name"])}{(" - "+esc(v["doctor_name"])) if v["doctor_name"] else ""}</option>' for v in vets)
+        vet_options='<option value="">Nessun veterinario selezionato / testo libero</option>'+''.join(f'<option value="{v["id"]}" {"selected" if str(raw("veterinarian_id"))==str(v["id"]) else ""}>{esc(v["clinic_name"])}{(" - "+esc(v["doctor_name"])) if v["doctor_name"] else ""}{(" - "+esc(v["notes"])) if v["notes"] else ""}</option>' for v in vets)
         voucher_checked='checked' if raw('voucher_requested')=="Si" else ''
         catalog_checked='checked' if raw('send_catalog')=="Si" else ''
         return f'''<section class="section"><h2>Operatore</h2><div class="fields"><div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option></select></div></div></section>
@@ -573,6 +655,17 @@ class App(BaseHTTPRequestHandler):
     def sync_voucher(self,c,pid,d):
         existing=c.execute("SELECT * FROM veterinarian_vouchers WHERE practice_id=?",(pid,)).fetchone()
         wants_voucher = d.get("voucher_requested") == "Si" and d.get("veterinarian_id")
+        if d.get("voucher_requested") == "Si" and not d.get("veterinarian_id") and d.get("clinic_name"):
+            clinic=d.get("clinic_name","").strip()
+            doctor=d.get("veterinarian_name","").strip()
+            vet=c.execute("SELECT id FROM veterinarians WHERE UPPER(clinic_name)=UPPER(?) AND COALESCE(doctor_name,'')=? AND active=1",(clinic,doctor)).fetchone()
+            if not vet:
+                stamp=now()
+                cur=c.execute("INSERT INTO veterinarians(clinic_name,doctor_name,phone,notes,created_at,updated_at) VALUES(?,?,?,?,?,?)",(clinic,doctor,"","Inserito automaticamente da testo libero",stamp,stamp))
+                d["veterinarian_id"]=cur.lastrowid
+            else:
+                d["veterinarian_id"]=vet["id"]
+            wants_voucher = True
         if wants_voucher:
             vet_id=int(d["veterinarian_id"])
             if existing:
@@ -613,10 +706,15 @@ class App(BaseHTTPRequestHandler):
         hist=''.join(f'<div class="event"><b>{esc(h["event_type"])}</b><br><span>{esc(h["new_value"])}</span><br><small class="sub">{esc(h["created_at"].replace("T"," "))} - {esc(h["display_name"])}</small></div>' for h in history)
         ddt=f'DDT n. {p["ddt_number"]} del {esc(p["ddt_date"])}' if p["ddt_number"] else 'Numero DDT non ancora assegnato'
         if p['ddt_pdf']:
-            pdf_block = f'<div class="flash">Il PDF definitivo e stato archiviato.</div><a class="btn" href="/pratiche/{pid}/ddt.pdf">Apri / stampa DDT</a>'
+            share_token = p["ddt_share_token"] if "ddt_share_token" in p.keys() and p["ddt_share_token"] else secrets.token_urlsafe(18)
+            if not ("ddt_share_token" in p.keys() and p["ddt_share_token"]):
+                with db() as c:
+                    c.execute("UPDATE practices SET ddt_share_token=? WHERE id=?",(share_token,pid))
+            share_url = f"/pubblici/ddt/{share_token}.pdf"
+            pdf_block = f'<div class="flash">Il PDF definitivo e stato archiviato.</div><div class="actions"><a class="btn" href="/pratiche/{pid}/ddt.pdf">Apri / stampa DDT</a><button class="btn ghost" type="button" onclick="sharePracticePdf(\'{share_url}\', \'DDT pratica {esc(p["practice_number"])}\')">Condividi PDF</button><button class="btn ghost" type="button" onclick="navigator.clipboard.writeText(new URL(\'{share_url}\', window.location.href).toString()).then(()=>alert(\'Link pubblico PDF copiato\'))">Copia link PDF</button></div><p class="sub">Il link condiviso apre solo questo PDF, non il gestionale.</p>'
         else:
             final_action = f'<form method="post" action="/pratiche/{pid}/ddt"><button class="btn">Assegna numero e genera PDF definitivo</button></form>' if p['data_complete'] else '<div class="flash warning">Pratica salvata. Potrai assegnare il numero DDT e generare il PDF definitivo quando avrai completato i dati obbligatori.</div>'
-            pdf_block = f'<div class="actions"><a class="btn ghost" href="/pratiche/{pid}">Salva pratica</a>{final_action}</div><p class="sub">La pratica resta salvata in archivio. Il DDT numerato puo essere generato anche in un secondo momento, per esempio alla fine della pratica.</p>'
+            pdf_block = f'<div class="actions"><a class="btn ghost" href="/pratiche/{pid}">Salva pratica</a><a class="btn ghost" href="/pratiche/{pid}/ddt-bozza.pdf">Apri bozza PDF</a><button class="btn ghost" type="button" onclick="sharePracticePdf(\'/pratiche/{pid}/ddt-bozza.pdf\', \'Bozza DCS pratica {esc(p["practice_number"])}\')">Condividi bozza PDF</button>{final_action}</div><p class="sub">La pratica resta salvata in archivio. Il DDT numerato puo essere generato anche in un secondo momento, per esempio alla fine della pratica.</p>'
         body=f"""
         <main class="wrap">
           <div class="titlebar"><div><h1>{esc(p['practice_number'])} - {esc(p['animal_name'] or 'Animale da inserire')}</h1><div class="sub">Creata il {esc(p['created_at'].replace('T',' '))}</div></div><div class="actions"><a class="btn ghost" href="/pratiche/{pid}/modifica">Modifica dati</a><a class="btn ghost" href="/pratiche/{pid}/firma">Firma su telefono</a></div></div>
@@ -704,6 +802,14 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,"Cambio stati",old_value,new_value,user["id"],now()))
         self.redirect(f"/pratiche/{pid}")
 
+    def public_ddt(self,token):
+        with db() as c:
+            p=c.execute("SELECT ddt_pdf FROM practices WHERE ddt_share_token=?",(token,)).fetchone()
+        if not p or not p["ddt_pdf"]: return self.send_error(404)
+        path=DDT_DIR / p["ddt_pdf"]
+        if not path.exists(): return self.send_error(404)
+        return self.send_pdf(path)
+
     def delete_practice(self,user,pid):
         f=self.form()
         if f.get("confirm_delete","").strip().upper() != "ELIMINA":
@@ -737,7 +843,8 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             if not p["data_complete"]: return self.error_page("Dati mancanti", "Completa i dati obbligatori prima di assegnare il numero DDT definitivo.", f"/pratiche/{pid}")
             number=next_number(c,"next_ddt_number")
             pdf_name=f"DDT-{number:06d}-{p['practice_number']}.pdf"
-            c.execute("UPDATE practices SET ddt_number=?,ddt_date=?,ddt_pdf=?,updated_at=? WHERE id=?",(number,date,pdf_name,stamp,pid))
+            share_token = secrets.token_urlsafe(18)
+            c.execute("UPDATE practices SET ddt_number=?,ddt_date=?,ddt_pdf=?,ddt_share_token=?,updated_at=? WHERE id=?",(number,date,pdf_name,share_token,stamp,pid))
             p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
             try:
                 generate_ddt(p, ASSETS / "DCS_NUOVO.pdf", DDT_DIR / pdf_name)
