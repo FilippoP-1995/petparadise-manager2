@@ -171,10 +171,10 @@ def _overlay_page_2(page, width, height):
     _text(c, 135, 524, _get(page, "age_years", "0"), 13.5)
     _text(c, 220, 524, _get(page, "age_months", "0"), 13.5)
     _center_text(c, 472, 524, f'{_get(page, "estimated_weight")} KG', 13.5)
-    _center_text(c, 305, 491, _get(page, "clinic_name"), 13.5, 30)
-    _text(c, 58, 438, owner, 12.5, 28)
-    _text(c, 245, 438, _get(page, "owner_phone"), 12.5)
-    _text(c, 430, 438, _get(page, "owner_email"), 10.5, 27)
+    _center_text(c, 305, 487, _get(page, "clinic_name"), 13.5, 30)
+    _center_text(c, 135, 434, owner, 12.5, 28)
+    _center_text(c, 390, 434, _get(page, "owner_phone"), 12.5, 24)
+    _center_text(c, 514, 434, _get(page, "owner_email"), 10.5, 27)
 
     # Preventivo stimato
     _text(c, 155, 379, _get(page, "price_cremation"), 13.5)
