@@ -159,8 +159,13 @@ def init_db():
             "tag_avvisare": "TEXT",
             "tag_da_richiamare": "TEXT",
             "payment_status": "TEXT DEFAULT 'Da saldare'",
+            "invoice_number": "TEXT",
             "signature_data": "TEXT",
             "owner_phone_2": "TEXT",
+            "owner_street": "TEXT",
+            "owner_city": "TEXT",
+            "owner_province": "TEXT",
+            "owner_zip": "TEXT",
             "veterinarian_id": "INTEGER",
             "voucher_requested": "TEXT"
         }
@@ -260,6 +265,25 @@ function updateRemainingBalance(){
   remainingField.value = ppmFormat(remaining);
 }
 document.addEventListener('input', function(e){
+  if(e.target && e.target.name === 'owner_city'){
+    const provinceField = document.querySelector('input[name="owner_province"]');
+    if(provinceField){
+      const map = {
+        'livorno':'LI','collesalvetti':'LI','rosignano marittimo':'LI','cecina':'LI','bibona':'LI','castagneto carducci':'LI','san vincenzo':'LI','campiglia marittima':'LI','piombino':'LI','portoferraio':'LI',
+        'empoli':'FI','firenze':'FI','capraia e limite':'FI','cerreto guidi':'FI','certaldo':'FI','fucecchio':'FI','gambassi terme':'FI','montaione':'FI','montelupo fiorentino':'FI','montespertoli':'FI','vinci':'FI','scandicci':'FI','sesto fiorentino':'FI',
+        'pisa':'PI','cascina':'PI','pontedera':'PI','san miniato':'PI','volterra':'PI','ponsacco':'PI','calci':'PI','vicopisano':'PI','calcinaia':'PI','crespina lorenzana':'PI','fauglia':'PI',
+        'lucca':'LU','viareggio':'LU','camaiore':'LU','capannori':'LU','altopascio':'LU','porcari':'LU','massarosa':'LU','pietrasanta':'LU','forte dei marmi':'LU',
+        'grosseto':'GR','follonica':'GR','castiglione della pescaia':'GR','massa marittima':'GR','orbetello':'GR',
+        'siena':'SI','poggibonsi':'SI','colle di val d elsa':'SI','monteriggioni':'SI','san gimignano':'SI',
+        'arezzo':'AR','montevarchi':'AR','san giovanni valdarno':'AR','cortona':'AR',
+        'prato':'PO','montemurlo':'PO','poggio a caiano':'PO','carmignano':'PO',
+        'pistoia':'PT','montecatini terme':'PT','pescia':'PT','quarrata':'PT',
+        'massa':'MS','carrara':'MS','aulla':'MS','pontremoli':'MS'
+      };
+      const key = e.target.value.trim().toLowerCase();
+      if(map[key]) provinceField.value = map[key];
+    }
+  }
   if(e.target && e.target.matches('[data-preventivo-sum="1"]')) updatePreventivoTotal();
   if(e.target && (e.target.name === 'deposit' || e.target.name === 'total_service')) updateRemainingBalance();
 });
@@ -436,7 +460,7 @@ class App(BaseHTTPRequestHandler):
 
     def practice_rows(self,rows):
         if not rows:return '<tr><td colspan="6" class="sub">Nessuna pratica presente.</td></tr>'
-        return ''.join(f'''<tr><td><a href="/pratiche/{r['id']}"><b>{esc(r['practice_number'])}</b></a></td><td>{esc(r['animal_name'] or 'Da inserire')}<br><small>{esc(r['species'])}</small></td><td>{esc((r['owner_first_name'] or '')+' '+(r['owner_last_name'] or ''))}<br><small>{esc(r['owner_phone'])}</small></td><td>{esc(r['destination_branch'])}</td><td>{self.tag_badges(r)}</td><td>{self.status_badges(r)}</td></tr>''' for r in rows)
+        return ''.join(f'''<tr><td><a href="/pratiche/{r['id']}"><b>{esc(r['practice_number'])}</b></a></td><td>{esc(r['animal_name'] or 'Da inserire')}<br><small>{esc(r['species'])}{(' · '+esc(r['estimated_weight'])+' kg') if r['estimated_weight'] else ''}</small></td><td>{esc((r['owner_first_name'] or '')+' '+(r['owner_last_name'] or ''))}<br><small>{esc(r['owner_phone'])}</small></td><td>{esc(r['destination_branch'])}</td><td>{self.tag_badges(r)}</td><td>{self.status_badges(r)}</td></tr>''' for r in rows)
 
     def archive(self,user):
         q=parse_qs(urlparse(self.path).query); term=q.get("q",[""])[0]; state=q.get("stato",[""])[0]; payment=q.get("pagamento",[""])[0]
@@ -503,7 +527,7 @@ class App(BaseHTTPRequestHandler):
         catalog_checked='checked' if raw('send_catalog')=="Si" else ''
         return f'''<section class="section"><h2>Operatore</h2><div class="fields"><div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option></select></div></div></section>
         <section class="section"><h2>Richiesta</h2><div class="fields"><div class="field"><label>Origine richiesta *</label><select name="request_origin" required><option {selected('request_origin','Veterinario')}>Veterinario</option><option {selected('request_origin','Privato')}>Privato</option><option {selected('request_origin','Consegna in sede')}>Consegna in sede</option></select></div><div class="field"><label>Sede di destinazione *</label><select name="destination_branch" required><option {selected('destination_branch','Livorno')}>Livorno</option><option {selected('destination_branch','Empoli')}>Empoli</option></select></div></div></section>
-        <section class="section"><h2>SPEDITORE</h2><div class="fields"><div class="field"><label>Nome *</label><input name="owner_first_name" value="{val('owner_first_name')}" required></div><div class="field"><label>Cognome *</label><input name="owner_last_name" value="{val('owner_last_name')}" required></div><div class="field"><label>Telefono *</label><input type="tel" inputmode="numeric" name="owner_phone" value="{val('owner_phone')}" required></div><div class="field"><label>Secondo telefono</label><input type="tel" inputmode="numeric" name="owner_phone_2" value="{val('owner_phone_2')}"></div><div class="field"><label>Email</label><input type="email" name="owner_email" value="{val('owner_email')}"></div><div class="field"><label>Codice fiscale</label><input name="owner_tax_code" value="{val('owner_tax_code')}"></div><div class="field full"><label>Indirizzo *</label><input name="owner_address" value="{val('owner_address')}" required></div></div></section>
+        <section class="section"><h2>SPEDITORE</h2><div class="fields"><div class="field"><label>Nome *</label><input name="owner_first_name" value="{val('owner_first_name')}" required></div><div class="field"><label>Cognome *</label><input name="owner_last_name" value="{val('owner_last_name')}" required></div><div class="field"><label>Telefono *</label><input type="tel" inputmode="numeric" name="owner_phone" value="{val('owner_phone')}" required></div><div class="field"><label>Secondo telefono</label><input type="tel" inputmode="numeric" name="owner_phone_2" value="{val('owner_phone_2')}"></div><div class="field"><label>Email</label><input type="email" name="owner_email" value="{val('owner_email')}"></div><div class="field"><label>Codice fiscale</label><input name="owner_tax_code" value="{val('owner_tax_code')}"></div><div class="field full"><label>Indirizzo - via / piazza *</label><input name="owner_street" value="{val('owner_street') or val('owner_address')}" required></div><div class="field"><label>Comune *</label><input name="owner_city" value="{val('owner_city')}" required></div><div class="field"><label>Provincia</label><input name="owner_province" value="{val('owner_province')}" maxlength="2" placeholder="Si compila dal comune"></div><div class="field"><label>CAP</label><input name="owner_zip" value="{val('owner_zip')}" inputmode="numeric"></div></div></section>
         <section class="section"><h2>DESTINATARIO E LUOGO DI DESTINAZIONE</h2><p class="sub">Compilati automaticamente in base alla sede selezionata: Livorno oppure Empoli.</p></section>
         <section class="section"><h2>LUOGO DI ORIGINE</h2><div class="fields"><div class="field"><label>Luogo di origine</label><select name="origin_mode"><option {selected('origin_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('origin_mode','Testo libero','IDEM SPED')}>Testo libero</option></select></div><div class="field"><label>Data recupero</label><input type="date" name="pickup_date" value="{val('pickup_date')}"></div><div class="field full"><label>Testo libero / indirizzo diverso</label><input name="origin_text" value="{val('origin_text') or (val('pickup_address') if raw('pickup_address_mode')=='Altro indirizzo' else '')}" placeholder="Scrivi qui solo se il luogo non è IDEM SPED"></div></div></section>
         <section class="section"><h2>Animale</h2><div class="fields"><div class="field"><label>Nome</label><input name="animal_name" value="{val('animal_name')}"></div><div class="field"><label>Specie</label><input name="species" value="{val('species')}"></div><div class="field"><label>Peso stimato (kg)</label><input name="estimated_weight" value="{val('estimated_weight')}"></div><div class="field"><label>Età - anni</label><input name="age_years" value="{val('age_years')}"></div><div class="field"><label>Età - mesi</label><input name="age_months" value="{val('age_months')}"></div><div class="field"><label>Microchip</label><input name="microchip" value="{val('microchip')}"></div><div class="field full"><label>Razza</label><input name="breed" value="{val('breed')}"></div></div></section>
@@ -518,13 +542,18 @@ class App(BaseHTTPRequestHandler):
         self.send_html(layout("Nuova pratica",body,user))
 
     def normalized_fields(self,f):
-        keys=["operator_name","request_origin","destination_branch","owner_first_name","owner_last_name","owner_phone","owner_phone_2","owner_email","owner_tax_code","owner_address","pickup_address_mode","pickup_address","origin_mode","origin_text","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","service_type","veterinarian_id","voucher_requested","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_assistita_streaming","tag_saluto","tag_calco","tag_avvisare","tag_da_richiamare","payment_status","price_cremation","price_pickup","price_evening","price_urn","send_catalog","price_delivery","price_night","price_cast","price_holiday","price_accessories","deposit","remaining_balance","total_service","total_text","identity_document_number","identity_document_date","signing_place"]
+        keys=["operator_name","request_origin","destination_branch","owner_first_name","owner_last_name","owner_phone","owner_phone_2","owner_email","owner_tax_code","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","service_type","veterinarian_id","voucher_requested","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_assistita_streaming","tag_saluto","tag_calco","tag_avvisare","tag_da_richiamare","payment_status","price_cremation","price_pickup","price_evening","price_urn","send_catalog","price_delivery","price_night","price_cast","price_holiday","price_accessories","deposit","remaining_balance","total_service","total_text","identity_document_number","identity_document_date","signing_place"]
         data = {k:f.get(k,"").strip() for k in keys}
         if not data["payment_status"] or data["payment_status"] not in PAYMENT_STATES:
             data["payment_status"] = "Da saldare"
         data["send_catalog"] = "Si" if data["send_catalog"] == "Si" else ""
         data["voucher_requested"] = "Si" if data["voucher_requested"] == "Si" else ""
         data["veterinarian_id"] = data["veterinarian_id"] or None
+        data["owner_province"] = data["owner_province"].upper()
+        city_line = " ".join(x for x in [data["owner_zip"], data["owner_city"], f'({data["owner_province"]})' if data["owner_province"] else ""] if x).strip()
+        composed_address = " - ".join(x for x in [data["owner_street"], city_line] if x)
+        if composed_address:
+            data["owner_address"] = composed_address
         if not data["origin_mode"]:
             data["origin_mode"] = "IDEM SPED"
         if not data["transporter_mode"]:
@@ -538,7 +567,7 @@ class App(BaseHTTPRequestHandler):
         return data
 
     def is_complete(self,d):
-        required=["owner_first_name","owner_last_name","owner_phone","owner_address","animal_name","species","estimated_weight","service_type"]
+        required=["owner_first_name","owner_last_name","owner_phone","owner_street","owner_city","animal_name","species","estimated_weight","service_type"]
         return int(all(d.get(k) and d.get(k)!="Da decidere" for k in required))
 
     def sync_voucher(self,c,pid,d):
@@ -558,8 +587,8 @@ class App(BaseHTTPRequestHandler):
         d=self.normalized_fields(self.form()); stamp=now()
         if not d.get("operator_name"):
             return self.send_error(400, "Operatore obbligatorio")
-        if not all(d.get(k) for k in ("owner_first_name","owner_last_name","owner_phone","owner_address")):
-            return self.send_error(400, "Nome, cognome, telefono e indirizzo del proprietario sono obbligatori")
+        if not all(d.get(k) for k in ("owner_first_name","owner_last_name","owner_phone","owner_street","owner_city")):
+            return self.send_error(400, "Nome, cognome, telefono, via e comune dello speditore sono obbligatori")
         initial="Ritirato"
         with db() as c:
             number=next_practice_code(c,d["service_type"])
@@ -579,6 +608,7 @@ class App(BaseHTTPRequestHandler):
         options=''.join(f'<option {"selected" if s==p["status"] else ""}>{esc(s)}</option>' for s in STATES)
         payment_value = p["payment_status"] if "payment_status" in p.keys() and p["payment_status"] else "Da saldare"
         catalog_value = "Si" if "send_catalog" in p.keys() and p["send_catalog"] else "No"
+        invoice_value = p["invoice_number"] if "invoice_number" in p.keys() and p["invoice_number"] else ""
         payment_options=''.join(f'<option {"selected" if s==payment_value else ""}>{esc(s)}</option>' for s in PAYMENT_STATES)
         hist=''.join(f'<div class="event"><b>{esc(h["event_type"])}</b><br><span>{esc(h["new_value"])}</span><br><small class="sub">{esc(h["created_at"].replace("T"," "))} - {esc(h["display_name"])}</small></div>' for h in history)
         ddt=f'DDT n. {p["ddt_number"]} del {esc(p["ddt_date"])}' if p["ddt_number"] else 'Numero DDT non ancora assegnato'
@@ -593,9 +623,9 @@ class App(BaseHTTPRequestHandler):
           {'' if p['data_complete'] else '<div class="flash warning">Questa pratica contiene ancora dati da completare.</div>'}
           <section class="grid practice-layout">
             <div class="grid">
-              <div class="section"><h2>Riepilogo</h2><div class="kvs"><div class="kv"><small>Stato</small><b>{esc(p['status'])}</b><br><span class="badge tag-blue">{esc(payment_value)}</span></div><div class="kv"><small>Speditore</small>{esc((p['owner_first_name'] or '')+' '+(p['owner_last_name'] or ''))}<br>{esc(p['owner_phone'])}{('<br>'+esc(p['owner_phone_2'])) if 'owner_phone_2' in p.keys() and p['owner_phone_2'] else ''}</div><div class="kv"><small>Animale</small>{esc(p['species'])} - {esc(p['breed'])}<br>{esc(p['estimated_weight'])} kg</div><div class="kv"><small>Sede</small><b>{esc(p['destination_branch'])}</b></div><div class="kv"><small>Origine</small><b>{esc(p['request_origin'])}</b></div><div class="kv"><small>Veterinario</small>{esc(p['clinic_name'])}<br>{esc(p['veterinarian_name'])}</div><div class="kv"><small>Catalogo urna</small><b>{esc(catalog_value)}</b></div></div></div>
+              <div class="section"><h2>Riepilogo</h2><div class="kvs"><div class="kv"><small>Stato</small><b>{esc(p['status'])}</b><br><span class="badge tag-blue">{esc(payment_value)}</span></div><div class="kv"><small>Speditore</small>{esc((p['owner_first_name'] or '')+' '+(p['owner_last_name'] or ''))}<br>{esc(p['owner_phone'])}{('<br>'+esc(p['owner_phone_2'])) if 'owner_phone_2' in p.keys() and p['owner_phone_2'] else ''}</div><div class="kv"><small>Animale</small>{esc(p['species'])} - {esc(p['breed'])}<br>{esc(p['estimated_weight'])} kg</div><div class="kv"><small>Sede</small><b>{esc(p['destination_branch'])}</b></div><div class="kv"><small>Origine</small><b>{esc(p['request_origin'])}</b></div><div class="kv"><small>Veterinario</small>{esc(p['clinic_name'])}<br>{esc(p['veterinarian_name'])}</div><div class="kv"><small>Catalogo urna</small><b>{esc(catalog_value)}</b></div><div class="kv"><small>Fattura</small>{esc(invoice_value) or '<span class="sub">Non inserita</span>'}</div></div></div>
               <div class="section"><h2>Firma proprietario</h2><p class="sub">{'Firma salvata.' if p['signature_data'] else 'Firma non ancora salvata.'}</p><a class="btn ghost" href="/pratiche/{pid}/firma">Apri firma</a></div>
-              <div class="section"><h2>Stati pratica</h2><form method="post" action="/pratiche/{pid}/stato"><div class="fields"><div class="field"><label>Avanzamento</label><select name="status">{options}</select></div><div class="field"><label>Pagamento</label><select name="payment_status">{payment_options}</select></div></div><button class="btn" style="margin-top:12px">Aggiorna stati</button></form></div>
+              <div class="section"><h2>Stati pratica</h2><form method="post" action="/pratiche/{pid}/stato"><div class="fields"><div class="field"><label>Avanzamento</label><select name="status">{options}</select></div><div class="field"><label>Pagamento</label><select name="payment_status">{payment_options}</select></div><div class="field"><label>Numero fattura</label><input name="invoice_number" value="{esc(invoice_value)}" placeholder="Da inserire quando risulta pagato"></div></div><button class="btn" style="margin-top:12px">Aggiorna stati</button></form></div>
               <div class="section"><h2>Documento DCS / DDT</h2><p>{ddt}</p>{pdf_block}</div>
               <div class="section"><h2>Note</h2><p>{esc(p['notes']) or '<span class="sub">Nessuna nota.</span>'}</p></div>
               <div class="section danger"><h2>Elimina pratica</h2><p class="danger-note">Attenzione: questa azione cancella definitivamente pratica, storico e PDF collegati.</p><form method="post" action="/pratiche/{pid}/elimina" onsubmit="return confirm('Confermi la cancellazione definitiva della pratica?')"><div class="field"><label>Per confermare scrivi ELIMINA</label><input name="confirm_delete" autocomplete="off" required></div><button class="btn danger-btn" style="margin-top:12px">Elimina definitivamente</button></form></div>
@@ -646,8 +676,8 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         d=self.normalized_fields(self.form()); stamp=now(); assignments=','.join(f'{k}=?' for k in d)
         if not d.get("operator_name"):
             return self.send_error(400, "Operatore obbligatorio")
-        if not all(d.get(k) for k in ("owner_first_name","owner_last_name","owner_phone","owner_address")):
-            return self.send_error(400, "Nome, cognome, telefono e indirizzo del proprietario sono obbligatori")
+        if not all(d.get(k) for k in ("owner_first_name","owner_last_name","owner_phone","owner_street","owner_city")):
+            return self.send_error(400, "Nome, cognome, telefono, via e comune dello speditore sono obbligatori")
         with db() as c:
             c.execute(f"UPDATE practices SET {assignments},data_complete=?,updated_at=? WHERE id=?",list(d.values())+[self.is_complete(d),stamp,pid])
             p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
@@ -662,14 +692,16 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         self.redirect(f"/pratiche/{pid}")
 
     def change_state(self,user,pid):
-        f=self.form(); new=f.get("status",""); payment=f.get("payment_status","Da saldare")
+        f=self.form(); new=f.get("status",""); payment=f.get("payment_status","Da saldare"); invoice=f.get("invoice_number","").strip()
         if new not in STATES or payment not in PAYMENT_STATES:return self.send_error(400)
         with db() as c:
-            old=c.execute("SELECT status,payment_status FROM practices WHERE id=?",(pid,)).fetchone()
+            old=c.execute("SELECT status,payment_status,invoice_number FROM practices WHERE id=?",(pid,)).fetchone()
             if not old:return self.send_error(404)
             old_payment=old["payment_status"] or "Da saldare"
-            c.execute("UPDATE practices SET status=?,payment_status=?,updated_at=? WHERE id=?",(new,payment,now(),pid))
-            c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,"Cambio stati",f'{old["status"]} + {old_payment}',f'{new} + {payment}',user["id"],now()))
+            c.execute("UPDATE practices SET status=?,payment_status=?,invoice_number=?,updated_at=? WHERE id=?",(new,payment,invoice,now(),pid))
+            new_value=f'{new} + {payment}' + (f' · Fattura {invoice}' if invoice else '')
+            old_value=f'{old["status"]} + {old_payment}' + (f' · Fattura {old["invoice_number"]}' if old["invoice_number"] else '')
+            c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,"Cambio stati",old_value,new_value,user["id"],now()))
         self.redirect(f"/pratiche/{pid}")
 
     def delete_practice(self,user,pid):
