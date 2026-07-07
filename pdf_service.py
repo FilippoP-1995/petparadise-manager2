@@ -124,9 +124,9 @@ def _overlay_page_1(page, width, height):
     _text(c, 390, 727, _get(page, "ddt_number"), 12)
     _text(c, 375, 700, _date(_get(page, "ddt_date")), 12)
 
-    # Speditore e trasporto, come nel DCS compilato di riferimento
-    _text(c, 95, 714, owner, 12, 32)
-    _text(c, 70, 680, _get(page, "owner_address"), 11, 55)
+    # Speditore: campi puliti e leggermente piu bassi per non sovrapporsi al modello.
+    _field_text(c, 92, 706, owner, 230, 11.5, 32)
+    _field_text(c, 70, 674, _get(page, "owner_address"), 285, 10.5, 55)
     _text(c, 440, 674, _get(page, "transport_method"), 11, 18)
     _text(c, 430, 648, _get(page, "vehicle_plate"), 11, 16)
 
@@ -146,7 +146,7 @@ def _overlay_page_1(page, width, height):
     temp_x = {"Ambiente": 108, "Refrigerato": 238, "Congelato": 354}.get(_get(page, "temperature_mode", "Ambiente"), 108)
     _text(c, temp_x, 467, "X", 11)
     _text(c, 510, 444, _get(page, "package_count", "1"), 13)
-    _center_text(c, 292, 418, _get(page, "container_id"), 12, 45)
+    _center_text(c, 292, 423, _get(page, "container_id"), 12, 45)
 
     # Merce / animale
     _text(c, 150, 392, _get(page, "species"), 12, 20)
@@ -172,9 +172,9 @@ def _overlay_page_2(page, width, height):
     _text(c, 220, 524, _get(page, "age_months", "0"), 13.5)
     _center_text(c, 472, 524, f'{_get(page, "estimated_weight")} KG', 13.5)
     _center_text(c, 305, 487, _get(page, "clinic_name"), 13.5, 30)
-    _center_text(c, 135, 434, owner, 12.5, 28)
-    _center_text(c, 390, 434, _get(page, "owner_phone"), 12.5, 24)
-    _center_text(c, 514, 434, _get(page, "owner_email"), 10.5, 27)
+    _center_field_text(c, 135, 431, owner, 150, 12.5, 28)
+    _center_field_text(c, 390, 431, _get(page, "owner_phone"), 116, 12.5, 24)
+    _center_field_text(c, 514, 431, _get(page, "owner_email"), 96, 10.5, 27)
 
     # Preventivo stimato
     _text(c, 155, 379, _get(page, "price_cremation"), 13.5)
