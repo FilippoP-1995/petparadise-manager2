@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import base64
+import re
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-from datetime import datetime
 
 from pypdf import PdfReader, PdfWriter
-from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase.pdfmetrics import stringWidth
+from reportlab.pdfgen import canvas
 
 
 COMPANY = {
@@ -29,6 +30,61 @@ BRANCHES = {
 }
 
 
+# Unica sorgente coordinate: tutti i campi automatici usano centro + larghezza.
+# In questo modo il testo resta centrato anche se cambia lunghezza.
+PAGE1_FIELDS = {
+    "ddt_number": {"cx": 405, "y": 727, "w": 62, "size": 12},
+    "ddt_date": {"cx": 405, "y": 700, "w": 78, "size": 12, "date": True},
+    "owner": {"cx": 205, "y": 706, "w": 232, "size": 11.5},
+    "owner_address": {"cx": 210, "y": 674, "w": 250, "size": 10.5},
+    "transport_method": {"cx": 500, "y": 674, "w": 128, "size": 11},
+    "vehicle_plate": {"cx": 500, "y": 648, "w": 128, "size": 11},
+    "origin": {"cx": 250, "y": 547, "w": 240, "size": 11},
+    "package_count": {"cx": 528, "y": 444, "w": 62, "size": 13},
+    "container_id": {"cx": 292, "y": 423, "w": 410, "size": 12},
+    "species_goods": {"cx": 225, "y": 392, "w": 105, "size": 12},
+    "weight_goods": {"cx": 455, "y": 392, "w": 112, "size": 12},
+    "lot_number": {"cx": 542, "y": 392, "w": 55, "size": 11},
+    "treatment_method": {"cx": 555, "y": 338, "w": 95, "size": 11},
+    "species_animal": {"cx": 218, "y": 307, "w": 150, "size": 12},
+    "microchip": {"cx": 675 / 2, "y": 269, "w": 250, "size": 11},
+}
+
+PAGE2_FIELDS = {
+    "ddt_date": {"cx": 195, "y": 588, "w": 120, "size": 14, "date": True},
+    "ddt_number": {"cx": 505, "y": 588, "w": 90, "size": 14},
+    "animal_name": {"cx": 200, "y": 556, "w": 155, "size": 14},
+    "microchip": {"cx": 500, "y": 556, "w": 130, "size": 13.5},
+    "age_years": {"cx": 158, "y": 524, "w": 70, "size": 13.5},
+    "age_months": {"cx": 246, "y": 524, "w": 70, "size": 13.5},
+    "weight": {"cx": 472, "y": 524, "w": 165, "size": 13.5},
+    "clinic": {"cx": 305, "y": 487, "w": 275, "size": 13.5},
+    "owner": {"cx": 103, "y": 431, "w": 125, "size": 12.5, "cover": True},
+    "owner_phone": {"cx": 300, "y": 431, "w": 125, "size": 12.5, "cover": True},
+    "owner_email": {"cx": 458, "y": 431, "w": 160, "size": 10.5, "cover": True},
+    "price_cremation": {"cx": 185, "y": 379, "w": 105, "size": 13.5},
+    "price_pickup": {"cx": 340, "y": 379, "w": 105, "size": 13.5},
+    "price_evening": {"cx": 535, "y": 379, "w": 105, "size": 13.5},
+    "price_urn": {"cx": 182, "y": 354, "w": 48, "size": 11.5},
+    "price_delivery": {"cx": 340, "y": 354, "w": 105, "size": 13.5},
+    "price_night": {"cx": 535, "y": 354, "w": 105, "size": 13.5},
+    "price_cast": {"cx": 185, "y": 330, "w": 105, "size": 13.5},
+    "price_holiday": {"cx": 340, "y": 330, "w": 105, "size": 13.5},
+    "price_accessories": {"cx": 515, "y": 330, "w": 145, "size": 12.5},
+    "deposit": {"cx": 182, "y": 251, "w": 140, "size": 13.5},
+    "total_service": {"cx": 455, "y": 259, "w": 150, "size": 14},
+    "decl_owner": {"cx": 218, "y": 212, "w": 145, "size": 10, "cover": True},
+    "tax_code": {"cx": 394, "y": 212, "w": 128, "size": 10, "cover": True},
+    "decl_species": {"cx": 261, "y": 198, "w": 58, "size": 10, "cover": True},
+    "decl_breed": {"cx": 390, "y": 198, "w": 136, "size": 10, "cover": True},
+    "decl_microchip": {"cx": 222, "y": 184, "w": 128, "size": 10, "cover": True},
+    "decl_date": {"cx": 131, "y": 130, "w": 106, "size": 10, "date": True, "cover": True},
+    "signing_place": {"cx": 255, "y": 130, "w": 75, "size": 10, "cover": True},
+    "document_number": {"cx": 206, "y": 102, "w": 132, "size": 10, "cover": True},
+    "document_date": {"cx": 380, "y": 102, "w": 80, "size": 10, "date": True, "cover": True},
+}
+
+
 def _pdf_safe(value):
     value = str(value or "").strip()
     replacements = {
@@ -40,16 +96,6 @@ def _pdf_safe(value):
     return value.encode("latin-1", "replace").decode("latin-1")
 
 
-def _text(c, x, y, value, size=8, max_chars=None):
-    value = _pdf_safe(value)
-    if not value:
-        return
-    if max_chars and len(value) > max_chars:
-        value = value[: max_chars - 3] + "..."
-    c.setFont("Helvetica", size)
-    c.drawString(x, y, value)
-
-
 def _get(page, key, default=""):
     try:
         value = page[key]
@@ -58,39 +104,47 @@ def _get(page, key, default=""):
     return value if value not in (None, "") else default
 
 
-def _center_text(c, center_x, y, value, size=8, max_chars=None):
+def _date(value):
+    value = str(value or "")
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").strftime("%d.%m.%y")
+    except ValueError:
+        return value
+
+
+def _fit_text(value, width, size, font="Helvetica"):
     value = _pdf_safe(value)
     if not value:
+        return "", size
+    while size > 7 and stringWidth(value, font, size) > width:
+        size -= 0.5
+    if stringWidth(value, font, size) <= width:
+        return value, size
+    ellipsis = "..."
+    while value and stringWidth(value + ellipsis, font, size) > width:
+        value = value[:-1]
+    return value + ellipsis if value else "", size
+
+
+def _draw_centered(c, spec, value):
+    value = _date(value) if spec.get("date") else value
+    value, size = _fit_text(value, spec["w"], spec["size"])
+    if not value:
         return
-    if max_chars and len(value) > max_chars:
-        value = value[: max_chars - 3] + "..."
+    cx, y, w = spec["cx"], spec["y"], spec["w"]
+    if spec.get("cover"):
+        c.saveState()
+        c.setFillColorRGB(1, 1, 1)
+        c.rect(cx - w / 2 - 2, y - 2, w + 4, size + 4, fill=1, stroke=0)
+        c.restoreState()
     c.setFont("Helvetica", size)
-    c.drawString(center_x - stringWidth(value, "Helvetica", size) / 2, y, value)
+    c.drawString(cx - stringWidth(value, "Helvetica", size) / 2, y, value)
 
 
-def _field_text(c, x, y, value, width, size=8, max_chars=None):
-    value = _pdf_safe(value)
-    if not value:
-        return
-    c.saveState()
-    c.setFillColorRGB(1, 1, 1)
-    c.rect(x - 2, y - 2, width, size + 4, fill=1, stroke=0)
-    c.restoreState()
-    _text(c, x, y, value, size, max_chars)
-
-
-def _center_field_text(c, center_x, y, value, width, size=8, max_chars=None):
-    value = _pdf_safe(value)
-    if not value:
-        return
-    if max_chars and len(value) > max_chars:
-        value = value[: max_chars - 3] + "..."
-    x = center_x - width / 2
-    c.saveState()
-    c.setFillColorRGB(1, 1, 1)
-    c.rect(x - 2, y - 2, width + 4, size + 4, fill=1, stroke=0)
-    c.restoreState()
-    _center_text(c, center_x, y, value, size)
+def _draw_fields(c, fields, values):
+    for name, value in values.items():
+        if name in fields:
+            _draw_centered(c, fields[name], value)
 
 
 def _draw_signature(c, page):
@@ -104,12 +158,12 @@ def _draw_signature(c, page):
         return
 
 
-def _date(value):
-    value = str(value or "")
-    try:
-        return datetime.strptime(value, "%Y-%m-%d").strftime("%d.%m.%y")
-    except ValueError:
-        return value
+def _urn_display(value):
+    value = str(value or "").strip()
+    match = re.match(r"^(\d+(?:[,.]\d+)?)\s+(.+)$", value)
+    if match:
+        return f"{match.group(2).strip()} {match.group(1).strip()}"
+    return value
 
 
 def _overlay_page_1(page, width, height):
@@ -117,44 +171,36 @@ def _overlay_page_1(page, width, height):
     c = canvas.Canvas(stream, pagesize=(width, height))
     branch = BRANCHES[_get(page, "destination_branch", "Livorno")]
     owner = f'{_get(page, "owner_first_name")} {_get(page, "owner_last_name")}'.strip()
-    source_name = owner
-    source_address = _get(page, "owner_address")
 
-    # DDT and date
-    _text(c, 390, 727, _get(page, "ddt_number"), 12)
-    _text(c, 375, 700, _date(_get(page, "ddt_date")), 12)
+    values = {
+        "ddt_number": _get(page, "ddt_number"),
+        "ddt_date": _get(page, "ddt_date"),
+        "owner": owner,
+        "owner_address": _get(page, "owner_address"),
+        "transport_method": _get(page, "transport_method"),
+        "vehicle_plate": _get(page, "vehicle_plate"),
+        "origin": _get(page, "origin_text") if _get(page, "origin_mode", "IDEM SPED") == "Testo libero" else "IDEM SPED.",
+        "package_count": _get(page, "package_count", "1"),
+        "container_id": _get(page, "container_id"),
+        "species_goods": _get(page, "species"),
+        "weight_goods": f'{_get(page, "estimated_weight")} KG',
+        "lot_number": _get(page, "lot_number", "/"),
+        "treatment_method": _get(page, "treatment_method", "/"),
+        "species_animal": _get(page, "species"),
+        "microchip": _get(page, "microchip", "/"),
+    }
+    _draw_fields(c, PAGE1_FIELDS, values)
 
-    # Speditore: campi puliti e leggermente piu bassi per non sovrapporsi al modello.
-    _field_text(c, 92, 706, owner, 230, 11.5, 32)
-    _field_text(c, 70, 674, _get(page, "owner_address"), 285, 10.5, 55)
-    _text(c, 440, 674, _get(page, "transport_method"), 11, 18)
-    _text(c, 430, 648, _get(page, "vehicle_plate"), 11, 16)
-
-    # Destinatario e destinazione sono prestampati nei modelli di sede.
     if _get(page, "transporter_mode", "IDEM SPED") == "DATI PET PARADISE":
-        _center_text(c, 420, 620, COMPANY["name"], 8.8, 28)
-        _center_text(c, 420, 607, branch["address"], 6.8, 34)
-        _center_text(c, 420, 596, COMPANY["vat"], 7.2, 24)
+        _draw_centered(c, {"cx": 420, "y": 620, "w": 170, "size": 8.8}, COMPANY["name"])
+        _draw_centered(c, {"cx": 420, "y": 607, "w": 175, "size": 6.8}, branch["address"])
+        _draw_centered(c, {"cx": 420, "y": 596, "w": 165, "size": 7.2}, COMPANY["vat"])
     else:
-        _center_text(c, 420, 612, "IDEM SPED.", 11)
+        _draw_centered(c, {"cx": 420, "y": 612, "w": 165, "size": 11}, "IDEM SPED.")
 
-    # Luogo di origine
-    origin = _get(page, "origin_text") if _get(page, "origin_mode", "IDEM SPED") == "Testo libero" else "IDEM SPED."
-    _text(c, 120, 547, origin, 11, 48)
-
-    # Condizioni di trasporto
     temp_x = {"Ambiente": 108, "Refrigerato": 238, "Congelato": 354}.get(_get(page, "temperature_mode", "Ambiente"), 108)
-    _text(c, temp_x, 467, "X", 11)
-    _text(c, 510, 444, _get(page, "package_count", "1"), 13)
-    _center_text(c, 292, 423, _get(page, "container_id"), 12, 45)
-
-    # Merce / animale
-    _text(c, 150, 392, _get(page, "species"), 12, 20)
-    _center_text(c, 455, 392, f'{_get(page, "estimated_weight")} KG', 12)
-    _text(c, 520, 392, _get(page, "lot_number", "/"), 11)
-    _text(c, 300, 338, _get(page, "treatment_method", "/"), 11)
-    _text(c, 136, 307, _get(page, "species"), 12)
-    _text(c, 270, 269, _get(page, "microchip", "/"), 11, 45)
+    c.setFont("Helvetica", 11)
+    c.drawString(temp_x, 467, "X")
     c.save(); stream.seek(0)
     return PdfReader(stream).pages[0]
 
@@ -164,41 +210,40 @@ def _overlay_page_2(page, width, height):
     c = canvas.Canvas(stream, pagesize=(width, height))
     owner = f'{_get(page, "owner_first_name")} {_get(page, "owner_last_name")}'.strip()
 
-    _text(c, 153, 588, _date(_get(page, "ddt_date")), 14)
-    _text(c, 466, 588, _get(page, "ddt_number"), 14)
-    _text(c, 122, 556, _get(page, "animal_name"), 14, 24)
-    _text(c, 427, 556, _get(page, "microchip", "/"), 13.5, 26)
-    _text(c, 135, 524, _get(page, "age_years", "0"), 13.5)
-    _text(c, 220, 524, _get(page, "age_months", "0"), 13.5)
-    _center_text(c, 472, 524, f'{_get(page, "estimated_weight")} KG', 13.5)
-    _center_text(c, 305, 487, _get(page, "clinic_name"), 13.5, 30)
-    _center_field_text(c, 135, 431, owner, 150, 12.5, 28)
-    _center_field_text(c, 390, 431, _get(page, "owner_phone"), 116, 12.5, 24)
-    _center_field_text(c, 514, 431, _get(page, "owner_email"), 96, 10.5, 27)
-
-    # Preventivo stimato
-    _text(c, 155, 379, _get(page, "price_cremation"), 13.5)
-    _text(c, 310, 379, _get(page, "price_pickup"), 13.5)
-    _text(c, 505, 379, _get(page, "price_evening"), 13.5)
-    _text(c, 155, 354, _get(page, "price_urn"), 13.5)
-    _text(c, 310, 354, _get(page, "price_delivery"), 13.5)
-    _text(c, 505, 354, _get(page, "price_night"), 13.5)
-    _text(c, 155, 330, _get(page, "price_cast"), 13.5)
-    _text(c, 310, 330, _get(page, "price_holiday"), 13.5)
-    _text(c, 475, 330, _get(page, "price_accessories"), 12.5)
-    _text(c, 125, 251, _get(page, "deposit"), 13.5)
-    _text(c, 405, 259, _get(page, "total_service"), 14)
-
-    # Dichiarazione del proprietario
-    _center_field_text(c, 218, 212, owner, 166, 10, 30)
-    _center_field_text(c, 394, 212, _get(page, "owner_tax_code"), 128, 10, 22)
-    _field_text(c, 232, 198, _get(page, "species"), 58, 10, 13)
-    _field_text(c, 322, 198, _get(page, "breed"), 136, 10, 24)
-    _field_text(c, 158, 184, _get(page, "microchip"), 128, 10, 24)
-    _field_text(c, 78, 130, _date(_get(page, "ddt_date")), 106, 10)
-    _field_text(c, 218, 130, _get(page, "signing_place", _get(page, "destination_branch")), 75, 10, 18)
-    _field_text(c, 140, 102, _get(page, "identity_document_number"), 132, 10, 24)
-    _field_text(c, 340, 102, _date(_get(page, "identity_document_date")), 80, 10)
+    values = {
+        "ddt_date": _get(page, "ddt_date"),
+        "ddt_number": _get(page, "ddt_number"),
+        "animal_name": _get(page, "animal_name"),
+        "microchip": _get(page, "microchip", "/"),
+        "age_years": _get(page, "age_years", "0"),
+        "age_months": _get(page, "age_months", "0"),
+        "weight": f'{_get(page, "estimated_weight")} KG',
+        "clinic": _get(page, "clinic_name"),
+        "owner": owner,
+        "owner_phone": _get(page, "owner_phone"),
+        "owner_email": _get(page, "owner_email"),
+        "price_cremation": _get(page, "price_cremation"),
+        "price_pickup": _get(page, "price_pickup"),
+        "price_evening": _get(page, "price_evening"),
+        "price_urn": _urn_display(_get(page, "price_urn")),
+        "price_delivery": _get(page, "price_delivery"),
+        "price_night": _get(page, "price_night"),
+        "price_cast": _get(page, "price_cast"),
+        "price_holiday": _get(page, "price_holiday"),
+        "price_accessories": _get(page, "price_accessories"),
+        "deposit": _get(page, "deposit"),
+        "total_service": _get(page, "total_service"),
+        "decl_owner": owner,
+        "tax_code": _get(page, "owner_tax_code"),
+        "decl_species": _get(page, "species"),
+        "decl_breed": _get(page, "breed"),
+        "decl_microchip": _get(page, "microchip"),
+        "decl_date": _get(page, "ddt_date"),
+        "signing_place": _get(page, "signing_place", _get(page, "destination_branch")),
+        "document_number": _get(page, "identity_document_number"),
+        "document_date": _get(page, "identity_document_date"),
+    }
+    _draw_fields(c, PAGE2_FIELDS, values)
     _draw_signature(c, page)
     c.save(); stream.seek(0)
     return PdfReader(stream).pages[0]
