@@ -437,7 +437,7 @@ async function sharePracticePdf(url, title){
 def layout(title, body, user=None):
     nav = ""
     if user:
-        nav = f'''<nav class="nav"><a href="/">Dashboard</a><a href="/pratiche"><span>Archivio </span>pratiche</a><a href="/database-mesi">Database mesi</a><a href="/veterinari">Veterinari</a><a href="/nuova" class="btn">+ Nuova pratica</a><a href="/logout">Esci</a></nav>'''
+        nav = f'''<nav class="nav"><a href="/">Dashboard</a><a href="/pratiche">Archivio</a><a href="/veterinari">Veterinari</a><a href="/nuova" class="btn">+ Nuova pratica</a><a href="/logout">Esci</a></nav>'''
     return f'''<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)} · Pet Paradise Manager</title><style>{CSS}</style></head><body><header class="top"><a class="brand" href="/">Pet Paradise <small>MANAGER</small></a>{nav}</header>{body}{APP_JS}</body></html>'''
 
 
@@ -515,7 +515,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/diagnostica": return self.diagnostics(user)
         if path == "/nuova": return self.new_page(user)
         if path == "/pratiche": return self.archive(user)
-        if path == "/database-mesi": return self.monthly_database(user)
+        if path == "/database-mesi": return self.redirect("/pratiche")
         if path == "/veterinari": return self.veterinarians_page(user)
         match = re.fullmatch(r"/pratiche/(\d+)", path)
         if match: return self.practice(user, int(match.group(1)))
@@ -586,7 +586,7 @@ class App(BaseHTTPRequestHandler):
         hour=datetime.now().hour
         greeting="Buongiorno" if hour < 13 else "Buon pomeriggio" if hour < 18 else "Buonasera"
         logo='<img class="home-logo" src="/assets/company_logo.png" alt="Pet Paradise">' if (ASSETS / "company_logo.png").exists() else ''
-        body=f'''<main class="wrap"><div class="titlebar"><div style="display:flex;gap:18px;align-items:center">{logo}<div><h1>{greeting}, {esc(user['display_name'])}</h1><div class="sub">Situazione operativa aggiornata</div></div></div><div class="actions"><a class="btn ghost" href="/database-mesi">Database mensile</a><a class="btn" href="/nuova">+ Nuova pratica</a></div></div>{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}<h2>Avanzamento pratiche</h2><section class="grid stats">{cards}</section><div style="height:20px"></div><h2>Pagamenti</h2><section class="grid stats">{payment_cards}</section><div style="height:20px"></div><h2>Promemoria</h2><section class="grid stats">{promemoria_cards}</section><div style="height:24px"></div><div class="titlebar"><h2>Attività recenti</h2><a href="/pratiche">Vedi archivio →</a></div><div class="tablebox"><table><thead><tr><th>Data</th><th>Pratica</th><th>Animale</th><th>Proprietario</th><th>Sede</th><th>Etichette</th><th>Stato</th></tr></thead><tbody>{rows}</tbody></table></div></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div style="display:flex;gap:18px;align-items:center">{logo}<div><h1>{greeting}, {esc(user['display_name'])}</h1><div class="sub">Situazione operativa aggiornata</div></div></div></div>{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}<h2>Avanzamento pratiche</h2><section class="grid stats">{cards}</section><div style="height:20px"></div><h2>Pagamenti</h2><section class="grid stats">{payment_cards}</section><div style="height:20px"></div><h2>Promemoria</h2><section class="grid stats">{promemoria_cards}</section><div style="height:24px"></div><div class="titlebar"><h2>Attività recenti</h2><a href="/pratiche">Vedi archivio →</a></div><div class="tablebox"><table><thead><tr><th>Data</th><th>Pratica</th><th>Animale</th><th>Proprietario</th><th>Sede</th><th>Etichette</th><th>Stato</th></tr></thead><tbody>{rows}</tbody></table></div></main>'''
         self.send_html(layout("Dashboard",body,user))
 
     def diagnostics(self,user):
@@ -611,6 +611,7 @@ class App(BaseHTTPRequestHandler):
             ("tag_calco", "CALCO", "tag-yellow"),
             ("tag_avvisare", "AVVISARE", "tag-pink"),
             ("tag_da_richiamare", "DA RICHIAMARE", "tag-blue"),
+            ("send_catalog", "INVIARE CATALOGO", "tag-outline-orange"),
         ]
         html_badges = ''.join(f'<span class="badge {cls}">{label}</span> ' for key,label,cls in tags if key in r.keys() and r[key])
         return html_badges or '<span class="sub">-</span>'
@@ -625,43 +626,79 @@ class App(BaseHTTPRequestHandler):
         if not rows:return '<tr><td colspan="7" class="sub">Nessuna pratica presente.</td></tr>'
         return ''.join(f'''<tr><td>{esc((r['created_at'] or '')[:10])}</td><td><a href="/pratiche/{r['id']}"><b>{esc(r['practice_number'])}</b></a></td><td>{esc(r['animal_name'] or 'Da inserire')}<br><small>{esc(r['species'])}{(' · '+esc(r['estimated_weight'])+' kg') if r['estimated_weight'] else ''}</small></td><td>{esc((r['owner_first_name'] or '')+' '+(r['owner_last_name'] or ''))}<br><small>{esc(r['owner_phone'])}</small></td><td>{esc(r['destination_branch'])}</td><td>{self.tag_badges(r)}</td><td>{self.status_badges(r)}</td></tr>''' for r in rows)
 
-    def monthly_database(self,user):
-        month_names=["","Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno","Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"]
+    def archive(self,user):
+        q=parse_qs(urlparse(self.path).query)
+        term=q.get("q",[""])[0].strip()
+        animal=q.get("animale",[""])[0].strip()
+        service=q.get("servizio",[""])[0].strip()
+        vet=q.get("veterinario",[""])[0].strip()
+        collaborator=q.get("collaboratore",[""])[0].strip()
+        total=q.get("totale",[""])[0].strip()
+        day=q.get("giorno",[""])[0].strip()
+        month=q.get("mese",[""])[0].strip()
+        year=q.get("anno",[""])[0].strip()
+        date_from=q.get("dal",[""])[0].strip()
+        date_to=q.get("al",[""])[0].strip()
+        state=q.get("stato",[""])[0].strip()
+        payment=q.get("pagamento",[""])[0].strip()
+        promemoria=q.get("promemoria",[""])[0].strip()
+
+        sql="SELECT * FROM practices WHERE 1=1"; args=[]
+        if term:
+            like=f"%{term}%"
+            sql+=" AND (practice_number LIKE ? OR animal_name LIKE ? OR owner_first_name||' '||owner_last_name LIKE ? OR owner_phone LIKE ? OR owner_phone_2 LIKE ? OR microchip LIKE ? OR clinic_name LIKE ? OR veterinarian_name LIKE ? OR collaborator_name LIKE ? OR CAST(ddt_number AS TEXT) LIKE ?)"
+            args += [like]*10
+        if animal:
+            sql += " AND animal_name LIKE ?"; args.append(f"%{animal}%")
+        if service:
+            sql += " AND service_type=?"; args.append(service)
+        if vet:
+            like=f"%{vet}%"; sql += " AND (clinic_name LIKE ? OR veterinarian_name LIKE ?)"; args += [like,like]
+        if collaborator:
+            sql += " AND collaborator_name LIKE ?"; args.append(f"%{collaborator}%")
+        if total:
+            sql += " AND total_service LIKE ?"; args.append(f"%{total}%")
+        if day:
+            sql += " AND substr(created_at,9,2)=?"; args.append(day.zfill(2))
+        if month:
+            sql += " AND substr(created_at,6,2)=?"; args.append(month.zfill(2))
+        if year:
+            sql += " AND substr(created_at,1,4)=?"; args.append(year)
+        if date_from:
+            sql += " AND date(created_at)>=date(?)"; args.append(date_from)
+        if date_to:
+            sql += " AND date(created_at)<=date(?)"; args.append(date_to)
+        if state:
+            sql += " AND status=?"; args.append(state)
+        if payment:
+            sql += " AND COALESCE(payment_status,'Da saldare')=?"; args.append(payment)
+        if promemoria == "catalogo":
+            sql += " AND send_catalog='Si' AND status!='Consegnato'"
+        if promemoria == "estremi":
+            sql += " AND send_estremi='Si' AND status!='Consegnato'"
+        sql += " ORDER BY created_at DESC"
         with db() as c:
-            rows=c.execute("SELECT * FROM practices ORDER BY created_at DESC").fetchall()
+            rows=c.execute(sql,args).fetchall()
+
+        opts='<option value="">Tutti gli stati</option>'+''.join(f'<option {"selected" if state==s else ""}>{esc(s)}</option>' for s in STATES)
+        pay_opts='<option value="">Tutti i pagamenti</option>'+''.join(f'<option {"selected" if payment==s else ""}>{esc(s)}</option>' for s in PAYMENT_STATES)
+        service_opts=''.join(f'<option value="{esc(x)}" {"selected" if service==x else ""}>{esc(x or "Tutti i servizi")}</option>' for x in ["","Da decidere","Cremazione singola","Cremazione collettiva"])
+        promemoria_label = " · Promemoria catalogo" if promemoria=="catalogo" else " · Promemoria estremi" if promemoria=="estremi" else ""
+        month_names=["","Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno","Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"]
         groups={}
         for r in rows:
             key=(r["created_at"] or "")[:7] or "Senza data"
             groups.setdefault(key,[]).append(r)
         blocks=[]
         for key,items in groups.items():
+            title=key
             if key != "Senza data":
                 try:
-                    year,month=key.split("-")
-                    title=f"{month_names[int(month)]} {year}"
+                    y,m=key.split("-"); title=f"{month_names[int(m)]} {y}"
                 except Exception:
-                    title=key
-            else:
-                title=key
+                    pass
             blocks.append(f'''<section class="month-block"><div class="month-title"><h2>{esc(title)}</h2><span class="badge">{len(items)} pratiche</span></div><div class="tablebox"><table><thead><tr><th>Data</th><th>Pratica</th><th>Animale</th><th>Proprietario</th><th>Sede</th><th>Etichette</th><th>Stato</th></tr></thead><tbody>{self.practice_rows(items)}</tbody></table></div></section>''')
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Database mensile pratiche</h1><div class="sub">Tutte le pratiche divise per mese di creazione.</div></div><div class="actions"><a class="btn ghost" href="/">Dashboard</a><a class="btn" href="/nuova">+ Nuova pratica</a></div></div>{''.join(blocks) if blocks else '<section class="section"><p class="sub">Nessuna pratica presente.</p></section>'}</main>'''
-        self.send_html(layout("Database mensile",body,user))
-
-    def archive(self,user):
-        q=parse_qs(urlparse(self.path).query); term=q.get("q",[""])[0]; state=q.get("stato",[""])[0]; payment=q.get("pagamento",[""])[0]; promemoria=q.get("promemoria",[""])[0]
-        sql="SELECT * FROM practices WHERE 1=1"; args=[]
-        if term:
-            like=f"%{term}%"; sql+=" AND (practice_number LIKE ? OR animal_name LIKE ? OR owner_first_name||' '||owner_last_name LIKE ? OR owner_phone LIKE ? OR owner_phone_2 LIKE ? OR microchip LIKE ? OR clinic_name LIKE ? OR veterinarian_name LIKE ? OR CAST(ddt_number AS TEXT) LIKE ?)"; args += [like]*9
-        if state: sql+=" AND status=?"; args.append(state)
-        if payment: sql+=" AND COALESCE(payment_status,'Da saldare')=?"; args.append(payment)
-        if promemoria == "catalogo": sql+=" AND send_catalog='Si' AND status!='Consegnato'"
-        if promemoria == "estremi": sql+=" AND send_estremi='Si' AND status!='Consegnato'"
-        sql+=" ORDER BY created_at DESC"
-        with db() as c: rows=c.execute(sql,args).fetchall()
-        opts='<option value="">Tutti gli stati</option>'+''.join(f'<option {"selected" if state==s else ""}>{esc(s)}</option>' for s in STATES)
-        pay_opts='<option value="">Tutti i pagamenti</option>'+''.join(f'<option {"selected" if payment==s else ""}>{esc(s)}</option>' for s in PAYMENT_STATES)
-        promemoria_label = " · Promemoria catalogo" if promemoria=="catalogo" else " · Promemoria estremi" if promemoria=="estremi" else ""
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Archivio pratiche</h1><div class="sub">{len(rows)} risultati{promemoria_label}</div></div><a class="btn" href="/nuova">+ Nuova pratica</a></div><form class="section" method="get" style="margin-bottom:18px"><div class="fields"><div class="field"><label>Ricerca</label><input name="q" value="{esc(term)}" placeholder="Animale, proprietario, telefono, microchip, veterinario, pratica o DDT"></div><div class="field"><label>Stato pratica</label><select name="stato">{opts}</select></div><div class="field"><label>Pagamento</label><select name="pagamento">{pay_opts}</select></div></div><button class="btn" style="margin-top:12px">Cerca</button></form><div class="tablebox"><table><thead><tr><th>Data</th><th>Pratica</th><th>Animale</th><th>Proprietario</th><th>Sede</th><th>Etichette</th><th>Stato</th></tr></thead><tbody>{self.practice_rows(rows)}</tbody></table></div></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>ARCHIVIO</h1><div class="sub">{len(rows)} risultati{promemoria_label} · pratiche divise per mese</div></div></div><form class="section" method="get" style="margin-bottom:18px"><div class="fields"><div class="field"><label>Ricerca generale</label><input name="q" value="{esc(term)}" placeholder="Proprietario, telefono, microchip, pratica, DDT"></div><div class="field"><label>Nome animale</label><input name="animale" value="{esc(animal)}"></div><div class="field"><label>Servizio</label><select name="servizio">{service_opts}</select></div><div class="field"><label>Veterinario</label><input name="veterinario" value="{esc(vet)}" placeholder="Clinica o medico"></div><div class="field"><label>Collaboratore</label><input name="collaboratore" value="{esc(collaborator)}"></div><div class="field"><label>Totale servizio</label><input name="totale" value="{esc(total)}" placeholder="Es. 250"></div><div class="field"><label>Giorno</label><input name="giorno" value="{esc(day)}" inputmode="numeric" placeholder="GG"></div><div class="field"><label>Mese</label><input name="mese" value="{esc(month)}" inputmode="numeric" placeholder="MM"></div><div class="field"><label>Anno</label><input name="anno" value="{esc(year)}" inputmode="numeric" placeholder="AAAA"></div><div class="field"><label>Periodo dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Periodo al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Stato pratica</label><select name="stato">{opts}</select></div><div class="field"><label>Pagamento</label><select name="pagamento">{pay_opts}</select></div></div><button class="btn" style="margin-top:12px">Cerca</button><a class="btn ghost" style="margin-top:12px" href="/pratiche">Pulisci filtri</a></form>{''.join(blocks) if blocks else '<section class="section"><p class="sub">Nessuna pratica trovata.</p></section>'}</main>'''
         self.send_html(layout("Archivio",body,user))
 
     def veterinarians_page(self,user):
