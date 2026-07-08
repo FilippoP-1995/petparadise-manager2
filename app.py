@@ -56,6 +56,23 @@ BRANCHES = {
     },
 }
 
+
+
+VETERINARIAN_ANAGRAFICHE = [
+    {"code":"DEL PERO", "name":"Ambulatorio Veterinario Andrea Del Pero", "address":"Corso Amedeo, 285, 57125 Livorno LI", "phone":"+39 0586 881022", "city":"Livorno"},
+    {"code":"RAZZAUTI", "name":"Studio Associato Veterinario Razzauti Daolio Anguillesi", "address":"Via del Lavoro, 11, 57122 Livorno LI", "phone":"+39 0586 951478", "city":"Livorno"},
+    {"code":"LEMMI", "name":"Studio Medico Veterinario Dr. Mario Lemmi", "address":"Viale Ippolito Nievo, 39, 57122 Livorno LI", "phone":"+39 0586 408370", "city":"Livorno"},
+    {"code":"AURELIA", "name":"Clinica Veterinaria Aurelia", "address":"Via Aurelia, 136 A, 57014 Stagno LI", "phone":"+39 0586 941089", "city":"Livorno"},
+    {"code":"BARSACCHI E SANDRI", "name":"Ambulatorio Veterinario Barsacchi - Sandri", "address":"Via Giotto, 29, 57128 Livorno LI", "phone":"+39 0586 861433", "city":"Livorno"},
+    {"code":"CAMPO DI MARTE", "name":"Centro Veterinario Campo Di Marte", "address":"Via dell'Artigianato, 39/c, 57121 Livorno LI", "phone":"+39 0586 405000", "city":"Livorno"},
+    {"code":"CARDIOVET", "name":"Clinica Veterinaria Cardio Vet", "address":"Via dei Pelaghi, 100, 57124 Livorno LI", "phone":"+39 0586 839956", "city":"Livorno"},
+    {"code":"NESTI", "name":"Dr.ssa Sabrina Nesti presso Ambulatorio Veterinario San Matteo", "address":"Via del Vigna, 290, 57121 Livorno LI", "phone":"+39 0586 423293", "city":"Livorno"},
+    {"code":"IL TIRRENO", "name":"Ambulatorio Il Tirreno Veterinario", "address":"Via Fabio Campana, 5, 57124 Livorno LI", "phone":"+39 330 619 816", "city":"Livorno"},
+    {"code":"CIMAROSA", "name":"Clinica Veterinaria Cimarosa Livorno", "address":"Via Giovan Battista Lulli, 35, 57124 Livorno LI", "phone":"+39 0586 854494", "city":"Livorno"},
+    {"code":"ACQUAVIVA/ACCADEMIA", "name":"Ambulatorio Veterinario Acquaviva", "address":"Via San Jacopo In Acquaviva, 152, 57127 Livorno LI", "phone":"+39 0586 812839", "city":"Livorno"},
+    {"code":"LA MARMORA", "name":"Clinica Veterinaria Lamarmora", "address":"Via della Torretta, 61, 57122 Livorno LI", "phone":"+39 0586 890782", "city":"Livorno"},
+]
+
 DEFAULT_VETERINARIANS = [
     ("DEL PERO", "LIVORNO"),
     ("RAZZAUTI", "LIVORNO"),
@@ -234,6 +251,10 @@ def init_db():
         for name, definition in extra_columns.items():
             if name not in existing:
                 c.execute(f"ALTER TABLE practices ADD COLUMN {name} {definition}")
+        vet_existing = {row["name"] for row in c.execute("PRAGMA table_info(veterinarians)")}
+        for name, definition in {"short_name":"TEXT", "address":"TEXT", "city":"TEXT"}.items():
+            if name not in vet_existing:
+                c.execute(f"ALTER TABLE veterinarians ADD COLUMN {name} {definition}")
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_practices_ddt_share_token ON practices(ddt_share_token)")
         c.execute("UPDATE practices SET payment_status='Da saldare' WHERE payment_status IS NULL OR payment_status=''")
         c.execute("UPDATE practices SET payment_status='Pagato', status='Consegnato' WHERE status='Pagato'")
@@ -249,6 +270,12 @@ def init_db():
                     "INSERT INTO veterinarians(clinic_name,doctor_name,phone,notes,created_at,updated_at) VALUES(?,?,?,?,?,?)",
                     (clinic, "", "", f"Comune: {city}", stamp, stamp),
                 )
+        for item in VETERINARIAN_ANAGRAFICHE:
+            existing_vet = c.execute("SELECT id FROM veterinarians WHERE UPPER(clinic_name)=UPPER(?) OR UPPER(short_name)=UPPER(?)", (item["name"], item["code"])).fetchone()
+            if existing_vet:
+                c.execute("UPDATE veterinarians SET short_name=?, clinic_name=?, address=?, city=?, phone=?, updated_at=? WHERE id=?", (item["code"], item["name"], item["address"], item["city"], item["phone"], stamp, existing_vet["id"]))
+            else:
+                c.execute("INSERT INTO veterinarians(clinic_name,doctor_name,phone,notes,active,created_at,updated_at,short_name,address,city) VALUES(?,?,?,?,?,?,?,?,?,?)", (item["name"], "", item["phone"], "", 1, stamp, stamp, item["code"], item["address"], item["city"]))
         if not c.execute("SELECT 1 FROM users WHERE username='admin'").fetchone():
             c.execute(
                 "INSERT INTO users(username,password_hash,display_name,role) VALUES(?,?,?,?)",
@@ -332,6 +359,19 @@ document.addEventListener('change', function(e){
       const set=(name,value)=>{const field=document.querySelector(`[name="${name}"]`); if(field) field.value=value;};
       set('owner_first_name', data.first); set('owner_last_name', data.last); set('owner_street', data.street);
       set('owner_zip', data.zip); set('owner_city', data.city); set('owner_province', data.province); set('owner_tax_code', data.tax);
+    }
+  }
+  if(e.target && e.target.name === 'veterinarian_id'){
+    const opt = e.target.selectedOptions && e.target.selectedOptions[0];
+    const clinic = document.querySelector('input[name="clinic_name"]');
+    const originMode = document.querySelector('select[name="origin_mode"]');
+    const originText = document.querySelector('input[name="origin_text"]');
+    if(opt && opt.value){
+      const fullName = opt.dataset.fullname || opt.textContent.trim();
+      const address = opt.dataset.address || '';
+      if(clinic) clinic.value = fullName;
+      if(originMode) originMode.value = 'Testo libero';
+      if(originText) originText.value = address ? `${fullName} - ${address}` : fullName;
     }
   }
   if(e.target && e.target.id === 'transport_method_quick'){
@@ -517,6 +557,8 @@ class App(BaseHTTPRequestHandler):
         if path == "/pratiche": return self.archive(user)
         if path == "/database-mesi": return self.redirect("/pratiche")
         if path == "/veterinari": return self.veterinarians_page(user)
+        match = re.fullmatch(r"/veterinari/(\d+)", path)
+        if match: return self.veterinarian_detail(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)", path)
         if match: return self.practice(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/modifica", path)
@@ -536,6 +578,14 @@ class App(BaseHTTPRequestHandler):
         if not user: return
         if path == "/nuova": return self.create_practice(user)
         if path == "/veterinari": return self.save_veterinarian(user)
+        match = re.fullmatch(r"/veterinari/(\d+)/elimina", path)
+        if match: return self.delete_veterinarian(user, int(match.group(1)))
+        match = re.fullmatch(r"/veterinari/(\d+)/buoni", path)
+        if match: return self.save_manual_voucher(user, int(match.group(1)))
+        match = re.fullmatch(r"/buoni/(\d+)/modifica", path)
+        if match: return self.edit_voucher(user, int(match.group(1)))
+        match = re.fullmatch(r"/buoni/(\d+)/elimina", path)
+        if match: return self.delete_voucher(user, int(match.group(1)))
         match = re.fullmatch(r"/veterinari/(\d+)/buono-usato", path)
         if match: return self.use_voucher(user, int(match.group(1)))
         match = re.fullmatch(r"/buoni/(\d+)/usato", path)
@@ -633,16 +683,13 @@ class App(BaseHTTPRequestHandler):
         service=q.get("servizio",[""])[0].strip()
         vet=q.get("veterinario",[""])[0].strip()
         collaborator=q.get("collaboratore",[""])[0].strip()
-        total=q.get("totale",[""])[0].strip()
-        day=q.get("giorno",[""])[0].strip()
-        month=q.get("mese",[""])[0].strip()
-        year=q.get("anno",[""])[0].strip()
+        spesa_min=q.get("spesa_min",[""])[0].strip().replace(",",".")
+        spesa_max=q.get("spesa_max",[""])[0].strip().replace(",",".")
         date_from=q.get("dal",[""])[0].strip()
         date_to=q.get("al",[""])[0].strip()
         state=q.get("stato",[""])[0].strip()
         payment=q.get("pagamento",[""])[0].strip()
         promemoria=q.get("promemoria",[""])[0].strip()
-
         sql="SELECT * FROM practices WHERE 1=1"; args=[]
         if term:
             like=f"%{term}%"
@@ -656,14 +703,10 @@ class App(BaseHTTPRequestHandler):
             like=f"%{vet}%"; sql += " AND (clinic_name LIKE ? OR veterinarian_name LIKE ?)"; args += [like,like]
         if collaborator:
             sql += " AND collaborator_name LIKE ?"; args.append(f"%{collaborator}%")
-        if total:
-            sql += " AND total_service LIKE ?"; args.append(f"%{total}%")
-        if day:
-            sql += " AND substr(created_at,9,2)=?"; args.append(day.zfill(2))
-        if month:
-            sql += " AND substr(created_at,6,2)=?"; args.append(month.zfill(2))
-        if year:
-            sql += " AND substr(created_at,1,4)=?"; args.append(year)
+        if spesa_min:
+            sql += " AND CAST(REPLACE(total_service, ',', '.') AS REAL) >= ?"; args.append(float(spesa_min) if re.match(r"^-?\d+(\.\d+)?$", spesa_min) else 0)
+        if spesa_max:
+            sql += " AND CAST(REPLACE(total_service, ',', '.') AS REAL) <= ?"; args.append(float(spesa_max) if re.match(r"^-?\d+(\.\d+)?$", spesa_max) else 999999999)
         if date_from:
             sql += " AND date(created_at)>=date(?)"; args.append(date_from)
         if date_to:
@@ -679,11 +722,10 @@ class App(BaseHTTPRequestHandler):
         sql += " ORDER BY created_at DESC"
         with db() as c:
             rows=c.execute(sql,args).fetchall()
-
         opts='<option value="">Tutti gli stati</option>'+''.join(f'<option {"selected" if state==s else ""}>{esc(s)}</option>' for s in STATES)
         pay_opts='<option value="">Tutti i pagamenti</option>'+''.join(f'<option {"selected" if payment==s else ""}>{esc(s)}</option>' for s in PAYMENT_STATES)
         service_opts=''.join(f'<option value="{esc(x)}" {"selected" if service==x else ""}>{esc(x or "Tutti i servizi")}</option>' for x in ["","Da decidere","Cremazione singola","Cremazione collettiva"])
-        promemoria_label = " · Promemoria catalogo" if promemoria=="catalogo" else " · Promemoria estremi" if promemoria=="estremi" else ""
+        promemoria_label = " - Promemoria catalogo" if promemoria=="catalogo" else " - Promemoria estremi" if promemoria=="estremi" else ""
         month_names=["","Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno","Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"]
         groups={}
         for r in rows:
@@ -698,14 +740,13 @@ class App(BaseHTTPRequestHandler):
                 except Exception:
                     pass
             blocks.append(f'''<section class="month-block"><div class="month-title"><h2>{esc(title)}</h2><span class="badge">{len(items)} pratiche</span></div><div class="tablebox"><table><thead><tr><th>Data</th><th>Pratica</th><th>Animale</th><th>Proprietario</th><th>Sede</th><th>Etichette</th><th>Stato</th></tr></thead><tbody>{self.practice_rows(items)}</tbody></table></div></section>''')
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>ARCHIVIO</h1><div class="sub">{len(rows)} risultati{promemoria_label} · pratiche divise per mese</div></div></div><form class="section" method="get" style="margin-bottom:18px"><div class="fields"><div class="field"><label>Ricerca generale</label><input name="q" value="{esc(term)}" placeholder="Proprietario, telefono, microchip, pratica, DDT"></div><div class="field"><label>Nome animale</label><input name="animale" value="{esc(animal)}"></div><div class="field"><label>Servizio</label><select name="servizio">{service_opts}</select></div><div class="field"><label>Veterinario</label><input name="veterinario" value="{esc(vet)}" placeholder="Clinica o medico"></div><div class="field"><label>Collaboratore</label><input name="collaboratore" value="{esc(collaborator)}"></div><div class="field"><label>Totale servizio</label><input name="totale" value="{esc(total)}" placeholder="Es. 250"></div><div class="field"><label>Giorno</label><input name="giorno" value="{esc(day)}" inputmode="numeric" placeholder="GG"></div><div class="field"><label>Mese</label><input name="mese" value="{esc(month)}" inputmode="numeric" placeholder="MM"></div><div class="field"><label>Anno</label><input name="anno" value="{esc(year)}" inputmode="numeric" placeholder="AAAA"></div><div class="field"><label>Periodo dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Periodo al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Stato pratica</label><select name="stato">{opts}</select></div><div class="field"><label>Pagamento</label><select name="pagamento">{pay_opts}</select></div></div><button class="btn" style="margin-top:12px">Cerca</button><a class="btn ghost" style="margin-top:12px" href="/pratiche">Pulisci filtri</a></form>{''.join(blocks) if blocks else '<section class="section"><p class="sub">Nessuna pratica trovata.</p></section>'}</main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>ARCHIVIO</h1><div class="sub">{len(rows)} risultati{promemoria_label} - pratiche divise per mese</div></div></div><form class="section" method="get" style="margin-bottom:18px"><div class="fields"><div class="field"><label>Ricerca generale</label><input name="q" value="{esc(term)}" placeholder="Proprietario, telefono, microchip, pratica, DDT"></div><div class="field"><label>Nome animale</label><input name="animale" value="{esc(animal)}"></div><div class="field"><label>Servizio</label><select name="servizio">{service_opts}</select></div><div class="field"><label>Veterinario</label><input name="veterinario" value="{esc(vet)}" placeholder="Clinica o medico"></div><div class="field"><label>Collaboratore</label><input name="collaboratore" value="{esc(collaborator)}"></div><div class="field"><label>Spesa minima</label><input name="spesa_min" value="{esc(spesa_min)}" inputmode="decimal" placeholder="Es. 100"></div><div class="field"><label>Spesa massima</label><input name="spesa_max" value="{esc(spesa_max)}" inputmode="decimal" placeholder="Es. 350"></div><div class="field"><label>Periodo dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Periodo al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Stato pratica</label><select name="stato">{opts}</select></div><div class="field"><label>Pagamento</label><select name="pagamento">{pay_opts}</select></div></div><button class="btn" style="margin-top:12px">Cerca</button><a class="btn ghost" style="margin-top:12px" href="/pratiche">Pulisci filtri</a></form>{''.join(blocks) if blocks else '<section class="section"><p class="sub">Nessuna pratica trovata.</p></section>'}</main>'''
         self.send_html(layout("Archivio",body,user))
 
     def veterinarians_page(self,user):
         q=parse_qs(urlparse(self.path).query)
         term=q.get("q",[""])[0].strip()
         voucher_filter=q.get("buoni",[""])[0]
-        selected_vet=q.get("vet",[""])[0].strip()
         with db() as c:
             sql=("SELECT v.*, "
                  "COALESCE(SUM(CASE WHEN vv.status='Maturato' THEN 1 ELSE 0 END),0) available_vouchers, "
@@ -714,60 +755,99 @@ class App(BaseHTTPRequestHandler):
                  "FROM veterinarians v LEFT JOIN veterinarian_vouchers vv ON vv.veterinarian_id=v.id WHERE v.active=1")
             args=[]
             if term:
-                sql += " AND (v.clinic_name LIKE ? OR v.doctor_name LIKE ? OR v.notes LIKE ?)"
-                like=f"%{term}%"; args += [like,like,like]
+                like=f"%{term}%"
+                sql += " AND (v.short_name LIKE ? OR v.clinic_name LIKE ? OR v.doctor_name LIKE ? OR v.address LIKE ? OR v.city LIKE ? OR v.phone LIKE ?)"
+                args += [like]*6
             sql += " GROUP BY v.id"
-            if voucher_filter == "Maturati":
-                sql += " HAVING available_vouchers>0"
-            elif voucher_filter == "Usati":
-                sql += " HAVING used_vouchers>0"
-            elif voucher_filter == "Senza buoni":
-                sql += " HAVING total_vouchers=0"
-            sql += " ORDER BY available_vouchers DESC, v.clinic_name, v.doctor_name"
+            if voucher_filter == "Maturati": sql += " HAVING available_vouchers>0"
+            elif voucher_filter == "Usati": sql += " HAVING used_vouchers>0"
+            elif voucher_filter == "Senza buoni": sql += " HAVING available_vouchers=0"
+            sql += " ORDER BY v.city, v.short_name, v.clinic_name"
             vets=c.execute(sql,args).fetchall()
-            status_filter = "Maturato" if voucher_filter=="Maturati" else "Usato" if voucher_filter=="Usati" else ""
-            vouchers=c.execute("SELECT vv.*, p.animal_name, p.species, p.practice_number, v.clinic_name FROM veterinarian_vouchers vv LEFT JOIN practices p ON p.id=vv.practice_id LEFT JOIN veterinarians v ON v.id=vv.veterinarian_id WHERE (?='' OR v.clinic_name LIKE ? OR v.doctor_name LIKE ? OR v.notes LIKE ?) AND (?='' OR vv.status=?) AND (?='' OR CAST(vv.veterinarian_id AS TEXT)=?) ORDER BY vv.status, vv.created_at DESC",(term,f"%{term}%",f"%{term}%",f"%{term}%",status_filter,status_filter,selected_vet,selected_vet)).fetchall()
         rows=[]
         for v in vets:
-            disabled = "disabled" if v['available_vouchers']==0 else ""
-            mature_badge = f'''<a class="badge tag-green" href="/veterinari?vet={v['id']}">{v['available_vouchers']} maturati</a>''' if v['available_vouchers'] else '<span class="badge tag-blue">0 maturati</span>'
-            rows.append(f'''<tr><td><b>{esc(v['clinic_name'])}</b><br><small>{esc(v['doctor_name'])} {esc(v['notes'])}</small></td><td>{mature_badge} <span class="badge tag-red">{v['used_vouchers']} usati</span></td><td>{esc(v['phone'])}</td><td><form method="post" action="/veterinari/{v['id']}/buono-usato"><button class="btn ghost" {disabled}>Usa primo buono</button></form></td></tr>''')
-        rows_html=''.join(rows) or '<tr><td colspan="4" class="sub">Nessun veterinario trovato.</td></tr>'
-        voucher_rows=[]
-        for b in vouchers:
-            animal=b["animal_name"] or "Animale non indicato"
-            species=b["species"] or ""
-            action=f'<form method="post" action="/buoni/{b["id"]}/usato"><button class="btn ghost">Segna usato</button></form>' if b["status"]=="Maturato" else f'<span class="sub">Usato il {esc((b["used_at"] or "").replace("T"," "))}</span>'
-            badge_cls = "tag-green" if b['status']=="Maturato" else "tag-red"
-            voucher_rows.append(f'''<tr><td>{esc(b['clinic_name'])}</td><td><span class="badge {badge_cls}">{esc(b['status'])}</span></td><td>{esc((b['created_at'] or '').replace('T',' '))}</td><td>{esc(animal)}<br><small>{esc(species)} - {esc(b['practice_number'])}</small></td><td>{action}</td></tr>''')
-        voucher_rows_html=''.join(voucher_rows) or '<tr><td colspan="5" class="sub">Nessun buono trovato.</td></tr>'
+            available=int(v["available_vouchers"] or 0); used=int(v["used_vouchers"] or 0)
+            available_badge = f'<span class="badge tag-green">{available} maturati</span>' if available else '<span class="badge tag-blue">0 maturati</span>'
+            rows.append(f'''<tr><td><a href="/veterinari/{v['id']}"><b>{esc(v['short_name'] or v['clinic_name'])}</b></a><br><small>{esc(v['clinic_name'])}</small></td><td>{esc(v['address'])}<br><small>{esc(v['city'])}</small></td><td>{esc(v['phone'])}</td><td>{available_badge} <span class="badge tag-red">{used} usati</span></td><td><a class="btn ghost" href="/veterinari/{v['id']}">Apri</a></td></tr>''')
+        rows_html=''.join(rows) or '<tr><td colspan="5" class="sub">Nessun veterinario trovato.</td></tr>'
         filter_opts=''.join(f'<option {"selected" if voucher_filter==x else ""}>{x}</option>' for x in ["","Maturati","Usati","Senza buoni"])
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Veterinari</h1><div class="sub">Buoni maturati e usati dai veterinari.</div></div></div><form class="section" method="get"><div class="fields"><div class="field"><label>Ricerca veterinario</label><input name="q" value="{esc(term)}" placeholder="Nome, medico, comune"></div><div class="field"><label>Filtro buoni</label><select name="buoni">{filter_opts}</select></div></div><button class="btn" style="margin-top:12px">Filtra</button></form><div style="height:14px"></div><section class="section"><h2>LISTA VETERINARI</h2><div class="tablebox"><table><thead><tr><th>Veterinario</th><th>Buoni</th><th>Telefono</th><th>Azione</th></tr></thead><tbody>{rows_html}</tbody></table></div></section><div style="height:14px"></div><section class="section"><h2>Dettaglio buoni</h2><div class="tablebox"><table><thead><tr><th>Veterinario</th><th>Stato</th><th>Maturato il</th><th>Pratica / animale</th><th>Azione</th></tr></thead><tbody>{voucher_rows_html}</tbody></table></div></section><div style="height:14px"></div><section class="section"><h2>Aggiungi veterinario</h2><form method="post"><div class="fields"><div class="field"><label>Clinica / ambulatorio *</label><input name="clinic_name" required></div><div class="field"><label>Medico</label><input name="doctor_name"></div><div class="field"><label>Telefono</label><input name="phone"></div><div class="field"><label>Note</label><input name="notes"></div></div><button class="btn" style="margin-top:12px">Aggiungi veterinario</button></form></section></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Veterinari</h1><div class="sub">Anagrafiche strutture veterinarie e buoni.</div></div></div><form class="section" method="get"><div class="fields"><div class="field"><label>Ricerca veterinario</label><input name="q" value="{esc(term)}" placeholder="Nome, indirizzo, comune, telefono"></div><div class="field"><label>Filtro buoni</label><select name="buoni">{filter_opts}</select></div></div><button class="btn" style="margin-top:12px">Filtra</button></form><div style="height:14px"></div><section class="section"><h2>LISTA VETERINARI</h2><div class="tablebox"><table><thead><tr><th>Veterinario</th><th>Indirizzo</th><th>Telefono</th><th>Buoni</th><th>Azione</th></tr></thead><tbody>{rows_html}</tbody></table></div></section><div style="height:14px"></div><section class="section"><h2>Aggiungi veterinario</h2><form method="post"><div class="fields"><div class="field"><label>Nome breve</label><input name="short_name" placeholder="Es. DEL PERO"></div><div class="field"><label>Nome completo</label><input name="clinic_name"></div><div class="field full"><label>Indirizzo</label><input name="address"></div><div class="field"><label>Comune</label><input name="city"></div><div class="field"><label>Telefono</label><input name="phone"></div><div class="field"><label>Medico</label><input name="doctor_name"></div><div class="field full"><label>Note</label><input name="notes"></div></div><button class="btn" style="margin-top:12px">Aggiungi veterinario</button></form></section></main>'''
         self.send_html(layout("Veterinari",body,user))
+
+    def veterinarian_detail(self,user,vet_id):
+        with db() as c:
+            v=c.execute("SELECT * FROM veterinarians WHERE id=? AND active=1",(vet_id,)).fetchone()
+            vouchers=c.execute("SELECT vv.*, p.animal_name, p.species, p.practice_number FROM veterinarian_vouchers vv LEFT JOIN practices p ON p.id=vv.practice_id WHERE vv.veterinarian_id=? ORDER BY vv.created_at DESC",(vet_id,)).fetchall()
+        if not v: return self.send_error(404)
+        rows=[]
+        for b in vouchers:
+            animal=(b['animal_name'] or (b['note'] or '').replace('Manuale:','').strip()).strip()
+            species=b['species'] or ''
+            status_opts=''.join(f'<option {"selected" if b["status"]==x else ""}>{x}</option>' for x in ["Maturato","Usato"])
+            rows.append(f'''<tr><form method="post" action="/buoni/{b['id']}/modifica"><td><input type="date" name="created_at" value="{esc((b['created_at'] or '')[:10])}"></td><td><input name="animal_name" value="{esc(animal)}" placeholder="Nome animale"></td><td><input name="species" value="{esc(species)}" placeholder="Specie"></td><td><select name="status">{status_opts}</select></td><td><button class="btn ghost">Salva</button></form><form method="post" action="/buoni/{b['id']}/elimina" onsubmit="return confirm('Eliminare questo buono?')"><button class="btn ghost">Elimina</button></form></td></tr>''')
+        voucher_rows=''.join(rows) or '<tr><td colspan="5" class="sub">Nessun buono presente.</td></tr>'
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{esc(v['short_name'] or v['clinic_name'])}</h1><div class="sub">{esc(v['clinic_name'])}</div></div><a class="btn ghost" href="/veterinari">Torna alla lista</a></div><section class="section"><h2>Anagrafica</h2><form method="post" action="/veterinari"><input type="hidden" name="id" value="{v['id']}"><div class="fields"><div class="field"><label>Nome breve</label><input name="short_name" value="{esc(v['short_name'])}"></div><div class="field"><label>Nome completo</label><input name="clinic_name" value="{esc(v['clinic_name'])}"></div><div class="field full"><label>Indirizzo</label><input name="address" value="{esc(v['address'])}"></div><div class="field"><label>Comune</label><input name="city" value="{esc(v['city'])}"></div><div class="field"><label>Telefono</label><input name="phone" value="{esc(v['phone'])}"></div><div class="field"><label>Medico veterinario</label><input name="doctor_name" value="{esc(v['doctor_name'])}"></div><div class="field full"><label>Note</label><input name="notes" value="{esc(v['notes'])}"></div></div><button class="btn" style="margin-top:12px">Salva anagrafica</button></form><form method="post" action="/veterinari/{v['id']}/elimina" onsubmit="return confirm('Eliminare questo veterinario dalla lista?')"><button class="btn ghost" style="margin-top:12px">Elimina veterinario</button></form></section><div style="height:14px"></div><section class="section"><h2>Aggiungi buono manuale</h2><form method="post" action="/veterinari/{v['id']}/buoni"><div class="fields"><div class="field"><label>Data maturazione</label><input type="date" name="created_at" value="{datetime.now().strftime('%Y-%m-%d')}"></div><div class="field"><label>Nome animale</label><input name="animal_name"></div><div class="field"><label>Specie</label><input name="species"></div><div class="field"><label>Stato</label><select name="status"><option>Maturato</option><option>Usato</option></select></div></div><button class="btn" style="margin-top:12px">Aggiungi buono</button></form></section><div style="height:14px"></div><section class="section"><h2>Buoni</h2><div class="tablebox"><table><thead><tr><th>Data</th><th>Animale</th><th>Specie</th><th>Stato</th><th>Azione</th></tr></thead><tbody>{voucher_rows}</tbody></table></div></section></main>'''
+        self.send_html(layout("Veterinario",body,user))
 
     def save_veterinarian(self,user):
         f=self.form(); stamp=now()
-        clinic=f.get("clinic_name","").strip()
-        if not clinic:return self.send_error(400, "Nome clinica obbligatorio")
-        data=(clinic,f.get("doctor_name","").strip(),f.get("phone","").strip(),f.get("notes","").strip())
+        clinic=f.get("clinic_name","").strip() or f.get("short_name","").strip() or "Veterinario senza nome"
+        data=(f.get("short_name","").strip(), clinic, f.get("doctor_name","").strip(), f.get("phone","").strip(), f.get("address","").strip(), f.get("city","").strip(), f.get("notes","").strip())
         with db() as c:
             if f.get("id"):
-                c.execute("UPDATE veterinarians SET clinic_name=?,doctor_name=?,phone=?,notes=?,updated_at=? WHERE id=?",data+(stamp,int(f["id"])))
+                c.execute("UPDATE veterinarians SET short_name=?,clinic_name=?,doctor_name=?,phone=?,address=?,city=?,notes=?,updated_at=? WHERE id=?",data+(stamp,int(f["id"])))
+                vet_id=int(f["id"])
             else:
-                c.execute("INSERT INTO veterinarians(clinic_name,doctor_name,phone,notes,created_at,updated_at) VALUES(?,?,?,?,?,?)",data+(stamp,stamp))
+                cur=c.execute("INSERT INTO veterinarians(short_name,clinic_name,doctor_name,phone,address,city,notes,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",data+(1,stamp,stamp))
+                vet_id=cur.lastrowid
+        self.redirect(f"/veterinari/{vet_id}")
+
+    def delete_veterinarian(self,user,vet_id):
+        with db() as c:
+            c.execute("UPDATE veterinarians SET active=0, updated_at=? WHERE id=?",(now(),vet_id))
         self.redirect("/veterinari")
+
+    def save_manual_voucher(self,user,vet_id):
+        f=self.form(); stamp=(f.get("created_at","").strip() or now()[:10]) + "T00:00:00"
+        status=f.get("status","Maturato") if f.get("status") in ("Maturato","Usato") else "Maturato"
+        note="Manuale: " + " | ".join(x for x in [f.get("animal_name","").strip(), f.get("species","").strip()] if x)
+        used_at=now() if status=="Usato" else None
+        with db() as c:
+            c.execute("INSERT INTO veterinarian_vouchers(veterinarian_id,practice_id,status,created_at,used_at,note) VALUES(?,?,?,?,?,?)",(vet_id,None,status,stamp,used_at,note))
+        self.redirect(f"/veterinari/{vet_id}")
+
+    def edit_voucher(self,user,voucher_id):
+        f=self.form(); status=f.get("status","Maturato") if f.get("status") in ("Maturato","Usato") else "Maturato"
+        stamp=(f.get("created_at","").strip() or now()[:10]) + "T00:00:00"
+        note="Manuale: " + " | ".join(x for x in [f.get("animal_name","").strip(), f.get("species","").strip()] if x)
+        used_at=now() if status=="Usato" else None
+        with db() as c:
+            row=c.execute("SELECT veterinarian_id FROM veterinarian_vouchers WHERE id=?",(voucher_id,)).fetchone()
+            if not row: return self.send_error(404)
+            c.execute("UPDATE veterinarian_vouchers SET status=?, created_at=?, used_at=?, note=? WHERE id=?",(status,stamp,used_at,note,voucher_id))
+            vet_id=row["veterinarian_id"]
+        self.redirect(f"/veterinari/{vet_id}")
+
+    def delete_voucher(self,user,voucher_id):
+        with db() as c:
+            row=c.execute("SELECT veterinarian_id FROM veterinarian_vouchers WHERE id=?",(voucher_id,)).fetchone()
+            if not row: return self.send_error(404)
+            c.execute("DELETE FROM veterinarian_vouchers WHERE id=?",(voucher_id,))
+            vet_id=row["veterinarian_id"]
+        self.redirect(f"/veterinari/{vet_id}")
 
     def use_voucher(self,user,vet_id):
         with db() as c:
             voucher=c.execute("SELECT id FROM veterinarian_vouchers WHERE veterinarian_id=? AND status='Maturato' ORDER BY created_at LIMIT 1",(vet_id,)).fetchone()
             if voucher:
                 c.execute("UPDATE veterinarian_vouchers SET status='Usato', used_at=? WHERE id=?",(now(),voucher["id"]))
-        self.redirect("/veterinari")
+        self.redirect(f"/veterinari/{vet_id}")
 
     def use_specific_voucher(self,user,voucher_id):
         with db() as c:
+            row=c.execute("SELECT veterinarian_id FROM veterinarian_vouchers WHERE id=?",(voucher_id,)).fetchone()
             c.execute("UPDATE veterinarian_vouchers SET status='Usato', used_at=? WHERE id=? AND status='Maturato'",(now(),voucher_id))
-        self.redirect("/veterinari")
+        self.redirect(f"/veterinari/{row['veterinarian_id']}" if row else "/veterinari")
 
     def fields_html(self,p=None):
         val=lambda k: esc(p[k] if p and k in p.keys() else "")
@@ -775,18 +855,18 @@ class App(BaseHTTPRequestHandler):
         selected=lambda k,v,default="": "selected" if str(raw(k,default))==v else ""
         tag_select=lambda name,label,cls: f'''<div class="field"><label><input type="checkbox" name="{name}" value="Si" {"checked" if raw(name)=="Si" else ""}> <span class="badge {cls}">{label}</span></label></div>'''
         with db() as c:
-            vets=c.execute("SELECT * FROM veterinarians WHERE active=1 ORDER BY clinic_name, doctor_name").fetchall()
-        vet_options='<option value="">Nessun veterinario selezionato / testo libero</option>'+''.join(f'<option value="{v["id"]}" {"selected" if str(raw("veterinarian_id"))==str(v["id"]) else ""}>{esc(v["clinic_name"])}{(" - "+esc(v["doctor_name"])) if v["doctor_name"] else ""}{(" - "+esc(v["notes"])) if v["notes"] else ""}</option>' for v in vets)
+            vets=c.execute("SELECT * FROM veterinarians WHERE active=1 ORDER BY COALESCE(short_name, clinic_name), clinic_name").fetchall()
+        vet_options='<option value="">Nessun veterinario selezionato</option>'+''.join(f'<option value="{v["id"]}" data-fullname="{esc(v["clinic_name"])}" data-address="{esc(v["address"])}" {"selected" if str(raw("veterinarian_id"))==str(v["id"]) else ""}>{esc(v["short_name"] or v["clinic_name"])}{(" - "+esc(v["clinic_name"])) if v["short_name"] else ""}</option>' for v in vets)
         voucher_checked='checked' if raw('voucher_requested')=="Si" else ''
         catalog_checked='checked' if raw('send_catalog')=="Si" else ''
         estremi_checked='checked' if raw('send_estremi')=="Si" else ''
-        return f'''<section class="section"><h2>Operatore</h2><div class="fields"><div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option></select></div></div></section>
-        <section class="section"><h2>Richiesta</h2><div class="fields"><div class="field"><label>Servizio</label><select name="service_type"><option {selected('service_type','Da decidere')}>Da decidere</option><option {selected('service_type','Cremazione singola')}>Cremazione singola</option><option {selected('service_type','Cremazione collettiva')}>Cremazione collettiva</option></select></div><div class="field"><label>Origine richiesta *</label><select name="request_origin" required><option {selected('request_origin','Veterinario')}>Veterinario</option><option {selected('request_origin','Privato')}>Privato</option><option {selected('request_origin','Consegna in sede')}>Consegna in sede</option><option {selected('request_origin','Collaboratore')}>Collaboratore</option></select></div><div class="field {'hidden' if raw('request_origin')!='Collaboratore' else ''}" id="collaboratorBox"><label>Collaboratore</label><select name="collaborator_name"><option value="">Nessun collaboratore</option><option {selected('collaborator_name','HUMANITAS CROCE VERDE')}>HUMANITAS CROCE VERDE</option></select></div><div class="field"><label>Sede di destinazione *</label><select name="destination_branch" required><option {selected('destination_branch','Livorno')}>Livorno</option><option {selected('destination_branch','Empoli')}>Empoli</option></select></div></div></section>
-        <section class="section"><h2>SPEDITORE</h2><div class="fields"><div class="field"><label>Nome *</label><input name="owner_first_name" value="{val('owner_first_name')}" required></div><div class="field"><label>Cognome *</label><input name="owner_last_name" value="{val('owner_last_name')}" required></div><div class="field"><label>Telefono *</label><input type="tel" inputmode="numeric" name="owner_phone" value="{val('owner_phone')}" required></div><div class="field"><label>Secondo telefono</label><input type="tel" inputmode="numeric" name="owner_phone_2" value="{val('owner_phone_2')}"></div><div class="field"><label>Email</label><input type="email" name="owner_email" value="{val('owner_email')}"></div><div class="field"><label>Codice fiscale</label><input name="owner_tax_code" value="{val('owner_tax_code')}"></div><div class="field full"><label>Indirizzo - via / piazza *</label><input name="owner_street" value="{val('owner_street') or val('owner_address')}" required></div><div class="field"><label>Comune *</label><input name="owner_city" value="{val('owner_city')}" required></div><div class="field"><label>Provincia</label><input name="owner_province" value="{val('owner_province')}" maxlength="2" placeholder="Si compila dal comune"></div><div class="field"><label>CAP</label><input name="owner_zip" value="{val('owner_zip')}" inputmode="numeric"></div></div></section>
+        return f'''<section class="section"><h2>Operatore</h2><div class="fields"><div class="field"><label>Operatore</label><select name="operator_name"><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option></select></div></div></section>
+        <section class="section"><h2>Richiesta</h2><div class="fields"><div class="field"><label>Servizio</label><select name="service_type"><option {selected('service_type','Da decidere')}>Da decidere</option><option {selected('service_type','Cremazione singola')}>Cremazione singola</option><option {selected('service_type','Cremazione collettiva')}>Cremazione collettiva</option></select></div><div class="field"><label>Origine richiesta</label><select name="request_origin"><option {selected('request_origin','Veterinario')}>Veterinario</option><option {selected('request_origin','Privato')}>Privato</option><option {selected('request_origin','Consegna in sede')}>Consegna in sede</option><option {selected('request_origin','Collaboratore')}>Collaboratore</option></select></div><div class="field {'hidden' if raw('request_origin')!='Collaboratore' else ''}" id="collaboratorBox"><label>Collaboratore</label><select name="collaborator_name"><option value="">Nessun collaboratore</option><option {selected('collaborator_name','HUMANITAS CROCE VERDE')}>HUMANITAS CROCE VERDE</option></select></div><div class="field"><label>Sede di destinazione</label><select name="destination_branch"><option {selected('destination_branch','Livorno')}>Livorno</option><option {selected('destination_branch','Empoli')}>Empoli</option></select></div><div class="field"><label>Data recupero</label><input type="date" name="pickup_date" value="{val('pickup_date')}"></div></div></section>
+        <section class="section"><h2>SPEDITORE</h2><div class="fields"><div class="field"><label>Nome</label><input name="owner_first_name" value="{val('owner_first_name')}"></div><div class="field"><label>Cognome</label><input name="owner_last_name" value="{val('owner_last_name')}"></div><div class="field"><label>Telefono</label><input type="tel" inputmode="numeric" name="owner_phone" value="{val('owner_phone')}"></div><div class="field"><label>Secondo telefono</label><input type="tel" inputmode="numeric" name="owner_phone_2" value="{val('owner_phone_2')}"></div><div class="field"><label>Email</label><input type="email" name="owner_email" value="{val('owner_email')}"></div><div class="field"><label>Codice fiscale</label><input name="owner_tax_code" value="{val('owner_tax_code')}"></div><div class="field full"><label>Indirizzo - via / piazza</label><input name="owner_street" value="{val('owner_street') or val('owner_address')}"></div><div class="field"><label>Comune</label><input name="owner_city" value="{val('owner_city')}"></div><div class="field"><label>Provincia</label><input name="owner_province" value="{val('owner_province')}" maxlength="2" placeholder="Si compila dal comune"></div><div class="field"><label>CAP</label><input name="owner_zip" value="{val('owner_zip')}" inputmode="numeric"></div></div></section>
         <section class="section"><h2>DESTINATARIO E LUOGO DI DESTINAZIONE</h2><p class="sub">Compilati automaticamente in base alla sede selezionata: Livorno oppure Empoli.</p></section>
-        <section class="section"><h2>LUOGO DI ORIGINE</h2><div class="fields"><div class="field"><label>Luogo di origine</label><select name="origin_mode"><option {selected('origin_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('origin_mode','Testo libero','IDEM SPED')}>Testo libero</option></select></div><div class="field"><label>Data recupero</label><input type="date" name="pickup_date" value="{val('pickup_date')}"></div><div class="field full"><label>Testo libero / indirizzo diverso</label><input name="origin_text" value="{val('origin_text') or (val('pickup_address') if raw('pickup_address_mode')=='Altro indirizzo' else '')}" placeholder="Scrivi qui solo se il luogo non è IDEM SPED"></div></div></section>
+        <section class="section"><h2>LUOGO DI ORIGINE</h2><div class="fields"><div class="field"><label>Luogo di origine</label><select name="origin_mode"><option {selected('origin_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('origin_mode','Testo libero','IDEM SPED')}>Testo libero</option></select></div><div class="field full"><label>Testo libero / indirizzo diverso</label><input name="origin_text" value="{val('origin_text') or (val('pickup_address') if raw('pickup_address_mode')=='Altro indirizzo' else '')}" placeholder="Scrivi qui solo se il luogo non è IDEM SPED"></div></div></section>
         <section class="section"><h2>Animale</h2><div class="fields"><div class="field"><label>Nome</label><input name="animal_name" value="{val('animal_name')}"></div><div class="field"><label>Specie</label><input name="species" value="{val('species')}"></div><div class="field"><label>Peso stimato (kg)</label><input name="estimated_weight" value="{val('estimated_weight')}"></div><div class="field"><label>Età - anni</label><input name="age_years" value="{val('age_years')}"></div><div class="field"><label>Età - mesi</label><input name="age_months" value="{val('age_months')}"></div><div class="field"><label>Microchip</label><input name="microchip" value="{val('microchip')}"></div><div class="field full"><label>Razza</label><input name="breed" value="{val('breed')}"></div></div><button class="btn ghost" type="button" id="showSecondAnimal" style="margin-top:12px;{'display:none' if raw('animal2_name') else ''}">+ Aggiungi altro animale</button><div id="secondAnimalBox" style="display:{'block' if raw('animal2_name') else 'none'};margin-top:14px"><h2>Secondo animale</h2><div class="fields"><div class="field"><label>Nome</label><input name="animal2_name" value="{val('animal2_name')}"></div><div class="field"><label>Specie</label><input name="animal2_species" value="{val('animal2_species')}"></div><div class="field"><label>Peso stimato (kg)</label><input name="animal2_weight" value="{val('animal2_weight')}"></div><div class="field"><label>Microchip</label><input name="animal2_microchip" value="{val('animal2_microchip')}"></div><div class="field full"><label>Razza</label><input name="animal2_breed" value="{val('animal2_breed')}"></div></div></div></section>
-        <section class="section"><h2>AMBULATORIO VETERINARIO</h2><div class="fields"><div class="field"><label>Veterinario per buono</label><select name="veterinarian_id">{vet_options}</select></div><div class="field"><label>Clinica / ambulatorio</label><input name="clinic_name" value="{val('clinic_name')}"></div><div class="field"><label>Medico veterinario</label><input name="veterinarian_name" value="{val('veterinarian_name')}"></div><div class="field full"><label><input type="checkbox" name="voucher_requested" value="Si" {voucher_checked} style="width:auto"> BUONO - aggiungi un buono al veterinario selezionato</label></div></div></section>
+        <section class="section"><h2>AMBULATORIO VETERINARIO</h2><div class="fields"><div class="field"><label>VETERINARIO</label><select name="veterinarian_id">{vet_options}</select><input type="hidden" name="clinic_name" value="{val('clinic_name')}"></div><div class="field"><label>MEDICO VETERINARIO</label><input name="veterinarian_name" value="{val('veterinarian_name')}"></div></div></section>
         <section class="section"><h2>TRASPORTATORE</h2><div class="fields"><div class="field"><label>Dati trasportatore</label><select name="transporter_mode"><option {selected('transporter_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('transporter_mode','DATI PET PARADISE','IDEM SPED')}>DATI PET PARADISE</option></select></div><div class="field"><label>Scelta rapida mezzo</label><select id="transport_method_quick"><option value="">Seleziona se serve</option><option value="MEZZO PROPRIO">MEZZO PROPRIO</option></select></div><div class="field"><label>Mezzo di trasporto</label><input name="transport_method" value="{val('transport_method')}"></div><div class="field"><label>Targa automezzo</label><input name="vehicle_plate" value="{val('vehicle_plate')}"></div><div class="field"><label>Temperatura</label><select name="temperature_mode"><option {selected('temperature_mode','Ambiente','Ambiente')}>Ambiente</option><option {selected('temperature_mode','Refrigerato','Ambiente')}>Refrigerato</option><option {selected('temperature_mode','Congelato','Ambiente')}>Congelato</option></select></div><div class="field"><label>Numero colli</label><input name="package_count" value="{val('package_count') or '1'}"></div><div class="field"><label>ID contenitore</label><select name="container_id"><option value="">Seleziona ID contenitore</option><option {selected('container_id','03/2021')}>03/2021</option><option {selected('container_id','04/2021')}>04/2021</option></select></div><div class="field"><label>Numero lotto</label><input name="lot_number" value="{val('lot_number') or '/'}"></div><div class="field"><label>Metodo trattamento</label><input name="treatment_method" value="{val('treatment_method') or '/'}"></div></div></section>
         <section class="section"><h2>Preventivo</h2><div class="fields"><div class="field"><label>Cremazione €</label><input name="price_cremation" value="{val('price_cremation')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Ritiro €</label><input name="price_pickup" value="{val('price_pickup')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Urna €</label><input name="price_urn" value="{val('price_urn')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label><input type="checkbox" name="send_catalog" value="Si" {catalog_checked} style="width:auto"> INVIARE CATALOGO</label></div><div class="field"><label>Riconsegna €</label><input name="price_delivery" value="{val('price_delivery')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Calco €</label><input name="price_cast" value="{val('price_cast')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Serale €</label><input name="price_evening" value="{val('price_evening')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Notturno €</label><input name="price_night" value="{val('price_night')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Festivo €</label><input name="price_holiday" value="{val('price_holiday')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Accessori €</label><input name="price_accessories" value="{val('price_accessories')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Totale servizio €</label><input name="total_service" value="{val('total_service')}" placeholder="Numero o testo libero"></div><div class="field"><label><input type="checkbox" name="send_estremi" value="Si" {estremi_checked} style="width:auto"> INVIARE ESTREMI</label></div><div class="field"><label>Acconto €</label><input name="deposit" value="{val('deposit')}" placeholder="Numero o testo libero"></div><div class="field"><label>Rimanenza €</label><input name="remaining_balance" value="{val('remaining_balance')}" readonly></div><div class="field full"><label>TOTALE</label><textarea name="total_text" placeholder="Testo libero per note sul totale">{val('total_text')}</textarea></div><div class="field full"><label>Note operative</label><textarea name="notes">{val('notes')}</textarea></div></div></section>
         <section class="section"><h2>Etichette operative</h2><div class="fields">{tag_select('tag_assistita','ASSISTITA','tag-red')}{tag_select('tag_possibile_assistita','POSSIBILE ASSISTITA','tag-red')}{tag_select('tag_assistita_streaming','ASSISTITA STREAMING','tag-orange')}{tag_select('tag_saluto','SALUTO','tag-purple')}{tag_select('tag_calco','CALCO','tag-yellow')}{tag_select('tag_avvisare','AVVISARE','tag-pink')}{tag_select('tag_da_richiamare','DA RICHIAMARE','tag-blue')}</div></section>
@@ -807,6 +887,15 @@ class App(BaseHTTPRequestHandler):
             data[key] = "Si" if data[key] == "Si" else ""
         data["voucher_requested"] = "Si" if data["voucher_requested"] == "Si" else ""
         data["veterinarian_id"] = data["veterinarian_id"] or None
+        if data["veterinarian_id"]:
+            with db() as c:
+                vet = c.execute("SELECT * FROM veterinarians WHERE id=? AND active=1", (data["veterinarian_id"],)).fetchone()
+            if vet:
+                data["clinic_name"] = data["clinic_name"] or vet["clinic_name"]
+                if not data["origin_text"]:
+                    data["origin_text"] = " - ".join(x for x in [vet["clinic_name"], vet["address"]] if x)
+                if data["origin_text"]:
+                    data["origin_mode"] = "Testo libero"
         if data["collaborator_name"] == "HUMANITAS CROCE VERDE":
             collab=COLLABORATORS["HUMANITAS CROCE VERDE"]
             data["owner_first_name"] = data["owner_first_name"] or "HUMANITAS"
@@ -839,8 +928,7 @@ class App(BaseHTTPRequestHandler):
         return data
 
     def is_complete(self,d):
-        required=["owner_first_name","owner_last_name","owner_phone","owner_street","owner_city","animal_name","species","estimated_weight","service_type"]
-        return int(all(d.get(k) and d.get(k)!="Da decidere" for k in required))
+        return 1
 
     def sync_voucher(self,c,pid,d):
         existing=c.execute("SELECT * FROM veterinarian_vouchers WHERE practice_id=?",(pid,)).fetchone()
@@ -868,10 +956,6 @@ class App(BaseHTTPRequestHandler):
 
     def create_practice(self,user):
         d=self.normalized_fields(self.form()); stamp=now()
-        if not d.get("operator_name"):
-            return self.send_error(400, "Operatore obbligatorio")
-        if not all(d.get(k) for k in ("owner_first_name","owner_last_name","owner_phone","owner_street","owner_city")):
-            return self.send_error(400, "Nome, cognome, telefono, via e comune dello speditore sono obbligatori")
         initial="Ritirato"
         with db() as c:
             number=next_practice_code(c,d["service_type"])
@@ -966,10 +1050,6 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
 
     def edit_submit(self,user,pid):
         d=self.normalized_fields(self.form()); stamp=now(); assignments=','.join(f'{k}=?' for k in d)
-        if not d.get("operator_name"):
-            return self.send_error(400, "Operatore obbligatorio")
-        if not all(d.get(k) for k in ("owner_first_name","owner_last_name","owner_phone","owner_street","owner_city")):
-            return self.send_error(400, "Nome, cognome, telefono, via e comune dello speditore sono obbligatori")
         with db() as c:
             c.execute(f"UPDATE practices SET {assignments},data_complete=?,updated_at=? WHERE id=?",list(d.values())+[self.is_complete(d),stamp,pid])
             p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
