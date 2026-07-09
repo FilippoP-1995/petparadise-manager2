@@ -1052,13 +1052,20 @@ Tel. 351 993 9566"""
 
     def send_whatsapp_thanks(self,c,pid,force=False):
         p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
-        if not p: return False, "Pratica non trovata"
+        if not p:
+            print(f"[WHATSAPP] pratica={pid} esito=ERRORE dettaglio=Pratica non trovata", flush=True)
+            return False, "Pratica non trovata"
         if not force and "whatsapp_thanks_sent_at" in p.keys() and p["whatsapp_thanks_sent_at"]:
-            return True, "Messaggio giÃ  inviato"
+            msg="Messaggio già inviato, invio automatico saltato"
+            print(f"[WHATSAPP] pratica={pid} esito=SKIP dettaglio={msg}", flush=True)
+            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,created_at) VALUES(?,?,?,?)",(pid,"WhatsApp ringraziamento",msg,now()))
+            return True, msg
         phone=re.sub(r"\D+","",p["owner_phone"] or "")
         if not phone:
             error="Telefono speditore mancante"
             c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,pid))
+            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,created_at) VALUES(?,?,?,?)",(pid,"WhatsApp ringraziamento",f"Errore: {error}",now()))
+            print(f"[WHATSAPP] pratica={pid} esito=ERRORE dettaglio={error}", flush=True)
             return False,error
         if phone.startswith("00"): phone=phone[2:]
         if not phone.startswith("39"): phone="39"+phone
@@ -1068,6 +1075,8 @@ Tel. 351 993 9566"""
         if not token or not phone_id:
             error="Config WhatsApp mancante: imposta WHATSAPP_ACCESS_TOKEN e WHATSAPP_PHONE_NUMBER_ID su Render"
             c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,pid))
+            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,created_at) VALUES(?,?,?,?)",(pid,"WhatsApp ringraziamento",f"Errore: {error}",now()))
+            print(f"[WHATSAPP] pratica={pid} esito=ERRORE dettaglio={error}", flush=True)
             return False,error
         payload=json.dumps({
             "messaging_product":"whatsapp",
@@ -1084,14 +1093,24 @@ Tel. 351 993 9566"""
         )
         try:
             with urllib.request.urlopen(req,timeout=12) as resp:
-                resp.read()
+                response_body=resp.read().decode("utf-8", "replace")
             sent_at=now()
             c.execute("UPDATE practices SET whatsapp_thanks_sent_at=?, whatsapp_thanks_last_error='' WHERE id=?",(sent_at,pid))
-            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,created_at) VALUES(?,?,?,?)",(pid,"WhatsApp ringraziamento",f"Inviato {sent_at}",sent_at))
+            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,created_at) VALUES(?,?,?,?)",(pid,"WhatsApp ringraziamento",f"Inviato {sent_at} a +{phone}",sent_at))
+            print(f"[WHATSAPP] pratica={pid} esito=INVIATO telefono=+{phone} sede={p['destination_branch']} risposta={response_body}", flush=True)
             return True,"Inviato"
+        except urllib.error.HTTPError as exc:
+            detail=exc.read().decode("utf-8", "replace")
+            error=f"Meta API HTTP {exc.code}: {detail}"
+            c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,pid))
+            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,created_at) VALUES(?,?,?,?)",(pid,"WhatsApp ringraziamento",f"Errore: {error}",now()))
+            print(f"[WHATSAPP] pratica={pid} esito=ERRORE telefono=+{phone} dettaglio={error}", flush=True)
+            return False,error
         except Exception as exc:
             error=str(exc)
             c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,pid))
+            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,created_at) VALUES(?,?,?,?)",(pid,"WhatsApp ringraziamento",f"Errore: {error}",now()))
+            print(f"[WHATSAPP] pratica={pid} esito=ERRORE telefono=+{phone} dettaglio={error}", flush=True)
             return False,error
 
     def sync_voucher(self,c,pid,d):
