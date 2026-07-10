@@ -11,7 +11,7 @@ import sqlite3
 import traceback
 import urllib.error
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 from http import cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -191,6 +191,28 @@ def init_db():
           note TEXT,
           UNIQUE(practice_id)
         );
+        CREATE TABLE IF NOT EXISTS whatsapp_messages (
+          id INTEGER PRIMARY KEY,
+          practice_id INTEGER NOT NULL REFERENCES practices(id),
+          scheduled_at TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'programmato',
+          attempts INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT,
+          message_id TEXT,
+          sent_at TEXT,
+          delivered_at TEXT,
+          read_at TEXT,
+          failed_at TEXT,
+          last_attempt_at TEXT,
+          template_name TEXT,
+          language_code TEXT,
+          recipient_phone TEXT,
+          payload_json TEXT,
+          response_json TEXT,
+          manual INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
         INSERT OR IGNORE INTO settings(key,value) VALUES('next_practice_number','1');
         INSERT OR IGNORE INTO settings(key,value) VALUES('next_cr_number','1');
         INSERT OR IGNORE INTO settings(key,value) VALUES('next_sm_number','1');
@@ -261,6 +283,9 @@ def init_db():
             if name not in vet_existing:
                 c.execute(f"ALTER TABLE veterinarians ADD COLUMN {name} {definition}")
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_practices_ddt_share_token ON practices(ddt_share_token)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_due ON whatsapp_messages(status, scheduled_at)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_practice ON whatsapp_messages(practice_id, created_at)")
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_whatsapp_messages_one_active ON whatsapp_messages(practice_id) WHERE status IN ('programmato','in_invio')")
         c.execute("UPDATE practices SET payment_status='Da saldare' WHERE payment_status IS NULL OR payment_status=''")
         c.execute("UPDATE practices SET payment_status='Pagato', status='Consegnato' WHERE status='Pagato'")
         c.execute("UPDATE veterinarian_vouchers SET status='Maturato' WHERE status='Disponibile'")
@@ -537,6 +562,11 @@ class App(BaseHTTPRequestHandler):
         self.send_response(status); self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
 
+    def send_json(self, obj, status=200):
+        data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        self.send_response(status); self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
+
     def send_png(self, path):
         data = path.read_bytes()
         self.send_response(200); self.send_header("Content-Type", "image/png")
@@ -586,6 +616,8 @@ class App(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path
         if path == "/health": return self.send_text("ok")
+        if path == "/cron/whatsapp": return self.whatsapp_cron()
+        if path == "/webhook/whatsapp": return self.whatsapp_webhook_verify()
         if path == "/assets/company_logo.png" and (ASSETS / "company_logo.png").exists(): return self.send_png(ASSETS / "company_logo.png")
         match = re.fullmatch(r"/pubblici/ddt/([A-Za-z0-9_-]+)\.pdf", path)
         if match: return self.public_ddt(match.group(1))
@@ -614,10 +646,14 @@ class App(BaseHTTPRequestHandler):
         if match: return self.draft_ddt(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/firma", path)
         if match: return self.signature_page(user, int(match.group(1)))
+        match = re.fullmatch(r"/pratiche/(\d+)/whatsapp-conferma", path)
+        if match: return self.whatsapp_confirm_page(user, int(match.group(1)))
         self.send_error(404)
 
     def do_POST(self):
         path = urlparse(self.path).path
+        if path == "/cron/whatsapp": return self.whatsapp_cron()
+        if path == "/webhook/whatsapp": return self.whatsapp_webhook_receive()
         if path == "/login": return self.login_submit()
         user = self.require_user()
         if not user: return
@@ -639,6 +675,8 @@ class App(BaseHTTPRequestHandler):
         if match: return self.change_state(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/whatsapp", path)
         if match: return self.resend_whatsapp(user, int(match.group(1)))
+        match = re.fullmatch(r"/pratiche/(\d+)/whatsapp-annulla", path)
+        if match: return self.cancel_whatsapp_manual(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/modifica", path)
         if match: return self.edit_submit(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/ddt", path)
@@ -1025,39 +1063,79 @@ class App(BaseHTTPRequestHandler):
         missing=[label for key,label in labels.items() if not d.get(key)]
         return "Campi obbligatori mancanti: " + ", ".join(missing) if missing else ""
 
-    def whatsapp_text(self,p):
-        nome_cliente=(p["owner_first_name"] or "").strip() or "Gentile cliente"
-        nome_animale=(p["animal_name"] or "").strip() or "il vostro compagno"
-        branch=(p["destination_branch"] or "Livorno").strip()
-        link="https://share.google/LtUaP3zBfH0gl2DAQ" if branch=="Empoli" else "https://share.google/50ixux3xbUogsdKvx"
-        finale="Pet Paradise Cremazioni Animali Empoli & Livorno" if branch=="Empoli" else "Pet Paradise Cremazioni Animali Livorno & Empoli"
-        return f"""Ciao {nome_cliente}, ti scriviamo dallo staff di Pet Paradise - Cremazione Animali Domestici;
-
-Volevamo prima di tutto ringraziarvi per aver scelto noi per affrontare un momento così difficile. ❤️
-
-Il nostro auspicio è quello di esservi stati di aiuto, per quanto si possa esserlo in momenti come questi, nell'accompagnare il vostro compagno di vita {nome_animale} nel suo ultimo viaggio verso il Ponte dell'Arcobaleno 🌈
-
-Se così fosse, questo ci renderebbe molto orgogliosi, consapevoli dell'amore che ogni giorno mettiamo nel nostro lavoro. ❣️
-
-Cliccando sul seguente link:
-{link}
-
-potrete lasciare una recensione, nella sezione "Recensioni", per Pet Paradise. 😊
-
-Ci farebbe molto piacere conoscere il vostro parere sul nostro servizio.
-
-Grazie ancora per esservi affidati a noi. 🐾
-
-{finale}
-
-Tel. 351 993 9566"""
-
     def masked_whatsapp_token(self, token):
         if not token:
             return "MANCANTE"
         if len(token) <= 12:
             return token[:2] + "***" + token[-2:]
         return token[:6] + "..." + token[-6:]
+
+    def whatsapp_language_code(self):
+        return os.environ.get("WHATSAPP_TEMPLATE_LANGUAGE", "it").strip() or "it"
+
+    def whatsapp_template_name(self, p):
+        branch=(p["destination_branch"] or "Livorno").strip().lower()
+        return "ringraziamento_empoli" if branch == "empoli" else "ringraziamento_livorno"
+
+    def whatsapp_client_name(self, p):
+        name=" ".join(x for x in [(p["owner_first_name"] or "").strip(), (p["owner_last_name"] or "").strip()] if x).strip()
+        return name or "cliente"
+
+    def whatsapp_animal_name(self, p):
+        return (p["animal_name"] or "").strip() or "il vostro compagno"
+
+    def whatsapp_normalized_phone(self, p):
+        phone=re.sub(r"\D+","",p["owner_phone"] or "")
+        if phone.startswith("00"):
+            phone=phone[2:]
+        if phone and not phone.startswith("39"):
+            phone="39"+phone
+        return phone
+
+    def whatsapp_payload_for_practice(self, p):
+        template=self.whatsapp_template_name(p)
+        language=self.whatsapp_language_code()
+        nome_cliente=self.whatsapp_client_name(p)
+        nome_animale=self.whatsapp_animal_name(p)
+        return {
+            "messaging_product":"whatsapp",
+            "to":self.whatsapp_normalized_phone(p),
+            "type":"template",
+            "template":{
+                "name":template,
+                "language":{"code":language},
+                "components":[{
+                    "type":"body",
+                    "parameters":[
+                        {"type":"text","text":nome_cliente},
+                        {"type":"text","text":nome_animale},
+                    ],
+                }],
+            },
+        }
+
+    def whatsapp_meta_config(self):
+        token=os.environ.get("WHATSAPP_ACCESS_TOKEN","").strip()
+        phone_id=os.environ.get("WHATSAPP_PHONE_NUMBER_ID","").strip()
+        version=os.environ.get("WHATSAPP_GRAPH_VERSION","v20.0").strip()
+        endpoint=f"https://graph.facebook.com/{version}/{phone_id}/messages" if phone_id else ""
+        return token, phone_id, version, endpoint
+
+    def whatsapp_status_label(self, status):
+        return {
+            "programmato":"Programmato",
+            "in_invio":"In invio",
+            "accettato_da_meta":"Accettato da Meta",
+            "consegnato":"Consegnato",
+            "letto":"Letto",
+            "fallito":"Fallito",
+            "annullato":"Annullato",
+        }.get(status or "", status or "Non programmato")
+
+    def whatsapp_next_retry_at(self, attempts):
+        minutes = [10, 30, 120]
+        idx=max(0, min(int(attempts or 1)-1, len(minutes)-1))
+        return (datetime.now() + timedelta(minutes=minutes[idx])).isoformat(timespec="seconds")
 
     def whatsapp_get_meta(self, endpoint, token):
         req=urllib.request.Request(endpoint,headers={"Authorization":f"Bearer {token}"},method="GET")
@@ -1102,78 +1180,191 @@ Tel. 351 993 9566"""
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>Diagnostica WhatsApp</h1><div class="sub">Controllo configurazione WhatsApp Business Cloud API.</div></div><a class="btn ghost" href="/">Dashboard</a></div>{hint}<section class="section"><h2>Variabili Render</h2><div class="kvs"><div class="kv"><small>WHATSAPP_GRAPH_VERSION</small><b>{esc(version)}</b></div><div class="kv"><small>WHATSAPP_ACCESS_TOKEN</small><b>{esc(token_status)}</b></div><div class="kv"><small>WHATSAPP_PHONE_NUMBER_ID</small><b>{esc(phone_id or "MANCANTE")}</b></div></div></section><div style="height:14px"></div><section class="section"><h2>GET Phone Number ID</h2><p><b>Endpoint:</b> {esc(phone_endpoint or "NON DISPONIBILE")}</p><p><b>HTTP:</b> {esc(phone_status)}</p><pre style="white-space:pre-wrap;background:#f7f4f0;padding:12px;border-radius:10px;overflow:auto">{esc(phone_body)}</pre></section><div style="height:14px"></div><section class="section"><h2>GET /me</h2><p><b>Endpoint:</b> {esc(me_endpoint)}</p><p><b>HTTP:</b> {esc(me_status)}</p><pre style="white-space:pre-wrap;background:#f7f4f0;padding:12px;border-radius:10px;overflow:auto">{esc(me_body)}</pre></section></main>'''
         self.send_html(layout("Diagnostica WhatsApp",body,user))
 
-    def send_whatsapp_thanks(self,c,pid,force=False):
+    def schedule_whatsapp_thanks(self,c,pid,user_id=None):
         p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
         if not p:
-            print(f"[WHATSAPP] pratica={pid} esito=ERRORE dettaglio=Pratica non trovata", flush=True)
             return False, "Pratica non trovata"
-        if not force and "whatsapp_thanks_sent_at" in p.keys() and p["whatsapp_thanks_sent_at"]:
-            msg="Messaggio già inviato, invio automatico saltato"
-            print(f"[WHATSAPP] pratica={pid} esito=SKIP dettaglio={msg}", flush=True)
-            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,created_at) VALUES(?,?,?,?)",(pid,"WhatsApp ringraziamento",msg,now()))
-            return True, msg
-        if not force and "no_whatsapp_message" in p.keys() and p["no_whatsapp_message"] == "Si":
-            msg="Invio WhatsApp automatico disattivato per questa pratica"
-            print(f"[WHATSAPP] pratica={pid} esito=SKIP dettaglio={msg}", flush=True)
+        if "no_whatsapp_message" in p.keys() and p["no_whatsapp_message"] == "Si":
+            msg="NO MESSAGGIO attivo: WhatsApp non programmato"
             c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(msg,pid))
-            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,created_at) VALUES(?,?,?,?)",(pid,"WhatsApp ringraziamento",msg,now()))
+            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"WhatsApp ringraziamento",msg,user_id,now()))
+            print(f"[WHATSAPP] pratica={pid} esito=SKIP programmazione motivo=no_whatsapp_message", flush=True)
             return False, msg
-        phone=re.sub(r"\D+","",p["owner_phone"] or "")
+        if "whatsapp_thanks_sent_at" in p.keys() and p["whatsapp_thanks_sent_at"]:
+            msg="WhatsApp già inviato in precedenza: nuova programmazione saltata"
+            print(f"[WHATSAPP] pratica={pid} esito=SKIP programmazione dettaglio={msg}", flush=True)
+            return False, msg
+        existing=c.execute("SELECT * FROM whatsapp_messages WHERE practice_id=? AND status IN ('programmato','in_invio','accettato_da_meta','consegnato','letto') ORDER BY created_at DESC LIMIT 1",(pid,)).fetchone()
+        if existing:
+            msg=f"WhatsApp già presente con stato {existing['status']}"
+            print(f"[WHATSAPP] pratica={pid} esito=SKIP programmazione dettaglio={msg}", flush=True)
+            return False, msg
+        phone=self.whatsapp_normalized_phone(p)
+        if not phone:
+            msg="Telefono speditore mancante: WhatsApp non programmato"
+            c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(msg,pid))
+            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"WhatsApp ringraziamento",msg,user_id,now()))
+            return False, msg
+        scheduled_at=(datetime.now()+timedelta(hours=48)).isoformat(timespec="seconds")
+        template=self.whatsapp_template_name(p)
+        language=self.whatsapp_language_code()
+        stamp=now()
+        c.execute("""INSERT INTO whatsapp_messages(practice_id,scheduled_at,status,attempts,template_name,language_code,recipient_phone,manual,created_at,updated_at)
+                     VALUES(?,?,?,?,?,?,?,?,?,?)""",(pid,scheduled_at,"programmato",0,template,language,phone,0,stamp,stamp))
+        c.execute("UPDATE practices SET whatsapp_thanks_last_error='' WHERE id=?",(pid,))
+        c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"WhatsApp programmato",f"Invio programmato per {scheduled_at} a +{phone} con template {template}",user_id,stamp))
+        print(f"[WHATSAPP] pratica={pid} esito=PROGRAMMATO scheduled_at={scheduled_at} destinatario=+{phone} template={template} lingua={language}", flush=True)
+        return True, scheduled_at
+
+    def cancel_whatsapp_scheduled(self,c,pid,user_id=None,reason="Invio programmato annullato"):
+        stamp=now()
+        rows=c.execute("UPDATE whatsapp_messages SET status='annullato', last_error=?, updated_at=? WHERE practice_id=? AND status IN ('programmato','in_invio')",(reason,stamp,pid)).rowcount
+        if rows:
+            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"WhatsApp annullato",reason,user_id,stamp))
+            print(f"[WHATSAPP] pratica={pid} esito=ANNULLATO righe={rows} motivo={reason}", flush=True)
+        return rows
+
+    def send_whatsapp_message(self,c,msg_id,manual=False,user_id=None):
+        msg=c.execute("SELECT * FROM whatsapp_messages WHERE id=?",(msg_id,)).fetchone()
+        if not msg:
+            return False, "Invio WhatsApp non trovato"
+        p=c.execute("SELECT * FROM practices WHERE id=?",(msg["practice_id"],)).fetchone()
+        if not p:
+            return False, "Pratica non trovata"
+        if not manual and "no_whatsapp_message" in p.keys() and p["no_whatsapp_message"] == "Si":
+            self.cancel_whatsapp_scheduled(c,p["id"],user_id,"NO MESSAGGIO attivo prima dell'invio")
+            return False, "NO MESSAGGIO attivo"
+        token, phone_id, version, endpoint = self.whatsapp_meta_config()
+        payload_obj=self.whatsapp_payload_for_practice(p)
+        phone=payload_obj["to"]
+        template=payload_obj["template"]["name"]
+        language=payload_obj["template"]["language"]["code"]
         if not phone:
             error="Telefono speditore mancante"
-            c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,pid))
-            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,created_at) VALUES(?,?,?,?)",(pid,"WhatsApp ringraziamento",f"Errore: {error}",now()))
-            print(f"[WHATSAPP] pratica={pid} esito=ERRORE dettaglio={error}", flush=True)
+            c.execute("UPDATE whatsapp_messages SET status='fallito', last_error=?, attempts=attempts+1, last_attempt_at=?, updated_at=? WHERE id=?",(error,now(),now(),msg_id))
+            c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,p["id"]))
             return False,error
-        if phone.startswith("00"): phone=phone[2:]
-        if not phone.startswith("39"): phone="39"+phone
-        token=os.environ.get("WHATSAPP_ACCESS_TOKEN","").strip()
-        phone_id=os.environ.get("WHATSAPP_PHONE_NUMBER_ID","").strip()
-        version=os.environ.get("WHATSAPP_GRAPH_VERSION","v20.0").strip()
         if not token or not phone_id:
             error="Config WhatsApp mancante: imposta WHATSAPP_ACCESS_TOKEN e WHATSAPP_PHONE_NUMBER_ID su Render"
-            c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,pid))
-            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,created_at) VALUES(?,?,?,?)",(pid,"WhatsApp ringraziamento",f"Errore: {error}",now()))
-            print(f"[WHATSAPP] pratica={pid} esito=ERRORE dettaglio={error}", flush=True)
+            c.execute("UPDATE whatsapp_messages SET status='fallito', last_error=?, attempts=attempts+1, last_attempt_at=?, updated_at=? WHERE id=?",(error,now(),now(),msg_id))
+            c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,p["id"]))
             return False,error
-        payload=json.dumps({
-            "messaging_product":"whatsapp",
-            "recipient_type":"individual",
-            "to":phone,
-            "type":"text",
-            "text":{"preview_url":True,"body":self.whatsapp_text(p)}
-        }).encode("utf-8")
-        req=urllib.request.Request(
-            f"https://graph.facebook.com/{version}/{phone_id}/messages",
-            data=payload,
-            headers={"Authorization":f"Bearer {token}","Content-Type":"application/json"},
-            method="POST",
-        )
-        endpoint=f"https://graph.facebook.com/{version}/{phone_id}/messages"
-        print(f"[WHATSAPP] POST endpoint={endpoint} phone_number_id={phone_id} token={self.masked_whatsapp_token(token)} pratica={pid} telefono=+{phone}", flush=True)
+        payload=json.dumps(payload_obj,ensure_ascii=False).encode("utf-8")
+        print(f"[WHATSAPP] POST pratica_id={p['id']} message_row={msg_id} endpoint={endpoint} phone_number_id={phone_id} token={self.masked_whatsapp_token(token)} destinatario=+{phone} template={template} lingua={language} scheduled_at={msg['scheduled_at']} payload={json.dumps(payload_obj,ensure_ascii=False)}", flush=True)
+        req=urllib.request.Request(endpoint,data=payload,headers={"Authorization":f"Bearer {token}","Content-Type":"application/json"},method="POST")
+        attempt_stamp=now()
         try:
-            with urllib.request.urlopen(req,timeout=12) as resp:
-                response_body=resp.read().decode("utf-8", "replace")
+            with urllib.request.urlopen(req,timeout=18) as resp:
+                response_body=resp.read().decode("utf-8","replace")
+                http_status=resp.status
+            response_json=json.loads(response_body) if response_body else {}
+            message_id=""
+            if isinstance(response_json,dict) and response_json.get("messages"):
+                message_id=response_json["messages"][0].get("id","")
             sent_at=now()
-            c.execute("UPDATE practices SET whatsapp_thanks_sent_at=?, whatsapp_thanks_last_error='' WHERE id=?",(sent_at,pid))
-            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,created_at) VALUES(?,?,?,?)",(pid,"WhatsApp ringraziamento",f"Inviato {sent_at} a +{phone}",sent_at))
-            print(f"[WHATSAPP] pratica={pid} esito=INVIATO endpoint={endpoint} phone_number_id={phone_id} http=200 telefono=+{phone} sede={p['destination_branch']} risposta={response_body}", flush=True)
-            return True,"Inviato"
+            c.execute("""UPDATE whatsapp_messages SET status='accettato_da_meta', attempts=attempts+1, last_error='', message_id=?, sent_at=?, last_attempt_at=?, template_name=?, language_code=?, recipient_phone=?, payload_json=?, response_json=?, updated_at=? WHERE id=?""",(message_id,sent_at,attempt_stamp,template,language,phone,json.dumps(payload_obj,ensure_ascii=False),response_body,sent_at,msg_id))
+            c.execute("UPDATE practices SET whatsapp_thanks_sent_at=?, whatsapp_thanks_last_error='' WHERE id=?",(sent_at,p["id"]))
+            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(p["id"],"WhatsApp ringraziamento",f"Accettato da Meta {sent_at} a +{phone} - template {template} - message_id {message_id}",user_id,sent_at))
+            print(f"[WHATSAPP] pratica_id={p['id']} message_row={msg_id} esito=ACCETTATO_DA_META http={http_status} message_id={message_id} risposta={response_body}", flush=True)
+            if manual:
+                self.cancel_whatsapp_scheduled(c,p["id"],user_id,"Annullato perché è stato inviato manualmente")
+                c.execute("UPDATE whatsapp_messages SET status='accettato_da_meta', updated_at=? WHERE id=?",(sent_at,msg_id))
+            return True, f"Accettato da Meta. Message ID: {message_id or 'non restituito'}"
         except urllib.error.HTTPError as exc:
-            detail=exc.read().decode("utf-8", "replace")
+            detail=exc.read().decode("utf-8","replace")
             error=f"Meta API HTTP {exc.code}: {detail}"
-            if "Unsupported post request" in detail or "does not exist" in detail or "Object with ID" in detail:
-                error += " | WHATSAPP_PHONE_NUMBER_ID non valido: probabilmente hai inserito l'ID profilo telefono e non il Phone Number ID API."
-            c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,pid))
-            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,created_at) VALUES(?,?,?,?)",(pid,"WhatsApp ringraziamento",f"Errore: {error}",now()))
-            print(f"[WHATSAPP] pratica={pid} esito=ERRORE endpoint={endpoint} phone_number_id={phone_id} http={exc.code} telefono=+{phone} risposta={detail}", flush=True)
+            attempts=int(msg["attempts"] or 0)+1
+            next_status="fallito" if attempts >= 3 or manual else "programmato"
+            retry_at=self.whatsapp_next_retry_at(attempts) if next_status=="programmato" else msg["scheduled_at"]
+            c.execute("""UPDATE whatsapp_messages SET status=?, scheduled_at=?, attempts=?, last_error=?, last_attempt_at=?, template_name=?, language_code=?, recipient_phone=?, payload_json=?, response_json=?, updated_at=? WHERE id=?""",(next_status,retry_at,attempts,error,attempt_stamp,template,language,phone,json.dumps(payload_obj,ensure_ascii=False),detail,now(),msg_id))
+            c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,p["id"]))
+            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(p["id"],"WhatsApp ringraziamento",f"Errore: {error}",user_id,now()))
+            print(f"[WHATSAPP] pratica_id={p['id']} message_row={msg_id} esito=ERRORE http={exc.code} tentativi={attempts} prossimo_stato={next_status} endpoint={endpoint} destinatario=+{phone} template={template} lingua={language} risposta={detail}", flush=True)
             return False,error
         except Exception as exc:
             error=str(exc)
-            c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,pid))
-            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,created_at) VALUES(?,?,?,?)",(pid,"WhatsApp ringraziamento",f"Errore: {error}",now()))
-            print(f"[WHATSAPP] pratica={pid} esito=ERRORE endpoint={endpoint} phone_number_id={phone_id} telefono=+{phone} dettaglio={error}", flush=True)
+            attempts=int(msg["attempts"] or 0)+1
+            next_status="fallito" if attempts >= 3 or manual else "programmato"
+            retry_at=self.whatsapp_next_retry_at(attempts) if next_status=="programmato" else msg["scheduled_at"]
+            c.execute("""UPDATE whatsapp_messages SET status=?, scheduled_at=?, attempts=?, last_error=?, last_attempt_at=?, template_name=?, language_code=?, recipient_phone=?, payload_json=?, updated_at=? WHERE id=?""",(next_status,retry_at,attempts,error,attempt_stamp,template,language,phone,json.dumps(payload_obj,ensure_ascii=False),now(),msg_id))
+            c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,p["id"]))
+            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(p["id"],"WhatsApp ringraziamento",f"Errore: {error}",user_id,now()))
+            print(f"[WHATSAPP] pratica_id={p['id']} message_row={msg_id} esito=ERRORE tentativi={attempts} prossimo_stato={next_status} endpoint={endpoint} destinatario=+{phone} template={template} lingua={language} errore={error}", flush=True)
             return False,error
+
+    def process_whatsapp_queue(self,limit=20):
+        results=[]
+        with db() as c:
+            stale=(datetime.now()-timedelta(minutes=30)).isoformat(timespec="seconds")
+            c.execute("UPDATE whatsapp_messages SET status='programmato', scheduled_at=?, updated_at=? WHERE status='in_invio' AND attempts<3 AND (last_attempt_at IS NULL OR last_attempt_at<=?)",(now(),now(),stale))
+            due=c.execute("SELECT id FROM whatsapp_messages WHERE status='programmato' AND scheduled_at<=? ORDER BY scheduled_at LIMIT ?",(now(),limit)).fetchall()
+            for row in due:
+                stamp=now()
+                changed=c.execute("UPDATE whatsapp_messages SET status='in_invio', updated_at=? WHERE id=? AND status='programmato'",(stamp,row["id"])).rowcount
+                if not changed:
+                    continue
+                ok,msg=self.send_whatsapp_message(c,row["id"],manual=False,user_id=None)
+                results.append({"id":row["id"],"ok":ok,"message":msg})
+        return results
+
+    def whatsapp_cron_authorized(self):
+        secret=os.environ.get("WHATSAPP_CRON_SECRET","").strip()
+        if not secret:
+            return False
+        qs=parse_qs(urlparse(self.path).query)
+        provided=(qs.get("secret") or [""])[0] or self.headers.get("X-Cron-Secret","")
+        return hmac.compare_digest(provided,secret)
+
+    def whatsapp_cron(self):
+        if not self.whatsapp_cron_authorized():
+            return self.send_json({"ok":False,"error":"WHATSAPP_CRON_SECRET mancante o secret non valido"},403)
+        results=self.process_whatsapp_queue()
+        return self.send_json({"ok":True,"processed":len(results),"results":results})
+
+    def whatsapp_webhook_verify(self):
+        qs=parse_qs(urlparse(self.path).query)
+        mode=(qs.get("hub.mode") or [""])[0]
+        token=(qs.get("hub.verify_token") or [""])[0]
+        challenge=(qs.get("hub.challenge") or [""])[0]
+        expected=os.environ.get("WHATSAPP_WEBHOOK_VERIFY_TOKEN","").strip()
+        if mode=="subscribe" and expected and hmac.compare_digest(token,expected):
+            print("[WHATSAPP_WEBHOOK] verifica ok", flush=True)
+            return self.send_text(challenge)
+        print(f"[WHATSAPP_WEBHOOK] verifica fallita mode={mode} token_presente={bool(token)}", flush=True)
+        return self.send_text("forbidden",403)
+
+    def whatsapp_webhook_receive(self):
+        size=int(self.headers.get("Content-Length",0))
+        raw=self.rfile.read(size).decode("utf-8","replace")
+        print(f"[WHATSAPP_WEBHOOK] payload={raw}", flush=True)
+        try:
+            data=json.loads(raw or "{}")
+        except Exception as exc:
+            return self.send_json({"ok":False,"error":str(exc)},400)
+        updates=[]
+        with db() as c:
+            for entry in data.get("entry",[]):
+                for change in entry.get("changes",[]):
+                    value=change.get("value",{})
+                    for st in value.get("statuses",[]):
+                        message_id=st.get("id","")
+                        status=st.get("status","")
+                        mapped={"sent":"accettato_da_meta","delivered":"consegnato","read":"letto","failed":"fallito"}.get(status)
+                        if not message_id or not mapped:
+                            continue
+                        err=json.dumps(st.get("errors",""),ensure_ascii=False) if st.get("errors") else ""
+                        stamp=now()
+                        fields={"consegnato":"delivered_at","letto":"read_at","fallito":"failed_at"}.get(mapped)
+                        if fields:
+                            c.execute(f"UPDATE whatsapp_messages SET status=?, {fields}=?, last_error=?, response_json=?, updated_at=? WHERE message_id=?",(mapped,stamp,err,json.dumps(st,ensure_ascii=False),stamp,message_id))
+                        else:
+                            c.execute("UPDATE whatsapp_messages SET status=?, last_error=?, response_json=?, updated_at=? WHERE message_id=?",(mapped,err,json.dumps(st,ensure_ascii=False),stamp,message_id))
+                        row=c.execute("SELECT practice_id FROM whatsapp_messages WHERE message_id=?",(message_id,)).fetchone()
+                        if row:
+                            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,created_at) VALUES(?,?,?,?)",(row["practice_id"],"WhatsApp stato",f"{self.whatsapp_status_label(mapped)} - message_id {message_id}",stamp))
+                        updates.append({"message_id":message_id,"status":mapped})
+                        print(f"[WHATSAPP_WEBHOOK] message_id={message_id} meta_status={status} stato={mapped} errore={err}", flush=True)
+        return self.send_json({"ok":True,"updates":updates})
 
     def sync_voucher(self,c,pid,d):
         existing=c.execute("SELECT * FROM veterinarian_vouchers WHERE practice_id=?",(pid,)).fetchone()
@@ -1218,6 +1409,7 @@ Tel. 351 993 9566"""
         with db() as c:
             p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
             history=c.execute("SELECT h.*,u.display_name FROM practice_history h LEFT JOIN users u ON u.id=h.user_id WHERE practice_id=? ORDER BY h.created_at DESC",(pid,)).fetchall()
+            whatsapp_msg=c.execute("SELECT * FROM whatsapp_messages WHERE practice_id=? ORDER BY created_at DESC LIMIT 1",(pid,)).fetchone()
         if not p:return self.send_error(404)
         options=''.join(f'<option {"selected" if s==p["status"] else ""}>{esc(s)}</option>' for s in STATES)
         payment_value = p["payment_status"] if "payment_status" in p.keys() and p["payment_status"] else "Da saldare"
@@ -1228,7 +1420,27 @@ Tel. 351 993 9566"""
         no_whatsapp_note = '<div class="flash warning">Invio automatico WhatsApp disattivato per questa pratica.</div>' if no_whatsapp_checked else ''
         whatsapp_sent = p["whatsapp_thanks_sent_at"] if "whatsapp_thanks_sent_at" in p.keys() and p["whatsapp_thanks_sent_at"] else ""
         whatsapp_error = p["whatsapp_thanks_last_error"] if "whatsapp_thanks_last_error" in p.keys() and p["whatsapp_thanks_last_error"] else ""
-        whatsapp_block = f'''<div class="section"><h2>WhatsApp ringraziamento</h2><p>{'Inviato il '+esc(whatsapp_sent.replace('T',' ')) if whatsapp_sent else '<span class="sub">Non ancora inviato.</span>'}</p>{f'<div class="flash warning">{esc(whatsapp_error)}</div>' if whatsapp_error else ''}<form method="post" action="/pratiche/{pid}/whatsapp"><button class="btn ghost">Reinvia WhatsApp</button></form></div>'''
+        current_payload=self.whatsapp_payload_for_practice(p)
+        latest_accepted = bool(whatsapp_msg and whatsapp_msg["status"] in ("accettato_da_meta","consegnato","letto"))
+        whatsapp_button = "REINVIA WHATSAPP" if latest_accepted or whatsapp_sent else "INVIA WHATSAPP SUBITO"
+        if whatsapp_msg:
+            scheduled = whatsapp_msg["scheduled_at"] or ""
+            status_label = self.whatsapp_status_label(whatsapp_msg["status"])
+            template_show = whatsapp_msg["template_name"] or current_payload["template"]["name"]
+            recipient_show = whatsapp_msg["recipient_phone"] or current_payload["to"]
+            last_attempt = whatsapp_msg["last_attempt_at"] or ""
+            message_id_show = whatsapp_msg["message_id"] or ""
+            msg_error = whatsapp_msg["last_error"] or whatsapp_error
+        else:
+            scheduled = ""
+            status_label = "Non programmato"
+            template_show = current_payload["template"]["name"]
+            recipient_show = current_payload["to"]
+            last_attempt = ""
+            message_id_show = ""
+            msg_error = whatsapp_error
+        cancel_form = f'''<form method="post" action="/pratiche/{pid}/whatsapp-annulla" onsubmit="return confirm('Annullare l invio WhatsApp programmato?')"><button class="btn ghost">Annulla invio programmato</button></form>''' if whatsapp_msg and whatsapp_msg["status"]=="programmato" else ""
+        whatsapp_block = f'''<div class="section"><h2>WhatsApp ringraziamento</h2><div class="kvs"><div class="kv"><small>Invio programmato per</small>{esc(scheduled) if scheduled and status_label=="Programmato" else '<span class="sub">Non programmato</span>'}</div><div class="kv"><small>Stato attuale</small><b>{esc(status_label)}</b></div><div class="kv"><small>Template</small>{esc(template_show)}</div><div class="kv"><small>Destinatario</small>{('+'+esc(recipient_show)) if recipient_show else '<span class="sub">Telefono mancante</span>'}</div><div class="kv"><small>Ultimo tentativo</small>{esc(last_attempt) or '<span class="sub">Nessuno</span>'}</div><div class="kv"><small>Message ID</small>{esc(message_id_show) or '<span class="sub">Non disponibile</span>'}</div></div>{f'<div class="flash warning">{esc(msg_error)}</div>' if msg_error else ''}<div class="actions" style="margin-top:14px"><a class="btn" href="/pratiche/{pid}/whatsapp-conferma">{whatsapp_button}</a>{cancel_form}</div></div>'''
         animal2_block = f'<div class="kv"><small>Secondo animale</small>{esc(p["animal2_name"])}<br>{esc(p["animal2_species"])} {esc(p["animal2_weight"])} kg</div>' if "animal2_name" in p.keys() and p["animal2_name"] else ""
         payment_options=''.join(f'<option {"selected" if s==payment_value else ""}>{esc(s)}</option>' for s in PAYMENT_STATES)
         hist=''.join(f'<div class="event"><b>{esc(h["event_type"])}</b><br><span>{esc(h["new_value"])}</span><br><small class="sub">{esc(h["created_at"].replace("T"," "))} - {esc(h["display_name"])}</small></div>' for h in history)
@@ -1329,15 +1541,61 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             new_value=f'{new} + {payment}' + (f' - Fattura {invoice}' if invoice else '') + (" - NO MESSAGGIO" if no_whatsapp else "")
             old_value=f'{old["status"]} + {old_payment}' + (f' - Fattura {old["invoice_number"]}' if old["invoice_number"] else '') + (" - NO MESSAGGIO" if old["no_whatsapp_message"]=="Si" else "")
             c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,"Cambio stati",old_value,new_value,user["id"],now()))
-            if new == "Consegnato":
-                self.send_whatsapp_thanks(c,pid,force=False)
+            if no_whatsapp:
+                self.cancel_whatsapp_scheduled(c,pid,user["id"],"NO MESSAGGIO selezionato")
+            elif old["status"] == "Consegnato" and new != "Consegnato":
+                self.cancel_whatsapp_scheduled(c,pid,user["id"],"Pratica spostata da Consegnato a un altro stato")
+            elif old["status"] != "Consegnato" and new == "Consegnato":
+                self.schedule_whatsapp_thanks(c,pid,user["id"])
         self.redirect(f"/pratiche/{pid}")
 
     def resend_whatsapp(self,user,pid):
+        if user["role"] != "admin":
+            return self.send_error(403)
+        f=self.form()
+        if f.get("confirm_send") != "SI":
+            return self.send_error(400, "Conferma invio WhatsApp mancante")
         with db() as c:
-            ok,msg=self.send_whatsapp_thanks(c,pid,force=True)
-            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"Reinvio WhatsApp",msg,user["id"],now()))
+            p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+            if not p: return self.send_error(404)
+            active=c.execute("SELECT * FROM whatsapp_messages WHERE practice_id=? AND status IN ('programmato','in_invio') ORDER BY created_at DESC LIMIT 1",(pid,)).fetchone()
+            if active:
+                msg_id=active["id"]
+                c.execute("UPDATE whatsapp_messages SET status='in_invio', manual=1, updated_at=? WHERE id=?",(now(),msg_id))
+            else:
+                payload=self.whatsapp_payload_for_practice(p)
+                stamp=now()
+                cur=c.execute("""INSERT INTO whatsapp_messages(practice_id,scheduled_at,status,attempts,template_name,language_code,recipient_phone,payload_json,manual,created_at,updated_at)
+                                 VALUES(?,?,?,?,?,?,?,?,?,?,?)""",(pid,stamp,"in_invio",0,payload["template"]["name"],payload["template"]["language"]["code"],payload["to"],json.dumps(payload,ensure_ascii=False),1,stamp,stamp))
+                msg_id=cur.lastrowid
+            ok,msg=self.send_whatsapp_message(c,msg_id,manual=True,user_id=user["id"])
+            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"Invio WhatsApp manuale",msg,user["id"],now()))
         self.redirect(f"/pratiche/{pid}")
+
+    def cancel_whatsapp_manual(self,user,pid):
+        with db() as c:
+            if not c.execute("SELECT id FROM practices WHERE id=?",(pid,)).fetchone():
+                return self.send_error(404)
+            self.cancel_whatsapp_scheduled(c,pid,user["id"],"Invio programmato annullato manualmente")
+        self.redirect(f"/pratiche/{pid}")
+
+    def whatsapp_confirm_page(self,user,pid):
+        if user["role"] != "admin":
+            return self.send_error(403)
+        with db() as c:
+            p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+            latest=c.execute("SELECT * FROM whatsapp_messages WHERE practice_id=? AND status IN ('accettato_da_meta','consegnato','letto') ORDER BY COALESCE(sent_at,created_at) DESC LIMIT 1",(pid,)).fetchone()
+        if not p: return self.send_error(404)
+        payload=self.whatsapp_payload_for_practice(p)
+        phone=payload["to"] or "Telefono mancante"
+        template=payload["template"]["name"]
+        nome_cliente=payload["template"]["components"][0]["parameters"][0]["text"]
+        nome_animale=payload["template"]["components"][0]["parameters"][1]["text"]
+        already = latest is not None
+        warning = '<div class="flash warning"><b>Attenzione:</b> questo cliente ha già ricevuto o potrebbe aver già ricevuto il messaggio. Conferma solo se vuoi reinviarlo.</div>' if already else ''
+        btn = "REINVIA WHATSAPP" if already else "INVIA WHATSAPP SUBITO"
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{btn}</h1><div class="sub">Conferma invio template WhatsApp per la pratica {esc(p['practice_number'])}</div></div><a class="btn ghost" href="/pratiche/{pid}">Torna alla pratica</a></div>{warning}<section class="section"><h2>Dati invio</h2><div class="kvs"><div class="kv"><small>Destinatario</small><b>+{esc(phone)}</b></div><div class="kv"><small>Template</small><b>{esc(template)}</b></div><div class="kv"><small>Lingua</small><b>{esc(payload['template']['language']['code'])}</b></div><div class="kv"><small>Nome cliente</small><b>{esc(nome_cliente)}</b></div><div class="kv"><small>Nome animale</small><b>{esc(nome_animale)}</b></div></div><form method="post" action="/pratiche/{pid}/whatsapp" onsubmit="return confirm('Confermi invio WhatsApp a +{esc(phone)} con template {esc(template)}?')"><input type="hidden" name="confirm_send" value="SI"><button class="btn" style="margin-top:18px">{btn}</button></form></section></main>'''
+        self.send_html(layout("Conferma WhatsApp",body,user))
 
     def public_ddt(self,token):
         with db() as c:
