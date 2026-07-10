@@ -304,7 +304,7 @@ def persistence_warning():
     if not os.environ.get("PPM_DATA_DIR"):
         return "ATTENZIONE: archivio non persistente. Su Render imposta PPM_DATA_DIR=/var/data e collega un Persistent Disk, altrimenti le pratiche possono sparire al riavvio."
     if not DATA.exists() or not os.access(DATA, os.W_OK):
-        return f"ATTENZIONE: la cartella dati {DATA} non Ã¨ scrivibile. Le pratiche potrebbero non rimanere salvate."
+        return f"ATTENZIONE: la cartella dati {DATA} non è scrivibile. Le pratiche potrebbero non rimanere salvate."
     return ""
 
 
@@ -519,7 +519,7 @@ def layout(title, body, user=None):
     nav = ""
     if user:
         nav = f'''<nav class="nav"><a href="/">Dashboard</a><a href="/pratiche">Archivio</a><a href="/veterinari">Veterinari</a><a href="/nuova" class="btn">+ Nuova pratica</a><a href="/logout">Esci</a></nav>'''
-    return f'''<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)} Â· Pet Paradise Manager</title><style>{CSS}</style></head><body><header class="top"><a class="brand" href="/">Pet Paradise <small>MANAGER</small></a>{nav}</header>{body}{APP_JS}</body></html>'''
+    return f'''<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)} - Pet Paradise Manager</title><style>{CSS}</style></head><body><header class="top"><a class="brand" href="/">Pet Paradise <small>MANAGER</small></a>{nav}</header>{body}{APP_JS}</body></html>'''
 
 
 class App(BaseHTTPRequestHandler):
@@ -594,6 +594,7 @@ class App(BaseHTTPRequestHandler):
         if not user: return
         if path == "/": return self.dashboard(user)
         if path == "/diagnostica": return self.diagnostics(user)
+        if path == "/whatsapp-diagnostica": return self.whatsapp_diagnostics(user)
         if path == "/nuova": return self.new_page(user)
         if path == "/pratiche": return self.archive_home(user)
         if path == "/archivio/pratiche": return self.archive(user)
@@ -681,7 +682,7 @@ class App(BaseHTTPRequestHandler):
         hour=datetime.now().hour
         greeting="Buongiorno" if hour < 13 else "Buon pomeriggio" if hour < 18 else "Buonasera"
         logo='<img class="home-logo" src="/assets/company_logo.png" alt="Pet Paradise">' if (ASSETS / "company_logo.png").exists() else ''
-        body=f'''<main class="wrap"><div class="titlebar"><div style="display:flex;gap:18px;align-items:center">{logo}<div><h1>{greeting}, {esc(user['display_name'])}</h1><div class="sub">Situazione operativa aggiornata</div></div></div></div>{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}<h2>Avanzamento pratiche</h2><section class="grid stats">{cards}</section><div style="height:20px"></div><h2>Pagamenti</h2><section class="grid stats">{payment_cards}</section><div style="height:20px"></div><h2>Promemoria</h2><section class="grid stats">{promemoria_cards}</section><div style="height:24px"></div><div class="titlebar"><h2>AttivitÃ  recenti</h2><a href="/pratiche">Vedi archivio â†’</a></div><div class="tablebox"><table><thead><tr><th>Data</th><th>Pratica</th><th>Animale</th><th>Proprietario</th><th>Sede</th><th>Etichette</th><th>Stato</th></tr></thead><tbody>{rows}</tbody></table></div></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div style="display:flex;gap:18px;align-items:center">{logo}<div><h1>{greeting}, {esc(user['display_name'])}</h1><div class="sub">Situazione operativa aggiornata</div></div></div></div>{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}<h2>Avanzamento pratiche</h2><section class="grid stats">{cards}</section><div style="height:20px"></div><h2>Pagamenti</h2><section class="grid stats">{payment_cards}</section><div style="height:20px"></div><h2>Promemoria</h2><section class="grid stats">{promemoria_cards}</section><div style="height:24px"></div><div class="titlebar"><h2>Attività recenti</h2><a href="/pratiche">Vedi archivio</a></div><div class="tablebox"><table><thead><tr><th>Data</th><th>Pratica</th><th>Animale</th><th>Proprietario</th><th>Sede</th><th>Etichette</th><th>Stato</th></tr></thead><tbody>{rows}</tbody></table></div></main>'''
         self.send_html(layout("Dashboard",body,user))
 
     def diagnostics(self,user):
@@ -694,7 +695,7 @@ class App(BaseHTTPRequestHandler):
         data_ok = DATA.exists()
         ddt_ok = DDT_DIR.exists()
         writable = os.access(DATA, os.W_OK) if data_ok else False
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Diagnostica</h1><div class="sub">Controllo rapido per PDF e cartelle online.</div></div></div><section class="section"><h2>Modelli PDF</h2><div class="tablebox"><table><thead><tr><th>File</th><th>Stato</th><th>Dimensione</th></tr></thead><tbody>{''.join(asset_rows)}</tbody></table></div></section><section class="section" style="margin-top:16px"><h2>Cartelle dati</h2><p><b>Assets:</b> {esc(ASSETS)}</p><p><b>DATA:</b> {esc(DATA)} Â· {'OK' if data_ok else 'MANCANTE'} Â· scrittura {'OK' if writable else 'NO'}</p><p><b>DDT:</b> {esc(DDT_DIR)} Â· {'OK' if ddt_ok else 'MANCANTE'}</p></section></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Diagnostica</h1><div class="sub">Controllo rapido per PDF e cartelle online.</div></div></div><section class="section"><h2>Modelli PDF</h2><div class="tablebox"><table><thead><tr><th>File</th><th>Stato</th><th>Dimensione</th></tr></thead><tbody>{''.join(asset_rows)}</tbody></table></div></section><section class="section" style="margin-top:16px"><h2>Cartelle dati</h2><p><b>Assets:</b> {esc(ASSETS)}</p><p><b>DATA:</b> {esc(DATA)} - {'OK' if data_ok else 'MANCANTE'} - scrittura {'OK' if writable else 'NO'}</p><p><b>DDT:</b> {esc(DDT_DIR)} - {'OK' if ddt_ok else 'MANCANTE'}</p></section></main>'''
         self.send_html(layout("Diagnostica",body,user))
 
     def tag_badges(self,r):
@@ -729,7 +730,7 @@ class App(BaseHTTPRequestHandler):
         return ''.join(html)
 
     def archive_home(self,user):
-        body='''<main class="wrap"><div class="titlebar"><div><h1>ARCHIVIO</h1><div class="sub">Scegli cosa vuoi consultare.</div></div></div><section class="grid stats"><a class="card stat" href="/archivio/pratiche"><span>Pratiche</span><b>â†’</b></a><a class="card stat" href="/archivio/clienti"><span>Anagrafica clienti</span><b>â†’</b></a></section></main>'''
+        body='''<main class="wrap"><div class="titlebar"><div><h1>ARCHIVIO</h1><div class="sub">Scegli cosa vuoi consultare.</div></div></div><section class="grid stats"><a class="card stat" href="/archivio/pratiche"><span>Pratiche</span><b>-</b></a><a class="card stat" href="/archivio/clienti"><span>Anagrafica clienti</span><b>-</b></a></section></main>'''
         self.send_html(layout("Archivio",body,user))
 
     def clients_archive(self,user):
@@ -936,11 +937,11 @@ class App(BaseHTTPRequestHandler):
         <section class="section"><h2>Richiesta</h2><div class="fields"><div class="field"><label>Servizio</label><select name="service_type"><option {selected('service_type','Da decidere')}>Da decidere</option><option {selected('service_type','Cremazione singola')}>Cremazione singola</option><option {selected('service_type','Cremazione collettiva')}>Cremazione collettiva</option></select></div><div class="field"><label>Origine richiesta *</label><select name="request_origin" required><option {selected('request_origin','Veterinario')}>Veterinario</option><option {selected('request_origin','Privato')}>Privato</option><option {selected('request_origin','Consegna in sede')}>Consegna in sede</option><option {selected('request_origin','Collaboratore')}>Collaboratore</option></select></div><div class="field {'hidden' if raw('request_origin')!='Collaboratore' else ''}" id="collaboratorBox"><label>Collaboratore</label><select name="collaborator_name"><option value="">Nessun collaboratore</option><option {selected('collaborator_name','HUMANITAS CROCE VERDE')}>HUMANITAS CROCE VERDE</option></select></div><div class="field"><label>Sede di destinazione</label><select name="destination_branch"><option {selected('destination_branch','Livorno')}>Livorno</option><option {selected('destination_branch','Empoli')}>Empoli</option></select></div><div class="field"><label>Data recupero</label><input type="date" name="pickup_date" value="{val('pickup_date')}"></div></div></section>
         <section class="section"><h2>SPEDITORE</h2><div class="fields"><div class="field"><label>Nome speditore *</label><input name="owner_first_name" value="{val('owner_first_name')}" required></div><div class="field"><label>Cognome speditore *</label><input name="owner_last_name" value="{val('owner_last_name')}" required></div><div class="field"><label>Telefono speditore *</label><input type="tel" inputmode="numeric" name="owner_phone" value="{val('owner_phone')}" required></div><div class="field"><label>Secondo telefono</label><input type="tel" inputmode="numeric" name="owner_phone_2" value="{val('owner_phone_2')}"></div><div class="field"><label>Email</label><input type="email" name="owner_email" value="{val('owner_email')}"></div><div class="field"><label>Codice fiscale speditore *</label><input name="owner_tax_code" value="{val('owner_tax_code')}" required></div><div class="field full"><label>Indirizzo speditore *</label><input name="owner_street" value="{val('owner_street') or val('owner_address')}" required></div><div class="field"><label>Comune speditore *</label><input name="owner_city" value="{val('owner_city')}" required></div><div class="field"><label>Provincia speditore *</label><input name="owner_province" value="{val('owner_province')}" maxlength="2" placeholder="Si compila dal comune" required></div><div class="field"><label>CAP speditore *</label><input name="owner_zip" value="{val('owner_zip')}" inputmode="numeric" required></div></div></section>
         <section class="section"><h2>DESTINATARIO E LUOGO DI DESTINAZIONE</h2><p class="sub">Compilati automaticamente in base alla sede selezionata: Livorno oppure Empoli.</p></section>
-        <section class="section"><h2>LUOGO DI ORIGINE</h2><div class="fields"><div class="field"><label>Luogo di origine</label><select name="origin_mode"><option {selected('origin_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('origin_mode','Testo libero','IDEM SPED')}>Testo libero</option></select></div><div class="field full"><label>Testo libero / indirizzo diverso</label><input name="origin_text" value="{val('origin_text') or (val('pickup_address') if raw('pickup_address_mode')=='Altro indirizzo' else '')}" placeholder="Scrivi qui solo se il luogo non Ã¨ IDEM SPED"></div></div></section>
-        <section class="section"><h2>Animale</h2><div class="fields"><div class="field"><label>Nome</label><input name="animal_name" value="{val('animal_name')}"></div><div class="field"><label>Specie</label><input name="species" value="{val('species')}"></div><div class="field"><label>Peso stimato (kg)</label><input name="estimated_weight" value="{val('estimated_weight')}"></div><div class="field"><label>EtÃ  - anni</label><input name="age_years" value="{val('age_years')}"></div><div class="field"><label>EtÃ  - mesi</label><input name="age_months" value="{val('age_months')}"></div><div class="field"><label>Microchip</label><input name="microchip" value="{val('microchip')}"></div><div class="field full"><label>Razza</label><input name="breed" value="{val('breed')}"></div></div><button class="btn ghost" type="button" id="showSecondAnimal" style="margin-top:12px;{'display:none' if raw('animal2_name') else ''}">+ Aggiungi altro animale</button><div id="secondAnimalBox" style="display:{'block' if raw('animal2_name') else 'none'};margin-top:14px"><h2>Secondo animale</h2><div class="fields"><div class="field"><label>Nome</label><input name="animal2_name" value="{val('animal2_name')}"></div><div class="field"><label>Specie</label><input name="animal2_species" value="{val('animal2_species')}"></div><div class="field"><label>Peso stimato (kg)</label><input name="animal2_weight" value="{val('animal2_weight')}"></div><div class="field"><label>Microchip</label><input name="animal2_microchip" value="{val('animal2_microchip')}"></div><div class="field full"><label>Razza</label><input name="animal2_breed" value="{val('animal2_breed')}"></div></div></div></section>
+        <section class="section"><h2>LUOGO DI ORIGINE</h2><div class="fields"><div class="field"><label>Luogo di origine</label><select name="origin_mode"><option {selected('origin_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('origin_mode','Testo libero','IDEM SPED')}>Testo libero</option></select></div><div class="field full"><label>Testo libero / indirizzo diverso</label><input name="origin_text" value="{val('origin_text') or (val('pickup_address') if raw('pickup_address_mode')=='Altro indirizzo' else '')}" placeholder="Scrivi qui solo se il luogo non è IDEM SPED"></div></div></section>
+        <section class="section"><h2>Animale</h2><div class="fields"><div class="field"><label>Nome</label><input name="animal_name" value="{val('animal_name')}"></div><div class="field"><label>Specie</label><input name="species" value="{val('species')}"></div><div class="field"><label>Peso stimato (kg)</label><input name="estimated_weight" value="{val('estimated_weight')}"></div><div class="field"><label>Età - anni</label><input name="age_years" value="{val('age_years')}"></div><div class="field"><label>Età - mesi</label><input name="age_months" value="{val('age_months')}"></div><div class="field"><label>Microchip</label><input name="microchip" value="{val('microchip')}"></div><div class="field full"><label>Razza</label><input name="breed" value="{val('breed')}"></div></div><button class="btn ghost" type="button" id="showSecondAnimal" style="margin-top:12px;{'display:none' if raw('animal2_name') else ''}">+ Aggiungi altro animale</button><div id="secondAnimalBox" style="display:{'block' if raw('animal2_name') else 'none'};margin-top:14px"><h2>Secondo animale</h2><div class="fields"><div class="field"><label>Nome</label><input name="animal2_name" value="{val('animal2_name')}"></div><div class="field"><label>Specie</label><input name="animal2_species" value="{val('animal2_species')}"></div><div class="field"><label>Peso stimato (kg)</label><input name="animal2_weight" value="{val('animal2_weight')}"></div><div class="field"><label>Microchip</label><input name="animal2_microchip" value="{val('animal2_microchip')}"></div><div class="field full"><label>Razza</label><input name="animal2_breed" value="{val('animal2_breed')}"></div></div></div></section>
         <section class="section"><h2>AMBULATORIO VETERINARIO</h2><div class="fields"><div class="field"><label>VETERINARIO</label><input id="vetSearch" placeholder="Scrivi per cercare il veterinario"><select name="veterinarian_id">{vet_options}</select><input type="hidden" name="clinic_name" value="{val('clinic_name')}"></div><div class="field"><label>MEDICO VETERINARIO</label><input name="veterinarian_name" value="{val('veterinarian_name')}"></div></div></section>
         <section class="section"><h2>TRASPORTATORE</h2><div class="fields"><div class="field"><label>Dati trasportatore</label><select name="transporter_mode"><option {selected('transporter_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('transporter_mode','DATI PET PARADISE','IDEM SPED')}>DATI PET PARADISE</option></select></div><div class="field"><label>Scelta rapida mezzo</label><select id="transport_method_quick"><option value="">Seleziona se serve</option><option value="MEZZO PROPRIO">MEZZO PROPRIO</option></select></div><div class="field"><label>Mezzo di trasporto</label><input name="transport_method" value="{val('transport_method')}"></div><div class="field"><label>Targa automezzo</label><input name="vehicle_plate" value="{val('vehicle_plate')}"></div><div class="field"><label>Temperatura</label><select name="temperature_mode"><option {selected('temperature_mode','Ambiente','Ambiente')}>Ambiente</option><option {selected('temperature_mode','Refrigerato','Ambiente')}>Refrigerato</option><option {selected('temperature_mode','Congelato','Ambiente')}>Congelato</option></select></div><div class="field"><label>Numero colli</label><input name="package_count" value="{val('package_count') or '1'}"></div><div class="field"><label>ID contenitore</label><select name="container_id"><option value="">Seleziona ID contenitore</option><option {selected('container_id','03/2021')}>03/2021</option><option {selected('container_id','04/2021')}>04/2021</option></select></div><div class="field"><label>Numero lotto</label><input name="lot_number" value="{val('lot_number') or '/'}"></div><div class="field"><label>Metodo trattamento</label><input name="treatment_method" value="{val('treatment_method') or '/'}"></div></div></section>
-        <section class="section"><h2>Preventivo</h2><div class="fields"><div class="field"><label>Cremazione â‚¬</label><input name="price_cremation" value="{val('price_cremation')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Ritiro â‚¬</label><input name="price_pickup" value="{val('price_pickup')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Urna â‚¬</label><input name="price_urn" value="{val('price_urn')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label><input type="checkbox" name="send_catalog" value="Si" {catalog_checked} style="width:auto"> INVIARE CATALOGO</label></div><div class="field"><label>Riconsegna â‚¬</label><input name="price_delivery" value="{val('price_delivery')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Calco â‚¬</label><input name="price_cast" value="{val('price_cast')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Serale â‚¬</label><input name="price_evening" value="{val('price_evening')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Notturno â‚¬</label><input name="price_night" value="{val('price_night')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Festivo â‚¬</label><input name="price_holiday" value="{val('price_holiday')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Accessori â‚¬</label><input name="price_accessories" value="{val('price_accessories')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Totale servizio â‚¬</label><input name="total_service" value="{val('total_service')}" placeholder="Numero o testo libero"></div><div class="field"><label><input type="checkbox" name="send_estremi" value="Si" {estremi_checked} style="width:auto"> INVIARE ESTREMI</label></div><div class="field"><label>Acconto â‚¬</label><input name="deposit" value="{val('deposit')}" placeholder="Numero o testo libero"></div><div class="field"><label>Rimanenza â‚¬</label><input name="remaining_balance" value="{val('remaining_balance')}" readonly></div><div class="field full"><label>TOTALE</label><textarea name="total_text" placeholder="Testo libero per note sul totale">{val('total_text')}</textarea></div><div class="field full"><label>Note operative</label><textarea name="notes">{val('notes')}</textarea></div></div></section>
+        <section class="section"><h2>Preventivo</h2><div class="fields"><div class="field"><label>Cremazione €</label><input name="price_cremation" value="{val('price_cremation')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Ritiro €</label><input name="price_pickup" value="{val('price_pickup')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Urna €</label><input name="price_urn" value="{val('price_urn')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label><input type="checkbox" name="send_catalog" value="Si" {catalog_checked} style="width:auto"> INVIARE CATALOGO</label></div><div class="field"><label>Riconsegna €</label><input name="price_delivery" value="{val('price_delivery')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Calco €</label><input name="price_cast" value="{val('price_cast')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Serale €</label><input name="price_evening" value="{val('price_evening')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Notturno €</label><input name="price_night" value="{val('price_night')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Festivo €</label><input name="price_holiday" value="{val('price_holiday')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Accessori €</label><input name="price_accessories" value="{val('price_accessories')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Totale servizio €</label><input name="total_service" value="{val('total_service')}" placeholder="Numero o testo libero"></div><div class="field"><label><input type="checkbox" name="send_estremi" value="Si" {estremi_checked} style="width:auto"> INVIARE ESTREMI</label></div><div class="field"><label>Acconto €</label><input name="deposit" value="{val('deposit')}" placeholder="Numero o testo libero"></div><div class="field"><label>Rimanenza €</label><input name="remaining_balance" value="{val('remaining_balance')}" readonly></div><div class="field full"><label>TOTALE</label><textarea name="total_text" placeholder="Testo libero per note sul totale">{val('total_text')}</textarea></div><div class="field full"><label>Note operative</label><textarea name="notes">{val('notes')}</textarea></div></div></section>
         <section class="section"><h2>Etichette operative</h2><div class="fields">{tag_select('tag_assistita','ASSISTITA','tag-red')}{tag_select('tag_possibile_assistita','POSSIBILE ASSISTITA','tag-red')}{tag_select('tag_assistita_streaming','ASSISTITA STREAMING','tag-orange')}{tag_select('tag_saluto','SALUTO','tag-purple')}{tag_select('tag_calco','CALCO','tag-yellow')}{tag_select('tag_avvisare','AVVISARE','tag-pink')}{tag_select('tag_da_richiamare','DA RICHIAMARE','tag-blue')}</div></section>
         <section class="section"><h2>Documento e accettazione</h2><div class="fields"><div class="field"><label>Numero documento</label><input name="identity_document_number" value="{val('identity_document_number')}"></div><div class="field"><label>Data rilascio</label><input type="date" name="identity_document_date" value="{val('identity_document_date')}"></div><div class="field full"><label>Luogo firma</label><input name="signing_place" value="{val('signing_place') or val('destination_branch')}"></div></div></section>'''
 
@@ -1031,24 +1032,74 @@ class App(BaseHTTPRequestHandler):
         finale="Pet Paradise Cremazioni Animali Empoli & Livorno" if branch=="Empoli" else "Pet Paradise Cremazioni Animali Livorno & Empoli"
         return f"""Ciao {nome_cliente}, ti scriviamo dallo staff di Pet Paradise - Cremazione Animali Domestici;
 
-Volevamo prima di tutto ringraziarvi per aver scelto noi per affrontare un momento cosÃ¬ difficile. â¤ï¸
+Volevamo prima di tutto ringraziarvi per aver scelto noi per affrontare un momento così difficile. ❤️
 
-Il nostro auspicio Ã¨ quello di esservi stati di aiuto, per quanto si possa esserlo in momenti come questi, nell'accompagnare il vostro compagno di vita {nome_animale} nel suo ultimo viaggio verso il Ponte dell'Arcobaleno ðŸŒˆ
+Il nostro auspicio è quello di esservi stati di aiuto, per quanto si possa esserlo in momenti come questi, nell'accompagnare il vostro compagno di vita {nome_animale} nel suo ultimo viaggio verso il Ponte dell'Arcobaleno 🌈
 
-Se cosÃ¬ fosse, questo ci renderebbe molto orgogliosi, consapevoli dell'amore che ogni giorno mettiamo nel nostro lavoro. â£ï¸
+Se così fosse, questo ci renderebbe molto orgogliosi, consapevoli dell'amore che ogni giorno mettiamo nel nostro lavoro. ❣️
 
 Cliccando sul seguente link:
 {link}
 
-potrete lasciare una recensione, nella sezione "Recensioni", per Pet Paradise. ðŸ˜Š
+potrete lasciare una recensione, nella sezione "Recensioni", per Pet Paradise. 😊
 
 Ci farebbe molto piacere conoscere il vostro parere sul nostro servizio.
 
-Grazie ancora per esservi affidati a noi. ðŸ¾
+Grazie ancora per esservi affidati a noi. 🐾
 
 {finale}
 
 Tel. 351 993 9566"""
+
+    def masked_whatsapp_token(self, token):
+        if not token:
+            return "MANCANTE"
+        if len(token) <= 12:
+            return token[:2] + "***" + token[-2:]
+        return token[:6] + "..." + token[-6:]
+
+    def whatsapp_get_meta(self, endpoint, token):
+        req=urllib.request.Request(endpoint,headers={"Authorization":f"Bearer {token}"},method="GET")
+        try:
+            with urllib.request.urlopen(req,timeout=12) as resp:
+                body=resp.read().decode("utf-8","replace")
+                print(f"[WHATSAPP_DIAGNOSTICA] GET {endpoint} token={self.masked_whatsapp_token(token)} http={resp.status} risposta={body}", flush=True)
+                return resp.status, body
+        except urllib.error.HTTPError as exc:
+            body=exc.read().decode("utf-8","replace")
+            print(f"[WHATSAPP_DIAGNOSTICA] GET {endpoint} token={self.masked_whatsapp_token(token)} http={exc.code} risposta={body}", flush=True)
+            return exc.code, body
+        except Exception as exc:
+            body=str(exc)
+            print(f"[WHATSAPP_DIAGNOSTICA] GET {endpoint} token={self.masked_whatsapp_token(token)} errore={body}", flush=True)
+            return "ERRORE", body
+
+    def whatsapp_id_hint(self, text):
+        lower=str(text or "").lower()
+        if "unsupported post request" in lower or "object with id" in lower or "does not exist" in lower:
+            return '<div class="flash warning"><b>WHATSAPP_PHONE_NUMBER_ID non valido:</b> probabilmente hai inserito l’ID profilo telefono e non il Phone Number ID API.</div>'
+        return ""
+
+    def whatsapp_diagnostics(self,user):
+        if user["role"] != "admin":
+            return self.send_error(403)
+        token=os.environ.get("WHATSAPP_ACCESS_TOKEN","").strip()
+        phone_id=os.environ.get("WHATSAPP_PHONE_NUMBER_ID","").strip()
+        version=os.environ.get("WHATSAPP_GRAPH_VERSION","v20.0").strip()
+        token_status="PRESENTE: " + self.masked_whatsapp_token(token) if token else "MANCANTE"
+        phone_endpoint=f"https://graph.facebook.com/{version}/{phone_id}" if phone_id else ""
+        me_endpoint=f"https://graph.facebook.com/{version}/me?fields=id,name"
+        if token and phone_id:
+            phone_status, phone_body = self.whatsapp_get_meta(phone_endpoint, token)
+        else:
+            phone_status, phone_body = "NON ESEGUITO", "Token o WHATSAPP_PHONE_NUMBER_ID mancante"
+        if token:
+            me_status, me_body = self.whatsapp_get_meta(me_endpoint, token)
+        else:
+            me_status, me_body = "NON ESEGUITO", "Token mancante"
+        hint=self.whatsapp_id_hint(phone_body)
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Diagnostica WhatsApp</h1><div class="sub">Controllo configurazione WhatsApp Business Cloud API.</div></div><a class="btn ghost" href="/">Dashboard</a></div>{hint}<section class="section"><h2>Variabili Render</h2><div class="kvs"><div class="kv"><small>WHATSAPP_GRAPH_VERSION</small><b>{esc(version)}</b></div><div class="kv"><small>WHATSAPP_ACCESS_TOKEN</small><b>{esc(token_status)}</b></div><div class="kv"><small>WHATSAPP_PHONE_NUMBER_ID</small><b>{esc(phone_id or "MANCANTE")}</b></div></div></section><div style="height:14px"></div><section class="section"><h2>GET Phone Number ID</h2><p><b>Endpoint:</b> {esc(phone_endpoint or "NON DISPONIBILE")}</p><p><b>HTTP:</b> {esc(phone_status)}</p><pre style="white-space:pre-wrap;background:#f7f4f0;padding:12px;border-radius:10px;overflow:auto">{esc(phone_body)}</pre></section><div style="height:14px"></div><section class="section"><h2>GET /me</h2><p><b>Endpoint:</b> {esc(me_endpoint)}</p><p><b>HTTP:</b> {esc(me_status)}</p><pre style="white-space:pre-wrap;background:#f7f4f0;padding:12px;border-radius:10px;overflow:auto">{esc(me_body)}</pre></section></main>'''
+        self.send_html(layout("Diagnostica WhatsApp",body,user))
 
     def send_whatsapp_thanks(self,c,pid,force=False):
         p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
@@ -1091,26 +1142,30 @@ Tel. 351 993 9566"""
             headers={"Authorization":f"Bearer {token}","Content-Type":"application/json"},
             method="POST",
         )
+        endpoint=f"https://graph.facebook.com/{version}/{phone_id}/messages"
+        print(f"[WHATSAPP] POST endpoint={endpoint} phone_number_id={phone_id} token={self.masked_whatsapp_token(token)} pratica={pid} telefono=+{phone}", flush=True)
         try:
             with urllib.request.urlopen(req,timeout=12) as resp:
                 response_body=resp.read().decode("utf-8", "replace")
             sent_at=now()
             c.execute("UPDATE practices SET whatsapp_thanks_sent_at=?, whatsapp_thanks_last_error='' WHERE id=?",(sent_at,pid))
             c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,created_at) VALUES(?,?,?,?)",(pid,"WhatsApp ringraziamento",f"Inviato {sent_at} a +{phone}",sent_at))
-            print(f"[WHATSAPP] pratica={pid} esito=INVIATO telefono=+{phone} sede={p['destination_branch']} risposta={response_body}", flush=True)
+            print(f"[WHATSAPP] pratica={pid} esito=INVIATO endpoint={endpoint} phone_number_id={phone_id} http=200 telefono=+{phone} sede={p['destination_branch']} risposta={response_body}", flush=True)
             return True,"Inviato"
         except urllib.error.HTTPError as exc:
             detail=exc.read().decode("utf-8", "replace")
             error=f"Meta API HTTP {exc.code}: {detail}"
+            if "Unsupported post request" in detail or "does not exist" in detail or "Object with ID" in detail:
+                error += " | WHATSAPP_PHONE_NUMBER_ID non valido: probabilmente hai inserito l'ID profilo telefono e non il Phone Number ID API."
             c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,pid))
             c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,created_at) VALUES(?,?,?,?)",(pid,"WhatsApp ringraziamento",f"Errore: {error}",now()))
-            print(f"[WHATSAPP] pratica={pid} esito=ERRORE telefono=+{phone} dettaglio={error}", flush=True)
+            print(f"[WHATSAPP] pratica={pid} esito=ERRORE endpoint={endpoint} phone_number_id={phone_id} http={exc.code} telefono=+{phone} risposta={detail}", flush=True)
             return False,error
         except Exception as exc:
             error=str(exc)
             c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,pid))
             c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,created_at) VALUES(?,?,?,?)",(pid,"WhatsApp ringraziamento",f"Errore: {error}",now()))
-            print(f"[WHATSAPP] pratica={pid} esito=ERRORE telefono=+{phone} dettaglio={error}", flush=True)
+            print(f"[WHATSAPP] pratica={pid} esito=ERRORE endpoint={endpoint} phone_number_id={phone_id} telefono=+{phone} dettaglio={error}", flush=True)
             return False,error
 
     def sync_voucher(self,c,pid,d):
@@ -1210,7 +1265,7 @@ Tel. 351 993 9566"""
         with db() as c:p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
         if not p:return self.send_error(404)
         owner=esc(((p["owner_first_name"] or "")+" "+(p["owner_last_name"] or "")).strip())
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Firma proprietario</h1><div class="sub">{owner} Â· pratica {esc(p['practice_number'])}</div></div></div><section class="section"><p class="sub">Fai firmare qui il proprietario con il dito. La firma verrÃ  salvata nella pratica e inserita nel PDF DDT.</p><form method="post" id="signatureForm"><canvas class="signature-pad" id="pad"></canvas><input type="hidden" name="signature_data" id="signatureData"><div class="actions" style="margin-top:14px"><button class="btn" type="submit">Salva firma</button><button class="btn ghost" type="button" id="clearPad">Cancella</button><a class="btn ghost" href="/pratiche/{pid}">Annulla</a></div></form></section><script>
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Firma proprietario</h1><div class="sub">{owner} - pratica {esc(p['practice_number'])}</div></div></div><section class="section"><p class="sub">Fai firmare qui il proprietario con il dito. La firma verrà salvata nella pratica e inserita nel PDF DDT.</p><form method="post" id="signatureForm"><canvas class="signature-pad" id="pad"></canvas><input type="hidden" name="signature_data" id="signatureData"><div class="actions" style="margin-top:14px"><button class="btn" type="submit">Salva firma</button><button class="btn ghost" type="button" id="clearPad">Cancella</button><a class="btn ghost" href="/pratiche/{pid}">Annulla</a></div></form></section><script>
 const canvas=document.getElementById('pad'),ctx=canvas.getContext('2d');let drawing=false,last=null;
 function resize(){{const r=canvas.getBoundingClientRect(),d=window.devicePixelRatio||1;canvas.width=r.width*d;canvas.height=r.height*d;ctx.setTransform(d,0,0,d,0,0);ctx.lineWidth=3;ctx.lineCap='round';ctx.strokeStyle='#1f1f1f';}}
 function pos(e){{const r=canvas.getBoundingClientRect(),t=e.touches?e.touches[0]:e;return {{x:t.clientX-r.left,y:t.clientY-r.top}};}}
