@@ -1310,15 +1310,28 @@ class App(BaseHTTPRequestHandler):
     def whatsapp_cron_authorized(self):
         secret=os.environ.get("WHATSAPP_CRON_SECRET","").strip()
         if not secret:
-            return False
+            return False, "variabile ambiente WHATSAPP_CRON_SECRET assente o vuota"
         qs=parse_qs(urlparse(self.path).query)
-        provided=(qs.get("secret") or [""])[0] or self.headers.get("X-Cron-Secret","")
-        return hmac.compare_digest(provided,secret)
+        query_secret=((qs.get("secret") or [""])[0] or "").strip()
+        header_secret=(self.headers.get("X-Cron-Secret","") or "").strip()
+        provided=query_secret or header_secret
+        source="query" if query_secret else ("header" if header_secret else "nessuna")
+        if not provided:
+            return False, "parametro ?secret= mancante e header X-Cron-Secret mancante"
+        if provided in ("<WHATSAPP_CRON_SECRET>", "WHATSAPP_CRON_SECRET"):
+            return False, "nel Cron Job è rimasto il placeholder <WHATSAPP_CRON_SECRET>: devi sostituirlo con il valore reale della variabile"
+        if not hmac.compare_digest(provided,secret):
+            return False, f"secret errato ricevuto da {source}: lunghezza_ricevuta={len(provided)} lunghezza_attesa={len(secret)}"
+        return True, f"secret corretto ricevuto da {source}"
 
     def whatsapp_cron(self):
-        if not self.whatsapp_cron_authorized():
-            return self.send_json({"ok":False,"error":"WHATSAPP_CRON_SECRET mancante o secret non valido"},403)
+        ok,reason=self.whatsapp_cron_authorized()
+        if not ok:
+            print(f"[WHATSAPP_CRON] 403 {reason}", flush=True)
+            return self.send_json({"ok":False,"error":reason},403)
+        print(f"[WHATSAPP_CRON] autorizzato: {reason}", flush=True)
         results=self.process_whatsapp_queue()
+        print(f"[WHATSAPP_CRON] completato processed={len(results)} results={json.dumps(results,ensure_ascii=False)}", flush=True)
         return self.send_json({"ok":True,"processed":len(results),"results":results})
 
     def whatsapp_webhook_verify(self):
