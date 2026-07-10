@@ -249,7 +249,8 @@ def init_db():
             "veterinarian_id": "INTEGER",
             "voucher_requested": "TEXT",
             "whatsapp_thanks_sent_at": "TEXT",
-            "whatsapp_thanks_last_error": "TEXT"
+            "whatsapp_thanks_last_error": "TEXT",
+            "no_whatsapp_message": "TEXT"
         }
         existing = {row["name"] for row in c.execute("PRAGMA table_info(practices)")}
         for name, definition in extra_columns.items():
@@ -935,7 +936,7 @@ class App(BaseHTTPRequestHandler):
         estremi_checked='checked' if raw('send_estremi')=="Si" else ''
         return f'''<section class="section"><h2>Operatore</h2><div class="fields"><div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option></select></div></div></section>
         <section class="section"><h2>Richiesta</h2><div class="fields"><div class="field"><label>Servizio</label><select name="service_type"><option {selected('service_type','Da decidere')}>Da decidere</option><option {selected('service_type','Cremazione singola')}>Cremazione singola</option><option {selected('service_type','Cremazione collettiva')}>Cremazione collettiva</option></select></div><div class="field"><label>Origine richiesta *</label><select name="request_origin" required><option {selected('request_origin','Veterinario')}>Veterinario</option><option {selected('request_origin','Privato')}>Privato</option><option {selected('request_origin','Consegna in sede')}>Consegna in sede</option><option {selected('request_origin','Collaboratore')}>Collaboratore</option></select></div><div class="field {'hidden' if raw('request_origin')!='Collaboratore' else ''}" id="collaboratorBox"><label>Collaboratore</label><select name="collaborator_name"><option value="">Nessun collaboratore</option><option {selected('collaborator_name','HUMANITAS CROCE VERDE')}>HUMANITAS CROCE VERDE</option></select></div><div class="field"><label>Sede di destinazione</label><select name="destination_branch"><option {selected('destination_branch','Livorno')}>Livorno</option><option {selected('destination_branch','Empoli')}>Empoli</option></select></div><div class="field"><label>Data recupero</label><input type="date" name="pickup_date" value="{val('pickup_date')}"></div></div></section>
-        <section class="section"><h2>SPEDITORE</h2><div class="fields"><div class="field"><label>Nome speditore *</label><input name="owner_first_name" value="{val('owner_first_name')}" required></div><div class="field"><label>Cognome speditore *</label><input name="owner_last_name" value="{val('owner_last_name')}" required></div><div class="field"><label>Telefono speditore *</label><input type="tel" inputmode="numeric" name="owner_phone" value="{val('owner_phone')}" required></div><div class="field"><label>Secondo telefono</label><input type="tel" inputmode="numeric" name="owner_phone_2" value="{val('owner_phone_2')}"></div><div class="field"><label>Email</label><input type="email" name="owner_email" value="{val('owner_email')}"></div><div class="field"><label>Codice fiscale speditore *</label><input name="owner_tax_code" value="{val('owner_tax_code')}" required></div><div class="field full"><label>Indirizzo speditore *</label><input name="owner_street" value="{val('owner_street') or val('owner_address')}" required></div><div class="field"><label>Comune speditore *</label><input name="owner_city" value="{val('owner_city')}" required></div><div class="field"><label>Provincia speditore *</label><input name="owner_province" value="{val('owner_province')}" maxlength="2" placeholder="Si compila dal comune" required></div><div class="field"><label>CAP speditore *</label><input name="owner_zip" value="{val('owner_zip')}" inputmode="numeric" required></div></div></section>
+        <section class="section"><h2>SPEDITORE</h2><div class="fields"><div class="field"><label>Nome *</label><input name="owner_first_name" value="{val('owner_first_name')}" required></div><div class="field"><label>Cognome *</label><input name="owner_last_name" value="{val('owner_last_name')}" required></div><div class="field"><label>Telefono *</label><input type="tel" inputmode="numeric" name="owner_phone" value="{val('owner_phone')}" required></div><div class="field"><label>Secondo telefono</label><input type="tel" inputmode="numeric" name="owner_phone_2" value="{val('owner_phone_2')}"></div><div class="field"><label>Email</label><input type="email" name="owner_email" value="{val('owner_email')}"></div><div class="field"><label>Codice fiscale *</label><input name="owner_tax_code" value="{val('owner_tax_code')}" required></div><div class="field full"><label>Indirizzo *</label><input name="owner_street" value="{val('owner_street') or val('owner_address')}" required></div><div class="field"><label>Comune *</label><input name="owner_city" value="{val('owner_city')}" required></div><div class="field"><label>Provincia *</label><input name="owner_province" value="{val('owner_province')}" maxlength="2" placeholder="Si compila dal comune" required></div><div class="field"><label>CAP *</label><input name="owner_zip" value="{val('owner_zip')}" inputmode="numeric" required></div></div></section>
         <section class="section"><h2>DESTINATARIO E LUOGO DI DESTINAZIONE</h2><p class="sub">Compilati automaticamente in base alla sede selezionata: Livorno oppure Empoli.</p></section>
         <section class="section"><h2>LUOGO DI ORIGINE</h2><div class="fields"><div class="field"><label>Luogo di origine</label><select name="origin_mode"><option {selected('origin_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('origin_mode','Testo libero','IDEM SPED')}>Testo libero</option></select></div><div class="field full"><label>Testo libero / indirizzo diverso</label><input name="origin_text" value="{val('origin_text') or (val('pickup_address') if raw('pickup_address_mode')=='Altro indirizzo' else '')}" placeholder="Scrivi qui solo se il luogo non è IDEM SPED"></div></div></section>
         <section class="section"><h2>Animale</h2><div class="fields"><div class="field"><label>Nome</label><input name="animal_name" value="{val('animal_name')}"></div><div class="field"><label>Specie</label><input name="species" value="{val('species')}"></div><div class="field"><label>Peso stimato (kg)</label><input name="estimated_weight" value="{val('estimated_weight')}"></div><div class="field"><label>Età - anni</label><input name="age_years" value="{val('age_years')}"></div><div class="field"><label>Età - mesi</label><input name="age_months" value="{val('age_months')}"></div><div class="field"><label>Microchip</label><input name="microchip" value="{val('microchip')}"></div><div class="field full"><label>Razza</label><input name="breed" value="{val('breed')}"></div></div><button class="btn ghost" type="button" id="showSecondAnimal" style="margin-top:12px;{'display:none' if raw('animal2_name') else ''}">+ Aggiungi altro animale</button><div id="secondAnimalBox" style="display:{'block' if raw('animal2_name') else 'none'};margin-top:14px"><h2>Secondo animale</h2><div class="fields"><div class="field"><label>Nome</label><input name="animal2_name" value="{val('animal2_name')}"></div><div class="field"><label>Specie</label><input name="animal2_species" value="{val('animal2_species')}"></div><div class="field"><label>Peso stimato (kg)</label><input name="animal2_weight" value="{val('animal2_weight')}"></div><div class="field"><label>Microchip</label><input name="animal2_microchip" value="{val('animal2_microchip')}"></div><div class="field full"><label>Razza</label><input name="animal2_breed" value="{val('animal2_breed')}"></div></div></div></section>
@@ -1016,10 +1017,10 @@ class App(BaseHTTPRequestHandler):
         if d.get("service_type") == "Cremazione collettiva" and d.get("veterinarian_id"):
             return ""
         labels={
-            "operator_name":"Operatore","request_origin":"Richiesta","owner_first_name":"Nome speditore",
-            "owner_last_name":"Cognome speditore","owner_phone":"Telefono speditore",
-            "owner_tax_code":"Codice fiscale speditore","owner_street":"Indirizzo speditore",
-            "owner_city":"Comune speditore","owner_province":"Provincia speditore","owner_zip":"CAP speditore",
+            "operator_name":"Operatore","request_origin":"Richiesta","owner_first_name":"Nome",
+            "owner_last_name":"Cognome","owner_phone":"Telefono",
+            "owner_tax_code":"Codice fiscale","owner_street":"Indirizzo",
+            "owner_city":"Comune","owner_province":"Provincia","owner_zip":"CAP",
         }
         missing=[label for key,label in labels.items() if not d.get(key)]
         return "Campi obbligatori mancanti: " + ", ".join(missing) if missing else ""
@@ -1111,6 +1112,12 @@ Tel. 351 993 9566"""
             print(f"[WHATSAPP] pratica={pid} esito=SKIP dettaglio={msg}", flush=True)
             c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,created_at) VALUES(?,?,?,?)",(pid,"WhatsApp ringraziamento",msg,now()))
             return True, msg
+        if not force and "no_whatsapp_message" in p.keys() and p["no_whatsapp_message"] == "Si":
+            msg="Invio WhatsApp automatico disattivato per questa pratica"
+            print(f"[WHATSAPP] pratica={pid} esito=SKIP dettaglio={msg}", flush=True)
+            c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(msg,pid))
+            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,created_at) VALUES(?,?,?,?)",(pid,"WhatsApp ringraziamento",msg,now()))
+            return False, msg
         phone=re.sub(r"\D+","",p["owner_phone"] or "")
         if not phone:
             error="Telefono speditore mancante"
@@ -1217,6 +1224,8 @@ Tel. 351 993 9566"""
         payment_cls = {"Da saldare":"pay-yellow","Acconto":"pay-blue","Pagato":"pay-green"}.get(payment_value,"")
         catalog_value = "Si" if "send_catalog" in p.keys() and p["send_catalog"] else "No"
         invoice_value = p["invoice_number"] if "invoice_number" in p.keys() and p["invoice_number"] else ""
+        no_whatsapp_checked = "checked" if "no_whatsapp_message" in p.keys() and p["no_whatsapp_message"] == "Si" else ""
+        no_whatsapp_note = '<div class="flash warning">Invio automatico WhatsApp disattivato per questa pratica.</div>' if no_whatsapp_checked else ''
         whatsapp_sent = p["whatsapp_thanks_sent_at"] if "whatsapp_thanks_sent_at" in p.keys() and p["whatsapp_thanks_sent_at"] else ""
         whatsapp_error = p["whatsapp_thanks_last_error"] if "whatsapp_thanks_last_error" in p.keys() and p["whatsapp_thanks_last_error"] else ""
         whatsapp_block = f'''<div class="section"><h2>WhatsApp ringraziamento</h2><p>{'Inviato il '+esc(whatsapp_sent.replace('T',' ')) if whatsapp_sent else '<span class="sub">Non ancora inviato.</span>'}</p>{f'<div class="flash warning">{esc(whatsapp_error)}</div>' if whatsapp_error else ''}<form method="post" action="/pratiche/{pid}/whatsapp"><button class="btn ghost">Reinvia WhatsApp</button></form></div>'''
@@ -1244,7 +1253,7 @@ Tel. 351 993 9566"""
             <div class="grid">
               <div class="section"><h2>Riepilogo</h2><div class="kvs"><div class="kv"><small>Stato</small><b>{esc(p['status'])}</b><br><span class="badge {payment_cls}">{esc(payment_value)}</span></div><div class="kv"><small>Speditore</small>{esc((p['owner_first_name'] or '')+' '+(p['owner_last_name'] or ''))}<br>{esc(p['owner_phone'])}{('<br>'+esc(p['owner_phone_2'])) if 'owner_phone_2' in p.keys() and p['owner_phone_2'] else ''}</div><div class="kv"><small>Animale</small>{esc(p['species'])} - {esc(p['breed'])}<br>{esc(p['estimated_weight'])} kg</div>{animal2_block}<div class="kv"><small>Sede</small><b>{esc(p['destination_branch'])}</b></div><div class="kv"><small>Origine</small><b>{esc(p['request_origin'])}</b></div><div class="kv"><small>Veterinario</small>{esc(p['clinic_name'])}<br>{esc(p['veterinarian_name'])}</div><div class="kv"><small>Catalogo urna</small><b>{esc(catalog_value)}</b></div><div class="kv"><small>Fattura</small>{esc(invoice_value) or '<span class="sub">Non inserita</span>'}</div></div></div>
               <div class="section"><h2>Firma proprietario</h2><p class="sub">{'Firma salvata.' if p['signature_data'] else 'Firma non ancora salvata.'}</p><a class="btn ghost" href="/pratiche/{pid}/firma">Apri firma</a></div>
-              <div class="section"><h2>Stati pratica</h2><form method="post" action="/pratiche/{pid}/stato"><div class="fields"><div class="field"><label>Avanzamento</label><select name="status">{options}</select></div><div class="field"><label>Pagamento</label><select name="payment_status">{payment_options}</select></div><div class="field"><label>Numero fattura</label><input name="invoice_number" value="{esc(invoice_value)}" placeholder="Da inserire quando risulta pagato"></div></div><button class="btn" style="margin-top:12px">Aggiorna stati</button></form></div>
+              <div class="section"><h2>Stati pratica</h2>{no_whatsapp_note}<form method="post" action="/pratiche/{pid}/stato"><div class="fields"><div class="field"><label>Avanzamento</label><select name="status">{options}</select></div><div class="field"><label><input type="checkbox" name="no_whatsapp_message" value="Si" {no_whatsapp_checked} style="width:auto"> NO MESSAGGIO</label><small class="sub">Se spuntato, quando la pratica passa a Consegnato non parte il WhatsApp automatico.</small></div><div class="field"><label>Pagamento</label><select name="payment_status">{payment_options}</select></div><div class="field"><label>Numero fattura</label><input name="invoice_number" value="{esc(invoice_value)}" placeholder="Da inserire quando risulta pagato"></div></div><button class="btn" style="margin-top:12px">Aggiorna stati</button></form></div>
               {whatsapp_block}
               <div class="section"><h2>Documento DCS / DDT</h2><p>{ddt}</p>{pdf_block}</div>
               <div class="section"><h2>Note</h2><p>{esc(p['notes']) or '<span class="sub">Nessuna nota.</span>'}</p></div>
@@ -1310,15 +1319,15 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         self.redirect(f"/pratiche/{pid}")
 
     def change_state(self,user,pid):
-        f=self.form(); new=f.get("status",""); payment=f.get("payment_status","Da saldare"); invoice=f.get("invoice_number","").strip()
+        f=self.form(); new=f.get("status",""); payment=f.get("payment_status","Da saldare"); invoice=f.get("invoice_number","").strip(); no_whatsapp="Si" if f.get("no_whatsapp_message")=="Si" else ""
         if new not in STATES or payment not in PAYMENT_STATES:return self.send_error(400)
         with db() as c:
-            old=c.execute("SELECT status,payment_status,invoice_number FROM practices WHERE id=?",(pid,)).fetchone()
+            old=c.execute("SELECT status,payment_status,invoice_number,no_whatsapp_message FROM practices WHERE id=?",(pid,)).fetchone()
             if not old:return self.send_error(404)
             old_payment=old["payment_status"] or "Da saldare"
-            c.execute("UPDATE practices SET status=?,payment_status=?,invoice_number=?,updated_at=? WHERE id=?",(new,payment,invoice,now(),pid))
-            new_value=f'{new} + {payment}' + (f' - Fattura {invoice}' if invoice else '')
-            old_value=f'{old["status"]} + {old_payment}' + (f' - Fattura {old["invoice_number"]}' if old["invoice_number"] else '')
+            c.execute("UPDATE practices SET status=?,payment_status=?,invoice_number=?,no_whatsapp_message=?,updated_at=? WHERE id=?",(new,payment,invoice,no_whatsapp,now(),pid))
+            new_value=f'{new} + {payment}' + (f' - Fattura {invoice}' if invoice else '') + (" - NO MESSAGGIO" if no_whatsapp else "")
+            old_value=f'{old["status"]} + {old_payment}' + (f' - Fattura {old["invoice_number"]}' if old["invoice_number"] else '') + (" - NO MESSAGGIO" if old["no_whatsapp_message"]=="Si" else "")
             c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,"Cambio stati",old_value,new_value,user["id"],now()))
             if new == "Consegnato":
                 self.send_whatsapp_thanks(c,pid,force=False)
