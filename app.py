@@ -163,6 +163,25 @@ def init_db():
           created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
           created_by INTEGER REFERENCES users(id)
         );
+        CREATE TABLE IF NOT EXISTS clients (
+          id INTEGER PRIMARY KEY,
+          first_name TEXT,
+          last_name TEXT,
+          company_name TEXT,
+          phone TEXT,
+          phone_2 TEXT,
+          email TEXT,
+          tax_code TEXT,
+          vat_number TEXT,
+          street TEXT,
+          city TEXT,
+          province TEXT,
+          zip TEXT,
+          address TEXT,
+          notes TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS practice_history (
           id INTEGER PRIMARY KEY, practice_id INTEGER NOT NULL REFERENCES practices(id),
           event_type TEXT NOT NULL, old_value TEXT, new_value TEXT,
@@ -258,6 +277,10 @@ def init_db():
             "ddt_share_token": "TEXT",
             "signature_data": "TEXT",
             "owner_phone_2": "TEXT",
+            "client_id": "INTEGER",
+            "owner_company": "TEXT",
+            "owner_vat": "TEXT",
+            "owner_notes": "TEXT",
             "owner_street": "TEXT",
             "owner_city": "TEXT",
             "owner_province": "TEXT",
@@ -286,6 +309,10 @@ def init_db():
         c.execute("CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_due ON whatsapp_messages(status, scheduled_at)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_practice ON whatsapp_messages(practice_id, created_at)")
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_whatsapp_messages_one_active ON whatsapp_messages(practice_id) WHERE status IN ('programmato','in_invio')")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(last_name, first_name)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_clients_phone ON clients(phone)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_clients_tax ON clients(tax_code)")
         c.execute("UPDATE practices SET payment_status='Da saldare' WHERE payment_status IS NULL OR payment_status=''")
         c.execute("UPDATE practices SET payment_status='Pagato', status='Consegnato' WHERE status='Pagato'")
         c.execute("UPDATE veterinarian_vouchers SET status='Maturato' WHERE status='Disponibile'")
@@ -306,6 +333,30 @@ def init_db():
                 c.execute("UPDATE veterinarians SET short_name=?, clinic_name=?, address=?, city=?, phone=?, updated_at=? WHERE id=?", (item["code"], item["name"], item["address"], item["city"], item["phone"], stamp, existing_vet["id"]))
             else:
                 c.execute("INSERT INTO veterinarians(clinic_name,doctor_name,phone,notes,active,created_at,updated_at,short_name,address,city) VALUES(?,?,?,?,?,?,?,?,?,?)", (item["name"], "", item["phone"], "", 1, stamp, stamp, item["code"], item["address"], item["city"]))
+        practice_clients = c.execute("""SELECT id, owner_first_name, owner_last_name, owner_company, owner_phone, owner_phone_2, owner_email, owner_tax_code, owner_vat, owner_street, owner_city, owner_province, owner_zip, owner_address, owner_notes
+                                        FROM practices
+                                        WHERE client_id IS NULL
+                                          AND COALESCE(owner_first_name,'')||COALESCE(owner_last_name,'')||COALESCE(owner_phone,'')||COALESCE(owner_email,'')||COALESCE(owner_tax_code,'')<>''""").fetchall()
+        for pcli in practice_clients:
+            phone_digits=only_digits(pcli["owner_phone"])
+            dup=None
+            if pcli["owner_tax_code"]:
+                dup=c.execute("SELECT id FROM clients WHERE UPPER(tax_code)=UPPER(?) LIMIT 1",(pcli["owner_tax_code"],)).fetchone()
+            if not dup and pcli["owner_vat"]:
+                dup=c.execute("SELECT id FROM clients WHERE UPPER(vat_number)=UPPER(?) LIMIT 1",(pcli["owner_vat"],)).fetchone()
+            if not dup and pcli["owner_email"]:
+                dup=c.execute("SELECT id FROM clients WHERE UPPER(email)=UPPER(?) LIMIT 1",(pcli["owner_email"],)).fetchone()
+            if not dup and phone_digits:
+                dup=c.execute("SELECT id FROM clients WHERE REPLACE(REPLACE(REPLACE(REPLACE(phone,' ',''),'+',''),'-',''),'.','') LIKE ? LIMIT 1",(f"%{phone_digits[-8:]}",)).fetchone()
+            if not dup and (pcli["owner_first_name"] or pcli["owner_last_name"]):
+                dup=c.execute("SELECT id FROM clients WHERE UPPER(first_name)=UPPER(?) AND UPPER(last_name)=UPPER(?) LIMIT 1",(pcli["owner_first_name"] or "", pcli["owner_last_name"] or "")).fetchone()
+            if dup:
+                c.execute("UPDATE practices SET client_id=? WHERE id=?",(dup["id"],pcli["id"]))
+            else:
+                cur=c.execute("""INSERT INTO clients(first_name,last_name,company_name,phone,phone_2,email,tax_code,vat_number,street,city,province,zip,address,notes,created_at,updated_at)
+                                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                              (pcli["owner_first_name"],pcli["owner_last_name"],pcli["owner_company"],pcli["owner_phone"],pcli["owner_phone_2"],pcli["owner_email"],pcli["owner_tax_code"],pcli["owner_vat"],pcli["owner_street"],pcli["owner_city"],pcli["owner_province"],pcli["owner_zip"],pcli["owner_address"],pcli["owner_notes"],stamp,stamp))
+                c.execute("UPDATE practices SET client_id=? WHERE id=?",(cur.lastrowid,pcli["id"]))
         if not c.execute("SELECT 1 FROM users WHERE username='admin'").fetchone():
             c.execute(
                 "INSERT INTO users(username,password_hash,display_name,role) VALUES(?,?,?,?)",
@@ -319,6 +370,14 @@ def esc(value):
 
 def now():
     return datetime.now().isoformat(timespec="seconds")
+
+
+def compact_text(value):
+    return re.sub(r"\s+", " ", str(value or "").strip())
+
+
+def only_digits(value):
+    return re.sub(r"\D+", "", str(value or ""))
 
 
 def safe_pdf_filename(name, fallback="pratica"):
@@ -364,6 +423,7 @@ a{color:inherit;text-decoration:none}.top{height:68px;background:#fff;border-bot
 .month-block{margin-bottom:18px}.month-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .hidden{display:none!important}
 .practice-code-cr{color:#1e88e5}.practice-code-sm{color:#111}
+.lookup{position:relative}.lookup-results{position:absolute;left:0;right:0;top:100%;z-index:20;background:white;border:1px solid var(--line);border-radius:12px;margin-top:6px;box-shadow:0 10px 30px #4b392626;max-height:340px;overflow:auto}.lookup-item{display:block;width:100%;border:0;background:white;text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer;color:var(--ink)}.lookup-item:hover,.lookup-item:focus{background:#f7f2ee;outline:none}.lookup-item b{display:block}.lookup-item small{display:block;color:var(--muted);white-space:normal}.lookup-state{padding:10px 12px;color:var(--muted);font-size:13px}.selected-box{border:1px solid #b8d7c8;background:#edf7f2;color:#285b45;border-radius:10px;padding:12px;margin-top:10px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}.selected-box .btn{width:auto}
 """
 
 APP_JS = r"""
@@ -493,19 +553,140 @@ function toggleCollectiveVetMode(){
   });
 }
 document.addEventListener('DOMContentLoaded', function(){
-  const search=document.getElementById('vetSearch');
-  const select=document.querySelector('select[name="veterinarian_id"]');
-  if(search && select){
-    const allOptions=Array.from(select.options).map(o=>({value:o.value,text:o.textContent,html:o.outerHTML}));
-    search.addEventListener('input', function(){
-      const q=search.value.trim().toLowerCase();
-      const current=select.value;
-      select.innerHTML=allOptions.filter(o=>!q || !o.value || o.text.toLowerCase().includes(q)).map(o=>o.html).join('');
-      if(Array.from(select.options).some(o=>o.value===current)) select.value=current;
-    });
-  }
+  setupClientLookup();
+  setupVetLookup();
   toggleCollectiveVetMode();
 });
+function ppmDebounce(fn, delay){
+  let timer=null;
+  return function(){ const args=arguments; clearTimeout(timer); timer=setTimeout(()=>fn.apply(this,args), delay); };
+}
+function lookupHtmlState(text){ return `<div class="lookup-state">${text}</div>`; }
+function setupClientLookup(){
+  const input=document.getElementById('clientSearch');
+  const results=document.getElementById('clientResults');
+  const selected=document.getElementById('clientSelected');
+  const selectedText=document.getElementById('clientSelectedText');
+  const clearBtn=document.getElementById('clearClientSelection');
+  const clientId=document.querySelector('input[name="client_id"]');
+  if(!input || !results) return;
+  function setField(name,value){ const field=document.querySelector(`[name="${name}"]`); if(field) field.value=value || ''; }
+  function showSelected(label){
+    if(selectedText) selectedText.textContent = label ? `Cliente selezionato: ${label}` : '';
+    if(selected) selected.classList.toggle('hidden', !label);
+  }
+  if(clientId && clientId.value){
+    const first=document.querySelector('[name="owner_first_name"]')?.value || '';
+    const last=document.querySelector('[name="owner_last_name"]')?.value || '';
+    const company=document.querySelector('[name="owner_company"]')?.value || '';
+    showSelected(`${first} ${last}`.trim() || company);
+  }
+  const search=ppmDebounce(async function(){
+    const q=input.value.trim();
+    if(q.length < 2){ results.innerHTML=lookupHtmlState('Scrivi almeno 2 caratteri'); results.classList.remove('hidden'); return; }
+    results.innerHTML=lookupHtmlState('Ricerca in corso...');
+    results.classList.remove('hidden');
+    try{
+      const res=await fetch(`/api/clienti/search?q=${encodeURIComponent(q)}`, {headers:{'Accept':'application/json'}});
+      const data=await res.json();
+      if(!data.ok) throw new Error(data.error || 'Errore');
+      if(!data.results.length){ results.innerHTML=lookupHtmlState('Nessun risultato'); return; }
+      results.innerHTML=data.results.map(function(c){
+        const label=c.display || c.company_name || 'Cliente';
+        const subtitle=c.subtitle || '';
+        const meta=`ID ${c.id}${c.practice_count ? ' - '+c.practice_count+' pratiche' : ''}${c.last_practice ? ' - ultima '+c.last_practice : ''}`;
+        return `<button type="button" class="lookup-item" data-client='${JSON.stringify(c).replace(/'/g,'&#39;')}'><b>${label}</b><small>${subtitle}</small><small>${meta}</small></button>`;
+      }).join('');
+    }catch(err){
+      results.innerHTML=lookupHtmlState('Errore di rete durante la ricerca');
+    }
+  }, 300);
+  input.addEventListener('input', search);
+  results.addEventListener('click', function(e){
+    const btn=e.target.closest('.lookup-item');
+    if(!btn) return;
+    const c=JSON.parse(btn.getAttribute('data-client'));
+    if(clientId) clientId.value=c.id || '';
+    setField('owner_first_name', c.first_name);
+    setField('owner_last_name', c.last_name);
+    setField('owner_company', c.company_name);
+    setField('owner_phone', c.phone);
+    setField('owner_phone_2', c.phone_2);
+    setField('owner_email', c.email);
+    setField('owner_tax_code', c.tax_code);
+    setField('owner_vat', c.vat_number);
+    setField('owner_street', c.street || c.address);
+    setField('owner_city', c.city);
+    setField('owner_province', c.province);
+    setField('owner_zip', c.zip);
+    setField('owner_notes', c.notes);
+    showSelected(c.display || c.company_name || `ID ${c.id}`);
+    input.value='';
+    results.classList.add('hidden');
+  });
+  if(clearBtn){
+    clearBtn.addEventListener('click', function(){
+      if(clientId) clientId.value='';
+      showSelected('');
+      input.value='';
+      results.classList.add('hidden');
+    });
+  }
+  document.addEventListener('click', function(e){ if(!e.target.closest('.lookup')) results.classList.add('hidden'); });
+}
+function setupVetLookup(){
+  const input=document.getElementById('vetSearch');
+  const results=document.getElementById('vetResults');
+  const select=document.querySelector('select[name="veterinarian_id"]');
+  const clearBtn=document.getElementById('clearVetSelection');
+  if(!input || !results || !select) return;
+  function chooseVet(v){
+    let option=Array.from(select.options).find(o=>o.value===String(v.id));
+    if(!option){
+      option=new Option(v.display || v.clinic_name, v.id);
+      select.appendChild(option);
+    }
+    option.dataset.fullname=v.clinic_name || v.display || '';
+    option.dataset.address=v.address || '';
+    option.dataset.city=v.city || '';
+    select.value=String(v.id);
+    select.dispatchEvent(new Event('change', {bubbles:true}));
+    input.value=v.display || v.clinic_name || '';
+    results.classList.add('hidden');
+  }
+  const search=ppmDebounce(async function(){
+    const q=input.value.trim();
+    if(q.length < 2){ results.innerHTML=lookupHtmlState('Scrivi almeno 2 caratteri'); results.classList.remove('hidden'); return; }
+    results.innerHTML=lookupHtmlState('Ricerca in corso...');
+    results.classList.remove('hidden');
+    try{
+      const res=await fetch(`/api/veterinari/search?q=${encodeURIComponent(q)}`, {headers:{'Accept':'application/json'}});
+      const data=await res.json();
+      if(!data.ok) throw new Error(data.error || 'Errore');
+      if(!data.results.length){ results.innerHTML=lookupHtmlState('Nessun risultato'); return; }
+      results.innerHTML=data.results.map(function(v){
+        return `<button type="button" class="lookup-item" data-vet='${JSON.stringify(v).replace(/'/g,'&#39;')}'><b>${v.display}</b><small>${v.subtitle || ''}</small><small>ID ${v.id}</small></button>`;
+      }).join('');
+    }catch(err){
+      results.innerHTML=lookupHtmlState('Errore di rete durante la ricerca');
+    }
+  }, 300);
+  input.addEventListener('input', search);
+  results.addEventListener('click', function(e){
+    const btn=e.target.closest('.lookup-item');
+    if(!btn) return;
+    chooseVet(JSON.parse(btn.getAttribute('data-vet')));
+  });
+  if(clearBtn){
+    clearBtn.addEventListener('click', function(){
+      select.value='';
+      select.dispatchEvent(new Event('change', {bubbles:true}));
+      input.value='';
+      results.classList.add('hidden');
+    });
+  }
+  document.addEventListener('click', function(e){ if(!e.target.closest('.lookup')) results.classList.add('hidden'); });
+}
 document.addEventListener('click', function(e){
   if(e.target && e.target.id === 'showSecondAnimal'){
     const box=document.getElementById('secondAnimalBox');
@@ -628,6 +809,8 @@ class App(BaseHTTPRequestHandler):
         if path == "/": return self.dashboard(user)
         if path == "/diagnostica": return self.diagnostics(user)
         if path == "/whatsapp-diagnostica": return self.whatsapp_diagnostics(user)
+        if path == "/api/clienti/search": return self.api_clients_search(user)
+        if path == "/api/veterinari/search": return self.api_veterinarians_search(user)
         if path == "/nuova": return self.new_page(user)
         if path == "/pratiche": return self.archive_home(user)
         if path == "/archivio/pratiche": return self.archive(user)
@@ -763,9 +946,13 @@ class App(BaseHTTPRequestHandler):
         for r in rows:
             code=str(r['practice_number'] or '')
             code_cls='practice-code-cr' if code.startswith('CR-') else 'practice-code-sm' if code.startswith('SM-') else ''
-            animal_meta=esc(r['species']) + ((' - '+esc(r['estimated_weight'])+' kg') if r['estimated_weight'] else '')
+            if (r['service_type'] or '') == 'Cremazione collettiva':
+                animal_cell='/'
+            else:
+                animal_meta=esc(r['species']) + ((' - '+esc(r['estimated_weight'])+' kg') if r['estimated_weight'] else '')
+                animal_cell=f'{esc(r["animal_name"] or "Da inserire")}<br><small>{animal_meta}</small>'
             owner=esc((r['owner_first_name'] or '')+' '+(r['owner_last_name'] or ''))
-            html.append(f'<tr><td>{esc((r["created_at"] or "")[:10])}</td><td><a href="/pratiche/{r["id"]}"><b class="{code_cls}">{esc(code)}</b></a></td><td>{esc(r["animal_name"] or "Da inserire")}<br><small>{animal_meta}</small></td><td>{owner}<br><small>{esc(r["owner_phone"])}</small></td><td>{esc(r["destination_branch"])}</td><td>{self.tag_badges(r)}</td><td>{self.status_badges(r)}</td></tr>')
+            html.append(f'<tr><td>{esc((r["created_at"] or "")[:10])}</td><td><a href="/pratiche/{r["id"]}"><b class="{code_cls}">{esc(code)}</b></a></td><td>{animal_cell}</td><td>{owner}<br><small>{esc(r["owner_phone"])}</small></td><td>{esc(r["destination_branch"])}</td><td>{self.tag_badges(r)}</td><td>{self.status_badges(r)}</td></tr>')
         return ''.join(html)
 
     def archive_home(self,user):
@@ -787,6 +974,70 @@ class App(BaseHTTPRequestHandler):
         body_rows=''.join(f'''<tr><td>{esc((r['owner_first_name'] or '')+' '+(r['owner_last_name'] or ''))}</td><td>{esc(r['owner_phone'])}<br><small>{esc(r['owner_phone_2'])}</small></td><td>{esc(r['owner_email'])}</td><td>{esc(r['owner_tax_code'])}</td><td>{esc(r['owner_address'])}</td><td>{r['n']}</td><td>{esc((r['last_date'] or '')[:10])}</td></tr>''' for r in rows) or '<tr><td colspan="7" class="sub">Nessun cliente trovato.</td></tr>'
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>Anagrafica clienti</h1><div class="sub">{len(rows)} risultati</div></div><a class="btn ghost" href="/pratiche">Archivio</a></div><form class="section" method="get" style="margin-bottom:18px"><div class="fields"><div class="field full"><label>Ricerca cliente</label><input name="q" value="{esc(term)}" placeholder="Nome, telefono, email, codice fiscale, indirizzo"></div></div><button class="btn" style="margin-top:12px">Cerca</button><a class="btn ghost" style="margin-top:12px" href="/archivio/clienti">Pulisci</a></form><div class="tablebox"><table><thead><tr><th>Cliente</th><th>Telefono</th><th>Email</th><th>Codice fiscale</th><th>Indirizzo</th><th>Pratiche</th><th>Ultima pratica</th></tr></thead><tbody>{body_rows}</tbody></table></div></main>'''
         self.send_html(layout("Anagrafica clienti",body,user))
+
+    def api_clients_search(self,user):
+        q=(parse_qs(urlparse(self.path).query).get("q",[""])[0] or "").strip()
+        if len(q) < 2:
+            return self.send_json({"ok":True,"query":q,"too_short":True,"results":[]})
+        tokens=[t for t in re.split(r"\s+", q) if len(t) >= 2][:5]
+        if not tokens:
+            return self.send_json({"ok":True,"query":q,"too_short":True,"results":[]})
+        searchable="COALESCE(first_name,'')||' '||COALESCE(last_name,'')||' '||COALESCE(company_name,'')||' '||COALESCE(phone,'')||' '||COALESCE(phone_2,'')||' '||COALESCE(email,'')||' '||COALESCE(tax_code,'')||' '||COALESCE(vat_number,'')||' '||COALESCE(street,'')||' '||COALESCE(city,'')||' '||COALESCE(address,'')"
+        where=[]; args=[]
+        for token in tokens:
+            where.append(f"{searchable} LIKE ? COLLATE NOCASE")
+            args.append(f"%{token}%")
+        digits=only_digits(q)
+        try:
+            with db() as c:
+                rows=c.execute(f"""SELECT id, first_name, last_name, company_name, phone, phone_2, email, tax_code, vat_number, street, city, province, zip, address, notes,
+                                           (SELECT COUNT(*) FROM practices p WHERE p.client_id=clients.id) AS practice_count,
+                                           (SELECT MAX(created_at) FROM practices p WHERE p.client_id=clients.id) AS last_practice
+                                    FROM clients
+                                    WHERE {' AND '.join(where)}
+                                    ORDER BY CASE
+                                        WHEN UPPER(COALESCE(first_name,'')||' '||COALESCE(last_name,''))=UPPER(?) THEN 0
+                                        WHEN ?<>'' AND REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone,''),' ',''),'+',''),'-',''),'.','') LIKE ? THEN 1
+                                        WHEN email LIKE ? COLLATE NOCASE THEN 2
+                                        WHEN tax_code LIKE ? COLLATE NOCASE THEN 3
+                                        ELSE 9 END,
+                                        COALESCE(last_practice, updated_at) DESC
+                                    LIMIT 15""", args+[q,digits,f"%{digits}%",f"%{q}%",f"%{q}%"]).fetchall()
+            results=[]
+            for r in rows:
+                display=" ".join(x for x in [r["first_name"], r["last_name"]] if x).strip() or r["company_name"] or "Cliente senza nome"
+                subtitle=" - ".join(x for x in [r["company_name"], r["phone"], r["email"], r["city"] or r["address"]] if x)
+                results.append({"id":r["id"],"first_name":r["first_name"] or "","last_name":r["last_name"] or "","company_name":r["company_name"] or "","phone":r["phone"] or "","phone_2":r["phone_2"] or "","email":r["email"] or "","tax_code":r["tax_code"] or "","vat_number":r["vat_number"] or "","street":r["street"] or "","city":r["city"] or "","province":r["province"] or "","zip":r["zip"] or "","address":r["address"] or "","notes":r["notes"] or "","display":display,"subtitle":subtitle,"practice_count":r["practice_count"] or 0,"last_practice":(r["last_practice"] or "")[:10]})
+            return self.send_json({"ok":True,"query":q,"results":results})
+        except Exception as exc:
+            print(f"[CLIENT_SEARCH] errore tipo={type(exc).__name__} lunghezza_query={len(q)}", flush=True)
+            return self.send_json({"ok":False,"error":"Errore durante la ricerca clienti"},500)
+
+    def api_veterinarians_search(self,user):
+        q=(parse_qs(urlparse(self.path).query).get("q",[""])[0] or "").strip()
+        if len(q) < 2:
+            return self.send_json({"ok":True,"query":q,"too_short":True,"results":[]})
+        tokens=[t for t in re.split(r"\s+", q) if len(t) >= 2][:5]
+        if not tokens:
+            return self.send_json({"ok":True,"query":q,"too_short":True,"results":[]})
+        searchable="COALESCE(short_name,'')||' '||COALESCE(clinic_name,'')||' '||COALESCE(doctor_name,'')||' '||COALESCE(phone,'')||' '||COALESCE(address,'')||' '||COALESCE(city,'')"
+        where=[]; args=[]
+        for token in tokens:
+            where.append(f"{searchable} LIKE ? COLLATE NOCASE")
+            args.append(f"%{token}%")
+        try:
+            with db() as c:
+                rows=c.execute(f"""SELECT id, short_name, clinic_name, doctor_name, phone, address, city
+                                   FROM veterinarians
+                                   WHERE active=1 AND {' AND '.join(where)}
+                                   ORDER BY CASE WHEN short_name LIKE ? COLLATE NOCASE THEN 0 WHEN clinic_name LIKE ? COLLATE NOCASE THEN 1 ELSE 9 END,
+                                            COALESCE(short_name, clinic_name), clinic_name
+                                   LIMIT 15""", args+[f"{q}%", f"%{q}%"]).fetchall()
+            results=[{"id":r["id"],"short_name":r["short_name"] or "","clinic_name":r["clinic_name"] or "","doctor_name":r["doctor_name"] or "","phone":r["phone"] or "","address":r["address"] or "","city":r["city"] or "","display":r["short_name"] or r["clinic_name"] or "Veterinario","subtitle":" - ".join(x for x in [r["clinic_name"], r["address"], r["city"]] if x)} for r in rows]
+            return self.send_json({"ok":True,"query":q,"results":results})
+        except Exception as exc:
+            print(f"[VET_SEARCH] errore tipo={type(exc).__name__} lunghezza_query={len(q)}", flush=True)
+            return self.send_json({"ok":False,"error":"Errore durante la ricerca veterinari"},500)
 
     def archive(self,user):
         q=parse_qs(urlparse(self.path).query)
@@ -974,11 +1225,11 @@ class App(BaseHTTPRequestHandler):
         estremi_checked='checked' if raw('send_estremi')=="Si" else ''
         return f'''<section class="section"><h2>Operatore</h2><div class="fields"><div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option></select></div></div></section>
         <section class="section"><h2>Richiesta</h2><div class="fields"><div class="field"><label>Servizio</label><select name="service_type"><option {selected('service_type','Da decidere')}>Da decidere</option><option {selected('service_type','Cremazione singola')}>Cremazione singola</option><option {selected('service_type','Cremazione collettiva')}>Cremazione collettiva</option></select></div><div class="field"><label>Origine richiesta *</label><select name="request_origin" required><option {selected('request_origin','Veterinario')}>Veterinario</option><option {selected('request_origin','Privato')}>Privato</option><option {selected('request_origin','Consegna in sede')}>Consegna in sede</option><option {selected('request_origin','Collaboratore')}>Collaboratore</option></select></div><div class="field {'hidden' if raw('request_origin')!='Collaboratore' else ''}" id="collaboratorBox"><label>Collaboratore</label><select name="collaborator_name"><option value="">Nessun collaboratore</option><option {selected('collaborator_name','HUMANITAS CROCE VERDE')}>HUMANITAS CROCE VERDE</option></select></div><div class="field"><label>Sede di destinazione</label><select name="destination_branch"><option {selected('destination_branch','Livorno')}>Livorno</option><option {selected('destination_branch','Empoli')}>Empoli</option></select></div><div class="field"><label>Data recupero</label><input type="date" name="pickup_date" value="{val('pickup_date')}"></div></div></section>
-        <section class="section"><h2>SPEDITORE</h2><div class="fields"><div class="field"><label>Nome *</label><input name="owner_first_name" value="{val('owner_first_name')}" required></div><div class="field"><label>Cognome *</label><input name="owner_last_name" value="{val('owner_last_name')}" required></div><div class="field"><label>Telefono *</label><input type="tel" inputmode="numeric" name="owner_phone" value="{val('owner_phone')}" required></div><div class="field"><label>Secondo telefono</label><input type="tel" inputmode="numeric" name="owner_phone_2" value="{val('owner_phone_2')}"></div><div class="field"><label>Email</label><input type="email" name="owner_email" value="{val('owner_email')}"></div><div class="field"><label>Codice fiscale *</label><input name="owner_tax_code" value="{val('owner_tax_code')}" required></div><div class="field full"><label>Indirizzo *</label><input name="owner_street" value="{val('owner_street') or val('owner_address')}" required></div><div class="field"><label>Comune *</label><input name="owner_city" value="{val('owner_city')}" required></div><div class="field"><label>Provincia *</label><input name="owner_province" value="{val('owner_province')}" maxlength="2" placeholder="Si compila dal comune" required></div><div class="field"><label>CAP *</label><input name="owner_zip" value="{val('owner_zip')}" inputmode="numeric" required></div></div></section>
+        <section class="section"><h2>SPEDITORE</h2><div class="fields"><input type="hidden" name="client_id" value="{val('client_id')}"><div class="field full lookup"><label>Cerca cliente in anagrafica</label><input id="clientSearch" autocomplete="off" placeholder="Scrivi nome, telefono, email, codice fiscale, città..."><div id="clientResults" class="lookup-results hidden"></div><div id="clientSelected" class="selected-box hidden"><span id="clientSelectedText"></span><button class="btn ghost" type="button" id="clearClientSelection">Cancella selezione</button></div><small class="sub">Se scegli un cliente, i campi vengono compilati automaticamente. Se li modifichi, l'anagrafica non viene aggiornata senza conferma.</small></div><div class="field"><label>Nome *</label><input name="owner_first_name" value="{val('owner_first_name')}" required></div><div class="field"><label>Cognome *</label><input name="owner_last_name" value="{val('owner_last_name')}" required></div><div class="field"><label>Ragione sociale</label><input name="owner_company" value="{val('owner_company')}"></div><div class="field"><label>Telefono *</label><input type="tel" inputmode="numeric" name="owner_phone" value="{val('owner_phone')}" required></div><div class="field"><label>Secondo telefono</label><input type="tel" inputmode="numeric" name="owner_phone_2" value="{val('owner_phone_2')}"></div><div class="field"><label>Email</label><input type="email" name="owner_email" value="{val('owner_email')}"></div><div class="field"><label>Codice fiscale *</label><input name="owner_tax_code" value="{val('owner_tax_code')}" required></div><div class="field"><label>Partita IVA</label><input name="owner_vat" value="{val('owner_vat')}"></div><div class="field full"><label>Indirizzo *</label><input name="owner_street" value="{val('owner_street') or val('owner_address')}" required></div><div class="field"><label>Comune *</label><input name="owner_city" value="{val('owner_city')}" required></div><div class="field"><label>Provincia *</label><input name="owner_province" value="{val('owner_province')}" maxlength="2" placeholder="Si compila dal comune" required></div><div class="field"><label>CAP *</label><input name="owner_zip" value="{val('owner_zip')}" inputmode="numeric" required></div><div class="field full"><label>Note cliente</label><textarea name="owner_notes" placeholder="Note anagrafiche utili">{val('owner_notes')}</textarea></div></div></section>
         <section class="section"><h2>DESTINATARIO E LUOGO DI DESTINAZIONE</h2><p class="sub">Compilati automaticamente in base alla sede selezionata: Livorno oppure Empoli.</p></section>
         <section class="section"><h2>LUOGO DI ORIGINE</h2><div class="fields"><div class="field"><label>Luogo di origine</label><select name="origin_mode"><option {selected('origin_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('origin_mode','Testo libero','IDEM SPED')}>Testo libero</option></select></div><div class="field full"><label>Testo libero / indirizzo diverso</label><input name="origin_text" value="{val('origin_text') or (val('pickup_address') if raw('pickup_address_mode')=='Altro indirizzo' else '')}" placeholder="Scrivi qui solo se il luogo non è IDEM SPED"></div></div></section>
         <section class="section"><h2>Animale</h2><div class="fields"><div class="field"><label>Nome</label><input name="animal_name" value="{val('animal_name')}"></div><div class="field"><label>Specie</label><input name="species" value="{val('species')}"></div><div class="field"><label>Peso stimato (kg)</label><input name="estimated_weight" value="{val('estimated_weight')}"></div><div class="field"><label>Età - anni</label><input name="age_years" value="{val('age_years')}"></div><div class="field"><label>Età - mesi</label><input name="age_months" value="{val('age_months')}"></div><div class="field"><label>Microchip</label><input name="microchip" value="{val('microchip')}"></div><div class="field full"><label>Razza</label><input name="breed" value="{val('breed')}"></div></div><button class="btn ghost" type="button" id="showSecondAnimal" style="margin-top:12px;{'display:none' if raw('animal2_name') else ''}">+ Aggiungi altro animale</button><div id="secondAnimalBox" style="display:{'block' if raw('animal2_name') else 'none'};margin-top:14px"><h2>Secondo animale</h2><div class="fields"><div class="field"><label>Nome</label><input name="animal2_name" value="{val('animal2_name')}"></div><div class="field"><label>Specie</label><input name="animal2_species" value="{val('animal2_species')}"></div><div class="field"><label>Peso stimato (kg)</label><input name="animal2_weight" value="{val('animal2_weight')}"></div><div class="field"><label>Microchip</label><input name="animal2_microchip" value="{val('animal2_microchip')}"></div><div class="field full"><label>Razza</label><input name="animal2_breed" value="{val('animal2_breed')}"></div></div></div></section>
-        <section class="section"><h2>AMBULATORIO VETERINARIO</h2><div class="fields"><div class="field"><label>VETERINARIO</label><input id="vetSearch" placeholder="Scrivi per cercare il veterinario"><select name="veterinarian_id">{vet_options}</select><input type="hidden" name="clinic_name" value="{val('clinic_name')}"></div><div class="field"><label>MEDICO VETERINARIO</label><input name="veterinarian_name" value="{val('veterinarian_name')}"></div></div></section>
+        <section class="section"><h2>AMBULATORIO VETERINARIO</h2><div class="fields"><div class="field full lookup"><label>VETERINARIO</label><input id="vetSearch" autocomplete="off" placeholder="Scrivi per cercare il veterinario"><div id="vetResults" class="lookup-results hidden"></div><select name="veterinarian_id">{vet_options}</select><input type="hidden" name="clinic_name" value="{val('clinic_name')}"><button class="btn ghost" type="button" id="clearVetSelection" style="margin-top:8px">Cancella veterinario</button></div><div class="field"><label>MEDICO VETERINARIO</label><input name="veterinarian_name" value="{val('veterinarian_name')}"></div><div class="field"><label><input type="checkbox" name="voucher_requested" value="Si" {voucher_checked}> BUONO</label><small class="sub">Spunta per assegnare un buono al veterinario selezionato.</small></div></div></section>
         <section class="section"><h2>TRASPORTATORE</h2><div class="fields"><div class="field"><label>Dati trasportatore</label><select name="transporter_mode"><option {selected('transporter_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('transporter_mode','DATI PET PARADISE','IDEM SPED')}>DATI PET PARADISE</option></select></div><div class="field"><label>Scelta rapida mezzo</label><select id="transport_method_quick"><option value="">Seleziona se serve</option><option value="MEZZO PROPRIO">MEZZO PROPRIO</option></select></div><div class="field"><label>Mezzo di trasporto</label><input name="transport_method" value="{val('transport_method')}"></div><div class="field"><label>Targa automezzo</label><input name="vehicle_plate" value="{val('vehicle_plate')}"></div><div class="field"><label>Temperatura</label><select name="temperature_mode"><option {selected('temperature_mode','Ambiente','Ambiente')}>Ambiente</option><option {selected('temperature_mode','Refrigerato','Ambiente')}>Refrigerato</option><option {selected('temperature_mode','Congelato','Ambiente')}>Congelato</option></select></div><div class="field"><label>Numero colli</label><input name="package_count" value="{val('package_count') or '1'}"></div><div class="field"><label>ID contenitore</label><select name="container_id"><option value="">Seleziona ID contenitore</option><option {selected('container_id','03/2021')}>03/2021</option><option {selected('container_id','04/2021')}>04/2021</option></select></div><div class="field"><label>Numero lotto</label><input name="lot_number" value="{val('lot_number') or '/'}"></div><div class="field"><label>Metodo trattamento</label><input name="treatment_method" value="{val('treatment_method') or '/'}"></div></div></section>
         <section class="section"><h2>Preventivo</h2><div class="fields"><div class="field"><label>Cremazione €</label><input name="price_cremation" value="{val('price_cremation')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Ritiro €</label><input name="price_pickup" value="{val('price_pickup')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Urna €</label><input name="price_urn" value="{val('price_urn')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label><input type="checkbox" name="send_catalog" value="Si" {catalog_checked} style="width:auto"> INVIARE CATALOGO</label></div><div class="field"><label>Riconsegna €</label><input name="price_delivery" value="{val('price_delivery')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Calco €</label><input name="price_cast" value="{val('price_cast')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Serale €</label><input name="price_evening" value="{val('price_evening')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Notturno €</label><input name="price_night" value="{val('price_night')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Festivo €</label><input name="price_holiday" value="{val('price_holiday')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Accessori €</label><input name="price_accessories" value="{val('price_accessories')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Totale servizio €</label><input name="total_service" value="{val('total_service')}" placeholder="Numero o testo libero"></div><div class="field"><label><input type="checkbox" name="send_estremi" value="Si" {estremi_checked} style="width:auto"> INVIARE ESTREMI</label></div><div class="field"><label>Acconto €</label><input name="deposit" value="{val('deposit')}" placeholder="Numero o testo libero"></div><div class="field"><label>Rimanenza €</label><input name="remaining_balance" value="{val('remaining_balance')}" readonly></div><div class="field full"><label>TOTALE</label><textarea name="total_text" placeholder="Testo libero per note sul totale">{val('total_text')}</textarea></div><div class="field full"><label>Note operative</label><textarea name="notes">{val('notes')}</textarea></div></div></section>
         <section class="section"><h2>Etichette operative</h2><div class="fields">{tag_select('tag_assistita','ASSISTITA','tag-red')}{tag_select('tag_possibile_assistita','POSSIBILE ASSISTITA','tag-red')}{tag_select('tag_assistita_streaming','ASSISTITA STREAMING','tag-orange')}{tag_select('tag_saluto','SALUTO','tag-purple')}{tag_select('tag_calco','CALCO','tag-yellow')}{tag_select('tag_avvisare','AVVISARE','tag-pink')}{tag_select('tag_da_richiamare','DA RICHIAMARE','tag-blue')}</div></section>
@@ -989,7 +1240,7 @@ class App(BaseHTTPRequestHandler):
         self.send_html(layout("Nuova pratica",body,user))
 
     def normalized_fields(self,f):
-        keys=["operator_name","request_origin","collaborator_name","destination_branch","owner_first_name","owner_last_name","owner_phone","owner_phone_2","owner_email","owner_tax_code","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_saluto","tag_calco","tag_avvisare","tag_da_richiamare","payment_status","price_cremation","price_pickup","price_evening","price_urn","send_catalog","send_estremi","price_delivery","price_night","price_cast","price_holiday","price_accessories","deposit","remaining_balance","total_service","total_text","identity_document_number","identity_document_date","signing_place"]
+        keys=["client_id","operator_name","request_origin","collaborator_name","destination_branch","owner_first_name","owner_last_name","owner_company","owner_phone","owner_phone_2","owner_email","owner_tax_code","owner_vat","owner_notes","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_saluto","tag_calco","tag_avvisare","tag_da_richiamare","payment_status","price_cremation","price_pickup","price_evening","price_urn","send_catalog","send_estremi","price_delivery","price_night","price_cast","price_holiday","price_accessories","deposit","remaining_balance","total_service","total_text","identity_document_number","identity_document_date","signing_place"]
         data = {k:f.get(k,"").strip() for k in keys}
         if not data["payment_status"] or data["payment_status"] not in PAYMENT_STATES:
             data["payment_status"] = "Da saldare"
@@ -998,6 +1249,7 @@ class App(BaseHTTPRequestHandler):
         for key in ("tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_saluto","tag_calco","tag_avvisare","tag_da_richiamare"):
             data[key] = "Si" if data[key] == "Si" else ""
         data["voucher_requested"] = "Si" if data["voucher_requested"] == "Si" else ""
+        data["client_id"] = data["client_id"] or None
         data["veterinarian_id"] = data["veterinarian_id"] or None
         if data["veterinarian_id"]:
             with db() as c:
@@ -1403,12 +1655,52 @@ class App(BaseHTTPRequestHandler):
         elif existing and existing["status"] in ("Disponibile","Maturato"):
             c.execute("DELETE FROM veterinarian_vouchers WHERE id=?",(existing["id"],))
 
+    def find_client_duplicates(self,c,d):
+        checks=[]; args=[]
+        if d.get("owner_tax_code"):
+            checks.append("UPPER(tax_code)=UPPER(?)"); args.append(d["owner_tax_code"])
+        if d.get("owner_vat"):
+            checks.append("UPPER(vat_number)=UPPER(?)"); args.append(d["owner_vat"])
+        if d.get("owner_email"):
+            checks.append("UPPER(email)=UPPER(?)"); args.append(d["owner_email"])
+        phone_digits=only_digits(d.get("owner_phone"))
+        if phone_digits:
+            checks.append("REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone,''),' ',''),'+',''),'-',''),'.','') LIKE ?"); args.append(f"%{phone_digits[-8:]}")
+        if d.get("owner_first_name") and d.get("owner_last_name"):
+            checks.append("(UPPER(first_name)=UPPER(?) AND UPPER(last_name)=UPPER(?))"); args += [d["owner_first_name"], d["owner_last_name"]]
+        if not checks:
+            return []
+        return c.execute(f"""SELECT id, first_name, last_name, company_name, phone, email, tax_code, vat_number, city, address
+                             FROM clients WHERE {' OR '.join(checks)} ORDER BY updated_at DESC LIMIT 10""",args).fetchall()
+
+    def create_client_from_practice_data(self,c,d):
+        stamp=now()
+        cur=c.execute("""INSERT INTO clients(first_name,last_name,company_name,phone,phone_2,email,tax_code,vat_number,street,city,province,zip,address,notes,created_at,updated_at)
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                      (d.get("owner_first_name"),d.get("owner_last_name"),d.get("owner_company"),d.get("owner_phone"),d.get("owner_phone_2"),d.get("owner_email"),d.get("owner_tax_code"),d.get("owner_vat"),d.get("owner_street"),d.get("owner_city"),d.get("owner_province"),d.get("owner_zip"),d.get("owner_address"),d.get("owner_notes"),stamp,stamp))
+        return cur.lastrowid
+
+    def duplicate_client_page(self,user,d,duplicates):
+        rows=''.join(f'''<tr><td>{esc(((r["first_name"] or "")+" "+(r["last_name"] or "")).strip() or r["company_name"])}</td><td>{esc(r["phone"])}</td><td>{esc(r["email"])}</td><td>{esc(r["tax_code"] or r["vat_number"])}</td><td>{esc(r["city"] or r["address"])}</td><td>ID {r["id"]}</td></tr>''' for r in duplicates)
+        hidden=''.join(f'<input type="hidden" name="{esc(k)}" value="{esc(v)}">' for k,v in d.items() if v is not None)
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Possibile cliente già presente</h1><div class="sub">Prima di creare una nuova anagrafica, controlla questi possibili duplicati.</div></div></div><section class="section"><div class="flash warning">Abbiamo trovato clienti con nome, telefono, email, codice fiscale o partita IVA simili. Puoi tornare alla pratica e usare la ricerca cliente, oppure confermare esplicitamente la creazione di un nuovo cliente.</div><div class="tablebox"><table><thead><tr><th>Cliente</th><th>Telefono</th><th>Email</th><th>CF / P.IVA</th><th>Città / indirizzo</th><th>ID</th></tr></thead><tbody>{rows}</tbody></table></div><div class="actions" style="margin-top:18px"><a class="btn ghost" href="/nuova">Torna e usa cliente esistente</a><form method="post" action="/nuova">{hidden}<input type="hidden" name="confirm_new_client" value="SI"><button class="btn">Conferma nuovo cliente</button></form></div></section></main>'''
+        self.send_html(layout("Possibile duplicato cliente",body,user),409)
+
     def create_practice(self,user):
-        d=self.normalized_fields(self.form()); stamp=now()
+        f=self.form(); d=self.normalized_fields(f); stamp=now()
         error=self.validation_error(d)
         if error: return self.send_error(400, error)
         initial="Ritirato"
         with db() as c:
+            if d.get("client_id"):
+                exists=c.execute("SELECT id FROM clients WHERE id=?",(d["client_id"],)).fetchone()
+                if not exists:
+                    d["client_id"]=None
+            if not d.get("client_id"):
+                duplicates=self.find_client_duplicates(c,d)
+                if duplicates and f.get("confirm_new_client") != "SI":
+                    return self.duplicate_client_page(user,d,duplicates)
+                d["client_id"]=self.create_client_from_practice_data(c,d)
             number=next_practice_code(c,d["service_type"])
             cols=list(d)+["practice_number","status","data_complete","created_at","updated_at","created_by"]
             values=list(d.values())+[number,initial,self.is_complete(d),stamp,stamp,user["id"]]
