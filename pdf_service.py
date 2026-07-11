@@ -33,23 +33,25 @@ BRANCHES = {
 # Unica sorgente coordinate: tutti i campi automatici usano centro + larghezza.
 # In questo modo il testo resta centrato anche se cambia lunghezza.
 PAGE1_FIELDS = {
-    "ddt_number": {"cx": 405, "y": 727, "w": 62, "size": 12},
-    "ddt_date": {"cx": 405, "y": 700, "w": 78, "size": 12, "date": True},
-    "owner": {"cx": 205, "y": 706, "w": 232, "size": 11.5},
-    "owner_address": {"cx": 210, "y": 674, "w": 250, "size": 10.5},
+    # x, y, w, h sono riquadri reali in punti PDF (origine in basso a sinistra).
+    # I campi evidenziati sul DDT cartaceo sono gestiti come box: testo centrato
+    # verticalmente, padding interno e riduzione automatica font se troppo lungo.
+    "ddt_number": {"x": 380, "y": 722, "w": 76, "h": 18, "size": 12, "align": "center"},
+    "ddt_date": {"x": 390, "y": 692, "w": 58, "h": 18, "size": 11, "date": True, "align": "center"},
+    "owner": {"x": 90, "y": 696, "w": 238, "h": 18, "size": 11.5, "align": "left"},
+    "owner_address": {"x": 76, "y": 653, "w": 248, "h": 34, "size": 10.5, "align": "left"},
     "transport_method": {"cx": 500, "y": 674, "w": 128, "size": 11},
     "vehicle_plate": {"cx": 500, "y": 648, "w": 128, "size": 11},
-    "origin": {"cx": 250, "y": 547, "w": 240, "size": 11},
+    "origin": {"x": 78, "y": 533, "w": 246, "h": 22, "size": 11, "align": "left"},
     "package_count": {"cx": 528, "y": 444, "w": 62, "size": 13},
-    "container_id": {"cx": 292, "y": 423, "w": 410, "size": 12},
-    "species_goods": {"cx": 225, "y": 392, "w": 105, "size": 12},
+    "container_id": {"x": 300, "y": 442, "w": 76, "h": 20, "size": 12, "align": "center"},
+    "species_goods": {"x": 207, "y": 373, "w": 58, "h": 18, "size": 12, "align": "center"},
     "weight_goods": {"cx": 455, "y": 392, "w": 112, "size": 12},
     "lot_number": {"cx": 542, "y": 392, "w": 55, "size": 11},
     "treatment_method": {"cx": 555, "y": 338, "w": 95, "size": 11},
-    "species_animal": {"cx": 218, "y": 307, "w": 150, "size": 12},
+    "species_animal": {"x": 207, "y": 304, "w": 58, "h": 18, "size": 12, "align": "center"},
     "microchip": {"cx": 675 / 2, "y": 269, "w": 250, "size": 11},
 }
-
 PAGE2_FIELDS = {
     "ddt_date": {"cx": 195, "y": 588, "w": 120, "size": 14, "date": True},
     "ddt_number": {"cx": 505, "y": 588, "w": 90, "size": 14},
@@ -107,7 +109,7 @@ def _get(page, key, default=""):
 def _date(value):
     value = str(value or "")
     try:
-        return datetime.strptime(value, "%Y-%m-%d").strftime("%d.%m.%y")
+        return datetime.strptime(value[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
     except ValueError:
         return value
 
@@ -126,11 +128,36 @@ def _fit_text(value, width, size, font="Helvetica"):
     return value + ellipsis if value else "", size
 
 
-def _draw_centered(c, spec, value):
+def _draw_text_box(c, spec, value):
     value = _date(value) if spec.get("date") else value
-    value, size = _fit_text(value, spec["w"], spec["size"])
+    padding = float(spec.get("padding", 2.5))
+    width = max(1, float(spec["w"]) - padding * 2)
+    value, size = _fit_text(value, width, spec["size"])
     if not value:
         return
+
+    if "x" in spec:
+        x = float(spec["x"])
+        y = float(spec["y"])
+        h = float(spec.get("h", size + padding * 2))
+        draw_y = y + (h - size) / 2 + 0.8
+        if spec.get("cover"):
+            c.saveState()
+            c.setFillColorRGB(1, 1, 1)
+            c.rect(x, y, spec["w"], h, fill=1, stroke=0)
+            c.restoreState()
+        c.setFont("Helvetica", size)
+        align = spec.get("align", "center")
+        text_w = stringWidth(value, "Helvetica", size)
+        if align == "left":
+            draw_x = x + padding
+        elif align == "right":
+            draw_x = x + spec["w"] - padding - text_w
+        else:
+            draw_x = x + (spec["w"] - text_w) / 2
+        c.drawString(draw_x, draw_y, value)
+        return
+
     cx, y, w = spec["cx"], spec["y"], spec["w"]
     if spec.get("cover"):
         c.saveState()
@@ -139,6 +166,10 @@ def _draw_centered(c, spec, value):
         c.restoreState()
     c.setFont("Helvetica", size)
     c.drawString(cx - stringWidth(value, "Helvetica", size) / 2, y, value)
+
+
+def _draw_centered(c, spec, value):
+    _draw_text_box(c, spec, value)
 
 
 def _draw_fields(c, fields, values):
@@ -263,3 +294,4 @@ def generate_ddt(practice, template_path: Path, output_path: Path):
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("wb") as handle:
         writer.write(handle)
+
