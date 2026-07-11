@@ -298,7 +298,9 @@ def init_db():
             "used_voucher_id": "INTEGER",
             "whatsapp_thanks_sent_at": "TEXT",
             "whatsapp_thanks_last_error": "TEXT",
-            "no_whatsapp_message": "TEXT"
+            "no_whatsapp_message": "TEXT",
+            "deleted_at": "TEXT",
+            "deleted_by": "INTEGER"
         }
         existing = {row["name"] for row in c.execute("PRAGMA table_info(practices)")}
         for name, definition in extra_columns.items():
@@ -489,6 +491,7 @@ CSS = r"""
 :root{--ink:#24312c;--muted:#6e7b75;--brand:#a74045;--brand2:#7f3035;--paper:#fff;--bg:#f4f1ed;--line:#ded8d1;--green:#39745b;--gold:#a87926}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
 a{color:inherit;text-decoration:none}.top{height:68px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:18px;padding:0 28px;position:sticky;top:0;z-index:5}.brand{font-weight:800;font-size:19px;color:var(--brand)}.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:1.5px}.nav{display:flex;gap:8px;margin-left:auto}.nav a{padding:9px 12px;border-radius:9px}.nav a:hover{background:#f3eeea}.wrap{max-width:1280px;margin:0 auto;padding:28px}.titlebar{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:22px}h1{margin:0;font-size:28px}h2{font-size:18px;margin:0 0 15px}.sub{color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:10px;background:var(--brand);color:white;padding:11px 16px;font-weight:700;cursor:pointer}.btn:hover{background:var(--brand2)}.btn.ghost{background:white;color:var(--ink);border:1px solid var(--line)}.grid{display:grid;gap:16px}.stats{grid-template-columns:repeat(3,1fr)}.card{background:var(--paper);border:1px solid var(--line);border-radius:15px;padding:20px;box-shadow:0 3px 15px #4b39260a}.stat{display:flex;justify-content:space-between;align-items:center}.stat b{font-size:32px;color:var(--brand)}.badge{display:inline-flex;padding:5px 9px;border-radius:99px;background:#eee9e3;font-size:12px;font-weight:700}.tag-red{background:#e53935;color:white}.tag-orange{background:#fb8c00;color:white}.tag-outline-orange{background:white;color:#fb8c00;border:2px solid #fb8c00}.tag-purple{background:#7e57c2;color:white}.tag-yellow,.pay-yellow{background:#fdd835;color:#3b3100}.tag-pink{background:#f06292;color:white}.tag-blue,.pay-blue{background:#1e88e5;color:white}.tag-green,.pay-green{background:#43a047;color:white}.status-stack{display:flex;gap:5px;flex-wrap:wrap}.form-grid{grid-template-columns:repeat(2,1fr)}.wide{grid-column:1/-1}.section{background:#fff;border:1px solid var(--line);border-radius:15px;padding:20px}.fields{display:grid;grid-template-columns:repeat(2,1fr);gap:13px}.field{display:flex;flex-direction:column;gap:6px}.field.full{grid-column:1/-1}label{font-weight:650;font-size:13px}input,select,textarea{width:100%;border:1px solid #cfc8c0;border-radius:9px;padding:11px 12px;background:white;color:var(--ink);font:inherit}input[type=checkbox]{width:auto;min-height:auto}textarea{min-height:90px;resize:vertical}input:focus,select:focus,textarea:focus{outline:3px solid #a7404520;border-color:var(--brand)}table{width:100%;border-collapse:collapse;background:white}th,td{text-align:left;padding:13px;border-bottom:1px solid var(--line)}th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}.tablebox{overflow:auto;-webkit-overflow-scrolling:touch;background:white;border:1px solid var(--line);border-radius:15px}.actions{display:flex;gap:10px;flex-wrap:wrap}.flash{padding:13px 16px;border-radius:10px;background:#e5f2eb;color:#285b45;margin-bottom:16px}.warning{background:#fff1d8;color:#765315}.login{max-width:410px;margin:10vh auto;background:white;padding:34px;border-radius:18px;border:1px solid var(--line)}.timeline{border-left:2px solid var(--line);margin-left:7px;padding-left:20px}.event{padding:0 0 18px;position:relative}.event:before{content:'';position:absolute;width:10px;height:10px;border-radius:50%;background:var(--brand);left:-26px;top:5px}.kvs{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.kv{background:#faf8f5;border-radius:10px;padding:12px}.kv small{display:block;color:var(--muted)}.signature-pad{width:100%;height:260px;border:2px dashed var(--line);border-radius:14px;background:white;touch-action:none}
+body{background:radial-gradient(circle at top left,#fff8f3 0,#f4f1ed 34%,#ece5dd 100%)}.top{backdrop-filter:saturate(1.2) blur(10px);box-shadow:0 8px 28px #4b392612}.brand{letter-spacing:.2px}.nav a{font-weight:650}.nav a.btn{box-shadow:0 8px 20px #a7404524}.wrap{animation:ppmFade .18s ease-out}.titlebar h1{letter-spacing:-.03em}.section,.card,.tablebox,.login{box-shadow:0 10px 30px #4b39260d}.section{transition:box-shadow .15s ease, transform .15s ease}.card{transition:transform .15s ease,box-shadow .15s ease}.card:hover{transform:translateY(-2px);box-shadow:0 14px 34px #4b392617}.btn{box-shadow:0 6px 16px #a740451f}.btn.ghost{box-shadow:none}.kv{border:1px solid #eee6df}.tablebox table tr:hover td{background:#fffaf6}input,select,textarea{transition:border-color .15s ease,box-shadow .15s ease}.danger{border-width:1px}.trash-note{background:#fff7e8;border:1px solid #f0cf9d;color:#765315;border-radius:12px;padding:12px 14px;margin-bottom:16px}.empty-state{text-align:center;padding:32px;color:var(--muted)}@keyframes ppmFade{from{opacity:.78;transform:translateY(3px)}to{opacity:1;transform:none}}
 .practice-layout{grid-template-columns:2fr 1fr}@media(max-width:800px){html,body{width:100%;max-width:100%;overflow-x:hidden}body{font-size:16px}.wrap{padding:14px}.top{height:auto;min-height:64px;padding:10px 12px;align-items:flex-start}.brand{font-size:17px}.nav{gap:4px;flex-wrap:wrap}.nav a{padding:8px 9px}.nav a span{display:none}.btn{width:100%;min-height:46px}.actions{width:100%}.actions .btn,.actions form{flex:1 1 100%}.stats,.form-grid,.fields,.kvs,.practice-layout{grid-template-columns:1fr}.section{padding:16px;border-radius:13px}.titlebar{align-items:flex-start;flex-direction:column}.wide{grid-column:auto}input,select,textarea{font-size:16px;min-height:46px}th:nth-child(4),td:nth-child(4){display:none}.badge{margin:2px 2px 2px 0}}
 .danger{border-color:#e2a5a5;background:#fff7f7}.btn.danger-btn{background:#b42323;color:white}.btn.danger-btn:hover{background:#8f1d1d}.danger-note{color:#8f1d1d;font-weight:700}
 .home-logo{width:118px;height:118px;object-fit:contain;border-radius:24px;background:white;padding:10px;border:1px solid var(--line);box-shadow:0 8px 24px #4b392614}
@@ -872,7 +875,7 @@ async function sharePracticePdf(url, title){
 def layout(title, body, user=None):
     nav = ""
     if user:
-        nav = f'''<nav class="nav"><a href="/">Dashboard</a><a href="/pratiche">Archivio</a><a href="/veterinari">Veterinari</a><a href="/nuova" class="btn">+ Nuova pratica</a><a href="/logout">Esci</a></nav>'''
+        nav = f'''<nav class="nav"><a href="/">Dashboard</a><a href="/pratiche">Archivio</a><a href="/veterinari">Veterinari</a><a href="/cestino">Cestino</a><a href="/nuova" class="btn">+ Nuova pratica</a><a href="/logout">Esci</a></nav>'''
     return f'''<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)} - Pet Paradise Manager</title><style>{CSS}</style></head><body><header class="top"><a class="brand" href="/">Pet Paradise <small>MANAGER</small></a>{nav}</header>{body}{APP_JS}</body></html>'''
 
 
@@ -964,6 +967,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/pratiche": return self.archive_home(user)
         if path == "/archivio/pratiche": return self.archive(user)
         if path == "/archivio/clienti": return self.clients_archive(user)
+        if path == "/cestino": return self.trash_page(user)
         if path == "/database-mesi": return self.redirect("/pratiche")
         if path == "/veterinari": return self.veterinarians_page(user)
         match = re.fullmatch(r"/veterinari/(\d+)", path)
@@ -972,6 +976,8 @@ class App(BaseHTTPRequestHandler):
         if match: return self.practice(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/modifica", path)
         if match: return self.edit_page(user, int(match.group(1)))
+        match = re.fullmatch(r"/pratiche/(\d+)/elimina", path)
+        if match: return self.delete_warning_page(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/ddt\.pdf", path)
         if match: return self.download_ddt(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/ddt-bozza\.pdf", path)
@@ -1017,6 +1023,10 @@ class App(BaseHTTPRequestHandler):
         if match: return self.signature_submit(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/elimina", path)
         if match: return self.delete_practice(user, int(match.group(1)))
+        match = re.fullmatch(r"/pratiche/(\d+)/ripristina", path)
+        if match: return self.restore_practice(user, int(match.group(1)))
+        match = re.fullmatch(r"/pratiche/(\d+)/elimina-definitiva", path)
+        if match: return self.permanent_delete_practice(user, int(match.group(1)))
         self.send_error(404)
 
     def login_page(self, error=""):
@@ -1039,12 +1049,13 @@ class App(BaseHTTPRequestHandler):
 
     def dashboard(self,user):
         with db() as c:
-            counts={r["status"]:r["n"] for r in c.execute("SELECT status,count(*) n FROM practices GROUP BY status")}
-            payment_counts={r["payment_status"]:r["n"] for r in c.execute("SELECT COALESCE(payment_status,'Da saldare') payment_status,count(*) n FROM practices GROUP BY COALESCE(payment_status,'Da saldare')")}
-            catalog_count=c.execute("SELECT count(*) n FROM practices WHERE send_catalog='Si' AND status!='Consegnato'").fetchone()["n"]
-            estremi_count=c.execute("SELECT count(*) n FROM practices WHERE send_estremi='Si' AND status!='Consegnato'").fetchone()["n"]
-            recent=c.execute("SELECT * FROM practices ORDER BY date(COALESCE(NULLIF(pickup_date,''), created_at)) DESC, id DESC LIMIT 8").fetchall()
-            incomplete=c.execute("SELECT count(*) n FROM practices WHERE data_complete=0 AND status!='Consegnata'").fetchone()["n"]
+            active_where="deleted_at IS NULL OR deleted_at=''"
+            counts={r["status"]:r["n"] for r in c.execute(f"SELECT status,count(*) n FROM practices WHERE {active_where} GROUP BY status")}
+            payment_counts={r["payment_status"]:r["n"] for r in c.execute(f"SELECT COALESCE(payment_status,'Da saldare') payment_status,count(*) n FROM practices WHERE {active_where} GROUP BY COALESCE(payment_status,'Da saldare')")}
+            catalog_count=c.execute(f"SELECT count(*) n FROM practices WHERE ({active_where}) AND send_catalog='Si' AND status!='Consegnato'").fetchone()["n"]
+            estremi_count=c.execute(f"SELECT count(*) n FROM practices WHERE ({active_where}) AND send_estremi='Si' AND status!='Consegnato'").fetchone()["n"]
+            recent=c.execute(f"SELECT * FROM practices WHERE {active_where} ORDER BY date(COALESCE(NULLIF(pickup_date,''), created_at)) DESC, id DESC LIMIT 8").fetchall()
+            incomplete=c.execute(f"SELECT count(*) n FROM practices WHERE ({active_where}) AND data_complete=0 AND status!='Consegnata'").fetchone()["n"]
         cards=''.join(f'<a class="card stat" href="/archivio/pratiche?stato={quote(s)}"><span>{esc(s)}</span><b>{counts.get(s,0)}</b></a>' for s in STATES)
         pay_card_cls={"Da saldare":"pay-yellow","Acconto":"pay-blue","Pagato":"pay-green"}
         payment_cards=''.join(f'<a class="card stat" href="/archivio/pratiche?pagamento={quote(s)}"><span class="badge {pay_card_cls.get(s,"")}">{esc(s)}</span><b>{payment_counts.get(s,0)}</b></a>' for s in PAYMENT_STATES)
@@ -1109,13 +1120,13 @@ class App(BaseHTTPRequestHandler):
         return ''.join(html)
 
     def archive_home(self,user):
-        body='''<main class="wrap"><div class="titlebar"><div><h1>ARCHIVIO</h1><div class="sub">Scegli cosa vuoi consultare.</div></div></div><section class="grid stats"><a class="card stat" href="/archivio/pratiche"><span>Pratiche</span><b>-</b></a><a class="card stat" href="/archivio/clienti"><span>Anagrafica clienti</span><b>-</b></a></section></main>'''
+        body='''<main class="wrap"><div class="titlebar"><div><h1>ARCHIVIO</h1><div class="sub">Scegli cosa vuoi consultare.</div></div></div><section class="grid stats"><a class="card stat" href="/archivio/pratiche"><span>Pratiche</span><b>-</b></a><a class="card stat" href="/archivio/clienti"><span>Anagrafica clienti</span><b>-</b></a><a class="card stat" href="/cestino"><span>Cestino</span><b>-</b></a></section></main>'''
         self.send_html(layout("Archivio",body,user))
 
     def clients_archive(self,user):
         q=parse_qs(urlparse(self.path).query)
         term=q.get("q",[""])[0].strip()
-        sql="SELECT owner_first_name, owner_last_name, owner_phone, owner_phone_2, owner_email, owner_tax_code, owner_address, owner_city, owner_province, owner_zip, COUNT(*) n, MAX(created_at) last_date FROM practices WHERE COALESCE(owner_first_name,'')||COALESCE(owner_last_name,'')||COALESCE(owner_phone,'')<>''"
+        sql="SELECT owner_first_name, owner_last_name, owner_phone, owner_phone_2, owner_email, owner_tax_code, owner_address, owner_city, owner_province, owner_zip, COUNT(*) n, MAX(created_at) last_date FROM practices WHERE (deleted_at IS NULL OR deleted_at='') AND COALESCE(owner_first_name,'')||COALESCE(owner_last_name,'')||COALESCE(owner_phone,'')<>''"
         args=[]
         if term:
             like=f"%{term}%"
@@ -1227,7 +1238,7 @@ class App(BaseHTTPRequestHandler):
         state=q.get("stato",[""])[0].strip()
         payment=q.get("pagamento",[""])[0].strip()
         promemoria=q.get("promemoria",[""])[0].strip()
-        sql="SELECT * FROM practices WHERE 1=1"; args=[]
+        sql="SELECT * FROM practices WHERE (deleted_at IS NULL OR deleted_at='')"; args=[]
         if term:
             like=f"%{term}%"
             sql+=" AND (practice_number LIKE ? OR animal_name LIKE ? OR owner_first_name||' '||owner_last_name LIKE ? OR owner_phone LIKE ? OR owner_phone_2 LIKE ? OR microchip LIKE ? OR clinic_name LIKE ? OR veterinarian_name LIKE ? OR collaborator_name LIKE ? OR CAST(ddt_number AS TEXT) LIKE ?)"
@@ -1998,7 +2009,7 @@ class App(BaseHTTPRequestHandler):
               {whatsapp_block}
               <div class="section"><h2>Documento DCS / DDT</h2><p>{ddt}</p>{pdf_block}</div>
               <div class="section"><h2>Note</h2><p>{esc(p['notes']) or '<span class="sub">Nessuna nota.</span>'}</p></div>
-              <div class="section danger"><h2>Elimina pratica</h2><p class="danger-note">Attenzione: questa azione cancella definitivamente pratica, storico e PDF collegati.</p><form method="post" action="/pratiche/{pid}/elimina" onsubmit="return confirm('Confermi la cancellazione definitiva della pratica?')"><div class="field"><label>Per confermare scrivi ELIMINA</label><input name="confirm_delete" autocomplete="off" required></div><button class="btn danger-btn" style="margin-top:12px">Elimina definitivamente</button></form></div>
+              <div class="section danger"><h2>Sposta nel Cestino</h2><p class="danger-note">La pratica non verra cancellata definitivamente: verra nascosta da Dashboard e Archivio e potrai ripristinarla dal Cestino.</p><form method="post" action="/pratiche/{pid}/elimina" onsubmit="return confirm('Spostare questa pratica nel Cestino? Potrai ripristinarla in seguito.')"><button class="btn danger-btn" style="margin-top:12px">Sposta nel Cestino</button></form></div>
             </div>
             <aside class="section"><h2>Storico</h2><div class="timeline">{hist}</div></aside>
           </section>
@@ -2135,29 +2146,96 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         if not path.exists(): return self.send_error(404)
         return self.send_pdf(path, safe_pdf_filename(p["animal_name"] or p["practice_number"], "pratica"))
 
-    def delete_practice(self,user,pid):
-        f=self.form()
-        if f.get("confirm_delete","").strip().upper() != "ELIMINA":
-            return self.send_error(400, "Per eliminare la pratica devi scrivere ELIMINA")
+    def delete_warning_page(self,user,pid):
         with db() as c:
             p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
-            if not p:return self.send_error(404)
-            pdf_names = []
-            if p["ddt_pdf"]:
-                pdf_names.append(p["ddt_pdf"])
-            if p["practice_number"]:
-                pdf_names.append(f"DCS-BOZZA-{p['practice_number']}.pdf")
-            c.execute("DELETE FROM veterinarian_vouchers WHERE practice_id=? AND status IN ('Disponibile','Maturato')",(pid,))
-            c.execute("DELETE FROM practice_history WHERE practice_id=?",(pid,))
-            c.execute("DELETE FROM practices WHERE id=?",(pid,))
-        for name in pdf_names:
-            path = (DDT_DIR / name).resolve()
-            try:
-                if str(path).startswith(str(DDT_DIR.resolve())) and path.exists():
-                    path.unlink()
-            except OSError:
-                pass
-        self.redirect("/pratiche")
+        if not p:
+            return self.error_page("Pratica non trovata", "La pratica richiesta non esiste o e gia stata eliminata definitivamente.", "/pratiche")
+        if "deleted_at" in p.keys() and p["deleted_at"]:
+            return self.redirect("/cestino")
+        body=f'''<main class="wrap"><section class="section danger"><h1>Sposta pratica nel Cestino</h1><p class="danger-note">La pratica {esc(p["practice_number"])} non verra cancellata definitivamente. Sara nascosta da Dashboard e Archivio e potra essere ripristinata dal Cestino.</p><div class="actions"><form method="post" action="/pratiche/{pid}/elimina" onsubmit="return confirm('Spostare questa pratica nel Cestino?')"><button class="btn danger-btn">Sposta nel Cestino</button></form><a class="btn ghost" href="/pratiche/{pid}">Annulla</a></div></section></main>'''
+        self.send_html(layout("Sposta nel Cestino", body, user))
+
+    def trash_page(self,user):
+        with db() as c:
+            rows=c.execute("SELECT * FROM practices WHERE deleted_at IS NOT NULL AND deleted_at<>'' ORDER BY deleted_at DESC, id DESC").fetchall()
+        if rows:
+            body_rows=[]
+            for r in rows:
+                animal='/' if (r['service_type'] or '') == 'Cremazione collettiva' else esc(r['animal_name'] or 'Da inserire')
+                owner=esc(((r['owner_first_name'] or '')+' '+(r['owner_last_name'] or '')).strip())
+                body_rows.append(f'''<tr><td>{esc(date_it(r["pickup_date"] or r["created_at"]))}</td><td><a href="/pratiche/{r["id"]}"><b>{esc(r["practice_number"])}</b></a><br><small>Cestinata il {esc((r["deleted_at"] or "").replace("T"," "))}</small></td><td>{animal}</td><td>{owner}</td><td>{esc(r["clinic_name"] or "-")}</td><td><div class="actions"><form method="post" action="/pratiche/{r["id"]}/ripristina" onsubmit="return confirm('Ripristinare questa pratica?')"><button class="btn ghost">Ripristina</button></form><form method="post" action="/pratiche/{r["id"]}/elimina-definitiva" onsubmit="return confirm('Sei sicuro di voler eliminare definitivamente questa pratica?') && confirm('Questa operazione e irreversibile.')"><input type="hidden" name="confirm_delete" value="ELIMINA DEFINITIVAMENTE"><button class="btn danger-btn">Elimina definitivamente</button></form></div></td></tr>''')
+            content=f'''<div class="trash-note">Le pratiche nel Cestino non compaiono in Dashboard e Archivio. Ripristinale se sono state eliminate per errore.</div><div class="tablebox"><table><thead><tr><th>Data recupero</th><th>Pratica</th><th>Animale</th><th>Speditore</th><th>Veterinario</th><th>Azioni</th></tr></thead><tbody>{''.join(body_rows)}</tbody></table></div>'''
+        else:
+            content='<section class="section empty-state">Il Cestino e vuoto.</section>'
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Cestino</h1><div class="sub">Pratiche eliminate ma ancora recuperabili.</div></div><a class="btn ghost" href="/archivio/pratiche">Torna all archivio</a></div>{content}</main>'''
+        self.send_html(layout("Cestino", body, user))
+
+    def delete_practice(self,user,pid):
+        stamp=now()
+        try:
+            with db() as c:
+                p=c.execute("SELECT id,deleted_at FROM practices WHERE id=?",(pid,)).fetchone()
+                if not p:
+                    return self.error_page("Pratica non trovata", "La pratica non esiste o e gia stata eliminata definitivamente.", "/pratiche")
+                if p["deleted_at"]:
+                    return self.redirect("/cestino")
+                c.execute("UPDATE practices SET deleted_at=?, deleted_by=?, updated_at=? WHERE id=?",(stamp,user["id"],stamp,pid))
+                c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,note,user_id,created_at) VALUES(?,?,?,?,?,?,?)",(pid,"Cestino","Attiva","Cestinata","Pratica spostata nel Cestino",user["id"],stamp))
+            self.redirect("/cestino")
+        except Exception as exc:
+            print("[DELETE_PRACTICE] errore spostamento cestino", flush=True)
+            print(traceback.format_exc(), flush=True)
+            return self.error_page("Errore eliminazione", f"Non sono riuscito a spostare la pratica nel Cestino. Nessun dato e stato cancellato. Dettaglio: {type(exc).__name__}: {exc}", f"/pratiche/{pid}")
+
+    def restore_practice(self,user,pid):
+        stamp=now()
+        try:
+            with db() as c:
+                p=c.execute("SELECT id,deleted_at FROM practices WHERE id=?",(pid,)).fetchone()
+                if not p:
+                    return self.error_page("Pratica non trovata", "La pratica non esiste o e stata eliminata definitivamente.", "/cestino")
+                c.execute("UPDATE practices SET deleted_at=NULL, deleted_by=NULL, updated_at=? WHERE id=?",(stamp,pid))
+                c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,note,user_id,created_at) VALUES(?,?,?,?,?,?,?)",(pid,"Ripristino","Cestinata","Attiva","Pratica ripristinata dal Cestino",user["id"],stamp))
+            self.redirect(f"/pratiche/{pid}")
+        except Exception as exc:
+            print("[RESTORE_PRACTICE] errore ripristino", flush=True)
+            print(traceback.format_exc(), flush=True)
+            return self.error_page("Errore ripristino", f"Non sono riuscito a ripristinare la pratica. Dettaglio: {type(exc).__name__}: {exc}", "/cestino")
+
+    def permanent_delete_practice(self,user,pid):
+        f=self.form()
+        if f.get("confirm_delete","").strip().upper() != "ELIMINA DEFINITIVAMENTE":
+            return self.error_page("Conferma mancante", "Per eliminare definitivamente serve la conferma corretta.", "/cestino")
+        pdf_names=[]
+        try:
+            with db() as c:
+                p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+                if not p:
+                    return self.redirect("/cestino")
+                if not ("deleted_at" in p.keys() and p["deleted_at"]):
+                    return self.error_page("Operazione non consentita", "La pratica deve prima essere spostata nel Cestino.", f"/pratiche/{pid}")
+                if p["ddt_pdf"]:
+                    pdf_names.append(p["ddt_pdf"])
+                if p["practice_number"]:
+                    pdf_names.append(f"DCS-BOZZA-{p['practice_number']}.pdf")
+                c.execute("DELETE FROM whatsapp_messages WHERE practice_id=?",(pid,))
+                c.execute("UPDATE veterinarian_vouchers SET practice_id=NULL, note=COALESCE(note,'') || ' - pratica eliminata definitivamente' WHERE practice_id=?",(pid,))
+                c.execute("DELETE FROM practice_history WHERE practice_id=?",(pid,))
+                c.execute("DELETE FROM practices WHERE id=?",(pid,))
+            for name in pdf_names:
+                try:
+                    path=(DDT_DIR / name).resolve()
+                    if str(path).startswith(str(DDT_DIR.resolve())) and path.exists():
+                        path.unlink()
+                except Exception:
+                    print(f"[PERMANENT_DELETE] PDF non eliminato: {name}", flush=True)
+                    print(traceback.format_exc(), flush=True)
+            self.redirect("/cestino")
+        except Exception as exc:
+            print("[PERMANENT_DELETE] errore cancellazione definitiva", flush=True)
+            print(traceback.format_exc(), flush=True)
+            return self.error_page("Errore cancellazione definitiva", f"La cancellazione definitiva non e stata completata. Il database e stato riportato allo stato precedente. Dettaglio: {type(exc).__name__}: {exc}", "/cestino")
 
     def assign_ddt(self,user,pid):
         stamp=now(); date=datetime.now().date().isoformat()
