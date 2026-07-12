@@ -513,6 +513,19 @@ input,select,textarea{background:#0c121b;border-color:#323c4b;color:#f3f5f8}inpu
 .install-btn{display:none}.install-btn.ready{display:flex}.install-hint{position:fixed;right:22px;bottom:22px;z-index:50;max-width:340px;padding:16px;background:#141b27;border:1px solid #353f4f;border-radius:16px;box-shadow:0 20px 60px #0008}.install-hint b{display:block;color:#ff6679;margin-bottom:5px}.install-hint button{margin-top:10px}
 @media(max-width:900px){.top{position:sticky;width:100%;height:auto;min-height:66px;bottom:auto;flex-direction:row;align-items:center;padding:8px 12px}.brand{padding:0}.brand-logo{width:42px;height:42px}.brand-copy{display:none}.nav{margin:0 0 0 auto;flex-direction:row;align-items:center;width:auto;overflow-x:auto}.nav a{padding:9px}.nav a span:not(.nav-icon){display:none}.nav-icon{display:inline-block!important}.nav .btn{margin:0}.nav .btn span:not(.nav-icon){display:none}.nav .logout{margin:0}.wrap{margin-left:0;padding:18px 14px}.stats{grid-template-columns:1fr 1fr}.home-logo{width:82px;height:82px}.tablebox th,.tablebox td{display:table-cell!important;white-space:nowrap}.install-hint{left:14px;right:14px;bottom:14px}.titlebar{gap:12px}}
 @media(max-width:560px){.stats{grid-template-columns:1fr}.brand-logo{width:38px;height:38px}.nav a{font-size:0}.nav-icon{font-size:18px}.nav .btn{width:auto;min-height:42px}.wrap{padding-top:14px}h1{font-size:25px}}
+/* Premium dashboard layout */
+body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.skip-link{position:fixed;top:8px;left:8px;z-index:200;transform:translateY(-150%);padding:10px 14px;border-radius:9px;background:#fff;color:#111827}.skip-link:focus{transform:none}
+.top{width:238px;padding:20px 14px;background:#0b1220;border-color:#263246}.brand{padding:0 8px 20px}.brand-logo{width:50px;height:50px}.brand-copy{font-size:17px}.nav{gap:3px;overflow-y:auto;padding-right:3px}.nav a,.nav button{min-height:42px;padding:9px 11px;border-radius:10px}.nav a:first-child{background:linear-gradient(90deg,#4a1826,#241523);border-color:#642239}.nav .install-btn{margin-top:8px}.nav .logout{margin-top:12px}
+.app-header{position:fixed;left:238px;right:0;top:0;height:76px;z-index:40;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px 30px;background:#111827e8;border-bottom:1px solid #263246;backdrop-filter:blur(16px)}.header-search{width:min(420px,40vw);display:flex;align-items:center;gap:9px;padding:0 13px;border:1px solid #334155;border-radius:11px;background:#172033}.header-search input{min-height:42px;padding:8px 0;background:transparent;border:0}.header-search input:focus{outline:0}.header-actions{display:flex;align-items:center;gap:9px}.icon-btn{display:inline-grid;place-items:center;width:42px;height:42px;padding:0;border:1px solid #334155;border-radius:11px;background:#172033;color:#cbd5e1;cursor:pointer}.icon-btn:hover{color:#fff;border-color:#ef405f}.header-new{gap:7px}.header-actions time{min-width:104px;padding:6px 10px;border:1px solid #334155;border-radius:10px;text-align:center;font-weight:700;background:#172033}.header-actions time small{display:block;color:#94a3b8;font-size:10px;text-transform:capitalize}.wrap{max-width:none;margin-left:238px;padding:106px 30px 42px}
+.dashboard-wrap{max-width:1500px}.welcome{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}.welcome h1{font-size:30px}.welcome p{margin:7px 0 0;color:#94a3b8}.dashboard-heading{margin:24px 0 12px;font-size:15px;color:#dce4ef}.dashboard-states{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.metric-card,.payment-card{position:relative;min-height:126px;display:flex;align-items:center;justify-content:space-between;gap:15px;padding:20px;border:1px solid #334155;border-radius:14px;background:#1f2937;overflow:hidden;box-shadow:0 14px 36px #03071235;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}.metric-card:before,.payment-card:before{content:"";position:absolute;inset:0;background:linear-gradient(120deg,var(--card-glow),transparent 62%);pointer-events:none}.metric-card:hover,.payment-card:hover{transform:translateY(-3px);border-color:#56657a;box-shadow:0 20px 44px #03071260}.metric-copy,.payment-card>span:first-child{position:relative;display:flex;flex-direction:column}.metric-card small,.payment-card small{font-style:normal;color:#e2e8f0}.metric-card strong,.payment-card strong{margin-top:4px;font-size:30px;line-height:1.05}.metric-card em,.payment-card em{margin-top:9px;color:#94a3b8;font-size:12px;font-style:normal}.metric-icon,.activity-icon{position:relative;display:grid;place-items:center;width:46px;height:46px;border-radius:12px;background:var(--icon-bg);color:var(--icon-color);box-shadow:0 8px 22px var(--icon-shadow)}.state-red{--card-glow:#83184375;--icon-bg:#881337;--icon-color:#fb7185;--icon-shadow:#e11d4840}.state-blue{--card-glow:#17255480;--icon-bg:#172554;--icon-color:#60a5fa;--icon-shadow:#2563eb40}.state-purple{--card-glow:#3b076480;--icon-bg:#3b0764;--icon-color:#c084fc;--icon-shadow:#9333ea40}.state-green{--card-glow:#052e2b85;--icon-bg:#064e3b;--icon-color:#4ade80;--icon-shadow:#16a34a40}
+.dashboard-payments{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.payment-card{min-height:116px}.payment-due{--card-glow:#713f123d;--icon-bg:#573713;--icon-color:#fbbf24;--icon-shadow:#f59e0b35}.payment-deposit{--card-glow:#17255465;--icon-bg:#172554;--icon-color:#60a5fa;--icon-shadow:#2563eb35}.payment-paid{--card-glow:#052e2b75;--icon-bg:#064e3b;--icon-color:#4ade80;--icon-shadow:#16a34a35}
+.dashboard-lower{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(350px,.8fr);gap:16px;margin-top:24px}.dashboard-panel{min-height:350px;padding:20px;border:1px solid #334155;border-radius:15px;background:#1f2937;box-shadow:0 18px 48px #03071235}.dashboard-panel>header{display:flex;align-items:flex-start;justify-content:space-between;gap:15px}.dashboard-panel h2{margin:0;font-size:16px}.dashboard-panel header p{margin:8px 0 0;color:#94a3b8}.dashboard-panel header p strong{color:#fff;font-size:21px}.dashboard-panel header a{color:#fb7185;font-size:13px}.income-chart{display:block;width:100%;height:auto;margin-top:14px}.chart-grid line{stroke:#334155;stroke-width:1}.chart-grid text,.chart-dates text{fill:#94a3b8;font-size:11px}.chart-area{fill:url(#incomeArea)}.chart-line{fill:none;stroke:#ef405f;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 5px 8px #ef405f55)}.income-chart circle{fill:#fb7185;stroke:#1f2937;stroke-width:2}
+.activity-list{display:flex;flex-direction:column;margin-top:14px}.activity-item{display:grid;grid-template-columns:42px minmax(0,1fr) auto;align-items:center;gap:11px;padding:12px 0;border-bottom:1px solid #334155}.activity-item:last-child{border-bottom:0}.activity-item b,.activity-item small{display:block}.activity-item b{font-size:13px}.activity-item small{margin-top:3px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.activity-item time{color:#94a3b8;font-size:11px}.activity-icon{width:38px;height:38px;--icon-bg:#243244;--icon-color:#5eead4;--icon-shadow:transparent}.activity-1 .activity-icon{--icon-bg:#422006;--icon-color:#fbbf24}.activity-2 .activity-icon{--icon-bg:#3b0764;--icon-color:#c084fc}.activity-3 .activity-icon{--icon-bg:#4c0519;--icon-color:#fb7185}.activity-empty{padding:40px 10px;color:#94a3b8;text-align:center}
+.bottom-nav,.more-menu,.more-backdrop{display:none}.tag-red{background:#7f1d2d;color:#fecdd3}.tag-orange{background:#7c2d12;color:#fed7aa}.tag-outline-orange{background:#3b1d0c;color:#fdba74;border-color:#f97316}.tag-purple{background:#4c1d95;color:#e9d5ff}.tag-yellow{background:#713f12;color:#fef08a}.tag-pink{background:#831843;color:#fbcfe8}.tag-blue{background:#1e3a8a;color:#bfdbfe}.tag-green{background:#14532d;color:#bbf7d0}
+*:focus-visible{outline:3px solid #fb7185!important;outline-offset:3px}.light-theme{background:#eef2f7;color:#111827}.light-theme .app-header,.light-theme .top{background:#fff;color:#111827}.light-theme .dashboard-panel,.light-theme .metric-card,.light-theme .payment-card,.light-theme .section,.light-theme .tablebox{background:#fff;color:#111827}.light-theme .header-search,.light-theme .icon-btn,.light-theme .header-actions time{background:#f8fafc;color:#111827}.light-theme .welcome p,.light-theme .metric-card em,.light-theme .payment-card em,.light-theme .activity-item small,.light-theme .activity-item time{color:#64748b}
+@media(max-width:1100px){.dashboard-states{grid-template-columns:repeat(2,1fr)}.dashboard-lower{grid-template-columns:1fr}.header-actions time{display:none}}
+@media(max-width:900px){body{padding-bottom:82px}.top{position:fixed;left:0;right:0;top:0;width:100%;height:64px;min-height:64px;padding:7px 14px;border-right:0;border-bottom:1px solid #263246}.top .nav{display:none}.brand-copy{display:inline}.brand-logo{width:42px;height:42px}.app-header{position:fixed;left:auto;right:10px;top:7px;width:auto;height:50px;padding:0;background:transparent;border:0;backdrop-filter:none}.header-search,.header-actions time,.header-new span{display:none}.header-actions{gap:7px}.header-new{width:42px;height:42px;padding:0}.wrap{margin-left:0;padding:88px 14px 22px}.bottom-nav{position:fixed;display:grid;grid-template-columns:repeat(5,1fr);align-items:end;left:0;right:0;bottom:0;z-index:90;height:72px;padding:6px max(8px,env(safe-area-inset-right)) calc(5px + env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));background:#0b1220ed;border-top:1px solid #334155;backdrop-filter:blur(18px)}.bottom-nav a,.bottom-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:0;background:transparent;color:#94a3b8;font-size:10px}.bottom-nav .icon{width:21px;height:21px}.bottom-nav a:first-child{color:#fb7185}.bottom-nav .bottom-new{align-self:center;width:52px;height:52px;margin:-18px auto 0;border-radius:50%;background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;box-shadow:0 8px 28px #ef405f70}.bottom-new span{display:none}.more-backdrop{position:fixed;display:block;inset:0;z-index:94;background:#020617aa;opacity:0;pointer-events:none;transition:opacity .2s}.more-menu{position:fixed;display:flex;flex-direction:column;gap:5px;left:14px;right:14px;bottom:82px;z-index:95;max-height:72vh;padding:16px;border:1px solid #334155;border-radius:18px;background:#111827;box-shadow:0 25px 80px #0009;overflow:auto;transform:translateY(120%);opacity:0;transition:transform .22s ease,opacity .22s}.more-menu a{display:flex;align-items:center;gap:11px;padding:11px;border-radius:10px;color:#e2e8f0}.more-menu a:hover{background:#1f2937}.more-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}.more-title .icon-btn{font-size:24px}.more-open .more-menu{transform:none;opacity:1}.more-open .more-backdrop{opacity:1;pointer-events:auto}.light-theme .bottom-nav,.light-theme .more-menu{background:#fff}.dashboard-lower{grid-template-columns:1fr}}
+@media(max-width:620px){.brand-copy{display:none}.dashboard-states,.dashboard-payments{grid-template-columns:1fr}.metric-card,.payment-card{min-height:104px}.dashboard-panel{padding:15px;min-height:0}.welcome h1{font-size:24px}.dashboard-lower{margin-top:18px}.income-chart{min-width:0}.activity-item{grid-template-columns:38px minmax(0,1fr)}.activity-item time{display:none}}
 """
 
 APP_JS = r"""
@@ -953,6 +966,23 @@ async function installPetParadise(){
   hint.querySelector('button').onclick=()=>hint.remove();
   document.body.appendChild(hint);
 }
+function toggleTheme(){
+  document.body.classList.toggle('light-theme');
+  localStorage.setItem('ppm-theme',document.body.classList.contains('light-theme')?'light':'dark');
+}
+function toggleMoreMenu(force){
+  const open=typeof force==='boolean' ? force : !document.body.classList.contains('more-open');
+  document.body.classList.toggle('more-open',open);
+}
+document.addEventListener('DOMContentLoaded',function(){
+  if(localStorage.getItem('ppm-theme')==='light') document.body.classList.add('light-theme');
+  document.addEventListener('keydown',function(event){
+    if(event.key==='Escape') toggleMoreMenu(false);
+    if(event.key==='/' && !/input|textarea|select/i.test(document.activeElement.tagName)){
+      event.preventDefault(); document.getElementById('globalSearch')?.focus();
+    }
+  });
+});
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(error=>console.warn('Service worker non registrato',error)));
 }
@@ -960,11 +990,85 @@ if('serviceWorker' in navigator){
 """
 
 
+LUCIDE_PATHS = {
+    "home": '<path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/>',
+    "archive": '<rect width="18" height="4" x="3" y="3" rx="1"/><path d="M5 7v13h14V7M9 11h6"/>',
+    "stethoscope": '<path d="M11 2v2M5 2v2M5 3H3v4a6 6 0 0 0 12 0V3h-2"/><circle cx="18" cy="16" r="3"/><path d="M15 16H9a4 4 0 0 1-4-4v-1"/>',
+    "clipboard": '<rect width="16" height="18" x="4" y="4" rx="2"/><path d="M9 4V2h6v2M8 9h8M8 13h6"/>',
+    "users": '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+    "paw": '<circle cx="11" cy="17" r="4"/><circle cx="5" cy="10" r="2"/><circle cx="10" cy="6" r="2"/><circle cx="16" cy="7" r="2"/><circle cx="19" cy="12" r="2"/>',
+    "wallet": '<path d="M20 7V5a2 2 0 0 0-2-2H5a3 3 0 0 0 0 6h15v12H5a3 3 0 0 1-3-3V6"/><path d="M16 13h2"/>',
+    "receipt": '<path d="M4 2v20l3-2 3 2 2-2 3 2 2-2 3 2V2l-3 2-3-2-2 2-3-2-2 2Z"/><path d="M8 9h8M8 13h6"/>',
+    "chart": '<path d="M3 3v18h18"/><path d="m7 16 4-5 4 3 5-7"/>',
+    "settings": '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1v.1h-4v-.1a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1-.4h-.1v-4H3A1.7 1.7 0 0 0 4.6 8.5a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1v-.1h4V3a1.7 1.7 0 0 0 1.1 1.6 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.15.37.37.7.6 1 .28.25.63.39 1 .4h.1v4H21a1.7 1.7 0 0 0-1.6.6Z"/>',
+    "help": '<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 1 1 5.2 2c-.9.8-2.3 1.4-2.3 3M12 18h.01"/>',
+    "calendar": '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+    "plus": '<path d="M12 5v14M5 12h14"/>',
+    "menu": '<path d="M4 6h16M4 12h16M4 18h16"/>',
+    "bell": '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>',
+    "sun": '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"/>',
+    "search": '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+}
+
+
+def lucide(name, label=""):
+    path=LUCIDE_PATHS.get(name,LUCIDE_PATHS["menu"])
+    aria=f' aria-label="{esc(label)}"' if label else ' aria-hidden="true"'
+    return f'<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"{aria}>{path}</svg>'
+
+
+def money_value(value):
+    text=str(value or "").strip().replace("€","").replace(" ","")
+    if "," in text and "." in text:
+        text=text.replace(".","").replace(",",".")
+    else:
+        text=text.replace(",",".")
+    match=re.search(r"-?\d+(?:\.\d+)?",text)
+    try:
+        return float(match.group(0)) if match else 0.0
+    except ValueError:
+        return 0.0
+
+
+def money_it(value):
+    return f"€ {value:,.2f}".replace(",","X").replace(".",",").replace("X",".")
+
+
+def income_chart(values,labels):
+    width,height=660,240; left,right,top,bottom=56,18,20,42
+    plot_w,plot_h=width-left-right,height-top-bottom
+    maximum=max(max(values,default=0),1)
+    points=[]
+    for index,value in enumerate(values):
+        x=left+(plot_w*index/max(len(values)-1,1)); y=top+plot_h-(value/maximum*plot_h)
+        points.append((x,y))
+    line=" ".join(f"{x:.1f},{y:.1f}" for x,y in points)
+    area=f"M {left},{top+plot_h} L "+" L ".join(f"{x:.1f},{y:.1f}" for x,y in points)+f" L {left+plot_w},{top+plot_h} Z"
+    grid=[]
+    for step in range(4):
+        y=top+plot_h-(plot_h*step/3); amount=maximum*step/3
+        grid.append(f'<line x1="{left}" y1="{y:.1f}" x2="{left+plot_w}" y2="{y:.1f}"/><text x="{left-8}" y="{y+4:.1f}" text-anchor="end">€ {amount:,.0f}</text>')
+    dates=''.join(f'<text x="{points[i][0]:.1f}" y="{height-12}" text-anchor="middle">{esc(label)}</text>' for i,label in enumerate(labels))
+    dots=''.join(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4"><title>{esc(labels[i])}: {money_it(values[i])}</title></circle>' for i,(x,y) in enumerate(points))
+    return f'''<svg class="income-chart" viewBox="0 0 {width} {height}" role="img" aria-label="Entrate giornaliere degli ultimi sette giorni"><defs><linearGradient id="incomeArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ef405f" stop-opacity=".5"/><stop offset="1" stop-color="#ef405f" stop-opacity="0"/></linearGradient></defs><g class="chart-grid">{''.join(grid)}</g><path class="chart-area" d="{area}"/><polyline class="chart-line" points="{line}"/>{dots}<g class="chart-dates">{dates}</g></svg>'''
+
+
 def layout(title, body, user=None):
-    nav = ""
+    nav = ""; app_header=""; mobile_nav=""
     if user:
-        nav = f'''<nav class="nav"><a href="/"><span class="nav-icon">⌂</span><span>Dashboard</span></a><a href="/pratiche"><span class="nav-icon">▤</span><span>Archivio</span></a><a href="/veterinari"><span class="nav-icon">♙</span><span>Veterinari</span></a><a href="/cestino"><span class="nav-icon">♲</span><span>Cestino</span></a><a href="/nuova" class="btn"><span class="nav-icon">＋</span><span>Nuova pratica</span></a><button class="btn ghost install-btn" type="button" onclick="installPetParadise()"><span class="nav-icon">⇩</span><span>Installa App</span></button><a class="logout" href="/logout"><span class="nav-icon">↪</span><span>Esci</span></a></nav>'''
-    return f'''<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#e9475b"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="PP Manager"><meta name="application-name" content="Pet Paradise Manager"><meta name="format-detection" content="telephone=no"><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"><title>{esc(title)} - Pet Paradise Manager</title><style>{CSS}</style></head><body><header class="top"><a class="brand" href="/"><img class="brand-logo" src="/assets/company_logo.png" alt="Pet Paradise"><span class="brand-copy">Pet Paradise <small>MANAGER</small></span></a>{nav}</header>{body}{APP_JS}</body></html>'''
+        links=[
+            ("/","home","Dashboard"),("/pratiche","archive","Archivio"),("/veterinari","stethoscope","Veterinari"),
+            ("/archivio/pratiche","clipboard","Gestionale"),("/archivio/clienti","users","Clienti"),("/archivio/pratiche","paw","Animali"),
+            ("/archivio/pratiche?pagamento=Da%20saldare","wallet","Pagamenti"),("/archivio/pratiche?pagamento=Pagato","receipt","Fatture"),
+            ("/archivio/pratiche","chart","Report"),("/diagnostica","settings","Impostazioni"),("mailto:assistenza@petparadise.it","help","Assistenza"),
+        ]
+        nav_links=''.join(f'<a href="{href}">{lucide(icon)}<span>{label}</span></a>' for href,icon,label in links)
+        nav=f'''<nav class="nav" aria-label="Menu principale">{nav_links}<button class="btn ghost install-btn" type="button" onclick="installPetParadise()">{lucide("plus")}<span>Installa App</span></button><a class="logout" href="/logout">{lucide("menu")}<span>Esci</span></a></nav>'''
+        today=datetime.now(); date_label=today.strftime("%d/%m/%Y"); weekday=["Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica"][today.weekday()]
+        app_header=f'''<header class="app-header"><form class="header-search" action="/archivio/pratiche" method="get" role="search">{lucide("search")}<label class="sr-only" for="globalSearch">Cerca nel gestionale</label><input id="globalSearch" name="q" placeholder="Cerca pratica, cliente, animale..." autocomplete="off"></form><div class="header-actions"><a class="icon-btn" href="/archivio/pratiche?promemoria=estremi" aria-label="Notifiche">{lucide("bell")}</a><button class="icon-btn" type="button" onclick="toggleTheme()" aria-label="Cambia tema">{lucide("sun")}</button><a class="btn header-new" href="/nuova">{lucide("plus")}<span>Nuova pratica</span></a><time datetime="{today.date().isoformat()}">{date_label}<small>{weekday}</small></time></div></header>'''
+        drawer_links=''.join(f'<a href="{href}">{lucide(icon)}<span>{label}</span></a>' for href,icon,label in links)
+        mobile_nav=f'''<nav class="bottom-nav" aria-label="Navigazione mobile"><a href="/">{lucide("home")}<span>Dashboard</span></a><a href="/archivio/pratiche">{lucide("calendar")}<span>Calendario</span></a><a class="bottom-new" href="/nuova" aria-label="Nuova pratica">{lucide("plus")}</a><a href="/archivio/clienti">{lucide("users")}<span>Clienti</span></a><button type="button" onclick="toggleMoreMenu()">{lucide("menu")}<span>Altro</span></button></nav><div class="more-backdrop" onclick="toggleMoreMenu(false)"></div><aside class="more-menu" aria-label="Altre funzioni"><div class="more-title"><b>Menu</b><button class="icon-btn" onclick="toggleMoreMenu(false)" aria-label="Chiudi">×</button></div>{drawer_links}<button class="btn ghost install-btn" type="button" onclick="installPetParadise()">Installa App</button></aside>'''
+    return f'''<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#e9475b"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="PP Manager"><meta name="application-name" content="Pet Paradise Manager"><meta name="format-detection" content="telephone=no"><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"><title>{esc(title)} - Pet Paradise Manager</title><style>{CSS}</style></head><body><a class="skip-link" href="#main-content">Vai al contenuto</a><aside class="top"><a class="brand" href="/"><img class="brand-logo" src="/assets/company_logo.png" alt="Pet Paradise"><span class="brand-copy">Pet Paradise <small>MANAGER</small></span></a>{nav}</aside>{app_header}<div id="main-content">{body}</div>{mobile_nav}{APP_JS}</body></html>'''
 
 
 class App(BaseHTTPRequestHandler):
@@ -1156,23 +1260,37 @@ class App(BaseHTTPRequestHandler):
         self.send_response(303); self.send_header("Set-Cookie","ppm_session=; Max-Age=0; Path=/"); self.send_header("Location","/login"); self.end_headers()
 
     def dashboard(self,user):
+        today=datetime.now().date(); days=[today-timedelta(days=offset) for offset in range(6,-1,-1)]
         with db() as c:
             active_where="deleted_at IS NULL OR deleted_at=''"
             counts={r["status"]:r["n"] for r in c.execute(f"SELECT status,count(*) n FROM practices WHERE {active_where} GROUP BY status")}
             payment_counts={r["payment_status"]:r["n"] for r in c.execute(f"SELECT COALESCE(payment_status,'Da saldare') payment_status,count(*) n FROM practices WHERE {active_where} GROUP BY COALESCE(payment_status,'Da saldare')")}
-            catalog_count=c.execute(f"SELECT count(*) n FROM practices WHERE ({active_where}) AND send_catalog='Si' AND status!='Consegnato'").fetchone()["n"]
-            estremi_count=c.execute(f"SELECT count(*) n FROM practices WHERE ({active_where}) AND send_estremi='Si' AND status!='Consegnato'").fetchone()["n"]
-            recent=c.execute(f"SELECT * FROM practices WHERE {active_where} ORDER BY date(COALESCE(NULLIF(pickup_date,''), created_at)) DESC, id DESC LIMIT 8").fetchall()
+            payment_rows=c.execute(f"SELECT COALESCE(payment_status,'Da saldare') payment_status,total_service FROM practices WHERE {active_where}").fetchall()
+            income_rows=c.execute(f"SELECT date(COALESCE(NULLIF(pickup_date,''),created_at)) day,total_service FROM practices WHERE ({active_where}) AND payment_status='Pagato' AND date(COALESCE(NULLIF(pickup_date,''),created_at))>=date(?)",(days[0].isoformat(),)).fetchall()
+            activity=c.execute("""SELECT h.event_type,h.new_value,h.created_at,p.id practice_id,p.practice_number
+                                  FROM practice_history h JOIN practices p ON p.id=h.practice_id
+                                  WHERE p.deleted_at IS NULL OR p.deleted_at=''
+                                  ORDER BY h.created_at DESC,h.id DESC LIMIT 6""").fetchall()
             incomplete=c.execute(f"SELECT count(*) n FROM practices WHERE ({active_where}) AND data_complete=0 AND status!='Consegnata'").fetchone()["n"]
-        cards=''.join(f'<a class="card stat" href="/archivio/pratiche?stato={quote(s)}"><span>{esc(s)}</span><b>{counts.get(s,0)}</b></a>' for s in STATES)
-        pay_card_cls={"Da saldare":"pay-yellow","Acconto":"pay-blue","Pagato":"pay-green"}
-        payment_cards=''.join(f'<a class="card stat" href="/archivio/pratiche?pagamento={quote(s)}"><span class="badge {pay_card_cls.get(s,"")}">{esc(s)}</span><b>{payment_counts.get(s,0)}</b></a>' for s in PAYMENT_STATES)
-        promemoria_cards=f'''<a class="card stat" href="/archivio/pratiche?promemoria=catalogo"><span class="badge tag-outline-orange">Inviare catalogo</span><b>{catalog_count}</b></a><a class="card stat" href="/archivio/pratiche?promemoria=estremi"><span class="badge tag-outline-orange">Inviare estremi</span><b>{estremi_count}</b></a>'''
-        rows=self.practice_rows(recent)
-        hour=datetime.now().hour
-        greeting="Buongiorno" if hour < 13 else "Buon pomeriggio" if hour < 18 else "Buonasera"
-        logo='<img class="home-logo" src="/assets/company_logo.png" alt="Pet Paradise">' if (ASSETS / "company_logo.png").exists() else ''
-        body=f'''<main class="wrap"><div class="titlebar"><div style="display:flex;gap:18px;align-items:center">{logo}<div><h1>{greeting}, {esc(user['display_name'])}</h1><div class="sub">Situazione operativa aggiornata</div></div></div></div>{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}<h2>Avanzamento pratiche</h2><section class="grid stats">{cards}</section><div style="height:20px"></div><h2>Pagamenti</h2><section class="grid stats">{payment_cards}</section><div style="height:20px"></div><h2>Promemoria</h2><section class="grid stats">{promemoria_cards}</section><div style="height:24px"></div><div class="titlebar"><h2>Attività recenti</h2><a href="/pratiche">Vedi archivio</a></div><div class="tablebox"><table><thead><tr><th>Data recupero</th><th>Codice pratica</th><th>Animale</th><th>Proprietario</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Stato</th></tr></thead><tbody>{rows}</tbody></table></div></main>'''
+        state_cards=[]
+        state_specs=[("Ritirato","Ritirati","archive","state-red"),("In programma","In programma","calendar","state-blue"),("Da consegnare","Da consegnare","clipboard","state-purple"),("Consegnato","Consegnati","home","state-green")]
+        for state,label,icon,cls in state_specs:
+            state_cards.append(f'<a class="metric-card {cls}" href="/archivio/pratiche?stato={quote(state)}"><span class="metric-copy"><small>{label}</small><strong>{counts.get(state,0)}</strong><em>{"Nessuna pratica" if not counts.get(state,0) else "Apri elenco"}</em></span><span class="metric-icon">{lucide(icon)}</span></a>')
+        payment_totals={state:sum(money_value(row["total_service"]) for row in payment_rows if row["payment_status"]==state) for state in PAYMENT_STATES}
+        payment_specs=[("Da saldare","Da saldare","wallet","payment-due"),("Acconto","Acconti","receipt","payment-deposit"),("Pagato","Pagati","chart","payment-paid")]
+        payment_cards=''.join(f'<a class="payment-card {cls}" href="/archivio/pratiche?pagamento={quote(state)}"><span><small>{label}</small><strong>{payment_counts.get(state,0)}</strong><em>{money_it(payment_totals[state])}</em></span><span class="metric-icon">{lucide(icon)}</span></a>' for state,label,icon,cls in payment_specs)
+        income_by_day={day.isoformat():0.0 for day in days}
+        for row in income_rows:
+            if row["day"] in income_by_day: income_by_day[row["day"]]+=money_value(row["total_service"])
+        income_values=[income_by_day[day.isoformat()] for day in days]; income_total=sum(income_values)
+        chart=income_chart(income_values,[day.strftime("%d/%m") for day in days])
+        timeline=[]
+        for index,event in enumerate(activity):
+            label=event["event_type"] or "Aggiornamento pratica"; detail=event["new_value"] or event["practice_number"] or ""
+            when=(event["created_at"] or "").replace("T"," ")[:16]
+            timeline.append(f'<a class="activity-item activity-{index%4}" href="/pratiche/{event["practice_id"]}"><span class="activity-icon">{lucide("clipboard")}</span><span><b>{esc(label)}</b><small>{esc(detail)}</small></span><time>{esc(when)}</time></a>')
+        if not timeline: timeline.append('<div class="activity-empty">Le nuove attività compariranno qui.</div>')
+        body=f'''<main class="wrap dashboard-wrap"><section class="welcome"><div><h1>Buongiorno, Pet Paradise <span aria-hidden="true">👋</span></h1><p>Panoramica aggiornata dell'attività</p></div></section>{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}<h2 class="dashboard-heading">Pratiche</h2><section class="dashboard-states">{''.join(state_cards)}</section><h2 class="dashboard-heading">Pagamenti</h2><section class="dashboard-payments">{payment_cards}</section><section class="dashboard-lower"><article class="dashboard-panel income-panel"><header><div><h2>Entrate ultimi 7 giorni</h2><p>Totale: <strong>{money_it(income_total)}</strong></p></div></header>{chart}</article><article class="dashboard-panel activity-panel"><header><h2>Attività recenti</h2><a href="/archivio/pratiche">Vedi tutte</a></header><div class="activity-list">{''.join(timeline)}</div></article></section></main>'''
         self.send_html(layout("Dashboard",body,user))
 
     def diagnostics(self,user):
