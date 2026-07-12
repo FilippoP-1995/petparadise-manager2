@@ -500,6 +500,19 @@ body{background:radial-gradient(circle at top left,#fff8f3 0,#f4f1ed 34%,#ece5dd
 .hidden{display:none!important}
 .practice-code-cr{color:#1e88e5}.practice-code-sm{color:#111}
 .lookup{position:relative}.lookup-results{position:absolute;left:0;right:0;top:100%;z-index:20;background:white;border:1px solid var(--line);border-radius:12px;margin-top:6px;box-shadow:0 10px 30px #4b392626;max-height:340px;overflow:auto}.lookup-item{display:block;width:100%;border:0;background:white;text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer;color:var(--ink)}.lookup-item:hover,.lookup-item:focus{background:#f7f2ee;outline:none}.lookup-item b{display:block}.lookup-item small{display:block;color:var(--muted);white-space:normal}.lookup-state{padding:10px 12px;color:var(--muted);font-size:13px}.selected-box{border:1px solid #b8d7c8;background:#edf7f2;color:#285b45;border-radius:10px;padding:12px;margin-top:10px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}.selected-box .btn{width:auto}
+/* Dark professional interface */
+:root{--ink:#f5f7fb;--muted:#9ca7b8;--brand:#e9475b;--brand2:#ff6377;--paper:#111722;--bg:#090d14;--line:#293140;--green:#35c98a;--gold:#f5b83d}
+html{color-scheme:dark}body{background:radial-gradient(circle at 78% -10%,#31121e 0,transparent 32%),linear-gradient(135deg,#090d14,#0d121b 55%,#090d14);min-height:100vh;color:var(--ink);font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.top{position:fixed;left:0;top:0;bottom:0;width:226px;height:100vh;display:flex;flex-direction:column;align-items:stretch;padding:24px 16px;background:#0c111acc;border:0;border-right:1px solid var(--line);backdrop-filter:blur(18px);box-shadow:16px 0 50px #0003}
+.brand{display:flex;align-items:center;gap:11px;padding:4px 6px 24px;color:#ff6678;font-size:18px}.brand-logo{width:48px;height:48px;object-fit:contain}.brand-copy small{margin-top:2px;color:#c1c8d3}
+.nav{margin:8px 0 0;display:flex;flex:1;flex-direction:column;width:100%;gap:7px}.nav a{display:flex;align-items:center;gap:11px;padding:11px 13px;color:#c5ccd7;border:1px solid transparent;border-radius:12px;font-weight:650}.nav a:hover{color:white;background:#181f2b;border-color:#2d3645}.nav a:first-child{color:#ff697b;background:linear-gradient(90deg,#381922,#1c151d);border-color:#53212e}.nav-icon{width:20px;text-align:center;font-size:17px}.nav .btn{margin-top:10px;color:white;background:linear-gradient(135deg,#ff526a,#cc2946);box-shadow:0 10px 26px #e9475b35}.nav .logout{margin-top:auto}.wrap{max-width:1500px;margin-left:226px;padding:34px 38px;animation:ppmFade .22s ease-out}
+h1{font-size:30px;letter-spacing:-.035em}h2{color:#eef1f6}.sub{color:var(--muted)}
+.section,.card,.tablebox,.login{background:linear-gradient(145deg,#131a26,#0f151f);border:1px solid var(--line);box-shadow:0 18px 50px #0003}.card{position:relative;overflow:hidden}.card:after{content:"";position:absolute;inset:auto -35px -50px auto;width:110px;height:110px;border-radius:50%;background:#e9475b12;filter:blur(4px)}.card:hover{border-color:#4a3340;box-shadow:0 20px 48px #0006,0 0 0 1px #e9475b12}.stat b{color:#ff6175}.btn{background:linear-gradient(135deg,#f05267,#c92d49);box-shadow:0 8px 24px #e9475b30}.btn:hover{background:linear-gradient(135deg,#ff6679,#df3652)}.btn.ghost{background:#171e2a;color:#e9edf3;border-color:#303948}.btn.ghost:hover{background:#202938}
+input,select,textarea{background:#0c121b;border-color:#323c4b;color:#f3f5f8}input:focus,select:focus,textarea:focus{outline:3px solid #e9475b22;border-color:#e9475b}.kv{background:#0c121b;border-color:#252e3b}.tablebox,table{background:#101620}th,td{border-color:#252d39}th{color:#8f9bad}.tablebox table tr:hover td{background:#171f2b}.lookup-results,.lookup-item{background:#131a25;border-color:#2b3544;color:#f5f7fb}.lookup-item:hover,.lookup-item:focus{background:#202938}.selected-box{background:#10261f;border-color:#245a46;color:#7ce0b7}
+.badge{background:#252d39;color:#dfe4eb}.tag-outline-orange{background:#271c10}.pay-yellow,.tag-yellow{background:#5a4610;color:#ffe28a}.login{margin-left:auto;margin-right:auto}.home-logo{background:#070a0f;border-color:#303948;box-shadow:0 12px 34px #0006;padding:7px}.practice-code-sm{color:#f3f5f8}.practice-code-cr{color:#6fa8ff}.danger{background:#291318;border-color:#6b2734}.trash-note,.warning{background:#302412;border-color:#624c23;color:#f6d58e}.flash{background:#102a20;color:#8be3bb}.signature-pad{background:#fff}
+.install-btn{display:none}.install-btn.ready{display:flex}.install-hint{position:fixed;right:22px;bottom:22px;z-index:50;max-width:340px;padding:16px;background:#141b27;border:1px solid #353f4f;border-radius:16px;box-shadow:0 20px 60px #0008}.install-hint b{display:block;color:#ff6679;margin-bottom:5px}.install-hint button{margin-top:10px}
+@media(max-width:900px){.top{position:sticky;width:100%;height:auto;min-height:66px;bottom:auto;flex-direction:row;align-items:center;padding:8px 12px}.brand{padding:0}.brand-logo{width:42px;height:42px}.brand-copy{display:none}.nav{margin:0 0 0 auto;flex-direction:row;align-items:center;width:auto;overflow-x:auto}.nav a{padding:9px}.nav a span:not(.nav-icon){display:none}.nav-icon{display:inline-block!important}.nav .btn{margin:0}.nav .btn span:not(.nav-icon){display:none}.nav .logout{margin:0}.wrap{margin-left:0;padding:18px 14px}.stats{grid-template-columns:1fr 1fr}.home-logo{width:82px;height:82px}.tablebox th,.tablebox td{display:table-cell!important;white-space:nowrap}.install-hint{left:14px;right:14px;bottom:14px}.titlebar{gap:12px}}
+@media(max-width:560px){.stats{grid-template-columns:1fr}.brand-logo{width:38px;height:38px}.nav a{font-size:0}.nav-icon{font-size:18px}.nav .btn{width:auto;min-height:42px}.wrap{padding-top:14px}h1{font-size:25px}}
 """
 
 APP_JS = r"""
@@ -911,6 +924,38 @@ async function sharePracticePdf(url, title){
     window.open(absoluteUrl, '_blank');
   }
 }
+let deferredInstallPrompt=null;
+window.addEventListener('beforeinstallprompt', function(event){
+  event.preventDefault();
+  deferredInstallPrompt=event;
+  document.querySelectorAll('.install-btn').forEach(button=>button.classList.add('ready'));
+});
+window.addEventListener('appinstalled', function(){
+  deferredInstallPrompt=null;
+  document.querySelectorAll('.install-btn').forEach(button=>button.classList.remove('ready'));
+});
+document.addEventListener('DOMContentLoaded',function(){
+  const standalone=window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone===true;
+  if(!standalone) document.querySelectorAll('.install-btn').forEach(button=>button.classList.add('ready'));
+});
+async function installPetParadise(){
+  if(deferredInstallPrompt){
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt=null;
+    document.querySelectorAll('.install-btn').forEach(button=>button.classList.remove('ready'));
+    return;
+  }
+  const isiOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
+  const hint=document.createElement('div');
+  hint.className='install-hint';
+  hint.innerHTML=isiOS ? '<b>Installa su iPhone o iPad</b>Apri il menu Condividi di Safari e scegli “Aggiungi alla schermata Home”.<button class="btn ghost" type="button">Ho capito</button>' : '<b>Installa Pet Paradise Manager</b>Apri il menu del browser e scegli “Installa app” o “Aggiungi a schermata Home”.<button class="btn ghost" type="button">Ho capito</button>';
+  hint.querySelector('button').onclick=()=>hint.remove();
+  document.body.appendChild(hint);
+}
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(error=>console.warn('Service worker non registrato',error)));
+}
 </script>
 """
 
@@ -918,8 +963,8 @@ async function sharePracticePdf(url, title){
 def layout(title, body, user=None):
     nav = ""
     if user:
-        nav = f'''<nav class="nav"><a href="/">Dashboard</a><a href="/pratiche">Archivio</a><a href="/veterinari">Veterinari</a><a href="/cestino">Cestino</a><a href="/nuova" class="btn">+ Nuova pratica</a><a href="/logout">Esci</a></nav>'''
-    return f'''<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)} - Pet Paradise Manager</title><style>{CSS}</style></head><body><header class="top"><a class="brand" href="/">Pet Paradise <small>MANAGER</small></a>{nav}</header>{body}{APP_JS}</body></html>'''
+        nav = f'''<nav class="nav"><a href="/"><span class="nav-icon">⌂</span><span>Dashboard</span></a><a href="/pratiche"><span class="nav-icon">▤</span><span>Archivio</span></a><a href="/veterinari"><span class="nav-icon">♙</span><span>Veterinari</span></a><a href="/cestino"><span class="nav-icon">♲</span><span>Cestino</span></a><a href="/nuova" class="btn"><span class="nav-icon">＋</span><span>Nuova pratica</span></a><button class="btn ghost install-btn" type="button" onclick="installPetParadise()"><span class="nav-icon">⇩</span><span>Installa App</span></button><a class="logout" href="/logout"><span class="nav-icon">↪</span><span>Esci</span></a></nav>'''
+    return f'''<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#e9475b"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="PP Manager"><meta name="application-name" content="Pet Paradise Manager"><meta name="format-detection" content="telephone=no"><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"><title>{esc(title)} - Pet Paradise Manager</title><style>{CSS}</style></head><body><header class="top"><a class="brand" href="/"><img class="brand-logo" src="/assets/company_logo.png" alt="Pet Paradise"><span class="brand-copy">Pet Paradise <small>MANAGER</small></span></a>{nav}</header>{body}{APP_JS}</body></html>'''
 
 
 class App(BaseHTTPRequestHandler):
@@ -945,6 +990,12 @@ class App(BaseHTTPRequestHandler):
         data = path.read_bytes()
         self.send_response(200); self.send_header("Content-Type", "image/png")
         self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
+
+    def send_static(self,path,content_type,cache="public, max-age=86400"):
+        data=path.read_bytes()
+        self.send_response(200); self.send_header("Content-Type",content_type)
+        self.send_header("Cache-Control",cache); self.send_header("Content-Length",str(len(data)))
+        self.end_headers(); self.wfile.write(data)
 
     def error_page(self, title, message, back="/"):
         body=f'''<main class="wrap"><section class="section"><h1>{esc(title)}</h1><p class="sub">{esc(message)}</p><div class="actions" style="margin-top:18px"><a class="btn" href="{esc(back)}">Torna indietro</a></div></section></main>'''
@@ -992,7 +1043,16 @@ class App(BaseHTTPRequestHandler):
         if path == "/health": return self.send_text("ok")
         if path == "/cron/whatsapp": return self.whatsapp_cron()
         if path == "/webhook/whatsapp": return self.whatsapp_webhook_verify()
-        if path == "/assets/company_logo.png" and (ASSETS / "company_logo.png").exists(): return self.send_png(ASSETS / "company_logo.png")
+        if path == "/manifest.json": return self.send_static(ASSETS / "manifest.json","application/manifest+json; charset=utf-8", "no-cache")
+        if path == "/sw.js": return self.send_static(ASSETS / "sw.js","application/javascript; charset=utf-8", "no-cache")
+        static_assets={
+            "/assets/company_logo.png":"company_logo.png",
+            "/assets/pwa-192.png":"pwa-192.png",
+            "/assets/pwa-512.png":"pwa-512.png",
+            "/assets/apple-touch-icon.png":"apple-touch-icon.png",
+            "/assets/favicon-32.png":"favicon-32.png",
+        }
+        if path in static_assets and (ASSETS / static_assets[path]).exists(): return self.send_static(ASSETS / static_assets[path],"image/png")
         match = re.fullmatch(r"/pubblici/ddt/([A-Za-z0-9_-]+)\.pdf", path)
         if match: return self.public_ddt(match.group(1))
         if path == "/login": return self.login_page()
@@ -1138,6 +1198,7 @@ class App(BaseHTTPRequestHandler):
             ("tag_avvisare", "AVVISARE", "tag-pink"),
             ("tag_da_richiamare", "DA RICHIAMARE", "tag-blue"),
             ("send_catalog", "INVIARE CATALOGO", "tag-outline-orange"),
+            ("send_estremi", "INVIARE ESTREMI", "tag-outline-orange"),
         ]
         html_badges = ''.join(f'<span class="badge {cls}">{label}</span> ' for key,label,cls in tags if key in r.keys() and r[key])
         return html_badges or '<span class="sub">-</span>'

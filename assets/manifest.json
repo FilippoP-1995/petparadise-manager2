@@ -1,0 +1,23 @@
+{
+  "id": "/",
+  "name": "Pet Paradise Manager",
+  "short_name": "PP Manager",
+  "description": "Gestionale operativo Pet Paradise",
+  "lang": "it-IT",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#090d14",
+  "theme_color": "#e9475b",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {"src": "/assets/pwa-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "/assets/pwa-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
+  ],
+  "shortcuts": [
+    {"name": "Nuova pratica", "short_name": "Nuova", "url": "/nuova", "icons": [{"src": "/assets/pwa-192.png", "sizes": "192x192"}]},
+    {"name": "Archivio", "short_name": "Archivio", "url": "/pratiche", "icons": [{"src": "/assets/pwa-192.png", "sizes": "192x192"}]}
+  ]
+}
