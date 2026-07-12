@@ -36,6 +36,13 @@ PAYMENT_STATES = [
     "Da saldare", "Acconto", "Pagato",
 ]
 
+MONEY_FIELDS = {
+    "price_cremation":"Cremazione", "price_pickup":"Ritiro", "price_urn":"Urna",
+    "price_delivery":"Riconsegna", "price_cast":"Calco", "price_evening":"Serale",
+    "price_night":"Notturno", "price_holiday":"Festivo", "price_accessories":"Accessori",
+    "total_service":"Totale servizio", "deposit":"Acconto", "remaining_balance":"Rimanenza",
+}
+
 COLLABORATORS = {
     "HUMANITAS CROCE VERDE": {
         "street": "VIA ROMANA, 907",
@@ -522,6 +529,7 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 .dashboard-lower{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(350px,.8fr);gap:16px;margin-top:24px}.dashboard-panel{min-height:350px;padding:20px;border:1px solid #334155;border-radius:15px;background:#1f2937;box-shadow:0 18px 48px #03071235}.dashboard-panel>header{display:flex;align-items:flex-start;justify-content:space-between;gap:15px}.dashboard-panel h2{margin:0;font-size:16px}.dashboard-panel header p{margin:8px 0 0;color:#94a3b8}.dashboard-panel header p strong{color:#fff;font-size:21px}.dashboard-panel header a{color:#fb7185;font-size:13px}.income-chart{display:block;width:100%;height:auto;margin-top:14px}.chart-grid line{stroke:#334155;stroke-width:1}.chart-grid text,.chart-dates text{fill:#94a3b8;font-size:11px}.chart-area{fill:url(#incomeArea)}.chart-line{fill:none;stroke:#ef405f;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 5px 8px #ef405f55)}.income-chart circle{fill:#fb7185;stroke:#1f2937;stroke-width:2}
 .activity-list{display:flex;flex-direction:column;margin-top:14px}.activity-item{display:grid;grid-template-columns:42px minmax(0,1fr) auto;align-items:center;gap:11px;padding:12px 0;border-bottom:1px solid #334155}.activity-item:last-child{border-bottom:0}.activity-item b,.activity-item small{display:block}.activity-item b{font-size:13px}.activity-item small{margin-top:3px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.activity-item time{color:#94a3b8;font-size:11px}.activity-icon{width:38px;height:38px;--icon-bg:#243244;--icon-color:#5eead4;--icon-shadow:transparent}.activity-1 .activity-icon{--icon-bg:#422006;--icon-color:#fbbf24}.activity-2 .activity-icon{--icon-bg:#3b0764;--icon-color:#c084fc}.activity-3 .activity-icon{--icon-bg:#4c0519;--icon-color:#fb7185}.activity-empty{padding:40px 10px;color:#94a3b8;text-align:center}
 .bottom-nav,.more-menu,.more-backdrop{display:none}.tag-red{background:#7f1d2d;color:#fecdd3}.tag-orange{background:#7c2d12;color:#fed7aa}.tag-outline-orange{background:#3b1d0c;color:#fdba74;border-color:#f97316}.tag-purple{background:#4c1d95;color:#e9d5ff}.tag-yellow{background:#713f12;color:#fef08a}.tag-pink{background:#831843;color:#fbcfe8}.tag-blue{background:#1e3a8a;color:#bfdbfe}.tag-green{background:#14532d;color:#bbf7d0}
+.search-after-results{margin-top:32px}.search-after-results>h2{margin-bottom:12px}.search-after-results .section{box-shadow:0 12px 34px #0307122e}
 *:focus-visible{outline:3px solid #fb7185!important;outline-offset:3px}.light-theme{background:#eef2f7;color:#111827}.light-theme .app-header,.light-theme .top{background:#fff;color:#111827}.light-theme .dashboard-panel,.light-theme .metric-card,.light-theme .payment-card,.light-theme .section,.light-theme .tablebox{background:#fff;color:#111827}.light-theme .header-search,.light-theme .icon-btn,.light-theme .header-actions time{background:#f8fafc;color:#111827}.light-theme .welcome p,.light-theme .metric-card em,.light-theme .payment-card em,.light-theme .activity-item small,.light-theme .activity-item time{color:#64748b}
 @media(max-width:1100px){.dashboard-states{grid-template-columns:repeat(2,1fr)}.dashboard-lower{grid-template-columns:1fr}.header-actions time{display:none}}
 @media(max-width:900px){body{padding-bottom:82px}.top{position:fixed;left:0;right:0;top:0;width:100%;height:64px;min-height:64px;padding:7px 14px;border-right:0;border-bottom:1px solid #263246}.top .nav{display:none}.brand-copy{display:inline}.brand-logo{width:42px;height:42px}.app-header{position:fixed;left:auto;right:10px;top:7px;width:auto;height:50px;padding:0;background:transparent;border:0;backdrop-filter:none}.header-search,.header-actions time,.header-new span{display:none}.header-actions{gap:7px}.header-new{width:42px;height:42px;padding:0}.wrap{margin-left:0;padding:88px 14px 22px}.bottom-nav{position:fixed;display:grid;grid-template-columns:repeat(5,1fr);align-items:end;left:0;right:0;bottom:0;z-index:90;height:72px;padding:6px max(8px,env(safe-area-inset-right)) calc(5px + env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));background:#0b1220ed;border-top:1px solid #334155;backdrop-filter:blur(18px)}.bottom-nav a,.bottom-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:0;background:transparent;color:#94a3b8;font-size:10px}.bottom-nav .icon{width:21px;height:21px}.bottom-nav a:first-child{color:#fb7185}.bottom-nav .bottom-new{align-self:center;width:52px;height:52px;margin:-18px auto 0;border-radius:50%;background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;box-shadow:0 8px 28px #ef405f70}.bottom-new span{display:none}.more-backdrop{position:fixed;display:block;inset:0;z-index:94;background:#020617aa;opacity:0;pointer-events:none;transition:opacity .2s}.more-menu{position:fixed;display:flex;flex-direction:column;gap:5px;left:14px;right:14px;bottom:82px;z-index:95;max-height:72vh;padding:16px;border:1px solid #334155;border-radius:18px;background:#111827;box-shadow:0 25px 80px #0009;overflow:auto;transform:translateY(120%);opacity:0;transition:transform .22s ease,opacity .22s}.more-menu a{display:flex;align-items:center;gap:11px;padding:11px;border-radius:10px;color:#e2e8f0}.more-menu a:hover{background:#1f2937}.more-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}.more-title .icon-btn{font-size:24px}.more-open .more-menu{transform:none;opacity:1}.more-open .more-backdrop{opacity:1;pointer-events:auto}.light-theme .bottom-nav,.light-theme .more-menu{background:#fff}.dashboard-lower{grid-template-columns:1fr}}
@@ -645,6 +653,31 @@ function updateRemainingBalance(){
   const remaining = ppmNumber(totalField ? totalField.value : 0) - ppmNumber(depositField ? depositField.value : 0);
   remainingField.value = ppmFormat(remaining);
 }
+function setupNumericBudgetFields(){
+  const names=['price_cremation','price_pickup','price_urn','price_delivery','price_cast','price_evening','price_night','price_holiday','price_accessories','total_service','deposit','remaining_balance'];
+  names.forEach(function(name){
+    const field=document.querySelector(`input[name="${name}"]`);
+    if(!field) return;
+    field.inputMode='decimal';
+    field.pattern='[0-9]+([,.][0-9]{1,2})?';
+    field.placeholder='0,00';
+    field.dataset.moneyOnly='1';
+    field.addEventListener('beforeinput',function(event){
+      if(event.inputType.startsWith('delete') || event.inputType.startsWith('history')) return;
+      if(event.data && !/^[0-9,.]+$/.test(event.data)) event.preventDefault();
+    });
+    field.addEventListener('input',function(){
+      let value=field.value.replace(/[^0-9,.]/g,'');
+      const separator=Math.max(value.lastIndexOf(','),value.lastIndexOf('.'));
+      if(separator>=0){
+        const integer=value.slice(0,separator).replace(/[,.]/g,'');
+        const decimals=value.slice(separator+1).replace(/[,.]/g,'').slice(0,2);
+        value=integer+((decimals || value.endsWith(',') || value.endsWith('.')) ? ','+decimals : '');
+      }
+      if(field.value!==value) field.value=value;
+    });
+  });
+}
 document.addEventListener('input', function(e){
   if(e.target && e.target.name === 'owner_city'){
     const provinceField = document.querySelector('input[name="owner_province"]');
@@ -710,7 +743,7 @@ function setupUrnNotesField(){
   const priceField=price.closest('.field');
   priceField.parentNode.insertBefore(field, priceField.nextSibling);
 }
-document.addEventListener('DOMContentLoaded', function(){ updatePreventivoTotal(); updateRemainingBalance(); setupZipLookup(); setupUrnNotesField(); });
+document.addEventListener('DOMContentLoaded', function(){ setupNumericBudgetFields(); updatePreventivoTotal(); updateRemainingBalance(); setupZipLookup(); setupUrnNotesField(); });
 function toggleCollaboratorBox(){
   const origin = document.querySelector('select[name="request_origin"]');
   const box = document.getElementById('collaboratorBox');
@@ -1537,7 +1570,9 @@ class App(BaseHTTPRequestHandler):
                 except Exception:
                     pass
             blocks.append(f'''<section class="month-block"><div class="month-title"><h2>{esc(title)}</h2><span class="badge">{len(items)} pratiche</span></div><div class="tablebox"><table><thead><tr><th>Data recupero</th><th>Codice pratica</th><th>Animale</th><th>Proprietario</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Stato</th></tr></thead><tbody>{self.practice_rows(items)}</tbody></table></div></section>''')
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>ARCHIVIO</h1><div class="sub">{len(rows)} risultati{promemoria_label} - pratiche divise per mese</div></div></div><form class="section" method="get" style="margin-bottom:18px"><div class="fields"><div class="field"><label>Ricerca generale</label><input name="q" value="{esc(term)}" placeholder="Proprietario, telefono, microchip, pratica, DDT"></div><div class="field"><label>Nome animale</label><input name="animale" value="{esc(animal)}"></div><div class="field"><label>Servizio</label><select name="servizio">{service_opts}</select></div><div class="field"><label>Veterinario</label><input name="veterinario" value="{esc(vet)}" placeholder="Clinica o medico"></div><div class="field"><label>Collaboratore</label><input name="collaboratore" value="{esc(collaborator)}"></div><div class="field"><label>Spesa minima</label><input name="spesa_min" value="{esc(spesa_min)}" inputmode="decimal" placeholder="Es. 100"></div><div class="field"><label>Spesa massima</label><input name="spesa_max" value="{esc(spesa_max)}" inputmode="decimal" placeholder="Es. 350"></div><div class="field"><label>Periodo dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Periodo al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Stato pratica</label><select name="stato">{opts}</select></div><div class="field"><label>Pagamento</label><select name="pagamento">{pay_opts}</select></div></div><button class="btn" style="margin-top:12px">Cerca</button><a class="btn ghost" style="margin-top:12px" href="/archivio/pratiche">Pulisci filtri</a></form>{''.join(blocks) if blocks else '<section class="section"><p class="sub">Nessuna pratica trovata.</p></section>'}</main>'''
+        results_html=''.join(blocks) if blocks else '<section class="section"><p class="sub">Nessuna pratica trovata.</p></section>'
+        filters_html=f'''<section class="search-after-results"><h2>Ricerca e filtri</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Ricerca generale</label><input name="q" value="{esc(term)}" placeholder="Proprietario, telefono, microchip, pratica, DDT"></div><div class="field"><label>Nome animale</label><input name="animale" value="{esc(animal)}"></div><div class="field"><label>Tipo cremazione</label><select name="servizio">{service_opts}</select></div><div class="field"><label>Veterinario</label><input name="veterinario" value="{esc(vet)}" placeholder="Clinica o medico"></div><div class="field"><label>Collaboratore</label><input name="collaboratore" value="{esc(collaborator)}"></div><div class="field"><label>Spesa minima</label><input type="number" min="0" step="0.01" name="spesa_min" value="{esc(spesa_min)}" inputmode="decimal" placeholder="Es. 100"></div><div class="field"><label>Spesa massima</label><input type="number" min="0" step="0.01" name="spesa_max" value="{esc(spesa_max)}" inputmode="decimal" placeholder="Es. 350"></div><div class="field"><label>Periodo dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Periodo al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Stato pratica</label><select name="stato">{opts}</select></div><div class="field"><label>Pagamento</label><select name="pagamento">{pay_opts}</select></div></div><button class="btn" style="margin-top:12px">Cerca</button><a class="btn ghost" style="margin-top:12px" href="/archivio/pratiche">Pulisci filtri</a></form></section>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>ARCHIVIO</h1><div class="sub">{len(rows)} risultati{promemoria_label} - pratiche divise per mese</div></div></div>{results_html}{filters_html}</main>'''
         body=body.replace('<label>Servizio</label><select name="servizio">','<label>Tipo cremazione</label><select name="servizio">')
         self.send_html(layout("Archivio",body,user))
 
@@ -1682,6 +1717,9 @@ class App(BaseHTTPRequestHandler):
         keys=["client_id","owner_veterinarian_id","operator_name","request_origin","collaborator_name","destination_branch","owner_first_name","owner_last_name","owner_company","owner_phone","owner_phone_2","owner_email","owner_tax_code","owner_vat","owner_notes","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","use_voucher","used_voucher_id","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_saluto","tag_calco","tag_avvisare","tag_da_richiamare","payment_status","price_cremation","price_pickup","price_evening","price_urn","send_catalog","send_estremi","price_delivery","price_night","price_cast","price_holiday","price_accessories","deposit","remaining_balance","total_service","total_text","identity_document_number","identity_document_date","signing_place"]
         data = {k:f.get(k,"").strip() for k in keys}
         data["urn_notes"] = f.get("urn_notes","").strip()
+        for key in MONEY_FIELDS:
+            value=data.get(key,"").replace(",",".")
+            data[key]=value
         if not data["payment_status"] or data["payment_status"] not in PAYMENT_STATES:
             data["payment_status"] = "Da saldare"
         data["send_catalog"] = "Si" if data["send_catalog"] == "Si" else ""
@@ -1770,6 +1808,9 @@ class App(BaseHTTPRequestHandler):
         return int(all(d.get(k) for k in required))
 
     def validation_error(self,d):
+        invalid_money=[label for key,label in MONEY_FIELDS.items() if d.get(key) and not re.fullmatch(r"\d+(?:\.\d{1,2})?",d[key])]
+        if invalid_money:
+            return "Nel Preventivo sono ammessi solo numeri, con al massimo due decimali: " + ", ".join(invalid_money)
         if d.get("service_type") == "Cremazione collettiva" and d.get("veterinarian_id"):
             return ""
         labels={
