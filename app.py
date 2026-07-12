@@ -536,6 +536,9 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 @media(max-width:620px){.brand-copy{display:none}.dashboard-states,.dashboard-payments{grid-template-columns:1fr}.metric-card,.payment-card{min-height:104px}.dashboard-panel{padding:15px;min-height:0}.welcome h1{font-size:24px}.dashboard-lower{margin-top:18px}.income-chart{min-width:0}.activity-item{grid-template-columns:38px minmax(0,1fr)}.activity-item time{display:none}}
 .income-panel{display:block;color:inherit;transition:transform .18s ease,border-color .18s ease}.income-panel:hover{transform:translateY(-2px);border-color:#fb7185}.panel-link{color:#fb7185;font-size:12px;font-weight:700}.balance-total{min-width:210px;padding:14px 18px;border:1px solid #334155;border-radius:14px;background:#1f2937;text-align:right}.balance-total small,.balance-total strong{display:block}.balance-total small{color:#94a3b8}.balance-total strong{margin-top:3px;color:#fb7185;font-size:25px}.balance-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:20px}.balance-card{display:flex;flex-direction:column;gap:7px;padding:17px;border:1px solid #334155;border-radius:13px;background:#1f2937;transition:transform .15s,border-color .15s}.balance-card:hover,.balance-card.active{transform:translateY(-2px);border-color:#fb7185}.balance-card small{color:#94a3b8}.balance-card strong{font-size:20px}.balance-table{margin-top:4px}.light-theme .balance-card,.light-theme .balance-total{background:#fff;color:#111827}
 @media(max-width:620px){.balance-grid{grid-template-columns:1fr 1fr}.balance-total{width:100%;text-align:left}.balances-wrap .titlebar{align-items:stretch}.panel-link{display:none}}
+.conversation-list{display:flex;flex-direction:column;gap:12px}.conversation-card{display:grid;grid-template-columns:minmax(280px,1.2fr) minmax(420px,1fr) auto;align-items:center;gap:20px;padding:18px;border:1px solid #334155;border-radius:15px;background:#1f2937;box-shadow:0 12px 34px #0307122e}.conversation-main{display:grid;grid-template-columns:46px minmax(0,1fr);align-items:center;gap:13px}.conversation-avatar{display:grid;place-items:center;width:46px;height:46px;border-radius:13px;background:#064e3b;color:#4ade80}.conversation-main h2{margin:0 0 5px;font-size:16px}.conversation-main p{margin:3px 0;color:#94a3b8;font-size:13px}.conversation-main p b,.conversation-main a{color:#e2e8f0}.conversation-message{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.conversation-card dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin:0}.conversation-card dl div{min-width:0}.conversation-card dt{color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:.05em}.conversation-card dd{margin:4px 0 0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.conversation-action{text-align:right}.whatsapp-open{background:linear-gradient(135deg,#22c55e,#15803d);white-space:nowrap}.message-accettato_da_meta{background:#1e3a8a;color:#bfdbfe}.message-consegnato{background:#14532d;color:#bbf7d0}.message-letto{background:#164e63;color:#a5f3fc}.message-fallito{background:#7f1d1d;color:#fecaca}.pagination{display:flex;align-items:center;justify-content:center;gap:18px;margin:20px 0;color:#94a3b8}.pagination a,.page-disabled{padding:9px 13px;border:1px solid #334155;border-radius:10px}.pagination a{color:#f8fafc;background:#1f2937}.page-disabled{opacity:.45}.light-theme .conversation-card{background:#fff;color:#111827}.light-theme .conversation-main p{color:#64748b}
+@media(max-width:1150px){.conversation-card{grid-template-columns:1fr 1fr}.conversation-action{grid-column:1/-1;text-align:left}}
+@media(max-width:700px){.conversation-card{grid-template-columns:1fr;gap:14px}.conversation-card dl{grid-template-columns:1fr 1fr}.conversation-action{grid-column:auto}.conversation-action .btn{width:100%}.pagination{gap:8px;justify-content:space-between}.pagination span{font-size:11px;text-align:center}.conversation-message{white-space:normal}.conversations-wrap .titlebar h1{font-size:24px}}
 """
 
 APP_JS = r"""
@@ -1028,6 +1031,7 @@ if('serviceWorker' in navigator){
 LUCIDE_PATHS = {
     "home": '<path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/>',
     "archive": '<rect width="18" height="4" x="3" y="3" rx="1"/><path d="M5 7v13h14V7M9 11h6"/>',
+    "message": '<path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z"/><path d="M8 9h8M8 13h5"/>',
     "stethoscope": '<path d="M11 2v2M5 2v2M5 3H3v4a6 6 0 0 0 12 0V3h-2"/><circle cx="18" cy="16" r="3"/><path d="M15 16H9a4 4 0 0 1-4-4v-1"/>',
     "clipboard": '<rect width="16" height="18" x="4" y="4" rx="2"/><path d="M9 4V2h6v2M8 9h8M8 13h6"/>',
     "users": '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
@@ -1092,7 +1096,7 @@ def layout(title, body, user=None):
     nav = ""; app_header=""; mobile_nav=""
     if user:
         links=[
-            ("/","home","Dashboard"),("/pratiche","archive","Archivio"),("/veterinari","stethoscope","Veterinari"),
+            ("/","home","Dashboard"),("/pratiche","archive","Archivio"),("/conversazioni-whatsapp","message","Conversazioni WhatsApp"),("/veterinari","stethoscope","Veterinari"),
             ("/archivio/pratiche","clipboard","Gestionale"),("/archivio/clienti","users","Clienti"),("/archivio/pratiche","paw","Animali"),
             ("/archivio/pratiche?pagamento=Da%20saldare","wallet","Pagamenti"),("/archivio/pratiche?pagamento=Pagato","receipt","Fatture"),
             ("/bilanci","chart","Report"),("/diagnostica","settings","Impostazioni"),("mailto:assistenza@petparadise.it","help","Assistenza"),
@@ -1200,6 +1204,7 @@ class App(BaseHTTPRequestHandler):
         if not user: return
         if path == "/": return self.dashboard(user)
         if path == "/bilanci": return self.balances(user)
+        if path == "/conversazioni-whatsapp": return self.whatsapp_conversations(user)
         if path == "/diagnostica": return self.diagnostics(user)
         if path == "/whatsapp-diagnostica": return self.whatsapp_diagnostics(user)
         if path == "/api/clienti/search": return self.api_clients_search(user)
@@ -1363,6 +1368,54 @@ class App(BaseHTTPRequestHandler):
         options='<option value="">Tutte le voci</option>'+''.join(f'<option value="{key}" {"selected" if selected==key else ""}>{label}</option>' for key,label in categories)
         body=f'''<main class="wrap balances-wrap"><div class="titlebar"><div><h1>Bilanci</h1><p class="sub">Entrate delle pratiche pagate dal {esc(date_it(date_from))} al {esc(date_it(date_to))}</p></div><div class="balance-total"><small>{esc(category_map.get(selected,"Entrate totali"))}</small><strong>{money_it(shown_total)}</strong></div></div><section class="balance-grid">{cards}</section><section class="tablebox balance-table"><table><thead><tr><th>Data</th><th>Pratica</th><th>Cliente</th><th>Voce</th><th>Entrata</th></tr></thead><tbody>{table_body}</tbody></table></section><section class="search-after-results"><h2>Filtra bilanci</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field full"><label>Voce</label><select name="voce">{options}</select></div></div><button class="btn" style="margin-top:12px">Applica filtri</button><a class="btn ghost" style="margin-top:12px" href="/bilanci">Ultimi 7 giorni</a></form></section></main>'''
         self.send_html(layout("Bilanci",body,user))
+
+    def whatsapp_conversations(self,user):
+        q=parse_qs(urlparse(self.path).query)
+        term=(q.get("q") or [""])[0].strip(); date_from=(q.get("dal") or [""])[0].strip(); date_to=(q.get("al") or [""])[0].strip()
+        message_status=(q.get("stato_messaggio") or [""])[0].strip(); practice_status=(q.get("stato_pratica") or [""])[0].strip()
+        allowed_message_statuses=["accettato_da_meta","consegnato","letto","fallito"]
+        if message_status not in allowed_message_statuses: message_status=""
+        if practice_status not in STATES: practice_status=""
+        try: page=max(1,int((q.get("pagina") or ["1"])[0]))
+        except ValueError: page=1
+        per_page=20
+        event_date="COALESCE(NULLIF(wm.sent_at,''),NULLIF(wm.last_attempt_at,''),NULLIF(wm.scheduled_at,''),wm.created_at)"
+        where=["wm.manual=0","(wm.sent_at IS NOT NULL OR wm.status IN ('accettato_da_meta','consegnato','letto','fallito'))"]
+        args=[]
+        if term:
+            like=f"%{term}%"; where.append("(COALESCE(p.owner_first_name,'')||' '||COALESCE(p.owner_last_name,'') LIKE ? OR COALESCE(p.owner_company,'') LIKE ? OR COALESCE(p.animal_name,'') LIKE ? OR COALESCE(wm.recipient_phone,'') LIKE ?)"); args.extend([like]*4)
+        if date_from and re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_from): where.append(f"date({event_date})>=date(?)"); args.append(date_from)
+        else: date_from=""
+        if date_to and re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_to): where.append(f"date({event_date})<=date(?)"); args.append(date_to)
+        else: date_to=""
+        if message_status: where.append("wm.status=?"); args.append(message_status)
+        if practice_status: where.append("p.status=?"); args.append(practice_status)
+        where_sql=" AND ".join(where)
+        with db() as c:
+            total=c.execute(f"SELECT count(*) n FROM whatsapp_messages wm JOIN practices p ON p.id=wm.practice_id WHERE {where_sql}",args).fetchone()["n"]
+            pages=max(1,(total+per_page-1)//per_page); page=min(page,pages); offset=(page-1)*per_page
+            rows=c.execute(f"""SELECT wm.*,p.practice_number,p.owner_first_name,p.owner_last_name,p.owner_company,p.owner_phone,p.animal_name,p.status practice_status,{event_date} event_at
+                               FROM whatsapp_messages wm JOIN practices p ON p.id=wm.practice_id
+                               WHERE {where_sql} ORDER BY event_at DESC,wm.id DESC LIMIT ? OFFSET ?""",args+[per_page,offset]).fetchall()
+        status_labels={"accettato_da_meta":"Inviato","consegnato":"Consegnato","letto":"Letto","fallito":"Fallito"}
+        cards=[]
+        for row in rows:
+            client=" ".join(x for x in [row["owner_first_name"],row["owner_last_name"]] if x).strip() or row["owner_company"] or "Cliente non indicato"
+            phone=only_digits(row["recipient_phone"] or row["owner_phone"]); status=status_labels.get(row["status"],self.whatsapp_status_label(row["status"]))
+            last_message=(f'Errore: {compact_text(row["last_error"])}' if row["status"]=="fallito" and row["last_error"] else f'Ringraziamento automatico · {row["template_name"]}' if row["template_name"] else "Ringraziamento automatico")
+            whatsapp_action=f'<a class="btn whatsapp-open" href="https://wa.me/{phone}" target="_blank" rel="noopener noreferrer">Apri chat WhatsApp</a>' if phone else '<span class="sub">Numero non disponibile</span>'
+            cards.append(f'''<article class="conversation-card"><div class="conversation-main"><div class="conversation-avatar">{lucide("message")}</div><div><h2>{esc(client)}</h2><p><b>{esc(row["animal_name"] or "Animale non indicato")}</b> · pratica <a href="/pratiche/{row["practice_id"]}">{esc(row["practice_number"])}</a></p><p class="conversation-message">{esc(last_message[:180])}</p></div></div><dl><div><dt>WhatsApp</dt><dd>{('+'+esc(phone)) if phone else '-'}</dd></div><div><dt>Inviato</dt><dd>{esc((row["event_at"] or "").replace("T"," ")[:16])}</dd></div><div><dt>Pratica</dt><dd><span class="badge">{esc(row["practice_status"])}</span></dd></div><div><dt>Messaggio</dt><dd><span class="badge message-{esc(row["status"])}">{esc(status)}</span></dd></div></dl><div class="conversation-action">{whatsapp_action}</div></article>''')
+        results=''.join(cards) or '<section class="section empty-state">Nessuna conversazione trovata.</section>'
+        def page_link(number,label,disabled=False):
+            if disabled: return f'<span class="page-disabled">{label}</span>'
+            params={"q":term,"dal":date_from,"al":date_to,"stato_messaggio":message_status,"stato_pratica":practice_status,"pagina":number}
+            return f'<a href="/conversazioni-whatsapp?{urlencode({k:v for k,v in params.items() if v not in (None,"")})}">{label}</a>'
+        pagination=f'<nav class="pagination" aria-label="Paginazione">{page_link(page-1,"← Precedente",page<=1)}<span>Pagina {page} di {pages} · {total} conversazioni</span>{page_link(page+1,"Successiva →",page>=pages)}</nav>'
+        message_options='<option value="">Tutti gli stati messaggio</option>'+''.join(f'<option value="{key}" {"selected" if message_status==key else ""}>{label}</option>' for key,label in status_labels.items())
+        practice_options='<option value="">Tutti gli stati pratica</option>'+''.join(f'<option {"selected" if practice_status==state else ""}>{esc(state)}</option>' for state in STATES)
+        filters=f'''<section class="search-after-results"><h2>Ricerca e filtri</h2><form class="section" method="get"><div class="fields"><div class="field full"><label>Cliente, animale o numero WhatsApp</label><input name="q" value="{esc(term)}" placeholder="Cerca conversazione"></div><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Stato messaggio</label><select name="stato_messaggio">{message_options}</select></div><div class="field"><label>Stato pratica</label><select name="stato_pratica">{practice_options}</select></div></div><button class="btn" style="margin-top:12px">Applica filtri</button><a class="btn ghost" style="margin-top:12px" href="/conversazioni-whatsapp">Pulisci filtri</a></form></section>'''
+        body=f'''<main class="wrap conversations-wrap"><div class="titlebar"><div><h1>Conversazioni WhatsApp</h1><p class="sub">Storico dei messaggi automatici di ringraziamento, dal più recente.</p></div></div><section class="conversation-list">{results}</section>{pagination}{filters}</main>'''
+        self.send_html(layout("Conversazioni WhatsApp",body,user))
 
     def diagnostics(self,user):
         asset_rows = []
