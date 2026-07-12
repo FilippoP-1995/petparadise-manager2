@@ -37,10 +37,10 @@ PAYMENT_STATES = [
 ]
 
 MONEY_FIELDS = {
-    "price_cremation":"Cremazione", "price_pickup":"Ritiro", "price_urn":"Urna",
-    "price_delivery":"Riconsegna", "price_cast":"Calco", "price_evening":"Serale",
-    "price_night":"Notturno", "price_holiday":"Festivo", "price_accessories":"Accessori",
-    "total_service":"Totale servizio", "deposit":"Acconto", "remaining_balance":"Rimanenza",
+    "price_cremation":"Cremazione", "price_pickup":"Ritiro", "price_urn":"Urna", "price_urn_2":"Seconda urna",
+    "price_delivery":"Riconsegna", "price_cast":"Calco", "price_cast_2":"Secondo calco", "price_evening":"Serale",
+    "price_night":"Notturno", "price_holiday":"Festivo", "price_accessories":"Accessori", "price_accessories_2":"Secondi accessori",
+    "total_service":"Totale servizio", "total_text":"TOTALE D", "deposit":"Acconto", "remaining_balance":"Rimanenza",
 }
 
 COLLABORATORS = {
@@ -265,6 +265,8 @@ def init_db():
             "price_urn": "TEXT", "price_delivery": "TEXT", "price_night": "TEXT",
             "urn_notes": "TEXT",
             "price_cast": "TEXT", "price_holiday": "TEXT", "price_accessories": "TEXT",
+            "price_urn_2": "TEXT", "urn_notes_2": "TEXT", "price_cast_2": "TEXT",
+            "price_accessories_2": "TEXT", "accessory_type": "TEXT", "accessory_type_2": "TEXT",
             "send_catalog": "TEXT",
             "send_estremi": "TEXT",
             "deposit": "TEXT", "remaining_balance": "TEXT", "total_service": "TEXT", "total_text": "TEXT", "identity_document_number": "TEXT",
@@ -530,6 +532,7 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 .activity-list{display:flex;flex-direction:column;margin-top:14px}.activity-item{display:grid;grid-template-columns:42px minmax(0,1fr) auto;align-items:center;gap:11px;padding:12px 0;border-bottom:1px solid #334155}.activity-item:last-child{border-bottom:0}.activity-item b,.activity-item small{display:block}.activity-item b{font-size:13px}.activity-item small{margin-top:3px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.activity-item time{color:#94a3b8;font-size:11px}.activity-icon{width:38px;height:38px;--icon-bg:#243244;--icon-color:#5eead4;--icon-shadow:transparent}.activity-1 .activity-icon{--icon-bg:#422006;--icon-color:#fbbf24}.activity-2 .activity-icon{--icon-bg:#3b0764;--icon-color:#c084fc}.activity-3 .activity-icon{--icon-bg:#4c0519;--icon-color:#fb7185}.activity-empty{padding:40px 10px;color:#94a3b8;text-align:center}
 .bottom-nav,.more-menu,.more-backdrop{display:none}.tag-red{background:#7f1d2d;color:#fecdd3}.tag-orange{background:#7c2d12;color:#fed7aa}.tag-outline-orange{background:#3b1d0c;color:#fdba74;border-color:#f97316}.tag-purple{background:#4c1d95;color:#e9d5ff}.tag-yellow{background:#713f12;color:#fef08a}.tag-pink{background:#831843;color:#fbcfe8}.tag-blue{background:#1e3a8a;color:#bfdbfe}.tag-green{background:#14532d;color:#bbf7d0}
 .search-after-results{margin-top:32px}.search-after-results>h2{margin-bottom:12px}.search-after-results .section{box-shadow:0 12px 34px #0307122e}
+.dashboard-recent{margin-top:26px}.dashboard-recent .titlebar{margin-bottom:12px}.dashboard-recent .titlebar a{color:#fb7185}.load-previous-month{display:flex;justify-content:center;padding:8px 0 24px}.load-previous-month .btn{width:auto;min-width:240px}.budget-add{align-self:end;width:auto!important;min-height:42px;margin-top:auto}
 *:focus-visible{outline:3px solid #fb7185!important;outline-offset:3px}.light-theme{background:#eef2f7;color:#111827}.light-theme .app-header,.light-theme .top{background:#fff;color:#111827}.light-theme .dashboard-panel,.light-theme .metric-card,.light-theme .payment-card,.light-theme .section,.light-theme .tablebox{background:#fff;color:#111827}.light-theme .header-search,.light-theme .icon-btn,.light-theme .header-actions time{background:#f8fafc;color:#111827}.light-theme .welcome p,.light-theme .metric-card em,.light-theme .payment-card em,.light-theme .activity-item small,.light-theme .activity-item time{color:#64748b}
 @media(max-width:1100px){.dashboard-states{grid-template-columns:repeat(2,1fr)}.dashboard-lower{grid-template-columns:1fr}.header-actions time{display:none}}
 @media(max-width:900px){body{min-height:100dvh;padding-bottom:calc(82px + var(--safe-bottom))}#main-content{min-height:100dvh;padding-left:var(--safe-left);padding-right:var(--safe-right)}.top{position:fixed;left:var(--safe-left);right:var(--safe-right);top:0;width:auto;height:calc(64px + var(--safe-top));min-height:calc(64px + var(--safe-top));padding:calc(7px + var(--safe-top)) 14px 7px;border-right:0;border-bottom:1px solid #263246}.top .nav{display:none}.brand-copy{display:inline}.brand-logo{width:42px;height:42px}.app-header{position:fixed;left:auto;right:calc(10px + var(--safe-right));top:calc(7px + var(--safe-top));width:auto;height:50px;padding:0;background:transparent;border:0;backdrop-filter:none}.header-search,.header-actions time,.header-new span{display:none}.header-actions{gap:7px}.header-new{width:42px;height:42px;padding:0}.wrap{margin-left:0;padding:calc(88px + var(--safe-top)) 14px 22px}.bottom-nav{position:fixed;display:grid;grid-template-columns:repeat(5,1fr);align-items:end;left:0;right:0;bottom:0;z-index:90;height:calc(72px + var(--safe-bottom));padding:6px max(8px,var(--safe-right)) calc(5px + var(--safe-bottom)) max(8px,var(--safe-left));background:#0b1220ed;border-top:1px solid #334155;backdrop-filter:blur(18px)}.bottom-nav a,.bottom-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:0;background:transparent;color:#94a3b8;font-size:10px}.bottom-nav .icon{width:21px;height:21px}.bottom-nav a:first-child{color:#fb7185}.bottom-nav .bottom-new{align-self:center;width:52px;height:52px;margin:-18px auto 0;border-radius:50%;background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;box-shadow:0 8px 28px #ef405f70}.bottom-new span{display:none}.more-backdrop{position:fixed;display:block;inset:0;z-index:94;background:#020617aa;opacity:0;pointer-events:none;transition:opacity .2s}.more-menu{position:fixed;display:flex;flex-direction:column;gap:5px;left:calc(14px + var(--safe-left));right:calc(14px + var(--safe-right));bottom:calc(82px + var(--safe-bottom));z-index:95;max-height:72dvh;padding:16px;border:1px solid #334155;border-radius:18px;background:#111827;box-shadow:0 25px 80px #0009;overflow:auto;transform:translateY(120%);opacity:0;transition:transform .22s ease,opacity .22s}.more-menu a{display:flex;align-items:center;gap:11px;padding:11px;border-radius:10px;color:#e2e8f0}.more-menu a:hover{background:#1f2937}.more-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}.more-title .icon-btn{font-size:24px}.more-open .more-menu{transform:none;opacity:1}.more-open .more-backdrop{opacity:1;pointer-events:auto}.install-hint{left:calc(14px + var(--safe-left));right:calc(14px + var(--safe-right));bottom:calc(14px + var(--safe-bottom))}.skip-link{top:calc(8px + var(--safe-top));left:calc(8px + var(--safe-left))}.light-theme .bottom-nav,.light-theme .more-menu{background:#fff}.dashboard-lower{grid-template-columns:1fr}}
@@ -652,14 +655,16 @@ function updatePreventivoTotal(){
 }
 function updateRemainingBalance(){
   const totalField = document.querySelector('input[name="total_service"]');
+  const definitiveField = document.querySelector('input[name="total_text"]');
   const depositField = document.querySelector('input[name="deposit"]');
   const remainingField = document.querySelector('input[name="remaining_balance"]');
   if(!remainingField) return;
-  const remaining = ppmNumber(totalField ? totalField.value : 0) - ppmNumber(depositField ? depositField.value : 0);
+  const total = definitiveField && definitiveField.value.trim() ? ppmNumber(definitiveField.value) : ppmNumber(totalField ? totalField.value : 0);
+  const remaining = total - ppmNumber(depositField ? depositField.value : 0);
   remainingField.value = ppmFormat(remaining);
 }
 function setupNumericBudgetFields(){
-  const names=['price_cremation','price_pickup','price_urn','price_delivery','price_cast','price_evening','price_night','price_holiday','price_accessories','total_service','deposit','remaining_balance'];
+  const names=['price_cremation','price_pickup','price_urn','price_urn_2','price_delivery','price_cast','price_cast_2','price_evening','price_night','price_holiday','price_accessories','price_accessories_2','total_service','total_text','deposit','remaining_balance'];
   names.forEach(function(name){
     const field=document.querySelector(`input[name="${name}"]`);
     if(!field) return;
@@ -704,7 +709,7 @@ document.addEventListener('input', function(e){
     }
   }
   if(e.target && e.target.matches('[data-preventivo-sum="1"]')) updatePreventivoTotal();
-  if(e.target && (e.target.name === 'deposit' || e.target.name === 'total_service')) updateRemainingBalance();
+  if(e.target && (e.target.name === 'deposit' || e.target.name === 'total_service' || e.target.name === 'total_text')) updateRemainingBalance();
 });
 function setupZipLookup(){
   const street=document.querySelector('input[name="owner_street"]');
@@ -748,7 +753,46 @@ function setupUrnNotesField(){
   const priceField=price.closest('.field');
   priceField.parentNode.insertBefore(field, priceField.nextSibling);
 }
-document.addEventListener('DOMContentLoaded', function(){ setupNumericBudgetFields(); updatePreventivoTotal(); updateRemainingBalance(); setupZipLookup(); setupUrnNotesField(); });
+function setupBudgetExtras(){
+  const fields=document.querySelector('.section input[name="price_cremation"]')?.closest('.fields');
+  if(!fields) return;
+  const wrapField=(element,label,after,hidden=false)=>{
+    element.type='text';
+    const wrap=document.createElement('div'); wrap.className='field'+(hidden?' hidden':'');
+    const lab=document.createElement('label'); lab.textContent=label; wrap.append(lab,element);
+    after.parentNode.insertBefore(wrap,after.nextSibling); return wrap;
+  };
+  const addButton=(label,after,targets)=>{
+    const button=document.createElement('button'); button.type='button'; button.className='btn ghost budget-add'; button.textContent=label;
+    after.parentNode.insertBefore(button,after.nextSibling);
+    button.onclick=()=>{targets.forEach(target=>target.classList.remove('hidden'));button.remove();};
+    if(targets.some(target=>target.querySelector('input,select')?.value)) button.click();
+  };
+  const totalArea=document.querySelector('textarea[name="total_text"]');
+  if(totalArea){
+    const input=document.createElement('input'); input.name='total_text'; input.value=totalArea.value; input.inputMode='decimal';
+    totalArea.replaceWith(input); input.closest('.field').querySelector('label').textContent='TOTALE D €';
+  }
+  const totalService=document.querySelector('input[name="total_service"]'); if(totalService){totalService.readOnly=true;totalService.closest('.field').querySelector('label').textContent='Totale calcolato €';}
+  const urn=document.querySelector('input[name="price_urn"]')?.closest('.field');
+  const urn2=wrapField(document.querySelector('input[name="price_urn_2"]'),'Seconda urna €',urn,true); urn2.querySelector('input').dataset.preventivoSum='1';
+  const urnNotes2=wrapField(document.querySelector('input[name="urn_notes_2"]'),'Seconda urna - testo libero',urn2,true);
+  addButton('+ Aggiungi altra urna',urnNotes2,[urn2,urnNotes2]);
+  const cast=document.querySelector('input[name="price_cast"]')?.closest('.field');
+  const cast2=wrapField(document.querySelector('input[name="price_cast_2"]'),'Secondo calco €',cast,true); cast2.querySelector('input').dataset.preventivoSum='1';
+  addButton('+ Aggiungi altro calco',cast2,[cast2]);
+  const accessoryPrice=document.querySelector('input[name="price_accessories"]')?.closest('.field');
+  const makeAccessorySelect=(hidden,name)=>{const select=document.createElement('select');select.name=name;['','Calco naso','Collana','Braccialetto','Calco inchiostro','Altro'].forEach(value=>{const option=new Option(value||'Seleziona accessorio',value);select.add(option)});select.value=hidden.value;hidden.replaceWith(select);return select;};
+  const accessoryTypeHidden=document.querySelector('input[name="accessory_type"]'); const accessoryType=makeAccessorySelect(accessoryTypeHidden,'accessory_type');
+  const accessoryTypeWrap=document.createElement('div');accessoryTypeWrap.className='field';accessoryTypeWrap.innerHTML='<label>Tipo accessorio</label>';accessoryTypeWrap.append(accessoryType);
+  cast.parentNode.insertBefore(accessoryTypeWrap,cast.nextSibling); accessoryTypeWrap.parentNode.insertBefore(accessoryPrice,accessoryTypeWrap.nextSibling);
+  const accessoryType2Hidden=document.querySelector('input[name="accessory_type_2"]'); const accessoryType2=makeAccessorySelect(accessoryType2Hidden,'accessory_type_2');
+  const accessoryType2Wrap=document.createElement('div');accessoryType2Wrap.className='field hidden';accessoryType2Wrap.innerHTML='<label>Secondo accessorio</label>';accessoryType2Wrap.append(accessoryType2);
+  accessoryPrice.parentNode.insertBefore(accessoryType2Wrap,accessoryPrice.nextSibling);
+  const accessory2=wrapField(document.querySelector('input[name="price_accessories_2"]'),'Secondi accessori €',accessoryType2Wrap,true); accessory2.querySelector('input').dataset.preventivoSum='1';
+  addButton('+ Aggiungi altri accessori',accessory2,[accessoryType2Wrap,accessory2]);
+}
+document.addEventListener('DOMContentLoaded', function(){ setupBudgetExtras(); setupNumericBudgetFields(); updatePreventivoTotal(); updateRemainingBalance(); setupZipLookup(); setupUrnNotesField(); });
 function toggleCollaboratorBox(){
   const origin = document.querySelector('select[name="request_origin"]');
   const box = document.getElementById('collaboratorBox');
@@ -1073,6 +1117,12 @@ def money_it(value):
     return f"€ {value:,.2f}".replace(",","X").replace(".",",").replace("X",".")
 
 
+def effective_total(practice):
+    keys=practice.keys() if hasattr(practice,"keys") else practice
+    definitive=practice["total_text"] if "total_text" in keys else ""
+    return money_value(definitive) if str(definitive or "").strip() else money_value(practice["total_service"] if "total_service" in keys else "")
+
+
 def income_chart(values,labels):
     width,height=660,240; left,right,top,bottom=56,18,20,42
     plot_w,plot_h=width-left-right,height-top-bottom
@@ -1106,7 +1156,7 @@ def layout(title, body, user=None):
         today=datetime.now(); date_label=today.strftime("%d/%m/%Y"); weekday=["Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica"][today.weekday()]
         app_header=f'''<header class="app-header"><form class="header-search" action="/archivio/pratiche" method="get" role="search">{lucide("search")}<label class="sr-only" for="globalSearch">Cerca nel gestionale</label><input id="globalSearch" name="q" placeholder="Cerca pratica, cliente, animale..." autocomplete="off"></form><div class="header-actions"><a class="icon-btn" href="/archivio/pratiche?promemoria=estremi" aria-label="Notifiche">{lucide("bell")}</a><button class="icon-btn" type="button" onclick="toggleTheme()" aria-label="Cambia tema">{lucide("sun")}</button><a class="btn header-new" href="/nuova">{lucide("plus")}<span>Nuova pratica</span></a><time datetime="{today.date().isoformat()}">{date_label}<small>{weekday}</small></time></div></header>'''
         drawer_links=''.join(f'<a href="{href}">{lucide(icon)}<span>{label}</span></a>' for href,icon,label in links)
-        mobile_nav=f'''<nav class="bottom-nav" aria-label="Navigazione mobile"><a href="/">{lucide("home")}<span>Dashboard</span></a><a href="/bilanci">{lucide("chart")}<span>Bilanci</span></a><a class="bottom-new" href="/nuova" aria-label="Nuova pratica">{lucide("plus")}</a><a href="/archivio/clienti">{lucide("users")}<span>Clienti</span></a><button type="button" onclick="toggleMoreMenu()">{lucide("menu")}<span>Altro</span></button></nav><div class="more-backdrop" onclick="toggleMoreMenu(false)"></div><aside class="more-menu" aria-label="Altre funzioni"><div class="more-title"><b>Menu</b><button class="icon-btn" onclick="toggleMoreMenu(false)" aria-label="Chiudi">×</button></div>{drawer_links}<button class="btn ghost install-btn" type="button" onclick="installPetParadise()">Installa App</button></aside>'''
+        mobile_nav=f'''<nav class="bottom-nav" aria-label="Navigazione mobile"><a href="/">{lucide("home")}<span>Dashboard</span></a><a href="/bilanci">{lucide("chart")}<span>Bilanci</span></a><a class="bottom-new" href="/nuova" aria-label="Nuova pratica">{lucide("plus")}</a><a href="/pratiche">{lucide("archive")}<span>Archivio</span></a><button type="button" onclick="toggleMoreMenu()">{lucide("menu")}<span>Altro</span></button></nav><div class="more-backdrop" onclick="toggleMoreMenu(false)"></div><aside class="more-menu" aria-label="Altre funzioni"><div class="more-title"><b>Menu</b><button class="icon-btn" onclick="toggleMoreMenu(false)" aria-label="Chiudi">×</button></div>{drawer_links}<button class="btn ghost install-btn" type="button" onclick="installPetParadise()">Installa App</button></aside>'''
     return f'''<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#e9475b"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="PP Manager"><meta name="application-name" content="Pet Paradise Manager"><meta name="format-detection" content="telephone=no"><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"><title>{esc(title)} - Pet Paradise Manager</title><style>{CSS}</style></head><body><a class="skip-link" href="#main-content">Vai al contenuto</a><aside class="top"><a class="brand" href="/"><img class="brand-logo" src="/assets/company_logo.png" alt="Pet Paradise"><span class="brand-copy">Pet Paradise <small>MANAGER</small></span></a>{nav}</aside>{app_header}<div id="main-content">{body}</div>{mobile_nav}{APP_JS}</body></html>'''
 
 
@@ -1306,8 +1356,9 @@ class App(BaseHTTPRequestHandler):
             active_where="deleted_at IS NULL OR deleted_at=''"
             counts={r["status"]:r["n"] for r in c.execute(f"SELECT status,count(*) n FROM practices WHERE {active_where} GROUP BY status")}
             payment_counts={r["payment_status"]:r["n"] for r in c.execute(f"SELECT COALESCE(payment_status,'Da saldare') payment_status,count(*) n FROM practices WHERE {active_where} GROUP BY COALESCE(payment_status,'Da saldare')")}
-            payment_rows=c.execute(f"SELECT COALESCE(payment_status,'Da saldare') payment_status,total_service FROM practices WHERE {active_where}").fetchall()
-            income_rows=c.execute(f"SELECT date(COALESCE(NULLIF(pickup_date,''),created_at)) day,total_service FROM practices WHERE ({active_where}) AND payment_status='Pagato' AND date(COALESCE(NULLIF(pickup_date,''),created_at))>=date(?)",(days[0].isoformat(),)).fetchall()
+            payment_rows=c.execute(f"SELECT *,COALESCE(payment_status,'Da saldare') normalized_payment_status FROM practices WHERE {active_where}").fetchall()
+            income_rows=c.execute(f"SELECT *,date(COALESCE(NULLIF(pickup_date,''),created_at)) day FROM practices WHERE ({active_where}) AND payment_status='Pagato' AND date(COALESCE(NULLIF(pickup_date,''),created_at))>=date(?)",(days[0].isoformat(),)).fetchall()
+            recent=c.execute(f"SELECT * FROM practices WHERE {active_where} ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) DESC,id DESC LIMIT 10").fetchall()
             activity=c.execute("""SELECT h.event_type,h.new_value,h.created_at,p.id practice_id,p.practice_number
                                   FROM practice_history h JOIN practices p ON p.id=h.practice_id
                                   WHERE p.deleted_at IS NULL OR p.deleted_at=''
@@ -1317,12 +1368,17 @@ class App(BaseHTTPRequestHandler):
         state_specs=[("Ritirato","Ritirati","archive","state-red"),("In programma","In programma","calendar","state-blue"),("Da consegnare","Da consegnare","clipboard","state-purple"),("Consegnato","Consegnati","home","state-green")]
         for state,label,icon,cls in state_specs:
             state_cards.append(f'<a class="metric-card {cls}" href="/archivio/pratiche?stato={quote(state)}"><span class="metric-copy"><small>{label}</small><strong>{counts.get(state,0)}</strong><em>{"Nessuna pratica" if not counts.get(state,0) else "Apri elenco"}</em></span><span class="metric-icon">{lucide(icon)}</span></a>')
-        payment_totals={state:sum(money_value(row["total_service"]) for row in payment_rows if row["payment_status"]==state) for state in PAYMENT_STATES}
+        payment_totals={
+            "Da saldare":sum(effective_total(row) for row in payment_rows if row["normalized_payment_status"]=="Da saldare"),
+            "Acconto":sum(money_value(row["deposit"]) for row in payment_rows),
+            "Pagato":sum(effective_total(row) for row in payment_rows if row["normalized_payment_status"]=="Pagato"),
+        }
+        payment_counts["Acconto"]=sum(1 for row in payment_rows if money_value(row["deposit"])>0)
         payment_specs=[("Da saldare","Da saldare","wallet","payment-due"),("Acconto","Acconti","receipt","payment-deposit"),("Pagato","Pagati","chart","payment-paid")]
         payment_cards=''.join(f'<a class="payment-card {cls}" href="/archivio/pratiche?pagamento={quote(state)}"><span><small>{label}</small><strong>{payment_counts.get(state,0)}</strong><em>{money_it(payment_totals[state])}</em></span><span class="metric-icon">{lucide(icon)}</span></a>' for state,label,icon,cls in payment_specs)
         income_by_day={day.isoformat():0.0 for day in days}
         for row in income_rows:
-            if row["day"] in income_by_day: income_by_day[row["day"]]+=money_value(row["total_service"])
+            if row["day"] in income_by_day: income_by_day[row["day"]]+=effective_total(row)
         income_values=[income_by_day[day.isoformat()] for day in days]; income_total=sum(income_values)
         chart=income_chart(income_values,[day.strftime("%d/%m") for day in days])
         timeline=[]
@@ -1332,7 +1388,7 @@ class App(BaseHTTPRequestHandler):
             timeline.append(f'<a class="activity-item activity-{index%4}" href="/pratiche/{event["practice_id"]}"><span class="activity-icon">{lucide("clipboard")}</span><span><b>{esc(label)}</b><small>{esc(detail)}</small></span><time>{esc(when)}</time></a>')
         if not timeline: timeline.append('<div class="activity-empty">Le nuove attività compariranno qui.</div>')
         hour=datetime.now().hour; greeting="Buongiorno" if hour < 13 else "Buon pomeriggio" if hour < 18 else "Buonasera"
-        body=f'''<main class="wrap dashboard-wrap"><section class="welcome"><div><h1>{greeting}, Pet Paradise <span aria-hidden="true">👋</span></h1><p>Panoramica aggiornata dell'attività</p></div></section>{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}<h2 class="dashboard-heading">Pratiche</h2><section class="dashboard-states">{''.join(state_cards)}</section><h2 class="dashboard-heading">Pagamenti</h2><section class="dashboard-payments">{payment_cards}</section><section class="dashboard-lower"><a class="dashboard-panel income-panel" href="/bilanci" aria-label="Apri Bilanci: entrate degli ultimi sette giorni"><header><div><h2>Entrate ultimi 7 giorni</h2><p>Totale: <strong>{money_it(income_total)}</strong></p></div><span class="panel-link">Apri Bilanci →</span></header>{chart}</a><article class="dashboard-panel activity-panel"><header><h2>Attività recenti</h2><a href="/archivio/pratiche">Vedi tutte</a></header><div class="activity-list">{''.join(timeline)}</div></article></section></main>'''
+        body=f'''<main class="wrap dashboard-wrap"><section class="welcome"><div><h1>{greeting}, Pet Paradise <span aria-hidden="true">👋</span></h1><p>Panoramica aggiornata dell'attività</p></div></section>{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}<h2 class="dashboard-heading">Pratiche</h2><section class="dashboard-states">{''.join(state_cards)}</section><h2 class="dashboard-heading">Pagamenti</h2><section class="dashboard-payments">{payment_cards}</section><section class="dashboard-lower"><a class="dashboard-panel income-panel" href="/bilanci" aria-label="Apri Bilanci: entrate degli ultimi sette giorni"><header><div><h2>Entrate ultimi 7 giorni</h2><p>Totale: <strong>{money_it(income_total)}</strong></p></div><span class="panel-link">Apri Bilanci →</span></header>{chart}</a><article class="dashboard-panel activity-panel"><header><h2>Attività recenti</h2><a href="/archivio/pratiche">Vedi tutte</a></header><div class="activity-list">{''.join(timeline)}</div></article></section><section class="dashboard-recent"><div class="titlebar"><h2>Ultime 10 pratiche per data recupero</h2><a href="/archivio/pratiche">Apri archivio</a></div><div class="tablebox"><table><thead><tr><th>Data recupero</th><th>Codice pratica</th><th>Animale</th><th>Proprietario</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Stato</th></tr></thead><tbody>{self.practice_rows(recent)}</tbody></table></div></section></main>'''
         self.send_html(layout("Dashboard",body,user))
 
     def balances(self,user):
@@ -1342,31 +1398,41 @@ class App(BaseHTTPRequestHandler):
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_from): date_from=(today-timedelta(days=6)).isoformat()
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_to): date_to=today.isoformat()
         categories=[
-            ("price_cremation","Cremazione"),("price_pickup","Ritiro"),("price_urn","Urna"),
-            ("price_delivery","Riconsegna"),("price_cast","Calco"),("price_evening","Serale"),
-            ("price_night","Notturno"),("price_holiday","Festivo"),("price_accessories","Accessori"),
+            ("price_cremation","Cremazione",("price_cremation",)),("price_pickup","Ritiro",("price_pickup",)),("price_urn","Urna",("price_urn","price_urn_2")),
+            ("price_delivery","Riconsegna",("price_delivery",)),("price_cast","Calco",("price_cast","price_cast_2")),("price_evening","Serale",("price_evening",)),
+            ("price_night","Notturno",("price_night",)),("price_holiday","Festivo",("price_holiday",)),("price_accessories","Accessori",("price_accessories","price_accessories_2")),
+            ("da_entrare","Da entrare",()),
         ]
-        category_map=dict(categories); selected=(q.get("voce") or [""])[0].strip()
+        category_map={key:label for key,label,_ in categories}; category_fields={key:fields for key,_,fields in categories}; selected=(q.get("voce") or [""])[0].strip()
         if selected not in category_map: selected=""
         with db() as c:
             rows=c.execute("""SELECT * FROM practices
-                              WHERE (deleted_at IS NULL OR deleted_at='') AND payment_status='Pagato'
+                              WHERE (deleted_at IS NULL OR deleted_at='')
                                 AND date(COALESCE(NULLIF(pickup_date,''),created_at)) BETWEEN date(?) AND date(?)
                               ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) DESC,id DESC""",(date_from,date_to)).fetchall()
-        breakdown={key:sum(money_value(row[key]) for row in rows) for key,_ in categories}
-        grand_total=sum(money_value(row["total_service"]) for row in rows)
+        breakdown={key:sum(sum(money_value(row[field]) for field in fields) for row in rows) for key,_,fields in categories if fields}
+        breakdown["da_entrare"]=sum(effective_total(row) for row in rows if (row["payment_status"] or "Da saldare")=="Da saldare")
+        grand_total=sum(effective_total(row) for row in rows if row["payment_status"]=="Pagato")
         shown_total=breakdown[selected] if selected else grand_total
-        cards=''.join(f'<a class="balance-card {"active" if selected==key else ""}" href="/bilanci?dal={quote(date_from)}&al={quote(date_to)}&voce={quote(key)}"><small>{label}</small><strong>{money_it(breakdown[key])}</strong></a>' for key,label in categories)
+        cards=''.join(f'<a class="balance-card {"active" if selected==key else ""}" href="/bilanci?dal={quote(date_from)}&al={quote(date_to)}&voce={quote(key)}"><small>{label}</small><strong>{money_it(breakdown[key])}</strong></a>' for key,label,_ in categories)
         table_rows=[]
         for row in rows:
-            amount=money_value(row[selected]) if selected else money_value(row["total_service"])
-            if selected and amount==0: continue
+            if selected=="da_entrare":
+                if (row["payment_status"] or "Da saldare")!="Da saldare": continue
+                amount=effective_total(row)
+            elif selected:
+                amount=sum(money_value(row[field]) for field in category_fields[selected])
+                if amount==0: continue
+            else:
+                if row["payment_status"]!="Pagato": continue
+                amount=effective_total(row)
             owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip()
             effective_date=(row["pickup_date"] or row["created_at"] or "")[:10]
             table_rows.append(f'<tr><td>{esc(date_it(effective_date))}</td><td><a href="/pratiche/{row["id"]}"><b>{esc(row["practice_number"])}</b></a></td><td>{esc(owner)}</td><td>{esc(category_map.get(selected,"Totale pratica"))}</td><td><b>{money_it(amount)}</b></td></tr>')
         table_body=''.join(table_rows) or '<tr><td colspan="5" class="sub">Nessuna entrata nel periodo selezionato.</td></tr>'
-        options='<option value="">Tutte le voci</option>'+''.join(f'<option value="{key}" {"selected" if selected==key else ""}>{label}</option>' for key,label in categories)
-        body=f'''<main class="wrap balances-wrap"><div class="titlebar"><div><h1>Bilanci</h1><p class="sub">Entrate delle pratiche pagate dal {esc(date_it(date_from))} al {esc(date_it(date_to))}</p></div><div class="balance-total"><small>{esc(category_map.get(selected,"Entrate totali"))}</small><strong>{money_it(shown_total)}</strong></div></div><section class="balance-grid">{cards}</section><section class="tablebox balance-table"><table><thead><tr><th>Data</th><th>Pratica</th><th>Cliente</th><th>Voce</th><th>Entrata</th></tr></thead><tbody>{table_body}</tbody></table></section><section class="search-after-results"><h2>Filtra bilanci</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field full"><label>Voce</label><select name="voce">{options}</select></div></div><button class="btn" style="margin-top:12px">Applica filtri</button><a class="btn ghost" style="margin-top:12px" href="/bilanci">Ultimi 7 giorni</a></form></section></main>'''
+        options='<option value="">Entrate pagate</option>'+''.join(f'<option value="{key}" {"selected" if selected==key else ""}>{label}</option>' for key,label,_ in categories)
+        subtitle="Pratiche contenenti la voce selezionata" if selected else "Entrate delle pratiche pagate"
+        body=f'''<main class="wrap balances-wrap"><div class="titlebar"><div><h1>Bilanci</h1><p class="sub">{subtitle} dal {esc(date_it(date_from))} al {esc(date_it(date_to))}</p></div><div class="balance-total"><small>{esc(category_map.get(selected,"Entrate totali"))}</small><strong>{money_it(shown_total)}</strong></div></div><section class="balance-grid">{cards}</section><section class="tablebox balance-table"><table><thead><tr><th>Data</th><th>Pratica</th><th>Cliente</th><th>Voce</th><th>Importo</th></tr></thead><tbody>{table_body}</tbody></table></section><section class="search-after-results"><h2>Filtra bilanci</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field full"><label>Voce</label><select name="voce">{options}</select></div></div><button class="btn" style="margin-top:12px">Applica filtri</button><a class="btn ghost" style="margin-top:12px" href="/bilanci">Ultimi 7 giorni</a></form></section></main>'''
         self.send_html(layout("Bilanci",body,user))
 
     def whatsapp_conversations(self,user):
@@ -1468,7 +1534,8 @@ class App(BaseHTTPRequestHandler):
             notes_preview=compact_text(r["notes"]) if "notes" in r.keys() else ""
             notes_cell=esc(notes_preview[:70])+("..." if len(notes_preview)>70 else "") if notes_preview else '<span class="sub">-</span>'
             urn_notes=compact_text(r["urn_notes"]) if "urn_notes" in r.keys() else ""
-            urn_price=compact_text(r["price_urn"]) if "price_urn" in r.keys() else ""
+            urn_prices=[compact_text(r[key]) for key in ("price_urn","price_urn_2") if key in r.keys() and r[key]]
+            urn_price=" + ".join(urn_prices)
             urn_cell='<br>'.join(x for x in [esc(urn_notes), f'<small>{esc(urn_price)} €</small>' if urn_price else ''] if x) or '<span class="sub">-</span>'
             html.append(f'<tr><td>{esc(recovery_date)}</td><td><a href="/pratiche/{r["id"]}"><b class="{code_cls}">{esc(code)}</b></a></td><td>{animal_cell}</td><td>{owner}<br><small>{esc(r["owner_phone"])}</small></td><td>{vet_label}</td><td>{esc(r["destination_branch"])}</td><td>{self.tag_badges(r)}</td><td>{notes_cell}</td><td>{urn_cell}</td><td>{self.status_badges(r)}</td></tr>')
         return ''.join(html)
@@ -1611,6 +1678,7 @@ class App(BaseHTTPRequestHandler):
         state=q.get("stato",[""])[0].strip()
         payment=q.get("pagamento",[""])[0].strip()
         promemoria=q.get("promemoria",[""])[0].strip()
+        selected_month=q.get("mese",[""])[0].strip()
         sql="SELECT * FROM practices WHERE (deleted_at IS NULL OR deleted_at='')"; args=[]
         if term:
             like=f"%{term}%"
@@ -1625,9 +1693,9 @@ class App(BaseHTTPRequestHandler):
         if collaborator:
             sql += " AND collaborator_name LIKE ?"; args.append(f"%{collaborator}%")
         if spesa_min:
-            sql += " AND CAST(REPLACE(total_service, ',', '.') AS REAL) >= ?"; args.append(float(spesa_min) if re.match(r"^-?\d+(\.\d+)?$", spesa_min) else 0)
+            sql += " AND CAST(REPLACE(COALESCE(NULLIF(total_text,''),total_service), ',', '.') AS REAL) >= ?"; args.append(float(spesa_min) if re.match(r"^-?\d+(\.\d+)?$", spesa_min) else 0)
         if spesa_max:
-            sql += " AND CAST(REPLACE(total_service, ',', '.') AS REAL) <= ?"; args.append(float(spesa_max) if re.match(r"^-?\d+(\.\d+)?$", spesa_max) else 999999999)
+            sql += " AND CAST(REPLACE(COALESCE(NULLIF(total_text,''),total_service), ',', '.') AS REAL) <= ?"; args.append(float(spesa_max) if re.match(r"^-?\d+(\.\d+)?$", spesa_max) else 999999999)
         if date_from:
             sql += " AND date(COALESCE(NULLIF(pickup_date,''), created_at))>=date(?)"; args.append(date_from)
         if date_to:
@@ -1643,13 +1711,16 @@ class App(BaseHTTPRequestHandler):
         sql += " ORDER BY date(COALESCE(NULLIF(pickup_date,''), created_at)) DESC, id DESC"
         with db() as c:
             rows=c.execute(sql,args).fetchall()
+        available_months=sorted({((row["pickup_date"] or row["created_at"] or "")[:7]) or "Senza data" for row in rows},reverse=True)
+        if selected_month not in available_months: selected_month=available_months[0] if available_months else ""
+        visible_rows=[row for row in rows if (((row["pickup_date"] or row["created_at"] or "")[:7]) or "Senza data")==selected_month]
         opts='<option value="">Tutti gli stati</option>'+''.join(f'<option {"selected" if state==s else ""}>{esc(s)}</option>' for s in STATES)
         pay_opts='<option value="">Tutti i pagamenti</option>'+''.join(f'<option {"selected" if payment==s else ""}>{esc(s)}</option>' for s in PAYMENT_STATES)
         service_opts=''.join(f'<option value="{esc(x)}" {"selected" if service==x else ""}>{esc(x or "Tutti i servizi")}</option>' for x in ["","Da decidere","Cremazione singola","Cremazione collettiva"])
         promemoria_label = " - Promemoria catalogo" if promemoria=="catalogo" else " - Promemoria estremi" if promemoria=="estremi" else ""
         month_names=["","Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno","Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"]
         groups={}
-        for r in rows:
+        for r in visible_rows:
             key=((r["pickup_date"] or r["created_at"] or "")[:7]) or "Senza data"
             groups.setdefault(key,[]).append(r)
         blocks=[]
@@ -1662,8 +1733,15 @@ class App(BaseHTTPRequestHandler):
                     pass
             blocks.append(f'''<section class="month-block"><div class="month-title"><h2>{esc(title)}</h2><span class="badge">{len(items)} pratiche</span></div><div class="tablebox"><table><thead><tr><th>Data recupero</th><th>Codice pratica</th><th>Animale</th><th>Proprietario</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Stato</th></tr></thead><tbody>{self.practice_rows(items)}</tbody></table></div></section>''')
         results_html=''.join(blocks) if blocks else '<section class="section"><p class="sub">Nessuna pratica trovata.</p></section>'
+        if selected_month in available_months and available_months.index(selected_month)+1<len(available_months):
+            previous_month=available_months[available_months.index(selected_month)+1]
+            month_params={"q":term,"animale":animal,"servizio":service,"veterinario":vet,"collaboratore":collaborator,"spesa_min":spesa_min,"spesa_max":spesa_max,"dal":date_from,"al":date_to,"stato":state,"pagamento":payment,"promemoria":promemoria,"mese":previous_month}
+            previous_label=previous_month
+            if previous_month!="Senza data":
+                y,m=previous_month.split("-"); previous_label=f"{month_names[int(m)]} {y}"
+            results_html+=f'<div class="load-previous-month"><a class="btn ghost" href="/archivio/pratiche?{urlencode({k:v for k,v in month_params.items() if v})}">Apri {esc(previous_label)}</a></div>'
         filters_html=f'''<section class="search-after-results"><h2>Ricerca e filtri</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Ricerca generale</label><input name="q" value="{esc(term)}" placeholder="Proprietario, telefono, microchip, pratica, DDT"></div><div class="field"><label>Nome animale</label><input name="animale" value="{esc(animal)}"></div><div class="field"><label>Tipo cremazione</label><select name="servizio">{service_opts}</select></div><div class="field"><label>Veterinario</label><input name="veterinario" value="{esc(vet)}" placeholder="Clinica o medico"></div><div class="field"><label>Collaboratore</label><input name="collaboratore" value="{esc(collaborator)}"></div><div class="field"><label>Spesa minima</label><input type="number" min="0" step="0.01" name="spesa_min" value="{esc(spesa_min)}" inputmode="decimal" placeholder="Es. 100"></div><div class="field"><label>Spesa massima</label><input type="number" min="0" step="0.01" name="spesa_max" value="{esc(spesa_max)}" inputmode="decimal" placeholder="Es. 350"></div><div class="field"><label>Periodo dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Periodo al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Stato pratica</label><select name="stato">{opts}</select></div><div class="field"><label>Pagamento</label><select name="pagamento">{pay_opts}</select></div></div><button class="btn" style="margin-top:12px">Cerca</button><a class="btn ghost" style="margin-top:12px" href="/archivio/pratiche">Pulisci filtri</a></form></section>'''
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>ARCHIVIO</h1><div class="sub">{len(rows)} risultati{promemoria_label} - pratiche divise per mese</div></div></div>{results_html}{filters_html}</main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>ARCHIVIO</h1><div class="sub">{len(visible_rows)} pratiche nel mese visualizzato{promemoria_label}</div></div></div>{results_html}{filters_html}</main>'''
         body=body.replace('<label>Servizio</label><select name="servizio">','<label>Tipo cremazione</label><select name="servizio">')
         self.send_html(layout("Archivio",body,user))
 
@@ -1789,6 +1867,7 @@ class App(BaseHTTPRequestHandler):
         estremi_checked='checked' if raw('send_estremi')=="Si" else ''
         return f'''<section class="section"><h2>Operatore</h2><div class="fields"><div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option></select></div></div></section>
         <input type="hidden" name="urn_notes" value="{val('urn_notes')}">
+        <input type="hidden" name="price_urn_2" value="{val('price_urn_2')}"><input type="hidden" name="urn_notes_2" value="{val('urn_notes_2')}"><input type="hidden" name="price_cast_2" value="{val('price_cast_2')}"><input type="hidden" name="price_accessories_2" value="{val('price_accessories_2')}"><input type="hidden" name="accessory_type" value="{val('accessory_type')}"><input type="hidden" name="accessory_type_2" value="{val('accessory_type_2')}">
         <section class="section"><h2>Richiesta</h2><div class="fields"><div class="field"><label>Servizio</label><select name="service_type"><option {selected('service_type','Da decidere')}>Da decidere</option><option {selected('service_type','Cremazione singola')}>Cremazione singola</option><option {selected('service_type','Cremazione collettiva')}>Cremazione collettiva</option></select></div><div class="field"><label>Origine richiesta *</label><select name="request_origin" required><option {selected('request_origin','Veterinario')}>Veterinario</option><option {selected('request_origin','Privato')}>Privato</option><option {selected('request_origin','Consegna in sede')}>Consegna in sede</option><option {selected('request_origin','Collaboratore')}>Collaboratore</option></select></div><div class="field {'hidden' if raw('request_origin')!='Collaboratore' else ''}" id="collaboratorBox"><label>Collaboratore</label><select name="collaborator_name"><option value="">Nessun collaboratore</option><option {selected('collaborator_name','HUMANITAS CROCE VERDE')}>HUMANITAS CROCE VERDE</option></select></div><div class="field"><label>Sede di destinazione</label><select name="destination_branch"><option {selected('destination_branch','Livorno')}>Livorno</option><option {selected('destination_branch','Empoli')}>Empoli</option></select></div><div class="field"><label>Data recupero</label><input type="date" name="pickup_date" value="{val('pickup_date')}"></div></div></section>
         <section class="section"><h2>SPEDITORE</h2><div class="fields"><input type="hidden" name="client_id" value="{val('client_id')}"><div class="field full lookup"><label>Cerca cliente in anagrafica</label><input id="clientSearch" autocomplete="off" placeholder="Scrivi nome, telefono, email, codice fiscale, città..."><div id="clientResults" class="lookup-results hidden"></div><div id="clientSelected" class="selected-box hidden"><span id="clientSelectedText"></span><button class="btn ghost" type="button" id="clearClientSelection">Cancella selezione</button></div><small class="sub">Se scegli un cliente, i campi vengono compilati automaticamente. Se li modifichi, l'anagrafica non viene aggiornata senza conferma.</small></div><div class="field full"><label>Usa veterinario come speditore</label><select name="owner_veterinarian_id">{owner_vet_options}</select><small class="sub">Compila automaticamente i dati dello speditore. Sul DDT, nel Luogo di origine, verra scritto solo il nome breve del veterinario.</small></div><div class="field"><label>Nome *</label><input name="owner_first_name" value="{val('owner_first_name')}" required></div><div class="field"><label>Cognome *</label><input name="owner_last_name" value="{val('owner_last_name')}" required></div><div class="field"><label>Ragione sociale</label><input name="owner_company" value="{val('owner_company')}"></div><div class="field"><label>Telefono *</label><input type="tel" inputmode="numeric" name="owner_phone" value="{val('owner_phone')}" required></div><div class="field"><label>Secondo telefono</label><input type="tel" inputmode="numeric" name="owner_phone_2" value="{val('owner_phone_2')}"></div><div class="field"><label>Email</label><input type="email" name="owner_email" value="{val('owner_email')}"></div><div class="field"><label>Codice fiscale *</label><input name="owner_tax_code" value="{val('owner_tax_code')}" required></div><div class="field"><label>Partita IVA</label><input name="owner_vat" value="{val('owner_vat')}"></div><div class="field full"><label>Indirizzo *</label><input name="owner_street" value="{val('owner_street') or val('owner_address')}" required></div><div class="field"><label>Comune *</label><input name="owner_city" value="{val('owner_city')}" required></div><div class="field"><label>Provincia *</label><input name="owner_province" value="{val('owner_province')}" maxlength="2" placeholder="Si compila dal comune" required></div><div class="field"><label>CAP *</label><input name="owner_zip" value="{val('owner_zip')}" inputmode="numeric" required></div><div class="field full"><label>Note cliente</label><textarea name="owner_notes" placeholder="Note anagrafiche utili">{val('owner_notes')}</textarea></div></div></section>
         <section class="section"><h2>DESTINATARIO E LUOGO DI DESTINAZIONE</h2><p class="sub">Compilati automaticamente in base alla sede selezionata: Livorno oppure Empoli.</p></section>
@@ -1808,9 +1887,16 @@ class App(BaseHTTPRequestHandler):
         keys=["client_id","owner_veterinarian_id","operator_name","request_origin","collaborator_name","destination_branch","owner_first_name","owner_last_name","owner_company","owner_phone","owner_phone_2","owner_email","owner_tax_code","owner_vat","owner_notes","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","use_voucher","used_voucher_id","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_saluto","tag_calco","tag_avvisare","tag_da_richiamare","payment_status","price_cremation","price_pickup","price_evening","price_urn","send_catalog","send_estremi","price_delivery","price_night","price_cast","price_holiday","price_accessories","deposit","remaining_balance","total_service","total_text","identity_document_number","identity_document_date","signing_place"]
         data = {k:f.get(k,"").strip() for k in keys}
         data["urn_notes"] = f.get("urn_notes","").strip()
+        for key in ("price_urn_2","urn_notes_2","price_cast_2","price_accessories_2","accessory_type","accessory_type_2"):
+            data[key]=f.get(key,"").strip()
         for key in MONEY_FIELDS:
             value=data.get(key,"").replace(",",".")
             data[key]=value
+        if data["total_text"]:
+            data["total_service"]=data["total_text"]
+        allowed_accessories={"","Calco naso","Collana","Braccialetto","Calco inchiostro","Altro"}
+        if data["accessory_type"] not in allowed_accessories: data["accessory_type"]="Altro"
+        if data["accessory_type_2"] not in allowed_accessories: data["accessory_type_2"]="Altro"
         if not data["payment_status"] or data["payment_status"] not in PAYMENT_STATES:
             data["payment_status"] = "Da saldare"
         data["send_catalog"] = "Si" if data["send_catalog"] == "Si" else ""
