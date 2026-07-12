@@ -1495,22 +1495,32 @@ class App(BaseHTTPRequestHandler):
         self.send_html(layout("Conversazioni WhatsApp",body,user))
 
     def notifications(self,user):
-        current=datetime.now(); visible_from=(current-timedelta(hours=96)).isoformat(timespec="seconds"); visible_to=(current-timedelta(hours=48)).isoformat(timespec="seconds")
+        current=datetime.now(); visible_from=(current-timedelta(hours=48)).isoformat(timespec="seconds"); visible_to=current.isoformat(timespec="seconds")
         event_at="COALESCE(NULLIF(wm.sent_at,''),NULLIF(wm.last_attempt_at,''),wm.created_at)"
         with db() as c:
-            rows=c.execute(f"""SELECT wm.*,p.practice_number,p.animal_name,p.owner_first_name,p.owner_last_name,p.owner_company,p.status practice_status,{event_at} event_at
+            whatsapp_rows=c.execute(f"""SELECT wm.*,p.practice_number,p.animal_name,p.owner_first_name,p.owner_last_name,p.owner_company,p.status practice_status,{event_at} event_at
                                FROM whatsapp_messages wm JOIN practices p ON p.id=wm.practice_id
                                WHERE (p.deleted_at IS NULL OR p.deleted_at='')
                                  AND wm.status IN ('accettato_da_meta','consegnato','letto')
                                  AND {event_at}>? AND {event_at}<=?
                                  AND wm.id=(SELECT wm2.id FROM whatsapp_messages wm2 WHERE wm2.practice_id=wm.practice_id AND wm2.status IN ('accettato_da_meta','consegnato','letto') ORDER BY COALESCE(NULLIF(wm2.sent_at,''),wm2.created_at) DESC,wm2.id DESC LIMIT 1)
                                ORDER BY event_at DESC""",(visible_from,visible_to)).fetchall()
+            reminder_rows=c.execute("""SELECT id practice_id,practice_number,animal_name,owner_first_name,owner_last_name,owner_company,status practice_status,send_catalog,send_estremi,updated_at event_at
+                                       FROM practices WHERE (deleted_at IS NULL OR deleted_at='') AND status!='Consegnato' AND (send_catalog='Si' OR send_estremi='Si')
+                                       ORDER BY updated_at DESC,id DESC""").fetchall()
         cards=[]
-        for row in rows:
+        shown=set()
+        for row in whatsapp_rows:
             client=" ".join(x for x in [row["owner_first_name"],row["owner_last_name"]] if x).strip() or row["owner_company"] or "Cliente non indicato"
-            cards.append(f'''<a class="conversation-card" href="/pratiche/{row["practice_id"]}"><div class="conversation-main"><div class="conversation-avatar">{lucide("message")}</div><div><h2>{esc(row["practice_number"])}</h2><p><b>{esc(row["animal_name"] or "Animale non indicato")}</b> · {esc(client)}</p><p>Messaggio WhatsApp inviato da oltre 48 ore</p></div></div><dl><div><dt>Inviato</dt><dd>{esc((row["event_at"] or "").replace("T"," ")[:16])}</dd></div><div><dt>Stato pratica</dt><dd><span class="badge">{esc(row["practice_status"])}</span></dd></div></dl><div class="conversation-action"><span class="btn ghost">Apri pratica</span></div></a>''')
-        results=''.join(cards) or '<section class="section empty-state">Nessuna notifica WhatsApp attiva. Le pratiche compaiono 48 ore dopo l’invio e restano visibili per altre 48 ore.</section>'
-        body=f'''<main class="wrap conversations-wrap"><div class="titlebar"><div><h1>Notifiche</h1><p class="sub">Messaggi WhatsApp inviati da 48 a 96 ore fa.</p></div></div><section class="conversation-list">{results}</section></main>'''
+            shown.add(row["practice_id"])
+            cards.append(f'''<a class="conversation-card" href="/pratiche/{row["practice_id"]}"><div class="conversation-main"><div class="conversation-avatar">{lucide("message")}</div><div><h2>{esc(row["practice_number"])}</h2><p><b>{esc(row["animal_name"] or "Animale non indicato")}</b> · {esc(client)}</p><p>Messaggio WhatsApp di ringraziamento inviato</p></div></div><dl><div><dt>Inviato</dt><dd>{esc((row["event_at"] or "").replace("T"," ")[:16])}</dd></div><div><dt>Stato pratica</dt><dd><span class="badge">{esc(row["practice_status"])}</span></dd></div></dl><div class="conversation-action"><span class="btn ghost">Apri pratica</span></div></a>''')
+        for row in reminder_rows:
+            if row["practice_id"] in shown: continue
+            client=" ".join(x for x in [row["owner_first_name"],row["owner_last_name"]] if x).strip() or row["owner_company"] or "Cliente non indicato"
+            reminders=' '.join(x for x in [('<span class="badge tag-outline-orange">INVIARE CATALOGO</span>' if row["send_catalog"]=="Si" else ''),('<span class="badge tag-outline-orange">INVIARE ESTREMI</span>' if row["send_estremi"]=="Si" else '')] if x)
+            cards.append(f'''<a class="conversation-card" href="/pratiche/{row["practice_id"]}"><div class="conversation-main"><div class="conversation-avatar">{lucide("bell")}</div><div><h2>{esc(row["practice_number"])}</h2><p><b>{esc(row["animal_name"] or "Animale non indicato")}</b> · {esc(client)}</p><p>{reminders}</p></div></div><dl><div><dt>Promemoria</dt><dd>Da completare</dd></div><div><dt>Stato pratica</dt><dd><span class="badge">{esc(row["practice_status"])}</span></dd></div></dl><div class="conversation-action"><span class="btn ghost">Apri pratica</span></div></a>''')
+        results=''.join(cards) or '<section class="section empty-state">Nessuna notifica attiva.</section>'
+        body=f'''<main class="wrap conversations-wrap"><div class="titlebar"><div><h1>Notifiche</h1><p class="sub">WhatsApp inviati nelle ultime 48 ore e promemoria operativi da completare.</p></div></div><section class="conversation-list">{results}</section></main>'''
         self.send_html(layout("Notifiche",body,user))
 
     def diagnostics(self,user):
