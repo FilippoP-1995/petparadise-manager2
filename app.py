@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from http import cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.parse import parse_qs, quote, urlencode, urlparse
 
 from pdf_service import generate_ddt
 
@@ -256,6 +256,7 @@ def init_db():
             "container_id": "TEXT", "lot_number": "TEXT DEFAULT '/'", "treatment_method": "TEXT DEFAULT '/'",
             "price_cremation": "TEXT", "price_pickup": "TEXT", "price_evening": "TEXT",
             "price_urn": "TEXT", "price_delivery": "TEXT", "price_night": "TEXT",
+            "urn_notes": "TEXT",
             "price_cast": "TEXT", "price_holiday": "TEXT", "price_accessories": "TEXT",
             "send_catalog": "TEXT",
             "send_estremi": "TEXT",
@@ -641,7 +642,49 @@ document.addEventListener('input', function(e){
   if(e.target && e.target.matches('[data-preventivo-sum="1"]')) updatePreventivoTotal();
   if(e.target && (e.target.name === 'deposit' || e.target.name === 'total_service')) updateRemainingBalance();
 });
-document.addEventListener('DOMContentLoaded', function(){ updatePreventivoTotal(); updateRemainingBalance(); });
+function setupZipLookup(){
+  const street=document.querySelector('input[name="owner_street"]');
+  const city=document.querySelector('input[name="owner_city"]');
+  const province=document.querySelector('input[name="owner_province"]');
+  const zip=document.querySelector('input[name="owner_zip"]');
+  if(!street || !city || !province || !zip) return;
+  let lastQuery='';
+  const lookup=ppmDebounce(async function(){
+    const address=street.value.trim(), municipality=city.value.trim(), prov=province.value.trim().toUpperCase();
+    if(!address || !municipality || prov.length !== 2) return;
+    const query=[address, municipality, prov].join('|');
+    if(query === lastQuery) return;
+    lastQuery=query;
+    try{
+      const params=new URLSearchParams({indirizzo:address, comune:municipality, provincia:prov});
+      const response=await fetch(`/api/cap?${params.toString()}`, {headers:{'Accept':'application/json'}});
+      const data=await response.json();
+      if(data.ok && data.zip && (!zip.value.trim() || zip.dataset.autoFilled === '1')){
+        zip.value=data.zip;
+        zip.dataset.autoFilled='1';
+      }
+    }catch(error){}
+  }, 900);
+  [street,city,province].forEach(function(field){ field.addEventListener('input', lookup); field.addEventListener('blur', lookup); });
+  zip.addEventListener('input', function(){ if(zip.dataset.autoFilled === '1') zip.dataset.autoFilled='0'; });
+  lookup();
+}
+function setupUrnNotesField(){
+  const hidden=document.querySelector('input[name="urn_notes"]');
+  const price=document.querySelector('input[name="price_urn"]');
+  if(!hidden || !price) return;
+  hidden.type='text';
+  hidden.placeholder='Descrizione o note libere sull urna';
+  const field=document.createElement('div');
+  field.className='field';
+  const label=document.createElement('label');
+  label.textContent='Urna - testo libero';
+  field.appendChild(label);
+  field.appendChild(hidden);
+  const priceField=price.closest('.field');
+  priceField.parentNode.insertBefore(field, priceField.nextSibling);
+}
+document.addEventListener('DOMContentLoaded', function(){ updatePreventivoTotal(); updateRemainingBalance(); setupZipLookup(); setupUrnNotesField(); });
 function toggleCollaboratorBox(){
   const origin = document.querySelector('select[name="request_origin"]');
   const box = document.getElementById('collaboratorBox');
@@ -960,6 +1003,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/diagnostica": return self.diagnostics(user)
         if path == "/whatsapp-diagnostica": return self.whatsapp_diagnostics(user)
         if path == "/api/clienti/search": return self.api_clients_search(user)
+        if path == "/api/cap": return self.api_zip_lookup(user)
         if path == "/api/veterinari/search": return self.api_veterinarians_search(user)
         match = re.fullmatch(r"/api/veterinari/(\d+)/buoni", path)
         if match: return self.api_veterinarian_vouchers(user, int(match.group(1)))
@@ -980,8 +1024,12 @@ class App(BaseHTTPRequestHandler):
         if match: return self.delete_warning_page(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/ddt\.pdf", path)
         if match: return self.download_ddt(user, int(match.group(1)))
+        match = re.fullmatch(r"/pratiche/(\d+)/ddt-download\.pdf", path)
+        if match: return self.download_ddt(user, int(match.group(1)), attachment=True)
         match = re.fullmatch(r"/pratiche/(\d+)/ddt-bozza\.pdf", path)
         if match: return self.draft_ddt(user, int(match.group(1)))
+        match = re.fullmatch(r"/pratiche/(\d+)/ddt-bozza-download\.pdf", path)
+        if match: return self.draft_ddt(user, int(match.group(1)), attachment=True)
         match = re.fullmatch(r"/pratiche/(\d+)/firma", path)
         if match: return self.signature_page(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/whatsapp-conferma", path)
@@ -1064,7 +1112,7 @@ class App(BaseHTTPRequestHandler):
         hour=datetime.now().hour
         greeting="Buongiorno" if hour < 13 else "Buon pomeriggio" if hour < 18 else "Buonasera"
         logo='<img class="home-logo" src="/assets/company_logo.png" alt="Pet Paradise">' if (ASSETS / "company_logo.png").exists() else ''
-        body=f'''<main class="wrap"><div class="titlebar"><div style="display:flex;gap:18px;align-items:center">{logo}<div><h1>{greeting}, {esc(user['display_name'])}</h1><div class="sub">Situazione operativa aggiornata</div></div></div></div>{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}<h2>Avanzamento pratiche</h2><section class="grid stats">{cards}</section><div style="height:20px"></div><h2>Pagamenti</h2><section class="grid stats">{payment_cards}</section><div style="height:20px"></div><h2>Promemoria</h2><section class="grid stats">{promemoria_cards}</section><div style="height:24px"></div><div class="titlebar"><h2>Attività recenti</h2><a href="/pratiche">Vedi archivio</a></div><div class="tablebox"><table><thead><tr><th>Data recupero</th><th>Pratica</th><th>Animale</th><th>Proprietario</th><th>Veterinario</th><th>Sede</th><th>Etichette</th><th>Stato</th></tr></thead><tbody>{rows}</tbody></table></div></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div style="display:flex;gap:18px;align-items:center">{logo}<div><h1>{greeting}, {esc(user['display_name'])}</h1><div class="sub">Situazione operativa aggiornata</div></div></div></div>{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}<h2>Avanzamento pratiche</h2><section class="grid stats">{cards}</section><div style="height:20px"></div><h2>Pagamenti</h2><section class="grid stats">{payment_cards}</section><div style="height:20px"></div><h2>Promemoria</h2><section class="grid stats">{promemoria_cards}</section><div style="height:24px"></div><div class="titlebar"><h2>Attività recenti</h2><a href="/pratiche">Vedi archivio</a></div><div class="tablebox"><table><thead><tr><th>Data recupero</th><th>Codice pratica</th><th>Animale</th><th>Proprietario</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Stato</th></tr></thead><tbody>{rows}</tbody></table></div></main>'''
         self.send_html(layout("Dashboard",body,user))
 
     def diagnostics(self,user):
@@ -1101,7 +1149,7 @@ class App(BaseHTTPRequestHandler):
         return f'<div class="status-stack"><span class="badge">{esc(r["status"])}</span><span class="badge {pay_cls}">{esc(payment)}</span>{invoice}</div>'
 
     def practice_rows(self,rows):
-        if not rows:return '<tr><td colspan="8" class="sub">Nessuna pratica presente.</td></tr>'
+        if not rows:return '<tr><td colspan="10" class="sub">Nessuna pratica presente.</td></tr>'
         html=[]
         for r in rows:
             code=str(r['practice_number'] or '')
@@ -1115,8 +1163,11 @@ class App(BaseHTTPRequestHandler):
             vet_label=esc(r['clinic_name'] if 'clinic_name' in r.keys() and r['clinic_name'] else '-')
             recovery_date=date_it(r['pickup_date'] if 'pickup_date' in r.keys() and r['pickup_date'] else r['created_at'])
             notes_preview=compact_text(r["notes"]) if "notes" in r.keys() else ""
-            notes_badge=f'<br><span class="badge tag-outline-orange">Nota: {esc(notes_preview[:45])}{"..." if len(notes_preview)>45 else ""}</span>' if notes_preview else ''
-            html.append(f'<tr><td>{esc(recovery_date)}</td><td><a href="/pratiche/{r["id"]}"><b class="{code_cls}">{esc(code)}</b></a></td><td>{animal_cell}</td><td>{owner}<br><small>{esc(r["owner_phone"])}</small></td><td>{vet_label}</td><td>{esc(r["destination_branch"])}</td><td>{self.tag_badges(r)}{notes_badge}</td><td>{self.status_badges(r)}</td></tr>')
+            notes_cell=esc(notes_preview[:70])+("..." if len(notes_preview)>70 else "") if notes_preview else '<span class="sub">-</span>'
+            urn_notes=compact_text(r["urn_notes"]) if "urn_notes" in r.keys() else ""
+            urn_price=compact_text(r["price_urn"]) if "price_urn" in r.keys() else ""
+            urn_cell='<br>'.join(x for x in [esc(urn_notes), f'<small>{esc(urn_price)} €</small>' if urn_price else ''] if x) or '<span class="sub">-</span>'
+            html.append(f'<tr><td>{esc(recovery_date)}</td><td><a href="/pratiche/{r["id"]}"><b class="{code_cls}">{esc(code)}</b></a></td><td>{animal_cell}</td><td>{owner}<br><small>{esc(r["owner_phone"])}</small></td><td>{vet_label}</td><td>{esc(r["destination_branch"])}</td><td>{self.tag_badges(r)}</td><td>{notes_cell}</td><td>{urn_cell}</td><td>{self.status_badges(r)}</td></tr>')
         return ''.join(html)
 
     def archive_home(self,user):
@@ -1176,6 +1227,25 @@ class App(BaseHTTPRequestHandler):
         except Exception as exc:
             print(f"[CLIENT_SEARCH] errore tipo={type(exc).__name__} lunghezza_query={len(q)}", flush=True)
             return self.send_json({"ok":False,"error":"Errore durante la ricerca clienti"},500)
+
+    def api_zip_lookup(self,user):
+        q=parse_qs(urlparse(self.path).query)
+        address=(q.get("indirizzo",[""])[0] or "").strip()
+        city=(q.get("comune",[""])[0] or "").strip()
+        province=(q.get("provincia",[""])[0] or "").strip().upper()
+        if not address or not city or not re.fullmatch(r"[A-Z]{2}", province):
+            return self.send_json({"ok":True,"zip":""})
+        params=urlencode({"street":address,"city":city,"county":province,"country":"Italia","countrycodes":"it","format":"jsonv2","addressdetails":"1","limit":"1"})
+        req=urllib.request.Request(f"https://nominatim.openstreetmap.org/search?{params}",headers={"Accept":"application/json","User-Agent":"PetParadiseManager/1.0 (CAP lookup)"},method="GET")
+        try:
+            with urllib.request.urlopen(req,timeout=8) as response:
+                payload=json.loads(response.read().decode("utf-8","replace"))
+            postcode=((payload[0].get("address") or {}).get("postcode") if payload else "") or ""
+            match=re.search(r"\b(\d{5})\b", postcode)
+            return self.send_json({"ok":True,"zip":match.group(1) if match else ""})
+        except Exception as exc:
+            print(f"[CAP_LOOKUP] {type(exc).__name__}: {exc}",flush=True)
+            return self.send_json({"ok":True,"zip":""})
 
     def api_veterinarians_search(self,user):
         q=(parse_qs(urlparse(self.path).query).get("q",[""])[0] or "").strip()
@@ -1287,8 +1357,9 @@ class App(BaseHTTPRequestHandler):
                     y,m=key.split("-"); title=f"{month_names[int(m)]} {y}"
                 except Exception:
                     pass
-            blocks.append(f'''<section class="month-block"><div class="month-title"><h2>{esc(title)}</h2><span class="badge">{len(items)} pratiche</span></div><div class="tablebox"><table><thead><tr><th>Data recupero</th><th>Pratica</th><th>Animale</th><th>Proprietario</th><th>Veterinario</th><th>Sede</th><th>Etichette</th><th>Stato</th></tr></thead><tbody>{self.practice_rows(items)}</tbody></table></div></section>''')
+            blocks.append(f'''<section class="month-block"><div class="month-title"><h2>{esc(title)}</h2><span class="badge">{len(items)} pratiche</span></div><div class="tablebox"><table><thead><tr><th>Data recupero</th><th>Codice pratica</th><th>Animale</th><th>Proprietario</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Stato</th></tr></thead><tbody>{self.practice_rows(items)}</tbody></table></div></section>''')
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>ARCHIVIO</h1><div class="sub">{len(rows)} risultati{promemoria_label} - pratiche divise per mese</div></div></div><form class="section" method="get" style="margin-bottom:18px"><div class="fields"><div class="field"><label>Ricerca generale</label><input name="q" value="{esc(term)}" placeholder="Proprietario, telefono, microchip, pratica, DDT"></div><div class="field"><label>Nome animale</label><input name="animale" value="{esc(animal)}"></div><div class="field"><label>Servizio</label><select name="servizio">{service_opts}</select></div><div class="field"><label>Veterinario</label><input name="veterinario" value="{esc(vet)}" placeholder="Clinica o medico"></div><div class="field"><label>Collaboratore</label><input name="collaboratore" value="{esc(collaborator)}"></div><div class="field"><label>Spesa minima</label><input name="spesa_min" value="{esc(spesa_min)}" inputmode="decimal" placeholder="Es. 100"></div><div class="field"><label>Spesa massima</label><input name="spesa_max" value="{esc(spesa_max)}" inputmode="decimal" placeholder="Es. 350"></div><div class="field"><label>Periodo dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Periodo al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Stato pratica</label><select name="stato">{opts}</select></div><div class="field"><label>Pagamento</label><select name="pagamento">{pay_opts}</select></div></div><button class="btn" style="margin-top:12px">Cerca</button><a class="btn ghost" style="margin-top:12px" href="/archivio/pratiche">Pulisci filtri</a></form>{''.join(blocks) if blocks else '<section class="section"><p class="sub">Nessuna pratica trovata.</p></section>'}</main>'''
+        body=body.replace('<label>Servizio</label><select name="servizio">','<label>Tipo cremazione</label><select name="servizio">')
         self.send_html(layout("Archivio",body,user))
 
     def veterinarians_page(self,user):
@@ -1412,6 +1483,7 @@ class App(BaseHTTPRequestHandler):
         catalog_checked='checked' if raw('send_catalog')=="Si" else ''
         estremi_checked='checked' if raw('send_estremi')=="Si" else ''
         return f'''<section class="section"><h2>Operatore</h2><div class="fields"><div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option></select></div></div></section>
+        <input type="hidden" name="urn_notes" value="{val('urn_notes')}">
         <section class="section"><h2>Richiesta</h2><div class="fields"><div class="field"><label>Servizio</label><select name="service_type"><option {selected('service_type','Da decidere')}>Da decidere</option><option {selected('service_type','Cremazione singola')}>Cremazione singola</option><option {selected('service_type','Cremazione collettiva')}>Cremazione collettiva</option></select></div><div class="field"><label>Origine richiesta *</label><select name="request_origin" required><option {selected('request_origin','Veterinario')}>Veterinario</option><option {selected('request_origin','Privato')}>Privato</option><option {selected('request_origin','Consegna in sede')}>Consegna in sede</option><option {selected('request_origin','Collaboratore')}>Collaboratore</option></select></div><div class="field {'hidden' if raw('request_origin')!='Collaboratore' else ''}" id="collaboratorBox"><label>Collaboratore</label><select name="collaborator_name"><option value="">Nessun collaboratore</option><option {selected('collaborator_name','HUMANITAS CROCE VERDE')}>HUMANITAS CROCE VERDE</option></select></div><div class="field"><label>Sede di destinazione</label><select name="destination_branch"><option {selected('destination_branch','Livorno')}>Livorno</option><option {selected('destination_branch','Empoli')}>Empoli</option></select></div><div class="field"><label>Data recupero</label><input type="date" name="pickup_date" value="{val('pickup_date')}"></div></div></section>
         <section class="section"><h2>SPEDITORE</h2><div class="fields"><input type="hidden" name="client_id" value="{val('client_id')}"><div class="field full lookup"><label>Cerca cliente in anagrafica</label><input id="clientSearch" autocomplete="off" placeholder="Scrivi nome, telefono, email, codice fiscale, città..."><div id="clientResults" class="lookup-results hidden"></div><div id="clientSelected" class="selected-box hidden"><span id="clientSelectedText"></span><button class="btn ghost" type="button" id="clearClientSelection">Cancella selezione</button></div><small class="sub">Se scegli un cliente, i campi vengono compilati automaticamente. Se li modifichi, l'anagrafica non viene aggiornata senza conferma.</small></div><div class="field full"><label>Usa veterinario come speditore</label><select name="owner_veterinarian_id">{owner_vet_options}</select><small class="sub">Compila automaticamente i dati dello speditore. Sul DDT, nel Luogo di origine, verra scritto solo il nome breve del veterinario.</small></div><div class="field"><label>Nome *</label><input name="owner_first_name" value="{val('owner_first_name')}" required></div><div class="field"><label>Cognome *</label><input name="owner_last_name" value="{val('owner_last_name')}" required></div><div class="field"><label>Ragione sociale</label><input name="owner_company" value="{val('owner_company')}"></div><div class="field"><label>Telefono *</label><input type="tel" inputmode="numeric" name="owner_phone" value="{val('owner_phone')}" required></div><div class="field"><label>Secondo telefono</label><input type="tel" inputmode="numeric" name="owner_phone_2" value="{val('owner_phone_2')}"></div><div class="field"><label>Email</label><input type="email" name="owner_email" value="{val('owner_email')}"></div><div class="field"><label>Codice fiscale *</label><input name="owner_tax_code" value="{val('owner_tax_code')}" required></div><div class="field"><label>Partita IVA</label><input name="owner_vat" value="{val('owner_vat')}"></div><div class="field full"><label>Indirizzo *</label><input name="owner_street" value="{val('owner_street') or val('owner_address')}" required></div><div class="field"><label>Comune *</label><input name="owner_city" value="{val('owner_city')}" required></div><div class="field"><label>Provincia *</label><input name="owner_province" value="{val('owner_province')}" maxlength="2" placeholder="Si compila dal comune" required></div><div class="field"><label>CAP *</label><input name="owner_zip" value="{val('owner_zip')}" inputmode="numeric" required></div><div class="field full"><label>Note cliente</label><textarea name="owner_notes" placeholder="Note anagrafiche utili">{val('owner_notes')}</textarea></div></div></section>
         <section class="section"><h2>DESTINATARIO E LUOGO DI DESTINAZIONE</h2><p class="sub">Compilati automaticamente in base alla sede selezionata: Livorno oppure Empoli.</p></section>
@@ -1430,6 +1502,7 @@ class App(BaseHTTPRequestHandler):
     def normalized_fields(self,f):
         keys=["client_id","owner_veterinarian_id","operator_name","request_origin","collaborator_name","destination_branch","owner_first_name","owner_last_name","owner_company","owner_phone","owner_phone_2","owner_email","owner_tax_code","owner_vat","owner_notes","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","use_voucher","used_voucher_id","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_saluto","tag_calco","tag_avvisare","tag_da_richiamare","payment_status","price_cremation","price_pickup","price_evening","price_urn","send_catalog","send_estremi","price_delivery","price_night","price_cast","price_holiday","price_accessories","deposit","remaining_balance","total_service","total_text","identity_document_number","identity_document_date","signing_place"]
         data = {k:f.get(k,"").strip() for k in keys}
+        data["urn_notes"] = f.get("urn_notes","").strip()
         if not data["payment_status"] or data["payment_status"] not in PAYMENT_STATES:
             data["payment_status"] = "Da saldare"
         data["send_catalog"] = "Si" if data["send_catalog"] == "Si" else ""
@@ -1992,11 +2065,11 @@ class App(BaseHTTPRequestHandler):
                     c.execute("UPDATE practices SET ddt_share_token=? WHERE id=?",(share_token,pid))
             share_url = f"/pubblici/ddt/{share_token}.pdf"
             pdf_filename = safe_pdf_filename(p["animal_name"] or p["practice_number"], "pratica")
-            pdf_block = f'<div class="flash">Il PDF definitivo e stato archiviato.</div><div class="actions"><a class="btn" href="/pratiche/{pid}/ddt.pdf">Apri / stampa DDT</a><button class="btn ghost" type="button" onclick="sharePracticePdf(\'{share_url}\', \'DDT pratica {esc(p["practice_number"])}\', \'{esc(pdf_filename)}\')">Condividi PDF</button><button class="btn ghost" type="button" onclick="navigator.clipboard.writeText(new URL(\'{share_url}\', window.location.href).toString()).then(()=>alert(\'Link pubblico PDF copiato\'))">Copia link PDF</button></div><p class="sub">Il link condiviso apre solo questo PDF, non il gestionale.</p>'
+            pdf_block = f'<div class="flash">Il PDF definitivo e stato archiviato.</div><div class="actions"><a class="btn" href="/pratiche/{pid}/ddt.pdf">Apri / stampa DDT</a><a class="btn ghost" href="/pratiche/{pid}/ddt-download.pdf">Salva PDF sul dispositivo</a><button class="btn ghost" type="button" onclick="sharePracticePdf(\'{share_url}\', \'DDT pratica {esc(p["practice_number"])}\', \'{esc(pdf_filename)}\')">Condividi PDF</button><button class="btn ghost" type="button" onclick="navigator.clipboard.writeText(new URL(\'{share_url}\', window.location.href).toString()).then(()=>alert(\'Link pubblico PDF copiato\'))">Copia link PDF</button></div><p class="sub">Puoi scaricare il documento sul PC o sul telefono. Il link condiviso apre solo questo PDF, non il gestionale.</p>'
         else:
             final_action = f'<form method="post" action="/pratiche/{pid}/ddt"><button class="btn">Assegna numero e genera PDF definitivo</button></form>' if p['data_complete'] else '<div class="flash warning">Pratica salvata. Potrai assegnare il numero DDT e generare il PDF definitivo quando avrai completato i dati obbligatori.</div>'
             draft_filename = safe_pdf_filename((p["animal_name"] or p["practice_number"]) + "_BOZZA", "bozza")
-            pdf_block = f'<div class="actions"><a class="btn ghost" href="/pratiche/{pid}">Salva pratica</a><a class="btn ghost" href="/pratiche/{pid}/ddt-bozza.pdf">Apri bozza PDF</a><button class="btn ghost" type="button" onclick="sharePracticePdf(\'/pratiche/{pid}/ddt-bozza.pdf\', \'Bozza DCS pratica {esc(p["practice_number"])}\', \'{esc(draft_filename)}\')">Condividi bozza PDF</button>{final_action}</div><p class="sub">La pratica resta salvata in archivio. Il DDT numerato puo essere generato anche in un secondo momento, per esempio alla fine della pratica.</p>'
+            pdf_block = f'<div class="actions"><a class="btn ghost" href="/pratiche/{pid}">Salva pratica</a><a class="btn ghost" href="/pratiche/{pid}/ddt-bozza.pdf">Apri bozza PDF</a><a class="btn ghost" href="/pratiche/{pid}/ddt-bozza-download.pdf">Salva bozza sul dispositivo</a><button class="btn ghost" type="button" onclick="sharePracticePdf(\'/pratiche/{pid}/ddt-bozza.pdf\', \'Bozza DCS pratica {esc(p["practice_number"])}\', \'{esc(draft_filename)}\')">Condividi bozza PDF</button>{final_action}</div><p class="sub">La pratica resta salvata in archivio. Il DDT numerato puo essere generato anche in un secondo momento, per esempio alla fine della pratica.</p>'
         body=f"""
         <main class="wrap">
           <div class="titlebar"><div><h1>{esc(p['practice_number'])} - {esc(p['animal_name'] or 'Animale da inserire')}</h1><div class="sub">Creata il {esc(p['created_at'].replace('T',' '))}</div></div><div class="actions"><a class="btn ghost" href="/pratiche/{pid}/modifica">Modifica dati</a><a class="btn ghost" href="/pratiche/{pid}/firma">Firma su telefono</a></div></div>
@@ -2258,14 +2331,14 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"Numero DDT assegnato",str(number),user["id"],stamp))
         self.redirect(f"/pratiche/{pid}")
 
-    def download_ddt(self,user,pid):
+    def download_ddt(self,user,pid,attachment=False):
         with db() as c: p=c.execute("SELECT ddt_pdf,animal_name,practice_number FROM practices WHERE id=?",(pid,)).fetchone()
         if not p or not p["ddt_pdf"]: return self.send_error(404)
         path=DDT_DIR / p["ddt_pdf"]
         if not path.exists(): return self.send_error(404)
-        return self.send_pdf(path, safe_pdf_filename(p["animal_name"] or p["practice_number"], "pratica"))
+        return self.send_pdf(path, safe_pdf_filename(p["animal_name"] or p["practice_number"], "pratica"), attachment=attachment)
 
-    def draft_ddt(self,user,pid):
+    def draft_ddt(self,user,pid,attachment=False):
         with db() as c: p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
         if not p: return self.send_error(404)
         draft=dict(p)
@@ -2276,12 +2349,13 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             generate_ddt(draft, ASSETS / "DCS_NUOVO.pdf", path)
         except Exception as exc:
             return self.pdf_error_page(exc, f"/pratiche/{pid}")
-        return self.send_pdf(path, safe_pdf_filename((p["animal_name"] or p["practice_number"]) + "_BOZZA", "bozza"))
+        return self.send_pdf(path, safe_pdf_filename((p["animal_name"] or p["practice_number"]) + "_BOZZA", "bozza"), attachment=attachment)
 
-    def send_pdf(self,path, filename=None):
+    def send_pdf(self,path, filename=None, attachment=False):
         payload=path.read_bytes()
         self.send_response(200); self.send_header("Content-Type","application/pdf")
-        self.send_header("Content-Disposition",f'inline; filename="{filename or path.name}"')
+        disposition="attachment" if attachment else "inline"
+        self.send_header("Content-Disposition",f'{disposition}; filename="{filename or path.name}"')
         self.send_header("Content-Length",str(len(payload))); self.end_headers(); self.wfile.write(payload)
 
 
