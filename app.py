@@ -767,6 +767,7 @@ function setupBudgetExtras(){
     after.parentNode.insertBefore(button,after.nextSibling);
     button.onclick=()=>{targets.forEach(target=>target.classList.remove('hidden'));button.remove();};
     if(targets.some(target=>target.querySelector('input,select')?.value)) button.click();
+    return button;
   };
   const totalArea=document.querySelector('textarea[name="total_text"]');
   if(totalArea){
@@ -780,12 +781,13 @@ function setupBudgetExtras(){
   addButton('+ Aggiungi altra urna',urnNotes2,[urn2,urnNotes2]);
   const cast=document.querySelector('input[name="price_cast"]')?.closest('.field');
   const cast2=wrapField(document.querySelector('input[name="price_cast_2"]'),'Secondo calco €',cast,true); cast2.querySelector('input').dataset.preventivoSum='1';
-  addButton('+ Aggiungi altro calco',cast2,[cast2]);
+  const castButton=addButton('+ Aggiungi altro calco',cast2,[cast2]);
   const accessoryPrice=document.querySelector('input[name="price_accessories"]')?.closest('.field');
   const makeAccessorySelect=(hidden,name)=>{const select=document.createElement('select');select.name=name;['','Calco naso','Collana','Braccialetto','Calco inchiostro','Altro'].forEach(value=>{const option=new Option(value||'Seleziona accessorio',value);select.add(option)});select.value=hidden.value;hidden.replaceWith(select);return select;};
   const accessoryTypeHidden=document.querySelector('input[name="accessory_type"]'); const accessoryType=makeAccessorySelect(accessoryTypeHidden,'accessory_type');
   const accessoryTypeWrap=document.createElement('div');accessoryTypeWrap.className='field';accessoryTypeWrap.innerHTML='<label>Tipo accessorio</label>';accessoryTypeWrap.append(accessoryType);
   cast.parentNode.insertBefore(accessoryTypeWrap,cast.nextSibling); accessoryTypeWrap.parentNode.insertBefore(accessoryPrice,accessoryTypeWrap.nextSibling);
+  if(castButton.isConnected) cast.parentNode.insertBefore(castButton,cast.nextSibling);
   const accessoryType2Hidden=document.querySelector('input[name="accessory_type_2"]'); const accessoryType2=makeAccessorySelect(accessoryType2Hidden,'accessory_type_2');
   const accessoryType2Wrap=document.createElement('div');accessoryType2Wrap.className='field hidden';accessoryType2Wrap.innerHTML='<label>Secondo accessorio</label>';accessoryType2Wrap.append(accessoryType2);
   accessoryPrice.parentNode.insertBefore(accessoryType2Wrap,accessoryPrice.nextSibling);
@@ -1374,8 +1376,8 @@ class App(BaseHTTPRequestHandler):
             "Pagato":sum(effective_total(row) for row in payment_rows if row["normalized_payment_status"]=="Pagato"),
         }
         payment_counts["Acconto"]=sum(1 for row in payment_rows if money_value(row["deposit"])>0)
-        payment_specs=[("Da saldare","Da saldare","wallet","payment-due"),("Acconto","Acconti","receipt","payment-deposit"),("Pagato","Pagati","chart","payment-paid")]
-        payment_cards=''.join(f'<a class="payment-card {cls}" href="/archivio/pratiche?pagamento={quote(state)}"><span><small>{label}</small><strong>{payment_counts.get(state,0)}</strong><em>{money_it(payment_totals[state])}</em></span><span class="metric-icon">{lucide(icon)}</span></a>' for state,label,icon,cls in payment_specs)
+        payment_specs=[("Da saldare","Da saldare","wallet","payment-due","/archivio/pratiche?pagamento=Da%20saldare"),("Acconto","Acconti","receipt","payment-deposit","/archivio/pratiche?con_acconto=1"),("Pagato","Pagati","chart","payment-paid","/archivio/pratiche?pagamento=Pagato")]
+        payment_cards=''.join(f'<a class="payment-card {cls}" href="{href}"><span><small>{label}</small><strong>{payment_counts.get(state,0)}</strong><em>{money_it(payment_totals[state])}</em></span><span class="metric-icon">{lucide(icon)}</span></a>' for state,label,icon,cls,href in payment_specs)
         income_by_day={day.isoformat():0.0 for day in days}
         for row in income_rows:
             if row["day"] in income_by_day: income_by_day[row["day"]]+=effective_total(row)
@@ -1388,7 +1390,7 @@ class App(BaseHTTPRequestHandler):
             timeline.append(f'<a class="activity-item activity-{index%4}" href="/pratiche/{event["practice_id"]}"><span class="activity-icon">{lucide("clipboard")}</span><span><b>{esc(label)}</b><small>{esc(detail)}</small></span><time>{esc(when)}</time></a>')
         if not timeline: timeline.append('<div class="activity-empty">Le nuove attività compariranno qui.</div>')
         hour=datetime.now().hour; greeting="Buongiorno" if hour < 13 else "Buon pomeriggio" if hour < 18 else "Buonasera"
-        body=f'''<main class="wrap dashboard-wrap"><section class="welcome"><div><h1>{greeting}, Pet Paradise <span aria-hidden="true">👋</span></h1><p>Panoramica aggiornata dell'attività</p></div></section>{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}<h2 class="dashboard-heading">Pratiche</h2><section class="dashboard-states">{''.join(state_cards)}</section><h2 class="dashboard-heading">Pagamenti</h2><section class="dashboard-payments">{payment_cards}</section><section class="dashboard-lower"><a class="dashboard-panel income-panel" href="/bilanci" aria-label="Apri Bilanci: entrate degli ultimi sette giorni"><header><div><h2>Entrate ultimi 7 giorni</h2><p>Totale: <strong>{money_it(income_total)}</strong></p></div><span class="panel-link">Apri Bilanci →</span></header>{chart}</a><article class="dashboard-panel activity-panel"><header><h2>Attività recenti</h2><a href="/archivio/pratiche">Vedi tutte</a></header><div class="activity-list">{''.join(timeline)}</div></article></section><section class="dashboard-recent"><div class="titlebar"><h2>Ultime 10 pratiche per data recupero</h2><a href="/archivio/pratiche">Apri archivio</a></div><div class="tablebox"><table><thead><tr><th>Data recupero</th><th>Codice pratica</th><th>Animale</th><th>Proprietario</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Stato</th></tr></thead><tbody>{self.practice_rows(recent)}</tbody></table></div></section></main>'''
+        body=f'''<main class="wrap dashboard-wrap"><section class="welcome"><div><h1>{greeting}, Pet Paradise <span aria-hidden="true">👋</span></h1><p>Panoramica aggiornata dell'attività</p></div></section>{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}<h2 class="dashboard-heading">Pratiche</h2><section class="dashboard-states">{''.join(state_cards)}</section><h2 class="dashboard-heading">Pagamenti</h2><section class="dashboard-payments">{payment_cards}</section><section class="dashboard-lower"><a class="dashboard-panel income-panel" href="/bilanci" aria-label="Apri Bilanci: entrate degli ultimi sette giorni"><header><div><h2>Entrate ultimi 7 giorni</h2><p>Totale: <strong>{money_it(income_total)}</strong></p></div><span class="panel-link">Apri Bilanci →</span></header>{chart}</a><article class="dashboard-panel activity-panel"><header><h2>Attività recenti</h2><a href="/archivio/pratiche">Vedi tutte</a></header><div class="activity-list">{''.join(timeline)}</div></article></section><section class="dashboard-recent"><div class="titlebar"><h2>Ultime 10 pratiche per data recupero</h2><a href="/archivio/pratiche">Apri archivio</a></div><div class="tablebox"><table><thead><tr><th>Data recupero</th><th>Codice pratica</th><th>Animale</th><th>Proprietario</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Totale calcolato</th><th>TOTALE D</th><th>Acconto</th><th>Rimanenza</th><th>Stato</th></tr></thead><tbody>{self.practice_rows(recent,True)}</tbody></table></div></section></main>'''
         self.send_html(layout("Dashboard",body,user))
 
     def balances(self,user):
@@ -1517,8 +1519,8 @@ class App(BaseHTTPRequestHandler):
         invoice = f'<small>Fatt. {esc(r["invoice_number"])}</small>' if "invoice_number" in r.keys() and r["invoice_number"] else ""
         return f'<div class="status-stack"><span class="badge">{esc(r["status"])}</span><span class="badge {pay_cls}">{esc(payment)}</span>{invoice}</div>'
 
-    def practice_rows(self,rows):
-        if not rows:return '<tr><td colspan="10" class="sub">Nessuna pratica presente.</td></tr>'
+    def practice_rows(self,rows,show_financials=False):
+        if not rows:return f'<tr><td colspan="{14 if show_financials else 10}" class="sub">Nessuna pratica presente.</td></tr>'
         html=[]
         for r in rows:
             code=str(r['practice_number'] or '')
@@ -1537,7 +1539,11 @@ class App(BaseHTTPRequestHandler):
             urn_prices=[compact_text(r[key]) for key in ("price_urn","price_urn_2") if key in r.keys() and r[key]]
             urn_price=" + ".join(urn_prices)
             urn_cell='<br>'.join(x for x in [esc(urn_notes), f'<small>{esc(urn_price)} €</small>' if urn_price else ''] if x) or '<span class="sub">-</span>'
-            html.append(f'<tr><td>{esc(recovery_date)}</td><td><a href="/pratiche/{r["id"]}"><b class="{code_cls}">{esc(code)}</b></a></td><td>{animal_cell}</td><td>{owner}<br><small>{esc(r["owner_phone"])}</small></td><td>{vet_label}</td><td>{esc(r["destination_branch"])}</td><td>{self.tag_badges(r)}</td><td>{notes_cell}</td><td>{urn_cell}</td><td>{self.status_badges(r)}</td></tr>')
+            financial_cells=''
+            if show_financials:
+                total_d=(r["total_text"] or "").strip() if "total_text" in r.keys() else ""
+                financial_cells=f'<td>{money_it(money_value(r["total_service"]))}</td><td>{money_it(money_value(total_d)) if total_d else "-"}</td><td>{money_it(money_value(r["deposit"]))}</td><td>{money_it(money_value(r["remaining_balance"]))}</td>'
+            html.append(f'<tr><td>{esc(recovery_date)}</td><td><a href="/pratiche/{r["id"]}"><b class="{code_cls}">{esc(code)}</b></a></td><td>{animal_cell}</td><td>{owner}<br><small>{esc(r["owner_phone"])}</small></td><td>{vet_label}</td><td>{esc(r["destination_branch"])}</td><td>{self.tag_badges(r)}</td><td>{notes_cell}</td><td>{urn_cell}</td>{financial_cells}<td>{self.status_badges(r)}</td></tr>')
         return ''.join(html)
 
     def archive_home(self,user):
@@ -1677,6 +1683,7 @@ class App(BaseHTTPRequestHandler):
         date_to=q.get("al",[""])[0].strip()
         state=q.get("stato",[""])[0].strip()
         payment=q.get("pagamento",[""])[0].strip()
+        with_deposit=q.get("con_acconto",[""])[0].strip()=="1"
         promemoria=q.get("promemoria",[""])[0].strip()
         selected_month=q.get("mese",[""])[0].strip()
         sql="SELECT * FROM practices WHERE (deleted_at IS NULL OR deleted_at='')"; args=[]
@@ -1704,6 +1711,8 @@ class App(BaseHTTPRequestHandler):
             sql += " AND status=?"; args.append(state)
         if payment:
             sql += " AND COALESCE(payment_status,'Da saldare')=?"; args.append(payment)
+        if with_deposit:
+            sql += " AND CAST(REPLACE(COALESCE(NULLIF(deposit,''),'0'), ',', '.') AS REAL)>0"
         if promemoria == "catalogo":
             sql += " AND send_catalog='Si' AND status!='Consegnato'"
         if promemoria == "estremi":
@@ -1717,7 +1726,7 @@ class App(BaseHTTPRequestHandler):
         opts='<option value="">Tutti gli stati</option>'+''.join(f'<option {"selected" if state==s else ""}>{esc(s)}</option>' for s in STATES)
         pay_opts='<option value="">Tutti i pagamenti</option>'+''.join(f'<option {"selected" if payment==s else ""}>{esc(s)}</option>' for s in PAYMENT_STATES)
         service_opts=''.join(f'<option value="{esc(x)}" {"selected" if service==x else ""}>{esc(x or "Tutti i servizi")}</option>' for x in ["","Da decidere","Cremazione singola","Cremazione collettiva"])
-        promemoria_label = " - Promemoria catalogo" if promemoria=="catalogo" else " - Promemoria estremi" if promemoria=="estremi" else ""
+        promemoria_label = " - Pratiche con acconto" if with_deposit else " - Promemoria catalogo" if promemoria=="catalogo" else " - Promemoria estremi" if promemoria=="estremi" else ""
         month_names=["","Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno","Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"]
         groups={}
         for r in visible_rows:
@@ -1735,7 +1744,7 @@ class App(BaseHTTPRequestHandler):
         results_html=''.join(blocks) if blocks else '<section class="section"><p class="sub">Nessuna pratica trovata.</p></section>'
         if selected_month in available_months and available_months.index(selected_month)+1<len(available_months):
             previous_month=available_months[available_months.index(selected_month)+1]
-            month_params={"q":term,"animale":animal,"servizio":service,"veterinario":vet,"collaboratore":collaborator,"spesa_min":spesa_min,"spesa_max":spesa_max,"dal":date_from,"al":date_to,"stato":state,"pagamento":payment,"promemoria":promemoria,"mese":previous_month}
+            month_params={"q":term,"animale":animal,"servizio":service,"veterinario":vet,"collaboratore":collaborator,"spesa_min":spesa_min,"spesa_max":spesa_max,"dal":date_from,"al":date_to,"stato":state,"pagamento":payment,"con_acconto":"1" if with_deposit else "","promemoria":promemoria,"mese":previous_month}
             previous_label=previous_month
             if previous_month!="Senza data":
                 y,m=previous_month.split("-"); previous_label=f"{month_names[int(m)]} {y}"
