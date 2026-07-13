@@ -26,6 +26,8 @@ class PetParadiseTests(unittest.TestCase):
             tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             self.assertIn("notifications", tables)
             self.assertIn("push_subscriptions", tables)
+            subscription_columns = {row["name"] for row in conn.execute("PRAGMA table_info(push_subscriptions)")}
+            self.assertTrue({"endpoint", "p256dh", "auth", "user_id", "device_name", "platform", "created_at"}.issubset(subscription_columns))
             admin = conn.execute("SELECT id FROM users WHERE username='admin'").fetchone()["id"]
             emit_notification(conn, "system_error", "Test", "Messaggio", target_user_ids=[admin], db_path=None)
             self.assertEqual(conn.execute("SELECT count(*) n FROM notifications").fetchone()["n"], 1)
@@ -35,10 +37,13 @@ class PetParadiseTests(unittest.TestCase):
 
     def test_form_extensions_and_normalization(self):
         html = self.handler.fields_html()
-        for expected in ("GIANLUCA", "CALCO PER URNA", "Fiat Fiorino", "Renault Captur", "Dr PK8", "Smaltito"):
+        for expected in ("GIANLUCA", "CALCO PER URNA", "CALCO POLPASTRELLO", "CALCO NASO", "price_paw_cast", "price_nose_cast", "Fiat Fiorino", "Renault Captur", "Dr PK8", "Smaltito"):
             self.assertIn(expected, html)
         data = self.handler.normalized_fields({"owner_tax_code": "rssmra80a01h501u", "service_type": "Da decidere"})
         self.assertEqual(data["owner_tax_code"], "RSSMRA80A01H501U")
+        extras = self.handler.normalized_fields({"price_paw_cast":"25,50", "price_nose_cast":"30", "tag_calco_paw":"Si", "tag_calco_nose":"Si"})
+        self.assertEqual(extras["price_paw_cast"], "25.50")
+        self.assertEqual(extras["tag_calco_nose"], "Si")
 
     def test_whatsapp_is_blocked_for_vet_and_collective(self):
         collective = {"service_type": "Cremazione collettiva", "owner_veterinarian_id": None}
@@ -60,10 +65,21 @@ class PetParadiseTests(unittest.TestCase):
             self.assertEqual(first, 1)
             self.assertEqual(second, 0)
 
+    def test_opening_notification_center_clears_unread_badge(self):
+        with app.db() as conn:
+            user = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            emit_notification(conn, "system_error", "Badge test", "Da leggere", target_user_ids=[user["id"]])
+        self.handler.path = "/notifiche"
+        self.handler.send_html = lambda content: None
+        self.handler.notifications(user)
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT count(*) n FROM notifications WHERE user_id=? AND is_read=0", (user["id"],)).fetchone()["n"], 0)
+
     def test_service_worker_handles_push_and_click(self):
         source = (app.ASSETS / "sw.js").read_text(encoding="utf-8")
         self.assertIn("addEventListener('push'", source)
         self.assertIn("addEventListener('notificationclick'", source)
+        self.assertIn("pet-paradise-shell-v7", source)
 
 
 if __name__ == "__main__":

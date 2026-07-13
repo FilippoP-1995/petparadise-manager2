@@ -8,6 +8,7 @@ import os
 import re
 import secrets
 import sqlite3
+import threading
 import traceback
 import urllib.error
 import urllib.request
@@ -44,7 +45,7 @@ PAYMENT_STATES = [
 
 MONEY_FIELDS = {
     "price_cremation":"Cremazione", "price_pickup":"Ritiro", "price_urn":"Urna", "price_urn_2":"Seconda urna",
-    "price_delivery":"Riconsegna", "price_cast":"Calco", "price_cast_2":"Secondo calco", "price_evening":"Serale",
+    "price_delivery":"Riconsegna", "price_cast":"Calco", "price_cast_2":"Secondo calco", "price_paw_cast":"Calco polpastrello", "price_nose_cast":"Calco naso", "price_evening":"Serale",
     "price_night":"Notturno", "price_holiday":"Festivo", "price_accessories":"Accessori", "price_accessories_2":"Secondi accessori",
     "total_service":"Totale servizio", "total_text":"TOTALE D", "deposit":"Acconto", "remaining_balance":"Rimanenza",
 }
@@ -271,6 +272,7 @@ def init_db():
             "price_urn": "TEXT", "price_delivery": "TEXT", "price_night": "TEXT",
             "urn_notes": "TEXT",
             "price_cast": "TEXT", "price_holiday": "TEXT", "price_accessories": "TEXT",
+            "price_paw_cast": "TEXT", "price_nose_cast": "TEXT",
             "price_urn_2": "TEXT", "urn_notes_2": "TEXT", "price_cast_2": "TEXT",
             "price_accessories_2": "TEXT", "accessory_type": "TEXT", "accessory_type_2": "TEXT",
             "send_catalog": "TEXT",
@@ -288,6 +290,8 @@ def init_db():
             "tag_saluto": "TEXT",
             "tag_calco": "TEXT",
             "tag_calco_urna": "TEXT",
+            "tag_calco_paw": "TEXT",
+            "tag_calco_nose": "TEXT",
             "tag_avvisare": "TEXT",
             "tag_da_richiamare": "TEXT",
             "payment_status": "TEXT DEFAULT 'Da saldare'",
@@ -688,7 +692,7 @@ function updateRemainingBalance(){
   remainingField.value = ppmFormat(remaining);
 }
 function setupNumericBudgetFields(){
-  const names=['price_cremation','price_pickup','price_urn','price_urn_2','price_delivery','price_cast','price_cast_2','price_evening','price_night','price_holiday','price_accessories','price_accessories_2','total_service','total_text','deposit','remaining_balance'];
+  const names=['price_cremation','price_pickup','price_urn','price_urn_2','price_delivery','price_cast','price_cast_2','price_paw_cast','price_nose_cast','price_evening','price_night','price_holiday','price_accessories','price_accessories_2','total_service','total_text','deposit','remaining_balance'];
   names.forEach(function(name){
     const field=document.querySelector(`input[name="${name}"]`);
     if(!field) return;
@@ -1101,38 +1105,84 @@ if('serviceWorker' in navigator){
   window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(error=>console.warn('Service worker non registrato',error)));
 }
 function urlBase64ToUint8Array(value){
+  value=(value||'').trim().replace(/^['\"]|['\"]$/g,'');
   const padding='='.repeat((4-value.length%4)%4),base64=(value+padding).replace(/-/g,'+').replace(/_/g,'/');
   return Uint8Array.from(atob(base64),c=>c.charCodeAt(0));
 }
+function pushDiagnostic(name,value,bad=false){
+  const node=document.querySelector(`[data-push-diagnostic="${name}"]`);
+  if(node){node.textContent=value;node.classList.toggle('warning',bad);}
+}
+function pushError(error){
+  const text=error instanceof Error?error.message:String(error||'Errore sconosciuto');
+  pushDiagnostic('lastError',text,true);
+  const box=document.getElementById('pushVisibleError');
+  if(box){box.textContent=text;box.classList.remove('hidden');}
+  return text;
+}
+function waitForActiveWorker(registration,timeout=15000){
+  if(registration.active)return Promise.resolve(registration.active);
+  const worker=registration.installing||registration.waiting;
+  if(!worker)return navigator.serviceWorker.ready.then(ready=>ready.active);
+  return new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>reject(new Error('Il service worker non è diventato attivo entro 15 secondi.')),timeout);
+    const check=()=>{if(worker.state==='activated'){clearTimeout(timer);resolve(worker);}else if(worker.state==='redundant'){clearTimeout(timer);reject(new Error('Installazione del service worker non riuscita.'));}};
+    worker.addEventListener('statechange',check);check();
+  });
+}
 async function syncPushSubscription(){
-  if(!('serviceWorker' in navigator) || !('PushManager' in window) || Notification.permission!=='granted') return false;
+  pushDiagnostic('permission',('Notification' in window)?Notification.permission:'non disponibile');
+  if(!('serviceWorker' in navigator)) throw new Error('Service worker non supportato da questo browser.');
+  if(!('PushManager' in window)) throw new Error('Push non disponibile. Su iPhone installa la PWA dalla schermata Home.');
+  if(Notification.permission!=='granted') throw new Error('Il permesso notifiche non è stato concesso.');
   const key=document.body.dataset.vapidPublicKey||'';
-  if(!key) return false;
-  const registration=await navigator.serviceWorker.ready;
+  if(!key) throw new Error('Chiave VAPID pubblica non configurata sul server.');
+  const applicationServerKey=urlBase64ToUint8Array(key);
+  if(applicationServerKey.length!==65) throw new Error('Chiave VAPID pubblica non valida.');
+  let registration=await navigator.serviceWorker.getRegistration('/');
+  if(!registration) registration=await navigator.serviceWorker.register('/sw.js',{scope:'/'});
+  pushDiagnostic('registered',registration?'sì':'no',!registration);
+  await waitForActiveWorker(registration);
+  registration=await navigator.serviceWorker.ready;
+  pushDiagnostic('active',registration.active?'sì':'no',!registration.active);
   let subscription=await registration.pushManager.getSubscription();
-  if(!subscription) subscription=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlBase64ToUint8Array(key)});
-  const response=await fetch('/api/push/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(subscription.toJSON())});
-  return response.ok;
+  if(!subscription) subscription=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey});
+  pushDiagnostic('subscription',subscription?'sì':'no',!subscription);
+  pushDiagnostic('endpoint',subscription.endpoint.slice(0,32)+'…');
+  const response=await fetch('/api/push/subscribe',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({subscription:subscription.toJSON(),device:{name:navigator.userAgentData?.platform||navigator.platform||'PWA',platform:navigator.userAgent,standalone:window.matchMedia('(display-mode: standalone)').matches||navigator.standalone===true}})});
+  const data=await response.json().catch(()=>({ok:false,error:`Risposta HTTP ${response.status}`}));
+  pushDiagnostic('backend',data.message||data.error||`HTTP ${response.status}`,!response.ok||!data.ok);
+  if(!response.ok||!data.ok) throw new Error(data.error||'Il server non ha salvato la sottoscrizione.');
+  const count=Number(data.subscriptions||1);
+  document.querySelectorAll('[data-push-device-count]').forEach(node=>node.textContent=String(count));
+  pushDiagnostic('devices',String(count),count<1);pushDiagnostic('lastError','nessuno');
+  document.getElementById('pushVisibleError')?.classList.add('hidden');
+  return true;
 }
 async function enablePushNotifications(){
   if(!('Notification' in window) || !('PushManager' in window)){
     alert('Le notifiche push non sono disponibili in questo browser. Su iPhone installa prima la PWA dalla Home.'); return false;
   }
-  const permission=await Notification.requestPermission();
+  const permission=Notification.permission==='granted'?'granted':await Notification.requestPermission();
   localStorage.setItem('ppm-notification-prompted','1');
   document.querySelector('.permission-prompt')?.remove();
   if(permission!=='granted'){alert('Permesso non concesso. Potrai riprovare dalle Impostazioni.');return false;}
   try{const ok=await syncPushSubscription();if(ok) alert('Notifiche abilitate su questo dispositivo.');return ok;}
-  catch(error){console.warn('Attivazione notifiche non riuscita',error);alert('Non è stato possibile attivare le notifiche. Verifica la configurazione e riprova.');return false;}
+  catch(error){console.warn('Attivazione notifiche non riuscita',error);alert(pushError(error));return false;}
 }
 function initializePushNotifications(){
-  fetch('/api/notifiche/stato',{headers:{'Accept':'application/json'}}).then(r=>r.json()).then(data=>{if('setAppBadge' in navigator){if(data.unread) navigator.setAppBadge(data.unread);else navigator.clearAppBadge();}}).catch(()=>{});
+  pushDiagnostic('permission',('Notification' in window)?Notification.permission:'non disponibile');
+  fetch('/api/notifiche/stato',{headers:{'Accept':'application/json'}}).then(r=>r.json()).then(data=>{document.querySelectorAll('[data-push-device-count]').forEach(node=>node.textContent=String(data.subscriptions||0));pushDiagnostic('devices',String(data.subscriptions||0),!data.subscriptions);pushDiagnostic('endpoint',data.endpoint||'—');pushDiagnostic('lastError',data.last_error||'nessuno',!!data.last_error);pushDiagnostic('backend',data.ok?'raggiungibile':'errore',!data.ok);if('setAppBadge' in navigator){if(data.unread) navigator.setAppBadge(data.unread);else navigator.clearAppBadge();}}).catch(error=>pushError(error));
   if(!('Notification' in window) || !('serviceWorker' in navigator)) return;
-  if(Notification.permission==='granted'){syncPushSubscription().catch(error=>console.warn('Sincronizzazione push non riuscita',error));return;}
+  if(Notification.permission==='granted'){syncPushSubscription().catch(error=>{console.warn('Sincronizzazione push non riuscita',error);pushError(error);});return;}
   if(Notification.permission!=='default' || localStorage.getItem('ppm-notification-prompted')) return;
   const prompt=document.createElement('aside'); prompt.className='permission-prompt';
   prompt.innerHTML='<b>Ricevi le notifiche di Pet Paradise</b><p>Attivale per aggiornamenti su pratiche, recuperi, pagamenti e WhatsApp anche quando il gestionale è chiuso.</p><div class="actions"><button class="btn" type="button">Abilita notifiche</button><button class="btn ghost" type="button">Non ora</button></div>';
   const buttons=prompt.querySelectorAll('button'); buttons[0].onclick=enablePushNotifications; buttons[1].onclick=()=>{localStorage.setItem('ppm-notification-prompted','1');prompt.remove();}; document.body.appendChild(prompt);
+}
+async function schedulePushTest(){
+  try{const response=await fetch('/api/push/test',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:'{}'});const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||'Test non programmato.');pushDiagnostic('backend',data.message);alert(data.message);}
+  catch(error){alert(pushError(error));}
 }
 </script>
 """
@@ -1387,6 +1437,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/nuova": return self.create_practice(user)
         if path == "/api/push/subscribe": return self.push_subscribe(user)
         if path == "/api/push/unsubscribe": return self.push_unsubscribe(user)
+        if path == "/api/push/test": return self.push_test(user)
         if path == "/impostazioni/notifiche": return self.save_notification_preferences(user)
         if path == "/notifiche/segna-tutte-lette": return self.mark_all_notifications_read(user)
         if path == "/veterinari": return self.save_veterinarian(user)
@@ -1497,10 +1548,10 @@ class App(BaseHTTPRequestHandler):
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_to): date_to=today.isoformat()
         categories=[
             ("price_cremation","Cremazione",("price_cremation",)),("price_pickup","Ritiro",("price_pickup",)),("price_urn","Urna",("price_urn","price_urn_2")),
-            ("price_delivery","Riconsegna",("price_delivery",)),("price_cast","Calco",("price_cast","price_cast_2")),("price_evening","Serale",("price_evening",)),
+            ("price_delivery","Riconsegna",("price_delivery",)),("price_cast","Calco",("price_cast","price_cast_2","price_paw_cast","price_nose_cast")),("price_evening","Serale",("price_evening",)),
             ("price_night","Notturno",("price_night",)),("price_holiday","Festivo",("price_holiday",)),("price_accessories","Accessori",("price_accessories","price_accessories_2")),
             ("totale_calcolato","Entrate da totale calcolato",()),("totale_d","Entrate da TOTALE D",()),
-            ("da_entrare","Da entrare",()),
+            ("da_entrare","Da entrare",()),("da_entrare_d","Da entrare D",()),
         ]
         category_map={key:label for key,label,_ in categories}; category_fields={key:fields for key,_,fields in categories}; selected=(q.get("voce") or [""])[0].strip()
         if selected not in category_map: selected=""
@@ -1513,6 +1564,7 @@ class App(BaseHTTPRequestHandler):
         breakdown["totale_calcolato"]=sum(calculated_service_total(row) for row in rows if not (row["total_text"] or "").strip())
         breakdown["totale_d"]=sum(money_value(row["total_text"]) for row in rows if (row["total_text"] or "").strip())
         breakdown["da_entrare"]=sum(effective_total(row) for row in rows if (row["payment_status"] or "Da saldare")=="Da saldare")
+        breakdown["da_entrare_d"]=sum(money_value(row["total_text"]) for row in rows if (row["payment_status"] or "Da saldare")!="Pagato" and (row["total_text"] or "").strip())
         grand_total=sum(effective_total(row) for row in rows if row["payment_status"]=="Pagato")
         shown_total=breakdown[selected] if selected else grand_total
         cards=''.join(f'<a class="balance-card {"active" if selected==key else ""}" href="/bilanci?dal={quote(date_from)}&al={quote(date_to)}&voce={quote(key)}"><small>{label}</small><strong>{money_it(breakdown[key])}</strong></a>' for key,label,_ in categories)
@@ -1521,6 +1573,10 @@ class App(BaseHTTPRequestHandler):
             if selected=="da_entrare":
                 if (row["payment_status"] or "Da saldare")!="Da saldare": continue
                 amount=effective_total(row)
+            elif selected=="da_entrare_d":
+                if (row["payment_status"] or "Da saldare")=="Pagato" or not (row["total_text"] or "").strip(): continue
+                amount=money_value(row["total_text"])
+                if amount==0: continue
             elif selected=="totale_calcolato":
                 if (row["total_text"] or "").strip(): continue
                 amount=calculated_service_total(row)
@@ -1594,6 +1650,8 @@ class App(BaseHTTPRequestHandler):
 
     def notifications(self,user):
         q=parse_qs(urlparse(self.path).query); term=(q.get("q") or [""])[0].strip(); kind=(q.get("tipo") or [""])[0].strip(); state=(q.get("stato") or [""])[0].strip()
+        with db() as c:
+            c.execute("UPDATE notifications SET is_read=1,read_at=COALESCE(read_at,?) WHERE user_id=? AND is_read=0",(now(),user["id"]))
         where=["n.user_id=?"]; args=[user["id"]]
         if term:
             where.append("(n.title LIKE ? OR n.text LIKE ? OR COALESCE(p.practice_number,'') LIKE ?)"); args.extend([f"%{term}%"]*3)
@@ -1630,7 +1688,7 @@ class App(BaseHTTPRequestHandler):
         data_ok = DATA.exists()
         ddt_ok = DDT_DIR.exists()
         writable = os.access(DATA, os.W_OK) if data_ok else False
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Impostazioni</h1><div class="sub">Preferenze personali e diagnostica.</div></div></div><section class="section"><h2>Notifiche</h2><p class="sub">Dispositivi collegati: {subscriptions}. Su iPhone la PWA deve essere installata dalla schermata Home.</p><div class="actions" style="margin-bottom:16px"><button class="btn" type="button" onclick="enablePushNotifications()">Abilita notifiche</button></div><form method="post" action="/impostazioni/notifiche"><div class="toggle-list">{toggles}</div><button class="btn" style="margin-top:16px">Salva preferenze</button></form></section><section class="section" style="margin-top:16px"><h2>Modelli PDF</h2><div class="tablebox"><table><thead><tr><th>File</th><th>Stato</th><th>Dimensione</th></tr></thead><tbody>{''.join(asset_rows)}</tbody></table></div></section><section class="section" style="margin-top:16px"><h2>Cartelle dati</h2><p><b>Assets:</b> {esc(ASSETS)}</p><p><b>DATA:</b> {esc(DATA)} - {'OK' if data_ok else 'MANCANTE'} - scrittura {'OK' if writable else 'NO'}</p><p><b>DDT:</b> {esc(DDT_DIR)} - {'OK' if ddt_ok else 'MANCANTE'}</p></section></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Impostazioni</h1><div class="sub">Preferenze personali e diagnostica.</div></div></div><section class="section"><h2>Notifiche</h2><p class="sub">Dispositivi collegati: <b data-push-device-count>{subscriptions}</b>. Su iPhone la PWA deve essere installata dalla schermata Home.</p><div id="pushVisibleError" class="flash warning hidden"></div><div class="actions" style="margin-bottom:16px"><button class="btn" type="button" onclick="enablePushNotifications()">Abilita notifiche</button><button class="btn ghost" type="button" onclick="schedulePushTest()">Test con PWA chiusa (10 secondi)</button></div><details class="section" open><summary><b>Diagnostica notifiche</b></summary><div class="kvs" style="margin-top:12px"><div class="kv"><small>Notification.permission</small><b data-push-diagnostic="permission">verifica…</b></div><div class="kv"><small>Service worker registrato</small><b data-push-diagnostic="registered">verifica…</b></div><div class="kv"><small>Service worker attivo</small><b data-push-diagnostic="active">verifica…</b></div><div class="kv"><small>Subscription presente</small><b data-push-diagnostic="subscription">verifica…</b></div><div class="kv"><small>Endpoint</small><b data-push-diagnostic="endpoint">—</b></div><div class="kv"><small>Risposta backend</small><b data-push-diagnostic="backend">verifica…</b></div><div class="kv"><small>Ultimo errore</small><b data-push-diagnostic="lastError">nessuno</b></div><div class="kv"><small>Dispositivi registrati</small><b data-push-diagnostic="devices">{subscriptions}</b></div></div></details><form method="post" action="/impostazioni/notifiche"><div class="toggle-list">{toggles}</div><button class="btn" style="margin-top:16px">Salva preferenze</button></form></section><section class="section" style="margin-top:16px"><h2>Modelli PDF</h2><div class="tablebox"><table><thead><tr><th>File</th><th>Stato</th><th>Dimensione</th></tr></thead><tbody>{''.join(asset_rows)}</tbody></table></div></section><section class="section" style="margin-top:16px"><h2>Cartelle dati</h2><p><b>Assets:</b> {esc(ASSETS)}</p><p><b>DATA:</b> {esc(DATA)} - {'OK' if data_ok else 'MANCANTE'} - scrittura {'OK' if writable else 'NO'}</p><p><b>DDT:</b> {esc(DDT_DIR)} - {'OK' if ddt_ok else 'MANCANTE'}</p></section></main>'''
         self.send_html(layout("Impostazioni",body,user))
 
     diagnostics=settings_page
@@ -1646,20 +1704,35 @@ class App(BaseHTTPRequestHandler):
         with db() as c:
             unread=c.execute("SELECT count(*) n FROM notifications WHERE user_id=? AND is_read=0",(user["id"],)).fetchone()["n"]
             subscriptions=c.execute("SELECT count(*) n FROM push_subscriptions WHERE user_id=?",(user["id"],)).fetchone()["n"]
-        return self.send_json({"ok":True,"unread":unread,"subscriptions":subscriptions,"vapid_configured":bool(os.environ.get("VAPID_PUBLIC_KEY"))})
+            latest=c.execute("SELECT endpoint,last_error FROM push_subscriptions WHERE user_id=? ORDER BY updated_at DESC,id DESC LIMIT 1",(user["id"],)).fetchone()
+        return self.send_json({"ok":True,"unread":unread,"subscriptions":subscriptions,"vapid_configured":bool(os.environ.get("VAPID_PUBLIC_KEY")),"endpoint":((latest["endpoint"][:32]+"…") if latest else ""),"last_error":(latest["last_error"] if latest else "")})
 
     def push_subscribe(self,user):
         try: data=self.json_body()
         except (ValueError,PermissionError) as exc: return self.send_json({"ok":False,"error":str(exc)},400)
-        endpoint=str(data.get("endpoint") or "").strip(); keys=data.get("keys") or {}; p256dh=str(keys.get("p256dh") or "").strip(); auth=str(keys.get("auth") or "").strip()
+        subscription=data.get("subscription") if isinstance(data.get("subscription"),dict) else data
+        device=data.get("device") if isinstance(data.get("device"),dict) else {}
+        endpoint=str(subscription.get("endpoint") or "").strip(); keys=subscription.get("keys") or {}; p256dh=str(keys.get("p256dh") or "").strip(); auth=str(keys.get("auth") or "").strip()
         if not endpoint.startswith("https://") or not p256dh or not auth or len(endpoint)>4096:
             return self.send_json({"ok":False,"error":"Sottoscrizione non valida"},400)
-        stamp=now(); agent=(self.headers.get("User-Agent") or "")[:300]
+        stamp=now(); agent=(self.headers.get("User-Agent") or "")[:300]; device_name=str(device.get("name") or "PWA")[:100]; platform=str(device.get("platform") or agent)[:300]
         with db() as c:
-            c.execute("""INSERT INTO push_subscriptions(user_id,endpoint,p256dh,auth,user_agent,created_at,updated_at,last_error)
-                         VALUES(?,?,?,?,?,?,?,'') ON CONFLICT(endpoint) DO UPDATE SET user_id=excluded.user_id,p256dh=excluded.p256dh,auth=excluded.auth,user_agent=excluded.user_agent,updated_at=excluded.updated_at,last_error=''""",
-                      (user["id"],endpoint,p256dh,auth,agent,stamp,stamp))
-        return self.send_json({"ok":True})
+            existed=c.execute("SELECT id FROM push_subscriptions WHERE endpoint=?",(endpoint,)).fetchone()
+            c.execute("""INSERT INTO push_subscriptions(user_id,endpoint,p256dh,auth,user_agent,device_name,platform,created_at,updated_at,last_error)
+                         VALUES(?,?,?,?,?,?,?,?,?,'') ON CONFLICT(endpoint) DO UPDATE SET user_id=excluded.user_id,p256dh=excluded.p256dh,auth=excluded.auth,user_agent=excluded.user_agent,device_name=excluded.device_name,platform=excluded.platform,updated_at=excluded.updated_at,last_error=''""",
+                      (user["id"],endpoint,p256dh,auth,agent,device_name,platform,stamp,stamp))
+            subscriptions=c.execute("SELECT count(*) n FROM push_subscriptions WHERE user_id=?",(user["id"],)).fetchone()["n"]
+        return self.send_json({"ok":True,"message":"Sottoscrizione già sincronizzata" if existed else "Dispositivo registrato","subscriptions":subscriptions,"endpoint":endpoint[:32]+"…"})
+
+    def push_test(self,user):
+        with db() as c:
+            count=c.execute("SELECT count(*) n FROM push_subscriptions WHERE user_id=?",(user["id"],)).fetchone()["n"]
+        if not count:return self.send_json({"ok":False,"error":"Nessun dispositivo registrato. Premi prima Abilita notifiche."},400)
+        if not os.environ.get("VAPID_PRIVATE_KEY"):return self.send_json({"ok":False,"error":"VAPID_PRIVATE_KEY non configurata sul server."},503)
+        def send_later():
+            with db() as c: emit_notification(c,"push_test","🔔 Test Pet Paradise","La notifica push funziona anche con la PWA chiusa.",actor_user_id=user["id"],target_user_ids=[user["id"]],payload={"url":"/notifiche"},db_path=DB_PATH)
+        timer=threading.Timer(10,send_later); timer.daemon=True; timer.start()
+        return self.send_json({"ok":True,"message":"Test programmato tra 10 secondi. Chiudi ora la PWA."})
 
     def push_unsubscribe(self,user):
         try: data=self.json_body()
@@ -1700,6 +1773,8 @@ class App(BaseHTTPRequestHandler):
             ("tag_saluto", "SALUTO", "tag-purple"),
             ("tag_calco", "CALCO", "tag-yellow"),
             ("tag_calco_urna", "CALCO PER URNA", "tag-yellow"),
+            ("tag_calco_paw", "CALCO POLPASTRELLO", "tag-yellow"),
+            ("tag_calco_nose", "CALCO NASO", "tag-yellow"),
             ("tag_avvisare", "AVVISARE", "tag-pink"),
             ("tag_da_richiamare", "DA RICHIAMARE", "tag-blue"),
             ("send_catalog", "INVIARE CATALOGO", "tag-outline-orange"),
@@ -2092,8 +2167,8 @@ class App(BaseHTTPRequestHandler):
         <section class="section"><h2>Animale</h2><div class="fields"><div class="field"><label>Nome</label><input name="animal_name" value="{val('animal_name')}"></div><div class="field"><label>Specie</label><input name="species" value="{val('species')}"></div><div class="field"><label>Peso stimato (kg)</label><input name="estimated_weight" value="{val('estimated_weight')}"></div><div class="field"><label>Età - anni</label><input name="age_years" value="{val('age_years')}"></div><div class="field"><label>Età - mesi</label><input name="age_months" value="{val('age_months')}"></div><div class="field"><label>Microchip</label><input name="microchip" value="{val('microchip')}"></div><div class="field full"><label>Razza</label><input name="breed" value="{val('breed')}"></div></div><button class="btn ghost" type="button" id="showSecondAnimal" style="margin-top:12px;{'display:none' if raw('animal2_name') else ''}">+ Aggiungi altro animale</button><div id="secondAnimalBox" style="display:{'block' if raw('animal2_name') else 'none'};margin-top:14px"><h2>Secondo animale</h2><div class="fields"><div class="field"><label>Nome</label><input name="animal2_name" value="{val('animal2_name')}"></div><div class="field"><label>Specie</label><input name="animal2_species" value="{val('animal2_species')}"></div><div class="field"><label>Peso stimato (kg)</label><input name="animal2_weight" value="{val('animal2_weight')}"></div><div class="field"><label>Microchip</label><input name="animal2_microchip" value="{val('animal2_microchip')}"></div><div class="field full"><label>Razza</label><input name="animal2_breed" value="{val('animal2_breed')}"></div></div></div></section>
         <section class="section"><h2>AMBULATORIO VETERINARIO</h2><div class="fields"><div class="field full lookup"><label>VETERINARIO</label><input id="vetSearch" autocomplete="off" placeholder="Scrivi per cercare il veterinario"><div id="vetResults" class="lookup-results hidden"></div><select name="veterinarian_id">{vet_options}</select><input type="hidden" name="clinic_name" value="{val('clinic_name')}"><button class="btn ghost" type="button" id="clearVetSelection" style="margin-top:8px">Cancella veterinario</button></div><div class="field"><label>MEDICO VETERINARIO</label><input name="veterinarian_name" value="{val('veterinarian_name')}"></div><div class="field"><label><input type="checkbox" name="voucher_requested" value="Si" {voucher_checked}> BUONO</label><small class="sub">Spunta per assegnare un buono al veterinario selezionato.</small></div></div></section>
         <section class="section"><h2>TRASPORTATORE</h2><div class="fields"><div class="field"><label>Dati trasportatore</label><select name="transporter_mode"><option {selected('transporter_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('transporter_mode','DATI PET PARADISE','IDEM SPED')}>DATI PET PARADISE</option></select></div><div class="field"><label>Mezzo di trasporto</label><select name="transport_method" id="transport_method_quick"><option value="">Seleziona mezzo</option><option {selected('transport_method','Fiat Fiorino')}>Fiat Fiorino</option><option {selected('transport_method','Renault Captur')}>Renault Captur</option><option {selected('transport_method','Dr PK8')}>Dr PK8</option></select></div><div class="field"><label>Targa automezzo</label><input name="vehicle_plate" value="{val('vehicle_plate')}" readonly></div><div class="field"><label>Temperatura</label><select name="temperature_mode"><option {selected('temperature_mode','Ambiente','Ambiente')}>Ambiente</option><option {selected('temperature_mode','Refrigerato','Ambiente')}>Refrigerato</option><option {selected('temperature_mode','Congelato','Ambiente')}>Congelato</option></select></div><div class="field"><label>Numero colli</label><input name="package_count" value="{val('package_count') or '1'}"></div><div class="field"><label>ID contenitore</label><select name="container_id"><option value="">Seleziona ID contenitore</option><option {selected('container_id','03/2021')}>03/2021</option><option {selected('container_id','04/2021')}>04/2021</option></select></div><div class="field"><label>Numero lotto</label><input name="lot_number" value="{val('lot_number') or '/'}"></div><div class="field"><label>Metodo trattamento</label><input name="treatment_method" value="{val('treatment_method') or '/'}"></div></div></section>
-        <section class="section"><h2>Preventivo</h2><div class="fields"><div class="field"><label>Cremazione €</label><input name="price_cremation" value="{val('price_cremation')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Ritiro €</label><input name="price_pickup" value="{val('price_pickup')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Urna €</label><input name="price_urn" value="{val('price_urn')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label><input type="checkbox" name="send_catalog" value="Si" {catalog_checked} style="width:auto"> INVIARE CATALOGO</label></div><div class="field"><label>Riconsegna €</label><input name="price_delivery" value="{val('price_delivery')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Calco €</label><input name="price_cast" value="{val('price_cast')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Serale €</label><input name="price_evening" value="{val('price_evening')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Notturno €</label><input name="price_night" value="{val('price_night')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Festivo €</label><input name="price_holiday" value="{val('price_holiday')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Accessori €</label><input name="price_accessories" value="{val('price_accessories')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Totale servizio €</label><input name="total_service" value="{val('total_service')}" placeholder="Numero o testo libero"></div><div class="field"><label>Acconto €</label><input name="deposit" value="{val('deposit')}" placeholder="Numero o testo libero"></div><div class="field"><label>Rimanenza €</label><input name="remaining_balance" value="{val('remaining_balance')}" readonly></div><div class="field full"><label>TOTALE</label><textarea name="total_text" placeholder="Testo libero per note sul totale">{val('total_text')}</textarea></div><div class="field full"><label>NOTE</label><textarea name="notes">{val('notes')}</textarea></div><div class="field"><label><input type="checkbox" name="send_estremi" value="Si" {estremi_checked} style="width:auto"> INVIARE ESTREMI</label></div><div class="field"><label><input type="checkbox" name="use_voucher" value="Si" {use_voucher_checked} style="width:auto"> USA BUONO</label><div id="useVoucherBox" class="selected-box hidden"><span id="useVoucherStatus">Seleziona il veterinario e spunta USA BUONO.</span><select name="used_voucher_id" data-current="{val('used_voucher_id')}" class="hidden"><option value="">Seleziona buono</option></select></div></div></div></section>
-        <section class="section"><h2>Etichette operative</h2><div class="fields">{tag_select('tag_assistita','ASSISTITA','tag-red')}{tag_select('tag_possibile_assistita','POSSIBILE ASSISTITA','tag-red')}{tag_select('tag_assistita_streaming','ASSISTITA STREAMING','tag-orange')}{tag_select('tag_saluto','SALUTO','tag-purple')}{tag_select('tag_calco','CALCO','tag-yellow')}{tag_select('tag_calco_urna','CALCO PER URNA','tag-yellow')}{tag_select('tag_avvisare','AVVISARE','tag-pink')}{tag_select('tag_da_richiamare','DA RICHIAMARE','tag-blue')}</div></section>
+        <section class="section"><h2>Preventivo</h2><div class="fields"><div class="field"><label>Cremazione €</label><input name="price_cremation" value="{val('price_cremation')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Ritiro €</label><input name="price_pickup" value="{val('price_pickup')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Urna €</label><input name="price_urn" value="{val('price_urn')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label><input type="checkbox" name="send_catalog" value="Si" {catalog_checked} style="width:auto"> INVIARE CATALOGO</label></div><div class="field"><label>Riconsegna €</label><input name="price_delivery" value="{val('price_delivery')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Calco €</label><input name="price_cast" value="{val('price_cast')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Calco polpastrello €</label><input name="price_paw_cast" value="{val('price_paw_cast')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Calco naso €</label><input name="price_nose_cast" value="{val('price_nose_cast')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Serale €</label><input name="price_evening" value="{val('price_evening')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Notturno €</label><input name="price_night" value="{val('price_night')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Festivo €</label><input name="price_holiday" value="{val('price_holiday')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Accessori €</label><input name="price_accessories" value="{val('price_accessories')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Totale servizio €</label><input name="total_service" value="{val('total_service')}" placeholder="Numero o testo libero"></div><div class="field"><label>Acconto €</label><input name="deposit" value="{val('deposit')}" placeholder="Numero o testo libero"></div><div class="field"><label>Rimanenza €</label><input name="remaining_balance" value="{val('remaining_balance')}" readonly></div><div class="field full"><label>TOTALE</label><textarea name="total_text" placeholder="Testo libero per note sul totale">{val('total_text')}</textarea></div><div class="field full"><label>NOTE</label><textarea name="notes">{val('notes')}</textarea></div><div class="field"><label><input type="checkbox" name="send_estremi" value="Si" {estremi_checked} style="width:auto"> INVIARE ESTREMI</label></div><div class="field"><label><input type="checkbox" name="use_voucher" value="Si" {use_voucher_checked} style="width:auto"> USA BUONO</label><div id="useVoucherBox" class="selected-box hidden"><span id="useVoucherStatus">Seleziona il veterinario e spunta USA BUONO.</span><select name="used_voucher_id" data-current="{val('used_voucher_id')}" class="hidden"><option value="">Seleziona buono</option></select></div></div></div></section>
+        <section class="section"><h2>Etichette operative</h2><div class="fields">{tag_select('tag_assistita','ASSISTITA','tag-red')}{tag_select('tag_possibile_assistita','POSSIBILE ASSISTITA','tag-red')}{tag_select('tag_assistita_streaming','ASSISTITA STREAMING','tag-orange')}{tag_select('tag_saluto','SALUTO','tag-purple')}{tag_select('tag_calco','CALCO','tag-yellow')}{tag_select('tag_calco_urna','CALCO PER URNA','tag-yellow')}{tag_select('tag_calco_paw','CALCO POLPASTRELLO','tag-yellow')}{tag_select('tag_calco_nose','CALCO NASO','tag-yellow')}{tag_select('tag_avvisare','AVVISARE','tag-pink')}{tag_select('tag_da_richiamare','DA RICHIAMARE','tag-blue')}</div></section>
         <section class="section"><h2>Documento e accettazione</h2><div class="fields"><div class="field"><label>Numero documento</label><input name="identity_document_number" value="{val('identity_document_number')}"></div><div class="field"><label>Data rilascio</label><input type="date" name="identity_document_date" value="{val('identity_document_date')}"></div><div class="field full"><label>Luogo firma</label><input name="signing_place" value="{val('signing_place') or val('destination_branch')}"></div></div></section>'''
 
     def new_page(self,user):
@@ -2101,7 +2176,7 @@ class App(BaseHTTPRequestHandler):
         self.send_html(layout("Nuova pratica",body,user))
 
     def normalized_fields(self,f):
-        keys=["client_id","owner_veterinarian_id","origin_veterinarian_id","operator_name","request_origin","collaborator_name","destination_branch","owner_first_name","owner_last_name","owner_company","owner_phone","owner_phone_2","owner_email","owner_tax_code","owner_vat","owner_notes","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","use_voucher","used_voucher_id","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_saluto","tag_calco","tag_calco_urna","tag_avvisare","tag_da_richiamare","payment_status","price_cremation","price_pickup","price_evening","price_urn","send_catalog","send_estremi","price_delivery","price_night","price_cast","price_holiday","price_accessories","deposit","remaining_balance","total_service","total_text","identity_document_number","identity_document_date","signing_place"]
+        keys=["client_id","owner_veterinarian_id","origin_veterinarian_id","operator_name","request_origin","collaborator_name","destination_branch","owner_first_name","owner_last_name","owner_company","owner_phone","owner_phone_2","owner_email","owner_tax_code","owner_vat","owner_notes","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","use_voucher","used_voucher_id","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_saluto","tag_calco","tag_calco_urna","tag_calco_paw","tag_calco_nose","tag_avvisare","tag_da_richiamare","payment_status","price_cremation","price_pickup","price_evening","price_urn","send_catalog","send_estremi","price_delivery","price_night","price_cast","price_paw_cast","price_nose_cast","price_holiday","price_accessories","deposit","remaining_balance","total_service","total_text","identity_document_number","identity_document_date","signing_place"]
         data = {k:f.get(k,"").strip() for k in keys}
         data["urn_notes"] = f.get("urn_notes","").strip()
         for key in ("price_urn_2","urn_notes_2","price_cast_2","price_accessories_2","accessory_type","accessory_type_2"):
@@ -2118,7 +2193,7 @@ class App(BaseHTTPRequestHandler):
         data["send_estremi"] = "Si" if data["send_estremi"] == "Si" else ""
         data["use_voucher"] = "Si" if data["use_voucher"] == "Si" else ""
         data["used_voucher_id"] = data["used_voucher_id"] or None
-        for key in ("tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_saluto","tag_calco","tag_calco_urna","tag_avvisare","tag_da_richiamare"):
+        for key in ("tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_saluto","tag_calco","tag_calco_urna","tag_calco_paw","tag_calco_nose","tag_avvisare","tag_da_richiamare"):
             data[key] = "Si" if data[key] == "Si" else ""
         data["voucher_requested"] = "Si" if data["voucher_requested"] == "Si" else ""
         data["client_id"] = data["client_id"] or None

@@ -36,45 +36,45 @@ PAGE1_FIELDS = {
     # x, y, w, h sono riquadri reali in punti PDF (origine in basso a sinistra).
     # I campi evidenziati sul DDT cartaceo sono gestiti come box: testo centrato
     # verticalmente, padding interno e riduzione automatica font se troppo lungo.
-    "ddt_number": {"x": 380, "y": 722, "w": 76, "h": 18, "size": 12, "align": "center"},
-    "ddt_date": {"x": 390, "y": 692, "w": 58, "h": 18, "size": 11, "date": True, "align": "center"},
-    "owner": {"x": 90, "y": 696, "w": 238, "h": 18, "size": 11.5, "align": "left"},
-    "owner_address": {"x": 76, "y": 653, "w": 248, "h": 34, "size": 10.5, "align": "left"},
-    "transport_method": {"cx": 500, "y": 674, "w": 128, "size": 11},
-    "vehicle_plate": {"cx": 500, "y": 648, "w": 128, "size": 11},
-    "origin": {"x": 78, "y": 533, "w": 246, "h": 22, "size": 11, "align": "left"},
-    "package_count": {"cx": 528, "y": 444, "w": 62, "size": 13},
-    "container_id": {"x": 300, "y": 442, "w": 76, "h": 20, "size": 12, "align": "center"},
+    "ddt_number": {"x": 405, "y": 716, "w": 132, "h": 18, "size": 10.5, "align": "center"},
+    "ddt_date": {"x": 386, "y": 699, "w": 72, "h": 16, "size": 10.5, "date": True, "align": "center"},
+    "owner": {"x": 90, "y": 690, "w": 238, "h": 21, "size": 11.5, "align": "left"},
+    "owner_address": {"x": 76, "y": 648, "w": 248, "h": 28, "size": 10.5, "align": "left"},
+    "transport_method": {"x": 420, "y": 662, "w": 118, "h": 18, "size": 10.5, "align": "center"},
+    "vehicle_plate": {"x": 420, "y": 647, "w": 118, "h": 17, "size": 10.5, "align": "center"},
+    "origin": {"x": 78, "y": 526, "w": 210, "h": 22, "size": 10.5, "align": "left"},
+    "package_count": {"x": 426, "y": 447, "w": 112, "h": 18, "size": 12, "align": "center"},
+    "container_id": {"x": 270, "y": 436, "w": 145, "h": 19, "size": 11.5, "align": "center"},
     "species_goods": {"x": 207, "y": 373, "w": 58, "h": 18, "size": 12, "align": "center"},
-    "weight_goods": {"cx": 455, "y": 392, "w": 112, "size": 12},
-    "lot_number": {"cx": 542, "y": 392, "w": 55, "size": 11},
-    "treatment_method": {"cx": 555, "y": 338, "w": 95, "size": 11},
+    "weight_goods": {"x": 377, "y": 386, "w": 118, "h": 18, "size": 11.5, "align": "center"},
+    "lot_number": {"x": 503, "y": 386, "w": 40, "h": 18, "size": 9.5, "align": "center"},
+    "treatment_method": {"x": 305, "y": 323, "w": 112, "h": 18, "size": 10.5, "align": "center"},
     "species_animal": {"x": 207, "y": 304, "w": 58, "h": 18, "size": 12, "align": "center"},
-    "microchip": {"cx": 675 / 2, "y": 269, "w": 250, "size": 11},
+    "microchip": {"x": 270, "y": 257, "w": 268, "h": 18, "size": 10.5, "align": "center"},
 }
 PAGE2_FIELDS = {
-    "ddt_date": {"cx": 195, "y": 588, "w": 120, "size": 14, "date": True},
-    "ddt_number": {"cx": 505, "y": 588, "w": 90, "size": 14},
-    "animal_name": {"cx": 200, "y": 556, "w": 155, "size": 14},
-    "microchip": {"cx": 500, "y": 556, "w": 130, "size": 13.5},
-    "age_years": {"cx": 158, "y": 524, "w": 70, "size": 13.5},
-    "age_months": {"cx": 246, "y": 524, "w": 70, "size": 13.5},
-    "weight": {"cx": 472, "y": 524, "w": 165, "size": 13.5},
-    "clinic": {"cx": 305, "y": 487, "w": 275, "size": 13.5},
+    "ddt_date": {"x": 151, "y": 582, "w": 83, "h": 18, "size": 12, "date": True},
+    "ddt_number": {"x": 468, "y": 582, "w": 68, "h": 18, "size": 11},
+    "animal_name": {"x": 121, "y": 550, "w": 92, "h": 18, "size": 12},
+    "microchip": {"x": 426, "y": 550, "w": 101, "h": 18, "size": 11.5},
+    "age_years": {"x": 121, "y": 518, "w": 47, "h": 18, "size": 11.5},
+    "age_months": {"x": 206, "y": 518, "w": 57, "h": 18, "size": 11.5},
+    "weight": {"x": 426, "y": 518, "w": 101, "h": 18, "size": 11.5},
+    "clinic": {"x": 206, "y": 481, "w": 182, "h": 18, "size": 11.5},
     "owner": {"cx": 103, "y": 431, "w": 125, "size": 12.5, "cover": True},
     "owner_phone": {"cx": 300, "y": 431, "w": 125, "size": 12.5, "cover": True},
     "owner_email": {"cx": 458, "y": 431, "w": 160, "size": 10.5, "cover": True},
-    "price_cremation": {"cx": 185, "y": 379, "w": 105, "size": 13.5},
-    "price_pickup": {"cx": 340, "y": 379, "w": 105, "size": 13.5},
-    "price_evening": {"cx": 535, "y": 379, "w": 105, "size": 13.5},
-    "price_urn": {"cx": 182, "y": 354, "w": 48, "size": 11.5},
-    "price_delivery": {"cx": 340, "y": 354, "w": 105, "size": 13.5},
-    "price_night": {"cx": 535, "y": 354, "w": 105, "size": 13.5},
-    "price_cast": {"cx": 185, "y": 330, "w": 105, "size": 13.5},
-    "price_holiday": {"cx": 340, "y": 330, "w": 105, "size": 13.5},
-    "price_accessories": {"cx": 515, "y": 330, "w": 145, "size": 12.5},
-    "deposit": {"cx": 182, "y": 251, "w": 140, "size": 13.5},
-    "total_service": {"cx": 455, "y": 259, "w": 150, "size": 14},
+    "price_cremation": {"x": 156, "y": 373, "w": 49, "h": 17, "size": 11.5},
+    "price_pickup": {"x": 313, "y": 373, "w": 49, "h": 17, "size": 11.5},
+    "price_evening": {"x": 497, "y": 373, "w": 54, "h": 17, "size": 11.5},
+    "price_urn": {"x": 156, "y": 348, "w": 49, "h": 17, "size": 9.5},
+    "price_delivery": {"x": 313, "y": 348, "w": 49, "h": 17, "size": 11.5},
+    "price_night": {"x": 497, "y": 348, "w": 54, "h": 17, "size": 11.5},
+    "price_cast": {"x": 156, "y": 324, "w": 49, "h": 17, "size": 11.5},
+    "price_holiday": {"x": 313, "y": 324, "w": 49, "h": 17, "size": 11.5},
+    "price_accessories": {"x": 456, "y": 324, "w": 71, "h": 17, "size": 9.5},
+    "deposit": {"x": 121, "y": 250, "w": 64, "h": 18, "size": 11.5},
+    "total_service": {"x": 392, "y": 258, "w": 82, "h": 18, "size": 12},
     "decl_owner": {"cx": 218, "y": 212, "w": 145, "size": 10, "cover": True},
     "tax_code": {"cx": 394, "y": 212, "w": 128, "size": 10, "cover": True},
     "decl_species": {"cx": 261, "y": 198, "w": 58, "size": 10, "cover": True},
@@ -155,7 +155,12 @@ def _draw_text_box(c, spec, value):
             draw_x = x + spec["w"] - padding - text_w
         else:
             draw_x = x + (spec["w"] - text_w) / 2
+        c.saveState()
+        clip = c.beginPath()
+        clip.rect(x, y, spec["w"], h)
+        c.clipPath(clip, stroke=0, fill=0)
         c.drawString(draw_x, draw_y, value)
+        c.restoreState()
         return
 
     cx, y, w = spec["cx"], spec["y"], spec["w"]
@@ -165,7 +170,12 @@ def _draw_text_box(c, spec, value):
         c.rect(cx - w / 2 - 2, y - 2, w + 4, size + 4, fill=1, stroke=0)
         c.restoreState()
     c.setFont("Helvetica", size)
+    c.saveState()
+    clip = c.beginPath()
+    clip.rect(cx - w / 2, y - 2, w, size + 4)
+    c.clipPath(clip, stroke=0, fill=0)
     c.drawString(cx - stringWidth(value, "Helvetica", size) / 2, y, value)
+    c.restoreState()
 
 
 def _draw_centered(c, spec, value):
@@ -200,7 +210,11 @@ def _urn_display(value):
 def _overlay_page_1(page, width, height):
     stream = BytesIO()
     c = canvas.Canvas(stream, pagesize=(width, height))
-    branch = BRANCHES[_get(page, "destination_branch", "Livorno")]
+    branch_name = _get(page, "destination_branch", "Livorno")
+    branch = BRANCHES[branch_name]
+    y_offset = 12 if branch_name == "Empoli" else 0
+    fields = {name: ({**spec, "y": spec["y"] + y_offset} if "y" in spec else dict(spec))
+              for name, spec in PAGE1_FIELDS.items()}
     owner = f'{_get(page, "owner_first_name")} {_get(page, "owner_last_name")}'.strip()
 
     values = {
@@ -220,18 +234,18 @@ def _overlay_page_1(page, width, height):
         "species_animal": _get(page, "species"),
         "microchip": _get(page, "microchip", "/"),
     }
-    _draw_fields(c, PAGE1_FIELDS, values)
+    _draw_fields(c, fields, values)
 
     if _get(page, "transporter_mode", "IDEM SPED") == "DATI PET PARADISE":
-        _draw_centered(c, {"cx": 420, "y": 620, "w": 170, "size": 8.8}, COMPANY["name"])
-        _draw_centered(c, {"cx": 420, "y": 607, "w": 175, "size": 6.8}, branch["address"])
-        _draw_centered(c, {"cx": 420, "y": 596, "w": 165, "size": 7.2}, COMPANY["vat"])
+        _draw_centered(c, {"cx": 420, "y": 620 + y_offset, "w": 170, "size": 8.8}, COMPANY["name"])
+        _draw_centered(c, {"cx": 420, "y": 607 + y_offset, "w": 175, "size": 6.8}, branch["address"])
+        _draw_centered(c, {"cx": 420, "y": 596 + y_offset, "w": 165, "size": 7.2}, COMPANY["vat"])
     else:
-        _draw_centered(c, {"cx": 420, "y": 612, "w": 165, "size": 11}, "IDEM SPED.")
+        _draw_centered(c, {"cx": 420, "y": 612 + y_offset, "w": 165, "size": 11}, "IDEM SPED.")
 
     temp_x = {"Ambiente": 108, "Refrigerato": 238, "Congelato": 354}.get(_get(page, "temperature_mode", "Ambiente"), 108)
     c.setFont("Helvetica", 11)
-    c.drawString(temp_x, 467, "X")
+    c.drawString(temp_x, 467 + y_offset, "X")
     c.save(); stream.seek(0)
     return PdfReader(stream).pages[0]
 

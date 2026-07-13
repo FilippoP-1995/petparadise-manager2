@@ -27,6 +27,7 @@ NOTIFICATION_TYPES = {
     "appointment_reminder": ("Promemoria appuntamenti", "⏰"),
     "backup_completed": ("Backup completato", "✅"),
     "system_error": ("Errori di sistema", "🚨"),
+    "push_test": ("Test notifiche push", "🔔"),
 }
 
 
@@ -58,6 +59,8 @@ def ensure_notification_schema(conn: sqlite3.Connection) -> None:
       p256dh TEXT NOT NULL,
       auth TEXT NOT NULL,
       user_agent TEXT,
+      device_name TEXT,
+      platform TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       last_error TEXT
@@ -78,6 +81,10 @@ def ensure_notification_schema(conn: sqlite3.Connection) -> None:
     CREATE INDEX IF NOT EXISTS idx_notifications_practice ON notifications(practice_id,created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id);
     """)
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(push_subscriptions)")}
+    for name in ("device_name", "platform"):
+        if name not in columns:
+            conn.execute(f"ALTER TABLE push_subscriptions ADD COLUMN {name} TEXT")
 
 
 def preference_enabled(conn: sqlite3.Connection, user_id: int, notification_type: str) -> bool:
