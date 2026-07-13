@@ -268,6 +268,7 @@ def init_db():
             "price_urn_2": "TEXT", "urn_notes_2": "TEXT", "price_cast_2": "TEXT",
             "price_accessories_2": "TEXT", "accessory_type": "TEXT", "accessory_type_2": "TEXT",
             "send_catalog": "TEXT",
+            "catalog_sent": "TEXT",
             "send_estremi": "TEXT",
             "deposit": "TEXT", "remaining_balance": "TEXT", "total_service": "TEXT", "total_text": "TEXT", "identity_document_number": "TEXT",
             "identity_document_date": "TEXT", "signing_place": "TEXT",
@@ -541,7 +542,7 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 .income-panel{display:block;color:inherit;transition:transform .18s ease,border-color .18s ease}.income-panel:hover{transform:translateY(-2px);border-color:#fb7185}.panel-link{color:#fb7185;font-size:12px;font-weight:700}.balance-total{min-width:210px;padding:14px 18px;border:1px solid #334155;border-radius:14px;background:#1f2937;text-align:right}.balance-total small,.balance-total strong{display:block}.balance-total small{color:#94a3b8}.balance-total strong{margin-top:3px;color:#fb7185;font-size:25px}.balance-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:20px}.balance-card{display:flex;flex-direction:column;gap:7px;padding:17px;border:1px solid #334155;border-radius:13px;background:#1f2937;transition:transform .15s,border-color .15s}.balance-card:hover,.balance-card.active{transform:translateY(-2px);border-color:#fb7185}.balance-card small{color:#94a3b8}.balance-card strong{font-size:20px}.balance-table{margin-top:4px}.light-theme .balance-card,.light-theme .balance-total{background:#fff;color:#111827}
 @media(max-width:620px){.balance-grid{grid-template-columns:1fr 1fr}.balance-total{width:100%;text-align:left}.balances-wrap .titlebar{align-items:stretch}.panel-link{display:none}}
 .conversation-list{display:flex;flex-direction:column;gap:12px}.conversation-card{display:grid;grid-template-columns:minmax(280px,1.2fr) minmax(420px,1fr) auto;align-items:center;gap:20px;padding:18px;border:1px solid #334155;border-radius:15px;background:#1f2937;box-shadow:0 12px 34px #0307122e}.conversation-main{display:grid;grid-template-columns:46px minmax(0,1fr);align-items:center;gap:13px}.conversation-avatar{display:grid;place-items:center;width:46px;height:46px;border-radius:13px;background:#064e3b;color:#4ade80}.conversation-main h2{margin:0 0 5px;font-size:16px}.conversation-main p{margin:3px 0;color:#94a3b8;font-size:13px}.conversation-main p b,.conversation-main a{color:#e2e8f0}.conversation-message{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.conversation-card dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin:0}.conversation-card dl div{min-width:0}.conversation-card dt{color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:.05em}.conversation-card dd{margin:4px 0 0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.conversation-action{text-align:right}.whatsapp-open{background:linear-gradient(135deg,#22c55e,#15803d);white-space:nowrap}.message-accettato_da_meta{background:#1e3a8a;color:#bfdbfe}.message-consegnato{background:#14532d;color:#bbf7d0}.message-letto{background:#164e63;color:#a5f3fc}.message-fallito{background:#7f1d1d;color:#fecaca}.pagination{display:flex;align-items:center;justify-content:center;gap:18px;margin:20px 0;color:#94a3b8}.pagination a,.page-disabled{padding:9px 13px;border:1px solid #334155;border-radius:10px}.pagination a{color:#f8fafc;background:#1f2937}.page-disabled{opacity:.45}.light-theme .conversation-card{background:#fff;color:#111827}.light-theme .conversation-main p{color:#64748b}
-.practice-row-link{cursor:pointer}.practice-row-link:focus td{outline:2px solid #fb7185;outline-offset:-2px}.light-theme{color-scheme:light;--ink:#111827;--muted:#526174;--paper:#fff;--bg:#eef2f7;--line:#cbd5e1}.light-theme h1,.light-theme h2,.light-theme label,.light-theme td,.light-theme .activity-item b,.light-theme .metric-card small,.light-theme .payment-card small,.light-theme .dashboard-panel header p strong,.light-theme .conversation-main p b,.light-theme .conversation-main a,.light-theme .pagination a{color:#111827}.light-theme input,.light-theme select,.light-theme textarea,.light-theme .lookup-results,.light-theme .lookup-item,.light-theme .kv,.light-theme table,.light-theme .login{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme input::placeholder,.light-theme textarea::placeholder{color:#64748b}.light-theme th,.light-theme .sub,.light-theme .kv small,.light-theme .conversation-card dt,.light-theme .pagination{color:#526174}.light-theme th,.light-theme td,.light-theme .activity-item{border-color:#d7dee8}.light-theme .tablebox table tr:hover td,.light-theme .practice-row-link:focus td,.light-theme .lookup-item:hover,.light-theme .lookup-item:focus{background:#f1f5f9}.light-theme .btn.ghost,.light-theme .pagination a{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .badge{background:#e2e8f0;color:#1e293b}.light-theme .tag-red{background:#fee2e2;color:#991b1b}.light-theme .tag-orange{background:#ffedd5;color:#9a3412}.light-theme .tag-purple{background:#f3e8ff;color:#6b21a8}.light-theme .tag-yellow,.light-theme .pay-yellow{background:#fef9c3;color:#713f12}.light-theme .tag-pink{background:#fce7f3;color:#9d174d}.light-theme .tag-blue,.light-theme .pay-blue{background:#dbeafe;color:#1e40af}.light-theme .tag-green,.light-theme .pay-green{background:#dcfce7;color:#166534}.light-theme .tag-outline-orange{background:#fff7ed;color:#c2410c}.light-theme .selected-box{background:#ecfdf5;color:#166534;border-color:#86efac}.light-theme .nav a{color:#334155}.light-theme .nav a:hover{background:#f1f5f9;color:#111827}.light-theme .nav a:first-child{background:#fff1f2;color:#be123c;border-color:#fecdd3}.light-theme .more-menu a{color:#334155}.light-theme .more-menu a:hover{background:#f1f5f9}.light-theme .chart-grid line{stroke:#cbd5e1}.light-theme .chart-grid text,.light-theme .chart-dates text{fill:#526174}.light-theme .income-chart circle{stroke:#fff}.light-theme .install-hint{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .danger{background:#fff1f2}.light-theme .warning,.light-theme .trash-note{background:#fff7ed;color:#7c2d12}.light-theme .flash:not(.warning){background:#ecfdf5;color:#166534}.light-theme .conversation-main p b,.light-theme .conversation-main a{color:#111827}
+.practice-row-link{cursor:pointer;outline:0}.practice-row-link:focus{outline:2px solid #fb7185;outline-offset:-2px}.tag-outline-green{background:#052e2b;color:#86efac;border:2px solid #22c55e}.light-theme{color-scheme:light;--ink:#111827;--muted:#526174;--paper:#fff;--bg:#eef2f7;--line:#cbd5e1}.light-theme h1,.light-theme h2,.light-theme label,.light-theme td,.light-theme .activity-item b,.light-theme .metric-card small,.light-theme .payment-card small,.light-theme .dashboard-panel header p strong,.light-theme .conversation-main p b,.light-theme .conversation-main a,.light-theme .pagination a{color:#111827}.light-theme input,.light-theme select,.light-theme textarea,.light-theme .lookup-results,.light-theme .lookup-item,.light-theme .kv,.light-theme table,.light-theme .login{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme input::placeholder,.light-theme textarea::placeholder{color:#64748b}.light-theme th,.light-theme .sub,.light-theme .kv small,.light-theme .conversation-card dt,.light-theme .pagination{color:#526174}.light-theme th,.light-theme td,.light-theme .activity-item{border-color:#d7dee8}.light-theme .tablebox table tr:hover td,.light-theme .practice-row-link:focus td,.light-theme .lookup-item:hover,.light-theme .lookup-item:focus{background:#f1f5f9}.light-theme .btn.ghost,.light-theme .pagination a{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .badge{background:#e2e8f0;color:#1e293b}.light-theme .tag-red{background:#fee2e2;color:#991b1b}.light-theme .tag-orange{background:#ffedd5;color:#9a3412}.light-theme .tag-purple{background:#f3e8ff;color:#6b21a8}.light-theme .tag-yellow,.light-theme .pay-yellow{background:#fef9c3;color:#713f12}.light-theme .tag-pink{background:#fce7f3;color:#9d174d}.light-theme .tag-blue,.light-theme .pay-blue{background:#dbeafe;color:#1e40af}.light-theme .tag-green,.light-theme .pay-green{background:#dcfce7;color:#166534}.light-theme .tag-outline-orange{background:#fff7ed;color:#c2410c}.light-theme .tag-outline-green{background:#f0fdf4;color:#166534;border-color:#22c55e}.light-theme .selected-box{background:#ecfdf5;color:#166534;border-color:#86efac}.light-theme .nav a{color:#334155}.light-theme .nav a:hover{background:#f1f5f9;color:#111827}.light-theme .nav a:first-child{background:#fff1f2;color:#be123c;border-color:#fecdd3}.light-theme .more-menu a{color:#334155}.light-theme .more-menu a:hover{background:#f1f5f9}.light-theme .chart-grid line{stroke:#cbd5e1}.light-theme .chart-grid text,.light-theme .chart-dates text{fill:#526174}.light-theme .income-chart circle{stroke:#fff}.light-theme .install-hint{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .danger{background:#fff1f2}.light-theme .warning,.light-theme .trash-note{background:#fff7ed;color:#7c2d12}.light-theme .flash:not(.warning){background:#ecfdf5;color:#166534}.light-theme .conversation-main p b,.light-theme .conversation-main a{color:#111827}
 @media(max-width:1150px){.conversation-card{grid-template-columns:1fr 1fr}.conversation-action{grid-column:1/-1;text-align:left}}
 @media(max-width:700px){.conversation-card{grid-template-columns:1fr;gap:14px}.conversation-card dl{grid-template-columns:1fr 1fr}.conversation-action{grid-column:auto}.conversation-action .btn{width:100%}.pagination{gap:8px;justify-content:space-between}.pagination span{font-size:11px;text-align:center}.conversation-message{white-space:normal}.conversations-wrap .titlebar h1{font-size:24px}}
 """
@@ -1327,6 +1328,8 @@ class App(BaseHTTPRequestHandler):
         if match: return self.use_specific_voucher(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/stato", path)
         if match: return self.change_state(user, int(match.group(1)))
+        match = re.fullmatch(r"/pratiche/(\d+)/catalogo-inviato", path)
+        if match: return self.catalog_sent(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/whatsapp", path)
         if match: return self.resend_whatsapp(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/whatsapp-annulla", path)
@@ -1548,6 +1551,7 @@ class App(BaseHTTPRequestHandler):
             ("tag_avvisare", "AVVISARE", "tag-pink"),
             ("tag_da_richiamare", "DA RICHIAMARE", "tag-blue"),
             ("send_catalog", "INVIARE CATALOGO", "tag-outline-orange"),
+            ("catalog_sent", "CATALOGO INVIATO", "tag-outline-green"),
             ("send_estremi", "INVIARE ESTREMI", "tag-outline-orange"),
         ]
         html_badges = ''.join(f'<span class="badge {cls}">{label}</span> ' for key,label,cls in tags if key in r.keys() and r[key])
@@ -2478,6 +2482,8 @@ class App(BaseHTTPRequestHandler):
         payment_value = p["payment_status"] if "payment_status" in p.keys() and p["payment_status"] else "Da saldare"
         payment_cls = {"Da saldare":"pay-yellow","Acconto":"pay-blue","Pagato":"pay-green"}.get(payment_value,"")
         catalog_value = "Si" if "send_catalog" in p.keys() and p["send_catalog"] else "No"
+        catalog_sent_checked = "checked" if "catalog_sent" in p.keys() and p["catalog_sent"] == "Si" else ""
+        catalog_box=f'''<div class="kv"><small>Catalogo urna</small><form method="post" action="/pratiche/{pid}/catalogo-inviato"><label><input type="checkbox" name="catalog_sent" value="Si" {catalog_sent_checked} onchange="this.form.submit()" style="width:auto"> Catalogo inviato</label></form></div>'''
         invoice_value = p["invoice_number"] if "invoice_number" in p.keys() and p["invoice_number"] else ""
         no_whatsapp_checked = "checked" if "no_whatsapp_message" in p.keys() and p["no_whatsapp_message"] == "Si" else ""
         no_whatsapp_note = '<div class="flash warning">Invio automatico WhatsApp disattivato per questa pratica.</div>' if no_whatsapp_checked else ''
@@ -2542,6 +2548,7 @@ class App(BaseHTTPRequestHandler):
             <aside class="section"><h2>Cronologia modifiche</h2><div class="timeline">{hist}</div></aside>
           </section>
         </main>"""
+        body=body.replace(f'<div class="kv"><small>Catalogo urna</small><b>{esc(catalog_value)}</b></div>',catalog_box)
         self.send_html(layout(p["practice_number"],body,user))
 
     def edit_page(self,user,pid):
@@ -2595,6 +2602,9 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 if compact_text(old_value)!=compact_text(new_value):
                     changes.append((field_labels.get(key,key.replace("_"," ").title()),old_value,new_value))
             c.execute(f"UPDATE practices SET {assignments},data_complete=?,updated_at=? WHERE id=?",list(d.values())+[self.is_complete(d),stamp,pid])
+            if d["send_catalog"] == "Si" and "catalog_sent" in previous.keys() and previous["catalog_sent"] == "Si":
+                c.execute("UPDATE practices SET catalog_sent='' WHERE id=?",(pid,))
+                changes.append(("Catalogo urna","Catalogo inviato","Da inviare"))
             p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
             wanted_prefix,_=practice_code_prefix(d["service_type"])
             current_number=p["practice_number"] or ""
@@ -2608,6 +2618,23 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,f"Modifica {label}",old_value,new_value,user["id"],stamp))
             if not changes:
                 c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"Dati verificati","Nessuna variazione ai dati",user["id"],stamp))
+        self.redirect(f"/pratiche/{pid}")
+
+    def catalog_sent(self,user,pid):
+        marked=self.form().get("catalog_sent")=="Si"; stamp=now()
+        with db() as c:
+            current=c.execute("SELECT send_catalog,catalog_sent FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(pid,)).fetchone()
+            if not current:return self.send_error(404)
+            if marked:
+                c.execute("UPDATE practices SET catalog_sent='Si',send_catalog='',updated_at=? WHERE id=?",(stamp,pid))
+                old_value="INVIARE CATALOGO" if current["send_catalog"]=="Si" else "Non inviato"
+                new_value="CATALOGO INVIATO"
+            elif current["catalog_sent"]=="Si":
+                c.execute("UPDATE practices SET catalog_sent='',send_catalog='Si',updated_at=? WHERE id=?",(stamp,pid))
+                old_value="CATALOGO INVIATO"; new_value="INVIARE CATALOGO"
+            else:
+                return self.redirect(f"/pratiche/{pid}")
+            c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,"Catalogo urna",old_value,new_value,user["id"],stamp))
         self.redirect(f"/pratiche/{pid}")
 
     def change_state(self,user,pid):
