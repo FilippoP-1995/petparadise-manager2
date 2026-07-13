@@ -1,4 +1,4 @@
-const CACHE = 'pet-paradise-shell-v4';
+const CACHE = 'pet-paradise-shell-v5';
 const SHELL = [
   '/manifest.json',
   '/assets/company_logo.png',
