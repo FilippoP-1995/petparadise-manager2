@@ -210,7 +210,7 @@ def _overlay_page_1(page, width, height):
         "owner_address": _get(page, "owner_address"),
         "transport_method": _get(page, "transport_method"),
         "vehicle_plate": _get(page, "vehicle_plate"),
-        "origin": _get(page, "origin_text") if _get(page, "origin_mode", "IDEM SPED") == "Testo libero" else "IDEM SPED.",
+        "origin": _get(page, "origin_text") if _get(page, "origin_mode", "IDEM SPED") != "IDEM SPED" else "IDEM SPED.",
         "package_count": _get(page, "package_count", "1"),
         "container_id": _get(page, "container_id"),
         "species_goods": _get(page, "species"),

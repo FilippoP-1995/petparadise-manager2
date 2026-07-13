@@ -1,4 +1,4 @@
-const CACHE = 'pet-paradise-shell-v5';
+const CACHE = 'pet-paradise-shell-v6';
 const SHELL = [
   '/manifest.json',
   '/assets/company_logo.png',
@@ -36,4 +36,43 @@ self.addEventListener('fetch', event => {
   if (SHELL.includes(url.pathname)) {
     event.respondWith(caches.match(event.request).then(cached => cached || fetch(event.request)));
   }
+});
+
+self.addEventListener('push', event => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (_) { data = {title: 'Pet Paradise Manager', body: event.data ? event.data.text() : ''}; }
+  const title = data.title || 'Pet Paradise Manager';
+  const options = {
+    body: data.body || '',
+    icon: data.icon || '/assets/pwa-192.png',
+    badge: data.badge || '/assets/favicon-32.png',
+    tag: data.tag || `ppm-${Date.now()}`,
+    renotify: true,
+    data: {url: data.url || '/notifiche', notificationId: data.notification_id || null},
+    actions: [{action: 'open', title: 'Apri'}]
+  };
+  event.waitUntil(Promise.all([
+    self.registration.showNotification(title, options),
+    self.registration.setAppBadge ? self.registration.setAppBadge() : Promise.resolve()
+  ]));
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const target = new URL((event.notification.data && event.notification.data.url) || '/notifiche', self.location.origin).href;
+  event.waitUntil(clients.matchAll({type: 'window', includeUncontrolled: true}).then(windowClients => {
+    for (const client of windowClients) {
+      if ('navigate' in client) {
+        return client.navigate(target).then(() => client.focus());
+      }
+    }
+    return clients.openWindow(target);
+  }));
+});
+
+self.addEventListener('message', event => {
+  if (event.data && event.data.type === 'CLEAR_BADGE' && self.registration.clearAppBadge) {
+    event.waitUntil(self.registration.clearAppBadge());
+  }
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
 });

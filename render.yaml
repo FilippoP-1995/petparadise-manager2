@@ -11,6 +11,12 @@ services:
         value: 0.0.0.0
       - key: PPM_DATA_DIR
         value: /var/data
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        value: mailto:assistenza@petparadise.it
     disk:
       name: pet-paradise-data
       mountPath: /var/data

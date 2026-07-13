@@ -44,6 +44,16 @@ Se il servizio resta inutilizzato per diverse ore, Render può impiegare qualche
 
 Questo non cancella le pratiche. Le pratiche e i PDF restano salvati se il disco persistente è attivo e `PPM_DATA_DIR` punta a `/var/data`.
 
+## Notifiche push
+
+Impostare su Render anche queste variabili:
+
+- `VAPID_PUBLIC_KEY`: chiave pubblica VAPID in formato URL-safe base64;
+- `VAPID_PRIVATE_KEY`: chiave privata VAPID (non inserirla mai nei log o nel repository);
+- `VAPID_SUBJECT`: contatto del mittente, per esempio `mailto:assistenza@petparadise.it`.
+
+Le chiavi devono appartenere alla stessa coppia e restare stabili: cambiandole, i dispositivi dovranno riabilitare le notifiche.
+
 ## Nota per la versione successiva
 
 Questa è la strada più veloce per andare online. Quando il gestionale crescerà con più utenti, più sedi e backup automatici, conviene migrare il database a PostgreSQL.

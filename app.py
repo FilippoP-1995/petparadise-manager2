@@ -18,6 +18,12 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, urlencode, urlparse
 
 from pdf_service import generate_ddt
+from notification_service import (
+    NOTIFICATION_TYPES,
+    emit_notification,
+    ensure_notification_schema,
+    process_scheduled_notifications,
+)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -29,7 +35,7 @@ HOST = os.environ.get("PPM_HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", os.environ.get("PPM_PORT", "8080")))
 
 STATES = [
-    "Ritirato", "In programma", "Da consegnare", "Consegnato",
+    "Ritirato", "In programma", "Da consegnare", "Consegnato", "Smaltito",
 ]
 
 PAYMENT_STATES = [
@@ -281,9 +287,12 @@ def init_db():
             "tag_assistita_streaming": "TEXT",
             "tag_saluto": "TEXT",
             "tag_calco": "TEXT",
+            "tag_calco_urna": "TEXT",
             "tag_avvisare": "TEXT",
             "tag_da_richiamare": "TEXT",
             "payment_status": "TEXT DEFAULT 'Da saldare'",
+            "payment_amount": "TEXT",
+            "origin_veterinarian_id": "INTEGER",
             "invoice_number": "TEXT",
             "ddt_share_token": "TEXT",
             "signature_data": "TEXT",
@@ -431,6 +440,7 @@ def init_db():
                 "INSERT INTO users(username,password_hash,display_name,role) VALUES(?,?,?,?)",
                 ("admin", password_hash("petparadise"), "Amministratore", "admin"),
             )
+        ensure_notification_schema(c)
 
 
 def esc(value):
@@ -544,15 +554,17 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 .conversation-list{display:flex;flex-direction:column;gap:12px}.conversation-card{display:grid;grid-template-columns:minmax(280px,1.2fr) minmax(420px,1fr) auto;align-items:center;gap:20px;padding:18px;border:1px solid #334155;border-radius:15px;background:#1f2937;box-shadow:0 12px 34px #0307122e}.conversation-main{display:grid;grid-template-columns:46px minmax(0,1fr);align-items:center;gap:13px}.conversation-avatar{display:grid;place-items:center;width:46px;height:46px;border-radius:13px;background:#064e3b;color:#4ade80}.conversation-main h2{margin:0 0 5px;font-size:16px}.conversation-main p{margin:3px 0;color:#94a3b8;font-size:13px}.conversation-main p b,.conversation-main a{color:#e2e8f0}.conversation-message{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.conversation-card dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin:0}.conversation-card dl div{min-width:0}.conversation-card dt{color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:.05em}.conversation-card dd{margin:4px 0 0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.conversation-action{text-align:right}.whatsapp-open{background:linear-gradient(135deg,#22c55e,#15803d);white-space:nowrap}.message-accettato_da_meta{background:#1e3a8a;color:#bfdbfe}.message-consegnato{background:#14532d;color:#bbf7d0}.message-letto{background:#164e63;color:#a5f3fc}.message-fallito{background:#7f1d1d;color:#fecaca}.pagination{display:flex;align-items:center;justify-content:center;gap:18px;margin:20px 0;color:#94a3b8}.pagination a,.page-disabled{padding:9px 13px;border:1px solid #334155;border-radius:10px}.pagination a{color:#f8fafc;background:#1f2937}.page-disabled{opacity:.45}.light-theme .conversation-card{background:#fff;color:#111827}.light-theme .conversation-main p{color:#64748b}
 .practice-row-link{cursor:pointer;outline:0}.practice-row-link:focus{outline:2px solid #fb7185;outline-offset:-2px}.tag-outline-green{background:#052e2b;color:#86efac;border:2px solid #22c55e}.light-theme{color-scheme:light;--ink:#111827;--muted:#526174;--paper:#fff;--bg:#eef2f7;--line:#cbd5e1}.light-theme h1,.light-theme h2,.light-theme label,.light-theme td,.light-theme .activity-item b,.light-theme .metric-card small,.light-theme .payment-card small,.light-theme .dashboard-panel header p strong,.light-theme .conversation-main p b,.light-theme .conversation-main a,.light-theme .pagination a{color:#111827}.light-theme input,.light-theme select,.light-theme textarea,.light-theme .lookup-results,.light-theme .lookup-item,.light-theme .kv,.light-theme table,.light-theme .login{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme input::placeholder,.light-theme textarea::placeholder{color:#64748b}.light-theme th,.light-theme .sub,.light-theme .kv small,.light-theme .conversation-card dt,.light-theme .pagination{color:#526174}.light-theme th,.light-theme td,.light-theme .activity-item{border-color:#d7dee8}.light-theme .tablebox table tr:hover td,.light-theme .practice-row-link:focus td,.light-theme .lookup-item:hover,.light-theme .lookup-item:focus{background:#f1f5f9}.light-theme .btn.ghost,.light-theme .pagination a{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .badge{background:#e2e8f0;color:#1e293b}.light-theme .tag-red{background:#fee2e2;color:#991b1b}.light-theme .tag-orange{background:#ffedd5;color:#9a3412}.light-theme .tag-purple{background:#f3e8ff;color:#6b21a8}.light-theme .tag-yellow,.light-theme .pay-yellow{background:#fef9c3;color:#713f12}.light-theme .tag-pink{background:#fce7f3;color:#9d174d}.light-theme .tag-blue,.light-theme .pay-blue{background:#dbeafe;color:#1e40af}.light-theme .tag-green,.light-theme .pay-green{background:#dcfce7;color:#166534}.light-theme .tag-outline-orange{background:#fff7ed;color:#c2410c}.light-theme .tag-outline-green{background:#f0fdf4;color:#166534;border-color:#22c55e}.light-theme .selected-box{background:#ecfdf5;color:#166534;border-color:#86efac}.light-theme .nav a{color:#334155}.light-theme .nav a:hover{background:#f1f5f9;color:#111827}.light-theme .nav a:first-child{background:#fff1f2;color:#be123c;border-color:#fecdd3}.light-theme .more-menu a{color:#334155}.light-theme .more-menu a:hover{background:#f1f5f9}.light-theme .chart-grid line{stroke:#cbd5e1}.light-theme .chart-grid text,.light-theme .chart-dates text{fill:#526174}.light-theme .income-chart circle{stroke:#fff}.light-theme .install-hint{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .danger{background:#fff1f2}.light-theme .warning,.light-theme .trash-note{background:#fff7ed;color:#7c2d12}.light-theme .flash:not(.warning){background:#ecfdf5;color:#166534}.light-theme .conversation-main p b,.light-theme .conversation-main a{color:#111827}
 .practice-status{background:transparent!important;border:2px solid currentColor}.practice-status-blue{color:#60a5fa!important;border-color:#3b82f6}.practice-status-red{color:#fb7185!important;border-color:#ef4444}.practice-status-yellow{color:#fde047!important;border-color:#eab308}.practice-status-green{color:#4ade80!important;border-color:#22c55e}.light-theme .practice-status-blue{color:#1d4ed8!important}.light-theme .practice-status-red{color:#b91c1c!important}.light-theme .practice-status-yellow{color:#854d0e!important}.light-theme .practice-status-green{color:#15803d!important}
+.pay-green{border:2px solid #22c55e!important}.pay-yellow{border:2px solid #eab308!important}.pay-blue{border:2px solid #3b82f6!important}.notification-badge{position:absolute;display:grid;place-items:center;min-width:19px;height:19px;padding:0 5px;border-radius:99px;background:#dc2626;color:#fff;font:700 11px/1 system-ui;transform:translate(13px,-13px);box-shadow:0 0 0 2px #111827}.nav-notification{position:relative}.notification-center{display:grid;gap:10px}.notification-item{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:13px;align-items:center;padding:15px;border:1px solid #334155;border-radius:13px;background:#1f2937}.notification-item.unread{border-left:4px solid #ef405f}.notification-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:#172033;font-size:21px}.notification-copy b,.notification-copy small{display:block}.notification-copy p{margin:4px 0;color:#cbd5e1}.notification-copy small{color:#94a3b8}.notification-actions{display:flex;gap:8px;align-items:center}.toggle-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.toggle-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:1px solid #334155;border-radius:11px}.toggle-row input{width:22px;height:22px}.permission-prompt{position:fixed;right:20px;bottom:20px;z-index:150;max-width:390px;padding:18px;border:1px solid #475569;border-radius:16px;background:#172033;color:#fff;box-shadow:0 24px 70px #000a}.permission-prompt p{color:#cbd5e1}.quick-payment{display:flex;gap:7px;align-items:center}.quick-payment select,.quick-payment input{min-width:110px}.quick-payment .btn{width:auto}.light-theme .notification-item,.light-theme .toggle-row,.light-theme .permission-prompt{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .notification-copy p{color:#334155}
 @media(max-width:1150px){.conversation-card{grid-template-columns:1fr 1fr}.conversation-action{grid-column:1/-1;text-align:left}}
 @media(max-width:700px){.conversation-card{grid-template-columns:1fr;gap:14px}.conversation-card dl{grid-template-columns:1fr 1fr}.conversation-action{grid-column:auto}.conversation-action .btn{width:100%}.pagination{gap:8px;justify-content:space-between}.pagination span{font-size:11px;text-align:center}.conversation-message{white-space:normal}.conversations-wrap .titlebar h1{font-size:24px}}
+@media(max-width:700px){.practice-layout{display:block!important}.practice-layout>.grid,.practice-layout>aside{width:100%;min-width:0}.practice-layout>aside{margin-top:16px}.practice-layout .kvs{grid-template-columns:1fr}.practice-layout .section{max-width:100%;overflow-wrap:anywhere}.toggle-list{grid-template-columns:1fr}.notification-item{grid-template-columns:40px minmax(0,1fr)}.notification-actions{grid-column:1/-1}.notification-actions .btn{width:100%}.permission-prompt{left:14px;right:14px;bottom:calc(84px + var(--safe-bottom));max-width:none}.quick-payment{min-width:430px}}
 """
 
 APP_JS = r"""
 <script>
 document.addEventListener('change', function(e){
   if(e.target && e.target.name === 'request_origin'){
-    const method = document.querySelector('input[name="transport_method"]');
+    const method = document.querySelector('[name="transport_method"]');
     const transporter = document.querySelector('select[name="transporter_mode"]');
     if(e.target.value === 'Consegna in sede'){
       if(method) method.value = 'MEZZO PROPRIO';
@@ -625,14 +637,22 @@ document.addEventListener('change', function(e){
       if(originMode) originMode.value='Testo libero';
     }
   }
+  if(e.target && e.target.name === 'origin_veterinarian_id'){
+    const opt=e.target.selectedOptions && e.target.selectedOptions[0];
+    const mode=document.querySelector('select[name="origin_mode"]'),text=document.querySelector('input[name="origin_text"]');
+    if(opt && opt.value){if(mode) mode.value='Veterinario';if(text) text.value=opt.dataset.shortname||opt.dataset.fullname||opt.textContent.trim();}
+  }
   if(e.target && e.target.name === 'use_voucher'){
     const pay=document.querySelector('select[name="payment_status"]');
     if(e.target.checked && pay) pay.value='Pagato';
     refreshUseVoucherBox();
   }
   if(e.target && e.target.id === 'transport_method_quick'){
-    const field = document.querySelector('input[name="transport_method"]');
+    const field = document.querySelector('[name="transport_method"]');
+    const plate = document.querySelector('input[name="vehicle_plate"]');
+    const vehicles={'Fiat Fiorino':'GP793KP','Renault Captur':'GV932LL','Dr PK8':'GV041FX'};
     if(field && e.target.value){ field.value = e.target.value; field.dispatchEvent(new Event('input', {bubbles:true})); }
+    if(plate && vehicles[e.target.value]) plate.value=vehicles[e.target.value];
   }
   if(e.target && e.target.id === 'container_id_quick'){
     const field = document.querySelector('input[name="container_id"]');
@@ -813,6 +833,9 @@ function toggleCollectiveVetMode(){
     const field=document.querySelector(`[name="${name}"]`);
     if(field){ field.required = !exempt; }
   });
+  const collective=!!(service && service.value==='Cremazione collettiva');
+  const smaltito=document.querySelector('select[name="status"] option[data-collective-only="1"]');
+  if(smaltito){smaltito.hidden=!collective;smaltito.disabled=!collective;if(!collective && smaltito.selected) smaltito.parentElement.value='Ritirato';}
 }
 document.addEventListener('DOMContentLoaded', function(){
   setupClientLookup();
@@ -1070,9 +1093,46 @@ document.addEventListener('DOMContentLoaded',function(){
       event.preventDefault(); document.getElementById('globalSearch')?.focus();
     }
   });
+  const tax=document.querySelector('input[name="owner_tax_code"]');
+  if(tax) tax.addEventListener('input',()=>{tax.value=tax.value.toUpperCase();});
+  initializePushNotifications();
 });
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(error=>console.warn('Service worker non registrato',error)));
+}
+function urlBase64ToUint8Array(value){
+  const padding='='.repeat((4-value.length%4)%4),base64=(value+padding).replace(/-/g,'+').replace(/_/g,'/');
+  return Uint8Array.from(atob(base64),c=>c.charCodeAt(0));
+}
+async function syncPushSubscription(){
+  if(!('serviceWorker' in navigator) || !('PushManager' in window) || Notification.permission!=='granted') return false;
+  const key=document.body.dataset.vapidPublicKey||'';
+  if(!key) return false;
+  const registration=await navigator.serviceWorker.ready;
+  let subscription=await registration.pushManager.getSubscription();
+  if(!subscription) subscription=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlBase64ToUint8Array(key)});
+  const response=await fetch('/api/push/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(subscription.toJSON())});
+  return response.ok;
+}
+async function enablePushNotifications(){
+  if(!('Notification' in window) || !('PushManager' in window)){
+    alert('Le notifiche push non sono disponibili in questo browser. Su iPhone installa prima la PWA dalla Home.'); return false;
+  }
+  const permission=await Notification.requestPermission();
+  localStorage.setItem('ppm-notification-prompted','1');
+  document.querySelector('.permission-prompt')?.remove();
+  if(permission!=='granted'){alert('Permesso non concesso. Potrai riprovare dalle Impostazioni.');return false;}
+  try{const ok=await syncPushSubscription();if(ok) alert('Notifiche abilitate su questo dispositivo.');return ok;}
+  catch(error){console.warn('Attivazione notifiche non riuscita',error);alert('Non è stato possibile attivare le notifiche. Verifica la configurazione e riprova.');return false;}
+}
+function initializePushNotifications(){
+  fetch('/api/notifiche/stato',{headers:{'Accept':'application/json'}}).then(r=>r.json()).then(data=>{if('setAppBadge' in navigator){if(data.unread) navigator.setAppBadge(data.unread);else navigator.clearAppBadge();}}).catch(()=>{});
+  if(!('Notification' in window) || !('serviceWorker' in navigator)) return;
+  if(Notification.permission==='granted'){syncPushSubscription().catch(error=>console.warn('Sincronizzazione push non riuscita',error));return;}
+  if(Notification.permission!=='default' || localStorage.getItem('ppm-notification-prompted')) return;
+  const prompt=document.createElement('aside'); prompt.className='permission-prompt';
+  prompt.innerHTML='<b>Ricevi le notifiche di Pet Paradise</b><p>Attivale per aggiornamenti su pratiche, recuperi, pagamenti e WhatsApp anche quando il gestionale è chiuso.</p><div class="actions"><button class="btn" type="button">Abilita notifiche</button><button class="btn ghost" type="button">Non ora</button></div>';
+  const buttons=prompt.querySelectorAll('button'); buttons[0].onclick=enablePushNotifications; buttons[1].onclick=()=>{localStorage.setItem('ppm-notification-prompted','1');prompt.remove();}; document.body.appendChild(prompt);
 }
 </script>
 """
@@ -1162,19 +1222,23 @@ def income_chart(values,labels):
 def layout(title, body, user=None):
     nav = ""; app_header=""; mobile_nav=""
     if user:
+        with db() as conn:
+            unread=conn.execute("SELECT count(*) n FROM notifications WHERE user_id=? AND is_read=0",(user["id"],)).fetchone()["n"]
+        unread_badge=f'<span class="notification-badge">{unread if unread < 100 else "99+"}</span>' if unread else ''
         links=[
-            ("/","home","Dashboard"),("/pratiche","archive","Archivio"),("/conversazioni-whatsapp","message","Conversazioni WhatsApp"),("/veterinari","stethoscope","Veterinari"),
+            ("/","home","Dashboard"),("/notifiche","bell","Notifiche"),("/pratiche","archive","Archivio"),("/conversazioni-whatsapp","message","Conversazioni WhatsApp"),("/veterinari","stethoscope","Veterinari"),
             ("/archivio/pratiche","clipboard","Gestionale"),("/archivio/clienti","users","Clienti"),("/archivio/pratiche","paw","Animali"),
             ("/archivio/pratiche?pagamento=Da%20saldare","wallet","Pagamenti"),("/archivio/pratiche?pagamento=Pagato","receipt","Fatture"),
-            ("/bilanci","chart","Report"),("/diagnostica","settings","Impostazioni"),("mailto:assistenza@petparadise.it","help","Assistenza"),
+            ("/bilanci","chart","Report"),("/impostazioni","settings","Impostazioni"),("mailto:assistenza@petparadise.it","help","Assistenza"),
         ]
-        nav_links=''.join(f'<a href="{href}">{lucide(icon)}<span>{label}</span></a>' for href,icon,label in links)
+        nav_links=''.join(f'<a href="{href}" class="{"nav-notification" if href=="/notifiche" else ""}">{lucide(icon)}<span>{label}</span>{unread_badge if href=="/notifiche" else ""}</a>' for href,icon,label in links)
         nav=f'''<nav class="nav" aria-label="Menu principale">{nav_links}<button class="btn ghost install-btn" type="button" onclick="installPetParadise()">{lucide("plus")}<span>Installa App</span></button><a class="logout" href="/logout">{lucide("menu")}<span>Esci</span></a></nav>'''
         today=datetime.now(); date_label=today.strftime("%d/%m/%Y"); weekday=["Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica"][today.weekday()]
-        app_header=f'''<header class="app-header"><div class="header-actions"><form class="header-search" action="/archivio/pratiche" method="get" role="search">{lucide("search")}<label class="sr-only" for="globalSearch">Ricerca rapida per animale o proprietario</label><input id="globalSearch" name="rapida" placeholder="Animale o proprietario..." autocomplete="off"></form><a class="icon-btn" href="/notifiche" aria-label="Notifiche">{lucide("bell")}</a><button class="icon-btn" type="button" onclick="toggleTheme()" aria-label="Cambia tema">{lucide("sun")}</button><a class="btn header-new" href="/nuova">{lucide("plus")}<span>Nuova pratica</span></a><time datetime="{today.date().isoformat()}">{date_label}<small>{weekday}</small></time></div></header>'''
-        drawer_links=''.join(f'<a href="{href}">{lucide(icon)}<span>{label}</span></a>' for href,icon,label in links)
+        app_header=f'''<header class="app-header"><div class="header-actions"><form class="header-search" action="/archivio/pratiche" method="get" role="search">{lucide("search")}<label class="sr-only" for="globalSearch">Ricerca rapida per animale o proprietario</label><input id="globalSearch" name="rapida" placeholder="Animale o proprietario..." autocomplete="off"></form><a class="icon-btn nav-notification" href="/notifiche" aria-label="Notifiche, {unread} non lette">{lucide("bell")}{unread_badge}</a><button class="icon-btn" type="button" onclick="toggleTheme()" aria-label="Cambia tema">{lucide("sun")}</button><a class="btn header-new" href="/nuova">{lucide("plus")}<span>Nuova pratica</span></a><time datetime="{today.date().isoformat()}">{date_label}<small>{weekday}</small></time></div></header>'''
+        drawer_links=''.join(f'<a href="{href}" class="{"nav-notification" if href=="/notifiche" else ""}">{lucide(icon)}<span>{label}</span>{unread_badge if href=="/notifiche" else ""}</a>' for href,icon,label in links)
         mobile_nav=f'''<nav class="bottom-nav" aria-label="Navigazione mobile"><a href="/">{lucide("home")}<span>Dashboard</span></a><a href="/bilanci">{lucide("chart")}<span>Bilanci</span></a><a class="bottom-new" href="/nuova" aria-label="Nuova pratica">{lucide("plus")}</a><a href="/pratiche">{lucide("archive")}<span>Archivio</span></a><button type="button" onclick="toggleMoreMenu()">{lucide("menu")}<span>Altro</span></button></nav><div class="more-backdrop" onclick="toggleMoreMenu(false)"></div><aside class="more-menu" aria-label="Altre funzioni"><div class="more-title"><b>Menu</b><button class="icon-btn" onclick="toggleMoreMenu(false)" aria-label="Chiudi">×</button></div>{drawer_links}<button class="btn ghost install-btn" type="button" onclick="installPetParadise()">Installa App</button></aside>'''
-    return f'''<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#e9475b"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="PP Manager"><meta name="application-name" content="Pet Paradise Manager"><meta name="format-detection" content="telephone=no"><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"><title>{esc(title)} - Pet Paradise Manager</title><style>{CSS}</style></head><body><a class="skip-link" href="#main-content">Vai al contenuto</a><aside class="top"><a class="brand" href="/"><img class="brand-logo brand-logo-dark" src="/assets/company_logo.png" alt="Pet Paradise"><img class="brand-logo brand-logo-light" src="/assets/company_logo_light.png" alt="Pet Paradise"><span class="brand-copy">Pet Paradise <small>MANAGER</small></span></a>{nav}</aside>{app_header}<div id="main-content">{body}</div>{mobile_nav}{APP_JS}</body></html>'''
+    vapid_public=esc(os.environ.get("VAPID_PUBLIC_KEY",""))
+    return f'''<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#e9475b"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="PP Manager"><meta name="application-name" content="Pet Paradise Manager"><meta name="format-detection" content="telephone=no"><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"><title>{esc(title)} - Pet Paradise Manager</title><style>{CSS}</style></head><body data-vapid-public-key="{vapid_public}"><a class="skip-link" href="#main-content">Vai al contenuto</a><aside class="top"><a class="brand" href="/"><img class="brand-logo brand-logo-dark" src="/assets/company_logo.png" alt="Pet Paradise"><img class="brand-logo brand-logo-light" src="/assets/company_logo_light.png" alt="Pet Paradise"><span class="brand-copy">Pet Paradise <small>MANAGER</small></span></a>{nav}</aside>{app_header}<div id="main-content">{body}</div>{mobile_nav}{APP_JS}</body></html>'''
 
 
 class App(BaseHTTPRequestHandler):
@@ -1274,11 +1338,12 @@ class App(BaseHTTPRequestHandler):
         if path == "/bilanci": return self.balances(user)
         if path == "/conversazioni-whatsapp": return self.whatsapp_conversations(user)
         if path == "/notifiche": return self.notifications(user)
-        if path == "/diagnostica": return self.diagnostics(user)
+        if path in ("/diagnostica","/impostazioni"): return self.settings_page(user)
         if path == "/whatsapp-diagnostica": return self.whatsapp_diagnostics(user)
         if path == "/api/clienti/search": return self.api_clients_search(user)
         if path == "/api/cap": return self.api_zip_lookup(user)
         if path == "/api/veterinari/search": return self.api_veterinarians_search(user)
+        if path == "/api/notifiche/stato": return self.notification_status(user)
         match = re.fullmatch(r"/api/veterinari/(\d+)/buoni", path)
         if match: return self.api_veterinarian_vouchers(user, int(match.group(1)))
         if path == "/nuova": return self.new_page(user)
@@ -1292,6 +1357,8 @@ class App(BaseHTTPRequestHandler):
         if match: return self.veterinarian_detail(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)", path)
         if match: return self.practice(user, int(match.group(1)))
+        match = re.fullmatch(r"/notifiche/(\d+)/apri", path)
+        if match: return self.open_notification(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/modifica", path)
         if match: return self.edit_page(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/elimina", path)
@@ -1318,6 +1385,10 @@ class App(BaseHTTPRequestHandler):
         user = self.require_user()
         if not user: return
         if path == "/nuova": return self.create_practice(user)
+        if path == "/api/push/subscribe": return self.push_subscribe(user)
+        if path == "/api/push/unsubscribe": return self.push_unsubscribe(user)
+        if path == "/impostazioni/notifiche": return self.save_notification_preferences(user)
+        if path == "/notifiche/segna-tutte-lette": return self.mark_all_notifications_read(user)
         if path == "/veterinari": return self.save_veterinarian(user)
         match = re.fullmatch(r"/veterinari/(\d+)/elimina", path)
         if match: return self.delete_veterinarian(user, int(match.group(1)))
@@ -1333,6 +1404,8 @@ class App(BaseHTTPRequestHandler):
         if match: return self.use_specific_voucher(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/stato", path)
         if match: return self.change_state(user, int(match.group(1)))
+        match = re.fullmatch(r"/pratiche/(\d+)/pagamento-rapido", path)
+        if match: return self.quick_payment(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/catalogo-inviato", path)
         if match: return self.catalog_sent(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/whatsapp", path)
@@ -1385,6 +1458,8 @@ class App(BaseHTTPRequestHandler):
                                   WHERE p.deleted_at IS NULL OR p.deleted_at=''
                                   ORDER BY h.created_at DESC,h.id DESC LIMIT 6""").fetchall()
             incomplete=c.execute(f"SELECT count(*) n FROM practices WHERE ({active_where}) AND data_complete=0 AND status!='Consegnata'").fetchone()["n"]
+            notification_recent=c.execute("SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC,id DESC LIMIT 5",(user["id"],)).fetchall()
+            notification_unread=c.execute("SELECT count(*) n FROM notifications WHERE user_id=? AND is_read=0",(user["id"],)).fetchone()["n"]
         state_cards=[]
         state_specs=[("Ritirato","Ritirati","archive","state-red"),("In programma","In programma","calendar","state-blue"),("Da consegnare","Da consegnare","clipboard","state-purple"),("Consegnato","Consegnati","home","state-green")]
         for state,label,icon,cls in state_specs:
@@ -1408,8 +1483,10 @@ class App(BaseHTTPRequestHandler):
             when=(event["created_at"] or "").replace("T"," ")[:16]
             timeline.append(f'<a class="activity-item activity-{index%4}" href="/pratiche/{event["practice_id"]}"><span class="activity-icon">{lucide("clipboard")}</span><span><b>{esc(label)}</b><small>{esc(detail)}</small></span><time>{esc(when)}</time></a>')
         if not timeline: timeline.append('<div class="activity-empty">Le nuove attività compariranno qui.</div>')
+        notification_items=''.join(f'''<a class="activity-item" href="/notifiche/{item['id']}/apri"><span class="activity-icon">{NOTIFICATION_TYPES.get(item['type'],('', '🔔'))[1]}</span><span><b>{esc(item['title'])}</b><small>{esc(item['text'])}</small></span><time>{esc((item['created_at'] or '')[11:16])}</time></a>''' for item in notification_recent) or '<div class="activity-empty">Nessuna notifica.</div>'
+        notification_panel=f'''<article class="dashboard-panel activity-panel" style="margin-top:16px"><header><div><h2>Centro notifiche</h2><p><strong>{notification_unread}</strong> non lette</p></div><a href="/notifiche">Visualizza tutte</a></header><div class="activity-list">{notification_items}</div></article>'''
         hour=datetime.now().hour; greeting="Buongiorno" if hour < 13 else "Buon pomeriggio" if hour < 18 else "Buonasera"
-        body=f'''<main class="wrap dashboard-wrap"><section class="welcome"><div><h1>{greeting}, Pet Paradise <span aria-hidden="true">👋</span></h1><p>Panoramica aggiornata dell'attività</p></div></section>{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}<h2 class="dashboard-heading">Pratiche</h2><section class="dashboard-states">{''.join(state_cards)}</section><h2 class="dashboard-heading">Pagamenti</h2><section class="dashboard-payments">{payment_cards}</section><section class="dashboard-lower"><a class="dashboard-panel income-panel" href="/bilanci" aria-label="Apri Bilanci: entrate degli ultimi sette giorni"><header><div><h2>Entrate ultimi 7 giorni</h2><p>Totale: <strong>{money_it(income_total)}</strong></p></div><span class="panel-link">Apri Bilanci →</span></header>{chart}</a><article class="dashboard-panel activity-panel"><header><h2>Attività recenti</h2><a href="/archivio/pratiche">Vedi tutte</a></header><div class="activity-list">{''.join(timeline)}</div></article></section><section class="dashboard-recent"><div class="titlebar"><h2>Ultime 10 pratiche per data recupero</h2><a href="/archivio/pratiche">Apri archivio</a></div><div class="tablebox"><table><thead><tr><th>Data recupero</th><th>Codice pratica</th><th>Animale</th><th>Proprietario</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Totale calcolato</th><th>TOTALE D</th><th>Acconto</th><th>Rimanenza</th><th>Stato</th></tr></thead><tbody>{self.practice_rows(recent,True)}</tbody></table></div></section></main>'''
+        body=f'''<main class="wrap dashboard-wrap"><section class="welcome"><div><h1>{greeting}, Pet Paradise <span aria-hidden="true">👋</span></h1><p>Panoramica aggiornata dell'attività</p></div></section>{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}<h2 class="dashboard-heading">Pratiche</h2><section class="dashboard-states">{''.join(state_cards)}</section><h2 class="dashboard-heading">Pagamenti</h2><section class="dashboard-payments">{payment_cards}</section><section class="dashboard-lower"><a class="dashboard-panel income-panel" href="/bilanci" aria-label="Apri Bilanci: entrate degli ultimi sette giorni"><header><div><h2>Entrate ultimi 7 giorni</h2><p>Totale: <strong>{money_it(income_total)}</strong></p></div><span class="panel-link">Apri Bilanci →</span></header>{chart}</a><article class="dashboard-panel activity-panel"><header><h2>Attività recenti</h2><a href="/archivio/pratiche">Vedi tutte</a></header><div class="activity-list">{''.join(timeline)}</div></article></section>{notification_panel}<section class="dashboard-recent"><div class="titlebar"><h2>Ultime 10 pratiche per data recupero</h2><a href="/archivio/pratiche">Apri archivio</a></div><div class="tablebox"><table><thead><tr><th>Data recupero</th><th>Codice pratica</th><th>Animale</th><th>Proprietario</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Totale calcolato</th><th>TOTALE D</th><th>Acconto</th><th>Rimanenza</th><th>Stato</th><th>Aggiorna pagamento</th></tr></thead><tbody>{self.practice_rows(recent,True,True)}</tbody></table></div></section></main>'''
         self.send_html(layout("Dashboard",body,user))
 
     def balances(self,user):
@@ -1422,6 +1499,7 @@ class App(BaseHTTPRequestHandler):
             ("price_cremation","Cremazione",("price_cremation",)),("price_pickup","Ritiro",("price_pickup",)),("price_urn","Urna",("price_urn","price_urn_2")),
             ("price_delivery","Riconsegna",("price_delivery",)),("price_cast","Calco",("price_cast","price_cast_2")),("price_evening","Serale",("price_evening",)),
             ("price_night","Notturno",("price_night",)),("price_holiday","Festivo",("price_holiday",)),("price_accessories","Accessori",("price_accessories","price_accessories_2")),
+            ("totale_calcolato","Entrate da totale calcolato",()),("totale_d","Entrate da TOTALE D",()),
             ("da_entrare","Da entrare",()),
         ]
         category_map={key:label for key,label,_ in categories}; category_fields={key:fields for key,_,fields in categories}; selected=(q.get("voce") or [""])[0].strip()
@@ -1432,6 +1510,8 @@ class App(BaseHTTPRequestHandler):
                                 AND date(COALESCE(NULLIF(pickup_date,''),created_at)) BETWEEN date(?) AND date(?)
                               ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) DESC,id DESC""",(date_from,date_to)).fetchall()
         breakdown={key:sum(sum(money_value(row[field]) for field in fields) for row in rows) for key,_,fields in categories if fields}
+        breakdown["totale_calcolato"]=sum(calculated_service_total(row) for row in rows if not (row["total_text"] or "").strip())
+        breakdown["totale_d"]=sum(money_value(row["total_text"]) for row in rows if (row["total_text"] or "").strip())
         breakdown["da_entrare"]=sum(effective_total(row) for row in rows if (row["payment_status"] or "Da saldare")=="Da saldare")
         grand_total=sum(effective_total(row) for row in rows if row["payment_status"]=="Pagato")
         shown_total=breakdown[selected] if selected else grand_total
@@ -1441,6 +1521,14 @@ class App(BaseHTTPRequestHandler):
             if selected=="da_entrare":
                 if (row["payment_status"] or "Da saldare")!="Da saldare": continue
                 amount=effective_total(row)
+            elif selected=="totale_calcolato":
+                if (row["total_text"] or "").strip(): continue
+                amount=calculated_service_total(row)
+                if amount==0: continue
+            elif selected=="totale_d":
+                if not (row["total_text"] or "").strip(): continue
+                amount=money_value(row["total_text"])
+                if amount==0: continue
             elif selected:
                 amount=sum(money_value(row[field]) for field in category_fields[selected])
                 if amount==0: continue
@@ -1505,35 +1593,34 @@ class App(BaseHTTPRequestHandler):
         self.send_html(layout("Conversazioni WhatsApp",body,user))
 
     def notifications(self,user):
-        current=datetime.now(); visible_from=(current-timedelta(hours=48)).isoformat(timespec="seconds"); visible_to=current.isoformat(timespec="seconds")
-        event_at="COALESCE(NULLIF(wm.sent_at,''),NULLIF(wm.last_attempt_at,''),wm.created_at)"
+        q=parse_qs(urlparse(self.path).query); term=(q.get("q") or [""])[0].strip(); kind=(q.get("tipo") or [""])[0].strip(); state=(q.get("stato") or [""])[0].strip()
+        where=["n.user_id=?"]; args=[user["id"]]
+        if term:
+            where.append("(n.title LIKE ? OR n.text LIKE ? OR COALESCE(p.practice_number,'') LIKE ?)"); args.extend([f"%{term}%"]*3)
+        if kind in NOTIFICATION_TYPES: where.append("n.type=?"); args.append(kind)
+        else: kind=""
+        if state in ("lette","non_lette"): where.append("n.is_read=?"); args.append(1 if state=="lette" else 0)
+        else: state=""
         with db() as c:
-            whatsapp_rows=c.execute(f"""SELECT wm.*,p.practice_number,p.animal_name,p.owner_first_name,p.owner_last_name,p.owner_company,p.status practice_status,{event_at} event_at
-                               FROM whatsapp_messages wm JOIN practices p ON p.id=wm.practice_id
-                               WHERE (p.deleted_at IS NULL OR p.deleted_at='')
-                                 AND wm.status IN ('accettato_da_meta','consegnato','letto')
-                                 AND {event_at}>? AND {event_at}<=?
-                                 AND wm.id=(SELECT wm2.id FROM whatsapp_messages wm2 WHERE wm2.practice_id=wm.practice_id AND wm2.status IN ('accettato_da_meta','consegnato','letto') ORDER BY COALESCE(NULLIF(wm2.sent_at,''),wm2.created_at) DESC,wm2.id DESC LIMIT 1)
-                               ORDER BY event_at DESC""",(visible_from,visible_to)).fetchall()
-            reminder_rows=c.execute("""SELECT id practice_id,practice_number,animal_name,owner_first_name,owner_last_name,owner_company,status practice_status,send_catalog,send_estremi,updated_at event_at
-                                       FROM practices WHERE (deleted_at IS NULL OR deleted_at='') AND status!='Consegnato' AND (send_catalog='Si' OR send_estremi='Si')
-                                       ORDER BY updated_at DESC,id DESC""").fetchall()
+            rows=c.execute(f"""SELECT n.*,u.display_name actor_name,p.practice_number
+                                FROM notifications n LEFT JOIN users u ON u.id=n.actor_user_id
+                                LEFT JOIN practices p ON p.id=n.practice_id
+                                WHERE {' AND '.join(where)} ORDER BY n.created_at DESC,n.id DESC LIMIT 300""",args).fetchall()
         cards=[]
-        shown=set()
-        for row in whatsapp_rows:
-            client=" ".join(x for x in [row["owner_first_name"],row["owner_last_name"]] if x).strip() or row["owner_company"] or "Cliente non indicato"
-            shown.add(row["practice_id"])
-            cards.append(f'''<a class="conversation-card" href="/pratiche/{row["practice_id"]}"><div class="conversation-main"><div class="conversation-avatar">{lucide("message")}</div><div><h2>{esc(row["practice_number"])}</h2><p><b>{esc(row["animal_name"] or "Animale non indicato")}</b> · {esc(client)}</p><p>Messaggio WhatsApp di ringraziamento inviato</p></div></div><dl><div><dt>Inviato</dt><dd>{esc((row["event_at"] or "").replace("T"," ")[:16])}</dd></div><div><dt>Stato pratica</dt><dd><span class="badge">{esc(row["practice_status"])}</span></dd></div></dl><div class="conversation-action"><span class="btn ghost">Apri pratica</span></div></a>''')
-        for row in reminder_rows:
-            if row["practice_id"] in shown: continue
-            client=" ".join(x for x in [row["owner_first_name"],row["owner_last_name"]] if x).strip() or row["owner_company"] or "Cliente non indicato"
-            reminders=' '.join(x for x in [('<span class="badge tag-outline-orange">INVIARE CATALOGO</span>' if row["send_catalog"]=="Si" else ''),('<span class="badge tag-outline-orange">INVIARE ESTREMI</span>' if row["send_estremi"]=="Si" else '')] if x)
-            cards.append(f'''<a class="conversation-card" href="/pratiche/{row["practice_id"]}"><div class="conversation-main"><div class="conversation-avatar">{lucide("bell")}</div><div><h2>{esc(row["practice_number"])}</h2><p><b>{esc(row["animal_name"] or "Animale non indicato")}</b> · {esc(client)}</p><p>{reminders}</p></div></div><dl><div><dt>Promemoria</dt><dd>Da completare</dd></div><div><dt>Stato pratica</dt><dd><span class="badge">{esc(row["practice_status"])}</span></dd></div></dl><div class="conversation-action"><span class="btn ghost">Apri pratica</span></div></a>''')
-        results=''.join(cards) or '<section class="section empty-state">Nessuna notifica attiva.</section>'
-        body=f'''<main class="wrap conversations-wrap"><div class="titlebar"><div><h1>Notifiche</h1><p class="sub">WhatsApp inviati nelle ultime 48 ore e promemoria operativi da completare.</p></div></div><section class="conversation-list">{results}</section></main>'''
+        for row in rows:
+            icon=NOTIFICATION_TYPES.get(row["type"],("","🔔"))[1]
+            cards.append(f'''<article class="notification-item {'unread' if not row['is_read'] else ''}"><span class="notification-icon">{icon}</span><div class="notification-copy"><b>{esc(row['title'])}</b><p>{esc(row['text'])}</p><small>{esc((row['created_at'] or '').replace('T',' ')[:16])} · {esc(row['actor_name'] or 'Sistema')} · {esc(row['practice_number'] or 'Generale')} · {'Letta' if row['is_read'] else 'Non letta'}</small></div><div class="notification-actions"><a class="btn ghost" href="/notifiche/{row['id']}/apri">Apri</a></div></article>''')
+        results=''.join(cards) or '<section class="section empty-state">Nessuna notifica trovata. Lo storico resterà disponibile qui.</section>'
+        type_options='<option value="">Tutte le tipologie</option>'+''.join(f'<option value="{key}" {"selected" if kind==key else ""}>{icon} {esc(label)}</option>' for key,(label,icon) in NOTIFICATION_TYPES.items())
+        state_options=''.join(f'<option value="{value}" {"selected" if state==value else ""}>{label}</option>' for value,label in (("","Lette e non lette"),("non_lette","Non lette"),("lette","Lette")))
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Notifiche</h1><p class="sub">Storico completo delle notifiche del tuo utente.</p></div><form method="post" action="/notifiche/segna-tutte-lette"><button class="btn ghost">Segna tutte come lette</button></form></div><form class="section" method="get" style="margin-bottom:16px"><div class="fields"><div class="field"><label>Ricerca</label><input name="q" value="{esc(term)}" placeholder="Titolo, testo o pratica"></div><div class="field"><label>Tipologia</label><select name="tipo">{type_options}</select></div><div class="field"><label>Stato</label><select name="stato">{state_options}</select></div></div><button class="btn" style="margin-top:12px">Filtra</button><a class="btn ghost" style="margin-top:12px" href="/notifiche">Pulisci</a></form><section class="notification-center">{results}</section></main>'''
         self.send_html(layout("Notifiche",body,user))
 
-    def diagnostics(self,user):
+    def settings_page(self,user):
+        with db() as c:
+            saved={row["type"]:bool(row["enabled"]) for row in c.execute("SELECT type,enabled FROM notification_preferences WHERE user_id=?",(user["id"],))}
+            subscriptions=c.execute("SELECT count(*) n FROM push_subscriptions WHERE user_id=?",(user["id"],)).fetchone()["n"]
+        toggles=''.join(f'''<label class="toggle-row"><span>{icon} {esc(label)}</span><input type="checkbox" name="{key}" value="1" {'checked' if saved.get(key,True) else ''}></label>''' for key,(label,icon) in NOTIFICATION_TYPES.items())
         asset_rows = []
         for name in ("DCS_NUOVO.pdf", "DCS_LIVORNO.pdf", "DCS_EMPOLI.pdf"):
             path = ASSETS / name
@@ -1543,8 +1630,67 @@ class App(BaseHTTPRequestHandler):
         data_ok = DATA.exists()
         ddt_ok = DDT_DIR.exists()
         writable = os.access(DATA, os.W_OK) if data_ok else False
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Diagnostica</h1><div class="sub">Controllo rapido per PDF e cartelle online.</div></div></div><section class="section"><h2>Modelli PDF</h2><div class="tablebox"><table><thead><tr><th>File</th><th>Stato</th><th>Dimensione</th></tr></thead><tbody>{''.join(asset_rows)}</tbody></table></div></section><section class="section" style="margin-top:16px"><h2>Cartelle dati</h2><p><b>Assets:</b> {esc(ASSETS)}</p><p><b>DATA:</b> {esc(DATA)} - {'OK' if data_ok else 'MANCANTE'} - scrittura {'OK' if writable else 'NO'}</p><p><b>DDT:</b> {esc(DDT_DIR)} - {'OK' if ddt_ok else 'MANCANTE'}</p></section></main>'''
-        self.send_html(layout("Diagnostica",body,user))
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Impostazioni</h1><div class="sub">Preferenze personali e diagnostica.</div></div></div><section class="section"><h2>Notifiche</h2><p class="sub">Dispositivi collegati: {subscriptions}. Su iPhone la PWA deve essere installata dalla schermata Home.</p><div class="actions" style="margin-bottom:16px"><button class="btn" type="button" onclick="enablePushNotifications()">Abilita notifiche</button></div><form method="post" action="/impostazioni/notifiche"><div class="toggle-list">{toggles}</div><button class="btn" style="margin-top:16px">Salva preferenze</button></form></section><section class="section" style="margin-top:16px"><h2>Modelli PDF</h2><div class="tablebox"><table><thead><tr><th>File</th><th>Stato</th><th>Dimensione</th></tr></thead><tbody>{''.join(asset_rows)}</tbody></table></div></section><section class="section" style="margin-top:16px"><h2>Cartelle dati</h2><p><b>Assets:</b> {esc(ASSETS)}</p><p><b>DATA:</b> {esc(DATA)} - {'OK' if data_ok else 'MANCANTE'} - scrittura {'OK' if writable else 'NO'}</p><p><b>DDT:</b> {esc(DDT_DIR)} - {'OK' if ddt_ok else 'MANCANTE'}</p></section></main>'''
+        self.send_html(layout("Impostazioni",body,user))
+
+    diagnostics=settings_page
+
+    def json_body(self):
+        origin=(self.headers.get("Origin") or "").strip()
+        if origin and urlparse(origin).netloc != (self.headers.get("Host") or ""):
+            raise PermissionError("Origine richiesta non valida")
+        size=min(int(self.headers.get("Content-Length",0)),64_000)
+        return json.loads(self.rfile.read(size).decode("utf-8") or "{}")
+
+    def notification_status(self,user):
+        with db() as c:
+            unread=c.execute("SELECT count(*) n FROM notifications WHERE user_id=? AND is_read=0",(user["id"],)).fetchone()["n"]
+            subscriptions=c.execute("SELECT count(*) n FROM push_subscriptions WHERE user_id=?",(user["id"],)).fetchone()["n"]
+        return self.send_json({"ok":True,"unread":unread,"subscriptions":subscriptions,"vapid_configured":bool(os.environ.get("VAPID_PUBLIC_KEY"))})
+
+    def push_subscribe(self,user):
+        try: data=self.json_body()
+        except (ValueError,PermissionError) as exc: return self.send_json({"ok":False,"error":str(exc)},400)
+        endpoint=str(data.get("endpoint") or "").strip(); keys=data.get("keys") or {}; p256dh=str(keys.get("p256dh") or "").strip(); auth=str(keys.get("auth") or "").strip()
+        if not endpoint.startswith("https://") or not p256dh or not auth or len(endpoint)>4096:
+            return self.send_json({"ok":False,"error":"Sottoscrizione non valida"},400)
+        stamp=now(); agent=(self.headers.get("User-Agent") or "")[:300]
+        with db() as c:
+            c.execute("""INSERT INTO push_subscriptions(user_id,endpoint,p256dh,auth,user_agent,created_at,updated_at,last_error)
+                         VALUES(?,?,?,?,?,?,?,'') ON CONFLICT(endpoint) DO UPDATE SET user_id=excluded.user_id,p256dh=excluded.p256dh,auth=excluded.auth,user_agent=excluded.user_agent,updated_at=excluded.updated_at,last_error=''""",
+                      (user["id"],endpoint,p256dh,auth,agent,stamp,stamp))
+        return self.send_json({"ok":True})
+
+    def push_unsubscribe(self,user):
+        try: data=self.json_body()
+        except (ValueError,PermissionError) as exc: return self.send_json({"ok":False,"error":str(exc)},400)
+        endpoint=str(data.get("endpoint") or "").strip()
+        with db() as c: c.execute("DELETE FROM push_subscriptions WHERE user_id=? AND endpoint=?",(user["id"],endpoint))
+        return self.send_json({"ok":True})
+
+    def save_notification_preferences(self,user):
+        form=self.form()
+        with db() as c:
+            for kind in NOTIFICATION_TYPES:
+                c.execute("""INSERT INTO notification_preferences(user_id,type,enabled) VALUES(?,?,?)
+                             ON CONFLICT(user_id,type) DO UPDATE SET enabled=excluded.enabled""",
+                          (user["id"],kind,1 if form.get(kind)=="1" else 0))
+        return self.redirect("/impostazioni")
+
+    def mark_all_notifications_read(self,user):
+        stamp=now()
+        with db() as c: c.execute("UPDATE notifications SET is_read=1,read_at=COALESCE(read_at,?) WHERE user_id=? AND is_read=0",(stamp,user["id"]))
+        return self.redirect("/notifiche")
+
+    def open_notification(self,user,notification_id):
+        with db() as c:
+            row=c.execute("SELECT * FROM notifications WHERE id=? AND user_id=?",(notification_id,user["id"])).fetchone()
+            if not row: return self.send_error(404)
+            c.execute("UPDATE notifications SET is_read=1,read_at=COALESCE(read_at,?) WHERE id=?",(now(),notification_id))
+        try: target=json.loads(row["payload"] or "{}").get("url") or "/notifiche"
+        except Exception: target="/notifiche"
+        if not isinstance(target,str) or not target.startswith("/") or target.startswith("//"): target="/notifiche"
+        return self.redirect(target)
 
     def tag_badges(self,r):
         tags = [
@@ -1553,6 +1699,7 @@ class App(BaseHTTPRequestHandler):
             ("tag_assistita_streaming", "ASSISTITA STREAMING", "tag-orange"),
             ("tag_saluto", "SALUTO", "tag-purple"),
             ("tag_calco", "CALCO", "tag-yellow"),
+            ("tag_calco_urna", "CALCO PER URNA", "tag-yellow"),
             ("tag_avvisare", "AVVISARE", "tag-pink"),
             ("tag_da_richiamare", "DA RICHIAMARE", "tag-blue"),
             ("send_catalog", "INVIARE CATALOGO", "tag-outline-orange"),
@@ -1569,8 +1716,9 @@ class App(BaseHTTPRequestHandler):
         invoice = f'<small>Fatt. {esc(r["invoice_number"])}</small>' if "invoice_number" in r.keys() and r["invoice_number"] else ""
         return f'<div class="status-stack"><span class="badge practice-status {status_cls}">{esc(r["status"])}</span><span class="badge {pay_cls}">{esc(payment)}</span>{invoice}</div>'
 
-    def practice_rows(self,rows,show_financials=False):
-        if not rows:return f'<tr><td colspan="{14 if show_financials else 10}" class="sub">Nessuna pratica presente.</td></tr>'
+    def practice_rows(self,rows,show_financials=False,show_payment_action=True):
+        columns=(14 if show_financials else 10)+(1 if show_payment_action else 0)
+        if not rows:return f'<tr><td colspan="{columns}" class="sub">Nessuna pratica presente.</td></tr>'
         html=[]
         for r in rows:
             code=str(r['practice_number'] or '')
@@ -1593,8 +1741,10 @@ class App(BaseHTTPRequestHandler):
             if show_financials:
                 total_d=(r["total_text"] or "").strip() if "total_text" in r.keys() else ""
                 financial_cells=f'<td>{money_it(calculated_service_total(r))}</td><td>{money_it(money_value(total_d)) if total_d else "-"}</td><td>{money_it(money_value(r["deposit"]))}</td><td>{money_it(money_value(r["remaining_balance"]))}</td>'
+            payment_value=r["payment_status"] or "Da saldare"
+            quick_payment=f'''<td onclick="event.stopPropagation()"><form class="quick-payment" method="post" action="/pratiche/{r['id']}/pagamento-rapido"><select name="payment_status" aria-label="Stato pagamento">{''.join(f'<option {"selected" if state==payment_value else ""}>{state}</option>' for state in PAYMENT_STATES)}</select><input type="number" min="0" step="0.01" inputmode="decimal" name="payment_amount" value="{esc(r['payment_amount'] if 'payment_amount' in r.keys() else '')}" placeholder="Importo €" aria-label="Importo"><button class="btn" type="submit">Salva</button></form></td>''' if show_payment_action else ''
             practice_url=f'/pratiche/{r["id"]}'
-            html.append(f'<tr class="practice-row-link" tabindex="0" role="link" aria-label="Apri pratica {esc(code)}" onclick="window.location.href=\'{practice_url}\'" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){{event.preventDefault();window.location.href=\'{practice_url}\'}}"><td>{esc(recovery_date)}</td><td><a href="{practice_url}"><b class="{code_cls}">{esc(code)}</b></a></td><td>{animal_cell}</td><td>{owner}<br><small>{esc(r["owner_phone"])}</small></td><td>{vet_label}</td><td>{esc(r["destination_branch"])}</td><td>{self.tag_badges(r)}</td><td>{notes_cell}</td><td>{urn_cell}</td>{financial_cells}<td>{self.status_badges(r)}</td></tr>')
+            html.append(f'<tr class="practice-row-link" tabindex="0" role="link" aria-label="Apri pratica {esc(code)}" onclick="window.location.href=\'{practice_url}\'" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){{event.preventDefault();window.location.href=\'{practice_url}\'}}"><td>{esc(recovery_date)}</td><td><a href="{practice_url}"><b class="{code_cls}">{esc(code)}</b></a></td><td>{animal_cell}</td><td>{owner}<br><small>{esc(r["owner_phone"])}</small></td><td>{vet_label}</td><td>{esc(r["destination_branch"])}</td><td>{self.tag_badges(r)}</td><td>{notes_cell}</td><td>{urn_cell}</td>{financial_cells}<td>{self.status_badges(r)}</td>{quick_payment}</tr>')
         return ''.join(html)
 
     def archive_home(self,user):
@@ -1789,6 +1939,7 @@ class App(BaseHTTPRequestHandler):
             key=((r["pickup_date"] or r["created_at"] or "")[:7]) or "Senza data"
             groups.setdefault(key,[]).append(r)
         blocks=[]
+        archive_financial_headers='<th>Totale calcolato</th><th>TOTALE D</th><th>Acconto</th><th>Rimanenza</th>' if quick else ''
         for key,items in groups.items():
             title=key
             if key != "Senza data":
@@ -1796,7 +1947,7 @@ class App(BaseHTTPRequestHandler):
                     y,m=key.split("-"); title=f"{month_names[int(m)]} {y}"
                 except Exception:
                     pass
-            blocks.append(f'''<section class="month-block"><div class="month-title"><h2>{esc(title)}</h2><span class="badge">{len(items)} pratiche</span></div><div class="tablebox"><table><thead><tr><th>Data recupero</th><th>Codice pratica</th><th>Animale</th><th>Proprietario</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Stato</th></tr></thead><tbody>{self.practice_rows(items)}</tbody></table></div></section>''')
+            blocks.append(f'''<section class="month-block"><div class="month-title"><h2>{esc(title)}</h2><span class="badge">{len(items)} pratiche</span></div><div class="tablebox"><table><thead><tr><th>Data recupero</th><th>Codice pratica</th><th>Animale</th><th>Proprietario</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th>{archive_financial_headers}<th>Stato</th><th>Aggiorna pagamento</th></tr></thead><tbody>{self.practice_rows(items,bool(quick),True)}</tbody></table></div></section>''')
         results_html=''.join(blocks) if blocks else '<section class="section"><p class="sub">Nessuna pratica trovata.</p></section>'
         if selected_month in available_months and available_months.index(selected_month)+1<len(available_months):
             previous_month=available_months[available_months.index(selected_month)+1]
@@ -1926,22 +2077,23 @@ class App(BaseHTTPRequestHandler):
         vet_option=lambda v, selected_id: f'<option value="{v["id"]}" data-shortname="{esc(v["short_name"] or v["clinic_name"])}" data-fullname="{esc(v["clinic_name"])}" data-address="{esc(v["address"])}" data-city="{esc(v["city"])}" data-phone="{esc(v["phone"])}" {"selected" if str(selected_id)==str(v["id"]) else ""}>{esc(v["short_name"] or v["clinic_name"])}{(" - "+esc(v["clinic_name"])) if v["short_name"] else ""}</option>'
         vet_options='<option value="">Nessun veterinario selezionato</option>'+''.join(vet_option(v, raw("veterinarian_id")) for v in vets)
         owner_vet_options='<option value="">Compilazione manuale</option>'+''.join(vet_option(v, raw("owner_veterinarian_id")) for v in vets)
+        origin_vet_options='<option value="">Seleziona veterinario</option>'+''.join(vet_option(v, raw("origin_veterinarian_id")) for v in vets)
         voucher_checked='checked' if raw('voucher_requested')=="Si" else ''
         use_voucher_checked='checked' if raw('use_voucher')=="Si" else ''
         catalog_checked='checked' if raw('send_catalog')=="Si" else ''
         estremi_checked='checked' if raw('send_estremi')=="Si" else ''
-        return f'''<section class="section"><h2>Operatore</h2><div class="fields"><div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option></select></div></div></section>
+        return f'''<section class="section"><h2>Operatore e stati</h2><div class="fields"><div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option><option {selected('operator_name','GIANLUCA')}>GIANLUCA</option></select></div><div class="field"><label>Stato pratica</label><select name="status"><option {selected('status','Ritirato','Ritirato')}>Ritirato</option><option {selected('status','In programma','Ritirato')}>In programma</option><option {selected('status','Da consegnare','Ritirato')}>Da consegnare</option><option {selected('status','Consegnato','Ritirato')}>Consegnato</option><option data-collective-only="1" {selected('status','Smaltito','Ritirato')}>Smaltito</option></select></div><div class="field"><label>Pagamento</label><select name="payment_status">{''.join(f'<option {"selected" if raw("payment_status","Da saldare")==state else ""}>{state}</option>' for state in PAYMENT_STATES)}</select></div></div></section>
         <input type="hidden" name="urn_notes" value="{val('urn_notes')}">
         <input type="hidden" name="price_urn_2" value="{val('price_urn_2')}"><input type="hidden" name="urn_notes_2" value="{val('urn_notes_2')}"><input type="hidden" name="price_cast_2" value="{val('price_cast_2')}"><input type="hidden" name="price_accessories_2" value="{val('price_accessories_2')}"><input type="hidden" name="accessory_type" value="{val('accessory_type')}"><input type="hidden" name="accessory_type_2" value="{val('accessory_type_2')}">
         <section class="section"><h2>Richiesta</h2><div class="fields"><div class="field"><label>Servizio</label><select name="service_type"><option {selected('service_type','Da decidere')}>Da decidere</option><option {selected('service_type','Cremazione singola')}>Cremazione singola</option><option {selected('service_type','Cremazione collettiva')}>Cremazione collettiva</option></select></div><div class="field"><label>Origine richiesta *</label><select name="request_origin" required><option {selected('request_origin','Veterinario')}>Veterinario</option><option {selected('request_origin','Privato')}>Privato</option><option {selected('request_origin','Consegna in sede')}>Consegna in sede</option><option {selected('request_origin','Collaboratore')}>Collaboratore</option></select></div><div class="field {'hidden' if raw('request_origin')!='Collaboratore' else ''}" id="collaboratorBox"><label>Collaboratore</label><select name="collaborator_name"><option value="">Nessun collaboratore</option><option {selected('collaborator_name','HUMANITAS CROCE VERDE')}>HUMANITAS CROCE VERDE</option></select></div><div class="field"><label>Sede di destinazione</label><select name="destination_branch"><option {selected('destination_branch','Livorno')}>Livorno</option><option {selected('destination_branch','Empoli')}>Empoli</option></select></div><div class="field"><label>Data recupero</label><input type="date" name="pickup_date" value="{val('pickup_date')}"></div></div></section>
         <section class="section"><h2>SPEDITORE</h2><div class="fields"><input type="hidden" name="client_id" value="{val('client_id')}"><div class="field full lookup"><label>Cerca cliente in anagrafica</label><input id="clientSearch" autocomplete="off" placeholder="Scrivi nome, telefono, email, codice fiscale, città..."><div id="clientResults" class="lookup-results hidden"></div><div id="clientSelected" class="selected-box hidden"><span id="clientSelectedText"></span><button class="btn ghost" type="button" id="clearClientSelection">Cancella selezione</button></div><small class="sub">Se scegli un cliente, i campi vengono compilati automaticamente. Se li modifichi, l'anagrafica non viene aggiornata senza conferma.</small></div><div class="field full"><label>Usa veterinario come speditore</label><select name="owner_veterinarian_id">{owner_vet_options}</select><small class="sub">Compila automaticamente i dati dello speditore. Sul DDT, nel Luogo di origine, verra scritto solo il nome breve del veterinario.</small></div><div class="field"><label>Nome *</label><input name="owner_first_name" value="{val('owner_first_name')}" required></div><div class="field"><label>Cognome *</label><input name="owner_last_name" value="{val('owner_last_name')}" required></div><div class="field"><label>Ragione sociale</label><input name="owner_company" value="{val('owner_company')}"></div><div class="field"><label>Telefono *</label><input type="tel" inputmode="numeric" name="owner_phone" value="{val('owner_phone')}" required></div><div class="field"><label>Secondo telefono</label><input type="tel" inputmode="numeric" name="owner_phone_2" value="{val('owner_phone_2')}"></div><div class="field"><label>Email</label><input type="email" name="owner_email" value="{val('owner_email')}"></div><div class="field"><label>Codice fiscale *</label><input name="owner_tax_code" value="{val('owner_tax_code')}" required></div><div class="field"><label>Partita IVA</label><input name="owner_vat" value="{val('owner_vat')}"></div><div class="field full"><label>Indirizzo *</label><input name="owner_street" value="{val('owner_street') or val('owner_address')}" required></div><div class="field"><label>Comune *</label><input name="owner_city" value="{val('owner_city')}" required></div><div class="field"><label>Provincia *</label><input name="owner_province" value="{val('owner_province')}" maxlength="2" placeholder="Si compila dal comune" required></div><div class="field"><label>CAP *</label><input name="owner_zip" value="{val('owner_zip')}" inputmode="numeric" required></div><div class="field full"><label>Note cliente</label><textarea name="owner_notes" placeholder="Note anagrafiche utili">{val('owner_notes')}</textarea></div></div></section>
         <section class="section"><h2>DESTINATARIO E LUOGO DI DESTINAZIONE</h2><p class="sub">Compilati automaticamente in base alla sede selezionata: Livorno oppure Empoli.</p></section>
-        <section class="section"><h2>LUOGO DI ORIGINE</h2><div class="fields"><div class="field"><label>Luogo di origine</label><select name="origin_mode"><option {selected('origin_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('origin_mode','Testo libero','IDEM SPED')}>Testo libero</option></select></div><div class="field full"><label>Testo libero / indirizzo diverso</label><input name="origin_text" value="{val('origin_text') or (val('pickup_address') if raw('pickup_address_mode')=='Altro indirizzo' else '')}" placeholder="Scrivi qui solo se il luogo non è IDEM SPED"></div></div></section>
+        <section class="section"><h2>LUOGO DI ORIGINE</h2><div class="fields"><div class="field"><label>Luogo di origine</label><select name="origin_mode"><option {selected('origin_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('origin_mode','Veterinario','IDEM SPED')}>Veterinario</option><option {selected('origin_mode','Testo libero','IDEM SPED')}>Testo libero</option></select></div><div class="field"><label>Veterinario di origine</label><select name="origin_veterinarian_id">{origin_vet_options}</select><small class="sub">Scrivi le iniziali selezionando il veterinario dall'elenco.</small></div><div class="field full"><label>Testo libero / indirizzo diverso</label><input name="origin_text" value="{val('origin_text') or (val('pickup_address') if raw('pickup_address_mode')=='Altro indirizzo' else '')}" placeholder="Nome breve veterinario o indirizzo diverso"></div></div></section>
         <section class="section"><h2>Animale</h2><div class="fields"><div class="field"><label>Nome</label><input name="animal_name" value="{val('animal_name')}"></div><div class="field"><label>Specie</label><input name="species" value="{val('species')}"></div><div class="field"><label>Peso stimato (kg)</label><input name="estimated_weight" value="{val('estimated_weight')}"></div><div class="field"><label>Età - anni</label><input name="age_years" value="{val('age_years')}"></div><div class="field"><label>Età - mesi</label><input name="age_months" value="{val('age_months')}"></div><div class="field"><label>Microchip</label><input name="microchip" value="{val('microchip')}"></div><div class="field full"><label>Razza</label><input name="breed" value="{val('breed')}"></div></div><button class="btn ghost" type="button" id="showSecondAnimal" style="margin-top:12px;{'display:none' if raw('animal2_name') else ''}">+ Aggiungi altro animale</button><div id="secondAnimalBox" style="display:{'block' if raw('animal2_name') else 'none'};margin-top:14px"><h2>Secondo animale</h2><div class="fields"><div class="field"><label>Nome</label><input name="animal2_name" value="{val('animal2_name')}"></div><div class="field"><label>Specie</label><input name="animal2_species" value="{val('animal2_species')}"></div><div class="field"><label>Peso stimato (kg)</label><input name="animal2_weight" value="{val('animal2_weight')}"></div><div class="field"><label>Microchip</label><input name="animal2_microchip" value="{val('animal2_microchip')}"></div><div class="field full"><label>Razza</label><input name="animal2_breed" value="{val('animal2_breed')}"></div></div></div></section>
         <section class="section"><h2>AMBULATORIO VETERINARIO</h2><div class="fields"><div class="field full lookup"><label>VETERINARIO</label><input id="vetSearch" autocomplete="off" placeholder="Scrivi per cercare il veterinario"><div id="vetResults" class="lookup-results hidden"></div><select name="veterinarian_id">{vet_options}</select><input type="hidden" name="clinic_name" value="{val('clinic_name')}"><button class="btn ghost" type="button" id="clearVetSelection" style="margin-top:8px">Cancella veterinario</button></div><div class="field"><label>MEDICO VETERINARIO</label><input name="veterinarian_name" value="{val('veterinarian_name')}"></div><div class="field"><label><input type="checkbox" name="voucher_requested" value="Si" {voucher_checked}> BUONO</label><small class="sub">Spunta per assegnare un buono al veterinario selezionato.</small></div></div></section>
-        <section class="section"><h2>TRASPORTATORE</h2><div class="fields"><div class="field"><label>Dati trasportatore</label><select name="transporter_mode"><option {selected('transporter_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('transporter_mode','DATI PET PARADISE','IDEM SPED')}>DATI PET PARADISE</option></select></div><div class="field"><label>Scelta rapida mezzo</label><select id="transport_method_quick"><option value="">Seleziona se serve</option><option value="MEZZO PROPRIO">MEZZO PROPRIO</option></select></div><div class="field"><label>Mezzo di trasporto</label><input name="transport_method" value="{val('transport_method')}"></div><div class="field"><label>Targa automezzo</label><input name="vehicle_plate" value="{val('vehicle_plate')}"></div><div class="field"><label>Temperatura</label><select name="temperature_mode"><option {selected('temperature_mode','Ambiente','Ambiente')}>Ambiente</option><option {selected('temperature_mode','Refrigerato','Ambiente')}>Refrigerato</option><option {selected('temperature_mode','Congelato','Ambiente')}>Congelato</option></select></div><div class="field"><label>Numero colli</label><input name="package_count" value="{val('package_count') or '1'}"></div><div class="field"><label>ID contenitore</label><select name="container_id"><option value="">Seleziona ID contenitore</option><option {selected('container_id','03/2021')}>03/2021</option><option {selected('container_id','04/2021')}>04/2021</option></select></div><div class="field"><label>Numero lotto</label><input name="lot_number" value="{val('lot_number') or '/'}"></div><div class="field"><label>Metodo trattamento</label><input name="treatment_method" value="{val('treatment_method') or '/'}"></div></div></section>
+        <section class="section"><h2>TRASPORTATORE</h2><div class="fields"><div class="field"><label>Dati trasportatore</label><select name="transporter_mode"><option {selected('transporter_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('transporter_mode','DATI PET PARADISE','IDEM SPED')}>DATI PET PARADISE</option></select></div><div class="field"><label>Mezzo di trasporto</label><select name="transport_method" id="transport_method_quick"><option value="">Seleziona mezzo</option><option {selected('transport_method','Fiat Fiorino')}>Fiat Fiorino</option><option {selected('transport_method','Renault Captur')}>Renault Captur</option><option {selected('transport_method','Dr PK8')}>Dr PK8</option></select></div><div class="field"><label>Targa automezzo</label><input name="vehicle_plate" value="{val('vehicle_plate')}" readonly></div><div class="field"><label>Temperatura</label><select name="temperature_mode"><option {selected('temperature_mode','Ambiente','Ambiente')}>Ambiente</option><option {selected('temperature_mode','Refrigerato','Ambiente')}>Refrigerato</option><option {selected('temperature_mode','Congelato','Ambiente')}>Congelato</option></select></div><div class="field"><label>Numero colli</label><input name="package_count" value="{val('package_count') or '1'}"></div><div class="field"><label>ID contenitore</label><select name="container_id"><option value="">Seleziona ID contenitore</option><option {selected('container_id','03/2021')}>03/2021</option><option {selected('container_id','04/2021')}>04/2021</option></select></div><div class="field"><label>Numero lotto</label><input name="lot_number" value="{val('lot_number') or '/'}"></div><div class="field"><label>Metodo trattamento</label><input name="treatment_method" value="{val('treatment_method') or '/'}"></div></div></section>
         <section class="section"><h2>Preventivo</h2><div class="fields"><div class="field"><label>Cremazione €</label><input name="price_cremation" value="{val('price_cremation')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Ritiro €</label><input name="price_pickup" value="{val('price_pickup')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Urna €</label><input name="price_urn" value="{val('price_urn')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label><input type="checkbox" name="send_catalog" value="Si" {catalog_checked} style="width:auto"> INVIARE CATALOGO</label></div><div class="field"><label>Riconsegna €</label><input name="price_delivery" value="{val('price_delivery')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Calco €</label><input name="price_cast" value="{val('price_cast')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Serale €</label><input name="price_evening" value="{val('price_evening')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Notturno €</label><input name="price_night" value="{val('price_night')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Festivo €</label><input name="price_holiday" value="{val('price_holiday')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Accessori €</label><input name="price_accessories" value="{val('price_accessories')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Totale servizio €</label><input name="total_service" value="{val('total_service')}" placeholder="Numero o testo libero"></div><div class="field"><label>Acconto €</label><input name="deposit" value="{val('deposit')}" placeholder="Numero o testo libero"></div><div class="field"><label>Rimanenza €</label><input name="remaining_balance" value="{val('remaining_balance')}" readonly></div><div class="field full"><label>TOTALE</label><textarea name="total_text" placeholder="Testo libero per note sul totale">{val('total_text')}</textarea></div><div class="field full"><label>NOTE</label><textarea name="notes">{val('notes')}</textarea></div><div class="field"><label><input type="checkbox" name="send_estremi" value="Si" {estremi_checked} style="width:auto"> INVIARE ESTREMI</label></div><div class="field"><label><input type="checkbox" name="use_voucher" value="Si" {use_voucher_checked} style="width:auto"> USA BUONO</label><div id="useVoucherBox" class="selected-box hidden"><span id="useVoucherStatus">Seleziona il veterinario e spunta USA BUONO.</span><select name="used_voucher_id" data-current="{val('used_voucher_id')}" class="hidden"><option value="">Seleziona buono</option></select></div></div></div></section>
-        <section class="section"><h2>Etichette operative</h2><div class="fields">{tag_select('tag_assistita','ASSISTITA','tag-red')}{tag_select('tag_possibile_assistita','POSSIBILE ASSISTITA','tag-red')}{tag_select('tag_assistita_streaming','ASSISTITA STREAMING','tag-orange')}{tag_select('tag_saluto','SALUTO','tag-purple')}{tag_select('tag_calco','CALCO','tag-yellow')}{tag_select('tag_avvisare','AVVISARE','tag-pink')}{tag_select('tag_da_richiamare','DA RICHIAMARE','tag-blue')}</div></section>
+        <section class="section"><h2>Etichette operative</h2><div class="fields">{tag_select('tag_assistita','ASSISTITA','tag-red')}{tag_select('tag_possibile_assistita','POSSIBILE ASSISTITA','tag-red')}{tag_select('tag_assistita_streaming','ASSISTITA STREAMING','tag-orange')}{tag_select('tag_saluto','SALUTO','tag-purple')}{tag_select('tag_calco','CALCO','tag-yellow')}{tag_select('tag_calco_urna','CALCO PER URNA','tag-yellow')}{tag_select('tag_avvisare','AVVISARE','tag-pink')}{tag_select('tag_da_richiamare','DA RICHIAMARE','tag-blue')}</div></section>
         <section class="section"><h2>Documento e accettazione</h2><div class="fields"><div class="field"><label>Numero documento</label><input name="identity_document_number" value="{val('identity_document_number')}"></div><div class="field"><label>Data rilascio</label><input type="date" name="identity_document_date" value="{val('identity_document_date')}"></div><div class="field full"><label>Luogo firma</label><input name="signing_place" value="{val('signing_place') or val('destination_branch')}"></div></div></section>'''
 
     def new_page(self,user):
@@ -1949,7 +2101,7 @@ class App(BaseHTTPRequestHandler):
         self.send_html(layout("Nuova pratica",body,user))
 
     def normalized_fields(self,f):
-        keys=["client_id","owner_veterinarian_id","operator_name","request_origin","collaborator_name","destination_branch","owner_first_name","owner_last_name","owner_company","owner_phone","owner_phone_2","owner_email","owner_tax_code","owner_vat","owner_notes","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","use_voucher","used_voucher_id","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_saluto","tag_calco","tag_avvisare","tag_da_richiamare","payment_status","price_cremation","price_pickup","price_evening","price_urn","send_catalog","send_estremi","price_delivery","price_night","price_cast","price_holiday","price_accessories","deposit","remaining_balance","total_service","total_text","identity_document_number","identity_document_date","signing_place"]
+        keys=["client_id","owner_veterinarian_id","origin_veterinarian_id","operator_name","request_origin","collaborator_name","destination_branch","owner_first_name","owner_last_name","owner_company","owner_phone","owner_phone_2","owner_email","owner_tax_code","owner_vat","owner_notes","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","use_voucher","used_voucher_id","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_saluto","tag_calco","tag_calco_urna","tag_avvisare","tag_da_richiamare","payment_status","price_cremation","price_pickup","price_evening","price_urn","send_catalog","send_estremi","price_delivery","price_night","price_cast","price_holiday","price_accessories","deposit","remaining_balance","total_service","total_text","identity_document_number","identity_document_date","signing_place"]
         data = {k:f.get(k,"").strip() for k in keys}
         data["urn_notes"] = f.get("urn_notes","").strip()
         for key in ("price_urn_2","urn_notes_2","price_cast_2","price_accessories_2","accessory_type","accessory_type_2"):
@@ -1966,14 +2118,19 @@ class App(BaseHTTPRequestHandler):
         data["send_estremi"] = "Si" if data["send_estremi"] == "Si" else ""
         data["use_voucher"] = "Si" if data["use_voucher"] == "Si" else ""
         data["used_voucher_id"] = data["used_voucher_id"] or None
-        for key in ("tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_saluto","tag_calco","tag_avvisare","tag_da_richiamare"):
+        for key in ("tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_saluto","tag_calco","tag_calco_urna","tag_avvisare","tag_da_richiamare"):
             data[key] = "Si" if data[key] == "Si" else ""
         data["voucher_requested"] = "Si" if data["voucher_requested"] == "Si" else ""
         data["client_id"] = data["client_id"] or None
         data["owner_veterinarian_id"] = data["owner_veterinarian_id"] or None
+        data["origin_veterinarian_id"] = data["origin_veterinarian_id"] or None
         if data["use_voucher"] == "Si":
             data["payment_status"] = "Pagato"
         data["veterinarian_id"] = data["veterinarian_id"] or None
+        if data["origin_mode"] == "Veterinario" and data["origin_veterinarian_id"]:
+            with db() as c:
+                origin_vet=c.execute("SELECT short_name,clinic_name FROM veterinarians WHERE id=? AND active=1",(data["origin_veterinarian_id"],)).fetchone()
+            if origin_vet: data["origin_text"]=origin_vet["short_name"] or origin_vet["clinic_name"] or data["origin_text"]
         if data["owner_veterinarian_id"]:
             with db() as c:
                 owner_vet = c.execute("SELECT * FROM veterinarians WHERE id=? AND active=1", (data["owner_veterinarian_id"],)).fetchone()
@@ -2019,6 +2176,7 @@ class App(BaseHTTPRequestHandler):
             data["owner_city"] = data["owner_city"] or collab["city"]
             data["owner_province"] = data["owner_province"] or collab["province"]
             data["owner_tax_code"] = data["owner_tax_code"] or collab["vat"]
+        data["owner_tax_code"] = data["owner_tax_code"].upper()
         data["owner_province"] = data["owner_province"].upper()
         city_line = " ".join(x for x in [data["owner_zip"], data["owner_city"], f'({data["owner_province"]})' if data["owner_province"] else ""] if x).strip()
         composed_address = " - ".join(x for x in [data["owner_street"], city_line] if x)
@@ -2028,8 +2186,10 @@ class App(BaseHTTPRequestHandler):
             data["origin_mode"] = "IDEM SPED"
         if not data["transporter_mode"]:
             data["transporter_mode"] = "IDEM SPED"
+        vehicle_plates={"Fiat Fiorino":"GP793KP","Renault Captur":"GV932LL","Dr PK8":"GV041FX"}
+        if data["transport_method"] in vehicle_plates:
+            data["vehicle_plate"]=vehicle_plates[data["transport_method"]]
         if data["request_origin"] == "Consegna in sede":
-            data["transport_method"] = data["transport_method"] or "MEZZO PROPRIO"
             data["transporter_mode"] = "IDEM SPED"
         elif data["request_origin"] in ("Veterinario","Privato","Collaboratore"):
             data["transporter_mode"] = "DATI PET PARADISE"
@@ -2179,10 +2339,23 @@ class App(BaseHTTPRequestHandler):
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>Diagnostica WhatsApp</h1><div class="sub">Controllo configurazione WhatsApp Business Cloud API.</div></div><a class="btn ghost" href="/">Dashboard</a></div>{hint}<section class="section"><h2>Variabili Render</h2><div class="kvs"><div class="kv"><small>WHATSAPP_GRAPH_VERSION</small><b>{esc(version)}</b></div><div class="kv"><small>WHATSAPP_ACCESS_TOKEN</small><b>{esc(token_status)}</b></div><div class="kv"><small>WHATSAPP_PHONE_NUMBER_ID</small><b>{esc(phone_id or "MANCANTE")}</b></div></div></section><div style="height:14px"></div><section class="section"><h2>GET Phone Number ID</h2><p><b>Endpoint:</b> {esc(phone_endpoint or "NON DISPONIBILE")}</p><p><b>HTTP:</b> {esc(phone_status)}</p><pre style="white-space:pre-wrap;background:#f7f4f0;padding:12px;border-radius:10px;overflow:auto">{esc(phone_body)}</pre></section><div style="height:14px"></div><section class="section"><h2>GET /me</h2><p><b>Endpoint:</b> {esc(me_endpoint)}</p><p><b>HTTP:</b> {esc(me_status)}</p><pre style="white-space:pre-wrap;background:#f7f4f0;padding:12px;border-radius:10px;overflow:auto">{esc(me_body)}</pre></section></main>'''
         self.send_html(layout("Diagnostica WhatsApp",body,user))
 
+    def whatsapp_block_reason(self,practice):
+        if practice["service_type"] == "Cremazione collettiva":
+            return "Cremazione collettiva: WhatsApp disattivato"
+        if "owner_veterinarian_id" in practice.keys() and practice["owner_veterinarian_id"]:
+            return "Speditore veterinario: WhatsApp disattivato"
+        return ""
+
     def schedule_whatsapp_thanks(self,c,pid,user_id=None):
         p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
         if not p:
             return False, "Pratica non trovata"
+        block_reason=self.whatsapp_block_reason(p)
+        if block_reason:
+            self.cancel_whatsapp_scheduled(c,pid,user_id,block_reason)
+            c.execute("UPDATE practices SET no_whatsapp_message='Si',whatsapp_thanks_last_error=? WHERE id=?",(block_reason,pid))
+            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"WhatsApp ringraziamento",block_reason,user_id,now()))
+            return False,block_reason
         if "no_whatsapp_message" in p.keys() and p["no_whatsapp_message"] == "Si":
             msg="NO MESSAGGIO attivo: WhatsApp non programmato"
             c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(msg,pid))
@@ -2230,6 +2403,10 @@ class App(BaseHTTPRequestHandler):
         p=c.execute("SELECT * FROM practices WHERE id=?",(msg["practice_id"],)).fetchone()
         if not p:
             return False, "Pratica non trovata"
+        block_reason=self.whatsapp_block_reason(p)
+        if block_reason:
+            self.cancel_whatsapp_scheduled(c,p["id"],user_id,block_reason)
+            return False,block_reason
         if not manual and "no_whatsapp_message" in p.keys() and p["no_whatsapp_message"] == "Si":
             self.cancel_whatsapp_scheduled(c,p["id"],user_id,"NO MESSAGGIO attivo prima dell'invio")
             return False, "NO MESSAGGIO attivo"
@@ -2268,6 +2445,10 @@ class App(BaseHTTPRequestHandler):
             if manual:
                 self.cancel_whatsapp_scheduled(c,p["id"],user_id,"Annullato perché è stato inviato manualmente")
                 c.execute("UPDATE whatsapp_messages SET status='accettato_da_meta', updated_at=? WHERE id=?",(sent_at,msg_id))
+            owner=f'{p["owner_first_name"] or ""} {p["owner_last_name"] or ""}'.strip() or p["owner_company"] or "Cliente non indicato"
+            emit_notification(c,"whatsapp_sent","📲 Messaggio WhatsApp inviato",owner,p["id"],user_id,{"url":"/conversazioni-whatsapp"},db_path=DB_PATH)
+            if not manual:
+                emit_notification(c,"thank_you_sent","💚 Messaggio di ringraziamento inviato",owner,p["id"],user_id,{"url":f'/pratiche/{p["id"]}'},db_path=DB_PATH)
             return True, f"Accettato da Meta. Message ID: {message_id or 'non restituito'}"
         except urllib.error.HTTPError as exc:
             detail=exc.read().decode("utf-8","replace")
@@ -2278,6 +2459,7 @@ class App(BaseHTTPRequestHandler):
             c.execute("""UPDATE whatsapp_messages SET status=?, scheduled_at=?, attempts=?, last_error=?, last_attempt_at=?, template_name=?, language_code=?, recipient_phone=?, payload_json=?, response_json=?, updated_at=? WHERE id=?""",(next_status,retry_at,attempts,error,attempt_stamp,template,language,phone,json.dumps(payload_obj,ensure_ascii=False),detail,now(),msg_id))
             c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,p["id"]))
             c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(p["id"],"WhatsApp ringraziamento",f"Errore: {error}",user_id,now()))
+            emit_notification(c,"whatsapp_error","❌ Errore invio WhatsApp",f'{p["owner_first_name"] or ""} {p["owner_last_name"] or ""}\nTocca per vedere il dettaglio.',p["id"],user_id,{"url":"/conversazioni-whatsapp"},db_path=DB_PATH)
             print(f"[WHATSAPP] pratica_id={p['id']} message_row={msg_id} esito=ERRORE http={exc.code} tentativi={attempts} prossimo_stato={next_status} endpoint={endpoint} destinatario=+{phone} template={template} lingua={language} risposta={detail}", flush=True)
             return False,error
         except Exception as exc:
@@ -2288,6 +2470,7 @@ class App(BaseHTTPRequestHandler):
             c.execute("""UPDATE whatsapp_messages SET status=?, scheduled_at=?, attempts=?, last_error=?, last_attempt_at=?, template_name=?, language_code=?, recipient_phone=?, payload_json=?, updated_at=? WHERE id=?""",(next_status,retry_at,attempts,error,attempt_stamp,template,language,phone,json.dumps(payload_obj,ensure_ascii=False),now(),msg_id))
             c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,p["id"]))
             c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(p["id"],"WhatsApp ringraziamento",f"Errore: {error}",user_id,now()))
+            emit_notification(c,"whatsapp_error","❌ Errore invio WhatsApp",f'{p["owner_first_name"] or ""} {p["owner_last_name"] or ""}\nTocca per vedere il dettaglio.',p["id"],user_id,{"url":"/conversazioni-whatsapp"},db_path=DB_PATH)
             print(f"[WHATSAPP] pratica_id={p['id']} message_row={msg_id} esito=ERRORE tentativi={attempts} prossimo_stato={next_status} endpoint={endpoint} destinatario=+{phone} template={template} lingua={language} errore={error}", flush=True)
             return False,error
 
@@ -2329,9 +2512,15 @@ class App(BaseHTTPRequestHandler):
             print(f"[WHATSAPP_CRON] 403 {reason}", flush=True)
             return self.send_json({"ok":False,"error":reason},403)
         print(f"[WHATSAPP_CRON] autorizzato: {reason}", flush=True)
-        results=self.process_whatsapp_queue()
+        try:
+            results=self.process_whatsapp_queue()
+            with db() as c: scheduled_created=process_scheduled_notifications(c,DB_PATH)
+        except Exception as exc:
+            print(f"[WHATSAPP_CRON] errore={type(exc).__name__}",flush=True)
+            with db() as c: emit_notification(c,"whatsapp_cron_error","❌ Errore Cron WhatsApp","Controlla la diagnostica WhatsApp.",payload={"url":"/whatsapp-diagnostica"},db_path=DB_PATH)
+            return self.send_json({"ok":False,"error":"Errore durante il cron"},500)
         print(f"[WHATSAPP_CRON] completato processed={len(results)} results={json.dumps(results,ensure_ascii=False)}", flush=True)
-        return self.send_json({"ok":True,"processed":len(results),"results":results})
+        return self.send_json({"ok":True,"processed":len(results),"scheduled_notifications":scheduled_created,"results":results})
 
     def whatsapp_webhook_verify(self):
         qs=parse_qs(urlparse(self.path).query)
@@ -2457,7 +2646,8 @@ class App(BaseHTTPRequestHandler):
         f=self.form(); d=self.normalized_fields(f); stamp=now()
         error=self.validation_error(d)
         if error: return self.send_error(400, error)
-        initial="Ritirato"
+        initial=f.get("status","Ritirato")
+        if initial not in STATES or (initial=="Smaltito" and d.get("service_type")!="Cremazione collettiva"): initial="Ritirato"
         with db() as c:
             if d.get("client_id"):
                 exists=c.execute("SELECT id FROM clients WHERE id=?",(d["client_id"],)).fetchone()
@@ -2476,6 +2666,8 @@ class App(BaseHTTPRequestHandler):
             self.sync_voucher(c,pid,d)
             self.apply_used_voucher(c,pid,d,user["id"])
             c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"Creazione pratica",initial,user["id"],stamp))
+            owner=" ".join(x for x in (d.get("owner_first_name"),d.get("owner_last_name")) if x).strip() or d.get("owner_company") or "Cliente non indicato"
+            emit_notification(c,"practice_created","🐾 Nuova pratica",f'{owner}\n{d.get("animal_name") or number}\n📍 {d.get("destination_branch") or ""}',pid,user["id"],db_path=DB_PATH)
         self.redirect(f"/pratiche/{pid}")
 
     def practice(self,user,pid):
@@ -2491,6 +2683,12 @@ class App(BaseHTTPRequestHandler):
         catalog_value = "Si" if "send_catalog" in p.keys() and p["send_catalog"] else "No"
         catalog_sent_checked = "checked" if "catalog_sent" in p.keys() and p["catalog_sent"] == "Si" else ""
         catalog_box=f'''<div class="kv"><small>Catalogo urna</small><form method="post" action="/pratiche/{pid}/catalogo-inviato"><label><input type="checkbox" name="catalog_sent" value="Si" {catalog_sent_checked} onchange="this.form.submit()" style="width:auto"> Catalogo inviato</label></form></div>'''
+        urn_parts=[]
+        if p["urn_notes"]: urn_parts.append(esc(p["urn_notes"]))
+        if p["price_urn"]: urn_parts.append(money_it(money_value(p["price_urn"])))
+        if p["urn_notes_2"]: urn_parts.append(esc(p["urn_notes_2"]))
+        if p["price_urn_2"]: urn_parts.append(money_it(money_value(p["price_urn_2"])))
+        urn_box=f'''<div class="kv"><small>Urna</small>{'<br>'.join(urn_parts) if urn_parts else '<span class="sub">Non indicata</span>'}</div>'''
         invoice_value = p["invoice_number"] if "invoice_number" in p.keys() and p["invoice_number"] else ""
         no_whatsapp_checked = "checked" if "no_whatsapp_message" in p.keys() and p["no_whatsapp_message"] == "Si" else ""
         no_whatsapp_note = '<div class="flash warning">Invio automatico WhatsApp disattivato per questa pratica.</div>' if no_whatsapp_checked else ''
@@ -2556,6 +2754,7 @@ class App(BaseHTTPRequestHandler):
           </section>
         </main>"""
         body=body.replace(f'<div class="kv"><small>Catalogo urna</small><b>{esc(catalog_value)}</b></div>',catalog_box)
+        body=body.replace(catalog_box,catalog_box+urn_box)
         body=body.replace(f'<small>Stato</small><b>{esc(p["status"])}</b>',f'<small>Stato</small><span class="badge practice-status {practice_state_cls}">{esc(p["status"])}</span>')
         self.send_html(layout(p["practice_number"],body,user))
 
@@ -2597,7 +2796,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         self.redirect(f"/pratiche/{pid}")
 
     def edit_submit(self,user,pid):
-        d=self.normalized_fields(self.form()); stamp=now(); assignments=','.join(f'{k}=?' for k in d)
+        form=self.form(); d=self.normalized_fields(form); stamp=now(); assignments=','.join(f'{k}=?' for k in d)
         error=self.validation_error(d)
         if error: return self.send_error(400, error)
         with db() as c:
@@ -2609,7 +2808,11 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 old_value=str(previous[key] or "") if key in previous.keys() else ""
                 if compact_text(old_value)!=compact_text(new_value):
                     changes.append((field_labels.get(key,key.replace("_"," ").title()),old_value,new_value))
-            c.execute(f"UPDATE practices SET {assignments},data_complete=?,updated_at=? WHERE id=?",list(d.values())+[self.is_complete(d),stamp,pid])
+            requested_status=form.get("status",previous["status"])
+            if requested_status not in STATES or (requested_status=="Smaltito" and d.get("service_type")!="Cremazione collettiva"): requested_status=previous["status"]
+            if requested_status!=previous["status"]:
+                changes.append(("Stato pratica",previous["status"],requested_status))
+            c.execute(f"UPDATE practices SET {assignments},status=?,data_complete=?,updated_at=? WHERE id=?",list(d.values())+[requested_status,self.is_complete(d),stamp,pid])
             if d["send_catalog"] == "Si" and "catalog_sent" in previous.keys() and previous["catalog_sent"] == "Si":
                 c.execute("UPDATE practices SET catalog_sent='' WHERE id=?",(pid,))
                 changes.append(("Catalogo urna","Catalogo inviato","Da inviare"))
@@ -2626,6 +2829,14 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,f"Modifica {label}",old_value,new_value,user["id"],stamp))
             if not changes:
                 c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"Dati verificati","Nessuna variazione ai dati",user["id"],stamp))
+            emit_notification(c,"practice_updated","✏️ Pratica modificata",f'{previous["practice_number"]} · {d.get("animal_name") or "Animale non indicato"}',pid,user["id"],db_path=DB_PATH)
+            if previous["status"]!=requested_status:
+                if previous["status"]=="Consegnato" and requested_status!="Consegnato": self.cancel_whatsapp_scheduled(c,pid,user["id"],"Pratica spostata da Consegnato")
+                elif requested_status=="Consegnato": self.schedule_whatsapp_thanks(c,pid,user["id"])
+                if requested_status=="Consegnato": emit_notification(c,"practice_delivered","📦 Pratica consegnata",f'{d.get("animal_name") or previous["practice_number"]}\nCliente: {d.get("owner_first_name","")} {d.get("owner_last_name","")}',pid,user["id"],db_path=DB_PATH)
+                elif requested_status=="Da consegnare": emit_notification(c,"delivery_scheduled","📅 Consegna programmata",d.get("animal_name") or previous["practice_number"],pid,user["id"],db_path=DB_PATH)
+            if (previous["payment_status"] or "Da saldare") != d["payment_status"] and d["payment_status"]=="Pagato":
+                emit_notification(c,"payment_received","💰 Pagamento ricevuto",f'{d.get("owner_first_name","")} {d.get("owner_last_name","")}\n{money_it(effective_total(d))}',pid,user["id"],db_path=DB_PATH)
         self.redirect(f"/pratiche/{pid}")
 
     def catalog_sent(self,user,pid):
@@ -2649,8 +2860,9 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         f=self.form(); new=f.get("status",""); payment=f.get("payment_status","Da saldare"); invoice=f.get("invoice_number","").strip(); no_whatsapp="Si" if f.get("no_whatsapp_message")=="Si" else ""
         if new not in STATES or payment not in PAYMENT_STATES:return self.send_error(400)
         with db() as c:
-            old=c.execute("SELECT status,payment_status,invoice_number,no_whatsapp_message FROM practices WHERE id=?",(pid,)).fetchone()
+            old=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
             if not old:return self.send_error(404)
+            if new=="Smaltito" and old["service_type"]!="Cremazione collettiva": return self.send_error(400,"Smaltito è disponibile solo per la cremazione collettiva")
             old_payment=old["payment_status"] or "Da saldare"
             c.execute("UPDATE practices SET status=?,payment_status=?,invoice_number=?,no_whatsapp_message=?,updated_at=? WHERE id=?",(new,payment,invoice,no_whatsapp,now(),pid))
             new_value=f'{new} + {payment}' + (f' - Fattura {invoice}' if invoice else '') + (" - NO MESSAGGIO" if no_whatsapp else "")
@@ -2662,7 +2874,30 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 self.cancel_whatsapp_scheduled(c,pid,user["id"],"Pratica spostata da Consegnato a un altro stato")
             elif old["status"] != "Consegnato" and new == "Consegnato":
                 self.schedule_whatsapp_thanks(c,pid,user["id"])
+            if old["status"]!=new and new=="Consegnato":
+                emit_notification(c,"practice_delivered","📦 Pratica consegnata",f'{old["animal_name"] or old["practice_number"]}\nCliente: {(old["owner_first_name"] or "")} {(old["owner_last_name"] or "")}',pid,user["id"],db_path=DB_PATH)
+            elif old["status"]!=new and new=="Da consegnare":
+                emit_notification(c,"delivery_scheduled","📅 Consegna programmata",f'{old["animal_name"] or old["practice_number"]} · {(old["owner_first_name"] or "")} {(old["owner_last_name"] or "")}',pid,user["id"],db_path=DB_PATH)
+            if old_payment!=payment and payment=="Pagato":
+                emit_notification(c,"payment_received","💰 Pagamento ricevuto",f'{(old["owner_first_name"] or "")} {(old["owner_last_name"] or "")}\n{money_it(effective_total(old))}',pid,user["id"],db_path=DB_PATH)
         self.redirect(f"/pratiche/{pid}")
+
+    def quick_payment(self,user,pid):
+        form=self.form(); payment=form.get("payment_status","Da saldare"); amount=form.get("payment_amount","").strip().replace(",",".")
+        if payment not in PAYMENT_STATES or (amount and not re.fullmatch(r"\d+(?:\.\d{1,2})?",amount)): return self.send_error(400,"Stato o importo non valido")
+        with db() as c:
+            row=c.execute("SELECT * FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(pid,)).fetchone()
+            if not row:return self.send_error(404)
+            old=row["payment_status"] or "Da saldare"; stamp=now()
+            deposit=amount if payment=="Acconto" and amount else row["deposit"]
+            c.execute("UPDATE practices SET payment_status=?,payment_amount=?,deposit=?,updated_at=? WHERE id=?",(payment,amount,deposit,stamp,pid))
+            c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,"Pagamento rapido",old,f'{payment}' + (f' · {money_it(money_value(amount))}' if amount else ''),user["id"],stamp))
+            if payment=="Pagato" and old!="Pagato":
+                owner=f'{row["owner_first_name"] or ""} {row["owner_last_name"] or ""}'.strip()
+                emit_notification(c,"payment_received","💰 Pagamento ricevuto",f'{owner}\n{money_it(money_value(amount) or effective_total(row))}',pid,user["id"],db_path=DB_PATH)
+        back=self.headers.get("Referer") or "/"
+        parsed=urlparse(back); target=(parsed.path or "/")+(f'?{parsed.query}' if parsed.query else '')
+        return self.redirect(target if target.startswith("/") else "/")
 
     def resend_whatsapp(self,user,pid):
         if user["role"] != "admin":
