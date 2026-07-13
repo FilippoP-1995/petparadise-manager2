@@ -1,7 +1,8 @@
-const CACHE = 'pet-paradise-shell-v3';
+const CACHE = 'pet-paradise-shell-v4';
 const SHELL = [
   '/manifest.json',
   '/assets/company_logo.png',
+  '/assets/company_logo_light.png',
   '/assets/pwa-192.png',
   '/assets/pwa-512.png',
   '/assets/apple-touch-icon.png',

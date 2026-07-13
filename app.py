@@ -513,7 +513,7 @@ body{background:radial-gradient(circle at top left,#fff8f3 0,#f4f1ed 34%,#ece5dd
 :root{--ink:#f5f7fb;--muted:#9ca7b8;--brand:#e9475b;--brand2:#ff6377;--paper:#111722;--bg:#090d14;--line:#293140;--green:#35c98a;--gold:#f5b83d}
 html{color-scheme:dark}body{background:radial-gradient(circle at 78% -10%,#31121e 0,transparent 32%),linear-gradient(135deg,#090d14,#0d121b 55%,#090d14);min-height:100dvh;color:var(--ink);font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 .top{position:fixed;left:0;top:0;bottom:0;width:226px;height:100dvh;display:flex;flex-direction:column;align-items:stretch;padding:24px 16px;background:#0c111acc;border:0;border-right:1px solid var(--line);backdrop-filter:blur(18px);box-shadow:16px 0 50px #0003}
-.brand{display:flex;align-items:center;gap:11px;padding:4px 6px 24px;color:#ff6678;font-size:18px}.brand-logo{width:48px;height:48px;object-fit:contain}.brand-copy small{margin-top:2px;color:#c1c8d3}
+.brand{display:flex;align-items:center;gap:11px;padding:4px 6px 24px;color:#ff6678;font-size:18px}.brand-logo{width:48px;height:48px;object-fit:contain}.brand-logo-light{display:none}.light-theme .brand-logo-dark{display:none}.light-theme .brand-logo-light{display:block}.brand-copy small{margin-top:2px;color:#c1c8d3}
 .nav{margin:8px 0 0;display:flex;flex:1;flex-direction:column;width:100%;gap:7px}.nav a{display:flex;align-items:center;gap:11px;padding:11px 13px;color:#c5ccd7;border:1px solid transparent;border-radius:12px;font-weight:650}.nav a:hover{color:white;background:#181f2b;border-color:#2d3645}.nav a:first-child{color:#ff697b;background:linear-gradient(90deg,#381922,#1c151d);border-color:#53212e}.nav-icon{width:20px;text-align:center;font-size:17px}.nav .btn{margin-top:10px;color:white;background:linear-gradient(135deg,#ff526a,#cc2946);box-shadow:0 10px 26px #e9475b35}.nav .logout{margin-top:auto}.wrap{max-width:1500px;margin-left:226px;padding:34px 38px;animation:ppmFade .22s ease-out}
 h1{font-size:30px;letter-spacing:-.035em}h2{color:#eef1f6}.sub{color:var(--muted)}
 .section,.card,.tablebox,.login{background:linear-gradient(145deg,#131a26,#0f151f);border:1px solid var(--line);box-shadow:0 18px 50px #0003}.card{position:relative;overflow:hidden}.card:after{content:"";position:absolute;inset:auto -35px -50px auto;width:110px;height:110px;border-radius:50%;background:#e9475b12;filter:blur(4px)}.card:hover{border-color:#4a3340;box-shadow:0 20px 48px #0006,0 0 0 1px #e9475b12}.stat b{color:#ff6175}.btn{background:linear-gradient(135deg,#f05267,#c92d49);box-shadow:0 8px 24px #e9475b30}.btn:hover{background:linear-gradient(135deg,#ff6679,#df3652)}.btn.ghost{background:#171e2a;color:#e9edf3;border-color:#303948}.btn.ghost:hover{background:#202938}
@@ -525,7 +525,7 @@ input,select,textarea{background:#0c121b;border-color:#323c4b;color:#f3f5f8}inpu
 /* Premium dashboard layout */
 body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.skip-link{position:fixed;top:8px;left:8px;z-index:200;transform:translateY(-150%);padding:10px 14px;border-radius:9px;background:#fff;color:#111827}.skip-link:focus{transform:none}
 .top{width:238px;padding:20px 14px;background:#0b1220;border-color:#263246}.brand{padding:0 8px 20px}.brand-logo{width:50px;height:50px}.brand-copy{font-size:17px}.nav{gap:3px;overflow-y:auto;padding-right:3px}.nav a,.nav button{min-height:42px;padding:9px 11px;border-radius:10px}.nav a:first-child{background:linear-gradient(90deg,#4a1826,#241523);border-color:#642239}.nav .install-btn{margin-top:8px}.nav .logout{margin-top:12px}
-.app-header{position:fixed;left:238px;right:0;top:0;height:76px;z-index:40;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px 30px;background:#111827e8;border-bottom:1px solid #263246;backdrop-filter:blur(16px)}.header-search{width:min(420px,40vw);display:flex;align-items:center;gap:9px;padding:0 13px;border:1px solid #334155;border-radius:11px;background:#172033}.header-search input{min-height:42px;padding:8px 0;background:transparent;border:0}.header-search input:focus{outline:0}.header-actions{display:flex;align-items:center;gap:9px}.icon-btn{display:inline-grid;place-items:center;width:42px;height:42px;padding:0;border:1px solid #334155;border-radius:11px;background:#172033;color:#cbd5e1;cursor:pointer}.icon-btn:hover{color:#fff;border-color:#ef405f}.header-new{gap:7px}.header-actions time{min-width:104px;padding:6px 10px;border:1px solid #334155;border-radius:10px;text-align:center;font-weight:700;background:#172033}.header-actions time small{display:block;color:#94a3b8;font-size:10px;text-transform:capitalize}.wrap{max-width:none;margin-left:238px;padding:106px 30px 42px}
+.app-header{position:fixed;left:238px;right:0;top:0;height:76px;z-index:40;display:flex;align-items:center;justify-content:flex-end;gap:20px;padding:14px 30px;background:#111827e8;border-bottom:1px solid #263246;backdrop-filter:blur(16px)}.header-search{width:min(360px,32vw);display:flex;align-items:center;gap:9px;padding:0 13px;border:1px solid #334155;border-radius:11px;background:#172033}.header-search input{min-height:42px;padding:8px 0;background:transparent;border:0}.header-search input:focus{outline:0}.header-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;width:100%}.icon-btn{display:inline-grid;place-items:center;width:42px;height:42px;padding:0;border:1px solid #334155;border-radius:11px;background:#172033;color:#cbd5e1;cursor:pointer}.icon-btn:hover{color:#fff;border-color:#ef405f}.header-new{gap:7px}.header-actions time{min-width:104px;padding:6px 10px;border:1px solid #334155;border-radius:10px;text-align:center;font-weight:700;background:#172033}.header-actions time small{display:block;color:#94a3b8;font-size:10px;text-transform:capitalize}.wrap{max-width:none;margin-left:238px;padding:106px 30px 42px}
 .dashboard-wrap{max-width:1500px}.welcome{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}.welcome h1{font-size:30px}.welcome p{margin:7px 0 0;color:#94a3b8}.dashboard-heading{margin:24px 0 12px;font-size:15px;color:#dce4ef}.dashboard-states{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.metric-card,.payment-card{position:relative;min-height:126px;display:flex;align-items:center;justify-content:space-between;gap:15px;padding:20px;border:1px solid #334155;border-radius:14px;background:#1f2937;overflow:hidden;box-shadow:0 14px 36px #03071235;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}.metric-card:before,.payment-card:before{content:"";position:absolute;inset:0;background:linear-gradient(120deg,var(--card-glow),transparent 62%);pointer-events:none}.metric-card:hover,.payment-card:hover{transform:translateY(-3px);border-color:#56657a;box-shadow:0 20px 44px #03071260}.metric-copy,.payment-card>span:first-child{position:relative;display:flex;flex-direction:column}.metric-card small,.payment-card small{font-style:normal;color:#e2e8f0}.metric-card strong,.payment-card strong{margin-top:4px;font-size:30px;line-height:1.05}.metric-card em,.payment-card em{margin-top:9px;color:#94a3b8;font-size:12px;font-style:normal}.metric-icon,.activity-icon{position:relative;display:grid;place-items:center;width:46px;height:46px;border-radius:12px;background:var(--icon-bg);color:var(--icon-color);box-shadow:0 8px 22px var(--icon-shadow)}.state-red{--card-glow:#83184375;--icon-bg:#881337;--icon-color:#fb7185;--icon-shadow:#e11d4840}.state-blue{--card-glow:#17255480;--icon-bg:#172554;--icon-color:#60a5fa;--icon-shadow:#2563eb40}.state-purple{--card-glow:#3b076480;--icon-bg:#3b0764;--icon-color:#c084fc;--icon-shadow:#9333ea40}.state-green{--card-glow:#052e2b85;--icon-bg:#064e3b;--icon-color:#4ade80;--icon-shadow:#16a34a40}
 .dashboard-payments{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.payment-card{min-height:116px}.payment-due{--card-glow:#713f123d;--icon-bg:#573713;--icon-color:#fbbf24;--icon-shadow:#f59e0b35}.payment-deposit{--card-glow:#17255465;--icon-bg:#172554;--icon-color:#60a5fa;--icon-shadow:#2563eb35}.payment-paid{--card-glow:#052e2b75;--icon-bg:#064e3b;--icon-color:#4ade80;--icon-shadow:#16a34a35}
 .dashboard-lower{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(350px,.8fr);gap:16px;margin-top:24px}.dashboard-panel{min-height:350px;padding:20px;border:1px solid #334155;border-radius:15px;background:#1f2937;box-shadow:0 18px 48px #03071235}.dashboard-panel>header{display:flex;align-items:flex-start;justify-content:space-between;gap:15px}.dashboard-panel h2{margin:0;font-size:16px}.dashboard-panel header p{margin:8px 0 0;color:#94a3b8}.dashboard-panel header p strong{color:#fff;font-size:21px}.dashboard-panel header a{color:#fb7185;font-size:13px}.income-chart{display:block;width:100%;height:auto;margin-top:14px}.chart-grid line{stroke:#334155;stroke-width:1}.chart-grid text,.chart-dates text{fill:#94a3b8;font-size:11px}.chart-area{fill:url(#incomeArea)}.chart-line{fill:none;stroke:#ef405f;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 5px 8px #ef405f55)}.income-chart circle{fill:#fb7185;stroke:#1f2937;stroke-width:2}
@@ -1164,10 +1164,10 @@ def layout(title, body, user=None):
         nav_links=''.join(f'<a href="{href}">{lucide(icon)}<span>{label}</span></a>' for href,icon,label in links)
         nav=f'''<nav class="nav" aria-label="Menu principale">{nav_links}<button class="btn ghost install-btn" type="button" onclick="installPetParadise()">{lucide("plus")}<span>Installa App</span></button><a class="logout" href="/logout">{lucide("menu")}<span>Esci</span></a></nav>'''
         today=datetime.now(); date_label=today.strftime("%d/%m/%Y"); weekday=["Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica"][today.weekday()]
-        app_header=f'''<header class="app-header"><form class="header-search" action="/archivio/pratiche" method="get" role="search">{lucide("search")}<label class="sr-only" for="globalSearch">Cerca nel gestionale</label><input id="globalSearch" name="q" placeholder="Cerca pratica, cliente, animale..." autocomplete="off"></form><div class="header-actions"><a class="icon-btn" href="/notifiche" aria-label="Notifiche">{lucide("bell")}</a><button class="icon-btn" type="button" onclick="toggleTheme()" aria-label="Cambia tema">{lucide("sun")}</button><a class="btn header-new" href="/nuova">{lucide("plus")}<span>Nuova pratica</span></a><time datetime="{today.date().isoformat()}">{date_label}<small>{weekday}</small></time></div></header>'''
+        app_header=f'''<header class="app-header"><div class="header-actions"><form class="header-search" action="/archivio/pratiche" method="get" role="search">{lucide("search")}<label class="sr-only" for="globalSearch">Ricerca rapida per animale o proprietario</label><input id="globalSearch" name="rapida" placeholder="Animale o proprietario..." autocomplete="off"></form><a class="icon-btn" href="/notifiche" aria-label="Notifiche">{lucide("bell")}</a><button class="icon-btn" type="button" onclick="toggleTheme()" aria-label="Cambia tema">{lucide("sun")}</button><a class="btn header-new" href="/nuova">{lucide("plus")}<span>Nuova pratica</span></a><time datetime="{today.date().isoformat()}">{date_label}<small>{weekday}</small></time></div></header>'''
         drawer_links=''.join(f'<a href="{href}">{lucide(icon)}<span>{label}</span></a>' for href,icon,label in links)
         mobile_nav=f'''<nav class="bottom-nav" aria-label="Navigazione mobile"><a href="/">{lucide("home")}<span>Dashboard</span></a><a href="/bilanci">{lucide("chart")}<span>Bilanci</span></a><a class="bottom-new" href="/nuova" aria-label="Nuova pratica">{lucide("plus")}</a><a href="/pratiche">{lucide("archive")}<span>Archivio</span></a><button type="button" onclick="toggleMoreMenu()">{lucide("menu")}<span>Altro</span></button></nav><div class="more-backdrop" onclick="toggleMoreMenu(false)"></div><aside class="more-menu" aria-label="Altre funzioni"><div class="more-title"><b>Menu</b><button class="icon-btn" onclick="toggleMoreMenu(false)" aria-label="Chiudi">×</button></div>{drawer_links}<button class="btn ghost install-btn" type="button" onclick="installPetParadise()">Installa App</button></aside>'''
-    return f'''<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#e9475b"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="PP Manager"><meta name="application-name" content="Pet Paradise Manager"><meta name="format-detection" content="telephone=no"><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"><title>{esc(title)} - Pet Paradise Manager</title><style>{CSS}</style></head><body><a class="skip-link" href="#main-content">Vai al contenuto</a><aside class="top"><a class="brand" href="/"><img class="brand-logo" src="/assets/company_logo.png" alt="Pet Paradise"><span class="brand-copy">Pet Paradise <small>MANAGER</small></span></a>{nav}</aside>{app_header}<div id="main-content">{body}</div>{mobile_nav}{APP_JS}</body></html>'''
+    return f'''<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#e9475b"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="PP Manager"><meta name="application-name" content="Pet Paradise Manager"><meta name="format-detection" content="telephone=no"><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"><title>{esc(title)} - Pet Paradise Manager</title><style>{CSS}</style></head><body><a class="skip-link" href="#main-content">Vai al contenuto</a><aside class="top"><a class="brand" href="/"><img class="brand-logo brand-logo-dark" src="/assets/company_logo.png" alt="Pet Paradise"><img class="brand-logo brand-logo-light" src="/assets/company_logo_light.png" alt="Pet Paradise"><span class="brand-copy">Pet Paradise <small>MANAGER</small></span></a>{nav}</aside>{app_header}<div id="main-content">{body}</div>{mobile_nav}{APP_JS}</body></html>'''
 
 
 class App(BaseHTTPRequestHandler):
@@ -1250,6 +1250,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/sw.js": return self.send_static(ASSETS / "sw.js","application/javascript; charset=utf-8", "no-cache")
         static_assets={
             "/assets/company_logo.png":"company_logo.png",
+            "/assets/company_logo_light.png":"company_logo_light.png",
             "/assets/pwa-192.png":"pwa-192.png",
             "/assets/pwa-512.png":"pwa-512.png",
             "/assets/apple-touch-icon.png":"apple-touch-icon.png",
@@ -1712,6 +1713,7 @@ class App(BaseHTTPRequestHandler):
     def archive(self,user):
         q=parse_qs(urlparse(self.path).query)
         term=q.get("q",[""])[0].strip()
+        quick=q.get("rapida",[""])[0].strip()
         animal=q.get("animale",[""])[0].strip()
         service=q.get("servizio",[""])[0].strip()
         vet=q.get("veterinario",[""])[0].strip()
@@ -1730,6 +1732,10 @@ class App(BaseHTTPRequestHandler):
             like=f"%{term}%"
             sql+=" AND (practice_number LIKE ? OR animal_name LIKE ? OR owner_first_name||' '||owner_last_name LIKE ? OR owner_phone LIKE ? OR owner_phone_2 LIKE ? OR microchip LIKE ? OR clinic_name LIKE ? OR veterinarian_name LIKE ? OR collaborator_name LIKE ? OR CAST(ddt_number AS TEXT) LIKE ?)"
             args += [like]*10
+        if quick:
+            like=f"%{quick}%"
+            sql+=" AND (animal_name LIKE ? OR owner_first_name LIKE ? OR owner_last_name LIKE ? OR owner_first_name||' '||owner_last_name LIKE ?)"
+            args += [like]*4
         if animal:
             sql += " AND animal_name LIKE ?"; args.append(f"%{animal}%")
         if service:
@@ -1765,7 +1771,7 @@ class App(BaseHTTPRequestHandler):
         opts='<option value="">Tutti gli stati</option>'+''.join(f'<option {"selected" if state==s else ""}>{esc(s)}</option>' for s in STATES)
         pay_opts='<option value="">Tutti i pagamenti</option>'+''.join(f'<option {"selected" if payment==s else ""}>{esc(s)}</option>' for s in PAYMENT_STATES)
         service_opts=''.join(f'<option value="{esc(x)}" {"selected" if service==x else ""}>{esc(x or "Tutti i servizi")}</option>' for x in ["","Da decidere","Cremazione singola","Cremazione collettiva"])
-        promemoria_label = " - Pratiche con acconto" if with_deposit else " - Promemoria catalogo" if promemoria=="catalogo" else " - Promemoria estremi" if promemoria=="estremi" else ""
+        promemoria_label = f" - Ricerca rapida: {esc(quick)}" if quick else " - Pratiche con acconto" if with_deposit else " - Promemoria catalogo" if promemoria=="catalogo" else " - Promemoria estremi" if promemoria=="estremi" else ""
         month_names=["","Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno","Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"]
         groups={}
         for r in visible_rows:
@@ -1783,7 +1789,7 @@ class App(BaseHTTPRequestHandler):
         results_html=''.join(blocks) if blocks else '<section class="section"><p class="sub">Nessuna pratica trovata.</p></section>'
         if selected_month in available_months and available_months.index(selected_month)+1<len(available_months):
             previous_month=available_months[available_months.index(selected_month)+1]
-            month_params={"q":term,"animale":animal,"servizio":service,"veterinario":vet,"collaboratore":collaborator,"spesa_min":spesa_min,"spesa_max":spesa_max,"dal":date_from,"al":date_to,"stato":state,"pagamento":payment,"con_acconto":"1" if with_deposit else "","promemoria":promemoria,"mese":previous_month}
+            month_params={"q":term,"rapida":quick,"animale":animal,"servizio":service,"veterinario":vet,"collaboratore":collaborator,"spesa_min":spesa_min,"spesa_max":spesa_max,"dal":date_from,"al":date_to,"stato":state,"pagamento":payment,"con_acconto":"1" if with_deposit else "","promemoria":promemoria,"mese":previous_month}
             previous_label=previous_month
             if previous_month!="Senza data":
                 y,m=previous_month.split("-"); previous_label=f"{month_names[int(m)]} {y}"
@@ -2499,7 +2505,12 @@ class App(BaseHTTPRequestHandler):
         whatsapp_block = f'''<div class="section"><h2>WhatsApp ringraziamento</h2><div class="kvs"><div class="kv"><small>Invio programmato per</small>{esc(scheduled) if scheduled and status_label=="Programmato" else '<span class="sub">Non programmato</span>'}</div><div class="kv"><small>Stato attuale</small><b>{esc(status_label)}</b></div><div class="kv"><small>Template</small>{esc(template_show)}</div><div class="kv"><small>Destinatario</small>{('+'+esc(recipient_show)) if recipient_show else '<span class="sub">Telefono mancante</span>'}</div><div class="kv"><small>Ultimo tentativo</small>{esc(last_attempt) or '<span class="sub">Nessuno</span>'}</div><div class="kv"><small>Message ID</small>{esc(message_id_show) or '<span class="sub">Non disponibile</span>'}</div></div>{f'<div class="flash warning">{esc(msg_error)}</div>' if msg_error else ''}<div class="actions" style="margin-top:14px"><a class="btn" href="/pratiche/{pid}/whatsapp-conferma">{whatsapp_button}</a>{cancel_form}</div></div>'''
         animal2_block = f'<div class="kv"><small>Secondo animale</small>{esc(p["animal2_name"])}<br>{esc(p["animal2_species"])} {esc(p["animal2_weight"])} kg</div>' if "animal2_name" in p.keys() and p["animal2_name"] else ""
         payment_options=''.join(f'<option {"selected" if s==payment_value else ""}>{esc(s)}</option>' for s in PAYMENT_STATES)
-        hist=''.join(f'<div class="event"><b>{esc(h["event_type"])}</b><br><span>{esc(h["new_value"])}</span><br><small class="sub">{esc(h["created_at"].replace("T"," "))} - {esc(h["display_name"])}</small></div>' for h in history)
+        hist_items=[]
+        for h in history:
+            old_value=compact_text(h["old_value"]); new_value=compact_text(h["new_value"]); note=compact_text(h["note"])
+            change=f'{esc(old_value)} → {esc(new_value)}' if old_value and new_value else esc(new_value or old_value)
+            hist_items.append(f'<div class="event"><b>{esc(h["event_type"])}</b>{f"<br><span>{change}</span>" if change else ""}{f"<br><span class=\"sub\">{esc(note)}</span>" if note else ""}<br><small class="sub">{esc(h["created_at"].replace("T"," "))} - {esc(h["display_name"] or "Sistema")}</small></div>')
+        hist=''.join(hist_items) or '<p class="sub">Nessuna modifica registrata.</p>'
         ddt=f'DDT n. {p["ddt_number"]} del {esc(p["ddt_date"])}' if p["ddt_number"] else 'Numero DDT non ancora assegnato'
         if p['ddt_pdf']:
             share_token = p["ddt_share_token"] if "ddt_share_token" in p.keys() and p["ddt_share_token"] else secrets.token_urlsafe(18)
@@ -2527,7 +2538,7 @@ class App(BaseHTTPRequestHandler):
               <div class="section"><h2>Note</h2><p>{esc(p['notes']) or '<span class="sub">Nessuna nota.</span>'}</p></div>
               <div class="section danger"><h2>Sposta nel Cestino</h2><p class="danger-note">La pratica non verra cancellata definitivamente: verra nascosta da Dashboard e Archivio e potrai ripristinarla dal Cestino.</p><form method="post" action="/pratiche/{pid}/elimina" onsubmit="return confirm('Spostare questa pratica nel Cestino? Potrai ripristinarla in seguito.')"><button class="btn danger-btn" style="margin-top:12px">Sposta nel Cestino</button></form></div>
             </div>
-            <aside class="section"><h2>Storico</h2><div class="timeline">{hist}</div></aside>
+            <aside class="section"><h2>Cronologia modifiche</h2><div class="timeline">{hist}</div></aside>
           </section>
         </main>"""
         self.send_html(layout(p["practice_number"],body,user))
@@ -2574,6 +2585,14 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         error=self.validation_error(d)
         if error: return self.send_error(400, error)
         with db() as c:
+            previous=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+            if not previous:return self.send_error(404)
+            field_labels={"animal_name":"Nome animale","owner_first_name":"Nome proprietario","owner_last_name":"Cognome proprietario","owner_phone":"Telefono proprietario","owner_phone_2":"Secondo telefono","service_type":"Tipo cremazione","destination_branch":"Sede","notes":"Note","send_catalog":"Inviare catalogo","send_estremi":"Inviare estremi","use_voucher":"Usa buono",**MONEY_FIELDS}
+            changes=[]
+            for key,new_value in d.items():
+                old_value=str(previous[key] or "") if key in previous.keys() else ""
+                if compact_text(old_value)!=compact_text(new_value):
+                    changes.append((field_labels.get(key,key.replace("_"," ").title()),old_value,new_value))
             c.execute(f"UPDATE practices SET {assignments},data_complete=?,updated_at=? WHERE id=?",list(d.values())+[self.is_complete(d),stamp,pid])
             p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
             wanted_prefix,_=practice_code_prefix(d["service_type"])
@@ -2584,7 +2603,10 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,"Cambio codice pratica",current_number,new_number,user["id"],stamp))
             self.sync_voucher(c,pid,d)
             self.apply_used_voucher(c,pid,d,user["id"])
-            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"Dati aggiornati","Pratica modificata",user["id"],stamp))
+            for label,old_value,new_value in changes:
+                c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,f"Modifica {label}",old_value,new_value,user["id"],stamp))
+            if not changes:
+                c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"Dati verificati","Nessuna variazione ai dati",user["id"],stamp))
         self.redirect(f"/pratiche/{pid}")
 
     def change_state(self,user,pid):
