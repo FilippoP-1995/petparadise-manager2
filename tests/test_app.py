@@ -62,6 +62,15 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(data["make_invoice"],"Si")
         self.assertEqual(self.handler.normalized_fields({"owner_city":"livorno"})["owner_city"],"Livorno")
 
+    def test_call_back_practice_can_be_saved_without_required_client_data(self):
+        data=self.handler.normalized_fields({"tag_da_richiamare":"Si","service_type":"Da decidere"})
+        self.assertEqual(self.handler.validation_error(data),"")
+        self.assertEqual(self.handler.is_complete(data),0)
+        self.assertFalse(any(data[key] for key in ("owner_first_name","owner_last_name","owner_phone","owner_tax_code","owner_street","owner_city","owner_province","owner_zip")))
+        self.assertIn("callBack?.checked",app.APP_JS)
+        invalid=self.handler.normalized_fields({"tag_da_richiamare":"Si","price_cremation":"non numerico"})
+        self.assertIn("solo numeri",self.handler.validation_error(invalid))
+
     def test_invoice_page_search_and_unique_code(self):
         with app.db() as conn:
             user=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
@@ -274,16 +283,22 @@ class PetParadiseTests(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT count(*) n FROM urn_movements WHERE urn_id=?", (urn_id,)).fetchone()["n"], 2)
 
         data = self.handler.normalized_fields({
-            "urn_id": str(urn_id), "price_cremation": "200", "deposit": "50",
+            "urn_id": str(urn_id), "urn_id_2": str(urn_id), "price_cremation": "200", "deposit": "50",
         })
         self.assertEqual(data["urn_id"], urn_id)
+        self.assertEqual(data["urn_id_2"], urn_id)
         self.assertEqual(data["urn_notes"], "Urna prova")
+        self.assertEqual(data["urn_notes_2"], "Urna prova")
         self.assertEqual(data["price_urn"], "85.00")
-        self.assertEqual(data["total_service"], "285.00")
+        self.assertEqual(data["price_urn_2"], "85.00")
+        self.assertEqual(data["total_service"], "370.00")
+        self.assertEqual(data["invoice_total"], "370.00")
 
         html = self.handler.fields_html()
         self.assertNotIn("<h2>Catalogo Urne</h2>", html)
         self.assertIn('name="urn_id" class="hidden"', html)
+        self.assertIn('name="urn_id_2" class="hidden"', html)
+        self.assertIn('name="invoice_total"', html)
         self.assertIn("Urna prova", html)
 
     def test_payment_movements_use_real_dates_and_separate_channels(self):
@@ -388,11 +403,28 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("PP-APERTURA",rendered[-1])
         self.assertIn(f'action="/pratiche/{pid}/fattura"',rendered[-1])
         self.assertIn("FARE FATTURA",rendered[-1])
+        self.assertIn('name="invoice_total"',rendered[-1])
         self.assertIn("Età: 7 anni, 3 mesi",rendered[-1])
         self.assertIn("Urna doppia",rendered[-1])
         self.assertNotIn("Firma su telefono",rendered[-1])
         with app.db() as conn:
             self.assertEqual(conn.execute("SELECT count(*) n FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["n"],0)
+
+    def test_archive_tables_show_age_invoice_and_collapsible_months(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            for number,date,age,invoice in (("CR-000101","2026-07-10","8","FT-101"),("CR-000102","2026-06-10","3","")):
+                stamp=f"{date}T10:00:00"
+                conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,
+                                created_by,animal_name,age_years,invoice_number,invoice_total,pickup_date)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                             (number,"Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Luna",age,invoice,"240.00",date))
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/archivio/pratiche?stato=Ritirato"
+        self.handler.archive(admin)
+        page=rendered[-1]
+        self.assertIn("Età",page);self.assertIn("Fattura",page);self.assertIn("FT-101",page)
+        self.assertIn("8 anni",page);self.assertEqual(page.count('class="month-toggle"'),2)
+        self.assertIn("toggleArchiveMonth",page);self.assertNotIn("Aggiorna pagamento",page);self.assertNotIn('class="quick-payment"',page)
 
     def test_dashboard_balances_and_payment_pages_render(self):
         with app.db() as conn:
