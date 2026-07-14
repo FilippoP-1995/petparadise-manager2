@@ -465,6 +465,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Totale incassato",page)
         self.assertIn("Numero fattura",page)
         self.assertIn("practice-list-table td:first-child",app.CSS)
+        self.assertIn("width:132px;min-width:132px;max-width:132px",app.CSS)
 
     def test_scheduled_whatsapp_appears_in_conversations(self):
         with app.db() as conn:
