@@ -53,7 +53,7 @@ MONEY_FIELDS = {
     "price_cremation":"Cremazione", "price_pickup":"Ritiro", "price_urn":"Urna", "price_urn_2":"Seconda urna",
     "price_delivery":"Riconsegna", "price_cast":"Calco", "price_cast_2":"Secondo calco", "price_paw_cast":"Calco polpastrello", "price_nose_cast":"Calco naso", "price_evening":"Serale",
     "price_night":"Notturno", "price_holiday":"Festivo", "price_accessories":"Accessori", "price_accessories_2":"Secondi accessori",
-    "total_service":"Totale servizio", "total_text":"TOTALE D", "deposit":"Acconto", "remaining_balance":"Rimanenza",
+    "total_service":"Totale W", "total_text":"TOTALE D", "deposit":"Acconto", "remaining_balance":"Rimanenza",
 }
 
 COLLABORATORS = {
@@ -983,7 +983,7 @@ function setupBudgetExtras(){
     const input=document.createElement('input'); input.name='total_text'; input.value=totalArea.value; input.inputMode='decimal';
     totalArea.replaceWith(input); input.closest('.field').querySelector('label').textContent='TOTALE D €';
   }
-  const totalService=document.querySelector('input[name="total_service"]'); if(totalService){totalService.readOnly=true;totalService.closest('.field').querySelector('label').textContent='Totale calcolato €';}
+  const totalService=document.querySelector('input[name="total_service"]'); if(totalService){totalService.readOnly=true;totalService.closest('.field').querySelector('label').textContent='Totale W €';}
   const urn=document.querySelector('input[name="price_urn"]')?.closest('.field');
   const urn2=wrapField(document.querySelector('input[name="price_urn_2"]'),'Seconda urna €',urn,true); urn2.querySelector('input').dataset.preventivoSum='1';
   const urnNotes2=wrapField(document.querySelector('input[name="urn_notes_2"]'),'Seconda urna - testo libero',urn2,true);
@@ -1790,7 +1790,7 @@ class App(BaseHTTPRequestHandler):
         notification_items=''.join(f'''<a class="activity-item" href="/notifiche/{item['id']}/apri"><span class="activity-icon">{NOTIFICATION_TYPES.get(item['type'],('', '🔔'))[1]}</span><span><b>{esc(item['title'])}</b><small>{esc(item['text'])}</small></span><time>{esc((item['created_at'] or '')[11:16])}</time></a>''' for item in notification_recent) or '<div class="activity-empty">Nessuna notifica.</div>'
         notification_panel=f'''<article class="dashboard-panel activity-panel" style="margin-top:16px"><header><div><h2>Centro notifiche</h2><p><strong>{notification_unread}</strong> non lette</p></div><a href="/notifiche">Visualizza tutte</a></header><div class="activity-list">{notification_items}</div></article>'''
         hour=datetime.now().hour; greeting="Buongiorno" if hour < 13 else "Buon pomeriggio" if hour < 18 else "Buonasera"
-        body=f'''<main class="wrap dashboard-wrap"><section class="welcome"><div><h1>{greeting}, Pet Paradise <span aria-hidden="true">👋</span></h1><p>Panoramica aggiornata dell'attività</p></div></section>{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}<h2 class="dashboard-heading">Pratiche</h2><section class="dashboard-states">{''.join(state_cards)}</section><h2 class="dashboard-heading">Pagamenti</h2><section class="dashboard-payments">{payment_cards}</section><section class="dashboard-lower"><a class="dashboard-panel income-panel" href="/bilanci" aria-label="Apri Bilanci: entrate degli ultimi sette giorni"><header><div><h2>Entrate ultimi 7 giorni</h2><p>Totale: <strong>{money_it(income_total)}</strong></p></div><span class="panel-link">Apri Bilanci →</span></header>{chart}</a><article class="dashboard-panel activity-panel"><header><h2>Attività recenti</h2><a href="/archivio/pratiche">Vedi tutte</a></header><div class="activity-list">{''.join(timeline)}</div></article></section>{notification_panel}<section class="dashboard-recent"><div class="titlebar"><h2>Ultime 10 pratiche per data recupero</h2><a href="/archivio/pratiche">Apri archivio</a></div><div class="tablebox"><table><thead><tr><th>Data recupero</th><th>Codice pratica</th><th>Animale</th><th>Proprietario</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Totale calcolato</th><th>TOTALE D</th><th>Acconto</th><th>Rimanenza</th><th>Stato</th><th>Aggiorna pagamento</th></tr></thead><tbody>{self.practice_rows(recent,True,True)}</tbody></table></div></section></main>'''
+        body=f'''<main class="wrap dashboard-wrap"><section class="welcome"><div><h1>{greeting}, Pet Paradise <span aria-hidden="true">👋</span></h1><p>Panoramica aggiornata dell'attività</p></div></section>{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}<h2 class="dashboard-heading">Pratiche</h2><section class="dashboard-states">{''.join(state_cards)}</section><h2 class="dashboard-heading">Pagamenti</h2><section class="dashboard-payments">{payment_cards}</section><section class="dashboard-lower"><a class="dashboard-panel income-panel" href="/bilanci" aria-label="Apri Bilanci: entrate degli ultimi sette giorni"><header><div><h2>Entrate ultimi 7 giorni</h2><p>Totale: <strong>{money_it(income_total)}</strong></p></div><span class="panel-link">Apri Bilanci →</span></header>{chart}</a><article class="dashboard-panel activity-panel"><header><h2>Attività recenti</h2><a href="/archivio/pratiche">Vedi tutte</a></header><div class="activity-list">{''.join(timeline)}</div></article></section>{notification_panel}<section class="dashboard-recent"><div class="titlebar"><h2>Ultime 10 pratiche per data recupero</h2><a href="/archivio/pratiche">Apri archivio</a></div><div class="tablebox"><table><thead><tr><th>Data recupero</th><th>Codice pratica</th><th>Animale</th><th>Proprietario</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Totale W</th><th>TOTALE D</th><th>Acconto</th><th>Rimanenza</th><th>Stato</th><th>Aggiorna pagamento</th></tr></thead><tbody>{self.practice_rows(recent,True,True)}</tbody></table></div></section></main>'''
         week_range=f"{week_start.strftime('%d/%m/%Y')} - {week_end.strftime('%d/%m/%Y')}"
         body=body.replace("Entrate ultimi 7 giorni", "Entrate settimana in corso")
         body=body.replace("Totale: <strong>", f"{week_range} · Totale: <strong>", 1)
@@ -1807,8 +1807,8 @@ class App(BaseHTTPRequestHandler):
             ("price_cremation","Cremazione",("price_cremation",)),("price_pickup","Ritiro",("price_pickup",)),("price_urn","Urna",("price_urn","price_urn_2")),
             ("price_delivery","Riconsegna",("price_delivery",)),("price_cast","Calco",("price_cast","price_cast_2","price_paw_cast","price_nose_cast")),("price_evening","Serale",("price_evening",)),
             ("price_night","Notturno",("price_night",)),("price_holiday","Festivo",("price_holiday",)),("price_accessories","Accessori",("price_accessories","price_accessories_2")),
-            ("totale_calcolato","Entrate da totale calcolato",()),("totale_d","Entrate da TOTALE D",()),
-            ("da_entrare","Da entrare",()),("da_entrare_d","Da entrare D",()),
+            ("totale_calcolato","Entrate W",()),("totale_d","Entrate D",()),
+            ("da_entrare","Da entrare W",()),("da_entrare_d","Da entrare D",()),
         ]
         category_map={key:label for key,label,_ in categories}; category_fields={key:fields for key,_,fields in categories}; selected=(q.get("voce") or [""])[0].strip()
         if selected not in category_map: selected=""
@@ -1868,8 +1868,8 @@ class App(BaseHTTPRequestHandler):
             ("price_cremation","Cremazione",("price_cremation",)),("price_pickup","Ritiro",("price_pickup",)),("price_urn","Urna",("price_urn","price_urn_2")),
             ("price_delivery","Riconsegna",("price_delivery",)),("price_cast","Calco",("price_cast","price_cast_2","price_paw_cast","price_nose_cast")),("price_evening","Serale",("price_evening",)),
             ("price_night","Notturno",("price_night",)),("price_holiday","Festivo",("price_holiday",)),("price_accessories","Accessori",("price_accessories","price_accessories_2")),
-            ("totale_calcolato","Entrate da totale calcolato",()),("totale_d","Entrate da TOTALE D",()),
-            ("da_entrare","Da entrare",()),("da_entrare_d","Da entrare D",()),
+            ("totale_calcolato","Entrate W",()),("totale_d","Entrate D",()),
+            ("da_entrare","Da entrare W",()),("da_entrare_d","Da entrare D",()),
         ]
         category_map={key:label for key,label,_ in categories}; category_fields={key:fields for key,_,fields in categories}
         selected=(q.get("voce") or [""])[0].strip()
@@ -1924,8 +1924,8 @@ class App(BaseHTTPRequestHandler):
             ("price_cremation","Cremazione",("price_cremation",)),("price_pickup","Ritiro",("price_pickup",)),("price_urn","Urna",("price_urn","price_urn_2")),
             ("price_delivery","Riconsegna",("price_delivery",)),("price_cast","Calco",("price_cast","price_cast_2","price_paw_cast","price_nose_cast")),
             ("price_evening","Serale",("price_evening",)),("price_night","Notturno",("price_night",)),("price_holiday","Festivo",("price_holiday",)),
-            ("price_accessories","Accessori",("price_accessories","price_accessories_2")),("totale_calcolato","Entrate da totale calcolato",()),
-            ("totale_d","Entrate da TOTALE D",()),("da_entrare","Da entrare",()),("da_entrare_d","Da entrare D",()),
+            ("price_accessories","Accessori",("price_accessories","price_accessories_2")),("totale_calcolato","Entrate W",()),
+            ("totale_d","Entrate D",()),("da_entrare","Da entrare W",()),("da_entrare_d","Da entrare D",()),
         ]
         category_map={key:label for key,label,_ in categories}; category_fields={key:fields for key,_,fields in categories}
         selected=(q.get("voce") or [""])[0].strip(); selected=selected if selected in category_map else ""
@@ -1967,7 +1967,7 @@ class App(BaseHTTPRequestHandler):
             else: breakdown[key]=sum(movement_amount(row,key) for row in movements)
         shown_total=breakdown[selected] if selected else sum(money_value(row["amount"]) for row in movements)
         cards=''.join(f'<a class="balance-card {"active" if selected==key else ""}" href="/bilanci?dal={quote(date_from)}&al={quote(date_to)}&voce={quote(key)}"><small>{label}</small><strong>{money_it(breakdown[key])}</strong></a>' for key,label,_ in categories)
-        type_labels={"acconto_ordinario":"Acconto","saldo_ordinario":"Saldo","acconto_d":"Acconto D","saldo_d":"Saldo D","rettifica":"Rettifica"}
+        type_labels={"acconto_ordinario":"Acconto W","saldo_ordinario":"Saldo W","acconto_d":"Acconto D","saldo_d":"Saldo D","rettifica":"Rettifica"}
         table_rows=[]; chart_by_day={}
         component_selected=bool(selected and category_fields.get(selected))
         if selected in ("da_entrare","da_entrare_d"):
@@ -1986,7 +1986,7 @@ class App(BaseHTTPRequestHandler):
             economic_date=((row["pickup_date"] or row["created_at"] or "")[:10] if selected in ("da_entrare","da_entrare_d") else (row["paid_at"] or "")[:10])
             movement_label="Rimanenza prevista" if selected in ("da_entrare","da_entrare_d") else f'{category_map[selected]} · valore inserito' if component_selected else type_labels.get(row["payment_type"],row["payment_type"] or "Incasso")
             chart_by_day[economic_date]=chart_by_day.get(economic_date,0.0)+amount
-            effective_label=("TOTALE D" if uses_total_d(row) else "Totale calcolato")+f" {money_it(effective_total(row))}"
+            effective_label=("TOTALE D" if uses_total_d(row) else "Totale W")+f" {money_it(effective_total(row))}"
             table_rows.append(f'''<tr class="practice-row-link" tabindex="0" role="link" onclick="window.location.href='{url}'" onkeydown="if(event.key==='Enter')window.location.href='{url}'"><td>{esc(date_it(economic_date))}</td><td>{esc(movement_label)}</td><td><a href="{url}"><b>{esc(row["practice_number"])}</b></a></td><td>{esc(owner)}</td><td><b>{money_it(amount)}</b></td><td>{esc(effective_label)}</td><td>{money_it(money_value(row["deposit"]))}</td><td>{money_it(outstanding_amount(row))}</td><td>{esc(row["payment_status"] or "Da saldare")}</td><td><a class="btn ghost" href="{url}">Apri</a></td></tr>''')
         start_date=datetime.strptime(date_from,"%Y-%m-%d").date(); end_date=datetime.strptime(date_to,"%Y-%m-%d").date(); chart_days=[]; cursor=start_date
         while cursor<=end_date: chart_days.append(cursor); cursor+=timedelta(days=1)
@@ -2022,7 +2022,7 @@ class App(BaseHTTPRequestHandler):
                 body.append(f'''<tr class="practice-row-link" tabindex="0" role="link" onclick="window.location.href='{url}'"><td><a href="{url}"><b>{esc(row["practice_number"])}</b></a></td><td>{esc(row["animal_name"] or "")}</td><td>{esc(owner)}</td><td>{money_it(effective_total(row))}</td><td>{money_it(money_value(row["deposit"]))}</td><td><b>{money_it(amount_for(row))}</b></td><td>{esc(row["payment_status"] or "Da saldare")}</td><td><a class="btn ghost" href="{url}">Apri</a></td></tr>''')
             table=''.join(body) or '<tr><td colspan="8" class="sub">Nessuna pratica in questa categoria.</td></tr>'
             sections.append(f'''<section class="dashboard-panel" style="margin-bottom:20px;border-top:4px solid {color}"><header><div><h2>{esc(label)}</h2><p>{len(selected)} pratiche</p></div><strong>{money_it(total)}</strong></header><div class="tablebox"><table><thead><tr><th>Pratica</th><th>Animale</th><th>Cliente</th><th>Totale</th><th>Acconto</th><th>{esc(title)}</th><th>Stato</th><th></th></tr></thead><tbody>{table}</tbody></table></div></section>''')
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Pagamenti · {esc(title)}</h1><p class="sub">Separazione tra Totale calcolato e Totale D (contanti).</p></div><a class="btn ghost" href="/">Dashboard</a></div>{''.join(sections)}</main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Pagamenti · {esc(title)}</h1><p class="sub">Separazione tra Totale W e Totale D (contanti).</p></div><a class="btn ghost" href="/">Dashboard</a></div>{''.join(sections)}</main>'''
         self.send_html(layout(f"Pagamenti · {title}",body,user))
 
     def articles_page(self,user):
@@ -2574,7 +2574,7 @@ class App(BaseHTTPRequestHandler):
             key=((r["pickup_date"] or r["created_at"] or "")[:7]) or "Senza data"
             groups.setdefault(key,[]).append(r)
         blocks=[]
-        archive_financial_headers='<th>Totale calcolato</th><th>TOTALE D</th><th>Acconto</th><th>Rimanenza</th>' if quick else ''
+        archive_financial_headers='<th>Totale W</th><th>TOTALE D</th><th>Acconto</th><th>Rimanenza</th>' if quick else ''
         for key,items in groups.items():
             title=key
             if key != "Senza data":
@@ -2703,6 +2703,9 @@ class App(BaseHTTPRequestHandler):
         self.redirect(f"/veterinari/{row['veterinarian_id']}" if row else "/veterinari")
 
     def fields_html(self,p=None):
+        return self._fields_html(p).replace("Totale servizio €","Totale W €")
+
+    def _fields_html(self,p=None):
         val=lambda k: esc(p[k] if p and k in p.keys() else "")
         raw=lambda k,default="": (p[k] if p and k in p.keys() and p[k] not in (None,"") else default)
         selected=lambda k,v,default="": "selected" if str(raw(k,default))==v else ""

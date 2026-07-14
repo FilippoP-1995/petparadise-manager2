@@ -188,6 +188,17 @@ def _draw_fields(c, fields, values):
             _draw_centered(c, fields[name], value)
 
 
+def _draw_total_w_label(c):
+    """Sostituisce solo la dicitura stampata, senza cambiare il campo total_service."""
+    c.saveState()
+    c.setFillColorRGB(1, 1, 1)
+    c.rect(363, 274, 143, 23, fill=1, stroke=0)
+    c.setFillColorRGB(0, 0, 0)
+    c.setFont("Times-Bold", 12.5)
+    c.drawCentredString(434.5, 279.5, "TOTALE W")
+    c.restoreState()
+
+
 def _draw_signature(c, page):
     data = _get(page, "signature_data")
     if not data.startswith("data:image/png;base64,"):
@@ -288,6 +299,7 @@ def _overlay_page_2(page, width, height):
         "document_number": _get(page, "identity_document_number"),
         "document_date": _get(page, "identity_document_date"),
     }
+    _draw_total_w_label(c)
     _draw_fields(c, PAGE2_FIELDS, values)
     _draw_signature(c, page)
     c.save(); stream.seek(0)

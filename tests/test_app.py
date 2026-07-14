@@ -5,6 +5,7 @@ from pathlib import Path
 
 import app
 from notification_service import emit_notification, process_scheduled_notifications
+from pypdf import PdfReader
 
 
 class PetParadiseTests(unittest.TestCase):
@@ -145,6 +146,44 @@ class PetParadiseTests(unittest.TestCase):
         ordinary = dict(whisky, total_text="0", deposit="100", payment_status="Acconto")
         self.assertEqual(app.effective_total(ordinary), 410)
         self.assertEqual(app.outstanding_amount(ordinary), 310)
+
+    def test_total_w_is_only_a_visible_rename(self):
+        html=self.handler.fields_html()
+        self.assertIn("Totale W €",html)
+        self.assertNotIn("Totale calcolato",html)
+        self.assertNotIn("Totale servizio €",html)
+        self.assertEqual(app.MONEY_FIELDS["total_service"],"Totale W")
+        with app.db() as conn:
+            columns={row["name"] for row in conn.execute("PRAGMA table_info(practices)")}
+        self.assertIn("total_service",columns)
+        self.assertNotIn("totale_w",columns)
+
+    def test_generated_pdf_shows_total_w_without_changing_technical_field(self):
+        output=Path(self.temp.name)/"totale-w.pdf"
+        practice={
+            "destination_branch":"Livorno","total_service":"410.00","deposit":"100.00",
+            "owner_first_name":"Mario","owner_last_name":"Rossi","animal_name":"Whisky",
+        }
+        app.generate_ddt(practice,app.ASSETS/"DCS_NUOVO.pdf",output)
+        text="\n".join(page.extract_text() or "" for page in PdfReader(str(output)).pages)
+        self.assertIn("TOTALE W",text)
+        self.assertIn("410.00",text)
+
+    def test_historical_w_and_d_practices_keep_their_saved_amounts(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now();before=conn.execute("SELECT count(*) n FROM practices").fetchone()["n"]
+            w_id=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,total_service,total_text,deposit,payment_status)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?)""",("CR-W-STORICA","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"410","","100","Acconto")).lastrowid
+            d_id=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,total_service,total_text,deposit,payment_status)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?)""",("CR-D-STORICA","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"410","330","100","Acconto")).lastrowid
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.edit_page(admin,w_id);self.assertIn("Totale W",rendered[-1]);self.assertIn('name="total_service" value="410"',rendered[-1])
+        self.handler.edit_page(admin,d_id);self.assertIn("Totale W",rendered[-1]);self.assertIn('name="total_text"',rendered[-1]);self.assertIn('>330</textarea>',rendered[-1])
+        self.handler.new_page(admin);self.assertIn("Totale W",rendered[-1])
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT count(*) n FROM practices").fetchone()["n"],before+2)
+            saved=conn.execute("SELECT total_service,total_text,deposit FROM practices WHERE id=?",(d_id,)).fetchone()
+        self.assertEqual(tuple(saved),("410","330","100"))
 
     def test_balances_total_d_filter_includes_whisky_and_partial_cash_flow(self):
         today = app.datetime.now().date().isoformat()
@@ -309,6 +348,12 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn(app.money_it(108.62),rendered[-1])
         self.assertNotIn(app.money_it(77.14),rendered[-1])
 
+        self.handler.path=f"/bilanci?dal={today}&al={today}&voce=totale_calcolato"
+        self.handler.balances_v2(admin)
+        self.assertIn("Entrate W",rendered[-1])
+        self.assertIn("Acconto W",rendered[-1])
+        self.assertIn("Totale W",rendered[-1])
+
     def test_payment_reconciliation_caps_due_and_removes_paid_income(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
@@ -350,11 +395,16 @@ class PetParadiseTests(unittest.TestCase):
         rendered=[]; self.handler.send_html=lambda content,*args: rendered.append(content)
         self.handler.dashboard(admin)
         self.assertIn("Entrate settimana in corso",rendered[-1])
+        self.assertIn("Totale W",rendered[-1])
+        self.assertNotIn("Totale calcolato",rendered[-1])
         self.handler.path="/bilanci"
         self.handler.balances_v2(admin)
         self.assertIn("Data economica",rendered[-1])
+        self.assertIn("Entrate W",rendered[-1])
+        self.assertIn("Da entrare W",rendered[-1])
         self.handler.payment_overview(admin,"da-saldare")
         self.assertIn("Da saldare D",rendered[-1])
+        self.assertIn("Totale W e Totale D",rendered[-1])
 
 
 if __name__ == "__main__":
