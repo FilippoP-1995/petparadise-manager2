@@ -1885,30 +1885,48 @@ class App(BaseHTTPRequestHandler):
             if key=="totale_calcolato": return 0.0 if is_d else amount
             if key=="totale_d": return amount if is_d else 0.0
             if key in ("da_entrare","da_entrare_d"): return 0.0
-            if key in category_fields:
-                if is_d: return 0.0
-                due=effective_total(row); component=sum(money_value(row[field]) for field in category_fields[key])
-                return amount*(component/due) if due else 0.0
             return amount
+
+        def component_amount(row,key):
+            return sum(money_value(row[field]) for field in category_fields.get(key,()))
+
+        practice_movements={}
+        for row in movements:
+            practice_id=row["id"]
+            if practice_id not in practice_movements:
+                practice_movements[practice_id]={"row":None,"net":0.0}
+            movement_value=money_value(row["amount"])
+            if movement_value>0 and practice_movements[practice_id]["row"] is None:
+                practice_movements[practice_id]["row"]=row
+            practice_movements[practice_id]["net"]+=movement_value
+        component_rows=[item["row"] for item in practice_movements.values() if item["row"] is not None and item["net"]>0.004]
 
         breakdown={key:0.0 for key,_,_ in categories}
         for key,_,_ in categories:
             if key=="da_entrare": breakdown[key]=sum(outstanding_amount(row) for row in outstanding if not uses_total_d(row))
             elif key=="da_entrare_d": breakdown[key]=sum(outstanding_amount(row) for row in outstanding if uses_total_d(row))
+            elif category_fields.get(key): breakdown[key]=sum(component_amount(row,key) for row in component_rows)
             else: breakdown[key]=sum(movement_amount(row,key) for row in movements)
         shown_total=breakdown[selected] if selected else sum(money_value(row["amount"]) for row in movements)
         cards=''.join(f'<a class="balance-card {"active" if selected==key else ""}" href="/bilanci?dal={quote(date_from)}&al={quote(date_to)}&voce={quote(key)}"><small>{label}</small><strong>{money_it(breakdown[key])}</strong></a>' for key,label,_ in categories)
         type_labels={"acconto_ordinario":"Acconto","saldo_ordinario":"Saldo","acconto_d":"Acconto D","saldo_d":"Saldo D","rettifica":"Rettifica"}
         table_rows=[]; chart_by_day={}
-        source=outstanding if selected in ("da_entrare","da_entrare_d") else movements
+        component_selected=bool(selected and category_fields.get(selected))
+        if selected in ("da_entrare","da_entrare_d"):
+            source=outstanding
+        elif component_selected:
+            source=component_rows
+        else:
+            source=movements
         for row in source:
             if selected=="da_entrare": amount=outstanding_amount(row) if not uses_total_d(row) else 0.0
             elif selected=="da_entrare_d": amount=outstanding_amount(row) if uses_total_d(row) else 0.0
+            elif component_selected: amount=component_amount(row,selected)
             else: amount=movement_amount(row,selected)
             if abs(amount)<0.005: continue
             owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip(); url=f'/pratiche/{row["id"]}'
             economic_date=((row["pickup_date"] or row["created_at"] or "")[:10] if selected in ("da_entrare","da_entrare_d") else (row["paid_at"] or "")[:10])
-            movement_label="Rimanenza prevista" if selected in ("da_entrare","da_entrare_d") else type_labels.get(row["payment_type"],row["payment_type"] or "Incasso")
+            movement_label="Rimanenza prevista" if selected in ("da_entrare","da_entrare_d") else f'{category_map[selected]} · valore inserito' if component_selected else type_labels.get(row["payment_type"],row["payment_type"] or "Incasso")
             chart_by_day[economic_date]=chart_by_day.get(economic_date,0.0)+amount
             effective_label=("TOTALE D" if uses_total_d(row) else "Totale calcolato")+f" {money_it(effective_total(row))}"
             table_rows.append(f'''<tr class="practice-row-link" tabindex="0" role="link" onclick="window.location.href='{url}'" onkeydown="if(event.key==='Enter')window.location.href='{url}'"><td>{esc(date_it(economic_date))}</td><td>{esc(movement_label)}</td><td><a href="{url}"><b>{esc(row["practice_number"])}</b></a></td><td>{esc(owner)}</td><td><b>{money_it(amount)}</b></td><td>{esc(effective_label)}</td><td>{money_it(money_value(row["deposit"]))}</td><td>{money_it(outstanding_amount(row))}</td><td>{esc(row["payment_status"] or "Da saldare")}</td><td><a class="btn ghost" href="{url}">Apri</a></td></tr>''')
@@ -1917,8 +1935,15 @@ class App(BaseHTTPRequestHandler):
         chart=income_chart([chart_by_day.get(day.isoformat(),0.0) for day in chart_days],[day.strftime("%d/%m") for day in chart_days])
         table_body=''.join(table_rows) or '<tr><td colspan="10" class="sub">Nessun importo nel periodo selezionato.</td></tr>'
         options='<option value="">Tutti gli incassi</option>'+''.join(f'<option value="{key}" {"selected" if selected==key else ""}>{label}</option>' for key,label,_ in categories)
-        subtitle="Risultati filtrati per data economica" if selected not in ("da_entrare","da_entrare_d") else "Importi ancora da incassare nel periodo operativo"
-        body=f'''<main class="wrap balances-wrap"><div class="titlebar"><div><h1>Bilanci</h1><p class="sub">{subtitle} dal {esc(date_it(date_from))} al {esc(date_it(date_to))}</p></div><div class="balance-total"><small>{esc(category_map.get(selected,"Entrate totali"))}</small><strong>{money_it(shown_total)}</strong></div></div><section class="balance-grid">{cards}</section><section class="dashboard-panel balance-chart"><header><div><h2>Andamento nel periodo filtrato</h2><p>Incassi registrati nella loro data effettiva.</p></div></header>{chart}</section><section class="tablebox balance-table"><table><thead><tr><th>Data economica</th><th>Movimento</th><th>Pratica</th><th>Cliente</th><th>Importo</th><th>Totale</th><th>Acconto</th><th>Rimanenza</th><th>Stato</th><th></th></tr></thead><tbody>{table_body}</tbody></table></section><section class="search-after-results"><h2>Filtra bilanci</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field full"><label>Voce</label><select name="voce">{options}</select></div></div><button class="btn" style="margin-top:12px">Applica filtri</button><a class="btn ghost" style="margin-top:12px" href="/bilanci">Ultimi 7 giorni</a></form></section></main>'''
+        if component_selected:
+            subtitle="Valori integrali inseriti nelle pratiche con incassi nel periodo"
+        elif selected in ("da_entrare","da_entrare_d"):
+            subtitle="Importi ancora da incassare nel periodo operativo"
+        else:
+            subtitle="Risultati filtrati per data economica"
+        chart_description="Ogni voce è conteggiata una sola volta per pratica, senza ripartizioni proporzionali." if component_selected else "Incassi registrati nella loro data effettiva."
+        amount_heading="Valore inserito" if component_selected else "Importo"
+        body=f'''<main class="wrap balances-wrap"><div class="titlebar"><div><h1>Bilanci</h1><p class="sub">{subtitle} dal {esc(date_it(date_from))} al {esc(date_it(date_to))}</p></div><div class="balance-total"><small>{esc(category_map.get(selected,"Entrate totali"))}</small><strong>{money_it(shown_total)}</strong></div></div><section class="balance-grid">{cards}</section><section class="dashboard-panel balance-chart"><header><div><h2>Andamento nel periodo filtrato</h2><p>{chart_description}</p></div></header>{chart}</section><section class="tablebox balance-table"><table><thead><tr><th>Data economica</th><th>Movimento</th><th>Pratica</th><th>Cliente</th><th>{amount_heading}</th><th>Totale</th><th>Acconto</th><th>Rimanenza</th><th>Stato</th><th></th></tr></thead><tbody>{table_body}</tbody></table></section><section class="search-after-results"><h2>Filtra bilanci</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field full"><label>Voce</label><select name="voce">{options}</select></div></div><button class="btn" style="margin-top:12px">Applica filtri</button><a class="btn ghost" style="margin-top:12px" href="/bilanci">Ultimi 7 giorni</a></form></section></main>'''
         self.send_html(layout("Bilanci",body,user))
 
     def payment_overview(self,user,kind):
