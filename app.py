@@ -45,6 +45,10 @@ PAYMENT_STATES = [
     "Da saldare", "Acconto", "Pagato",
 ]
 
+PAYMENT_METHODS = [
+    "", "Pos", "Contanti", "Bonifico",
+]
+
 MONEY_FIELDS = {
     "price_cremation":"Cremazione", "price_pickup":"Ritiro", "price_urn":"Urna", "price_urn_2":"Seconda urna",
     "price_delivery":"Riconsegna", "price_cast":"Calco", "price_cast_2":"Secondo calco", "price_paw_cast":"Calco polpastrello", "price_nose_cast":"Calco naso", "price_evening":"Serale",
@@ -359,6 +363,10 @@ def init_db():
             "payment_amount": "TEXT",
             "origin_veterinarian_id": "INTEGER",
             "invoice_number": "TEXT",
+            "invoice_date": "TEXT",
+            "make_invoice": "TEXT",
+            "payment_method": "TEXT",
+            "original_practice_number": "TEXT",
             "ddt_share_token": "TEXT",
             "signature_data": "TEXT",
             "owner_phone_2": "TEXT",
@@ -399,6 +407,7 @@ def init_db():
             if name not in vet_existing:
                 c.execute(f"ALTER TABLE veterinarians ADD COLUMN {name} {definition}")
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_practices_ddt_share_token ON practices(ddt_share_token)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_practices_invoice ON practices(invoice_number,invoice_date)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_due ON whatsapp_messages(status, scheduled_at)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_practice ON whatsapp_messages(practice_id, created_at)")
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_whatsapp_messages_one_active ON whatsapp_messages(practice_id) WHERE status IN ('programmato','in_invio')")
@@ -596,6 +605,15 @@ def next_practice_code(conn, service_type):
     return next_number(conn, key, prefix)
 
 
+def sequence_code_parts(number):
+    match=re.fullmatch(r"(CR|SM)-(\d+)",str(number or ""))
+    return (match.group(1),int(match.group(2)),len(match.group(2))) if match else None
+
+
+def format_sequence_code(prefix,value,width=6):
+    return f"{prefix}-{value:0{max(6,width)}d}"
+
+
 CSS = r"""
 :root{--ink:#24312c;--muted:#6e7b75;--brand:#a74045;--brand2:#7f3035;--paper:#fff;--bg:#f4f1ed;--line:#ded8d1;--green:#39745b;--gold:#a87926;--safe-top:env(safe-area-inset-top,0px);--safe-bottom:env(safe-area-inset-bottom,0px);--safe-left:env(safe-area-inset-left,0px);--safe-right:env(safe-area-inset-right,0px)}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
@@ -642,6 +660,7 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 .conversation-list{display:flex;flex-direction:column;gap:12px}.conversation-card{display:grid;grid-template-columns:minmax(280px,1.2fr) minmax(420px,1fr) auto;align-items:center;gap:20px;padding:18px;border:1px solid #334155;border-radius:15px;background:#1f2937;box-shadow:0 12px 34px #0307122e}.conversation-main{display:grid;grid-template-columns:46px minmax(0,1fr);align-items:center;gap:13px}.conversation-avatar{display:grid;place-items:center;width:46px;height:46px;border-radius:13px;background:#064e3b;color:#4ade80}.conversation-main h2{margin:0 0 5px;font-size:16px}.conversation-main p{margin:3px 0;color:#94a3b8;font-size:13px}.conversation-main p b,.conversation-main a{color:#e2e8f0}.conversation-message{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.conversation-card dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin:0}.conversation-card dl div{min-width:0}.conversation-card dt{color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:.05em}.conversation-card dd{margin:4px 0 0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.conversation-action{text-align:right}.whatsapp-open{background:linear-gradient(135deg,#22c55e,#15803d);white-space:nowrap}.message-accettato_da_meta{background:#1e3a8a;color:#bfdbfe}.message-consegnato{background:#14532d;color:#bbf7d0}.message-letto{background:#164e63;color:#a5f3fc}.message-fallito{background:#7f1d1d;color:#fecaca}.pagination{display:flex;align-items:center;justify-content:center;gap:18px;margin:20px 0;color:#94a3b8}.pagination a,.page-disabled{padding:9px 13px;border:1px solid #334155;border-radius:10px}.pagination a{color:#f8fafc;background:#1f2937}.page-disabled{opacity:.45}.light-theme .conversation-card{background:#fff;color:#111827}.light-theme .conversation-main p{color:#64748b}
 .practice-row-link{cursor:pointer;outline:0}.practice-row-link:focus{outline:2px solid #fb7185;outline-offset:-2px}.tag-outline-green{background:#052e2b;color:#86efac;border:2px solid #22c55e}.light-theme{color-scheme:light;--ink:#111827;--muted:#526174;--paper:#fff;--bg:#eef2f7;--line:#cbd5e1}.light-theme h1,.light-theme h2,.light-theme label,.light-theme td,.light-theme .activity-item b,.light-theme .metric-card small,.light-theme .payment-card small,.light-theme .dashboard-panel header p strong,.light-theme .conversation-main p b,.light-theme .conversation-main a,.light-theme .pagination a{color:#111827}.light-theme input,.light-theme select,.light-theme textarea,.light-theme .lookup-results,.light-theme .lookup-item,.light-theme .kv,.light-theme table,.light-theme .login{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme input::placeholder,.light-theme textarea::placeholder{color:#64748b}.light-theme th,.light-theme .sub,.light-theme .kv small,.light-theme .conversation-card dt,.light-theme .pagination{color:#526174}.light-theme th,.light-theme td,.light-theme .activity-item{border-color:#d7dee8}.light-theme .tablebox table tr:hover td,.light-theme .practice-row-link:focus td,.light-theme .lookup-item:hover,.light-theme .lookup-item:focus{background:#f1f5f9}.light-theme .btn.ghost,.light-theme .pagination a{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .badge{background:#e2e8f0;color:#1e293b}.light-theme .tag-red{background:#fee2e2;color:#991b1b}.light-theme .tag-orange{background:#ffedd5;color:#9a3412}.light-theme .tag-purple{background:#f3e8ff;color:#6b21a8}.light-theme .tag-yellow,.light-theme .pay-yellow{background:#fef9c3;color:#713f12}.light-theme .tag-pink{background:#fce7f3;color:#9d174d}.light-theme .tag-blue,.light-theme .pay-blue{background:#dbeafe;color:#1e40af}.light-theme .tag-green,.light-theme .pay-green{background:#dcfce7;color:#166534}.light-theme .tag-outline-orange{background:#fff7ed;color:#c2410c}.light-theme .tag-outline-green{background:#f0fdf4;color:#166534;border-color:#22c55e}.light-theme .selected-box{background:#ecfdf5;color:#166534;border-color:#86efac}.light-theme .nav a{color:#334155}.light-theme .nav a:hover{background:#f1f5f9;color:#111827}.light-theme .nav a:first-child{background:#fff1f2;color:#be123c;border-color:#fecdd3}.light-theme .more-menu a{color:#334155}.light-theme .more-menu a:hover{background:#f1f5f9}.light-theme .chart-grid line{stroke:#cbd5e1}.light-theme .chart-grid text,.light-theme .chart-dates text{fill:#526174}.light-theme .income-chart circle{stroke:#fff}.light-theme .install-hint{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .danger{background:#fff1f2}.light-theme .warning,.light-theme .trash-note{background:#fff7ed;color:#7c2d12}.light-theme .flash:not(.warning){background:#ecfdf5;color:#166534}.light-theme .conversation-main p b,.light-theme .conversation-main a{color:#111827}
 .practice-status{background:transparent!important;border:2px solid currentColor}.practice-status-blue{color:#60a5fa!important;border-color:#3b82f6}.practice-status-red{color:#fb7185!important;border-color:#ef4444}.practice-status-yellow{color:#fde047!important;border-color:#eab308}.practice-status-green{color:#4ade80!important;border-color:#22c55e}.light-theme .practice-status-blue{color:#1d4ed8!important}.light-theme .practice-status-red{color:#b91c1c!important}.light-theme .practice-status-yellow{color:#854d0e!important}.light-theme .practice-status-green{color:#15803d!important}
+.modern-check{display:flex;align-items:center;gap:10px;min-height:46px;padding:10px 13px;border:1px solid #3b4658;border-radius:12px;background:linear-gradient(145deg,#182130,#111925);color:#e8edf5;cursor:pointer;transition:border-color .16s,transform .16s,box-shadow .16s}.modern-check:hover{transform:translateY(-1px);border-color:#fb7185;box-shadow:0 8px 22px #02061745}.modern-check input[type=checkbox]{width:20px;height:20px;margin:0;accent-color:#ef405f}.modern-check span{font-size:12px;font-weight:800;letter-spacing:.025em}.light-theme .modern-check{background:linear-gradient(145deg,#fff,#f1f5f9);color:#172033;border-color:#cbd5e1}.invoice-inline{display:grid;gap:8px}.invoice-inline input{min-width:0}.invoice-inline .btn{width:100%}
 .pay-green{border:2px solid #22c55e!important}.pay-yellow{border:2px solid #eab308!important}.pay-blue{border:2px solid #3b82f6!important}.notification-badge{position:absolute;display:grid;place-items:center;min-width:19px;height:19px;padding:0 5px;border-radius:99px;background:#dc2626;color:#fff;font:700 11px/1 system-ui;transform:translate(13px,-13px);box-shadow:0 0 0 2px #111827}.nav-notification{position:relative}.notification-center{display:grid;gap:10px}.notification-item{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:13px;align-items:center;padding:15px;border:1px solid #334155;border-radius:13px;background:#1f2937}.notification-item.unread{border-left:4px solid #ef405f}.notification-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:#172033;font-size:21px}.notification-copy b,.notification-copy small{display:block}.notification-copy p{margin:4px 0;color:#cbd5e1}.notification-copy small{color:#94a3b8}.notification-actions{display:flex;gap:8px;align-items:center}.toggle-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.toggle-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:1px solid #334155;border-radius:11px}.toggle-row input{width:22px;height:22px}.permission-prompt{position:fixed;right:20px;bottom:20px;z-index:150;max-width:390px;padding:18px;border:1px solid #475569;border-radius:16px;background:#172033;color:#fff;box-shadow:0 24px 70px #000a}.permission-prompt p{color:#cbd5e1}.quick-payment{display:flex;gap:7px;align-items:center}.quick-payment select,.quick-payment input{min-width:110px}.quick-payment .btn{width:auto}.light-theme .notification-item,.light-theme .toggle-row,.light-theme .permission-prompt{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .notification-copy p{color:#334155}
 @media(max-width:1150px){.conversation-card{grid-template-columns:1fr 1fr}.conversation-action{grid-column:1/-1;text-align:left}}
 @media(max-width:700px){.conversation-card{grid-template-columns:1fr;gap:14px}.conversation-card dl{grid-template-columns:1fr 1fr}.conversation-action{grid-column:auto}.conversation-action .btn{width:100%}.pagination{gap:8px;justify-content:space-between}.pagination span{font-size:11px;text-align:center}.conversation-message{white-space:normal}.conversations-wrap .titlebar h1{font-size:24px}}
@@ -662,7 +681,7 @@ document.addEventListener('change', function(e){
     const method = document.querySelector('[name="transport_method"]');
     const transporter = document.querySelector('select[name="transporter_mode"]');
     if(e.target.value === 'Consegna in sede'){
-      if(method) method.value = 'MEZZO PROPRIO';
+      if(method) method.value = 'Mezzo proprio';
       if(transporter) transporter.value = 'IDEM SPED';
     }
     if(e.target.value === 'Veterinario' || e.target.value === 'Privato' || e.target.value === 'Collaboratore'){
@@ -912,9 +931,40 @@ function setupUrnNotesField(){
   const priceField=price.closest('.field');
   priceField.parentNode.insertBefore(field, priceField.nextSibling);
 }
+function reorderSenderFields(){
+  const section=[...document.querySelectorAll('.section')].find(item=>item.querySelector('h2')?.textContent.trim()==='SPEDITORE');
+  const fields=section?.querySelector('.fields');
+  if(!fields) return;
+  const selectors=['#clientSearch','[name="owner_veterinarian_id"]','[name="owner_first_name"]','[name="owner_last_name"]','[name="owner_street"]','[name="owner_city"]','[name="owner_province"]','[name="owner_zip"]','[name="owner_phone"]','[name="owner_phone_2"]','[name="owner_tax_code"]'];
+  const ordered=selectors.map(selector=>fields.querySelector(selector)?.closest('.field')).filter(Boolean);
+  const remaining=[...fields.children].filter(item=>item.classList.contains('field')&&!ordered.includes(item));
+  [...ordered,...remaining].forEach(field=>fields.appendChild(field));
+  const secondPhone=fields.querySelector('[name="owner_phone_2"]');
+  if(secondPhone){secondPhone.type='text';secondPhone.removeAttribute('inputmode');secondPhone.placeholder='Numero oppure testo libero';}
+}
 function setupBudgetExtras(){
   const fields=document.querySelector('.section input[name="price_cremation"]')?.closest('.fields');
   if(!fields) return;
+  const modernizeCheck=(input)=>{const label=input?.closest('label');if(label)label.classList.add('modern-check');return input?.closest('.field');};
+  const insertControl=(control,label,after)=>{
+    control.classList.remove('hidden');
+    const wrap=document.createElement('div');wrap.className='field';
+    const lab=document.createElement('label');lab.textContent=label;wrap.append(lab,control);
+    fields.insertBefore(wrap,after?.nextSibling||fields.firstElementChild);return wrap;
+  };
+  const insertCheck=(control,label,after)=>{
+    const wasChecked=control.value==='Si';control.type='checkbox';control.value='Si';control.checked=wasChecked;control.classList.remove('hidden');
+    const wrap=document.createElement('div');wrap.className='field';
+    const lab=document.createElement('label');lab.className='modern-check';lab.append(control,document.createTextNode(label));wrap.append(lab);
+    fields.insertBefore(wrap,after?.nextSibling||fields.firstElementChild);return wrap;
+  };
+  const voucherField=modernizeCheck(document.querySelector('input[name="use_voucher"]'));
+  if(voucherField)fields.insertBefore(voucherField,fields.firstElementChild);
+  const paymentField=insertControl(document.querySelector('select[name="payment_status"]'),'Pagamento',voucherField);
+  insertControl(document.querySelector('select[name="payment_method"]'),'Metodo di pagamento',paymentField);
+  const sendCatalogField=modernizeCheck(document.querySelector('input[name="send_catalog"]'));
+  insertCheck(document.querySelector('input[name="catalog_sent"]'),'CATALOGO INVIATO',sendCatalogField);
+  modernizeCheck(document.querySelector('input[name="send_estremi"]'));
   const wrapField=(element,label,after,hidden=false)=>{
     element.type='text';
     const wrap=document.createElement('div'); wrap.className='field'+(hidden?' hidden':'');
@@ -952,9 +1002,14 @@ function setupBudgetExtras(){
   accessoryPrice.parentNode.insertBefore(accessoryType2Wrap,accessoryPrice.nextSibling);
   const accessory2=wrapField(document.querySelector('input[name="price_accessories_2"]'),'Secondi accessori €',accessoryType2Wrap,true); accessory2.querySelector('input').dataset.preventivoSum='1';
   addButton('+ Aggiungi altri accessori',accessory2,[accessoryType2Wrap,accessory2]);
+  const invoiceNumber=document.querySelector('input[name="invoice_number"]');invoiceNumber.type='text';invoiceNumber.placeholder='Numero fattura';
+  const invoiceField=document.createElement('div');invoiceField.className='field';invoiceField.innerHTML='<label>Numero fattura</label>';invoiceField.append(invoiceNumber);fields.append(invoiceField);
+  const invoiceDate=document.querySelector('input[name="invoice_date"]');invoiceDate.type='date';
+  const invoiceDateField=document.createElement('div');invoiceDateField.className='field';invoiceDateField.innerHTML='<label>Data fattura</label>';invoiceDateField.append(invoiceDate);fields.append(invoiceDateField);
+  insertCheck(document.querySelector('input[name="make_invoice"]'),'FARE FATTURA',fields.lastElementChild);
 }
 document.addEventListener('DOMContentLoaded', function(){
-  setupBudgetExtras(); setupNumericBudgetFields(); updatePreventivoTotal(); updateRemainingBalance(); setupZipLookup(); setupUrnNotesField();
+  reorderSenderFields(); setupBudgetExtras(); setupNumericBudgetFields(); updatePreventivoTotal(); updateRemainingBalance(); setupZipLookup(); setupUrnNotesField();
   const plate=document.querySelector('input[name="vehicle_plate"]');
   if(plate) plate.readOnly=false;
 });
@@ -1441,10 +1496,10 @@ def layout(title, body, user=None):
         unread_badge=f'<span class="notification-badge">{unread if unread < 100 else "99+"}</span>' if unread else ''
         links=[
             ("/","home","Dashboard"),("/notifiche","bell","Notifiche"),("/pratiche","archive","Archivio"),("/conversazioni-whatsapp","message","Conversazioni WhatsApp"),("/veterinari","stethoscope","Veterinari"),
-            ("/articoli","clipboard","Articoli"),
+            ("/prodotti","clipboard","Prodotti"),
             ("/catalogo-urne","archive","Catalogo Urne"),
             ("/archivio/pratiche","clipboard","Gestionale"),("/archivio/clienti","users","Clienti"),("/archivio/pratiche","paw","Animali"),
-            ("/archivio/pratiche?pagamento=Da%20saldare","wallet","Pagamenti"),("/archivio/pratiche?pagamento=Pagato","receipt","Fatture"),
+            ("/archivio/pratiche?pagamento=Da%20saldare","wallet","Pagamenti"),("/fatture","receipt","Fatture"),
             ("/bilanci","chart","Report"),("/impostazioni","settings","Impostazioni"),("mailto:assistenza@petparadise.it","help","Assistenza"),
         ]
         nav_links=''.join(f'<a href="{href}" class="{"nav-notification" if href=="/notifiche" else ""}">{lucide(icon)}<span>{label}</span>{unread_badge if href=="/notifiche" else ""}</a>' for href,icon,label in links)
@@ -1563,7 +1618,8 @@ class App(BaseHTTPRequestHandler):
         if match: return self.payment_overview(user,match.group(1))
         if path == "/conversazioni-whatsapp": return self.whatsapp_conversations(user)
         if path == "/notifiche": return self.notifications(user)
-        if path == "/articoli": return self.articles_page(user)
+        if path in ("/prodotti","/articoli"): return self.articles_page(user)
+        if path == "/fatture": return self.invoices_page(user)
         if path == "/catalogo-urne": return self.urn_catalog_page(user)
         if path == "/catalogo-urne/nuova": return self.urn_edit_page(user)
         if path in ("/diagnostica","/impostazioni"): return self.settings_page(user)
@@ -1622,7 +1678,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/api/push/test": return self.push_test(user)
         if path == "/impostazioni/notifiche": return self.save_notification_preferences(user)
         if path == "/notifiche/segna-tutte-lette": return self.mark_all_notifications_read(user)
-        match = re.fullmatch(r"/articoli/(\d+)/ordina", path)
+        match = re.fullmatch(r"/(?:prodotti|articoli)/(\d+)/ordina", path)
         if match: return self.order_article(user, int(match.group(1)))
         if path == "/catalogo-urne/nuova": return self.save_urn(user)
         match = re.fullmatch(r"/catalogo-urne/(\d+)/modifica", path)
@@ -1644,6 +1700,8 @@ class App(BaseHTTPRequestHandler):
         if match: return self.use_specific_voucher(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/stato", path)
         if match: return self.change_state(user, int(match.group(1)))
+        match = re.fullmatch(r"/pratiche/(\d+)/fattura", path)
+        if match: return self.save_invoice(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/pagamento-rapido", path)
         if match: return self.quick_payment(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/catalogo-inviato", path)
@@ -1973,10 +2031,30 @@ class App(BaseHTTPRequestHandler):
             recent=c.execute("""SELECT o.created_at,a.name,u.display_name FROM article_orders o
                                 JOIN articles a ON a.id=o.article_id JOIN users u ON u.id=o.ordered_by
                                 ORDER BY o.created_at DESC,o.id DESC LIMIT 10""").fetchall()
-        cards=''.join(f'''<article class="article-card"><div><span class="badge tag-outline-orange">Da ordinare</span><h2>{esc(item["name"])}</h2></div><p>Invia la richiesta di ordine al centro notifiche.</p><form method="post" action="/articoli/{item["id"]}/ordina" onsubmit="return confirm('Inviare la richiesta per {esc(item["name"])}?')"><button class="btn">Ordina articolo</button></form></article>''' for item in articles)
+        cards=''.join(f'''<article class="article-card"><div><span class="badge tag-outline-orange">Da ordinare</span><h2>{esc(item["name"])}</h2></div><p>Invia la richiesta di ordine al centro notifiche.</p><form method="post" action="/prodotti/{item["id"]}/ordina" onsubmit="return confirm('Inviare la richiesta per {esc(item["name"])}?')"><button class="btn">Ordina prodotto</button></form></article>''' for item in articles)
         history=''.join(f'<div class="event"><b>{esc(row["name"])}</b><br><small class="sub">Richiesto da {esc(row["display_name"])} · {esc((row["created_at"] or "").replace("T"," "))}</small></div>' for row in recent) or '<p class="sub">Nessuna richiesta inviata.</p>'
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>Articoli</h1><p class="sub">Seleziona un articolo sotto la voce “Da ordinare”.</p></div></div><section class="article-grid">{cards}</section><section class="section" style="margin-top:20px"><h2>Ultime richieste</h2><div class="timeline">{history}</div></section></main>'''
-        self.send_html(layout("Articoli",body,user))
+        body=body.replace("<h1>Articoli</h1>","<h1>Prodotti</h1>").replace("Seleziona un articolo","Seleziona un prodotto")
+        self.send_html(layout("Prodotti",body,user))
+
+    def invoices_page(self,user):
+        q=parse_qs(urlparse(self.path).query); term=(q.get("q") or [""])[0].strip(); date_from=(q.get("dal") or [""])[0].strip(); date_to=(q.get("al") or [""])[0].strip()
+        where=["(deleted_at IS NULL OR deleted_at='')","COALESCE(invoice_number,'')<>''"]; args=[]
+        if term:
+            where.append("(invoice_number LIKE ? OR practice_number LIKE ? OR owner_first_name LIKE ? OR owner_last_name LIKE ? OR animal_name LIKE ?)");args.extend([f"%{term}%"]*5)
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_from): where.append("date(invoice_date)>=date(?)");args.append(date_from)
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_to): where.append("date(invoice_date)<=date(?)");args.append(date_to)
+        with db() as c:
+            rows=c.execute(f"SELECT * FROM practices WHERE {' AND '.join(where)} ORDER BY COALESCE(NULLIF(invoice_date,''),created_at) DESC,id DESC",args).fetchall()
+            reminders=c.execute("SELECT id,practice_number,owner_first_name,owner_last_name,animal_name FROM practices WHERE (deleted_at IS NULL OR deleted_at='') AND make_invoice='Si' AND COALESCE(invoice_number,'')='' ORDER BY updated_at DESC").fetchall()
+        table=[]
+        for row in rows:
+            owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip();url=f'/pratiche/{row["id"]}'
+            table.append(f'''<tr class="practice-row-link" tabindex="0" role="link" onclick="window.location.href='{url}'"><td><b>{esc(row["invoice_number"])}</b></td><td>{esc(date_it(row["invoice_date"]))}</td><td><a href="{url}">{esc(row["practice_number"])}</a></td><td>{esc(owner)}</td><td>{esc(row["animal_name"] or "")}</td><td>{money_it(effective_total(row))}</td><td><a class="btn ghost" href="{url}">Apri</a></td></tr>''')
+        reminder_html=''.join(f'<a class="event" href="/pratiche/{row["id"]}"><b>{esc(row["practice_number"])}</b> · {esc(((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip())} · {esc(row["animal_name"] or "")}</a>' for row in reminders) or '<p class="sub">Nessuna fattura da ricordare.</p>'
+        empty='<tr><td colspan="7" class="sub">Nessuna fattura trovata.</td></tr>'
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Fatture</h1><p class="sub">Ogni numero fattura identifica e apre la pratica collegata.</p></div></div><form class="section" method="get"><div class="fields"><div class="field full"><label>Numero fattura o pratica</label><input name="q" value="{esc(term)}" placeholder="Cerca per fattura, pratica, cliente o animale"></div><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div></div><button class="btn" style="margin-top:12px">Cerca</button></form><section class="tablebox"><table><thead><tr><th>Fattura</th><th>Data</th><th>Pratica</th><th>Cliente</th><th>Animale</th><th>Totale</th><th></th></tr></thead><tbody>{''.join(table) or empty}</tbody></table></section><section class="section" style="margin-top:20px"><h2>Da fatturare</h2><div class="timeline">{reminder_html}</div></section></main>'''
+        self.send_html(layout("Fatture",body,user))
 
     def urn_catalog_page(self,user):
         q=parse_qs(urlparse(self.path).query); term=(q.get("q") or [""])[0].strip(); material=(q.get("materiale") or [""])[0].strip(); availability=(q.get("disponibilita") or [""])[0].strip()
@@ -2079,8 +2157,8 @@ class App(BaseHTTPRequestHandler):
             if not article:return self.send_error(404)
             stamp=now()
             c.execute("INSERT INTO article_orders(article_id,ordered_by,created_at) VALUES(?,?,?)",(article_id,user["id"],stamp))
-            emit_notification(c,"article_ordered","📦 Articolo da ordinare",f'{article["name"]}\nRichiesto da {user["display_name"]}',actor_user_id=user["id"],payload={"url":"/articoli"},db_path=DB_PATH)
-        self.redirect("/articoli")
+            emit_notification(c,"article_ordered","📦 Prodotto da ordinare",f'{article["name"]}\nRichiesto da {user["display_name"]}',actor_user_id=user["id"],payload={"url":"/prodotti"},db_path=DB_PATH)
+        self.redirect("/prodotti")
 
     def whatsapp_conversations(self,user):
         q=parse_qs(urlparse(self.path).query)
@@ -2640,17 +2718,21 @@ class App(BaseHTTPRequestHandler):
         voucher_checked='checked' if raw('voucher_requested')=="Si" else ''
         use_voucher_checked='checked' if raw('use_voucher')=="Si" else ''
         catalog_checked='checked' if raw('send_catalog')=="Si" else ''
+        catalog_sent_checked='checked' if raw('catalog_sent')=="Si" else ''
         estremi_checked='checked' if raw('send_estremi')=="Si" else ''
-        return f'''<section class="section"><h2>Operatore e stati</h2><div class="fields"><div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option><option {selected('operator_name','GIANLUCA')}>GIANLUCA</option></select></div><div class="field"><label>Stato pratica</label><select name="status"><option {selected('status','Ritirato','Ritirato')}>Ritirato</option><option {selected('status','In programma','Ritirato')}>In programma</option><option {selected('status','Da consegnare','Ritirato')}>Da consegnare</option><option {selected('status','Consegnato','Ritirato')}>Consegnato</option><option data-collective-only="1" {selected('status','Smaltito','Ritirato')}>Smaltito</option></select></div><div class="field"><label>Pagamento</label><select name="payment_status">{''.join(f'<option {"selected" if raw("payment_status","Da saldare")==state else ""}>{state}</option>' for state in PAYMENT_STATES)}</select></div></div></section>
+        make_invoice_checked='checked' if raw('make_invoice')=="Si" else ''
+        payment_options=''.join(f'<option {"selected" if raw("payment_status","Da saldare")==state else ""}>{state}</option>' for state in PAYMENT_STATES)
+        payment_method_options=''.join(f'<option value="{method}" {"selected" if raw("payment_method")==method else ""}>{method or "Seleziona metodo"}</option>' for method in PAYMENT_METHODS)
+        return f'''<section class="section"><h2>Operatore e stati</h2><div class="fields"><div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option><option {selected('operator_name','GIANLUCA')}>GIANLUCA</option></select></div><div class="field"><label>Stato pratica</label><select name="status"><option {selected('status','Ritirato','Ritirato')}>Ritirato</option><option {selected('status','In programma','Ritirato')}>In programma</option><option {selected('status','Da consegnare','Ritirato')}>Da consegnare</option><option {selected('status','Consegnato','Ritirato')}>Consegnato</option><option data-collective-only="1" {selected('status','Smaltito','Ritirato')}>Smaltito</option></select></div></div></section>
         <input type="hidden" name="urn_notes" value="{val('urn_notes')}"><select name="urn_id" class="hidden" aria-hidden="true" tabindex="-1">{urn_options}</select><small id="urnStockWarning" class="sub hidden"></small>
-        <input type="hidden" name="price_urn_2" value="{val('price_urn_2')}"><input type="hidden" name="urn_notes_2" value="{val('urn_notes_2')}"><input type="hidden" name="price_cast_2" value="{val('price_cast_2')}"><input type="hidden" name="price_accessories_2" value="{val('price_accessories_2')}"><input type="hidden" name="accessory_type" value="{val('accessory_type')}"><input type="hidden" name="accessory_type_2" value="{val('accessory_type_2')}">
-        <section class="section"><h2>Richiesta</h2><div class="fields"><div class="field"><label>Servizio</label><select name="service_type"><option {selected('service_type','Da decidere')}>Da decidere</option><option {selected('service_type','Cremazione singola')}>Cremazione singola</option><option {selected('service_type','Cremazione collettiva')}>Cremazione collettiva</option></select></div><div class="field"><label>Origine richiesta *</label><select name="request_origin" required><option {selected('request_origin','Veterinario')}>Veterinario</option><option {selected('request_origin','Privato')}>Privato</option><option {selected('request_origin','Consegna in sede')}>Consegna in sede</option><option {selected('request_origin','Collaboratore')}>Collaboratore</option></select></div><div class="field {'hidden' if raw('request_origin')!='Collaboratore' else ''}" id="collaboratorBox"><label>Collaboratore</label><select name="collaborator_name"><option value="">Nessun collaboratore</option><option {selected('collaborator_name','HUMANITAS CROCE VERDE')}>HUMANITAS CROCE VERDE</option></select></div><div class="field"><label>Sede di destinazione</label><select name="destination_branch"><option {selected('destination_branch','Livorno')}>Livorno</option><option {selected('destination_branch','Empoli')}>Empoli</option></select></div><div class="field"><label>Data recupero</label><input type="date" name="pickup_date" value="{val('pickup_date')}"></div></div></section>
+        <input type="hidden" name="price_urn_2" value="{val('price_urn_2')}"><input type="hidden" name="urn_notes_2" value="{val('urn_notes_2')}"><input type="hidden" name="price_cast_2" value="{val('price_cast_2')}"><input type="hidden" name="price_accessories_2" value="{val('price_accessories_2')}"><input type="hidden" name="accessory_type" value="{val('accessory_type')}"><input type="hidden" name="accessory_type_2" value="{val('accessory_type_2')}"><select name="payment_status" class="hidden">{payment_options}</select><select name="payment_method" class="hidden">{payment_method_options}</select><input type="hidden" name="catalog_sent" value="{'Si' if catalog_sent_checked else ''}"><input type="hidden" name="invoice_number" value="{val('invoice_number')}"><input type="hidden" name="invoice_date" value="{val('invoice_date')}"><input type="hidden" name="make_invoice" value="{'Si' if make_invoice_checked else ''}">
+        <section class="section"><h2>Richiesta</h2><div class="fields"><div class="field"><label>Servizio</label><select name="service_type"><option {selected('service_type','Da decidere')}>Da decidere</option><option {selected('service_type','Cremazione singola')}>Cremazione singola</option><option {selected('service_type','Cremazione collettiva')}>Cremazione collettiva</option></select></div><div class="field"><label>Origine richiesta *</label><select name="request_origin" required><option {selected('request_origin','Veterinario')}>Veterinario</option><option {selected('request_origin','Privato')}>Privato</option><option value="Consegna in sede" {selected('request_origin','Consegna in sede')}>Consegnato in sede</option><option {selected('request_origin','Collaboratore')}>Collaboratore</option></select></div><div class="field {'hidden' if raw('request_origin')!='Collaboratore' else ''}" id="collaboratorBox"><label>Collaboratore</label><select name="collaborator_name"><option value="">Nessun collaboratore</option><option {selected('collaborator_name','HUMANITAS CROCE VERDE')}>HUMANITAS CROCE VERDE</option></select></div><div class="field"><label>Sede di destinazione</label><select name="destination_branch"><option {selected('destination_branch','Livorno')}>Livorno</option><option {selected('destination_branch','Empoli')}>Empoli</option></select></div><div class="field"><label>Data recupero</label><input type="date" name="pickup_date" value="{val('pickup_date')}"></div></div></section>
         <section class="section"><h2>SPEDITORE</h2><div class="fields"><input type="hidden" name="client_id" value="{val('client_id')}"><div class="field full lookup"><label>Cerca cliente in anagrafica</label><input id="clientSearch" autocomplete="off" placeholder="Scrivi nome, telefono, email, codice fiscale, città..."><div id="clientResults" class="lookup-results hidden"></div><div id="clientSelected" class="selected-box hidden"><span id="clientSelectedText"></span><button class="btn ghost" type="button" id="clearClientSelection">Cancella selezione</button></div><small class="sub">Se scegli un cliente, i campi vengono compilati automaticamente. Se li modifichi, l'anagrafica non viene aggiornata senza conferma.</small></div><div class="field full"><label>Usa veterinario come speditore</label><select name="owner_veterinarian_id">{owner_vet_options}</select><small class="sub">Compila automaticamente i dati dello speditore. Sul DDT, nel Luogo di origine, verra scritto solo il nome breve del veterinario.</small></div><div class="field"><label>Nome *</label><input name="owner_first_name" value="{val('owner_first_name')}" required></div><div class="field"><label>Cognome *</label><input name="owner_last_name" value="{val('owner_last_name')}" required></div><div class="field"><label>Ragione sociale</label><input name="owner_company" value="{val('owner_company')}"></div><div class="field"><label>Telefono *</label><input type="tel" inputmode="numeric" name="owner_phone" value="{val('owner_phone')}" required></div><div class="field"><label>Secondo telefono</label><input type="tel" inputmode="numeric" name="owner_phone_2" value="{val('owner_phone_2')}"></div><div class="field"><label>Email</label><input type="email" name="owner_email" value="{val('owner_email')}"></div><div class="field"><label>Codice fiscale *</label><input name="owner_tax_code" value="{val('owner_tax_code')}" required></div><div class="field"><label>Partita IVA</label><input name="owner_vat" value="{val('owner_vat')}"></div><div class="field full"><label>Indirizzo *</label><input name="owner_street" value="{val('owner_street') or val('owner_address')}" required></div><div class="field"><label>Comune *</label><input name="owner_city" value="{val('owner_city')}" required></div><div class="field"><label>Provincia *</label><input name="owner_province" value="{val('owner_province')}" maxlength="2" placeholder="Si compila dal comune" required></div><div class="field"><label>CAP *</label><input name="owner_zip" value="{val('owner_zip')}" inputmode="numeric" required></div><div class="field full"><label>Note cliente</label><textarea name="owner_notes" placeholder="Note anagrafiche utili">{val('owner_notes')}</textarea></div></div></section>
         <section class="section"><h2>DESTINATARIO E LUOGO DI DESTINAZIONE</h2><p class="sub">Compilati automaticamente in base alla sede selezionata: Livorno oppure Empoli.</p></section>
         <section class="section"><h2>LUOGO DI ORIGINE</h2><div class="fields"><div class="field"><label>Luogo di origine</label><select name="origin_mode"><option {selected('origin_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('origin_mode','Veterinario','IDEM SPED')}>Veterinario</option><option {selected('origin_mode','Testo libero','IDEM SPED')}>Testo libero</option></select></div><div class="field"><label>Veterinario di origine</label><select name="origin_veterinarian_id">{origin_vet_options}</select><small class="sub">Scrivi le iniziali selezionando il veterinario dall'elenco.</small></div><div class="field full"><label>Testo libero / indirizzo diverso</label><input name="origin_text" value="{val('origin_text') or (val('pickup_address') if raw('pickup_address_mode')=='Altro indirizzo' else '')}" placeholder="Nome breve veterinario o indirizzo diverso"></div></div></section>
         <section class="section"><h2>Animale</h2><div class="fields"><div class="field"><label>Nome</label><input name="animal_name" value="{val('animal_name')}"></div><div class="field"><label>Specie</label><input name="species" value="{val('species')}"></div><div class="field"><label>Peso stimato (kg)</label><input name="estimated_weight" value="{val('estimated_weight')}"></div><div class="field"><label>Età - anni</label><input name="age_years" value="{val('age_years')}"></div><div class="field"><label>Età - mesi</label><input name="age_months" value="{val('age_months')}"></div><div class="field"><label>Microchip</label><input name="microchip" value="{val('microchip')}"></div><div class="field full"><label>Razza</label><input name="breed" value="{val('breed')}"></div></div><button class="btn ghost" type="button" id="showSecondAnimal" style="margin-top:12px;{'display:none' if raw('animal2_name') else ''}">+ Aggiungi altro animale</button><div id="secondAnimalBox" style="display:{'block' if raw('animal2_name') else 'none'};margin-top:14px"><h2>Secondo animale</h2><div class="fields"><div class="field"><label>Nome</label><input name="animal2_name" value="{val('animal2_name')}"></div><div class="field"><label>Specie</label><input name="animal2_species" value="{val('animal2_species')}"></div><div class="field"><label>Peso stimato (kg)</label><input name="animal2_weight" value="{val('animal2_weight')}"></div><div class="field"><label>Microchip</label><input name="animal2_microchip" value="{val('animal2_microchip')}"></div><div class="field full"><label>Razza</label><input name="animal2_breed" value="{val('animal2_breed')}"></div></div></div></section>
         <section class="section"><h2>AMBULATORIO VETERINARIO</h2><div class="fields"><div class="field full lookup"><label>VETERINARIO</label><input id="vetSearch" autocomplete="off" placeholder="Scrivi per cercare il veterinario"><div id="vetResults" class="lookup-results hidden"></div><select name="veterinarian_id">{vet_options}</select><input type="hidden" name="clinic_name" value="{val('clinic_name')}"><button class="btn ghost" type="button" id="clearVetSelection" style="margin-top:8px">Cancella veterinario</button></div><div class="field"><label>MEDICO VETERINARIO</label><input name="veterinarian_name" value="{val('veterinarian_name')}"></div><div class="field"><label><input type="checkbox" name="voucher_requested" value="Si" {voucher_checked}> BUONO</label><small class="sub">Spunta per assegnare un buono al veterinario selezionato.</small></div></div></section>
-        <section class="section"><h2>TRASPORTATORE</h2><div class="fields"><div class="field"><label>Dati trasportatore</label><select name="transporter_mode"><option {selected('transporter_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('transporter_mode','DATI PET PARADISE','IDEM SPED')}>DATI PET PARADISE</option></select></div><div class="field"><label>Mezzo di trasporto</label><select name="transport_method" id="transport_method_quick"><option value="">Seleziona mezzo</option><option {selected('transport_method','Fiat Fiorino')}>Fiat Fiorino</option><option {selected('transport_method','Renault Captur')}>Renault Captur</option><option {selected('transport_method','Dr PK8')}>Dr PK8</option></select></div><div class="field"><label>Targa automezzo</label><input name="vehicle_plate" value="{val('vehicle_plate')}" placeholder="Compilata automaticamente, modificabile"></div><div class="field"><label>Temperatura</label><select name="temperature_mode"><option {selected('temperature_mode','Ambiente','Ambiente')}>Ambiente</option><option {selected('temperature_mode','Refrigerato','Ambiente')}>Refrigerato</option><option {selected('temperature_mode','Congelato','Ambiente')}>Congelato</option></select></div><div class="field"><label>Numero colli</label><input name="package_count" value="{val('package_count') or '1'}"></div><div class="field"><label>ID contenitore</label><select name="container_id"><option value="">Seleziona ID contenitore</option><option {selected('container_id','03/2021')}>03/2021</option><option {selected('container_id','04/2021')}>04/2021</option></select></div><div class="field"><label>Numero lotto</label><input name="lot_number" value="{val('lot_number') or '/'}"></div><div class="field"><label>Metodo trattamento</label><input name="treatment_method" value="{val('treatment_method') or '/'}"></div></div></section>
+        <section class="section"><h2>TRASPORTATORE</h2><div class="fields"><div class="field"><label>Dati trasportatore</label><select name="transporter_mode"><option {selected('transporter_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('transporter_mode','DATI PET PARADISE','IDEM SPED')}>DATI PET PARADISE</option></select></div><div class="field"><label>Mezzo di trasporto</label><select name="transport_method" id="transport_method_quick"><option value="">Seleziona mezzo</option><option {selected('transport_method','Fiat Fiorino')}>Fiat Fiorino</option><option {selected('transport_method','Renault Captur')}>Renault Captur</option><option {selected('transport_method','Dr PK8')}>Dr PK8</option><option {selected('transport_method','Mezzo proprio')}>Mezzo proprio</option></select></div><div class="field"><label>Targa automezzo</label><input name="vehicle_plate" value="{val('vehicle_plate')}" placeholder="Compilata automaticamente, modificabile"></div><div class="field"><label>Temperatura</label><select name="temperature_mode"><option {selected('temperature_mode','Ambiente','Ambiente')}>Ambiente</option><option {selected('temperature_mode','Refrigerato','Ambiente')}>Refrigerato</option><option {selected('temperature_mode','Congelato','Ambiente')}>Congelato</option></select></div><div class="field"><label>Numero colli</label><input name="package_count" value="{val('package_count') or '1'}"></div><div class="field"><label>ID contenitore</label><select name="container_id"><option value="">Seleziona ID contenitore</option><option {selected('container_id','03/2021')}>03/2021</option><option {selected('container_id','04/2021')}>04/2021</option></select></div><div class="field"><label>Numero lotto</label><input name="lot_number" value="{val('lot_number') or '/'}"></div><div class="field"><label>Metodo trattamento</label><input name="treatment_method" value="{val('treatment_method') or '/'}"></div></div></section>
         <section class="section"><h2>Preventivo</h2><div class="fields"><div class="field"><label>Cremazione €</label><input name="price_cremation" value="{val('price_cremation')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Ritiro €</label><input name="price_pickup" value="{val('price_pickup')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Urna €</label><input name="price_urn" value="{val('price_urn')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label><input type="checkbox" name="send_catalog" value="Si" {catalog_checked} style="width:auto"> INVIARE CATALOGO</label></div><div class="field"><label>Riconsegna €</label><input name="price_delivery" value="{val('price_delivery')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Calco €</label><input name="price_cast" value="{val('price_cast')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Calco polpastrello €</label><input name="price_paw_cast" value="{val('price_paw_cast')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Calco naso €</label><input name="price_nose_cast" value="{val('price_nose_cast')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Serale €</label><input name="price_evening" value="{val('price_evening')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Notturno €</label><input name="price_night" value="{val('price_night')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Festivo €</label><input name="price_holiday" value="{val('price_holiday')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Accessori €</label><input name="price_accessories" value="{val('price_accessories')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Totale servizio €</label><input name="total_service" value="{val('total_service')}" readonly></div><div class="field"><label>Acconto €</label><input name="deposit" value="{val('deposit')}" placeholder="Numero o testo libero"></div><div class="field"><label>Rimanenza €</label><input name="remaining_balance" value="{val('remaining_balance')}" readonly></div><div class="field full"><label>TOTALE D</label><textarea name="total_text" placeholder="Testo libero per note sul totale">{val('total_text')}</textarea></div><div class="field full"><label>NOTE</label><textarea name="notes">{val('notes')}</textarea></div><div class="field"><label><input type="checkbox" name="send_estremi" value="Si" {estremi_checked} style="width:auto"> INVIARE ESTREMI</label></div><div class="field"><label><input type="checkbox" name="use_voucher" value="Si" {use_voucher_checked} style="width:auto"> USA BUONO</label><div id="useVoucherBox" class="selected-box hidden"><span id="useVoucherStatus">Seleziona il veterinario e spunta USA BUONO.</span><select name="used_voucher_id" data-current="{val('used_voucher_id')}" class="hidden"><option value="">Seleziona buono</option></select></div></div></div></section>
         <section class="section"><h2>Etichette operative</h2><div class="fields">{tag_select('tag_assistita','ASSISTITA','tag-red')}{tag_select('tag_possibile_assistita','POSSIBILE ASSISTITA','tag-red')}{tag_select('tag_assistita_streaming','ASSISTITA STREAMING','tag-orange')}{tag_select('tag_saluto','SALUTO','tag-purple')}{tag_select('tag_calco','CALCO','tag-yellow')}{tag_select('tag_calco_urna','CALCO PER URNA','tag-yellow')}{tag_select('tag_calco_paw','CALCO POLPASTRELLO','tag-yellow')}{tag_select('tag_calco_nose','CALCO NASO','tag-yellow')}{tag_select('tag_avvisare','AVVISARE','tag-pink')}{tag_select('tag_da_richiamare','DA RICHIAMARE','tag-blue')}</div></section>
         <section class="section"><h2>Documento e accettazione</h2><div class="fields"><div class="field"><label>Numero documento</label><input name="identity_document_number" value="{val('identity_document_number')}"></div><div class="field"><label>Data rilascio</label><input type="date" name="identity_document_date" value="{val('identity_document_date')}"></div><div class="field full"><label>Luogo firma</label><input name="signing_place" value="{val('signing_place') or val('destination_branch')}"></div></div></section>'''
@@ -2660,7 +2742,7 @@ class App(BaseHTTPRequestHandler):
         self.send_html(layout("Nuova pratica",body,user))
 
     def normalized_fields(self,f):
-        keys=["client_id","owner_veterinarian_id","origin_veterinarian_id","operator_name","request_origin","collaborator_name","destination_branch","owner_first_name","owner_last_name","owner_company","owner_phone","owner_phone_2","owner_email","owner_tax_code","owner_vat","owner_notes","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","use_voucher","used_voucher_id","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_saluto","tag_calco","tag_calco_urna","tag_calco_paw","tag_calco_nose","tag_avvisare","tag_da_richiamare","payment_status","price_cremation","price_pickup","price_evening","price_urn","send_catalog","send_estremi","price_delivery","price_night","price_cast","price_paw_cast","price_nose_cast","price_holiday","price_accessories","deposit","remaining_balance","total_service","total_text","identity_document_number","identity_document_date","signing_place"]
+        keys=["client_id","owner_veterinarian_id","origin_veterinarian_id","operator_name","request_origin","collaborator_name","destination_branch","owner_first_name","owner_last_name","owner_company","owner_phone","owner_phone_2","owner_email","owner_tax_code","owner_vat","owner_notes","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","use_voucher","used_voucher_id","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_saluto","tag_calco","tag_calco_urna","tag_calco_paw","tag_calco_nose","tag_avvisare","tag_da_richiamare","payment_status","payment_method","price_cremation","price_pickup","price_evening","price_urn","send_catalog","catalog_sent","send_estremi","price_delivery","price_night","price_cast","price_paw_cast","price_nose_cast","price_holiday","price_accessories","deposit","remaining_balance","total_service","total_text","invoice_number","invoice_date","make_invoice","identity_document_number","identity_document_date","signing_place"]
         data = {k:f.get(k,"").strip() for k in keys}
         data["urn_id"] = f.get("urn_id","").strip() or None
         data["urn_notes"] = f.get("urn_notes","").strip()
@@ -2674,8 +2756,14 @@ class App(BaseHTTPRequestHandler):
         if data["accessory_type_2"] not in allowed_accessories: data["accessory_type_2"]="Altro"
         if not data["payment_status"] or data["payment_status"] not in PAYMENT_STATES:
             data["payment_status"] = "Da saldare"
+        if data["payment_method"] not in PAYMENT_METHODS:
+            data["payment_method"] = ""
         data["send_catalog"] = "Si" if data["send_catalog"] == "Si" else ""
+        data["catalog_sent"] = "Si" if data["catalog_sent"] == "Si" else ""
+        if data["catalog_sent"] == "Si":
+            data["send_catalog"] = ""
         data["send_estremi"] = "Si" if data["send_estremi"] == "Si" else ""
+        data["make_invoice"] = "Si" if data["make_invoice"] == "Si" else ""
         data["use_voucher"] = "Si" if data["use_voucher"] == "Si" else ""
         data["used_voucher_id"] = data["used_voucher_id"] or None
         for key in ("tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_saluto","tag_calco","tag_calco_urna","tag_calco_paw","tag_calco_nose","tag_avvisare","tag_da_richiamare"):
@@ -2751,6 +2839,7 @@ class App(BaseHTTPRequestHandler):
             data["vehicle_plate"]=vehicle_plates[data["transport_method"]]
         if data["request_origin"] == "Consegna in sede":
             data["transporter_mode"] = "IDEM SPED"
+            data["transport_method"] = "Mezzo proprio"
         elif data["request_origin"] in ("Veterinario","Privato","Collaboratore"):
             data["transporter_mode"] = "DATI PET PARADISE"
         if data["origin_mode"] == "IDEM SPED":
@@ -3263,6 +3352,14 @@ class App(BaseHTTPRequestHandler):
                       (d.get("owner_first_name"),d.get("owner_last_name"),d.get("owner_company"),d.get("owner_phone"),d.get("owner_phone_2"),d.get("owner_email"),d.get("owner_tax_code"),d.get("owner_vat"),d.get("owner_street"),d.get("owner_city"),d.get("owner_province"),d.get("owner_zip"),d.get("owner_address"),d.get("owner_notes"),stamp,stamp))
         return cur.lastrowid
 
+    def invoice_conflict(self,c,invoice_number,exclude_id=None):
+        number=(invoice_number or "").strip()
+        if not number:return None
+        sql="SELECT id,practice_number FROM practices WHERE lower(trim(invoice_number))=lower(trim(?))"
+        args=[number]
+        if exclude_id is not None:sql+=" AND id<>?";args.append(exclude_id)
+        return c.execute(sql,args).fetchone()
+
     def duplicate_client_page(self,user,d,duplicates):
         rows=''.join(f'''<tr><td>{esc(((r["first_name"] or "")+" "+(r["last_name"] or "")).strip() or r["company_name"])}</td><td>{esc(r["phone"])}</td><td>{esc(r["email"])}</td><td>{esc(r["tax_code"] or r["vat_number"])}</td><td>{esc(r["city"] or r["address"])}</td><td>ID {r["id"]}</td></tr>''' for r in duplicates)
         hidden=''.join(f'<input type="hidden" name="{esc(k)}" value="{esc(v)}">' for k,v in d.items() if v is not None)
@@ -3276,6 +3373,8 @@ class App(BaseHTTPRequestHandler):
         initial=f.get("status","Ritirato")
         if initial not in STATES or (initial=="Smaltito" and d.get("service_type")!="Cremazione collettiva"): initial="Ritirato"
         with db() as c:
+            conflict=self.invoice_conflict(c,d.get("invoice_number"))
+            if conflict:return self.send_error(409,f'Numero fattura già usato nella pratica {conflict["practice_number"]}')
             if d.get("client_id"):
                 exists=c.execute("SELECT id FROM clients WHERE id=?",(d["client_id"],)).fetchone()
                 if not exists:
@@ -3298,6 +3397,8 @@ class App(BaseHTTPRequestHandler):
             c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"Creazione pratica",initial,user["id"],stamp))
             owner=" ".join(x for x in (d.get("owner_first_name"),d.get("owner_last_name")) if x).strip() or d.get("owner_company") or "Cliente non indicato"
             emit_notification(c,"practice_created","🐾 Nuova pratica",f'{owner}\n{d.get("animal_name") or number}\n📍 {d.get("destination_branch") or ""}',pid,user["id"],db_path=DB_PATH)
+            if d.get("catalog_sent")=="Si":
+                emit_notification(c,"catalog_sent","📖 Catalogo inviato",f'{number} · {d.get("animal_name") or "Animale non indicato"}',pid,user["id"],db_path=DB_PATH)
         self.redirect(f"/pratiche/{pid}")
 
     def practice(self,user,pid):
@@ -3308,6 +3409,7 @@ class App(BaseHTTPRequestHandler):
         if not p:return self.send_error(404)
         options=''.join(f'<option {"selected" if s==p["status"] else ""}>{esc(s)}</option>' for s in STATES)
         payment_value = p["payment_status"] if "payment_status" in p.keys() and p["payment_status"] else "Da saldare"
+        payment_method_value = p["payment_method"] if "payment_method" in p.keys() and p["payment_method"] else "Non indicato"
         payment_cls = {"Da saldare":"pay-yellow","Acconto":"pay-blue","Pagato":"pay-green"}.get(payment_value,"")
         practice_state_cls=practice_status_class(p["status"])
         catalog_value = "Si" if "send_catalog" in p.keys() and p["send_catalog"] else "No"
@@ -3324,6 +3426,10 @@ class App(BaseHTTPRequestHandler):
         if p["price_urn_2"]: urn_parts.append(money_it(money_value(p["price_urn_2"])))
         urn_box=f'''<div class="kv"><small>Urna</small>{'<br>'.join(urn_parts) if urn_parts else '<span class="sub">Non indicata</span>'}</div>'''
         invoice_value = p["invoice_number"] if "invoice_number" in p.keys() and p["invoice_number"] else ""
+        invoice_date = p["invoice_date"] if "invoice_date" in p.keys() and p["invoice_date"] else ""
+        make_invoice_checked = "checked" if "make_invoice" in p.keys() and p["make_invoice"] == "Si" else ""
+        invoice_box=f'''<div class="kv full"><small>Fattura</small><form class="invoice-inline" method="post" action="/pratiche/{pid}/fattura"><input name="invoice_number" value="{esc(invoice_value)}" placeholder="Numero fattura"><input type="date" name="invoice_date" value="{esc(invoice_date)}"><label class="modern-check"><input type="checkbox" name="make_invoice" value="Si" {make_invoice_checked}> FARE FATTURA</label><button class="btn ghost">Salva fattura</button></form></div>'''
+        old_invoice_box=f'''<div class="kv"><small>Fattura</small>{esc(invoice_value) or '<span class="sub">Non inserita</span>'}</div>'''
         no_whatsapp_checked = "checked" if "no_whatsapp_message" in p.keys() and p["no_whatsapp_message"] == "Si" else ""
         no_whatsapp_note = '<div class="flash warning">Invio automatico WhatsApp disattivato per questa pratica.</div>' if no_whatsapp_checked else ''
         whatsapp_sent = p["whatsapp_thanks_sent_at"] if "whatsapp_thanks_sent_at" in p.keys() and p["whatsapp_thanks_sent_at"] else ""
@@ -3388,9 +3494,12 @@ class App(BaseHTTPRequestHandler):
           </section>
         </main>"""
         body=body.replace(f'<a class="btn ghost" href="/pratiche/{pid}/firma">Firma su telefono</a>',"")
+        body=body.replace(old_invoice_box,invoice_box)
+        body=body.replace(f'<div class="field"><label>Numero fattura</label><input name="invoice_number" value="{esc(invoice_value)}" placeholder="Da inserire quando risulta pagato"></div>',"")
         body=body.replace(f'<div class="kv"><small>Catalogo urna</small><b>{esc(catalog_value)}</b></div>',catalog_box)
         body=body.replace(catalog_box,catalog_box+urn_box)
         body=body.replace(f'<small>Stato</small><b>{esc(p["status"])}</b>',f'<small>Stato</small><span class="badge practice-status {practice_state_cls}">{esc(p["status"])}</span>')
+        body=body.replace(f'<span class="badge {payment_cls}">{esc(payment_value)}</span>',f'<span class="badge {payment_cls}">{esc(payment_value)}</span><br><small>Metodo: {esc(payment_method_value)}</small>')
         self.send_html(layout(p["practice_number"],body,user))
 
     def edit_page(self,user,pid):
@@ -3437,7 +3546,9 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         with db() as c:
             previous=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
             if not previous:return self.send_error(404)
-            field_labels={"animal_name":"Nome animale","owner_first_name":"Nome proprietario","owner_last_name":"Cognome proprietario","owner_phone":"Telefono proprietario","owner_phone_2":"Secondo telefono","service_type":"Tipo cremazione","destination_branch":"Sede","notes":"Note","send_catalog":"Inviare catalogo","send_estremi":"Inviare estremi","use_voucher":"Usa buono",**MONEY_FIELDS}
+            conflict=self.invoice_conflict(c,d.get("invoice_number"),pid)
+            if conflict:return self.send_error(409,f'Numero fattura già usato nella pratica {conflict["practice_number"]}')
+            field_labels={"animal_name":"Nome animale","owner_first_name":"Nome proprietario","owner_last_name":"Cognome proprietario","owner_phone":"Telefono proprietario","owner_phone_2":"Secondo telefono","service_type":"Tipo cremazione","destination_branch":"Sede","notes":"Note","send_catalog":"Inviare catalogo","catalog_sent":"Catalogo inviato","send_estremi":"Inviare estremi","use_voucher":"Usa buono","payment_method":"Metodo di pagamento","invoice_number":"Numero fattura","invoice_date":"Data fattura","make_invoice":"Fare fattura",**MONEY_FIELDS}
             changes=[]
             for key,new_value in d.items():
                 old_value=str(previous[key] or "") if key in previous.keys() else ""
@@ -3449,9 +3560,6 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 changes.append(("Stato pratica",previous["status"],requested_status))
             c.execute(f"UPDATE practices SET {assignments},status=?,data_complete=?,updated_at=? WHERE id=?",list(d.values())+[requested_status,self.is_complete(d),stamp,pid])
             self.sync_practice_urn(c,pid,previous["urn_id"],d.get("urn_id"),user["id"])
-            if d["send_catalog"] == "Si" and "catalog_sent" in previous.keys() and previous["catalog_sent"] == "Si":
-                c.execute("UPDATE practices SET catalog_sent='' WHERE id=?",(pid,))
-                changes.append(("Catalogo urna","Catalogo inviato","Da inviare"))
             p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
             self.reconcile_payment_movements(c,pid,previous,p,user["id"],"Modifica pratica")
             wanted_prefix,_=practice_code_prefix(d["service_type"])
@@ -3474,6 +3582,21 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 elif requested_status=="Da consegnare": emit_notification(c,"delivery_scheduled","📅 Consegna programmata",d.get("animal_name") or previous["practice_number"],pid,user["id"],db_path=DB_PATH)
             if (previous["payment_status"] or "Da saldare") != d["payment_status"] and d["payment_status"]=="Pagato":
                 emit_notification(c,"payment_received","💰 Pagamento ricevuto",f'{d.get("owner_first_name","")} {d.get("owner_last_name","")}\n{money_it(effective_total(d))}',pid,user["id"],db_path=DB_PATH)
+            if previous["catalog_sent"]!="Si" and d.get("catalog_sent")=="Si":
+                emit_notification(c,"catalog_sent","📖 Catalogo inviato",f'{previous["practice_number"]} · {d.get("animal_name") or "Animale non indicato"}',pid,user["id"],db_path=DB_PATH)
+        self.redirect(f"/pratiche/{pid}")
+
+    def save_invoice(self,user,pid):
+        f=self.form();number=f.get("invoice_number","").strip();invoice_date=f.get("invoice_date","").strip();make_invoice="Si" if f.get("make_invoice")=="Si" else ""
+        if invoice_date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}",invoice_date):return self.send_error(400,"Data fattura non valida")
+        with db() as c:
+            current=c.execute("SELECT invoice_number,invoice_date,make_invoice FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(pid,)).fetchone()
+            if not current:return self.send_error(404)
+            conflict=self.invoice_conflict(c,number,pid)
+            if conflict:return self.send_error(409,f'Numero fattura già usato nella pratica {conflict["practice_number"]}')
+            c.execute("UPDATE practices SET invoice_number=?,invoice_date=?,make_invoice=?,updated_at=? WHERE id=?",(number,invoice_date,make_invoice,now(),pid))
+            old=f'{current["invoice_number"] or "Non inserita"} · {date_it(current["invoice_date"])}';new=f'{number or "Non inserita"} · {date_it(invoice_date)}'
+            c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,"Fattura",old,new,user["id"],now()))
         self.redirect(f"/pratiche/{pid}")
 
     def catalog_sent(self,user,pid):
@@ -3499,11 +3622,14 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         self.redirect(f"/pratiche/{pid}")
 
     def change_state(self,user,pid):
-        f=self.form(); new=f.get("status",""); payment=f.get("payment_status","Da saldare"); invoice=f.get("invoice_number","").strip(); no_whatsapp="Si" if f.get("no_whatsapp_message")=="Si" else ""
+        f=self.form(); new=f.get("status",""); payment=f.get("payment_status","Da saldare"); requested_invoice=f.get("invoice_number"); no_whatsapp="Si" if f.get("no_whatsapp_message")=="Si" else ""
         if new not in STATES or payment not in PAYMENT_STATES:return self.send_error(400)
         with db() as c:
             old=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
             if not old:return self.send_error(404)
+            invoice=old["invoice_number"] if requested_invoice is None else requested_invoice.strip()
+            conflict=self.invoice_conflict(c,invoice,pid)
+            if conflict:return self.send_error(409,f'Numero fattura già usato nella pratica {conflict["practice_number"]}')
             if new=="Smaltito" and old["service_type"]!="Cremazione collettiva": return self.send_error(400,"Smaltito è disponibile solo per la cremazione collettiva")
             old_payment=old["payment_status"] or "Da saldare"
             c.execute("UPDATE practices SET status=?,payment_status=?,invoice_number=?,no_whatsapp_message=?,updated_at=? WHERE id=?",(new,payment,invoice,no_whatsapp,now(),pid))
@@ -3622,23 +3748,61 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             for r in rows:
                 animal='/' if (r['service_type'] or '') == 'Cremazione collettiva' else esc(r['animal_name'] or 'Da inserire')
                 owner=esc(((r['owner_first_name'] or '')+' '+(r['owner_last_name'] or '')).strip())
-                body_rows.append(f'''<tr><td>{esc(date_it(r["pickup_date"] or r["created_at"]))}</td><td><a href="/pratiche/{r["id"]}"><b>{esc(r["practice_number"])}</b></a><br><small>Cestinata il {esc((r["deleted_at"] or "").replace("T"," "))}</small></td><td>{animal}</td><td>{owner}</td><td>{esc(r["clinic_name"] or "-")}</td><td><div class="actions"><form method="post" action="/pratiche/{r["id"]}/ripristina" onsubmit="return confirm('Ripristinare questa pratica?')"><button class="btn ghost">Ripristina</button></form><form method="post" action="/pratiche/{r["id"]}/elimina-definitiva" onsubmit="return confirm('Sei sicuro di voler eliminare definitivamente questa pratica?') && confirm('Questa operazione e irreversibile.')"><input type="hidden" name="confirm_delete" value="ELIMINA DEFINITIVAMENTE"><button class="btn danger-btn">Elimina definitivamente</button></form></div></td></tr>''')
+                display_number=r["original_practice_number"] or r["practice_number"]
+                body_rows.append(f'''<tr><td>{esc(date_it(r["pickup_date"] or r["created_at"]))}</td><td><a href="/pratiche/{r["id"]}"><b>{esc(display_number)}</b></a><br><small>Cestinata il {esc((r["deleted_at"] or "").replace("T"," "))}</small></td><td>{animal}</td><td>{owner}</td><td>{esc(r["clinic_name"] or "-")}</td><td><div class="actions"><form method="post" action="/pratiche/{r["id"]}/ripristina" onsubmit="return confirm('Ripristinare questa pratica?')"><button class="btn ghost">Ripristina</button></form><form method="post" action="/pratiche/{r["id"]}/elimina-definitiva" onsubmit="return confirm('Sei sicuro di voler eliminare definitivamente questa pratica?') && confirm('Questa operazione e irreversibile.')"><input type="hidden" name="confirm_delete" value="ELIMINA DEFINITIVAMENTE"><button class="btn danger-btn">Elimina definitivamente</button></form></div></td></tr>''')
             content=f'''<div class="trash-note">Le pratiche nel Cestino non compaiono in Dashboard e Archivio. Ripristinale se sono state eliminate per errore.</div><div class="tablebox"><table><thead><tr><th>Data recupero</th><th>Pratica</th><th>Animale</th><th>Speditore</th><th>Veterinario</th><th>Azioni</th></tr></thead><tbody>{''.join(body_rows)}</tbody></table></div>'''
         else:
             content='<section class="section empty-state">Il Cestino e vuoto.</section>'
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>Cestino</h1><div class="sub">Pratiche eliminate ma ancora recuperabili.</div></div><a class="btn ghost" href="/archivio/pratiche">Torna all archivio</a></div>{content}</main>'''
         self.send_html(layout("Cestino", body, user))
 
+    def sync_sequence_counter(self,c,prefix):
+        key="next_cr_number" if prefix=="CR" else "next_sm_number"
+        values=[sequence_code_parts(row["practice_number"]) for row in c.execute("SELECT practice_number FROM practices WHERE (deleted_at IS NULL OR deleted_at='') AND practice_number LIKE ?",(f"{prefix}-%",))]
+        maximum=max((parts[1] for parts in values if parts),default=0)
+        c.execute("UPDATE settings SET value=? WHERE key=?",(str(maximum+1),key))
+
+    def shift_sequence_after_delete(self,c,number,user_id,stamp):
+        parts=sequence_code_parts(number)
+        if not parts:return
+        prefix,removed,width=parts
+        rows=c.execute("SELECT id,practice_number FROM practices WHERE (deleted_at IS NULL OR deleted_at='') AND practice_number LIKE ? ORDER BY practice_number",(f"{prefix}-%",)).fetchall()
+        for row in rows:
+            current=sequence_code_parts(row["practice_number"])
+            if not current or current[1]<=removed:continue
+            new_number=format_sequence_code(prefix,current[1]-1,max(width,current[2]))
+            c.execute("UPDATE practices SET practice_number=?,updated_at=? WHERE id=?",(new_number,stamp,row["id"]))
+            c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(row["id"],"Rinumerazione automatica",row["practice_number"],new_number,user_id,stamp))
+        self.sync_sequence_counter(c,prefix)
+
+    def shift_sequence_for_restore(self,c,number,user_id,stamp):
+        parts=sequence_code_parts(number)
+        if not parts:return
+        prefix,target,width=parts
+        rows=c.execute("SELECT id,practice_number FROM practices WHERE (deleted_at IS NULL OR deleted_at='') AND practice_number LIKE ? ORDER BY practice_number DESC",(f"{prefix}-%",)).fetchall()
+        for row in rows:
+            current=sequence_code_parts(row["practice_number"])
+            if not current or current[1]<target:continue
+            new_number=format_sequence_code(prefix,current[1]+1,max(width,current[2]))
+            c.execute("UPDATE practices SET practice_number=?,updated_at=? WHERE id=?",(new_number,stamp,row["id"]))
+            c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(row["id"],"Rinumerazione automatica",row["practice_number"],new_number,user_id,stamp))
+
     def delete_practice(self,user,pid):
         stamp=now()
         try:
             with db() as c:
-                p=c.execute("SELECT id,deleted_at,urn_id FROM practices WHERE id=?",(pid,)).fetchone()
+                p=c.execute("SELECT id,deleted_at,urn_id,practice_number FROM practices WHERE id=?",(pid,)).fetchone()
                 if not p:
                     return self.error_page("Pratica non trovata", "La pratica non esiste o e gia stata eliminata definitivamente.", "/pratiche")
                 if p["deleted_at"]:
                     return self.redirect("/cestino")
-                c.execute("UPDATE practices SET deleted_at=?, deleted_by=?, updated_at=? WHERE id=?",(stamp,user["id"],stamp,pid))
+                original=p["practice_number"]
+                if sequence_code_parts(original):
+                    placeholder=f"DEL-{pid}-{original}"
+                    c.execute("UPDATE practices SET practice_number=?,original_practice_number=?,deleted_at=?,deleted_by=?,updated_at=? WHERE id=?",(placeholder,original,stamp,user["id"],stamp,pid))
+                    self.shift_sequence_after_delete(c,original,user["id"],stamp)
+                else:
+                    c.execute("UPDATE practices SET deleted_at=?,deleted_by=?,updated_at=? WHERE id=?",(stamp,user["id"],stamp,pid))
                 self.adjust_urn_stock(c,p["urn_id"],1,"Restituita per pratica cestinata",pid,user["id"],"Pratica spostata nel Cestino")
                 c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,note,user_id,created_at) VALUES(?,?,?,?,?,?,?)",(pid,"Cestino","Attiva","Cestinata","Pratica spostata nel Cestino",user["id"],stamp))
             self.redirect("/cestino")
@@ -3651,10 +3815,16 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         stamp=now()
         try:
             with db() as c:
-                p=c.execute("SELECT id,deleted_at,urn_id FROM practices WHERE id=?",(pid,)).fetchone()
+                p=c.execute("SELECT id,deleted_at,urn_id,practice_number,original_practice_number FROM practices WHERE id=?",(pid,)).fetchone()
                 if not p:
                     return self.error_page("Pratica non trovata", "La pratica non esiste o e stata eliminata definitivamente.", "/cestino")
-                c.execute("UPDATE practices SET deleted_at=NULL, deleted_by=NULL, updated_at=? WHERE id=?",(stamp,pid))
+                original=p["original_practice_number"] or p["practice_number"]
+                if sequence_code_parts(original):
+                    self.shift_sequence_for_restore(c,original,user["id"],stamp)
+                    c.execute("UPDATE practices SET practice_number=?,original_practice_number=NULL,deleted_at=NULL,deleted_by=NULL,updated_at=? WHERE id=?",(original,stamp,pid))
+                    self.sync_sequence_counter(c,sequence_code_parts(original)[0])
+                else:
+                    c.execute("UPDATE practices SET deleted_at=NULL,deleted_by=NULL,updated_at=? WHERE id=?",(stamp,pid))
                 self.adjust_urn_stock(c,p["urn_id"],-1,"Utilizzata per pratica ripristinata",pid,user["id"],"Pratica ripristinata dal Cestino")
                 c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,note,user_id,created_at) VALUES(?,?,?,?,?,?,?)",(pid,"Ripristino","Cestinata","Attiva","Pratica ripristinata dal Cestino",user["id"],stamp))
             self.redirect(f"/pratiche/{pid}")

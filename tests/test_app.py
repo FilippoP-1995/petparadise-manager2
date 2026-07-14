@@ -45,6 +45,53 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(extras["price_paw_cast"], "25.50")
         self.assertEqual(extras["tag_calco_nose"], "Si")
 
+    def test_new_budget_invoice_and_transport_fields(self):
+        html=self.handler.fields_html()
+        for expected in ('name="catalog_sent"','name="payment_method"','name="invoice_number"','name="invoice_date"','name="make_invoice"','Mezzo proprio'):
+            self.assertIn(expected,html)
+        data=self.handler.normalized_fields({
+            "request_origin":"Consegna in sede","send_catalog":"Si","catalog_sent":"Si",
+            "payment_method":"Contanti","invoice_number":"F-2026-19","invoice_date":"2026-07-14","make_invoice":"Si",
+        })
+        self.assertEqual(data["transport_method"],"Mezzo proprio")
+        self.assertEqual(data["payment_method"],"Contanti")
+        self.assertEqual(data["catalog_sent"],"Si")
+        self.assertEqual(data["send_catalog"],"")
+        self.assertEqual(data["invoice_number"],"F-2026-19")
+        self.assertEqual(data["make_invoice"],"Si")
+
+    def test_invoice_page_search_and_unique_code(self):
+        with app.db() as conn:
+            user=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,invoice_number,invoice_date,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,owner_first_name)
+                              VALUES(?,?,?,?,?,?,?,?,?,?,?)""",("CR-000001","FT-77","2026-07-14","Privato","Livorno","Ritirato",stamp,stamp,user["id"],"Luna","Mario")).lastrowid
+            conflict=self.handler.invoice_conflict(conn,"ft-77")
+            self.assertEqual(conflict["id"],pid)
+        rendered=[];self.handler.send_html=lambda content:rendered.append(content);self.handler.path="/fatture?q=FT-77"
+        self.handler.invoices_page(user)
+        self.assertIn("FT-77",rendered[-1])
+        self.assertIn(f'/pratiche/{pid}',rendered[-1])
+
+    def test_cr_codes_shift_on_delete_and_restore(self):
+        with app.db() as conn:
+            user=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now();ids=[]
+            for number,name in ((3,"Mario"),(4,"Giuseppe"),(5,"Fabio")):
+                ids.append(conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,owner_first_name)
+                                         VALUES(?,?,?,?,?,?,?,?)""",(f"CR-{number:06d}","Privato","Livorno","Ritirato",stamp,stamp,user["id"],name)).lastrowid)
+            conn.execute("UPDATE settings SET value='6' WHERE key='next_cr_number'")
+        redirects=[];self.handler.redirect=lambda path:redirects.append(path)
+        self.handler.delete_practice(user,ids[0])
+        with app.db() as conn:
+            deleted=conn.execute("SELECT * FROM practices WHERE id=?",(ids[0],)).fetchone()
+            self.assertEqual(deleted["original_practice_number"],"CR-000003")
+            self.assertEqual(conn.execute("SELECT practice_number FROM practices WHERE id=?",(ids[1],)).fetchone()["practice_number"],"CR-000003")
+            self.assertEqual(conn.execute("SELECT practice_number FROM practices WHERE id=?",(ids[2],)).fetchone()["practice_number"],"CR-000004")
+            self.assertEqual(conn.execute("SELECT value FROM settings WHERE key='next_cr_number'").fetchone()["value"],"5")
+        self.handler.restore_practice(user,ids[0])
+        with app.db() as conn:
+            self.assertEqual([conn.execute("SELECT practice_number FROM practices WHERE id=?",(pid,)).fetchone()["practice_number"] for pid in ids],["CR-000003","CR-000004","CR-000005"])
+            self.assertEqual(conn.execute("SELECT value FROM settings WHERE key='next_cr_number'").fetchone()["value"],"6")
+
     def test_whatsapp_is_blocked_for_vet_and_collective(self):
         collective = {"service_type": "Cremazione collettiva", "owner_veterinarian_id": None}
         veterinarian = {"service_type": "Cremazione singola", "owner_veterinarian_id": 2}
@@ -291,6 +338,9 @@ class PetParadiseTests(unittest.TestCase):
         rendered=[]; self.handler.send_html=lambda content,*args: rendered.append(content)
         self.handler.practice(admin,pid)
         self.assertIn("PP-APERTURA",rendered[-1])
+        self.assertIn(f'action="/pratiche/{pid}/fattura"',rendered[-1])
+        self.assertIn("FARE FATTURA",rendered[-1])
+        self.assertNotIn("Firma su telefono",rendered[-1])
         with app.db() as conn:
             self.assertEqual(conn.execute("SELECT count(*) n FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["n"],0)
 
