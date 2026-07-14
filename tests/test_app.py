@@ -105,18 +105,20 @@ class PetParadiseTests(unittest.TestCase):
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
             stamp = app.now()
             base = ("Privato", "Livorno", "Ritirato", today, stamp, stamp, admin["id"])
-            conn.execute(
+            paid_id=conn.execute(
                 """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
                    created_at,updated_at,created_by,animal_name,price_cremation,total_service,total_text,deposit,payment_status)
                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 ("PP-WHISKY", *base, "Whisky", "410", "410", "330", "0", "Pagato"),
-            )
-            conn.execute(
+            ).lastrowid
+            partial_id=conn.execute(
                 """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
                    created_at,updated_at,created_by,animal_name,price_cremation,total_service,total_text,deposit,payment_status)
                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 ("PP-PARZIALE", *base, "Parziale", "410", "410", "330", "100", "Acconto"),
-            )
+            ).lastrowid
+            self.handler.add_payment_movement(conn,paid_id,"saldo_d","D",330,admin["id"],"Test",stamp)
+            self.handler.add_payment_movement(conn,partial_id,"acconto_d","D",100,admin["id"],"Test",stamp)
 
         rendered = []
         self.handler.send_html = lambda content: rendered.append(content)
@@ -192,8 +194,85 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(data["total_service"], "285.00")
 
         html = self.handler.fields_html()
-        self.assertIn("Catalogo Urne", html)
+        self.assertNotIn("<h2>Catalogo Urne</h2>", html)
+        self.assertIn('name="urn_id" class="hidden"', html)
         self.assertIn("Urna prova", html)
+
+    def test_payment_movements_use_real_dates_and_separate_channels(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            created="2026-07-10T09:00:00"; paid="2026-07-15T11:30:00"
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,
+                                created_by,animal_name,price_cremation,total_service,total_text,deposit,payment_status)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                             ("PP-RAFFAELE","Privato","Livorno","Ritirato",created,created,admin["id"],"Raffaele","410","410","330","100","Acconto")).lastrowid
+            self.handler.add_payment_movement(conn,pid,"acconto_d","D",100,admin["id"],"Acconto",created)
+            self.handler.add_payment_movement(conn,pid,"saldo_d","D",230,admin["id"],"Saldo",paid)
+            paid_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,
+                                     created_by,animal_name,price_cremation,total_service,total_text,deposit,payment_status)
+                                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                  ("PP-DATA-SALDO","Privato","Livorno","Ritirato",created,created,admin["id"],"Whisky","410","410","330","0","Pagato")).lastrowid
+            self.handler.add_payment_movement(conn,paid_pid,"saldo_d","D",330,admin["id"],"Pagamento completo",paid)
+            totals={row["day"]:row["amount"] for row in conn.execute("SELECT date(paid_at) day,sum(amount) amount FROM payment_movements WHERE practice_id=? GROUP BY date(paid_at)",(pid,))}
+        self.assertEqual(totals,{"2026-07-10":100.0,"2026-07-15":230.0})
+
+        rendered=[]; self.handler.send_html=lambda content: rendered.append(content)
+        self.handler.path="/bilanci?dal=2026-07-15&al=2026-07-15&voce=totale_d"
+        self.handler.balances_v2(admin)
+        self.assertIn("PP-RAFFAELE",rendered[-1])
+        self.assertIn("PP-DATA-SALDO",rendered[-1])
+        self.assertIn("230,00",rendered[-1])
+        self.assertNotIn("100,00</b>",rendered[-1])
+        self.handler.path="/bilanci?dal=2026-07-10&al=2026-07-10&voce=totale_d"
+        self.handler.balances_v2(admin)
+        self.assertIn("PP-RAFFAELE",rendered[-1])
+        self.assertNotIn("PP-DATA-SALDO",rendered[-1])
+        self.assertIn("100,00",rendered[-1])
+        self.assertNotIn("230,00</b>",rendered[-1])
+
+    def test_payment_reconciliation_caps_due_and_removes_paid_income(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,
+                                created_by,price_cremation,total_service,total_text,deposit,payment_status)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                             ("PP-MOVIMENTI","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"410","410","330","100","Acconto")).lastrowid
+            partial=conn.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+            self.handler.reconcile_payment_movements(conn,pid,None,partial,admin["id"],"Acconto iniziale")
+            conn.execute("UPDATE practices SET deposit='999',payment_status='Pagato' WHERE id=?",(pid,))
+            paid=conn.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+            self.handler.reconcile_payment_movements(conn,pid,partial,paid,admin["id"],"Saldo")
+            self.assertAlmostEqual(conn.execute("SELECT sum(amount) n FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["n"],330)
+            conn.execute("UPDATE practices SET deposit='100',payment_status='Acconto' WHERE id=?",(pid,))
+            reopened=conn.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+            self.handler.reconcile_payment_movements(conn,pid,paid,reopened,admin["id"],"Riapertura")
+            self.assertAlmostEqual(conn.execute("SELECT sum(amount) n FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["n"],100)
+            self.assertGreater(conn.execute("SELECT count(*) n FROM payment_movements WHERE practice_id=? AND amount<0",(pid,)).fetchone()["n"],0)
+
+    def test_practice_summary_opens_without_mutating_payments(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,
+                                created_by,animal_name,payment_status) VALUES(?,?,?,?,?,?,?,?,?)""",
+                             ("PP-APERTURA","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Luna","Da saldare")).lastrowid
+        rendered=[]; self.handler.send_html=lambda content,*args: rendered.append(content)
+        self.handler.practice(admin,pid)
+        self.assertIn("PP-APERTURA",rendered[-1])
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT count(*) n FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["n"],0)
+
+    def test_dashboard_balances_and_payment_pages_render(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered=[]; self.handler.send_html=lambda content,*args: rendered.append(content)
+        self.handler.dashboard(admin)
+        self.assertIn("Entrate settimana in corso",rendered[-1])
+        self.handler.path="/bilanci"
+        self.handler.balances_v2(admin)
+        self.assertIn("Data economica",rendered[-1])
+        self.handler.payment_overview(admin,"da-saldare")
+        self.assertIn("Da saldare D",rendered[-1])
 
 
 if __name__ == "__main__":

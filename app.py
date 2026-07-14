@@ -286,6 +286,17 @@ def init_db():
           note TEXT,
           created_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS payment_movements (
+          id INTEGER PRIMARY KEY,
+          practice_id INTEGER NOT NULL REFERENCES practices(id) ON DELETE CASCADE,
+          payment_type TEXT NOT NULL,
+          payment_channel TEXT NOT NULL,
+          amount REAL NOT NULL,
+          paid_at TEXT NOT NULL,
+          user_id INTEGER REFERENCES users(id),
+          notes TEXT,
+          created_at TEXT NOT NULL
+        );
         INSERT OR IGNORE INTO settings(key,value) VALUES('next_practice_number','1');
         INSERT OR IGNORE INTO settings(key,value) VALUES('next_cr_number','1');
         INSERT OR IGNORE INTO settings(key,value) VALUES('next_sm_number','1');
@@ -375,7 +386,9 @@ def init_db():
             "no_whatsapp_message": "TEXT",
             "deleted_at": "TEXT",
             "deleted_by": "INTEGER",
-            "urn_id": "INTEGER"
+            "urn_id": "INTEGER",
+            "deposit_paid_at": "TEXT",
+            "paid_at": "TEXT"
         }
         existing = {row["name"] for row in c.execute("PRAGMA table_info(practices)")}
         for name, definition in extra_columns.items():
@@ -395,6 +408,8 @@ def init_db():
         c.execute("CREATE INDEX IF NOT EXISTS idx_clients_tax ON clients(tax_code)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_urns_search ON urns(active,material,name)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_urn_movements_urn ON urn_movements(urn_id,created_at DESC)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_payment_movements_paid ON payment_movements(paid_at,payment_channel)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_payment_movements_practice ON payment_movements(practice_id,paid_at)")
         c.execute("UPDATE practices SET payment_status='Da saldare' WHERE payment_status IS NULL OR payment_status=''")
         c.execute("UPDATE practices SET payment_status='Pagato', status='Consegnato' WHERE status='Pagato'")
         c.execute("UPDATE veterinarian_vouchers SET status='Maturato' WHERE status='Disponibile'")
@@ -497,6 +512,22 @@ def init_db():
                 "INSERT INTO users(username,password_hash,display_name,role) VALUES(?,?,?,?)",
                 ("admin", password_hash("petparadise"), "Amministratore", "admin"),
             )
+        legacy_payments=c.execute("""SELECT * FROM practices p
+                                     WHERE NOT EXISTS(SELECT 1 FROM payment_movements m WHERE m.practice_id=p.id)""").fetchall()
+        for practice in legacy_payments:
+            due=effective_total(practice); deposit=min(due,max(0.0,money_value(practice["deposit"])))
+            channel="D" if uses_total_d(practice) else "ordinario"
+            economic_at=practice["updated_at"] or practice["created_at"] or now()
+            if deposit>0:
+                c.execute("""INSERT INTO payment_movements(practice_id,payment_type,payment_channel,amount,paid_at,user_id,notes,created_at)
+                             VALUES(?,?,?,?,?,?,?,?)""",(practice["id"],"acconto_d" if channel=="D" else "acconto_ordinario",channel,deposit,economic_at,practice["created_by"],"Migrazione dati esistenti: data ricavata dall'ultimo aggiornamento",now()))
+                c.execute("UPDATE practices SET deposit_paid_at=COALESCE(deposit_paid_at,?) WHERE id=?",(economic_at,practice["id"]))
+            if (practice["payment_status"] or "") == "Pagato" and due>deposit:
+                balance=due-deposit
+                c.execute("""INSERT INTO payment_movements(practice_id,payment_type,payment_channel,amount,paid_at,user_id,notes,created_at)
+                             VALUES(?,?,?,?,?,?,?,?)""",(practice["id"],"saldo_d" if channel=="D" else "saldo_ordinario",channel,balance,economic_at,practice["created_by"],"Migrazione dati esistenti: data ricavata dall'ultimo aggiornamento",now()))
+            if (practice["payment_status"] or "") == "Pagato":
+                c.execute("UPDATE practices SET paid_at=COALESCE(paid_at,?) WHERE id=?",(economic_at,practice["id"]))
         ensure_notification_schema(c)
 
 
@@ -593,7 +624,7 @@ input,select,textarea{background:#0c121b;border-color:#323c4b;color:#f3f5f8}inpu
 /* Premium dashboard layout */
 body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.skip-link{position:fixed;top:8px;left:8px;z-index:200;transform:translateY(-150%);padding:10px 14px;border-radius:9px;background:#fff;color:#111827}.skip-link:focus{transform:none}
 .top{width:238px;padding:20px 14px;background:#0b1220;border-color:#263246}.brand{padding:0 8px 20px}.brand-logo{width:50px;height:50px}.brand-copy{font-size:17px}.nav{gap:3px;overflow-y:auto;padding-right:3px}.nav a,.nav button{min-height:42px;padding:9px 11px;border-radius:10px}.nav a:first-child{background:linear-gradient(90deg,#4a1826,#241523);border-color:#642239}.nav .install-btn{margin-top:8px}.nav .logout{margin-top:12px}
-.app-header{position:fixed;left:238px;right:0;top:0;height:76px;z-index:40;display:flex;align-items:center;justify-content:flex-end;gap:20px;padding:14px 30px;background:#111827e8;border-bottom:1px solid #263246;backdrop-filter:blur(16px)}.header-search{width:min(360px,32vw);display:flex;align-items:center;gap:9px;padding:0 13px;border:1px solid #334155;border-radius:11px;background:#172033}.header-search input{min-height:42px;padding:8px 0;background:transparent;border:0}.header-search input:focus{outline:0}.header-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;width:100%}.icon-btn{display:inline-grid;place-items:center;width:42px;height:42px;padding:0;border:1px solid #334155;border-radius:11px;background:#172033;color:#cbd5e1;cursor:pointer}.icon-btn:hover{color:#fff;border-color:#ef405f}.header-new{gap:7px}.header-actions time{min-width:104px;padding:6px 10px;border:1px solid #334155;border-radius:10px;text-align:center;font-weight:700;background:#172033}.header-actions time small{display:block;color:#94a3b8;font-size:10px;text-transform:capitalize}.wrap{max-width:none;margin-left:238px;padding:106px 30px 42px}
+.app-header{position:fixed;left:238px;right:0;top:0;height:76px;z-index:40;display:flex;align-items:center;justify-content:flex-end;gap:20px;padding:14px 30px;background:#111827e8;border-bottom:1px solid #263246;backdrop-filter:blur(16px)}.header-search{width:min(640px,48vw);display:flex;align-items:center;gap:9px;padding:0 13px;border:1px solid #334155;border-radius:11px;background:#172033}.header-search input{min-height:42px;padding:8px 0;background:transparent;border:0}.header-search input:focus{outline:0}.header-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;width:100%}.icon-btn{display:inline-grid;place-items:center;width:42px;height:42px;padding:0;border:1px solid #334155;border-radius:11px;background:#172033;color:#cbd5e1;cursor:pointer}.icon-btn:hover{color:#fff;border-color:#ef405f}.header-new{gap:7px}.header-actions time{min-width:104px;padding:6px 10px;border:1px solid #334155;border-radius:10px;text-align:center;font-weight:700;background:#172033}.header-actions time small{display:block;color:#94a3b8;font-size:10px;text-transform:capitalize}.wrap{max-width:none;margin-left:238px;padding:106px 30px 42px}
 .dashboard-wrap{max-width:1500px}.welcome{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}.welcome h1{font-size:30px}.welcome p{margin:7px 0 0;color:#94a3b8}.dashboard-heading{margin:24px 0 12px;font-size:15px;color:#dce4ef}.dashboard-states{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.metric-card,.payment-card{position:relative;min-height:126px;display:flex;align-items:center;justify-content:space-between;gap:15px;padding:20px;border:1px solid #334155;border-radius:14px;background:#1f2937;overflow:hidden;box-shadow:0 14px 36px #03071235;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}.metric-card:before,.payment-card:before{content:"";position:absolute;inset:0;background:linear-gradient(120deg,var(--card-glow),transparent 62%);pointer-events:none}.metric-card:hover,.payment-card:hover{transform:translateY(-3px);border-color:#56657a;box-shadow:0 20px 44px #03071260}.metric-copy,.payment-card>span:first-child{position:relative;display:flex;flex-direction:column}.metric-card small,.payment-card small{font-style:normal;color:#e2e8f0}.metric-card strong,.payment-card strong{margin-top:4px;font-size:30px;line-height:1.05}.metric-card em,.payment-card em{margin-top:9px;color:#94a3b8;font-size:12px;font-style:normal}.metric-icon,.activity-icon{position:relative;display:grid;place-items:center;width:46px;height:46px;border-radius:12px;background:var(--icon-bg);color:var(--icon-color);box-shadow:0 8px 22px var(--icon-shadow)}.state-red{--card-glow:#83184375;--icon-bg:#881337;--icon-color:#fb7185;--icon-shadow:#e11d4840}.state-blue{--card-glow:#17255480;--icon-bg:#172554;--icon-color:#60a5fa;--icon-shadow:#2563eb40}.state-purple{--card-glow:#3b076480;--icon-bg:#3b0764;--icon-color:#c084fc;--icon-shadow:#9333ea40}.state-green{--card-glow:#052e2b85;--icon-bg:#064e3b;--icon-color:#4ade80;--icon-shadow:#16a34a40}
 .dashboard-payments{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.payment-card{min-height:116px}.payment-due{--card-glow:#713f123d;--icon-bg:#573713;--icon-color:#fbbf24;--icon-shadow:#f59e0b35}.payment-deposit{--card-glow:#17255465;--icon-bg:#172554;--icon-color:#60a5fa;--icon-shadow:#2563eb35}.payment-paid{--card-glow:#052e2b75;--icon-bg:#064e3b;--icon-color:#4ade80;--icon-shadow:#16a34a35}
 .dashboard-lower{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(350px,.8fr);gap:16px;margin-top:24px}.dashboard-panel{min-height:350px;padding:20px;border:1px solid #334155;border-radius:15px;background:#1f2937;box-shadow:0 18px 48px #03071235}.dashboard-panel>header{display:flex;align-items:flex-start;justify-content:space-between;gap:15px}.dashboard-panel h2{margin:0;font-size:16px}.dashboard-panel header p{margin:8px 0 0;color:#94a3b8}.dashboard-panel header p strong{color:#fff;font-size:21px}.dashboard-panel header a{color:#fb7185;font-size:13px}.income-chart{display:block;width:100%;height:auto;margin-top:14px}.chart-grid line{stroke:#334155;stroke-width:1}.chart-grid text,.chart-dates text{fill:#94a3b8;font-size:11px}.chart-area{fill:url(#incomeArea)}.chart-line{fill:none;stroke:#ef405f;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 5px 8px #ef405f55)}.income-chart circle{fill:#fb7185;stroke:#1f2937;stroke-width:2}
@@ -615,9 +646,9 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 @media(max-width:1150px){.conversation-card{grid-template-columns:1fr 1fr}.conversation-action{grid-column:1/-1;text-align:left}}
 @media(max-width:700px){.conversation-card{grid-template-columns:1fr;gap:14px}.conversation-card dl{grid-template-columns:1fr 1fr}.conversation-action{grid-column:auto}.conversation-action .btn{width:100%}.pagination{gap:8px;justify-content:space-between}.pagination span{font-size:11px;text-align:center}.conversation-message{white-space:normal}.conversations-wrap .titlebar h1{font-size:24px}}
 @media(max-width:700px){.practice-layout{display:block!important}.practice-layout>.grid,.practice-layout>aside{width:100%;min-width:0}.practice-layout>aside{margin-top:16px}.practice-layout .kvs{grid-template-columns:1fr}.practice-layout .section{max-width:100%;overflow-wrap:anywhere}.toggle-list{grid-template-columns:1fr}.notification-item{grid-template-columns:40px minmax(0,1fr)}.notification-actions{grid-column:1/-1}.notification-actions .btn{width:100%}.permission-prompt{left:14px;right:14px;bottom:calc(84px + var(--safe-bottom));max-width:none}.quick-payment{min-width:430px}}
-.app-header{position:absolute}.balance-chart{min-height:0;margin:0 0 20px}.article-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.article-card{display:flex;flex-direction:column;gap:16px;min-height:170px;padding:20px;border:1px solid #334155;border-radius:15px;background:#1f2937}.article-card h2{margin:0;font-size:18px}.article-card p{margin:0;color:#94a3b8}.article-card form{margin-top:auto}.article-card .btn{width:100%}.light-theme .article-card{background:#fff;color:#111827;border-color:#cbd5e1}
+.balance-chart{min-height:0;margin:0 0 20px}.article-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.article-card{display:flex;flex-direction:column;gap:16px;min-height:170px;padding:20px;border:1px solid #334155;border-radius:15px;background:#1f2937}.article-card h2{margin:0;font-size:18px}.article-card p{margin:0;color:#94a3b8}.article-card form{margin-top:auto}.article-card .btn{width:100%}.light-theme .article-card{background:#fff;color:#111827;border-color:#cbd5e1}
 .urn-stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:20px}.urn-stat,.urn-card{padding:17px;border:1px solid #334155;border-radius:14px;background:#1f2937}.urn-stat small,.urn-meta{color:#94a3b8}.urn-stat strong{display:block;margin-top:5px;font-size:24px}.urn-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}.urn-card{display:flex;flex-direction:column;gap:12px;min-width:0}.urn-card img,.urn-placeholder{width:100%;aspect-ratio:4/3;border-radius:10px;object-fit:cover;background:#111827}.urn-placeholder{display:grid;place-items:center;color:#64748b;font-weight:700}.urn-card h2{margin:0}.urn-card .actions{margin-top:auto}.stock-good{color:#86efac}.stock-low{color:#fdba74}.stock-out{color:#fca5a5}.light-theme .urn-stat,.light-theme .urn-card{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .urn-placeholder{background:#e2e8f0}.urn-filter{margin-bottom:20px}.urn-detail{grid-template-columns:minmax(280px,.7fr) minmax(0,1.3fr)}
-@media(max-width:900px){.app-header{position:absolute;left:0;right:0}.app-header .header-actions{position:absolute;right:calc(10px + var(--safe-right));top:calc(7px + var(--safe-top))}.app-header .header-search{position:absolute;left:calc(14px + var(--safe-left));right:calc(14px + var(--safe-right));top:calc(70px + var(--safe-top))}.article-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:900px){.app-header{position:fixed;left:0;right:0}.app-header .header-actions{position:absolute;right:calc(10px + var(--safe-right));top:calc(7px + var(--safe-top))}.app-header .header-search{position:fixed;left:calc(14px + var(--safe-left));right:calc(14px + var(--safe-right));top:calc(70px + var(--safe-top))}.article-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:900px){.urn-stats{grid-template-columns:repeat(2,1fr)}.urn-grid{grid-template-columns:1fr 1fr}.urn-detail{grid-template-columns:1fr}}
 @media(max-width:620px){.article-grid,.urn-grid{grid-template-columns:1fr}.urn-stats{grid-template-columns:1fr 1fr}}
 """
@@ -832,21 +863,40 @@ function setupUrnNotesField(){
   const catalog=document.querySelector('select[name="urn_id"]');
   if(catalog){
     const warning=document.getElementById('urnStockWarning');
-    const apply=()=>{
-      const option=catalog.options[catalog.selectedIndex];
+    const priceField=price.closest('.field');
+    priceField.querySelector('label').textContent='Prezzo urna €';
+    const field=document.createElement('div'); field.className='field full lookup';
+    const label=document.createElement('label'); label.textContent='Urna';
+    const search=document.createElement('input'); search.type='text'; search.autocomplete='off'; search.placeholder='Scrivi per cercare oppure inserisci testo libero';
+    const results=document.createElement('div'); results.className='lookup-results hidden';
+    field.append(label,search,results,warning); priceField.parentNode.insertBefore(field,priceField);
+    const selectedOption=catalog.options[catalog.selectedIndex];
+    search.value=selectedOption&&selectedOption.value?(selectedOption.dataset.name||''):hidden.value;
+    const apply=(option)=>{
       if(!option || !option.value) return;
+      catalog.value=option.value; search.value=option.dataset.name||option.textContent.trim();
       price.value=option.dataset.price||'';
       hidden.value=option.dataset.name||option.textContent.trim();
-      price.readOnly=true;
+      price.readOnly=false;
       if(warning){
         const quantity=Number(option.dataset.quantity||0);
-        warning.textContent=quantity<=0?'Magazzino esaurito - disponibilita 0':`Disponibilita attuale: ${quantity}`;
+        warning.textContent=quantity<=0?'Magazzino esaurito - disponibilità 0':`Disponibilità attuale: ${quantity}`;
         warning.classList.toggle('warning',quantity<=0);
         warning.classList.remove('hidden');
       }
+      results.classList.add('hidden'); results.innerHTML='';
       updatePreventivoTotal();
     };
-    catalog.addEventListener('change',apply); apply();
+    const showMatches=()=>{
+      const query=search.value.trim().toLocaleLowerCase('it'); hidden.value=search.value.trim(); catalog.value=''; price.readOnly=false;
+      if(warning) warning.classList.add('hidden');
+      const matches=[...catalog.options].filter(option=>option.value&&(!query||(option.dataset.name||option.textContent).toLocaleLowerCase('it').includes(query))).slice(0,12);
+      results.innerHTML='';
+      matches.forEach(option=>{const button=document.createElement('button');button.type='button';button.className='lookup-item';button.innerHTML=`<b>${option.dataset.name||option.textContent}</b><small>${option.textContent.replace(option.dataset.name||'','').replace(/^\s*·\s*/,'')}</small>`;button.onclick=()=>apply(option);results.append(button)});
+      results.classList.toggle('hidden',matches.length===0);
+    };
+    search.addEventListener('input',showMatches); search.addEventListener('focus',showMatches);
+    document.addEventListener('click',event=>{if(!field.contains(event.target))results.classList.add('hidden')});
     return;
   }
   hidden.type='text';
@@ -1375,8 +1425,10 @@ def income_chart(values,labels):
         y=top+plot_h-(plot_h*step/3); amount=maximum*step/3
         grid.append(f'<line x1="{left}" y1="{y:.1f}" x2="{left+plot_w}" y2="{y:.1f}"/><text x="{left-8}" y="{y+4:.1f}" text-anchor="end">€ {amount:,.0f}</text>')
     dates=''.join(f'<text x="{points[i][0]:.1f}" y="{height-12}" text-anchor="middle">{esc(label)}</text>' for i,label in enumerate(labels))
-    dots=''.join(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4"><title>{esc(labels[i])}: {money_it(values[i])}</title></circle>' for i,(x,y) in enumerate(points))
-    return f'''<svg class="income-chart" viewBox="0 0 {width} {height}" role="img" aria-label="Entrate giornaliere degli ultimi sette giorni"><defs><linearGradient id="incomeArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ef405f" stop-opacity=".5"/><stop offset="1" stop-color="#ef405f" stop-opacity="0"/></linearGradient></defs><g class="chart-grid">{''.join(grid)}</g><path class="chart-area" d="{area}"/><polyline class="chart-line" points="{line}"/>{dots}<g class="chart-dates">{dates}</g></svg>'''
+    palette=("#fb4c67","#f59e0b","#22c55e","#14b8a6","#3b82f6","#8b5cf6","#ec4899")
+    bars=''.join(f'<rect x="{x-12:.1f}" y="{y:.1f}" width="24" height="{top+plot_h-y:.1f}" rx="7" fill="{palette[i%len(palette)]}" opacity=".72"><title>{esc(labels[i])}: {money_it(values[i])}</title></rect>' for i,(x,y) in enumerate(points))
+    dots=''.join(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="5" style="fill:{palette[i%len(palette)]}"><title>{esc(labels[i])}: {money_it(values[i])}</title></circle>' for i,(x,y) in enumerate(points))
+    return f'''<svg class="income-chart" viewBox="0 0 {width} {height}" role="img" aria-label="Entrate giornaliere nel periodo selezionato"><defs><linearGradient id="incomeArea" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fb4c67" stop-opacity=".38"/><stop offset=".5" stop-color="#3b82f6" stop-opacity=".20"/><stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/></linearGradient></defs><g class="chart-grid">{''.join(grid)}</g><path class="chart-area" d="{area}"/>{bars}<polyline class="chart-line" points="{line}"/>{dots}<g class="chart-dates">{dates}</g></svg>'''
 
 
 def layout(title, body, user=None):
@@ -1505,6 +1557,8 @@ class App(BaseHTTPRequestHandler):
             return self.send_static(image,content_type)
         if path == "/": return self.dashboard(user)
         if path == "/bilanci": return self.balances_v2(user)
+        match = re.fullmatch(r"/pagamenti/(da-saldare|acconti|pagati)", path)
+        if match: return self.payment_overview(user,match.group(1))
         if path == "/conversazioni-whatsapp": return self.whatsapp_conversations(user)
         if path == "/notifiche": return self.notifications(user)
         if path == "/articoli": return self.articles_page(user)
@@ -1638,7 +1692,10 @@ class App(BaseHTTPRequestHandler):
             counts={r["status"]:r["n"] for r in c.execute(f"SELECT status,count(*) n FROM practices WHERE {active_where} GROUP BY status")}
             payment_counts={r["payment_status"]:r["n"] for r in c.execute(f"SELECT COALESCE(payment_status,'Da saldare') payment_status,count(*) n FROM practices WHERE {active_where} GROUP BY COALESCE(payment_status,'Da saldare')")}
             payment_rows=c.execute(f"SELECT *,COALESCE(payment_status,'Da saldare') normalized_payment_status FROM practices WHERE {active_where}").fetchall()
-            income_rows=c.execute(f"SELECT *,date(COALESCE(NULLIF(pickup_date,''),created_at)) day FROM practices WHERE ({active_where}) AND date(COALESCE(NULLIF(pickup_date,''),created_at)) BETWEEN date(?) AND date(?)",(week_start.isoformat(),week_end.isoformat())).fetchall()
+            income_rows=c.execute(f"""SELECT date(m.paid_at) day,COALESCE(sum(m.amount),0) amount
+                                      FROM payment_movements m JOIN practices p ON p.id=m.practice_id
+                                      WHERE (p.deleted_at IS NULL OR p.deleted_at='') AND date(m.paid_at) BETWEEN date(?) AND date(?)
+                                      GROUP BY date(m.paid_at)""",(week_start.isoformat(),week_end.isoformat())).fetchall()
             recent=c.execute(f"SELECT * FROM practices WHERE {active_where} ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) DESC,id DESC LIMIT 10").fetchall()
             activity=c.execute("""SELECT h.event_type,h.new_value,h.created_at,p.id practice_id,p.practice_number
                                   FROM practice_history h JOIN practices p ON p.id=h.practice_id
@@ -1657,11 +1714,11 @@ class App(BaseHTTPRequestHandler):
             "Pagato":sum(received_amount(row) for row in payment_rows if row["normalized_payment_status"]=="Pagato"),
         }
         payment_counts["Acconto"]=sum(1 for row in payment_rows if money_value(row["deposit"])>0)
-        payment_specs=[("Da saldare","Da saldare","wallet","payment-due","/archivio/pratiche?pagamento=Da%20saldare"),("Acconto","Acconti","receipt","payment-deposit","/archivio/pratiche?con_acconto=1"),("Pagato","Pagati","chart","payment-paid","/archivio/pratiche?pagamento=Pagato")]
+        payment_specs=[("Da saldare","Da saldare","wallet","payment-due","/pagamenti/da-saldare"),("Acconto","Acconti","receipt","payment-deposit","/pagamenti/acconti"),("Pagato","Pagati","chart","payment-paid","/pagamenti/pagati")]
         payment_cards=''.join(f'<a class="payment-card {cls}" href="{href}"><span><small>{label}</small><strong>{payment_counts.get(state,0)}</strong><em>{money_it(payment_totals[state])}</em></span><span class="metric-icon">{lucide(icon)}</span></a>' for state,label,icon,cls,href in payment_specs)
         income_by_day={day.isoformat():0.0 for day in days}
         for row in income_rows:
-            if row["day"] in income_by_day: income_by_day[row["day"]]+=received_amount(row)
+            if row["day"] in income_by_day: income_by_day[row["day"]]+=money_value(row["amount"])
         income_values=[income_by_day[day.isoformat()] for day in days]; income_total=sum(income_values)
         chart=income_chart(income_values,[day.strftime("%d/%m") for day in days])
         timeline=[]
@@ -1740,7 +1797,7 @@ class App(BaseHTTPRequestHandler):
         body=f'''<main class="wrap balances-wrap"><div class="titlebar"><div><h1>Bilanci</h1><p class="sub">{subtitle} dal {esc(date_it(date_from))} al {esc(date_it(date_to))}</p></div><div class="balance-total"><small>{esc(category_map.get(selected,"Entrate totali"))}</small><strong>{money_it(shown_total)}</strong></div></div><section class="balance-grid">{cards}</section><section class="tablebox balance-table"><table><thead><tr><th>Data</th><th>Pratica</th><th>Cliente</th><th>Voce</th><th>Importo</th></tr></thead><tbody>{table_body}</tbody></table></section><section class="search-after-results"><h2>Filtra bilanci</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field full"><label>Voce</label><select name="voce">{options}</select></div></div><button class="btn" style="margin-top:12px">Applica filtri</button><a class="btn ghost" style="margin-top:12px" href="/bilanci">Ultimi 7 giorni</a></form></section></main>'''
         self.send_html(layout("Bilanci",body,user))
 
-    def balances_v2(self,user):
+    def balances_legacy_v2(self,user):
         q=parse_qs(urlparse(self.path).query); today=datetime.now().date()
         default_from=today-timedelta(days=6)
         date_from=(q.get("dal") or [default_from.isoformat()])[0].strip()
@@ -1797,6 +1854,91 @@ class App(BaseHTTPRequestHandler):
         subtitle="Risultati filtrati" if selected else "Denaro effettivamente incassato"
         body=f'''<main class="wrap balances-wrap"><div class="titlebar"><div><h1>Bilanci</h1><p class="sub">{subtitle} dal {esc(date_it(date_from))} al {esc(date_it(date_to))}</p></div><div class="balance-total"><small>{esc(category_map.get(selected,"Entrate totali"))}</small><strong>{money_it(shown_total)}</strong></div></div><section class="balance-grid">{cards}</section><section class="dashboard-panel balance-chart"><header><div><h2>Andamento nel periodo filtrato</h2><p>Il grafico si aggiorna con date e voce selezionate.</p></div></header>{chart}</section><section class="tablebox balance-table"><table><thead><tr><th>Data</th><th>Pratica</th><th>Cliente</th><th>Voce</th><th>Importo</th><th></th></tr></thead><tbody>{table_body}</tbody></table></section><section class="search-after-results"><h2>Filtra bilanci</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field full"><label>Voce</label><select name="voce">{options}</select></div></div><button class="btn" style="margin-top:12px">Applica filtri</button><a class="btn ghost" style="margin-top:12px" href="/bilanci">Ultimi 7 giorni</a></form></section></main>'''
         self.send_html(layout("Bilanci",body,user))
+
+    def balances_v2(self,user):
+        q=parse_qs(urlparse(self.path).query); today=datetime.now().date(); default_from=today-timedelta(days=6)
+        date_from=(q.get("dal") or [default_from.isoformat()])[0].strip(); date_to=(q.get("al") or [today.isoformat()])[0].strip()
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_from): date_from=default_from.isoformat()
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_to): date_to=today.isoformat()
+        categories=[
+            ("price_cremation","Cremazione",("price_cremation",)),("price_pickup","Ritiro",("price_pickup",)),("price_urn","Urna",("price_urn","price_urn_2")),
+            ("price_delivery","Riconsegna",("price_delivery",)),("price_cast","Calco",("price_cast","price_cast_2","price_paw_cast","price_nose_cast")),
+            ("price_evening","Serale",("price_evening",)),("price_night","Notturno",("price_night",)),("price_holiday","Festivo",("price_holiday",)),
+            ("price_accessories","Accessori",("price_accessories","price_accessories_2")),("totale_calcolato","Entrate da totale calcolato",()),
+            ("totale_d","Entrate da TOTALE D",()),("da_entrare","Da entrare",()),("da_entrare_d","Da entrare D",()),
+        ]
+        category_map={key:label for key,label,_ in categories}; category_fields={key:fields for key,_,fields in categories}
+        selected=(q.get("voce") or [""])[0].strip(); selected=selected if selected in category_map else ""
+        with db() as c:
+            movements=c.execute("""SELECT m.id movement_id,m.payment_type,m.payment_channel,m.amount,m.paid_at,p.*
+                                   FROM payment_movements m JOIN practices p ON p.id=m.practice_id
+                                   WHERE (p.deleted_at IS NULL OR p.deleted_at='') AND date(m.paid_at) BETWEEN date(?) AND date(?)
+                                   ORDER BY datetime(m.paid_at) DESC,m.id DESC""",(date_from,date_to)).fetchall()
+            outstanding=c.execute("""SELECT * FROM practices WHERE (deleted_at IS NULL OR deleted_at='')
+                                     AND date(COALESCE(NULLIF(pickup_date,''),created_at)) BETWEEN date(?) AND date(?)
+                                     ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) DESC,id DESC""",(date_from,date_to)).fetchall()
+
+        def movement_amount(row,key):
+            amount=money_value(row["amount"]); is_d=row["payment_channel"]=="D"
+            if key=="totale_calcolato": return 0.0 if is_d else amount
+            if key=="totale_d": return amount if is_d else 0.0
+            if key in ("da_entrare","da_entrare_d"): return 0.0
+            if key in category_fields:
+                if is_d: return 0.0
+                due=effective_total(row); component=sum(money_value(row[field]) for field in category_fields[key])
+                return amount*(component/due) if due else 0.0
+            return amount
+
+        breakdown={key:0.0 for key,_,_ in categories}
+        for key,_,_ in categories:
+            if key=="da_entrare": breakdown[key]=sum(outstanding_amount(row) for row in outstanding if not uses_total_d(row))
+            elif key=="da_entrare_d": breakdown[key]=sum(outstanding_amount(row) for row in outstanding if uses_total_d(row))
+            else: breakdown[key]=sum(movement_amount(row,key) for row in movements)
+        shown_total=breakdown[selected] if selected else sum(money_value(row["amount"]) for row in movements)
+        cards=''.join(f'<a class="balance-card {"active" if selected==key else ""}" href="/bilanci?dal={quote(date_from)}&al={quote(date_to)}&voce={quote(key)}"><small>{label}</small><strong>{money_it(breakdown[key])}</strong></a>' for key,label,_ in categories)
+        type_labels={"acconto_ordinario":"Acconto","saldo_ordinario":"Saldo","acconto_d":"Acconto D","saldo_d":"Saldo D","rettifica":"Rettifica"}
+        table_rows=[]; chart_by_day={}
+        source=outstanding if selected in ("da_entrare","da_entrare_d") else movements
+        for row in source:
+            if selected=="da_entrare": amount=outstanding_amount(row) if not uses_total_d(row) else 0.0
+            elif selected=="da_entrare_d": amount=outstanding_amount(row) if uses_total_d(row) else 0.0
+            else: amount=movement_amount(row,selected)
+            if abs(amount)<0.005: continue
+            owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip(); url=f'/pratiche/{row["id"]}'
+            economic_date=((row["pickup_date"] or row["created_at"] or "")[:10] if selected in ("da_entrare","da_entrare_d") else (row["paid_at"] or "")[:10])
+            movement_label="Rimanenza prevista" if selected in ("da_entrare","da_entrare_d") else type_labels.get(row["payment_type"],row["payment_type"] or "Incasso")
+            chart_by_day[economic_date]=chart_by_day.get(economic_date,0.0)+amount
+            effective_label=("TOTALE D" if uses_total_d(row) else "Totale calcolato")+f" {money_it(effective_total(row))}"
+            table_rows.append(f'''<tr class="practice-row-link" tabindex="0" role="link" onclick="window.location.href='{url}'" onkeydown="if(event.key==='Enter')window.location.href='{url}'"><td>{esc(date_it(economic_date))}</td><td>{esc(movement_label)}</td><td><a href="{url}"><b>{esc(row["practice_number"])}</b></a></td><td>{esc(owner)}</td><td><b>{money_it(amount)}</b></td><td>{esc(effective_label)}</td><td>{money_it(money_value(row["deposit"]))}</td><td>{money_it(outstanding_amount(row))}</td><td>{esc(row["payment_status"] or "Da saldare")}</td><td><a class="btn ghost" href="{url}">Apri</a></td></tr>''')
+        start_date=datetime.strptime(date_from,"%Y-%m-%d").date(); end_date=datetime.strptime(date_to,"%Y-%m-%d").date(); chart_days=[]; cursor=start_date
+        while cursor<=end_date: chart_days.append(cursor); cursor+=timedelta(days=1)
+        chart=income_chart([chart_by_day.get(day.isoformat(),0.0) for day in chart_days],[day.strftime("%d/%m") for day in chart_days])
+        table_body=''.join(table_rows) or '<tr><td colspan="10" class="sub">Nessun importo nel periodo selezionato.</td></tr>'
+        options='<option value="">Tutti gli incassi</option>'+''.join(f'<option value="{key}" {"selected" if selected==key else ""}>{label}</option>' for key,label,_ in categories)
+        subtitle="Risultati filtrati per data economica" if selected not in ("da_entrare","da_entrare_d") else "Importi ancora da incassare nel periodo operativo"
+        body=f'''<main class="wrap balances-wrap"><div class="titlebar"><div><h1>Bilanci</h1><p class="sub">{subtitle} dal {esc(date_it(date_from))} al {esc(date_it(date_to))}</p></div><div class="balance-total"><small>{esc(category_map.get(selected,"Entrate totali"))}</small><strong>{money_it(shown_total)}</strong></div></div><section class="balance-grid">{cards}</section><section class="dashboard-panel balance-chart"><header><div><h2>Andamento nel periodo filtrato</h2><p>Incassi registrati nella loro data effettiva.</p></div></header>{chart}</section><section class="tablebox balance-table"><table><thead><tr><th>Data economica</th><th>Movimento</th><th>Pratica</th><th>Cliente</th><th>Importo</th><th>Totale</th><th>Acconto</th><th>Rimanenza</th><th>Stato</th><th></th></tr></thead><tbody>{table_body}</tbody></table></section><section class="search-after-results"><h2>Filtra bilanci</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field full"><label>Voce</label><select name="voce">{options}</select></div></div><button class="btn" style="margin-top:12px">Applica filtri</button><a class="btn ghost" style="margin-top:12px" href="/bilanci">Ultimi 7 giorni</a></form></section></main>'''
+        self.send_html(layout("Bilanci",body,user))
+
+    def payment_overview(self,user,kind):
+        specs={
+            "da-saldare":("Da saldare",lambda row: outstanding_amount(row)>0,lambda row: outstanding_amount(row)),
+            "acconti":("Acconti",lambda row: received_amount(row)>0 and outstanding_amount(row)>0,lambda row: received_amount(row)),
+            "pagati":("Pagati",lambda row: (row["payment_status"] or "")=="Pagato",lambda row: received_amount(row)),
+        }
+        title,include,amount_for=specs[kind]
+        with db() as c:
+            rows=c.execute("SELECT * FROM practices WHERE deleted_at IS NULL OR deleted_at='' ORDER BY updated_at DESC,id DESC").fetchall()
+        groups=[(False,title,"#3b82f6"),(True,f"{title} D","#f59e0b")]; sections=[]
+        for is_d,label,color in groups:
+            selected=[row for row in rows if include(row) and uses_total_d(row)==is_d]; total=sum(amount_for(row) for row in selected)
+            body=[]
+            for row in selected:
+                owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip(); url=f'/pratiche/{row["id"]}'
+                body.append(f'''<tr class="practice-row-link" tabindex="0" role="link" onclick="window.location.href='{url}'"><td><a href="{url}"><b>{esc(row["practice_number"])}</b></a></td><td>{esc(row["animal_name"] or "")}</td><td>{esc(owner)}</td><td>{money_it(effective_total(row))}</td><td>{money_it(money_value(row["deposit"]))}</td><td><b>{money_it(amount_for(row))}</b></td><td>{esc(row["payment_status"] or "Da saldare")}</td><td><a class="btn ghost" href="{url}">Apri</a></td></tr>''')
+            table=''.join(body) or '<tr><td colspan="8" class="sub">Nessuna pratica in questa categoria.</td></tr>'
+            sections.append(f'''<section class="dashboard-panel" style="margin-bottom:20px;border-top:4px solid {color}"><header><div><h2>{esc(label)}</h2><p>{len(selected)} pratiche</p></div><strong>{money_it(total)}</strong></header><div class="tablebox"><table><thead><tr><th>Pratica</th><th>Animale</th><th>Cliente</th><th>Totale</th><th>Acconto</th><th>{esc(title)}</th><th>Stato</th><th></th></tr></thead><tbody>{table}</tbody></table></div></section>''')
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Pagamenti · {esc(title)}</h1><p class="sub">Separazione tra Totale calcolato e Totale D (contanti).</p></div><a class="btn ghost" href="/">Dashboard</a></div>{''.join(sections)}</main>'''
+        self.send_html(layout(f"Pagamenti · {title}",body,user))
 
     def articles_page(self,user):
         with db() as c:
@@ -2473,8 +2615,7 @@ class App(BaseHTTPRequestHandler):
         catalog_checked='checked' if raw('send_catalog')=="Si" else ''
         estremi_checked='checked' if raw('send_estremi')=="Si" else ''
         return f'''<section class="section"><h2>Operatore e stati</h2><div class="fields"><div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option><option {selected('operator_name','GIANLUCA')}>GIANLUCA</option></select></div><div class="field"><label>Stato pratica</label><select name="status"><option {selected('status','Ritirato','Ritirato')}>Ritirato</option><option {selected('status','In programma','Ritirato')}>In programma</option><option {selected('status','Da consegnare','Ritirato')}>Da consegnare</option><option {selected('status','Consegnato','Ritirato')}>Consegnato</option><option data-collective-only="1" {selected('status','Smaltito','Ritirato')}>Smaltito</option></select></div><div class="field"><label>Pagamento</label><select name="payment_status">{''.join(f'<option {"selected" if raw("payment_status","Da saldare")==state else ""}>{state}</option>' for state in PAYMENT_STATES)}</select></div></div></section>
-        <input type="hidden" name="urn_notes" value="{val('urn_notes')}">
-        <section class="section"><h2>Catalogo Urne</h2><div class="fields"><div class="field full"><label>Urna</label><select name="urn_id">{urn_options}</select><small id="urnStockWarning" class="sub hidden"></small></div></div><p class="sub">La selezione compila automaticamente il prezzo e aggiorna il magazzino al salvataggio.</p></section>
+        <input type="hidden" name="urn_notes" value="{val('urn_notes')}"><select name="urn_id" class="hidden" aria-hidden="true" tabindex="-1">{urn_options}</select><small id="urnStockWarning" class="sub hidden"></small>
         <input type="hidden" name="price_urn_2" value="{val('price_urn_2')}"><input type="hidden" name="urn_notes_2" value="{val('urn_notes_2')}"><input type="hidden" name="price_cast_2" value="{val('price_cast_2')}"><input type="hidden" name="price_accessories_2" value="{val('price_accessories_2')}"><input type="hidden" name="accessory_type" value="{val('accessory_type')}"><input type="hidden" name="accessory_type_2" value="{val('accessory_type_2')}">
         <section class="section"><h2>Richiesta</h2><div class="fields"><div class="field"><label>Servizio</label><select name="service_type"><option {selected('service_type','Da decidere')}>Da decidere</option><option {selected('service_type','Cremazione singola')}>Cremazione singola</option><option {selected('service_type','Cremazione collettiva')}>Cremazione collettiva</option></select></div><div class="field"><label>Origine richiesta *</label><select name="request_origin" required><option {selected('request_origin','Veterinario')}>Veterinario</option><option {selected('request_origin','Privato')}>Privato</option><option {selected('request_origin','Consegna in sede')}>Consegna in sede</option><option {selected('request_origin','Collaboratore')}>Collaboratore</option></select></div><div class="field {'hidden' if raw('request_origin')!='Collaboratore' else ''}" id="collaboratorBox"><label>Collaboratore</label><select name="collaborator_name"><option value="">Nessun collaboratore</option><option {selected('collaborator_name','HUMANITAS CROCE VERDE')}>HUMANITAS CROCE VERDE</option></select></div><div class="field"><label>Sede di destinazione</label><select name="destination_branch"><option {selected('destination_branch','Livorno')}>Livorno</option><option {selected('destination_branch','Empoli')}>Empoli</option></select></div><div class="field"><label>Data recupero</label><input type="date" name="pickup_date" value="{val('pickup_date')}"></div></div></section>
         <section class="section"><h2>SPEDITORE</h2><div class="fields"><input type="hidden" name="client_id" value="{val('client_id')}"><div class="field full lookup"><label>Cerca cliente in anagrafica</label><input id="clientSearch" autocomplete="off" placeholder="Scrivi nome, telefono, email, codice fiscale, città..."><div id="clientResults" class="lookup-results hidden"></div><div id="clientSelected" class="selected-box hidden"><span id="clientSelectedText"></span><button class="btn ghost" type="button" id="clearClientSelection">Cancella selezione</button></div><small class="sub">Se scegli un cliente, i campi vengono compilati automaticamente. Se li modifichi, l'anagrafica non viene aggiornata senza conferma.</small></div><div class="field full"><label>Usa veterinario come speditore</label><select name="owner_veterinarian_id">{owner_vet_options}</select><small class="sub">Compila automaticamente i dati dello speditore. Sul DDT, nel Luogo di origine, verra scritto solo il nome breve del veterinario.</small></div><div class="field"><label>Nome *</label><input name="owner_first_name" value="{val('owner_first_name')}" required></div><div class="field"><label>Cognome *</label><input name="owner_last_name" value="{val('owner_last_name')}" required></div><div class="field"><label>Ragione sociale</label><input name="owner_company" value="{val('owner_company')}"></div><div class="field"><label>Telefono *</label><input type="tel" inputmode="numeric" name="owner_phone" value="{val('owner_phone')}" required></div><div class="field"><label>Secondo telefono</label><input type="tel" inputmode="numeric" name="owner_phone_2" value="{val('owner_phone_2')}"></div><div class="field"><label>Email</label><input type="email" name="owner_email" value="{val('owner_email')}"></div><div class="field"><label>Codice fiscale *</label><input name="owner_tax_code" value="{val('owner_tax_code')}" required></div><div class="field"><label>Partita IVA</label><input name="owner_vat" value="{val('owner_vat')}"></div><div class="field full"><label>Indirizzo *</label><input name="owner_street" value="{val('owner_street') or val('owner_address')}" required></div><div class="field"><label>Comune *</label><input name="owner_city" value="{val('owner_city')}" required></div><div class="field"><label>Provincia *</label><input name="owner_province" value="{val('owner_province')}" maxlength="2" placeholder="Si compila dal comune" required></div><div class="field"><label>CAP *</label><input name="owner_zip" value="{val('owner_zip')}" inputmode="numeric" required></div><div class="field full"><label>Note cliente</label><textarea name="owner_notes" placeholder="Note anagrafiche utili">{val('owner_notes')}</textarea></div></div></section>
@@ -3044,6 +3185,44 @@ class App(BaseHTTPRequestHandler):
         c.execute("UPDATE urns SET quantity=?,updated_at=? WHERE id=?",(new_quantity,now(),urn_id))
         c.execute("INSERT INTO urn_movements(urn_id,practice_id,user_id,movement_type,quantity_delta,old_quantity,new_quantity,note,created_at) VALUES(?,?,?,?,?,?,?,?,?)",(urn_id,practice_id,user_id,movement_type,actual_delta,old_quantity,new_quantity,note,now()))
 
+    def add_payment_movement(self,c,practice_id,payment_type,channel,amount,user_id,notes,paid_at=None):
+        amount=round(float(amount),2)
+        if abs(amount)<0.005:return
+        stamp=paid_at or now()
+        c.execute("""INSERT INTO payment_movements(practice_id,payment_type,payment_channel,amount,paid_at,user_id,notes,created_at)
+                     VALUES(?,?,?,?,?,?,?,?)""",(practice_id,payment_type,channel,amount,stamp,user_id,notes,now()))
+
+    def reconcile_payment_movements(self,c,practice_id,previous,current,user_id,reason):
+        channel="D" if uses_total_d(current) else "ordinario"
+        due=effective_total(current); target=received_amount(current)
+        rows=c.execute("SELECT payment_channel,COALESCE(sum(amount),0) amount FROM payment_movements WHERE practice_id=? GROUP BY payment_channel",(practice_id,)).fetchall()
+        totals={row["payment_channel"]:float(row["amount"] or 0) for row in rows}
+        existing_total=sum(totals.values())
+        for old_channel,old_amount in list(totals.items()):
+            if old_channel!=channel and abs(old_amount)>=0.005:
+                self.add_payment_movement(c,practice_id,"rettifica",old_channel,-old_amount,user_id,f"Riclassificazione verso circuito {channel}: {reason}")
+                self.add_payment_movement(c,practice_id,"rettifica",channel,old_amount,user_id,f"Riclassificazione dal circuito {old_channel}: {reason}")
+        old_status=(previous["payment_status"] or "Da saldare") if previous is not None else "Da saldare"
+        new_status=current["payment_status"] or "Da saldare"
+        old_deposit=money_value(previous["deposit"]) if previous is not None else 0.0
+        new_deposit=min(due,max(0.0,money_value(current["deposit"])))
+        delta=round(target-existing_total,2)
+        stamp=now()
+        if previous is None and new_status=="Pagato" and target>0:
+            deposit_part=min(new_deposit,target)
+            self.add_payment_movement(c,practice_id,"acconto_d" if channel=="D" else "acconto_ordinario",channel,deposit_part,user_id,reason,stamp)
+            self.add_payment_movement(c,practice_id,"saldo_d" if channel=="D" else "saldo_ordinario",channel,target-deposit_part,user_id,reason,stamp)
+        elif delta>0:
+            is_balance=new_status=="Pagato"
+            movement_type=("saldo_d" if channel=="D" else "saldo_ordinario") if is_balance else ("acconto_d" if channel=="D" else "acconto_ordinario")
+            self.add_payment_movement(c,practice_id,movement_type,channel,delta,user_id,reason,stamp)
+        elif delta<0:
+            self.add_payment_movement(c,practice_id,"rettifica",channel,delta,user_id,reason,stamp)
+        if new_deposit>old_deposit:
+            c.execute("UPDATE practices SET deposit_paid_at=? WHERE id=?",(stamp,practice_id))
+        if new_status=="Pagato" and old_status!="Pagato":
+            c.execute("UPDATE practices SET paid_at=? WHERE id=?",(stamp,practice_id))
+
     def sync_practice_urn(self,c,practice_id,old_urn_id,new_urn_id,user_id):
         old_id=int(old_urn_id) if old_urn_id else None; new_id=int(new_urn_id) if new_urn_id else None
         if old_id==new_id:return
@@ -3085,6 +3264,8 @@ class App(BaseHTTPRequestHandler):
             marks=','.join('?' for _ in cols)
             cur=c.execute(f"INSERT INTO practices({','.join(cols)}) VALUES({marks})",values); pid=cur.lastrowid
             self.sync_practice_urn(c,pid,None,d.get("urn_id"),user["id"])
+            created_practice=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+            self.reconcile_payment_movements(c,pid,None,created_practice,user["id"],"Creazione pratica")
             self.sync_voucher(c,pid,d)
             self.apply_used_voucher(c,pid,d,user["id"])
             c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"Creazione pratica",initial,user["id"],stamp))
@@ -3245,6 +3426,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 c.execute("UPDATE practices SET catalog_sent='' WHERE id=?",(pid,))
                 changes.append(("Catalogo urna","Catalogo inviato","Da inviare"))
             p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+            self.reconcile_payment_movements(c,pid,previous,p,user["id"],"Modifica pratica")
             wanted_prefix,_=practice_code_prefix(d["service_type"])
             current_number=p["practice_number"] or ""
             if not p["ddt_number"] and wanted_prefix in ("CR-","SM-") and not current_number.startswith(wanted_prefix):
@@ -3298,6 +3480,8 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             if new=="Smaltito" and old["service_type"]!="Cremazione collettiva": return self.send_error(400,"Smaltito è disponibile solo per la cremazione collettiva")
             old_payment=old["payment_status"] or "Da saldare"
             c.execute("UPDATE practices SET status=?,payment_status=?,invoice_number=?,no_whatsapp_message=?,updated_at=? WHERE id=?",(new,payment,invoice,no_whatsapp,now(),pid))
+            updated=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+            self.reconcile_payment_movements(c,pid,old,updated,user["id"],"Aggiornamento stato pagamento")
             new_value=f'{new} + {payment}' + (f' - Fattura {invoice}' if invoice else '') + (" - NO MESSAGGIO" if no_whatsapp else "")
             old_value=f'{old["status"]} + {old_payment}' + (f' - Fattura {old["invoice_number"]}' if old["invoice_number"] else '') + (" - NO MESSAGGIO" if old["no_whatsapp_message"]=="Si" else "")
             c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,"Cambio stati",old_value,new_value,user["id"],now()))
@@ -3327,6 +3511,8 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             if payment!="Pagato" and due and money_value(deposit)>=due: payment="Pagato"
             remaining=0.0 if payment=="Pagato" else max(0.0,due-money_value(deposit))
             c.execute("UPDATE practices SET payment_status=?,payment_amount=?,deposit=?,remaining_balance=?,updated_at=? WHERE id=?",(payment,amount,deposit,f"{remaining:.2f}",stamp,pid))
+            updated=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+            self.reconcile_payment_movements(c,pid,row,updated,user["id"],"Pagamento rapido")
             c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,"Pagamento rapido",old,f'{payment}' + (f' · {money_it(money_value(amount))}' if amount else ''),user["id"],stamp))
             if payment=="Pagato" and old!="Pagato":
                 owner=f'{row["owner_first_name"] or ""} {row["owner_last_name"] or ""}'.strip()
