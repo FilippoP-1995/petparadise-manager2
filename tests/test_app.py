@@ -426,6 +426,75 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("8 anni",page);self.assertEqual(page.count('class="month-toggle"'),2)
         self.assertIn("toggleArchiveMonth",page);self.assertNotIn("Aggiorna pagamento",page);self.assertNotIn('class="quick-payment"',page)
 
+    def test_origin_veterinarian_lookup_and_safe_return_link(self):
+        html=self.handler.fields_html()
+        self.assertIn('id="originVetSearch"',html)
+        self.assertIn('id="originVetResults"',html)
+        self.assertIn('name="origin_veterinarian_id"',html)
+        self.assertIn("setupOriginVetLookup",app.APP_JS)
+        self.assertIn("/api/veterinari/search",app.APP_JS)
+        self.assertEqual(app.safe_return_path("https://example.test/evil","/"),"/")
+        self.assertEqual(app.safe_return_path("/archivio/pratiche?stato=Ritirato","/"),"/archivio/pratiche?stato=Ritirato")
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by)
+                                VALUES(?,?,?,?,?,?,?)""",("CR-RETURN","Privato","Livorno","Ritirato",stamp,stamp,admin["id"])).lastrowid
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path=f"/pratiche/{pid}?return_to=%2Fdashboard%3Fstato%3DRitirato"
+        self.handler.practice(admin,pid)
+        self.assertIn('href="/dashboard?stato=Ritirato"',rendered[-1])
+        self.assertIn("Torna alla pagina precedente",rendered[-1])
+
+    def test_practice_list_order_sticky_urn_and_inline_statuses(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            urn_id=conn.execute("INSERT INTO urns(name,price,quantity,active,created_at,updated_at) VALUES(?,?,?,?,?,?)",("Doppia Quercia","95.00",2,1,stamp,stamp)).lastrowid
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                         animal_name,species,estimated_weight,age_years,owner_first_name,owner_last_name,service_type,urn_id,payment_status,total_service)
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                         ("CR-LISTA","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Luna","Cane","12","8","Mario","Rossi","Cremazione singola",urn_id,"Da saldare","230"))
+            rows=conn.execute("SELECT * FROM practices WHERE practice_number='CR-LISTA'").fetchall()
+        self.handler.path="/dashboard?stato=Ritirato"
+        page=self.handler.practice_rows(rows)
+        self.assertLess(page.index("Luna"),page.index("8 anni"))
+        self.assertLess(page.index("8 anni"),page.index("Mario Rossi"))
+        self.assertLess(page.index("Mario Rossi"),page.index(">CR-LISTA</b>"))
+        self.assertIn("Doppia Quercia",page)
+        self.assertIn("stato-rapido",page)
+        self.assertIn("pagamento-rapido",page)
+        self.assertIn("Totale incassato",page)
+        self.assertIn("Numero fattura",page)
+        self.assertIn("practice-list-table td:first-child",app.CSS)
+
+    def test_scheduled_whatsapp_appears_in_conversations(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,owner_last_name,owner_phone,animal_name)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?)""",("CR-WA","Privato","Livorno","Consegnato",stamp,stamp,admin["id"],"Mario","Rossi","393331234567","Luna")).lastrowid
+            conn.execute("""INSERT INTO whatsapp_messages(practice_id,scheduled_at,status,template_name,recipient_phone,manual,created_at,updated_at)
+                            VALUES(?,?,?,?,?,?,?,?)""",(pid,"2026-07-15T10:00:00","programmato","grazie_cliente","393331234567",0,stamp,stamp))
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/conversazioni-whatsapp"
+        self.handler.whatsapp_conversations(admin)
+        self.assertIn("Programmato per",rendered[-1])
+        self.assertIn("CR-WA",rendered[-1])
+        self.assertIn("message-programmato",rendered[-1])
+
+    def test_quick_payment_saves_details_and_returns_to_list(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?)""",("CR-PAY","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Mario","Cremazione singola","Da saldare","200")).lastrowid
+        self.handler.form=lambda:{"payment_status":"Pagato","payment_method":"Pos","payment_amount":"200,00","invoice_number":"FT-200","invoice_total":"200,00","invoice_date":"2026-07-14","return_to":"/archivio/pratiche?stato=Ritirato"}
+        redirects=[];self.handler.redirect=lambda path:redirects.append(path);self.handler.headers={}
+        self.handler.quick_payment(admin,pid)
+        with app.db() as conn:
+            row=conn.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+            self.assertEqual((row["payment_status"],row["payment_method"],row["payment_amount"]),("Pagato","Pos","200.00"))
+            self.assertEqual((row["invoice_number"],row["invoice_total"],row["invoice_date"]),("FT-200","200.00","2026-07-14"))
+        self.assertEqual(redirects[-1],"/archivio/pratiche?stato=Ritirato")
+
     def test_dashboard_balances_and_payment_pages_render(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
