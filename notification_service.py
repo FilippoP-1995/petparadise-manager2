@@ -28,6 +28,8 @@ NOTIFICATION_TYPES = {
     "backup_completed": ("Backup completato", "✅"),
     "system_error": ("Errori di sistema", "🚨"),
     "push_test": ("Test notifiche push", "🔔"),
+    "catalog_sent": ("Catalogo inviato", "📖"),
+    "article_ordered": ("Articolo da ordinare", "📦"),
 }
 
 

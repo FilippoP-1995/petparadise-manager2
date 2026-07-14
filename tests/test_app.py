@@ -81,6 +81,120 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("addEventListener('notificationclick'", source)
         self.assertIn("pet-paradise-shell-v7", source)
 
+    def test_effective_total_and_cash_flow_use_total_d_once(self):
+        whisky = {
+            "price_cremation": "410", "total_text": "330", "deposit": "0",
+            "payment_status": "Pagato",
+        }
+        self.assertEqual(app.calculated_service_total(whisky), 410)
+        self.assertEqual(app.effective_total(whisky), 330)
+        self.assertEqual(app.received_amount(whisky), 330)
+        self.assertEqual(app.outstanding_amount(whisky), 0)
+
+        partial = dict(whisky, deposit="100", payment_status="Acconto")
+        self.assertEqual(app.received_amount(partial), 100)
+        self.assertEqual(app.outstanding_amount(partial), 230)
+
+        ordinary = dict(whisky, total_text="0", deposit="100", payment_status="Acconto")
+        self.assertEqual(app.effective_total(ordinary), 410)
+        self.assertEqual(app.outstanding_amount(ordinary), 310)
+
+    def test_balances_total_d_filter_includes_whisky_and_partial_cash_flow(self):
+        today = app.datetime.now().date().isoformat()
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            base = ("Privato", "Livorno", "Ritirato", today, stamp, stamp, admin["id"])
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
+                   created_at,updated_at,created_by,animal_name,price_cremation,total_service,total_text,deposit,payment_status)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("PP-WHISKY", *base, "Whisky", "410", "410", "330", "0", "Pagato"),
+            )
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
+                   created_at,updated_at,created_by,animal_name,price_cremation,total_service,total_text,deposit,payment_status)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("PP-PARZIALE", *base, "Parziale", "410", "410", "330", "100", "Acconto"),
+            )
+
+        rendered = []
+        self.handler.send_html = lambda content: rendered.append(content)
+        self.handler.path = f"/bilanci?dal={today}&al={today}&voce=totale_d"
+        self.handler.balances_v2(admin)
+        self.assertIn("PP-WHISKY", rendered[-1])
+        self.assertIn("PP-PARZIALE", rendered[-1])
+        self.assertIn("€ 430,00", rendered[-1])
+        self.assertIn('/pratiche/', rendered[-1])
+
+        self.handler.path = f"/bilanci?dal={today}&al={today}&voce=da_entrare_d"
+        self.handler.balances_v2(admin)
+        self.assertIn("PP-PARZIALE", rendered[-1])
+        self.assertIn("€ 230,00", rendered[-1])
+
+    def test_normalization_keeps_custom_plate_and_calculates_remaining(self):
+        data = self.handler.normalized_fields({
+            "transport_method": "Fiat Fiorino", "vehicle_plate": "TARGA LIBERA",
+            "price_cremation": "300", "price_paw_cast": "30", "total_text": "250",
+            "deposit": "100", "payment_status": "Acconto",
+        })
+        self.assertEqual(data["vehicle_plate"], "TARGA LIBERA")
+        self.assertEqual(data["total_service"], "330.00")
+        self.assertEqual(data["remaining_balance"], "150.00")
+
+    def test_articles_and_new_notification_types_are_initialized(self):
+        with app.db() as conn:
+            names = {row["name"] for row in conn.execute("SELECT name FROM articles")}
+        self.assertEqual(names, {
+            "Sacchi per ritiro", "Boccette pelo", "Certificati",
+            "Sacchetti riconsegna", "Sacchetti ceneri",
+        })
+        self.assertIn("catalog_sent", app.NOTIFICATION_TYPES)
+        self.assertIn("article_ordered", app.NOTIFICATION_TYPES)
+
+    def test_pdf_urn_inventory_is_imported_once_with_exact_totals(self):
+        with app.db() as conn:
+            rows = conn.execute("SELECT name,material,price,quantity FROM urns WHERE active=1").fetchall()
+            movements = conn.execute("SELECT count(*) n FROM urn_movements WHERE movement_type='Importazione inventario'").fetchone()["n"]
+        self.assertEqual(len(rows), 85)
+        self.assertEqual(sum(row["quantity"] for row in rows), 80)
+        self.assertEqual(sum(row["quantity"] * app.money_value(row["price"]) for row in rows), 5900)
+        self.assertEqual(movements, 85)
+        self.assertEqual({row["material"] for row in rows}, {"Legno", "Ceramica", "Metallo"})
+        self.assertIn("Salto d’Amore Bianca", {row["name"] for row in rows})
+
+        app.init_db()
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT count(*) n FROM urns WHERE active=1").fetchone()["n"], 85)
+            self.assertEqual(conn.execute("SELECT count(*) n FROM urn_movements WHERE movement_type='Importazione inventario'").fetchone()["n"], 85)
+
+    def test_urn_catalog_schema_selection_and_stock_movements(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT id FROM users WHERE username='admin'").fetchone()["id"]
+            stamp = app.now()
+            cur = conn.execute(
+                """INSERT INTO urns(name,material,internal_code,price,quantity,low_stock_threshold,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?)""",
+                ("Urna prova", "Legno", "URN-TEST", "85.00", 2, 3, stamp, stamp),
+            )
+            urn_id = cur.lastrowid
+            self.handler.adjust_urn_stock(conn, urn_id, -1, "Utilizzata nella pratica", None, admin)
+            self.handler.adjust_urn_stock(conn, urn_id, 1, "Restituita dalla pratica", None, admin)
+            self.assertEqual(conn.execute("SELECT quantity FROM urns WHERE id=?", (urn_id,)).fetchone()["quantity"], 2)
+            self.assertEqual(conn.execute("SELECT count(*) n FROM urn_movements WHERE urn_id=?", (urn_id,)).fetchone()["n"], 2)
+
+        data = self.handler.normalized_fields({
+            "urn_id": str(urn_id), "price_cremation": "200", "deposit": "50",
+        })
+        self.assertEqual(data["urn_id"], urn_id)
+        self.assertEqual(data["urn_notes"], "Urna prova")
+        self.assertEqual(data["price_urn"], "85.00")
+        self.assertEqual(data["total_service"], "285.00")
+
+        html = self.handler.fields_html()
+        self.assertIn("Catalogo Urne", html)
+        self.assertIn("Urna prova", html)
+
 
 if __name__ == "__main__":
     unittest.main()
