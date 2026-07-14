@@ -13,7 +13,6 @@ from pathlib import Path
 NOTIFICATION_TYPES = {
     "practice_created": ("Nuova pratica", "🐾"),
     "practice_updated": ("Pratica modificata", "✏️"),
-    "pickup_today": ("Recupero programmato oggi", "🚐"),
     "pickup_30m": ("Recupero tra 30 minuti", "⏰"),
     "delivery_scheduled": ("Consegna programmata", "📅"),
     "practice_delivered": ("Pratica consegnata", "📦"),
@@ -31,7 +30,6 @@ NOTIFICATION_TYPES = {
     "catalog_sent": ("Catalogo inviato", "📖"),
     "article_ordered": ("Articolo da ordinare", "📦"),
 }
-
 
 def ensure_notification_schema(conn: sqlite3.Connection) -> None:
     conn.executescript("""
@@ -212,7 +210,7 @@ def _deliver_batch(db_path: str, queued: list[dict]) -> None:
 
 
 def process_scheduled_notifications(conn, db_path) -> int:
-    """Crea una sola volta i promemoria recupero e saldo attualmente dovuti."""
+    """Crea una sola volta i promemoria imminenti e i saldi attualmente dovuti."""
     current = datetime.now()
     today = current.date().isoformat()
     rows = conn.execute("""SELECT * FROM practices
@@ -221,8 +219,6 @@ def process_scheduled_notifications(conn, db_path) -> int:
     for row in rows:
         owner = " ".join(x for x in (row["owner_first_name"], row["owner_last_name"]) if x).strip()
         base = f'{row["animal_name"] or row["practice_number"]} · {owner or "Cliente non indicato"}'
-        created += _scheduled_once(conn, db_path, f"pickup-today-{row['id']}-{today}", "pickup_today",
-                                   "🚐 Recupero programmato oggi", base, row["id"])
         time_text = (row["pickup_time"] or "")[:5]
         if time_text and len(time_text) == 5:
             try:

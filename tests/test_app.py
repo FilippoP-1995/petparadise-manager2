@@ -60,6 +60,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(data["send_catalog"],"")
         self.assertEqual(data["invoice_number"],"F-2026-19")
         self.assertEqual(data["make_invoice"],"Si")
+        self.assertEqual(self.handler.normalized_fields({"owner_city":"livorno"})["owner_city"],"Livorno")
 
     def test_invoice_page_search_and_unique_code(self):
         with app.db() as conn:
@@ -110,8 +111,9 @@ class PetParadiseTests(unittest.TestCase):
                           stamp[:10], "23:59", stamp, stamp, admin))
             first = process_scheduled_notifications(conn, app.DB_PATH)
             second = process_scheduled_notifications(conn, app.DB_PATH)
-            self.assertEqual(first, 1)
+            self.assertEqual(first, 0)
             self.assertEqual(second, 0)
+            self.assertEqual(conn.execute("SELECT count(*) n FROM notifications WHERE type='pickup_today'").fetchone()["n"], 0)
 
     def test_opening_notification_center_clears_unread_badge(self):
         with app.db() as conn:
@@ -378,13 +380,16 @@ class PetParadiseTests(unittest.TestCase):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp=app.now()
             pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,
-                                created_by,animal_name,payment_status) VALUES(?,?,?,?,?,?,?,?,?)""",
-                             ("PP-APERTURA","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Luna","Da saldare")).lastrowid
+                                created_by,animal_name,species,breed,age_years,age_months,service_type,urn_notes,price_urn,payment_status)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                             ("PP-APERTURA","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Luna","Cane","Meticcio","7","3","Cremazione singola","Urna doppia","85","Da saldare")).lastrowid
         rendered=[]; self.handler.send_html=lambda content,*args: rendered.append(content)
         self.handler.practice(admin,pid)
         self.assertIn("PP-APERTURA",rendered[-1])
         self.assertIn(f'action="/pratiche/{pid}/fattura"',rendered[-1])
         self.assertIn("FARE FATTURA",rendered[-1])
+        self.assertIn("Età: 7 anni, 3 mesi",rendered[-1])
+        self.assertIn("Urna doppia",rendered[-1])
         self.assertNotIn("Firma su telefono",rendered[-1])
         with app.db() as conn:
             self.assertEqual(conn.execute("SELECT count(*) n FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["n"],0)

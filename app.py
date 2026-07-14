@@ -634,6 +634,7 @@ html{color-scheme:dark}body{background:radial-gradient(circle at 78% -10%,#31121
 .nav{margin:8px 0 0;display:flex;flex:1;flex-direction:column;width:100%;gap:7px}.nav a{display:flex;align-items:center;gap:11px;padding:11px 13px;color:#c5ccd7;border:1px solid transparent;border-radius:12px;font-weight:650}.nav a:hover{color:white;background:#181f2b;border-color:#2d3645}.nav a:first-child{color:#ff697b;background:linear-gradient(90deg,#381922,#1c151d);border-color:#53212e}.nav-icon{width:20px;text-align:center;font-size:17px}.nav .btn{margin-top:10px;color:white;background:linear-gradient(135deg,#ff526a,#cc2946);box-shadow:0 10px 26px #e9475b35}.nav .logout{margin-top:auto}.wrap{max-width:1500px;margin-left:226px;padding:34px 38px;animation:ppmFade .22s ease-out}
 h1{font-size:30px;letter-spacing:-.035em}h2{color:#eef1f6}.sub{color:var(--muted)}
 .section,.card,.tablebox,.login{background:linear-gradient(145deg,#131a26,#0f151f);border:1px solid var(--line);box-shadow:0 18px 50px #0003}.card{position:relative;overflow:hidden}.card:after{content:"";position:absolute;inset:auto -35px -50px auto;width:110px;height:110px;border-radius:50%;background:#e9475b12;filter:blur(4px)}.card:hover{border-color:#4a3340;box-shadow:0 20px 48px #0006,0 0 0 1px #e9475b12}.stat b{color:#ff6175}.btn{background:linear-gradient(135deg,#f05267,#c92d49);box-shadow:0 8px 24px #e9475b30}.btn:hover{background:linear-gradient(135deg,#ff6679,#df3652)}.btn.ghost{background:#171e2a;color:#e9edf3;border-color:#303948}.btn.ghost:hover{background:#202938}
+.section-tone-blue{--section-accent:#4f8fdc}.section-tone-teal{--section-accent:#35a89a}.section-tone-violet{--section-accent:#8b72cf}.section-tone-amber{--section-accent:#c79343}.section-tone-slate{--section-accent:#70829b}.section[class*="section-tone-"]{border-top:3px solid var(--section-accent);background:linear-gradient(145deg,color-mix(in srgb,var(--section-accent) 8%,#131a26),#0f151f 72%)}.section[class*="section-tone-"]>h2,.section-heading-row>h2{color:color-mix(in srgb,var(--section-accent) 58%,#f4f7fb)}.section-heading-row{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px}.section-heading-row h2{margin:0}.section-header-flag{flex:0 0 auto}.section-header-flag .field{margin:0}.section-header-flag label{margin:0}.section-header-flag .badge{font-size:11px;letter-spacing:.04em}.light-theme .section[class*="section-tone-"]{background:linear-gradient(145deg,color-mix(in srgb,var(--section-accent) 7%,#fff),#fff 74%)}.light-theme .section[class*="section-tone-"]>h2,.light-theme .section-heading-row>h2{color:color-mix(in srgb,var(--section-accent) 72%,#1f2937)}
 input,select,textarea{background:#0c121b;border-color:#323c4b;color:#f3f5f8}input:focus,select:focus,textarea:focus{outline:3px solid #e9475b22;border-color:#e9475b}.kv{background:#0c121b;border-color:#252e3b}.tablebox,table{background:#101620}th,td{border-color:#252d39}th{color:#8f9bad}.tablebox table tr:hover td{background:#171f2b}.lookup-results,.lookup-item{background:#131a25;border-color:#2b3544;color:#f5f7fb}.lookup-item:hover,.lookup-item:focus{background:#202938}.selected-box{background:#10261f;border-color:#245a46;color:#7ce0b7}
 .badge{background:#252d39;color:#dfe4eb}.tag-outline-orange{background:#271c10}.pay-yellow,.tag-yellow{background:#5a4610;color:#ffe28a}.login{margin-left:auto;margin-right:auto}.home-logo{background:#070a0f;border-color:#303948;box-shadow:0 12px 34px #0006;padding:7px}.practice-code-sm{color:#f3f5f8}.practice-code-cr{color:#6fa8ff}.danger{background:#291318;border-color:#6b2734}.trash-note,.warning{background:#302412;border-color:#624c23;color:#f6d58e}.flash{background:#102a20;color:#8be3bb}.signature-pad{background:#fff}
 .install-btn{display:none}.install-btn.ready{display:flex}.install-hint{position:fixed;right:22px;bottom:22px;z-index:50;max-width:340px;padding:16px;background:#141b27;border:1px solid #353f4f;border-radius:16px;box-shadow:0 20px 60px #0008}.install-hint b{display:block;color:#ff6679;margin-bottom:5px}.install-hint button{margin-top:10px}
@@ -829,6 +830,11 @@ function setupNumericBudgetFields(){
 }
 document.addEventListener('input', function(e){
   if(e.target && e.target.name === 'owner_city'){
+    const original=e.target.value;
+    if(original){
+      const capitalized=original.charAt(0).toLocaleUpperCase('it')+original.slice(1);
+      if(capitalized!==original){const cursor=e.target.selectionStart;e.target.value=capitalized;if(cursor!==null)e.target.setSelectionRange(cursor,cursor);}
+    }
     const provinceField = document.querySelector('input[name="owner_province"]');
     if(provinceField){
       const map = {
@@ -942,6 +948,20 @@ function reorderSenderFields(){
   const secondPhone=fields.querySelector('[name="owner_phone_2"]');
   if(secondPhone){secondPhone.type='text';secondPhone.removeAttribute('inputmode');secondPhone.placeholder='Numero oppure testo libero';}
 }
+function placeCallBackFlag(){
+  const input=document.querySelector('input[name="tag_da_richiamare"]');
+  const field=input?.closest('.field');
+  const section=[...document.querySelectorAll('.section')].find(item=>item.querySelector(':scope > h2')?.textContent.trim()==='SPEDITORE');
+  const heading=section?.querySelector(':scope > h2');
+  if(!field || !section || !heading) return;
+  const row=document.createElement('div');row.className='section-heading-row';
+  const flag=document.createElement('div');flag.className='section-header-flag';
+  heading.replaceWith(row);row.append(heading,flag);flag.append(field);
+}
+function decoratePracticeSections(){
+  const tones=['section-tone-blue','section-tone-teal','section-tone-violet','section-tone-amber','section-tone-slate'];
+  document.querySelectorAll('.section:not(.danger)').forEach((section,index)=>section.classList.add(tones[index%tones.length]));
+}
 function setupBudgetExtras(){
   const fields=document.querySelector('.section input[name="price_cremation"]')?.closest('.fields');
   if(!fields) return;
@@ -956,7 +976,7 @@ function setupBudgetExtras(){
     const wasChecked=control.value==='Si';control.type='checkbox';control.value='Si';control.checked=wasChecked;control.classList.remove('hidden');
     const wrap=document.createElement('div');wrap.className='field';
     const lab=document.createElement('label');lab.className='modern-check';lab.append(control,document.createTextNode(label));wrap.append(lab);
-    fields.insertBefore(wrap,after?.nextSibling||fields.firstElementChild);return wrap;
+    fields.insertBefore(wrap,after ? after.nextSibling : fields.firstElementChild);return wrap;
   };
   const voucherField=modernizeCheck(document.querySelector('input[name="use_voucher"]'));
   if(voucherField)fields.insertBefore(voucherField,fields.firstElementChild);
@@ -964,7 +984,7 @@ function setupBudgetExtras(){
   insertControl(document.querySelector('select[name="payment_method"]'),'Metodo di pagamento',paymentField);
   const sendCatalogField=modernizeCheck(document.querySelector('input[name="send_catalog"]'));
   insertCheck(document.querySelector('input[name="catalog_sent"]'),'CATALOGO INVIATO',sendCatalogField);
-  modernizeCheck(document.querySelector('input[name="send_estremi"]'));
+  const sendEstremiField=modernizeCheck(document.querySelector('input[name="send_estremi"]'));
   const wrapField=(element,label,after,hidden=false)=>{
     element.type='text';
     const wrap=document.createElement('div'); wrap.className='field'+(hidden?' hidden':'');
@@ -1006,10 +1026,11 @@ function setupBudgetExtras(){
   const invoiceField=document.createElement('div');invoiceField.className='field';invoiceField.innerHTML='<label>Numero fattura</label>';invoiceField.append(invoiceNumber);fields.append(invoiceField);
   const invoiceDate=document.querySelector('input[name="invoice_date"]');invoiceDate.type='date';
   const invoiceDateField=document.createElement('div');invoiceDateField.className='field';invoiceDateField.innerHTML='<label>Data fattura</label>';invoiceDateField.append(invoiceDate);fields.append(invoiceDateField);
-  insertCheck(document.querySelector('input[name="make_invoice"]'),'FARE FATTURA',fields.lastElementChild);
+  if(sendEstremiField)fields.append(sendEstremiField);
+  insertCheck(document.querySelector('input[name="make_invoice"]'),'FARE FATTURA',sendEstremiField||fields.lastElementChild);
 }
 document.addEventListener('DOMContentLoaded', function(){
-  reorderSenderFields(); setupBudgetExtras(); setupNumericBudgetFields(); updatePreventivoTotal(); updateRemainingBalance(); setupZipLookup(); setupUrnNotesField();
+  reorderSenderFields(); placeCallBackFlag(); setupBudgetExtras(); decoratePracticeSections(); setupNumericBudgetFields(); updatePreventivoTotal(); updateRemainingBalance(); setupZipLookup(); setupUrnNotesField();
   const plate=document.querySelector('input[name="vehicle_plate"]');
   if(plate) plate.readOnly=false;
 });
@@ -2829,6 +2850,8 @@ class App(BaseHTTPRequestHandler):
             data["owner_tax_code"] = data["owner_tax_code"] or collab["vat"]
         data["owner_tax_code"] = data["owner_tax_code"].upper()
         data["owner_province"] = data["owner_province"].upper()
+        if data["owner_city"]:
+            data["owner_city"] = data["owner_city"][:1].upper() + data["owner_city"][1:]
         city_line = " ".join(x for x in [data["owner_zip"], data["owner_city"], f'({data["owner_province"]})' if data["owner_province"] else ""] if x).strip()
         composed_address = " - ".join(x for x in [data["owner_street"], city_line] if x)
         if composed_address:
@@ -3458,6 +3481,10 @@ class App(BaseHTTPRequestHandler):
             msg_error = whatsapp_error
         cancel_form = f'''<form method="post" action="/pratiche/{pid}/whatsapp-annulla" onsubmit="return confirm('Annullare l invio WhatsApp programmato?')"><button class="btn ghost">Annulla invio programmato</button></form>''' if whatsapp_msg and whatsapp_msg["status"]=="programmato" else ""
         whatsapp_block = f'''<div class="section"><h2>WhatsApp ringraziamento</h2><div class="kvs"><div class="kv"><small>Stato attuale</small><b>{esc(status_label)}</b></div><div class="kv"><small>Destinatario</small>{('+'+esc(recipient_show)) if recipient_show else '<span class="sub">Telefono mancante</span>'}</div></div>{f'<div class="flash warning">{esc(msg_error)}</div>' if msg_error else ''}<div class="actions" style="margin-top:14px"><a class="btn" href="/pratiche/{pid}/whatsapp-conferma">{whatsapp_button}</a>{cancel_form}</div></div>'''
+        age_parts=[]
+        if p["age_years"]: age_parts.append(f'{esc(p["age_years"])} {"anno" if str(p["age_years"]).strip()=="1" else "anni"}')
+        if p["age_months"]: age_parts.append(f'{esc(p["age_months"])} {"mese" if str(p["age_months"]).strip()=="1" else "mesi"}')
+        animal_age='<br><span class="sub">Età: '+', '.join(age_parts)+'</span>' if age_parts else '<br><span class="sub">Età non indicata</span>'
         animal2_block = f'<div class="kv"><small>Secondo animale</small>{esc(p["animal2_name"])}<br>{esc(p["animal2_species"])} {esc(p["animal2_weight"])} kg</div>' if "animal2_name" in p.keys() and p["animal2_name"] else ""
         payment_options=''.join(f'<option {"selected" if s==payment_value else ""}>{esc(s)}</option>' for s in PAYMENT_STATES)
         hist_items=[]
@@ -3485,7 +3512,7 @@ class App(BaseHTTPRequestHandler):
           {'' if p['data_complete'] else '<div class="flash warning">Questa pratica contiene ancora dati da completare.</div>'}
           <section class="grid practice-layout">
             <div class="grid">
-              <div class="section"><h2>Riepilogo</h2><div class="kvs"><div class="kv"><small>Stato</small><b>{esc(p['status'])}</b><br><span class="badge {payment_cls}">{esc(payment_value)}</span></div><div class="kv"><small>Speditore</small>{esc((p['owner_first_name'] or '')+' '+(p['owner_last_name'] or ''))}<br>{esc(p['owner_phone'])}{('<br>'+esc(p['owner_phone_2'])) if 'owner_phone_2' in p.keys() and p['owner_phone_2'] else ''}</div><div class="kv"><small>Animale</small>{esc(p['species'])} - {esc(p['breed'])}<br>{esc(p['estimated_weight'])} kg</div>{animal2_block}<div class="kv"><small>Sede</small><b>{esc(p['destination_branch'])}</b></div><div class="kv"><small>Origine</small><b>{esc(p['request_origin'])}</b></div><div class="kv"><small>Veterinario</small>{esc(p['clinic_name'])}<br>{esc(p['veterinarian_name'])}</div><div class="kv"><small>Catalogo urna</small><b>{esc(catalog_value)}</b></div><div class="kv"><small>Fattura</small>{esc(invoice_value) or '<span class="sub">Non inserita</span>'}</div></div></div>
+              <div class="section"><h2>Riepilogo</h2><div class="kvs"><div class="kv"><small>Stato</small><b>{esc(p['status'])}</b><br><span class="badge {payment_cls}">{esc(payment_value)}</span></div><div class="kv"><small>Speditore</small>{esc((p['owner_first_name'] or '')+' '+(p['owner_last_name'] or ''))}<br>{esc(p['owner_phone'])}{('<br>'+esc(p['owner_phone_2'])) if 'owner_phone_2' in p.keys() and p['owner_phone_2'] else ''}</div><div class="kv"><small>Animale</small>{esc(p['species'])} - {esc(p['breed'])}<br>{esc(p['estimated_weight'])} kg{animal_age}</div>{animal2_block}<div class="kv"><small>Sede</small><b>{esc(p['destination_branch'])}</b></div><div class="kv"><small>Origine</small><b>{esc(p['request_origin'])}</b></div><div class="kv"><small>Veterinario</small>{esc(p['clinic_name'])}<br>{esc(p['veterinarian_name'])}</div><div class="kv"><small>Catalogo urna</small><b>{esc(catalog_value)}</b></div><div class="kv"><small>Fattura</small>{esc(invoice_value) or '<span class="sub">Non inserita</span>'}</div></div></div>
               <div class="section"><h2>Firma proprietario</h2><p class="sub">{'Firma salvata.' if p['signature_data'] else 'Firma non ancora salvata.'}</p><a class="btn ghost" href="/pratiche/{pid}/firma">Apri firma</a></div>
               <div class="section"><h2>Stati pratica</h2>{no_whatsapp_note}<form method="post" action="/pratiche/{pid}/stato"><div class="fields"><div class="field"><label>Avanzamento</label><select name="status">{options}</select></div><div class="field"><label><input type="checkbox" name="no_whatsapp_message" value="Si" {no_whatsapp_checked} style="width:auto"> NO MESSAGGIO</label><small class="sub">Se spuntato, quando la pratica passa a Consegnato non parte il WhatsApp automatico.</small></div><div class="field"><label>Pagamento</label><select name="payment_status">{payment_options}</select></div><div class="field"><label>Numero fattura</label><input name="invoice_number" value="{esc(invoice_value)}" placeholder="Da inserire quando risulta pagato"></div></div><button class="btn" style="margin-top:12px">Aggiorna stati</button></form></div>
               {whatsapp_block}
@@ -3500,7 +3527,8 @@ class App(BaseHTTPRequestHandler):
         body=body.replace(old_invoice_box,invoice_box)
         body=body.replace(f'<div class="field"><label>Numero fattura</label><input name="invoice_number" value="{esc(invoice_value)}" placeholder="Da inserire quando risulta pagato"></div>',"")
         body=body.replace(f'<div class="kv"><small>Catalogo urna</small><b>{esc(catalog_value)}</b></div>',catalog_box)
-        body=body.replace(catalog_box,catalog_box+urn_box)
+        if p["service_type"] == "Cremazione singola":
+            body=body.replace(catalog_box,catalog_box+urn_box)
         body=body.replace(f'<small>Stato</small><b>{esc(p["status"])}</b>',f'<small>Stato</small><span class="badge practice-status {practice_state_cls}">{esc(p["status"])}</span>')
         body=body.replace(f'<span class="badge {payment_cls}">{esc(payment_value)}</span>',f'<span class="badge {payment_cls}">{esc(payment_value)}</span><br><small>Metodo: {esc(payment_method_value)}</small>')
         self.send_html(layout(p["practice_number"],body,user))
