@@ -77,8 +77,10 @@ class PetParadiseTests(unittest.TestCase):
         with app.db() as conn:
             columns={row["name"] for row in conn.execute("PRAGMA table_info(email_orders)")}
             recipient=conn.execute("SELECT value FROM settings WHERE key='order_recipient_email'").fetchone()["value"]
+            settings=app.order_email_settings(conn)
         self.assertTrue({"quantity","recipient","subject","body","status","error_message","operator_id","parent_order_id","archived_at","sent_at"}.issubset(columns))
         self.assertEqual(recipient,"[QUI INSERIRÒ IL MIO INDIRIZZO EMAIL]")
+        self.assertEqual(app.render_order_email(5,settings),("Ordine boccioni acqua - Pet Paradise","Buongiorno,\n\ndesideriamo ordinare 5 boccioni di acqua.\n\nVi chiediamo gentilmente di confermare disponibilità e consegna.\n\nGrazie.\n\nPet Paradise"))
         self.assertTrue(app.valid_email_address("fornitore@example.com"))
         for invalid in ("","non-valida","a@localhost","a@example.com\nBcc:x@y.it"):
             self.assertFalse(app.valid_email_address(invalid))
@@ -88,21 +90,21 @@ class PetParadiseTests(unittest.TestCase):
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
             conn.execute("UPDATE settings SET value='supplier@example.com' WHERE key='order_recipient_email'")
         sent=[];statuses_during=[];redirects=[];self.handler.redirect=lambda path:redirects.append(path)
-        def capture_send(recipient,subject,body):
+        def capture_send(recipient,subject,body,**kwargs):
             sent.append((recipient,subject,body))
             with app.db() as conn:statuses_during.append(conn.execute("SELECT status FROM email_orders ORDER BY id DESC LIMIT 1").fetchone()["status"])
         with patch("app.send_email",side_effect=capture_send):
-            for quantity,notes in ((1,""),(5,"Consegnare in mattinata")):
-                self.handler.form=lambda q=quantity,n=notes:{"confirm_send":"SI","quantity":str(q),"notes":n}
+            for quantity in (1,5):
+                self.handler.form=lambda q=quantity:{"confirm_send":"SI","quantity":str(q)}
                 self.handler.send_water_order(admin)
         self.assertEqual(len(sent),2);self.assertIn("1 boccioni di acqua",sent[0][2]);self.assertIn("5 boccioni di acqua",sent[1][2])
-        self.assertIn("Consegnare in mattinata",sent[1][2]);self.assertTrue(all(item[0]=="supplier@example.com" for item in sent))
+        self.assertIn("confermare disponibilità e consegna",sent[1][2]);self.assertTrue(all(item[0]=="supplier@example.com" for item in sent))
         with app.db() as conn:
             rows=conn.execute("SELECT * FROM email_orders ORDER BY id").fetchall()
         self.assertEqual([row["status"] for row in rows],["Inviato","Inviato"])
         self.assertEqual(statuses_during,["Invio in corso","Invio in corso"])
         self.assertTrue(all(row["sent_at"] and row["operator_id"]==admin["id"] for row in rows))
-        self.assertEqual(len(redirects),2)
+        self.assertEqual(redirects,["/ordini?esito=inviato&ordine=1","/ordini?esito=inviato&ordine=2"])
 
     def test_order_blocks_zero_negative_missing_confirmation_and_invalid_recipient(self):
         with app.db() as conn:admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
@@ -130,46 +132,69 @@ class PetParadiseTests(unittest.TestCase):
     def test_order_resend_duplicate_filters_detail_and_soft_archive(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();conn.execute("UPDATE settings SET value='supplier@example.com' WHERE key='order_recipient_email'")
-        with patch("app.send_email"):
-            original,_=self.handler._create_and_send_order(admin,5,"Nota originale")
+        with patch("app.send_email",side_effect=email_service.EmailDeliveryError("Errore SMTP di prova")):
+            original,_=self.handler._create_and_send_order(admin,5,"")
             self.handler.form=lambda:{"confirm_send":"SI"};redirects=[];self.handler.redirect=lambda path:redirects.append(path)
+        with patch("app.send_email"):
             self.handler.order_action(admin,original,"reinvia")
         with app.db() as conn:
             resent=conn.execute("SELECT * FROM email_orders WHERE parent_order_id=? AND status='Inviato' ORDER BY id DESC",(original,)).fetchone()
-        self.assertIsNotNone(resent);self.assertEqual((resent["quantity"],resent["notes"]),(5,"Nota originale"))
+        self.assertIsNotNone(resent);self.assertEqual((resent["quantity"],resent["notes"]),(5,""))
         self.handler.order_action(admin,original,"duplica")
         with app.db() as conn:
             draft=conn.execute("SELECT * FROM email_orders WHERE parent_order_id=? AND status='Bozza'",(original,)).fetchone()
             conn.execute("""INSERT INTO email_orders(order_type,quantity,recipient,subject,body,status,operator_id,created_at,updated_at)
                             VALUES('water',2,'old-supplier@example.com','Ordine storico','CORPO-STORICO','Inviato',?,'2020-01-01T10:00:00','2020-01-01T10:00:00')""",(admin["id"],))
         self.assertIsNotNone(draft);self.assertIn(f"bozza={draft['id']}",redirects[-1])
-        today=datetime.now().date().isoformat();rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path=f"/ordini?dal={today}&al={today}&stato=Inviato"
-        self.handler.orders_page(admin);self.assertIn("Storico ordini",rendered[-1]);self.assertNotIn("old-supplier@example.com",rendered[-1]);self.assertIn("Nota originale",app.water_order_body(5,"Nota originale"))
+        today=datetime.now().date().isoformat();rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path=f"/ordini/storico?dal={today}&al={today}&stato=Inviato"
+        self.handler.orders_history_page(admin);self.assertIn("Storico ordini",rendered[-1]);self.assertNotIn("old-supplier@example.com",rendered[-1])
         self.handler.order_detail_page(admin,original);self.assertIn("Reinvia ordine",rendered[-1]);self.assertIn("Duplica ordine",rendered[-1])
         self.handler.order_action(admin,original,"archivia")
         with app.db() as conn:archived=conn.execute("SELECT archived_at FROM email_orders WHERE id=?",(original,)).fetchone()["archived_at"]
         self.assertTrue(archived)
 
     def test_order_settings_validate_and_save_recipient(self):
-        with app.db() as conn:admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();conn.execute("INSERT INTO users(username,password_hash,display_name,role) VALUES('operatore','x','Operatore','operator')");operator=conn.execute("SELECT * FROM users WHERE username='operatore'").fetchone()
         errors=[];self.handler.error_page=lambda title,message,back="/":errors.append(message);self.handler.redirect=lambda path:None
         self.handler.form=lambda:{"order_recipient_email":"non valida"};self.handler.save_order_settings(admin)
         self.assertTrue(errors)
-        self.handler.form=lambda:{"order_recipient_email":"Supplier@Example.com"};self.handler.save_order_settings(admin)
-        with app.db() as conn:value=conn.execute("SELECT value FROM settings WHERE key='order_recipient_email'").fetchone()["value"]
-        self.assertEqual(value,"supplier@example.com")
+        values={"order_recipient_email":"Supplier@Example.com","order_email_subject":"Ordine personalizzato","order_email_template":"Servono {{quantita}} boccioni. {{note_predefinite}}","order_email_signature":"Firma Azienda","order_sender_name":"Ufficio ordini","order_phone":"0571 000000","order_default_notes":"Consegna mattina"}
+        self.handler.form=lambda:values;self.handler.save_order_settings(admin)
+        with app.db() as conn:
+            saved=app.order_email_settings(conn);subject,body=app.render_order_email(5,saved)
+        self.assertEqual(saved["order_recipient_email"],"supplier@example.com");self.assertEqual(subject,"Ordine personalizzato");self.assertIn("Servono 5 boccioni",body);self.assertIn("Consegna mattina",body);self.assertIn("Firma Azienda",body)
+        forbidden=[];self.handler.send_error=lambda *args:forbidden.append(args);self.handler.save_order_settings(operator);self.assertEqual(forbidden[0][0],403)
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.order_settings_page(admin)
+        for field in ("order_recipient_email","order_email_subject","order_email_template","order_email_signature","order_sender_name","order_phone","order_default_notes"):self.assertIn(field,rendered[-1])
+        self.assertNotIn("SMTP_PASSWORD",rendered[-1])
 
     def test_orders_desktop_mobile_and_confirmation_markup(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();conn.execute("UPDATE settings SET value='supplier@example.com' WHERE key='order_recipient_email'")
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/ordini"
         self.handler.orders_page(admin);page=rendered[-1]
-        for text in ("Ordine acqua","Numero boccioni","Destinatario attualmente configurato","Oggetto email","Anteprima del testo","Invia ordine","Storico ordini"):
+        for text in ("Ordina boccioni d’acqua","Seleziona la quantità","Ordina adesso","3 boccioni","5 boccioni","10 boccioni","Modifica impostazioni","Vedi tutti gli ordini","Ultimi ordini"):
             self.assertIn(text,page)
-        self.assertIn("confirmOrderSubmission(this)",page);self.assertIn("Destinatario: ${recipient}",app.APP_JS);self.assertIn("Quantità: ${quantity}",app.APP_JS)
-        for token in (".order-preview","@media(max-width:620px)","var(--safe-bottom)","min-height:44px"):
+        self.assertNotIn('name="order_recipient_email"',page);self.assertNotIn('name="order_email_subject"',page);self.assertNotIn('<textarea',page)
+        self.assertIn("openOrderConfirmation(this,event)",page);self.assertIn("Conferma e invia",page);self.assertIn("closeOrderConfirmation()",page)
+        for token in (".water-order-card",".quantity-stepper","@media(max-width:620px)","var(--safe-bottom)","min-height:44px"):
             self.assertIn(token,app.CSS)
-        self.assertIn('href="/ordini"',page)
+        self.assertIn('href="/ordini/storico"',page)
+
+    def test_order_operator_can_send_and_view_but_cannot_open_settings(self):
+        with app.db() as conn:
+            conn.execute("INSERT INTO users(username,password_hash,display_name,role) VALUES('operatore','x','Operatore','operator')");operator=conn.execute("SELECT * FROM users WHERE username='operatore'").fetchone();conn.execute("UPDATE settings SET value='supplier@example.com' WHERE key='order_recipient_email'")
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/ordini";self.handler.orders_page(operator)
+        self.assertIn("Ordina adesso",rendered[-1]);self.assertNotIn("Modifica impostazioni",rendered[-1])
+        forbidden=[];self.handler.send_error=lambda *args:forbidden.append(args);self.handler.order_settings_page(operator);self.assertEqual(forbidden[0][0],403)
+
+    def test_order_main_shows_only_latest_five_and_failure_keeps_quantity(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();conn.execute("UPDATE settings SET value='supplier@example.com' WHERE key='order_recipient_email'")
+            for quantity in range(1,7):conn.execute("""INSERT INTO email_orders(order_type,quantity,recipient,subject,body,status,operator_id,created_at,updated_at) VALUES('water',?,'supplier@example.com','S','B','Inviato',?,?,?)""",(quantity,admin["id"],f"2026-07-1{quantity}T10:00:00",f"2026-07-1{quantity}T10:00:00"))
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/ordini?quantita=5";self.handler.orders_page(admin)
+        self.assertIn('value="5"',rendered[-1]);self.assertIn('>6</td>',rendered[-1]);self.assertNotIn('>1</td>',rendered[-1])
 
     def test_form_extensions_and_normalization(self):
         html = self.handler.fields_html()

@@ -325,6 +325,12 @@ def init_db():
         INSERT OR IGNORE INTO settings(key,value) VALUES('next_sm_number','1');
         INSERT OR IGNORE INTO settings(key,value) VALUES('next_ddt_number','1');
         INSERT OR IGNORE INTO settings(key,value) VALUES('order_recipient_email','[QUI INSERIRÒ IL MIO INDIRIZZO EMAIL]');
+        INSERT OR IGNORE INTO settings(key,value) VALUES('order_email_subject','Ordine boccioni acqua - Pet Paradise');
+        INSERT OR IGNORE INTO settings(key,value) VALUES('order_email_template','Buongiorno,\n\ndesideriamo ordinare {{quantita}} boccioni di acqua.\n\nVi chiediamo gentilmente di confermare disponibilità e consegna.\n\n{{note_predefinite}}\n\nGrazie.');
+        INSERT OR IGNORE INTO settings(key,value) VALUES('order_email_signature','Pet Paradise');
+        INSERT OR IGNORE INTO settings(key,value) VALUES('order_sender_name','Pet Paradise');
+        INSERT OR IGNORE INTO settings(key,value) VALUES('order_phone','');
+        INSERT OR IGNORE INTO settings(key,value) VALUES('order_default_notes','');
         """)
         for article_name in ("Sacchi per ritiro", "Boccette pelo", "Certificati", "Sacchetti riconsegna", "Sacchetti ceneri"):
             c.execute("INSERT OR IGNORE INTO articles(name,created_at) VALUES(?,?)", (article_name, now()))
@@ -578,6 +584,15 @@ def compact_text(value):
 
 
 ORDER_EMAIL_SUBJECT = "Ordine boccioni acqua - Pet Paradise"
+DEFAULT_ORDER_EMAIL_TEMPLATE = """Buongiorno,
+
+desideriamo ordinare {{quantita}} boccioni di acqua.
+
+Vi chiediamo gentilmente di confermare disponibilità e consegna.
+
+{{note_predefinite}}
+
+Grazie."""
 
 
 def valid_email_address(value):
@@ -585,10 +600,49 @@ def valid_email_address(value):
     return bool(len(value)<=254 and "\n" not in value and "\r" not in value and re.fullmatch(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+",value))
 
 
+def order_email_settings(conn):
+    defaults={
+        "order_recipient_email":"[QUI INSERIRÒ IL MIO INDIRIZZO EMAIL]",
+        "order_email_subject":ORDER_EMAIL_SUBJECT,
+        "order_email_template":DEFAULT_ORDER_EMAIL_TEMPLATE,
+        "order_email_signature":"Pet Paradise",
+        "order_sender_name":"Pet Paradise",
+        "order_phone":"",
+        "order_default_notes":"",
+    }
+    keys=tuple(defaults);marks=','.join('?' for _ in keys)
+    saved={row["key"]:row["value"] for row in conn.execute(f"SELECT key,value FROM settings WHERE key IN ({marks})",keys)}
+    defaults.update(saved)
+    return defaults
+
+
+def render_order_email(quantity,settings,notes=""):
+    default_notes=str(settings.get("order_default_notes") or "").strip()
+    extra_notes=str(notes or "").strip()
+    notes_text="\n".join(value for value in (default_notes,extra_notes) if value)
+    body=str(settings.get("order_email_template") or DEFAULT_ORDER_EMAIL_TEMPLATE)
+    template_tokens=set(re.findall(r"\{\{[a-z_]+\}\}",body))
+    replacements={
+        "{{quantita}}":str(int(quantity)),
+        "{{note_predefinite}}":notes_text,
+        "{{firma}}":str(settings.get("order_email_signature") or "").strip(),
+        "{{nome_mittente}}":str(settings.get("order_sender_name") or "").strip(),
+        "{{telefono}}":str(settings.get("order_phone") or "").strip(),
+    }
+    for token,value in replacements.items():body=body.replace(token,value)
+    body=re.sub(r"\n{3,}","\n\n",body.strip())
+    signature=str(settings.get("order_email_signature") or "").strip()
+    phone=str(settings.get("order_phone") or "").strip()
+    footer=[]
+    if signature and "{{firma}}" not in template_tokens:footer.append(signature)
+    if phone and "{{telefono}}" not in template_tokens:footer.append(f"Tel. {phone}")
+    if footer:body=f"{body}\n\n"+"\n".join(footer)
+    return str(settings.get("order_email_subject") or ORDER_EMAIL_SUBJECT).strip(),body
+
+
 def water_order_body(quantity,notes=""):
-    note=str(notes or "").strip()
-    note_block=f"\n{note}\n" if note else ""
-    return f"Buongiorno,\n\ndesideriamo ordinare:\n\n{int(quantity)} boccioni di acqua.\n{note_block}\nGrazie.\n\nPet Paradise"
+    _,body=render_order_email(quantity,{"order_email_template":DEFAULT_ORDER_EMAIL_TEMPLATE,"order_email_signature":"Pet Paradise"},notes)
+    return body
 
 
 def only_digits(value):
@@ -724,8 +778,8 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 /* Cleaner, lighter dark theme */
 body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;border-color:#344156}.app-header{background:#172131ed;border-color:#344156}.section,.card,.tablebox,.login{background:linear-gradient(145deg,#202c3d,#1b2636);border-color:#38475c;box-shadow:0 12px 34px #080d162b}.section[class*="section-tone-"]{background:linear-gradient(145deg,color-mix(in srgb,var(--section-accent) 5%,#202c3d),#1b2636 76%)}.dashboard-panel,.metric-card,.payment-card,.balance-card,.balance-total,.conversation-card,.article-card,.urn-stat,.urn-card{background:#202c3d;border-color:#3a495e;box-shadow:0 12px 32px #080d1626}.tablebox,table{background:#1b2636}.practice-list-table th:first-child,.practice-list-table td:first-child{background:#1b2636}.kv,input,select,textarea,.header-search,.icon-btn,.header-actions time{background:#182334;border-color:#3b4a5f}.tablebox table tr:hover td{background:#253247}.lookup-results,.lookup-item{background:#202c3d;border-color:#3b4a5f}.lookup-item:hover,.lookup-item:focus{background:#29384d}h1{font-weight:650}h2{font-weight:600}b,strong{font-weight:600}label{font-weight:550}.nav a,.nav button{font-weight:500}.btn{font-weight:600}.badge,.inline-state-select{font-weight:600}th{font-weight:600;letter-spacing:.035em}.metric-card strong,.payment-card strong,.stat b{font-weight:650}.light-theme .practice-list-table th:first-child,.light-theme .practice-list-table td:first-child{background:#fff}
 .dashboard-section-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:24px 0 12px}.dashboard-section-head .dashboard-heading{margin:0}.period-selector{display:inline-grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px;padding:3px;border:1px solid #3b4a5f;border-radius:12px;background:#182334}.period-selector a{display:grid;place-items:center;min-width:88px;min-height:38px;padding:8px 12px;border-radius:9px;color:#aeb9c8;font-size:13px;font-weight:600}.period-selector a:hover{color:#fff;background:#253248}.period-selector a.active{color:#fff;background:#ef405f;box-shadow:0 5px 14px #ef405f40}.dashboard-chart-only{margin-top:24px}.dashboard-chart-only .dashboard-panel{display:block;min-height:0}.light-theme .period-selector{background:#f1f5f9;border-color:#cbd5e1}.light-theme .period-selector a{color:#526174}.light-theme .period-selector a.active{color:#fff}.state-yellow{--card-glow:#713f124f;--icon-bg:#573713;--icon-color:#fde047;--icon-shadow:#eab30840}.inline-save-note{min-height:16px;color:#86efac;font-size:11px}.inline-save-note.error{color:#fca5a5}
-.order-compose{max-width:920px}.order-preview{margin:0;min-height:190px;padding:18px;border:1px solid #3b4a5f;border-radius:12px;background:#182334;color:#e7ecf3;font:400 14px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}.light-theme .order-preview{background:#f8fafc;color:#24312c;border-color:#cbd5e1}.orders-wrap .tablebox{margin-top:16px}
-@media(max-width:620px){.dashboard-section-head{align-items:stretch;flex-direction:column;gap:9px}.period-selector{width:100%}.period-selector a{min-width:0;min-height:44px;padding:8px 5px}.dashboard-chart-only{margin-top:18px}.dashboard-wrap{padding-bottom:calc(28px + var(--safe-bottom))}.order-compose{padding:15px}.order-preview{min-height:220px;padding:14px;font-size:13px}.orders-wrap .tablebox{max-width:100%;overflow-x:auto}.orders-wrap{padding-bottom:calc(28px + var(--safe-bottom))}}
+.water-order-card{max-width:620px;margin:0 auto;padding:28px;text-align:center}.water-order-card h1{margin-bottom:6px}.water-order-card .sub{margin-bottom:24px}.quantity-stepper{display:grid;grid-template-columns:64px minmax(100px,160px) 64px;justify-content:center;align-items:center;gap:12px}.quantity-stepper button{width:64px;height:64px;border-radius:18px;font-size:32px}.quantity-stepper input{height:76px;text-align:center;font-size:34px;font-weight:650;padding:8px}.quick-quantities{display:flex;justify-content:center;gap:9px;flex-wrap:wrap;margin:16px 0 22px}.quick-quantities button{min-height:44px}.order-now{width:min(100%,420px);min-height:58px;font-size:17px}.last-order{margin:18px 0 0}.order-secondary-actions{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:18px}.recent-orders{margin-top:22px}.order-preview{margin:0;padding:16px;border:1px solid #3b4a5f;border-radius:12px;background:#182334;color:#e7ecf3;font:400 14px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}.light-theme .order-preview{background:#f8fafc;color:#24312c;border-color:#cbd5e1}.orders-wrap .tablebox{margin-top:14px}.order-modal[hidden]{display:none}.order-modal{position:fixed;inset:0;z-index:1200;display:grid;place-items:center;padding:20px;background:rgba(4,10,20,.72)}.order-modal-card{width:min(560px,100%);max-height:min(720px,calc(100dvh - 40px));overflow:auto;padding:24px;border:1px solid var(--line);border-radius:18px;background:#202c3d;box-shadow:0 24px 70px rgba(0,0,0,.45)}.light-theme .order-modal-card{background:#fff}.order-modal-card .order-preview{max-height:210px;overflow:auto}.modal-open{overflow:hidden}.admin-order-settings{max-width:820px}.admin-order-settings textarea{min-height:240px}
+@media(max-width:620px){.dashboard-section-head{align-items:stretch;flex-direction:column;gap:9px}.period-selector{width:100%}.period-selector a{min-width:0;min-height:44px;padding:8px 5px}.dashboard-chart-only{margin-top:18px}.dashboard-wrap{padding-bottom:calc(28px + var(--safe-bottom))}.water-order-card{padding:22px 15px}.quantity-stepper{grid-template-columns:58px minmax(86px,130px) 58px;gap:8px}.quantity-stepper button{width:58px;height:58px}.quantity-stepper input{height:68px;font-size:30px}.order-now{width:100%}.orders-wrap .tablebox{max-width:100%;overflow-x:auto}.orders-wrap{padding-bottom:calc(92px + var(--safe-bottom))}.order-modal{padding:12px 12px calc(78px + var(--safe-bottom))}.order-modal-card{padding:18px;max-height:calc(100dvh - 110px - var(--safe-bottom))}}
 """
 
 APP_JS = r"""
@@ -1484,25 +1538,35 @@ function toggleTheme(){
   document.body.classList.toggle('light-theme');
   localStorage.setItem('ppm-theme',document.body.classList.contains('light-theme')?'light':'dark');
 }
-function orderEmailBody(quantity,notes){
-  const clean=String(notes||'').trim();
-  return `Buongiorno,\n\ndesideriamo ordinare:\n\n${quantity} boccioni di acqua.\n${clean?`\n${clean}\n`:''}\nGrazie.\n\nPet Paradise`;
+let pendingOrderForm=null;
+function normalizeOrderQuantity(input,value){
+  const quantity=Math.max(1,Math.min(999,Math.trunc(Number(value)||1)));
+  input.value=quantity;return quantity;
 }
-function updateOrderPreview(form){
-  const quantity=form.querySelector('[name="quantity"]')?.value||'0';
-  const notes=form.querySelector('[name="notes"]')?.value||'';
-  const preview=form.querySelector('.order-preview');if(preview)preview.textContent=orderEmailBody(quantity,notes);
+function adjustOrderQuantity(form,delta){
+  const input=form.querySelector('[name="quantity"]');
+  normalizeOrderQuantity(input,Number(input.value||1)+delta);
 }
-function confirmOrderSubmission(form){
-  const quantity=Number(form.querySelector('[name="quantity"]')?.value||0);
-  if(!Number.isInteger(quantity)||quantity<1){alert('Il numero di boccioni deve essere almeno 1.');return false;}
-  const recipient=form.dataset.recipient||'';
-  const notes=form.querySelector('[name="notes"]')?.value||'';
-  const subject='Ordine boccioni acqua - Pet Paradise';
-  const body=orderEmailBody(quantity,notes);
-  const confirmed=confirm(`Confermi l'invio dell'ordine?\n\nDestinatario: ${recipient}\nQuantità: ${quantity}\nOggetto: ${subject}\n\n${body}`);
-  if(confirmed)form.querySelector('[name="confirm_send"]').value='SI';
-  return confirmed;
+function setOrderQuantity(form,value){normalizeOrderQuantity(form.querySelector('[name="quantity"]'),value);}
+function openOrderConfirmation(form,event){
+  event?.preventDefault();
+  const input=form.querySelector('[name="quantity"]');const quantity=normalizeOrderQuantity(input,input.value);
+  const modal=document.getElementById('orderConfirmModal');if(!modal)return false;
+  modal.querySelector('[data-order-confirm="quantity"]').textContent=`${quantity} boccioni`;
+  modal.querySelector('[data-order-confirm="recipient"]').textContent=form.dataset.recipient||'Non configurato';
+  modal.querySelector('[data-order-confirm="subject"]').textContent=form.dataset.subject||'';
+  modal.querySelector('[data-order-confirm="preview"]').textContent=(form.dataset.preview||'').replaceAll('__QUANTITY__',quantity);
+  pendingOrderForm=form;modal.hidden=false;document.body.classList.add('modal-open');
+  modal.querySelector('[data-order-confirm-button]')?.focus();return false;
+}
+function closeOrderConfirmation(){
+  const modal=document.getElementById('orderConfirmModal');if(modal)modal.hidden=true;
+  pendingOrderForm=null;document.body.classList.remove('modal-open');
+}
+function confirmAndSubmitOrder(){
+  if(!pendingOrderForm)return;
+  pendingOrderForm.querySelector('[name="confirm_send"]').value='SI';
+  const form=pendingOrderForm;closeOrderConfirmation();form.submit();
 }
 function toggleMoreMenu(force){
   const open=typeof force==='boolean' ? force : !document.body.classList.contains('more-open');
@@ -1875,6 +1939,8 @@ class App(BaseHTTPRequestHandler):
         if path == "/notifiche": return self.notifications(user)
         if path in ("/prodotti","/articoli"): return self.articles_page(user)
         if path == "/ordini": return self.orders_page(user)
+        if path == "/ordini/storico": return self.orders_history_page(user)
+        if path == "/ordini/impostazioni": return self.order_settings_page(user)
         match = re.fullmatch(r"/ordini/(\d+)", path)
         if match: return self.order_detail_page(user,int(match.group(1)))
         if path == "/fatture": return self.invoices_page(user)
@@ -1935,7 +2001,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/api/push/unsubscribe": return self.push_unsubscribe(user)
         if path == "/api/push/test": return self.push_test(user)
         if path == "/impostazioni/notifiche": return self.save_notification_preferences(user)
-        if path == "/impostazioni/ordini": return self.save_order_settings(user)
+        if path in ("/impostazioni/ordini","/ordini/impostazioni"): return self.save_order_settings(user)
         if path == "/ordini/invia": return self.send_water_order(user)
         match = re.fullmatch(r"/ordini/(\d+)/(reinvia|duplica|archivia)",path)
         if match: return self.order_action(user,int(match.group(1)),match.group(2))
@@ -2386,7 +2452,7 @@ class App(BaseHTTPRequestHandler):
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>Pagamenti · {esc(title)}</h1><p class="sub">Separazione tra Totale W e Totale D (contanti). {esc(period_note)}</p></div><a class="btn ghost" href="/?pratiche_periodo=oggi&amp;pagamenti_periodo={period}">Dashboard</a></div>{''.join(sections)}</main>'''
         self.send_html(layout(f"Pagamenti · {title}",body,user))
 
-    def orders_page(self,user):
+    def orders_page_legacy(self,user):
         q=parse_qs(urlparse(self.path).query);date_from=(q.get("dal") or [""])[0].strip();date_to=(q.get("al") or [""])[0].strip();status=(q.get("stato") or [""])[0].strip();draft_id=(q.get("bozza") or [""])[0].strip()
         statuses=("Bozza","Invio in corso","Inviato","Fallito")
         if status not in statuses:status=""
@@ -2411,37 +2477,97 @@ class App(BaseHTTPRequestHandler):
         body=f'''<main class="wrap orders-wrap"><div class="titlebar"><div><h1>Ordini</h1><p class="sub">Invio ordini tramite l'account email aziendale.</p></div></div>{warning}<section class="section order-compose"><h2>Ordine acqua</h2><form method="post" action="/ordini/invia" data-recipient="{esc(recipient)}" onsubmit="return confirmOrderSubmission(this)"><input type="hidden" name="confirm_send" value=""><input type="hidden" name="source_order_id" value="{draft['id'] if draft else ''}"><div class="fields"><div class="field"><label>Numero boccioni</label><input type="number" name="quantity" min="1" step="1" value="{quantity}" required inputmode="numeric" oninput="updateOrderPreview(this.form)"></div><div class="field"><label>Destinatario attualmente configurato</label><input value="{esc(recipient)}" readonly></div><div class="field full"><label>Note opzionali</label><textarea name="notes" maxlength="2000" oninput="updateOrderPreview(this.form)">{esc(notes)}</textarea></div><div class="field full"><label>Oggetto email</label><input name="subject_preview" value="{esc(ORDER_EMAIL_SUBJECT)}" readonly></div><div class="field full"><label>Anteprima del testo della mail</label><pre class="order-preview" aria-live="polite">{esc(preview)}</pre></div></div><button class="btn" {'disabled' if invalid_recipient else ''}>Invia ordine</button></form></section><section class="search-after-results"><h2>Storico ordini</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Esito</label><select name="stato">{options}</select></div></div><button class="btn" style="margin-top:12px">Filtra</button><a class="btn ghost" style="margin-top:12px" href="/ordini">Pulisci</a></form></section><div class="tablebox"><table><thead><tr><th>Data e ora</th><th>Operatore</th><th>Quantità</th><th>Destinatario</th><th>Esito</th><th></th></tr></thead><tbody>{table}</tbody></table></div></main>'''
         self.send_html(layout("Ordini",body,user))
 
+    def order_confirmation_modal(self):
+        return '''<div class="order-modal" id="orderConfirmModal" hidden role="dialog" aria-modal="true" aria-labelledby="orderConfirmTitle"><div class="order-modal-card"><h2 id="orderConfirmTitle">Conferma ordine</h2><p class="sub">Controlla i dati prima dell'invio.</p><div class="kvs"><div class="kv"><small>Quantità</small><b data-order-confirm="quantity"></b></div><div class="kv"><small>Destinatario</small><b data-order-confirm="recipient"></b></div><div class="kv"><small>Oggetto</small><b data-order-confirm="subject"></b></div></div><h3>Anteprima messaggio</h3><pre class="order-preview" data-order-confirm="preview"></pre><div class="actions"><button class="btn ghost" type="button" onclick="closeOrderConfirmation()">Annulla</button><button class="btn" type="button" data-order-confirm-button onclick="confirmAndSubmitOrder()">Conferma e invia</button></div></div></div>'''
+
+    def orders_page(self,user):
+        q=parse_qs(urlparse(self.path).query);draft_id=(q.get("bozza") or [""])[0].strip();result=(q.get("esito") or [""])[0].strip();order_id=(q.get("ordine") or [""])[0].strip()
+        with db() as c:
+            settings=order_email_settings(c)
+            draft=c.execute("SELECT * FROM email_orders WHERE id=? AND status='Bozza' AND archived_at IS NULL",(int(draft_id),)).fetchone() if draft_id.isdigit() else None
+            recent=c.execute("""SELECT o.*,u.display_name operator_name FROM email_orders o JOIN users u ON u.id=o.operator_id
+                                WHERE o.archived_at IS NULL ORDER BY o.created_at DESC,o.id DESC LIMIT 5""").fetchall()
+            last_sent=c.execute("SELECT * FROM email_orders WHERE status='Inviato' AND archived_at IS NULL ORDER BY sent_at DESC,id DESC LIMIT 1").fetchone()
+            failed=c.execute("SELECT error_message FROM email_orders WHERE id=? AND status='Fallito'",(int(order_id),)).fetchone() if order_id.isdigit() else None
+        requested=(q.get("quantita") or [""])[0]
+        try:quantity=int(requested)
+        except (TypeError,ValueError):quantity=draft["quantity"] if draft else 1
+        quantity=max(1,min(999,quantity));recipient=settings["order_recipient_email"].strip();subject,preview=render_order_email(987654,settings);preview_template=preview.replace("987654","__QUANTITY__")
+        invalid=not valid_email_address(recipient);is_admin=user["role"]=="admin"
+        if result=="inviato":flash='<div class="flash">Ordine inviato correttamente.</div>'
+        elif result=="fallito":flash=f'<div class="flash warning"><b>Invio non riuscito.</b> {esc((failed["error_message"] if failed else "Riprova tra poco."))}</div>'
+        else:flash=""
+        if invalid:flash+='<div class="flash warning">Il destinatario ordini non è configurato correttamente. '+('<a href="/ordini/impostazioni"><b>Apri le impostazioni</b></a>.' if is_admin else 'Contatta un amministratore.')+'</div>'
+        rows=[]
+        for row in recent:
+            badge={"Bozza":"tag-yellow","Invio in corso":"tag-blue","Inviato":"tag-green","Fallito":"tag-red"}.get(row["status"],"")
+            rows.append(f'''<tr><td>{esc(date_it(row["created_at"]))}<br><small>{esc((row["created_at"] or "")[11:16])}</small></td><td>{row["quantity"]}</td><td>{esc(row["recipient"])}</td><td><span class="badge {badge}">{esc(row["status"])}</span></td><td><a class="btn ghost" href="/ordini/{row["id"]}">Apri</a></td></tr>''')
+        table=''.join(rows) or '<tr><td colspan="5" class="sub">Nessun ordine registrato.</td></tr>'
+        last=(f'Ultimo ordine inviato: <b>{esc(date_it(last_sent["sent_at"]))} alle {esc((last_sent["sent_at"] or "")[11:16])}</b> · {last_sent["quantity"]} boccioni' if last_sent else 'Nessun ordine ancora inviato')
+        settings_link='<a class="btn ghost" href="/ordini/impostazioni">Modifica impostazioni</a>' if is_admin else ''
+        body=f'''<main class="wrap orders-wrap"><section class="section water-order-card"><h1>Ordina boccioni d’acqua</h1><p class="sub">Seleziona la quantità e invia l’ordine al fornitore</p>{flash}<form method="post" action="/ordini/invia" data-recipient="{esc(recipient)}" data-subject="{esc(subject)}" data-preview="{esc(preview_template)}" onsubmit="return openOrderConfirmation(this,event)"><input type="hidden" name="confirm_send"><input type="hidden" name="source_order_id" value="{draft['id'] if draft else ''}"><div class="quantity-stepper"><button class="btn ghost" type="button" aria-label="Diminuisci quantità" onclick="adjustOrderQuantity(this.form,-1)">−</button><input aria-label="Numero boccioni" type="number" name="quantity" min="1" max="999" step="1" value="{quantity}" inputmode="numeric" required onblur="normalizeOrderQuantity(this,this.value)"><button class="btn ghost" type="button" aria-label="Aumenta quantità" onclick="adjustOrderQuantity(this.form,1)">+</button></div><div class="quick-quantities" aria-label="Quantità rapide"><button class="btn ghost" type="button" onclick="setOrderQuantity(this.form,3)">3 boccioni</button><button class="btn ghost" type="button" onclick="setOrderQuantity(this.form,5)">5 boccioni</button><button class="btn ghost" type="button" onclick="setOrderQuantity(this.form,10)">10 boccioni</button></div><button class="btn order-now" {'disabled' if invalid else ''}>Ordina adesso</button></form><p class="last-order sub">{last}</p><div class="order-secondary-actions">{settings_link}</div></section><section class="recent-orders"><div class="titlebar"><div><h2>Ultimi ordini</h2><p class="sub">Gli ultimi 5 ordini registrati.</p></div><a class="btn ghost" href="/ordini/storico">Vedi tutti gli ordini</a></div><div class="tablebox"><table><thead><tr><th>Data e ora</th><th>Quantità</th><th>Destinatario</th><th>Stato</th><th></th></tr></thead><tbody>{table}</tbody></table></div></section>{self.order_confirmation_modal()}</main>'''
+        self.send_html(layout("Ordini",body,user))
+
+    def orders_history_page(self,user):
+        q=parse_qs(urlparse(self.path).query);date_from=(q.get("dal") or [""])[0].strip();date_to=(q.get("al") or [""])[0].strip();status=(q.get("stato") or [""])[0].strip();statuses=("Bozza","Invio in corso","Inviato","Fallito")
+        if status not in statuses:status=""
+        where=["o.archived_at IS NULL"];args=[]
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_from):where.append("date(o.created_at)>=date(?)");args.append(date_from)
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_to):where.append("date(o.created_at)<=date(?)");args.append(date_to)
+        if status:where.append("o.status=?");args.append(status)
+        with db() as c:
+            settings=order_email_settings(c);rows=c.execute(f"""SELECT o.*,u.display_name operator_name FROM email_orders o JOIN users u ON u.id=o.operator_id WHERE {' AND '.join(where)} ORDER BY o.created_at DESC,o.id DESC""",args).fetchall()
+        recipient=settings["order_recipient_email"];subject,preview=render_order_email(987654,settings);preview=preview.replace("987654","__QUANTITY__")
+        options='<option value="">Tutti gli esiti</option>'+''.join(f'<option value="{item}" {"selected" if status==item else ""}>{item}</option>' for item in statuses);table_rows=[]
+        for row in rows:
+            badge={"Bozza":"tag-yellow","Invio in corso":"tag-blue","Inviato":"tag-green","Fallito":"tag-red"}.get(row["status"],"");error=esc(row["error_message"] or "-")
+            duplicate=f'''<form method="post" action="/ordini/{row['id']}/duplica"><button class="btn ghost">Duplica</button></form>'''
+            resend=f'''<form method="post" action="/ordini/{row['id']}/reinvia" data-recipient="{esc(recipient)}" data-subject="{esc(subject)}" data-preview="{esc(preview)}" onsubmit="return openOrderConfirmation(this,event)"><input type="hidden" name="confirm_send"><input type="hidden" name="quantity" value="{row['quantity']}"><button class="btn">Reinvia</button></form>''' if row["status"]=="Fallito" else ""
+            table_rows.append(f'''<tr><td>{esc(date_it(row["created_at"]))}<br><small>{esc((row["created_at"] or "")[11:16])}</small></td><td>{row["quantity"]}</td><td>{esc(row["recipient"])}</td><td>{esc(row["subject"])}</td><td>{esc(row["operator_name"])}</td><td><span class="badge {badge}">{esc(row["status"])}</span></td><td>{error}</td><td><div class="actions"><a class="btn ghost" href="/ordini/{row['id']}">Apri</a>{duplicate}{resend}</div></td></tr>''')
+        table=''.join(table_rows) or '<tr><td colspan="8" class="sub">Nessun ordine trovato.</td></tr>'
+        body=f'''<main class="wrap orders-wrap"><div class="titlebar"><div><h1>Storico ordini</h1><p class="sub">Consulta, duplica o riprova gli ordini falliti.</p></div><a class="btn ghost" href="/ordini">Torna a Ordine acqua</a></div><form class="section" method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Esito</label><select name="stato">{options}</select></div></div><div class="actions"><button class="btn">Filtra</button><a class="btn ghost" href="/ordini/storico">Pulisci</a></div></form><div class="tablebox"><table><thead><tr><th>Data e ora</th><th>Quantità</th><th>Destinatario</th><th>Oggetto</th><th>Operatore</th><th>Stato</th><th>Errore</th><th></th></tr></thead><tbody>{table}</tbody></table></div>{self.order_confirmation_modal()}</main>'''
+        self.send_html(layout("Storico ordini",body,user))
+
+    def order_settings_page(self,user):
+        if user["role"]!="admin":return self.send_error(403,"Solo gli amministratori possono modificare le impostazioni degli ordini.")
+        with db() as c:settings=order_email_settings(c)
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Impostazioni ordine acqua</h1><p class="sub">Questi dati vengono applicati automaticamente a ogni nuovo ordine.</p></div><a class="btn ghost" href="/ordini">Torna agli ordini</a></div><section class="section admin-order-settings"><form method="post" action="/ordini/impostazioni"><div class="fields"><div class="field full"><label>Email destinatario ordini</label><input type="email" name="order_recipient_email" value="{esc(settings['order_recipient_email'])}" required></div><div class="field full"><label>Oggetto email</label><input name="order_email_subject" value="{esc(settings['order_email_subject'])}" maxlength="200" required></div><div class="field full"><label>Testo email</label><textarea name="order_email_template" maxlength="10000" required>{esc(settings['order_email_template'])}</textarea><small class="sub">Inserisci <b>{{{{quantita}}}}</b> nel punto in cui deve apparire la quantità. Sono disponibili anche {{{{note_predefinite}}}}, {{{{firma}}}}, {{{{nome_mittente}}}} e {{{{telefono}}}}.</small></div><div class="field"><label>Firma finale</label><input name="order_email_signature" value="{esc(settings['order_email_signature'])}" maxlength="200" required></div><div class="field"><label>Nome mittente</label><input name="order_sender_name" value="{esc(settings['order_sender_name'])}" maxlength="200" required></div><div class="field"><label>Numero di telefono (opzionale)</label><input name="order_phone" value="{esc(settings['order_phone'])}" maxlength="100"></div><div class="field full"><label>Note predefinite (opzionali)</label><textarea name="order_default_notes" maxlength="2000">{esc(settings['order_default_notes'])}</textarea></div><div class="field full"><label>Mittente tecnico</label><input value="info@petparadisempoli.com" readonly><small class="sub">Le credenziali SMTP restano esclusivamente nelle variabili d’ambiente di Render e non sono mostrate qui.</small></div></div><button class="btn">Salva impostazioni</button></form></section></main>'''
+        self.send_html(layout("Impostazioni ordine acqua",body,user))
+
     def order_detail_page(self,user,order_id):
         with db() as c:
             row=c.execute("SELECT o.*,u.display_name operator_name FROM email_orders o JOIN users u ON u.id=o.operator_id WHERE o.id=?",(order_id,)).fetchone()
-            recipient_row=c.execute("SELECT value FROM settings WHERE key='order_recipient_email'").fetchone();current_recipient=recipient_row["value"] if recipient_row else ""
+            settings=order_email_settings(c)
         if not row:return self.send_error(404)
         result=(f'<div class="flash">Ordine inviato correttamente.</div>' if row["status"]=="Inviato" else f'<div class="flash warning"><b>Invio non riuscito:</b> {esc(row["error_message"] or "Errore non specificato")}</div>' if row["status"]=="Fallito" else "")
         actions=""
         if not row["archived_at"]:
-            resend=f'''<form method="post" action="/ordini/{order_id}/reinvia" data-recipient="{esc(current_recipient)}" onsubmit="return confirmOrderSubmission(this)"><input type="hidden" name="confirm_send"><input type="hidden" name="quantity" value="{row['quantity']}"><textarea name="notes" hidden>{esc(row['notes'])}</textarea><button class="btn">Reinvia ordine</button></form>'''
+            current_subject,current_preview=render_order_email(987654,settings);current_preview=current_preview.replace("987654","__QUANTITY__")
+            resend=f'''<form method="post" action="/ordini/{order_id}/reinvia" data-recipient="{esc(settings['order_recipient_email'])}" data-subject="{esc(current_subject)}" data-preview="{esc(current_preview)}" onsubmit="return openOrderConfirmation(this,event)"><input type="hidden" name="confirm_send"><input type="hidden" name="quantity" value="{row['quantity']}"><button class="btn">Reinvia ordine</button></form>''' if row["status"]=="Fallito" else ""
             duplicate=f'''<form method="post" action="/ordini/{order_id}/duplica"><button class="btn ghost">Duplica ordine</button></form>'''
             archive=f'''<form method="post" action="/ordini/{order_id}/archivia" onsubmit="return confirm('Archiviare questo ordine?')"><button class="btn ghost">Archivia</button></form>'''
             actions=f'<div class="actions">{resend}{duplicate}{archive}</div>'
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Ordine #{row["id"]}</h1><p class="sub">{esc(row["status"])} · {esc(date_it(row["created_at"]))} {esc((row["created_at"] or "")[11:16])}</p></div><a class="btn ghost" href="/ordini">Torna agli ordini</a></div>{result}<section class="section"><div class="kvs"><div class="kv"><small>Operatore</small><b>{esc(row["operator_name"])}</b></div><div class="kv"><small>Destinatario</small><b>{esc(row["recipient"])}</b></div><div class="kv"><small>Quantità</small><b>{row["quantity"]} boccioni</b></div><div class="kv"><small>Esito</small><b>{esc(row["status"])}</b></div><div class="kv"><small>Tentativi</small><b>{row["attempt_count"]}</b></div><div class="kv"><small>Inviato il</small><b>{esc((row["sent_at"] or "").replace("T"," ") or "-")}</b></div></div><h2 style="margin-top:20px">{esc(row["subject"])}</h2><pre class="order-preview">{esc(row["body"])}</pre>{actions}</section></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Ordine #{row["id"]}</h1><p class="sub">{esc(row["status"])} · {esc(date_it(row["created_at"]))} {esc((row["created_at"] or "")[11:16])}</p></div><a class="btn ghost" href="/ordini/storico">Torna allo storico</a></div>{result}<section class="section"><div class="kvs"><div class="kv"><small>Operatore</small><b>{esc(row["operator_name"])}</b></div><div class="kv"><small>Destinatario</small><b>{esc(row["recipient"])}</b></div><div class="kv"><small>Quantità</small><b>{row["quantity"]} boccioni</b></div><div class="kv"><small>Esito</small><b>{esc(row["status"])}</b></div><div class="kv"><small>Tentativi</small><b>{row["attempt_count"]}</b></div><div class="kv"><small>Inviato il</small><b>{esc((row["sent_at"] or "").replace("T"," ") or "-")}</b></div></div><h2 style="margin-top:20px">{esc(row["subject"])}</h2><pre class="order-preview">{esc(row["body"])}</pre>{actions}</section>{self.order_confirmation_modal()}</main>'''
         self.send_html(layout(f"Ordine #{order_id}",body,user))
 
     def _create_and_send_order(self,user,quantity,notes,parent_order_id=None):
         with db() as c:
-            recipient_row=c.execute("SELECT value FROM settings WHERE key='order_recipient_email'").fetchone();recipient=(recipient_row["value"] if recipient_row else "").strip().lower()
+            settings=order_email_settings(c);recipient=settings["order_recipient_email"].strip().lower()
         if not valid_email_address(recipient):return None,"L'indirizzo destinatario ordini è vuoto o non valido. Configuralo nelle Impostazioni."
-        subject=ORDER_EMAIL_SUBJECT;body=water_order_body(quantity,notes);stamp=now()
+        subject,body=render_order_email(quantity,settings,notes);stamp=now()
         with db() as c:
             cur=c.execute("""INSERT INTO email_orders(order_type,quantity,notes,recipient,subject,body,status,operator_id,parent_order_id,attempt_count,created_at,updated_at)
                              VALUES('water',?,?,?,?,?,'Invio in corso',?,?,1,?,?)""",(quantity,notes,recipient,subject,body,user["id"],parent_order_id,stamp,stamp));order_id=cur.lastrowid
         try:
-            send_email(recipient,subject,body)
+            send_email(recipient,subject,body,from_name=settings["order_sender_name"])
         except (EmailConfigurationError,EmailDeliveryError) as exc:
             message=str(exc)[:500]
+            print(f"[ORDER_EMAIL] order_id={order_id} status=failed error={message}",flush=True)
             with db() as c:c.execute("UPDATE email_orders SET status='Fallito',error_message=?,updated_at=? WHERE id=?",(message,now(),order_id))
             return order_id,message
         except Exception as exc:
             message=f"Errore imprevisto durante l'invio email: {type(exc).__name__}."
+            print(f"[ORDER_EMAIL] order_id={order_id} status=failed error={message}",flush=True)
             with db() as c:c.execute("UPDATE email_orders SET status='Fallito',error_message=?,updated_at=? WHERE id=?",(message,now(),order_id))
             return order_id,message
         sent=now()
@@ -2455,9 +2581,10 @@ class App(BaseHTTPRequestHandler):
         except (TypeError,ValueError):quantity=0
         if quantity<1:return self.error_page("Quantità non valida","Il numero di boccioni deve essere almeno 1.","/ordini")
         if quantity>999:return self.error_page("Quantità non valida","Il numero di boccioni è troppo elevato.","/ordini")
-        notes=str(form.get("notes","")).strip()[:2000];parent=int(form["source_order_id"]) if str(form.get("source_order_id","")).isdigit() else None
-        order_id,error=self._create_and_send_order(user,quantity,notes,parent)
-        if order_id:return self.redirect(f"/ordini/{order_id}")
+        parent=int(form["source_order_id"]) if str(form.get("source_order_id","")).isdigit() else None
+        order_id,error=self._create_and_send_order(user,quantity,"",parent)
+        if order_id and error:return self.redirect(f"/ordini?esito=fallito&ordine={order_id}&quantita={quantity}")
+        if order_id:return self.redirect(f"/ordini?esito=inviato&ordine={order_id}")
         return self.error_page("Invio non disponibile",error,"/ordini")
 
     def order_action(self,user,order_id,action):
@@ -2472,10 +2599,12 @@ class App(BaseHTTPRequestHandler):
                 cur=c.execute("""INSERT INTO email_orders(order_type,quantity,notes,recipient,subject,body,status,operator_id,parent_order_id,created_at,updated_at)
                                  VALUES(?,?,?,?,?,?,'Bozza',?,?,?,?)""",(row["order_type"],row["quantity"],row["notes"],row["recipient"],row["subject"],row["body"],user["id"],order_id,stamp,stamp))
             return self.redirect(f"/ordini?bozza={cur.lastrowid}")
+        if row["status"]!="Fallito":return self.error_page("Reinvio non disponibile","È possibile reinviare soltanto un ordine fallito.",f"/ordini/{order_id}")
         form=self.form()
         if form.get("confirm_send")!="SI":return self.error_page("Conferma mancante","Il reinvio richiede una conferma esplicita.",f"/ordini/{order_id}")
         new_id,error=self._create_and_send_order(user,row["quantity"],row["notes"] or "",order_id)
-        if new_id:return self.redirect(f"/ordini/{new_id}")
+        if new_id and error:return self.redirect(f"/ordini?esito=fallito&ordine={new_id}&quantita={row['quantity']}")
+        if new_id:return self.redirect(f"/ordini?esito=inviato&ordine={new_id}")
         return self.error_page("Invio non disponibile",error,f"/ordini/{order_id}")
 
     def articles_page(self,user):
@@ -2693,8 +2822,6 @@ class App(BaseHTTPRequestHandler):
         with db() as c:
             saved={row["type"]:bool(row["enabled"]) for row in c.execute("SELECT type,enabled FROM notification_preferences WHERE user_id=?",(user["id"],))}
             subscriptions=c.execute("SELECT count(*) n FROM push_subscriptions WHERE user_id=?",(user["id"],)).fetchone()["n"]
-            recipient_row=c.execute("SELECT value FROM settings WHERE key='order_recipient_email'").fetchone()
-            order_recipient=recipient_row["value"] if recipient_row else ""
         toggles=''.join(f'''<label class="toggle-row"><span>{icon} {esc(label)}</span><input type="checkbox" name="{key}" value="1" {'checked' if saved.get(key,True) else ''}></label>''' for key,(label,icon) in NOTIFICATION_TYPES.items())
         asset_rows = []
         for name in ("DCS_NUOVO.pdf", "DCS_LIVORNO.pdf", "DCS_EMPOLI.pdf"):
@@ -2706,8 +2833,6 @@ class App(BaseHTTPRequestHandler):
         ddt_ok = DDT_DIR.exists()
         writable = os.access(DATA, os.W_OK) if data_ok else False
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>Impostazioni</h1><div class="sub">Preferenze personali e diagnostica.</div></div></div><section class="section"><h2>Notifiche</h2><p class="sub">Dispositivi collegati: <b data-push-device-count>{subscriptions}</b>. Su iPhone la PWA deve essere installata dalla schermata Home.</p><div id="pushVisibleError" class="flash warning hidden"></div><div class="actions" style="margin-bottom:16px"><button class="btn" type="button" onclick="enablePushNotifications()">Abilita notifiche</button><button class="btn ghost" type="button" onclick="schedulePushTest()">Test con PWA chiusa (10 secondi)</button></div><details class="section" open><summary><b>Diagnostica notifiche</b></summary><div class="kvs" style="margin-top:12px"><div class="kv"><small>Notification.permission</small><b data-push-diagnostic="permission">verifica…</b></div><div class="kv"><small>Service worker registrato</small><b data-push-diagnostic="registered">verifica…</b></div><div class="kv"><small>Service worker attivo</small><b data-push-diagnostic="active">verifica…</b></div><div class="kv"><small>Subscription presente</small><b data-push-diagnostic="subscription">verifica…</b></div><div class="kv"><small>Endpoint</small><b data-push-diagnostic="endpoint">—</b></div><div class="kv"><small>Risposta backend</small><b data-push-diagnostic="backend">verifica…</b></div><div class="kv"><small>Ultimo errore</small><b data-push-diagnostic="lastError">nessuno</b></div><div class="kv"><small>Dispositivi registrati</small><b data-push-diagnostic="devices">{subscriptions}</b></div></div></details><form method="post" action="/impostazioni/notifiche"><div class="toggle-list">{toggles}</div><button class="btn" style="margin-top:16px">Salva preferenze</button></form></section><section class="section" style="margin-top:16px"><h2>Modelli PDF</h2><div class="tablebox"><table><thead><tr><th>File</th><th>Stato</th><th>Dimensione</th></tr></thead><tbody>{''.join(asset_rows)}</tbody></table></div></section><section class="section" style="margin-top:16px"><h2>Cartelle dati</h2><p><b>Assets:</b> {esc(ASSETS)}</p><p><b>DATA:</b> {esc(DATA)} - {'OK' if data_ok else 'MANCANTE'} - scrittura {'OK' if writable else 'NO'}</p><p><b>DDT:</b> {esc(DDT_DIR)} - {'OK' if ddt_ok else 'MANCANTE'}</p></section></main>'''
-        order_settings=f'''<section class="section" style="margin-top:16px"><h2>Ordini via email</h2><p class="sub">Il destinatario viene usato automaticamente per tutti gli ordini. Le credenziali SMTP restano nelle variabili d'ambiente di Render.</p><form method="post" action="/impostazioni/ordini"><div class="field"><label>Email destinatario ordini</label><input type="email" name="order_recipient_email" value="{esc(order_recipient)}" required autocomplete="email"></div><button class="btn" style="margin-top:16px">Salva destinatario</button></form></section>'''
-        body=body.replace("</main>",order_settings+"</main>")
         self.send_html(layout("Impostazioni",body,user))
 
     diagnostics=settings_page
@@ -2770,12 +2895,18 @@ class App(BaseHTTPRequestHandler):
         return self.redirect("/impostazioni")
 
     def save_order_settings(self,user):
-        recipient=self.form().get("order_recipient_email","").strip().lower()
+        if user["role"]!="admin":return self.send_error(403,"Solo gli amministratori possono modificare le impostazioni degli ordini.")
+        form=self.form();recipient=form.get("order_recipient_email","").strip().lower();subject=form.get("order_email_subject","").strip();template=form.get("order_email_template","").strip();signature=form.get("order_email_signature","").strip();sender_name=form.get("order_sender_name","").strip();phone=form.get("order_phone","").strip();default_notes=form.get("order_default_notes","").strip()
         if not valid_email_address(recipient):
-            return self.error_page("Indirizzo non valido","Inserisci un indirizzo email destinatario valido.","/impostazioni")
+            return self.error_page("Indirizzo non valido","Inserisci un indirizzo email destinatario valido.","/ordini/impostazioni")
+        if not subject or len(subject)>200 or "\n" in subject or "\r" in subject:return self.error_page("Oggetto non valido","Inserisci un oggetto email valido.","/ordini/impostazioni")
+        if not template or len(template)>10000 or "{{quantita}}" not in template:return self.error_page("Testo non valido","Il testo deve contenere la variabile {{quantita}}.","/ordini/impostazioni")
+        if not signature or len(signature)>200 or not sender_name or len(sender_name)>200:return self.error_page("Impostazioni non valide","Firma e nome mittente sono obbligatori.","/ordini/impostazioni")
+        if len(phone)>100 or len(default_notes)>2000:return self.error_page("Impostazioni non valide","Telefono o note predefinite sono troppo lunghi.","/ordini/impostazioni")
+        values={"order_recipient_email":recipient,"order_email_subject":subject,"order_email_template":template,"order_email_signature":signature,"order_sender_name":sender_name,"order_phone":phone,"order_default_notes":default_notes}
         with db() as c:
-            c.execute("INSERT INTO settings(key,value) VALUES('order_recipient_email',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(recipient,))
-        return self.redirect("/impostazioni")
+            c.executemany("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",values.items())
+        return self.redirect("/ordini/impostazioni")
 
     def mark_all_notifications_read(self,user):
         stamp=now()

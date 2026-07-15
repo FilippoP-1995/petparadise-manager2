@@ -64,10 +64,11 @@ def smtp_config(environ=None) -> SMTPConfig:
     )
 
 
-def send_email(recipient: str, subject: str, body: str, environ=None, timeout=20) -> None:
+def send_email(recipient: str, subject: str, body: str, environ=None, timeout=20, from_name=None) -> None:
     config = smtp_config(environ)
     message = EmailMessage()
-    message["From"] = f"{config.from_name} <{config.from_address}>"
+    display_name = str(from_name or config.from_name).replace("\r", " ").replace("\n", " ").strip()
+    message["From"] = f"{display_name} <{config.from_address}>"
     message["To"] = recipient
     message["Subject"] = subject
     message.set_content(body)
