@@ -11,6 +11,7 @@ from calendar_service import (
     normalize_event,
     normalize_time,
     overlap_rows,
+    parse_items,
     period_bounds,
 )
 from notification_service import process_calendar_notifications
@@ -84,8 +85,8 @@ class OperationalCalendarTests(unittest.TestCase):
         expected = {
             "Ritiro": "RITIRO LIVORNO",
             "Ritiro in sede": "RITIRO IN SEDE LIVORNO",
-            "Riconsegna": "RICONSEGNA LIVORNO",
-            "Riconsegna in sede": "RICONSEGNA IN SEDE LIVORNO",
+            "Riconsegna": "RICONSEGNA FIDO LIVORNO",
+            "Riconsegna in sede": "RICONSEGNA FIDO IN SEDE LIVORNO",
             "Appuntamento": "APPUNTAMENTO FORNITORE",
         }
         ids = [self.save(self.event_form(kind)) for kind in expected]
@@ -96,6 +97,47 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertEqual(rows[-1]["payment_status"], "")
         self.assertTrue(all(row["operator_name"]=="Serena" for row in rows))
         self.assertTrue(all(ids))
+
+    def test_validation_is_specific_to_event_type_and_empty_animals_are_ignored(self):
+        pickup=normalize_event(self.event_form("Ritiro",destination_site=""))
+        self.assertEqual((pickup["zone"],pickup["destination_site"]),("Livorno",""))
+        with self.assertRaisesRegex(ValueError,"zona"):
+            normalize_event(self.event_form("Ritiro",zone=""))
+        for site in ("Livorno","Empoli"):
+            event=normalize_event(self.event_form("Ritiro in sede",destination_site=site))
+            self.assertEqual(event["destination_site"],site)
+        with self.assertRaisesRegex(ValueError,"sede"):
+            normalize_event(self.event_form("Ritiro in sede",destination_site=""))
+        self.assertEqual(parse_items(json.dumps([{"name":"","species":"","weight":"","cremation_type":"","notes":""}]),"animal"),[])
+
+    def test_invalid_calendar_save_stays_in_wizard_without_raw_http_error(self):
+        rendered=[];errors=[]
+        self.handler.path="/calendario/nuovo"
+        self.handler.form=lambda:self.event_form("Ritiro",zone="")
+        self.handler.send_html=lambda html,status=200:rendered.append((html,status))
+        self.handler.send_error=lambda *args:errors.append(args)
+        self.handler.save_calendar_event(self.admin)
+        self.assertFalse(errors)
+        self.assertEqual(rendered[-1][1],200)
+        self.assertIn("La zona è obbligatoria",rendered[-1][0])
+        self.assertIn('name="start_date" value="2026-07-15"',rendered[-1][0])
+
+    def test_calendar_contact_search_includes_razzauti_and_first_animal_is_open(self):
+        stamp=datetime.now().isoformat(timespec="seconds")
+        with app.db() as conn:
+            conn.execute("INSERT INTO veterinarians(short_name,clinic_name,doctor_name,phone,address,city,notes,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,1,?,?)",("Razzauti","Ambulatorio Razzauti","Dott. Razzauti","0586123456","Via Roma 8","Livorno","9-19",stamp,stamp))
+        response={};self.handler.path="/api/veterinari/search?q=razzauti"
+        self.handler.send_json=lambda obj,status=200:response.update(obj=obj,status=status)
+        self.handler.api_veterinarians_search(self.admin)
+        self.assertEqual(response["status"],200)
+        self.assertIn("Razzauti",[row["display"] for row in response["obj"]["results"]])
+        rendered=[];self.handler.path="/calendario/nuovo";self.handler.send_html=lambda html,status=200:rendered.append(html)
+        self.handler.calendar_event_form(self.admin)
+        self.assertIn("Cerca cliente o veterinario",rendered[-1])
+        self.assertIn("calendarAddRow('animal',{})",rendered[-1])
+        self.assertIn("Veterinario/Ambulatorio",app.APP_JS)
+        self.assertIn("history.back()",app.APP_JS)
+        self.assertIn("Le modifiche non salvate andranno perse",app.APP_JS)
 
     def test_manual_time_normalization_and_quarter_hour_suggestions(self):
         self.assertEqual(normalize_time("9"), "09:00")
@@ -184,6 +226,10 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("15 Luglio 2026",pages["giorno"])
         self.assertIn(">OGGI<",pages["giorno"])
         self.assertIn("create-sheet",pages["giorno"])
+        self.assertIn("grid-template-columns:repeat(2,minmax(0,1fr))",app.CSS)
+        self.assertIn("min-height:46px",app.CSS)
+        self.assertIn("linear-gradient(135deg,#fb4c67,#d9284c)",app.CSS)
+        self.assertIn("create-sheet-backdrop",pages["giorno"])
         self.handler.path = "/"
         self.handler.dashboard(self.admin)
         self.assertIn("+ Nuova pratica", pages["current"])

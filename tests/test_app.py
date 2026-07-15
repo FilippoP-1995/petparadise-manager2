@@ -1,5 +1,6 @@
 import os
 import io
+import json
 import socket
 import tempfile
 import unittest
@@ -27,6 +28,40 @@ class PetParadiseTests(unittest.TestCase):
     def tearDown(self):
         app.DATA, app.DB_PATH, app.DDT_DIR = self.old
         self.temp.cleanup()
+
+    def test_practice_autosave_debounce_success_conflict_and_no_side_effects(self):
+        stamp="2026-07-15T10:00:00"
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+              animal_name,owner_first_name,owner_last_name,owner_phone,tag_da_richiamare,total_service,total_text,deposit,remaining_balance,payment_status)
+              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-AUTO","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Fido","Mario","Rossi","333111","Si","250","330","100","230","Acconto")).lastrowid
+            notifications_before=conn.execute("SELECT count(*) n FROM notifications").fetchone()["n"]
+            whatsapp_before=conn.execute("SELECT count(*) n FROM whatsapp_messages").fetchone()["n"]
+        rendered=[];self.handler.path=f"/pratiche/{pid}/modifica";self.handler.send_html=lambda html,*args:rendered.append(html)
+        self.handler.edit_page(admin,pid)
+        page=rendered[-1]
+        self.assertIn(f'data-autosave-url="/api/pratiche/{pid}/autosave"',page)
+        self.assertIn("Ultimo salvataggio",page)
+        self.assertIn("setTimeout(save,1800)",app.APP_JS)
+        captured=[];self.handler.send_json=lambda obj,status=200:captured.append((obj,status))
+        self.handler.form=lambda:{"updated_at":stamp,"changes_json":json.dumps({"animal_name":"Fido Junior","owner_phone":"333222"})}
+        self.handler.practice_autosave(admin,pid)
+        self.assertEqual(captured[-1][1],200)
+        new_version=captured[-1][0]["updated_at"]
+        with app.db() as conn:
+            row=conn.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+            self.assertEqual((row["animal_name"],row["owner_phone"]),("Fido Junior","333222"))
+            self.assertEqual((row["total_service"],row["total_text"],row["deposit"],row["remaining_balance"]),("250","330","100","230"))
+            self.assertEqual(conn.execute("SELECT count(*) n FROM notifications").fetchone()["n"],notifications_before)
+            self.assertEqual(conn.execute("SELECT count(*) n FROM whatsapp_messages").fetchone()["n"],whatsapp_before)
+            self.assertEqual(conn.execute("SELECT count(*) n FROM practice_history WHERE practice_id=? AND event_type='Salvataggio automatico'",(pid,)).fetchone()["n"],1)
+        self.handler.form=lambda:{"updated_at":stamp,"changes_json":json.dumps({"animal_name":"Versione vecchia"})}
+        self.handler.practice_autosave(admin,pid)
+        self.assertEqual(captured[-1][1],409)
+        self.assertTrue(captured[-1][0]["conflict"])
+        with app.db() as conn:self.assertEqual(conn.execute("SELECT animal_name FROM practices WHERE id=?",(pid,)).fetchone()["animal_name"],"Fido Junior")
+        self.assertNotEqual(new_version,stamp)
 
     def test_notification_schema_and_preferences(self):
         with app.db() as conn:

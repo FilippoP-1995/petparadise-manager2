@@ -161,8 +161,8 @@ def automatic_title(event_type, zone="", animal="", site=""):
     zone=_clean(zone).upper();animal=_clean(animal).upper();site=_clean(site).upper()
     if event_type=="Ritiro":return f"RITIRO {zone}".strip()
     if event_type=="Ritiro in sede":return f"RITIRO IN SEDE {site}".strip()
-    if event_type=="Riconsegna":return f"RICONSEGNA {zone}".strip()
-    if event_type=="Riconsegna in sede":return f"RICONSEGNA IN SEDE {site}".strip()
+    if event_type=="Riconsegna":return f"RICONSEGNA {animal} {zone}".strip()
+    if event_type=="Riconsegna in sede":return f"RICONSEGNA {animal} IN SEDE {site}".strip()
     return ""
 
 
@@ -196,6 +196,7 @@ def normalize_event(form, current=None):
     if not title:raise ValueError("Il titolo è obbligatorio")
     if event_type in ("Ritiro","Riconsegna") and not zone:raise ValueError("La zona è obbligatoria")
     if event_type in ("Ritiro in sede","Riconsegna in sede") and site not in ("Livorno","Empoli"):raise ValueError("Seleziona la sede")
+    if event_type in ("Riconsegna","Riconsegna in sede") and not animal:raise ValueError("Il nome animale è obbligatorio")
     operator=_clean(form.get("operator_name"),50).title()
     if operator not in CALENDAR_OPERATORS:raise ValueError("Seleziona l'operatore")
     status=_clean(form.get("event_status"),50)
@@ -235,7 +236,8 @@ def parse_items(raw, kind):
         if not isinstance(item,dict):continue
         if kind=="animal":
             cremation=_clean(item.get("cremation_type"),30)
-            cleaned.append({"name":_clean(item.get("name"),100),"species":_clean(item.get("species"),100),"weight":_clean(item.get("weight"),30),"cremation_type":cremation if cremation in ("Singola","Collettiva") else "","notes":_clean(item.get("notes"),500)})
+            animal={"name":_clean(item.get("name"),100),"species":_clean(item.get("species"),100),"weight":_clean(item.get("weight"),30),"cremation_type":cremation if cremation in ("Singola","Collettiva") else "","notes":_clean(item.get("notes"),500)}
+            if any(animal.values()):cleaned.append(animal)
         else:
             description=_clean(item.get("description"),200)
             if not description:continue
