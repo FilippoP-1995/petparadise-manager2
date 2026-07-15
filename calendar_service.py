@@ -11,6 +11,7 @@ EVENT_TYPES = ("Ritiro", "Ritiro in sede", "Riconsegna", "Riconsegna in sede", "
 PICKUP_STATUSES = ("Da confermare", "Da ritirare", "Ritirato", "Annullato")
 DELIVERY_STATUSES = ("In programma", "Completato")
 PAYMENT_STATUSES = ("Da pagare", "Da saldare", "Pagato")
+CALENDAR_OPERATORS = ("Serena", "Alessio", "Filippo")
 DEFAULT_ZONES = (
     "Livorno", "Empoli", "Pisa", "Viareggio", "Firenze", "Sesto Fiorentino",
     "Montelupo", "Pietrasanta", "Lucca", "Castelfiorentino", "Pontedera", "San Miniato",
@@ -49,6 +50,7 @@ def ensure_calendar_schema(conn):
       payment_status TEXT,
       payment_amount REAL NOT NULL DEFAULT 0,
       notes TEXT,
+      operator_name TEXT,
       created_by INTEGER NOT NULL REFERENCES users(id),
       assigned_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
       linked_practice_id INTEGER REFERENCES practices(id) ON DELETE SET NULL,
@@ -103,6 +105,8 @@ def ensure_calendar_schema(conn):
     CREATE INDEX IF NOT EXISTS idx_calendar_history_event ON calendar_event_history(event_id,created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_calendar_notifications_due ON calendar_event_notifications(status,scheduled_at);
     """)
+    columns={row[1] for row in conn.execute("PRAGMA table_info(calendar_events)")}
+    if "operator_name" not in columns:conn.execute("ALTER TABLE calendar_events ADD COLUMN operator_name TEXT")
     stamp=datetime.now().isoformat(timespec="seconds")
     conn.executemany("INSERT OR IGNORE INTO calendar_zones(name,is_default,created_at) VALUES(?,1,?)",((zone,stamp) for zone in DEFAULT_ZONES))
 
@@ -122,7 +126,7 @@ def overlap_rows(conn, start_date, end_date, filters=None, include_deleted=False
     where=["e.start_at<=?", "e.end_at>=?"];args=[end,start]
     if not include_deleted:where.append("(e.deleted_at IS NULL OR e.deleted_at='')")
     filters=filters or {}
-    exact={"event_type":"e.event_type","event_status":"e.event_status","assigned_user_id":"e.assigned_user_id","veterinarian_id":"e.veterinarian_id","location_type":"e.location_type"}
+    exact={"event_type":"e.event_type","event_status":"e.event_status","operator_name":"e.operator_name","veterinarian_id":"e.veterinarian_id","location_type":"e.location_type"}
     for key,column in exact.items():
         value=str(filters.get(key) or "").strip()
         if value:where.append(f"{column}=?");args.append(value)
@@ -142,6 +146,8 @@ def overlap_rows(conn, start_date, end_date, filters=None, include_deleted=False
           OR EXISTS(SELECT 1 FROM calendar_event_animals a WHERE a.event_id=e.id AND (a.name LIKE ? OR a.species LIKE ?)))""");args.extend([like]*9)
     return conn.execute(f"""SELECT e.*,u.display_name creator_name,au.display_name assigned_name,
       (SELECT count(*) FROM calendar_event_animals a WHERE a.event_id=e.id) animal_count,
+      (SELECT COALESCE(sum(CASE WHEN trim(weight) GLOB '[0-9]*' THEN CAST(replace(weight,',','.') AS REAL) ELSE 0 END),0) FROM calendar_event_animals a WHERE a.event_id=e.id) animal_weight_total,
+      (SELECT group_concat(DISTINCT cremation_type) FROM calendar_event_animals a WHERE a.event_id=e.id AND cremation_type!='') cremation_types,
       (SELECT COALESCE(sum(amount),0) FROM calendar_event_estimate_items i WHERE i.event_id=e.id) estimate_total
       FROM calendar_events e JOIN users u ON u.id=e.created_by LEFT JOIN users au ON au.id=e.assigned_user_id
       WHERE {' AND '.join(where)} ORDER BY e.start_at,e.id""",args).fetchall()
@@ -155,8 +161,21 @@ def automatic_title(event_type, zone="", animal="", site=""):
     zone=_clean(zone).upper();animal=_clean(animal).upper();site=_clean(site).upper()
     if event_type=="Ritiro":return f"RITIRO {zone}".strip()
     if event_type=="Ritiro in sede":return f"RITIRO IN SEDE {site}".strip()
-    if event_type=="Riconsegna":return f"RICONSEGNA {animal} {zone}".strip()
-    if event_type=="Riconsegna in sede":return f"RICONSEGNA {animal} IN SEDE {site}".strip()
+    if event_type=="Riconsegna":return f"RICONSEGNA {zone}".strip()
+    if event_type=="Riconsegna in sede":return f"RICONSEGNA IN SEDE {site}".strip()
+    return ""
+
+
+def normalize_time(value, default=""):
+    value=re.sub(r"\D", "", str(value or ""))
+    if not value:return default
+    if len(value)<=2:
+        hour=int(value)
+        return f"{hour:02d}:00" if 0<=hour<=23 else ""
+    if len(value)==3:value="0"+value
+    if len(value)==4:
+        hour=int(value[:2]);minute=int(value[2:])
+        return f"{hour:02d}:{minute:02d}" if 0<=hour<=23 and 0<=minute<=59 else ""
     return ""
 
 
@@ -167,8 +186,8 @@ def normalize_event(form, current=None):
     start_date=_clean(form.get("start_date"),10);end_date=_clean(form.get("end_date"),10) or start_date
     try:date.fromisoformat(start_date);date.fromisoformat(end_date)
     except ValueError:raise ValueError("Inserisci date valide")
-    start_time="00:00" if all_day else _clean(form.get("start_time"),5)
-    end_time="23:59" if all_day else (_clean(form.get("end_time"),5) or start_time)
+    start_time="00:00" if all_day else normalize_time(form.get("start_time"))
+    end_time="23:59" if all_day else normalize_time(form.get("end_time"),start_time)
     if not all_day and (not re.fullmatch(r"\d{2}:\d{2}",start_time) or not re.fullmatch(r"\d{2}:\d{2}",end_time)):raise ValueError("Inserisci un orario valido")
     start_at=f"{start_date}T{start_time}:00";end_at=f"{end_date}T{end_time}:59"
     if end_at<start_at:raise ValueError("La fine dell'evento non può precedere l'inizio")
@@ -177,7 +196,8 @@ def normalize_event(form, current=None):
     if not title:raise ValueError("Il titolo è obbligatorio")
     if event_type in ("Ritiro","Riconsegna") and not zone:raise ValueError("La zona è obbligatoria")
     if event_type in ("Ritiro in sede","Riconsegna in sede") and site not in ("Livorno","Empoli"):raise ValueError("Seleziona la sede")
-    if event_type in ("Riconsegna","Riconsegna in sede") and not animal:raise ValueError("Il nome animale è obbligatorio")
+    operator=_clean(form.get("operator_name"),50).title()
+    if operator not in CALENDAR_OPERATORS:raise ValueError("Seleziona l'operatore")
     status=_clean(form.get("event_status"),50)
     if event_type in ("Ritiro","Ritiro in sede"):
         status=status if status in PICKUP_STATUSES else "Da confermare"
@@ -199,10 +219,10 @@ def normalize_event(form, current=None):
       "client_id":int(form["client_id"]) if str(form.get("client_id") or "").isdigit() else None,
       "client_first_name":_clean(form.get("client_first_name"),100),"client_last_name":_clean(form.get("client_last_name"),100),
       "client_phone":_clean(form.get("client_phone"),50),"destination_site":site,"animal_name":animal,
-      "person_company":_clean(form.get("person_company"),200),"category":_clean(form.get("category"),100),
+      "person_company":"","category":_clean(form.get("category"),100),
       "start_at":start_at,"end_at":end_at,"all_day":1 if all_day else 0,"event_status":status,
       "payment_status":payment,"payment_amount":max(0,amount),"notes":str(form.get("notes") or "").strip()[:5000],
-      "assigned_user_id":int(form["assigned_user_id"]) if str(form.get("assigned_user_id") or "").isdigit() else None,
+      "operator_name":operator,"assigned_user_id":None,
     }
 
 
@@ -229,6 +249,10 @@ def event_color_class(row):
     if row["event_type"]=="Appuntamento":return "calendar-purple"
     if row["event_type"] in ("Riconsegna","Riconsegna in sede"):return "calendar-blue"
     return {"Da confermare":"calendar-yellow","Da ritirare":"calendar-red","Ritirato":"calendar-green","Annullato":"calendar-dark"}.get(row["event_status"],"calendar-red")
+
+
+def event_type_dot_class(row):
+    return {"Ritiro":"calendar-dot-red","Ritiro in sede":"calendar-dot-yellow","Riconsegna":"calendar-dot-blue","Riconsegna in sede":"calendar-dot-cyan","Appuntamento":"calendar-dot-purple"}.get(row["event_type"],"calendar-dot-gray")
 
 
 def add_history(conn,event_id,user_id,action,old_value="",new_value="",stamp=None):

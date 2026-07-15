@@ -9,6 +9,7 @@ import app
 from calendar_service import (
     DEFAULT_ZONES,
     normalize_event,
+    normalize_time,
     overlap_rows,
     period_bounds,
 )
@@ -37,6 +38,7 @@ class OperationalCalendarTests(unittest.TestCase):
     def event_form(self, event_type="Ritiro", **changes):
         data = {
             "event_type": event_type,
+            "operator_name": "Serena",
             "title": "",
             "zone": "Livorno" if event_type in ("Ritiro", "Riconsegna") else "",
             "destination_site": "Livorno" if "in sede" in event_type else "",
@@ -72,16 +74,18 @@ class OperationalCalendarTests(unittest.TestCase):
             tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             indexes = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")}
             zones = {row["name"] for row in conn.execute("SELECT name FROM calendar_zones")}
+            event_columns = {row["name"] for row in conn.execute("PRAGMA table_info(calendar_events)")}
         self.assertTrue(expected.issubset(tables))
         self.assertTrue({"idx_calendar_events_range", "idx_calendar_events_status", "idx_calendar_events_vet", "idx_calendar_events_assigned"}.issubset(indexes))
         self.assertEqual(zones, set(DEFAULT_ZONES))
+        self.assertIn("operator_name", event_columns)
 
     def test_all_event_types_auto_titles_colors_and_states(self):
         expected = {
             "Ritiro": "RITIRO LIVORNO",
             "Ritiro in sede": "RITIRO IN SEDE LIVORNO",
-            "Riconsegna": "RICONSEGNA FIDO LIVORNO",
-            "Riconsegna in sede": "RICONSEGNA FIDO IN SEDE LIVORNO",
+            "Riconsegna": "RICONSEGNA LIVORNO",
+            "Riconsegna in sede": "RICONSEGNA IN SEDE LIVORNO",
             "Appuntamento": "APPUNTAMENTO FORNITORE",
         }
         ids = [self.save(self.event_form(kind)) for kind in expected]
@@ -90,7 +94,18 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertEqual([row["title"] for row in rows], list(expected.values()))
         self.assertEqual(rows[-1]["event_status"], "")
         self.assertEqual(rows[-1]["payment_status"], "")
+        self.assertTrue(all(row["operator_name"]=="Serena" for row in rows))
         self.assertTrue(all(ids))
+
+    def test_manual_time_normalization_and_quarter_hour_suggestions(self):
+        self.assertEqual(normalize_time("9"), "09:00")
+        self.assertEqual(normalize_time("18"), "18:00")
+        self.assertEqual(normalize_time("1830"), "18:30")
+        self.assertEqual(normalize_time("945"), "09:45")
+        result=normalize_event(self.event_form("Ritiro",start_time="1830",end_time="19"))
+        self.assertEqual((result["start_at"][11:16],result["end_at"][11:16]),("18:30","19:00"))
+        self.assertIn("[0,15,30,45]", app.APP_JS)
+        self.assertIn("padStart(2,'0')", app.APP_JS)
 
     def test_multi_day_all_day_and_invalid_ranges(self):
         result = normalize_event(self.event_form("Appuntamento", all_day="1", start_date="2026-07-15", end_date="2026-07-18"))
@@ -148,7 +163,7 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertEqual((client["first_name"], vet["clinic_name"]), ("Mario", "Clinica Test"))
 
     def test_calendar_pages_render_all_views_navigation_filters_and_mobile_hooks(self):
-        self.save(self.event_form("Ritiro", event_status="Da ritirare"))
+        self.save(self.event_form("Ritiro", event_status="Da ritirare",animals_json=json.dumps([{"name":"Luna","species":"Cane","weight":"18","cremation_type":"Singola","notes":""}])))
         pages = {}
         self.handler.send_html = lambda html, status=200: pages.update(current=html, status=status)
         for view in ("giorno", "settimana", "mese", "mista_settimana", "mista_mese", "compatto"):
@@ -159,10 +174,16 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("data-calendar-swipe", pages["giorno"])
         self.assertIn("calendar-week-scroll", pages["settimana"])
         self.assertIn("calendar-month", pages["mese"])
+        self.assertIn("calendar-dot-red", pages["mese"])
+        self.assertIn("18 kg", pages["giorno"])
+        self.assertIn("Singola", pages["settimana"])
         self.assertIn("calendar-mixed", pages["mista_settimana"])
         self.assertIn("calendar-dots", pages["compatto"])
         self.assertIn("Ricerca e filtri", pages["giorno"])
         self.assertIn("safe-bottom", app.CSS)
+        self.assertIn("15 Luglio 2026",pages["giorno"])
+        self.assertIn(">OGGI<",pages["giorno"])
+        self.assertIn("create-sheet",pages["giorno"])
         self.handler.path = "/"
         self.handler.dashboard(self.admin)
         self.assertIn("+ Nuova pratica", pages["current"])
@@ -178,8 +199,27 @@ class OperationalCalendarTests(unittest.TestCase):
             self.assertIn(text, html)
         for hook in ("calendarZoneOffer", "/api/clienti/search", "/api/veterinari/search"):
             self.assertIn(hook, html if hook == "calendarZoneOffer" else app.APP_JS + html)
+        for operator in ("Serena","Alessio","Filippo"):
+            self.assertIn(operator,html)
+        for preset in ("Cremazione","Ritiro","Riconsegna","Urna","Altro"):
+            self.assertIn(preset,html)
+        self.assertNotIn("Persona o azienda",html)
+        self.assertNotIn("Nome animale *",html)
+        self.assertNotIn("Operatore assegnato",html)
+        self.assertIn("calendarTypeSelected(this)",html)
+        self.assertIn("calendarWizardSwipe",app.APP_JS)
+        self.assertIn("calendarTimeInput",app.APP_JS)
+        self.assertIn("calendar-zone-results",html)
         self.assertIn("@media(max-width:900px)", app.CSS)
         self.assertIn("bottom:calc(88px + var(--safe-bottom))", app.CSS)
+
+    def test_calendar_settings_store_preferred_view(self):
+        captured=[];self.handler.send_html=lambda html,status=200:captured.append(html)
+        self.handler.calendar_settings(self.admin)
+        html=captured[0]
+        for value in ("giorno","settimana","mese","mista_settimana","mista_mese","compatto"):
+            self.assertIn(f'value="{value}"',html)
+        self.assertIn("localStorage.setItem('ppm_calendar_view'",html)
 
     def test_comments_history_status_soft_delete_and_restore(self):
         event_id = self.save(self.event_form("Ritiro"))
