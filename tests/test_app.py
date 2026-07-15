@@ -588,9 +588,10 @@ class PetParadiseTests(unittest.TestCase):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp=app.now()
             pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,
-                                created_by,animal_name,species,breed,age_years,age_months,service_type,urn_notes,price_urn,payment_status)
-                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                             ("PP-APERTURA","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Luna","Cane","Meticcio","7","3","Cremazione singola","Urna doppia","85","Da saldare")).lastrowid
+                                created_by,animal_name,species,breed,age_years,age_months,service_type,urn_notes,price_urn,price_pickup,
+                                price_night,send_catalog,payment_status)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                             ("PP-APERTURA","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Luna","Cane","Meticcio","7","3","Cremazione singola","Urna doppia","85","40","","Si","Da saldare")).lastrowid
         rendered=[]; self.handler.send_html=lambda content,*args: rendered.append(content)
         self.handler.practice(admin,pid)
         self.assertIn("PP-APERTURA",rendered[-1])
@@ -603,6 +604,11 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Totale pagato",rendered[-1])
         self.assertIn("Da pagare",rendered[-1])
         self.assertIn("Rimanenza registrata",rendered[-1])
+        self.assertIn("Voci del preventivo",rendered[-1])
+        self.assertIn("Ritiro",rendered[-1])
+        self.assertIn("INVIARE CATALOGO",rendered[-1])
+        self.assertIn('name="send_catalog" value="Si" checked',rendered[-1])
+        self.assertIn('name="catalog_sent"',rendered[-1])
         self.assertNotIn("Firma su telefono",rendered[-1])
         with app.db() as conn:
             self.assertEqual(conn.execute("SELECT count(*) n FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["n"],0)
@@ -655,10 +661,29 @@ class PetParadiseTests(unittest.TestCase):
         with app.db() as conn:
             stamp=app.now();vet_id=conn.execute("INSERT INTO veterinarians(short_name,clinic_name,active,created_at,updated_at) VALUES(?,?,?,?,?)",("Barbaricina","Clinica Barbaricina",1,stamp,stamp)).lastrowid
         automatic=self.handler.normalized_fields({"veterinarian_id":str(vet_id)})
+        automatic_origin=self.handler.normalized_fields({"origin_mode":"Veterinario","origin_veterinarian_id":str(vet_id)})
         manual=self.handler.normalized_fields({"veterinarian_id":str(vet_id),"provenance":"F"})
-        self.assertEqual(automatic["provenance"],"P");self.assertEqual(manual["provenance"],"F")
+        self.assertEqual(automatic["provenance"],"P");self.assertEqual(automatic_origin["provenance"],"P");self.assertEqual(manual["provenance"],"F")
         self.assertIn('data-provenance="P"',self.handler.fields_html())
         self.assertIn("setProvenanceFromVeterinarian",app.APP_JS)
+
+    def test_catalog_flags_are_mutually_exclusive_from_form_and_summary(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,send_catalog)
+                                VALUES(?,?,?,?,?,?,?,?)""",("CR-CATALOGO","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Si")).lastrowid
+        self.handler.redirect=lambda path:None
+        with patch("app.emit_notification",return_value=[]):
+            self.handler.form=lambda:{"catalog_sent":"Si"};self.handler.catalog_sent(admin,pid)
+        with app.db() as conn:
+            row=conn.execute("SELECT send_catalog,catalog_sent FROM practices WHERE id=?",(pid,)).fetchone()
+            self.assertEqual((row["send_catalog"],row["catalog_sent"]),("","Si"))
+        self.handler.form=lambda:{"send_catalog":"Si"};self.handler.catalog_sent(admin,pid)
+        with app.db() as conn:
+            row=conn.execute("SELECT send_catalog,catalog_sent FROM practices WHERE id=?",(pid,)).fetchone()
+            self.assertEqual((row["send_catalog"],row["catalog_sent"]),("Si",""))
+        self.assertIn("e.target.name === 'catalog_sent'",app.APP_JS)
+        self.assertIn("arrangeBudgetLayout",app.APP_JS)
 
     def test_advanced_search_forms_are_collapsed_behind_button(self):
         source='<form class="section" method="get"><input name="q"><select name="stato"></select></form>'

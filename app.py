@@ -797,7 +797,7 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 .activity-list{display:flex;flex-direction:column;margin-top:14px}.activity-item{display:grid;grid-template-columns:42px minmax(0,1fr) auto;align-items:center;gap:11px;padding:12px 0;border-bottom:1px solid #334155}.activity-item:last-child{border-bottom:0}.activity-item b,.activity-item small{display:block}.activity-item b{font-size:13px}.activity-item small{margin-top:3px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.activity-item time{color:#94a3b8;font-size:11px}.activity-icon{width:38px;height:38px;--icon-bg:#243244;--icon-color:#5eead4;--icon-shadow:transparent}.activity-1 .activity-icon{--icon-bg:#422006;--icon-color:#fbbf24}.activity-2 .activity-icon{--icon-bg:#3b0764;--icon-color:#c084fc}.activity-3 .activity-icon{--icon-bg:#4c0519;--icon-color:#fb7185}.activity-empty{padding:40px 10px;color:#94a3b8;text-align:center}
 .bottom-nav,.more-menu,.more-backdrop{display:none}.tag-red{background:#7f1d2d;color:#fecdd3}.tag-orange{background:#7c2d12;color:#fed7aa}.tag-outline-orange{background:#3b1d0c;color:#fdba74;border-color:#f97316}.tag-purple{background:#4c1d95;color:#e9d5ff}.tag-yellow{background:#713f12;color:#fef08a}.tag-pink{background:#831843;color:#fbcfe8}.tag-blue{background:#1e3a8a;color:#bfdbfe}.tag-green{background:#14532d;color:#bbf7d0}
 .search-after-results{margin-top:32px}.search-after-results>h2{display:none}.search-after-results .section{box-shadow:0 12px 34px #0307122e}.advanced-search{margin:16px 0 24px;border:1px solid var(--line);border-radius:14px;background:#202c3d;overflow:hidden}.advanced-search summary{display:flex;align-items:center;justify-content:space-between;min-height:48px;padding:12px 16px;cursor:pointer;font-weight:600;list-style:none}.advanced-search summary::-webkit-details-marker{display:none}.advanced-search summary:after{content:'+';font-size:22px;line-height:1}.advanced-search[open] summary:after{content:'−'}.advanced-search form{margin:0;border:0;border-top:1px solid var(--line);border-radius:0;box-shadow:none!important}.light-theme .advanced-search{background:#fff}
-.dashboard-recent{margin-top:26px}.dashboard-recent .titlebar{margin-bottom:12px}.dashboard-recent .titlebar a{color:#fb7185}.load-previous-month{display:flex;justify-content:center;padding:8px 0 24px}.load-previous-month .btn{width:auto;min-width:240px}.budget-add{align-self:end;width:auto!important;min-height:42px;margin-top:auto}
+.dashboard-recent{margin-top:26px}.dashboard-recent .titlebar{margin-bottom:12px}.dashboard-recent .titlebar a{color:#fb7185}.load-previous-month{display:flex;justify-content:center;padding:8px 0 24px}.load-previous-month .btn{width:auto;min-width:240px}.budget-add{align-self:end;width:auto!important;min-height:42px;margin-top:auto}.budget-layout{display:block}.budget-workspace{display:grid;gap:12px}.budget-row{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(270px,.75fr);gap:16px;padding:12px;border:1px solid #334155;border-radius:13px;background:#11192566}.budget-cell{display:grid;align-content:start;gap:10px;min-width:0}.budget-cell-right .modern-check{min-height:42px}.budget-cell-right .field{min-width:0}.budget-cell:empty{display:none}.economic-estimate{margin-top:20px;padding-top:18px;border-top:1px solid #3b4658}.economic-estimate h3{margin:0 0 12px;font-size:15px}.catalog-summary-form{display:grid;gap:8px;margin-top:9px}.catalog-summary-form .modern-check{min-height:40px;padding:8px 10px}.light-theme .budget-row{border-color:#cbd5e1;background:#f8fafc}.light-theme .economic-estimate{border-color:#cbd5e1}
 *:focus-visible{outline:3px solid #fb7185!important;outline-offset:3px}.light-theme{background:#eef2f7;color:#111827}.light-theme .app-header,.light-theme .top{background:#fff;color:#111827}.light-theme .dashboard-panel,.light-theme .metric-card,.light-theme .payment-card,.light-theme .section,.light-theme .tablebox{background:#fff;color:#111827}.light-theme .header-search,.light-theme .icon-btn,.light-theme .header-actions time{background:#f8fafc;color:#111827}.light-theme .welcome p,.light-theme .metric-card em,.light-theme .payment-card em,.light-theme .activity-item small,.light-theme .activity-item time{color:#64748b}
 @media(max-width:1100px){.dashboard-states{grid-template-columns:repeat(2,1fr)}.dashboard-lower{grid-template-columns:1fr}.header-actions time{display:none}}
 @media(max-width:900px){body{min-height:100dvh;padding-bottom:calc(82px + var(--safe-bottom))}#main-content{min-height:100dvh;padding-left:var(--safe-left);padding-right:var(--safe-right)}.top{position:fixed;left:var(--safe-left);right:var(--safe-right);top:0;width:auto;height:calc(64px + var(--safe-top));min-height:calc(64px + var(--safe-top));padding:calc(7px + var(--safe-top)) 14px 7px;border-right:0;border-bottom:1px solid #263246}.top .nav{display:none}.brand-copy{display:inline}.brand-logo{width:42px;height:42px}.app-header{position:fixed;left:auto;right:calc(10px + var(--safe-right));top:calc(7px + var(--safe-top));width:auto;height:50px;padding:0;background:transparent;border:0;backdrop-filter:none}.header-search,.header-actions time,.header-new span{display:none}.header-actions{gap:7px}.header-new{width:42px;height:42px;padding:0}.wrap{margin-left:0;padding:calc(88px + var(--safe-top)) 14px 22px}.bottom-nav{position:fixed;display:grid;grid-template-columns:repeat(5,1fr);align-items:end;left:0;right:0;bottom:0;z-index:90;height:calc(72px + var(--safe-bottom));padding:6px max(8px,var(--safe-right)) calc(5px + var(--safe-bottom)) max(8px,var(--safe-left));background:#0b1220ed;border-top:1px solid #334155;backdrop-filter:blur(18px)}.bottom-nav a,.bottom-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:0;background:transparent;color:#94a3b8;font-size:10px}.bottom-nav .icon{width:21px;height:21px}.bottom-nav a:first-child{color:#fb7185}.bottom-nav .bottom-new{align-self:center;width:52px;height:52px;margin:-18px auto 0;border-radius:50%;background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;box-shadow:0 8px 28px #ef405f70}.bottom-new span{display:none}.more-backdrop{position:fixed;display:block;inset:0;z-index:94;background:#020617aa;opacity:0;pointer-events:none;transition:opacity .2s}.more-menu{position:fixed;display:flex;flex-direction:column;gap:5px;left:calc(14px + var(--safe-left));right:calc(14px + var(--safe-right));bottom:calc(82px + var(--safe-bottom));z-index:95;max-height:72dvh;padding:16px;border:1px solid #334155;border-radius:18px;background:#111827;box-shadow:0 25px 80px #0009;overflow:auto;transform:translateY(120%);opacity:0;transition:transform .22s ease,opacity .22s}.more-menu a{display:flex;align-items:center;gap:11px;padding:11px;border-radius:10px;color:#e2e8f0}.more-menu a:hover{background:#1f2937}.more-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}.more-title .icon-btn{font-size:24px}.more-open .more-menu{transform:none;opacity:1}.more-open .more-backdrop{opacity:1;pointer-events:auto}.install-hint{left:calc(14px + var(--safe-left));right:calc(14px + var(--safe-right));bottom:calc(14px + var(--safe-bottom))}.skip-link{top:calc(8px + var(--safe-top));left:calc(8px + var(--safe-left))}.light-theme .bottom-nav,.light-theme .more-menu{background:#fff}.dashboard-lower{grid-template-columns:1fr}}
@@ -831,6 +831,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 @media(max-width:900px){.calendar-wrap{padding-bottom:calc(100px + var(--safe-bottom))}.calendar-toolbar{align-items:stretch;flex-direction:column}.calendar-view-switch{display:grid;grid-template-columns:repeat(3,1fr);overflow:auto}.calendar-view-switch a{text-align:center;white-space:nowrap}.calendar-mixed,.calendar-detail-grid{grid-template-columns:1fr}.calendar-month{grid-template-columns:repeat(7,minmax(43px,1fr));gap:3px}.calendar-month-day{min-height:76px;padding:5px}.calendar-month-day .calendar-band{display:none}.calendar-month-day>a{font-size:12px}.calendar-type-grid{grid-template-columns:1fr}.calendar-repeat-row{grid-template-columns:1fr 1fr}.calendar-repeat-row .full-mobile{grid-column:1/-1}.calendar-event{grid-template-columns:62px minmax(0,1fr);padding:13px}.calendar-event>.btn{grid-column:1/-1;width:100%}.calendar-fab{right:18px;bottom:calc(88px + var(--safe-bottom))}.calendar-form{padding-bottom:calc(90px + var(--safe-bottom))}.header-event-new{display:none!important}}
 .calendar-date-nav{display:grid;grid-template-columns:48px minmax(0,1fr) 48px;gap:8px;width:min(560px,100%);margin:0 auto 16px}.calendar-date-nav .calendar-date-title{position:relative;display:grid;place-items:center;min-height:46px;border:1px solid #3b4a5f;border-radius:13px;background:#182334;font-weight:700;cursor:pointer}.calendar-date-title input{position:absolute;inset:0;opacity:0;cursor:pointer}.calendar-today{grid-column:1/-1;width:100%}.calendar-settings-link{white-space:nowrap}.calendar-dot{width:8px;height:8px}.calendar-dot-red{color:#fb7185}.calendar-dot-yellow{color:#fde047}.calendar-dot-blue{color:#60a5fa}.calendar-dot-cyan{color:#22d3ee}.calendar-dot-purple{color:#c084fc}.calendar-dot-gray{color:#94a3b8}.calendar-month-day .calendar-dots{margin:5px 0}.calendar-form-step{animation:calendarStepIn .2s ease both;touch-action:pan-y}.calendar-form-step.step-back{animation-name:calendarStepBack}@keyframes calendarStepIn{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:none}}@keyframes calendarStepBack{from{opacity:0;transform:translateX(-18px)}to{opacity:1;transform:none}}.calendar-first-operator{max-width:340px;margin-bottom:18px}.calendar-title-zone-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.8fr);gap:13px;grid-column:1/-1}.calendar-time-control{display:grid;grid-template-columns:minmax(0,1fr) 44px;gap:7px}.calendar-time-control button{width:44px;min-height:44px;padding:0}.calendar-native-time{position:absolute!important;width:1px!important;height:1px!important;opacity:0;pointer-events:none}.calendar-zone-results{display:grid;position:absolute;left:0;right:0;top:100%;z-index:30;margin-top:5px;padding:6px;border:1px solid #475569;border-radius:12px;background:#182334;box-shadow:0 18px 45px #0008}.calendar-zone-field{position:relative}.calendar-zone-results button{padding:10px;border:0;border-radius:8px;background:transparent;color:#e7ecf3;text-align:left}.calendar-zone-results button:hover{background:#253247}.calendar-estimate-preset{display:flex;align-items:center;padding:0 10px;font-weight:650}.calendar-other-description{grid-column:span 3}.calendar-wizard-error{min-height:20px;color:#fca5a5;font-size:12px}.create-sheet-backdrop{position:fixed;display:block;inset:0;z-index:96;background:#020617aa;opacity:0;pointer-events:none;transition:opacity .2s}.create-sheet{position:fixed;display:grid;gap:9px;left:50%;bottom:calc(86px + var(--safe-bottom));z-index:97;width:min(360px,calc(100% - 28px));padding:14px;border:1px solid #475569;border-radius:19px;background:#172131;box-shadow:0 24px 80px #000b;opacity:0;pointer-events:none;transform:translate(-50%,24px) scale(.96);transition:opacity .2s,transform .22s cubic-bezier(.2,.8,.2,1)}.create-sheet a{display:flex;align-items:center;gap:12px;min-height:54px;padding:12px 15px;border-radius:13px;background:#202c3d;font-weight:700}.create-sheet .icon{color:#fb7185}.create-menu-open .create-sheet{opacity:1;pointer-events:auto;transform:translate(-50%,0) scale(1)}.create-menu-open .create-sheet-backdrop{opacity:1;pointer-events:auto}.light-theme .calendar-date-title,.light-theme .calendar-zone-results,.light-theme .create-sheet{background:#fff}.light-theme .calendar-zone-results button{color:#111827}.light-theme .create-sheet a{background:#f1f5f9}
 @media(max-width:900px){.calendar-view-switch{display:none}.calendar-toolbar{margin-bottom:8px}.calendar-quick-actions{display:grid;grid-template-columns:minmax(0,1fr) auto auto;width:100%;gap:8px}.calendar-quick-actions .btn{width:auto;min-height:38px;padding:8px 10px;font-size:12px}.calendar-title-zone-row{grid-template-columns:minmax(0,1fr) minmax(110px,.8fr)}.calendar-date-nav{grid-template-columns:44px minmax(0,1fr) 44px}.calendar-date-nav .btn{width:auto;min-height:44px;padding:8px}.calendar-month-day{min-height:82px}.calendar-form .titlebar{display:grid;grid-template-columns:minmax(0,1fr) auto}.calendar-form .titlebar .btn{width:42px;min-height:42px;padding:0;border-radius:50%}.calendar-type-option{min-height:72px;padding:12px}.calendar-first-operator{max-width:none}.calendar-repeat-row{grid-template-columns:1fr 1fr}.calendar-estimate-row{grid-template-columns:minmax(90px,1fr) minmax(90px,.8fr)}.calendar-estimate-row .calendar-other-description{grid-column:1/-1}.calendar-estimate-row button{display:none}}
+@media(max-width:800px){.budget-row{grid-template-columns:1fr;padding:10px}.budget-cell-right{padding-top:2px}.catalog-summary-form button{width:100%}}
 """
 
 APP_JS = r"""
@@ -840,6 +841,14 @@ function setProvenanceFromVeterinarian(option){
   if(field && option?.value && option.dataset.provenance)field.value=option.dataset.provenance;
 }
 document.addEventListener('change', function(e){
+  if(e.target && e.target.name === 'catalog_sent' && e.target.checked){
+    const sendCatalog=e.target.form?.querySelector('[name="send_catalog"]')||document.querySelector('[name="send_catalog"]');
+    if(sendCatalog)sendCatalog.checked=false;
+  }
+  if(e.target && e.target.name === 'send_catalog' && e.target.checked){
+    const catalogSent=e.target.form?.querySelector('[name="catalog_sent"]')||document.querySelector('[name="catalog_sent"]');
+    if(catalogSent)catalogSent.checked=false;
+  }
   if(e.target && e.target.name === 'request_origin'){
     const method = document.querySelector('[name="transport_method"]');
     const transporter = document.querySelector('select[name="transporter_mode"]');
@@ -1253,8 +1262,47 @@ function setupBudgetExtras(){
   if(sendEstremiField)fields.append(sendEstremiField);
   insertCheck(document.querySelector('input[name="make_invoice"]'),'FARE FATTURA',sendEstremiField||fields.lastElementChild);
 }
+function arrangeBudgetLayout(){
+  const fields=document.querySelector('.section input[name="price_cremation"]')?.closest('.fields');
+  if(!fields || fields.classList.contains('budget-layout'))return;
+  const original=[...fields.children];
+  const used=new Set();
+  const field=(name)=>fields.querySelector(`[name="${name}"]`)?.closest('.field');
+  const button=(text)=>original.find(node=>node.matches?.('button')&&node.textContent.includes(text));
+  const priceUrn=field('price_urn'),priceUrn2=field('price_urn_2');
+  const urnSearch=priceUrn?.previousElementSibling?.classList.contains('lookup')?priceUrn.previousElementSibling:null;
+  const urnSearch2=priceUrn2?.previousElementSibling?.classList.contains('lookup')?priceUrn2.previousElementSibling:null;
+  const workspace=document.createElement('div');workspace.className='budget-workspace';
+  const addRow=(left,right=[])=>{
+    const clean=(items)=>items.filter(node=>node&&original.includes(node)&&!used.has(node));
+    const leftItems=clean(left),rightItems=clean(right);
+    if(!leftItems.length&&!rightItems.length)return;
+    const row=document.createElement('div');row.className='budget-row';
+    const leftCell=document.createElement('div');leftCell.className='budget-cell budget-cell-left';
+    const rightCell=document.createElement('div');rightCell.className='budget-cell budget-cell-right';
+    leftItems.forEach(node=>{used.add(node);leftCell.append(node)});
+    rightItems.forEach(node=>{used.add(node);rightCell.append(node)});
+    row.append(leftCell,rightCell);workspace.append(row);
+  };
+  addRow([field('price_cremation')],[field('use_voucher'),field('payment_status')]);
+  addRow([field('price_pickup')],[field('payment_method')]);
+  addRow([urnSearch,priceUrn,urnSearch2,priceUrn2,field('urn_notes_2')],[field('send_catalog'),field('catalog_sent'),button('altra urna')]);
+  addRow([field('price_delivery')]);
+  addRow([field('price_cast'),field('price_cast_2')],[button('altro calco')]);
+  addRow([field('price_paw_cast')]);
+  addRow([field('price_nose_cast')]);
+  addRow([field('price_evening')]);
+  addRow([field('price_night')]);
+  addRow([field('price_holiday')]);
+  addRow([field('price_accessories'),field('price_accessories_2')],[field('accessory_type'),field('accessory_type_2'),button('altri accessori')]);
+  addRow([field('total_service'),field('deposit'),field('remaining_balance'),field('total_text')]);
+  addRow([field('invoice_number'),field('invoice_date'),field('invoice_total')],[field('send_estremi'),field('make_invoice')]);
+  addRow([field('notes')]);
+  original.filter(node=>!used.has(node)).forEach(node=>addRow([node]));
+  fields.replaceChildren(workspace);fields.classList.add('budget-layout');
+}
 document.addEventListener('DOMContentLoaded', function(){
-  reorderSenderFields(); placeCallBackFlag(); setupBudgetExtras(); decoratePracticeSections(); setupNumericBudgetFields(); updatePreventivoTotal(); updateRemainingBalance(); setupZipLookup(); setupUrnNotesField();
+  reorderSenderFields(); placeCallBackFlag(); setupBudgetExtras(); decoratePracticeSections(); setupNumericBudgetFields(); updatePreventivoTotal(); updateRemainingBalance(); setupZipLookup(); setupUrnNotesField();arrangeBudgetLayout();
   const plate=document.querySelector('input[name="vehicle_plate"]');
   if(plate) plate.readOnly=false;
 });
@@ -3747,7 +3795,7 @@ class App(BaseHTTPRequestHandler):
             data["payment_status"] = "Pagato"
         data["veterinarian_id"] = data["veterinarian_id"] or None
         if not data["provenance"]:
-            provenance_vet_id=data["veterinarian_id"] or data["origin_veterinarian_id"] or data["owner_veterinarian_id"]
+            provenance_vet_id=(data["origin_veterinarian_id"] if data["origin_mode"]=="Veterinario" else None) or data["veterinarian_id"] or data["owner_veterinarian_id"]
             if provenance_vet_id:
                 with db() as c:
                     provenance_vet=c.execute("SELECT short_name,clinic_name FROM veterinarians WHERE id=? AND active=1",(provenance_vet_id,)).fetchone()
@@ -4451,18 +4499,14 @@ class App(BaseHTTPRequestHandler):
         payment_cls = {"Da saldare":"pay-yellow","Acconto":"pay-blue","Pagato":"pay-green"}.get(payment_value,"")
         practice_state_cls=practice_status_class(p["status"])
         catalog_value = "Si" if "send_catalog" in p.keys() and p["send_catalog"] else "No"
-        if p["send_catalog"] == "Si":
-            catalog_box=f'''<div class="kv"><small>Catalogo urna</small><form method="post" action="/pratiche/{pid}/catalogo-inviato"><input type="hidden" name="practice_view" value="{esc(practice_view)}"><label><input type="checkbox" name="catalog_sent" value="Si" onchange="this.form.submit()" style="width:auto"> Catalogo inviato</label></form></div>'''
-        elif p["catalog_sent"] == "Si":
-            catalog_box='<div class="kv"><small>Catalogo urna</small><span class="badge tag-outline-green">Catalogo inviato</span></div>'
-        else:
-            catalog_box='<div class="kv"><small>Catalogo urna</small><span class="sub">Non richiesto</span></div>'
+        send_catalog_checked="checked" if p["send_catalog"]=="Si" else ""
+        catalog_sent_checked="checked" if p["catalog_sent"]=="Si" else ""
+        catalog_controls=f'''<form class="catalog-summary-form" method="post" action="/pratiche/{pid}/catalogo-inviato"><input type="hidden" name="practice_view" value="{esc(practice_view)}"><label class="modern-check"><input type="checkbox" name="send_catalog" value="Si" {send_catalog_checked} onchange="if(this.checked)this.form.catalog_sent.checked=false;this.form.submit()"> INVIARE CATALOGO</label><label class="modern-check"><input type="checkbox" name="catalog_sent" value="Si" {catalog_sent_checked} onchange="if(this.checked)this.form.send_catalog.checked=false;this.form.submit()"> CATALOGO INVIATO</label></form>'''
         urn_parts=[]
         if p["urn_notes"]: urn_parts.append(esc(p["urn_notes"]))
         if p["price_urn"]: urn_parts.append(money_it(money_value(p["price_urn"])))
         if p["urn_notes_2"]: urn_parts.append(esc(p["urn_notes_2"]))
         if p["price_urn_2"]: urn_parts.append(money_it(money_value(p["price_urn_2"])))
-        urn_box=f'''<div class="kv"><small>Urna</small>{'<br>'.join(urn_parts) if urn_parts else '<span class="sub">Non indicata</span>'}</div>'''
         invoice_value = p["invoice_number"] if "invoice_number" in p.keys() and p["invoice_number"] else ""
         invoice_date = p["invoice_date"] if "invoice_date" in p.keys() and p["invoice_date"] else ""
         invoice_total_value = p["invoice_total"] if "invoice_total" in p.keys() and p["invoice_total"] else f"{effective_total(p):.2f}"
@@ -4503,7 +4547,14 @@ class App(BaseHTTPRequestHandler):
         total_w=calculated_service_total(p);total_d_raw=(p["total_text"] or "").strip();total_d=money_value(total_d_raw)
         practice_total=effective_total(p);paid_total=received_amount(p);due_total=outstanding_amount(p);deposit_total=money_value(p["deposit"])
         remaining_total=money_value(p["remaining_balance"]) if (p["remaining_balance"] or "").strip() else due_total
-        economic_block=f'''<div class="section"><h2>Dati economici</h2><div class="kvs"><div class="kv"><small>Totale pratica</small><b>{money_it(practice_total)}</b></div><div class="kv"><small>Totale W</small><b>{money_it(total_w)}</b></div><div class="kv"><small>Totale D</small><b>{money_it(total_d) if total_d_raw else "-"}</b></div><div class="kv"><small>Totale pagato</small><b>{money_it(paid_total)}</b></div><div class="kv"><small>Da pagare</small><b>{money_it(due_total)}</b></div><div class="kv"><small>Acconto</small><b>{money_it(deposit_total)}</b></div><div class="kv"><small>Rimanenza registrata</small><b>{money_it(remaining_total)}</b></div><div class="kv"><small>Stato pagamento</small><b>{esc(payment_value)}</b></div><div class="kv"><small>Metodo</small><b>{esc(payment_method_value)}</b></div></div></div>'''
+        estimate_fields=(("price_cremation","Cremazione"),("price_pickup","Ritiro"),("price_delivery","Riconsegna"),("price_cast","Calco"),("price_cast_2","Secondo calco"),("price_paw_cast","Calco polpastrello"),("price_nose_cast","Calco naso"),("price_evening","Serale"),("price_night","Notturno"),("price_holiday","Festivo"),("price_accessories","Accessori"),("price_accessories_2","Secondi accessori"))
+        estimate_rows=[]
+        for key,label in estimate_fields:
+            raw_value=(p[key] or "").strip()
+            if raw_value:estimate_rows.append(f'<div class="kv"><small>{label}</small><b>{money_it(money_value(raw_value))}</b></div>')
+        urn_summary='<br>'.join(urn_parts) if urn_parts else '<span class="sub">Nessuna urna o prezzo inserito</span>'
+        estimate_rows.insert(2,f'<div class="kv"><small>Urna</small>{urn_summary}{catalog_controls}</div>')
+        economic_block=f'''<div class="section"><h2>Dati economici</h2><div class="kvs"><div class="kv"><small>Totale pratica</small><b>{money_it(practice_total)}</b></div><div class="kv"><small>Totale W</small><b>{money_it(total_w)}</b></div><div class="kv"><small>Totale D</small><b>{money_it(total_d) if total_d_raw else "-"}</b></div><div class="kv"><small>Totale pagato</small><b>{money_it(paid_total)}</b></div><div class="kv"><small>Da pagare</small><b>{money_it(due_total)}</b></div><div class="kv"><small>Acconto</small><b>{money_it(deposit_total)}</b></div><div class="kv"><small>Rimanenza registrata</small><b>{money_it(remaining_total)}</b></div><div class="kv"><small>Stato pagamento</small><b>{esc(payment_value)}</b></div><div class="kv"><small>Metodo</small><b>{esc(payment_method_value)}</b></div></div><div class="economic-estimate"><h3>Voci del preventivo</h3><div class="kvs">{''.join(estimate_rows)}</div></div></div>'''
         hist_items=[]
         for h in history:
             old_value=compact_text(h["old_value"]); new_value=compact_text(h["new_value"]); note=compact_text(h["note"])
@@ -4544,9 +4595,7 @@ class App(BaseHTTPRequestHandler):
         body=body.replace(f'<a class="btn ghost" href="/pratiche/{pid}/firma">Firma su telefono</a>',"")
         body=body.replace(old_invoice_box,invoice_box)
         body=body.replace(f'<div class="field"><label>Numero fattura</label><input name="invoice_number" value="{esc(invoice_value)}" placeholder="Da inserire quando risulta pagato"></div>',"")
-        body=body.replace(f'<div class="kv"><small>Catalogo urna</small><b>{esc(catalog_value)}</b></div>',catalog_box)
-        if p["service_type"] == "Cremazione singola":
-            body=body.replace(catalog_box,catalog_box+urn_box)
+        body=body.replace(f'<div class="kv"><small>Catalogo urna</small><b>{esc(catalog_value)}</b></div>',"")
         body=body.replace(f'<small>Stato</small><b>{esc(p["status"])}</b>',f'<small>Stato</small><span class="badge practice-status {practice_state_cls}">{esc(p["status"])}</span>')
         body=body.replace(f'<span class="badge {payment_cls}">{esc(payment_value)}</span>',f'<span class="badge {payment_cls}">{esc(payment_value)}</span><br><small>Metodo: {esc(payment_method_value)}</small>')
         self.send_html(layout(p["practice_number"],body,user))
@@ -4654,23 +4703,16 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         self.redirect(safe_return_path(f.get("practice_view"),f"/pratiche/{pid}"))
 
     def catalog_sent(self,user,pid):
-        f=self.form(); marked=f.get("catalog_sent")=="Si"; stamp=now()
+        f=self.form();new_sent="Si" if f.get("catalog_sent")=="Si" else "";new_send="Si" if f.get("send_catalog")=="Si" and not new_sent else "";stamp=now()
         with db() as c:
             current=c.execute("SELECT send_catalog,catalog_sent FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(pid,)).fetchone()
             if not current:return self.send_error(404)
-            if marked:
-                if current["send_catalog"] != "Si":
-                    return self.send_error(400,"Catalogo inviato è disponibile solo con l'etichetta INVIARE CATALOGO")
-                c.execute("UPDATE practices SET catalog_sent='Si',send_catalog='',updated_at=? WHERE id=?",(stamp,pid))
-                old_value="INVIARE CATALOGO" if current["send_catalog"]=="Si" else "Non inviato"
-                new_value="CATALOGO INVIATO"
-            elif current["catalog_sent"]=="Si":
-                c.execute("UPDATE practices SET catalog_sent='',send_catalog='Si',updated_at=? WHERE id=?",(stamp,pid))
-                old_value="CATALOGO INVIATO"; new_value="INVIARE CATALOGO"
-            else:
-                return self.redirect(safe_return_path(f.get("practice_view"),f"/pratiche/{pid}"))
+            old_value="CATALOGO INVIATO" if current["catalog_sent"]=="Si" else "INVIARE CATALOGO" if current["send_catalog"]=="Si" else "Nessuna etichetta catalogo"
+            new_value="CATALOGO INVIATO" if new_sent else "INVIARE CATALOGO" if new_send else "Nessuna etichetta catalogo"
+            if (current["send_catalog"] or "")==new_send and (current["catalog_sent"] or "")==new_sent:return self.redirect(safe_return_path(f.get("practice_view"),f"/pratiche/{pid}"))
+            c.execute("UPDATE practices SET catalog_sent=?,send_catalog=?,updated_at=? WHERE id=?",(new_sent,new_send,stamp,pid))
             c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,"Catalogo urna",old_value,new_value,user["id"],stamp))
-            if marked:
+            if new_sent and current["catalog_sent"]!="Si":
                 practice=c.execute("SELECT practice_number,animal_name FROM practices WHERE id=?",(pid,)).fetchone()
                 emit_notification(c,"catalog_sent","📖 Catalogo inviato",f'{practice["practice_number"]} · {practice["animal_name"] or "Animale non indicato"}',pid,user["id"],db_path=DB_PATH)
         self.redirect(safe_return_path(f.get("practice_view"),f"/pratiche/{pid}"))
