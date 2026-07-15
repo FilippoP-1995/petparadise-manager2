@@ -609,14 +609,39 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('href="/dashboard?stato=Ritirato"',rendered[-1])
         self.assertIn("Torna alla pagina precedente",rendered[-1])
 
+    def test_provenance_mapping_manual_selection_and_automatic_veterinarian(self):
+        expected={
+            "V":["VARIGNANO","CAMPO D'AVIAZIONE","GLI AMICI DI BLU"],
+            "E":["Lucy","Frediani","Matteini","La Fenice","Croce Azzurra","Bellucci","Bartoli","Gennari","Giulia Frati","Sanminianimal","Parlanti","Dante delle Rose"],
+            "F":["Il Poggetto","Ariosto"],"P":["Barbaricina"],"L":["Qualsiasi altro veterinario"],
+        }
+        for code,names in expected.items():
+            for name in names:self.assertEqual(app.veterinarian_provenance(name),code,name)
+        html=self.handler.fields_html()
+        self.assertIn('name="provenance"',html);self.assertIn('V · Viareggio',html);self.assertIn('P · Pisa',html)
+        with app.db() as conn:
+            stamp=app.now();vet_id=conn.execute("INSERT INTO veterinarians(short_name,clinic_name,active,created_at,updated_at) VALUES(?,?,?,?,?)",("Barbaricina","Clinica Barbaricina",1,stamp,stamp)).lastrowid
+        automatic=self.handler.normalized_fields({"veterinarian_id":str(vet_id)})
+        manual=self.handler.normalized_fields({"veterinarian_id":str(vet_id),"provenance":"F"})
+        self.assertEqual(automatic["provenance"],"P");self.assertEqual(manual["provenance"],"F")
+        self.assertIn('data-provenance="P"',self.handler.fields_html())
+        self.assertIn("setProvenanceFromVeterinarian",app.APP_JS)
+
+    def test_advanced_search_forms_are_collapsed_behind_button(self):
+        source='<form class="section" method="get"><input name="q"><select name="stato"></select></form>'
+        collapsed=app.collapse_advanced_search(source)
+        self.assertIn('<details class="advanced-search">',collapsed);self.assertIn('<summary>Ricerca avanzata</summary>',collapsed)
+        self.assertNotIn(' open',collapsed);self.assertIn('advanced-search-form',collapsed)
+        self.assertEqual(app.collapse_advanced_search('<form method="get"><input name="q"></form>'),'<form method="get"><input name="q"></form>')
+
     def test_practice_list_order_sticky_urn_and_inline_statuses(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             urn_id=conn.execute("INSERT INTO urns(name,price,quantity,active,created_at,updated_at) VALUES(?,?,?,?,?,?)",("Doppia Quercia","95.00",2,1,stamp,stamp)).lastrowid
             conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
-                         animal_name,species,estimated_weight,age_years,owner_first_name,owner_last_name,service_type,urn_id,payment_status,total_service)
-                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                         ("CR-LISTA","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Luna","Cane","12","8","Mario","Rossi","Cremazione singola",urn_id,"Da saldare","230"))
+                         animal_name,species,estimated_weight,age_years,owner_first_name,owner_last_name,service_type,urn_id,payment_status,total_service,provenance)
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                         ("CR-LISTA","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Luna","Cane","12","8","Mario","Rossi","Cremazione singola",urn_id,"Da saldare","230","V"))
             rows=conn.execute("SELECT * FROM practices WHERE practice_number='CR-LISTA'").fetchall()
         self.handler.path="/dashboard?stato=Ritirato"
         page=self.handler.practice_rows(rows)
@@ -624,6 +649,9 @@ class PetParadiseTests(unittest.TestCase):
         self.assertLess(page.index("8 anni"),page.index("Mario Rossi"))
         self.assertLess(page.index("Mario Rossi"),page.index(">CR-LISTA</b>"))
         self.assertIn("Doppia Quercia",page)
+        self.assertIn("<td><b>V</b></td>",page)
+        rendered=app.layout("Test",'<table><thead><tr><th>Veterinario</th><th>Sede</th></tr></thead></table>')
+        self.assertIn("<th>Veterinario</th><th>Provenienza</th><th>Sede</th>",rendered)
         self.assertIn("stato-rapido",page)
         self.assertIn("pagamento-rapido",page)
         self.assertIn("Totale incassato",page)

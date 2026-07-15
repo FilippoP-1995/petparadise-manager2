@@ -374,6 +374,7 @@ def init_db():
             "transporter_mode": "TEXT DEFAULT 'IDEM SPED'",
             "origin_mode": "TEXT DEFAULT 'IDEM SPED'",
             "origin_text": "TEXT",
+            "provenance": "TEXT",
             "tag_assistita": "TEXT",
             "tag_possibile_assistita": "TEXT",
             "tag_assistita_streaming": "TEXT",
@@ -600,6 +601,19 @@ def valid_email_address(value):
     return bool(len(value)<=254 and "\n" not in value and "\r" not in value and re.fullmatch(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+",value))
 
 
+def veterinarian_provenance(*names):
+    label=" ".join(str(name or "") for name in names).upper().replace("’", "'")
+    groups={
+        "V":("VARIGNANO","CAMPO D'AVIAZIONE","CAMPO D AVIAZIONE","GLI AMICI DI BLU","AMICI DI BLU"),
+        "E":("LUCY","FREDIANI","MATTEINI","LA FENICE","FENICE","CROCE AZZURRA","BELLUCCI","BARTOLI","GENNARI","GIULIA FRATI","SANMINIANIMAL","PARLANTI","DANTE DELLE ROSE"),
+        "F":("IL POGGETTO","POGGETTO","ARIOSTO"),
+        "P":("BARBARICINA",),
+    }
+    for code,needles in groups.items():
+        if any(needle in label for needle in needles):return code
+    return "L" if label.strip() else ""
+
+
 def order_email_settings(conn):
     defaults={
         "order_recipient_email":"[QUI INSERIRÒ IL MIO INDIRIZZO EMAIL]",
@@ -749,7 +763,7 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 .dashboard-lower{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(350px,.8fr);gap:16px;margin-top:24px}.dashboard-panel{min-height:350px;padding:20px;border:1px solid #334155;border-radius:15px;background:#1f2937;box-shadow:0 18px 48px #03071235}.dashboard-panel>header{display:flex;align-items:flex-start;justify-content:space-between;gap:15px}.dashboard-panel h2{margin:0;font-size:16px}.dashboard-panel header p{margin:8px 0 0;color:#94a3b8}.dashboard-panel header p strong{color:#fff;font-size:21px}.dashboard-panel header a{color:#fb7185;font-size:13px}.income-chart{display:block;width:100%;height:auto;margin-top:14px}.chart-grid line{stroke:#334155;stroke-width:1}.chart-grid text,.chart-dates text{fill:#94a3b8;font-size:11px}.chart-area{fill:url(#incomeArea)}.chart-line{fill:none;stroke:#ef405f;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 5px 8px #ef405f55)}.income-chart circle{fill:#fb7185;stroke:#1f2937;stroke-width:2}
 .activity-list{display:flex;flex-direction:column;margin-top:14px}.activity-item{display:grid;grid-template-columns:42px minmax(0,1fr) auto;align-items:center;gap:11px;padding:12px 0;border-bottom:1px solid #334155}.activity-item:last-child{border-bottom:0}.activity-item b,.activity-item small{display:block}.activity-item b{font-size:13px}.activity-item small{margin-top:3px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.activity-item time{color:#94a3b8;font-size:11px}.activity-icon{width:38px;height:38px;--icon-bg:#243244;--icon-color:#5eead4;--icon-shadow:transparent}.activity-1 .activity-icon{--icon-bg:#422006;--icon-color:#fbbf24}.activity-2 .activity-icon{--icon-bg:#3b0764;--icon-color:#c084fc}.activity-3 .activity-icon{--icon-bg:#4c0519;--icon-color:#fb7185}.activity-empty{padding:40px 10px;color:#94a3b8;text-align:center}
 .bottom-nav,.more-menu,.more-backdrop{display:none}.tag-red{background:#7f1d2d;color:#fecdd3}.tag-orange{background:#7c2d12;color:#fed7aa}.tag-outline-orange{background:#3b1d0c;color:#fdba74;border-color:#f97316}.tag-purple{background:#4c1d95;color:#e9d5ff}.tag-yellow{background:#713f12;color:#fef08a}.tag-pink{background:#831843;color:#fbcfe8}.tag-blue{background:#1e3a8a;color:#bfdbfe}.tag-green{background:#14532d;color:#bbf7d0}
-.search-after-results{margin-top:32px}.search-after-results>h2{margin-bottom:12px}.search-after-results .section{box-shadow:0 12px 34px #0307122e}
+.search-after-results{margin-top:32px}.search-after-results>h2{display:none}.search-after-results .section{box-shadow:0 12px 34px #0307122e}.advanced-search{margin:16px 0 24px;border:1px solid var(--line);border-radius:14px;background:#202c3d;overflow:hidden}.advanced-search summary{display:flex;align-items:center;justify-content:space-between;min-height:48px;padding:12px 16px;cursor:pointer;font-weight:600;list-style:none}.advanced-search summary::-webkit-details-marker{display:none}.advanced-search summary:after{content:'+';font-size:22px;line-height:1}.advanced-search[open] summary:after{content:'−'}.advanced-search form{margin:0;border:0;border-top:1px solid var(--line);border-radius:0;box-shadow:none!important}.light-theme .advanced-search{background:#fff}
 .dashboard-recent{margin-top:26px}.dashboard-recent .titlebar{margin-bottom:12px}.dashboard-recent .titlebar a{color:#fb7185}.load-previous-month{display:flex;justify-content:center;padding:8px 0 24px}.load-previous-month .btn{width:auto;min-width:240px}.budget-add{align-self:end;width:auto!important;min-height:42px;margin-top:auto}
 *:focus-visible{outline:3px solid #fb7185!important;outline-offset:3px}.light-theme{background:#eef2f7;color:#111827}.light-theme .app-header,.light-theme .top{background:#fff;color:#111827}.light-theme .dashboard-panel,.light-theme .metric-card,.light-theme .payment-card,.light-theme .section,.light-theme .tablebox{background:#fff;color:#111827}.light-theme .header-search,.light-theme .icon-btn,.light-theme .header-actions time{background:#f8fafc;color:#111827}.light-theme .welcome p,.light-theme .metric-card em,.light-theme .payment-card em,.light-theme .activity-item small,.light-theme .activity-item time{color:#64748b}
 @media(max-width:1100px){.dashboard-states{grid-template-columns:repeat(2,1fr)}.dashboard-lower{grid-template-columns:1fr}.header-actions time{display:none}}
@@ -784,6 +798,10 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 
 APP_JS = r"""
 <script>
+function setProvenanceFromVeterinarian(option){
+  const field=document.querySelector('select[name="provenance"]');
+  if(field && option?.value && option.dataset.provenance)field.value=option.dataset.provenance;
+}
 document.addEventListener('change', function(e){
   if(e.target && e.target.name === 'request_origin'){
     const method = document.querySelector('[name="transport_method"]');
@@ -821,6 +839,7 @@ document.addEventListener('change', function(e){
     const originMode = document.querySelector('select[name="origin_mode"]');
     const originText = document.querySelector('input[name="origin_text"]');
     if(opt && opt.value){
+      setProvenanceFromVeterinarian(opt);
       const fullName = opt.dataset.fullname || opt.textContent.trim();
       const address = opt.dataset.address || '';
       const city = opt.dataset.city || '';
@@ -842,6 +861,7 @@ document.addEventListener('change', function(e){
   if(e.target && e.target.name === 'owner_veterinarian_id'){
     const opt = e.target.selectedOptions && e.target.selectedOptions[0];
     if(opt && opt.value){
+      setProvenanceFromVeterinarian(opt);
       const set=(name,value)=>{const field=document.querySelector(`[name="${name}"]`); if(field) field.value=value || '';};
       const fullName = opt.dataset.fullname || opt.textContent.trim();
       const shortName = opt.dataset.shortname || fullName;
@@ -865,7 +885,7 @@ document.addEventListener('change', function(e){
   if(e.target && e.target.name === 'origin_veterinarian_id'){
     const opt=e.target.selectedOptions && e.target.selectedOptions[0];
     const mode=document.querySelector('select[name="origin_mode"]'),text=document.querySelector('input[name="origin_text"]');
-    if(opt && opt.value){if(mode) mode.value='Veterinario';if(text) text.value=opt.dataset.shortname||opt.dataset.fullname||opt.textContent.trim();}
+    if(opt && opt.value){setProvenanceFromVeterinarian(opt);if(mode) mode.value='Veterinario';if(text) text.value=opt.dataset.shortname||opt.dataset.fullname||opt.textContent.trim();}
   }
   if(e.target && e.target.name === 'use_voucher'){
     const pay=document.querySelector('select[name="payment_status"]');
@@ -1326,8 +1346,11 @@ function setupVetLookup(){
       select.appendChild(option);
     }
     option.dataset.fullname=v.clinic_name || v.display || '';
+    option.dataset.shortname=v.short_name || v.display || '';
     option.dataset.address=v.address || '';
     option.dataset.city=v.city || '';
+    option.dataset.phone=v.phone || '';
+    option.dataset.provenance=v.provenance || '';
     select.value=String(v.id);
     select.dispatchEvent(new Event('change', {bubbles:true}));
     input.value=v.display || v.clinic_name || '';
@@ -1392,8 +1415,8 @@ function setupOriginVetLookup(){
     const button=event.target.closest('.lookup-item');if(!button)return;
     const vet=JSON.parse(button.getAttribute('data-origin-vet'));
     let option=[...select.options].find(item=>item.value===String(vet.id));
-    if(!option){option=new Option(vet.display||vet.clinic_name,vet.id);select.append(option);}
-    select.value=String(vet.id);mode.value='Veterinario';input.value=vet.display||vet.clinic_name||'';text.value=vet.short_name||vet.display||vet.clinic_name||'';results.classList.add('hidden');
+    if(!option){option=new Option(vet.display||vet.clinic_name,vet.id);option.dataset.provenance=vet.provenance||'';select.append(option);}
+    select.value=String(vet.id);setProvenanceFromVeterinarian(option);mode.value='Veterinario';input.value=vet.display||vet.clinic_name||'';text.value=vet.short_name||vet.display||vet.clinic_name||'';results.classList.add('hidden');
   });
 }
 function openPaymentPopover(select){
@@ -1807,7 +1830,20 @@ def income_chart(values,labels):
     return f'''<svg class="income-chart" viewBox="0 0 {width} {height}" role="img" aria-label="Entrate giornaliere nel periodo selezionato"><defs><linearGradient id="incomeArea" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fb4c67" stop-opacity=".38"/><stop offset=".5" stop-color="#3b82f6" stop-opacity=".20"/><stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/></linearGradient></defs><g class="chart-grid">{''.join(grid)}</g><path class="chart-area" d="{area}"/>{bars}<polyline class="chart-line" points="{line}"/>{dots}<g class="chart-dates">{dates}</g></svg>'''
 
 
+def collapse_advanced_search(body):
+    pattern=re.compile(r'(<form\b(?=[^>]*\bmethod=["\']get["\'])[^>]*>.*?</form>)',re.IGNORECASE|re.DOTALL)
+    def wrap(match):
+        form=match.group(1)
+        controls=len(re.findall(r'<(?:input|select|textarea)\b',form,re.IGNORECASE))
+        if controls<2 or "advanced-search-form" in form:return form
+        form=form.replace('class="','class="advanced-search-form ',1) if 'class="' in form.split('>',1)[0] else form.replace('<form','<form class="advanced-search-form"',1)
+        return f'''<details class="advanced-search"><summary>Ricerca avanzata</summary>{form}</details>'''
+    return pattern.sub(wrap,body)
+
+
 def layout(title, body, user=None):
+    body=body.replace("<th>Veterinario</th><th>Sede</th>","<th>Veterinario</th><th>Provenienza</th><th>Sede</th>")
+    body=collapse_advanced_search(body)
     nav = ""; app_header=""; mobile_nav=""
     if user:
         with db() as conn:
@@ -2964,7 +3000,7 @@ class App(BaseHTTPRequestHandler):
 
     def practice_rows(self,rows,show_financials=False):
         rows=list(rows)
-        columns=16 if show_financials else 12
+        columns=17 if show_financials else 13
         if not rows:return f'<tr><td colspan="{columns}" class="sub">Nessuna pratica presente.</td></tr>'
         urn_ids={int(row[key]) for row in rows for key in ("urn_id","urn_id_2") if key in row.keys() and row[key]}
         urn_names={}
@@ -3006,7 +3042,8 @@ class App(BaseHTTPRequestHandler):
                 total_d=(r["total_text"] or "").strip() if "total_text" in r.keys() else ""
                 financial_cells=f'<td>{money_it(calculated_service_total(r))}</td><td>{money_it(money_value(total_d)) if total_d else "-"}</td><td>{money_it(money_value(r["deposit"]))}</td><td>{money_it(money_value(r["remaining_balance"]))}</td>'
             practice_url=f'/pratiche/{r["id"]}?return_to={quote(self.path,safe="")}'
-            html.append(f'<tr class="practice-row-link" tabindex="0" role="link" aria-label="Apri pratica {esc(code)}" onclick="window.location.href=\'{practice_url}\'" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){{event.preventDefault();window.location.href=\'{practice_url}\'}}"><td>{animal_cell}</td><td>{age_cell}</td><td>{owner}<br><small>{esc(r["owner_phone"])}</small></td><td>{esc(recovery_date)}</td><td><a href="{practice_url}"><b class="{code_cls}">{esc(code)}</b></a></td><td>{vet_label}</td><td>{esc(r["destination_branch"])}</td><td>{self.tag_badges(r)}</td><td>{notes_cell}</td><td>{urn_cell}</td><td>{invoice_cell}</td>{financial_cells}<td>{self.status_badges(r)}</td></tr>')
+            provenance=esc(r["provenance"] if "provenance" in r.keys() and r["provenance"] else "-")
+            html.append(f'<tr class="practice-row-link" tabindex="0" role="link" aria-label="Apri pratica {esc(code)}" onclick="window.location.href=\'{practice_url}\'" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){{event.preventDefault();window.location.href=\'{practice_url}\'}}"><td>{animal_cell}</td><td>{age_cell}</td><td>{owner}<br><small>{esc(r["owner_phone"])}</small></td><td>{esc(recovery_date)}</td><td><a href="{practice_url}"><b class="{code_cls}">{esc(code)}</b></a></td><td>{vet_label}</td><td><b>{provenance}</b></td><td>{esc(r["destination_branch"])}</td><td>{self.tag_badges(r)}</td><td>{notes_cell}</td><td>{urn_cell}</td><td>{invoice_cell}</td>{financial_cells}<td>{self.status_badges(r)}</td></tr>')
         return ''.join(html)
 
     def archive_home(self,user):
@@ -3106,7 +3143,7 @@ class App(BaseHTTPRequestHandler):
                                    ORDER BY CASE WHEN short_name LIKE ? COLLATE NOCASE THEN 0 WHEN clinic_name LIKE ? COLLATE NOCASE THEN 1 ELSE 9 END,
                                             COALESCE(short_name, clinic_name), clinic_name
                                    LIMIT 15""", args+[f"{q}%", f"%{q}%"]).fetchall()
-            results=[{"id":r["id"],"short_name":r["short_name"] or "","clinic_name":r["clinic_name"] or "","doctor_name":r["doctor_name"] or "","phone":r["phone"] or "","address":r["address"] or "","city":r["city"] or "","display":r["short_name"] or r["clinic_name"] or "Veterinario","subtitle":" - ".join(x for x in [r["clinic_name"], r["address"], r["city"]] if x)} for r in rows]
+            results=[{"id":r["id"],"short_name":r["short_name"] or "","clinic_name":r["clinic_name"] or "","doctor_name":r["doctor_name"] or "","phone":r["phone"] or "","address":r["address"] or "","city":r["city"] or "","provenance":veterinarian_provenance(r["short_name"],r["clinic_name"]),"display":r["short_name"] or r["clinic_name"] or "Veterinario","subtitle":" - ".join(x for x in [r["clinic_name"], r["address"], r["city"]] if x)} for r in rows]
             return self.send_json({"ok":True,"query":q,"results":results})
         except Exception as exc:
             print(f"[VET_SEARCH] errore tipo={type(exc).__name__} lunghezza_query={len(q)}", flush=True)
@@ -3344,7 +3381,7 @@ class App(BaseHTTPRequestHandler):
         with db() as c:
             vets=c.execute("SELECT * FROM veterinarians WHERE active=1 ORDER BY COALESCE(short_name, clinic_name), clinic_name").fetchall()
             urns=c.execute("SELECT * FROM urns WHERE active=1 ORDER BY name").fetchall()
-        vet_option=lambda v, selected_id: f'<option value="{v["id"]}" data-shortname="{esc(v["short_name"] or v["clinic_name"])}" data-fullname="{esc(v["clinic_name"])}" data-address="{esc(v["address"])}" data-city="{esc(v["city"])}" data-phone="{esc(v["phone"])}" {"selected" if str(selected_id)==str(v["id"]) else ""}>{esc(v["short_name"] or v["clinic_name"])}{(" - "+esc(v["clinic_name"])) if v["short_name"] else ""}</option>'
+        vet_option=lambda v, selected_id: f'<option value="{v["id"]}" data-shortname="{esc(v["short_name"] or v["clinic_name"])}" data-fullname="{esc(v["clinic_name"])}" data-address="{esc(v["address"])}" data-city="{esc(v["city"])}" data-phone="{esc(v["phone"])}" data-provenance="{veterinarian_provenance(v["short_name"],v["clinic_name"])}" {"selected" if str(selected_id)==str(v["id"]) else ""}>{esc(v["short_name"] or v["clinic_name"])}{(" - "+esc(v["clinic_name"])) if v["short_name"] else ""}</option>'
         vet_options='<option value="">Nessun veterinario selezionato</option>'+''.join(vet_option(v, raw("veterinarian_id")) for v in vets)
         owner_vet_options='<option value="">Compilazione manuale</option>'+''.join(vet_option(v, raw("owner_veterinarian_id")) for v in vets)
         origin_vet_options='<option value="">Seleziona veterinario</option>'+''.join(vet_option(v, raw("origin_veterinarian_id")) for v in vets)
@@ -3363,7 +3400,7 @@ class App(BaseHTTPRequestHandler):
         <section class="section"><h2>Richiesta</h2><div class="fields"><div class="field"><label>Servizio</label><select name="service_type"><option {selected('service_type','Da decidere')}>Da decidere</option><option {selected('service_type','Cremazione singola')}>Cremazione singola</option><option {selected('service_type','Cremazione collettiva')}>Cremazione collettiva</option></select></div><div class="field"><label>Origine richiesta *</label><select name="request_origin" required><option {selected('request_origin','Veterinario')}>Veterinario</option><option {selected('request_origin','Privato')}>Privato</option><option value="Consegna in sede" {selected('request_origin','Consegna in sede')}>Consegnato in sede</option><option {selected('request_origin','Collaboratore')}>Collaboratore</option></select></div><div class="field {'hidden' if raw('request_origin')!='Collaboratore' else ''}" id="collaboratorBox"><label>Collaboratore</label><select name="collaborator_name"><option value="">Nessun collaboratore</option><option {selected('collaborator_name','HUMANITAS CROCE VERDE')}>HUMANITAS CROCE VERDE</option></select></div><div class="field"><label>Sede di destinazione</label><select name="destination_branch"><option {selected('destination_branch','Livorno')}>Livorno</option><option {selected('destination_branch','Empoli')}>Empoli</option></select></div><div class="field"><label>Data recupero</label><input type="date" name="pickup_date" value="{val('pickup_date')}"></div></div></section>
         <section class="section"><h2>SPEDITORE</h2><div class="fields"><input type="hidden" name="client_id" value="{val('client_id')}"><div class="field full lookup"><label>Cerca cliente in anagrafica</label><input id="clientSearch" autocomplete="off" placeholder="Scrivi nome, telefono, email, codice fiscale, città..."><div id="clientResults" class="lookup-results hidden"></div><div id="clientSelected" class="selected-box hidden"><span id="clientSelectedText"></span><button class="btn ghost" type="button" id="clearClientSelection">Cancella selezione</button></div><small class="sub">Se scegli un cliente, i campi vengono compilati automaticamente. Se li modifichi, l'anagrafica non viene aggiornata senza conferma.</small></div><div class="field full"><label>Usa veterinario come speditore</label><select name="owner_veterinarian_id">{owner_vet_options}</select><small class="sub">Compila automaticamente i dati dello speditore. Sul DDT, nel Luogo di origine, verra scritto solo il nome breve del veterinario.</small></div><div class="field"><label>Nome *</label><input name="owner_first_name" value="{val('owner_first_name')}" required></div><div class="field"><label>Cognome *</label><input name="owner_last_name" value="{val('owner_last_name')}" required></div><div class="field"><label>Ragione sociale</label><input name="owner_company" value="{val('owner_company')}"></div><div class="field"><label>Telefono *</label><input type="tel" inputmode="numeric" name="owner_phone" value="{val('owner_phone')}" required></div><div class="field"><label>Secondo telefono</label><input type="tel" inputmode="numeric" name="owner_phone_2" value="{val('owner_phone_2')}"></div><div class="field"><label>Email</label><input type="email" name="owner_email" value="{val('owner_email')}"></div><div class="field"><label>Codice fiscale *</label><input name="owner_tax_code" value="{val('owner_tax_code')}" required></div><div class="field"><label>Partita IVA</label><input name="owner_vat" value="{val('owner_vat')}"></div><div class="field full"><label>Indirizzo *</label><input name="owner_street" value="{val('owner_street') or val('owner_address')}" required></div><div class="field"><label>Comune *</label><input name="owner_city" value="{val('owner_city')}" required></div><div class="field"><label>Provincia *</label><input name="owner_province" value="{val('owner_province')}" maxlength="2" placeholder="Si compila dal comune" required></div><div class="field"><label>CAP *</label><input name="owner_zip" value="{val('owner_zip')}" inputmode="numeric" required></div><div class="field full"><label>Note cliente</label><textarea name="owner_notes" placeholder="Note anagrafiche utili">{val('owner_notes')}</textarea></div></div></section>
         <section class="section"><h2>DESTINATARIO E LUOGO DI DESTINAZIONE</h2><p class="sub">Compilati automaticamente in base alla sede selezionata: Livorno oppure Empoli.</p></section>
-        <section class="section"><h2>LUOGO DI ORIGINE</h2><div class="fields"><div class="field"><label>Luogo di origine</label><select name="origin_mode"><option {selected('origin_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('origin_mode','Veterinario','IDEM SPED')}>Veterinario</option><option {selected('origin_mode','Testo libero','IDEM SPED')}>Testo libero</option></select></div><div class="field lookup"><label>Cerca veterinario o scrivi testo libero</label><input id="originVetSearch" autocomplete="off" placeholder="Nome o iniziali del veterinario"><div id="originVetResults" class="lookup-results hidden"></div><select name="origin_veterinarian_id" class="hidden" aria-hidden="true" tabindex="-1">{origin_vet_options}</select><small class="sub">Seleziona un risultato oppure continua a scrivere liberamente.</small></div><div class="field full"><label>Testo libero / indirizzo diverso</label><input name="origin_text" value="{val('origin_text') or (val('pickup_address') if raw('pickup_address_mode')=='Altro indirizzo' else '')}" placeholder="Nome breve veterinario o indirizzo diverso"></div></div></section>
+        <section class="section"><h2>LUOGO DI ORIGINE</h2><div class="fields"><div class="field"><label>Provenienza</label><select name="provenance"><option value="">Seleziona zona</option>{''.join(f'<option value="{code}" {"selected" if raw("provenance")==code else ""}>{code} · {label}</option>' for code,label in (("L","Livorno"),("E","Empoli"),("V","Viareggio"),("F","Firenze"),("P","Pisa")))}</select></div><div class="field"><label>Luogo di origine</label><select name="origin_mode"><option {selected('origin_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('origin_mode','Veterinario','IDEM SPED')}>Veterinario</option><option {selected('origin_mode','Testo libero','IDEM SPED')}>Testo libero</option></select></div><div class="field lookup"><label>Cerca veterinario o scrivi testo libero</label><input id="originVetSearch" autocomplete="off" placeholder="Nome o iniziali del veterinario"><div id="originVetResults" class="lookup-results hidden"></div><select name="origin_veterinarian_id" class="hidden" aria-hidden="true" tabindex="-1">{origin_vet_options}</select><small class="sub">Seleziona un risultato oppure continua a scrivere liberamente.</small></div><div class="field full"><label>Testo libero / indirizzo diverso</label><input name="origin_text" value="{val('origin_text') or (val('pickup_address') if raw('pickup_address_mode')=='Altro indirizzo' else '')}" placeholder="Nome breve veterinario o indirizzo diverso"></div></div></section>
         <section class="section"><h2>Animale</h2><div class="fields"><div class="field"><label>Nome</label><input name="animal_name" value="{val('animal_name')}"></div><div class="field"><label>Specie</label><input name="species" value="{val('species')}"></div><div class="field"><label>Peso stimato (kg)</label><input name="estimated_weight" value="{val('estimated_weight')}"></div><div class="field"><label>Età - anni</label><input name="age_years" value="{val('age_years')}"></div><div class="field"><label>Età - mesi</label><input name="age_months" value="{val('age_months')}"></div><div class="field"><label>Microchip</label><input name="microchip" value="{val('microchip')}"></div><div class="field full"><label>Razza</label><input name="breed" value="{val('breed')}"></div></div><button class="btn ghost" type="button" id="showSecondAnimal" style="margin-top:12px;{'display:none' if raw('animal2_name') else ''}">+ Aggiungi altro animale</button><div id="secondAnimalBox" style="display:{'block' if raw('animal2_name') else 'none'};margin-top:14px"><h2>Secondo animale</h2><div class="fields"><div class="field"><label>Nome</label><input name="animal2_name" value="{val('animal2_name')}"></div><div class="field"><label>Specie</label><input name="animal2_species" value="{val('animal2_species')}"></div><div class="field"><label>Peso stimato (kg)</label><input name="animal2_weight" value="{val('animal2_weight')}"></div><div class="field"><label>Microchip</label><input name="animal2_microchip" value="{val('animal2_microchip')}"></div><div class="field full"><label>Razza</label><input name="animal2_breed" value="{val('animal2_breed')}"></div></div></div></section>
         <section class="section"><h2>AMBULATORIO VETERINARIO</h2><div class="fields"><div class="field full lookup"><label>VETERINARIO</label><input id="vetSearch" autocomplete="off" placeholder="Scrivi per cercare il veterinario"><div id="vetResults" class="lookup-results hidden"></div><select name="veterinarian_id">{vet_options}</select><input type="hidden" name="clinic_name" value="{val('clinic_name')}"><button class="btn ghost" type="button" id="clearVetSelection" style="margin-top:8px">Cancella veterinario</button></div><div class="field"><label>MEDICO VETERINARIO</label><input name="veterinarian_name" value="{val('veterinarian_name')}"></div><div class="field"><label><input type="checkbox" name="voucher_requested" value="Si" {voucher_checked}> BUONO</label><small class="sub">Spunta per assegnare un buono al veterinario selezionato.</small></div></div></section>
         <section class="section"><h2>TRASPORTATORE</h2><div class="fields"><div class="field"><label>Dati trasportatore</label><select name="transporter_mode"><option {selected('transporter_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('transporter_mode','DATI PET PARADISE','IDEM SPED')}>DATI PET PARADISE</option></select></div><div class="field"><label>Mezzo di trasporto</label><select name="transport_method" id="transport_method_quick"><option value="">Seleziona mezzo</option><option {selected('transport_method','Fiat Fiorino')}>Fiat Fiorino</option><option {selected('transport_method','Renault Captur')}>Renault Captur</option><option {selected('transport_method','Dr PK8')}>Dr PK8</option><option {selected('transport_method','Mezzo proprio')}>Mezzo proprio</option></select></div><div class="field"><label>Targa automezzo</label><input name="vehicle_plate" value="{val('vehicle_plate')}" placeholder="Compilata automaticamente, modificabile"></div><div class="field"><label>Temperatura</label><select name="temperature_mode"><option {selected('temperature_mode','Ambiente','Ambiente')}>Ambiente</option><option {selected('temperature_mode','Refrigerato','Ambiente')}>Refrigerato</option><option {selected('temperature_mode','Congelato','Ambiente')}>Congelato</option></select></div><div class="field"><label>Numero colli</label><input name="package_count" value="{val('package_count') or '1'}"></div><div class="field"><label>ID contenitore</label><select name="container_id"><option value="">Seleziona ID contenitore</option><option {selected('container_id','03/2021')}>03/2021</option><option {selected('container_id','04/2021')}>04/2021</option></select></div><div class="field"><label>Numero lotto</label><input name="lot_number" value="{val('lot_number') or '/'}"></div><div class="field"><label>Metodo trattamento</label><input name="treatment_method" value="{val('treatment_method') or '/'}"></div></div></section>
@@ -3376,7 +3413,7 @@ class App(BaseHTTPRequestHandler):
         self.send_html(layout("Nuova pratica",body,user))
 
     def normalized_fields(self,f):
-        keys=["client_id","owner_veterinarian_id","origin_veterinarian_id","operator_name","request_origin","collaborator_name","destination_branch","owner_first_name","owner_last_name","owner_company","owner_phone","owner_phone_2","owner_email","owner_tax_code","owner_vat","owner_notes","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","use_voucher","used_voucher_id","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_saluto","tag_calco","tag_calco_urna","tag_calco_paw","tag_calco_nose","tag_avvisare","tag_da_richiamare","payment_status","payment_method","price_cremation","price_pickup","price_evening","price_urn","send_catalog","catalog_sent","send_estremi","price_delivery","price_night","price_cast","price_paw_cast","price_nose_cast","price_holiday","price_accessories","deposit","remaining_balance","total_service","total_text","invoice_number","invoice_date","invoice_total","make_invoice","identity_document_number","identity_document_date","signing_place"]
+        keys=["client_id","owner_veterinarian_id","origin_veterinarian_id","operator_name","request_origin","collaborator_name","destination_branch","owner_first_name","owner_last_name","owner_company","owner_phone","owner_phone_2","owner_email","owner_tax_code","owner_vat","owner_notes","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","provenance","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","use_voucher","used_voucher_id","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_saluto","tag_calco","tag_calco_urna","tag_calco_paw","tag_calco_nose","tag_avvisare","tag_da_richiamare","payment_status","payment_method","price_cremation","price_pickup","price_evening","price_urn","send_catalog","catalog_sent","send_estremi","price_delivery","price_night","price_cast","price_paw_cast","price_nose_cast","price_holiday","price_accessories","deposit","remaining_balance","total_service","total_text","invoice_number","invoice_date","invoice_total","make_invoice","identity_document_number","identity_document_date","signing_place"]
         data = {k:f.get(k,"").strip() for k in keys}
         data["urn_id"] = f.get("urn_id","").strip() or None
         data["urn_id_2"] = f.get("urn_id_2","").strip() or None
@@ -3414,9 +3451,16 @@ class App(BaseHTTPRequestHandler):
         data["client_id"] = data["client_id"] or None
         data["owner_veterinarian_id"] = data["owner_veterinarian_id"] or None
         data["origin_veterinarian_id"] = data["origin_veterinarian_id"] or None
+        data["provenance"] = data["provenance"].upper() if data["provenance"].upper() in ("L","E","V","F","P") else ""
         if data["use_voucher"] == "Si":
             data["payment_status"] = "Pagato"
         data["veterinarian_id"] = data["veterinarian_id"] or None
+        if not data["provenance"]:
+            provenance_vet_id=data["veterinarian_id"] or data["origin_veterinarian_id"] or data["owner_veterinarian_id"]
+            if provenance_vet_id:
+                with db() as c:
+                    provenance_vet=c.execute("SELECT short_name,clinic_name FROM veterinarians WHERE id=? AND active=1",(provenance_vet_id,)).fetchone()
+                if provenance_vet:data["provenance"]=veterinarian_provenance(provenance_vet["short_name"],provenance_vet["clinic_name"])
         if data["origin_mode"] == "Veterinario" and data["origin_veterinarian_id"]:
             with db() as c:
                 origin_vet=c.execute("SELECT short_name,clinic_name FROM veterinarians WHERE id=? AND active=1",(data["origin_veterinarian_id"],)).fetchone()
