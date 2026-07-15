@@ -38,7 +38,7 @@ class PetParadiseTests(unittest.TestCase):
 
     def test_form_extensions_and_normalization(self):
         html = self.handler.fields_html()
-        for expected in ("GIANLUCA", "CALCO PER URNA", "CALCO POLPASTRELLO", "CALCO NASO", "price_paw_cast", "price_nose_cast", "Fiat Fiorino", "Renault Captur", "Dr PK8", "Smaltito"):
+        for expected in ("GIANLUCA", "CALCO PER URNA", "CALCO POLPASTRELLO", "CALCO NASO", "price_paw_cast", "price_nose_cast", "Fiat Fiorino", "Renault Captur", "Dr PK8", "Cremato", "Smaltito"):
             self.assertIn(expected, html)
         data = self.handler.normalized_fields({"owner_tax_code": "rssmra80a01h501u", "service_type": "Da decidere"})
         self.assertEqual(data["owner_tax_code"], "RSSMRA80A01H501U")
@@ -406,6 +406,10 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('name="invoice_total"',rendered[-1])
         self.assertIn("Età: 7 anni, 3 mesi",rendered[-1])
         self.assertIn("Urna doppia",rendered[-1])
+        self.assertIn("Dati economici",rendered[-1])
+        self.assertIn("Totale pagato",rendered[-1])
+        self.assertIn("Da pagare",rendered[-1])
+        self.assertIn("Rimanenza registrata",rendered[-1])
         self.assertNotIn("Firma su telefono",rendered[-1])
         with app.db() as conn:
             self.assertEqual(conn.execute("SELECT count(*) n FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["n"],0)
@@ -466,6 +470,44 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Numero fattura",page)
         self.assertIn("practice-list-table td:first-child",app.CSS)
         self.assertIn("width:132px;min-width:132px;max-width:132px",app.CSS)
+
+    def test_cremated_status_colors_entire_row_and_ritirato_is_yellow(self):
+        self.assertIn("Cremato",app.STATES)
+        self.assertEqual(app.practice_status_class("Ritirato"),"practice-status-yellow")
+        self.assertEqual(app.practice_status_class("Cremato"),"practice-status-blue")
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                         animal_name,species,service_type,payment_status) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                         ("CR-CREMATO","Privato","Livorno","Cremato",stamp,stamp,admin["id"],"Luna","Cane","Cremazione singola","Da saldare"))
+            rows=conn.execute("SELECT * FROM practices WHERE practice_number='CR-CREMATO'").fetchall()
+        self.handler.path="/archivio/pratiche"
+        page=self.handler.practice_rows(rows)
+        self.assertIn('class="practice-row-link practice-row-cremated"',page)
+        self.assertIn("practice-status-blue",page)
+        self.assertIn("practice-row-cremated td",app.CSS)
+
+    def test_urn_word_search_and_frame_urn_enable_cast_tag(self):
+        self.assertIn("urnMatchesWords",app.APP_JS)
+        self.assertIn("words.every",app.APP_JS)
+        self.assertIn("markCastForFrameUrn",app.APP_JS)
+        with app.db() as conn:
+            stamp=app.now()
+            urn_id=conn.execute("INSERT INTO urns(name,price,quantity,active,created_at,updated_at) VALUES(?,?,?,?,?,?)",("Doppia Cornice Bianca L","120",3,1,stamp,stamp)).lastrowid
+        data=self.handler.normalized_fields({"urn_id":str(urn_id),"service_type":"Cremazione singola"})
+        self.assertEqual(data["tag_calco_urna"],"Si")
+
+    def test_quick_state_ajax_saves_without_redirect(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,service_type)
+                                VALUES(?,?,?,?,?,?,?,?)""",("CR-AJAX","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Cremazione singola")).lastrowid
+        self.handler.form=lambda:{"status":"Cremato","ajax":"1","return_to":"/archivio/pratiche?stato=Ritirato"}
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status));self.handler.redirect=lambda path:self.fail("Il salvataggio AJAX non deve reindirizzare")
+        self.handler.quick_state(admin,pid)
+        with app.db() as conn:self.assertEqual(conn.execute("SELECT status FROM practices WHERE id=?",(pid,)).fetchone()["status"],"Cremato")
+        self.assertEqual(responses[-1][0]["status"],"Cremato")
+        self.assertIn("savePracticeState",app.APP_JS)
 
     def test_scheduled_whatsapp_appears_in_conversations(self):
         with app.db() as conn:

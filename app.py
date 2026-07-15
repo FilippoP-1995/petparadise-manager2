@@ -38,7 +38,7 @@ HOST = os.environ.get("PPM_HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", os.environ.get("PPM_PORT", "8080")))
 
 STATES = [
-    "Ritirato", "In programma", "Da consegnare", "Consegnato", "Smaltito",
+    "Ritirato", "In programma", "Cremato", "Da consegnare", "Consegnato", "Smaltito",
 ]
 
 PAYMENT_STATES = [
@@ -684,6 +684,9 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 @media(max-width:620px){.article-grid,.urn-grid{grid-template-columns:1fr}.urn-stats{grid-template-columns:1fr 1fr}}
 @media(max-width:900px){.top{z-index:42}.top .brand{width:48px;padding:0}.top .brand-copy{display:none}.app-header{left:calc(64px + var(--safe-left));right:var(--safe-right);top:0;z-index:43;width:auto;height:calc(64px + var(--safe-top));padding:calc(7px + var(--safe-top)) 8px 7px 0;background:transparent;border:0;backdrop-filter:none}.app-header .header-actions{position:static;display:flex;width:100%;height:100%;gap:5px}.app-header .header-search{position:static;display:flex;flex:1 1 auto;min-width:0;width:auto;height:42px;padding:0 9px;background:#172033;box-shadow:none}.app-header .header-search input{min-width:0;height:40px;min-height:40px;font-size:14px}.app-header .header-search .icon{width:17px;height:17px;flex-basis:17px}.app-header .icon-btn,.app-header .header-new{flex:0 0 38px;width:38px;height:38px;min-height:38px;padding:0}.app-header .header-actions time,.app-header .header-new span{display:none}.wrap{padding-top:calc(88px + var(--safe-top))}.light-theme .app-header .header-search{background:#f8fafc;border-color:#cbd5e1;box-shadow:none}}
 @media(max-width:390px){.app-header{left:calc(58px + var(--safe-left));padding-right:5px}.app-header .header-actions{gap:4px}.app-header .header-search{padding:0 7px}.app-header .icon-btn,.app-header .header-new{flex-basis:35px;width:35px;height:35px;min-height:35px}.top{padding-left:10px;padding-right:10px}.top .brand-logo{width:38px;height:38px}}
+/* Cleaner, lighter dark theme */
+body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;border-color:#344156}.app-header{background:#172131ed;border-color:#344156}.section,.card,.tablebox,.login{background:linear-gradient(145deg,#202c3d,#1b2636);border-color:#38475c;box-shadow:0 12px 34px #080d162b}.section[class*="section-tone-"]{background:linear-gradient(145deg,color-mix(in srgb,var(--section-accent) 5%,#202c3d),#1b2636 76%)}.dashboard-panel,.metric-card,.payment-card,.balance-card,.balance-total,.conversation-card,.article-card,.urn-stat,.urn-card{background:#202c3d;border-color:#3a495e;box-shadow:0 12px 32px #080d1626}.tablebox,table{background:#1b2636}.practice-list-table th:first-child,.practice-list-table td:first-child{background:#1b2636}.kv,input,select,textarea,.header-search,.icon-btn,.header-actions time{background:#182334;border-color:#3b4a5f}.tablebox table tr:hover td{background:#253247}.lookup-results,.lookup-item{background:#202c3d;border-color:#3b4a5f}.lookup-item:hover,.lookup-item:focus{background:#29384d}h1{font-weight:650}h2{font-weight:600}b,strong{font-weight:600}label{font-weight:550}.nav a,.nav button{font-weight:500}.btn{font-weight:600}.badge,.inline-state-select{font-weight:600}th{font-weight:600;letter-spacing:.035em}.metric-card strong,.payment-card strong,.stat b{font-weight:650}.light-theme .practice-list-table th:first-child,.light-theme .practice-list-table td:first-child{background:#fff}
+.state-yellow{--card-glow:#713f124f;--icon-bg:#573713;--icon-color:#fde047;--icon-shadow:#eab30840}.practice-row-cremated td,.practice-row-cremated a,.practice-row-cremated small,.practice-row-cremated b{color:#60a5fa!important}.practice-row-cremated .practice-status-blue{color:#7db7ff!important}.light-theme .practice-row-cremated td,.light-theme .practice-row-cremated a,.light-theme .practice-row-cremated small,.light-theme .practice-row-cremated b{color:#1d4ed8!important}.inline-save-note{min-height:16px;color:#86efac;font-size:11px}.inline-save-note.error{color:#fca5a5}
 """
 
 APP_JS = r"""
@@ -899,6 +902,20 @@ function setupZipLookup(){
   zip.addEventListener('input', function(){ if(zip.dataset.autoFilled === '1') zip.dataset.autoFilled='0'; });
   lookup();
 }
+function normalizeUrnSearch(value){
+  return String(value||'').toLocaleLowerCase('it').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+}
+function urnMatchesWords(option,query){
+  const words=normalizeUrnSearch(query).split(/\s+/).filter(Boolean);
+  const name=normalizeUrnSearch(option?.dataset?.name||option?.textContent||'');
+  return words.every(word=>name.includes(word));
+}
+function markCastForFrameUrn(option){
+  const name=normalizeUrnSearch(option?.dataset?.name||option?.textContent||'');
+  if(!name.includes('doppia cornice'))return;
+  const tag=document.querySelector('input[name="tag_calco_urna"]');
+  if(tag){tag.checked=true;tag.value='Si';}
+}
 function setupUrnNotesField(){
   const hidden=document.querySelector('input[name="urn_notes"]');
   const price=document.querySelector('input[name="price_urn"]');
@@ -915,12 +932,14 @@ function setupUrnNotesField(){
     field.append(label,search,results,warning); priceField.parentNode.insertBefore(field,priceField);
     const selectedOption=catalog.options[catalog.selectedIndex];
     search.value=selectedOption&&selectedOption.value?(selectedOption.dataset.name||''):hidden.value;
+    if(selectedOption?.value)markCastForFrameUrn(selectedOption);
     const apply=(option)=>{
       if(!option || !option.value) return;
       catalog.value=option.value; search.value=option.dataset.name||option.textContent.trim();
       price.value=option.dataset.price||'';
       hidden.value=option.dataset.name||option.textContent.trim();
       price.readOnly=false;
+      markCastForFrameUrn(option);
       if(warning){
         const quantity=Number(option.dataset.quantity||0);
         warning.textContent=quantity<=0?'Magazzino esaurito - disponibilità 0':`Disponibilità attuale: ${quantity}`;
@@ -931,9 +950,9 @@ function setupUrnNotesField(){
       updatePreventivoTotal();
     };
     const showMatches=()=>{
-      const query=search.value.trim().toLocaleLowerCase('it'); hidden.value=search.value.trim(); catalog.value=''; price.readOnly=false;
+      const query=search.value.trim(); hidden.value=query; catalog.value=''; price.readOnly=false;
       if(warning) warning.classList.add('hidden');
-      const matches=[...catalog.options].filter(option=>option.value&&(!query||(option.dataset.name||option.textContent).toLocaleLowerCase('it').includes(query))).slice(0,12);
+      const matches=[...catalog.options].filter(option=>option.value&&urnMatchesWords(option,query)).slice(0,12);
       results.innerHTML='';
       matches.forEach(option=>{const button=document.createElement('button');button.type='button';button.className='lookup-item';button.innerHTML=`<b>${option.dataset.name||option.textContent}</b><small>${option.textContent.replace(option.dataset.name||'','').replace(/^\s*·\s*/,'')}</small>`;button.onclick=()=>apply(option);results.append(button)});
       results.classList.toggle('hidden',matches.length===0);
@@ -968,17 +987,19 @@ function setupSecondUrnCatalog(){
   priceField.parentNode.insertBefore(field,priceField);
   const selected=catalog.options[catalog.selectedIndex];
   search.value=selected&&selected.value?(selected.dataset.name||''):notes.value;
+  if(selected?.value)markCastForFrameUrn(selected);
   const apply=(option)=>{
     if(!option || !option.value)return;
     catalog.value=option.value;search.value=option.dataset.name||option.textContent.trim();notes.value=search.value;
     price.value=option.dataset.price||'';price.readOnly=false;
+    markCastForFrameUrn(option);
     if(warning){const quantity=Number(option.dataset.quantity||0);warning.textContent=quantity<=0?'Magazzino esaurito - disponibilita 0':`Disponibilita attuale: ${quantity}`;warning.classList.toggle('warning',quantity<=0);warning.classList.remove('hidden');}
     results.classList.add('hidden');results.innerHTML='';updatePreventivoTotal();
   };
   const showMatches=()=>{
-    const query=search.value.trim().toLocaleLowerCase('it');notes.value=search.value.trim();catalog.value='';price.readOnly=false;
+    const query=search.value.trim();notes.value=query;catalog.value='';price.readOnly=false;
     if(warning)warning.classList.add('hidden');
-    const matches=[...catalog.options].filter(option=>option.value&&(!query||(option.dataset.name||option.textContent).toLocaleLowerCase('it').includes(query))).slice(0,12);
+    const matches=[...catalog.options].filter(option=>option.value&&urnMatchesWords(option,query)).slice(0,12);
     results.innerHTML='';matches.forEach(option=>{const button=document.createElement('button');button.type='button';button.className='lookup-item';button.innerHTML=`<b>${option.dataset.name||option.textContent}</b><small>${option.textContent.replace(option.dataset.name||'','')}</small>`;button.onclick=()=>apply(option);results.append(button)});
     results.classList.toggle('hidden',matches.length===0);
   };
@@ -1291,6 +1312,32 @@ function closePaymentPopover(button){
   const target=button.closest('.payment-popover');if(target)target.hidden=true;
   document.body.style.overflow='';
 }
+function practiceStatusCss(status){
+  return {'Ritirato':'practice-status-yellow','In programma':'practice-status-red','Cremato':'practice-status-blue','Da consegnare':'practice-status-yellow','Consegnato':'practice-status-green'}[status]||'';
+}
+async function savePracticeState(form,event){
+  if(event)event.preventDefault();
+  if(!form || form.dataset.saving==='1')return false;
+  const select=form.querySelector('select[name="status"]');
+  const note=form.querySelector('.inline-save-note');
+  const row=form.closest('tr');
+  const previous=select.dataset.savedValue||select.value;
+  form.dataset.saving='1';select.disabled=true;if(note){note.textContent='Salvataggio...';note.classList.remove('error');}
+  try{
+    const payload=new FormData(form);payload.set('status',select.value);payload.set('ajax','1');
+    const response=await fetch(form.action,{method:'POST',body:new URLSearchParams(payload),headers:{'Accept':'application/json'},credentials:'same-origin'});
+    const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||'Salvataggio non riuscito');
+    select.dataset.savedValue=data.status;select.classList.remove('practice-status-blue','practice-status-red','practice-status-yellow','practice-status-green');
+    const cls=practiceStatusCss(data.status);if(cls)select.classList.add(cls);
+    if(row)row.classList.toggle('practice-row-cremated',data.status==='Cremato');
+    if(note)note.textContent='Salvato';
+    const activeFilter=new URLSearchParams(location.search).get('stato');
+    if(row&&activeFilter&&activeFilter!==data.status){row.style.opacity='0';setTimeout(()=>row.remove(),180);}
+    else if(note)setTimeout(()=>{note.textContent='';},1400);
+  }catch(error){select.value=previous;if(note){note.textContent=error.message;note.classList.add('error');}}
+  finally{select.disabled=false;form.dataset.saving='';}
+  return false;
+}
 async function refreshUseVoucherBox(){
   const checkbox=document.querySelector('input[name="use_voucher"]');
   const box=document.getElementById('useVoucherBox');
@@ -1579,7 +1626,7 @@ def outstanding_amount(practice):
 
 
 def practice_status_class(status):
-    return {"Ritirato":"practice-status-blue","In programma":"practice-status-red","Da consegnare":"practice-status-yellow","Consegnato":"practice-status-green"}.get(status,"")
+    return {"Ritirato":"practice-status-yellow","In programma":"practice-status-red","Cremato":"practice-status-blue","Da consegnare":"practice-status-yellow","Consegnato":"practice-status-green"}.get(status,"")
 
 
 def income_chart(values,labels):
@@ -1882,7 +1929,7 @@ class App(BaseHTTPRequestHandler):
             notification_recent=c.execute("SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC,id DESC LIMIT 5",(user["id"],)).fetchall()
             notification_unread=c.execute("SELECT count(*) n FROM notifications WHERE user_id=? AND is_read=0",(user["id"],)).fetchone()["n"]
         state_cards=[]
-        state_specs=[("Ritirato","Ritirati","archive","state-red"),("In programma","In programma","calendar","state-blue"),("Da consegnare","Da consegnare","clipboard","state-purple"),("Consegnato","Consegnati","home","state-green")]
+        state_specs=[("Ritirato","Ritirati","archive","state-yellow"),("In programma","In programma","calendar","state-red"),("Cremato","Cremati","archive","state-blue"),("Da consegnare","Da consegnare","clipboard","state-purple"),("Consegnato","Consegnati","home","state-green")]
         for state,label,icon,cls in state_specs:
             state_cards.append(f'<a class="metric-card {cls}" href="/archivio/pratiche?stato={quote(state)}"><span class="metric-copy"><small>{label}</small><strong>{counts.get(state,0)}</strong><em>{"Nessuna pratica" if not counts.get(state,0) else "Apri elenco"}</em></span><span class="metric-icon">{lucide(icon)}</span></a>')
         payment_totals={
@@ -2479,7 +2526,7 @@ class App(BaseHTTPRequestHandler):
         modal_id=f'paymentPopover{r["id"]}'
         return_to=esc(self.path)
         return f'''<div class="inline-statuses" onclick="event.stopPropagation()">
-        <form method="post" action="/pratiche/{r['id']}/stato-rapido"><input type="hidden" name="return_to" value="{return_to}"><select class="inline-state-select practice-status {status_cls}" name="status" aria-label="Stato pratica" onchange="this.form.submit()">{state_options}</select></form>
+        <form method="post" action="/pratiche/{r['id']}/stato-rapido" onsubmit="return savePracticeState(this,event)"><input type="hidden" name="return_to" value="{return_to}"><select class="inline-state-select practice-status {status_cls}" name="status" aria-label="Stato pratica" data-saved-value="{esc(r['status'])}" onchange="savePracticeState(this.form)">{state_options}</select><span class="inline-save-note" aria-live="polite"></span></form>
         <select class="inline-state-select {pay_cls}" aria-label="Stato pagamento" data-payment-popover="{modal_id}" onchange="openPaymentPopover(this)">{payment_options}</select>
         <div class="payment-popover" id="{modal_id}" hidden onclick="if(event.target===this)closePaymentPopover(this)"><form class="payment-dialog" method="post" action="/pratiche/{r['id']}/pagamento-rapido"><div class="titlebar"><div><h2>Pagamento · {esc(r['practice_number'])}</h2><p class="sub">Registra i dettagli senza lasciare questa lista.</p></div><button class="btn ghost" type="button" onclick="closePaymentPopover(this)">Chiudi</button></div><input type="hidden" name="return_to" value="{return_to}"><div class="fields"><div class="field"><label>Stato pagamento</label><select name="payment_status">{payment_options}</select></div><div class="field"><label>Metodo di pagamento</label><select name="payment_method">{method_options}</select></div><div class="field"><label>Totale incassato €</label><input name="payment_amount" value="{esc(amount_value)}" inputmode="decimal"></div><div class="field"><label>Numero fattura</label><input name="invoice_number" value="{esc(invoice_number)}"></div><div class="field"><label>Totale fattura €</label><input name="invoice_total" value="{esc(invoice_total)}" inputmode="decimal"></div><div class="field"><label>Data fattura</label><input type="date" name="invoice_date" value="{esc(invoice_date)}"></div></div><button class="btn" style="margin-top:16px">Salva pagamento</button></form></div></div>'''
 
@@ -2527,7 +2574,8 @@ class App(BaseHTTPRequestHandler):
                 total_d=(r["total_text"] or "").strip() if "total_text" in r.keys() else ""
                 financial_cells=f'<td>{money_it(calculated_service_total(r))}</td><td>{money_it(money_value(total_d)) if total_d else "-"}</td><td>{money_it(money_value(r["deposit"]))}</td><td>{money_it(money_value(r["remaining_balance"]))}</td>'
             practice_url=f'/pratiche/{r["id"]}?return_to={quote(self.path,safe="")}'
-            html.append(f'<tr class="practice-row-link" tabindex="0" role="link" aria-label="Apri pratica {esc(code)}" onclick="window.location.href=\'{practice_url}\'" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){{event.preventDefault();window.location.href=\'{practice_url}\'}}"><td>{animal_cell}</td><td>{age_cell}</td><td>{owner}<br><small>{esc(r["owner_phone"])}</small></td><td>{esc(recovery_date)}</td><td><a href="{practice_url}"><b class="{code_cls}">{esc(code)}</b></a></td><td>{vet_label}</td><td>{esc(r["destination_branch"])}</td><td>{self.tag_badges(r)}</td><td>{notes_cell}</td><td>{urn_cell}</td><td>{invoice_cell}</td>{financial_cells}<td>{self.status_badges(r)}</td></tr>')
+            row_cls='practice-row-link practice-row-cremated' if r["status"]=="Cremato" else 'practice-row-link'
+            html.append(f'<tr class="{row_cls}" tabindex="0" role="link" aria-label="Apri pratica {esc(code)}" onclick="window.location.href=\'{practice_url}\'" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){{event.preventDefault();window.location.href=\'{practice_url}\'}}"><td>{animal_cell}</td><td>{age_cell}</td><td>{owner}<br><small>{esc(r["owner_phone"])}</small></td><td>{esc(recovery_date)}</td><td><a href="{practice_url}"><b class="{code_cls}">{esc(code)}</b></a></td><td>{vet_label}</td><td>{esc(r["destination_branch"])}</td><td>{self.tag_badges(r)}</td><td>{notes_cell}</td><td>{urn_cell}</td><td>{invoice_cell}</td>{financial_cells}<td>{self.status_badges(r)}</td></tr>')
         return ''.join(html)
 
     def archive_home(self,user):
@@ -2863,7 +2911,7 @@ class App(BaseHTTPRequestHandler):
         make_invoice_checked='checked' if raw('make_invoice')=="Si" else ''
         payment_options=''.join(f'<option {"selected" if raw("payment_status","Da saldare")==state else ""}>{state}</option>' for state in PAYMENT_STATES)
         payment_method_options=''.join(f'<option value="{method}" {"selected" if raw("payment_method")==method else ""}>{method or "Seleziona metodo"}</option>' for method in PAYMENT_METHODS)
-        return f'''<section class="section"><h2>Operatore e stati</h2><div class="fields"><div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option><option {selected('operator_name','GIANLUCA')}>GIANLUCA</option></select></div><div class="field"><label>Stato pratica</label><select name="status"><option {selected('status','Ritirato','Ritirato')}>Ritirato</option><option {selected('status','In programma','Ritirato')}>In programma</option><option {selected('status','Da consegnare','Ritirato')}>Da consegnare</option><option {selected('status','Consegnato','Ritirato')}>Consegnato</option><option data-collective-only="1" {selected('status','Smaltito','Ritirato')}>Smaltito</option></select></div></div></section>
+        return f'''<section class="section"><h2>Operatore e stati</h2><div class="fields"><div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option><option {selected('operator_name','GIANLUCA')}>GIANLUCA</option></select></div><div class="field"><label>Stato pratica</label><select name="status"><option {selected('status','Ritirato','Ritirato')}>Ritirato</option><option {selected('status','In programma','Ritirato')}>In programma</option><option {selected('status','Cremato','Ritirato')}>Cremato</option><option {selected('status','Da consegnare','Ritirato')}>Da consegnare</option><option {selected('status','Consegnato','Ritirato')}>Consegnato</option><option data-collective-only="1" {selected('status','Smaltito','Ritirato')}>Smaltito</option></select></div></div></section>
         <input type="hidden" name="urn_notes" value="{val('urn_notes')}"><select name="urn_id" class="hidden" aria-hidden="true" tabindex="-1">{urn_options(raw('urn_id'))}</select><small id="urnStockWarning" class="sub hidden"></small>
         <input type="hidden" name="price_urn_2" value="{val('price_urn_2')}"><input type="hidden" name="urn_notes_2" value="{val('urn_notes_2')}"><select name="urn_id_2" class="hidden" aria-hidden="true" tabindex="-1">{urn_options(raw('urn_id_2'))}</select><small id="urnStockWarning2" class="sub hidden"></small><input type="hidden" name="price_cast_2" value="{val('price_cast_2')}"><input type="hidden" name="price_accessories_2" value="{val('price_accessories_2')}"><input type="hidden" name="accessory_type" value="{val('accessory_type')}"><input type="hidden" name="accessory_type_2" value="{val('accessory_type_2')}"><select name="payment_status" class="hidden">{payment_options}</select><select name="payment_method" class="hidden">{payment_method_options}</select><input type="hidden" name="catalog_sent" value="{'Si' if catalog_sent_checked else ''}"><input type="hidden" name="invoice_number" value="{val('invoice_number')}"><input type="hidden" name="invoice_date" value="{val('invoice_date')}"><input type="hidden" name="invoice_total" value="{val('invoice_total')}"><input type="hidden" name="make_invoice" value="{'Si' if make_invoice_checked else ''}">
         <section class="section"><h2>Richiesta</h2><div class="fields"><div class="field"><label>Servizio</label><select name="service_type"><option {selected('service_type','Da decidere')}>Da decidere</option><option {selected('service_type','Cremazione singola')}>Cremazione singola</option><option {selected('service_type','Cremazione collettiva')}>Cremazione collettiva</option></select></div><div class="field"><label>Origine richiesta *</label><select name="request_origin" required><option {selected('request_origin','Veterinario')}>Veterinario</option><option {selected('request_origin','Privato')}>Privato</option><option value="Consegna in sede" {selected('request_origin','Consegna in sede')}>Consegnato in sede</option><option {selected('request_origin','Collaboratore')}>Collaboratore</option></select></div><div class="field {'hidden' if raw('request_origin')!='Collaboratore' else ''}" id="collaboratorBox"><label>Collaboratore</label><select name="collaborator_name"><option value="">Nessun collaboratore</option><option {selected('collaborator_name','HUMANITAS CROCE VERDE')}>HUMANITAS CROCE VERDE</option></select></div><div class="field"><label>Sede di destinazione</label><select name="destination_branch"><option {selected('destination_branch','Livorno')}>Livorno</option><option {selected('destination_branch','Empoli')}>Empoli</option></select></div><div class="field"><label>Data recupero</label><input type="date" name="pickup_date" value="{val('pickup_date')}"></div></div></section>
@@ -2910,6 +2958,12 @@ class App(BaseHTTPRequestHandler):
         data["used_voucher_id"] = data["used_voucher_id"] or None
         for key in ("tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_saluto","tag_calco","tag_calco_urna","tag_calco_paw","tag_calco_nose","tag_avvisare","tag_da_richiamare"):
             data[key] = "Si" if data[key] == "Si" else ""
+        selected_urn_ids=[urn_id for urn_id in (data["urn_id"],data["urn_id_2"]) if urn_id]
+        if selected_urn_ids:
+            marks=','.join('?' for _ in selected_urn_ids)
+            with db() as c:
+                frame_urn=c.execute(f"SELECT 1 FROM urns WHERE id IN ({marks}) AND LOWER(name) LIKE '%doppia cornice%' LIMIT 1",selected_urn_ids).fetchone()
+            if frame_urn:data["tag_calco_urna"]="Si"
         data["voucher_requested"] = "Si" if data["voucher_requested"] == "Si" else ""
         data["client_id"] = data["client_id"] or None
         data["owner_veterinarian_id"] = data["owner_veterinarian_id"] or None
@@ -3627,6 +3681,10 @@ class App(BaseHTTPRequestHandler):
         animal_age='<br><span class="sub">Età: '+', '.join(age_parts)+'</span>' if age_parts else '<br><span class="sub">Età non indicata</span>'
         animal2_block = f'<div class="kv"><small>Secondo animale</small>{esc(p["animal2_name"])}<br>{esc(p["animal2_species"])} {esc(p["animal2_weight"])} kg</div>' if "animal2_name" in p.keys() and p["animal2_name"] else ""
         payment_options=''.join(f'<option {"selected" if s==payment_value else ""}>{esc(s)}</option>' for s in PAYMENT_STATES)
+        total_w=calculated_service_total(p);total_d_raw=(p["total_text"] or "").strip();total_d=money_value(total_d_raw)
+        practice_total=effective_total(p);paid_total=received_amount(p);due_total=outstanding_amount(p);deposit_total=money_value(p["deposit"])
+        remaining_total=money_value(p["remaining_balance"]) if (p["remaining_balance"] or "").strip() else due_total
+        economic_block=f'''<div class="section"><h2>Dati economici</h2><div class="kvs"><div class="kv"><small>Totale pratica</small><b>{money_it(practice_total)}</b></div><div class="kv"><small>Totale W</small><b>{money_it(total_w)}</b></div><div class="kv"><small>Totale D</small><b>{money_it(total_d) if total_d_raw else "-"}</b></div><div class="kv"><small>Totale pagato</small><b>{money_it(paid_total)}</b></div><div class="kv"><small>Da pagare</small><b>{money_it(due_total)}</b></div><div class="kv"><small>Acconto</small><b>{money_it(deposit_total)}</b></div><div class="kv"><small>Rimanenza registrata</small><b>{money_it(remaining_total)}</b></div><div class="kv"><small>Stato pagamento</small><b>{esc(payment_value)}</b></div><div class="kv"><small>Metodo</small><b>{esc(payment_method_value)}</b></div></div></div>'''
         hist_items=[]
         for h in history:
             old_value=compact_text(h["old_value"]); new_value=compact_text(h["new_value"]); note=compact_text(h["note"])
@@ -3653,6 +3711,7 @@ class App(BaseHTTPRequestHandler):
           <section class="grid practice-layout">
             <div class="grid">
               <div class="section"><h2>Riepilogo</h2><div class="kvs"><div class="kv"><small>Stato</small><b>{esc(p['status'])}</b><br><span class="badge {payment_cls}">{esc(payment_value)}</span></div><div class="kv"><small>Speditore</small>{esc((p['owner_first_name'] or '')+' '+(p['owner_last_name'] or ''))}<br>{esc(p['owner_phone'])}{('<br>'+esc(p['owner_phone_2'])) if 'owner_phone_2' in p.keys() and p['owner_phone_2'] else ''}</div><div class="kv"><small>Animale</small>{esc(p['species'])} - {esc(p['breed'])}<br>{esc(p['estimated_weight'])} kg{animal_age}</div>{animal2_block}<div class="kv"><small>Sede</small><b>{esc(p['destination_branch'])}</b></div><div class="kv"><small>Origine</small><b>{esc(p['request_origin'])}</b></div><div class="kv"><small>Veterinario</small>{esc(p['clinic_name'])}<br>{esc(p['veterinarian_name'])}</div><div class="kv"><small>Catalogo urna</small><b>{esc(catalog_value)}</b></div><div class="kv"><small>Fattura</small>{esc(invoice_value) or '<span class="sub">Non inserita</span>'}</div></div></div>
+              {economic_block}
               <div class="section"><h2>Firma proprietario</h2><p class="sub">{'Firma salvata.' if p['signature_data'] else 'Firma non ancora salvata.'}</p><a class="btn ghost" href="/pratiche/{pid}/firma">Apri firma</a></div>
               <div class="section"><h2>Stati pratica</h2>{no_whatsapp_note}<form method="post" action="/pratiche/{pid}/stato"><input type="hidden" name="practice_view" value="{esc(practice_view)}"><div class="fields"><div class="field"><label>Avanzamento</label><select name="status">{options}</select></div><div class="field"><label><input type="checkbox" name="no_whatsapp_message" value="Si" {no_whatsapp_checked} style="width:auto"> NO MESSAGGIO</label><small class="sub">Se spuntato, quando la pratica passa a Consegnato non parte il WhatsApp automatico.</small></div><div class="field"><label>Pagamento</label><select name="payment_status">{payment_options}</select></div><div class="field"><label>Numero fattura</label><input name="invoice_number" value="{esc(invoice_value)}" placeholder="Da inserire quando risulta pagato"></div></div><button class="btn" style="margin-top:12px">Aggiorna stati</button></form></div>
               {whatsapp_block}
@@ -3851,11 +3910,11 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         return self.redirect(safe_return_path(form.get("return_to") or self.headers.get("Referer"),"/"))
 
     def quick_state(self,user,pid):
-        form=self.form(); new=form.get("status","")
-        if new not in STATES:return self.send_error(400,"Stato pratica non valido")
+        form=self.form(); new=form.get("status",""); ajax=form.get("ajax")=="1"
+        if new not in STATES:return self.send_json({"ok":False,"error":"Stato pratica non valido"},400) if ajax else self.send_error(400,"Stato pratica non valido")
         with db() as c:
             old=c.execute("SELECT * FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(pid,)).fetchone()
-            if not old:return self.send_error(404)
+            if not old:return self.send_json({"ok":False,"error":"Pratica non trovata"},404) if ajax else self.send_error(404)
             if new=="Smaltito" and old["service_type"]!="Cremazione collettiva":return self.send_error(400,"Smaltito è disponibile solo per la cremazione collettiva")
             if old["status"]!=new:
                 stamp=now();c.execute("UPDATE practices SET status=?,updated_at=? WHERE id=?",(new,stamp,pid))
@@ -3864,6 +3923,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 elif old["status"]!="Consegnato" and new=="Consegnato":self.schedule_whatsapp_thanks(c,pid,user["id"])
                 if new=="Consegnato":emit_notification(c,"practice_delivered","📦 Pratica consegnata",old["animal_name"] or old["practice_number"],pid,user["id"],db_path=DB_PATH)
                 elif new=="Da consegnare":emit_notification(c,"delivery_scheduled","📅 Consegna programmata",old["animal_name"] or old["practice_number"],pid,user["id"],db_path=DB_PATH)
+        if ajax:return self.send_json({"ok":True,"status":new,"practice_id":pid})
         return self.redirect(safe_return_path(form.get("return_to") or self.headers.get("Referer"),"/"))
 
     def resend_whatsapp(self,user,pid):
