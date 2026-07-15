@@ -206,6 +206,7 @@ class OperationalCalendarTests(unittest.TestCase):
 
     def test_calendar_pages_render_all_views_navigation_filters_and_mobile_hooks(self):
         self.save(self.event_form("Ritiro", event_status="Da ritirare",animals_json=json.dumps([{"name":"Luna","species":"Cane","weight":"18","cremation_type":"Singola","notes":""}])))
+        self.save(self.event_form("Appuntamento", title="APPUNTAMENTO FORNITORE", end_time="10:00"))
         pages = {}
         self.handler.send_html = lambda html, status=200: pages.update(current=html, status=status)
         for view in ("giorno", "settimana", "mese", "mista_settimana", "mista_mese", "compatto"):
@@ -215,8 +216,17 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("Calendario operativo", pages["giorno"])
         self.assertIn("data-calendar-swipe", pages["giorno"])
         self.assertIn("calendar-week-scroll", pages["settimana"])
+        self.assertIn("calendar-week-time-column", pages["settimana"])
+        self.assertIn("calendar-week-grid-line", pages["settimana"])
         self.assertIn("calendar-month", pages["mese"])
         self.assertIn("calendar-dot-red", pages["mese"])
+        self.assertIn("calendar-event-icon", pages["giorno"])
+        self.assertIn("--event-lanes:2", pages["giorno"])
+        self.assertIn("--event-lane:0", pages["giorno"])
+        self.assertIn("--event-lane:1", pages["giorno"])
+        self.assertEqual(pages["giorno"].count('data-calendar-view="'), 3)
+        for label in ("Giorno", "Settimana", "Mese"):
+            self.assertIn(f">{label}</a>", pages["giorno"])
         self.assertIn("18 kg", pages["giorno"])
         self.assertIn("Singola", pages["settimana"])
         self.assertIn("calendar-mixed", pages["mista_settimana"])
