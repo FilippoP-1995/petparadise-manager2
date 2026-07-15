@@ -1,6 +1,9 @@
 import os
+import io
+import socket
 import tempfile
 import unittest
+from contextlib import redirect_stderr
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
@@ -72,6 +75,36 @@ class PetParadiseTests(unittest.TestCase):
         with patch("email_service.smtplib.SMTP",BadSMTP),self.assertRaises(email_service.EmailDeliveryError) as failed:
             email_service.send_email("supplier@example.com","Test","Test",env)
         self.assertIn("Autenticazione SMTP non riuscita",str(failed.exception));self.assertNotIn("wrong",str(failed.exception))
+
+    def test_smtp_port_465_uses_ssl_and_debug_logs_are_safe(self):
+        calls={}
+        class FakeSMTPSSL:
+            def __init__(self,host,port,timeout,context):calls.update(host=host,port=port,timeout=timeout,context=context)
+            def __enter__(self):return self
+            def __exit__(self,*args):pass
+            def ehlo(self):calls["ehlo"]=calls.get("ehlo",0)+1
+            def starttls(self,context):raise AssertionError("STARTTLS non deve essere usato sulla porta 465")
+            def login(self,username,password):calls.update(username=username,password=password)
+            def send_message(self,message):calls["message"]=message
+        env={"SMTP_HOST":" \u200bsmtp.titan.email\t","SMTP_PORT":"465","SMTP_USERNAME":"info@petparadisempoli.com","SMTP_PASSWORD":"secret-test","SMTP_USE_TLS":"false","EMAIL_FROM_NAME":"Pet Paradise","EMAIL_FROM_ADDRESS":"info@petparadisempoli.com"}
+        logs=io.StringIO()
+        with patch("email_service.smtplib.SMTP_SSL",FakeSMTPSSL),patch("email_service.smtplib.SMTP",side_effect=AssertionError("SMTP semplice non atteso")),redirect_stderr(logs):
+            email_service.send_email("supplier@example.com","Test SSL","Corpo",env)
+        output=logs.getvalue()
+        self.assertEqual((calls["host"],calls["port"]),("smtp.titan.email",465));self.assertEqual(calls["ehlo"],1)
+        self.assertIn("smtplib.SMTP_SSL",output);self.assertIn("SSL=True STARTTLS=False",output);self.assertIn("SMTP_PASSWORD presente=True",output)
+        self.assertNotIn("secret-test",output)
+
+    def test_smtp_dns_failure_logs_raw_host_and_full_traceback(self):
+        raw_host="  smtp.non-risolvibile.invalid  "
+        env={"SMTP_HOST":raw_host,"SMTP_PORT":"587","SMTP_USERNAME":"info@petparadisempoli.com","SMTP_PASSWORD":"secret-test","SMTP_USE_TLS":"false","EMAIL_FROM_NAME":"Pet Paradise","EMAIL_FROM_ADDRESS":"info@petparadisempoli.com"}
+        logs=io.StringIO()
+        with patch("email_service.smtplib.SMTP",side_effect=socket.gaierror(-2,"Name or service not known")),redirect_stderr(logs),self.assertRaises(email_service.EmailDeliveryError) as failed:
+            email_service.send_email("supplier@example.com","Test DNS","Corpo",env)
+        output=logs.getvalue()
+        self.assertIn("tipo_connessione=smtplib.SMTP + STARTTLS",output);self.assertIn("SSL=False STARTTLS=True",output)
+        self.assertIn(f"SMTP_HOST esatto letto dall'ambiente={raw_host!r}",output);self.assertIn("Traceback (most recent call last)",output);self.assertIn("socket.gaierror",output)
+        self.assertIn("gaierror",str(failed.exception));self.assertNotIn("secret-test",output)
 
     def test_order_schema_default_recipient_and_email_validation(self):
         with app.db() as conn:
