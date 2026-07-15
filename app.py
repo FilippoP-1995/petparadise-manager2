@@ -324,7 +324,6 @@ def init_db():
             "Ceneri pronte": "Da consegnare",
             "Consegnata": "Consegnato",
             "Messo in programma": "In programma",
-            "Cremato": "In programma",
         }
         for old_status, new_status in status_migrations.items():
             c.execute("UPDATE practices SET status=? WHERE status=?", (new_status, old_status))
@@ -421,6 +420,8 @@ def init_db():
         c.execute("CREATE INDEX IF NOT EXISTS idx_urn_movements_urn ON urn_movements(urn_id,created_at DESC)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_payment_movements_paid ON payment_movements(paid_at,payment_channel)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_payment_movements_practice ON payment_movements(practice_id,paid_at)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_practices_dashboard ON practices(status,pickup_date,deleted_at)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_history_status_events ON practice_history(practice_id,event_type,created_at)")
         c.execute("UPDATE practices SET payment_status='Da saldare' WHERE payment_status IS NULL OR payment_status=''")
         c.execute("UPDATE practices SET payment_status='Pagato', status='Consegnato' WHERE status='Pagato'")
         c.execute("UPDATE veterinarian_vouchers SET status='Maturato' WHERE status='Disponibile'")
@@ -686,7 +687,8 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 @media(max-width:390px){.app-header{left:calc(58px + var(--safe-left));padding-right:5px}.app-header .header-actions{gap:4px}.app-header .header-search{padding:0 7px}.app-header .icon-btn,.app-header .header-new{flex-basis:35px;width:35px;height:35px;min-height:35px}.top{padding-left:10px;padding-right:10px}.top .brand-logo{width:38px;height:38px}}
 /* Cleaner, lighter dark theme */
 body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;border-color:#344156}.app-header{background:#172131ed;border-color:#344156}.section,.card,.tablebox,.login{background:linear-gradient(145deg,#202c3d,#1b2636);border-color:#38475c;box-shadow:0 12px 34px #080d162b}.section[class*="section-tone-"]{background:linear-gradient(145deg,color-mix(in srgb,var(--section-accent) 5%,#202c3d),#1b2636 76%)}.dashboard-panel,.metric-card,.payment-card,.balance-card,.balance-total,.conversation-card,.article-card,.urn-stat,.urn-card{background:#202c3d;border-color:#3a495e;box-shadow:0 12px 32px #080d1626}.tablebox,table{background:#1b2636}.practice-list-table th:first-child,.practice-list-table td:first-child{background:#1b2636}.kv,input,select,textarea,.header-search,.icon-btn,.header-actions time{background:#182334;border-color:#3b4a5f}.tablebox table tr:hover td{background:#253247}.lookup-results,.lookup-item{background:#202c3d;border-color:#3b4a5f}.lookup-item:hover,.lookup-item:focus{background:#29384d}h1{font-weight:650}h2{font-weight:600}b,strong{font-weight:600}label{font-weight:550}.nav a,.nav button{font-weight:500}.btn{font-weight:600}.badge,.inline-state-select{font-weight:600}th{font-weight:600;letter-spacing:.035em}.metric-card strong,.payment-card strong,.stat b{font-weight:650}.light-theme .practice-list-table th:first-child,.light-theme .practice-list-table td:first-child{background:#fff}
-.state-yellow{--card-glow:#713f124f;--icon-bg:#573713;--icon-color:#fde047;--icon-shadow:#eab30840}.practice-row-cremated td,.practice-row-cremated a,.practice-row-cremated small,.practice-row-cremated b{color:#60a5fa!important}.practice-row-cremated .practice-status-blue{color:#7db7ff!important}.light-theme .practice-row-cremated td,.light-theme .practice-row-cremated a,.light-theme .practice-row-cremated small,.light-theme .practice-row-cremated b{color:#1d4ed8!important}.inline-save-note{min-height:16px;color:#86efac;font-size:11px}.inline-save-note.error{color:#fca5a5}
+.dashboard-section-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:24px 0 12px}.dashboard-section-head .dashboard-heading{margin:0}.period-selector{display:inline-grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px;padding:3px;border:1px solid #3b4a5f;border-radius:12px;background:#182334}.period-selector a{display:grid;place-items:center;min-width:88px;min-height:38px;padding:8px 12px;border-radius:9px;color:#aeb9c8;font-size:13px;font-weight:600}.period-selector a:hover{color:#fff;background:#253248}.period-selector a.active{color:#fff;background:#ef405f;box-shadow:0 5px 14px #ef405f40}.dashboard-chart-only{margin-top:24px}.dashboard-chart-only .dashboard-panel{display:block;min-height:0}.light-theme .period-selector{background:#f1f5f9;border-color:#cbd5e1}.light-theme .period-selector a{color:#526174}.light-theme .period-selector a.active{color:#fff}.state-yellow{--card-glow:#713f124f;--icon-bg:#573713;--icon-color:#fde047;--icon-shadow:#eab30840}.inline-save-note{min-height:16px;color:#86efac;font-size:11px}.inline-save-note.error{color:#fca5a5}
+@media(max-width:620px){.dashboard-section-head{align-items:stretch;flex-direction:column;gap:9px}.period-selector{width:100%}.period-selector a{min-width:0;min-height:44px;padding:8px 5px}.dashboard-chart-only{margin-top:18px}.dashboard-wrap{padding-bottom:calc(28px + var(--safe-bottom))}}
 """
 
 APP_JS = r"""
@@ -1329,7 +1331,6 @@ async function savePracticeState(form,event){
     const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||'Salvataggio non riuscito');
     select.dataset.savedValue=data.status;select.classList.remove('practice-status-blue','practice-status-red','practice-status-yellow','practice-status-green');
     const cls=practiceStatusCss(data.status);if(cls)select.classList.add(cls);
-    if(row)row.classList.toggle('practice-row-cremated',data.status==='Cremato');
     if(note)note.textContent='Salvato';
     const activeFilter=new URLSearchParams(location.search).get('stato');
     if(row&&activeFilter&&activeFilter!==data.status){row.style.opacity='0';setTimeout(()=>row.remove(),180);}
@@ -1625,6 +1626,41 @@ def outstanding_amount(practice):
     return max(0.0, effective_total(practice)-received_amount(practice))
 
 
+def dashboard_period_bounds(period, today=None):
+    today=today or datetime.now().date()
+    period=period if period in ("oggi","settimana","mese") else "oggi"
+    if period=="settimana":
+        start=today-timedelta(days=(today.weekday()-5)%7);end=start+timedelta(days=6)
+    elif period=="mese":
+        start=today.replace(day=1)
+        next_month=(start.replace(year=start.year+1,month=1) if start.month==12 else start.replace(month=start.month+1))
+        end=next_month-timedelta(days=1)
+    else:start=end=today
+    return period,start,end
+
+
+def status_event_date_sql(status, alias="practices"):
+    safe=str(status).replace("'","''")
+    return f"""(SELECT date(MAX(h.created_at)) FROM practice_history h WHERE h.practice_id={alias}.id AND (
+      (h.event_type='Cambio stato rapido' AND h.new_value='{safe}') OR
+      (h.event_type='Cambio stati' AND h.new_value LIKE '{safe} +%') OR
+      (h.event_type='Modifica Stato pratica' AND h.new_value='{safe}')
+    ))"""
+
+
+def dashboard_practice_date_sql(kind, alias="practices"):
+    if kind=="ritirati":
+        event=status_event_date_sql("Ritirato",alias)
+        return f"COALESCE(date(NULLIF({alias}.pickup_date,'')),{event},CASE WHEN {alias}.status='Ritirato' THEN date({alias}.updated_at) END)"
+    if kind=="in_programma":
+        event=status_event_date_sql("In programma",alias)
+        return f"COALESCE(date(NULLIF({alias}.pickup_date,'')),{event},CASE WHEN {alias}.status='In programma' THEN date({alias}.updated_at) END)"
+    if kind=="consegnati":
+        event=status_event_date_sql("Consegnato",alias)
+        return f"COALESCE({event},CASE WHEN {alias}.status='Consegnato' THEN date({alias}.updated_at) END)"
+    return "NULL"
+
+
 def practice_status_class(status):
     return {"Ritirato":"practice-status-yellow","In programma":"practice-status-red","Cremato":"practice-status-blue","Da consegnare":"practice-status-yellow","Consegnato":"practice-status-green"}.get(status,"")
 
@@ -1906,7 +1942,7 @@ class App(BaseHTTPRequestHandler):
             with db() as c: c.execute("DELETE FROM sessions WHERE token=?",(m.value,))
         self.send_response(303); self.send_header("Set-Cookie","ppm_session=; Max-Age=0; Path=/"); self.send_header("Location","/login"); self.end_headers()
 
-    def dashboard(self,user):
+    def dashboard_legacy(self,user):
         today=datetime.now().date()
         week_start=today-timedelta(days=(today.weekday()-5)%7)
         days=[week_start+timedelta(days=offset) for offset in range(7)]
@@ -1959,6 +1995,69 @@ class App(BaseHTTPRequestHandler):
         body=body.replace("Entrate ultimi 7 giorni", "Entrate settimana in corso")
         body=body.replace("Totale: <strong>", f"{week_range} · Totale: <strong>", 1)
         body=body.replace('href="/bilanci" aria-label="Apri Bilanci: entrate degli ultimi sette giorni"', f'href="/bilanci?dal={week_start.isoformat()}&al={week_end.isoformat()}" aria-label="Apri Bilanci: entrate della settimana in corso"')
+        self.send_html(layout("Dashboard",body,user))
+
+    def dashboard(self,user):
+        q=parse_qs(urlparse(getattr(self,"path","/")).query);today=datetime.now().date()
+        practice_period,practice_from,practice_to=dashboard_period_bounds((q.get("pratiche_periodo") or ["oggi"])[0],today)
+        payment_period,payment_from,payment_to=dashboard_period_bounds((q.get("pagamenti_periodo") or ["oggi"])[0],today)
+        _,week_start,week_end=dashboard_period_bounds("settimana",today);days=[week_start+timedelta(days=offset) for offset in range(7)]
+        active="p.deleted_at IS NULL OR p.deleted_at=''"
+        ritiro_date=dashboard_practice_date_sql("ritirati","p");programma_date=dashboard_practice_date_sql("in_programma","p");consegna_date=dashboard_practice_date_sql("consegnati","p")
+        with db() as c:
+            counts={
+                "Ritirato":c.execute(f"SELECT count(*) n FROM practices p WHERE ({active}) AND p.status IN ('Ritirato','Cremato','Da consegnare','Consegnato','Smaltito') AND {ritiro_date} BETWEEN date(?) AND date(?)",(practice_from.isoformat(),practice_to.isoformat())).fetchone()["n"],
+                "In programma":c.execute(f"SELECT count(*) n FROM practices p WHERE ({active}) AND p.status='In programma' AND ((p.pickup_date IS NULL OR p.pickup_date='') OR {programma_date} BETWEEN date(?) AND date(?))",(practice_from.isoformat(),practice_to.isoformat())).fetchone()["n"],
+                "Da consegnare":c.execute(f"SELECT count(*) n FROM practices p WHERE ({active}) AND p.status='Da consegnare'").fetchone()["n"],
+                "Consegnato":c.execute(f"SELECT count(*) n FROM practices p WHERE ({active}) AND p.status='Consegnato' AND {consegna_date} BETWEEN date(?) AND date(?)",(practice_from.isoformat(),practice_to.isoformat())).fetchone()["n"],
+            }
+            open_rows=c.execute(f"SELECT p.* FROM practices p WHERE ({active}) AND COALESCE(p.payment_status,'Da saldare')!='Pagato'").fetchall()
+            movement_stats={row["category"]:row for row in c.execute(f"""SELECT CASE WHEN m.payment_type LIKE 'acconto_%' THEN 'Acconto' ELSE 'Pagato' END category,
+                                         count(DISTINCT m.practice_id) practice_count,COALESCE(sum(m.amount),0) amount
+                                         FROM payment_movements m JOIN practices p ON p.id=m.practice_id
+                                         WHERE ({active}) AND m.amount>0 AND date(m.paid_at) BETWEEN date(?) AND date(?)
+                                         AND m.payment_type IN ('acconto_ordinario','acconto_d','saldo_ordinario','saldo_d')
+                                         GROUP BY category""",(payment_from.isoformat(),payment_to.isoformat())).fetchall()}
+            income_rows=c.execute(f"""SELECT date(m.paid_at) day,COALESCE(sum(m.amount),0) amount
+                                      FROM payment_movements m JOIN practices p ON p.id=m.practice_id
+                                      WHERE ({active}) AND date(m.paid_at) BETWEEN date(?) AND date(?)
+                                      GROUP BY date(m.paid_at)""",(week_start.isoformat(),week_end.isoformat())).fetchall()
+            recent=c.execute("SELECT * FROM practices WHERE deleted_at IS NULL OR deleted_at='' ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) DESC,id DESC LIMIT 10").fetchall()
+            incomplete=c.execute("SELECT count(*) n FROM practices WHERE (deleted_at IS NULL OR deleted_at='') AND data_complete=0 AND status!='Consegnato'").fetchone()["n"]
+        def state_url(event,state="",include_dates=True):
+            params={"dashboard_event":event,"periodo":practice_period}
+            if state:params["stato"]=state
+            if include_dates:params.update({"dal":practice_from.isoformat(),"al":practice_to.isoformat()})
+            return "/archivio/pratiche?"+urlencode(params)
+        state_specs=[
+            ("Ritirato","Ritirati","archive","state-yellow",state_url("ritirati")),
+            ("In programma","In programma","calendar","state-red",state_url("in_programma","In programma")),
+            ("Da consegnare","Da consegnare","clipboard","state-purple",state_url("da_consegnare","Da consegnare",False)),
+            ("Consegnato","Consegnati","home","state-green",state_url("consegnati","Consegnato")),
+        ]
+        state_cards=''.join(f'<a class="metric-card {cls}" data-dashboard-card="{state}" data-count="{counts[state]}" href="{href}"><span class="metric-copy"><small>{label}</small><strong>{counts[state]}</strong><em>{"Aperti, senza scadenza" if state=="Da consegnare" else "Apri elenco"}</em></span><span class="metric-icon">{lucide(icon)}</span></a>' for state,label,icon,cls,href in state_specs)
+        open_due=[row for row in open_rows if outstanding_amount(row)>0]
+        def movement_value(category,key):
+            row=movement_stats.get(category)
+            return row[key] if row else 0
+        payment_counts={"Da saldare":len(open_due),"Acconto":movement_value("Acconto","practice_count"),"Pagato":movement_value("Pagato","practice_count")}
+        payment_totals={"Da saldare":sum(outstanding_amount(row) for row in open_due),"Acconto":money_value(movement_value("Acconto","amount")),"Pagato":money_value(movement_value("Pagato","amount"))}
+        payment_query=urlencode({"dal":payment_from.isoformat(),"al":payment_to.isoformat(),"periodo":payment_period})
+        payment_specs=[("Da saldare","Da saldare","wallet","payment-due",f"/pagamenti/da-saldare?{payment_query}"),("Acconto","Acconti","receipt","payment-deposit",f"/pagamenti/acconti?{payment_query}"),("Pagato","Pagati","chart","payment-paid",f"/pagamenti/pagati?{payment_query}")]
+        payment_cards=''.join(f'<a class="payment-card {cls}" data-dashboard-payment="{state}" data-count="{payment_counts[state]}" data-amount="{payment_totals[state]:.2f}" href="{href}"><span><small>{label}</small><strong>{payment_counts[state]}</strong><em>{money_it(payment_totals[state])}</em>{"<small>Tutte le rimanenze aperte</small>" if state=="Da saldare" else ""}</span><span class="metric-icon">{lucide(icon)}</span></a>' for state,label,icon,cls,href in payment_specs)
+        income_by_day={day.isoformat():0.0 for day in days}
+        for row in income_rows:
+            if row["day"] in income_by_day:income_by_day[row["day"]]+=money_value(row["amount"])
+        income_values=[income_by_day[day.isoformat()] for day in days];income_total=sum(income_values);chart=income_chart(income_values,[day.strftime("%d/%m") for day in days])
+        def selector(key,current,other_key,other):
+            links=[]
+            for value,label in (("oggi","Oggi"),("settimana","Settimana"),("mese","Mese")):
+                links.append(f'<a data-dashboard-period="{key}" data-period-value="{value}" class="{"active" if current==value else ""}" href="/?{urlencode({key:value,other_key:other})}">{label}</a>')
+            return '<nav class="period-selector" aria-label="Seleziona periodo">'+''.join(links)+'</nav>'
+        practice_selector=selector("pratiche_periodo",practice_period,"pagamenti_periodo",payment_period);payment_selector=selector("pagamenti_periodo",payment_period,"pratiche_periodo",practice_period)
+        persistence_script='''<script>(function(){const allowed=['oggi','settimana','mese'];const url=new URL(location.href);let changed=false;['pratiche_periodo','pagamenti_periodo'].forEach(key=>{const saved=localStorage.getItem('ppm_'+key);if(!url.searchParams.has(key)&&allowed.includes(saved)&&saved!=='oggi'){url.searchParams.set(key,saved);changed=true;}});if(changed){location.replace(url);return;}document.querySelectorAll('[data-dashboard-period]').forEach(link=>link.addEventListener('click',()=>localStorage.setItem('ppm_'+link.dataset.dashboardPeriod,link.dataset.periodValue)));})();</script>'''
+        hour=datetime.now().hour;greeting="Buongiorno" if hour<13 else "Buon pomeriggio" if hour<18 else "Buonasera"
+        body=f'''<main class="wrap dashboard-wrap"><section class="welcome"><div><h1>{greeting}, Pet Paradise <span aria-hidden="true">👋</span></h1><p>Panoramica operativa del periodo selezionato</p></div></section>{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}<div class="dashboard-section-head"><h2 class="dashboard-heading">Pratiche / Ritiri</h2>{practice_selector}</div><section class="dashboard-states">{state_cards}</section><div class="dashboard-section-head"><h2 class="dashboard-heading">Pagamenti</h2>{payment_selector}</div><section class="dashboard-payments">{payment_cards}</section><section class="dashboard-chart-only"><a class="dashboard-panel income-panel" href="/bilanci?dal={week_start.isoformat()}&al={week_end.isoformat()}" aria-label="Apri Bilanci: entrate della settimana in corso"><header><div><h2>Entrate settimana in corso</h2><p>{week_start.strftime('%d/%m/%Y')} - {week_end.strftime('%d/%m/%Y')} · Totale: <strong>{money_it(income_total)}</strong></p></div><span class="panel-link">Apri Bilanci →</span></header>{chart}</a></section><section class="dashboard-recent"><div class="titlebar"><h2>Ultime 10 pratiche per data recupero</h2><a href="/archivio/pratiche">Apri archivio</a></div><div class="tablebox dashboard-table-scroll"><table class="practice-list-table"><thead><tr><th>Animale</th><th>Età</th><th>Proprietario</th><th>Data recupero</th><th>Codice pratica</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Fattura</th><th>Totale W</th><th>TOTALE D</th><th>Acconto</th><th>Rimanenza</th><th>Stati</th></tr></thead><tbody>{self.practice_rows(recent,True)}</tbody></table></div></section>{persistence_script}</main>'''
         self.send_html(layout("Dashboard",body,user))
 
     def balances(self,user):
@@ -2168,7 +2267,7 @@ class App(BaseHTTPRequestHandler):
         body=f'''<main class="wrap balances-wrap"><div class="titlebar"><div><h1>Bilanci</h1><p class="sub">{subtitle} dal {esc(date_it(date_from))} al {esc(date_it(date_to))}</p></div><div class="balance-total"><small>{esc(category_map.get(selected,"Entrate totali"))}</small><strong>{money_it(shown_total)}</strong></div></div><section class="balance-grid">{cards}</section><section class="dashboard-panel balance-chart"><header><div><h2>Andamento nel periodo filtrato</h2><p>{chart_description}</p></div></header>{chart}</section><section class="tablebox balance-table"><table><thead><tr><th>Data economica</th><th>Movimento</th><th>Pratica</th><th>Cliente</th><th>{amount_heading}</th><th>Totale</th><th>Acconto</th><th>Rimanenza</th><th>Stato</th><th></th></tr></thead><tbody>{table_body}</tbody></table></section><section class="search-after-results"><h2>Filtra bilanci</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field full"><label>Voce</label><select name="voce">{options}</select></div></div><button class="btn" style="margin-top:12px">Applica filtri</button><a class="btn ghost" style="margin-top:12px" href="/bilanci">Ultimi 7 giorni</a></form></section></main>'''
         self.send_html(layout("Bilanci",body,user))
 
-    def payment_overview(self,user,kind):
+    def payment_overview_legacy(self,user,kind):
         specs={
             "da-saldare":("Da saldare",lambda row: outstanding_amount(row)>0,lambda row: outstanding_amount(row)),
             "acconti":("Acconti",lambda row: received_amount(row)>0 and outstanding_amount(row)>0,lambda row: received_amount(row)),
@@ -2187,6 +2286,40 @@ class App(BaseHTTPRequestHandler):
             table=''.join(body) or '<tr><td colspan="8" class="sub">Nessuna pratica in questa categoria.</td></tr>'
             sections.append(f'''<section class="dashboard-panel" style="margin-bottom:20px;border-top:4px solid {color}"><header><div><h2>{esc(label)}</h2><p>{len(selected)} pratiche</p></div><strong>{money_it(total)}</strong></header><div class="tablebox"><table><thead><tr><th>Pratica</th><th>Animale</th><th>Cliente</th><th>Totale</th><th>Acconto</th><th>{esc(title)}</th><th>Stato</th><th></th></tr></thead><tbody>{table}</tbody></table></div></section>''')
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>Pagamenti · {esc(title)}</h1><p class="sub">Separazione tra Totale W e Totale D (contanti).</p></div><a class="btn ghost" href="/">Dashboard</a></div>{''.join(sections)}</main>'''
+        self.send_html(layout(f"Pagamenti · {title}",body,user))
+
+    def payment_overview(self,user,kind):
+        titles={"da-saldare":"Da saldare","acconti":"Acconti","pagati":"Pagati"};title=titles[kind]
+        q=parse_qs(urlparse(self.path).query);today=datetime.now().date()
+        period,date_from,date_to=dashboard_period_bounds((q.get("periodo") or ["oggi"])[0],today)
+        raw_from=(q.get("dal") or [date_from.isoformat()])[0];raw_to=(q.get("al") or [date_to.isoformat()])[0]
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}",raw_from):date_from=datetime.strptime(raw_from,"%Y-%m-%d").date()
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}",raw_to):date_to=datetime.strptime(raw_to,"%Y-%m-%d").date()
+        with db() as c:
+            if kind=="da-saldare":
+                rows=c.execute("SELECT *,NULL dashboard_amount,NULL dashboard_channel,NULL dashboard_paid_at FROM practices WHERE (deleted_at IS NULL OR deleted_at='') AND COALESCE(payment_status,'Da saldare')!='Pagato' ORDER BY updated_at DESC,id DESC").fetchall()
+                rows=[row for row in rows if outstanding_amount(row)>0]
+            else:
+                prefix="acconto_%" if kind=="acconti" else "saldo_%"
+                rows=c.execute("""SELECT p.*,SUM(m.amount) dashboard_amount,m.payment_channel dashboard_channel,MAX(m.paid_at) dashboard_paid_at
+                                  FROM payment_movements m JOIN practices p ON p.id=m.practice_id
+                                  WHERE (p.deleted_at IS NULL OR p.deleted_at='') AND m.amount>0 AND m.payment_type LIKE ?
+                                  AND date(m.paid_at) BETWEEN date(?) AND date(?)
+                                  GROUP BY p.id,m.payment_channel ORDER BY dashboard_paid_at DESC,p.id DESC""",
+                               (prefix,date_from.isoformat(),date_to.isoformat())).fetchall()
+        def amount_for(row):return outstanding_amount(row) if kind=="da-saldare" else money_value(row["dashboard_amount"])
+        def row_is_d(row):return uses_total_d(row) if kind=="da-saldare" else row["dashboard_channel"]=="D"
+        groups=[(False,title,"#3b82f6"),(True,f"{title} D","#f59e0b")];sections=[]
+        for is_d,label,color in groups:
+            selected=[row for row in rows if row_is_d(row)==is_d];total=sum(amount_for(row) for row in selected);table_rows=[]
+            for row in selected:
+                owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip();url=f'/pratiche/{row["id"]}?return_to={quote(self.path,safe="")}'
+                economic_date=date_it(row["dashboard_paid_at"]) if kind!="da-saldare" else "Aperta"
+                table_rows.append(f'''<tr class="practice-row-link" tabindex="0" role="link" onclick="window.location.href='{url}'"><td>{esc(economic_date)}</td><td><a href="{url}"><b>{esc(row["practice_number"])}</b></a></td><td>{esc(row["animal_name"] or "")}</td><td>{esc(owner)}</td><td>{money_it(effective_total(row))}</td><td>{money_it(money_value(row["deposit"]))}</td><td><b>{money_it(amount_for(row))}</b></td><td>{esc(row["payment_status"] or "Da saldare")}</td><td><a class="btn ghost" href="{url}">Apri</a></td></tr>''')
+            table=''.join(table_rows) or '<tr><td colspan="9" class="sub">Nessuna pratica in questa categoria.</td></tr>'
+            sections.append(f'''<section class="dashboard-panel" style="margin-bottom:20px;border-top:4px solid {color}"><header><div><h2>{esc(label)}</h2><p>{len(selected)} pratiche</p></div><strong>{money_it(total)}</strong></header><div class="tablebox"><table><thead><tr><th>Data economica</th><th>Pratica</th><th>Animale</th><th>Cliente</th><th>Totale</th><th>Acconto</th><th>{esc(title)}</th><th>Stato</th><th></th></tr></thead><tbody>{table}</tbody></table></div></section>''')
+        period_note="Tutte le rimanenze attualmente aperte: non esiste una scadenza di saldo." if kind=="da-saldare" else f"Incassi registrati dal {date_it(date_from.isoformat())} al {date_it(date_to.isoformat())}."
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Pagamenti · {esc(title)}</h1><p class="sub">Separazione tra Totale W e Totale D (contanti). {esc(period_note)}</p></div><a class="btn ghost" href="/?pratiche_periodo=oggi&amp;pagamenti_periodo={period}">Dashboard</a></div>{''.join(sections)}</main>'''
         self.send_html(layout(f"Pagamenti · {title}",body,user))
 
     def articles_page(self,user):
@@ -2574,8 +2707,7 @@ class App(BaseHTTPRequestHandler):
                 total_d=(r["total_text"] or "").strip() if "total_text" in r.keys() else ""
                 financial_cells=f'<td>{money_it(calculated_service_total(r))}</td><td>{money_it(money_value(total_d)) if total_d else "-"}</td><td>{money_it(money_value(r["deposit"]))}</td><td>{money_it(money_value(r["remaining_balance"]))}</td>'
             practice_url=f'/pratiche/{r["id"]}?return_to={quote(self.path,safe="")}'
-            row_cls='practice-row-link practice-row-cremated' if r["status"]=="Cremato" else 'practice-row-link'
-            html.append(f'<tr class="{row_cls}" tabindex="0" role="link" aria-label="Apri pratica {esc(code)}" onclick="window.location.href=\'{practice_url}\'" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){{event.preventDefault();window.location.href=\'{practice_url}\'}}"><td>{animal_cell}</td><td>{age_cell}</td><td>{owner}<br><small>{esc(r["owner_phone"])}</small></td><td>{esc(recovery_date)}</td><td><a href="{practice_url}"><b class="{code_cls}">{esc(code)}</b></a></td><td>{vet_label}</td><td>{esc(r["destination_branch"])}</td><td>{self.tag_badges(r)}</td><td>{notes_cell}</td><td>{urn_cell}</td><td>{invoice_cell}</td>{financial_cells}<td>{self.status_badges(r)}</td></tr>')
+            html.append(f'<tr class="practice-row-link" tabindex="0" role="link" aria-label="Apri pratica {esc(code)}" onclick="window.location.href=\'{practice_url}\'" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){{event.preventDefault();window.location.href=\'{practice_url}\'}}"><td>{animal_cell}</td><td>{age_cell}</td><td>{owner}<br><small>{esc(r["owner_phone"])}</small></td><td>{esc(recovery_date)}</td><td><a href="{practice_url}"><b class="{code_cls}">{esc(code)}</b></a></td><td>{vet_label}</td><td>{esc(r["destination_branch"])}</td><td>{self.tag_badges(r)}</td><td>{notes_cell}</td><td>{urn_cell}</td><td>{invoice_cell}</td>{financial_cells}<td>{self.status_badges(r)}</td></tr>')
         return ''.join(html)
 
     def archive_home(self,user):
@@ -2716,9 +2848,14 @@ class App(BaseHTTPRequestHandler):
         date_to=q.get("al",[""])[0].strip()
         state=q.get("stato",[""])[0].strip()
         payment=q.get("pagamento",[""])[0].strip()
+        dashboard_event=q.get("dashboard_event",[""])[0].strip()
+        dashboard_period=q.get("periodo",[""])[0].strip()
+        if dashboard_event not in ("ritirati","in_programma","da_consegnare","consegnati"):dashboard_event=""
         with_deposit=q.get("con_acconto",[""])[0].strip()=="1"
         promemoria=q.get("promemoria",[""])[0].strip()
-        sql="SELECT * FROM practices WHERE (deleted_at IS NULL OR deleted_at='')"; args=[]
+        event_date_sql=dashboard_practice_date_sql(dashboard_event,"practices") if dashboard_event and dashboard_event!="da_consegnare" else ""
+        event_select=f", {event_date_sql} AS dashboard_event_date" if event_date_sql else ""
+        sql=f"SELECT practices.*{event_select} FROM practices WHERE (deleted_at IS NULL OR deleted_at='')"; args=[]
         if term:
             like=f"%{term}%"
             sql+=" AND (practice_number LIKE ? OR animal_name LIKE ? OR owner_first_name||' '||owner_last_name LIKE ? OR owner_phone LIKE ? OR owner_phone_2 LIKE ? OR microchip LIKE ? OR clinic_name LIKE ? OR veterinarian_name LIKE ? OR collaborator_name LIKE ? OR CAST(ddt_number AS TEXT) LIKE ?)"
@@ -2739,11 +2876,19 @@ class App(BaseHTTPRequestHandler):
             sql += " AND CAST(REPLACE(COALESCE(NULLIF(total_text,''),total_service), ',', '.') AS REAL) >= ?"; args.append(float(spesa_min) if re.match(r"^-?\d+(\.\d+)?$", spesa_min) else 0)
         if spesa_max:
             sql += " AND CAST(REPLACE(COALESCE(NULLIF(total_text,''),total_service), ',', '.') AS REAL) <= ?"; args.append(float(spesa_max) if re.match(r"^-?\d+(\.\d+)?$", spesa_max) else 999999999)
-        if date_from:
+        if date_from and not dashboard_event:
             sql += " AND date(COALESCE(NULLIF(pickup_date,''), created_at))>=date(?)"; args.append(date_from)
-        if date_to:
+        if date_to and not dashboard_event:
             sql += " AND date(COALESCE(NULLIF(pickup_date,''), created_at))<=date(?)"; args.append(date_to)
-        if state:
+        if dashboard_event=="ritirati":
+            sql += f" AND status IN ('Ritirato','Cremato','Da consegnare','Consegnato','Smaltito') AND {event_date_sql} BETWEEN date(?) AND date(?)";args.extend([date_from,date_to])
+        elif dashboard_event=="in_programma":
+            sql += f" AND status='In programma' AND ((pickup_date IS NULL OR pickup_date='') OR {event_date_sql} BETWEEN date(?) AND date(?))";args.extend([date_from,date_to])
+        elif dashboard_event=="da_consegnare":
+            sql += " AND status='Da consegnare'"
+        elif dashboard_event=="consegnati":
+            sql += f" AND status='Consegnato' AND {event_date_sql} BETWEEN date(?) AND date(?)";args.extend([date_from,date_to])
+        elif state:
             sql += " AND status=?"; args.append(state)
         if payment:
             sql += " AND COALESCE(payment_status,'Da saldare')=?"; args.append(payment)
@@ -2753,17 +2898,19 @@ class App(BaseHTTPRequestHandler):
             sql += " AND send_catalog='Si' AND status!='Consegnato'"
         if promemoria == "estremi":
             sql += " AND send_estremi='Si' AND status!='Consegnato'"
-        sql += " ORDER BY date(COALESCE(NULLIF(pickup_date,''), created_at)) DESC, id DESC"
+        sql += f" ORDER BY {event_date_sql} DESC, id DESC" if event_date_sql else " ORDER BY date(COALESCE(NULLIF(pickup_date,''), created_at)) DESC, id DESC"
         with db() as c:
             rows=c.execute(sql,args).fetchall()
         opts='<option value="">Tutti gli stati</option>'+''.join(f'<option {"selected" if state==s else ""}>{esc(s)}</option>' for s in STATES)
         pay_opts='<option value="">Tutti i pagamenti</option>'+''.join(f'<option {"selected" if payment==s else ""}>{esc(s)}</option>' for s in PAYMENT_STATES)
         service_opts=''.join(f'<option value="{esc(x)}" {"selected" if service==x else ""}>{esc(x or "Tutti i servizi")}</option>' for x in ["","Da decidere","Cremazione singola","Cremazione collettiva"])
-        promemoria_label = f" - Ricerca rapida: {esc(quick)}" if quick else " - Pratiche con acconto" if with_deposit else " - Promemoria catalogo" if promemoria=="catalogo" else " - Promemoria estremi" if promemoria=="estremi" else ""
+        period_names={"oggi":"Oggi","settimana":"Settimana in corso","mese":"Mese corrente"}
+        promemoria_label = f" - {period_names.get(dashboard_period,dashboard_period)}" if dashboard_event else f" - Ricerca rapida: {esc(quick)}" if quick else " - Pratiche con acconto" if with_deposit else " - Promemoria catalogo" if promemoria=="catalogo" else " - Promemoria estremi" if promemoria=="estremi" else ""
         month_names=["","Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno","Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"]
         groups={}
         for r in rows:
-            key=((r["pickup_date"] or r["created_at"] or "")[:7]) or "Senza data"
+            grouping_date=(r["dashboard_event_date"] if "dashboard_event_date" in r.keys() else "") or r["pickup_date"] or r["created_at"] or ""
+            key=(grouping_date[:7]) or "Senza data"
             groups.setdefault(key,[]).append(r)
         blocks=[]
         archive_financial_headers='<th>Totale W</th><th>TOTALE D</th><th>Acconto</th><th>Rimanenza</th>' if quick else ''

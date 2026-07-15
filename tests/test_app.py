@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import app
@@ -471,7 +472,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("practice-list-table td:first-child",app.CSS)
         self.assertIn("width:132px;min-width:132px;max-width:132px",app.CSS)
 
-    def test_cremated_status_colors_entire_row_and_ritirato_is_yellow(self):
+    def test_cremated_status_colors_only_label_and_ritirato_is_yellow(self):
         self.assertIn("Cremato",app.STATES)
         self.assertEqual(app.practice_status_class("Ritirato"),"practice-status-yellow")
         self.assertEqual(app.practice_status_class("Cremato"),"practice-status-blue")
@@ -483,9 +484,10 @@ class PetParadiseTests(unittest.TestCase):
             rows=conn.execute("SELECT * FROM practices WHERE practice_number='CR-CREMATO'").fetchall()
         self.handler.path="/archivio/pratiche"
         page=self.handler.practice_rows(rows)
-        self.assertIn('class="practice-row-link practice-row-cremated"',page)
+        self.assertIn('class="practice-row-link"',page)
         self.assertIn("practice-status-blue",page)
-        self.assertIn("practice-row-cremated td",app.CSS)
+        self.assertNotIn("practice-row-cremated",page)
+        self.assertNotIn("practice-row-cremated",app.CSS)
 
     def test_urn_word_search_and_frame_urn_enable_cast_tag(self):
         self.assertIn("urnMatchesWords",app.APP_JS)
@@ -537,6 +539,78 @@ class PetParadiseTests(unittest.TestCase):
             self.assertEqual((row["payment_status"],row["payment_method"],row["payment_amount"]),("Pagato","Pos","200.00"))
             self.assertEqual((row["invoice_number"],row["invoice_total"],row["invoice_date"]),("FT-200","200.00","2026-07-14"))
         self.assertEqual(redirects[-1],"/archivio/pratiche?stato=Ritirato")
+
+    def test_dashboard_period_bounds_are_today_saturday_friday_and_month(self):
+        reference=date(2026,7,15)
+        self.assertEqual(app.dashboard_period_bounds("oggi",reference),("oggi",reference,reference))
+        self.assertEqual(app.dashboard_period_bounds("settimana",reference),("settimana",date(2026,7,11),date(2026,7,17)))
+        self.assertEqual(app.dashboard_period_bounds("mese",reference),("mese",date(2026,7,1),date(2026,7,31)))
+        self.assertEqual(app.dashboard_period_bounds("mese",date(2026,12,8)),("mese",date(2026,12,1),date(2026,12,31)))
+
+    def test_dashboard_uses_operational_and_economic_dates_without_double_counting(self):
+        today=datetime.now().date();week_start=app.dashboard_period_bounds("settimana",today)[1]
+        old_day=(today-timedelta(days=35)).isoformat();today_text=today.isoformat();week_day=week_start.isoformat();stamp=app.now()
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();uid=admin["id"]
+            def practice(code,name,status,pickup,total,total_d="",deposit="0",remaining="0",payment="Da saldare",created=old_day):
+                return conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,created_at,updated_at,created_by,
+                                      animal_name,service_type,payment_status,total_service,price_cremation,total_text,deposit,remaining_balance,data_complete)
+                                      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)""",
+                                    (code,"Privato","Livorno",status,pickup,created+"T08:00:00",stamp,uid,name,"Cremazione singola",payment,total,total,total_d,deposit,remaining)).lastrowid
+            w_open=practice("CR-DASH-W","Ritiro oggi W","Ritirato",today_text,"300","","100","200")
+            d_open=practice("CR-DASH-D","Ritiro oggi D","Ritirato",today_text,"400","330","100","230")
+            paid=practice("CR-DASH-PAID","Consegnata oggi","Consegnato",week_day,"300","","100","0","Pagato")
+            outside=practice("CR-DASH-OLD","Fuori periodo","Ritirato",old_day,"50","","0","50")
+            conn.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(paid,"Cambio stato rapido","Consegnato",uid,today_text+"T12:00:00"))
+            for pid,ptype,channel,amount,paid_at in (
+                (w_open,"acconto_ordinario","ordinario",100,today_text+"T09:00:00"),
+                (d_open,"acconto_d","D",100,today_text+"T10:00:00"),
+                (paid,"acconto_ordinario","ordinario",100,old_day+"T10:00:00"),
+                (paid,"saldo_ordinario","ordinario",200,today_text+"T11:00:00"),
+            ):
+                conn.execute("INSERT INTO payment_movements(practice_id,payment_type,payment_channel,amount,paid_at,user_id,notes,created_at) VALUES(?,?,?,?,?,?,?,?)",(pid,ptype,channel,amount,paid_at,uid,"test",stamp))
+            snapshot=(conn.execute("SELECT count(*) n FROM practices").fetchone()["n"],conn.execute("SELECT count(*) n FROM payment_movements").fetchone()["n"],conn.execute("SELECT count(*) n FROM practice_history").fetchone()["n"])
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/?pratiche_periodo=oggi&pagamenti_periodo=oggi";self.handler.dashboard(admin);page=rendered[-1]
+        self.assertIn('data-dashboard-card="Ritirato" data-count="2"',page)
+        self.assertIn('data-dashboard-card="Consegnato" data-count="1"',page)
+        self.assertIn('data-dashboard-payment="Da saldare" data-count="3" data-amount="480.00"',page)
+        self.assertIn('data-dashboard-payment="Acconto" data-count="2" data-amount="200.00"',page)
+        self.assertIn('data-dashboard-payment="Pagato" data-count="1" data-amount="200.00"',page)
+        self.assertIn("Entrate settimana in corso",page);self.assertIn("400,00",page)
+        self.assertIn("Ultime 10 pratiche per data recupero",page);self.assertIn("Apri archivio",page)
+        self.assertNotIn("Attività recenti",page);self.assertNotIn("Centro notifiche",page)
+        self.assertEqual(page.count('class="period-selector"'),2);self.assertIn("/notifiche",page)
+        self.assertIn("dashboard_event=ritirati",page);self.assertNotIn("dashboard_event=ritirati&amp;stato=Ritirato",page)
+        self.handler.path=f"/?pratiche_periodo=settimana&pagamenti_periodo=settimana";self.handler.dashboard(admin);week_page=rendered[-1]
+        self.assertIn('data-dashboard-card="Ritirato" data-count="3"',week_page)
+        self.assertIn('data-dashboard-payment="Pagato" data-count="1" data-amount="200.00"',week_page)
+        self.handler.path=f"/?pratiche_periodo=mese&pagamenti_periodo=mese";self.handler.dashboard(admin);month_page=rendered[-1]
+        self.assertIn('data-dashboard-card="Ritirato" data-count="3"',month_page)
+        self.assertIn('data-dashboard-payment="Acconto" data-count="2" data-amount="200.00"',month_page)
+        with app.db() as conn:
+            self.assertEqual(snapshot,(conn.execute("SELECT count(*) n FROM practices").fetchone()["n"],conn.execute("SELECT count(*) n FROM payment_movements").fetchone()["n"],conn.execute("SELECT count(*) n FROM practice_history").fetchone()["n"]))
+
+    def test_dashboard_card_lists_and_payment_lists_keep_the_selected_period(self):
+        today=datetime.now().date().isoformat();old=(datetime.now().date()-timedelta(days=40)).isoformat();stamp=app.now()
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();uid=admin["id"]
+            current=conn.execute("INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,created_at,updated_at,created_by,animal_name,total_service,price_cremation,payment_status,remaining_balance,deposit) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",("CR-CURRENT","Privato","Livorno","Ritirato",today,old+"T08:00:00",stamp,uid,"Visibile",200,200,"Acconto",150,50)).lastrowid
+            conn.execute("INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,created_at,updated_at,created_by,animal_name,total_service,price_cremation,payment_status,remaining_balance) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",("CR-OLD","Privato","Livorno","Ritirato",old,old+"T08:00:00",stamp,uid,"Nascosta",100,100,"Da saldare",100))
+            conn.execute("INSERT INTO payment_movements(practice_id,payment_type,payment_channel,amount,paid_at,user_id,created_at) VALUES(?,?,?,?,?,?,?)",(current,"acconto_ordinario","ordinario",50,today+"T10:00:00",uid,stamp))
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path=f"/archivio/pratiche?dashboard_event=ritirati&periodo=oggi&dal={today}&al={today}";self.handler.archive(admin);archive_page=rendered[-1]
+        self.assertIn("Visibile",archive_page);self.assertNotIn("Nascosta",archive_page);self.assertIn("Oggi",archive_page)
+        self.handler.path=f"/pagamenti/acconti?periodo=oggi&dal={today}&al={today}";self.handler.payment_overview(admin,"acconti");payment_page=rendered[-1]
+        self.assertIn("CR-CURRENT",payment_page);self.assertIn("50,00",payment_page);self.assertIn("Incassi registrati",payment_page)
+        self.handler.path=f"/pagamenti/pagati?periodo=oggi&dal={today}&al={today}";self.handler.payment_overview(admin,"pagati")
+        self.assertNotIn("CR-CURRENT",rendered[-1])
+
+    def test_dashboard_layout_is_compact_responsive_and_ios_safe(self):
+        for token in (".dashboard-section-head",".period-selector","min-height:44px","var(--safe-bottom)",".dashboard-chart-only"):
+            self.assertIn(token,app.CSS)
+        dashboard_constants="".join(value for value in app.App.dashboard.__code__.co_consts if isinstance(value,str))
+        self.assertIn("localStorage.getItem('ppm_'+key)",dashboard_constants)
 
     def test_dashboard_balances_and_payment_pages_render(self):
         with app.db() as conn:
