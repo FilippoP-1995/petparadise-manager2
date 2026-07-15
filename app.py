@@ -13,7 +13,7 @@ import threading
 import traceback
 import urllib.error
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from http import cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -21,12 +21,19 @@ from urllib.parse import parse_qs, quote, urlencode, urlparse
 from zoneinfo import ZoneInfo
 
 from email_service import EmailConfigurationError, EmailDeliveryError, send_email
+from calendar_service import (
+    EVENT_TYPES, PICKUP_STATUSES, DELIVERY_STATUSES, PAYMENT_STATUSES,
+    add_history as calendar_add_history,
+    ensure_calendar_schema, event_color_class, normalize_event, overlap_rows,
+    parse_items as calendar_parse_items, period_bounds as calendar_period_bounds,
+    schedule_event_notifications, sync_children as calendar_sync_children,
+)
 from pdf_service import generate_ddt
 from notification_service import (
     NOTIFICATION_TYPES,
     emit_notification,
     ensure_notification_schema,
-    process_scheduled_notifications,
+    process_scheduled_notifications, process_calendar_notifications,
 )
 from urn_inventory import DEFAULT_URNS
 
@@ -581,6 +588,7 @@ def init_db():
             if (practice["payment_status"] or "") == "Pagato":
                 c.execute("UPDATE practices SET paid_at=COALESCE(paid_at,?) WHERE id=?",(economic_at,practice["id"]))
         ensure_notification_schema(c)
+        ensure_calendar_schema(c)
 
 
 def esc(value):
@@ -819,6 +827,8 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .dashboard-section-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:24px 0 12px}.dashboard-section-head .dashboard-heading{margin:0}.period-selector{display:inline-grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px;padding:3px;border:1px solid #3b4a5f;border-radius:12px;background:#182334}.period-selector a{display:grid;place-items:center;min-width:88px;min-height:38px;padding:8px 12px;border-radius:9px;color:#aeb9c8;font-size:13px;font-weight:600}.period-selector a:hover{color:#fff;background:#253248}.period-selector a.active{color:#fff;background:#ef405f;box-shadow:0 5px 14px #ef405f40}.dashboard-chart-only{margin-top:24px}.dashboard-chart-only .dashboard-panel{display:block;min-height:0}.light-theme .period-selector{background:#f1f5f9;border-color:#cbd5e1}.light-theme .period-selector a{color:#526174}.light-theme .period-selector a.active{color:#fff}.state-yellow{--card-glow:#713f124f;--icon-bg:#573713;--icon-color:#fde047;--icon-shadow:#eab30840}.inline-save-note{min-height:16px;color:#86efac;font-size:11px}.inline-save-note.error{color:#fca5a5}
 .water-order-card{max-width:620px;margin:0 auto;padding:28px;text-align:center}.water-order-card h1{margin-bottom:6px}.water-order-card .sub{margin-bottom:24px}.quantity-stepper{display:grid;grid-template-columns:64px minmax(100px,160px) 64px;justify-content:center;align-items:center;gap:12px}.quantity-stepper button{width:64px;height:64px;border-radius:18px;font-size:32px}.quantity-stepper input{height:76px;text-align:center;font-size:34px;font-weight:650;padding:8px}.quick-quantities{display:flex;justify-content:center;gap:9px;flex-wrap:wrap;margin:16px 0 22px}.quick-quantities button{min-height:44px}.order-now{width:min(100%,420px);min-height:58px;font-size:17px}.last-order{margin:18px 0 0}.order-secondary-actions{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:18px}.recent-orders{margin-top:22px}.order-preview{margin:0;padding:16px;border:1px solid #3b4a5f;border-radius:12px;background:#182334;color:#e7ecf3;font:400 14px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}.light-theme .order-preview{background:#f8fafc;color:#24312c;border-color:#cbd5e1}.orders-wrap .tablebox{margin-top:14px}.order-modal[hidden]{display:none}.order-modal{position:fixed;inset:0;z-index:1200;display:grid;place-items:center;padding:20px;background:rgba(4,10,20,.72)}.order-modal-card{width:min(560px,100%);max-height:min(720px,calc(100dvh - 40px));overflow:auto;padding:24px;border:1px solid var(--line);border-radius:18px;background:#202c3d;box-shadow:0 24px 70px rgba(0,0,0,.45)}.light-theme .order-modal-card{background:#fff}.order-modal-card .order-preview{max-height:210px;overflow:auto}.modal-open{overflow:hidden}.admin-order-settings{max-width:820px}.admin-order-settings textarea{min-height:240px}
 @media(max-width:620px){.dashboard-section-head{align-items:stretch;flex-direction:column;gap:9px}.period-selector{width:100%}.period-selector a{min-width:0;min-height:44px;padding:8px 5px}.dashboard-chart-only{margin-top:18px}.dashboard-wrap{padding-bottom:calc(28px + var(--safe-bottom))}.water-order-card{padding:22px 15px}.quantity-stepper{grid-template-columns:58px minmax(86px,130px) 58px;gap:8px}.quantity-stepper button{width:58px;height:58px}.quantity-stepper input{height:68px;font-size:30px}.order-now{width:100%}.orders-wrap .tablebox{max-width:100%;overflow-x:auto}.orders-wrap{padding-bottom:calc(92px + var(--safe-bottom))}.order-modal{padding:12px 12px calc(78px + var(--safe-bottom))}.order-modal-card{padding:18px;max-height:calc(100dvh - 110px - var(--safe-bottom))}}
+.calendar-wrap{max-width:1700px}.calendar-toolbar,.calendar-nav,.calendar-view-switch,.calendar-quick-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.calendar-toolbar{justify-content:space-between;margin-bottom:16px}.calendar-view-switch{padding:4px;border:1px solid #3b4a5f;border-radius:13px;background:#182334}.calendar-view-switch a{min-height:40px;padding:9px 12px;border-radius:9px;color:#aeb9c8}.calendar-view-switch a.active{background:#ef405f;color:#fff}.calendar-board{display:grid;gap:12px}.calendar-day-list{display:grid;gap:10px;min-height:260px}.calendar-event{display:grid;grid-template-columns:76px minmax(0,1fr) auto;gap:13px;align-items:center;padding:14px 16px;border:1px solid #3a495e;border-left:4px solid currentColor;border-radius:14px;background:#202c3d;box-shadow:0 8px 24px #080d1626;touch-action:pan-y}.calendar-event-time{color:#aeb9c8;font-size:13px}.calendar-event h3{margin:0 0 4px;font-size:15px;color:currentColor}.calendar-event p{margin:2px 0;color:#aeb9c8;font-size:12px}.calendar-red{color:#fb7185}.calendar-yellow{color:#fde047}.calendar-green{color:#4ade80}.calendar-blue{color:#60a5fa}.calendar-purple{color:#c084fc}.calendar-dark{color:#94a3b8}.calendar-week{display:grid;grid-template-columns:repeat(7,minmax(170px,1fr));gap:8px;min-width:1190px}.calendar-week-scroll{overflow-x:auto;padding-bottom:8px}.calendar-day-column{min-height:520px;padding:10px;border:1px solid #3a495e;border-radius:14px;background:#1b2636}.calendar-day-column>header{position:sticky;top:0;padding:8px;background:#1b2636;z-index:2}.calendar-day-column .calendar-event{grid-template-columns:1fr;padding:10px;margin-top:8px}.calendar-day-column .calendar-event-time{font-weight:600}.calendar-month{display:grid;grid-template-columns:repeat(7,minmax(105px,1fr));gap:5px}.calendar-month-day{min-height:128px;padding:8px;border:1px solid #3a495e;border-radius:11px;background:#1b2636;overflow:hidden}.calendar-month-day.selected{outline:2px solid #ef405f}.calendar-month-day>a{display:block;font-weight:600;margin-bottom:6px}.calendar-band{display:block;margin:4px 0;padding:4px 6px;border-left:3px solid currentColor;border-radius:6px;background:#253247;color:inherit;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.calendar-dots{display:flex;gap:4px;flex-wrap:wrap}.calendar-dot{width:7px;height:7px;border-radius:50%;background:currentColor}.calendar-mixed{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(320px,.7fr);gap:16px}.calendar-form{max-width:980px;margin:auto}.calendar-steps{display:flex;justify-content:center;gap:8px;margin-bottom:18px}.calendar-steps span{display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:#253247}.calendar-steps span.active{background:#ef405f}.calendar-type-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}.calendar-type-option{display:flex;min-height:92px;padding:14px;border:1px solid #3b4a5f;border-radius:15px;background:#202c3d;cursor:pointer}.calendar-type-option input{width:auto}.calendar-type-option:has(input:checked){border-color:#ef405f;box-shadow:0 0 0 2px #ef405f35}.calendar-form-step[hidden]{display:none}.calendar-repeat-list{display:grid;gap:10px}.calendar-repeat-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr)) auto;gap:8px}.calendar-tabs{display:flex;gap:5px;border-bottom:1px solid #3b4a5f;margin-bottom:16px}.calendar-tabs a{padding:10px 13px}.calendar-tabs a.active{color:#fb7185;border-bottom:2px solid #fb7185}.calendar-detail-grid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(300px,.7fr);gap:16px}.calendar-comment{padding:12px;border:1px solid #3b4a5f;border-radius:12px;background:#182334}.calendar-comment+.calendar-comment{margin-top:8px}.calendar-fab{position:fixed;right:30px;bottom:30px;z-index:30;width:58px;height:58px;border-radius:50%;font-size:27px}.light-theme .calendar-event,.light-theme .calendar-day-column,.light-theme .calendar-month-day,.light-theme .calendar-type-option{background:#fff;border-color:#cbd5e1}.light-theme .calendar-day-column>header{background:#fff}.light-theme .calendar-event p,.light-theme .calendar-event-time{color:#526174}
+@media(max-width:900px){.calendar-wrap{padding-bottom:calc(100px + var(--safe-bottom))}.calendar-toolbar{align-items:stretch;flex-direction:column}.calendar-view-switch{display:grid;grid-template-columns:repeat(3,1fr);overflow:auto}.calendar-view-switch a{text-align:center;white-space:nowrap}.calendar-mixed,.calendar-detail-grid{grid-template-columns:1fr}.calendar-month{grid-template-columns:repeat(7,minmax(43px,1fr));gap:3px}.calendar-month-day{min-height:76px;padding:5px}.calendar-month-day .calendar-band{display:none}.calendar-month-day>a{font-size:12px}.calendar-type-grid{grid-template-columns:1fr}.calendar-repeat-row{grid-template-columns:1fr 1fr}.calendar-repeat-row .full-mobile{grid-column:1/-1}.calendar-event{grid-template-columns:62px minmax(0,1fr);padding:13px}.calendar-event>.btn{grid-column:1/-1;width:100%}.calendar-fab{right:18px;bottom:calc(88px + var(--safe-bottom))}.calendar-form{padding-bottom:calc(90px + var(--safe-bottom))}.header-event-new{display:none!important}}
 """
 
 APP_JS = r"""
@@ -1632,6 +1642,17 @@ document.addEventListener('DOMContentLoaded',function(){
   if(tax) tax.addEventListener('input',()=>{tax.value=tax.value.toUpperCase();});
   initializePushNotifications();
 });
+function calendarStep(step){document.querySelectorAll('.calendar-form-step').forEach(el=>el.hidden=Number(el.dataset.step)!==step);document.querySelectorAll('.calendar-steps span').forEach((el,i)=>el.classList.toggle('active',i+1===step));scrollTo({top:0,behavior:'smooth'});}
+function calendarAutoTitle(force=false){const form=document.getElementById('calendarEventForm');if(!form)return;const type=form.event_type?.value||'';const zone=(form.zone?.value||'').trim().toUpperCase();const animal=(form.animal_name?.value||'').trim().toUpperCase();const site=(form.destination_site?.value||'').trim().toUpperCase();let title='';if(type==='Ritiro')title=`RITIRO ${zone}`;if(type==='Ritiro in sede')title=`RITIRO IN SEDE ${site}`;if(type==='Riconsegna')title=`RICONSEGNA ${animal} ${zone}`;if(type==='Riconsegna in sede')title=`RICONSEGNA ${animal} IN SEDE ${site}`;const field=form.title;if(field&&(force||!field.dataset.manual))field.value=title.trim();}
+function calendarTypeChanged(){const form=document.getElementById('calendarEventForm');if(!form)return;const type=form.event_type.value;form.querySelectorAll('[data-calendar-types]').forEach(el=>{const hide=!el.dataset.calendarTypes.split('|').includes(type);el.hidden=hide;el.querySelectorAll('input,select,textarea').forEach(input=>input.disabled=hide);});calendarAutoTitle(true);}
+function calendarAllDayChanged(box){const form=box.form;form.querySelectorAll('[data-calendar-time]').forEach(el=>{el.hidden=box.checked;el.querySelectorAll('input').forEach(input=>input.required=!box.checked&&input.name==='start_time');});}
+function calendarZoneOffer(input){const value=input.value.trim();if(!value)return;const known=[...input.list.options].some(option=>option.value.toLocaleLowerCase('it')===value.toLocaleLowerCase('it'));const save=input.closest('.field')?.querySelector('input[name="save_zone"]');if(!known&&save&&!save.checked&&confirm(`Vuoi aggiungere ${value} ai suggerimenti?`))save.checked=true;}
+function calendarAddRow(kind,data={}){const list=document.querySelector(`[data-calendar-list="${kind}"]`);if(!list)return;const row=document.createElement('div');row.className='calendar-repeat-row';if(kind==='animal')row.innerHTML=`<input placeholder="Nome" data-key="name" value="${data.name||''}"><input placeholder="Specie" data-key="species" value="${data.species||''}"><input inputmode="decimal" placeholder="Peso kg" data-key="weight" value="${data.weight||''}"><select data-key="cremation_type"><option value="">Cremazione</option><option ${data.cremation_type==='Singola'?'selected':''}>Singola</option><option ${data.cremation_type==='Collettiva'?'selected':''}>Collettiva</option></select><input class="full-mobile" placeholder="Note" data-key="notes" value="${data.notes||''}"><button class="btn ghost" type="button" onclick="this.parentElement.remove();calendarSerialize()">×</button>`;else row.innerHTML=`<input class="full-mobile" placeholder="Descrizione" data-key="description" value="${data.description||''}"><input inputmode="decimal" placeholder="Importo €" data-key="amount" value="${data.amount||''}"><button class="btn ghost" type="button" onclick="this.parentElement.remove();calendarSerialize()">×</button>`;list.append(row);row.querySelectorAll('input,select').forEach(input=>input.addEventListener('input',calendarSerialize));calendarSerialize();}
+function calendarSerialize(){['animal','estimate'].forEach(kind=>{const hidden=document.querySelector(`input[name="${kind==='animal'?'animals_json':'estimate_json'}"]`);const list=document.querySelector(`[data-calendar-list="${kind}"]`);if(!hidden||!list)return;const values=[...list.children].map(row=>Object.fromEntries([...row.querySelectorAll('[data-key]')].map(input=>[input.dataset.key,input.value])));hidden.value=JSON.stringify(values);if(kind==='estimate'){const total=values.reduce((sum,item)=>sum+(Number(String(item.amount||0).replace(',','.'))||0),0);const output=document.querySelector('[data-estimate-total]');if(output)output.textContent=total.toLocaleString('it-IT',{style:'currency',currency:'EUR'});}});}
+async function calendarLookup(input,endpoint,results,select){const q=input.value.trim();if(q.length<2){results.classList.add('hidden');return;}const response=await fetch(`${endpoint}?q=${encodeURIComponent(q)}`);const data=await response.json();results.innerHTML=(data.results||[]).map(item=>`<button type="button" class="lookup-item" data-value='${JSON.stringify(item).replace(/'/g,'&#39;')}'><b>${item.display||item.name||''}</b><small>${item.subtitle||item.phone||''}</small></button>`).join('')||'<div class="lookup-state">Nessun risultato: i dati restano solo nell evento.</div>';results.classList.remove('hidden');results.onclick=e=>{const button=e.target.closest('[data-value]');if(!button)return;select(JSON.parse(button.dataset.value));results.classList.add('hidden');};}
+function calendarInitLookups(){const client=document.getElementById('calendarClientSearch'),clientResults=document.getElementById('calendarClientResults');if(client)client.addEventListener('input',()=>calendarLookup(client,'/api/clienti/search',clientResults,item=>{const form=client.form;form.client_id.value=item.id||'';form.client_first_name.value=item.first_name||'';form.client_last_name.value=item.last_name||'';form.client_phone.value=item.phone||'';}));const vet=document.getElementById('calendarVetSearch'),vetResults=document.getElementById('calendarVetResults');if(vet)vet.addEventListener('input',()=>calendarLookup(vet,'/api/veterinari/search',vetResults,item=>{const form=vet.form;form.veterinarian_id.value=item.id||'';form.veterinarian_name.value=item.display||item.clinic_name||'';form.veterinarian_phone.value=item.phone||'';form.veterinarian_address.value=item.address||'';form.veterinarian_hours.value=item.notes||'';form.venue_name.value=item.display||'';form.address.value=item.address||'';form.phone.value=item.phone||'';}));}
+function calendarSwipeNavigation(){const board=document.querySelector('[data-calendar-swipe]');if(!board)return;let x=0,y=0;board.addEventListener('touchstart',e=>{x=e.touches[0].clientX;y=e.touches[0].clientY},{passive:true});board.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-x,dy=e.changedTouches[0].clientY-y;if(Math.abs(dx)>80&&Math.abs(dx)>Math.abs(dy)*1.5){const link=document.querySelector(dx<0?'[data-calendar-next]':'[data-calendar-prev]');if(link)location.href=link.href;}},{passive:true});document.querySelectorAll('[data-status-swipe]').forEach(card=>{let sx=0,sy=0;card.addEventListener('touchstart',e=>{sx=e.touches[0].clientX;sy=e.touches[0].clientY},{passive:true});card.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;if(Math.abs(dx)>90&&Math.abs(dx)>Math.abs(dy)*1.8){const status=dx>0?'Ritirato':'Annullato';if(confirm(`Confermi il cambio stato in ${status}?`)){const form=card.querySelector('form[data-quick-status]');form.status.value=status;form.submit();}}},{passive:true});});}
+document.addEventListener('DOMContentLoaded',()=>{calendarInitLookups();calendarSwipeNavigation();calendarSerialize();});
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(error=>console.warn('Service worker non registrato',error)));
 }
@@ -1875,7 +1896,7 @@ def layout(title, body, user=None):
             unread=conn.execute("SELECT count(*) n FROM notifications WHERE user_id=? AND is_read=0",(user["id"],)).fetchone()["n"]
         unread_badge=f'<span class="notification-badge">{unread if unread < 100 else "99+"}</span>' if unread else ''
         links=[
-            ("/","home","Dashboard"),("/notifiche","bell","Notifiche"),("/pratiche","archive","Archivio"),("/conversazioni-whatsapp","message","Conversazioni WhatsApp"),("/veterinari","stethoscope","Veterinari"),
+            ("/","home","Dashboard"),("/calendario","calendar","Calendario"),("/notifiche","bell","Notifiche"),("/pratiche","archive","Archivio"),("/conversazioni-whatsapp","message","Conversazioni WhatsApp"),("/veterinari","stethoscope","Veterinari"),
             ("/prodotti","clipboard","Prodotti"),("/ordini","receipt","Ordini"),
             ("/catalogo-urne","archive","Catalogo Urne"),
             ("/archivio/pratiche","clipboard","Gestionale"),("/archivio/clienti","users","Clienti"),("/archivio/pratiche","paw","Animali"),
@@ -1885,9 +1906,9 @@ def layout(title, body, user=None):
         nav_links=''.join(f'<a href="{href}" class="{"nav-notification" if href=="/notifiche" else ""}">{lucide(icon)}<span>{label}</span>{unread_badge if href=="/notifiche" else ""}</a>' for href,icon,label in links)
         nav=f'''<nav class="nav" aria-label="Menu principale">{nav_links}<button class="btn ghost install-btn" type="button" onclick="installPetParadise()">{lucide("plus")}<span>Installa App</span></button><a class="logout" href="/logout">{lucide("menu")}<span>Esci</span></a></nav>'''
         today=datetime.now(); date_label=today.strftime("%d/%m/%Y"); weekday=["Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica"][today.weekday()]
-        app_header=f'''<header class="app-header"><div class="header-actions"><form class="header-search" action="/archivio/pratiche" method="get" role="search">{lucide("search")}<label class="sr-only" for="globalSearch">Ricerca rapida per animale o proprietario</label><input id="globalSearch" name="rapida" placeholder="Animale o proprietario..." autocomplete="off"></form><a class="icon-btn nav-notification" href="/notifiche" aria-label="Notifiche, {unread} non lette">{lucide("bell")}{unread_badge}</a><button class="icon-btn" type="button" onclick="toggleTheme()" aria-label="Cambia tema">{lucide("sun")}</button><a class="btn header-new" href="/nuova">{lucide("plus")}<span>Nuova pratica</span></a><time datetime="{today.date().isoformat()}">{date_label}<small>{weekday}</small></time></div></header>'''
+        app_header=f'''<header class="app-header"><div class="header-actions"><form class="header-search" action="/archivio/pratiche" method="get" role="search">{lucide("search")}<label class="sr-only" for="globalSearch">Ricerca rapida per animale o proprietario</label><input id="globalSearch" name="rapida" placeholder="Animale o proprietario..." autocomplete="off"></form><a class="icon-btn nav-notification" href="/notifiche" aria-label="Notifiche, {unread} non lette">{lucide("bell")}{unread_badge}</a><button class="icon-btn" type="button" onclick="toggleTheme()" aria-label="Cambia tema">{lucide("sun")}</button><a class="btn header-new header-event-new" href="/calendario/nuovo" aria-label="Nuovo evento">{lucide("calendar")}<span>Nuovo evento</span></a><a class="btn header-new" href="/nuova">{lucide("plus")}<span>Nuova pratica</span></a><time datetime="{today.date().isoformat()}">{date_label}<small>{weekday}</small></time></div></header>'''
         drawer_links=''.join(f'<a href="{href}" class="{"nav-notification" if href=="/notifiche" else ""}">{lucide(icon)}<span>{label}</span>{unread_badge if href=="/notifiche" else ""}</a>' for href,icon,label in links)
-        mobile_nav=f'''<nav class="bottom-nav" aria-label="Navigazione mobile"><a href="/">{lucide("home")}<span>Dashboard</span></a><a href="/bilanci">{lucide("chart")}<span>Bilanci</span></a><a class="bottom-new" href="/nuova" aria-label="Nuova pratica">{lucide("plus")}</a><a href="/pratiche">{lucide("archive")}<span>Archivio</span></a><button type="button" onclick="toggleMoreMenu()">{lucide("menu")}<span>Altro</span></button></nav><div class="more-backdrop" onclick="toggleMoreMenu(false)"></div><aside class="more-menu" aria-label="Altre funzioni"><div class="more-title"><b>Menu</b><button class="icon-btn" onclick="toggleMoreMenu(false)" aria-label="Chiudi">×</button></div>{drawer_links}<button class="btn ghost install-btn" type="button" onclick="installPetParadise()">Installa App</button></aside>'''
+        mobile_nav=f'''<nav class="bottom-nav" aria-label="Navigazione mobile"><a href="/">{lucide("home")}<span>Dashboard</span></a><a href="/calendario">{lucide("calendar")}<span>Calendario</span></a><a class="bottom-new" href="/nuova" aria-label="Nuova pratica">{lucide("plus")}</a><a href="/pratiche">{lucide("archive")}<span>Archivio</span></a><button type="button" onclick="toggleMoreMenu()">{lucide("menu")}<span>Altro</span></button></nav><div class="more-backdrop" onclick="toggleMoreMenu(false)"></div><aside class="more-menu" aria-label="Altre funzioni"><div class="more-title"><b>Menu</b><button class="icon-btn" onclick="toggleMoreMenu(false)" aria-label="Chiudi">×</button></div>{drawer_links}<button class="btn ghost install-btn" type="button" onclick="installPetParadise()">Installa App</button></aside>'''
     vapid_public=esc(os.environ.get("VAPID_PUBLIC_KEY",""))
     return f'''<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#e9475b"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="PP Manager"><meta name="application-name" content="Pet Paradise Manager"><meta name="format-detection" content="telephone=no"><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"><title>{esc(title)} - Pet Paradise Manager</title><style>{CSS}</style></head><body data-vapid-public-key="{vapid_public}"><a class="skip-link" href="#main-content">Vai al contenuto</a><aside class="top"><a class="brand" href="/"><img class="brand-logo brand-logo-dark" src="/assets/company_logo.png" alt="Pet Paradise"><img class="brand-logo brand-logo-light" src="/assets/company_logo_light.png" alt="Pet Paradise"><span class="brand-copy">Pet Paradise <small>MANAGER</small></span></a>{nav}</aside>{app_header}<div id="main-content">{body}</div>{mobile_nav}{APP_JS}</body></html>'''
 
@@ -1993,6 +2014,13 @@ class App(BaseHTTPRequestHandler):
             content_type={".png":"image/png",".jpg":"image/jpeg",".jpeg":"image/jpeg",".webp":"image/webp"}.get(image.suffix.lower(),"application/octet-stream")
             return self.send_static(image,content_type)
         if path == "/": return self.dashboard(user)
+        if path == "/calendario": return self.calendar_page(user)
+        if path == "/calendario/nuovo": return self.calendar_event_form(user)
+        if path == "/calendario/cestino": return self.calendar_trash(user)
+        match = re.fullmatch(r"/calendario/(\d+)/modifica",path)
+        if match: return self.calendar_event_form(user,int(match.group(1)))
+        match = re.fullmatch(r"/calendario/(\d+)",path)
+        if match: return self.calendar_event_detail(user,int(match.group(1)))
         if path == "/bilanci": return self.balances_v2(user)
         match = re.fullmatch(r"/pagamenti/(da-saldare|acconti|pagati)", path)
         if match: return self.payment_overview(user,match.group(1))
@@ -2058,6 +2086,13 @@ class App(BaseHTTPRequestHandler):
         user = self.require_user()
         if not user: return
         if path == "/nuova": return self.create_practice(user)
+        if path == "/calendario/nuovo": return self.save_calendar_event(user)
+        match = re.fullmatch(r"/calendario/(\d+)/modifica",path)
+        if match: return self.save_calendar_event(user,int(match.group(1)))
+        match = re.fullmatch(r"/calendario/(\d+)/(stato|commento|elimina|ripristina|elimina-definitiva)",path)
+        if match: return self.calendar_event_action(user,int(match.group(1)),match.group(2))
+        match = re.fullmatch(r"/calendario/(\d+)/commenti/(\d+)/(modifica|elimina)",path)
+        if match: return self.calendar_comment_action(user,int(match.group(1)),int(match.group(2)),match.group(3))
         if path == "/api/push/subscribe": return self.push_subscribe(user)
         if path == "/api/push/unsubscribe": return self.push_unsubscribe(user)
         if path == "/api/push/test": return self.push_test(user)
@@ -2188,6 +2223,8 @@ class App(BaseHTTPRequestHandler):
         body=body.replace("Entrate ultimi 7 giorni", "Entrate settimana in corso")
         body=body.replace("Totale: <strong>", f"{week_range} · Totale: <strong>", 1)
         body=body.replace('href="/bilanci" aria-label="Apri Bilanci: entrate degli ultimi sette giorni"', f'href="/bilanci?dal={week_start.isoformat()}&al={week_end.isoformat()}" aria-label="Apri Bilanci: entrate della settimana in corso"')
+        dashboard_actions='''<div class="calendar-quick-actions"><a class="btn" href="/nuova">+ Nuova pratica</a><a class="btn ghost" href="/calendario/nuovo">+ Nuovo evento</a></div>'''
+        body=body.replace("</section>",dashboard_actions+"</section>",1)
         self.send_html(layout("Dashboard",body,user))
 
     def dashboard(self,user):
@@ -2250,8 +2287,205 @@ class App(BaseHTTPRequestHandler):
         practice_selector=selector("pratiche_periodo",practice_period,"pagamenti_periodo",payment_period);payment_selector=selector("pagamenti_periodo",payment_period,"pratiche_periodo",practice_period)
         persistence_script='''<script>(function(){const allowed=['oggi','settimana','mese'];const url=new URL(location.href);let changed=false;['pratiche_periodo','pagamenti_periodo'].forEach(key=>{const saved=localStorage.getItem('ppm_'+key);if(!url.searchParams.has(key)&&allowed.includes(saved)&&saved!=='oggi'){url.searchParams.set(key,saved);changed=true;}});if(changed){location.replace(url);return;}document.querySelectorAll('[data-dashboard-period]').forEach(link=>link.addEventListener('click',()=>localStorage.setItem('ppm_'+link.dataset.dashboardPeriod,link.dataset.periodValue)));})();</script>'''
         hour=datetime.now().hour;greeting="Buongiorno" if hour<13 else "Buon pomeriggio" if hour<18 else "Buonasera"
-        body=f'''<main class="wrap dashboard-wrap"><section class="welcome"><div><h1>{greeting}, Pet Paradise <span aria-hidden="true">👋</span></h1><p>Panoramica operativa del periodo selezionato</p></div></section>{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}<div class="dashboard-section-head"><h2 class="dashboard-heading">Pratiche / Ritiri</h2>{practice_selector}</div><section class="dashboard-states">{state_cards}</section><div class="dashboard-section-head"><h2 class="dashboard-heading">Pagamenti</h2>{payment_selector}</div><section class="dashboard-payments">{payment_cards}</section><section class="dashboard-chart-only"><a class="dashboard-panel income-panel" href="/bilanci?dal={week_start.isoformat()}&al={week_end.isoformat()}" aria-label="Apri Bilanci: entrate della settimana in corso"><header><div><h2>Entrate settimana in corso</h2><p>{week_start.strftime('%d/%m/%Y')} - {week_end.strftime('%d/%m/%Y')} · Totale: <strong>{money_it(income_total)}</strong></p></div><span class="panel-link">Apri Bilanci →</span></header>{chart}</a></section><section class="dashboard-recent"><div class="titlebar"><h2>Ultime 10 pratiche per data recupero</h2><a href="/archivio/pratiche">Apri archivio</a></div><div class="tablebox dashboard-table-scroll"><table class="practice-list-table"><thead><tr><th>Animale</th><th>Età</th><th>Proprietario</th><th>Data recupero</th><th>Codice pratica</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Fattura</th><th>Totale W</th><th>TOTALE D</th><th>Acconto</th><th>Rimanenza</th><th>Stati</th></tr></thead><tbody>{self.practice_rows(recent,True)}</tbody></table></div></section>{persistence_script}</main>'''
+        quick_actions='''<div class="calendar-quick-actions dashboard-calendar-actions"><a class="btn" href="/nuova">+ Nuova pratica</a><a class="btn ghost" href="/calendario/nuovo">+ Nuovo evento</a></div>'''
+        body=f'''<main class="wrap dashboard-wrap"><section class="welcome"><div><h1>{greeting}, Pet Paradise <span aria-hidden="true">👋</span></h1><p>Panoramica operativa del periodo selezionato</p></div></section>{quick_actions}{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}<div class="dashboard-section-head"><h2 class="dashboard-heading">Pratiche / Ritiri</h2>{practice_selector}</div><section class="dashboard-states">{state_cards}</section><div class="dashboard-section-head"><h2 class="dashboard-heading">Pagamenti</h2>{payment_selector}</div><section class="dashboard-payments">{payment_cards}</section><section class="dashboard-chart-only"><a class="dashboard-panel income-panel" href="/bilanci?dal={week_start.isoformat()}&al={week_end.isoformat()}" aria-label="Apri Bilanci: entrate della settimana in corso"><header><div><h2>Entrate settimana in corso</h2><p>{week_start.strftime('%d/%m/%Y')} - {week_end.strftime('%d/%m/%Y')} · Totale: <strong>{money_it(income_total)}</strong></p></div><span class="panel-link">Apri Bilanci →</span></header>{chart}</a></section><section class="dashboard-recent"><div class="titlebar"><h2>Ultime 10 pratiche per data recupero</h2><a href="/archivio/pratiche">Apri archivio</a></div><div class="tablebox dashboard-table-scroll"><table class="practice-list-table"><thead><tr><th>Animale</th><th>Età</th><th>Proprietario</th><th>Data recupero</th><th>Codice pratica</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Fattura</th><th>Totale W</th><th>TOTALE D</th><th>Acconto</th><th>Rimanenza</th><th>Stati</th></tr></thead><tbody>{self.practice_rows(recent,True)}</tbody></table></div></section>{persistence_script}</main>'''
         self.send_html(layout("Dashboard",body,user))
+
+    def calendar_event_card(self,row,compact=False):
+        cls=event_color_class(row);start=(row["start_at"] or "");end=(row["end_at"] or "")
+        time_text="Tutto il giorno" if row["all_day"] else start[11:16]
+        if start[:10]!=end[:10]:time_text=f'{start[:10]} → {end[:10]}'
+        details=[]
+        if row["animal_count"]:details.append(f'{row["animal_count"]} animale' + ('i' if row["animal_count"]!=1 else ''))
+        if row["zone"]:details.append(row["zone"])
+        if row["payment_status"]:details.append(f'{row["payment_status"]} {money_it(row["payment_amount"])}')
+        if row["estimate_total"]:details.append(f'Preventivo {money_it(row["estimate_total"])}')
+        if compact:return f'<a class="calendar-band {cls}" href="/calendario/{row["id"]}">{esc(row["title"])}</a>'
+        quick=''
+        if row["event_type"] in ("Ritiro","Ritiro in sede") and row["event_status"] not in ("Ritirato","Annullato"):
+            quick=f'''<form method="post" action="/calendario/{row['id']}/stato" data-quick-status><input type="hidden" name="status"><input type="hidden" name="return_to" value="{esc(getattr(self,'path','/calendario'))}"></form>'''
+        return f'''<article class="calendar-event {cls}" data-status-swipe="{row['id']}"><time class="calendar-event-time">{esc(time_text)}</time><a href="/calendario/{row['id']}"><h3>{esc(row['title'])}</h3><p>{esc(' · '.join(details) or row['event_type'])}</p><p>{esc(row['assigned_name'] or row['creator_name'])}</p></a>{quick}<a class="btn ghost" href="/calendario/{row['id']}">Apri</a></article>'''
+
+    def calendar_page(self,user):
+        q=parse_qs(urlparse(self.path).query);selected=(q.get("data") or [datetime.now().date().isoformat()])[0]
+        try:date.fromisoformat(selected)
+        except ValueError:selected=datetime.now().date().isoformat()
+        view=(q.get("vista") or ["giorno"])[0]
+        if view not in ("giorno","settimana","mese","mista_settimana","mista_mese","compatto"):view="giorno"
+        start,end=calendar_period_bounds(view,selected)
+        filters={key:(q.get(key) or [""])[0] for key in ("q","event_type","event_status","assigned_user_id","veterinarian_id","location_type","zone","venue_scope","date_from","date_to")}
+        with db() as c:
+            rows=overlap_rows(c,start.isoformat(),end.isoformat(),filters)
+            users=c.execute("SELECT id,display_name FROM users WHERE active=1 ORDER BY display_name").fetchall()
+            vets=c.execute("SELECT id,COALESCE(short_name,clinic_name) name FROM veterinarians WHERE active=1 ORDER BY name").fetchall()
+        by_day={}
+        for row in rows:
+            cursor=max(start,date.fromisoformat(row["start_at"][:10]));last=min(end,date.fromisoformat(row["end_at"][:10]))
+            while cursor<=last:by_day.setdefault(cursor.isoformat(),[]).append(row);cursor+=timedelta(days=1)
+        selected_date=date.fromisoformat(selected)
+        step=timedelta(days=1 if view=="giorno" else 7 if view in ("settimana","mista_settimana") else 28)
+        def view_url(target,current_view=view):
+            params={"vista":current_view,"data":target.isoformat(),**{k:v for k,v in filters.items() if v}}
+            return "/calendario?"+urlencode(params)
+        switch=''.join(f'<a data-calendar-view="{key}" class="{"active" if view==key else ""}" href="{view_url(selected_date,key)}">{label}</a>' for key,label in (("giorno","Giorno"),("settimana","Settimana"),("mese","Mese"),("mista_settimana","Mista G+S"),("mista_mese","Mista M+Elenco"),("compatto","Mese compatto")))
+        day_cards=''.join(self.calendar_event_card(row) for row in by_day.get(selected,[])) or '<section class="section empty-state"><p>Nessun evento</p><a class="btn" href="/calendario/nuovo?data='+selected+'">+ Crea evento in questa data</a></section>'
+        day_view=f'<section class="calendar-day-list" data-calendar-swipe>{day_cards}</section>'
+        week_days=[start+timedelta(days=i) for i in range(7)]
+        week_view='<div class="calendar-week-scroll"><section class="calendar-week">'+''.join(f'''<div class="calendar-day-column"><header><a href="{view_url(day,'giorno')}"><b>{day.strftime('%a %d/%m')}</b></a></header>{''.join(self.calendar_event_card(row) for row in by_day.get(day.isoformat(),[])) or '<p class="sub">Nessun evento</p>'}</div>''' for day in week_days)+'</section></div>'
+        month_start=start;offset=month_start.weekday();grid_start=month_start-timedelta(days=offset);month_days=[grid_start+timedelta(days=i) for i in range(42)]
+        compact=view=="compatto"
+        month_view='<section class="calendar-month">'+''.join(f'''<div class="calendar-month-day {'selected' if day.isoformat()==selected else ''}"><a href="{view_url(day,'giorno')}">{day.day}</a>{('<div class="calendar-dots">'+''.join(f'<span class="calendar-dot {event_color_class(row)}" title="{esc(row["title"])}"></span>' for row in by_day.get(day.isoformat(),[]))+'</div>') if compact else ''.join(self.calendar_event_card(row,True) for row in by_day.get(day.isoformat(),[])[:4])}</div>''' for day in month_days)+'</section>'
+        if view=="giorno":content=day_view
+        elif view=="settimana":content=week_view
+        elif view in ("mese","compatto"):content=month_view+f'<div style="height:14px"></div>{day_view}'
+        elif view=="mista_settimana":content=f'<div class="calendar-mixed"><div>{day_view}</div><div>{week_view}</div></div>'
+        else:content=f'<div class="calendar-mixed"><div>{month_view}</div><div><h2>Eventi del {selected_date.strftime("%d/%m/%Y")}</h2>{day_view}</div></div>'
+        type_options='<option value="">Tutti i tipi</option>'+''.join(f'<option {"selected" if filters["event_type"]==x else ""}>{x}</option>' for x in EVENT_TYPES)
+        status_options='<option value="">Tutti gli stati</option>'+''.join(f'<option {"selected" if filters["event_status"]==x else ""}>{x}</option>' for x in (*PICKUP_STATUSES,*DELIVERY_STATUSES))
+        operator_options='<option value="">Tutti gli operatori</option>'+''.join(f'<option value="{row["id"]}" {"selected" if filters["assigned_user_id"]==str(row["id"]) else ""}>{esc(row["display_name"])}</option>' for row in users)
+        vet_options='<option value="">Tutti i veterinari</option>'+''.join(f'<option value="{row["id"]}" {"selected" if filters["veterinarian_id"]==str(row["id"]) else ""}>{esc(row["name"])}</option>' for row in vets)
+        filters_html=f'''<details class="advanced-search"><summary>Ricerca e filtri</summary><form class="section advanced-search-form" method="get"><input type="hidden" name="vista" value="{view}"><input type="hidden" name="data" value="{selected}"><div class="fields"><div class="field full"><label>Parole chiave</label><input name="q" value="{esc(filters['q'])}" placeholder="Titolo, animale, cliente, veterinario, luogo, note"></div><div class="field"><label>Tipo</label><select name="event_type">{type_options}</select></div><div class="field"><label>Stato</label><select name="event_status">{status_options}</select></div><div class="field"><label>Operatore</label><select name="assigned_user_id">{operator_options}</select></div><div class="field"><label>Veterinario</label><select name="veterinarian_id">{vet_options}</select></div><div class="field"><label>Luogo</label><select name="location_type"><option value="">Tutti</option>{''.join(f'<option {"selected" if filters["location_type"]==x else ""}>{x}</option>' for x in ("Veterinario","Privato","Sede Livorno","Sede Empoli","Altro indirizzo"))}</select></div><div class="field"><label>Zona</label><input name="zone" value="{esc(filters['zone'])}"></div><div class="field"><label>Sede o fuori sede</label><select name="venue_scope"><option value="">Tutti</option><option value="sede" {"selected" if filters["venue_scope"]=="sede" else ""}>In sede</option><option value="fuori" {"selected" if filters["venue_scope"]=="fuori" else ""}>Fuori sede</option></select></div><div class="field"><label>Dal</label><input type="date" name="date_from" value="{esc(filters['date_from'])}"></div><div class="field"><label>Al</label><input type="date" name="date_to" value="{esc(filters['date_to'])}"></div></div><button class="btn" style="margin-top:12px">Applica</button></form></details>'''
+        preference_script=f'''<script>(function(){{const url=new URL(location.href);const saved=localStorage.getItem('ppm_calendar_view');const allowed=['giorno','settimana','mese','mista_settimana','mista_mese','compatto'];if(!url.searchParams.has('vista')&&allowed.includes(saved)&&saved!=='giorno'){{url.searchParams.set('vista',saved);location.replace(url);return;}}localStorage.setItem('ppm_calendar_view','{view}');}})();</script>'''
+        body=f'''<main class="wrap calendar-wrap"><div class="titlebar"><div><h1>Calendario operativo</h1><p class="sub">Ritiri, riconsegne e appuntamenti</p></div><div class="calendar-quick-actions"><a class="btn" href="/calendario/nuovo?data={selected}">+ Nuovo evento</a><a class="btn ghost" href="/calendario/cestino">Cestino</a></div></div><div class="calendar-toolbar"><nav class="calendar-nav"><a class="btn ghost" data-calendar-prev href="{view_url(selected_date-step)}">←</a><a class="btn ghost" href="{view_url(datetime.now().date())}">Oggi</a><input type="date" value="{selected}" onchange="const u=new URL(location.href);u.searchParams.set('data',this.value);location.href=u"><a class="btn ghost" data-calendar-next href="{view_url(selected_date+step)}">→</a></nav><nav class="calendar-view-switch">{switch}</nav></div>{content}{filters_html}<a class="btn calendar-fab" href="/calendario/nuovo?data={selected}" aria-label="Nuovo evento">+</a>{preference_script}</main>'''
+        self.send_html(layout("Calendario operativo",body,user))
+
+    def calendar_event_form(self,user,event_id=None):
+        q=parse_qs(urlparse(self.path).query);default_date=(q.get("data") or [datetime.now().date().isoformat()])[0]
+        with db() as c:
+            event=c.execute("SELECT * FROM calendar_events WHERE id=?",(event_id,)).fetchone() if event_id else None
+            if event_id and not event:return self.send_error(404)
+            animals=[dict(row) for row in c.execute("SELECT name,species,weight,cremation_type,notes FROM calendar_event_animals WHERE event_id=? ORDER BY id",(event_id,))] if event_id else []
+            estimates=[dict(row) for row in c.execute("SELECT description,amount FROM calendar_event_estimate_items WHERE event_id=? ORDER BY sort_order,id",(event_id,))] if event_id else []
+            zones=c.execute("SELECT name FROM calendar_zones ORDER BY name").fetchall();users=c.execute("SELECT id,display_name FROM users WHERE active=1 ORDER BY display_name").fetchall()
+        val=lambda key,default="":esc(event[key] if event and key in event.keys() and event[key] not in (None,"") else default)
+        raw=lambda key,default="":event[key] if event and key in event.keys() and event[key] not in (None,"") else default
+        event_type=raw("event_type","");start_date=raw("start_at",default_date)[:10];end_date=raw("end_at",default_date)[:10]
+        zones_list=''.join(f'<option value="{esc(row["name"])}">' for row in zones)
+        types=''.join(f'''<label class="calendar-type-option"><input type="radio" name="event_type" value="{kind}" {"checked" if event_type==kind else ""} required onchange="calendarTypeChanged()"><span><b>{kind}</b><small class="sub">{desc}</small></span></label>''' for kind,desc in (("Ritiro","Ritiro presso veterinario o privato"),("Ritiro in sede","Consegna presso una sede"),("Riconsegna","Riconsegna al cliente"),("Riconsegna in sede","Ritiro ceneri presso sede"),("Appuntamento","Promemoria e incontri")))
+        operator_options='<option value="">Non assegnato</option>'+''.join(f'<option value="{r["id"]}" {"selected" if str(raw("assigned_user_id"))==str(r["id"]) else ""}>{esc(r["display_name"])}</option>' for r in users)
+        pickup_status=''.join(f'<option {"selected" if raw("event_status","Da confermare")==s else ""}>{s}</option>' for s in PICKUP_STATUSES)
+        delivery_status=''.join(f'<option {"selected" if raw("event_status","In programma")==s else ""}>{s}</option>' for s in DELIVERY_STATUSES)
+        payment_status=''.join(f'<option {"selected" if raw("payment_status","Da pagare")==s else ""}>{s}</option>' for s in PAYMENT_STATUSES)
+        action=f'/calendario/{event_id}/modifica' if event_id else '/calendario/nuovo'
+        body=f'''<main class="wrap calendar-form"><div class="titlebar"><div><h1>{'Modifica evento' if event_id else 'Nuovo evento'}</h1><p class="sub">Flusso guidato rapido</p></div><a class="btn ghost" href="{f'/calendario/{event_id}' if event_id else '/calendario'}">Annulla</a></div><div class="calendar-steps"><span class="active">1</span><span>2</span><span>3</span></div><form id="calendarEventForm" method="post" action="{action}" onsubmit="calendarSerialize()">
+        <section class="section calendar-form-step" data-step="1"><h2>Tipo evento</h2><div class="calendar-type-grid">{types}</div><button class="btn" type="button" onclick="calendarTypeChanged();calendarStep(2)" style="margin-top:16px">Avanti</button></section>
+        <section class="section calendar-form-step" data-step="2" hidden><h2>Data e titolo</h2><div class="fields"><div class="field full"><label>Titolo *</label><input name="title" value="{val('title')}" required oninput="this.dataset.manual='1'"></div><div class="field"><label>Data inizio *</label><input type="date" name="start_date" value="{start_date}" required></div><div class="field"><label>Data fine</label><input type="date" name="end_date" value="{end_date}"></div><div class="field" data-calendar-time><label>Ora inizio *</label><input type="time" name="start_time" value="{val('start_at')[11:16] or '09:00'}" required></div><div class="field" data-calendar-time><label>Ora fine</label><input type="time" name="end_time" value="{val('end_at')[11:16]}"></div><div class="field full"><label class="modern-check"><input type="checkbox" name="all_day" value="1" {"checked" if raw("all_day") else ""} onchange="calendarAllDayChanged(this)"> Tutto il giorno</label></div>
+        <div class="field" data-calendar-types="Ritiro|Riconsegna" {"" if event_type in ("Ritiro","Riconsegna") else "hidden"}><label>Zona *</label><input name="zone" list="calendarZones" value="{val('zone')}" oninput="calendarAutoTitle()" onblur="calendarZoneOffer(this)"><datalist id="calendarZones">{zones_list}</datalist><small class="sub">Le nuove zone possono essere salvate nei suggerimenti.</small><label><input type="checkbox" name="save_zone" value="1"> Aggiungi questa zona ai suggerimenti</label></div><div class="field" data-calendar-types="Ritiro in sede|Riconsegna in sede" {"" if event_type in ("Ritiro in sede","Riconsegna in sede") else "hidden"}><label>Sede</label><select name="destination_site" onchange="calendarAutoTitle()"><option value="">Seleziona</option><option {"selected" if raw("destination_site")=="Livorno" else ""}>Livorno</option><option {"selected" if raw("destination_site")=="Empoli" else ""}>Empoli</option></select></div><div class="field" data-calendar-types="Riconsegna|Riconsegna in sede" {"" if event_type in ("Riconsegna","Riconsegna in sede") else "hidden"}><label>Nome animale *</label><input name="animal_name" value="{val('animal_name')}" oninput="calendarAutoTitle()"></div><div class="field" data-calendar-types="Appuntamento" {"" if event_type=="Appuntamento" else "hidden"}><label>Persona o azienda</label><input name="person_company" value="{val('person_company')}"></div><div class="field" data-calendar-types="Appuntamento" {"" if event_type=="Appuntamento" else "hidden"}><label>Categoria</label><input name="category" value="{val('category')}"></div></div><div class="actions" style="margin-top:16px"><button class="btn ghost" type="button" onclick="calendarStep(1)">Indietro</button><button class="btn" type="button" onclick="calendarStep(3)">Avanti</button></div></section>
+        <section class="section calendar-form-step" data-step="3" hidden><h2>Informazioni</h2><div class="fields"><div class="field"><label>Operatore assegnato</label><select name="assigned_user_id">{operator_options}</select></div><div class="field" data-calendar-types="Ritiro|Ritiro in sede" {"" if event_type in ("Ritiro","Ritiro in sede") else "hidden"}><label>Stato ritiro</label><select name="event_status">{pickup_status}</select></div><div class="field" data-calendar-types="Riconsegna|Riconsegna in sede" {"" if event_type in ("Riconsegna","Riconsegna in sede") else "hidden"}><label>Stato evento</label><select name="event_status">{delivery_status}</select></div><div class="field" data-calendar-types="Riconsegna|Riconsegna in sede" {"" if event_type in ("Riconsegna","Riconsegna in sede") else "hidden"}><label>Pagamento</label><select name="payment_status">{payment_status}</select></div><div class="field" data-calendar-types="Riconsegna|Riconsegna in sede" {"" if event_type in ("Riconsegna","Riconsegna in sede") else "hidden"}><label>Importo</label><input inputmode="decimal" name="payment_amount" value="{val('payment_amount','0')}"></div>
+        <div class="field full lookup"><label>Cerca cliente</label><input id="calendarClientSearch" autocomplete="off" placeholder="Nome, cognome o telefono"><div id="calendarClientResults" class="lookup-results hidden"></div><input type="hidden" name="client_id" value="{val('client_id')}"></div><div class="field"><label>Nome cliente</label><input name="client_first_name" value="{val('client_first_name')}"></div><div class="field"><label>Cognome cliente</label><input name="client_last_name" value="{val('client_last_name')}"></div><div class="field"><label>Telefono</label><input type="tel" inputmode="tel" name="client_phone" value="{val('client_phone')}"></div>
+        <div class="field"><label>Tipo luogo</label><select name="location_type"><option value="">Seleziona</option>{''.join(f'<option {"selected" if raw("location_type")==x else ""}>{x}</option>' for x in ("Veterinario","Privato","Sede Livorno","Sede Empoli","Altro indirizzo"))}</select></div><div class="field"><label>Luogo</label><input name="venue_name" value="{val('venue_name')}"></div><div class="field full"><label>Indirizzo</label><input name="address" value="{val('address')}"></div><div class="field"><label>Telefono luogo</label><input type="tel" name="phone" value="{val('phone')}"></div>
+        <div class="field full lookup"><label>Cerca veterinario</label><input id="calendarVetSearch" autocomplete="off" placeholder="Ambulatorio, medico o città"><div id="calendarVetResults" class="lookup-results hidden"></div><input type="hidden" name="veterinarian_id" value="{val('veterinarian_id')}"></div><input type="hidden" name="veterinarian_name" value="{val('veterinarian_name')}"><input type="hidden" name="veterinarian_phone" value="{val('veterinarian_phone')}"><input type="hidden" name="veterinarian_address" value="{val('veterinarian_address')}"><input type="hidden" name="veterinarian_hours" value="{val('veterinarian_hours')}"><input type="hidden" name="veterinarian_contact" value="{val('veterinarian_contact')}"><div class="field full"><label>Note</label><textarea name="notes">{val('notes')}</textarea></div></div>
+        <div data-calendar-types="Ritiro|Ritiro in sede" {"" if event_type in ("Ritiro","Ritiro in sede") else "hidden"}><h2>Animali</h2><div class="calendar-repeat-list" data-calendar-list="animal"></div><input type="hidden" name="animals_json"><button class="btn ghost" type="button" onclick="calendarAddRow('animal')">+ Aggiungi animale</button><h2 style="margin-top:18px">Preventivo previsto</h2><div class="calendar-repeat-list" data-calendar-list="estimate"></div><input type="hidden" name="estimate_json"><button class="btn ghost" type="button" onclick="calendarAddRow('estimate')">+ Aggiungi voce</button><p>Totale: <b data-estimate-total>€ 0,00</b></p></div><div class="actions" style="margin-top:18px"><button class="btn ghost" type="button" onclick="calendarStep(2)">Indietro</button><button class="btn">{'Salva modifiche' if event_id else 'Crea evento'}</button></div></section></form><script>document.addEventListener('DOMContentLoaded',()=>{{{''.join(f"calendarAddRow('animal',{json.dumps(a,ensure_ascii=False)});" for a in animals)}{''.join(f"calendarAddRow('estimate',{json.dumps(i,ensure_ascii=False)});" for i in estimates)}calendarTypeChanged();const allDay=document.querySelector('#calendarEventForm input[name="all_day"]');if(allDay)calendarAllDayChanged(allDay);}});</script></main>'''
+        self.send_html(layout("Modifica evento" if event_id else "Nuovo evento",body,user))
+
+    def save_calendar_event(self,user,event_id=None):
+        form=self.form();stamp=now()
+        try:data=normalize_event(form);animals=calendar_parse_items(form.get("animals_json"),"animal");estimates=calendar_parse_items(form.get("estimate_json"),"estimate")
+        except ValueError as exc:return self.send_error(400,str(exc))
+        with db() as c:
+            if data["client_id"] and not c.execute("SELECT 1 FROM clients WHERE id=?",(data["client_id"],)).fetchone():data["client_id"]=None
+            if data["veterinarian_id"]:
+                vet=c.execute("SELECT * FROM veterinarians WHERE id=? AND active=1",(data["veterinarian_id"],)).fetchone()
+                if not vet:data["veterinarian_id"]=None
+                else:
+                    data["veterinarian_name"]=data["veterinarian_name"] or vet["short_name"] or vet["clinic_name"]
+                    data["veterinarian_phone"]=data["veterinarian_phone"] or vet["phone"] or ""
+                    data["veterinarian_address"]=data["veterinarian_address"] or vet["address"] or ""
+                    data["veterinarian_hours"]=data["veterinarian_hours"] or vet["notes"] or ""
+            if form.get("save_zone")=="1" and data["zone"]:c.execute("INSERT OR IGNORE INTO calendar_zones(name,is_default,created_at) VALUES(?,0,?)",(data["zone"],stamp))
+            if event_id:
+                old=c.execute("SELECT * FROM calendar_events WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(event_id,)).fetchone()
+                if not old:return self.send_error(404)
+                assignments=','.join(f"{key}=?" for key in data)
+                c.execute(f"UPDATE calendar_events SET {assignments},updated_at=?,updated_by=? WHERE id=?",tuple(data.values())+(stamp,user["id"],event_id))
+                for key,value in data.items():
+                    if str(old[key] if key in old.keys() and old[key] is not None else "")!=str(value if value is not None else ""):calendar_add_history(c,event_id,user["id"],f"Modifica {key}",old[key] if key in old.keys() else "",value,stamp)
+                old_animals=[dict(row) for row in c.execute("SELECT name,species,weight,cremation_type,notes FROM calendar_event_animals WHERE event_id=? ORDER BY id",(event_id,))]
+                old_estimates=[dict(row) for row in c.execute("SELECT description,amount FROM calendar_event_estimate_items WHERE event_id=? ORDER BY sort_order,id",(event_id,))]
+                calendar_sync_children(c,event_id,animals,estimates,stamp)
+                if old_animals!=animals:calendar_add_history(c,event_id,user["id"],"Modifica animali",json.dumps(old_animals,ensure_ascii=False),json.dumps(animals,ensure_ascii=False),stamp)
+                if old_estimates!=estimates:calendar_add_history(c,event_id,user["id"],"Modifica preventivo",json.dumps(old_estimates,ensure_ascii=False),json.dumps(estimates,ensure_ascii=False),stamp)
+                kind="calendar_event_cancelled" if data["event_status"]=="Annullato" and old["event_status"]!="Annullato" else "calendar_event_updated"
+                emit_notification(c,kind,"Evento calendario aggiornato",data["title"],actor_user_id=user["id"],payload={"url":f"/calendario/{event_id}"},db_path=DB_PATH)
+            else:
+                cols=list(data)+["created_by","created_at","updated_at","updated_by"]
+                cur=c.execute(f"INSERT INTO calendar_events({','.join(cols)}) VALUES({','.join('?' for _ in cols)})",tuple(data.values())+(user["id"],stamp,stamp,user["id"]));event_id=cur.lastrowid
+                calendar_sync_children(c,event_id,animals,estimates,stamp);calendar_add_history(c,event_id,user["id"],"Creazione evento","",data["title"],stamp)
+                emit_notification(c,"calendar_event_created","Nuovo evento calendario",data["title"],actor_user_id=user["id"],payload={"url":f"/calendario/{event_id}"},db_path=DB_PATH)
+            if data["event_status"] in ("Annullato","Completato"):
+                c.execute("UPDATE calendar_event_notifications SET status='annullato',error='' WHERE event_id=? AND status IN ('programmato','in_invio','fallito')",(event_id,))
+            else:schedule_event_notifications(c,event_id,data["start_at"],stamp)
+        self.redirect(f"/calendario/{event_id}")
+
+    def calendar_event_detail(self,user,event_id):
+        tab=(parse_qs(urlparse(self.path).query).get("tab") or ["dettagli"])[0]
+        if tab not in ("dettagli","note","commenti","storico"):tab="dettagli"
+        with db() as c:
+            event=c.execute("""SELECT e.*,u.display_name creator_name,uu.display_name updater_name,au.display_name assigned_name,p.practice_number
+              FROM calendar_events e JOIN users u ON u.id=e.created_by LEFT JOIN users uu ON uu.id=e.updated_by LEFT JOIN users au ON au.id=e.assigned_user_id LEFT JOIN practices p ON p.id=e.linked_practice_id WHERE e.id=?""",(event_id,)).fetchone()
+            if not event:return self.send_error(404)
+            animals=c.execute("SELECT * FROM calendar_event_animals WHERE event_id=? ORDER BY id",(event_id,)).fetchall()
+            estimates=c.execute("SELECT * FROM calendar_event_estimate_items WHERE event_id=? ORDER BY sort_order,id",(event_id,)).fetchall()
+            comments=c.execute("SELECT c.*,u.display_name FROM calendar_event_comments c JOIN users u ON u.id=c.user_id WHERE event_id=? ORDER BY c.created_at",(event_id,)).fetchall()
+            history=c.execute("SELECT h.*,u.display_name FROM calendar_event_history h LEFT JOIN users u ON u.id=h.user_id WHERE event_id=? ORDER BY h.created_at DESC",(event_id,)).fetchall()
+        tabs=''.join(f'<a class="{"active" if tab==key else ""}" href="/calendario/{event_id}?tab={key}">{label}</a>' for key,label in (("dettagli","Dettagli"),("note","Note"),("commenti","Commenti"),("storico","Storico")))
+        phone=only_digits(event["client_phone"] or event["phone"] or event["veterinarian_phone"]);contact=''.join((f'<a class="btn ghost" href="tel:+{phone}">Chiama</a><a class="btn ghost" href="https://wa.me/{phone}" target="_blank">WhatsApp</a>' if phone else '',f'<a class="btn ghost" href="https://www.google.com/maps/search/?api=1&query={quote(event["address"] or event["veterinarian_address"] or event["venue_name"] or "")}" target="_blank">Maps</a>' if event["address"] or event["veterinarian_address"] else ''))
+        animal_rows=''.join(f'<tr><td>{esc(a["name"] or "-")}</td><td>{esc(a["species"])}</td><td>{esc(a["weight"])} kg</td><td>{esc(a["cremation_type"])}</td><td>{esc(a["notes"])}</td></tr>' for a in animals) or '<tr><td colspan="5">Nessun animale</td></tr>'
+        estimate_total=sum(float(i["amount"] or 0) for i in estimates);estimate_rows=''.join(f'<tr><td>{esc(i["description"])}</td><td>{money_it(i["amount"])}</td></tr>' for i in estimates) or '<tr><td colspan="2">Nessuna voce</td></tr>'
+        if tab=="dettagli":panel=f'''<section class="section"><div class="kvs"><div class="kv"><small>Tipo</small><b>{esc(event['event_type'])}</b></div><div class="kv"><small>Intervallo</small><b>{esc(event['start_at'].replace('T',' ')[:16])} → {esc(event['end_at'].replace('T',' ')[:16])}</b></div><div class="kv"><small>Stato</small><b class="{event_color_class(event)}">{esc(event['event_status'] or 'Nessuno')}</b></div><div class="kv"><small>Cliente</small><b>{esc(' '.join(x for x in (event['client_first_name'],event['client_last_name']) if x) or '-')}</b></div><div class="kv"><small>Luogo</small><b>{esc(event['venue_name'] or event['location_type'] or '-')}</b></div><div class="kv"><small>Operatore</small><b>{esc(event['assigned_name'] or '-')}</b></div><div class="kv"><small>Pagamento</small><b>{esc(event['payment_status'] or '-')} {money_it(event['payment_amount']) if event['payment_status'] else ''}</b></div></div><div class="actions" style="margin-top:15px">{contact}</div></section><section class="section" style="margin-top:14px"><h2>Animali</h2><div class="tablebox"><table><thead><tr><th>Nome</th><th>Specie</th><th>Peso</th><th>Cremazione</th><th>Note</th></tr></thead><tbody>{animal_rows}</tbody></table></div><h2 style="margin-top:18px">Preventivo previsto: {money_it(estimate_total)}</h2><div class="tablebox"><table><tbody>{estimate_rows}</tbody></table></div></section>'''
+        elif tab=="note":panel=f'<section class="section"><h2>Note</h2><p style="white-space:pre-wrap">{esc(event["notes"] or "Nessuna nota")}</p></section>'
+        elif tab=="commenti":
+            comment_html=''.join(f'<article class="calendar-comment"><b>{esc(row["display_name"])}</b><small class="sub"> · {esc(row["created_at"].replace("T"," ")[:16])}{" · modificato" if row["updated_at"] else ""}{" · eliminato" if row["deleted_at"] else ""}</small><p>{esc("Commento eliminato" if row["deleted_at"] else row["message"])}</p>{f"<details><summary>Modifica commento</summary><form method=\"post\" action=\"/calendario/{event_id}/commenti/{row['id']}/modifica\"><textarea name=\"message\" required maxlength=\"2000\">{esc(row['message'])}</textarea><button class=\"btn ghost\">Salva</button></form></details><form method=\"post\" action=\"/calendario/{event_id}/commenti/{row['id']}/elimina\"><button class=\"btn ghost\">Elimina</button></form>" if not row["deleted_at"] and (row["user_id"]==user["id"] or user["role"]=="admin") else ""}</article>' for row in comments) or '<p>Nessun commento.</p>'
+            panel=f'''<section class="section">{comment_html}<form method="post" action="/calendario/{event_id}/commento" style="margin-top:15px"><label>Nuovo commento</label><textarea name="message" required maxlength="2000"></textarea><button class="btn">Invia commento</button></form></section>'''
+        else:panel='<section class="section timeline">'+''.join(f'<div class="event"><b>{esc(row["action"])}</b><small class="sub"> · {esc(row["display_name"] or "Sistema")} · {esc(row["created_at"].replace("T"," ")[:16])}</small><p>{esc(row["old_value"])} → {esc(row["new_value"])}</p></div>' for row in history)+'</section>'
+        create_practice=''
+        if event["event_type"] in ("Ritiro","Ritiro in sede") and event["event_status"]=="Ritirato":create_practice=f'<a class="btn" href="{f"/pratiche/{event["linked_practice_id"]}" if event["linked_practice_id"] else f"/nuova?calendar_event_id={event_id}"}">{"Apri pratica "+esc(event["practice_number"]) if event["linked_practice_id"] else "+ Crea pratica"}</a>'
+        status_form=''
+        if event["event_type"] in ("Ritiro","Ritiro in sede"):status_form=f'''<form method="post" action="/calendario/{event_id}/stato"><select name="status">{''.join(f'<option {"selected" if event["event_status"]==s else ""}>{s}</option>' for s in PICKUP_STATUSES)}</select><button class="btn ghost">Aggiorna stato</button></form>'''
+        elif event["event_type"] in ("Riconsegna","Riconsegna in sede"):status_form=f'''<form method="post" action="/calendario/{event_id}/stato"><select name="status">{''.join(f'<option {"selected" if event["event_status"]==s else ""}>{s}</option>' for s in DELIVERY_STATUSES)}</select><button class="btn ghost">Aggiorna stato</button></form>'''
+        body=f'''<main class="wrap calendar-wrap"><div class="titlebar"><div><h1 class="{event_color_class(event)}">{esc(event['title'])}</h1><p class="sub">Creato da {esc(event['creator_name'])} · {esc(event['created_at'].replace('T',' ')[:16])}</p></div><div class="actions"><a class="btn ghost" href="/calendario">Calendario</a><a class="btn" href="/calendario/{event_id}/modifica">Modifica</a>{create_practice}</div></div><nav class="calendar-tabs">{tabs}</nav><div class="calendar-detail-grid"><div>{panel}</div><aside><section class="section"><h2>Azioni</h2>{status_form}<form method="post" action="/calendario/{event_id}/elimina" onsubmit="return confirm('Spostare questo evento nel cestino?')"><button class="btn ghost" style="margin-top:12px">Sposta nel cestino</button></form></section></aside></div></main>'''
+        self.send_html(layout(event["title"],body,user))
+
+    def calendar_event_action(self,user,event_id,action):
+        form=self.form();stamp=now()
+        with db() as c:
+            event=c.execute("SELECT * FROM calendar_events WHERE id=?",(event_id,)).fetchone()
+            if not event:return self.send_error(404)
+            if action=="stato":
+                allowed=PICKUP_STATUSES if event["event_type"] in ("Ritiro","Ritiro in sede") else DELIVERY_STATUSES if event["event_type"] in ("Riconsegna","Riconsegna in sede") else ()
+                status=form.get("status","")
+                if status not in allowed:return self.send_error(400,"Stato non valido")
+                c.execute("UPDATE calendar_events SET event_status=?,updated_at=?,updated_by=? WHERE id=?",(status,stamp,user["id"],event_id));calendar_add_history(c,event_id,user["id"],"Cambio stato",event["event_status"],status,stamp)
+                kind="calendar_event_cancelled" if status=="Annullato" else "calendar_event_updated";emit_notification(c,kind,"Stato evento aggiornato",f'{event["title"]}: {status}',actor_user_id=user["id"],payload={"url":f"/calendario/{event_id}"},db_path=DB_PATH)
+            elif action=="commento":
+                message=form.get("message","").strip()[:2000]
+                if not message:return self.send_error(400,"Commento vuoto")
+                c.execute("INSERT INTO calendar_event_comments(event_id,user_id,message,created_at) VALUES(?,?,?,?)",(event_id,user["id"],message,stamp));calendar_add_history(c,event_id,user["id"],"Aggiunta commento","",message,stamp);emit_notification(c,"calendar_comment","Nuovo commento evento",event["title"],actor_user_id=user["id"],payload={"url":f"/calendario/{event_id}?tab=commenti"},db_path=DB_PATH)
+            elif action=="elimina":
+                c.execute("UPDATE calendar_events SET deleted_at=?,deleted_by=?,updated_at=? WHERE id=?",(stamp,user["id"],stamp,event_id));c.execute("UPDATE calendar_event_notifications SET status='annullato' WHERE event_id=? AND status IN ('programmato','in_invio')",(event_id,));calendar_add_history(c,event_id,user["id"],"Eliminazione","","Cestino",stamp)
+            elif action=="ripristina":c.execute("UPDATE calendar_events SET deleted_at=NULL,deleted_by=NULL,updated_at=?,updated_by=? WHERE id=?",(stamp,user["id"],event_id));calendar_add_history(c,event_id,user["id"],"Ripristino","Cestino","Attivo",stamp)
+            elif action=="elimina-definitiva":
+                if user["role"]!="admin" or form.get("confirm")!="ELIMINA DEFINITIVAMENTE":return self.send_error(403,"Conferma amministratore mancante")
+                c.execute("DELETE FROM calendar_events WHERE id=? AND deleted_at IS NOT NULL",(event_id,));return self.redirect("/calendario/cestino")
+        self.redirect(safe_return_path(form.get("return_to") or self.headers.get("Referer"),f"/calendario/{event_id}"))
+
+    def calendar_comment_action(self,user,event_id,comment_id,action):
+        with db() as c:
+            row=c.execute("SELECT * FROM calendar_event_comments WHERE id=? AND event_id=?",(comment_id,event_id)).fetchone()
+            if not row:return self.send_error(404)
+            if row["user_id"]!=user["id"] and user["role"]!="admin":return self.send_error(403)
+            stamp=now()
+            if action=="modifica":
+                message=self.form().get("message","").strip()[:2000]
+                if not message:return self.send_error(400,"Commento vuoto")
+                c.execute("UPDATE calendar_event_comments SET message=?,updated_at=? WHERE id=? AND deleted_at IS NULL",(message,stamp,comment_id));calendar_add_history(c,event_id,user["id"],"Modifica commento",row["message"],message,stamp)
+            else:c.execute("UPDATE calendar_event_comments SET deleted_at=?,deleted_by=? WHERE id=?",(stamp,user["id"],comment_id));calendar_add_history(c,event_id,user["id"],"Eliminazione commento",row["message"],"",stamp)
+        self.redirect(f"/calendario/{event_id}?tab=commenti")
+
+    def calendar_trash(self,user):
+        with db() as c:rows=c.execute("SELECT e.*,u.display_name FROM calendar_events e LEFT JOIN users u ON u.id=e.deleted_by WHERE e.deleted_at IS NOT NULL ORDER BY e.deleted_at DESC").fetchall()
+        cards=''.join(f'''<article class="section"><h2>{esc(row['title'])}</h2><p class="sub">Eliminato {esc(row['deleted_at'].replace('T',' ')[:16])} da {esc(row['display_name'] or 'Sistema')}</p><div class="actions"><a class="btn ghost" href="/calendario/{row['id']}?tab=storico">Storico</a><form method="post" action="/calendario/{row['id']}/ripristina"><button class="btn">Ripristina</button></form>{f'<form method="post" action="/calendario/{row["id"]}/elimina-definitiva" onsubmit="return confirm(\'Conferma definitiva: i dati non saranno recuperabili. Continuare?\')"><input type="hidden" name="confirm" value="ELIMINA DEFINITIVAMENTE"><button class="btn danger-btn">Elimina definitivamente</button></form>' if user['role']=='admin' else ''}</div></article>''' for row in rows) or '<section class="section empty-state">Il cestino è vuoto.</section>'
+        self.send_html(layout("Cestino calendario",f'<main class="wrap"><div class="titlebar"><h1>Cestino calendario</h1><a class="btn ghost" href="/calendario">Calendario</a></div><div class="grid">{cards}</div></main>',user))
 
     def balances(self,user):
         q=parse_qs(urlparse(self.path).query); today=datetime.now().date()
@@ -3166,13 +3400,13 @@ class App(BaseHTTPRequestHandler):
             args.append(f"%{token}%")
         try:
             with db() as c:
-                rows=c.execute(f"""SELECT id, short_name, clinic_name, doctor_name, phone, address, city
+                rows=c.execute(f"""SELECT id, short_name, clinic_name, doctor_name, phone, address, city, notes
                                    FROM veterinarians
                                    WHERE active=1 AND {' AND '.join(where)}
                                    ORDER BY CASE WHEN short_name LIKE ? COLLATE NOCASE THEN 0 WHEN clinic_name LIKE ? COLLATE NOCASE THEN 1 ELSE 9 END,
                                             COALESCE(short_name, clinic_name), clinic_name
                                    LIMIT 15""", args+[f"{q}%", f"%{q}%"]).fetchall()
-            results=[{"id":r["id"],"short_name":r["short_name"] or "","clinic_name":r["clinic_name"] or "","doctor_name":r["doctor_name"] or "","phone":r["phone"] or "","address":r["address"] or "","city":r["city"] or "","provenance":veterinarian_provenance(r["short_name"],r["clinic_name"]),"display":r["short_name"] or r["clinic_name"] or "Veterinario","subtitle":" - ".join(x for x in [r["clinic_name"], r["address"], r["city"]] if x)} for r in rows]
+            results=[{"id":r["id"],"short_name":r["short_name"] or "","clinic_name":r["clinic_name"] or "","doctor_name":r["doctor_name"] or "","phone":r["phone"] or "","address":r["address"] or "","city":r["city"] or "","notes":r["notes"] or "","provenance":veterinarian_provenance(r["short_name"],r["clinic_name"]),"display":r["short_name"] or r["clinic_name"] or "Veterinario","subtitle":" - ".join(x for x in [r["clinic_name"], r["address"], r["city"]] if x)} for r in rows]
             return self.send_json({"ok":True,"query":q,"results":results})
         except Exception as exc:
             print(f"[VET_SEARCH] errore tipo={type(exc).__name__} lunghezza_query={len(q)}", flush=True)
@@ -3438,12 +3672,22 @@ class App(BaseHTTPRequestHandler):
         <section class="section"><h2>Documento e accettazione</h2><div class="fields"><div class="field"><label>Numero documento</label><input name="identity_document_number" value="{val('identity_document_number')}"></div><div class="field"><label>Data rilascio</label><input type="date" name="identity_document_date" value="{val('identity_document_date')}"></div><div class="field full"><label>Luogo firma</label><input name="signing_place" value="{val('signing_place') or val('destination_branch')}"></div></div></section>'''
 
     def new_page(self,user):
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Nuova pratica</h1><div class="sub">Inserisci subito i dati disponibili; potrai completarli in seguito.</div></div><div class="actions"><button class="btn" form="practiceForm">Crea pratica</button></div></div><form method="post" id="practiceForm"><div class="grid form-grid">{self.fields_html()}</div><div class="actions" style="margin-top:18px"><button class="btn">Crea pratica</button><a class="btn ghost" href="/">Annulla</a></div></form></main>'''
+        q=parse_qs(urlparse(getattr(self,"path","")).query);calendar_event_id=(q.get("calendar_event_id") or [""])[0];prefill={}
+        if calendar_event_id.isdigit():
+            with db() as c:
+                event=c.execute("SELECT * FROM calendar_events WHERE id=? AND deleted_at IS NULL",(int(calendar_event_id),)).fetchone()
+                animal=c.execute("SELECT * FROM calendar_event_animals WHERE event_id=? ORDER BY id LIMIT 1",(int(calendar_event_id),)).fetchone()
+            if event:
+                if event["linked_practice_id"]:return self.redirect(f'/pratiche/{event["linked_practice_id"]}')
+                prefill={"client_id":event["client_id"] or "","owner_first_name":event["client_first_name"] or "","owner_last_name":event["client_last_name"] or "","owner_phone":event["client_phone"] or "","owner_street":event["address"] or event["veterinarian_address"] or "","owner_city":event["zone"] or "","pickup_address":event["address"] or "","pickup_date":event["start_at"][:10],"destination_branch":event["destination_site"] or "Livorno","request_origin":"Veterinario" if event["veterinarian_id"] else "Privato","veterinarian_id":event["veterinarian_id"] or "","clinic_name":event["veterinarian_name"] or "","notes":event["notes"] or "","animal_name":(animal["name"] if animal else event["animal_name"]) or "","species":animal["species"] if animal else "","estimated_weight":animal["weight"] if animal else "","service_type":f'Cremazione {animal["cremation_type"].lower()}' if animal and animal["cremation_type"] else "Da decidere"}
+        hidden=(f'<input type="hidden" name="calendar_event_id" value="{calendar_event_id}"><input type="hidden" name="pickup_time" value="{event["start_at"][11:16]}">' if calendar_event_id.isdigit() and event else '')
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Nuova pratica</h1><div class="sub">Inserisci subito i dati disponibili; potrai completarli in seguito.</div></div><div class="actions"><button class="btn" form="practiceForm">Crea pratica</button></div></div><form method="post" id="practiceForm">{hidden}<div class="grid form-grid">{self.fields_html(prefill)}</div><div class="actions" style="margin-top:18px"><button class="btn">Crea pratica</button><a class="btn ghost" href="{f'/calendario/{calendar_event_id}' if calendar_event_id.isdigit() else '/'}">Annulla</a></div></form></main>'''
         self.send_html(layout("Nuova pratica",body,user))
 
     def normalized_fields(self,f):
         keys=["client_id","owner_veterinarian_id","origin_veterinarian_id","operator_name","request_origin","collaborator_name","destination_branch","owner_first_name","owner_last_name","owner_company","owner_phone","owner_phone_2","owner_email","owner_tax_code","owner_vat","owner_notes","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","provenance","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","use_voucher","used_voucher_id","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_saluto","tag_calco","tag_calco_urna","tag_calco_paw","tag_calco_nose","tag_avvisare","tag_da_richiamare","payment_status","payment_method","price_cremation","price_pickup","price_evening","price_urn","send_catalog","catalog_sent","send_estremi","price_delivery","price_night","price_cast","price_paw_cast","price_nose_cast","price_holiday","price_accessories","deposit","remaining_balance","total_service","total_text","invoice_number","invoice_date","invoice_total","make_invoice","identity_document_number","identity_document_date","signing_place"]
         data = {k:f.get(k,"").strip() for k in keys}
+        data["pickup_time"] = f.get("pickup_time","").strip()
         data["urn_id"] = f.get("urn_id","").strip() or None
         data["urn_id_2"] = f.get("urn_id_2","").strip() or None
         data["urn_notes"] = f.get("urn_notes","").strip()
@@ -3932,7 +4176,9 @@ class App(BaseHTTPRequestHandler):
         print(f"[WHATSAPP_CRON] run_id={run_id} autorizzato={reason} timezone=Europe/Rome started_at={started_at}", flush=True)
         try:
             results=self.process_whatsapp_queue()
-            with db() as c: scheduled_created=process_scheduled_notifications(c,DB_PATH)
+            with db() as c:
+                scheduled_created=process_scheduled_notifications(c,DB_PATH)
+                scheduled_created+=process_calendar_notifications(c,DB_PATH)
         except Exception as exc:
             error=f"{type(exc).__name__}: {exc}"
             print(f"[WHATSAPP_CRON] run_id={run_id} errore={error}\n{traceback.format_exc()}",flush=True)
@@ -4126,12 +4372,17 @@ class App(BaseHTTPRequestHandler):
         self.send_html(layout("Possibile duplicato cliente",body,user),409)
 
     def create_practice(self,user):
-        f=self.form(); d=self.normalized_fields(f); stamp=now()
+        f=self.form(); d=self.normalized_fields(f); stamp=now();calendar_event_id=int(f["calendar_event_id"]) if f.get("calendar_event_id","").isdigit() else None
         error=self.validation_error(d)
         if error: return self.send_error(400, error)
         initial=f.get("status","Ritirato")
         if initial not in STATES or (initial=="Smaltito" and d.get("service_type")!="Cremazione collettiva"): initial="Ritirato"
         with db() as c:
+            calendar_event=None
+            if calendar_event_id:
+                calendar_event=c.execute("SELECT * FROM calendar_events WHERE id=? AND deleted_at IS NULL AND event_type IN ('Ritiro','Ritiro in sede') AND event_status='Ritirato'",(calendar_event_id,)).fetchone()
+                if not calendar_event:return self.send_error(400,"Evento calendario non valido per la creazione pratica")
+                if calendar_event["linked_practice_id"]:return self.redirect(f'/pratiche/{calendar_event["linked_practice_id"]}')
             conflict=self.invoice_conflict(c,d.get("invoice_number"))
             if conflict:return self.send_error(409,f'Numero fattura già usato nella pratica {conflict["practice_number"]}')
             if d.get("client_id"):
@@ -4163,6 +4414,9 @@ class App(BaseHTTPRequestHandler):
             emit_notification(c,"practice_created","🐾 Nuova pratica",f'{owner}\n{d.get("animal_name") or number}\n📍 {d.get("destination_branch") or ""}',pid,user["id"],db_path=DB_PATH)
             if d.get("catalog_sent")=="Si":
                 emit_notification(c,"catalog_sent","📖 Catalogo inviato",f'{number} · {d.get("animal_name") or "Animale non indicato"}',pid,user["id"],db_path=DB_PATH)
+            if calendar_event:
+                c.execute("UPDATE calendar_events SET linked_practice_id=?,updated_at=?,updated_by=? WHERE id=? AND linked_practice_id IS NULL",(pid,stamp,user["id"],calendar_event_id))
+                calendar_add_history(c,calendar_event_id,user["id"],"Creazione pratica","",number,stamp)
         self.redirect(f"/pratiche/{pid}")
 
     def practice(self,user,pid):

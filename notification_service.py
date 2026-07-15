@@ -29,6 +29,12 @@ NOTIFICATION_TYPES = {
     "push_test": ("Test notifiche push", "🔔"),
     "catalog_sent": ("Catalogo inviato", "📖"),
     "article_ordered": ("Articolo da ordinare", "📦"),
+    "calendar_event_created": ("Evento calendario creato", "CAL"),
+    "calendar_event_updated": ("Evento calendario modificato", "MOD"),
+    "calendar_event_cancelled": ("Evento calendario annullato", "ANN"),
+    "calendar_reminder_30m": ("Evento tra 30 minuti", "30M"),
+    "calendar_daily_summary": ("Riepilogo calendario giornaliero", "OGGI"),
+    "calendar_comment": ("Nuovo commento calendario", "MSG"),
 }
 
 def ensure_notification_schema(conn: sqlite3.Connection) -> None:
@@ -234,6 +240,38 @@ def process_scheduled_notifications(conn, db_path) -> int:
         day = current.date().isoformat()
         created += _scheduled_once(conn, db_path, f"payment-due-{row['id']}-{day}", "payment_due",
                                    "⚠️ Pratica ancora da saldare", row["animal_name"] or row["practice_number"], row["id"])
+    return created
+
+
+def process_calendar_notifications(conn, db_path, current=None) -> int:
+    """Deliver due calendar reminders and the idempotent 09:00 daily summary."""
+    current=current or datetime.now();stamp=current.isoformat(timespec="seconds");created=0
+    tables={row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if "calendar_events" not in tables:return 0
+    conn.execute("""UPDATE calendar_event_notifications SET status='annullato',error='Evento non piu attivo'
+      WHERE status='programmato' AND event_id IN (SELECT id FROM calendar_events
+      WHERE deleted_at IS NOT NULL OR COALESCE(event_status,'') IN ('Annullato','Completato'))""")
+    due=conn.execute("""SELECT n.id,e.id event_id,e.title,e.start_at FROM calendar_event_notifications n
+      JOIN calendar_events e ON e.id=n.event_id WHERE n.status='programmato' AND n.scheduled_at<=?
+      AND (e.deleted_at IS NULL OR e.deleted_at='') AND COALESCE(e.event_status,'')!='Annullato' ORDER BY n.scheduled_at LIMIT 100""",(stamp,)).fetchall()
+    for row in due:
+        changed=conn.execute("UPDATE calendar_event_notifications SET status='in_invio' WHERE id=? AND status='programmato'",(row["id"],)).rowcount
+        if not changed:continue
+        try:
+            emit_notification(conn,"calendar_reminder_30m","Evento tra 30 minuti",row["title"],payload={"url":f'/calendario/{row["event_id"]}'},db_path=db_path)
+            conn.execute("UPDATE calendar_event_notifications SET status='inviato',sent_at=?,error='' WHERE id=?",(stamp,row["id"]));created+=1
+        except Exception as exc:
+            conn.execute("UPDATE calendar_event_notifications SET status='fallito',error=? WHERE id=?",(f"{type(exc).__name__}: {exc}"[:500],row["id"]))
+    today=current.date().isoformat()
+    if current.hour==9:
+        rows=conn.execute("""SELECT id,title,start_at FROM calendar_events WHERE start_at<=? AND end_at>=?
+          AND (deleted_at IS NULL OR deleted_at='') AND COALESCE(event_status,'') NOT IN ('Annullato','Completato') ORDER BY start_at""",(today+"T23:59:59",today+"T00:00:00")).fetchall()
+        if rows:
+            key=f"calendar-daily-summary-{today}"
+            if not conn.execute("SELECT 1 FROM scheduled_notification_events WHERE event_key=?",(key,)).fetchone():
+                conn.execute("INSERT INTO scheduled_notification_events(event_key,created_at) VALUES(?,?)",(key,stamp))
+                text="\n".join(f'{(row["start_at"] or "")[11:16]} - {row["title"]}' for row in rows[:12])
+                emit_notification(conn,"calendar_daily_summary",f"Eventi di oggi: {len(rows)}",text,payload={"url":f"/calendario?data={today}"},db_path=db_path);created+=1
     return created
 
 
