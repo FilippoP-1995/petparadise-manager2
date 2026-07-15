@@ -11,6 +11,10 @@ services:
         value: 0.0.0.0
       - key: PPM_DATA_DIR
         value: /var/data
+      - key: TZ
+        value: Europe/Rome
+      - key: WHATSAPP_CRON_SECRET
+        sync: false
       - key: VAPID_PUBLIC_KEY
         sync: false
       - key: VAPID_PRIVATE_KEY
@@ -21,3 +25,17 @@ services:
       name: pet-paradise-data
       mountPath: /var/data
       sizeGB: 1
+  - type: cron
+    name: pet-paradise-whatsapp-cron
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python cron_whatsapp.py
+    schedule: "*/5 * * * *"
+    envVars:
+      - key: TZ
+        value: Europe/Rome
+      - key: WHATSAPP_CRON_URL
+        sync: false
+      - key: WHATSAPP_CRON_SECRET
+        sync: false

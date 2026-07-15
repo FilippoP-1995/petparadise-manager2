@@ -741,9 +741,94 @@ class PetParadiseTests(unittest.TestCase):
                             VALUES(?,?,?,?,?,?,?,?)""",(pid,"2026-07-15T10:00:00","programmato","grazie_cliente","393331234567",0,stamp,stamp))
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/conversazioni-whatsapp"
         self.handler.whatsapp_conversations(admin)
-        self.assertIn("Programmato per",rendered[-1])
+        self.assertIn("Orario programmato",rendered[-1])
         self.assertIn("CR-WA",rendered[-1])
         self.assertIn("message-programmato",rendered[-1])
+
+    def _whatsapp_record(self, scheduled_at, status="programmato", attempts=0, last_attempt_at=None, message_id=None):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            number=f"CR-WA-{conn.execute('SELECT count(*) n FROM practices').fetchone()['n']+1}"
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,owner_last_name,owner_phone,animal_name,service_type)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",(number,"Privato","Livorno","Consegnato",stamp,stamp,admin["id"],"Mario","Rossi","3331234567","Luna","Cremazione singola")).lastrowid
+            msg_id=conn.execute("""INSERT INTO whatsapp_messages(practice_id,scheduled_at,status,attempts,last_attempt_at,message_id,template_name,recipient_phone,manual,created_at,updated_at)
+                                  VALUES(?,?,?,?,?,?,?,?,?,?,?)""",(pid,scheduled_at,status,attempts,last_attempt_at,message_id,"ringraziamento_livorno","393331234567",0,stamp,stamp)).lastrowid
+        return admin,pid,msg_id
+
+    def test_whatsapp_future_message_is_not_processed(self):
+        _,_,msg_id=self._whatsapp_record("2026-07-15T15:01:00")
+        with patch.object(self.handler,"send_whatsapp_message") as send:
+            result=self.handler.process_whatsapp_queue(current_time=datetime(2026,7,15,15,0))
+        self.assertEqual(result,[]);send.assert_not_called()
+        with app.db() as conn:self.assertEqual(conn.execute("SELECT status FROM whatsapp_messages WHERE id=?",(msg_id,)).fetchone()["status"],"programmato")
+
+    def test_whatsapp_due_success_and_second_job_do_not_duplicate(self):
+        _,_,msg_id=self._whatsapp_record("2026-07-15T14:00:00")
+        class MetaResponse:
+            status=200
+            def __enter__(self):return self
+            def __exit__(self,*args):pass
+            def read(self):return b'{"messages":[{"id":"wamid.test"}]}'
+        env={"WHATSAPP_ACCESS_TOKEN":"token-test","WHATSAPP_PHONE_NUMBER_ID":"phone-test"}
+        with patch.dict(os.environ,env),patch("app.urllib.request.urlopen",return_value=MetaResponse()) as post:
+            first=self.handler.process_whatsapp_queue(current_time=datetime(2026,7,15,14,0))
+            second=self.handler.process_whatsapp_queue(current_time=datetime(2026,7,15,14,1))
+        self.assertTrue(first[0]["ok"]);self.assertEqual(second,[]);self.assertEqual(post.call_count,1)
+        with app.db() as conn:
+            row=conn.execute("SELECT status,message_id,sent_at,last_attempt_at,attempts FROM whatsapp_messages WHERE id=?",(msg_id,)).fetchone()
+        self.assertEqual((row["status"],row["message_id"],row["attempts"]),("accettato_da_meta","wamid.test",1));self.assertTrue(row["sent_at"] and row["last_attempt_at"])
+
+    def test_whatsapp_due_failure_is_recorded_as_failed(self):
+        _,_,msg_id=self._whatsapp_record("2026-07-15T14:00:00")
+        env={"WHATSAPP_ACCESS_TOKEN":"token-test","WHATSAPP_PHONE_NUMBER_ID":"phone-test"}
+        with patch.dict(os.environ,env),patch("app.urllib.request.urlopen",side_effect=OSError("rete non disponibile")):
+            result=self.handler.process_whatsapp_queue(current_time=datetime(2026,7,15,14,0))
+        self.assertFalse(result[0]["ok"])
+        with app.db() as conn:row=conn.execute("SELECT status,last_error,last_attempt_at,failed_at FROM whatsapp_messages WHERE id=?",(msg_id,)).fetchone()
+        self.assertEqual(row["status"],"fallito");self.assertIn("rete non disponibile",row["last_error"]);self.assertTrue(row["last_attempt_at"] and row["failed_at"])
+
+    def test_whatsapp_stale_processing_lock_becomes_failed_without_resend(self):
+        _,_,msg_id=self._whatsapp_record("2026-07-15T13:00:00","in_invio",1,"2026-07-15T13:40:00")
+        with patch.object(self.handler,"send_whatsapp_message") as send:
+            result=self.handler.process_whatsapp_queue(current_time=datetime(2026,7,15,14,0))
+        send.assert_not_called();self.assertFalse(result[0]["ok"])
+        with app.db() as conn:row=conn.execute("SELECT status,last_error FROM whatsapp_messages WHERE id=?",(msg_id,)).fetchone()
+        self.assertEqual(row["status"],"fallito");self.assertIn("evitare duplicazioni",row["last_error"])
+
+    def test_whatsapp_timezone_is_explicitly_europe_rome(self):
+        winter=app.whatsapp_datetime(datetime(2026,1,15,12,0));summer=app.whatsapp_datetime(datetime(2026,7,15,12,0))
+        self.assertEqual(winter.tzinfo.key,"Europe/Rome");self.assertEqual(winter.utcoffset(),timedelta(hours=1));self.assertEqual(summer.utcoffset(),timedelta(hours=2))
+        self.assertEqual(app.whatsapp_now(summer),"2026-07-15T12:00:00")
+
+    def test_whatsapp_ui_shows_real_timestamps_error_and_contextual_actions(self):
+        admin,_,failed_id=self._whatsapp_record("2026-07-15T13:00:00","fallito",1,"2026-07-15T13:01:00")
+        with app.db() as conn:conn.execute("UPDATE whatsapp_messages SET last_error='Errore Meta',failed_at='2026-07-15T13:01:00' WHERE id=?",(failed_id,))
+        self._whatsapp_record("2026-07-15T15:00:00")
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/conversazioni-whatsapp"
+        self.handler.whatsapp_conversations(admin);page=rendered[-1]
+        for text in ("Stato reale","Orario programmato","Ultimo tentativo","Data invio","Errore Meta","Riprova","Annulla"):
+            self.assertIn(text,page)
+        self.assertIn(f'/whatsapp-messaggi/{failed_id}/riprova',page)
+
+    def test_whatsapp_failed_retry_and_scheduled_cancel(self):
+        admin,_,failed_id=self._whatsapp_record("2026-07-15T13:00:00","fallito",1,"2026-07-15T13:01:00")
+        _,_,scheduled_id=self._whatsapp_record("2026-07-15T15:00:00")
+        self.handler.headers={"Referer":"/conversazioni-whatsapp"};self.handler.redirect=lambda path:None
+        def accepted(conn,msg_id,**kwargs):
+            conn.execute("UPDATE whatsapp_messages SET status='accettato_da_meta',message_id='wamid.retry',sent_at=?,last_error='' WHERE id=?",(app.whatsapp_now(),msg_id));return True,"ok"
+        with patch.object(self.handler,"send_whatsapp_message",side_effect=accepted):self.handler.whatsapp_message_action(admin,failed_id,"riprova")
+        self.handler.whatsapp_message_action(admin,scheduled_id,"annulla")
+        with app.db() as conn:
+            states={row["id"]:row["status"] for row in conn.execute("SELECT id,status FROM whatsapp_messages WHERE id IN (?,?)",(failed_id,scheduled_id))}
+        self.assertEqual(states[failed_id],"accettato_da_meta");self.assertEqual(states[scheduled_id],"annullato")
+
+    def test_whatsapp_ineligible_due_message_is_cancelled(self):
+        _,pid,msg_id=self._whatsapp_record("2026-07-15T14:00:00")
+        with app.db() as conn:conn.execute("UPDATE practices SET status='Ritirato' WHERE id=?",(pid,))
+        result=self.handler.process_whatsapp_queue(current_time=datetime(2026,7,15,14,0))
+        with app.db() as conn:status=conn.execute("SELECT status FROM whatsapp_messages WHERE id=?",(msg_id,)).fetchone()["status"]
+        self.assertFalse(result[0]["ok"]);self.assertEqual(status,"annullato")
 
     def test_quick_payment_saves_details_and_returns_to_list(self):
         with app.db() as conn:

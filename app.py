@@ -18,6 +18,7 @@ from http import cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlencode, urlparse
+from zoneinfo import ZoneInfo
 
 from email_service import EmailConfigurationError, EmailDeliveryError, send_email
 from pdf_service import generate_ddt
@@ -37,6 +38,7 @@ DDT_DIR = DATA / "ddt"
 ASSETS = ROOT / "assets"
 HOST = os.environ.get("PPM_HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", os.environ.get("PPM_PORT", "8080")))
+ROME_TZ = ZoneInfo("Europe/Rome")
 
 STATES = [
     "Ritirato", "In programma", "Cremato", "Da consegnare", "Consegnato", "Smaltito",
@@ -253,6 +255,14 @@ def init_db():
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS whatsapp_cron_runs (
+          id INTEGER PRIMARY KEY,
+          started_at TEXT NOT NULL,
+          finished_at TEXT,
+          status TEXT NOT NULL DEFAULT 'in_corso',
+          processed INTEGER NOT NULL DEFAULT 0,
+          error TEXT
+        );
         CREATE TABLE IF NOT EXISTS articles (
           id INTEGER PRIMARY KEY,
           name TEXT UNIQUE NOT NULL,
@@ -439,6 +449,7 @@ def init_db():
         c.execute("CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_due ON whatsapp_messages(status, scheduled_at)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_practice ON whatsapp_messages(practice_id, created_at)")
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_whatsapp_messages_one_active ON whatsapp_messages(practice_id) WHERE status IN ('programmato','in_invio')")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_whatsapp_cron_runs_started ON whatsapp_cron_runs(started_at DESC)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(last_name, first_name)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_clients_phone ON clients(phone)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email)")
@@ -578,6 +589,20 @@ def esc(value):
 
 def now():
     return datetime.now().isoformat(timespec="seconds")
+
+
+def whatsapp_datetime(value=None):
+    """Return a timezone-aware Europe/Rome datetime for WhatsApp scheduling."""
+    value = value or datetime.now(ROME_TZ)
+    if value.tzinfo is None:
+        return value.replace(tzinfo=ROME_TZ)
+    return value.astimezone(ROME_TZ)
+
+
+def whatsapp_now(value=None):
+    # Existing SQLite values are local, offset-free ISO strings. Keep that format
+    # for safe lexical comparisons, but always derive it explicitly in Rome time.
+    return whatsapp_datetime(value).replace(tzinfo=None).isoformat(timespec="seconds")
 
 
 def compact_text(value):
@@ -777,10 +802,10 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 .practice-status{background:transparent!important;border:2px solid currentColor}.practice-status-blue{color:#60a5fa!important;border-color:#3b82f6}.practice-status-red{color:#fb7185!important;border-color:#ef4444}.practice-status-yellow{color:#fde047!important;border-color:#eab308}.practice-status-green{color:#4ade80!important;border-color:#22c55e}.light-theme .practice-status-blue{color:#1d4ed8!important}.light-theme .practice-status-red{color:#b91c1c!important}.light-theme .practice-status-yellow{color:#854d0e!important}.light-theme .practice-status-green{color:#15803d!important}
 .modern-check{display:flex;align-items:center;gap:10px;min-height:46px;padding:10px 13px;border:1px solid #3b4658;border-radius:12px;background:linear-gradient(145deg,#182130,#111925);color:#e8edf5;cursor:pointer;transition:border-color .16s,transform .16s,box-shadow .16s}.modern-check:hover{transform:translateY(-1px);border-color:#fb7185;box-shadow:0 8px 22px #02061745}.modern-check input[type=checkbox]{width:20px;height:20px;margin:0;accent-color:#ef405f}.modern-check span{font-size:12px;font-weight:800;letter-spacing:.025em}.light-theme .modern-check{background:linear-gradient(145deg,#fff,#f1f5f9);color:#172033;border-color:#cbd5e1}.invoice-inline{display:grid;gap:8px}.invoice-inline input{min-width:0}.invoice-inline .btn{width:100%}
 .pay-green{border:2px solid #22c55e!important}.pay-yellow{border:2px solid #eab308!important}.pay-blue{border:2px solid #3b82f6!important}.notification-badge{position:absolute;display:grid;place-items:center;min-width:19px;height:19px;padding:0 5px;border-radius:99px;background:#dc2626;color:#fff;font:700 11px/1 system-ui;transform:translate(13px,-13px);box-shadow:0 0 0 2px #111827}.nav-notification{position:relative}.notification-center{display:grid;gap:10px}.notification-item{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:13px;align-items:center;padding:15px;border:1px solid #334155;border-radius:13px;background:#1f2937}.notification-item.unread{border-left:4px solid #ef405f}.notification-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:#172033;font-size:21px}.notification-copy b,.notification-copy small{display:block}.notification-copy p{margin:4px 0;color:#cbd5e1}.notification-copy small{color:#94a3b8}.notification-actions{display:flex;gap:8px;align-items:center}.toggle-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.toggle-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:1px solid #334155;border-radius:11px}.toggle-row input{width:22px;height:22px}.permission-prompt{position:fixed;right:20px;bottom:20px;z-index:150;max-width:390px;padding:18px;border:1px solid #475569;border-radius:16px;background:#172033;color:#fff;box-shadow:0 24px 70px #000a}.permission-prompt p{color:#cbd5e1}.quick-payment{display:flex;gap:7px;align-items:center}.quick-payment select,.quick-payment input{min-width:110px}.quick-payment .btn{width:auto}.light-theme .notification-item,.light-theme .toggle-row,.light-theme .permission-prompt{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .notification-copy p{color:#334155}
-.practice-list-table{min-width:1500px}.practice-list-table th:first-child,.practice-list-table td:first-child{position:sticky;left:0;z-index:3;min-width:215px;background:#101620;box-shadow:8px 0 14px #02061735}.practice-list-table th:first-child{z-index:4}.light-theme .practice-list-table th:first-child,.light-theme .practice-list-table td:first-child{background:#fff}.inline-statuses{display:grid;gap:8px;min-width:170px}.inline-state-select{min-height:38px;padding:7px 32px 7px 10px;border-width:2px;font-weight:800}.payment-popover{position:fixed;inset:0;z-index:180;display:grid;place-items:center;padding:18px;background:#020617b8}.payment-popover[hidden]{display:none}.payment-dialog{width:min(620px,100%);max-height:90dvh;overflow:auto;padding:20px;border:1px solid #475569;border-radius:16px;background:#172033;box-shadow:0 28px 90px #000c}.payment-dialog h2{margin-bottom:6px}.payment-dialog .fields{margin-top:16px}.light-theme .payment-dialog{background:#fff;color:#111827}.message-programmato{background:#4c1d95;color:#ede9fe}
+.practice-list-table{min-width:1500px}.practice-list-table th:first-child,.practice-list-table td:first-child{position:sticky;left:0;z-index:3;min-width:215px;background:#101620;box-shadow:8px 0 14px #02061735}.practice-list-table th:first-child{z-index:4}.light-theme .practice-list-table th:first-child,.light-theme .practice-list-table td:first-child{background:#fff}.inline-statuses{display:grid;gap:8px;min-width:170px}.inline-state-select{min-height:38px;padding:7px 32px 7px 10px;border-width:2px;font-weight:800}.payment-popover{position:fixed;inset:0;z-index:180;display:grid;place-items:center;padding:18px;background:#020617b8}.payment-popover[hidden]{display:none}.payment-dialog{width:min(620px,100%);max-height:90dvh;overflow:auto;padding:20px;border:1px solid #475569;border-radius:16px;background:#172033;box-shadow:0 28px 90px #000c}.payment-dialog h2{margin-bottom:6px}.payment-dialog .fields{margin-top:16px}.light-theme .payment-dialog{background:#fff;color:#111827}.message-programmato{background:#4c1d95;color:#ede9fe}.message-in_invio{background:#78350f;color:#fef3c7}.message-annullato{background:#334155;color:#cbd5e1}.conversation-error{grid-column:1/-1}.conversation-error dd{white-space:normal;color:#fca5a5}.conversation-action.actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}.conversation-action form{margin:0}
 @media(max-width:620px){.practice-list-table th:first-child,.practice-list-table td:first-child{box-sizing:border-box;width:132px;min-width:132px;max-width:132px;padding-left:12px;padding-right:10px;white-space:normal!important}}
 @media(max-width:1150px){.conversation-card{grid-template-columns:1fr 1fr}.conversation-action{grid-column:1/-1;text-align:left}}
-@media(max-width:700px){.conversation-card{grid-template-columns:1fr;gap:14px}.conversation-card dl{grid-template-columns:1fr 1fr}.conversation-action{grid-column:auto}.conversation-action .btn{width:100%}.pagination{gap:8px;justify-content:space-between}.pagination span{font-size:11px;text-align:center}.conversation-message{white-space:normal}.conversations-wrap .titlebar h1{font-size:24px}}
+@media(max-width:700px){.conversation-card{grid-template-columns:1fr;gap:14px}.conversation-card dl{grid-template-columns:1fr 1fr}.conversation-action{grid-column:auto}.conversation-action.actions{justify-content:stretch}.conversation-action form,.conversation-action .btn{width:100%}.pagination{gap:8px;justify-content:space-between}.pagination span{font-size:11px;text-align:center}.conversation-message{white-space:normal}.conversations-wrap .titlebar h1{font-size:24px}}
 @media(max-width:700px){.practice-layout{display:block!important}.practice-layout>.grid,.practice-layout>aside{width:100%;min-width:0}.practice-layout>aside{margin-top:16px}.practice-layout .kvs{grid-template-columns:1fr}.practice-layout .section{max-width:100%;overflow-wrap:anywhere}.toggle-list{grid-template-columns:1fr}.notification-item{grid-template-columns:40px minmax(0,1fr)}.notification-actions{grid-column:1/-1}.notification-actions .btn{width:100%}.permission-prompt{left:14px;right:14px;bottom:calc(84px + var(--safe-bottom));max-width:none}.quick-payment{min-width:430px}}
 .balance-chart{min-height:0;margin:0 0 20px}.article-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.article-card{display:flex;flex-direction:column;gap:16px;min-height:170px;padding:20px;border:1px solid #334155;border-radius:15px;background:#1f2937}.article-card h2{margin:0;font-size:18px}.article-card p{margin:0;color:#94a3b8}.article-card form{margin-top:auto}.article-card .btn{width:100%}.light-theme .article-card{background:#fff;color:#111827;border-color:#cbd5e1}
 .urn-stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:20px}.urn-stat,.urn-card{padding:17px;border:1px solid #334155;border-radius:14px;background:#1f2937}.urn-stat small,.urn-meta{color:#94a3b8}.urn-stat strong{display:block;margin-top:5px;font-size:24px}.urn-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}.urn-card{display:flex;flex-direction:column;gap:12px;min-width:0}.urn-card img,.urn-placeholder{width:100%;aspect-ratio:4/3;border-radius:10px;object-fit:cover;background:#111827}.urn-placeholder{display:grid;place-items:center;color:#64748b;font-weight:700}.urn-card h2{margin:0}.urn-card .actions{margin-top:auto}.stock-good{color:#86efac}.stock-low{color:#fdba74}.stock-out{color:#fca5a5}.light-theme .urn-stat,.light-theme .urn-card{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .urn-placeholder{background:#e2e8f0}.urn-filter{margin-bottom:20px}.urn-detail{grid-template-columns:minmax(280px,.7fr) minmax(0,1.3fr)}
@@ -2076,6 +2101,8 @@ class App(BaseHTTPRequestHandler):
         if match: return self.resend_whatsapp(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/whatsapp-annulla", path)
         if match: return self.cancel_whatsapp_manual(user, int(match.group(1)))
+        match = re.fullmatch(r"/whatsapp-messaggi/(\d+)/(riprova|annulla)", path)
+        if match: return self.whatsapp_message_action(user, int(match.group(1)), match.group(2))
         match = re.fullmatch(r"/pratiche/(\d+)/modifica", path)
         if match: return self.edit_submit(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/ddt", path)
@@ -2783,14 +2810,14 @@ class App(BaseHTTPRequestHandler):
         q=parse_qs(urlparse(self.path).query)
         term=(q.get("q") or [""])[0].strip(); date_from=(q.get("dal") or [""])[0].strip(); date_to=(q.get("al") or [""])[0].strip()
         message_status=(q.get("stato_messaggio") or [""])[0].strip(); practice_status=(q.get("stato_pratica") or [""])[0].strip()
-        allowed_message_statuses=["programmato","accettato_da_meta","consegnato","letto","fallito"]
+        allowed_message_statuses=["programmato","in_invio","accettato_da_meta","consegnato","letto","fallito","annullato"]
         if message_status not in allowed_message_statuses: message_status=""
         if practice_status not in STATES: practice_status=""
         try: page=max(1,int((q.get("pagina") or ["1"])[0]))
         except ValueError: page=1
         per_page=20
         event_date="COALESCE(NULLIF(wm.sent_at,''),NULLIF(wm.last_attempt_at,''),NULLIF(wm.scheduled_at,''),wm.created_at)"
-        where=["wm.manual=0","(wm.sent_at IS NOT NULL OR wm.status IN ('programmato','accettato_da_meta','consegnato','letto','fallito'))"]
+        where=["wm.manual=0","(wm.sent_at IS NOT NULL OR wm.status IN ('programmato','in_invio','accettato_da_meta','consegnato','letto','fallito','annullato'))"]
         args=[]
         if term:
             like=f"%{term}%"; where.append("(COALESCE(p.owner_first_name,'')||' '||COALESCE(p.owner_last_name,'') LIKE ? OR COALESCE(p.owner_company,'') LIKE ? OR COALESCE(p.animal_name,'') LIKE ? OR COALESCE(wm.recipient_phone,'') LIKE ?)"); args.extend([like]*4)
@@ -2807,15 +2834,17 @@ class App(BaseHTTPRequestHandler):
             rows=c.execute(f"""SELECT wm.*,p.practice_number,p.owner_first_name,p.owner_last_name,p.owner_company,p.owner_phone,p.animal_name,p.status practice_status,{event_date} event_at
                                FROM whatsapp_messages wm JOIN practices p ON p.id=wm.practice_id
                                WHERE {where_sql} ORDER BY event_at DESC,wm.id DESC LIMIT ? OFFSET ?""",args+[per_page,offset]).fetchall()
-        status_labels={"programmato":"Programmato","accettato_da_meta":"Inviato","consegnato":"Consegnato","letto":"Letto","fallito":"Fallito"}
+        status_labels={"programmato":"Programmato","in_invio":"Invio in corso","accettato_da_meta":"Inviato","consegnato":"Consegnato","letto":"Letto","fallito":"Fallito","annullato":"Annullato"}
         cards=[]
         for row in rows:
             client=" ".join(x for x in [row["owner_first_name"],row["owner_last_name"]] if x).strip() or row["owner_company"] or "Cliente non indicato"
             phone=only_digits(row["recipient_phone"] or row["owner_phone"]); status=status_labels.get(row["status"],self.whatsapp_status_label(row["status"]))
             last_message=(f'Errore: {compact_text(row["last_error"])}' if row["status"]=="fallito" and row["last_error"] else f'Ringraziamento automatico · {row["template_name"]}' if row["template_name"] else "Ringraziamento automatico")
-            whatsapp_action=f'<a class="btn whatsapp-open" href="https://wa.me/{phone}" target="_blank" rel="noopener noreferrer">Apri chat WhatsApp</a>' if phone else '<span class="sub">Numero non disponibile</span>'
-            date_label="Programmato per" if row["status"]=="programmato" else "Inviato"
-            cards.append(f'''<article class="conversation-card"><div class="conversation-main"><div class="conversation-avatar">{lucide("message")}</div><div><h2>{esc(client)}</h2><p><b>{esc(row["animal_name"] or "Animale non indicato")}</b> · pratica <a href="/pratiche/{row["practice_id"]}?return_to={quote(self.path,safe='')}">{esc(row["practice_number"])}</a></p><p class="conversation-message">{esc(last_message[:180])}</p></div></div><dl><div><dt>WhatsApp</dt><dd>{('+'+esc(phone)) if phone else '-'}</dd></div><div><dt>{date_label}</dt><dd>{esc((row["event_at"] or "").replace("T"," ")[:16])}</dd></div><div><dt>Pratica</dt><dd><span class="badge">{esc(row["practice_status"])}</span></dd></div><div><dt>Messaggio</dt><dd><span class="badge message-{esc(row["status"])}">{esc(status)}</span></dd></div></dl><div class="conversation-action">{whatsapp_action}</div></article>''')
+            chat_action=f'<a class="btn whatsapp-open" href="https://wa.me/{phone}" target="_blank" rel="noopener noreferrer">Apri chat WhatsApp</a>' if phone else '<span class="sub">Numero non disponibile</span>'
+            retry_action=f'''<form method="post" action="/whatsapp-messaggi/{row['id']}/riprova" onsubmit="return confirm('Riprovare ora questo invio WhatsApp?')"><button class="btn">Riprova</button></form>''' if row["status"]=="fallito" else ""
+            cancel_action=f'''<form method="post" action="/whatsapp-messaggi/{row['id']}/annulla" onsubmit="return confirm('Annullare questo messaggio programmato?')"><button class="btn ghost">Annulla</button></form>''' if row["status"]=="programmato" else ""
+            error_detail=f'<div class="conversation-error"><dt>Errore</dt><dd>{esc(row["last_error"])}</dd></div>' if row["last_error"] else ""
+            cards.append(f'''<article class="conversation-card"><div class="conversation-main"><div class="conversation-avatar">{lucide("message")}</div><div><h2>{esc(client)}</h2><p><b>{esc(row["animal_name"] or "Animale non indicato")}</b> · pratica <a href="/pratiche/{row["practice_id"]}?return_to={quote(self.path,safe='')}">{esc(row["practice_number"])}</a></p><p class="conversation-message">{esc(last_message[:180])}</p></div></div><dl><div><dt>WhatsApp</dt><dd>{('+'+esc(phone)) if phone else '-'}</dd></div><div><dt>Stato reale</dt><dd><span class="badge message-{esc(row["status"])}">{esc(status)}</span></dd></div><div><dt>Orario programmato</dt><dd>{esc((row["scheduled_at"] or "-").replace("T"," ")[:16])}</dd></div><div><dt>Ultimo tentativo</dt><dd>{esc((row["last_attempt_at"] or "-").replace("T"," ")[:16])}</dd></div><div><dt>Data invio</dt><dd>{esc((row["sent_at"] or "-").replace("T"," ")[:16])}</dd></div><div><dt>Pratica</dt><dd><span class="badge">{esc(row["practice_status"])}</span></dd></div>{error_detail}</dl><div class="conversation-action actions">{retry_action}{cancel_action}{chat_action}</div></article>''')
         results=''.join(cards) or '<section class="section empty-state">Nessuna conversazione trovata.</section>'
         def page_link(number,label,disabled=False):
             if disabled: return f'<span class="page-disabled">{label}</span>'
@@ -3649,18 +3678,13 @@ class App(BaseHTTPRequestHandler):
     def whatsapp_status_label(self, status):
         return {
             "programmato":"Programmato",
-            "in_invio":"In invio",
-            "accettato_da_meta":"Accettato da Meta",
+            "in_invio":"Invio in corso",
+            "accettato_da_meta":"Inviato",
             "consegnato":"Consegnato",
             "letto":"Letto",
             "fallito":"Fallito",
             "annullato":"Annullato",
         }.get(status or "", status or "Non programmato")
-
-    def whatsapp_next_retry_at(self, attempts):
-        minutes = [10, 30, 120]
-        idx=max(0, min(int(attempts or 1)-1, len(minutes)-1))
-        return (datetime.now() + timedelta(minutes=minutes[idx])).isoformat(timespec="seconds")
 
     def whatsapp_get_meta(self, endpoint, token):
         req=urllib.request.Request(endpoint,headers={"Authorization":f"Bearer {token}"},method="GET")
@@ -3743,7 +3767,7 @@ class App(BaseHTTPRequestHandler):
             c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(msg,pid))
             c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"WhatsApp ringraziamento",msg,user_id,now()))
             return False, msg
-        scheduled_at=(datetime.now()+timedelta(hours=48)).isoformat(timespec="seconds")
+        scheduled_at=whatsapp_now(whatsapp_datetime()+timedelta(hours=48))
         template=self.whatsapp_template_name(p)
         language=self.whatsapp_language_code()
         stamp=now()
@@ -3762,13 +3786,19 @@ class App(BaseHTTPRequestHandler):
             print(f"[WHATSAPP] pratica={pid} esito=ANNULLATO righe={rows} motivo={reason}", flush=True)
         return rows
 
-    def send_whatsapp_message(self,c,msg_id,manual=False,user_id=None):
+    def send_whatsapp_message(self,c,msg_id,manual=False,user_id=None,attempt_recorded=False):
         msg=c.execute("SELECT * FROM whatsapp_messages WHERE id=?",(msg_id,)).fetchone()
         if not msg:
             return False, "Invio WhatsApp non trovato"
         p=c.execute("SELECT * FROM practices WHERE id=?",(msg["practice_id"],)).fetchone()
         if not p:
-            return False, "Pratica non trovata"
+            stamp=whatsapp_now();error="Pratica non trovata"
+            c.execute("UPDATE whatsapp_messages SET status='fallito',failed_at=?,last_attempt_at=COALESCE(last_attempt_at,?),last_error=?,updated_at=? WHERE id=?",(stamp,stamp,error,stamp,msg_id))
+            return False,error
+        if not manual and (p["status"] != "Consegnato" or ("deleted_at" in p.keys() and p["deleted_at"])):
+            reason="Pratica non più nello stato Consegnato: invio annullato"
+            self.cancel_whatsapp_scheduled(c,p["id"],user_id,reason)
+            return False,reason
         block_reason=self.whatsapp_block_reason(p)
         if block_reason:
             self.cancel_whatsapp_scheduled(c,p["id"],user_id,block_reason)
@@ -3783,18 +3813,22 @@ class App(BaseHTTPRequestHandler):
         language=payload_obj["template"]["language"]["code"]
         if not phone:
             error="Telefono speditore mancante"
-            c.execute("UPDATE whatsapp_messages SET status='fallito', last_error=?, attempts=attempts+1, last_attempt_at=?, updated_at=? WHERE id=?",(error,now(),now(),msg_id))
+            stamp=whatsapp_now()
+            increment=0 if attempt_recorded else 1
+            c.execute("UPDATE whatsapp_messages SET status='fallito', failed_at=?, last_error=?, attempts=attempts+?, last_attempt_at=?, updated_at=? WHERE id=?",(stamp,error,increment,stamp,stamp,msg_id))
             c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,p["id"]))
             return False,error
         if not token or not phone_id:
             error="Config WhatsApp mancante: imposta WHATSAPP_ACCESS_TOKEN e WHATSAPP_PHONE_NUMBER_ID su Render"
-            c.execute("UPDATE whatsapp_messages SET status='fallito', last_error=?, attempts=attempts+1, last_attempt_at=?, updated_at=? WHERE id=?",(error,now(),now(),msg_id))
+            stamp=whatsapp_now()
+            increment=0 if attempt_recorded else 1
+            c.execute("UPDATE whatsapp_messages SET status='fallito', failed_at=?, last_error=?, attempts=attempts+?, last_attempt_at=?, updated_at=? WHERE id=?",(stamp,error,increment,stamp,stamp,msg_id))
             c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,p["id"]))
             return False,error
         payload=json.dumps(payload_obj,ensure_ascii=False).encode("utf-8")
         print(f"[WHATSAPP] POST pratica_id={p['id']} message_row={msg_id} endpoint={endpoint} phone_number_id={phone_id} token={self.masked_whatsapp_token(token)} destinatario=+{phone} template={template} lingua={language} scheduled_at={msg['scheduled_at']} payload={json.dumps(payload_obj,ensure_ascii=False)}", flush=True)
         req=urllib.request.Request(endpoint,data=payload,headers={"Authorization":f"Bearer {token}","Content-Type":"application/json"},method="POST")
-        attempt_stamp=now()
+        attempt_stamp=whatsapp_now()
         try:
             with urllib.request.urlopen(req,timeout=18) as resp:
                 response_body=resp.read().decode("utf-8","replace")
@@ -3803,8 +3837,9 @@ class App(BaseHTTPRequestHandler):
             message_id=""
             if isinstance(response_json,dict) and response_json.get("messages"):
                 message_id=response_json["messages"][0].get("id","")
-            sent_at=now()
-            c.execute("""UPDATE whatsapp_messages SET status='accettato_da_meta', attempts=attempts+1, last_error='', message_id=?, sent_at=?, last_attempt_at=?, template_name=?, language_code=?, recipient_phone=?, payload_json=?, response_json=?, updated_at=? WHERE id=?""",(message_id,sent_at,attempt_stamp,template,language,phone,json.dumps(payload_obj,ensure_ascii=False),response_body,sent_at,msg_id))
+            sent_at=whatsapp_now()
+            increment=0 if attempt_recorded else 1
+            c.execute("""UPDATE whatsapp_messages SET status='accettato_da_meta', attempts=attempts+?, last_error='', message_id=?, sent_at=?, last_attempt_at=?, template_name=?, language_code=?, recipient_phone=?, payload_json=?, response_json=?, updated_at=? WHERE id=?""",(increment,message_id,sent_at,attempt_stamp,template,language,phone,json.dumps(payload_obj,ensure_ascii=False),response_body,sent_at,msg_id))
             c.execute("UPDATE practices SET whatsapp_thanks_sent_at=?, whatsapp_thanks_last_error='' WHERE id=?",(sent_at,p["id"]))
             c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(p["id"],"WhatsApp ringraziamento",f"Accettato da Meta {sent_at} a +{phone} - template {template} - message_id {message_id}",user_id,sent_at))
             print(f"[WHATSAPP] pratica_id={p['id']} message_row={msg_id} esito=ACCETTATO_DA_META http={http_status} message_id={message_id} risposta={response_body}", flush=True)
@@ -3819,39 +3854,53 @@ class App(BaseHTTPRequestHandler):
         except urllib.error.HTTPError as exc:
             detail=exc.read().decode("utf-8","replace")
             error=f"Meta API HTTP {exc.code}: {detail}"
-            attempts=int(msg["attempts"] or 0)+1
-            next_status="fallito" if attempts >= 3 or manual else "programmato"
-            retry_at=self.whatsapp_next_retry_at(attempts) if next_status=="programmato" else msg["scheduled_at"]
-            c.execute("""UPDATE whatsapp_messages SET status=?, scheduled_at=?, attempts=?, last_error=?, last_attempt_at=?, template_name=?, language_code=?, recipient_phone=?, payload_json=?, response_json=?, updated_at=? WHERE id=?""",(next_status,retry_at,attempts,error,attempt_stamp,template,language,phone,json.dumps(payload_obj,ensure_ascii=False),detail,now(),msg_id))
+            attempts=int(msg["attempts"] or 0)+(0 if attempt_recorded else 1)
+            failed_at=whatsapp_now()
+            c.execute("""UPDATE whatsapp_messages SET status='fallito', attempts=?, last_error=?, last_attempt_at=?, failed_at=?, template_name=?, language_code=?, recipient_phone=?, payload_json=?, response_json=?, updated_at=? WHERE id=?""",(attempts,error,attempt_stamp,failed_at,template,language,phone,json.dumps(payload_obj,ensure_ascii=False),detail,failed_at,msg_id))
             c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,p["id"]))
             c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(p["id"],"WhatsApp ringraziamento",f"Errore: {error}",user_id,now()))
             emit_notification(c,"whatsapp_error","❌ Errore invio WhatsApp",f'{p["owner_first_name"] or ""} {p["owner_last_name"] or ""}\nTocca per vedere il dettaglio.',p["id"],user_id,{"url":"/conversazioni-whatsapp"},db_path=DB_PATH)
-            print(f"[WHATSAPP] pratica_id={p['id']} message_row={msg_id} esito=ERRORE http={exc.code} tentativi={attempts} prossimo_stato={next_status} endpoint={endpoint} destinatario=+{phone} template={template} lingua={language} risposta={detail}", flush=True)
+            print(f"[WHATSAPP] pratica_id={p['id']} message_row={msg_id} esito=FALLITO http={exc.code} tentativi={attempts} endpoint={endpoint} destinatario=+{phone} template={template} lingua={language} risposta={detail}", flush=True)
             return False,error
         except Exception as exc:
             error=str(exc)
-            attempts=int(msg["attempts"] or 0)+1
-            next_status="fallito" if attempts >= 3 or manual else "programmato"
-            retry_at=self.whatsapp_next_retry_at(attempts) if next_status=="programmato" else msg["scheduled_at"]
-            c.execute("""UPDATE whatsapp_messages SET status=?, scheduled_at=?, attempts=?, last_error=?, last_attempt_at=?, template_name=?, language_code=?, recipient_phone=?, payload_json=?, updated_at=? WHERE id=?""",(next_status,retry_at,attempts,error,attempt_stamp,template,language,phone,json.dumps(payload_obj,ensure_ascii=False),now(),msg_id))
+            attempts=int(msg["attempts"] or 0)+(0 if attempt_recorded else 1)
+            failed_at=whatsapp_now()
+            c.execute("""UPDATE whatsapp_messages SET status='fallito', attempts=?, last_error=?, last_attempt_at=?, failed_at=?, template_name=?, language_code=?, recipient_phone=?, payload_json=?, updated_at=? WHERE id=?""",(attempts,error,attempt_stamp,failed_at,template,language,phone,json.dumps(payload_obj,ensure_ascii=False),failed_at,msg_id))
             c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,p["id"]))
             c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(p["id"],"WhatsApp ringraziamento",f"Errore: {error}",user_id,now()))
             emit_notification(c,"whatsapp_error","❌ Errore invio WhatsApp",f'{p["owner_first_name"] or ""} {p["owner_last_name"] or ""}\nTocca per vedere il dettaglio.',p["id"],user_id,{"url":"/conversazioni-whatsapp"},db_path=DB_PATH)
-            print(f"[WHATSAPP] pratica_id={p['id']} message_row={msg_id} esito=ERRORE tentativi={attempts} prossimo_stato={next_status} endpoint={endpoint} destinatario=+{phone} template={template} lingua={language} errore={error}", flush=True)
+            print(f"[WHATSAPP] pratica_id={p['id']} message_row={msg_id} esito=FALLITO tentativi={attempts} endpoint={endpoint} destinatario=+{phone} template={template} lingua={language} errore={error}", flush=True)
             return False,error
 
-    def process_whatsapp_queue(self,limit=20):
+    def process_whatsapp_queue(self,limit=20,current_time=None):
         results=[]
+        current_dt=whatsapp_datetime(current_time)
+        current=whatsapp_now(current_dt)
+        stale=whatsapp_now(current_dt-timedelta(minutes=10))
         with db() as c:
-            stale=(datetime.now()-timedelta(minutes=30)).isoformat(timespec="seconds")
-            c.execute("UPDATE whatsapp_messages SET status='programmato', scheduled_at=?, updated_at=? WHERE status='in_invio' AND attempts<3 AND (last_attempt_at IS NULL OR last_attempt_at<=?)",(now(),now(),stale))
-            due=c.execute("SELECT id FROM whatsapp_messages WHERE status='programmato' AND scheduled_at<=? ORDER BY scheduled_at LIMIT ?",(now(),limit)).fetchall()
+            stuck=c.execute("""SELECT id,message_id FROM whatsapp_messages
+                               WHERE status='in_invio' AND COALESCE(NULLIF(last_attempt_at,''),updated_at)<=?""",(stale,)).fetchall()
+            for row in stuck:
+                if row["message_id"]:
+                    c.execute("UPDATE whatsapp_messages SET status='accettato_da_meta',sent_at=COALESCE(sent_at,?),last_attempt_at=COALESCE(last_attempt_at,?),last_error='',updated_at=? WHERE id=?",(current,current,current,row["id"]))
+                    results.append({"id":row["id"],"ok":True,"message":"Invio precedente riconciliato tramite Message ID"})
+                else:
+                    error="Invio interrotto da oltre 10 minuti: non reinviato automaticamente per evitare duplicazioni"
+                    c.execute("UPDATE whatsapp_messages SET status='fallito',failed_at=?,last_attempt_at=COALESCE(last_attempt_at,?),last_error=?,updated_at=? WHERE id=?",(current,current,error,current,row["id"]))
+                    results.append({"id":row["id"],"ok":False,"message":error})
+            due=c.execute("SELECT id,message_id FROM whatsapp_messages WHERE status='programmato' AND scheduled_at<=? ORDER BY scheduled_at LIMIT ?",(current,limit)).fetchall()
             for row in due:
-                stamp=now()
-                changed=c.execute("UPDATE whatsapp_messages SET status='in_invio', updated_at=? WHERE id=? AND status='programmato'",(stamp,row["id"])).rowcount
+                if row["message_id"]:
+                    c.execute("UPDATE whatsapp_messages SET status='accettato_da_meta',sent_at=COALESCE(sent_at,?),last_error='',updated_at=? WHERE id=? AND status='programmato'",(current,current,row["id"]))
+                    results.append({"id":row["id"],"ok":True,"message":"Già accettato da Meta: invio non duplicato"})
+                    continue
+                changed=c.execute("""UPDATE whatsapp_messages
+                                     SET status='in_invio',attempts=attempts+1,last_attempt_at=?,updated_at=?
+                                     WHERE id=? AND status='programmato' AND message_id IS NULL""",(current,current,row["id"])).rowcount
                 if not changed:
                     continue
-                ok,msg=self.send_whatsapp_message(c,row["id"],manual=False,user_id=None)
+                ok,msg=self.send_whatsapp_message(c,row["id"],manual=False,user_id=None,attempt_recorded=True)
                 results.append({"id":row["id"],"ok":ok,"message":msg})
         return results
 
@@ -3877,15 +3926,23 @@ class App(BaseHTTPRequestHandler):
         if not ok:
             print(f"[WHATSAPP_CRON] 403 {reason}", flush=True)
             return self.send_json({"ok":False,"error":reason},403)
-        print(f"[WHATSAPP_CRON] autorizzato: {reason}", flush=True)
+        started_at=whatsapp_now()
+        with db() as c:
+            run_id=c.execute("INSERT INTO whatsapp_cron_runs(started_at,status) VALUES(?,'in_corso')",(started_at,)).lastrowid
+        print(f"[WHATSAPP_CRON] run_id={run_id} autorizzato={reason} timezone=Europe/Rome started_at={started_at}", flush=True)
         try:
             results=self.process_whatsapp_queue()
             with db() as c: scheduled_created=process_scheduled_notifications(c,DB_PATH)
         except Exception as exc:
-            print(f"[WHATSAPP_CRON] errore={type(exc).__name__}",flush=True)
-            with db() as c: emit_notification(c,"whatsapp_cron_error","❌ Errore Cron WhatsApp","Controlla la diagnostica WhatsApp.",payload={"url":"/whatsapp-diagnostica"},db_path=DB_PATH)
+            error=f"{type(exc).__name__}: {exc}"
+            print(f"[WHATSAPP_CRON] run_id={run_id} errore={error}\n{traceback.format_exc()}",flush=True)
+            with db() as c:
+                c.execute("UPDATE whatsapp_cron_runs SET finished_at=?,status='fallito',error=? WHERE id=?",(whatsapp_now(),error,run_id))
+                emit_notification(c,"whatsapp_cron_error","❌ Errore Cron WhatsApp","Controlla la diagnostica WhatsApp.",payload={"url":"/whatsapp-diagnostica"},db_path=DB_PATH)
             return self.send_json({"ok":False,"error":"Errore durante il cron"},500)
-        print(f"[WHATSAPP_CRON] completato processed={len(results)} results={json.dumps(results,ensure_ascii=False)}", flush=True)
+        with db() as c:
+            c.execute("UPDATE whatsapp_cron_runs SET finished_at=?,status='completato',processed=? WHERE id=?",(whatsapp_now(),len(results),run_id))
+        print(f"[WHATSAPP_CRON] run_id={run_id} completato processed={len(results)} results={json.dumps(results,ensure_ascii=False)}", flush=True)
         return self.send_json({"ok":True,"processed":len(results),"scheduled_notifications":scheduled_created,"results":results})
 
     def whatsapp_webhook_verify(self):
@@ -4445,6 +4502,33 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 return self.send_error(404)
             self.cancel_whatsapp_scheduled(c,pid,user["id"],"Invio programmato annullato manualmente")
         self.redirect(f"/pratiche/{pid}")
+
+    def whatsapp_message_action(self,user,msg_id,action):
+        return_to=safe_return_path(self.headers.get("Referer"),"/conversazioni-whatsapp")
+        with db() as c:
+            msg=c.execute("SELECT * FROM whatsapp_messages WHERE id=?",(msg_id,)).fetchone()
+            if not msg:
+                return self.send_error(404)
+            if action == "annulla":
+                if msg["status"] != "programmato":
+                    return self.send_error(409,"Solo un messaggio ancora programmato può essere annullato")
+                stamp=whatsapp_now()
+                reason="Invio programmato annullato manualmente"
+                c.execute("UPDATE whatsapp_messages SET status='annullato',last_error=?,updated_at=? WHERE id=? AND status='programmato'",(reason,stamp,msg_id))
+                c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(msg["practice_id"],"WhatsApp annullato",reason,user["id"],stamp))
+            elif action == "riprova":
+                if msg["status"] != "fallito":
+                    return self.send_error(409,"È possibile riprovare soltanto un messaggio fallito")
+                if msg["message_id"]:
+                    stamp=whatsapp_now()
+                    c.execute("UPDATE whatsapp_messages SET status='accettato_da_meta',sent_at=COALESCE(sent_at,?),last_error='',updated_at=? WHERE id=?",(stamp,stamp,msg_id))
+                else:
+                    stamp=whatsapp_now()
+                    changed=c.execute("""UPDATE whatsapp_messages SET status='in_invio',attempts=attempts+1,
+                                         last_attempt_at=?,failed_at=NULL,updated_at=? WHERE id=? AND status='fallito' AND message_id IS NULL""",(stamp,stamp,msg_id)).rowcount
+                    if changed:
+                        self.send_whatsapp_message(c,msg_id,manual=False,user_id=user["id"],attempt_recorded=True)
+        self.redirect(return_to)
 
     def whatsapp_confirm_page(self,user,pid):
         if user["role"] != "admin":
