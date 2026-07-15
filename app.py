@@ -19,6 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlencode, urlparse
 
+from email_service import EmailConfigurationError, EmailDeliveryError, send_email
 from pdf_service import generate_ddt
 from notification_service import (
     NOTIFICATION_TYPES,
@@ -264,6 +265,24 @@ def init_db():
           ordered_by INTEGER NOT NULL REFERENCES users(id),
           created_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS email_orders (
+          id INTEGER PRIMARY KEY,
+          order_type TEXT NOT NULL DEFAULT 'water',
+          quantity INTEGER NOT NULL,
+          notes TEXT,
+          recipient TEXT NOT NULL,
+          subject TEXT NOT NULL,
+          body TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'Bozza',
+          error_message TEXT,
+          operator_id INTEGER NOT NULL REFERENCES users(id),
+          parent_order_id INTEGER REFERENCES email_orders(id),
+          attempt_count INTEGER NOT NULL DEFAULT 0,
+          sent_at TEXT,
+          archived_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS urns (
           id INTEGER PRIMARY KEY,
           name TEXT NOT NULL,
@@ -305,6 +324,7 @@ def init_db():
         INSERT OR IGNORE INTO settings(key,value) VALUES('next_cr_number','1');
         INSERT OR IGNORE INTO settings(key,value) VALUES('next_sm_number','1');
         INSERT OR IGNORE INTO settings(key,value) VALUES('next_ddt_number','1');
+        INSERT OR IGNORE INTO settings(key,value) VALUES('order_recipient_email','[QUI INSERIRÒ IL MIO INDIRIZZO EMAIL]');
         """)
         for article_name in ("Sacchi per ritiro", "Boccette pelo", "Certificati", "Sacchetti riconsegna", "Sacchetti ceneri"):
             c.execute("INSERT OR IGNORE INTO articles(name,created_at) VALUES(?,?)", (article_name, now()))
@@ -422,6 +442,8 @@ def init_db():
         c.execute("CREATE INDEX IF NOT EXISTS idx_payment_movements_practice ON payment_movements(practice_id,paid_at)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_practices_dashboard ON practices(status,pickup_date,deleted_at)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_history_status_events ON practice_history(practice_id,event_type,created_at)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_email_orders_status_date ON email_orders(status,created_at DESC)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_email_orders_active ON email_orders(archived_at,created_at DESC)")
         c.execute("UPDATE practices SET payment_status='Da saldare' WHERE payment_status IS NULL OR payment_status=''")
         c.execute("UPDATE practices SET payment_status='Pagato', status='Consegnato' WHERE status='Pagato'")
         c.execute("UPDATE veterinarian_vouchers SET status='Maturato' WHERE status='Disponibile'")
@@ -553,6 +575,20 @@ def now():
 
 def compact_text(value):
     return re.sub(r"\s+", " ", str(value or "").strip())
+
+
+ORDER_EMAIL_SUBJECT = "Ordine boccioni acqua - Pet Paradise"
+
+
+def valid_email_address(value):
+    value=str(value or "").strip()
+    return bool(len(value)<=254 and "\n" not in value and "\r" not in value and re.fullmatch(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+",value))
+
+
+def water_order_body(quantity,notes=""):
+    note=str(notes or "").strip()
+    note_block=f"\n{note}\n" if note else ""
+    return f"Buongiorno,\n\ndesideriamo ordinare:\n\n{int(quantity)} boccioni di acqua.\n{note_block}\nGrazie.\n\nPet Paradise"
 
 
 def only_digits(value):
@@ -688,7 +724,8 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 /* Cleaner, lighter dark theme */
 body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;border-color:#344156}.app-header{background:#172131ed;border-color:#344156}.section,.card,.tablebox,.login{background:linear-gradient(145deg,#202c3d,#1b2636);border-color:#38475c;box-shadow:0 12px 34px #080d162b}.section[class*="section-tone-"]{background:linear-gradient(145deg,color-mix(in srgb,var(--section-accent) 5%,#202c3d),#1b2636 76%)}.dashboard-panel,.metric-card,.payment-card,.balance-card,.balance-total,.conversation-card,.article-card,.urn-stat,.urn-card{background:#202c3d;border-color:#3a495e;box-shadow:0 12px 32px #080d1626}.tablebox,table{background:#1b2636}.practice-list-table th:first-child,.practice-list-table td:first-child{background:#1b2636}.kv,input,select,textarea,.header-search,.icon-btn,.header-actions time{background:#182334;border-color:#3b4a5f}.tablebox table tr:hover td{background:#253247}.lookup-results,.lookup-item{background:#202c3d;border-color:#3b4a5f}.lookup-item:hover,.lookup-item:focus{background:#29384d}h1{font-weight:650}h2{font-weight:600}b,strong{font-weight:600}label{font-weight:550}.nav a,.nav button{font-weight:500}.btn{font-weight:600}.badge,.inline-state-select{font-weight:600}th{font-weight:600;letter-spacing:.035em}.metric-card strong,.payment-card strong,.stat b{font-weight:650}.light-theme .practice-list-table th:first-child,.light-theme .practice-list-table td:first-child{background:#fff}
 .dashboard-section-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:24px 0 12px}.dashboard-section-head .dashboard-heading{margin:0}.period-selector{display:inline-grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px;padding:3px;border:1px solid #3b4a5f;border-radius:12px;background:#182334}.period-selector a{display:grid;place-items:center;min-width:88px;min-height:38px;padding:8px 12px;border-radius:9px;color:#aeb9c8;font-size:13px;font-weight:600}.period-selector a:hover{color:#fff;background:#253248}.period-selector a.active{color:#fff;background:#ef405f;box-shadow:0 5px 14px #ef405f40}.dashboard-chart-only{margin-top:24px}.dashboard-chart-only .dashboard-panel{display:block;min-height:0}.light-theme .period-selector{background:#f1f5f9;border-color:#cbd5e1}.light-theme .period-selector a{color:#526174}.light-theme .period-selector a.active{color:#fff}.state-yellow{--card-glow:#713f124f;--icon-bg:#573713;--icon-color:#fde047;--icon-shadow:#eab30840}.inline-save-note{min-height:16px;color:#86efac;font-size:11px}.inline-save-note.error{color:#fca5a5}
-@media(max-width:620px){.dashboard-section-head{align-items:stretch;flex-direction:column;gap:9px}.period-selector{width:100%}.period-selector a{min-width:0;min-height:44px;padding:8px 5px}.dashboard-chart-only{margin-top:18px}.dashboard-wrap{padding-bottom:calc(28px + var(--safe-bottom))}}
+.order-compose{max-width:920px}.order-preview{margin:0;min-height:190px;padding:18px;border:1px solid #3b4a5f;border-radius:12px;background:#182334;color:#e7ecf3;font:400 14px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}.light-theme .order-preview{background:#f8fafc;color:#24312c;border-color:#cbd5e1}.orders-wrap .tablebox{margin-top:16px}
+@media(max-width:620px){.dashboard-section-head{align-items:stretch;flex-direction:column;gap:9px}.period-selector{width:100%}.period-selector a{min-width:0;min-height:44px;padding:8px 5px}.dashboard-chart-only{margin-top:18px}.dashboard-wrap{padding-bottom:calc(28px + var(--safe-bottom))}.order-compose{padding:15px}.order-preview{min-height:220px;padding:14px;font-size:13px}.orders-wrap .tablebox{max-width:100%;overflow-x:auto}.orders-wrap{padding-bottom:calc(28px + var(--safe-bottom))}}
 """
 
 APP_JS = r"""
@@ -1447,6 +1484,26 @@ function toggleTheme(){
   document.body.classList.toggle('light-theme');
   localStorage.setItem('ppm-theme',document.body.classList.contains('light-theme')?'light':'dark');
 }
+function orderEmailBody(quantity,notes){
+  const clean=String(notes||'').trim();
+  return `Buongiorno,\n\ndesideriamo ordinare:\n\n${quantity} boccioni di acqua.\n${clean?`\n${clean}\n`:''}\nGrazie.\n\nPet Paradise`;
+}
+function updateOrderPreview(form){
+  const quantity=form.querySelector('[name="quantity"]')?.value||'0';
+  const notes=form.querySelector('[name="notes"]')?.value||'';
+  const preview=form.querySelector('.order-preview');if(preview)preview.textContent=orderEmailBody(quantity,notes);
+}
+function confirmOrderSubmission(form){
+  const quantity=Number(form.querySelector('[name="quantity"]')?.value||0);
+  if(!Number.isInteger(quantity)||quantity<1){alert('Il numero di boccioni deve essere almeno 1.');return false;}
+  const recipient=form.dataset.recipient||'';
+  const notes=form.querySelector('[name="notes"]')?.value||'';
+  const subject='Ordine boccioni acqua - Pet Paradise';
+  const body=orderEmailBody(quantity,notes);
+  const confirmed=confirm(`Confermi l'invio dell'ordine?\n\nDestinatario: ${recipient}\nQuantità: ${quantity}\nOggetto: ${subject}\n\n${body}`);
+  if(confirmed)form.querySelector('[name="confirm_send"]').value='SI';
+  return confirmed;
+}
 function toggleMoreMenu(force){
   const open=typeof force==='boolean' ? force : !document.body.classList.contains('more-open');
   document.body.classList.toggle('more-open',open);
@@ -1694,7 +1751,7 @@ def layout(title, body, user=None):
         unread_badge=f'<span class="notification-badge">{unread if unread < 100 else "99+"}</span>' if unread else ''
         links=[
             ("/","home","Dashboard"),("/notifiche","bell","Notifiche"),("/pratiche","archive","Archivio"),("/conversazioni-whatsapp","message","Conversazioni WhatsApp"),("/veterinari","stethoscope","Veterinari"),
-            ("/prodotti","clipboard","Prodotti"),
+            ("/prodotti","clipboard","Prodotti"),("/ordini","receipt","Ordini"),
             ("/catalogo-urne","archive","Catalogo Urne"),
             ("/archivio/pratiche","clipboard","Gestionale"),("/archivio/clienti","users","Clienti"),("/archivio/pratiche","paw","Animali"),
             ("/archivio/pratiche?pagamento=Da%20saldare","wallet","Pagamenti"),("/fatture","receipt","Fatture"),
@@ -1817,6 +1874,9 @@ class App(BaseHTTPRequestHandler):
         if path == "/conversazioni-whatsapp": return self.whatsapp_conversations(user)
         if path == "/notifiche": return self.notifications(user)
         if path in ("/prodotti","/articoli"): return self.articles_page(user)
+        if path == "/ordini": return self.orders_page(user)
+        match = re.fullmatch(r"/ordini/(\d+)", path)
+        if match: return self.order_detail_page(user,int(match.group(1)))
         if path == "/fatture": return self.invoices_page(user)
         if path == "/catalogo-urne": return self.urn_catalog_page(user)
         if path == "/catalogo-urne/nuova": return self.urn_edit_page(user)
@@ -1875,6 +1935,10 @@ class App(BaseHTTPRequestHandler):
         if path == "/api/push/unsubscribe": return self.push_unsubscribe(user)
         if path == "/api/push/test": return self.push_test(user)
         if path == "/impostazioni/notifiche": return self.save_notification_preferences(user)
+        if path == "/impostazioni/ordini": return self.save_order_settings(user)
+        if path == "/ordini/invia": return self.send_water_order(user)
+        match = re.fullmatch(r"/ordini/(\d+)/(reinvia|duplica|archivia)",path)
+        if match: return self.order_action(user,int(match.group(1)),match.group(2))
         if path == "/notifiche/segna-tutte-lette": return self.mark_all_notifications_read(user)
         match = re.fullmatch(r"/(?:prodotti|articoli)/(\d+)/ordina", path)
         if match: return self.order_article(user, int(match.group(1)))
@@ -2322,6 +2386,98 @@ class App(BaseHTTPRequestHandler):
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>Pagamenti · {esc(title)}</h1><p class="sub">Separazione tra Totale W e Totale D (contanti). {esc(period_note)}</p></div><a class="btn ghost" href="/?pratiche_periodo=oggi&amp;pagamenti_periodo={period}">Dashboard</a></div>{''.join(sections)}</main>'''
         self.send_html(layout(f"Pagamenti · {title}",body,user))
 
+    def orders_page(self,user):
+        q=parse_qs(urlparse(self.path).query);date_from=(q.get("dal") or [""])[0].strip();date_to=(q.get("al") or [""])[0].strip();status=(q.get("stato") or [""])[0].strip();draft_id=(q.get("bozza") or [""])[0].strip()
+        statuses=("Bozza","Invio in corso","Inviato","Fallito")
+        if status not in statuses:status=""
+        where=["o.archived_at IS NULL"];args=[]
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_from):where.append("date(o.created_at)>=date(?)");args.append(date_from)
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_to):where.append("date(o.created_at)<=date(?)");args.append(date_to)
+        if status:where.append("o.status=?");args.append(status)
+        with db() as c:
+            recipient_row=c.execute("SELECT value FROM settings WHERE key='order_recipient_email'").fetchone();recipient=recipient_row["value"] if recipient_row else ""
+            rows=c.execute(f"""SELECT o.*,u.display_name operator_name FROM email_orders o JOIN users u ON u.id=o.operator_id
+                               WHERE {' AND '.join(where)} ORDER BY o.created_at DESC,o.id DESC""",args).fetchall()
+            draft=c.execute("SELECT * FROM email_orders WHERE id=? AND status='Bozza' AND archived_at IS NULL",(int(draft_id),)).fetchone() if draft_id.isdigit() else None
+        quantity=draft["quantity"] if draft else 1;notes=draft["notes"] if draft else "";preview=water_order_body(quantity,notes)
+        options='<option value="">Tutti gli esiti</option>'+''.join(f'<option value="{item}" {"selected" if status==item else ""}>{item}</option>' for item in statuses)
+        history=[]
+        for row in rows:
+            badge={"Bozza":"tag-yellow","Invio in corso":"tag-blue","Inviato":"tag-green","Fallito":"tag-red"}.get(row["status"],"")
+            history.append(f'''<tr><td>{esc(date_it(row["created_at"]))}<br><small>{esc((row["created_at"] or "")[11:16])}</small></td><td>{esc(row["operator_name"])}</td><td>{row["quantity"]}</td><td>{esc(row["recipient"])}</td><td><span class="badge {badge}">{esc(row["status"])}</span></td><td><a class="btn ghost" href="/ordini/{row["id"]}">Apri</a></td></tr>''')
+        table=''.join(history) or '<tr><td colspan="6" class="sub">Nessun ordine trovato.</td></tr>'
+        invalid_recipient=not valid_email_address(recipient)
+        warning='<div class="flash warning">Configura un indirizzo valido in <a href="/impostazioni"><b>Impostazioni</b></a> prima di inviare.</div>' if invalid_recipient else ''
+        body=f'''<main class="wrap orders-wrap"><div class="titlebar"><div><h1>Ordini</h1><p class="sub">Invio ordini tramite l'account email aziendale.</p></div></div>{warning}<section class="section order-compose"><h2>Ordine acqua</h2><form method="post" action="/ordini/invia" data-recipient="{esc(recipient)}" onsubmit="return confirmOrderSubmission(this)"><input type="hidden" name="confirm_send" value=""><input type="hidden" name="source_order_id" value="{draft['id'] if draft else ''}"><div class="fields"><div class="field"><label>Numero boccioni</label><input type="number" name="quantity" min="1" step="1" value="{quantity}" required inputmode="numeric" oninput="updateOrderPreview(this.form)"></div><div class="field"><label>Destinatario attualmente configurato</label><input value="{esc(recipient)}" readonly></div><div class="field full"><label>Note opzionali</label><textarea name="notes" maxlength="2000" oninput="updateOrderPreview(this.form)">{esc(notes)}</textarea></div><div class="field full"><label>Oggetto email</label><input name="subject_preview" value="{esc(ORDER_EMAIL_SUBJECT)}" readonly></div><div class="field full"><label>Anteprima del testo della mail</label><pre class="order-preview" aria-live="polite">{esc(preview)}</pre></div></div><button class="btn" {'disabled' if invalid_recipient else ''}>Invia ordine</button></form></section><section class="search-after-results"><h2>Storico ordini</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Esito</label><select name="stato">{options}</select></div></div><button class="btn" style="margin-top:12px">Filtra</button><a class="btn ghost" style="margin-top:12px" href="/ordini">Pulisci</a></form></section><div class="tablebox"><table><thead><tr><th>Data e ora</th><th>Operatore</th><th>Quantità</th><th>Destinatario</th><th>Esito</th><th></th></tr></thead><tbody>{table}</tbody></table></div></main>'''
+        self.send_html(layout("Ordini",body,user))
+
+    def order_detail_page(self,user,order_id):
+        with db() as c:
+            row=c.execute("SELECT o.*,u.display_name operator_name FROM email_orders o JOIN users u ON u.id=o.operator_id WHERE o.id=?",(order_id,)).fetchone()
+            recipient_row=c.execute("SELECT value FROM settings WHERE key='order_recipient_email'").fetchone();current_recipient=recipient_row["value"] if recipient_row else ""
+        if not row:return self.send_error(404)
+        result=(f'<div class="flash">Ordine inviato correttamente.</div>' if row["status"]=="Inviato" else f'<div class="flash warning"><b>Invio non riuscito:</b> {esc(row["error_message"] or "Errore non specificato")}</div>' if row["status"]=="Fallito" else "")
+        actions=""
+        if not row["archived_at"]:
+            resend=f'''<form method="post" action="/ordini/{order_id}/reinvia" data-recipient="{esc(current_recipient)}" onsubmit="return confirmOrderSubmission(this)"><input type="hidden" name="confirm_send"><input type="hidden" name="quantity" value="{row['quantity']}"><textarea name="notes" hidden>{esc(row['notes'])}</textarea><button class="btn">Reinvia ordine</button></form>'''
+            duplicate=f'''<form method="post" action="/ordini/{order_id}/duplica"><button class="btn ghost">Duplica ordine</button></form>'''
+            archive=f'''<form method="post" action="/ordini/{order_id}/archivia" onsubmit="return confirm('Archiviare questo ordine?')"><button class="btn ghost">Archivia</button></form>'''
+            actions=f'<div class="actions">{resend}{duplicate}{archive}</div>'
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Ordine #{row["id"]}</h1><p class="sub">{esc(row["status"])} · {esc(date_it(row["created_at"]))} {esc((row["created_at"] or "")[11:16])}</p></div><a class="btn ghost" href="/ordini">Torna agli ordini</a></div>{result}<section class="section"><div class="kvs"><div class="kv"><small>Operatore</small><b>{esc(row["operator_name"])}</b></div><div class="kv"><small>Destinatario</small><b>{esc(row["recipient"])}</b></div><div class="kv"><small>Quantità</small><b>{row["quantity"]} boccioni</b></div><div class="kv"><small>Esito</small><b>{esc(row["status"])}</b></div><div class="kv"><small>Tentativi</small><b>{row["attempt_count"]}</b></div><div class="kv"><small>Inviato il</small><b>{esc((row["sent_at"] or "").replace("T"," ") or "-")}</b></div></div><h2 style="margin-top:20px">{esc(row["subject"])}</h2><pre class="order-preview">{esc(row["body"])}</pre>{actions}</section></main>'''
+        self.send_html(layout(f"Ordine #{order_id}",body,user))
+
+    def _create_and_send_order(self,user,quantity,notes,parent_order_id=None):
+        with db() as c:
+            recipient_row=c.execute("SELECT value FROM settings WHERE key='order_recipient_email'").fetchone();recipient=(recipient_row["value"] if recipient_row else "").strip().lower()
+        if not valid_email_address(recipient):return None,"L'indirizzo destinatario ordini è vuoto o non valido. Configuralo nelle Impostazioni."
+        subject=ORDER_EMAIL_SUBJECT;body=water_order_body(quantity,notes);stamp=now()
+        with db() as c:
+            cur=c.execute("""INSERT INTO email_orders(order_type,quantity,notes,recipient,subject,body,status,operator_id,parent_order_id,attempt_count,created_at,updated_at)
+                             VALUES('water',?,?,?,?,?,'Invio in corso',?,?,1,?,?)""",(quantity,notes,recipient,subject,body,user["id"],parent_order_id,stamp,stamp));order_id=cur.lastrowid
+        try:
+            send_email(recipient,subject,body)
+        except (EmailConfigurationError,EmailDeliveryError) as exc:
+            message=str(exc)[:500]
+            with db() as c:c.execute("UPDATE email_orders SET status='Fallito',error_message=?,updated_at=? WHERE id=?",(message,now(),order_id))
+            return order_id,message
+        except Exception as exc:
+            message=f"Errore imprevisto durante l'invio email: {type(exc).__name__}."
+            with db() as c:c.execute("UPDATE email_orders SET status='Fallito',error_message=?,updated_at=? WHERE id=?",(message,now(),order_id))
+            return order_id,message
+        sent=now()
+        with db() as c:c.execute("UPDATE email_orders SET status='Inviato',sent_at=?,error_message=NULL,updated_at=? WHERE id=?",(sent,sent,order_id))
+        return order_id,""
+
+    def send_water_order(self,user):
+        form=self.form()
+        if form.get("confirm_send")!="SI":return self.error_page("Conferma mancante","L'email non è stata inviata perché manca la conferma esplicita.","/ordini")
+        try:quantity=int(form.get("quantity",0))
+        except (TypeError,ValueError):quantity=0
+        if quantity<1:return self.error_page("Quantità non valida","Il numero di boccioni deve essere almeno 1.","/ordini")
+        if quantity>999:return self.error_page("Quantità non valida","Il numero di boccioni è troppo elevato.","/ordini")
+        notes=str(form.get("notes","")).strip()[:2000];parent=int(form["source_order_id"]) if str(form.get("source_order_id","")).isdigit() else None
+        order_id,error=self._create_and_send_order(user,quantity,notes,parent)
+        if order_id:return self.redirect(f"/ordini/{order_id}")
+        return self.error_page("Invio non disponibile",error,"/ordini")
+
+    def order_action(self,user,order_id,action):
+        with db() as c:row=c.execute("SELECT * FROM email_orders WHERE id=? AND archived_at IS NULL",(order_id,)).fetchone()
+        if not row:return self.send_error(404)
+        if action=="archivia":
+            with db() as c:c.execute("UPDATE email_orders SET archived_at=?,updated_at=? WHERE id=?",(now(),now(),order_id))
+            return self.redirect("/ordini")
+        if action=="duplica":
+            stamp=now()
+            with db() as c:
+                cur=c.execute("""INSERT INTO email_orders(order_type,quantity,notes,recipient,subject,body,status,operator_id,parent_order_id,created_at,updated_at)
+                                 VALUES(?,?,?,?,?,?,'Bozza',?,?,?,?)""",(row["order_type"],row["quantity"],row["notes"],row["recipient"],row["subject"],row["body"],user["id"],order_id,stamp,stamp))
+            return self.redirect(f"/ordini?bozza={cur.lastrowid}")
+        form=self.form()
+        if form.get("confirm_send")!="SI":return self.error_page("Conferma mancante","Il reinvio richiede una conferma esplicita.",f"/ordini/{order_id}")
+        new_id,error=self._create_and_send_order(user,row["quantity"],row["notes"] or "",order_id)
+        if new_id:return self.redirect(f"/ordini/{new_id}")
+        return self.error_page("Invio non disponibile",error,f"/ordini/{order_id}")
+
     def articles_page(self,user):
         with db() as c:
             articles=c.execute("SELECT * FROM articles WHERE active=1 ORDER BY id").fetchall()
@@ -2537,6 +2693,8 @@ class App(BaseHTTPRequestHandler):
         with db() as c:
             saved={row["type"]:bool(row["enabled"]) for row in c.execute("SELECT type,enabled FROM notification_preferences WHERE user_id=?",(user["id"],))}
             subscriptions=c.execute("SELECT count(*) n FROM push_subscriptions WHERE user_id=?",(user["id"],)).fetchone()["n"]
+            recipient_row=c.execute("SELECT value FROM settings WHERE key='order_recipient_email'").fetchone()
+            order_recipient=recipient_row["value"] if recipient_row else ""
         toggles=''.join(f'''<label class="toggle-row"><span>{icon} {esc(label)}</span><input type="checkbox" name="{key}" value="1" {'checked' if saved.get(key,True) else ''}></label>''' for key,(label,icon) in NOTIFICATION_TYPES.items())
         asset_rows = []
         for name in ("DCS_NUOVO.pdf", "DCS_LIVORNO.pdf", "DCS_EMPOLI.pdf"):
@@ -2548,6 +2706,8 @@ class App(BaseHTTPRequestHandler):
         ddt_ok = DDT_DIR.exists()
         writable = os.access(DATA, os.W_OK) if data_ok else False
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>Impostazioni</h1><div class="sub">Preferenze personali e diagnostica.</div></div></div><section class="section"><h2>Notifiche</h2><p class="sub">Dispositivi collegati: <b data-push-device-count>{subscriptions}</b>. Su iPhone la PWA deve essere installata dalla schermata Home.</p><div id="pushVisibleError" class="flash warning hidden"></div><div class="actions" style="margin-bottom:16px"><button class="btn" type="button" onclick="enablePushNotifications()">Abilita notifiche</button><button class="btn ghost" type="button" onclick="schedulePushTest()">Test con PWA chiusa (10 secondi)</button></div><details class="section" open><summary><b>Diagnostica notifiche</b></summary><div class="kvs" style="margin-top:12px"><div class="kv"><small>Notification.permission</small><b data-push-diagnostic="permission">verifica…</b></div><div class="kv"><small>Service worker registrato</small><b data-push-diagnostic="registered">verifica…</b></div><div class="kv"><small>Service worker attivo</small><b data-push-diagnostic="active">verifica…</b></div><div class="kv"><small>Subscription presente</small><b data-push-diagnostic="subscription">verifica…</b></div><div class="kv"><small>Endpoint</small><b data-push-diagnostic="endpoint">—</b></div><div class="kv"><small>Risposta backend</small><b data-push-diagnostic="backend">verifica…</b></div><div class="kv"><small>Ultimo errore</small><b data-push-diagnostic="lastError">nessuno</b></div><div class="kv"><small>Dispositivi registrati</small><b data-push-diagnostic="devices">{subscriptions}</b></div></div></details><form method="post" action="/impostazioni/notifiche"><div class="toggle-list">{toggles}</div><button class="btn" style="margin-top:16px">Salva preferenze</button></form></section><section class="section" style="margin-top:16px"><h2>Modelli PDF</h2><div class="tablebox"><table><thead><tr><th>File</th><th>Stato</th><th>Dimensione</th></tr></thead><tbody>{''.join(asset_rows)}</tbody></table></div></section><section class="section" style="margin-top:16px"><h2>Cartelle dati</h2><p><b>Assets:</b> {esc(ASSETS)}</p><p><b>DATA:</b> {esc(DATA)} - {'OK' if data_ok else 'MANCANTE'} - scrittura {'OK' if writable else 'NO'}</p><p><b>DDT:</b> {esc(DDT_DIR)} - {'OK' if ddt_ok else 'MANCANTE'}</p></section></main>'''
+        order_settings=f'''<section class="section" style="margin-top:16px"><h2>Ordini via email</h2><p class="sub">Il destinatario viene usato automaticamente per tutti gli ordini. Le credenziali SMTP restano nelle variabili d'ambiente di Render.</p><form method="post" action="/impostazioni/ordini"><div class="field"><label>Email destinatario ordini</label><input type="email" name="order_recipient_email" value="{esc(order_recipient)}" required autocomplete="email"></div><button class="btn" style="margin-top:16px">Salva destinatario</button></form></section>'''
+        body=body.replace("</main>",order_settings+"</main>")
         self.send_html(layout("Impostazioni",body,user))
 
     diagnostics=settings_page
@@ -2607,6 +2767,14 @@ class App(BaseHTTPRequestHandler):
                 c.execute("""INSERT INTO notification_preferences(user_id,type,enabled) VALUES(?,?,?)
                              ON CONFLICT(user_id,type) DO UPDATE SET enabled=excluded.enabled""",
                           (user["id"],kind,1 if form.get(kind)=="1" else 0))
+        return self.redirect("/impostazioni")
+
+    def save_order_settings(self,user):
+        recipient=self.form().get("order_recipient_email","").strip().lower()
+        if not valid_email_address(recipient):
+            return self.error_page("Indirizzo non valido","Inserisci un indirizzo email destinatario valido.","/impostazioni")
+        with db() as c:
+            c.execute("INSERT INTO settings(key,value) VALUES('order_recipient_email',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(recipient,))
         return self.redirect("/impostazioni")
 
     def mark_all_notifications_read(self,user):
