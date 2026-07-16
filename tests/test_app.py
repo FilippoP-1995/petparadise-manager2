@@ -479,6 +479,31 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("catalog_sent", app.NOTIFICATION_TYPES)
         self.assertIn("article_ordered", app.NOTIFICATION_TYPES)
 
+    def test_sidebar_menu_follows_requested_order(self):
+        rendered = []
+        self.handler.send_html = lambda html, *args: rendered.append(html)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.path = "/"
+        self.handler.dashboard(admin)
+        page = rendered[-1]
+        expected_order = [
+            "Dashboard", "Calendario", "Notifiche", "Archivio", "Catalogo Urne", "Report",
+            "Conversazioni WhatsApp", "Veterinari", "Prodotti", "Ordini", "Gestionale", "Clienti",
+        ]
+        positions = [page.index(f">{label}</span>") for label in expected_order]
+        self.assertEqual(positions, sorted(positions))
+        for label in ("Animali", "Pagamenti", "Fatture", "Impostazioni", "Assistenza"):
+            self.assertGreater(page.index(f">{label}</span>"), positions[-1])
+
+    def test_desktop_sidebar_is_narrower_and_wrap_has_a_readable_max_width(self):
+        self.assertIn(".top{width:212px", app.CSS)
+        self.assertIn(".app-header{position:fixed;left:212px", app.CSS)
+        self.assertIn(".wrap{max-width:1600px;margin-left:212px;margin-right:auto", app.CSS)
+        # Mobile/tablet breakpoints stay untouched (sidebar collapses independently there).
+        self.assertIn("@media(max-width:900px)", app.CSS)
+        self.assertIn(".wrap{margin-left:0;padding:calc(88px + var(--safe-top)) 14px 22px}", app.CSS)
+
     def test_pdf_urn_inventory_is_imported_once_with_exact_totals(self):
         with app.db() as conn:
             rows = conn.execute("SELECT name,material,price,quantity FROM urns WHERE active=1").fetchall()
