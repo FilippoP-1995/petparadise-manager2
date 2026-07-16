@@ -479,6 +479,24 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("catalog_sent", app.NOTIFICATION_TYPES)
         self.assertIn("article_ordered", app.NOTIFICATION_TYPES)
 
+    def test_shared_lookup_panel_controller_is_defined_and_used_everywhere(self):
+        js = app.APP_JS
+        self.assertIn("function ppmCloseLookupPanel(panel)", js)
+        self.assertIn("function ppmRegisterLookupPanel(input,panel)", js)
+        self.assertIn("function ppmBindLookupEmptyClose(input,panel,fetcher)", js)
+        self.assertIn("function ppmLookupFetcher()", js)
+        self.assertIn("ppmLookupPanels.forEach(entry=>{", js)
+        # Every lookup input registers itself with the shared outside-click/close controller.
+        self.assertGreaterEqual(js.count("ppmRegisterLookupPanel(input,results)"), 3)
+        self.assertIn("ppmRegisterLookupPanel(client,clientResults)", js)
+        self.assertIn("ppmRegisterLookupPanel(vet,vetResults)", js)
+        self.assertIn("ppmRegisterLookupPanel(deliveryAnimal,deliveryResults)", js)
+        self.assertIn("ppmRegisterLookupPanel(input,panel)", js)
+        # Async lookups guard against stale/late responses via the shared token+abort fetcher.
+        self.assertGreaterEqual(js.count("fetcher.stale(token)"), 6)
+        # The old ad-hoc per-function sequence counter was removed, not duplicated further.
+        self.assertNotIn("calendarDeliveryAnimalLookupSequence", js)
+
     def test_pdf_urn_inventory_is_imported_once_with_exact_totals(self):
         with app.db() as conn:
             rows = conn.execute("SELECT name,material,price,quantity FROM urns WHERE active=1").fetchall()
