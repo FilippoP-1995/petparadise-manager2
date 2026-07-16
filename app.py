@@ -1366,6 +1366,40 @@ function ppmDebounce(fn, delay){
   let timer=null;
   return function(){ const args=arguments; clearTimeout(timer); timer=setTimeout(()=>fn.apply(this,args), delay); };
 }
+const ppmLookupPanels=new Set();
+function ppmCloseLookupPanel(panel){
+  if(!panel)return;
+  panel.classList.add('hidden');
+  if('hidden' in panel)panel.hidden=true;
+  panel.innerHTML='';
+}
+function ppmRegisterLookupPanel(input,panel){
+  if(!input||!panel)return;
+  ppmLookupPanels.add({input,panel});
+}
+document.addEventListener('click',function(e){
+  ppmLookupPanels.forEach(entry=>{
+    if(!entry.input.isConnected){ppmLookupPanels.delete(entry);return;}
+    if(entry.input===e.target||entry.input.contains(e.target)||entry.panel.contains(e.target))return;
+    ppmCloseLookupPanel(entry.panel);
+  });
+},true);
+function ppmBindLookupEmptyClose(input,panel,fetcher){
+  input.addEventListener('input',function(){
+    if(!input.value.trim()){
+      if(fetcher)fetcher.cancel();
+      ppmCloseLookupPanel(panel);
+    }
+  });
+}
+function ppmLookupFetcher(){
+  let seq=0,controller=null;
+  return {
+    start(){seq++;if(controller)controller.abort();controller=new AbortController();return {token:seq,signal:controller.signal};},
+    stale(token){return token!==seq;},
+    cancel(){seq++;if(controller){controller.abort();controller=null;}}
+  };
+}
 function lookupHtmlState(text){ return `<div class="lookup-state">${text}</div>`; }
 function setupClientLookup(){
   const input=document.getElementById('clientSearch');
@@ -1375,6 +1409,9 @@ function setupClientLookup(){
   const clearBtn=document.getElementById('clearClientSelection');
   const clientId=document.querySelector('input[name="client_id"]');
   if(!input || !results) return;
+  const fetcher=ppmLookupFetcher();
+  ppmRegisterLookupPanel(input,results);
+  ppmBindLookupEmptyClose(input,results,fetcher);
   function setField(name,value){ const field=document.querySelector(`[name="${name}"]`); if(field) field.value=value || ''; }
   function showSelected(label){
     if(selectedText) selectedText.textContent = label ? `Cliente selezionato: ${label}` : '';
@@ -1388,12 +1425,15 @@ function setupClientLookup(){
   }
   const search=ppmDebounce(async function(){
     const q=input.value.trim();
+    if(!q){ ppmCloseLookupPanel(results); return; }
     if(q.length < 2){ results.innerHTML=lookupHtmlState('Scrivi almeno 2 caratteri'); results.classList.remove('hidden'); return; }
     results.innerHTML=lookupHtmlState('Ricerca in corso...');
     results.classList.remove('hidden');
+    const {token,signal}=fetcher.start();
     try{
-      const res=await fetch(`/api/clienti/search?q=${encodeURIComponent(q)}`, {headers:{'Accept':'application/json'}});
+      const res=await fetch(`/api/clienti/search?q=${encodeURIComponent(q)}`, {headers:{'Accept':'application/json'}, signal});
       const data=await res.json();
+      if(fetcher.stale(token) || input.value.trim()!==q) return;
       if(!data.ok) throw new Error(data.error || 'Errore');
       if(!data.results.length){ results.innerHTML=lookupHtmlState('Nessun risultato'); return; }
       results.innerHTML=data.results.map(function(c){
@@ -1403,6 +1443,7 @@ function setupClientLookup(){
         return `<button type="button" class="lookup-item" data-client='${JSON.stringify(c).replace(/'/g,'&#39;')}'><b>${label}</b><small>${subtitle}</small><small>${meta}</small></button>`;
       }).join('');
     }catch(err){
+      if(err.name==='AbortError' || fetcher.stale(token)) return;
       results.innerHTML=lookupHtmlState('Errore di rete durante la ricerca');
     }
   }, 300);
@@ -1427,17 +1468,16 @@ function setupClientLookup(){
     setField('owner_notes', c.notes);
     showSelected(c.display || c.company_name || `ID ${c.id}`);
     input.value='';
-    results.classList.add('hidden');
+    ppmCloseLookupPanel(results);
   });
   if(clearBtn){
     clearBtn.addEventListener('click', function(){
       if(clientId) clientId.value='';
       showSelected('');
       input.value='';
-      results.classList.add('hidden');
+      ppmCloseLookupPanel(results);
     });
   }
-  document.addEventListener('click', function(e){ if(!e.target.closest('.lookup')) results.classList.add('hidden'); });
 }
 function setupVetLookup(){
   const input=document.getElementById('vetSearch');
@@ -1445,6 +1485,9 @@ function setupVetLookup(){
   const select=document.querySelector('select[name="veterinarian_id"]');
   const clearBtn=document.getElementById('clearVetSelection');
   if(!input || !results || !select) return;
+  const fetcher=ppmLookupFetcher();
+  ppmRegisterLookupPanel(input,results);
+  ppmBindLookupEmptyClose(input,results,fetcher);
   function chooseVet(v){
     let option=Array.from(select.options).find(o=>o.value===String(v.id));
     if(!option){
@@ -1460,22 +1503,26 @@ function setupVetLookup(){
     select.value=String(v.id);
     select.dispatchEvent(new Event('change', {bubbles:true}));
     input.value=v.display || v.clinic_name || '';
-    results.classList.add('hidden');
+    ppmCloseLookupPanel(results);
   }
   const search=ppmDebounce(async function(){
     const q=input.value.trim();
+    if(!q){ ppmCloseLookupPanel(results); return; }
     if(q.length < 2){ results.innerHTML=lookupHtmlState('Scrivi almeno 2 caratteri'); results.classList.remove('hidden'); return; }
     results.innerHTML=lookupHtmlState('Ricerca in corso...');
     results.classList.remove('hidden');
+    const {token,signal}=fetcher.start();
     try{
-      const res=await fetch(`/api/veterinari/search?q=${encodeURIComponent(q)}`, {headers:{'Accept':'application/json'}});
+      const res=await fetch(`/api/veterinari/search?q=${encodeURIComponent(q)}`, {headers:{'Accept':'application/json'}, signal});
       const data=await res.json();
+      if(fetcher.stale(token) || input.value.trim()!==q) return;
       if(!data.ok) throw new Error(data.error || 'Errore');
       if(!data.results.length){ results.innerHTML=lookupHtmlState('Nessun risultato'); return; }
       results.innerHTML=data.results.map(function(v){
         return `<button type="button" class="lookup-item" data-vet='${JSON.stringify(v).replace(/'/g,'&#39;')}'><b>${v.display}</b><small>${v.subtitle || ''}</small><small>ID ${v.id}</small></button>`;
       }).join('');
     }catch(err){
+      if(err.name==='AbortError' || fetcher.stale(token)) return;
       results.innerHTML=lookupHtmlState('Errore di rete durante la ricerca');
     }
   }, 300);
@@ -1490,10 +1537,9 @@ function setupVetLookup(){
       select.value='';
       select.dispatchEvent(new Event('change', {bubbles:true}));
       input.value='';
-      results.classList.add('hidden');
+      ppmCloseLookupPanel(results);
     });
   }
-  document.addEventListener('click', function(e){ if(!e.target.closest('.lookup')) results.classList.add('hidden'); });
 }
 function setupOriginVetLookup(){
   const input=document.getElementById('originVetSearch');
@@ -1502,19 +1548,29 @@ function setupOriginVetLookup(){
   const mode=document.querySelector('select[name="origin_mode"]');
   const text=document.querySelector('input[name="origin_text"]');
   if(!input || !results || !select || !mode || !text)return;
+  const fetcher=ppmLookupFetcher();
+  ppmRegisterLookupPanel(input,results);
+  ppmBindLookupEmptyClose(input,results,fetcher);
   const selected=select.options[select.selectedIndex];
   if(selected?.value)input.value=selected.dataset.shortname||selected.textContent.trim();
   else input.value=text.value;
   const search=ppmDebounce(async function(){
     const q=input.value.trim();select.value='';mode.value='Testo libero';text.value=q;
+    if(!q){ppmCloseLookupPanel(results);return;}
     if(q.length<2){results.innerHTML=lookupHtmlState('Scrivi almeno 2 caratteri oppure continua con testo libero');results.classList.remove('hidden');return;}
     results.innerHTML=lookupHtmlState('Ricerca in corso...');results.classList.remove('hidden');
+    const {token,signal}=fetcher.start();
     try{
-      const response=await fetch(`/api/veterinari/search?q=${encodeURIComponent(q)}`,{headers:{'Accept':'application/json'}});
-      const data=await response.json();if(!data.ok)throw new Error(data.error||'Errore');
+      const response=await fetch(`/api/veterinari/search?q=${encodeURIComponent(q)}`,{headers:{'Accept':'application/json'},signal});
+      const data=await response.json();
+      if(fetcher.stale(token) || input.value.trim()!==q)return;
+      if(!data.ok)throw new Error(data.error||'Errore');
       if(!data.results.length){results.innerHTML=lookupHtmlState('Nessun veterinario: il testo resta comunque utilizzabile');return;}
       results.innerHTML=data.results.map(v=>`<button type="button" class="lookup-item" data-origin-vet='${JSON.stringify(v).replace(/'/g,'&#39;')}'><b>${v.display}</b><small>${v.subtitle||''}</small></button>`).join('');
-    }catch(error){results.innerHTML=lookupHtmlState('Errore durante la ricerca');}
+    }catch(error){
+      if(error.name==='AbortError' || fetcher.stale(token))return;
+      results.innerHTML=lookupHtmlState('Errore durante la ricerca');
+    }
   },300);
   input.addEventListener('input',search);
   results.addEventListener('click',function(event){
@@ -1522,7 +1578,7 @@ function setupOriginVetLookup(){
     const vet=JSON.parse(button.getAttribute('data-origin-vet'));
     let option=[...select.options].find(item=>item.value===String(vet.id));
     if(!option){option=new Option(vet.display||vet.clinic_name,vet.id);option.dataset.provenance=vet.provenance||'';select.append(option);}
-    select.value=String(vet.id);setProvenanceFromVeterinarian(option);mode.value='Veterinario';input.value=vet.display||vet.clinic_name||'';text.value=vet.short_name||vet.display||vet.clinic_name||'';results.classList.add('hidden');
+    select.value=String(vet.id);setProvenanceFromVeterinarian(option);mode.value='Veterinario';input.value=vet.display||vet.clinic_name||'';text.value=vet.short_name||vet.display||vet.clinic_name||'';ppmCloseLookupPanel(results);
   });
 }
 function openPaymentPopover(select){
@@ -1741,29 +1797,74 @@ function calendarOpenTimePicker(button){const native=button.parentElement.queryS
 function calendarRenumberAnimals(){document.querySelectorAll('[data-calendar-list="animal"] .calendar-repeat-row').forEach((row,index)=>{const title=row.querySelector('.calendar-animal-title');if(title)title.textContent=`ANIMALE ${index+1}`;const remove=row.querySelector('[data-remove-animal]');if(remove)remove.hidden=index===0;});}
 function calendarAddRow(kind,data={}){const list=document.querySelector(`[data-calendar-list="${kind}"]`);if(!list)return;const row=document.createElement('div');row.className=`calendar-repeat-row ${kind==='estimate'?'calendar-estimate-row':''}`;if(kind==='animal')row.innerHTML=`<strong class="calendar-animal-title"></strong><select data-key="species" aria-label="Specie animale"><option value="">Specie</option><option ${data.species==='Cane'?'selected':''}>Cane</option><option ${data.species==='Gatto'?'selected':''}>Gatto</option><option ${data.species==='Altro'?'selected':''}>Altro</option></select><input inputmode="decimal" placeholder="Peso kg" data-key="weight" value="${data.weight||''}"><select data-key="cremation_type" aria-label="Tipo di cremazione"><option value="">Tipo di cremazione</option><option ${data.cremation_type==='Singola'?'selected':''}>Singola</option><option ${data.cremation_type==='Collettiva'?'selected':''}>Collettiva</option></select><input placeholder="Nome facoltativo" data-key="name" value="${data.name||''}"><input class="full-mobile" placeholder="Note" data-key="notes" value="${data.notes||''}"><button class="btn ghost" data-remove-animal type="button" onclick="this.parentElement.remove();calendarSerialize()">×</button>`;else if(data.preset==='Altro')row.innerHTML=`<span class="calendar-estimate-preset">Altro</span><input class="calendar-other-description" placeholder="Descrizione" data-key="description" value="${data.description||''}"><input inputmode="decimal" placeholder="Importo €" data-key="amount" value="${data.amount||''}">`;else if(data.preset)row.innerHTML=`<span class="calendar-estimate-preset">${data.preset}</span><input type="hidden" data-key="description" value="${data.preset}"><input inputmode="decimal" placeholder="Importo €" data-key="amount" value="${data.amount||''}">`;else row.innerHTML=`<input class="full-mobile" placeholder="Descrizione" data-key="description" value="${data.description||''}"><input inputmode="decimal" placeholder="Importo €" data-key="amount" value="${data.amount||''}"><button class="btn ghost" type="button" onclick="this.parentElement.remove();calendarSerialize()">×</button>`;list.append(row);row.querySelectorAll('input,select').forEach(input=>input.addEventListener('input',()=>{input.form.dataset.dirty='1';calendarSerialize();}));calendarSerialize();}
 function calendarSerialize(){['animal','estimate'].forEach(kind=>{const hidden=document.querySelector(`input[name="${kind==='animal'?'animals_json':'estimate_json'}"]`);const list=document.querySelector(`[data-calendar-list="${kind}"]`);if(!hidden||!list)return;const values=[...list.children].map(row=>Object.fromEntries([...row.querySelectorAll('[data-key]')].map(input=>[input.dataset.key,input.value])));hidden.value=JSON.stringify(values);if(kind==='estimate'){const total=values.reduce((sum,item)=>sum+(Number(String(item.amount||0).replace(',','.'))||0),0);const output=document.querySelector('[data-estimate-total]');if(output)output.textContent=total.toLocaleString('it-IT',{style:'currency',currency:'EUR'});}});calendarRenumberAnimals();calendarAutoTitle();}
-async function calendarLookup(input,endpoint,results,select){const q=input.value.trim();if(q.length<2){results.classList.add('hidden');return;}const response=await fetch(`${endpoint}?q=${encodeURIComponent(q)}`);const data=await response.json();results.innerHTML=(data.results||[]).map(item=>`<button type="button" class="lookup-item" data-value='${JSON.stringify(item).replace(/'/g,'&#39;')}'><b>${item.display||item.name||''}</b><small>${item.subtitle||item.phone||''}</small></button>`).join('')||'<div class="lookup-state">Nessun risultato: i dati restano solo nell evento.</div>';results.classList.remove('hidden');results.onclick=e=>{const button=e.target.closest('[data-value]');if(!button)return;select(JSON.parse(button.dataset.value));results.classList.add('hidden');};}
-function calendarSelectVeterinarian(form,item){form.veterinarian_id.value=item.id||'';form.veterinarian_name.value=item.clinic_name||item.display||'';form.veterinarian_contact.value=item.doctor_name||'';form.veterinarian_phone.value=item.phone||'';form.veterinarian_address.value=item.address||'';form.veterinarian_hours.value=item.notes||'';form.venue_name.value=item.clinic_name||item.display||'';form.address.value=[item.address,item.city].filter(Boolean).join(' - ');form.phone.value=item.phone||'';if(form.location_type)form.location_type.value='Veterinario';}
-async function calendarContactLookup(input,results){const q=input.value.trim();if(q.length<2){results.replaceChildren();results.classList.add('hidden');return;}try{const [clients,vets]=await Promise.all(['/api/clienti/search','/api/veterinari/search'].map(url=>fetch(`${url}?q=${encodeURIComponent(q)}`).then(r=>r.json())));const items=[...(clients.results||[]).map(item=>({...item,_kind:'Cliente'})),...(vets.results||[]).map(item=>({...item,_kind:'Veterinario/Ambulatorio'}))];results.innerHTML=items.map((item,index)=>`<button type="button" class="lookup-item" data-contact-index="${index}"><span><b>${calendarHtml(item.display||'')}</b><small>${calendarHtml(item.subtitle||item.phone||'')}</small></span><span class="lookup-kind">${item._kind}</span></button>`).join('')||'<div class="lookup-state">Nessun risultato: i dati inseriti resteranno solo nell evento.</div>';results.classList.remove('hidden');results.onclick=e=>{const button=e.target.closest('[data-contact-index]');if(!button)return;const item=items[Number(button.dataset.contactIndex)],form=input.form;if(item._kind==='Cliente'){form.client_id.value=item.id||'';form.client_first_name.value=item.first_name||'';form.client_last_name.value=item.last_name||'';form.client_phone.value=item.phone||'';if(form.location_type)form.location_type.value='Privato';}else{form.client_id.value='';calendarSelectVeterinarian(form,item);}results.replaceChildren();results.classList.add('hidden');};}catch(error){results.innerHTML='<div class="lookup-state">Ricerca temporaneamente non disponibile.</div>';results.classList.remove('hidden');}}
-let calendarDeliveryAnimalLookupSequence=0;
-async function calendarDeliveryAnimalLookup(input,results){
-  const q=input.value.trim(),sequence=++calendarDeliveryAnimalLookupSequence;
-  if(input._deliveryLookupController)input._deliveryLookupController.abort();
-  if(q.length<2){results.replaceChildren();results.classList.add('hidden');results.onclick=null;return;}
-  const controller=new AbortController();input._deliveryLookupController=controller;
+async function calendarLookup(input,endpoint,results,select){
+  const q=input.value.trim();
+  const fetcher=input._ppmFetcher||(input._ppmFetcher=ppmLookupFetcher());
+  if(!q){fetcher.cancel();ppmCloseLookupPanel(results);return;}
+  if(q.length<2){ppmCloseLookupPanel(results);return;}
+  const {token,signal}=fetcher.start();
   try{
-    const response=await fetch(`/api/calendario/animali/search?q=${encodeURIComponent(q)}`,{signal:controller.signal});
+    const response=await fetch(`${endpoint}?q=${encodeURIComponent(q)}`,{signal});
     const data=await response.json();
-    if(sequence!==calendarDeliveryAnimalLookupSequence||input.value.trim()!==q)return;
-    const items=data.results||[];
-    results.innerHTML=items.map((item,index)=>`<button type="button" class="lookup-item" data-delivery-animal-index="${index}"><span><b>${calendarHtml(item.animal_name||'Animale senza nome')}</b><small>${calendarHtml([item.owner_name,item.species,item.pickup_date?`recupero ${calendarDateIt(item.pickup_date)}`:'',item.practice_number].filter(Boolean).join(' · '))}</small><small>${calendarHtml(item.payment_summary||'')}</small></span></button>`).join('')||'<div class="lookup-state">Nessun animale o proprietario trovato.</div>';
+    if(fetcher.stale(token)||input.value.trim()!==q)return;
+    results.innerHTML=(data.results||[]).map(item=>`<button type="button" class="lookup-item" data-value='${JSON.stringify(item).replace(/'/g,'&#39;')}'><b>${item.display||item.name||''}</b><small>${item.subtitle||item.phone||''}</small></button>`).join('')||'<div class="lookup-state">Nessun risultato: i dati restano solo nell evento.</div>';
     results.classList.remove('hidden');
-    results.onclick=e=>{const button=e.target.closest('[data-delivery-animal-index]');if(!button)return;const item=items[Number(button.dataset.deliveryAnimalIndex)],form=input.form;input.value=item.animal_name||'';form.linked_practice_id.value=item.practice_id||'';form.payment_status.value=item.calendar_payment_status||'Da pagare';form.payment_amount.value=Number(item.calendar_payment_amount||0).toFixed(2).replace('.',',');const detail=form.querySelector('[data-delivery-payment-detail]');if(detail)detail.value=item.payment_summary||'';calendarAutoTitle(true);results.replaceChildren();results.classList.add('hidden');results.onclick=null;};
+    results.onclick=e=>{const button=e.target.closest('[data-value]');if(!button)return;select(JSON.parse(button.dataset.value));ppmCloseLookupPanel(results);};
   }catch(error){
-    if(error.name==='AbortError'||sequence!==calendarDeliveryAnimalLookupSequence||input.value.trim().length<2)return;
+    if(error.name==='AbortError'||fetcher.stale(token))return;
     results.innerHTML='<div class="lookup-state">Ricerca temporaneamente non disponibile.</div>';results.classList.remove('hidden');
   }
 }
-function calendarInitLookups(){const client=document.getElementById('calendarClientSearch'),clientResults=document.getElementById('calendarClientResults');if(client)client.addEventListener('input',()=>calendarContactLookup(client,clientResults));const vet=document.getElementById('calendarVetSearch'),vetResults=document.getElementById('calendarVetResults');if(vet)vet.addEventListener('input',()=>calendarLookup(vet,'/api/veterinari/search',vetResults,item=>calendarSelectVeterinarian(vet.form,item)));const deliveryAnimal=document.getElementById('calendarDeliveryAnimalSearch'),deliveryResults=document.getElementById('calendarDeliveryAnimalResults');if(deliveryAnimal)deliveryAnimal.addEventListener('input',()=>calendarDeliveryAnimalLookup(deliveryAnimal,deliveryResults));}
+function calendarSelectVeterinarian(form,item){form.veterinarian_id.value=item.id||'';form.veterinarian_name.value=item.clinic_name||item.display||'';form.veterinarian_contact.value=item.doctor_name||'';form.veterinarian_phone.value=item.phone||'';form.veterinarian_address.value=item.address||'';form.veterinarian_hours.value=item.notes||'';form.venue_name.value=item.clinic_name||item.display||'';form.address.value=[item.address,item.city].filter(Boolean).join(' - ');form.phone.value=item.phone||'';if(form.location_type)form.location_type.value='Veterinario';}
+async function calendarContactLookup(input,results){
+  const q=input.value.trim();
+  const fetcher=input._ppmFetcher||(input._ppmFetcher=ppmLookupFetcher());
+  if(!q){fetcher.cancel();ppmCloseLookupPanel(results);return;}
+  if(q.length<2){ppmCloseLookupPanel(results);return;}
+  const {token,signal}=fetcher.start();
+  try{
+    const [clients,vets]=await Promise.all(['/api/clienti/search','/api/veterinari/search'].map(url=>fetch(`${url}?q=${encodeURIComponent(q)}`,{signal}).then(r=>r.json())));
+    if(fetcher.stale(token)||input.value.trim()!==q)return;
+    const items=[...(clients.results||[]).map(item=>({...item,_kind:'Cliente'})),...(vets.results||[]).map(item=>({...item,_kind:'Veterinario/Ambulatorio'}))];
+    results.innerHTML=items.map((item,index)=>`<button type="button" class="lookup-item" data-contact-index="${index}"><span><b>${calendarHtml(item.display||'')}</b><small>${calendarHtml(item.subtitle||item.phone||'')}</small></span><span class="lookup-kind">${item._kind}</span></button>`).join('')||'<div class="lookup-state">Nessun risultato: i dati inseriti resteranno solo nell evento.</div>';
+    results.classList.remove('hidden');
+    results.onclick=e=>{const button=e.target.closest('[data-contact-index]');if(!button)return;const item=items[Number(button.dataset.contactIndex)],form=input.form;if(item._kind==='Cliente'){form.client_id.value=item.id||'';form.client_first_name.value=item.first_name||'';form.client_last_name.value=item.last_name||'';form.client_phone.value=item.phone||'';if(form.location_type)form.location_type.value='Privato';}else{form.client_id.value='';calendarSelectVeterinarian(form,item);}ppmCloseLookupPanel(results);};
+  }catch(error){
+    if(error.name==='AbortError'||fetcher.stale(token))return;
+    results.innerHTML='<div class="lookup-state">Ricerca temporaneamente non disponibile.</div>';results.classList.remove('hidden');
+  }
+}
+async function calendarDeliveryAnimalLookup(input,results){
+  const q=input.value.trim();
+  const fetcher=input._ppmFetcher||(input._ppmFetcher=ppmLookupFetcher());
+  if(!q){fetcher.cancel();ppmCloseLookupPanel(results);results.onclick=null;return;}
+  if(q.length<2){ppmCloseLookupPanel(results);results.onclick=null;return;}
+  const {token,signal}=fetcher.start();
+  try{
+    const response=await fetch(`/api/calendario/animali/search?q=${encodeURIComponent(q)}`,{signal});
+    const data=await response.json();
+    if(fetcher.stale(token)||input.value.trim()!==q)return;
+    const items=data.results||[];
+    results.innerHTML=items.map((item,index)=>`<button type="button" class="lookup-item" data-delivery-animal-index="${index}"><span><b>${calendarHtml(item.animal_name||'Animale senza nome')}</b><small>${calendarHtml([item.owner_name,item.species,item.pickup_date?`recupero ${calendarDateIt(item.pickup_date)}`:'',item.practice_number].filter(Boolean).join(' · '))}</small><small>${calendarHtml(item.payment_summary||'')}</small></span></button>`).join('')||'<div class="lookup-state">Nessun animale o proprietario trovato.</div>';
+    results.classList.remove('hidden');
+    results.onclick=e=>{const button=e.target.closest('[data-delivery-animal-index]');if(!button)return;const item=items[Number(button.dataset.deliveryAnimalIndex)],form=input.form;input.value=item.animal_name||'';form.linked_practice_id.value=item.practice_id||'';form.payment_status.value=item.calendar_payment_status||'Da pagare';form.payment_amount.value=Number(item.calendar_payment_amount||0).toFixed(2).replace('.',',');const detail=form.querySelector('[data-delivery-payment-detail]');if(detail)detail.value=item.payment_summary||'';calendarAutoTitle(true);ppmCloseLookupPanel(results);results.onclick=null;};
+  }catch(error){
+    if(error.name==='AbortError'||fetcher.stale(token))return;
+    results.innerHTML='<div class="lookup-state">Ricerca temporaneamente non disponibile.</div>';results.classList.remove('hidden');
+  }
+}
+function calendarInitLookups(){
+  const client=document.getElementById('calendarClientSearch'),clientResults=document.getElementById('calendarClientResults');
+  if(client){ppmRegisterLookupPanel(client,clientResults);client.addEventListener('input',()=>calendarContactLookup(client,clientResults));}
+  const vet=document.getElementById('calendarVetSearch'),vetResults=document.getElementById('calendarVetResults');
+  if(vet){ppmRegisterLookupPanel(vet,vetResults);vet.addEventListener('input',()=>calendarLookup(vet,'/api/veterinari/search',vetResults,item=>calendarSelectVeterinarian(vet.form,item)));}
+  const deliveryAnimal=document.getElementById('calendarDeliveryAnimalSearch'),deliveryResults=document.getElementById('calendarDeliveryAnimalResults');
+  if(deliveryAnimal){ppmRegisterLookupPanel(deliveryAnimal,deliveryResults);deliveryAnimal.addEventListener('input',()=>calendarDeliveryAnimalLookup(deliveryAnimal,deliveryResults));}
+  document.querySelectorAll('.calendar-zone-field input[name="zone"]').forEach(input=>{
+    const panel=input.parentElement.querySelector('.calendar-zone-results');
+    if(panel)ppmRegisterLookupPanel(input,panel);
+  });
+}
 function calendarSwipeNavigation(){document.querySelectorAll('[data-calendar-swipe]').forEach(board=>{let x=0,y=0,startedInteractive=false;board.addEventListener('touchstart',e=>{startedInteractive=!!e.target.closest('a,button,input,select,textarea,.calendar-event');x=e.touches[0].clientX;y=e.touches[0].clientY},{passive:true});board.addEventListener('touchend',e=>{if(startedInteractive)return;const dx=e.changedTouches[0].clientX-x,dy=e.changedTouches[0].clientY-y;if(Math.abs(dx)>75&&Math.abs(dx)>Math.abs(dy)*1.45){const link=document.querySelector(dx<0?'[data-calendar-next]':'[data-calendar-prev]');if(link)location.href=link.href;}},{passive:true});});}
 function calendarWizardDirty(form){return form.dataset.dirty==='1'||[...form.elements].some(input=>input.dataset.initialValue!==undefined&&input.value!==input.dataset.initialValue);}
 function calendarConfirmExit(event,href){const form=document.getElementById('calendarEventForm');if(form&&calendarWizardDirty(form)&&!confirm('Vuoi uscire? Le modifiche non salvate andranno perse.')){event?.preventDefault();return false;}calendarWizardAllowExit=true;if(href){event?.preventDefault();location.href=href;}return true;}
