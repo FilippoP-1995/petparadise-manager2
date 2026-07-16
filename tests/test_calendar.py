@@ -85,7 +85,7 @@ class OperationalCalendarTests(unittest.TestCase):
         expected = {
             "Ritiro": "RITIRO LIVORNO",
             "Ritiro in sede": "RITIRO IN SEDE LIVORNO",
-            "Riconsegna": "RICONSEGNA FIDO LIVORNO",
+            "Riconsegna": "RICONSEGNA FIDO",
             "Riconsegna in sede": "RICONSEGNA FIDO IN SEDE LIVORNO",
             "Appuntamento": "APPUNTAMENTO FORNITORE",
         }
@@ -108,6 +108,8 @@ class OperationalCalendarTests(unittest.TestCase):
             self.assertEqual(event["destination_site"],site)
         with self.assertRaisesRegex(ValueError,"sede"):
             normalize_event(self.event_form("Ritiro in sede",destination_site=""))
+        delivery=normalize_event(self.event_form("Riconsegna",zone="Livorno"))
+        self.assertEqual((delivery["zone"],delivery["title"]),("","RICONSEGNA FIDO"))
         self.assertEqual(parse_items(json.dumps([{"name":"","species":"","weight":"","cremation_type":"","notes":""}]),"animal"),[])
 
     def test_invalid_calendar_save_stays_in_wizard_without_raw_http_error(self):
@@ -216,6 +218,7 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("Calendario operativo", pages["giorno"])
         self.assertIn("data-calendar-swipe", pages["giorno"])
         self.assertIn("calendar-week-scroll", pages["settimana"])
+        self.assertNotIn('calendar-week-scroll" data-calendar-swipe', pages["settimana"])
         self.assertIn("calendar-week-time-column", pages["settimana"])
         self.assertIn("calendar-week-grid-line", pages["settimana"])
         self.assertIn("calendar-month", pages["mese"])
@@ -266,6 +269,9 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("calendarWizardSwipe",app.APP_JS)
         self.assertIn("calendarTimeInput",app.APP_JS)
         self.assertIn("calendar-zone-results",html)
+        self.assertEqual(html.count('class="calendar-event-type-icon"'),5)
+        self.assertIn(".calendar-form [data-calendar-types][hidden]",app.CSS)
+        self.assertIn("padding:calc(88px + var(--safe-top))",app.CSS)
         self.assertIn("@media(max-width:900px)", app.CSS)
         self.assertIn("bottom:calc(88px + var(--safe-bottom))", app.CSS)
 
