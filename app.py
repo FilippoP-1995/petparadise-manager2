@@ -349,7 +349,7 @@ def init_db():
         INSERT OR IGNORE INTO settings(key,value) VALUES('order_phone','');
         INSERT OR IGNORE INTO settings(key,value) VALUES('order_default_notes','');
         """)
-        for article_name in ("Sacchi per ritiro", "Boccette pelo", "Certificati", "Sacchetti riconsegna", "Sacchetti ceneri"):
+        for article_name in ("Sacchi per ritiro", "Boccette pelo", "Certificati", "Sacchetti riconsegna", "Sacchetti ceneri", "Cerniere e viti urne"):
             c.execute("INSERT OR IGNORE INTO articles(name,created_at) VALUES(?,?)", (article_name, now()))
         if not c.execute("SELECT 1 FROM urns LIMIT 1").fetchone():
             for index,(urn_name,material,quantity,price) in enumerate(DEFAULT_URNS,1):
@@ -451,6 +451,10 @@ def init_db():
         for name, definition in {"short_name":"TEXT", "address":"TEXT", "city":"TEXT"}.items():
             if name not in vet_existing:
                 c.execute(f"ALTER TABLE veterinarians ADD COLUMN {name} {definition}")
+        urn_existing = {row["name"] for row in c.execute("PRAGMA table_info(urns)")}
+        for name, definition in {"category": "TEXT NOT NULL DEFAULT 'Urna'"}.items():
+            if name not in urn_existing:
+                c.execute(f"ALTER TABLE urns ADD COLUMN {name} {definition}")
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_practices_ddt_share_token ON practices(ddt_share_token)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_practices_invoice ON practices(invoice_number,invoice_date)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_due ON whatsapp_messages(status, scheduled_at)")
@@ -1733,6 +1737,10 @@ function adjustOrderQuantity(form,delta){
   normalizeOrderQuantity(input,Number(input.value||1)+delta);
 }
 function setOrderQuantity(form,value){normalizeOrderQuantity(form.querySelector('[name="quantity"]'),value);}
+function adjustUrnQuantity(form,delta){
+  const input=form.querySelector('[name="quantity"]');
+  input.value=Math.max(0,Math.trunc(Number(input.value||0)+delta));
+}
 function openOrderConfirmation(form,event){
   event?.preventDefault();
   const input=form.querySelector('[name="quantity"]');const quantity=normalizeOrderQuantity(input,input.value);
@@ -3292,7 +3300,11 @@ class App(BaseHTTPRequestHandler):
 
     def urn_catalog_page(self,user):
         q=parse_qs(urlparse(self.path).query); term=(q.get("q") or [""])[0].strip(); material=(q.get("materiale") or [""])[0].strip(); availability=(q.get("disponibilita") or [""])[0].strip()
-        where=["active=1"]; args=[]
+        category_options_map={"urne":"Urna","accessori":"Accessorio","calchi":"Calco"}
+        category_param=(q.get("categoria") or ["urne"])[0].strip().lower()
+        if category_param not in category_options_map:category_param="urne"
+        category=category_options_map[category_param]
+        where=["active=1","category=?"]; args=[category]
         if term:
             where.append("(name LIKE ? OR material LIKE ? OR COALESCE(internal_code,'') LIKE ?)"); args.extend([f"%{term}%"]*3)
         if material: where.append("material=?"); args.append(material)
@@ -3301,8 +3313,10 @@ class App(BaseHTTPRequestHandler):
         elif availability=="esaurita": where.append("quantity<=0")
         with db() as c:
             urns=c.execute(f"SELECT * FROM urns WHERE {' AND '.join(where)} ORDER BY name",args).fetchall()
-            all_urns=c.execute("SELECT * FROM urns WHERE active=1").fetchall()
-            materials=[row["material"] for row in c.execute("SELECT DISTINCT material FROM urns WHERE active=1 AND material<>'' ORDER BY material")]
+            all_urns=c.execute("SELECT * FROM urns WHERE active=1 AND category=?",(category,)).fetchall()
+            materials=[row["material"] for row in c.execute("SELECT DISTINCT material FROM urns WHERE active=1 AND category=? AND material<>'' ORDER BY material",(category,))]
+        tabs_html=''.join(f'<a href="/catalogo-urne?categoria={key}" class="{"active" if key==category_param else ""}">{label}</a>' for key,label in (("urne","Urne"),("accessori","Accessori"),("calchi","Calchi")))
+        new_item_label={"Urna":"Nuova urna","Accessorio":"Nuovo accessorio","Calco":"Nuovo calco"}[category]
         stats={"models":len(all_urns),"quantity":sum(max(0,int(u["quantity"] or 0)) for u in all_urns),"out":sum(1 for u in all_urns if int(u["quantity"] or 0)<=0),"low":sum(1 for u in all_urns if 0<int(u["quantity"] or 0)<=int(u["low_stock_threshold"] or 3)),"value":sum(max(0,int(u["quantity"] or 0))*money_value(u["price"]) for u in all_urns)}
         stat_html=''.join(f'<div class="urn-stat"><small>{label}</small><strong>{value}</strong></div>' for label,value in (("Modelli",stats["models"]),("Pezzi disponibili",stats["quantity"]),("Esaurite",stats["out"]),("Scorte basse",stats["low"]),("Valore magazzino",money_it(stats["value"]))))
         cards=[]
@@ -3319,7 +3333,7 @@ class App(BaseHTTPRequestHandler):
         availability_options=''.join(f'<option value="{value}" {"selected" if display_availability==value else ""}>{label}</option>' for value,label in (("","Tutte le disponibilita"),("disponibile","Disponibili"),("bassa","Scorte basse"),("esaurita","Esaurite")))
         empty='<section id="urnLiveEmpty" class="section empty-state">Nessuna urna corrisponde ai filtri. Puoi aggiungerne una nuova.</section>'
         content=f'<section id="urnCatalogGrid" class="urn-grid">{"".join(cards)}</section><section id="urnLiveEmpty" class="section empty-state" style="display:none">Nessuna urna corrisponde alla ricerca.</section>' if cards else empty
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Catalogo Urne</h1><p class="sub">Catalogo e magazzino collegati alle pratiche.</p></div><a class="btn" href="/catalogo-urne/nuova">Nuova urna</a></div><section class="urn-stats">{stat_html}</section><form class="section urn-filter" method="get"><div class="fields"><div class="field full"><label>Cerca urna</label><input id="urnCatalogSearch" name="q" value="{esc(display_term)}" placeholder="Inizia a scrivere il nome dell urna" autocomplete="off"></div><div class="field"><label>Materiale</label><select name="materiale">{material_options}</select></div><div class="field"><label>Disponibilita</label><select name="disponibilita">{availability_options}</select></div></div><button class="btn" style="margin-top:12px">Filtra</button></form>{content}<script>(function(){{const input=document.getElementById("urnCatalogSearch"),grid=document.getElementById("urnCatalogGrid"),empty=document.getElementById("urnLiveEmpty");if(!input||!grid)return;const cards=[...grid.querySelectorAll(".urn-card")];const normalize=v=>String(v||"").toLocaleLowerCase("it").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();input.addEventListener("input",()=>{{const words=normalize(input.value).split(/\s+/).filter(Boolean);let visible=0;cards.forEach(card=>{{const hay=normalize(card.dataset.urnSearch);const show=words.every(word=>hay.includes(word));card.style.display=show?"":"none";if(show)visible++;}});if(empty)empty.style.display=visible?"none":"block";}});}})();</script></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Catalogo Urne</h1><p class="sub">Catalogo e magazzino collegati alle pratiche.</p></div><a class="btn" href="/catalogo-urne/nuova?categoria={category_param}">{new_item_label}</a></div><nav class="calendar-tabs urn-tabs">{tabs_html}</nav><section class="urn-stats">{stat_html}</section><form class="section urn-filter" method="get"><input type="hidden" name="categoria" value="{category_param}"><div class="fields"><div class="field full"><label>Cerca urna</label><input id="urnCatalogSearch" name="q" value="{esc(display_term)}" placeholder="Inizia a scrivere il nome dell urna" autocomplete="off"></div><div class="field"><label>Materiale</label><select name="materiale">{material_options}</select></div><div class="field"><label>Disponibilita</label><select name="disponibilita">{availability_options}</select></div></div><button class="btn" style="margin-top:12px">Filtra</button></form>{content}<script>(function(){{const input=document.getElementById("urnCatalogSearch"),grid=document.getElementById("urnCatalogGrid"),empty=document.getElementById("urnLiveEmpty");if(!input||!grid)return;const cards=[...grid.querySelectorAll(".urn-card")];const normalize=v=>String(v||"").toLocaleLowerCase("it").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();input.addEventListener("input",()=>{{const words=normalize(input.value).split(/\s+/).filter(Boolean);let visible=0;cards.forEach(card=>{{const hay=normalize(card.dataset.urnSearch);const show=words.every(word=>hay.includes(word));card.style.display=show?"":"none";if(show)visible++;}});if(empty)empty.style.display=visible?"none":"block";}});}})();</script></main>'''
         self.send_html(layout("Catalogo Urne",body,user))
 
     def urn_edit_page(self,user,urn_id=None):
@@ -3328,12 +3342,21 @@ class App(BaseHTTPRequestHandler):
             with db() as c: urn=c.execute("SELECT * FROM urns WHERE id=? AND active=1",(urn_id,)).fetchone()
             if not urn:return self.send_error(404)
         value=lambda key: esc(urn[key] if urn else "")
+        category_labels={"Urna":"Urna","Accessorio":"Accessorio","Calco":"Calco"}
+        category_param_map={"urne":"Urna","accessori":"Accessorio","calchi":"Calco"}
+        q=parse_qs(urlparse(self.path).query)
+        default_category_param=(q.get("categoria") or ["urne"])[0].strip().lower()
+        if default_category_param not in category_param_map:default_category_param="urne"
+        current_category=urn["category"] if urn and urn["category"] in category_labels else category_param_map[default_category_param]
+        category_options=''.join(f'<option value="{value_}" {"selected" if value_==current_category else ""}>{label}</option>' for value_,label in category_labels.items())
+        new_item_title={"Urna":"Nuova urna","Accessorio":"Nuovo accessorio","Calco":"Nuovo calco"}[current_category]
+        edit_item_title={"Urna":"Modifica urna","Accessorio":"Modifica accessorio","Calco":"Modifica calco"}[current_category]
         with db() as c:
             materials=[row["material"] for row in c.execute("SELECT DISTINCT material FROM urns WHERE active=1 AND TRIM(COALESCE(material,''))<>'' ORDER BY material")]
         material_list=''.join(f'<option value="{esc(item)}"></option>' for item in materials)
         action=f'/catalogo-urne/{urn_id}/modifica' if urn_id else '/catalogo-urne/nuova'
         readonly_code='' if urn else 'readonly'
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{'Modifica urna' if urn else 'Nuova urna'}</h1><p class="sub">I dati saranno disponibili subito nella compilazione delle pratiche.</p></div></div><form method="post" action="{action}" class="section"><div class="fields"><div class="field"><label>Nome *</label><input name="name" value="{value('name')}" required></div><div class="field"><label>Materiale / categoria</label><input name="material" list="urnMaterialOptions" value="{value('material')}" placeholder="Scegli o scrivi un materiale"><datalist id="urnMaterialOptions">{material_list}</datalist></div><div class="field"><label>Codice interno</label><input name="internal_code" value="{value('internal_code')}" placeholder="Generato automaticamente" {readonly_code}><small class="sub">Per una nuova urna viene assegnato automaticamente.</small></div><div class="field"><label>Prezzo € *</label><input name="price" value="{value('price')}" inputmode="decimal" required></div><div class="field"><label>Quantita disponibile</label><input name="quantity" value="{value('quantity') if urn else '0'}" inputmode="numeric"></div><div class="field"><label>Soglia scorte basse</label><input name="low_stock_threshold" value="{value('low_stock_threshold') if urn else '3'}" inputmode="numeric"></div><div class="field full"><label>Foto (PNG, JPG o WEBP; max 3 MB)</label><input id="urnImageFile" type="file" accept="image/png,image/jpeg,image/webp"><input type="hidden" name="image_data"><small class="sub">Lascia vuoto per mantenere la foto esistente.</small></div><div class="field full"><label>Note</label><textarea name="notes">{value('notes')}</textarea></div></div><div class="actions" style="margin-top:16px"><button class="btn">Salva</button><a class="btn ghost" href="{f'/catalogo-urne/{urn_id}' if urn_id else '/catalogo-urne'}">Annulla</a></div></form></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{edit_item_title if urn else new_item_title}</h1><p class="sub">I dati saranno disponibili subito nella compilazione delle pratiche.</p></div></div><form method="post" action="{action}" class="section"><div class="fields"><div class="field"><label>Categoria</label><select name="category">{category_options}</select></div><div class="field"><label>Nome *</label><input name="name" value="{value('name')}" required></div><div class="field"><label>Materiale</label><input name="material" list="urnMaterialOptions" value="{value('material')}" placeholder="Scegli o scrivi un materiale"><datalist id="urnMaterialOptions">{material_list}</datalist></div><div class="field"><label>Codice interno</label><input name="internal_code" value="{value('internal_code')}" placeholder="Generato automaticamente" {readonly_code}><small class="sub">Per un nuovo articolo viene assegnato automaticamente.</small></div><div class="field"><label>Prezzo € *</label><input name="price" value="{value('price')}" inputmode="decimal" required></div><div class="field"><label>Quantita disponibile</label><div class="quantity-stepper urn-quantity-stepper"><button class="btn ghost" type="button" aria-label="Diminuisci quantità" onclick="adjustUrnQuantity(this.form,-1)">−</button><input name="quantity" value="{value('quantity') if urn else '0'}" inputmode="numeric"><button class="btn ghost" type="button" aria-label="Aumenta quantità" onclick="adjustUrnQuantity(this.form,1)">+</button></div></div><div class="field"><label>Soglia scorte basse</label><input name="low_stock_threshold" value="{value('low_stock_threshold') if urn else '3'}" inputmode="numeric"></div><div class="field full"><label>Foto (PNG, JPG o WEBP; max 3 MB)</label><input id="urnImageFile" type="file" accept="image/png,image/jpeg,image/webp"><input type="hidden" name="image_data"><small class="sub">Lascia vuoto per mantenere la foto esistente.</small></div><div class="field full"><label>Note</label><textarea name="notes">{value('notes')}</textarea></div></div><div class="actions" style="margin-top:16px"><button class="btn">Salva</button><a class="btn ghost" href="{f'/catalogo-urne/{urn_id}' if urn_id else '/catalogo-urne'}">Annulla</a></div></form></main>'''
         self.send_html(layout("Catalogo Urne",body,user))
 
     def urn_detail_page(self,user,urn_id):
@@ -3365,28 +3388,31 @@ class App(BaseHTTPRequestHandler):
 
     def save_urn(self,user,urn_id=None):
         f=self.form(); name=f.get("name","").strip(); material=f.get("material","").strip(); code=f.get("internal_code","").strip() or None; price=f.get("price","").strip().replace(",","."); notes=f.get("notes","").strip()
+        category=f.get("category","").strip()
+        if category not in ("Urna","Accessorio","Calco"):category="Urna"
         try: quantity=max(0,int(f.get("quantity","0") or 0)); threshold=max(0,int(f.get("low_stock_threshold","3") or 3))
         except ValueError:return self.send_error(400,"Quantita non valida")
         if not name or not re.fullmatch(r"\d+(?:\.\d{1,2})?",price):return self.send_error(400,"Nome o prezzo non valido")
+        code_prefix={"Urna":"URN","Accessorio":"ACC","Calco":"CALCO"}[category]
         try:
             with db() as c:
                 stamp=now()
                 if not urn_id and not code:
                     used={str(row[0] or "").upper() for row in c.execute("SELECT internal_code FROM urns WHERE internal_code IS NOT NULL")}
                     next_number=1
-                    while f"URN-{next_number:03d}" in used:
+                    while f"{code_prefix}-{next_number:03d}" in used:
                         next_number+=1
-                    code=f"URN-{next_number:03d}"
+                    code=f"{code_prefix}-{next_number:03d}"
                 if urn_id:
                     old=c.execute("SELECT * FROM urns WHERE id=? AND active=1",(urn_id,)).fetchone()
                     if not old:return self.send_error(404)
                     image_path=old["image_path"]
                     saved=self._save_urn_image(f.get("image_data",""),urn_id)
                     if saved:image_path=saved
-                    c.execute("UPDATE urns SET name=?,material=?,internal_code=?,price=?,quantity=?,low_stock_threshold=?,image_path=?,notes=?,updated_at=? WHERE id=?",(name,material,code,price,quantity,threshold,image_path,notes,stamp,urn_id))
+                    c.execute("UPDATE urns SET name=?,material=?,category=?,internal_code=?,price=?,quantity=?,low_stock_threshold=?,image_path=?,notes=?,updated_at=? WHERE id=?",(name,material,category,code,price,quantity,threshold,image_path,notes,stamp,urn_id))
                     if quantity!=int(old["quantity"] or 0): c.execute("INSERT INTO urn_movements(urn_id,user_id,movement_type,quantity_delta,old_quantity,new_quantity,note,created_at) VALUES(?,?,?,?,?,?,?,?)",(urn_id,user["id"],"Rettifica manuale",quantity-int(old["quantity"] or 0),int(old["quantity"] or 0),quantity,"Modifica scheda urna",stamp))
                 else:
-                    cur=c.execute("INSERT INTO urns(name,material,internal_code,price,quantity,low_stock_threshold,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",(name,material,code,price,quantity,threshold,notes,stamp,stamp)); urn_id=cur.lastrowid
+                    cur=c.execute("INSERT INTO urns(name,material,category,internal_code,price,quantity,low_stock_threshold,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",(name,material,category,code,price,quantity,threshold,notes,stamp,stamp)); urn_id=cur.lastrowid
                     image_path=self._save_urn_image(f.get("image_data",""),urn_id)
                     if image_path:c.execute("UPDATE urns SET image_path=? WHERE id=?",(image_path,urn_id))
                     c.execute("INSERT INTO urn_movements(urn_id,user_id,movement_type,quantity_delta,old_quantity,new_quantity,note,created_at) VALUES(?,?,?,?,?,?,?,?)",(urn_id,user["id"],"Creazione / carico iniziale",quantity,0,quantity,"Nuova urna",stamp))
