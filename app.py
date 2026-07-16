@@ -1940,7 +1940,46 @@ function calendarInitDateTimeSync(){
   form.start_date.addEventListener('change',sync);
   if(form.start_time)form.start_time.addEventListener('change',sync);
 }
-document.addEventListener('DOMContentLoaded',()=>{calendarInitLookups();calendarSwipeNavigation();calendarWizardSwipe();calendarSerialize();setupPracticeAutosave();calendarInitDateTimeSync();document.addEventListener('pointerdown',event=>{if(!event.target.closest('.calendar-datetime-row'))document.querySelectorAll('[data-time-wheel]').forEach(wheel=>wheel.hidden=true);});});
+function setupCalendarDraftAutosave(form){
+  if(!form)return;
+  const key=form.dataset.draftKey;
+  if(!key)return;
+  const status=document.getElementById('calendarDraftStatus'),label=status?.querySelector('[data-draft-label]');
+  const show=(state,text)=>{if(!status)return;status.hidden=false;status.dataset.state=state;if(label)label.textContent=text;};
+  const skipField=name=>{const input=form.elements.namedItem(name);return !input||input.type==='password'||/token|session/i.test(name);};
+  const fieldValue=input=>input.type==='checkbox'?(input.checked?input.value:''):input.value;
+  const serialize=()=>{const data={};[...form.elements].forEach(el=>{if(!el.name||el.disabled||skipField(el.name))return;if(el.type==='radio'){if(el.checked)data[el.name]=el.value;return;}data[el.name]=fieldValue(el);});return data;};
+  const restore=()=>{
+    let raw;try{raw=localStorage.getItem(key);}catch(error){return;}
+    if(!raw)return;
+    let data;try{data=JSON.parse(raw);}catch(error){try{localStorage.removeItem(key);}catch(_error){}return;}
+    Object.entries(data).forEach(([name,value])=>{
+      if(name==='animals_json'||name==='estimate_json')return;
+      const input=form.elements.namedItem(name);if(!input)return;
+      if(input.type==='checkbox'){input.checked=value!==''&&input.value===value;return;}
+      if(input.type==='radio'){const radio=[...form.querySelectorAll(`[name="${name}"]`)].find(el=>el.value===value);if(radio)radio.checked=true;return;}
+      input.value=value;
+    });
+    ['animal','estimate'].forEach(kind=>{
+      const rawList=data[kind==='animal'?'animals_json':'estimate_json'];if(!rawList)return;
+      let items;try{items=JSON.parse(rawList);}catch(error){return;}
+      if(!Array.isArray(items)||!items.length)return;
+      const list=form.querySelector(`[data-calendar-list="${kind}"]`);if(list)list.innerHTML='';
+      items.forEach(item=>calendarAddRow(kind,item));
+    });
+    calendarTypeChanged();calendarSerialize();
+    show('saved','Bozza ripristinata');
+  };
+  const save=ppmDebounce(()=>{
+    try{localStorage.setItem(key,JSON.stringify(serialize()));}catch(error){return;}
+    show('saved','Bozza salvata');
+  },1800);
+  form.addEventListener('input',()=>{show('saving','Salvataggio…');save();});
+  form.addEventListener('change',()=>{show('saving','Salvataggio…');save();});
+  form.addEventListener('submit',()=>{try{localStorage.removeItem(key);}catch(error){}});
+  restore();
+}
+document.addEventListener('DOMContentLoaded',()=>{calendarInitLookups();calendarSwipeNavigation();calendarWizardSwipe();calendarSerialize();setupPracticeAutosave();calendarInitDateTimeSync();setupCalendarDraftAutosave(document.getElementById('calendarEventForm'));document.addEventListener('pointerdown',event=>{if(!event.target.closest('.calendar-datetime-row'))document.querySelectorAll('[data-time-wheel]').forEach(wheel=>wheel.hidden=true);});});
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(error=>console.warn('Service worker non registrato',error)));
 }
@@ -2787,7 +2826,9 @@ class App(BaseHTTPRequestHandler):
             required_attr=' required' if required else ''
             return f'''<div class="calendar-datetime-row"><label>{label}</label><input class="calendar-date-compact" type="date" name="{date_name}" value="{esc(date_value)}"{required_attr}><div class="calendar-time-slot" data-calendar-time><input class="calendar-time-entry" type="text" inputmode="numeric" name="{time_name}" data-time-entry value="{esc(time_value)}"{required_attr} placeholder="{'09:30' if required else '10:30'}" onfocus="calendarTimeFocus(this)" onbeforeinput="calendarTimeBeforeInput(this,event)" oninput="calendarTimeInput(this)" onblur="calendarTimeBlur(this)"></div><div class="calendar-time-wheel" data-time-wheel hidden><div class="calendar-wheel-column" data-wheel-part="hour">{wheel_hours}</div><span class="calendar-wheel-separator">:</span><div class="calendar-wheel-column" data-wheel-part="minute">{wheel_minutes}</div></div></div>'''
         datetime_fields=datetime_row("Inizio","start_date",start_date,"start_time",start_time,True)+datetime_row("Fine","end_date",end_date,"end_time",end_time)
-        body=f'''<main class="wrap calendar-form"><div class="titlebar"><div><h1>{'Modifica evento' if event_id else 'Nuovo evento'}</h1><p class="sub">Crea o modifica un evento in tre passaggi</p></div><a class="btn ghost" href="{close_url}" onclick="return calendarConfirmExit(event,this.href)" aria-label="Chiudi">×</a></div>{error_html}<div class="calendar-steps" aria-label="Fasi evento"><button class="active" type="button" onclick="calendarStepFromIndicator(1)" aria-label="Vai alla fase 1">1</button><button type="button" onclick="calendarStepFromIndicator(2)" aria-label="Vai alla fase 2">2</button><button type="button" onclick="calendarStepFromIndicator(3)" aria-label="Vai alla fase 3">3</button></div><form id="calendarEventForm" data-current-step="1" method="post" action="{action}" onsubmit="return calendarSubmit(this)">
+        draft_key=f"ppm_calendar_draft_edit_{event_id}" if event_id else "ppm_calendar_draft_new"
+        draft_status='<div id="calendarDraftStatus" class="autosave-status" data-state="idle" hidden role="status"><span data-draft-label></span></div>'
+        body=f'''<main class="wrap calendar-form"><div class="titlebar"><div><h1>{'Modifica evento' if event_id else 'Nuovo evento'}</h1><p class="sub">Crea o modifica un evento in tre passaggi</p></div><a class="btn ghost" href="{close_url}" onclick="return calendarConfirmExit(event,this.href)" aria-label="Chiudi">×</a></div>{error_html}{draft_status}<div class="calendar-steps" aria-label="Fasi evento"><button class="active" type="button" onclick="calendarStepFromIndicator(1)" aria-label="Vai alla fase 1">1</button><button type="button" onclick="calendarStepFromIndicator(2)" aria-label="Vai alla fase 2">2</button><button type="button" onclick="calendarStepFromIndicator(3)" aria-label="Vai alla fase 3">3</button></div><form id="calendarEventForm" data-current-step="1" data-draft-key="{draft_key}" method="post" action="{action}" onsubmit="return calendarSubmit(this)">
         <section class="section calendar-form-step" data-step="1"><div class="field calendar-first-operator"><label>Operatore *</label><select name="operator_name" required>{operator_options}</select><small class="calendar-wizard-error" data-operator-error></small></div><h2>Tipo evento</h2><div class="calendar-type-grid">{types}</div></section>
         <section class="section calendar-form-step" data-step="2" hidden><h2>Data e titolo</h2><div class="fields"><div class="calendar-title-zone-row"><div class="field"><label>Titolo *</label><input name="title" value="{title_value}" required oninput="this.dataset.manual='1'"></div><div class="field calendar-zone-field" data-calendar-types="Ritiro|Riconsegna" {"" if event_type in ("Ritiro","Riconsegna") else "hidden"}><label>Zona{' *' if event_type=='Ritiro' else ''}</label><input name="zone" value="{val('zone')}" autocomplete="off" oninput="calendarZoneInput(this)" onfocus="calendarZoneInput(this)" onblur="calendarZoneOffer(this)"><div class="calendar-zone-results" hidden></div><small class="sub">Scrivi per cercare o inserire una nuova zona.</small><label><input type="checkbox" name="save_zone" value="1"> Salva nei suggerimenti</label></div><div class="field" data-calendar-types="Ritiro in sede|Riconsegna in sede" {"" if event_type in ("Ritiro in sede","Riconsegna in sede") else "hidden"}><label>Sede *</label><select name="destination_site" onchange="calendarAutoTitle()"><option value="">Seleziona</option><option {"selected" if raw("destination_site")=="Livorno" else ""}>Livorno</option><option {"selected" if raw("destination_site")=="Empoli" else ""}>Empoli</option></select></div></div><div class="field full lookup" data-calendar-types="Riconsegna|Riconsegna in sede" {"" if event_type in ("Riconsegna","Riconsegna in sede") else "hidden"}><label>Animale *</label><input id="calendarDeliveryAnimalSearch" name="animal_name" value="{val('animal_name')}" placeholder="Cerca animale o proprietario" autocomplete="off" oninput="calendarAutoTitle()"><div id="calendarDeliveryAnimalResults" class="lookup-results hidden"></div><input type="hidden" name="linked_practice_id" value="{val('linked_practice_id')}"></div><div class="calendar-datetime-stack">{datetime_fields}</div><div class="field full"><label class="modern-check"><input type="checkbox" name="all_day" value="1" {"checked" if raw("all_day") else ""} onchange="calendarAllDayChanged(this)"> Tutto il giorno</label></div></div><div class="actions" style="margin-top:16px"><button class="btn ghost" type="button" onclick="calendarStep(1,'back')">Indietro</button><button class="btn" type="button" onclick="calendarStep(3)">Avanti</button></div></section>
         <section class="section calendar-form-step" data-step="3" hidden><h2>Informazioni</h2>

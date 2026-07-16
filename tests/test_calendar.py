@@ -314,6 +314,29 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("+ Nuova pratica", pages["current"])
         self.assertIn("+ Nuovo evento", pages["current"])
 
+    def test_calendar_draft_autosave_has_separate_keys_and_excludes_sensitive_fields(self):
+        rendered = []
+        self.handler.path = "/calendario/nuovo"
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.calendar_event_form(self.admin)
+        self.assertIn('data-draft-key="ppm_calendar_draft_new"', rendered[-1])
+        self.assertIn('id="calendarDraftStatus"', rendered[-1])
+
+        event_id = self.save(self.event_form("Ritiro"))
+        rendered.clear()
+        self.handler.path = f"/calendario/{event_id}/modifica"
+        self.handler.calendar_event_form(self.admin, event_id)
+        self.assertIn(f'data-draft-key="ppm_calendar_draft_edit_{event_id}"', rendered[-1])
+
+        js = app.APP_JS
+        self.assertIn("function setupCalendarDraftAutosave(form)", js)
+        self.assertIn("setupCalendarDraftAutosave(document.getElementById('calendarEventForm'))", js)
+        self.assertIn("input.type==='password'", js)
+        self.assertIn("/token|session/i.test(name)", js)
+        self.assertIn("localStorage.removeItem(key)", js)
+        self.assertIn("Bozza salvata", js)
+        self.assertIn("Bozza ripristinata", js)
+
     def test_new_event_shortcut_prefills_currently_viewed_day(self):
         pages = {}
         self.handler.send_html = lambda html, status=200: pages.update(current=html)
