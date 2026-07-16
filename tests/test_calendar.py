@@ -251,6 +251,24 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("+ Nuova pratica", pages["current"])
         self.assertIn("+ Nuovo evento", pages["current"])
 
+    def test_new_event_shortcut_prefills_currently_viewed_day(self):
+        pages = {}
+        self.handler.send_html = lambda html, status=200: pages.update(current=html)
+        self.handler.path = "/calendario?vista=giorno&data=2026-07-20"
+        self.handler.calendar_page(self.admin)
+        self.assertIn('data-calendar-new-event', pages["current"])
+        self.assertIn('href="/calendario/nuovo?data=2026-07-20"', pages["current"])
+        self.assertIn("function calendarInitDateTimeSync()", app.APP_JS)
+        self.assertIn("location.pathname==='/calendario'", app.APP_JS)
+        self.assertIn("dataset.manualEdit", app.APP_JS)
+
+    def test_end_date_and_time_stay_manually_editable_after_first_change(self):
+        self.assertIn("form.start_date.addEventListener('change',sync)", app.APP_JS)
+        self.assertIn("if(form.end_date&&!form.end_date.dataset.manualEdit)form.end_date.value=form.start_date.value;", app.APP_JS)
+        # Server-side normalize_event already rejects an end before the start regardless of client sync bugs.
+        with self.assertRaisesRegex(ValueError, "fine"):
+            normalize_event(self.event_form("Ritiro", start_date="2026-07-16", end_date="2026-07-15"))
+
     def test_form_is_guided_supports_contacts_maps_autocomplete_and_touch_layout(self):
         captured = []
         self.handler.path = "/calendario/nuovo?data=2026-07-15"
