@@ -638,7 +638,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Dati economici",rendered[-1])
         self.assertIn("Totale pagato",rendered[-1])
         self.assertIn("Da pagare",rendered[-1])
-        self.assertIn("Rimanenza registrata",rendered[-1])
+        self.assertIn("Rimanenza W",rendered[-1])
         self.assertIn("Voci del preventivo",rendered[-1])
         self.assertIn("Ritiro",rendered[-1])
         self.assertIn("INVIARE CATALOGO",rendered[-1])
