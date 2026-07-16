@@ -318,15 +318,17 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertTrue({"Creazione evento", "Cambio stato", "Aggiunta commento", "Modifica commento", "Eliminazione", "Ripristino"}.issubset(actions))
 
     def test_due_reminder_and_daily_summary_are_idempotent(self):
-        event_id = self.save(self.event_form("Ritiro", start_date="2026-07-15", start_time="10:00", end_time="11:00"))
-        moment = datetime(2026, 7, 15, 9, 30)
+        future_date = (datetime.now() + timedelta(days=1)).date()
+        date_text = future_date.isoformat()
+        event_id = self.save(self.event_form("Ritiro", start_date=date_text, end_date=date_text, start_time="10:00", end_time="11:00"))
+        moment = datetime.combine(future_date, datetime.min.time()).replace(hour=9, minute=30)
         with app.db() as conn:
             first = process_calendar_notifications(conn, None, moment)
             second = process_calendar_notifications(conn, None, moment)
             reminder = conn.execute("SELECT * FROM calendar_event_notifications WHERE event_id=?", (event_id,)).fetchone()
             count = conn.execute("SELECT count(*) n FROM notifications WHERE type='calendar_reminder_30m'").fetchone()["n"]
-            summary_first = process_calendar_notifications(conn, None, datetime(2026, 7, 15, 9, 45))
-            summary_second = process_calendar_notifications(conn, None, datetime(2026, 7, 15, 9, 50))
+            summary_first = process_calendar_notifications(conn, None, moment.replace(minute=45))
+            summary_second = process_calendar_notifications(conn, None, moment.replace(minute=50))
             summaries = conn.execute("SELECT count(*) n FROM notifications WHERE type='calendar_daily_summary'").fetchone()["n"]
         self.assertEqual((first, second, count), (2, 0, 1))
         self.assertEqual(reminder["status"], "inviato")
@@ -334,12 +336,14 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertEqual((summary_first, summary_second, summaries), (0, 0, 1))
 
     def test_cancelled_and_deleted_events_never_emit_pending_reminders(self):
-        cancelled = self.save(self.event_form("Ritiro", event_status="Annullato", start_time="10:00"))
-        active = self.save(self.event_form("Ritiro", start_time="10:00"))
+        future_date = (datetime.now() + timedelta(days=1)).date()
+        date_text = future_date.isoformat()
+        cancelled = self.save(self.event_form("Ritiro", event_status="Annullato", start_date=date_text, end_date=date_text, start_time="10:00"))
+        active = self.save(self.event_form("Ritiro", start_date=date_text, end_date=date_text, start_time="10:00"))
         self.handler.form = lambda: {}
         self.handler.calendar_event_action(self.admin, active, "elimina")
         with app.db() as conn:
-            process_calendar_notifications(conn, None, datetime(2026, 7, 15, 12, 0))
+            process_calendar_notifications(conn, None, datetime.combine(future_date, datetime.min.time()).replace(hour=12))
             statuses = {row["event_id"]: row["status"] for row in conn.execute("SELECT event_id,status FROM calendar_event_notifications WHERE event_id IN (?,?)", (cancelled, active))}
             sent = conn.execute("SELECT count(*) n FROM notifications WHERE type='calendar_reminder_30m'").fetchone()["n"]
         self.assertNotIn(cancelled, statuses)
