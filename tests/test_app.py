@@ -474,7 +474,7 @@ class PetParadiseTests(unittest.TestCase):
             names = {row["name"] for row in conn.execute("SELECT name FROM articles")}
         self.assertEqual(names, {
             "Sacchi per ritiro", "Boccette pelo", "Certificati",
-            "Sacchetti riconsegna", "Sacchetti ceneri",
+            "Sacchetti riconsegna", "Sacchetti ceneri", "Cerniere e viti urne",
         })
         self.assertIn("catalog_sent", app.NOTIFICATION_TYPES)
         self.assertIn("article_ordered", app.NOTIFICATION_TYPES)
@@ -546,6 +546,69 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('name="urn_id_2" class="hidden"', html)
         self.assertIn('name="invoice_total"', html)
         self.assertIn("Urna prova", html)
+
+    def test_urn_category_column_is_idempotent_and_seed_defaults_to_urna(self):
+        with app.db() as conn:
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(urns)")}
+            self.assertIn("category", columns)
+            categories = {row["category"] for row in conn.execute("SELECT category FROM urns WHERE active=1")}
+        self.assertEqual(categories, {"Urna"})
+        app.init_db()
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT count(*) n FROM urns WHERE active=1 AND category='Urna'").fetchone()["n"], 85)
+
+    def test_urn_catalog_tabs_filter_by_category_and_use_prefixed_codes(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+
+        self.handler.form = lambda: {"category": "Accessorio", "name": "Collana prova", "material": "Metallo", "price": "12.00", "quantity": "3", "low_stock_threshold": "1"}
+        self.handler.redirect = lambda path: setattr(self, "redirected", path)
+        self.handler.save_urn(admin)
+        with app.db() as conn:
+            accessory = conn.execute("SELECT * FROM urns WHERE name='Collana prova'").fetchone()
+        self.assertEqual(accessory["category"], "Accessorio")
+        self.assertTrue(accessory["internal_code"].startswith("ACC-"))
+
+        self.handler.form = lambda: {"category": "Calco", "name": "Calco naso prova", "material": "", "price": "20.00", "quantity": "1", "low_stock_threshold": "1"}
+        self.handler.save_urn(admin)
+        with app.db() as conn:
+            cast = conn.execute("SELECT * FROM urns WHERE name='Calco naso prova'").fetchone()
+        self.assertEqual(cast["category"], "Calco")
+        self.assertTrue(cast["internal_code"].startswith("CALCO-"))
+
+        rendered = []
+        self.handler.send_html = lambda html, *args: rendered.append(html)
+        self.handler.path = "/catalogo-urne?categoria=accessori"
+        self.handler.urn_catalog_page(admin)
+        page = rendered[-1]
+        self.assertIn("Collana prova", page)
+        self.assertNotIn("Calco naso prova", page)
+        self.assertIn('class="active">Accessori</a>', page)
+
+        self.handler.path = "/catalogo-urne?categoria=calchi"
+        self.handler.urn_catalog_page(admin)
+        page = rendered[-1]
+        self.assertIn("Calco naso prova", page)
+        self.assertNotIn("Collana prova", page)
+
+        self.handler.path = "/catalogo-urne"
+        self.handler.urn_catalog_page(admin)
+        page = rendered[-1]
+        self.assertNotIn("Collana prova", page)
+        self.assertNotIn("Calco naso prova", page)
+
+    def test_urn_edit_page_has_quantity_stepper_buttons(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda html, *args: rendered.append(html)
+        self.handler.path = "/catalogo-urne/nuova?categoria=accessori"
+        self.handler.urn_edit_page(admin)
+        page = rendered[-1]
+        self.assertIn('onclick="adjustUrnQuantity(this.form,-1)"', page)
+        self.assertIn('onclick="adjustUrnQuantity(this.form,1)"', page)
+        self.assertIn('<option value="Accessorio" selected>Accessorio</option>', page)
+        self.assertIn("function adjustUrnQuantity(form,delta)", app.APP_JS)
 
     def test_payment_movements_use_real_dates_and_separate_channels(self):
         with app.db() as conn:
