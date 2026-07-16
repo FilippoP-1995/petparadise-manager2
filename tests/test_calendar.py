@@ -109,7 +109,11 @@ class OperationalCalendarTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"sede"):
             normalize_event(self.event_form("Ritiro in sede",destination_site=""))
         delivery=normalize_event(self.event_form("Riconsegna",zone="Livorno"))
-        self.assertEqual((delivery["zone"],delivery["title"]),("","RICONSEGNA FIDO"))
+        self.assertEqual((delivery["zone"],delivery["title"]),("Livorno","RICONSEGNA FIDO"))
+        delivery_in_sede=normalize_event(self.event_form("Riconsegna in sede",zone="Livorno"))
+        self.assertEqual(delivery_in_sede["zone"],"")
+        appointment=normalize_event(self.event_form("Appuntamento",zone="Livorno"))
+        self.assertEqual(appointment["zone"],"")
         self.assertEqual(parse_items(json.dumps([{"name":"","species":"","weight":"","cremation_type":"","notes":""}]),"animal"),[])
 
     def test_invalid_calendar_save_stays_in_wizard_without_raw_http_error(self):
@@ -207,6 +211,65 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertEqual(event["veterinarian_address"], "Via Roma 1")
         self.assertEqual((client["first_name"], vet["clinic_name"]), ("Mario", "Clinica Test"))
 
+    def test_delivery_zone_and_clinic_are_persisted_and_shown_without_growing_the_card(self):
+        stamp = datetime.now().isoformat(timespec="seconds")
+        with app.db() as conn:
+            vet_id = conn.execute(
+                "INSERT INTO veterinarians(clinic_name,short_name,doctor_name,phone,address,active,created_at,updated_at) VALUES(?,?,?,?,?,1,?,?)",
+                ("Ambulatorio Riconsegna", "AmbRicons", "Dott. Bianchi", "0586999999", "Via Test 1", stamp, stamp),
+            ).lastrowid
+        event_id = self.save(self.event_form(
+            "Riconsegna", zone="Livorno",
+            delivery_clinic_id=str(vet_id), delivery_clinic_name="Ambulatorio Riconsegna",
+        ))
+        with app.db() as conn:
+            event = conn.execute("SELECT * FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+        self.assertEqual(event["zone"], "Livorno")
+        self.assertEqual(event["delivery_clinic_id"], vet_id)
+        self.assertEqual(event["delivery_clinic_name"], "Ambulatorio Riconsegna")
+        self.assertEqual(event["delivery_clinic_phone"], "0586999999")
+
+        card = self.handler.calendar_event_card(dict(event, animal_species="", animal_weight_total=0, cremation_types="", estimate_total=0, payment_channel="", operator_name="Serena", assigned_name="", creator_name=""))
+        self.assertIn("Livorno", card)
+        self.assertIn("Ambulatorio Riconsegna", card)
+        self.assertEqual(card.count("<p>"), 2)  # details line + operator line only, no extra row added per detail
+
+        pages = []
+        self.handler.send_html = lambda html, status=200: pages.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(self.admin, event_id)
+        self.assertIn("Ambulatorio Riconsegna", pages[-1])
+        self.assertIn(">Zona<", pages[-1])
+
+    def test_delivery_clinic_optional_and_ambulatorio_field_present_in_wizard(self):
+        event_id = self.save(self.event_form("Riconsegna"))
+        with app.db() as conn:
+            event = conn.execute("SELECT * FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+        self.assertIsNone(event["delivery_clinic_id"])
+        self.assertEqual(event["delivery_clinic_name"], "")
+        rendered = []
+        self.handler.path = "/calendario/nuovo"
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.calendar_event_form(self.admin)
+        self.assertIn("Ambulatorio riconsegna (facoltativo)", rendered[-1])
+        self.assertIn("calendarDeliveryClinicSearch", rendered[-1])
+        self.assertIn("function calendarSelectDeliveryClinic(form,item)", app.APP_JS)
+
+    def test_client_name_resolution_priority_and_empty_row(self):
+        base = {"client_id": None, "client_first_name": "", "client_last_name": "", "person_company": "", "linked_practice_id": None}
+        self.assertEqual(self.handler.calendar_event_client_name(base), "")
+        manual = dict(base, client_first_name="Anna", client_last_name="Verdi")
+        self.assertEqual(self.handler.calendar_event_client_name(manual), "Anna Verdi")
+        company = dict(base, person_company="Studio Veterinario XYZ")
+        self.assertEqual(self.handler.calendar_event_client_name(company), "Studio Veterinario XYZ")
+        via_practice = dict(base, linked_practice_id=7, client_first_name="Ignored")
+        self.assertEqual(self.handler.calendar_event_client_name(via_practice, practice_owner_names={7: "Proprietario Pratica"}), "Proprietario Pratica")
+        via_client = dict(base, client_id=3, linked_practice_id=7, client_first_name="Ignored")
+        self.assertEqual(
+            self.handler.calendar_event_client_name(via_client, client_names={3: "Cliente Anagrafica"}, practice_owner_names={7: "Proprietario Pratica"}),
+            "Cliente Anagrafica",
+        )
+
     def test_calendar_pages_render_all_views_navigation_filters_and_mobile_hooks(self):
         self.save(self.event_form("Ritiro", event_status="Da ritirare",animals_json=json.dumps([{"name":"Luna","species":"Cane","weight":"18","cremation_type":"Singola","notes":""}])))
         self.save(self.event_form("Appuntamento", title="APPUNTAMENTO FORNITORE", end_time="10:00"))
@@ -250,6 +313,24 @@ class OperationalCalendarTests(unittest.TestCase):
         self.handler.dashboard(self.admin)
         self.assertIn("+ Nuova pratica", pages["current"])
         self.assertIn("+ Nuovo evento", pages["current"])
+
+    def test_new_event_shortcut_prefills_currently_viewed_day(self):
+        pages = {}
+        self.handler.send_html = lambda html, status=200: pages.update(current=html)
+        self.handler.path = "/calendario?vista=giorno&data=2026-07-20"
+        self.handler.calendar_page(self.admin)
+        self.assertIn('data-calendar-new-event', pages["current"])
+        self.assertIn('href="/calendario/nuovo?data=2026-07-20"', pages["current"])
+        self.assertIn("function calendarInitDateTimeSync()", app.APP_JS)
+        self.assertIn("location.pathname==='/calendario'", app.APP_JS)
+        self.assertIn("dataset.manualEdit", app.APP_JS)
+
+    def test_end_date_and_time_stay_manually_editable_after_first_change(self):
+        self.assertIn("form.start_date.addEventListener('change',sync)", app.APP_JS)
+        self.assertIn("if(form.end_date&&!form.end_date.dataset.manualEdit)form.end_date.value=form.start_date.value;", app.APP_JS)
+        # Server-side normalize_event already rejects an end before the start regardless of client sync bugs.
+        with self.assertRaisesRegex(ValueError, "fine"):
+            normalize_event(self.event_form("Ritiro", start_date="2026-07-16", end_date="2026-07-15"))
 
     def test_form_is_guided_supports_contacts_maps_autocomplete_and_touch_layout(self):
         captured = []
