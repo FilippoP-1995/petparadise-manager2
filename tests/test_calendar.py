@@ -332,6 +332,98 @@ class OperationalCalendarTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "fine"):
             normalize_event(self.event_form("Ritiro", start_date="2026-07-16", end_date="2026-07-15"))
 
+    def test_link_existing_practice_search_covers_all_four_criteria(self):
+        stamp = datetime.now().isoformat(timespec="seconds")
+        with app.db() as conn:
+            admin_id = self.admin["id"]
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   animal_name,species,owner_first_name,owner_last_name,clinic_name,pickup_date)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("PP-LINK-01", "Veterinario", "Livorno", "Ritirato", stamp, stamp, admin_id,
+                 "Luna", "Cane", "Anna", "Verdi", "Clinica Aurelia", "2026-07-10"),
+            ).lastrowid
+        for term in ("Luna", "Verdi", "Aurelia", "PP-LINK-01"):
+            response = {}
+            self.handler.path = f"/api/calendario/pratiche/search?q={term}"
+            self.handler.send_json = lambda obj, status=200: response.update(obj=obj, status=status)
+            self.handler.api_calendar_practices_search(self.admin)
+            practice_ids = [r["practice_id"] for r in response["obj"]["results"]]
+            self.assertIn(pid, practice_ids, f"search for {term!r} did not find the practice")
+
+    def test_link_and_unlink_existing_practice_to_ritiro_prevents_duplicates(self):
+        stamp = datetime.now().isoformat(timespec="seconds")
+        with app.db() as conn:
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name)
+                   VALUES(?,?,?,?,?,?,?,?)""",
+                ("PP-LINK-02", "Privato", "Livorno", "Ritirato", stamp, stamp, self.admin["id"], "Fido"),
+            ).lastrowid
+            other_pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name)
+                   VALUES(?,?,?,?,?,?,?,?)""",
+                ("PP-LINK-03", "Privato", "Livorno", "Ritirato", stamp, stamp, self.admin["id"], "Rex"),
+            ).lastrowid
+        event_id = self.save(self.event_form("Ritiro", event_status="Ritirato"))
+
+        # Non-admin cannot unlink even before a link exists (route requires linked_practice_id anyway).
+        self.handler.form = lambda: {"practice_id": str(pid)}
+        self.handler.calendar_event_action(self.admin, event_id, "collega-pratica")
+        with app.db() as conn:
+            event = conn.execute("SELECT linked_practice_id FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+        self.assertEqual(event["linked_practice_id"], pid)
+
+        # Linking again (accidentally, e.g. to a different practice) must not overwrite the existing link.
+        errors = []
+        self.handler.send_error = lambda *args: errors.append(args)
+        self.handler.form = lambda: {"practice_id": str(other_pid)}
+        self.handler.calendar_event_action(self.admin, event_id, "collega-pratica")
+        self.assertTrue(errors and errors[0][0] == 409)
+        with app.db() as conn:
+            event = conn.execute("SELECT linked_practice_id FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+        self.assertEqual(event["linked_practice_id"], pid)
+
+        non_admin = dict(self.admin)
+        non_admin["role"] = "staff"
+        errors.clear()
+        self.handler.form = lambda: {"confirm": "SCOLLEGA"}
+        self.handler.calendar_event_action(non_admin, event_id, "scollega-pratica")
+        self.assertTrue(errors and errors[0][0] == 403)
+
+        self.handler.calendar_event_action(self.admin, event_id, "scollega-pratica")
+        with app.db() as conn:
+            event = conn.execute("SELECT linked_practice_id FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+        self.assertIsNone(event["linked_practice_id"])
+
+    def test_link_practice_section_shown_only_when_ritirato_and_unlinked(self):
+        event_id = self.save(self.event_form("Ritiro", event_status="Da confermare"))
+        rendered = []
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(self.admin, event_id)
+        self.assertNotIn("Collega pratica esistente", rendered[-1])
+
+        self.handler.form = lambda: {"status": "Ritirato"}
+        with patch("app.emit_notification", return_value=[]):
+            self.handler.calendar_event_action(self.admin, event_id, "stato")
+        self.handler.calendar_event_detail(self.admin, event_id)
+        self.assertIn("Collega pratica esistente", rendered[-1])
+        self.assertIn("calendarLinkPracticeSearch", rendered[-1])
+
+        with app.db() as conn:
+            stamp = datetime.now().isoformat(timespec="seconds")
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name)
+                   VALUES(?,?,?,?,?,?,?,?)""",
+                ("PP-LINK-04", "Privato", "Livorno", "Ritirato", stamp, stamp, self.admin["id"], "Milo"),
+            ).lastrowid
+        self.handler.form = lambda: {"practice_id": str(pid)}
+        self.handler.calendar_event_action(self.admin, event_id, "collega-pratica")
+        self.handler.calendar_event_detail(self.admin, event_id)
+        self.assertNotIn('id="calendarLinkPracticeSearch"', rendered[-1])
+        self.assertIn("Apri pratica", rendered[-1])
+        self.assertIn("PP-LINK-04", rendered[-1])
+
     def test_form_is_guided_supports_contacts_maps_autocomplete_and_touch_layout(self):
         captured = []
         self.handler.path = "/calendario/nuovo?data=2026-07-15"

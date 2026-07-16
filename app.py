@@ -1862,6 +1862,33 @@ async function calendarDeliveryAnimalLookup(input,results){
     results.innerHTML='<div class="lookup-state">Ricerca temporaneamente non disponibile.</div>';results.classList.remove('hidden');
   }
 }
+async function calendarLinkPracticeLookup(input,results){
+  const q=input.value.trim();
+  const fetcher=input._ppmFetcher||(input._ppmFetcher=ppmLookupFetcher());
+  if(!q){fetcher.cancel();ppmCloseLookupPanel(results);return;}
+  if(q.length<2){ppmCloseLookupPanel(results);return;}
+  const {token,signal}=fetcher.start();
+  try{
+    const response=await fetch(`/api/calendario/pratiche/search?q=${encodeURIComponent(q)}`,{signal});
+    const data=await response.json();
+    if(fetcher.stale(token)||input.value.trim()!==q)return;
+    const items=data.results||[];
+    results.innerHTML=items.map((item,index)=>`<button type="button" class="lookup-item" data-link-practice-index="${index}"><span><b>${calendarHtml(item.practice_number||'')} · ${calendarHtml(item.animal_name||'Senza nome')}</b><small>${calendarHtml([item.owner_name,item.species,item.veterinarian_name,item.pickup_date?`recupero ${calendarDateIt(item.pickup_date)}`:'',item.status].filter(Boolean).join(' · '))}</small></span></button>`).join('')||'<div class="lookup-state">Nessuna pratica trovata.</div>';
+    results.classList.remove('hidden');
+    results.onclick=e=>{
+      const button=e.target.closest('[data-link-practice-index]');if(!button)return;
+      const item=items[Number(button.dataset.linkPracticeIndex)];
+      if(!confirm(`Collegare la pratica ${item.practice_number} a questo evento?`))return;
+      const form=document.createElement('form');
+      form.method='post';form.action=`/calendario/${input.dataset.eventId}/collega-pratica`;
+      const hidden=document.createElement('input');hidden.type='hidden';hidden.name='practice_id';hidden.value=item.practice_id;
+      form.append(hidden);document.body.append(form);form.submit();
+    };
+  }catch(error){
+    if(error.name==='AbortError'||fetcher.stale(token))return;
+    results.innerHTML='<div class="lookup-state">Ricerca temporaneamente non disponibile.</div>';results.classList.remove('hidden');
+  }
+}
 function calendarInitLookups(){
   const client=document.getElementById('calendarClientSearch'),clientResults=document.getElementById('calendarClientResults');
   if(client){ppmRegisterLookupPanel(client,clientResults);client.addEventListener('input',()=>calendarContactLookup(client,clientResults));}
@@ -1869,6 +1896,8 @@ function calendarInitLookups(){
   if(vet){ppmRegisterLookupPanel(vet,vetResults);vet.addEventListener('input',()=>calendarLookup(vet,'/api/veterinari/search',vetResults,item=>calendarSelectVeterinarian(vet.form,item)));}
   const deliveryAnimal=document.getElementById('calendarDeliveryAnimalSearch'),deliveryResults=document.getElementById('calendarDeliveryAnimalResults');
   if(deliveryAnimal){ppmRegisterLookupPanel(deliveryAnimal,deliveryResults);deliveryAnimal.addEventListener('input',()=>calendarDeliveryAnimalLookup(deliveryAnimal,deliveryResults));}
+  const linkPractice=document.getElementById('calendarLinkPracticeSearch'),linkPracticeResults=document.getElementById('calendarLinkPracticeResults');
+  if(linkPractice){ppmRegisterLookupPanel(linkPractice,linkPracticeResults);linkPractice.addEventListener('input',()=>calendarLinkPracticeLookup(linkPractice,linkPracticeResults));}
   const deliveryClinic=document.getElementById('calendarDeliveryClinicSearch'),deliveryClinicResults=document.getElementById('calendarDeliveryClinicResults');
   if(deliveryClinic){ppmRegisterLookupPanel(deliveryClinic,deliveryClinicResults);deliveryClinic.addEventListener('input',()=>calendarLookup(deliveryClinic,'/api/veterinari/search',deliveryClinicResults,item=>calendarSelectDeliveryClinic(deliveryClinic.form,item)));}
   document.querySelectorAll('.calendar-zone-field input[name="zone"]').forEach(input=>{
@@ -2310,6 +2339,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/api/cap": return self.api_zip_lookup(user)
         if path == "/api/veterinari/search": return self.api_veterinarians_search(user)
         if path == "/api/calendario/animali/search": return self.api_calendar_animals_search(user)
+        if path == "/api/calendario/pratiche/search": return self.api_calendar_practices_search(user)
         if path == "/api/notifiche/stato": return self.notification_status(user)
         match = re.fullmatch(r"/api/veterinari/(\d+)/buoni", path)
         if match: return self.api_veterinarian_vouchers(user, int(match.group(1)))
@@ -2359,7 +2389,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/calendario/nuovo": return self.save_calendar_event(user)
         match = re.fullmatch(r"/calendario/(\d+)/modifica",path)
         if match: return self.save_calendar_event(user,int(match.group(1)))
-        match = re.fullmatch(r"/calendario/(\d+)/(stato|commento|elimina|ripristina|elimina-definitiva)",path)
+        match = re.fullmatch(r"/calendario/(\d+)/(stato|commento|elimina|ripristina|elimina-definitiva|collega-pratica|scollega-pratica)",path)
         if match: return self.calendar_event_action(user,int(match.group(1)),match.group(2))
         match = re.fullmatch(r"/calendario/(\d+)/commenti/(\d+)/(modifica|elimina)",path)
         if match: return self.calendar_comment_action(user,int(match.group(1)),int(match.group(2)),match.group(3))
@@ -2874,10 +2904,17 @@ class App(BaseHTTPRequestHandler):
         if event["event_type"] in ("Ritiro","Ritiro in sede") and event["event_status"]=="Ritirato":create_practice=f'<a class="btn" href="{f"/pratiche/{event["linked_practice_id"]}" if event["linked_practice_id"] else f"/nuova?calendar_event_id={event_id}"}">{"Apri pratica "+esc(event["practice_number"]) if event["linked_practice_id"] else "+ Crea pratica"}</a>'
         status_form=''
         if event["event_type"] in ("Ritiro","Ritiro in sede"):status_form=f'''<form class="calendar-detail-status" method="post" action="/calendario/{event_id}/stato"><label for="calendarDetailStatus"><b>Cambia stato del ritiro</b></label><select id="calendarDetailStatus" name="status">{''.join(f'<option {"selected" if event["event_status"]==s else ""}>{s}</option>' for s in PICKUP_STATUSES)}</select><button class="btn">Salva nuovo stato</button></form>'''
+        link_practice_section=''
+        if event["event_type"] in ("Ritiro","Ritiro in sede") and event["event_status"]=="Ritirato":
+            if event["linked_practice_id"]:
+                unlink=f'''<form method="post" action="/calendario/{event_id}/scollega-pratica" onsubmit="return confirm('Confermi lo scollegamento della pratica da questo evento?')" style="margin-top:8px"><input type="hidden" name="confirm" value="SCOLLEGA"><button class="btn danger-btn">Scollega pratica</button></form>''' if user["role"]=="admin" else ''
+                link_practice_section=f'''<section class="section" style="margin-top:14px"><h2>Pratica collegata</h2><p><b>{esc(event["practice_number"])}</b></p><a class="btn ghost" href="/pratiche/{event["linked_practice_id"]}">Apri pratica</a>{unlink}</section>'''
+            else:
+                link_practice_section=f'''<section class="section" style="margin-top:14px"><h2>Collega pratica esistente</h2><div class="field full lookup"><input id="calendarLinkPracticeSearch" data-event-id="{event_id}" autocomplete="off" placeholder="Cerca per animale, proprietario, veterinario o numero pratica"><div id="calendarLinkPracticeResults" class="lookup-results hidden"></div></div></section>'''
         confetti=''.join(f'<i style="left:{(index*37)%97}%;--drift:{((index%7)-3)*18}px;--rotate:{index*29}deg;--confetti:{("#ef405f","#34d399","#60a5fa","#facc15","#c084fc")[index%5]}"></i>' for index in range(28))
         celebration=f'<div class="calendar-created-celebration" aria-hidden="true"><div class="calendar-created-confetti">{confetti}</div><div class="calendar-created-celebration-card"><span class="calendar-created-celebration-icon">✓</span><b>Evento creato!</b></div></div>'
         created_animation=f'''<template id="calendarCreatedCelebration">{celebration}</template><script>try{{if(sessionStorage.getItem('ppm_calendar_created')==='1'){{sessionStorage.removeItem('ppm_calendar_created');document.body.append(document.getElementById('calendarCreatedCelebration').content.cloneNode(true));}}}}catch(error){{}}</script>'''
-        body=f'''{created_animation}<main class="wrap calendar-wrap"><div class="titlebar"><div><h1 class="{event_color_class(event)}">{esc(re.sub(r'^APPUNTAMENTO\b','PROMEMORIA',event['title'],flags=re.I) if event['event_type']=='Appuntamento' else event['title'])}</h1><p class="sub">Creato da {esc(event['creator_name'])} · {esc(event['created_at'].replace('T',' ')[:16])}</p></div><div class="actions"><a class="btn ghost" href="/calendario">Calendario</a><a class="btn" href="/calendario/{event_id}/modifica">Modifica</a>{create_practice}</div></div><nav class="calendar-tabs">{tabs}</nav><div class="calendar-detail-grid"><div>{panel}</div><aside><section class="section"><h2>Azioni</h2>{status_form}<form method="post" action="/calendario/{event_id}/elimina" onsubmit="return confirm('Spostare questo evento nel cestino?')"><button class="btn ghost" style="margin-top:12px">Sposta nel cestino</button></form></section></aside></div></main>'''
+        body=f'''{created_animation}<main class="wrap calendar-wrap"><div class="titlebar"><div><h1 class="{event_color_class(event)}">{esc(re.sub(r'^APPUNTAMENTO\b','PROMEMORIA',event['title'],flags=re.I) if event['event_type']=='Appuntamento' else event['title'])}</h1><p class="sub">Creato da {esc(event['creator_name'])} · {esc(event['created_at'].replace('T',' ')[:16])}</p></div><div class="actions"><a class="btn ghost" href="/calendario">Calendario</a><a class="btn" href="/calendario/{event_id}/modifica">Modifica</a>{create_practice}</div></div><nav class="calendar-tabs">{tabs}</nav><div class="calendar-detail-grid"><div>{panel}</div><aside><section class="section"><h2>Azioni</h2>{status_form}<form method="post" action="/calendario/{event_id}/elimina" onsubmit="return confirm('Spostare questo evento nel cestino?')"><button class="btn ghost" style="margin-top:12px">Sposta nel cestino</button></form></section>{link_practice_section}</aside></div></main>'''
         self.send_html(layout(re.sub(r'^APPUNTAMENTO\b','PROMEMORIA',event["title"],flags=re.I) if event["event_type"]=='Appuntamento' else event["title"],body,user))
 
     def calendar_event_action(self,user,event_id,action):
@@ -2901,6 +2938,20 @@ class App(BaseHTTPRequestHandler):
             elif action=="elimina-definitiva":
                 if user["role"]!="admin" or form.get("confirm")!="ELIMINA DEFINITIVAMENTE":return self.send_error(403,"Conferma amministratore mancante")
                 c.execute("DELETE FROM calendar_events WHERE id=? AND deleted_at IS NOT NULL",(event_id,));return self.redirect("/calendario/cestino")
+            elif action=="collega-pratica":
+                if event["event_type"] not in ("Ritiro","Ritiro in sede"):return self.send_error(400,"Azione non valida per questo tipo di evento")
+                if event["linked_practice_id"]:return self.send_error(409,"Evento già collegato a una pratica")
+                practice_id=form.get("practice_id","")
+                if not practice_id.isdigit():return self.send_error(400,"Pratica non valida")
+                practice=c.execute("SELECT id,practice_number FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(int(practice_id),)).fetchone()
+                if not practice:return self.send_error(404,"Pratica non trovata")
+                c.execute("UPDATE calendar_events SET linked_practice_id=?,updated_at=?,updated_by=? WHERE id=?",(practice["id"],stamp,user["id"],event_id))
+                calendar_add_history(c,event_id,user["id"],"Collegamento pratica","",practice["practice_number"],stamp)
+            elif action=="scollega-pratica":
+                if user["role"]!="admin":return self.send_error(403,"Solo un amministratore può scollegare la pratica")
+                if form.get("confirm")!="SCOLLEGA":return self.send_error(400,"Conferma mancante")
+                c.execute("UPDATE calendar_events SET linked_practice_id=NULL,updated_at=?,updated_by=? WHERE id=?",(stamp,user["id"],event_id))
+                calendar_add_history(c,event_id,user["id"],"Scollegamento pratica",str(event["linked_practice_id"] or ""),"",stamp)
         self.redirect(safe_return_path(form.get("return_to") or self.headers.get("Referer"),f"/calendario/{event_id}"))
 
     def calendar_comment_action(self,user,event_id,comment_id,action):
@@ -3886,6 +3937,28 @@ class App(BaseHTTPRequestHandler):
         except Exception as exc:
             print(f"[CALENDAR_ANIMAL_SEARCH] {type(exc).__name__}: {exc}",flush=True)
             return self.send_json({"ok":False,"error":"Errore durante la ricerca animali"},500)
+
+    def api_calendar_practices_search(self,user):
+        q=(parse_qs(urlparse(self.path).query).get("q",[""])[0] or "").strip()
+        if len(q)<2:return self.send_json({"ok":True,"query":q,"too_short":True,"results":[]})
+        tokens=[token for token in re.split(r"\s+",q) if len(token)>=2][:5]
+        searchable="COALESCE(animal_name,'')||' '||COALESCE(owner_first_name,'')||' '||COALESCE(owner_last_name,'')||' '||COALESCE(clinic_name,'')||' '||COALESCE(veterinarian_name,'')||' '||COALESCE(practice_number,'')"
+        where=[];args=[]
+        for token in tokens:
+            where.append(f"{searchable} LIKE ? COLLATE NOCASE");args.append(f"%{token}%")
+        try:
+            with db() as c:
+                rows=c.execute(f"""SELECT * FROM practices
+                                  WHERE (deleted_at IS NULL OR deleted_at='') AND {' AND '.join(where)}
+                                  ORDER BY COALESCE(pickup_date,created_at) DESC,id DESC LIMIT 50""",args).fetchall()
+            results=[]
+            for row in rows:
+                owner=" ".join(part for part in (row["owner_first_name"],row["owner_last_name"]) if part).strip()
+                results.append({"practice_id":row["id"],"practice_number":row["practice_number"] or "","animal_name":row["animal_name"] or "","species":row["species"] or "","owner_name":owner,"veterinarian_name":row["clinic_name"] or row["veterinarian_name"] or "","pickup_date":date_it(row["pickup_date"] or ""),"status":row["status"] or ""})
+            return self.send_json({"ok":True,"query":q,"results":results})
+        except Exception as exc:
+            print(f"[CALENDAR_PRACTICE_SEARCH] {type(exc).__name__}: {exc}",flush=True)
+            return self.send_json({"ok":False,"error":"Errore durante la ricerca pratiche"},500)
 
     def api_veterinarians_search(self,user):
         q=(parse_qs(urlparse(self.path).query).get("q",[""])[0] or "").strip()
