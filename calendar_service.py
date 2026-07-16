@@ -107,6 +107,14 @@ def ensure_calendar_schema(conn):
     """)
     columns={row[1] for row in conn.execute("PRAGMA table_info(calendar_events)")}
     if "operator_name" not in columns:conn.execute("ALTER TABLE calendar_events ADD COLUMN operator_name TEXT")
+    delivery_clinic_columns={
+        "delivery_clinic_id":"INTEGER REFERENCES veterinarians(id) ON DELETE SET NULL",
+        "delivery_clinic_name":"TEXT",
+        "delivery_clinic_address":"TEXT",
+        "delivery_clinic_phone":"TEXT",
+    }
+    for name,definition in delivery_clinic_columns.items():
+        if name not in columns:conn.execute(f"ALTER TABLE calendar_events ADD COLUMN {name} {definition}")
     stamp=datetime.now().isoformat(timespec="seconds")
     conn.executemany("INSERT OR IGNORE INTO calendar_zones(name,is_default,created_at) VALUES(?,1,?)",((zone,stamp) for zone in DEFAULT_ZONES))
 
@@ -192,7 +200,7 @@ def normalize_event(form, current=None):
     start_at=f"{start_date}T{start_time}:00";end_at=f"{end_date}T{end_time}:59"
     if end_at<start_at:raise ValueError("La fine dell'evento non può precedere l'inizio")
     zone=_clean(form.get("zone"),100);site=_clean(form.get("destination_site"),50);animal=_clean(form.get("animal_name"),100)
-    if event_type!="Ritiro":zone=""
+    if event_type not in ("Ritiro","Riconsegna"):zone=""
     title=_clean(form.get("title"),200) or automatic_title(event_type,zone,animal,site)
     if not title:raise ValueError("Il titolo è obbligatorio")
     if event_type=="Ritiro" and not zone:raise ValueError("La zona è obbligatoria")
@@ -225,6 +233,10 @@ def normalize_event(form, current=None):
       "start_at":start_at,"end_at":end_at,"all_day":1 if all_day else 0,"event_status":status,
       "payment_status":payment,"payment_amount":max(0,amount),"notes":str(form.get("notes") or "").strip()[:5000],
       "operator_name":operator,"assigned_user_id":None,
+      "delivery_clinic_id":int(form["delivery_clinic_id"]) if str(form.get("delivery_clinic_id") or "").isdigit() else None,
+      "delivery_clinic_name":_clean(form.get("delivery_clinic_name"),200) if event_type in ("Riconsegna","Riconsegna in sede") else "",
+      "delivery_clinic_address":_clean(form.get("delivery_clinic_address"),500) if event_type in ("Riconsegna","Riconsegna in sede") else "",
+      "delivery_clinic_phone":_clean(form.get("delivery_clinic_phone"),50) if event_type in ("Riconsegna","Riconsegna in sede") else "",
     }
 
 
