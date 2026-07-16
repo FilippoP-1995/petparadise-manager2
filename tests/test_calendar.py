@@ -222,6 +222,8 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertNotIn('calendar-week-scroll" data-calendar-swipe', pages["settimana"])
         self.assertIn("calendar-week-time-column", pages["settimana"])
         self.assertIn("calendar-week-grid-line", pages["settimana"])
+        self.assertIn(".calendar-week-scroll{max-height:calc(100dvh - 210px);overflow:auto", app.CSS)
+        self.assertIn(".calendar-week-time-column>header,.calendar-day-column>header{top:0;z-index:8", app.CSS)
         self.assertIn("calendar-month", pages["mese"])
         self.assertIn("calendar-dot-red", pages["mese"])
         self.assertIn("calendar-event-icon", pages["giorno"])
