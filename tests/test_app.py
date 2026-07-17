@@ -1436,6 +1436,91 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(redirects, [])
         self.assertEqual(dashboard_calls[0]["id"], serena["id"])
 
+    def test_service_type_is_required_and_not_preselected(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        form_html = app.App._fields_html(self.handler, None, admin)
+        self.assertIn('<option value="" selected>SELEZIONA</option>', form_html)
+        self.assertNotIn('<option selected>Da decidere</option>', form_html)
+
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.form = lambda: {
+            "operator_name": "SERENA", "owner_first_name": "Anna", "owner_last_name": "Bianchi",
+            "owner_phone": "333", "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno",
+            "owner_province": "LI", "owner_zip": "57100", "request_origin": "Privato",
+        }
+        self.handler.create_practice(admin)
+        self.assertIn("Campi obbligatori mancanti", rendered[-1])
+        self.assertIn("Servizio", rendered[-1])
+
+    def test_arrange_budget_layout_places_payment_status_between_remaining_final_and_notes(self):
+        js = app.APP_JS
+        remaining_final_idx = js.index("addRow([field('total_text'),field('deposit_final'),field('remaining_final')]);")
+        payment_status_idx = js.index("addRow([field('payment_status')]);")
+        notes_idx = js.index("addRow([field('notes')]);")
+        self.assertLess(remaining_final_idx, payment_status_idx)
+        self.assertLess(payment_status_idx, notes_idx)
+        self.assertNotIn("addRow([field('price_cremation')],[field('payment_status')]);", js)
+
+    def test_accessory_field_labels_are_renamed(self):
+        js = app.APP_JS
+        for label in ("Note accessorio", "Tipo secondo accessorio", "Altro accessorio €", "Note altro accessorio"):
+            self.assertIn(label, js)
+        self.assertNotIn("'Secondo accessorio'", js)
+        self.assertNotIn("'Secondi accessori €'", js)
+
+    def test_practice_detail_page_uses_inline_status_dropdown_and_moves_no_whatsapp(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pid = conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?)""",("CR-STATO","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Mario","Cremazione singola","Da saldare","200")).lastrowid
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = f"/pratiche/{pid}"
+        self.handler.practice(admin, pid)
+        page = rendered[-1]
+        self.assertNotIn("Stati pratica", page)
+        self.assertIn('class="inline-state-select practice-status', page)
+        whatsapp_index = page.index("WhatsApp ringraziamento")
+        no_msg_index = page.index("NO MESSAGGIO")
+        self.assertGreater(no_msg_index, whatsapp_index)
+        fattura_index = page.index('class="invoice-inline"')
+        metodo_index = page.index("<small>Metodo</small>")
+        self.assertGreater(fattura_index, metodo_index)
+
+    def test_practice_created_notification_includes_animal_weight(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        redirects = []
+        self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.form = lambda: {
+            "operator_name": "SERENA", "service_type": "Cremazione collettiva", "destination_branch": "Livorno",
+            "owner_first_name": "Anna", "estimated_weight": "7",
+        }
+        self.handler.create_practice(admin)
+        with app.db() as conn:
+            notif = conn.execute("SELECT * FROM notifications WHERE type='practice_created' ORDER BY id DESC LIMIT 1").fetchone()
+        self.assertIn("⚖️ 7 kg", notif["text"])
+
+    def test_new_practice_from_calendar_event_prefers_client_address_over_vet(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            client_id = conn.execute("""INSERT INTO clients(first_name,last_name,phone,street,city,province,zip,tax_code,created_at,updated_at)
+                                         VALUES(?,?,?,?,?,?,?,?,?,?)""",("Anna","Bruni","3331112222","Via Cliente 9","Pisa","PI","56100","BRNANN80A01G702U",stamp,stamp)).lastrowid
+            vet_id = conn.execute("""INSERT INTO veterinarians(clinic_name,phone,address,city,active,created_at,updated_at) VALUES(?,?,?,?,1,?,?)""",("Clinica Vet","0500000000","Via Veterinario 1","Pisa",stamp,stamp)).lastrowid
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,start_at,end_at,client_id,client_first_name,client_last_name,client_phone,
+                                        address,zone,veterinarian_id,veterinarian_name,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                     ("Ritiro","Ritiro test","2026-07-20T10:00:00","2026-07-20T11:00:00",client_id,"Anna","Bruni","3331112222","Via Veterinario 1 - Pisa","Pisa",vet_id,"Clinica Vet",admin["id"],stamp,stamp)).lastrowid
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = f"/nuova?calendar_event_id={event_id}"
+        self.handler.new_page(admin)
+        page = rendered[-1]
+        self.assertIn('value="Via Cliente 9"', page)
+        self.assertNotIn('value="Via Veterinario 1', page)
+
     def test_operator_field_is_automatic_for_non_admin_and_manual_for_admin(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
