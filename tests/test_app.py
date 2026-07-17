@@ -224,9 +224,9 @@ class PetParadiseTests(unittest.TestCase):
     def test_order_settings_validate_and_save_recipient(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();conn.execute("INSERT INTO users(username,password_hash,display_name,role) VALUES('operatore','x','Operatore','operator')");operator=conn.execute("SELECT * FROM users WHERE username='operatore'").fetchone()
-        errors=[];self.handler.error_page=lambda title,message,back="/":errors.append(message);self.handler.redirect=lambda path:None
+        invalid_pages=[];self.handler.send_html=lambda content,*a:invalid_pages.append(content);self.handler.redirect=lambda path:None
         self.handler.form=lambda:{"order_recipient_email":"non valida"};self.handler.save_order_settings(admin)
-        self.assertTrue(errors)
+        self.assertIn("indirizzo email destinatario valido",invalid_pages[-1])
         values={"order_recipient_email":"Supplier@Example.com","order_email_subject":"Ordine personalizzato","order_email_template":"Servono {{quantita}} boccioni. {{note_predefinite}}","order_email_signature":"Firma Azienda","order_sender_name":"Ufficio ordini","order_phone":"0571 000000","order_default_notes":"Consegna mattina"}
         self.handler.form=lambda:values;self.handler.save_order_settings(admin)
         with app.db() as conn:
@@ -409,7 +409,8 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("SALUTO", page)
         self.assertNotIn(">CHIAMA<", page)
         self.assertNotIn(">WHATSAPP<", page)
-        self.assertIn('class="icon-btn phone-action-btn"', page)
+        self.assertIn('class="icon-btn phone-action-btn call-btn"', page)
+        self.assertIn('class="icon-btn phone-action-btn whatsapp-btn"', page)
 
     def test_dati_economici_shows_preventivo_items_before_totals(self):
         with app.db() as conn:
@@ -775,12 +776,43 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("ppmRegisterLookupPanel(globalSearch,globalSearchResults)", app.APP_JS)
         self.assertIn("/api/calendario/pratiche/search", app.APP_JS)
 
-    def test_invoice_total_formats_two_decimals_with_euro_sign(self):
+    def test_invoice_total_formats_two_decimals_without_euro_sign_in_value(self):
         js = app.APP_JS
         self.assertIn("function ppmFormatInvoiceTotal(value){", js)
-        self.assertIn("`${number.toFixed(2).replace('.', ',')} €`", js)
+        self.assertIn("return number.toFixed(2).replace('.', ',');", js)
+        self.assertNotIn("`${number.toFixed(2).replace('.', ',')} €`", js)
         self.assertIn("invoiceTotal.value=ppmFormatInvoiceTotal(seedTotal)", js)
         self.assertIn("invoiceTotal.addEventListener('blur'", js)
+
+    def test_invoice_total_accepts_plain_number_with_euro_sign_or_comma(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pid = conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?)""",("CR-INV","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Mario","Cremazione singola","Da saldare","150")).lastrowid
+        for raw_value in ("150,00 €", "150.00", "150,00", "150"):
+            redirects = []; self.handler.redirect = lambda path: redirects.append(path)
+            self.handler.form = lambda value=raw_value: {"invoice_number": "FT-1", "invoice_date": "2026-07-14", "invoice_total": value}
+            self.handler.save_invoice(admin, pid)
+            self.assertTrue(redirects, f"il valore {raw_value!r} avrebbe dovuto essere accettato")
+            with app.db() as conn:
+                saved = conn.execute("SELECT invoice_total FROM practices WHERE id=?", (pid,)).fetchone()["invoice_total"]
+            self.assertEqual(app.money_value(saved), 150.0)
+
+    def test_invoice_total_invalid_text_shows_inline_error_on_practice_page(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pid = conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?)""",("CR-INV2","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Mario","Cremazione singola","Da saldare","150")).lastrowid
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.form = lambda: {"invoice_number": "FT-2", "invoice_date": "2026-07-14", "invoice_total": "abc"}
+        self.handler.save_invoice(admin, pid)
+        self.assertIn("Totale fattura non valido", rendered[-1])
+        self.assertIn("CR-INV2", rendered[-1])
+        with app.db() as conn:
+            unchanged = conn.execute("SELECT invoice_number FROM practices WHERE id=?", (pid,)).fetchone()["invoice_number"]
+        self.assertIsNone(unchanged)
 
     def test_dashboard_quick_action_buttons_share_equal_width(self):
         self.assertIn(".calendar-quick-actions .btn{flex:1}", app.CSS)
@@ -1362,6 +1394,171 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.payment_overview(admin,"da-saldare")
         self.assertIn("Da saldare D",rendered[-1])
         self.assertIn("Totale W e Totale D",rendered[-1])
+
+    def test_must_change_password_gate_and_change_password_flow(self):
+        with app.db() as conn:
+            serena = conn.execute("SELECT * FROM users WHERE username='serena'").fetchone()
+            self.assertEqual(serena["must_change_password"], 1)
+            self.assertTrue(app.password_ok("petparadise", serena["password_hash"]))
+            token = "test-session-token"
+            conn.execute("INSERT INTO sessions VALUES(?,?,?)", (token, serena["id"], app.now()))
+        self.handler.headers = {"Cookie": f"ppm_session={token}"}
+        redirects = []
+        self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.dashboard = lambda user: self.fail("La dashboard non deve essere renderizzata prima del cambio password obbligatorio")
+
+        self.handler.path = "/"
+        self.handler.do_GET()
+        self.assertEqual(redirects, ["/imposta-password"])
+
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/imposta-password"
+        self.handler.do_GET()
+        self.assertIn("Imposta la tua nuova password", rendered[-1])
+
+        self.handler.form = lambda: {"new_password": "nuovapassword123", "confirm_password": "nuovapassword123", "return_to": "/"}
+        redirects.clear()
+        self.handler.do_POST()
+        self.assertEqual(redirects, ["/"])
+
+        with app.db() as conn:
+            updated = conn.execute("SELECT * FROM users WHERE id=?", (serena["id"],)).fetchone()
+        self.assertEqual(updated["must_change_password"], 0)
+        self.assertFalse(app.password_ok("petparadise", updated["password_hash"]))
+        self.assertTrue(app.password_ok("nuovapassword123", updated["password_hash"]))
+
+        dashboard_calls = []
+        self.handler.dashboard = lambda user: dashboard_calls.append(user)
+        redirects.clear()
+        self.handler.path = "/"
+        self.handler.do_GET()
+        self.assertEqual(redirects, [])
+        self.assertEqual(dashboard_calls[0]["id"], serena["id"])
+
+    def test_operator_field_is_automatic_for_non_admin_and_manual_for_admin(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            serena = conn.execute("SELECT * FROM users WHERE username='serena'").fetchone()
+
+        admin_form = app.App._fields_html(self.handler, None, admin)
+        self.assertIn('name="operator_name" required', admin_form)
+        self.assertIn(">SERENA<", admin_form)
+
+        operator_form = app.App._fields_html(self.handler, None, serena)
+        self.assertNotIn("Seleziona operatore", operator_form)
+        self.assertIn('<input type="hidden" name="operator_name" value="SERENA">', operator_form)
+
+        redirects = []
+        self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.form = lambda: {"operator_name": "ALESSIO", "service_type": "Cremazione collettiva", "destination_branch": "Livorno"}
+        self.handler.create_practice(serena)
+        pid = int(redirects[-1].split("/pratiche/")[1])
+        with app.db() as conn:
+            created = conn.execute("SELECT * FROM practices WHERE id=?", (pid,)).fetchone()
+        self.assertEqual(created["operator_name"], "SERENA")
+
+        redirects.clear()
+        self.handler.form = lambda: {"operator_name": "GIANLUCA", "service_type": "Cremazione collettiva", "destination_branch": "Livorno", "return_to": f"/pratiche/{pid}"}
+        self.handler.edit_submit(serena, pid)
+        with app.db() as conn:
+            edited = conn.execute("SELECT * FROM practices WHERE id=?", (pid,)).fetchone()
+        self.assertEqual(edited["operator_name"], "SERENA")
+
+        self.handler.form = lambda: {"updated_at": edited["updated_at"], "changes_json": json.dumps({"operator_name": "FILIPPO", "notes": "Controllo autosave"})}
+        responses = []
+        self.handler.send_json = lambda obj, status=200: responses.append((obj, status))
+        self.handler.practice_autosave(serena, pid)
+        with app.db() as conn:
+            autosaved = conn.execute("SELECT * FROM practices WHERE id=?", (pid,)).fetchone()
+        self.assertEqual(autosaved["operator_name"], "SERENA")
+        self.assertEqual(autosaved["notes"], "Controllo autosave")
+
+        redirects.clear()
+        self.handler.form = lambda: {"operator_name": "GIANLUCA", "service_type": "Cremazione collettiva", "destination_branch": "Livorno"}
+        self.handler.create_practice(admin)
+        admin_pid = int(redirects[-1].split("/pratiche/")[1])
+        with app.db() as conn:
+            admin_created = conn.execute("SELECT * FROM practices WHERE id=?", (admin_pid,)).fetchone()
+        self.assertEqual(admin_created["operator_name"], "GIANLUCA")
+
+    def test_personal_preferences_are_saved_per_user_and_default_unchanged_otherwise(self):
+        with app.db() as conn:
+            serena = conn.execute("SELECT * FROM users WHERE username='serena'").fetchone()
+            alessio = conn.execute("SELECT * FROM users WHERE username='alessio'").fetchone()
+
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/"
+        self.handler.dashboard(alessio)
+        default_page = rendered[-1]
+        for section_text in ("Pratiche / Ritiri", "Pagamenti", "Entrate settimana in corso", "Ultime 10 pratiche per data recupero"):
+            self.assertIn(section_text, default_page)
+        self.assertNotIn("light-theme", default_page.split("<body", 1)[1].split(">", 1)[0])
+
+        redirects = []
+        self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.form = lambda: {
+            "theme": "light",
+            "return_to": "/il-mio-profilo",
+            "dash_show__payments": "1",
+            "dash_pos__payments": "0",
+            "dash_show__recent_practices": "1",
+            "dash_pos__recent_practices": "1",
+            "bottom_slot_1": "Calendario",
+            "bottom_slot_2": "Dashboard",
+            "bottom_slot_3": "Archivio",
+        }
+        self.handler.save_preferences(serena)
+        self.assertEqual(redirects, ["/il-mio-profilo"])
+
+        self.handler.path = "/"
+        self.handler.dashboard(serena)
+        serena_page = rendered[-1]
+        self.assertNotIn("Pratiche / Ritiri", serena_page)
+        self.assertNotIn("Entrate settimana in corso", serena_page)
+        payments_index = serena_page.index('<h2 class="dashboard-heading">Pagamenti</h2>')
+        recent_index = serena_page.index("<h2>Ultime 10 pratiche per data recupero</h2>")
+        self.assertLess(payments_index, recent_index)
+        self.assertIn('class="light-theme"', serena_page.split("<body", 1)[1].split(">", 1)[0])
+
+        self.handler.path = "/"
+        self.handler.dashboard(alessio)
+        alessio_page = rendered[-1]
+        for section_text in ("Pratiche / Ritiri", "Pagamenti", "Entrate settimana in corso", "Ultime 10 pratiche per data recupero"):
+            self.assertIn(section_text, alessio_page)
+        self.assertNotIn("light-theme", alessio_page.split("<body", 1)[1].split(">", 1)[0])
+
+        with app.db() as conn:
+            saved = {row["key"]: row["value"] for row in conn.execute("SELECT key,value FROM user_preferences WHERE user_id=?", (serena["id"],))}
+        self.assertEqual(saved["theme"], "light")
+        self.assertEqual(json.loads(saved["dashboard_sections"]), ["payments", "recent_practices"])
+        self.assertEqual(json.loads(saved["bottom_nav_slots"]), ["Calendario", "Dashboard", "Archivio"])
+
+    def test_profile_page_renders_password_theme_sidebar_and_notification_sections(self):
+        with app.db() as conn:
+            serena = conn.execute("SELECT * FROM users WHERE username='serena'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.profile_page(serena)
+        page = rendered[-1]
+        self.assertIn("Il mio profilo", page)
+        self.assertIn('href="/imposta-password?return_to=/il-mio-profilo"', page)
+        self.assertIn('action="/il-mio-profilo/salva"', page)
+        self.assertIn('action="/impostazioni/notifiche"', page)
+        self.assertIn("Barra di navigazione mobile", page)
+
+    def test_change_password_voluntary_requires_correct_current_password(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.form = lambda: {"current_password": "sbagliata", "new_password": "altranuova123", "confirm_password": "altranuova123", "return_to": "/impostazioni"}
+        self.handler.change_password_submit(admin)
+        self.assertIn("Password attuale non corretta.", rendered[-1])
+        with app.db() as conn:
+            unchanged = conn.execute("SELECT * FROM users WHERE id=?", (admin["id"],)).fetchone()
+        self.assertTrue(app.password_ok("petparadise", unchanged["password_hash"]))
 
 
 if __name__ == "__main__":
