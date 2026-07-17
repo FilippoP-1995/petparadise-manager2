@@ -317,6 +317,97 @@ class PetParadiseTests(unittest.TestCase):
         for expected in ("POSSIBILE ASSISTITA STREAMING", "POSSIBILE CALCO", "POSSIBILE CALCO POLPASTRELLO", "POSSIBILE CALCO NASO"):
             self.assertIn(expected, badges)
 
+    def test_richiesta_animale_speditore_reorder_and_relabel(self):
+        html = self.handler.fields_html()
+        self.assertIn('<label>Servizio *</label><select name="service_type" required>', html)
+        self.assertIn('<label>Specie *</label><input name="species" value="" required>', html)
+        for expected in ('<label>Peso</label>', '<label>Anni</label>', '<label>Mesi</label>', 'name="owner_phone_note"'):
+            self.assertIn(expected, html)
+        species_pos = html.index('name="species"')
+        animal_name_pos = html.index('name="animal_name"')
+        self.assertLess(species_pos, animal_name_pos)
+        selectors = "['[name=\"owner_veterinarian_id\"]','#clientSearch','[name=\"owner_first_name\"]','[name=\"owner_last_name\"]','[name=\"owner_phone\"]','[name=\"owner_phone_2\"]','[name=\"owner_phone_note\"]'"
+        self.assertIn(selectors, app.APP_JS)
+
+    def test_cremazione_collettiva_relaxes_required_fields(self):
+        self.assertIn("const exempt = !!(callBack?.checked || (service && service.value === 'Cremazione collettiva'));", app.APP_JS)
+        no_error = self.handler.validation_error({"service_type": "Cremazione collettiva"})
+        self.assertEqual(no_error, "")
+        self.assertEqual(self.handler.is_complete({"service_type": "Cremazione collettiva"}), 1)
+        error = self.handler.validation_error({"service_type": "Cremazione singola"})
+        self.assertIn("Nome", error)
+
+    def test_calco_naso_polpastrello_type_dropdowns_autofill_price(self):
+        html = self.handler.fields_html()
+        for expected in ('name="nose_cast_type"', 'name="nose_cast_type_2"', 'name="paw_cast_type"'):
+            self.assertIn(expected, html)
+        self.assertIn("NOSE_CAST_OPTIONS=[['Bronzo S',220],['Bronzo M',260],['Bronzo G',300],['Argento S',300],['Argento M',380],['Argento G',500]]", app.APP_JS)
+        self.assertIn("PAW_CAST_OPTIONS=[['Argento',200]]", app.APP_JS)
+        data = self.handler.normalized_fields({"nose_cast_type": "Bronzo M", "nose_cast_type_2": "Argento G", "paw_cast_type": "Argento"})
+        self.assertEqual(data["nose_cast_type"], "Bronzo M")
+        self.assertEqual(data["nose_cast_type_2"], "Argento G")
+        self.assertEqual(data["paw_cast_type"], "Argento")
+
+    def test_accessori_dropdown_reduced_with_conditional_detail_field(self):
+        self.assertIn("const options=['','Braccialetto','Collana','Calco inchiostro']", app.APP_JS)
+        self.assertIn("['Collana','Braccialetto'].includes(select.value)", app.APP_JS)
+        html = self.handler.fields_html()
+        for expected in ('name="accessory_detail"', 'name="accessory_detail_2"'):
+            self.assertIn(expected, html)
+        data = self.handler.normalized_fields({"accessory_detail": "Nome inciso", "accessory_detail_2": "Altro testo"})
+        self.assertEqual(data["accessory_detail"], "Nome inciso")
+        self.assertEqual(data["accessory_detail_2"], "Altro testo")
+
+    def test_totale_w_and_totale_d_groups_are_independent(self):
+        html = self.handler.fields_html()
+        for expected in ('<label>Acconto D €</label><input name="deposit_final"', '<label>Rimanenza D €</label><input name="remaining_final"'):
+            self.assertIn(expected, html)
+        self.assertIn("ESTREMI INVIATI", app.APP_JS)
+        self.assertEqual(app.MONEY_FIELDS.get("deposit_final"), "Acconto D")
+        self.assertEqual(app.MONEY_FIELDS.get("remaining_final"), "Rimanenza D")
+        data = self.handler.normalized_fields({"deposit_final": "50,25", "remaining_final": "100", "estremi_sent": "Si", "send_estremi": "Si"})
+        self.assertEqual(data["deposit_final"], "50.25")
+        self.assertEqual(data["remaining_final"], "100")
+        self.assertEqual(data["estremi_sent"], "Si")
+        self.assertEqual(data["send_estremi"], "", "estremi_sent=Si must clear send_estremi like catalog_sent does")
+        self.assertIn("e.target.name === 'deposit_final'", app.APP_JS)
+        self.assertNotIn("definitive > 0 ? definitive : ppmNumber(totalField ? totalField.value : 0);\n  const remaining", app.APP_JS)
+
+    def test_fare_fattura_unchecked_when_invoice_number_filled(self):
+        self.assertIn("if(makeInvoice&&invoiceNumber.value.trim())makeInvoice.checked=false;", app.APP_JS)
+
+    def test_header_search_result_field_order(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                         owner_first_name,owner_last_name,animal_name,species,estimated_weight,service_type,pickup_date,payment_status)
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                         ("CR-ORDER", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Anna", "Verdi", "Search-Order-Animal", "Gatto", "9", "Cremazione collettiva", "2026-07-20", "Da saldare"))
+        self.handler.path = "/api/calendario/pratiche/search?q=Search-Order-Animal"
+        payload = []
+        self.handler.send_json = lambda obj, status=200: payload.append(obj)
+        self.handler.api_calendar_practices_search(None)
+        result = payload[0]["results"][0]
+        self.assertEqual(result["display"], "20/07/2026 · Search-Order-Animal")
+        self.assertEqual(result["subtitle"], "Anna Verdi · 9 kg · Collettiva · CR-ORDER")
+
+    def test_riepilogo_shows_call_whatsapp_buttons_and_tag_badges(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pid = conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                         owner_first_name,owner_last_name,owner_phone,owner_phone_2,animal_name,species,service_type,payment_status,tag_saluto,data_complete)
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                         ("CR-RIEP", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Luca", "Bianchi", "333 111 2222", "0586 123456", "Fido", "Cane", "Cremazione singola", "Da saldare", "Si", 1)).lastrowid
+        rendered = []
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.path = f"/pratiche/{pid}"
+        self.handler.practice(admin, pid)
+        page = rendered[-1]
+        self.assertIn('href="tel:3331112222"', page)
+        self.assertIn('href="https://wa.me/393331112222"', page)
+        self.assertIn('href="tel:0586123456"', page)
+        self.assertIn("SALUTO", page)
+
     def test_new_budget_invoice_and_transport_fields(self):
         html=self.handler.fields_html()
         for expected in ('name="catalog_sent"','name="payment_method"','name="invoice_number"','name="invoice_date"','name="make_invoice"','Mezzo proprio'):
@@ -624,7 +715,7 @@ class PetParadiseTests(unittest.TestCase):
         js = app.APP_JS
         self.assertIn("function ppmFormatInvoiceTotal(value){", js)
         self.assertIn("`${number.toFixed(2).replace('.', ',')} €`", js)
-        self.assertIn("invoiceTotal.value=ppmFormatInvoiceTotal(total)", js)
+        self.assertIn("invoiceTotal.value=ppmFormatInvoiceTotal(seedTotal)", js)
         self.assertIn("invoiceTotal.addEventListener('blur'", js)
 
     def test_dashboard_quick_action_buttons_share_equal_width(self):
