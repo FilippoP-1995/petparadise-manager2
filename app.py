@@ -64,6 +64,7 @@ MONEY_FIELDS = {
     "price_delivery":"Riconsegna", "price_cast":"Calco", "price_cast_2":"Secondo calco", "price_paw_cast":"Calco polpastrello", "price_paw_cast_2":"Secondo calco polpastrello", "price_nose_cast":"Calco naso", "price_nose_cast_2":"Secondo calco naso", "price_evening":"Serale",
     "price_night":"Notturno", "price_holiday":"Festivo", "price_accessories":"Accessori", "price_accessories_2":"Secondi accessori",
     "total_service":"Totale W", "total_text":"TOTALE D", "deposit":"Acconto", "remaining_balance":"Rimanenza",
+    "deposit_final":"Acconto D", "remaining_final":"Rimanenza D",
 }
 
 COLLABORATORS = {
@@ -408,6 +409,11 @@ def init_db():
             "tag_da_richiamare": "TEXT",
             "price_paw_cast_2": "TEXT",
             "price_nose_cast_2": "TEXT",
+            "nose_cast_type": "TEXT", "nose_cast_type_2": "TEXT", "paw_cast_type": "TEXT",
+            "accessory_detail": "TEXT", "accessory_detail_2": "TEXT",
+            "owner_phone_note": "TEXT",
+            "estremi_sent": "TEXT",
+            "deposit_final": "TEXT", "remaining_final": "TEXT",
             "payment_status": "TEXT DEFAULT 'Da saldare'",
             "payment_amount": "TEXT",
             "origin_veterinarian_id": "INTEGER",
@@ -1008,16 +1014,26 @@ function updateRemainingBalance(){
   const definitiveField = document.querySelector('[name="total_text"]');
   const depositField = document.querySelector('input[name="deposit"]');
   const remainingField = document.querySelector('input[name="remaining_balance"]');
-  if(!remainingField) return;
   const definitive = definitiveField ? ppmNumber(definitiveField.value) : 0;
-  const total = definitive > 0 ? definitive : ppmNumber(totalField ? totalField.value : 0);
-  const remaining = Math.max(0, total - ppmNumber(depositField ? depositField.value : 0));
-  remainingField.value = ppmFormat(remaining);
+  const serviceTotal = ppmNumber(totalField ? totalField.value : 0);
+  if(remainingField){
+    const remaining = Math.max(0, serviceTotal - ppmNumber(depositField ? depositField.value : 0));
+    remainingField.value = ppmFormat(remaining);
+  }
   const invoiceTotal=document.querySelector('input[name="invoice_total"]');
-  if(invoiceTotal?.dataset.autoFilled==='1')invoiceTotal.value=ppmFormatInvoiceTotal(total);
+  if(invoiceTotal?.dataset.autoFilled==='1'){
+    const seedTotal = definitive > 0 ? definitive : serviceTotal;
+    invoiceTotal.value=ppmFormatInvoiceTotal(seedTotal);
+  }
+  const depositFinalField = document.querySelector('input[name="deposit_final"]');
+  const remainingFinalField = document.querySelector('input[name="remaining_final"]');
+  if(remainingFinalField){
+    const remainingFinal = Math.max(0, definitive - ppmNumber(depositFinalField ? depositFinalField.value : 0));
+    remainingFinalField.value = ppmFormat(remainingFinal);
+  }
 }
 function setupNumericBudgetFields(){
-  const names=['price_cremation','price_pickup','price_urn','price_urn_2','price_delivery','price_cast','price_cast_2','price_paw_cast','price_nose_cast','price_evening','price_night','price_holiday','price_accessories','price_accessories_2','total_service','total_text','deposit','remaining_balance'];
+  const names=['price_cremation','price_pickup','price_urn','price_urn_2','price_delivery','price_cast','price_cast_2','price_paw_cast','price_paw_cast_2','price_nose_cast','price_nose_cast_2','price_evening','price_night','price_holiday','price_accessories','price_accessories_2','total_service','total_text','deposit','deposit_final','remaining_balance','remaining_final'];
   names.forEach(function(name){
     const field=document.querySelector(`[name="${name}"]`);
     if(!field) return;
@@ -1067,7 +1083,7 @@ document.addEventListener('input', function(e){
     }
   }
   if(e.target && e.target.matches('[data-preventivo-sum="1"]')) updatePreventivoTotal();
-  if(e.target && (e.target.name === 'deposit' || e.target.name === 'total_service' || e.target.name === 'total_text')) updateRemainingBalance();
+  if(e.target && (e.target.name === 'deposit' || e.target.name === 'total_service' || e.target.name === 'total_text' || e.target.name === 'deposit_final')) updateRemainingBalance();
 });
 function setupZipLookup(){
   const street=document.querySelector('input[name="owner_street"]');
@@ -1204,7 +1220,7 @@ function reorderSenderFields(){
   const section=[...document.querySelectorAll('.section')].find(item=>item.querySelector('h2')?.textContent.trim()==='SPEDITORE');
   const fields=section?.querySelector('.fields');
   if(!fields) return;
-  const selectors=['#clientSearch','[name="owner_veterinarian_id"]','[name="owner_first_name"]','[name="owner_last_name"]','[name="owner_street"]','[name="owner_city"]','[name="owner_province"]','[name="owner_zip"]','[name="owner_phone"]','[name="owner_phone_2"]','[name="owner_tax_code"]'];
+  const selectors=['[name="owner_veterinarian_id"]','#clientSearch','[name="owner_first_name"]','[name="owner_last_name"]','[name="owner_phone"]','[name="owner_phone_2"]','[name="owner_phone_note"]','[name="owner_street"]','[name="owner_city"]','[name="owner_province"]','[name="owner_zip"]','[name="owner_tax_code"]','[name="owner_email"]','[name="owner_company"]','[name="owner_vat"]','[name="owner_notes"]'];
   const ordered=selectors.map(selector=>fields.querySelector(selector)?.closest('.field')).filter(Boolean);
   const remaining=[...fields.children].filter(item=>item.classList.contains('field')&&!ordered.includes(item));
   [...ordered,...remaining].forEach(field=>fields.appendChild(field));
@@ -1267,6 +1283,8 @@ function setupBudgetExtras(){
     totalArea.replaceWith(input); input.closest('.field').querySelector('label').textContent='TOTALE D €';
   }
   const totalService=document.querySelector('input[name="total_service"]'); if(totalService){totalService.readOnly=true;totalService.closest('.field').querySelector('label').textContent='Totale W €';}
+  const depositField_=document.querySelector('input[name="deposit"]'); if(depositField_){depositField_.closest('.field').querySelector('label').textContent='Acconto W €';}
+  const remainingBalanceField_=document.querySelector('input[name="remaining_balance"]'); if(remainingBalanceField_){remainingBalanceField_.closest('.field').querySelector('label').textContent='Rimanenza W €';}
   const urn=document.querySelector('input[name="price_urn"]')?.closest('.field');
   const urn2=wrapField(document.querySelector('input[name="price_urn_2"]'),'Seconda urna €',urn,true); urn2.querySelector('input').dataset.preventivoSum='1';
   const urnNotes2=wrapField(document.querySelector('input[name="urn_notes_2"]'),'Seconda urna - testo libero',urn2,true);
@@ -1281,18 +1299,54 @@ function setupBudgetExtras(){
   const noseCast=document.querySelector('input[name="price_nose_cast"]')?.closest('.field');
   const noseCast2=wrapField(document.querySelector('input[name="price_nose_cast_2"]'),'Secondo calco naso €',noseCast,true); noseCast2.querySelector('input').dataset.preventivoSum='1';
   addButton('+ Aggiungi calco naso',noseCast2,[noseCast2]);
+  const makeCastTypeSelect=(hidden,name,options,priceInput,after,label)=>{
+    const select=document.createElement('select');select.name=name;
+    select.add(new Option('Seleziona tipo',''));
+    options.forEach(([optLabel,price])=>{const opt=new Option(optLabel,optLabel);opt.dataset.price=price;select.add(opt)});
+    select.value=hidden.value||'';hidden.replaceWith(select);
+    select.addEventListener('change',()=>{
+      const opt=select.selectedOptions[0];
+      priceInput.value=(opt&&opt.value)?ppmFormat(Number(opt.dataset.price)):'';
+      priceInput.dispatchEvent(new Event('input',{bubbles:true}));
+    });
+    const wrap=document.createElement('div');wrap.className='field';
+    const lab=document.createElement('label');lab.textContent=label;wrap.append(lab,select);
+    after.parentNode.insertBefore(wrap,after.nextSibling);
+    return wrap;
+  };
+  const NOSE_CAST_OPTIONS=[['Bronzo S',220],['Bronzo M',260],['Bronzo G',300],['Argento S',300],['Argento M',380],['Argento G',500]];
+  const PAW_CAST_OPTIONS=[['Argento',200]];
+  const noseCastTypeHidden=document.querySelector('input[name="nose_cast_type"]');
+  if(noseCastTypeHidden) makeCastTypeSelect(noseCastTypeHidden,'nose_cast_type',NOSE_CAST_OPTIONS,document.querySelector('input[name="price_nose_cast"]'),noseCast,'Tipo calco naso');
+  const noseCastType2Hidden=document.querySelector('input[name="nose_cast_type_2"]');
+  if(noseCastType2Hidden) makeCastTypeSelect(noseCastType2Hidden,'nose_cast_type_2',NOSE_CAST_OPTIONS,document.querySelector('input[name="price_nose_cast_2"]'),noseCast2,'Tipo secondo calco naso');
+  const pawCastTypeHidden=document.querySelector('input[name="paw_cast_type"]');
+  if(pawCastTypeHidden) makeCastTypeSelect(pawCastTypeHidden,'paw_cast_type',PAW_CAST_OPTIONS,document.querySelector('input[name="price_paw_cast"]'),pawCast,'Tipo calco polpastrello');
   const accessoryPrice=document.querySelector('input[name="price_accessories"]')?.closest('.field');
-  const makeAccessorySelect=(hidden,name)=>{const select=document.createElement('select');select.name=name;['','Calco naso','Collana','Braccialetto','Calco inchiostro','Altro'].forEach(value=>{const option=new Option(value||'Seleziona accessorio',value);select.add(option)});select.value=hidden.value;hidden.replaceWith(select);return select;};
+  const makeAccessorySelect=(hidden,name)=>{const select=document.createElement('select');select.name=name;const options=['','Braccialetto','Collana','Calco inchiostro'];if(hidden.value&&!options.includes(hidden.value))options.push(hidden.value);options.forEach(value=>{const option=new Option(value||'Seleziona accessorio',value);select.add(option)});select.value=hidden.value;hidden.replaceWith(select);return select;};
+  const makeAccessoryDetail=(hidden,select)=>{
+    hidden.type='text';hidden.placeholder='Dettaglio (facoltativo)';
+    const wrap=document.createElement('div');wrap.className='field hidden';
+    const lab=document.createElement('label');lab.textContent='Dettaglio accessorio';wrap.append(lab,hidden);
+    const sync=()=>wrap.classList.toggle('hidden',!['Collana','Braccialetto'].includes(select.value));
+    select.addEventListener('change',sync);sync();
+    return wrap;
+  };
   const accessoryTypeHidden=document.querySelector('input[name="accessory_type"]'); const accessoryType=makeAccessorySelect(accessoryTypeHidden,'accessory_type');
   const accessoryTypeWrap=document.createElement('div');accessoryTypeWrap.className='field';accessoryTypeWrap.innerHTML='<label>Tipo accessorio</label>';accessoryTypeWrap.append(accessoryType);
   cast.parentNode.insertBefore(accessoryTypeWrap,cast.nextSibling); accessoryTypeWrap.parentNode.insertBefore(accessoryPrice,accessoryTypeWrap.nextSibling);
+  const accessoryDetailWrap=makeAccessoryDetail(document.querySelector('input[name="accessory_detail"]'),accessoryType);
+  accessoryPrice.parentNode.insertBefore(accessoryDetailWrap,accessoryPrice.nextSibling);
   if(castButton.isConnected) cast.parentNode.insertBefore(castButton,cast.nextSibling);
   const accessoryType2Hidden=document.querySelector('input[name="accessory_type_2"]'); const accessoryType2=makeAccessorySelect(accessoryType2Hidden,'accessory_type_2');
   const accessoryType2Wrap=document.createElement('div');accessoryType2Wrap.className='field hidden';accessoryType2Wrap.innerHTML='<label>Secondo accessorio</label>';accessoryType2Wrap.append(accessoryType2);
-  accessoryPrice.parentNode.insertBefore(accessoryType2Wrap,accessoryPrice.nextSibling);
+  accessoryDetailWrap.parentNode.insertBefore(accessoryType2Wrap,accessoryDetailWrap.nextSibling);
   const accessory2=wrapField(document.querySelector('input[name="price_accessories_2"]'),'Secondi accessori €',accessoryType2Wrap,true); accessory2.querySelector('input').dataset.preventivoSum='1';
-  addButton('+ Aggiungi altri accessori',accessory2,[accessoryType2Wrap,accessory2]);
+  const accessoryDetail2Wrap=makeAccessoryDetail(document.querySelector('input[name="accessory_detail_2"]'),accessoryType2);
+  accessory2.parentNode.insertBefore(accessoryDetail2Wrap,accessory2.nextSibling);
+  addButton('+ Aggiungi altri accessori',accessoryDetail2Wrap,[accessoryType2Wrap,accessory2,accessoryDetail2Wrap]);
   const invoiceNumber=document.querySelector('input[name="invoice_number"]');invoiceNumber.type='text';invoiceNumber.placeholder='Numero fattura';
+  invoiceNumber.addEventListener('input',()=>{const makeInvoice=document.querySelector('input[name="make_invoice"]');if(makeInvoice&&invoiceNumber.value.trim())makeInvoice.checked=false;});
   const invoiceField=document.createElement('div');invoiceField.className='field';invoiceField.innerHTML='<label>Numero fattura</label>';invoiceField.append(invoiceNumber);fields.append(invoiceField);
   const invoiceDate=document.querySelector('input[name="invoice_date"]');invoiceDate.type='date';
   const invoiceDateField=document.createElement('div');invoiceDateField.className='field';invoiceDateField.innerHTML='<label>Data fattura</label>';invoiceDateField.append(invoiceDate);fields.append(invoiceDateField);
@@ -1303,7 +1357,8 @@ function setupBudgetExtras(){
   invoiceTotal.addEventListener('input',()=>invoiceTotal.dataset.autoFilled='0');
   invoiceTotal.addEventListener('blur',()=>{if(invoiceTotal.value.trim())invoiceTotal.value=ppmFormatInvoiceTotal(invoiceTotal.value);});
   if(sendEstremiField)fields.append(sendEstremiField);
-  insertCheck(document.querySelector('input[name="make_invoice"]'),'FARE FATTURA',sendEstremiField||fields.lastElementChild);
+  const estremiSentField=insertCheck(document.querySelector('input[name="estremi_sent"]'),'ESTREMI INVIATI',sendEstremiField||fields.lastElementChild);
+  insertCheck(document.querySelector('input[name="make_invoice"]'),'FARE FATTURA',estremiSentField||sendEstremiField||fields.lastElementChild);
 }
 function arrangeBudgetLayout(){
   const fields=document.querySelector('.section input[name="price_cremation"]')?.closest('.fields');
@@ -1327,19 +1382,21 @@ function arrangeBudgetLayout(){
     rightItems.forEach(node=>{used.add(node);rightCell.append(node)});
     row.append(leftCell,rightCell);workspace.append(row);
   };
-  addRow([field('price_cremation')],[field('use_voucher'),field('payment_status')]);
+  addRow([field('use_voucher')]);
+  addRow([field('price_cremation')],[field('payment_status')]);
   addRow([field('price_pickup')],[field('payment_method')]);
   addRow([urnSearch,priceUrn,urnSearch2,priceUrn2,field('urn_notes_2')],[field('send_catalog'),field('catalog_sent'),button('altra urna')]);
-  addRow([field('price_delivery')]);
   addRow([field('price_cast'),field('price_cast_2')],[button('altro calco')]);
-  addRow([field('price_paw_cast')]);
-  addRow([field('price_nose_cast')]);
+  addRow([field('price_nose_cast'),field('nose_cast_type')],[field('price_nose_cast_2'),field('nose_cast_type_2'),button('calco naso')]);
+  addRow([field('price_paw_cast'),field('paw_cast_type')],[field('price_paw_cast_2'),button('calco polpastrello')]);
+  addRow([field('price_delivery')]);
+  addRow([field('price_holiday')]);
   addRow([field('price_evening')]);
   addRow([field('price_night')]);
-  addRow([field('price_holiday')]);
-  addRow([field('price_accessories'),field('price_accessories_2')],[field('accessory_type'),field('accessory_type_2'),button('altri accessori')]);
-  addRow([field('total_service'),field('deposit'),field('remaining_balance'),field('total_text')]);
-  addRow([field('invoice_number'),field('invoice_date'),field('invoice_total')],[field('send_estremi'),field('make_invoice')]);
+  addRow([field('price_accessories'),field('price_accessories_2')],[field('accessory_type'),field('accessory_detail'),field('accessory_type_2'),field('accessory_detail_2'),button('altri accessori')]);
+  addRow([field('total_service'),field('deposit'),field('remaining_balance')],[field('send_estremi'),field('estremi_sent')]);
+  addRow([field('total_text'),field('deposit_final'),field('remaining_final')]);
+  addRow([field('invoice_number'),field('invoice_date'),field('invoice_total')],[field('make_invoice')]);
   addRow([field('notes')]);
   original.filter(node=>!used.has(node)).forEach(node=>addRow([node]));
   fields.replaceChildren(workspace);fields.classList.add('budget-layout');
@@ -1367,7 +1424,7 @@ function toggleCollectiveVetMode(){
   const service = document.querySelector('select[name="service_type"]');
   const vet = document.querySelector('select[name="veterinarian_id"]');
   const callBack = document.querySelector('input[name="tag_da_richiamare"]');
-  const exempt = !!(callBack?.checked || (service && vet && service.value === 'Cremazione collettiva' && vet.value));
+  const exempt = !!(callBack?.checked || (service && service.value === 'Cremazione collettiva'));
   ['operator_name','request_origin','owner_first_name','owner_last_name','owner_phone','owner_tax_code','owner_street','owner_city','owner_province','owner_zip'].forEach(function(name){
     const field=document.querySelector(`[name="${name}"]`);
     if(field){ field.required = !exempt; }
@@ -4026,9 +4083,13 @@ class App(BaseHTTPRequestHandler):
             for row in rows:
                 owner=" ".join(part for part in (row["owner_first_name"],row["owner_last_name"]) if part).strip()
                 vet=row["clinic_name"] or row["veterinarian_name"] or ""
-                display=" · ".join(part for part in (row["practice_number"],row["animal_name"]) if part)
-                subtitle=" · ".join(part for part in (owner,row["species"],vet) if part)
-                results.append({"practice_id":row["id"],"practice_number":row["practice_number"] or "","animal_name":row["animal_name"] or "","species":row["species"] or "","owner_name":owner,"veterinarian_name":vet,"pickup_date":date_it(row["pickup_date"] or ""),"status":row["status"] or "","display":display,"subtitle":subtitle})
+                pickup_display=date_it(row["pickup_date"] or "")
+                weight=(row["estimated_weight"] or "").strip()
+                service_type=(row["service_type"] or "").strip()
+                service_label={"Cremazione singola":"Singola","Cremazione collettiva":"Collettiva"}.get(service_type,service_type)
+                display=" · ".join(part for part in (pickup_display,row["animal_name"]) if part)
+                subtitle=" · ".join(part for part in (owner,f"{weight} kg" if weight else "",service_label,row["practice_number"]) if part)
+                results.append({"practice_id":row["id"],"practice_number":row["practice_number"] or "","animal_name":row["animal_name"] or "","species":row["species"] or "","owner_name":owner,"veterinarian_name":vet,"pickup_date":pickup_display,"status":row["status"] or "","display":display,"subtitle":subtitle})
             return self.send_json({"ok":True,"query":q,"results":results})
         except Exception as exc:
             print(f"[CALENDAR_PRACTICE_SEARCH] {type(exc).__name__}: {exc}",flush=True)
@@ -4302,20 +4363,21 @@ class App(BaseHTTPRequestHandler):
         catalog_checked='checked' if raw('send_catalog')=="Si" else ''
         catalog_sent_checked='checked' if raw('catalog_sent')=="Si" else ''
         estremi_checked='checked' if raw('send_estremi')=="Si" else ''
+        estremi_sent_checked='checked' if raw('estremi_sent')=="Si" else ''
         make_invoice_checked='checked' if raw('make_invoice')=="Si" else ''
         payment_options=''.join(f'<option {"selected" if raw("payment_status","Da saldare")==state else ""}>{state}</option>' for state in PAYMENT_STATES)
         payment_method_options=''.join(f'<option value="{method}" {"selected" if raw("payment_method")==method else ""}>{method or "Seleziona metodo"}</option>' for method in PAYMENT_METHODS)
         return f'''<section class="section"><h2>Operatore e stati</h2><div class="fields"><div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option><option {selected('operator_name','GIANLUCA')}>GIANLUCA</option></select></div><div class="field"><label>Stato pratica</label><select name="status"><option {selected('status','Ritirato','Ritirato')}>Ritirato</option><option {selected('status','In programma','Ritirato')}>In programma</option><option {selected('status','Cremato','Ritirato')}>Cremato</option><option {selected('status','Da consegnare','Ritirato')}>Da consegnare</option><option {selected('status','Consegnato','Ritirato')}>Consegnato</option><option data-collective-only="1" {selected('status','Smaltito','Ritirato')}>Smaltito</option></select></div></div></section>
         <input type="hidden" name="urn_notes" value="{val('urn_notes')}"><select name="urn_id" class="hidden" aria-hidden="true" tabindex="-1">{urn_options(raw('urn_id'))}</select><small id="urnStockWarning" class="sub hidden"></small>
-        <input type="hidden" name="price_urn_2" value="{val('price_urn_2')}"><input type="hidden" name="urn_notes_2" value="{val('urn_notes_2')}"><select name="urn_id_2" class="hidden" aria-hidden="true" tabindex="-1">{urn_options(raw('urn_id_2'))}</select><small id="urnStockWarning2" class="sub hidden"></small><input type="hidden" name="price_cast_2" value="{val('price_cast_2')}"><input type="hidden" name="price_paw_cast_2" value="{val('price_paw_cast_2')}"><input type="hidden" name="price_nose_cast_2" value="{val('price_nose_cast_2')}"><input type="hidden" name="price_accessories_2" value="{val('price_accessories_2')}"><input type="hidden" name="accessory_type" value="{val('accessory_type')}"><input type="hidden" name="accessory_type_2" value="{val('accessory_type_2')}"><select name="payment_status" class="hidden">{payment_options}</select><select name="payment_method" class="hidden">{payment_method_options}</select><input type="hidden" name="catalog_sent" value="{'Si' if catalog_sent_checked else ''}"><input type="hidden" name="invoice_number" value="{val('invoice_number')}"><input type="hidden" name="invoice_date" value="{val('invoice_date')}"><input type="hidden" name="invoice_total" value="{val('invoice_total')}"><input type="hidden" name="make_invoice" value="{'Si' if make_invoice_checked else ''}">
-        <section class="section"><h2>Richiesta</h2><div class="fields"><div class="field"><label>Servizio</label><select name="service_type"><option {selected('service_type','Da decidere')}>Da decidere</option><option {selected('service_type','Cremazione singola')}>Cremazione singola</option><option {selected('service_type','Cremazione collettiva')}>Cremazione collettiva</option></select></div><div class="field"><label>Origine richiesta *</label><select name="request_origin" required><option {selected('request_origin','Veterinario')}>Veterinario</option><option {selected('request_origin','Privato')}>Privato</option><option value="Consegna in sede" {selected('request_origin','Consegna in sede')}>Consegnato in sede</option><option {selected('request_origin','Collaboratore')}>Collaboratore</option></select></div><div class="field {'hidden' if raw('request_origin')!='Collaboratore' else ''}" id="collaboratorBox"><label>Collaboratore</label><select name="collaborator_name"><option value="">Nessun collaboratore</option><option {selected('collaborator_name','HUMANITAS CROCE VERDE')}>HUMANITAS CROCE VERDE</option></select></div><div class="field"><label>Sede di destinazione</label><select name="destination_branch"><option {selected('destination_branch','Livorno')}>Livorno</option><option {selected('destination_branch','Empoli')}>Empoli</option></select></div><div class="field"><label>Data recupero</label><input type="date" name="pickup_date" value="{val('pickup_date')}"></div></div></section>
-        <section class="section"><h2>SPEDITORE</h2><div class="fields"><input type="hidden" name="client_id" value="{val('client_id')}"><div class="field full lookup"><label>Cerca cliente in anagrafica</label><input id="clientSearch" autocomplete="off" placeholder="Scrivi nome, telefono, email, codice fiscale, città..."><div id="clientResults" class="lookup-results hidden"></div><div id="clientSelected" class="selected-box hidden"><span id="clientSelectedText"></span><button class="btn ghost" type="button" id="clearClientSelection">Cancella selezione</button></div><small class="sub">Se scegli un cliente, i campi vengono compilati automaticamente. Se li modifichi, l'anagrafica non viene aggiornata senza conferma.</small></div><div class="field full"><label>Usa veterinario come speditore</label><select name="owner_veterinarian_id">{owner_vet_options}</select><small class="sub">Compila automaticamente i dati dello speditore. Sul DDT, nel Luogo di origine, verra scritto solo il nome breve del veterinario.</small></div><div class="field"><label>Nome *</label><input name="owner_first_name" value="{val('owner_first_name')}" required></div><div class="field"><label>Cognome *</label><input name="owner_last_name" value="{val('owner_last_name')}" required></div><div class="field"><label>Ragione sociale</label><input name="owner_company" value="{val('owner_company')}"></div><div class="field"><label>Telefono *</label><input type="tel" inputmode="numeric" name="owner_phone" value="{val('owner_phone')}" required></div><div class="field"><label>Secondo telefono</label><input type="tel" inputmode="numeric" name="owner_phone_2" value="{val('owner_phone_2')}"></div><div class="field"><label>Email</label><input type="email" name="owner_email" value="{val('owner_email')}"></div><div class="field"><label>Codice fiscale *</label><input name="owner_tax_code" value="{val('owner_tax_code')}" required></div><div class="field"><label>Partita IVA</label><input name="owner_vat" value="{val('owner_vat')}"></div><div class="field full"><label>Indirizzo *</label><input name="owner_street" value="{val('owner_street') or val('owner_address')}" required></div><div class="field"><label>Comune *</label><input name="owner_city" value="{val('owner_city')}" required></div><div class="field"><label>Provincia *</label><input name="owner_province" value="{val('owner_province')}" maxlength="2" placeholder="Si compila dal comune" required></div><div class="field"><label>CAP *</label><input name="owner_zip" value="{val('owner_zip')}" inputmode="numeric" required></div><div class="field full"><label>Note cliente</label><textarea name="owner_notes" placeholder="Note anagrafiche utili">{val('owner_notes')}</textarea></div></div></section>
+        <input type="hidden" name="price_urn_2" value="{val('price_urn_2')}"><input type="hidden" name="urn_notes_2" value="{val('urn_notes_2')}"><select name="urn_id_2" class="hidden" aria-hidden="true" tabindex="-1">{urn_options(raw('urn_id_2'))}</select><small id="urnStockWarning2" class="sub hidden"></small><input type="hidden" name="price_cast_2" value="{val('price_cast_2')}"><input type="hidden" name="price_paw_cast_2" value="{val('price_paw_cast_2')}"><input type="hidden" name="price_nose_cast_2" value="{val('price_nose_cast_2')}"><input type="hidden" name="price_accessories_2" value="{val('price_accessories_2')}"><input type="hidden" name="accessory_type" value="{val('accessory_type')}"><input type="hidden" name="accessory_type_2" value="{val('accessory_type_2')}"><input type="hidden" name="accessory_detail" value="{val('accessory_detail')}"><input type="hidden" name="accessory_detail_2" value="{val('accessory_detail_2')}"><input type="hidden" name="nose_cast_type" value="{val('nose_cast_type')}"><input type="hidden" name="nose_cast_type_2" value="{val('nose_cast_type_2')}"><input type="hidden" name="paw_cast_type" value="{val('paw_cast_type')}"><select name="payment_status" class="hidden">{payment_options}</select><select name="payment_method" class="hidden">{payment_method_options}</select><input type="hidden" name="catalog_sent" value="{'Si' if catalog_sent_checked else ''}"><input type="hidden" name="estremi_sent" value="{'Si' if estremi_sent_checked else ''}"><input type="hidden" name="invoice_number" value="{val('invoice_number')}"><input type="hidden" name="invoice_date" value="{val('invoice_date')}"><input type="hidden" name="invoice_total" value="{val('invoice_total')}"><input type="hidden" name="make_invoice" value="{'Si' if make_invoice_checked else ''}">
+        <section class="section"><h2>Richiesta</h2><div class="fields"><div class="field"><label>Servizio *</label><select name="service_type" required><option {selected('service_type','Da decidere')}>Da decidere</option><option {selected('service_type','Cremazione singola')}>Cremazione singola</option><option {selected('service_type','Cremazione collettiva')}>Cremazione collettiva</option></select></div><div class="field"><label>Origine richiesta *</label><select name="request_origin" required><option {selected('request_origin','Veterinario')}>Veterinario</option><option {selected('request_origin','Privato')}>Privato</option><option value="Consegna in sede" {selected('request_origin','Consegna in sede')}>Consegnato in sede</option><option {selected('request_origin','Collaboratore')}>Collaboratore</option></select></div><div class="field {'hidden' if raw('request_origin')!='Collaboratore' else ''}" id="collaboratorBox"><label>Collaboratore</label><select name="collaborator_name"><option value="">Nessun collaboratore</option><option {selected('collaborator_name','HUMANITAS CROCE VERDE')}>HUMANITAS CROCE VERDE</option></select></div><div class="field"><label>Sede di destinazione</label><select name="destination_branch"><option {selected('destination_branch','Livorno')}>Livorno</option><option {selected('destination_branch','Empoli')}>Empoli</option></select></div><div class="field"><label>Data recupero</label><input type="date" name="pickup_date" value="{val('pickup_date')}"></div></div></section>
+        <section class="section"><h2>SPEDITORE</h2><div class="fields"><input type="hidden" name="client_id" value="{val('client_id')}"><div class="field full lookup"><label>Cerca cliente in anagrafica</label><input id="clientSearch" autocomplete="off" placeholder="Scrivi nome, telefono, email, codice fiscale, città..."><div id="clientResults" class="lookup-results hidden"></div><div id="clientSelected" class="selected-box hidden"><span id="clientSelectedText"></span><button class="btn ghost" type="button" id="clearClientSelection">Cancella selezione</button></div><small class="sub">Se scegli un cliente, i campi vengono compilati automaticamente. Se li modifichi, l'anagrafica non viene aggiornata senza conferma.</small></div><div class="field full"><label>Usa veterinario come speditore</label><select name="owner_veterinarian_id">{owner_vet_options}</select><small class="sub">Compila automaticamente i dati dello speditore. Sul DDT, nel Luogo di origine, verra scritto solo il nome breve del veterinario.</small></div><div class="field"><label>Nome *</label><input name="owner_first_name" value="{val('owner_first_name')}" required></div><div class="field"><label>Cognome *</label><input name="owner_last_name" value="{val('owner_last_name')}" required></div><div class="field"><label>Ragione sociale</label><input name="owner_company" value="{val('owner_company')}"></div><div class="field"><label>Telefono *</label><input type="tel" inputmode="numeric" name="owner_phone" value="{val('owner_phone')}" required></div><div class="field"><label>Secondo telefono</label><input type="tel" inputmode="numeric" name="owner_phone_2" value="{val('owner_phone_2')}"></div><div class="field"><label>Note telefono</label><input name="owner_phone_note" value="{val('owner_phone_note')}" placeholder="Testo libero"></div><div class="field"><label>Email</label><input type="email" name="owner_email" value="{val('owner_email')}"></div><div class="field"><label>Codice fiscale *</label><input name="owner_tax_code" value="{val('owner_tax_code')}" required></div><div class="field"><label>Partita IVA</label><input name="owner_vat" value="{val('owner_vat')}"></div><div class="field full"><label>Indirizzo *</label><input name="owner_street" value="{val('owner_street') or val('owner_address')}" required></div><div class="field"><label>Comune *</label><input name="owner_city" value="{val('owner_city')}" required></div><div class="field"><label>Provincia *</label><input name="owner_province" value="{val('owner_province')}" maxlength="2" placeholder="Si compila dal comune" required></div><div class="field"><label>CAP *</label><input name="owner_zip" value="{val('owner_zip')}" inputmode="numeric" required></div><div class="field full"><label>Note cliente</label><textarea name="owner_notes" placeholder="Note anagrafiche utili">{val('owner_notes')}</textarea></div></div></section>
         <section class="section"><h2>DESTINATARIO E LUOGO DI DESTINAZIONE</h2><p class="sub">Compilati automaticamente in base alla sede selezionata: Livorno oppure Empoli.</p></section>
         <section class="section"><h2>LUOGO DI ORIGINE</h2><div class="fields"><div class="field"><label>Provenienza</label><select name="provenance"><option value="">Seleziona zona</option>{''.join(f'<option value="{code}" {"selected" if raw("provenance")==code else ""}>{code} · {label}</option>' for code,label in (("L","Livorno"),("E","Empoli"),("V","Viareggio"),("F","Firenze"),("P","Pisa")))}</select></div><div class="field"><label>Luogo di origine</label><select name="origin_mode"><option {selected('origin_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('origin_mode','Veterinario','IDEM SPED')}>Veterinario</option><option {selected('origin_mode','Testo libero','IDEM SPED')}>Testo libero</option></select></div><div class="field lookup"><label>Cerca veterinario o scrivi testo libero</label><input id="originVetSearch" autocomplete="off" placeholder="Nome o iniziali del veterinario"><div id="originVetResults" class="lookup-results hidden"></div><select name="origin_veterinarian_id" class="hidden" aria-hidden="true" tabindex="-1">{origin_vet_options}</select><small class="sub">Seleziona un risultato oppure continua a scrivere liberamente.</small></div><div class="field full"><label>Testo libero / indirizzo diverso</label><input name="origin_text" value="{val('origin_text') or (val('pickup_address') if raw('pickup_address_mode')=='Altro indirizzo' else '')}" placeholder="Nome breve veterinario o indirizzo diverso"></div></div></section>
-        <section class="section"><h2>Animale</h2><div class="fields"><div class="field"><label>Nome</label><input name="animal_name" value="{val('animal_name')}"></div><div class="field"><label>Specie</label><input name="species" value="{val('species')}"></div><div class="field"><label>Peso stimato (kg)</label><input name="estimated_weight" value="{val('estimated_weight')}"></div><div class="field"><label>Età - anni</label><input name="age_years" value="{val('age_years')}"></div><div class="field"><label>Età - mesi</label><input name="age_months" value="{val('age_months')}"></div><div class="field"><label>Microchip</label><input name="microchip" value="{val('microchip')}"></div><div class="field full"><label>Razza</label><input name="breed" value="{val('breed')}"></div></div><button class="btn ghost" type="button" id="showSecondAnimal" style="margin-top:12px;{'display:none' if raw('animal2_name') else ''}">+ Aggiungi altro animale</button><div id="secondAnimalBox" style="display:{'block' if raw('animal2_name') else 'none'};margin-top:14px"><h2>Secondo animale</h2><div class="fields"><div class="field"><label>Nome</label><input name="animal2_name" value="{val('animal2_name')}"></div><div class="field"><label>Specie</label><input name="animal2_species" value="{val('animal2_species')}"></div><div class="field"><label>Peso stimato (kg)</label><input name="animal2_weight" value="{val('animal2_weight')}"></div><div class="field"><label>Microchip</label><input name="animal2_microchip" value="{val('animal2_microchip')}"></div><div class="field full"><label>Razza</label><input name="animal2_breed" value="{val('animal2_breed')}"></div></div></div></section>
+        <section class="section"><h2>Animale</h2><div class="fields"><div class="field"><label>Specie *</label><input name="species" value="{val('species')}" required></div><div class="field"><label>Nome</label><input name="animal_name" value="{val('animal_name')}"></div><div class="field"><label>Peso</label><input name="estimated_weight" value="{val('estimated_weight')}"></div><div class="field"><label>Anni</label><input name="age_years" value="{val('age_years')}"></div><div class="field"><label>Mesi</label><input name="age_months" value="{val('age_months')}"></div><div class="field"><label>Microchip</label><input name="microchip" value="{val('microchip')}"></div><div class="field full"><label>Razza</label><input name="breed" value="{val('breed')}"></div></div><button class="btn ghost" type="button" id="showSecondAnimal" style="margin-top:12px;{'display:none' if raw('animal2_name') else ''}">+ Aggiungi altro animale</button><div id="secondAnimalBox" style="display:{'block' if raw('animal2_name') else 'none'};margin-top:14px"><h2>Secondo animale</h2><div class="fields"><div class="field"><label>Nome</label><input name="animal2_name" value="{val('animal2_name')}"></div><div class="field"><label>Specie</label><input name="animal2_species" value="{val('animal2_species')}"></div><div class="field"><label>Peso stimato (kg)</label><input name="animal2_weight" value="{val('animal2_weight')}"></div><div class="field"><label>Microchip</label><input name="animal2_microchip" value="{val('animal2_microchip')}"></div><div class="field full"><label>Razza</label><input name="animal2_breed" value="{val('animal2_breed')}"></div></div></div></section>
         <section class="section"><h2>AMBULATORIO VETERINARIO</h2><div class="fields"><div class="field full lookup"><label>VETERINARIO</label><input id="vetSearch" autocomplete="off" placeholder="Scrivi per cercare il veterinario"><div id="vetResults" class="lookup-results hidden"></div><select name="veterinarian_id">{vet_options}</select><input type="hidden" name="clinic_name" value="{val('clinic_name')}"><button class="btn ghost" type="button" id="clearVetSelection" style="margin-top:8px">Cancella veterinario</button></div><div class="field"><label>MEDICO VETERINARIO</label><input name="veterinarian_name" value="{val('veterinarian_name')}"></div><div class="field"><label><input type="checkbox" name="voucher_requested" value="Si" {voucher_checked}> BUONO</label><small class="sub">Spunta per assegnare un buono al veterinario selezionato.</small></div></div></section>
         <section class="section"><h2>TRASPORTATORE</h2><div class="fields"><div class="field"><label>Dati trasportatore</label><select name="transporter_mode"><option {selected('transporter_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('transporter_mode','DATI PET PARADISE','IDEM SPED')}>DATI PET PARADISE</option></select></div><div class="field"><label>Mezzo di trasporto</label><select name="transport_method" id="transport_method_quick"><option value="">Seleziona mezzo</option><option {selected('transport_method','Fiat Fiorino')}>Fiat Fiorino</option><option {selected('transport_method','Renault Captur')}>Renault Captur</option><option {selected('transport_method','Dr PK8')}>Dr PK8</option><option {selected('transport_method','Mezzo proprio')}>Mezzo proprio</option></select></div><div class="field"><label>Targa automezzo</label><input name="vehicle_plate" value="{val('vehicle_plate')}" placeholder="Compilata automaticamente, modificabile"></div><div class="field"><label>Temperatura</label><select name="temperature_mode"><option {selected('temperature_mode','Ambiente','Ambiente')}>Ambiente</option><option {selected('temperature_mode','Refrigerato','Ambiente')}>Refrigerato</option><option {selected('temperature_mode','Congelato','Ambiente')}>Congelato</option></select></div><div class="field"><label>Numero colli</label><input name="package_count" value="{val('package_count') or '1'}"></div><div class="field"><label>ID contenitore</label><select name="container_id"><option value="">Seleziona ID contenitore</option><option {selected('container_id','03/2021')}>03/2021</option><option {selected('container_id','04/2021')}>04/2021</option></select></div><div class="field"><label>Numero lotto</label><input name="lot_number" value="{val('lot_number') or '/'}"></div><div class="field"><label>Metodo trattamento</label><input name="treatment_method" value="{val('treatment_method') or '/'}"></div></div></section>
-        <section class="section"><h2>Preventivo</h2><div class="fields"><div class="field"><label>Cremazione €</label><input name="price_cremation" value="{val('price_cremation')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Ritiro €</label><input name="price_pickup" value="{val('price_pickup')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Urna €</label><input name="price_urn" value="{val('price_urn')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label><input type="checkbox" name="send_catalog" value="Si" {catalog_checked} style="width:auto"> INVIARE CATALOGO</label></div><div class="field"><label>Riconsegna €</label><input name="price_delivery" value="{val('price_delivery')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Calco €</label><input name="price_cast" value="{val('price_cast')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Calco polpastrello €</label><input name="price_paw_cast" value="{val('price_paw_cast')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Calco naso €</label><input name="price_nose_cast" value="{val('price_nose_cast')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Serale €</label><input name="price_evening" value="{val('price_evening')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Notturno €</label><input name="price_night" value="{val('price_night')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Festivo €</label><input name="price_holiday" value="{val('price_holiday')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Accessori €</label><input name="price_accessories" value="{val('price_accessories')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Totale servizio €</label><input name="total_service" value="{val('total_service')}" readonly></div><div class="field"><label>Acconto €</label><input name="deposit" value="{val('deposit')}" placeholder="Numero o testo libero"></div><div class="field"><label>Rimanenza €</label><input name="remaining_balance" value="{val('remaining_balance')}" readonly></div><div class="field full"><label>TOTALE D</label><textarea name="total_text" placeholder="Testo libero per note sul totale">{val('total_text')}</textarea></div><div class="field full"><label>NOTE</label><textarea name="notes">{val('notes')}</textarea></div><div class="field"><label><input type="checkbox" name="send_estremi" value="Si" {estremi_checked} style="width:auto"> INVIARE ESTREMI</label></div><div class="field"><label><input type="checkbox" name="use_voucher" value="Si" {use_voucher_checked} style="width:auto"> USA BUONO</label><div id="useVoucherBox" class="selected-box hidden"><span id="useVoucherStatus">Seleziona il veterinario e spunta USA BUONO.</span><select name="used_voucher_id" data-current="{val('used_voucher_id')}" class="hidden"><option value="">Seleziona buono</option></select></div></div></div></section>
+        <section class="section"><h2>Preventivo</h2><div class="fields"><div class="field"><label>Cremazione €</label><input name="price_cremation" value="{val('price_cremation')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Ritiro €</label><input name="price_pickup" value="{val('price_pickup')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Urna €</label><input name="price_urn" value="{val('price_urn')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label><input type="checkbox" name="send_catalog" value="Si" {catalog_checked} style="width:auto"> INVIARE CATALOGO</label></div><div class="field"><label>Riconsegna €</label><input name="price_delivery" value="{val('price_delivery')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Calco €</label><input name="price_cast" value="{val('price_cast')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Calco polpastrello €</label><input name="price_paw_cast" value="{val('price_paw_cast')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Calco naso €</label><input name="price_nose_cast" value="{val('price_nose_cast')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Serale €</label><input name="price_evening" value="{val('price_evening')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Notturno €</label><input name="price_night" value="{val('price_night')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Festivo €</label><input name="price_holiday" value="{val('price_holiday')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Accessori €</label><input name="price_accessories" value="{val('price_accessories')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Totale servizio €</label><input name="total_service" value="{val('total_service')}" readonly></div><div class="field"><label>Acconto €</label><input name="deposit" value="{val('deposit')}" placeholder="Numero o testo libero"></div><div class="field"><label>Rimanenza €</label><input name="remaining_balance" value="{val('remaining_balance')}" readonly></div><div class="field full"><label>TOTALE D</label><textarea name="total_text" placeholder="Testo libero per note sul totale">{val('total_text')}</textarea></div><div class="field"><label>Acconto D €</label><input name="deposit_final" value="{val('deposit_final')}" placeholder="Numero o testo libero"></div><div class="field"><label>Rimanenza D €</label><input name="remaining_final" value="{val('remaining_final')}" readonly></div><div class="field full"><label>NOTE</label><textarea name="notes">{val('notes')}</textarea></div><div class="field"><label><input type="checkbox" name="send_estremi" value="Si" {estremi_checked} style="width:auto"> INVIARE ESTREMI</label></div><div class="field"><label><input type="checkbox" name="use_voucher" value="Si" {use_voucher_checked} style="width:auto"> USA BUONO</label><div id="useVoucherBox" class="selected-box hidden"><span id="useVoucherStatus">Seleziona il veterinario e spunta USA BUONO.</span><select name="used_voucher_id" data-current="{val('used_voucher_id')}" class="hidden"><option value="">Seleziona buono</option></select></div></div></div></section>
         <section class="section"><h2>Etichette operative</h2><div class="fields">{tag_select('tag_assistita','ASSISTITA','tag-red')}{tag_select('tag_possibile_assistita','POSSIBILE ASSISTITA','tag-red')}{tag_select('tag_assistita_streaming','ASSISTITA STREAMING','tag-orange')}{tag_select('tag_possibile_assistita_streaming','POSSIBILE ASSISTITA STREAMING','tag-orange')}{tag_select('tag_saluto','SALUTO','tag-purple')}{tag_select('tag_calco','CALCO','tag-yellow')}{tag_select('tag_possibile_calco','POSSIBILE CALCO','tag-yellow')}{tag_select('tag_calco_urna','CALCO PER URNA','tag-yellow')}{tag_select('tag_calco_paw','CALCO POLPASTRELLO','tag-yellow')}{tag_select('tag_possibile_calco_paw','POSSIBILE CALCO POLPASTRELLO','tag-yellow')}{tag_select('tag_calco_nose','CALCO NASO','tag-yellow')}{tag_select('tag_possibile_calco_nose','POSSIBILE CALCO NASO','tag-yellow')}{tag_select('tag_avvisare','AVVISARE','tag-pink')}{tag_select('tag_da_richiamare','DA RICHIAMARE','tag-blue')}</div></section>
         <section class="section"><h2>Documento e accettazione</h2><div class="fields"><div class="field"><label>Numero documento</label><input name="identity_document_number" value="{val('identity_document_number')}"></div><div class="field"><label>Data rilascio</label><input type="date" name="identity_document_date" value="{val('identity_document_date')}"></div><div class="field full"><label>Luogo firma</label><input name="signing_place" value="{val('signing_place') or val('destination_branch')}"></div></div></section>'''
 
@@ -4333,13 +4395,13 @@ class App(BaseHTTPRequestHandler):
         self.send_html(layout("Nuova pratica",body,user))
 
     def normalized_fields(self,f):
-        keys=["client_id","owner_veterinarian_id","origin_veterinarian_id","operator_name","request_origin","collaborator_name","destination_branch","owner_first_name","owner_last_name","owner_company","owner_phone","owner_phone_2","owner_email","owner_tax_code","owner_vat","owner_notes","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","provenance","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","use_voucher","used_voucher_id","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_possibile_assistita_streaming","tag_saluto","tag_calco","tag_possibile_calco","tag_calco_urna","tag_calco_paw","tag_possibile_calco_paw","tag_calco_nose","tag_possibile_calco_nose","tag_avvisare","tag_da_richiamare","payment_status","payment_method","price_cremation","price_pickup","price_evening","price_urn","send_catalog","catalog_sent","send_estremi","price_delivery","price_night","price_cast","price_paw_cast","price_nose_cast","price_holiday","price_accessories","deposit","remaining_balance","total_service","total_text","invoice_number","invoice_date","invoice_total","make_invoice","identity_document_number","identity_document_date","signing_place"]
+        keys=["client_id","owner_veterinarian_id","origin_veterinarian_id","operator_name","request_origin","collaborator_name","destination_branch","owner_first_name","owner_last_name","owner_company","owner_phone","owner_phone_2","owner_phone_note","owner_email","owner_tax_code","owner_vat","owner_notes","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","provenance","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","use_voucher","used_voucher_id","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_possibile_assistita_streaming","tag_saluto","tag_calco","tag_possibile_calco","tag_calco_urna","tag_calco_paw","tag_possibile_calco_paw","tag_calco_nose","tag_possibile_calco_nose","tag_avvisare","tag_da_richiamare","payment_status","payment_method","price_cremation","price_pickup","price_evening","price_urn","send_catalog","catalog_sent","send_estremi","estremi_sent","price_delivery","price_night","price_cast","price_paw_cast","price_nose_cast","price_holiday","price_accessories","deposit","deposit_final","remaining_balance","remaining_final","total_service","total_text","invoice_number","invoice_date","invoice_total","make_invoice","identity_document_number","identity_document_date","signing_place"]
         data = {k:f.get(k,"").strip() for k in keys}
         data["pickup_time"] = f.get("pickup_time","").strip()
         data["urn_id"] = f.get("urn_id","").strip() or None
         data["urn_id_2"] = f.get("urn_id_2","").strip() or None
         data["urn_notes"] = f.get("urn_notes","").strip()
-        for key in ("price_urn_2","urn_notes_2","price_cast_2","price_paw_cast_2","price_nose_cast_2","price_accessories_2","accessory_type","accessory_type_2"):
+        for key in ("price_urn_2","urn_notes_2","price_cast_2","price_paw_cast_2","price_nose_cast_2","price_accessories_2","accessory_type","accessory_type_2","nose_cast_type","nose_cast_type_2","paw_cast_type","accessory_detail","accessory_detail_2"):
             data[key]=f.get(key,"").strip()
         for key in MONEY_FIELDS:
             value=data.get(key,"").replace(",",".")
@@ -4357,6 +4419,9 @@ class App(BaseHTTPRequestHandler):
         if data["catalog_sent"] == "Si":
             data["send_catalog"] = ""
         data["send_estremi"] = "Si" if data["send_estremi"] == "Si" else ""
+        data["estremi_sent"] = "Si" if data["estremi_sent"] == "Si" else ""
+        if data["estremi_sent"] == "Si":
+            data["send_estremi"] = ""
         data["make_invoice"] = "Si" if data["make_invoice"] == "Si" else ""
         data["use_voucher"] = "Si" if data["use_voucher"] == "Si" else ""
         data["used_voucher_id"] = data["used_voucher_id"] or None
@@ -4487,7 +4552,7 @@ class App(BaseHTTPRequestHandler):
     def is_complete(self,d):
         if d.get("tag_da_richiamare") == "Si":
             return 0
-        if d.get("service_type") == "Cremazione collettiva" and d.get("veterinarian_id"):
+        if d.get("service_type") == "Cremazione collettiva":
             return 1
         required=["operator_name","request_origin","owner_first_name","owner_last_name","owner_phone","owner_tax_code","owner_street","owner_city","owner_province","owner_zip"]
         return int(all(d.get(k) for k in required))
@@ -4498,7 +4563,7 @@ class App(BaseHTTPRequestHandler):
             return "Nel Preventivo sono ammessi solo numeri, con al massimo due decimali: " + ", ".join(invalid_money)
         if d.get("tag_da_richiamare") == "Si":
             return ""
-        if d.get("service_type") == "Cremazione collettiva" and d.get("veterinarian_id"):
+        if d.get("service_type") == "Cremazione collettiva":
             return ""
         labels={
             "operator_name":"Operatore","request_origin":"Richiesta","owner_first_name":"Nome",
@@ -4531,12 +4596,23 @@ class App(BaseHTTPRequestHandler):
         return (p["animal_name"] or "").strip() or "il vostro compagno"
 
     def whatsapp_normalized_phone(self, p):
-        phone=re.sub(r"\D+","",p["owner_phone"] or "")
-        if phone.startswith("00"):
-            phone=phone[2:]
-        if phone and not phone.startswith("39"):
-            phone="39"+phone
-        return phone
+        return self.wa_digits(p["owner_phone"] or "")
+
+    def wa_digits(self, phone):
+        digits=re.sub(r"\D+","",phone or "")
+        if digits.startswith("00"):
+            digits=digits[2:]
+        if digits and not digits.startswith("39"):
+            digits="39"+digits
+        return digits
+
+    def phone_action_buttons(self, phone):
+        phone=(phone or "").strip()
+        if not phone: return ""
+        tel=re.sub(r"[^0-9+]","",phone)
+        wa=self.wa_digits(phone)
+        wa_btn=f'<a class="btn ghost" href="https://wa.me/{wa}" target="_blank" rel="noopener noreferrer">WHATSAPP</a>' if wa else ""
+        return f'{esc(phone)} <a class="btn ghost" href="tel:{esc(tel)}">CHIAMA</a> {wa_btn}'
 
     def whatsapp_payload_for_practice(self, p):
         template=self.whatsapp_template_name(p)
@@ -5075,6 +5151,8 @@ class App(BaseHTTPRequestHandler):
             history=c.execute("SELECT h.*,u.display_name FROM practice_history h LEFT JOIN users u ON u.id=h.user_id WHERE practice_id=? ORDER BY h.created_at DESC",(pid,)).fetchall()
             whatsapp_msg=c.execute("SELECT * FROM whatsapp_messages WHERE practice_id=? ORDER BY created_at DESC LIMIT 1",(pid,)).fetchone()
         if not p:return self.send_error(404)
+        tag_badges_raw=self.tag_badges(p)
+        tag_badges_html='<br>'+tag_badges_raw if 'sub">-' not in tag_badges_raw else ''
         options=''.join(f'<option {"selected" if s==p["status"] else ""}>{esc(s)}</option>' for s in STATES)
         payment_value = p["payment_status"] if "payment_status" in p.keys() and p["payment_status"] else "Da saldare"
         payment_method_value = p["payment_method"] if "payment_method" in p.keys() and p["payment_method"] else "Non indicato"
@@ -5162,7 +5240,7 @@ class App(BaseHTTPRequestHandler):
           {'' if p['data_complete'] else '<div class="flash warning">Questa pratica contiene ancora dati da completare.</div>'}
           <section class="grid practice-layout">
             <div class="grid">
-              <div class="section"><h2>Riepilogo</h2><div class="kvs"><div class="kv"><small>Stato</small><b>{esc(p['status'])}</b><br><span class="badge {payment_cls}">{esc(payment_value)}</span></div><div class="kv"><small>Speditore</small>{esc((p['owner_first_name'] or '')+' '+(p['owner_last_name'] or ''))}<br>{esc(p['owner_phone'])}{('<br>'+esc(p['owner_phone_2'])) if 'owner_phone_2' in p.keys() and p['owner_phone_2'] else ''}</div><div class="kv"><small>Animale</small>{esc(p['species'])} - {esc(p['breed'])}<br>{esc(p['estimated_weight'])} kg{animal_age}</div>{animal2_block}<div class="kv"><small>Sede</small><b>{esc(p['destination_branch'])}</b></div><div class="kv"><small>Origine</small><b>{esc(p['request_origin'])}</b></div><div class="kv"><small>Veterinario</small>{esc(p['clinic_name'])}<br>{esc(p['veterinarian_name'])}</div><div class="kv"><small>Catalogo urna</small><b>{esc(catalog_value)}</b></div><div class="kv"><small>Fattura</small>{esc(invoice_value) or '<span class="sub">Non inserita</span>'}</div></div></div>
+              <div class="section"><h2>Riepilogo</h2><div class="kvs"><div class="kv"><small>Stato</small><b>{esc(p['status'])}</b><br><span class="badge {payment_cls}">{esc(payment_value)}</span>{tag_badges_html}</div><div class="kv"><small>Speditore</small>{esc((p['owner_first_name'] or '')+' '+(p['owner_last_name'] or ''))}<br>{self.phone_action_buttons(p['owner_phone'])}{('<br>'+self.phone_action_buttons(p['owner_phone_2'])) if 'owner_phone_2' in p.keys() and p['owner_phone_2'] else ''}</div><div class="kv"><small>Animale</small>{esc(p['species'])} - {esc(p['breed'])}<br>{esc(p['estimated_weight'])} kg{animal_age}</div>{animal2_block}<div class="kv"><small>Sede</small><b>{esc(p['destination_branch'])}</b></div><div class="kv"><small>Origine</small><b>{esc(p['request_origin'])}</b></div><div class="kv"><small>Veterinario</small>{esc(p['clinic_name'])}<br>{esc(p['veterinarian_name'])}</div><div class="kv"><small>Catalogo urna</small><b>{esc(catalog_value)}</b></div><div class="kv"><small>Fattura</small>{esc(invoice_value) or '<span class="sub">Non inserita</span>'}</div></div></div>
               {economic_block}
               <div class="section"><h2>Firma proprietario</h2><p class="sub">{'Firma salvata.' if p['signature_data'] else 'Firma non ancora salvata.'}</p><a class="btn ghost" href="/pratiche/{pid}/firma">Apri firma</a></div>
               <div class="section"><h2>Stati pratica</h2>{no_whatsapp_note}<form method="post" action="/pratiche/{pid}/stato"><input type="hidden" name="practice_view" value="{esc(practice_view)}"><div class="fields"><div class="field"><label>Avanzamento</label><select name="status">{options}</select></div><div class="field"><label><input type="checkbox" name="no_whatsapp_message" value="Si" {no_whatsapp_checked} style="width:auto"> NO MESSAGGIO</label><small class="sub">Se spuntato, quando la pratica passa a Consegnato non parte il WhatsApp automatico.</small></div><div class="field"><label>Pagamento</label><select name="payment_status">{payment_options}</select></div><div class="field"><label>Numero fattura</label><input name="invoice_number" value="{esc(invoice_value)}" placeholder="Da inserire quando risulta pagato"></div></div><button class="btn" style="margin-top:12px">Aggiorna stati</button></form></div>
