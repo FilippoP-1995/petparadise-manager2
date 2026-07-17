@@ -407,6 +407,70 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('href="https://wa.me/393331112222"', page)
         self.assertIn('href="tel:0586123456"', page)
         self.assertIn("SALUTO", page)
+        self.assertNotIn(">CHIAMA<", page)
+        self.assertNotIn(">WHATSAPP<", page)
+        self.assertIn('class="icon-btn phone-action-btn"', page)
+
+    def test_dati_economici_shows_preventivo_items_before_totals(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pid = conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                         animal_name,species,service_type,payment_status,price_cremation)
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                         ("CR-ECON", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Fido", "Cane", "Cremazione singola", "Da saldare", "150")).lastrowid
+        rendered = []
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.path = f"/pratiche/{pid}"
+        self.handler.practice(admin, pid)
+        page = rendered[-1]
+        estimate_pos = page.index("Voci del preventivo")
+        totals_pos = page.index("Totale pratica")
+        self.assertLess(estimate_pos, totals_pos)
+
+    def test_owner_veterinarian_field_is_a_search_bar(self):
+        html = self.handler.fields_html()
+        self.assertIn('id="ownerVetSearch"', html)
+        self.assertIn('id="ownerVetResults"', html)
+        self.assertIn('<select name="owner_veterinarian_id" class="hidden"', html)
+        self.assertIn("function setupOwnerVetLookup(){", app.APP_JS)
+        self.assertIn("setupOwnerVetLookup();", app.APP_JS)
+
+    def test_clear_client_selection_also_clears_autofilled_fields(self):
+        self.assertIn(
+            "['owner_first_name','owner_last_name','owner_company','owner_phone','owner_phone_2','owner_email','owner_tax_code','owner_vat','owner_street','owner_city','owner_province','owner_zip','owner_notes'].forEach(name=>setField(name,''));",
+            app.APP_JS,
+        )
+
+    def test_invoice_block_positioned_between_estremi_and_totale_d(self):
+        self.assertIn(
+            "addRow([field('total_service'),field('deposit'),field('remaining_balance')],[field('send_estremi'),field('estremi_sent')]);\n"
+            "  addRow([field('invoice_number'),field('invoice_date'),field('invoice_total')],[field('make_invoice')]);\n"
+            "  addRow([field('total_text'),field('deposit_final'),field('remaining_final')]);",
+            app.APP_JS,
+        )
+
+    def test_calco_naso_polpastrello_type_before_price_and_expandable(self):
+        html = self.handler.fields_html()
+        for expected in (
+            'name="nose_cast_type_3"', 'name="nose_cast_type_4"',
+            'name="paw_cast_type_2"', 'name="paw_cast_type_3"', 'name="paw_cast_type_4"',
+            'name="price_nose_cast_3"', 'name="price_nose_cast_4"',
+            'name="price_paw_cast_3"', 'name="price_paw_cast_4"',
+        ):
+            self.assertIn(expected, html)
+        self.assertIn("const setupExpandableCast=(config)=>{", app.APP_JS)
+        self.assertIn("primaryTypeWrap=buildSelect(hiddenType,config.primaryTypeName,config.primaryTypeLabel,priceInput);\n    priceWrap.parentNode.insertBefore(primaryTypeWrap,priceWrap);", app.APP_JS)
+        self.assertIn("addFirstLabel:'+ Aggiungi calco naso', addMoreLabel:'+ Aggiungi altro calco naso',", app.APP_JS)
+        self.assertIn("addFirstLabel:'+ Aggiungi calco polpastrello', addMoreLabel:'+ Aggiungi altro calco polpastrello',", app.APP_JS)
+        self.assertIn("const buttons=(text)=>original.filter(node=>node.matches?.('button')&&node.textContent.includes(text));", app.APP_JS)
+        data = self.handler.normalized_fields({
+            "nose_cast_type_3": "Bronzo G", "price_nose_cast_3": "300",
+            "paw_cast_type_4": "Argento", "price_paw_cast_4": "200,00",
+        })
+        self.assertEqual(data["nose_cast_type_3"], "Bronzo G")
+        self.assertEqual(data["price_nose_cast_3"], "300")
+        self.assertEqual(data["paw_cast_type_4"], "Argento")
+        self.assertEqual(data["price_paw_cast_4"], "200.00")
 
     def test_new_budget_invoice_and_transport_fields(self):
         html=self.handler.fields_html()
