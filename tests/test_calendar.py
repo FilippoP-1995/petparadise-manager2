@@ -447,6 +447,49 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("Apri pratica", rendered[-1])
         self.assertIn("PP-LINK-04", rendered[-1])
 
+    def test_delivery_clinic_hidden_for_riconsegna_in_sede_but_shown_for_riconsegna(self):
+        rendered = []
+        self.handler.path = "/calendario/nuovo"
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+
+        self.handler.calendar_event_form(self.admin, draft=self.event_form("Riconsegna in sede", destination_site="Livorno"))
+        in_sede_html = rendered[-1]
+        clinic_marker = in_sede_html.index('id="calendarDeliveryClinicSearch"')
+        clinic_field_start = in_sede_html.rindex('data-calendar-types="Riconsegna"', 0, clinic_marker)
+        self.assertIn("hidden", in_sede_html[clinic_field_start:clinic_marker])
+        address_marker = in_sede_html.index('name="delivery_address"')
+        address_field_start = in_sede_html.rindex('data-calendar-types="Riconsegna"', 0, address_marker)
+        self.assertIn("hidden", in_sede_html[address_field_start:address_marker])
+
+        self.handler.calendar_event_form(self.admin, draft=self.event_form("Riconsegna"))
+        riconsegna_html = rendered[-1]
+        clinic_marker = riconsegna_html.index('id="calendarDeliveryClinicSearch"')
+        clinic_field_start = riconsegna_html.rindex('data-calendar-types="Riconsegna"', 0, clinic_marker)
+        clinic_field_tag = riconsegna_html[clinic_field_start:clinic_marker]
+        self.assertNotIn("hidden>", clinic_field_tag)
+        self.assertIn('name="delivery_address"', riconsegna_html)
+        address_marker = riconsegna_html.index('name="delivery_address"')
+        address_field_start = riconsegna_html.rindex('data-calendar-types="Riconsegna"', 0, address_marker)
+        self.assertNotIn("hidden>", riconsegna_html[address_field_start:address_marker])
+
+    def test_delivery_animal_search_returns_owner_address_for_auto_fill(self):
+        stamp = datetime.now().isoformat(timespec="seconds")
+        with app.db() as conn:
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   animal_name,owner_first_name,owner_last_name,owner_street,owner_city,pickup_date)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("PP-ADDR-01", "Privato", "Livorno", "Ritirato", stamp, stamp, self.admin["id"],
+                 "Zampina", "Marco", "Neri", "Via dei Fiori 5", "Livorno", "2026-07-10"),
+            )
+        response = {}
+        self.handler.path = "/api/calendario/animali/search?q=zampina"
+        self.handler.send_json = lambda obj, status=200: response.update(obj=obj, status=status)
+        self.handler.api_calendar_animals_search(self.admin)
+        result = response["obj"]["results"][0]
+        self.assertEqual(result["owner_address"], "Via dei Fiori 5, Livorno")
+        self.assertIn("form.delivery_address.value=item.owner_address", app.APP_JS)
+
     def test_form_is_guided_supports_contacts_maps_autocomplete_and_touch_layout(self):
         captured = []
         self.handler.path = "/calendario/nuovo?data=2026-07-15"
