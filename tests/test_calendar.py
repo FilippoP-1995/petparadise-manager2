@@ -314,6 +314,21 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("+ Nuova pratica", pages["current"])
         self.assertIn("+ Nuovo evento", pages["current"])
 
+    def test_non_overlapping_event_keeps_full_width_despite_other_overlaps_same_day(self):
+        self.save(self.event_form("Ritiro", event_status="Da ritirare"))
+        self.save(self.event_form("Appuntamento", title="APPUNTAMENTO FORNITORE", end_time="10:00"))
+        self.save(self.event_form("Appuntamento", title="EVENTO ISOLATO", start_time="14:00", end_time="15:00"))
+        rendered = []
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.path = "/calendario?vista=giorno&data=2026-07-15"
+        self.handler.calendar_page(self.admin)
+        page = rendered[-1]
+        isolated_pos = page.index("EVENTO ISOLATO")
+        card_start = page.rindex('<div class="calendar-timeline-event"', 0, isolated_pos)
+        card_style = page[card_start:isolated_pos]
+        self.assertIn("--event-lanes:1", card_style)
+        self.assertIn("--event-lanes:2", page)
+
     def test_calendar_draft_autosave_has_separate_keys_and_excludes_sensitive_fields(self):
         rendered = []
         self.handler.path = "/calendario/nuovo"

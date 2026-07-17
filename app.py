@@ -61,7 +61,7 @@ PAYMENT_METHODS = [
 
 MONEY_FIELDS = {
     "price_cremation":"Cremazione", "price_pickup":"Ritiro", "price_urn":"Urna", "price_urn_2":"Seconda urna",
-    "price_delivery":"Riconsegna", "price_cast":"Calco", "price_cast_2":"Secondo calco", "price_paw_cast":"Calco polpastrello", "price_paw_cast_2":"Secondo calco polpastrello", "price_nose_cast":"Calco naso", "price_nose_cast_2":"Secondo calco naso", "price_evening":"Serale",
+    "price_delivery":"Riconsegna", "price_cast":"Calco", "price_cast_2":"Secondo calco", "price_paw_cast":"Calco polpastrello", "price_paw_cast_2":"Secondo calco polpastrello", "price_paw_cast_3":"Altro calco polpastrello", "price_paw_cast_4":"Altro calco polpastrello", "price_nose_cast":"Calco naso", "price_nose_cast_2":"Secondo calco naso", "price_nose_cast_3":"Altro calco naso", "price_nose_cast_4":"Altro calco naso", "price_evening":"Serale",
     "price_night":"Notturno", "price_holiday":"Festivo", "price_accessories":"Accessori", "price_accessories_2":"Secondi accessori",
     "total_service":"Totale W", "total_text":"TOTALE D", "deposit":"Acconto", "remaining_balance":"Rimanenza",
     "deposit_final":"Acconto D", "remaining_final":"Rimanenza D",
@@ -409,7 +409,10 @@ def init_db():
             "tag_da_richiamare": "TEXT",
             "price_paw_cast_2": "TEXT",
             "price_nose_cast_2": "TEXT",
-            "nose_cast_type": "TEXT", "nose_cast_type_2": "TEXT", "paw_cast_type": "TEXT",
+            "price_nose_cast_3": "TEXT", "price_nose_cast_4": "TEXT",
+            "price_paw_cast_3": "TEXT", "price_paw_cast_4": "TEXT",
+            "nose_cast_type": "TEXT", "nose_cast_type_2": "TEXT", "nose_cast_type_3": "TEXT", "nose_cast_type_4": "TEXT",
+            "paw_cast_type": "TEXT", "paw_cast_type_2": "TEXT", "paw_cast_type_3": "TEXT", "paw_cast_type_4": "TEXT",
             "accessory_detail": "TEXT", "accessory_detail_2": "TEXT",
             "owner_phone_note": "TEXT",
             "estremi_sent": "TEXT",
@@ -806,7 +809,7 @@ input,select,textarea{background:#0c121b;border-color:#323c4b;color:#f3f5f8}inpu
 /* Premium dashboard layout */
 body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.skip-link{position:fixed;top:8px;left:8px;z-index:200;transform:translateY(-150%);padding:10px 14px;border-radius:9px;background:#fff;color:#111827}.skip-link:focus{transform:none}
 .top{width:212px;padding:20px 14px;background:#0b1220;border-color:#263246}.brand{padding:0 8px 20px}.brand-logo{width:50px;height:50px}.brand-copy{font-size:17px}.nav{gap:3px;overflow-y:auto;padding-right:3px}.nav a,.nav button{min-height:42px;padding:9px 11px;border-radius:10px}.nav a:first-child{background:linear-gradient(90deg,#4a1826,#241523);border-color:#642239}.nav .install-btn{margin-top:8px}.nav .logout{margin-top:12px}
-.app-header{position:fixed;left:212px;right:0;top:0;height:76px;z-index:40;display:flex;align-items:center;justify-content:flex-end;gap:20px;padding:14px 30px;background:#111827e8;border-bottom:1px solid #263246;backdrop-filter:blur(16px)}.header-search{width:min(640px,48vw);display:flex;align-items:center;gap:9px;padding:0 13px;border:1px solid #334155;border-radius:11px;background:#172033}.header-search input{min-height:42px;padding:8px 0;background:transparent;border:0}.header-search input:focus{outline:0}.header-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;width:100%}.icon-btn{display:inline-grid;place-items:center;width:42px;height:42px;padding:0;border:1px solid #334155;border-radius:11px;background:#172033;color:#cbd5e1;cursor:pointer}.icon-btn:hover{color:#fff;border-color:#ef405f}.header-new{gap:7px}.header-actions time{min-width:104px;padding:6px 10px;border:1px solid #334155;border-radius:10px;text-align:center;font-weight:700;background:#172033}.header-actions time small{display:block;color:#94a3b8;font-size:10px;text-transform:capitalize}.wrap{max-width:1600px;margin-left:212px;margin-right:auto;padding:106px 30px 42px}
+.app-header{position:fixed;left:212px;right:0;top:0;height:76px;z-index:40;display:flex;align-items:center;justify-content:flex-end;gap:20px;padding:14px 30px;background:#111827e8;border-bottom:1px solid #263246;backdrop-filter:blur(16px)}.header-search{width:min(640px,48vw);display:flex;align-items:center;gap:9px;padding:0 13px;border:1px solid #334155;border-radius:11px;background:#172033}.header-search input{min-height:42px;padding:8px 0;background:transparent;border:0}.header-search input:focus{outline:0}.header-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;width:100%}.icon-btn{display:inline-grid;place-items:center;width:42px;height:42px;padding:0;border:1px solid #334155;border-radius:11px;background:#172033;color:#cbd5e1;cursor:pointer}.icon-btn:hover{color:#fff;border-color:#ef405f}.phone-action-btn{width:30px;height:30px;border-radius:9px;vertical-align:middle}.phone-action-btn .icon{width:15px;height:15px}.header-new{gap:7px}.header-actions time{min-width:104px;padding:6px 10px;border:1px solid #334155;border-radius:10px;text-align:center;font-weight:700;background:#172033}.header-actions time small{display:block;color:#94a3b8;font-size:10px;text-transform:capitalize}.wrap{max-width:1600px;margin-left:212px;margin-right:auto;padding:106px 30px 42px}
 .dashboard-wrap{max-width:1500px}.welcome{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}.welcome h1{font-size:30px}.welcome p{margin:7px 0 0;color:#94a3b8}.dashboard-heading{margin:24px 0 12px;font-size:15px;color:#dce4ef}.dashboard-states{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.metric-card,.payment-card{position:relative;min-height:126px;display:flex;align-items:center;justify-content:space-between;gap:15px;padding:20px;border:1px solid #334155;border-radius:14px;background:#1f2937;overflow:hidden;box-shadow:0 14px 36px #03071235;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}.metric-card:before,.payment-card:before{content:"";position:absolute;inset:0;background:linear-gradient(120deg,var(--card-glow),transparent 62%);pointer-events:none}.metric-card:hover,.payment-card:hover{transform:translateY(-3px);border-color:#56657a;box-shadow:0 20px 44px #03071260}.metric-copy,.payment-card>span:first-child{position:relative;display:flex;flex-direction:column}.metric-card small,.payment-card small{font-style:normal;color:#e2e8f0}.metric-card strong,.payment-card strong{margin-top:4px;font-size:30px;line-height:1.05}.metric-card em,.payment-card em{margin-top:9px;color:#94a3b8;font-size:12px;font-style:normal}.metric-icon,.activity-icon{position:relative;display:grid;place-items:center;width:46px;height:46px;border-radius:12px;background:var(--icon-bg);color:var(--icon-color);box-shadow:0 8px 22px var(--icon-shadow)}.state-red{--card-glow:#83184375;--icon-bg:#881337;--icon-color:#fb7185;--icon-shadow:#e11d4840}.state-blue{--card-glow:#17255480;--icon-bg:#172554;--icon-color:#60a5fa;--icon-shadow:#2563eb40}.state-purple{--card-glow:#3b076480;--icon-bg:#3b0764;--icon-color:#c084fc;--icon-shadow:#9333ea40}.state-green{--card-glow:#052e2b85;--icon-bg:#064e3b;--icon-color:#4ade80;--icon-shadow:#16a34a40}
 .dashboard-payments{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.payment-card{min-height:116px}.payment-due{--card-glow:#713f123d;--icon-bg:#573713;--icon-color:#fbbf24;--icon-shadow:#f59e0b35}.payment-deposit{--card-glow:#17255465;--icon-bg:#172554;--icon-color:#60a5fa;--icon-shadow:#2563eb35}.payment-paid{--card-glow:#052e2b75;--icon-bg:#064e3b;--icon-color:#4ade80;--icon-shadow:#16a34a35}
 .dashboard-lower{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(350px,.8fr);gap:16px;margin-top:24px}.dashboard-panel{min-height:350px;padding:20px;border:1px solid #334155;border-radius:15px;background:#1f2937;box-shadow:0 18px 48px #03071235}.dashboard-panel>header{display:flex;align-items:flex-start;justify-content:space-between;gap:15px}.dashboard-panel h2{margin:0;font-size:16px}.dashboard-panel header p{margin:8px 0 0;color:#94a3b8}.dashboard-panel header p strong{color:#fff;font-size:21px}.dashboard-panel header a{color:#fb7185;font-size:13px}.income-chart{display:block;width:100%;height:auto;margin-top:14px}.chart-grid line{stroke:#334155;stroke-width:1}.chart-grid text,.chart-dates text{fill:#94a3b8;font-size:11px}.chart-area{fill:url(#incomeArea)}.chart-line{fill:none;stroke:#ef405f;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 5px 8px #ef405f55)}.income-chart circle{fill:#fb7185;stroke:#1f2937;stroke-width:2}
@@ -1033,7 +1036,7 @@ function updateRemainingBalance(){
   }
 }
 function setupNumericBudgetFields(){
-  const names=['price_cremation','price_pickup','price_urn','price_urn_2','price_delivery','price_cast','price_cast_2','price_paw_cast','price_paw_cast_2','price_nose_cast','price_nose_cast_2','price_evening','price_night','price_holiday','price_accessories','price_accessories_2','total_service','total_text','deposit','deposit_final','remaining_balance','remaining_final'];
+  const names=['price_cremation','price_pickup','price_urn','price_urn_2','price_delivery','price_cast','price_cast_2','price_paw_cast','price_paw_cast_2','price_paw_cast_3','price_paw_cast_4','price_nose_cast','price_nose_cast_2','price_nose_cast_3','price_nose_cast_4','price_evening','price_night','price_holiday','price_accessories','price_accessories_2','total_service','total_text','deposit','deposit_final','remaining_balance','remaining_final'];
   names.forEach(function(name){
     const field=document.querySelector(`[name="${name}"]`);
     if(!field) return;
@@ -1293,35 +1296,78 @@ function setupBudgetExtras(){
   const cast=document.querySelector('input[name="price_cast"]')?.closest('.field');
   const cast2=wrapField(document.querySelector('input[name="price_cast_2"]'),'Secondo calco €',cast,true); cast2.querySelector('input').dataset.preventivoSum='1';
   const castButton=addButton('+ Aggiungi altro calco',cast2,[cast2]);
-  const pawCast=document.querySelector('input[name="price_paw_cast"]')?.closest('.field');
-  const pawCast2=wrapField(document.querySelector('input[name="price_paw_cast_2"]'),'Secondo calco polpastrello €',pawCast,true); pawCast2.querySelector('input').dataset.preventivoSum='1';
-  addButton('+ Aggiungi calco polpastrello',pawCast2,[pawCast2]);
-  const noseCast=document.querySelector('input[name="price_nose_cast"]')?.closest('.field');
-  const noseCast2=wrapField(document.querySelector('input[name="price_nose_cast_2"]'),'Secondo calco naso €',noseCast,true); noseCast2.querySelector('input').dataset.preventivoSum='1';
-  addButton('+ Aggiungi calco naso',noseCast2,[noseCast2]);
-  const makeCastTypeSelect=(hidden,name,options,priceInput,after,label)=>{
-    const select=document.createElement('select');select.name=name;
-    select.add(new Option('Seleziona tipo',''));
-    options.forEach(([optLabel,price])=>{const opt=new Option(optLabel,optLabel);opt.dataset.price=price;select.add(opt)});
-    select.value=hidden.value||'';hidden.replaceWith(select);
-    select.addEventListener('change',()=>{
-      const opt=select.selectedOptions[0];
-      priceInput.value=(opt&&opt.value)?ppmFormat(Number(opt.dataset.price)):'';
-      priceInput.dispatchEvent(new Event('input',{bubbles:true}));
+  const setupExpandableCast=(config)=>{
+    const priceInput=document.querySelector(`input[name="${config.primaryPriceName}"]`);
+    if(!priceInput) return;
+    const priceWrap=priceInput.closest('.field');
+    const buildSelect=(hidden,name,label,priceField)=>{
+      const select=document.createElement('select');select.name=name;
+      select.add(new Option('Seleziona tipo',''));
+      config.options.forEach(([optLabel,price])=>{const opt=new Option(optLabel,optLabel);opt.dataset.price=price;select.add(opt)});
+      select.value=hidden.value||'';
+      hidden.replaceWith(select);
+      select.addEventListener('change',()=>{
+        const opt=select.selectedOptions[0];
+        priceField.value=(opt&&opt.value)?ppmFormat(Number(opt.dataset.price)):'';
+        priceField.dispatchEvent(new Event('input',{bubbles:true}));
+      });
+      const wrap=document.createElement('div');wrap.className='field';
+      const lab=document.createElement('label');lab.textContent=label;wrap.append(lab,select);
+      return wrap;
+    };
+    const hiddenType=document.querySelector(`input[name="${config.primaryTypeName}"]`);
+    const primaryTypeWrap=buildSelect(hiddenType,config.primaryTypeName,config.primaryTypeLabel,priceInput);
+    priceWrap.parentNode.insertBefore(primaryTypeWrap,priceWrap);
+    let anchor=priceWrap;
+    const entries=[];
+    config.extraSuffixes.forEach((suffix,idx)=>{
+      const typeName=config.typeFieldBase+suffix, priceName=config.priceFieldBase+suffix;
+      const hiddenTypeExtra=document.querySelector(`input[name="${typeName}"]`);
+      const hiddenPriceExtra=document.querySelector(`input[name="${priceName}"]`);
+      if(!hiddenTypeExtra||!hiddenPriceExtra) return;
+      const labels=idx===0?config.secondLabels:config.moreLabels;
+      hiddenPriceExtra.type='text';hiddenPriceExtra.dataset.preventivoSum='1';
+      const priceWrapExtra=document.createElement('div');priceWrapExtra.className='field hidden';
+      const priceLab=document.createElement('label');priceLab.textContent=labels.price;priceWrapExtra.append(priceLab,hiddenPriceExtra);
+      const typeWrapExtra=buildSelect(hiddenTypeExtra,typeName,labels.type,hiddenPriceExtra);
+      typeWrapExtra.classList.add('hidden');
+      anchor.parentNode.insertBefore(typeWrapExtra,anchor.nextSibling);
+      anchor.parentNode.insertBefore(priceWrapExtra,typeWrapExtra.nextSibling);
+      const btn=document.createElement('button');btn.type='button';btn.className='btn ghost budget-add hidden';
+      btn.textContent=idx===0?config.addFirstLabel:config.addMoreLabel;
+      priceWrapExtra.parentNode.insertBefore(btn,priceWrapExtra.nextSibling);
+      entries.push({typeWrapExtra,priceWrapExtra,btn,hiddenTypeExtra,hiddenPriceExtra});
+      anchor=btn;
     });
-    const wrap=document.createElement('div');wrap.className='field';
-    const lab=document.createElement('label');lab.textContent=label;wrap.append(lab,select);
-    after.parentNode.insertBefore(wrap,after.nextSibling);
-    return wrap;
+    entries.forEach((entry,idx)=>{
+      const reveal=()=>{
+        entry.typeWrapExtra.classList.remove('hidden');
+        entry.priceWrapExtra.classList.remove('hidden');
+        entry.btn.remove();
+        const next=entries[idx+1];
+        if(next) next.btn.classList.remove('hidden');
+      };
+      entry.btn.onclick=reveal;
+      if(idx===0) entry.btn.classList.remove('hidden');
+      if(entry.hiddenTypeExtra.value||entry.hiddenPriceExtra.value) reveal();
+    });
   };
   const NOSE_CAST_OPTIONS=[['Bronzo S',220],['Bronzo M',260],['Bronzo G',300],['Argento S',300],['Argento M',380],['Argento G',500]];
   const PAW_CAST_OPTIONS=[['Argento',200]];
-  const noseCastTypeHidden=document.querySelector('input[name="nose_cast_type"]');
-  if(noseCastTypeHidden) makeCastTypeSelect(noseCastTypeHidden,'nose_cast_type',NOSE_CAST_OPTIONS,document.querySelector('input[name="price_nose_cast"]'),noseCast,'Tipo calco naso');
-  const noseCastType2Hidden=document.querySelector('input[name="nose_cast_type_2"]');
-  if(noseCastType2Hidden) makeCastTypeSelect(noseCastType2Hidden,'nose_cast_type_2',NOSE_CAST_OPTIONS,document.querySelector('input[name="price_nose_cast_2"]'),noseCast2,'Tipo secondo calco naso');
-  const pawCastTypeHidden=document.querySelector('input[name="paw_cast_type"]');
-  if(pawCastTypeHidden) makeCastTypeSelect(pawCastTypeHidden,'paw_cast_type',PAW_CAST_OPTIONS,document.querySelector('input[name="price_paw_cast"]'),pawCast,'Tipo calco polpastrello');
+  setupExpandableCast({
+    primaryPriceName:'price_nose_cast', primaryTypeName:'nose_cast_type', primaryTypeLabel:'Tipo calco naso',
+    typeFieldBase:'nose_cast_type', priceFieldBase:'price_nose_cast', extraSuffixes:['_2','_3','_4'], options:NOSE_CAST_OPTIONS,
+    addFirstLabel:'+ Aggiungi calco naso', addMoreLabel:'+ Aggiungi altro calco naso',
+    secondLabels:{type:'Tipo secondo calco naso',price:'Secondo calco naso €'},
+    moreLabels:{type:'Tipo altro calco naso',price:'Altro calco naso €'},
+  });
+  setupExpandableCast({
+    primaryPriceName:'price_paw_cast', primaryTypeName:'paw_cast_type', primaryTypeLabel:'Tipo calco polpastrello',
+    typeFieldBase:'paw_cast_type', priceFieldBase:'price_paw_cast', extraSuffixes:['_2','_3','_4'], options:PAW_CAST_OPTIONS,
+    addFirstLabel:'+ Aggiungi calco polpastrello', addMoreLabel:'+ Aggiungi altro calco polpastrello',
+    secondLabels:{type:'Tipo di calco polpastrello',price:'Secondo calco polpastrello €'},
+    moreLabels:{type:'Tipo altro calco polpastrello',price:'Altro calco polpastrello €'},
+  });
   const accessoryPrice=document.querySelector('input[name="price_accessories"]')?.closest('.field');
   const makeAccessorySelect=(hidden,name)=>{const select=document.createElement('select');select.name=name;const options=['','Braccialetto','Collana','Calco inchiostro'];if(hidden.value&&!options.includes(hidden.value))options.push(hidden.value);options.forEach(value=>{const option=new Option(value||'Seleziona accessorio',value);select.add(option)});select.value=hidden.value;hidden.replaceWith(select);return select;};
   const makeAccessoryDetail=(hidden,select)=>{
@@ -1367,6 +1413,7 @@ function arrangeBudgetLayout(){
   const used=new Set();
   const field=(name)=>fields.querySelector(`[name="${name}"]`)?.closest('.field');
   const button=(text)=>original.find(node=>node.matches?.('button')&&node.textContent.includes(text));
+  const buttons=(text)=>original.filter(node=>node.matches?.('button')&&node.textContent.includes(text));
   const priceUrn=field('price_urn'),priceUrn2=field('price_urn_2');
   const urnSearch=priceUrn?.previousElementSibling?.classList.contains('lookup')?priceUrn.previousElementSibling:null;
   const urnSearch2=priceUrn2?.previousElementSibling?.classList.contains('lookup')?priceUrn2.previousElementSibling:null;
@@ -1387,16 +1434,16 @@ function arrangeBudgetLayout(){
   addRow([field('price_pickup')],[field('payment_method')]);
   addRow([urnSearch,priceUrn,urnSearch2,priceUrn2,field('urn_notes_2')],[field('send_catalog'),field('catalog_sent'),button('altra urna')]);
   addRow([field('price_cast'),field('price_cast_2')],[button('altro calco')]);
-  addRow([field('price_nose_cast'),field('nose_cast_type')],[field('price_nose_cast_2'),field('nose_cast_type_2'),button('calco naso')]);
-  addRow([field('price_paw_cast'),field('paw_cast_type')],[field('price_paw_cast_2'),button('calco polpastrello')]);
+  addRow([field('nose_cast_type'),field('price_nose_cast'),field('nose_cast_type_2'),field('price_nose_cast_2'),field('nose_cast_type_3'),field('price_nose_cast_3'),field('nose_cast_type_4'),field('price_nose_cast_4')],buttons('calco naso'));
+  addRow([field('paw_cast_type'),field('price_paw_cast'),field('paw_cast_type_2'),field('price_paw_cast_2'),field('paw_cast_type_3'),field('price_paw_cast_3'),field('paw_cast_type_4'),field('price_paw_cast_4')],buttons('calco polpastrello'));
   addRow([field('price_delivery')]);
   addRow([field('price_holiday')]);
   addRow([field('price_evening')]);
   addRow([field('price_night')]);
   addRow([field('price_accessories'),field('price_accessories_2')],[field('accessory_type'),field('accessory_detail'),field('accessory_type_2'),field('accessory_detail_2'),button('altri accessori')]);
   addRow([field('total_service'),field('deposit'),field('remaining_balance')],[field('send_estremi'),field('estremi_sent')]);
-  addRow([field('total_text'),field('deposit_final'),field('remaining_final')]);
   addRow([field('invoice_number'),field('invoice_date'),field('invoice_total')],[field('make_invoice')]);
+  addRow([field('total_text'),field('deposit_final'),field('remaining_final')]);
   addRow([field('notes')]);
   original.filter(node=>!used.has(node)).forEach(node=>addRow([node]));
   fields.replaceChildren(workspace);fields.classList.add('budget-layout');
@@ -1438,6 +1485,7 @@ document.addEventListener('DOMContentLoaded', function(){
   setupClientLookup();
   setupVetLookup();
   setupOriginVetLookup();
+  setupOwnerVetLookup();
   toggleCollectiveVetMode();
   refreshUseVoucherBox();
 });
@@ -1557,6 +1605,7 @@ function setupClientLookup(){
   if(clearBtn){
     clearBtn.addEventListener('click', function(){
       if(clientId) clientId.value='';
+      ['owner_first_name','owner_last_name','owner_company','owner_phone','owner_phone_2','owner_email','owner_tax_code','owner_vat','owner_street','owner_city','owner_province','owner_zip','owner_notes'].forEach(name=>setField(name,''));
       showSelected('');
       input.value='';
       ppmCloseLookupPanel(results);
@@ -1624,6 +1673,59 @@ function setupVetLookup(){
       ppmCloseLookupPanel(results);
     });
   }
+}
+function setupOwnerVetLookup(){
+  const input=document.getElementById('ownerVetSearch');
+  const results=document.getElementById('ownerVetResults');
+  const select=document.querySelector('select[name="owner_veterinarian_id"]');
+  if(!input || !results || !select) return;
+  const fetcher=ppmLookupFetcher();
+  ppmRegisterLookupPanel(input,results);
+  ppmBindLookupEmptyClose(input,results,fetcher);
+  function chooseVet(v){
+    let option=Array.from(select.options).find(o=>o.value===String(v.id));
+    if(!option){
+      option=new Option(v.display || v.clinic_name, v.id);
+      select.appendChild(option);
+    }
+    option.dataset.fullname=v.clinic_name || v.display || '';
+    option.dataset.shortname=v.short_name || v.display || '';
+    option.dataset.address=v.address || '';
+    option.dataset.city=v.city || '';
+    option.dataset.phone=v.phone || '';
+    option.dataset.provenance=v.provenance || '';
+    select.value=String(v.id);
+    select.dispatchEvent(new Event('change', {bubbles:true}));
+    input.value=v.display || v.clinic_name || '';
+    ppmCloseLookupPanel(results);
+  }
+  const search=ppmDebounce(async function(){
+    const q=input.value.trim();
+    if(!q){ ppmCloseLookupPanel(results); return; }
+    if(q.length < 2){ results.innerHTML=lookupHtmlState('Scrivi almeno 2 caratteri'); ppmOpenLookupPanel(results); return; }
+    results.innerHTML=lookupHtmlState('Ricerca in corso...');
+    ppmOpenLookupPanel(results);
+    const {token,signal}=fetcher.start();
+    try{
+      const res=await fetch(`/api/veterinari/search?q=${encodeURIComponent(q)}`, {headers:{'Accept':'application/json'}, signal});
+      const data=await res.json();
+      if(fetcher.stale(token) || input.value.trim()!==q) return;
+      if(!data.ok) throw new Error(data.error || 'Errore');
+      if(!data.results.length){ results.innerHTML=lookupHtmlState('Nessun risultato'); return; }
+      results.innerHTML=data.results.map(function(v){
+        return `<button type="button" class="lookup-item" data-vet='${JSON.stringify(v).replace(/'/g,'&#39;')}'><b>${v.display}</b><small>${v.subtitle || ''}</small><small>ID ${v.id}</small></button>`;
+      }).join('');
+    }catch(err){
+      if(err.name==='AbortError' || fetcher.stale(token)) return;
+      results.innerHTML=lookupHtmlState('Errore di rete durante la ricerca');
+    }
+  }, 300);
+  input.addEventListener('input', search);
+  results.addEventListener('click', function(e){
+    const btn=e.target.closest('.lookup-item');
+    if(!btn) return;
+    chooseVet(JSON.parse(btn.getAttribute('data-vet')));
+  });
 }
 function setupOriginVetLookup(){
   const input=document.getElementById('originVetSearch');
@@ -2168,6 +2270,7 @@ LUCIDE_PATHS = {
     "bell": '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>',
     "sun": '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"/>',
     "search": '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+    "phone": '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>',
 }
 
 
@@ -2827,10 +2930,20 @@ class App(BaseHTTPRequestHandler):
                 if lane==len(lane_ends):lane_ends.append(display_end)
                 else:lane_ends[lane]=display_end
                 placements.append((row,minutes,display_end,lane))
-            lane_count=max(1,len(lane_ends));rendered=[]
-            for row,minutes,display_end,lane in placements:
+            cluster_lane_count=[1]*len(placements);cluster_start=0;cluster_end=None
+            for index,(_,minutes,display_end,_) in enumerate(placements):
+                if cluster_end is not None and minutes>=cluster_end:
+                    count=max(placements[i][3] for i in range(cluster_start,index))+1
+                    for i in range(cluster_start,index):cluster_lane_count[i]=count
+                    cluster_start=index;cluster_end=None
+                cluster_end=display_end if cluster_end is None else max(cluster_end,display_end)
+            if placements:
+                count=max(placements[i][3] for i in range(cluster_start,len(placements)))+1
+                for i in range(cluster_start,len(placements)):cluster_lane_count[i]=count
+            rendered=[]
+            for index,(row,minutes,display_end,lane) in enumerate(placements):
                 top=max(0,(minutes-timeline_start)/60*pixels_per_hour);height=max(44,(display_end-minutes)/60*pixels_per_hour-3)
-                style=f'--event-lane:{lane};--event-lanes:{lane_count};--event-height:{height:.1f}px;top:{top:.1f}px'
+                style=f'--event-lane:{lane};--event-lanes:{cluster_lane_count[index]};--event-height:{height:.1f}px;top:{top:.1f}px'
                 rendered.append(f'<div class="{class_name}" style="{style}">{self.calendar_event_card(row,client_names=client_names,practice_owner_names=practice_owner_names)}</div>')
             return ''.join(rendered)
         timeline_events=positioned_events(selected_date,selected_rows,"calendar-timeline-event")
@@ -4369,9 +4482,9 @@ class App(BaseHTTPRequestHandler):
         payment_method_options=''.join(f'<option value="{method}" {"selected" if raw("payment_method")==method else ""}>{method or "Seleziona metodo"}</option>' for method in PAYMENT_METHODS)
         return f'''<section class="section"><h2>Operatore e stati</h2><div class="fields"><div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option><option {selected('operator_name','GIANLUCA')}>GIANLUCA</option></select></div><div class="field"><label>Stato pratica</label><select name="status"><option {selected('status','Ritirato','Ritirato')}>Ritirato</option><option {selected('status','In programma','Ritirato')}>In programma</option><option {selected('status','Cremato','Ritirato')}>Cremato</option><option {selected('status','Da consegnare','Ritirato')}>Da consegnare</option><option {selected('status','Consegnato','Ritirato')}>Consegnato</option><option data-collective-only="1" {selected('status','Smaltito','Ritirato')}>Smaltito</option></select></div></div></section>
         <input type="hidden" name="urn_notes" value="{val('urn_notes')}"><select name="urn_id" class="hidden" aria-hidden="true" tabindex="-1">{urn_options(raw('urn_id'))}</select><small id="urnStockWarning" class="sub hidden"></small>
-        <input type="hidden" name="price_urn_2" value="{val('price_urn_2')}"><input type="hidden" name="urn_notes_2" value="{val('urn_notes_2')}"><select name="urn_id_2" class="hidden" aria-hidden="true" tabindex="-1">{urn_options(raw('urn_id_2'))}</select><small id="urnStockWarning2" class="sub hidden"></small><input type="hidden" name="price_cast_2" value="{val('price_cast_2')}"><input type="hidden" name="price_paw_cast_2" value="{val('price_paw_cast_2')}"><input type="hidden" name="price_nose_cast_2" value="{val('price_nose_cast_2')}"><input type="hidden" name="price_accessories_2" value="{val('price_accessories_2')}"><input type="hidden" name="accessory_type" value="{val('accessory_type')}"><input type="hidden" name="accessory_type_2" value="{val('accessory_type_2')}"><input type="hidden" name="accessory_detail" value="{val('accessory_detail')}"><input type="hidden" name="accessory_detail_2" value="{val('accessory_detail_2')}"><input type="hidden" name="nose_cast_type" value="{val('nose_cast_type')}"><input type="hidden" name="nose_cast_type_2" value="{val('nose_cast_type_2')}"><input type="hidden" name="paw_cast_type" value="{val('paw_cast_type')}"><select name="payment_status" class="hidden">{payment_options}</select><select name="payment_method" class="hidden">{payment_method_options}</select><input type="hidden" name="catalog_sent" value="{'Si' if catalog_sent_checked else ''}"><input type="hidden" name="estremi_sent" value="{'Si' if estremi_sent_checked else ''}"><input type="hidden" name="invoice_number" value="{val('invoice_number')}"><input type="hidden" name="invoice_date" value="{val('invoice_date')}"><input type="hidden" name="invoice_total" value="{val('invoice_total')}"><input type="hidden" name="make_invoice" value="{'Si' if make_invoice_checked else ''}">
+        <input type="hidden" name="price_urn_2" value="{val('price_urn_2')}"><input type="hidden" name="urn_notes_2" value="{val('urn_notes_2')}"><select name="urn_id_2" class="hidden" aria-hidden="true" tabindex="-1">{urn_options(raw('urn_id_2'))}</select><small id="urnStockWarning2" class="sub hidden"></small><input type="hidden" name="price_cast_2" value="{val('price_cast_2')}"><input type="hidden" name="price_paw_cast_2" value="{val('price_paw_cast_2')}"><input type="hidden" name="price_paw_cast_3" value="{val('price_paw_cast_3')}"><input type="hidden" name="price_paw_cast_4" value="{val('price_paw_cast_4')}"><input type="hidden" name="price_nose_cast_2" value="{val('price_nose_cast_2')}"><input type="hidden" name="price_nose_cast_3" value="{val('price_nose_cast_3')}"><input type="hidden" name="price_nose_cast_4" value="{val('price_nose_cast_4')}"><input type="hidden" name="price_accessories_2" value="{val('price_accessories_2')}"><input type="hidden" name="accessory_type" value="{val('accessory_type')}"><input type="hidden" name="accessory_type_2" value="{val('accessory_type_2')}"><input type="hidden" name="accessory_detail" value="{val('accessory_detail')}"><input type="hidden" name="accessory_detail_2" value="{val('accessory_detail_2')}"><input type="hidden" name="nose_cast_type" value="{val('nose_cast_type')}"><input type="hidden" name="nose_cast_type_2" value="{val('nose_cast_type_2')}"><input type="hidden" name="nose_cast_type_3" value="{val('nose_cast_type_3')}"><input type="hidden" name="nose_cast_type_4" value="{val('nose_cast_type_4')}"><input type="hidden" name="paw_cast_type" value="{val('paw_cast_type')}"><input type="hidden" name="paw_cast_type_2" value="{val('paw_cast_type_2')}"><input type="hidden" name="paw_cast_type_3" value="{val('paw_cast_type_3')}"><input type="hidden" name="paw_cast_type_4" value="{val('paw_cast_type_4')}"><select name="payment_status" class="hidden">{payment_options}</select><select name="payment_method" class="hidden">{payment_method_options}</select><input type="hidden" name="catalog_sent" value="{'Si' if catalog_sent_checked else ''}"><input type="hidden" name="estremi_sent" value="{'Si' if estremi_sent_checked else ''}"><input type="hidden" name="invoice_number" value="{val('invoice_number')}"><input type="hidden" name="invoice_date" value="{val('invoice_date')}"><input type="hidden" name="invoice_total" value="{val('invoice_total')}"><input type="hidden" name="make_invoice" value="{'Si' if make_invoice_checked else ''}">
         <section class="section"><h2>Richiesta</h2><div class="fields"><div class="field"><label>Servizio *</label><select name="service_type" required><option {selected('service_type','Da decidere')}>Da decidere</option><option {selected('service_type','Cremazione singola')}>Cremazione singola</option><option {selected('service_type','Cremazione collettiva')}>Cremazione collettiva</option></select></div><div class="field"><label>Origine richiesta *</label><select name="request_origin" required><option {selected('request_origin','Veterinario')}>Veterinario</option><option {selected('request_origin','Privato')}>Privato</option><option value="Consegna in sede" {selected('request_origin','Consegna in sede')}>Consegnato in sede</option><option {selected('request_origin','Collaboratore')}>Collaboratore</option></select></div><div class="field {'hidden' if raw('request_origin')!='Collaboratore' else ''}" id="collaboratorBox"><label>Collaboratore</label><select name="collaborator_name"><option value="">Nessun collaboratore</option><option {selected('collaborator_name','HUMANITAS CROCE VERDE')}>HUMANITAS CROCE VERDE</option></select></div><div class="field"><label>Sede di destinazione</label><select name="destination_branch"><option {selected('destination_branch','Livorno')}>Livorno</option><option {selected('destination_branch','Empoli')}>Empoli</option></select></div><div class="field"><label>Data recupero</label><input type="date" name="pickup_date" value="{val('pickup_date')}"></div></div></section>
-        <section class="section"><h2>SPEDITORE</h2><div class="fields"><input type="hidden" name="client_id" value="{val('client_id')}"><div class="field full lookup"><label>Cerca cliente in anagrafica</label><input id="clientSearch" autocomplete="off" placeholder="Scrivi nome, telefono, email, codice fiscale, città..."><div id="clientResults" class="lookup-results hidden"></div><div id="clientSelected" class="selected-box hidden"><span id="clientSelectedText"></span><button class="btn ghost" type="button" id="clearClientSelection">Cancella selezione</button></div><small class="sub">Se scegli un cliente, i campi vengono compilati automaticamente. Se li modifichi, l'anagrafica non viene aggiornata senza conferma.</small></div><div class="field full"><label>Usa veterinario come speditore</label><select name="owner_veterinarian_id">{owner_vet_options}</select><small class="sub">Compila automaticamente i dati dello speditore. Sul DDT, nel Luogo di origine, verra scritto solo il nome breve del veterinario.</small></div><div class="field"><label>Nome *</label><input name="owner_first_name" value="{val('owner_first_name')}" required></div><div class="field"><label>Cognome *</label><input name="owner_last_name" value="{val('owner_last_name')}" required></div><div class="field"><label>Ragione sociale</label><input name="owner_company" value="{val('owner_company')}"></div><div class="field"><label>Telefono *</label><input type="tel" inputmode="numeric" name="owner_phone" value="{val('owner_phone')}" required></div><div class="field"><label>Secondo telefono</label><input type="tel" inputmode="numeric" name="owner_phone_2" value="{val('owner_phone_2')}"></div><div class="field"><label>Note telefono</label><input name="owner_phone_note" value="{val('owner_phone_note')}" placeholder="Testo libero"></div><div class="field"><label>Email</label><input type="email" name="owner_email" value="{val('owner_email')}"></div><div class="field"><label>Codice fiscale *</label><input name="owner_tax_code" value="{val('owner_tax_code')}" required></div><div class="field"><label>Partita IVA</label><input name="owner_vat" value="{val('owner_vat')}"></div><div class="field full"><label>Indirizzo *</label><input name="owner_street" value="{val('owner_street') or val('owner_address')}" required></div><div class="field"><label>Comune *</label><input name="owner_city" value="{val('owner_city')}" required></div><div class="field"><label>Provincia *</label><input name="owner_province" value="{val('owner_province')}" maxlength="2" placeholder="Si compila dal comune" required></div><div class="field"><label>CAP *</label><input name="owner_zip" value="{val('owner_zip')}" inputmode="numeric" required></div><div class="field full"><label>Note cliente</label><textarea name="owner_notes" placeholder="Note anagrafiche utili">{val('owner_notes')}</textarea></div></div></section>
+        <section class="section"><h2>SPEDITORE</h2><div class="fields"><input type="hidden" name="client_id" value="{val('client_id')}"><div class="field full lookup"><label>Cerca cliente in anagrafica</label><input id="clientSearch" autocomplete="off" placeholder="Scrivi nome, telefono, email, codice fiscale, città..."><div id="clientResults" class="lookup-results hidden"></div><div id="clientSelected" class="selected-box hidden"><span id="clientSelectedText"></span><button class="btn ghost" type="button" id="clearClientSelection">Cancella selezione</button></div><small class="sub">Se scegli un cliente, i campi vengono compilati automaticamente. Se li modifichi, l'anagrafica non viene aggiornata senza conferma.</small></div><div class="field full lookup"><label>Usa veterinario come speditore</label><input id="ownerVetSearch" autocomplete="off" placeholder="Scrivi per cercare il veterinario"><div id="ownerVetResults" class="lookup-results hidden"></div><select name="owner_veterinarian_id" class="hidden" aria-hidden="true" tabindex="-1">{owner_vet_options}</select><small class="sub">Compila automaticamente i dati dello speditore. Sul DDT, nel Luogo di origine, verra scritto solo il nome breve del veterinario.</small></div><div class="field"><label>Nome *</label><input name="owner_first_name" value="{val('owner_first_name')}" required></div><div class="field"><label>Cognome *</label><input name="owner_last_name" value="{val('owner_last_name')}" required></div><div class="field"><label>Ragione sociale</label><input name="owner_company" value="{val('owner_company')}"></div><div class="field"><label>Telefono *</label><input type="tel" inputmode="numeric" name="owner_phone" value="{val('owner_phone')}" required></div><div class="field"><label>Secondo telefono</label><input type="tel" inputmode="numeric" name="owner_phone_2" value="{val('owner_phone_2')}"></div><div class="field"><label>Note telefono</label><input name="owner_phone_note" value="{val('owner_phone_note')}" placeholder="Testo libero"></div><div class="field"><label>Email</label><input type="email" name="owner_email" value="{val('owner_email')}"></div><div class="field"><label>Codice fiscale *</label><input name="owner_tax_code" value="{val('owner_tax_code')}" required></div><div class="field"><label>Partita IVA</label><input name="owner_vat" value="{val('owner_vat')}"></div><div class="field full"><label>Indirizzo *</label><input name="owner_street" value="{val('owner_street') or val('owner_address')}" required></div><div class="field"><label>Comune *</label><input name="owner_city" value="{val('owner_city')}" required></div><div class="field"><label>Provincia *</label><input name="owner_province" value="{val('owner_province')}" maxlength="2" placeholder="Si compila dal comune" required></div><div class="field"><label>CAP *</label><input name="owner_zip" value="{val('owner_zip')}" inputmode="numeric" required></div><div class="field full"><label>Note cliente</label><textarea name="owner_notes" placeholder="Note anagrafiche utili">{val('owner_notes')}</textarea></div></div></section>
         <section class="section"><h2>DESTINATARIO E LUOGO DI DESTINAZIONE</h2><p class="sub">Compilati automaticamente in base alla sede selezionata: Livorno oppure Empoli.</p></section>
         <section class="section"><h2>LUOGO DI ORIGINE</h2><div class="fields"><div class="field"><label>Provenienza</label><select name="provenance"><option value="">Seleziona zona</option>{''.join(f'<option value="{code}" {"selected" if raw("provenance")==code else ""}>{code} · {label}</option>' for code,label in (("L","Livorno"),("E","Empoli"),("V","Viareggio"),("F","Firenze"),("P","Pisa")))}</select></div><div class="field"><label>Luogo di origine</label><select name="origin_mode"><option {selected('origin_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('origin_mode','Veterinario','IDEM SPED')}>Veterinario</option><option {selected('origin_mode','Testo libero','IDEM SPED')}>Testo libero</option></select></div><div class="field lookup"><label>Cerca veterinario o scrivi testo libero</label><input id="originVetSearch" autocomplete="off" placeholder="Nome o iniziali del veterinario"><div id="originVetResults" class="lookup-results hidden"></div><select name="origin_veterinarian_id" class="hidden" aria-hidden="true" tabindex="-1">{origin_vet_options}</select><small class="sub">Seleziona un risultato oppure continua a scrivere liberamente.</small></div><div class="field full"><label>Testo libero / indirizzo diverso</label><input name="origin_text" value="{val('origin_text') or (val('pickup_address') if raw('pickup_address_mode')=='Altro indirizzo' else '')}" placeholder="Nome breve veterinario o indirizzo diverso"></div></div></section>
         <section class="section"><h2>Animale</h2><div class="fields"><div class="field"><label>Specie *</label><input name="species" value="{val('species')}" required></div><div class="field"><label>Nome</label><input name="animal_name" value="{val('animal_name')}"></div><div class="field"><label>Peso</label><input name="estimated_weight" value="{val('estimated_weight')}"></div><div class="field"><label>Anni</label><input name="age_years" value="{val('age_years')}"></div><div class="field"><label>Mesi</label><input name="age_months" value="{val('age_months')}"></div><div class="field"><label>Microchip</label><input name="microchip" value="{val('microchip')}"></div><div class="field full"><label>Razza</label><input name="breed" value="{val('breed')}"></div></div><button class="btn ghost" type="button" id="showSecondAnimal" style="margin-top:12px;{'display:none' if raw('animal2_name') else ''}">+ Aggiungi altro animale</button><div id="secondAnimalBox" style="display:{'block' if raw('animal2_name') else 'none'};margin-top:14px"><h2>Secondo animale</h2><div class="fields"><div class="field"><label>Nome</label><input name="animal2_name" value="{val('animal2_name')}"></div><div class="field"><label>Specie</label><input name="animal2_species" value="{val('animal2_species')}"></div><div class="field"><label>Peso stimato (kg)</label><input name="animal2_weight" value="{val('animal2_weight')}"></div><div class="field"><label>Microchip</label><input name="animal2_microchip" value="{val('animal2_microchip')}"></div><div class="field full"><label>Razza</label><input name="animal2_breed" value="{val('animal2_breed')}"></div></div></div></section>
@@ -4401,7 +4514,7 @@ class App(BaseHTTPRequestHandler):
         data["urn_id"] = f.get("urn_id","").strip() or None
         data["urn_id_2"] = f.get("urn_id_2","").strip() or None
         data["urn_notes"] = f.get("urn_notes","").strip()
-        for key in ("price_urn_2","urn_notes_2","price_cast_2","price_paw_cast_2","price_nose_cast_2","price_accessories_2","accessory_type","accessory_type_2","nose_cast_type","nose_cast_type_2","paw_cast_type","accessory_detail","accessory_detail_2"):
+        for key in ("price_urn_2","urn_notes_2","price_cast_2","price_paw_cast_2","price_paw_cast_3","price_paw_cast_4","price_nose_cast_2","price_nose_cast_3","price_nose_cast_4","price_accessories_2","accessory_type","accessory_type_2","nose_cast_type","nose_cast_type_2","nose_cast_type_3","nose_cast_type_4","paw_cast_type","paw_cast_type_2","paw_cast_type_3","paw_cast_type_4","accessory_detail","accessory_detail_2"):
             data[key]=f.get(key,"").strip()
         for key in MONEY_FIELDS:
             value=data.get(key,"").replace(",",".")
@@ -4611,8 +4724,8 @@ class App(BaseHTTPRequestHandler):
         if not phone: return ""
         tel=re.sub(r"[^0-9+]","",phone)
         wa=self.wa_digits(phone)
-        wa_btn=f'<a class="btn ghost" href="https://wa.me/{wa}" target="_blank" rel="noopener noreferrer">WHATSAPP</a>' if wa else ""
-        return f'{esc(phone)} <a class="btn ghost" href="tel:{esc(tel)}">CHIAMA</a> {wa_btn}'
+        wa_btn=f'<a class="icon-btn phone-action-btn" href="https://wa.me/{wa}" target="_blank" rel="noopener noreferrer" aria-label="Apri chat WhatsApp">{lucide("message")}</a>' if wa else ""
+        return f'{esc(phone)} <a class="icon-btn phone-action-btn" href="tel:{esc(tel)}" aria-label="Chiama">{lucide("phone")}</a> {wa_btn}'
 
     def whatsapp_payload_for_practice(self, p):
         template=self.whatsapp_template_name(p)
@@ -5214,7 +5327,7 @@ class App(BaseHTTPRequestHandler):
             if raw_value:estimate_rows.append(f'<div class="kv"><small>{label}</small><b>{money_it(money_value(raw_value))}</b></div>')
         urn_summary='<br>'.join(urn_parts) if urn_parts else '<span class="sub">Nessuna urna o prezzo inserito</span>'
         estimate_rows.insert(2,f'<div class="kv"><small>Urna</small>{urn_summary}{catalog_controls}</div>')
-        economic_block=f'''<div class="section"><h2>Dati economici</h2><div class="kvs"><div class="kv"><small>Totale pratica</small><b>{money_it(practice_total)}</b></div><div class="kv"><small>Totale W</small><b>{money_it(total_w)}</b></div><div class="kv"><small>Totale D</small><b>{money_it(total_d) if total_d_raw else "-"}</b></div><div class="kv"><small>Totale pagato {payment_channel(p)}</small><b>{money_it(paid_total)}</b></div><div class="kv"><small>Da pagare {payment_channel(p)}</small><b>{money_it(due_total)}</b></div><div class="kv"><small>Acconto {payment_channel(p)}</small><b>{money_it(deposit_total)}</b></div><div class="kv"><small>Rimanenza {payment_channel(p)}</small><b>{money_it(remaining_total)}</b></div><div class="kv"><small>Stato pagamento</small><b>{esc(payment_value)}</b></div><div class="kv"><small>Metodo</small><b>{esc(payment_method_value)}</b></div></div><div class="economic-estimate"><h3>Voci del preventivo</h3><div class="kvs">{''.join(estimate_rows)}</div></div></div>'''
+        economic_block=f'''<div class="section"><h2>Dati economici</h2><div class="economic-estimate"><h3>Voci del preventivo</h3><div class="kvs">{''.join(estimate_rows)}</div></div><div class="kvs"><div class="kv"><small>Totale pratica</small><b>{money_it(practice_total)}</b></div><div class="kv"><small>Totale W</small><b>{money_it(total_w)}</b></div><div class="kv"><small>Totale D</small><b>{money_it(total_d) if total_d_raw else "-"}</b></div><div class="kv"><small>Totale pagato {payment_channel(p)}</small><b>{money_it(paid_total)}</b></div><div class="kv"><small>Da pagare {payment_channel(p)}</small><b>{money_it(due_total)}</b></div><div class="kv"><small>Acconto {payment_channel(p)}</small><b>{money_it(deposit_total)}</b></div><div class="kv"><small>Rimanenza {payment_channel(p)}</small><b>{money_it(remaining_total)}</b></div><div class="kv"><small>Stato pagamento</small><b>{esc(payment_value)}</b></div><div class="kv"><small>Metodo</small><b>{esc(payment_method_value)}</b></div></div></div>'''
         hist_items=[]
         for h in history:
             old_value=compact_text(h["old_value"]); new_value=compact_text(h["new_value"]); note=compact_text(h["note"])
