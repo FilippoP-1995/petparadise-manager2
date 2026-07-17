@@ -522,6 +522,71 @@ class PetParadiseTests(unittest.TestCase):
         # The old ad-hoc per-function sequence counter was removed, not duplicated further.
         self.assertNotIn("calendarDeliveryAnimalLookupSequence", js)
 
+    def test_lookup_panels_reopen_after_being_closed_once(self):
+        # Regression test: ppmCloseLookupPanel used to set the native `hidden`
+        # attribute, but every "show" path only ever cleared the CSS class, so a
+        # panel closed once (outside click, empty input, selection) could never
+        # be shown again even though classList said it wasn't hidden.
+        js = app.APP_JS
+        self.assertIn("function ppmOpenLookupPanel(panel)", js)
+        self.assertIn("panel.hidden=false", js)
+        # No lookup "show" path should bypass the shared opener by touching
+        # classList directly (that was exactly the source of the bug).
+        self.assertNotIn("results.classList.remove('hidden')", js)
+        self.assertGreaterEqual(js.count("ppmOpenLookupPanel(results)"), 6)
+        # The zone field mixes the native attribute (its own show/hide logic)
+        # with the shared close/open helpers, so both must stay in sync too.
+        self.assertIn("function calendarZoneInput(input){", js)
+        self.assertNotIn("results.hidden=!input.value.trim()||!matches.length", js)
+
+    def test_calendar_time_blur_dispatches_change_for_end_time_sync(self):
+        # Regression test: calendarTimeBlur reformats the typed digits but used
+        # to never fire a change event, so calendarInitDateTimeSync's `change`
+        # listener on start_time could run before (or never see) the final
+        # formatted value, breaking "end follows start" for typed times.
+        js = app.APP_JS
+        self.assertIn("function calendarTimeBlur(input){", js)
+        blur_start = js.index("function calendarTimeBlur(input){")
+        blur_end = js.index("\n", blur_start)
+        blur_body = js[blur_start:blur_end]
+        self.assertIn("input.dispatchEvent(new Event('change',{bubbles:true}))", blur_body)
+
+    def test_day_view_swipe_navigation_removed(self):
+        rendered = []
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.path = "/calendario?vista=giorno"
+        self.handler.calendar_page(admin)
+        page = rendered[-1]
+        self.assertNotIn('class="calendar-day-timeline" data-calendar-swipe', page)
+        self.assertNotIn('class="calendar-day-list" data-calendar-swipe', page)
+
+    def test_header_search_input_uses_16px_font_to_avoid_ios_zoom(self):
+        self.assertIn('.app-header .header-search input{min-width:0;height:40px;min-height:40px;font-size:16px}', app.CSS)
+
+    def test_header_search_has_live_suggestions(self):
+        rendered = []
+        self.handler.send_html = lambda html, *args: rendered.append(html)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.path = "/"
+        self.handler.dashboard(admin)
+        page = rendered[-1]
+        self.assertIn('id="globalSearchResults"', page)
+        self.assertIn("ppmRegisterLookupPanel(globalSearch,globalSearchResults)", app.APP_JS)
+        self.assertIn("/api/calendario/pratiche/search", app.APP_JS)
+
+    def test_invoice_total_formats_two_decimals_with_euro_sign(self):
+        js = app.APP_JS
+        self.assertIn("function ppmFormatInvoiceTotal(value){", js)
+        self.assertIn("`${number.toFixed(2).replace('.', ',')} €`", js)
+        self.assertIn("invoiceTotal.value=ppmFormatInvoiceTotal(total)", js)
+        self.assertIn("invoiceTotal.addEventListener('blur'", js)
+
+    def test_dashboard_quick_action_buttons_share_equal_width(self):
+        self.assertIn(".calendar-quick-actions .btn{flex:1}", app.CSS)
+
     def test_pdf_urn_inventory_is_imported_once_with_exact_totals(self):
         with app.db() as conn:
             rows = conn.execute("SELECT name,material,price,quantity FROM urns WHERE active=1").fetchall()

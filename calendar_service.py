@@ -221,7 +221,7 @@ def normalize_event(form, current=None):
     except ValueError:raise ValueError("Importo non valido")
     return {
       "event_type":event_type,"title":title,"zone":zone,"location_type":_clean(form.get("location_type"),50),
-      "venue_name":_clean(form.get("venue_name"),200),"address":_clean(form.get("address"),500),"phone":_clean(form.get("phone"),50),
+      "venue_name":_clean(form.get("venue_name"),200),"address":_clean(form.get("delivery_address") or form.get("address"),500),"phone":_clean(form.get("phone"),50),
       "veterinarian_id":int(form["veterinarian_id"]) if str(form.get("veterinarian_id") or "").isdigit() else None,
       "veterinarian_name":_clean(form.get("veterinarian_name"),200),"veterinarian_phone":_clean(form.get("veterinarian_phone"),50),
       "veterinarian_address":_clean(form.get("veterinarian_address"),500),"veterinarian_hours":_clean(form.get("veterinarian_hours"),500),
