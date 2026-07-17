@@ -11,7 +11,7 @@ EVENT_TYPES = ("Ritiro", "Ritiro in sede", "Riconsegna", "Riconsegna in sede", "
 PICKUP_STATUSES = ("Da confermare", "Da ritirare", "Ritirato", "Annullato")
 DELIVERY_STATUSES = ("In programma", "Completato")
 PAYMENT_STATUSES = ("Da pagare", "Da saldare", "Pagato")
-CALENDAR_OPERATORS = ("Serena", "Alessio", "Filippo")
+CALENDAR_OPERATORS = ("Serena", "Alessio", "Filippo", "Gianluca")
 DEFAULT_ZONES = (
     "Livorno", "Empoli", "Pisa", "Viareggio", "Firenze", "Sesto Fiorentino",
     "Montelupo", "Pietrasanta", "Lucca", "Castelfiorentino", "Pontedera", "San Miniato",

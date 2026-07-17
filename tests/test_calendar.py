@@ -635,6 +635,32 @@ class OperationalCalendarTests(unittest.TestCase):
         self.handler.create_practice(self.admin)
         self.assertEqual(self.redirected, f'/pratiche/{practice["id"]}')
 
+    def test_calendar_operator_is_automatic_for_non_admin_and_manual_for_admin(self):
+        with app.db() as conn:
+            gianluca = conn.execute("SELECT * FROM users WHERE username='gianluca'").fetchone()
+
+        form = self.event_form("Ritiro", operator_name="Serena")
+        self.handler.form = lambda: form
+        with patch("app.emit_notification", return_value=[]):
+            self.handler.save_calendar_event(gianluca)
+        event_id = int(self.redirected.rsplit("/", 1)[-1])
+        with app.db() as conn:
+            event = conn.execute("SELECT * FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+        self.assertEqual(event["operator_name"], "Gianluca")
+
+        edit_form = self.event_form("Ritiro", operator_name="Filippo")
+        self.handler.form = lambda: edit_form
+        with patch("app.emit_notification", return_value=[]):
+            self.handler.save_calendar_event(gianluca, event_id)
+        with app.db() as conn:
+            edited = conn.execute("SELECT * FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+        self.assertEqual(edited["operator_name"], "Gianluca")
+
+        admin_event_id = self.save(self.event_form("Ritiro", operator_name="Filippo"))
+        with app.db() as conn:
+            admin_event = conn.execute("SELECT * FROM calendar_events WHERE id=?", (admin_event_id,)).fetchone()
+        self.assertEqual(admin_event["operator_name"], "Filippo")
+
     def test_existing_services_remain_untouched_by_calendar_estimates(self):
         before = {}
         with app.db() as conn:

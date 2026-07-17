@@ -470,6 +470,16 @@ def init_db():
         for name, definition in {"category": "TEXT NOT NULL DEFAULT 'Urna'"}.items():
             if name not in urn_existing:
                 c.execute(f"ALTER TABLE urns ADD COLUMN {name} {definition}")
+        users_existing = {row["name"] for row in c.execute("PRAGMA table_info(users)")}
+        if "must_change_password" not in users_existing:
+            c.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0")
+        c.executescript("""
+        CREATE TABLE IF NOT EXISTS user_preferences (
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          key TEXT NOT NULL, value TEXT NOT NULL,
+          PRIMARY KEY(user_id, key)
+        );
+        """)
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_practices_ddt_share_token ON practices(ddt_share_token)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_practices_invoice ON practices(invoice_number,invoice_date)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_due ON whatsapp_messages(status, scheduled_at)")
@@ -590,6 +600,15 @@ def init_db():
                 "INSERT INTO users(username,password_hash,display_name,role) VALUES(?,?,?,?)",
                 ("admin", password_hash("petparadise"), "Amministratore", "admin"),
             )
+        for op_username, op_display_name in (
+            ("serena", "Serena"), ("alessio", "Alessio"),
+            ("filippo", "Filippo"), ("gianluca", "Gianluca"),
+        ):
+            if not c.execute("SELECT 1 FROM users WHERE username=?", (op_username,)).fetchone():
+                c.execute(
+                    "INSERT INTO users(username,password_hash,display_name,role,must_change_password) VALUES(?,?,?,?,1)",
+                    (op_username, password_hash("petparadise"), op_display_name, "operator"),
+                )
         legacy_payments=c.execute("""SELECT * FROM practices p
                                      WHERE NOT EXISTS(SELECT 1 FROM payment_movements m WHERE m.practice_id=p.id)""").fetchall()
         for practice in legacy_payments:
@@ -743,6 +762,30 @@ def safe_return_path(value, fallback="/"):
     return parsed.path+(f"?{parsed.query}" if parsed.query else "")
 
 
+def load_preferences(user_id):
+    with db() as c:
+        return {row["key"]: row["value"] for row in c.execute("SELECT key,value FROM user_preferences WHERE user_id=?", (user_id,))}
+
+
+def parse_preference_list(value, max_len=40):
+    try:
+        data = json.loads(value)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(data, list):
+        return []
+    return [str(item) for item in data[:max_len] if isinstance(item, (str, int, float))]
+
+
+def reorder_by_saved(default_items, saved_keys, key_fn):
+    keys_present = {key_fn(item) for item in default_items}
+    ordered_keys = [k for k in saved_keys if k in keys_present]
+    seen = set(ordered_keys)
+    ordered_keys += [key_fn(item) for item in default_items if key_fn(item) not in seen]
+    by_key = {key_fn(item): item for item in default_items}
+    return [by_key[k] for k in ordered_keys]
+
+
 def persistence_warning():
     if not os.environ.get("PPM_DATA_DIR"):
         return "ATTENZIONE: archivio non persistente. Su Render imposta PPM_DATA_DIR=/var/data e collega un Persistent Disk, altrimenti le pratiche possono sparire al riavvio."
@@ -809,7 +852,7 @@ input,select,textarea{background:#0c121b;border-color:#323c4b;color:#f3f5f8}inpu
 /* Premium dashboard layout */
 body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.skip-link{position:fixed;top:8px;left:8px;z-index:200;transform:translateY(-150%);padding:10px 14px;border-radius:9px;background:#fff;color:#111827}.skip-link:focus{transform:none}
 .top{width:212px;padding:20px 14px;background:#0b1220;border-color:#263246}.brand{padding:0 8px 20px}.brand-logo{width:50px;height:50px}.brand-copy{font-size:17px}.nav{gap:3px;overflow-y:auto;padding-right:3px}.nav a,.nav button{min-height:42px;padding:9px 11px;border-radius:10px}.nav a:first-child{background:linear-gradient(90deg,#4a1826,#241523);border-color:#642239}.nav .install-btn{margin-top:8px}.nav .logout{margin-top:12px}
-.app-header{position:fixed;left:212px;right:0;top:0;height:76px;z-index:40;display:flex;align-items:center;justify-content:flex-end;gap:20px;padding:14px 30px;background:#111827e8;border-bottom:1px solid #263246;backdrop-filter:blur(16px)}.header-search{width:min(640px,48vw);display:flex;align-items:center;gap:9px;padding:0 13px;border:1px solid #334155;border-radius:11px;background:#172033}.header-search input{min-height:42px;padding:8px 0;background:transparent;border:0}.header-search input:focus{outline:0}.header-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;width:100%}.icon-btn{display:inline-grid;place-items:center;width:42px;height:42px;padding:0;border:1px solid #334155;border-radius:11px;background:#172033;color:#cbd5e1;cursor:pointer}.icon-btn:hover{color:#fff;border-color:#ef405f}.phone-action-btn{width:30px;height:30px;border-radius:9px;vertical-align:middle}.phone-action-btn .icon{width:15px;height:15px}.header-new{gap:7px}.header-actions time{min-width:104px;padding:6px 10px;border:1px solid #334155;border-radius:10px;text-align:center;font-weight:700;background:#172033}.header-actions time small{display:block;color:#94a3b8;font-size:10px;text-transform:capitalize}.wrap{max-width:1600px;margin-left:212px;margin-right:auto;padding:106px 30px 42px}
+.app-header{position:fixed;left:212px;right:0;top:0;height:76px;z-index:40;display:flex;align-items:center;justify-content:flex-end;gap:20px;padding:14px 30px;background:#111827e8;border-bottom:1px solid #263246;backdrop-filter:blur(16px)}.header-search{width:min(640px,48vw);display:flex;align-items:center;gap:9px;padding:0 13px;border:1px solid #334155;border-radius:11px;background:#172033}.header-search input{min-height:42px;padding:8px 0;background:transparent;border:0}.header-search input:focus{outline:0}.header-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;width:100%}.icon-btn{display:inline-grid;place-items:center;width:42px;height:42px;padding:0;border:1px solid #334155;border-radius:11px;background:#172033;color:#cbd5e1;cursor:pointer}.icon-btn:hover{color:#fff;border-color:#ef405f}.phone-action-btn{width:30px;height:30px;border-radius:9px;vertical-align:middle}.phone-action-btn .icon{width:15px;height:15px}.phone-action-btn.call-btn{background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;border-color:transparent}.phone-action-btn.call-btn:hover{color:#fff;border-color:transparent;filter:brightness(1.1)}.phone-action-btn.whatsapp-btn{background:linear-gradient(135deg,#22c55e,#15803d);color:#fff;border-color:transparent}.phone-action-btn.whatsapp-btn:hover{color:#fff;border-color:transparent;filter:brightness(1.1)}.header-new{gap:7px}.header-actions time{min-width:104px;padding:6px 10px;border:1px solid #334155;border-radius:10px;text-align:center;font-weight:700;background:#172033}.header-actions time small{display:block;color:#94a3b8;font-size:10px;text-transform:capitalize}.wrap{max-width:1600px;margin-left:212px;margin-right:auto;padding:106px 30px 42px}
 .dashboard-wrap{max-width:1500px}.welcome{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}.welcome h1{font-size:30px}.welcome p{margin:7px 0 0;color:#94a3b8}.dashboard-heading{margin:24px 0 12px;font-size:15px;color:#dce4ef}.dashboard-states{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.metric-card,.payment-card{position:relative;min-height:126px;display:flex;align-items:center;justify-content:space-between;gap:15px;padding:20px;border:1px solid #334155;border-radius:14px;background:#1f2937;overflow:hidden;box-shadow:0 14px 36px #03071235;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}.metric-card:before,.payment-card:before{content:"";position:absolute;inset:0;background:linear-gradient(120deg,var(--card-glow),transparent 62%);pointer-events:none}.metric-card:hover,.payment-card:hover{transform:translateY(-3px);border-color:#56657a;box-shadow:0 20px 44px #03071260}.metric-copy,.payment-card>span:first-child{position:relative;display:flex;flex-direction:column}.metric-card small,.payment-card small{font-style:normal;color:#e2e8f0}.metric-card strong,.payment-card strong{margin-top:4px;font-size:30px;line-height:1.05}.metric-card em,.payment-card em{margin-top:9px;color:#94a3b8;font-size:12px;font-style:normal}.metric-icon,.activity-icon{position:relative;display:grid;place-items:center;width:46px;height:46px;border-radius:12px;background:var(--icon-bg);color:var(--icon-color);box-shadow:0 8px 22px var(--icon-shadow)}.state-red{--card-glow:#83184375;--icon-bg:#881337;--icon-color:#fb7185;--icon-shadow:#e11d4840}.state-blue{--card-glow:#17255480;--icon-bg:#172554;--icon-color:#60a5fa;--icon-shadow:#2563eb40}.state-purple{--card-glow:#3b076480;--icon-bg:#3b0764;--icon-color:#c084fc;--icon-shadow:#9333ea40}.state-green{--card-glow:#052e2b85;--icon-bg:#064e3b;--icon-color:#4ade80;--icon-shadow:#16a34a40}
 .dashboard-payments{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.payment-card{min-height:116px}.payment-due{--card-glow:#713f123d;--icon-bg:#573713;--icon-color:#fbbf24;--icon-shadow:#f59e0b35}.payment-deposit{--card-glow:#17255465;--icon-bg:#172554;--icon-color:#60a5fa;--icon-shadow:#2563eb35}.payment-paid{--card-glow:#052e2b75;--icon-bg:#064e3b;--icon-color:#4ade80;--icon-shadow:#16a34a35}
 .dashboard-lower{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(350px,.8fr);gap:16px;margin-top:24px}.dashboard-panel{min-height:350px;padding:20px;border:1px solid #334155;border-radius:15px;background:#1f2937;box-shadow:0 18px 48px #03071235}.dashboard-panel>header{display:flex;align-items:flex-start;justify-content:space-between;gap:15px}.dashboard-panel h2{margin:0;font-size:16px}.dashboard-panel header p{margin:8px 0 0;color:#94a3b8}.dashboard-panel header p strong{color:#fff;font-size:21px}.dashboard-panel header a{color:#fb7185;font-size:13px}.income-chart{display:block;width:100%;height:auto;margin-top:14px}.chart-grid line{stroke:#334155;stroke-width:1}.chart-grid text,.chart-dates text{fill:#94a3b8;font-size:11px}.chart-area{fill:url(#incomeArea)}.chart-line{fill:none;stroke:#ef405f;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 5px 8px #ef405f55)}.income-chart circle{fill:#fb7185;stroke:#1f2937;stroke-width:2}
@@ -819,7 +862,7 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 .dashboard-recent{margin-top:26px}.dashboard-recent .titlebar{margin-bottom:12px}.dashboard-recent .titlebar a{color:#fb7185}.load-previous-month{display:flex;justify-content:center;padding:8px 0 24px}.load-previous-month .btn{width:auto;min-width:240px}.budget-add{align-self:end;width:auto!important;min-height:42px;margin-top:auto}.budget-layout{display:block}.budget-workspace{display:grid;gap:12px}.budget-row{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(270px,.75fr);gap:16px;padding:12px;border:1px solid #334155;border-radius:13px;background:#11192566}.budget-cell{display:grid;align-content:start;gap:10px;min-width:0}.budget-cell-right .modern-check{min-height:42px}.budget-cell-right .field{min-width:0}.budget-cell:empty{display:none}.economic-estimate{margin-top:20px;padding-top:18px;border-top:1px solid #3b4658}.economic-estimate h3{margin:0 0 12px;font-size:15px}.catalog-summary-form{display:grid;gap:8px;margin-top:9px}.catalog-summary-form .modern-check{min-height:40px;padding:8px 10px}.light-theme .budget-row{border-color:#cbd5e1;background:#f8fafc}.light-theme .economic-estimate{border-color:#cbd5e1}
 *:focus-visible{outline:3px solid #fb7185!important;outline-offset:3px}.light-theme{background:#eef2f7;color:#111827}.light-theme .app-header,.light-theme .top{background:#fff;color:#111827}.light-theme .dashboard-panel,.light-theme .metric-card,.light-theme .payment-card,.light-theme .section,.light-theme .tablebox{background:#fff;color:#111827}.light-theme .header-search,.light-theme .icon-btn,.light-theme .header-actions time{background:#f8fafc;color:#111827}.light-theme .welcome p,.light-theme .metric-card em,.light-theme .payment-card em,.light-theme .activity-item small,.light-theme .activity-item time{color:#64748b}
 @media(max-width:1100px){.dashboard-states{grid-template-columns:repeat(2,1fr)}.dashboard-lower{grid-template-columns:1fr}.header-actions time{display:none}}
-@media(max-width:900px){body{min-height:100dvh;padding-bottom:calc(82px + var(--safe-bottom))}#main-content{min-height:100dvh;padding-left:var(--safe-left);padding-right:var(--safe-right)}.top{position:fixed;left:var(--safe-left);right:var(--safe-right);top:0;width:auto;height:calc(64px + var(--safe-top));min-height:calc(64px + var(--safe-top));padding:calc(7px + var(--safe-top)) 14px 7px;border-right:0;border-bottom:1px solid #263246}.top .nav{display:none}.brand-copy{display:inline}.brand-logo{width:42px;height:42px}.app-header{position:fixed;left:auto;right:calc(10px + var(--safe-right));top:calc(7px + var(--safe-top));width:auto;height:50px;padding:0;background:transparent;border:0;backdrop-filter:none}.header-search,.header-actions time,.header-new span{display:none}.header-actions{gap:7px}.header-new{width:42px;height:42px;padding:0}.wrap{margin-left:0;padding:calc(88px + var(--safe-top)) 14px 22px}.bottom-nav{position:fixed;display:grid;grid-template-columns:repeat(5,1fr);align-items:end;left:0;right:0;bottom:0;z-index:90;height:calc(72px + var(--safe-bottom));padding:6px max(8px,var(--safe-right)) calc(5px + var(--safe-bottom)) max(8px,var(--safe-left));background:#0b1220ed;border-top:1px solid #334155;backdrop-filter:blur(18px)}.bottom-nav a,.bottom-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:0;background:transparent;color:#94a3b8;font-size:10px}.bottom-nav .icon{width:21px;height:21px}.bottom-nav a:first-child{color:#fb7185}.bottom-nav .bottom-new{align-self:center;width:52px;height:52px;margin:-18px auto 0;border-radius:50%;background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;box-shadow:0 8px 28px #ef405f70}.bottom-new span{display:none}.more-backdrop{position:fixed;display:block;inset:0;z-index:94;background:#020617aa;opacity:0;pointer-events:none;transition:opacity .2s}.more-menu{position:fixed;display:flex;flex-direction:column;gap:5px;left:calc(14px + var(--safe-left));right:calc(14px + var(--safe-right));bottom:calc(82px + var(--safe-bottom));z-index:95;max-height:72dvh;padding:16px;border:1px solid #334155;border-radius:18px;background:#111827;box-shadow:0 25px 80px #0009;overflow:auto;transform:translateY(120%);opacity:0;transition:transform .22s ease,opacity .22s}.more-menu a{display:flex;align-items:center;gap:11px;padding:11px;border-radius:10px;color:#e2e8f0}.more-menu a:hover{background:#1f2937}.more-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}.more-title .icon-btn{font-size:24px}.more-open .more-menu{transform:none;opacity:1}.more-open .more-backdrop{opacity:1;pointer-events:auto}.install-hint{left:calc(14px + var(--safe-left));right:calc(14px + var(--safe-right));bottom:calc(14px + var(--safe-bottom))}.skip-link{top:calc(8px + var(--safe-top));left:calc(8px + var(--safe-left))}.light-theme .bottom-nav,.light-theme .more-menu{background:#fff}.dashboard-lower{grid-template-columns:1fr}}
+@media(max-width:900px){body{min-height:100dvh;padding-bottom:calc(82px + var(--safe-bottom))}#main-content{min-height:100dvh;padding-left:var(--safe-left);padding-right:var(--safe-right)}.top{position:fixed;left:var(--safe-left);right:var(--safe-right);top:0;width:auto;height:calc(64px + var(--safe-top));min-height:calc(64px + var(--safe-top));padding:calc(7px + var(--safe-top)) 14px 7px;border-right:0;border-bottom:1px solid #263246}.top .nav{display:none}.brand-copy{display:inline}.brand-logo{width:42px;height:42px}.app-header{position:fixed;left:auto;right:calc(10px + var(--safe-right));top:calc(7px + var(--safe-top));width:auto;height:50px;padding:0;background:transparent;border:0;backdrop-filter:none}.header-search,.header-actions time,.header-new span{display:none}.header-actions{gap:7px}.header-new{width:42px;height:42px;padding:0}.wrap{margin-left:0;padding:calc(88px + var(--safe-top)) 14px 22px}.bottom-nav{position:fixed;display:grid;grid-template-columns:repeat(5,1fr);align-items:end;left:0;right:0;bottom:0;z-index:90;height:calc(72px + var(--safe-bottom));padding:6px max(8px,var(--safe-right)) calc(5px + var(--safe-bottom)) max(8px,var(--safe-left));background:#0b1220ed;border-top:1px solid #334155;backdrop-filter:blur(18px)}.bottom-nav a,.bottom-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:0;background:transparent;color:#94a3b8;font-size:10px;transition:transform .1s ease,background-color .1s ease}.bottom-nav a:active,.bottom-nav button:active{background:#1d2938;transform:scale(.94)}.bottom-nav .bottom-new:active{transform:scale(.92)}.light-theme .bottom-nav a:active,.light-theme .bottom-nav button:active{background:#f1f5f9}.bottom-nav .icon{width:21px;height:21px}.bottom-nav a:first-child{color:#fb7185}.bottom-nav .bottom-new{align-self:center;width:52px;height:52px;margin:-18px auto 0;border-radius:50%;background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;box-shadow:0 8px 28px #ef405f70}.bottom-new span{display:none}.more-backdrop{position:fixed;display:block;inset:0;z-index:94;background:#020617aa;opacity:0;pointer-events:none;transition:opacity .2s}.more-menu{position:fixed;display:flex;flex-direction:column;gap:5px;left:calc(14px + var(--safe-left));right:calc(14px + var(--safe-right));bottom:calc(82px + var(--safe-bottom));z-index:95;max-height:72dvh;padding:16px;border:1px solid #334155;border-radius:18px;background:#111827;box-shadow:0 25px 80px #0009;overflow:auto;transform:translateY(120%);opacity:0;transition:transform .22s ease,opacity .22s}.more-menu a{display:flex;align-items:center;gap:11px;padding:11px;border-radius:10px;color:#e2e8f0}.more-menu a:hover{background:#1f2937}.more-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}.more-title .icon-btn{font-size:24px}.more-open .more-menu{transform:none;opacity:1}.more-open .more-backdrop{opacity:1;pointer-events:auto}.install-hint{left:calc(14px + var(--safe-left));right:calc(14px + var(--safe-right));bottom:calc(14px + var(--safe-bottom))}.skip-link{top:calc(8px + var(--safe-top));left:calc(8px + var(--safe-left))}.light-theme .bottom-nav,.light-theme .more-menu{background:#fff}.dashboard-lower{grid-template-columns:1fr}}
 @media(max-width:900px){.app-header .header-search{position:fixed;display:flex;left:calc(14px + var(--safe-left));right:calc(14px + var(--safe-right));top:calc(70px + var(--safe-top));width:auto;height:44px;z-index:41;background:#172033;box-shadow:0 8px 24px #02061740}.app-header .header-search input{min-width:0;height:42px}.app-header .header-actions{width:auto}.wrap{padding-top:calc(136px + var(--safe-top))}.light-theme .app-header .header-search{background:#fff;border-color:#cbd5e1;box-shadow:0 8px 24px #64748b20}}
 @media(max-width:620px){.brand-copy{display:none}.dashboard-states,.dashboard-payments{grid-template-columns:1fr}.metric-card,.payment-card{min-height:104px}.dashboard-panel{padding:15px;min-height:0}.welcome h1{font-size:24px}.dashboard-lower{margin-top:18px}.income-chart{min-width:0}.activity-item{grid-template-columns:38px minmax(0,1fr)}.activity-item time{display:none}}
 .income-panel{display:block;color:inherit;transition:transform .18s ease,border-color .18s ease}.income-panel:hover{transform:translateY(-2px);border-color:#fb7185}.panel-link{color:#fb7185;font-size:12px;font-weight:700}.balance-total{min-width:210px;padding:14px 18px;border:1px solid #334155;border-radius:14px;background:#1f2937;text-align:right}.balance-total small,.balance-total strong{display:block}.balance-total small{color:#94a3b8}.balance-total strong{margin-top:3px;color:#fb7185;font-size:25px}.balance-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:20px}.balance-card{display:flex;flex-direction:column;gap:7px;padding:17px;border:1px solid #334155;border-radius:13px;background:#1f2937;transition:transform .15s,border-color .15s}.balance-card:hover,.balance-card.active{transform:translateY(-2px);border-color:#fb7185}.balance-card small{color:#94a3b8}.balance-card strong{font-size:20px}.balance-table{margin-top:4px}.light-theme .balance-card,.light-theme .balance-total{background:#fff;color:#111827}
@@ -869,7 +912,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 @media(max-width:900px){.calendar-timeline-event{left:calc((100% / var(--event-lanes)) * var(--event-lane) + 2px);right:auto;width:calc((100% / var(--event-lanes)) - 4px)}}
 .calendar-form [data-calendar-types][hidden],.calendar-form .calendar-zone-results[hidden]{display:none!important}.calendar-type-option{position:relative;align-items:center;gap:12px}.calendar-type-option>input[type=radio]{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}.calendar-event-type-icon{display:grid;place-items:center;flex:0 0 38px;width:38px;height:38px;border-radius:11px;background:#273447;color:#cbd5e1}.calendar-event-type-icon .icon{width:20px;height:20px}.calendar-type-option:has(input:checked) .calendar-event-type-icon{background:#ef405f;color:#fff}.calendar-form .fields,.calendar-form .field,.calendar-form .calendar-title-zone-row{min-width:0}.calendar-form input,.calendar-form select,.calendar-form textarea{min-width:0;max-width:100%}
 @media(max-width:900px){.calendar-form{padding:calc(88px + var(--safe-top)) 12px calc(94px + var(--safe-bottom))!important}.calendar-form .fields,.calendar-form .calendar-title-zone-row{grid-template-columns:minmax(0,1fr)}.calendar-form .calendar-title-zone-row{gap:13px}.calendar-form-step{width:100%;min-width:0}.calendar-form-step>.fields>.field,.calendar-form .calendar-title-zone-row>.field{grid-column:1;width:100%}.calendar-form input[type=date]{display:block;width:100%;min-width:0}.calendar-form .calendar-time-control{grid-template-columns:minmax(0,1fr) 44px}.calendar-form .calendar-type-option{min-height:68px}.calendar-form .calendar-event-type-icon{flex-basis:36px;width:36px;height:36px}}
-.calendar-datetime-stack{display:grid;grid-column:1/-1;gap:8px;margin-top:2px}.calendar-datetime-row{position:relative;display:grid;grid-template-columns:72px minmax(170px,1fr) 104px;gap:8px;align-items:center;min-width:0;padding:9px 0;border-bottom:1px solid #334155}.calendar-datetime-row>label{margin:0;font-size:14px}.calendar-date-compact,.calendar-time-entry{min-width:0!important;min-height:40px!important;height:40px;padding:7px 10px!important;border-radius:10px!important;font-size:14px!important;text-align:center}.calendar-time-slot{min-width:0}.calendar-time-entry{font-variant-numeric:tabular-nums;font-weight:700;font-size:16px!important}.calendar-created-celebration{position:fixed;inset:0;z-index:120;display:grid;place-items:center;pointer-events:none;animation:calendarCelebrateFade 1.8s ease forwards}.calendar-created-celebration-card{display:grid;place-items:center;gap:8px;padding:22px 28px;border:1px solid #34d399;border-radius:22px;background:#101a28ee;box-shadow:0 22px 70px #02061799;animation:calendarCelebratePop .55s cubic-bezier(.2,.9,.25,1.25)}.calendar-created-celebration-icon{display:grid;place-items:center;width:64px;height:64px;border-radius:50%;background:#059669;color:#fff;font-size:34px;font-weight:900}.calendar-created-confetti{position:absolute;inset:0;overflow:hidden}.calendar-created-confetti i{position:absolute;top:-12px;width:8px;height:18px;border-radius:3px;background:var(--confetti);animation:calendarConfettiFall 1.45s ease-in forwards;transform:rotate(var(--rotate))}@keyframes calendarCelebratePop{from{opacity:0;transform:scale(.72)}to{opacity:1;transform:scale(1)}}@keyframes calendarCelebrateFade{0%,70%{opacity:1}100%{opacity:0;visibility:hidden}}@keyframes calendarConfettiFall{to{transform:translate(var(--drift),105vh) rotate(620deg)}}.calendar-time-wheel{position:relative;display:grid;grid-template-columns:minmax(76px,1fr) 20px minmax(76px,1fr);grid-column:2/-1;align-items:center;width:min(100%,360px);height:168px;margin:5px auto 3px;padding:0 18px;border:1px solid #3b4a5f;border-radius:15px;background:#111a27;box-shadow:0 18px 45px #02061770;overflow:hidden}.calendar-time-wheel[hidden]{display:none!important}.calendar-time-wheel:after{content:"";position:absolute;right:10px;left:10px;top:50%;height:40px;border-radius:9px;background:#263244;transform:translateY(-50%);pointer-events:none}.calendar-wheel-column{position:relative;z-index:1;height:168px;padding:64px 0;overflow-y:auto;scroll-snap-type:y mandatory;scrollbar-width:none;overscroll-behavior:contain}.calendar-wheel-column::-webkit-scrollbar{display:none}.calendar-wheel-option{display:grid;place-items:center;width:100%;height:40px;padding:0;border:0;background:transparent;color:#6f7c8f;font:600 20px/1 system-ui;scroll-snap-align:center;cursor:pointer;transition:color .14s,transform .14s}.calendar-wheel-option.active{color:#34d399;transform:scale(1.08)}.calendar-wheel-separator{position:relative;z-index:2;color:#34d399;font-size:22px;font-weight:700;text-align:center}.light-theme .calendar-time-wheel{background:#fff;border-color:#cbd5e1}.light-theme .calendar-time-wheel:after{background:#e2e8f0}.light-theme .calendar-wheel-option{color:#94a3b8}.light-theme .calendar-wheel-option.active{color:#059669}
+.calendar-datetime-stack{display:grid;grid-column:1/-1;gap:8px;margin-top:2px}.calendar-datetime-row{position:relative;display:grid;grid-template-columns:72px minmax(170px,1fr) 104px;gap:8px;align-items:center;min-width:0;padding:9px 0;border-bottom:1px solid #334155}.calendar-datetime-row>label{margin:0;font-size:14px}.calendar-date-compact,.calendar-time-entry{min-width:0!important;min-height:40px!important;height:40px;padding:7px 10px!important;border-radius:10px!important;font-size:14px!important;text-align:center}.calendar-time-slot{min-width:0}.calendar-time-entry{font-variant-numeric:tabular-nums;font-weight:700;font-size:16px!important}.calendar-created-celebration{position:fixed;inset:0;z-index:120;display:grid;place-items:center;pointer-events:none;animation:calendarCelebrateFade 1.8s ease forwards}.calendar-created-celebration-card{display:grid;place-items:center;gap:8px;padding:22px 28px;border:1px solid #34d399;border-radius:22px;background:#101a28ee;box-shadow:0 22px 70px #02061799;animation:calendarCelebratePop .55s cubic-bezier(.2,.9,.25,1.25)}.calendar-created-celebration-icon{display:grid;place-items:center;width:64px;height:64px;border-radius:50%;background:#059669;color:#fff;font-size:34px;font-weight:900;animation:calendarCheckPulse .5s ease .5s}.calendar-created-check{width:38px;height:38px}.calendar-created-check circle{stroke:#fff;stroke-width:3;stroke-dasharray:151;stroke-dashoffset:151;animation:calendarCheckCircle .5s ease forwards}.calendar-created-check path{stroke:#fff;stroke-width:4;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:36;stroke-dashoffset:36;animation:calendarCheckMark .35s ease .45s forwards}.calendar-created-confetti{position:absolute;inset:0;overflow:hidden}.calendar-created-confetti i{position:absolute;top:-12px;width:8px;height:18px;border-radius:3px;background:var(--confetti);animation:calendarConfettiFall 1.7s ease-in var(--delay,0s) forwards;transform:rotate(var(--rotate))}@keyframes calendarCelebratePop{from{opacity:0;transform:scale(.72)}to{opacity:1;transform:scale(1)}}@keyframes calendarCelebrateFade{0%,70%{opacity:1}100%{opacity:0;visibility:hidden}}@keyframes calendarConfettiFall{to{transform:translate(var(--drift),105vh) rotate(620deg)}}@keyframes calendarCheckCircle{to{stroke-dashoffset:0}}@keyframes calendarCheckMark{to{stroke-dashoffset:0}}@keyframes calendarCheckPulse{0%{transform:scale(1)}50%{transform:scale(1.12)}100%{transform:scale(1)}}.calendar-time-wheel{position:relative;display:grid;grid-template-columns:minmax(76px,1fr) 20px minmax(76px,1fr);grid-column:2/-1;align-items:center;width:min(100%,360px);height:168px;margin:5px auto 3px;padding:0 18px;border:1px solid #3b4a5f;border-radius:15px;background:#111a27;box-shadow:0 18px 45px #02061770;overflow:hidden}.calendar-time-wheel[hidden]{display:none!important}.calendar-time-wheel:after{content:"";position:absolute;right:10px;left:10px;top:50%;height:40px;border-radius:9px;background:#263244;transform:translateY(-50%);pointer-events:none}.calendar-wheel-column{position:relative;z-index:1;height:168px;padding:64px 0;overflow-y:auto;scroll-snap-type:y mandatory;scrollbar-width:none;overscroll-behavior:contain}.calendar-wheel-column::-webkit-scrollbar{display:none}.calendar-wheel-option{display:grid;place-items:center;width:100%;height:40px;padding:0;border:0;background:transparent;color:#6f7c8f;font:600 20px/1 system-ui;scroll-snap-align:center;cursor:pointer;transition:color .14s,transform .14s}.calendar-wheel-option.active{color:#34d399;transform:scale(1.08)}.calendar-wheel-separator{position:relative;z-index:2;color:#34d399;font-size:22px;font-weight:700;text-align:center}.light-theme .calendar-time-wheel{background:#fff;border-color:#cbd5e1}.light-theme .calendar-time-wheel:after{background:#e2e8f0}.light-theme .calendar-wheel-option{color:#94a3b8}.light-theme .calendar-wheel-option.active{color:#059669}
 @media(max-width:900px){.calendar-datetime-row{grid-template-columns:52px minmax(0,1fr) 88px;gap:7px}.calendar-datetime-row>label{font-size:13px}.calendar-date-compact{height:38px;min-height:38px!important;padding:6px 7px!important;font-size:13px!important}.calendar-time-entry{height:38px;min-height:38px!important;padding:6px 7px!important;font-size:16px!important}.calendar-time-wheel{grid-column:1/-1;width:min(100%,310px);height:158px}.calendar-wheel-column{height:158px;padding:59px 0}.calendar-wheel-option{height:40px;font-size:19px}}
 @media(max-width:800px){.budget-row{grid-template-columns:1fr;padding:10px}.budget-cell-right{padding-top:2px}.catalog-summary-form button{width:100%}}
 """
@@ -1001,7 +1044,7 @@ function ppmFormat(value){
 }
 function ppmFormatInvoiceTotal(value){
   const number = typeof value === 'number' ? value : ppmNumber(value);
-  return `${number.toFixed(2).replace('.', ',')} €`;
+  return number.toFixed(2).replace('.', ',');
 }
 function updatePreventivoTotal(){
   const fields = document.querySelectorAll('[data-preventivo-sum="1"]');
@@ -1907,7 +1950,11 @@ async function installPetParadise(){
 }
 function toggleTheme(){
   document.body.classList.toggle('light-theme');
-  localStorage.setItem('ppm-theme',document.body.classList.contains('light-theme')?'light':'dark');
+  const theme=document.body.classList.contains('light-theme')?'light':'dark';
+  localStorage.setItem('ppm-theme',theme);
+  if(document.body.dataset.hasSession==='1'){
+    fetch('/il-mio-profilo/salva',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'theme='+theme}).catch(()=>{});
+  }
 }
 let pendingOrderForm=null;
 function normalizeOrderQuantity(input,value){
@@ -1948,7 +1995,7 @@ function toggleMoreMenu(force){
   document.body.classList.toggle('more-open',open);
 }
 document.addEventListener('DOMContentLoaded',function(){
-  if(localStorage.getItem('ppm-theme')==='light') document.body.classList.add('light-theme');
+  if(document.body.dataset.serverTheme!=='1' && localStorage.getItem('ppm-theme')==='light') document.body.classList.add('light-theme');
   document.addEventListener('keydown',function(event){
     if(event.key==='Escape') toggleMoreMenu(false);
     if(event.key==='/' && !/input|textarea|select/i.test(document.activeElement.tagName)){
@@ -2271,6 +2318,7 @@ LUCIDE_PATHS = {
     "sun": '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"/>',
     "search": '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
     "phone": '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>',
+    "user": '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
 }
 
 
@@ -2280,12 +2328,17 @@ def lucide(name, label=""):
     return f'<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"{aria}>{path}</svg>'
 
 
-def money_value(value):
+def normalize_money_text(value):
     text=str(value or "").strip().replace("€","").replace(" ","")
     if "," in text and "." in text:
         text=text.replace(".","").replace(",",".")
     else:
         text=text.replace(",",".")
+    return text
+
+
+def money_value(value):
+    text=normalize_money_text(value)
     match=re.search(r"-?\d+(?:\.\d+)?",text)
     try:
         return float(match.group(0)) if match else 0.0
@@ -2407,31 +2460,51 @@ def collapse_advanced_search(body):
     return pattern.sub(wrap,body)
 
 
+SIDEBAR_LINKS=[
+    ("/","home","Dashboard"),("/calendario","calendar","Calendario"),("/notifiche","bell","Notifiche"),("/pratiche","archive","Archivio"),
+    ("/catalogo-urne","archive","Catalogo Urne"),("/bilanci","chart","Report"),("/conversazioni-whatsapp","message","Conversazioni WhatsApp"),("/veterinari","stethoscope","Veterinari"),
+    ("/prodotti","clipboard","Prodotti"),("/ordini","receipt","Ordini"),
+    ("/archivio/pratiche","clipboard","Gestionale"),("/archivio/clienti","users","Clienti"),
+    ("/archivio/pratiche","paw","Animali"),
+    ("/archivio/pratiche?pagamento=Da%20saldare","wallet","Pagamenti"),("/fatture","receipt","Fatture"),
+    ("/impostazioni","settings","Impostazioni"),("/il-mio-profilo","user","Il mio profilo"),("mailto:assistenza@petparadise.it","help","Assistenza"),
+]
+DASHBOARD_SECTION_LABELS=[
+    ("practices","Pratiche / Ritiri"),("payments","Pagamenti"),("income_chart","Entrate settimana in corso"),("recent_practices","Ultime 10 pratiche"),
+]
+BOTTOM_NAV_DEFAULT_SLOTS=["Dashboard","Calendario","Archivio"]
+
+
 def layout(title, body, user=None):
     body=body.replace("<th>Veterinario</th><th>Sede</th>","<th>Veterinario</th><th>Provenienza</th><th>Sede</th>")
     body=collapse_advanced_search(body)
-    nav = ""; app_header=""; mobile_nav=""
+    nav = ""; app_header=""; mobile_nav=""; body_class=""; body_attrs=""
     if user:
         with db() as conn:
             unread=conn.execute("SELECT count(*) n FROM notifications WHERE user_id=? AND is_read=0",(user["id"],)).fetchone()["n"]
         unread_badge=f'<span class="notification-badge">{unread if unread < 100 else "99+"}</span>' if unread else ''
-        links=[
-            ("/","home","Dashboard"),("/calendario","calendar","Calendario"),("/notifiche","bell","Notifiche"),("/pratiche","archive","Archivio"),
-            ("/catalogo-urne","archive","Catalogo Urne"),("/bilanci","chart","Report"),("/conversazioni-whatsapp","message","Conversazioni WhatsApp"),("/veterinari","stethoscope","Veterinari"),
-            ("/prodotti","clipboard","Prodotti"),("/ordini","receipt","Ordini"),
-            ("/archivio/pratiche","clipboard","Gestionale"),("/archivio/clienti","users","Clienti"),
-            ("/archivio/pratiche","paw","Animali"),
-            ("/archivio/pratiche?pagamento=Da%20saldare","wallet","Pagamenti"),("/fatture","receipt","Fatture"),
-            ("/impostazioni","settings","Impostazioni"),("mailto:assistenza@petparadise.it","help","Assistenza"),
-        ]
+        prefs=load_preferences(user["id"])
+        if prefs.get("theme")=="light": body_class=" light-theme"
+        body_attrs=f' data-has-session="1"{" data-server-theme=\"1\"" if "theme" in prefs else ""}'
+        links=list(SIDEBAR_LINKS)
+        sidebar_order=parse_preference_list(prefs.get("sidebar_order",""))
+        if sidebar_order:
+            links=reorder_by_saved(links,sidebar_order,lambda item:item[2])
         nav_links=''.join(f'<a href="{href}" class="{"nav-notification" if href=="/notifiche" else ""}">{lucide(icon)}<span>{label}</span>{unread_badge if href=="/notifiche" else ""}</a>' for href,icon,label in links)
         nav=f'''<nav class="nav" aria-label="Menu principale">{nav_links}<button class="btn ghost install-btn" type="button" onclick="installPetParadise()">{lucide("plus")}<span>Installa App</span></button><a class="logout" href="/logout">{lucide("menu")}<span>Esci</span></a></nav>'''
         today=datetime.now(); date_label=today.strftime("%d/%m/%Y"); weekday=["Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica"][today.weekday()]
         app_header=f'''<header class="app-header"><div class="header-actions"><form class="header-search lookup" action="/archivio/pratiche" method="get" role="search">{lucide("search")}<label class="sr-only" for="globalSearch">Ricerca rapida per animale o proprietario</label><input id="globalSearch" name="rapida" placeholder="Animale o proprietario..." autocomplete="off"><div id="globalSearchResults" class="lookup-results hidden"></div></form><a class="icon-btn nav-notification" href="/notifiche" aria-label="Notifiche, {unread} non lette">{lucide("bell")}{unread_badge}</a><button class="icon-btn" type="button" onclick="toggleTheme()" aria-label="Cambia tema">{lucide("sun")}</button><button class="btn header-new" type="button" onclick="toggleCreateMenu()" aria-label="Crea pratica o evento">{lucide("plus")}<span>Crea</span></button><time datetime="{today.date().isoformat()}">{date_label}<small>{weekday}</small></time></div></header>'''
         drawer_links=''.join(f'<a href="{href}" class="{"nav-notification" if href=="/notifiche" else ""}">{lucide(icon)}<span>{label}</span>{unread_badge if href=="/notifiche" else ""}</a>' for href,icon,label in links)
-        mobile_nav=f'''<nav class="bottom-nav" aria-label="Navigazione mobile"><a href="/">{lucide("home")}<span>Dashboard</span></a><a href="/calendario">{lucide("calendar")}<span>Calendario</span></a><button class="bottom-new" type="button" onclick="toggleCreateMenu()" aria-label="Crea">{lucide("plus")}</button><a href="/pratiche">{lucide("archive")}<span>Archivio</span></a><button type="button" onclick="toggleMoreMenu()">{lucide("menu")}<span>Altro</span></button></nav><div class="create-sheet-backdrop" onclick="toggleCreateMenu(false)"></div><aside class="create-sheet" aria-label="Crea"><a href="/nuova">{lucide("plus")}<span>Nuova pratica</span></a><a href="/calendario/nuovo" data-calendar-new-event>{lucide("calendar")}<span>Nuovo evento</span></a></aside><div class="more-backdrop" onclick="toggleMoreMenu(false)"></div><aside class="more-menu" aria-label="Altre funzioni"><div class="more-title"><b>Menu</b><button class="icon-btn" onclick="toggleMoreMenu(false)" aria-label="Chiudi">×</button></div>{drawer_links}<button class="btn ghost install-btn" type="button" onclick="installPetParadise()">Installa App</button></aside>'''
+        bottom_default=BOTTOM_NAV_DEFAULT_SLOTS
+        bottom_pool={label:(href,icon,label) for href,icon,label in links}
+        bottom_slots=[label for label in parse_preference_list(prefs.get("bottom_nav_slots","")) if label in bottom_pool][:3]
+        for label in bottom_default:
+            if len(bottom_slots)>=3:break
+            if label not in bottom_slots and label in bottom_pool:bottom_slots.append(label)
+        slot1,slot2,slot3=(bottom_pool.get(label,("/","home",label)) for label in (bottom_slots+bottom_default)[:3])
+        mobile_nav=f'''<nav class="bottom-nav" aria-label="Navigazione mobile"><a href="{slot1[0]}">{lucide(slot1[1])}<span>{slot1[2]}</span></a><a href="{slot2[0]}">{lucide(slot2[1])}<span>{slot2[2]}</span></a><button class="bottom-new" type="button" onclick="toggleCreateMenu()" aria-label="Crea">{lucide("plus")}</button><a href="{slot3[0]}">{lucide(slot3[1])}<span>{slot3[2]}</span></a><button type="button" onclick="toggleMoreMenu()">{lucide("menu")}<span>Altro</span></button></nav><div class="create-sheet-backdrop" onclick="toggleCreateMenu(false)"></div><aside class="create-sheet" aria-label="Crea"><a href="/nuova">{lucide("plus")}<span>Nuova pratica</span></a><a href="/calendario/nuovo" data-calendar-new-event>{lucide("calendar")}<span>Nuovo evento</span></a></aside><div class="more-backdrop" onclick="toggleMoreMenu(false)"></div><aside class="more-menu" aria-label="Altre funzioni"><div class="more-title"><b>Menu</b><button class="icon-btn" onclick="toggleMoreMenu(false)" aria-label="Chiudi">×</button></div>{drawer_links}<button class="btn ghost install-btn" type="button" onclick="installPetParadise()">Installa App</button></aside>'''
     vapid_public=esc(os.environ.get("VAPID_PUBLIC_KEY",""))
-    return f'''<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#e9475b"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="PP Manager"><meta name="application-name" content="Pet Paradise Manager"><meta name="format-detection" content="telephone=no"><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"><title>{esc(title)} - Pet Paradise Manager</title><style>{CSS}</style></head><body data-vapid-public-key="{vapid_public}"><a class="skip-link" href="#main-content">Vai al contenuto</a><aside class="top"><a class="brand" href="/"><img class="brand-logo brand-logo-dark" src="/assets/company_logo.png" alt="Pet Paradise"><img class="brand-logo brand-logo-light" src="/assets/company_logo_light.png" alt="Pet Paradise"><span class="brand-copy">Pet Paradise <small>MANAGER</small></span></a>{nav}</aside>{app_header}<div id="main-content">{body}</div>{mobile_nav}{APP_JS}</body></html>'''
+    return f'''<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#e9475b"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="PP Manager"><meta name="application-name" content="Pet Paradise Manager"><meta name="format-detection" content="telephone=no"><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"><title>{esc(title)} - Pet Paradise Manager</title><style>{CSS}</style></head><body class="{body_class.strip()}"{body_attrs} data-vapid-public-key="{vapid_public}"><a class="skip-link" href="#main-content">Vai al contenuto</a><aside class="top"><a class="brand" href="/"><img class="brand-logo brand-logo-dark" src="/assets/company_logo.png" alt="Pet Paradise"><img class="brand-logo brand-logo-light" src="/assets/company_logo_light.png" alt="Pet Paradise"><span class="brand-copy">Pet Paradise <small>MANAGER</small></span></a>{nav}</aside>{app_header}<div id="main-content">{body}</div>{mobile_nav}{APP_JS}</body></html>'''
 
 
 class App(BaseHTTPRequestHandler):
@@ -2527,6 +2600,9 @@ class App(BaseHTTPRequestHandler):
         if path == "/logout": return self.logout()
         user = self.require_user()
         if not user: return
+        if user["must_change_password"] and path != "/imposta-password" and not path.startswith("/api/"):
+            return self.redirect("/imposta-password")
+        if path == "/imposta-password": return self.change_password_page(user)
         match = re.fullmatch(r"/uploads/urns/([A-Za-z0-9_.-]+)", path)
         if match:
             image=(DATA / "urn_images" / match.group(1)).resolve()
@@ -2558,6 +2634,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/catalogo-urne": return self.urn_catalog_page(user)
         if path == "/catalogo-urne/nuova": return self.urn_edit_page(user)
         if path in ("/diagnostica","/impostazioni"): return self.settings_page(user)
+        if path == "/il-mio-profilo": return self.profile_page(user)
         if path == "/whatsapp-diagnostica": return self.whatsapp_diagnostics(user)
         if path == "/api/clienti/search": return self.api_clients_search(user)
         if path == "/api/cap": return self.api_zip_lookup(user)
@@ -2609,6 +2686,9 @@ class App(BaseHTTPRequestHandler):
         if path == "/login": return self.login_submit()
         user = self.require_user()
         if not user: return
+        if user["must_change_password"] and path != "/imposta-password" and not path.startswith("/api/"):
+            return self.redirect("/imposta-password")
+        if path == "/imposta-password": return self.change_password_submit(user)
         if path == "/nuova": return self.create_practice(user)
         if path == "/calendario/nuovo": return self.save_calendar_event(user)
         match = re.fullmatch(r"/calendario/(\d+)/modifica",path)
@@ -2621,6 +2701,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/api/push/unsubscribe": return self.push_unsubscribe(user)
         if path == "/api/push/test": return self.push_test(user)
         if path == "/impostazioni/notifiche": return self.save_notification_preferences(user)
+        if path == "/il-mio-profilo/salva": return self.save_preferences(user)
         if path in ("/impostazioni/ordini","/ordini/impostazioni"): return self.save_order_settings(user)
         if path == "/ordini/invia": return self.send_water_order(user)
         match = re.fullmatch(r"/ordini/(\d+)/(reinvia|duplica|archivia)",path)
@@ -2695,6 +2776,37 @@ class App(BaseHTTPRequestHandler):
         if m:
             with db() as c: c.execute("DELETE FROM sessions WHERE token=?",(m.value,))
         self.send_response(303); self.send_header("Set-Cookie","ppm_session=; Max-Age=0; Path=/"); self.send_header("Location","/login"); self.end_headers()
+
+    def change_password_page(self, user, error="", return_to=None):
+        forced=bool(user["must_change_password"])
+        if return_to is None:
+            q=parse_qs(urlparse(getattr(self,"path","")).query)
+            return_to=(q.get("return_to") or ["/"])[0]
+        return_to=safe_return_path(return_to)
+        intro=(
+            "Prima di continuare devi impostare una nuova password personale. Questa schermata non può essere saltata."
+            if forced else
+            "Cambia la tua password personale in qualsiasi momento."
+        )
+        body=f'''<main class="wrap"><section class="section" style="max-width:420px;margin:0 auto"><h1>{"Imposta la tua nuova password" if forced else "Cambia password"}</h1><p class="sub">{esc(intro)}</p>{f'<div class="flash warning">{esc(error)}</div>' if error else ''}<form method="post"><input type="hidden" name="return_to" value="{esc(return_to)}">{'' if forced else '<div class="field"><label>Password attuale</label><input type="password" name="current_password" required autofocus></div>'}<div class="field" style="margin-top:12px"><label>Nuova password</label><input type="password" name="new_password" minlength="8" required{' autofocus' if forced else ''}></div><div class="field" style="margin-top:12px"><label>Conferma nuova password</label><input type="password" name="confirm_password" minlength="8" required></div><button class="btn" style="width:100%;margin-top:20px">Salva nuova password</button></form></section></main>'''
+        self.send_html(layout("Cambia password", body, user))
+
+    def change_password_submit(self, user):
+        f=self.form()
+        return_to=safe_return_path(f.get("return_to") or "/")
+        forced=bool(user["must_change_password"])
+        current=f.get("current_password","")
+        new=f.get("new_password","")
+        confirm=f.get("confirm_password","")
+        if not forced and not password_ok(current, user["password_hash"]):
+            return self.change_password_page(user,"Password attuale non corretta.",return_to)
+        if len(new)<8:
+            return self.change_password_page(user,"La nuova password deve avere almeno 8 caratteri.",return_to)
+        if new!=confirm:
+            return self.change_password_page(user,"Le due password inserite non coincidono.",return_to)
+        with db() as c:
+            c.execute("UPDATE users SET password_hash=?,must_change_password=0 WHERE id=?",(password_hash(new),user["id"]))
+        return self.redirect(return_to)
 
     def dashboard_legacy(self,user):
         today=datetime.now().date()
@@ -2814,7 +2926,17 @@ class App(BaseHTTPRequestHandler):
         persistence_script='''<script>(function(){const allowed=['oggi','settimana','mese'];const url=new URL(location.href);let changed=false;['pratiche_periodo','pagamenti_periodo'].forEach(key=>{const saved=localStorage.getItem('ppm_'+key);if(!url.searchParams.has(key)&&allowed.includes(saved)&&saved!=='oggi'){url.searchParams.set(key,saved);changed=true;}});if(changed){location.replace(url);return;}document.querySelectorAll('[data-dashboard-period]').forEach(link=>link.addEventListener('click',()=>localStorage.setItem('ppm_'+link.dataset.dashboardPeriod,link.dataset.periodValue)));})();</script>'''
         hour=datetime.now().hour;greeting="Buongiorno" if hour<13 else "Buon pomeriggio" if hour<18 else "Buonasera"
         quick_actions='''<div class="calendar-quick-actions dashboard-calendar-actions"><a class="btn" href="/nuova">+ Nuova pratica</a><a class="btn ghost" href="/calendario/nuovo">+ Nuovo evento</a></div>'''
-        body=f'''<main class="wrap dashboard-wrap"><section class="welcome"><div><h1>{greeting}, Pet Paradise <span aria-hidden="true">👋</span></h1><p>Panoramica operativa del periodo selezionato</p></div></section>{quick_actions}{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}<div class="dashboard-section-head"><h2 class="dashboard-heading">Pratiche / Ritiri</h2>{practice_selector}</div><section class="dashboard-states">{state_cards}</section><div class="dashboard-section-head"><h2 class="dashboard-heading">Pagamenti</h2>{payment_selector}</div><section class="dashboard-payments">{payment_cards}</section><section class="dashboard-chart-only"><a class="dashboard-panel income-panel" href="/bilanci?dal={week_start.isoformat()}&al={week_end.isoformat()}" aria-label="Apri Bilanci: entrate della settimana in corso"><header><div><h2>Entrate settimana in corso</h2><p>{week_start.strftime('%d/%m/%Y')} - {week_end.strftime('%d/%m/%Y')} · Totale: <strong>{money_it(income_total)}</strong></p></div><span class="panel-link">Apri Bilanci →</span></header>{chart}</a></section><section class="dashboard-recent"><div class="titlebar"><h2>Ultime 10 pratiche per data recupero</h2><a href="/archivio/pratiche">Apri archivio</a></div><div class="tablebox dashboard-table-scroll"><table class="practice-list-table"><thead><tr><th>Animale</th><th>Età</th><th>Proprietario</th><th>Data recupero</th><th>Codice pratica</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Totale pagato</th><th>Fattura</th><th>Totale W</th><th>TOTALE D</th><th>Acconto</th><th>Rimanenza</th><th>Stati</th></tr></thead><tbody>{self.practice_rows(recent,True)}</tbody></table></div></section>{persistence_script}</main>'''
+        dashboard_sections={
+            "practices": f'''<div class="dashboard-section-head"><h2 class="dashboard-heading">Pratiche / Ritiri</h2>{practice_selector}</div><section class="dashboard-states">{state_cards}</section>''',
+            "payments": f'''<div class="dashboard-section-head"><h2 class="dashboard-heading">Pagamenti</h2>{payment_selector}</div><section class="dashboard-payments">{payment_cards}</section>''',
+            "income_chart": f'''<section class="dashboard-chart-only"><a class="dashboard-panel income-panel" href="/bilanci?dal={week_start.isoformat()}&al={week_end.isoformat()}" aria-label="Apri Bilanci: entrate della settimana in corso"><header><div><h2>Entrate settimana in corso</h2><p>{week_start.strftime('%d/%m/%Y')} - {week_end.strftime('%d/%m/%Y')} · Totale: <strong>{money_it(income_total)}</strong></p></div><span class="panel-link">Apri Bilanci →</span></header>{chart}</a></section>''',
+            "recent_practices": f'''<section class="dashboard-recent"><div class="titlebar"><h2>Ultime 10 pratiche per data recupero</h2><a href="/archivio/pratiche">Apri archivio</a></div><div class="tablebox dashboard-table-scroll"><table class="practice-list-table"><thead><tr><th>Animale</th><th>Età</th><th>Proprietario</th><th>Data recupero</th><th>Codice pratica</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Totale pagato</th><th>Fattura</th><th>Totale W</th><th>TOTALE D</th><th>Acconto</th><th>Rimanenza</th><th>Stati</th></tr></thead><tbody>{self.practice_rows(recent,True)}</tbody></table></div></section>''',
+        }
+        default_dashboard_order=[sid for sid,_ in DASHBOARD_SECTION_LABELS]
+        saved_dashboard_order=[sid for sid in parse_preference_list(load_preferences(user["id"]).get("dashboard_sections","")) if sid in dashboard_sections]
+        dashboard_order=saved_dashboard_order or default_dashboard_order
+        sections_html=''.join(dashboard_sections[sid] for sid in dashboard_order)
+        body=f'''<main class="wrap dashboard-wrap"><section class="welcome"><div><h1>{greeting}, Pet Paradise <span aria-hidden="true">👋</span></h1><p>Panoramica operativa del periodo selezionato</p></div></section>{quick_actions}{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}{sections_html}{persistence_script}</main>'''
         self.send_html(layout("Dashboard",body,user))
 
     def calendar_event_client_name(self,row,client_names=None,practice_owner_names=None):
@@ -3007,6 +3129,11 @@ class App(BaseHTTPRequestHandler):
         title_value="" if event_type=="Appuntamento" and re.fullmatch(r"PROMEMORIA\s*",str(raw("title","")).strip(),flags=re.I) else val("title")
         types=''.join(f'''<label class="calendar-type-option"><input type="radio" name="event_type" value="{kind}" {"checked" if event_type==kind else ""} required onclick="calendarTypeSelected(this)"><span class="calendar-event-type-icon">{lucide(icon_name)}</span><span><b>{label}</b><small class="sub">{desc}</small></span></label>''' for kind,label,desc,icon_name in (("Ritiro","RITIRO","Ritiro presso veterinario o privato","paw"),("Ritiro in sede","RITIRO IN SEDE","Consegna presso una sede","home"),("Riconsegna","RICONSEGNA","Riconsegna al cliente","archive"),("Riconsegna in sede","RICONSEGNA IN SEDE","Ritiro ceneri presso sede","home"),("Appuntamento","PROMEMORIA","Promemoria, riunioni, fornitori e impegni","calendar")))
         operator_options='<option value="">Seleziona operatore</option>'+''.join(f'<option {"selected" if raw("operator_name")==name else ""}>{name}</option>' for name in CALENDAR_OPERATORS)
+        if user["role"]=="admin":
+            operator_field=f'<label>Operatore *</label><select name="operator_name" required>{operator_options}</select><small class="calendar-wizard-error" data-operator-error></small>'
+        else:
+            operator_display=raw("operator_name") or user["display_name"]
+            operator_field=f'<input type="hidden" name="operator_name" value="{esc(operator_display)}"><label>Operatore</label><p style="margin:0;padding:11px 0;font-weight:700">{esc(operator_display)}</p>'
         pickup_status=''.join(f'<option {"selected" if raw("event_status","Da ritirare")==s else ""}>{s}</option>' for s in PICKUP_STATUSES)
         delivery_status=''.join(f'<option {"selected" if raw("event_status","In programma")==s else ""}>{s}</option>' for s in DELIVERY_STATUSES)
         payment_status=''.join(f'<option {"selected" if raw("payment_status","Da pagare")==s else ""}>{s}</option>' for s in PAYMENT_STATUSES)
@@ -3024,7 +3151,7 @@ class App(BaseHTTPRequestHandler):
         draft_key=f"ppm_calendar_draft_edit_{event_id}" if event_id else "ppm_calendar_draft_new"
         draft_status='<div id="calendarDraftStatus" class="autosave-status" data-state="idle" hidden role="status"><span data-draft-label></span></div>'
         body=f'''<main class="wrap calendar-form"><div class="titlebar"><div><h1>{'Modifica evento' if event_id else 'Nuovo evento'}</h1><p class="sub">Crea o modifica un evento in tre passaggi</p></div><a class="btn ghost" href="{close_url}" onclick="return calendarConfirmExit(event,this.href)" aria-label="Chiudi">×</a></div>{error_html}{draft_status}<div class="calendar-steps" aria-label="Fasi evento"><button class="active" type="button" onclick="calendarStepFromIndicator(1)" aria-label="Vai alla fase 1">1</button><button type="button" onclick="calendarStepFromIndicator(2)" aria-label="Vai alla fase 2">2</button><button type="button" onclick="calendarStepFromIndicator(3)" aria-label="Vai alla fase 3">3</button></div><form id="calendarEventForm" data-current-step="1" data-draft-key="{draft_key}" method="post" action="{action}" onsubmit="return calendarSubmit(this)">
-        <section class="section calendar-form-step" data-step="1"><div class="field calendar-first-operator"><label>Operatore *</label><select name="operator_name" required>{operator_options}</select><small class="calendar-wizard-error" data-operator-error></small></div><h2>Tipo evento</h2><div class="calendar-type-grid">{types}</div></section>
+        <section class="section calendar-form-step" data-step="1"><div class="field calendar-first-operator">{operator_field}</div><h2>Tipo evento</h2><div class="calendar-type-grid">{types}</div></section>
         <section class="section calendar-form-step" data-step="2" hidden><h2>Data e titolo</h2><div class="fields"><div class="calendar-title-zone-row"><div class="field"><label>Titolo *</label><input name="title" value="{title_value}" required oninput="this.dataset.manual='1'"></div><div class="field calendar-zone-field" data-calendar-types="Ritiro|Riconsegna" {"" if event_type in ("Ritiro","Riconsegna") else "hidden"}><label>Zona{' *' if event_type=='Ritiro' else ''}</label><input name="zone" value="{val('zone')}" autocomplete="off" oninput="calendarZoneInput(this)" onfocus="calendarZoneInput(this)" onblur="calendarZoneOffer(this)"><div class="calendar-zone-results" hidden></div><small class="sub">Scrivi per cercare o inserire una nuova zona.</small><label><input type="checkbox" name="save_zone" value="1"> Salva nei suggerimenti</label></div><div class="field" data-calendar-types="Ritiro in sede|Riconsegna in sede" {"" if event_type in ("Ritiro in sede","Riconsegna in sede") else "hidden"}><label>Sede *</label><select name="destination_site" onchange="calendarAutoTitle()"><option value="">Seleziona</option><option {"selected" if raw("destination_site")=="Livorno" else ""}>Livorno</option><option {"selected" if raw("destination_site")=="Empoli" else ""}>Empoli</option></select></div></div><div class="field full lookup" data-calendar-types="Riconsegna|Riconsegna in sede" {"" if event_type in ("Riconsegna","Riconsegna in sede") else "hidden"}><label>Animale *</label><input id="calendarDeliveryAnimalSearch" name="animal_name" value="{val('animal_name')}" placeholder="Cerca animale o proprietario" autocomplete="off" oninput="calendarAutoTitle()"><div id="calendarDeliveryAnimalResults" class="lookup-results hidden"></div><input type="hidden" name="linked_practice_id" value="{val('linked_practice_id')}"></div><div class="calendar-datetime-stack">{datetime_fields}</div><div class="field full"><label class="modern-check"><input type="checkbox" name="all_day" value="1" {"checked" if raw("all_day") else ""} onchange="calendarAllDayChanged(this)"> Tutto il giorno</label></div></div><div class="actions" style="margin-top:16px"><button class="btn ghost" type="button" onclick="calendarStep(1,'back')">Indietro</button><button class="btn" type="button" onclick="calendarStep(3)">Avanti</button></div></section>
         <section class="section calendar-form-step" data-step="3" hidden><h2>Informazioni</h2>
         <div data-calendar-types="Ritiro|Ritiro in sede" {"" if event_type in ("Ritiro","Ritiro in sede") else "hidden"}><div class="fields"><div class="field"><label>Stato ritiro</label><select name="event_status">{pickup_status}</select></div><div class="field full lookup"><label>Cerca cliente o veterinario</label><input id="calendarClientSearch" autocomplete="off" placeholder="Nome, telefono, ambulatorio, città o indirizzo"><div id="calendarClientResults" class="lookup-results hidden"></div><input type="hidden" name="client_id" value="{val('client_id')}"></div><div class="field"><label>Nome cliente</label><input name="client_first_name" value="{val('client_first_name')}"></div><div class="field"><label>Cognome cliente</label><input name="client_last_name" value="{val('client_last_name')}"></div><div class="field"><label>Telefono</label><input type="tel" inputmode="tel" name="client_phone" value="{val('client_phone')}"></div><div class="field full"><label>Indirizzo</label><input name="address" value="{val('address')}"></div><input type="hidden" name="phone" value="{val('phone')}"><div class="field"><label>Tipo di luogo</label><select name="location_type"><option value="">Seleziona</option>{''.join(f'<option {"selected" if raw("location_type")==x else ""}>{x}</option>' for x in ("Privato","Veterinario"))}</select></div><input type="hidden" name="venue_name" value="{val('venue_name')}"><div class="field full lookup"><label>Cerca veterinario</label><input id="calendarVetSearch" autocomplete="off" placeholder="Ambulatorio, medico o città"><div id="calendarVetResults" class="lookup-results hidden"></div><input type="hidden" name="veterinarian_id" value="{val('veterinarian_id')}"></div><input type="hidden" name="veterinarian_name" value="{val('veterinarian_name')}"><input type="hidden" name="veterinarian_phone" value="{val('veterinarian_phone')}"><input type="hidden" name="veterinarian_address" value="{val('veterinarian_address')}"><input type="hidden" name="veterinarian_hours" value="{val('veterinarian_hours')}"><input type="hidden" name="veterinarian_contact" value="{val('veterinarian_contact')}"></div><h2>Animali</h2><div class="calendar-repeat-list" data-calendar-list="animal"></div><input type="hidden" name="animals_json"><button class="btn ghost" type="button" onclick="calendarAddRow('animal')">+ Aggiungi animale</button><h2 style="margin-top:18px">Preventivo previsto</h2><div class="calendar-repeat-list" data-calendar-list="estimate"></div><input type="hidden" name="estimate_json"><p>Totale automatico: <b data-estimate-total>€ 0,00</b></p><div class="field full" style="margin-top:18px"><label>Note</label><textarea name="notes">{val('notes')}</textarea></div></div>
@@ -3067,6 +3194,7 @@ class App(BaseHTTPRequestHandler):
                 if event_id:
                     old=c.execute("SELECT * FROM calendar_events WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(event_id,)).fetchone()
                     if not old:return self.send_error(404)
+                    if user["role"]!="admin": data["operator_name"]=old["operator_name"]
                     assignments=','.join(f"{key}=?" for key in data)
                     c.execute(f"UPDATE calendar_events SET {assignments},updated_at=?,updated_by=? WHERE id=?",tuple(data.values())+(stamp,user["id"],event_id))
                     for key,value in data.items():
@@ -3080,6 +3208,7 @@ class App(BaseHTTPRequestHandler):
                     emit_notification(c,kind,"Evento calendario aggiornato",data["title"],actor_user_id=user["id"],payload={"url":f"/calendario/{event_id}"},db_path=DB_PATH)
                 else:
                     created_now=True
+                    if user["role"]!="admin": data["operator_name"]=user["display_name"]
                     cols=list(data)+["created_by","created_at","updated_at","updated_by"]
                     cur=c.execute(f"INSERT INTO calendar_events({','.join(cols)}) VALUES({','.join('?' for _ in cols)})",tuple(data.values())+(user["id"],stamp,stamp,user["id"]));event_id=cur.lastrowid
                     calendar_sync_children(c,event_id,animals,estimates,stamp);calendar_add_history(c,event_id,user["id"],"Creazione evento","",data["title"],stamp)
@@ -3100,7 +3229,7 @@ class App(BaseHTTPRequestHandler):
             return self.calendar_event_form(user,event_id,form,"Non è stato possibile salvare l’evento. Riprova senza chiudere questa schermata.")
         self.redirect(f"/calendario/{event_id}")
 
-    def calendar_event_detail(self,user,event_id):
+    def calendar_event_detail(self,user,event_id,error=""):
         tab=(parse_qs(urlparse(self.path).query).get("tab") or ["dettagli"])[0]
         if tab not in ("dettagli","note","commenti","storico"):tab="dettagli"
         with db() as c:
@@ -3147,10 +3276,12 @@ class App(BaseHTTPRequestHandler):
                 link_practice_section=f'''<section class="section" style="margin-top:14px"><h2>Pratica collegata</h2><p><b>{esc(event["practice_number"])}</b></p><a class="btn ghost" href="/pratiche/{event["linked_practice_id"]}">Apri pratica</a>{unlink}</section>'''
             else:
                 link_practice_section=f'''<section class="section" style="margin-top:14px"><h2>Collega pratica esistente</h2><div class="field full lookup"><input id="calendarLinkPracticeSearch" data-event-id="{event_id}" autocomplete="off" placeholder="Cerca per animale, proprietario, veterinario o numero pratica"><div id="calendarLinkPracticeResults" class="lookup-results hidden"></div></div></section>'''
-        confetti=''.join(f'<i style="left:{(index*37)%97}%;--drift:{((index%7)-3)*18}px;--rotate:{index*29}deg;--confetti:{("#ef405f","#34d399","#60a5fa","#facc15","#c084fc")[index%5]}"></i>' for index in range(28))
-        celebration=f'<div class="calendar-created-celebration" aria-hidden="true"><div class="calendar-created-confetti">{confetti}</div><div class="calendar-created-celebration-card"><span class="calendar-created-celebration-icon">✓</span><b>Evento creato!</b></div></div>'
+        confetti=''.join(f'<i style="left:{(index*23)%97}%;--drift:{((index%9)-4)*22}px;--rotate:{index*31}deg;--delay:{(index%6)*0.06:.2f}s;--confetti:{("#ef405f","#34d399","#60a5fa","#facc15","#c084fc","#fb7185")[index%6]}"></i>' for index in range(44))
+        checkmark='<svg class="calendar-created-check" viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="24" fill="none"/><path fill="none" d="M14 27l8 8 16-17"/></svg>'
+        celebration=f'<div class="calendar-created-celebration" aria-hidden="true"><div class="calendar-created-confetti">{confetti}</div><div class="calendar-created-celebration-card"><span class="calendar-created-celebration-icon">{checkmark}</span><b>Evento creato!</b></div></div>'
         created_animation=f'''<template id="calendarCreatedCelebration">{celebration}</template><script>try{{if(sessionStorage.getItem('ppm_calendar_created')==='1'){{sessionStorage.removeItem('ppm_calendar_created');document.body.append(document.getElementById('calendarCreatedCelebration').content.cloneNode(true));}}}}catch(error){{}}</script>'''
-        body=f'''{created_animation}<main class="wrap calendar-wrap"><div class="titlebar"><div><h1 class="{event_color_class(event)}">{esc(re.sub(r'^APPUNTAMENTO\b','PROMEMORIA',event['title'],flags=re.I) if event['event_type']=='Appuntamento' else event['title'])}</h1><p class="sub">Creato da {esc(event['creator_name'])} · {esc(event['created_at'].replace('T',' ')[:16])}</p></div><div class="actions"><a class="btn ghost" href="/calendario">Calendario</a><a class="btn" href="/calendario/{event_id}/modifica">Modifica</a>{create_practice}</div></div><nav class="calendar-tabs">{tabs}</nav><div class="calendar-detail-grid"><div>{panel}</div><aside><section class="section"><h2>Azioni</h2>{status_form}<form method="post" action="/calendario/{event_id}/elimina" onsubmit="return confirm('Spostare questo evento nel cestino?')"><button class="btn ghost" style="margin-top:12px">Sposta nel cestino</button></form></section>{link_practice_section}</aside></div></main>'''
+        error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
+        body=f'''{created_animation}<main class="wrap calendar-wrap">{error_html}<div class="titlebar"><div><h1 class="{event_color_class(event)}">{esc(re.sub(r'^APPUNTAMENTO\b','PROMEMORIA',event['title'],flags=re.I) if event['event_type']=='Appuntamento' else event['title'])}</h1><p class="sub">Creato da {esc(event['creator_name'])} · {esc(event['created_at'].replace('T',' ')[:16])}</p></div><div class="actions"><a class="btn ghost" href="/calendario">Calendario</a><a class="btn" href="/calendario/{event_id}/modifica">Modifica</a>{create_practice}</div></div><nav class="calendar-tabs">{tabs}</nav><div class="calendar-detail-grid"><div>{panel}</div><aside><section class="section"><h2>Azioni</h2>{status_form}<form method="post" action="/calendario/{event_id}/elimina" onsubmit="return confirm('Spostare questo evento nel cestino?')"><button class="btn ghost" style="margin-top:12px">Sposta nel cestino</button></form></section>{link_practice_section}</aside></div></main>'''
         self.send_html(layout(re.sub(r'^APPUNTAMENTO\b','PROMEMORIA',event["title"],flags=re.I) if event["event_type"]=='Appuntamento' else event["title"],body,user))
 
     def calendar_event_action(self,user,event_id,action):
@@ -3161,12 +3292,12 @@ class App(BaseHTTPRequestHandler):
             if action=="stato":
                 allowed=PICKUP_STATUSES if event["event_type"] in ("Ritiro","Ritiro in sede") else DELIVERY_STATUSES if event["event_type"] in ("Riconsegna","Riconsegna in sede") else ()
                 status=form.get("status","")
-                if status not in allowed:return self.send_error(400,"Stato non valido")
+                if status not in allowed:return self.calendar_event_detail(user,event_id,error="Stato non valido.")
                 c.execute("UPDATE calendar_events SET event_status=?,updated_at=?,updated_by=? WHERE id=?",(status,stamp,user["id"],event_id));calendar_add_history(c,event_id,user["id"],"Cambio stato",event["event_status"],status,stamp)
                 kind="calendar_event_cancelled" if status=="Annullato" else "calendar_event_updated";emit_notification(c,kind,"Stato evento aggiornato",f'{event["title"]}: {status}',actor_user_id=user["id"],payload={"url":f"/calendario/{event_id}"},db_path=DB_PATH)
             elif action=="commento":
                 message=form.get("message","").strip()[:2000]
-                if not message:return self.send_error(400,"Commento vuoto")
+                if not message:return self.calendar_event_detail(user,event_id,error="Il commento non può essere vuoto.")
                 c.execute("INSERT INTO calendar_event_comments(event_id,user_id,message,created_at) VALUES(?,?,?,?)",(event_id,user["id"],message,stamp));calendar_add_history(c,event_id,user["id"],"Aggiunta commento","",message,stamp);emit_notification(c,"calendar_comment","Nuovo commento evento",event["title"],actor_user_id=user["id"],payload={"url":f"/calendario/{event_id}?tab=commenti"},db_path=DB_PATH)
             elif action=="elimina":
                 c.execute("UPDATE calendar_events SET deleted_at=?,deleted_by=?,updated_at=? WHERE id=?",(stamp,user["id"],stamp,event_id));c.execute("UPDATE calendar_event_notifications SET status='annullato' WHERE event_id=? AND status IN ('programmato','in_invio')",(event_id,));calendar_add_history(c,event_id,user["id"],"Eliminazione","","Cestino",stamp)
@@ -3198,7 +3329,7 @@ class App(BaseHTTPRequestHandler):
             stamp=now()
             if action=="modifica":
                 message=self.form().get("message","").strip()[:2000]
-                if not message:return self.send_error(400,"Commento vuoto")
+                if not message:return self.calendar_event_detail(user,event_id,error="Il commento non può essere vuoto.")
                 c.execute("UPDATE calendar_event_comments SET message=?,updated_at=? WHERE id=? AND deleted_at IS NULL",(message,stamp,comment_id));calendar_add_history(c,event_id,user["id"],"Modifica commento",row["message"],message,stamp)
             else:c.execute("UPDATE calendar_event_comments SET deleted_at=?,deleted_by=? WHERE id=?",(stamp,user["id"],comment_id));calendar_add_history(c,event_id,user["id"],"Eliminazione commento",row["message"],"",stamp)
         self.redirect(f"/calendario/{event_id}?tab=commenti")
@@ -3546,10 +3677,12 @@ class App(BaseHTTPRequestHandler):
         body=f'''<main class="wrap orders-wrap"><div class="titlebar"><div><h1>Storico ordini</h1><p class="sub">Consulta, duplica o riprova gli ordini falliti.</p></div><a class="btn ghost" href="/ordini">Torna a Ordine acqua</a></div><form class="section" method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Esito</label><select name="stato">{options}</select></div></div><div class="actions"><button class="btn">Filtra</button><a class="btn ghost" href="/ordini/storico">Pulisci</a></div></form><div class="tablebox"><table><thead><tr><th>Data e ora</th><th>Quantità</th><th>Destinatario</th><th>Oggetto</th><th>Operatore</th><th>Stato</th><th>Errore</th><th></th></tr></thead><tbody>{table}</tbody></table></div>{self.order_confirmation_modal()}</main>'''
         self.send_html(layout("Storico ordini",body,user))
 
-    def order_settings_page(self,user):
+    def order_settings_page(self,user,draft=None,error=""):
         if user["role"]!="admin":return self.send_error(403,"Solo gli amministratori possono modificare le impostazioni degli ordini.")
         with db() as c:settings=order_email_settings(c)
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Impostazioni ordine acqua</h1><p class="sub">Questi dati vengono applicati automaticamente a ogni nuovo ordine.</p></div><a class="btn ghost" href="/ordini">Torna agli ordini</a></div><section class="section admin-order-settings"><form method="post" action="/ordini/impostazioni"><div class="fields"><div class="field full"><label>Email destinatario ordini</label><input type="email" name="order_recipient_email" value="{esc(settings['order_recipient_email'])}" required></div><div class="field full"><label>Oggetto email</label><input name="order_email_subject" value="{esc(settings['order_email_subject'])}" maxlength="200" required></div><div class="field full"><label>Testo email</label><textarea name="order_email_template" maxlength="10000" required>{esc(settings['order_email_template'])}</textarea><small class="sub">Inserisci <b>{{{{quantita}}}}</b> nel punto in cui deve apparire la quantità. Sono disponibili anche {{{{note_predefinite}}}}, {{{{firma}}}}, {{{{nome_mittente}}}} e {{{{telefono}}}}.</small></div><div class="field"><label>Firma finale</label><input name="order_email_signature" value="{esc(settings['order_email_signature'])}" maxlength="200" required></div><div class="field"><label>Nome mittente</label><input name="order_sender_name" value="{esc(settings['order_sender_name'])}" maxlength="200" required></div><div class="field"><label>Numero di telefono (opzionale)</label><input name="order_phone" value="{esc(settings['order_phone'])}" maxlength="100"></div><div class="field full"><label>Note predefinite (opzionali)</label><textarea name="order_default_notes" maxlength="2000">{esc(settings['order_default_notes'])}</textarea></div><div class="field full"><label>Mittente tecnico</label><input value="info@petparadisempoli.com" readonly><small class="sub">Le credenziali SMTP restano esclusivamente nelle variabili d’ambiente di Render e non sono mostrate qui.</small></div></div><button class="btn">Salva impostazioni</button></form></section></main>'''
+        if draft is not None:settings={**settings,**draft}
+        error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Impostazioni ordine acqua</h1><p class="sub">Questi dati vengono applicati automaticamente a ogni nuovo ordine.</p></div><a class="btn ghost" href="/ordini">Torna agli ordini</a></div>{error_html}<section class="section admin-order-settings"><form method="post" action="/ordini/impostazioni"><div class="fields"><div class="field full"><label>Email destinatario ordini</label><input type="email" name="order_recipient_email" value="{esc(settings['order_recipient_email'])}" required></div><div class="field full"><label>Oggetto email</label><input name="order_email_subject" value="{esc(settings['order_email_subject'])}" maxlength="200" required></div><div class="field full"><label>Testo email</label><textarea name="order_email_template" maxlength="10000" required>{esc(settings['order_email_template'])}</textarea><small class="sub">Inserisci <b>{{{{quantita}}}}</b> nel punto in cui deve apparire la quantità. Sono disponibili anche {{{{note_predefinite}}}}, {{{{firma}}}}, {{{{nome_mittente}}}} e {{{{telefono}}}}.</small></div><div class="field"><label>Firma finale</label><input name="order_email_signature" value="{esc(settings['order_email_signature'])}" maxlength="200" required></div><div class="field"><label>Nome mittente</label><input name="order_sender_name" value="{esc(settings['order_sender_name'])}" maxlength="200" required></div><div class="field"><label>Numero di telefono (opzionale)</label><input name="order_phone" value="{esc(settings['order_phone'])}" maxlength="100"></div><div class="field full"><label>Note predefinite (opzionali)</label><textarea name="order_default_notes" maxlength="2000">{esc(settings['order_default_notes'])}</textarea></div><div class="field full"><label>Mittente tecnico</label><input value="info@petparadisempoli.com" readonly><small class="sub">Le credenziali SMTP restano esclusivamente nelle variabili d’ambiente di Render e non sono mostrate qui.</small></div></div><button class="btn">Salva impostazioni</button></form></section></main>'''
         self.send_html(layout("Impostazioni ordine acqua",body,user))
 
     def order_detail_page(self,user,order_id):
@@ -3695,18 +3828,19 @@ class App(BaseHTTPRequestHandler):
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>Catalogo Urne</h1><p class="sub">Catalogo e magazzino collegati alle pratiche.</p></div><a class="btn" href="/catalogo-urne/nuova?categoria={category_param}">{new_item_label}</a></div><nav class="calendar-tabs urn-tabs">{tabs_html}</nav><section class="urn-stats">{stat_html}</section><form class="section urn-filter" method="get"><input type="hidden" name="categoria" value="{category_param}"><div class="fields"><div class="field full"><label>Cerca urna</label><input id="urnCatalogSearch" name="q" value="{esc(display_term)}" placeholder="Inizia a scrivere il nome dell urna" autocomplete="off"></div><div class="field"><label>Materiale</label><select name="materiale">{material_options}</select></div><div class="field"><label>Disponibilita</label><select name="disponibilita">{availability_options}</select></div></div><button class="btn" style="margin-top:12px">Filtra</button></form>{content}<script>(function(){{const input=document.getElementById("urnCatalogSearch"),grid=document.getElementById("urnCatalogGrid"),empty=document.getElementById("urnLiveEmpty");if(!input||!grid)return;const cards=[...grid.querySelectorAll(".urn-card")];const normalize=v=>String(v||"").toLocaleLowerCase("it").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();input.addEventListener("input",()=>{{const words=normalize(input.value).split(/\s+/).filter(Boolean);let visible=0;cards.forEach(card=>{{const hay=normalize(card.dataset.urnSearch);const show=words.every(word=>hay.includes(word));card.style.display=show?"":"none";if(show)visible++;}});if(empty)empty.style.display=visible?"none":"block";}});}})();</script></main>'''
         self.send_html(layout("Catalogo Urne",body,user))
 
-    def urn_edit_page(self,user,urn_id=None):
+    def urn_edit_page(self,user,urn_id=None,draft=None,error=""):
         urn=None
         if urn_id:
             with db() as c: urn=c.execute("SELECT * FROM urns WHERE id=? AND active=1",(urn_id,)).fetchone()
             if not urn:return self.send_error(404)
-        value=lambda key: esc(urn[key] if urn else "")
+        value=lambda key: esc(draft.get(key,"") if draft is not None else (urn[key] if urn else ""))
         category_labels={"Urna":"Urna","Accessorio":"Accessorio","Calco":"Calco"}
         category_param_map={"urne":"Urna","accessori":"Accessorio","calchi":"Calco"}
         q=parse_qs(urlparse(self.path).query)
         default_category_param=(q.get("categoria") or ["urne"])[0].strip().lower()
         if default_category_param not in category_param_map:default_category_param="urne"
-        current_category=urn["category"] if urn and urn["category"] in category_labels else category_param_map[default_category_param]
+        draft_category=draft.get("category") if draft is not None else None
+        current_category=draft_category if draft_category in category_labels else (urn["category"] if urn and urn["category"] in category_labels else category_param_map[default_category_param])
         category_options=''.join(f'<option value="{value_}" {"selected" if value_==current_category else ""}>{label}</option>' for value_,label in category_labels.items())
         new_item_title={"Urna":"Nuova urna","Accessorio":"Nuovo accessorio","Calco":"Nuovo calco"}[current_category]
         edit_item_title={"Urna":"Modifica urna","Accessorio":"Modifica accessorio","Calco":"Modifica calco"}[current_category]
@@ -3715,7 +3849,8 @@ class App(BaseHTTPRequestHandler):
         material_list=''.join(f'<option value="{esc(item)}"></option>' for item in materials)
         action=f'/catalogo-urne/{urn_id}/modifica' if urn_id else '/catalogo-urne/nuova'
         readonly_code='' if urn else 'readonly'
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{edit_item_title if urn else new_item_title}</h1><p class="sub">I dati saranno disponibili subito nella compilazione delle pratiche.</p></div></div><form method="post" action="{action}" class="section"><div class="fields"><div class="field"><label>Categoria</label><select name="category">{category_options}</select></div><div class="field"><label>Nome *</label><input name="name" value="{value('name')}" required></div><div class="field"><label>Materiale</label><input name="material" list="urnMaterialOptions" value="{value('material')}" placeholder="Scegli o scrivi un materiale"><datalist id="urnMaterialOptions">{material_list}</datalist></div><div class="field"><label>Codice interno</label><input name="internal_code" value="{value('internal_code')}" placeholder="Generato automaticamente" {readonly_code}><small class="sub">Per un nuovo articolo viene assegnato automaticamente.</small></div><div class="field"><label>Prezzo € *</label><input name="price" value="{value('price')}" inputmode="decimal" required></div><div class="field"><label>Quantita disponibile</label><div class="quantity-stepper urn-quantity-stepper"><button class="btn ghost" type="button" aria-label="Diminuisci quantità" onclick="adjustUrnQuantity(this.form,-1)">−</button><input name="quantity" value="{value('quantity') if urn else '0'}" inputmode="numeric"><button class="btn ghost" type="button" aria-label="Aumenta quantità" onclick="adjustUrnQuantity(this.form,1)">+</button></div></div><div class="field"><label>Soglia scorte basse</label><input name="low_stock_threshold" value="{value('low_stock_threshold') if urn else '3'}" inputmode="numeric"></div><div class="field full"><label>Foto (PNG, JPG o WEBP; max 3 MB)</label><input id="urnImageFile" type="file" accept="image/png,image/jpeg,image/webp"><input type="hidden" name="image_data"><small class="sub">Lascia vuoto per mantenere la foto esistente.</small></div><div class="field full"><label>Note</label><textarea name="notes">{value('notes')}</textarea></div></div><div class="actions" style="margin-top:16px"><button class="btn">Salva</button><a class="btn ghost" href="{f'/catalogo-urne/{urn_id}' if urn_id else '/catalogo-urne'}">Annulla</a></div></form></main>'''
+        error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{edit_item_title if urn else new_item_title}</h1><p class="sub">I dati saranno disponibili subito nella compilazione delle pratiche.</p></div></div>{error_html}<form method="post" action="{action}" class="section"><div class="fields"><div class="field"><label>Categoria</label><select name="category">{category_options}</select></div><div class="field"><label>Nome *</label><input name="name" value="{value('name')}" required></div><div class="field"><label>Materiale</label><input name="material" list="urnMaterialOptions" value="{value('material')}" placeholder="Scegli o scrivi un materiale"><datalist id="urnMaterialOptions">{material_list}</datalist></div><div class="field"><label>Codice interno</label><input name="internal_code" value="{value('internal_code')}" placeholder="Generato automaticamente" {readonly_code}><small class="sub">Per un nuovo articolo viene assegnato automaticamente.</small></div><div class="field"><label>Prezzo € *</label><input name="price" value="{value('price')}" inputmode="decimal" required></div><div class="field"><label>Quantita disponibile</label><div class="quantity-stepper urn-quantity-stepper"><button class="btn ghost" type="button" aria-label="Diminuisci quantità" onclick="adjustUrnQuantity(this.form,-1)">−</button><input name="quantity" value="{value('quantity') if urn or draft is not None else '0'}" inputmode="numeric"><button class="btn ghost" type="button" aria-label="Aumenta quantità" onclick="adjustUrnQuantity(this.form,1)">+</button></div></div><div class="field"><label>Soglia scorte basse</label><input name="low_stock_threshold" value="{value('low_stock_threshold') if urn or draft is not None else '3'}" inputmode="numeric"></div><div class="field full"><label>Foto (PNG, JPG o WEBP; max 3 MB)</label><input id="urnImageFile" type="file" accept="image/png,image/jpeg,image/webp"><input type="hidden" name="image_data"><small class="sub">Lascia vuoto per mantenere la foto esistente.</small></div><div class="field full"><label>Note</label><textarea name="notes">{value('notes')}</textarea></div></div><div class="actions" style="margin-top:16px"><button class="btn">Salva</button><a class="btn ghost" href="{f'/catalogo-urne/{urn_id}' if urn_id else '/catalogo-urne'}">Annulla</a></div></form></main>'''
         self.send_html(layout("Catalogo Urne",body,user))
 
     def urn_detail_page(self,user,urn_id):
@@ -3746,12 +3881,13 @@ class App(BaseHTTPRequestHandler):
         return f"/uploads/urns/{filename}"
 
     def save_urn(self,user,urn_id=None):
-        f=self.form(); name=f.get("name","").strip(); material=f.get("material","").strip(); code=f.get("internal_code","").strip() or None; price=f.get("price","").strip().replace(",","."); notes=f.get("notes","").strip()
+        f=self.form(); name=f.get("name","").strip(); material=f.get("material","").strip(); code=f.get("internal_code","").strip() or None; price=normalize_money_text(f.get("price","")); notes=f.get("notes","").strip()
         category=f.get("category","").strip()
         if category not in ("Urna","Accessorio","Calco"):category="Urna"
+        draft={"name":name,"material":material,"internal_code":f.get("internal_code","").strip(),"price":price,"quantity":f.get("quantity","0"),"low_stock_threshold":f.get("low_stock_threshold","3"),"notes":notes,"category":category}
         try: quantity=max(0,int(f.get("quantity","0") or 0)); threshold=max(0,int(f.get("low_stock_threshold","3") or 3))
-        except ValueError:return self.send_error(400,"Quantita non valida")
-        if not name or not re.fullmatch(r"\d+(?:\.\d{1,2})?",price):return self.send_error(400,"Nome o prezzo non valido")
+        except ValueError:return self.urn_edit_page(user,urn_id,draft=draft,error="Quantità o soglia scorte non valide: usa solo numeri interi.")
+        if not name or not re.fullmatch(r"\d+(?:\.\d{1,2})?",price):return self.urn_edit_page(user,urn_id,draft=draft,error="Inserisci un nome e un prezzo validi (es. 120,00).")
         code_prefix={"Urna":"URN","Accessorio":"ACC","Calco":"CALCO"}[category]
         try:
             with db() as c:
@@ -3775,8 +3911,8 @@ class App(BaseHTTPRequestHandler):
                     image_path=self._save_urn_image(f.get("image_data",""),urn_id)
                     if image_path:c.execute("UPDATE urns SET image_path=? WHERE id=?",(image_path,urn_id))
                     c.execute("INSERT INTO urn_movements(urn_id,user_id,movement_type,quantity_delta,old_quantity,new_quantity,note,created_at) VALUES(?,?,?,?,?,?,?,?)",(urn_id,user["id"],"Creazione / carico iniziale",quantity,0,quantity,"Nuova urna",stamp))
-        except sqlite3.IntegrityError:return self.send_error(400,"Codice interno gia utilizzato")
-        except (ValueError,base64.binascii.Error):return self.send_error(400,"Immagine non valida")
+        except sqlite3.IntegrityError:return self.urn_edit_page(user,urn_id,draft=draft,error="Codice interno già utilizzato da un altro articolo.")
+        except (ValueError,base64.binascii.Error):return self.urn_edit_page(user,urn_id,draft=draft,error="Immagine non valida: usa PNG, JPG o WEBP entro 3 MB.")
         self.redirect(f"/catalogo-urne/{urn_id}")
 
     def delete_urn(self,user,urn_id):
@@ -3873,10 +4009,6 @@ class App(BaseHTTPRequestHandler):
         self.send_html(layout("Notifiche",body,user))
 
     def settings_page(self,user):
-        with db() as c:
-            saved={row["type"]:bool(row["enabled"]) for row in c.execute("SELECT type,enabled FROM notification_preferences WHERE user_id=?",(user["id"],))}
-            subscriptions=c.execute("SELECT count(*) n FROM push_subscriptions WHERE user_id=?",(user["id"],)).fetchone()["n"]
-        toggles=''.join(f'''<label class="toggle-row"><span>{icon} {esc(label)}</span><input type="checkbox" name="{key}" value="1" {'checked' if saved.get(key,True) else ''}></label>''' for key,(label,icon) in NOTIFICATION_TYPES.items())
         asset_rows = []
         for name in ("DCS_NUOVO.pdf", "DCS_LIVORNO.pdf", "DCS_EMPOLI.pdf"):
             path = ASSETS / name
@@ -3886,10 +4018,71 @@ class App(BaseHTTPRequestHandler):
         data_ok = DATA.exists()
         ddt_ok = DDT_DIR.exists()
         writable = os.access(DATA, os.W_OK) if data_ok else False
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Impostazioni</h1><div class="sub">Preferenze personali e diagnostica.</div></div></div><section class="section"><h2>Notifiche</h2><p class="sub">Dispositivi collegati: <b data-push-device-count>{subscriptions}</b>. Su iPhone la PWA deve essere installata dalla schermata Home.</p><div id="pushVisibleError" class="flash warning hidden"></div><div class="actions" style="margin-bottom:16px"><button class="btn" type="button" onclick="enablePushNotifications()">Abilita notifiche</button><button class="btn ghost" type="button" onclick="schedulePushTest()">Test con PWA chiusa (10 secondi)</button></div><details class="section" open><summary><b>Diagnostica notifiche</b></summary><div class="kvs" style="margin-top:12px"><div class="kv"><small>Notification.permission</small><b data-push-diagnostic="permission">verifica…</b></div><div class="kv"><small>Service worker registrato</small><b data-push-diagnostic="registered">verifica…</b></div><div class="kv"><small>Service worker attivo</small><b data-push-diagnostic="active">verifica…</b></div><div class="kv"><small>Subscription presente</small><b data-push-diagnostic="subscription">verifica…</b></div><div class="kv"><small>Endpoint</small><b data-push-diagnostic="endpoint">—</b></div><div class="kv"><small>Risposta backend</small><b data-push-diagnostic="backend">verifica…</b></div><div class="kv"><small>Ultimo errore</small><b data-push-diagnostic="lastError">nessuno</b></div><div class="kv"><small>Dispositivi registrati</small><b data-push-diagnostic="devices">{subscriptions}</b></div></div></details><form method="post" action="/impostazioni/notifiche"><div class="toggle-list">{toggles}</div><button class="btn" style="margin-top:16px">Salva preferenze</button></form></section><section class="section" style="margin-top:16px"><h2>Modelli PDF</h2><div class="tablebox"><table><thead><tr><th>File</th><th>Stato</th><th>Dimensione</th></tr></thead><tbody>{''.join(asset_rows)}</tbody></table></div></section><section class="section" style="margin-top:16px"><h2>Cartelle dati</h2><p><b>Assets:</b> {esc(ASSETS)}</p><p><b>DATA:</b> {esc(DATA)} - {'OK' if data_ok else 'MANCANTE'} - scrittura {'OK' if writable else 'NO'}</p><p><b>DDT:</b> {esc(DDT_DIR)} - {'OK' if ddt_ok else 'MANCANTE'}</p></section></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Impostazioni</h1><div class="sub">Diagnostica del gestionale. Per le preferenze personali vai su <a href="/il-mio-profilo">Il mio profilo</a>.</div></div></div><section class="section"><h2>Modelli PDF</h2><div class="tablebox"><table><thead><tr><th>File</th><th>Stato</th><th>Dimensione</th></tr></thead><tbody>{''.join(asset_rows)}</tbody></table></div></section><section class="section" style="margin-top:16px"><h2>Cartelle dati</h2><p><b>Assets:</b> {esc(ASSETS)}</p><p><b>DATA:</b> {esc(DATA)} - {'OK' if data_ok else 'MANCANTE'} - scrittura {'OK' if writable else 'NO'}</p><p><b>DDT:</b> {esc(DDT_DIR)} - {'OK' if ddt_ok else 'MANCANTE'}</p></section></main>'''
         self.send_html(layout("Impostazioni",body,user))
 
     diagnostics=settings_page
+
+    def profile_page(self,user,error=""):
+        with db() as c:
+            saved={row["type"]:bool(row["enabled"]) for row in c.execute("SELECT type,enabled FROM notification_preferences WHERE user_id=?",(user["id"],))}
+            subscriptions=c.execute("SELECT count(*) n FROM push_subscriptions WHERE user_id=?",(user["id"],)).fetchone()["n"]
+        prefs=load_preferences(user["id"])
+        toggles=''.join(f'''<label class="toggle-row"><span>{icon} {esc(label)}</span><input type="checkbox" name="{key}" value="1" {'checked' if saved.get(key,True) else ''}></label>''' for key,(label,icon) in NOTIFICATION_TYPES.items())
+        theme=prefs.get("theme","dark")
+        theme_options=''.join(f'<option value="{value}" {"selected" if theme==value else ""}>{label}</option>' for value,label in (("dark","Scuro"),("light","Chiaro")))
+        sidebar_order=parse_preference_list(prefs.get("sidebar_order",""))
+        ordered_links=reorder_by_saved(SIDEBAR_LINKS,sidebar_order,lambda item:item[2]) if sidebar_order else list(SIDEBAR_LINKS)
+        sidebar_rows=''.join(f'''<div class="field"><label>{esc(label)}</label><input type="number" name="sidebar_pos__{esc(label)}" value="{index}" min="0" style="width:80px"></div>''' for index,(href,icon,label) in enumerate(ordered_links))
+        bottom_pool={label:(href,icon,label) for href,icon,label in SIDEBAR_LINKS}
+        bottom_slots=[label for label in parse_preference_list(prefs.get("bottom_nav_slots","")) if label in bottom_pool][:3]
+        for label in BOTTOM_NAV_DEFAULT_SLOTS:
+            if len(bottom_slots)>=3:break
+            if label not in bottom_slots:bottom_slots.append(label)
+        bottom_option_labels=[label for href,_,label in SIDEBAR_LINKS if ":" not in href]
+        bottom_selects=''.join(f'''<div class="field"><label>Posizione {position}</label><select name="bottom_slot_{position}">{''.join(f'<option {"selected" if bottom_slots[position-1]==label else ""}>{esc(label)}</option>' for label in bottom_option_labels)}</select></div>''' for position in (1,2,3))
+        dashboard_order=[sid for sid in parse_preference_list(prefs.get("dashboard_sections","")) if sid in dict(DASHBOARD_SECTION_LABELS)]
+        visible_ids=set(dashboard_order) if dashboard_order else {sid for sid,_ in DASHBOARD_SECTION_LABELS}
+        ordered_sections=[(sid,label) for sid in (dashboard_order or [sid for sid,_ in DASHBOARD_SECTION_LABELS])for s,label in DASHBOARD_SECTION_LABELS if s==sid]
+        remaining_sections=[(sid,label) for sid,label in DASHBOARD_SECTION_LABELS if sid not in visible_ids]
+        dashboard_rows=''.join(f'''<div class="field"><label><input type="checkbox" name="dash_show__{sid}" value="1" checked style="width:auto"> {esc(label)}</label><input type="number" name="dash_pos__{sid}" value="{index}" min="0" style="width:80px"></div>''' for index,(sid,label) in enumerate(ordered_sections))+''.join(f'''<div class="field"><label><input type="checkbox" name="dash_show__{sid}" value="1" style="width:auto"> {esc(label)}</label><input type="number" name="dash_pos__{sid}" value="{len(ordered_sections)+index}" min="0" style="width:80px"></div>''' for index,(sid,label) in enumerate(remaining_sections))
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Il mio profilo</h1><div class="sub">Preferenze personali di {esc(user['display_name'])}. Non modificano i permessi del tuo account.</div></div></div>{f'<div class="flash warning">{esc(error)}</div>' if error else ''}
+        <section class="section"><h2>Password</h2><p class="sub">Cambia la tua password personale in qualsiasi momento.</p><a class="btn ghost" href="/imposta-password?return_to=/il-mio-profilo">Cambia password</a></section>
+        <section class="section" style="margin-top:16px"><h2>Aspetto</h2><form method="post" action="/il-mio-profilo/salva"><input type="hidden" name="return_to" value="/il-mio-profilo"><div class="fields"><div class="field"><label>Tema colori</label><select name="theme">{theme_options}</select></div></div><button class="btn" style="margin-top:12px">Salva tema</button></form></section>
+        <section class="section" style="margin-top:16px"><h2>Ordine della sidebar</h2><p class="sub">Numeri più bassi vengono mostrati per primi.</p><form method="post" action="/il-mio-profilo/salva"><input type="hidden" name="return_to" value="/il-mio-profilo"><div class="fields">{sidebar_rows}</div><button class="btn" style="margin-top:12px">Salva ordine sidebar</button></form></section>
+        <section class="section" style="margin-top:16px"><h2>Barra di navigazione mobile</h2><p class="sub">Scegli le tre voci accanto al pulsante centrale "+".</p><form method="post" action="/il-mio-profilo/salva"><input type="hidden" name="return_to" value="/il-mio-profilo"><div class="fields">{bottom_selects}</div><button class="btn" style="margin-top:12px">Salva barra mobile</button></form></section>
+        <section class="section" style="margin-top:16px"><h2>Dashboard</h2><p class="sub">Spunta i pannelli da mostrare e scegli l'ordine.</p><form method="post" action="/il-mio-profilo/salva"><input type="hidden" name="return_to" value="/il-mio-profilo"><div class="fields">{dashboard_rows}</div><button class="btn" style="margin-top:12px">Salva dashboard</button></form></section>
+        <section class="section" style="margin-top:16px"><h2>Notifiche</h2><p class="sub">Dispositivi collegati: <b data-push-device-count>{subscriptions}</b>. Su iPhone la PWA deve essere installata dalla schermata Home.</p><div id="pushVisibleError" class="flash warning hidden"></div><div class="actions" style="margin-bottom:16px"><button class="btn" type="button" onclick="enablePushNotifications()">Abilita notifiche</button><button class="btn ghost" type="button" onclick="schedulePushTest()">Test con PWA chiusa (10 secondi)</button></div><details class="section" open><summary><b>Diagnostica notifiche</b></summary><div class="kvs" style="margin-top:12px"><div class="kv"><small>Notification.permission</small><b data-push-diagnostic="permission">verifica…</b></div><div class="kv"><small>Service worker registrato</small><b data-push-diagnostic="registered">verifica…</b></div><div class="kv"><small>Service worker attivo</small><b data-push-diagnostic="active">verifica…</b></div><div class="kv"><small>Subscription presente</small><b data-push-diagnostic="subscription">verifica…</b></div><div class="kv"><small>Endpoint</small><b data-push-diagnostic="endpoint">—</b></div><div class="kv"><small>Risposta backend</small><b data-push-diagnostic="backend">verifica…</b></div><div class="kv"><small>Ultimo errore</small><b data-push-diagnostic="lastError">nessuno</b></div><div class="kv"><small>Dispositivi registrati</small><b data-push-diagnostic="devices">{subscriptions}</b></div></div></details><form method="post" action="/impostazioni/notifiche"><div class="toggle-list">{toggles}</div><button class="btn" style="margin-top:16px">Salva preferenze</button></form></section></main>'''
+        self.send_html(layout("Il mio profilo",body,user))
+
+    def save_preferences(self,user):
+        form=self.form()
+        updates={}
+        if form.get("theme") in ("light","dark"):
+            updates["theme"]=form["theme"]
+        sidebar_positions=[(key[len("sidebar_pos__"):],value) for key,value in form.items() if key.startswith("sidebar_pos__")]
+        if sidebar_positions:
+            try:
+                ordered=[label for label,_ in sorted(sidebar_positions,key=lambda item:float(item[1]))]
+                updates["sidebar_order"]=json.dumps(ordered,ensure_ascii=False)
+            except ValueError:
+                pass
+        bottom_slots=[form.get(f"bottom_slot_{position}","").strip() for position in (1,2,3)]
+        if any(bottom_slots):
+            updates["bottom_nav_slots"]=json.dumps([slot for slot in bottom_slots if slot],ensure_ascii=False)
+        dash_positions=[(key[len("dash_pos__"):],value) for key,value in form.items() if key.startswith("dash_pos__")]
+        if dash_positions:
+            visible={key[len("dash_show__"):] for key in form if key.startswith("dash_show__")}
+            try:
+                ordered=[sid for sid,_ in sorted(dash_positions,key=lambda item:float(item[1])) if sid in visible]
+                updates["dashboard_sections"]=json.dumps(ordered,ensure_ascii=False)
+            except ValueError:
+                pass
+        if updates:
+            with db() as c:
+                for key,value in updates.items():
+                    c.execute("INSERT INTO user_preferences(user_id,key,value) VALUES(?,?,?) ON CONFLICT(user_id,key) DO UPDATE SET value=excluded.value",(user["id"],key,value))
+        return self.redirect(safe_return_path(form.get("return_to"),"/il-mio-profilo"))
 
     def json_body(self):
         origin=(self.headers.get("Origin") or "").strip()
@@ -3951,13 +4144,13 @@ class App(BaseHTTPRequestHandler):
     def save_order_settings(self,user):
         if user["role"]!="admin":return self.send_error(403,"Solo gli amministratori possono modificare le impostazioni degli ordini.")
         form=self.form();recipient=form.get("order_recipient_email","").strip().lower();subject=form.get("order_email_subject","").strip();template=form.get("order_email_template","").strip();signature=form.get("order_email_signature","").strip();sender_name=form.get("order_sender_name","").strip();phone=form.get("order_phone","").strip();default_notes=form.get("order_default_notes","").strip()
-        if not valid_email_address(recipient):
-            return self.error_page("Indirizzo non valido","Inserisci un indirizzo email destinatario valido.","/ordini/impostazioni")
-        if not subject or len(subject)>200 or "\n" in subject or "\r" in subject:return self.error_page("Oggetto non valido","Inserisci un oggetto email valido.","/ordini/impostazioni")
-        if not template or len(template)>10000 or "{{quantita}}" not in template:return self.error_page("Testo non valido","Il testo deve contenere la variabile {{quantita}}.","/ordini/impostazioni")
-        if not signature or len(signature)>200 or not sender_name or len(sender_name)>200:return self.error_page("Impostazioni non valide","Firma e nome mittente sono obbligatori.","/ordini/impostazioni")
-        if len(phone)>100 or len(default_notes)>2000:return self.error_page("Impostazioni non valide","Telefono o note predefinite sono troppo lunghi.","/ordini/impostazioni")
         values={"order_recipient_email":recipient,"order_email_subject":subject,"order_email_template":template,"order_email_signature":signature,"order_sender_name":sender_name,"order_phone":phone,"order_default_notes":default_notes}
+        if not valid_email_address(recipient):
+            return self.order_settings_page(user,draft=values,error="Inserisci un indirizzo email destinatario valido.")
+        if not subject or len(subject)>200 or "\n" in subject or "\r" in subject:return self.order_settings_page(user,draft=values,error="Inserisci un oggetto email valido (senza andare a capo, max 200 caratteri).")
+        if not template or len(template)>10000 or "{{quantita}}" not in template:return self.order_settings_page(user,draft=values,error="Il testo deve contenere la variabile {{quantita}}.")
+        if not signature or len(signature)>200 or not sender_name or len(sender_name)>200:return self.order_settings_page(user,draft=values,error="Firma e nome mittente sono obbligatori (max 200 caratteri).")
+        if len(phone)>100 or len(default_notes)>2000:return self.order_settings_page(user,draft=values,error="Telefono o note predefinite sono troppo lunghi.")
         with db() as c:
             c.executemany("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",values.items())
         return self.redirect("/ordini/impostazioni")
@@ -4018,7 +4211,7 @@ class App(BaseHTTPRequestHandler):
         return f'''<div class="inline-statuses" onclick="event.stopPropagation()">
         <form method="post" action="/pratiche/{r['id']}/stato-rapido" onsubmit="return savePracticeState(this,event)"><input type="hidden" name="return_to" value="{return_to}"><select class="inline-state-select practice-status {status_cls}" name="status" aria-label="Stato pratica" data-saved-value="{esc(r['status'])}" onchange="savePracticeState(this.form)">{state_options}</select><span class="inline-save-note" aria-live="polite"></span></form>
         <select class="inline-state-select {pay_cls}" aria-label="Stato pagamento" data-payment-popover="{modal_id}" onchange="openPaymentPopover(this)">{payment_options}</select>
-        <div class="payment-popover" id="{modal_id}" hidden onclick="if(event.target===this)closePaymentPopover(this)"><form class="payment-dialog" method="post" action="/pratiche/{r['id']}/pagamento-rapido"><div class="titlebar"><div><h2>Pagamento · {esc(r['practice_number'])}</h2><p class="sub">Registra i dettagli senza lasciare questa lista.</p></div><button class="btn ghost" type="button" onclick="closePaymentPopover(this)">Chiudi</button></div><input type="hidden" name="return_to" value="{return_to}"><div class="fields"><div class="field"><label>Stato pagamento</label><select name="payment_status">{payment_options}</select></div><div class="field"><label>Metodo di pagamento</label><select name="payment_method">{method_options}</select></div><div class="field"><label>Totale incassato €</label><input name="payment_amount" value="{esc(amount_value)}" inputmode="decimal"></div><div class="field"><label>Numero fattura</label><input name="invoice_number" value="{esc(invoice_number)}"></div><div class="field"><label>Totale fattura €</label><input name="invoice_total" value="{esc(invoice_total)}" inputmode="decimal"></div><div class="field"><label>Data fattura</label><input type="date" name="invoice_date" value="{esc(invoice_date)}"></div></div><button class="btn" style="margin-top:16px">Salva pagamento</button></form></div></div>'''
+        <div class="payment-popover" id="{modal_id}" hidden onclick="if(event.target===this)closePaymentPopover(this)"><form class="payment-dialog" method="post" action="/pratiche/{r['id']}/pagamento-rapido"><div class="titlebar"><div><h2>Pagamento · {esc(r['practice_number'])}</h2><p class="sub">Registra i dettagli senza lasciare questa lista.</p></div><button class="btn ghost" type="button" onclick="closePaymentPopover(this)">Chiudi</button></div><input type="hidden" name="return_to" value="{return_to}"><div class="fields"><div class="field"><label>Stato pagamento</label><select name="payment_status">{payment_options}</select></div><div class="field"><label>Metodo di pagamento</label><select name="payment_method">{method_options}</select></div><div class="field"><label>Totale incassato €</label><input name="payment_amount" value="{esc(amount_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field"><label>Numero fattura</label><input name="invoice_number" value="{esc(invoice_number)}"></div><div class="field"><label>Totale fattura €</label><input name="invoice_total" value="{esc(invoice_total)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field"><label>Data fattura</label><input type="date" name="invoice_date" value="{esc(invoice_date)}"></div></div><button class="btn" style="margin-top:16px">Salva pagamento</button></form></div></div>'''
 
     def practice_rows(self,rows,show_financials=False):
         rows=list(rows)
@@ -4455,10 +4648,10 @@ class App(BaseHTTPRequestHandler):
             c.execute("UPDATE veterinarian_vouchers SET status='Usato', used_at=? WHERE id=? AND status='Maturato'",(now(),voucher_id))
         self.redirect(f"/veterinari/{row['veterinarian_id']}" if row else "/veterinari")
 
-    def fields_html(self,p=None):
-        return self._fields_html(p).replace("Totale servizio €","Totale W €")
+    def fields_html(self,p=None,user=None):
+        return self._fields_html(p,user).replace("Totale servizio €","Totale W €")
 
-    def _fields_html(self,p=None):
+    def _fields_html(self,p=None,user=None):
         val=lambda k: esc(p[k] if p and k in p.keys() else "")
         raw=lambda k,default="": (p[k] if p and k in p.keys() and p[k] not in (None,"") else default)
         selected=lambda k,v,default="": "selected" if str(raw(k,default))==v else ""
@@ -4480,7 +4673,12 @@ class App(BaseHTTPRequestHandler):
         make_invoice_checked='checked' if raw('make_invoice')=="Si" else ''
         payment_options=''.join(f'<option {"selected" if raw("payment_status","Da saldare")==state else ""}>{state}</option>' for state in PAYMENT_STATES)
         payment_method_options=''.join(f'<option value="{method}" {"selected" if raw("payment_method")==method else ""}>{method or "Seleziona metodo"}</option>' for method in PAYMENT_METHODS)
-        return f'''<section class="section"><h2>Operatore e stati</h2><div class="fields"><div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option><option {selected('operator_name','GIANLUCA')}>GIANLUCA</option></select></div><div class="field"><label>Stato pratica</label><select name="status"><option {selected('status','Ritirato','Ritirato')}>Ritirato</option><option {selected('status','In programma','Ritirato')}>In programma</option><option {selected('status','Cremato','Ritirato')}>Cremato</option><option {selected('status','Da consegnare','Ritirato')}>Da consegnare</option><option {selected('status','Consegnato','Ritirato')}>Consegnato</option><option data-collective-only="1" {selected('status','Smaltito','Ritirato')}>Smaltito</option></select></div></div></section>
+        if user is None or user["role"]=="admin":
+            operator_field=f'''<div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option><option {selected('operator_name','GIANLUCA')}>GIANLUCA</option></select></div>'''
+        else:
+            operator_display=raw('operator_name') or user['display_name'].upper()
+            operator_field=f'''<input type="hidden" name="operator_name" value="{esc(operator_display)}"><div class="field"><label>Operatore</label><p style="margin:0;padding:11px 0;font-weight:700">{esc(operator_display)}</p></div>'''
+        return f'''<section class="section"><h2>Operatore e stati</h2><div class="fields">{operator_field}<div class="field"><label>Stato pratica</label><select name="status"><option {selected('status','Ritirato','Ritirato')}>Ritirato</option><option {selected('status','In programma','Ritirato')}>In programma</option><option {selected('status','Cremato','Ritirato')}>Cremato</option><option {selected('status','Da consegnare','Ritirato')}>Da consegnare</option><option {selected('status','Consegnato','Ritirato')}>Consegnato</option><option data-collective-only="1" {selected('status','Smaltito','Ritirato')}>Smaltito</option></select></div></div></section>
         <input type="hidden" name="urn_notes" value="{val('urn_notes')}"><select name="urn_id" class="hidden" aria-hidden="true" tabindex="-1">{urn_options(raw('urn_id'))}</select><small id="urnStockWarning" class="sub hidden"></small>
         <input type="hidden" name="price_urn_2" value="{val('price_urn_2')}"><input type="hidden" name="urn_notes_2" value="{val('urn_notes_2')}"><select name="urn_id_2" class="hidden" aria-hidden="true" tabindex="-1">{urn_options(raw('urn_id_2'))}</select><small id="urnStockWarning2" class="sub hidden"></small><input type="hidden" name="price_cast_2" value="{val('price_cast_2')}"><input type="hidden" name="price_paw_cast_2" value="{val('price_paw_cast_2')}"><input type="hidden" name="price_paw_cast_3" value="{val('price_paw_cast_3')}"><input type="hidden" name="price_paw_cast_4" value="{val('price_paw_cast_4')}"><input type="hidden" name="price_nose_cast_2" value="{val('price_nose_cast_2')}"><input type="hidden" name="price_nose_cast_3" value="{val('price_nose_cast_3')}"><input type="hidden" name="price_nose_cast_4" value="{val('price_nose_cast_4')}"><input type="hidden" name="price_accessories_2" value="{val('price_accessories_2')}"><input type="hidden" name="accessory_type" value="{val('accessory_type')}"><input type="hidden" name="accessory_type_2" value="{val('accessory_type_2')}"><input type="hidden" name="accessory_detail" value="{val('accessory_detail')}"><input type="hidden" name="accessory_detail_2" value="{val('accessory_detail_2')}"><input type="hidden" name="nose_cast_type" value="{val('nose_cast_type')}"><input type="hidden" name="nose_cast_type_2" value="{val('nose_cast_type_2')}"><input type="hidden" name="nose_cast_type_3" value="{val('nose_cast_type_3')}"><input type="hidden" name="nose_cast_type_4" value="{val('nose_cast_type_4')}"><input type="hidden" name="paw_cast_type" value="{val('paw_cast_type')}"><input type="hidden" name="paw_cast_type_2" value="{val('paw_cast_type_2')}"><input type="hidden" name="paw_cast_type_3" value="{val('paw_cast_type_3')}"><input type="hidden" name="paw_cast_type_4" value="{val('paw_cast_type_4')}"><select name="payment_status" class="hidden">{payment_options}</select><select name="payment_method" class="hidden">{payment_method_options}</select><input type="hidden" name="catalog_sent" value="{'Si' if catalog_sent_checked else ''}"><input type="hidden" name="estremi_sent" value="{'Si' if estremi_sent_checked else ''}"><input type="hidden" name="invoice_number" value="{val('invoice_number')}"><input type="hidden" name="invoice_date" value="{val('invoice_date')}"><input type="hidden" name="invoice_total" value="{val('invoice_total')}"><input type="hidden" name="make_invoice" value="{'Si' if make_invoice_checked else ''}">
         <section class="section"><h2>Richiesta</h2><div class="fields"><div class="field"><label>Servizio *</label><select name="service_type" required><option {selected('service_type','Da decidere')}>Da decidere</option><option {selected('service_type','Cremazione singola')}>Cremazione singola</option><option {selected('service_type','Cremazione collettiva')}>Cremazione collettiva</option></select></div><div class="field"><label>Origine richiesta *</label><select name="request_origin" required><option {selected('request_origin','Veterinario')}>Veterinario</option><option {selected('request_origin','Privato')}>Privato</option><option value="Consegna in sede" {selected('request_origin','Consegna in sede')}>Consegnato in sede</option><option {selected('request_origin','Collaboratore')}>Collaboratore</option></select></div><div class="field {'hidden' if raw('request_origin')!='Collaboratore' else ''}" id="collaboratorBox"><label>Collaboratore</label><select name="collaborator_name"><option value="">Nessun collaboratore</option><option {selected('collaborator_name','HUMANITAS CROCE VERDE')}>HUMANITAS CROCE VERDE</option></select></div><div class="field"><label>Sede di destinazione</label><select name="destination_branch"><option {selected('destination_branch','Livorno')}>Livorno</option><option {selected('destination_branch','Empoli')}>Empoli</option></select></div><div class="field"><label>Data recupero</label><input type="date" name="pickup_date" value="{val('pickup_date')}"></div></div></section>
@@ -4494,7 +4692,7 @@ class App(BaseHTTPRequestHandler):
         <section class="section"><h2>Etichette operative</h2><div class="fields">{tag_select('tag_assistita','ASSISTITA','tag-red')}{tag_select('tag_possibile_assistita','POSSIBILE ASSISTITA','tag-red')}{tag_select('tag_assistita_streaming','ASSISTITA STREAMING','tag-orange')}{tag_select('tag_possibile_assistita_streaming','POSSIBILE ASSISTITA STREAMING','tag-orange')}{tag_select('tag_saluto','SALUTO','tag-purple')}{tag_select('tag_calco','CALCO','tag-yellow')}{tag_select('tag_possibile_calco','POSSIBILE CALCO','tag-yellow')}{tag_select('tag_calco_urna','CALCO PER URNA','tag-yellow')}{tag_select('tag_calco_paw','CALCO POLPASTRELLO','tag-yellow')}{tag_select('tag_possibile_calco_paw','POSSIBILE CALCO POLPASTRELLO','tag-yellow')}{tag_select('tag_calco_nose','CALCO NASO','tag-yellow')}{tag_select('tag_possibile_calco_nose','POSSIBILE CALCO NASO','tag-yellow')}{tag_select('tag_avvisare','AVVISARE','tag-pink')}{tag_select('tag_da_richiamare','DA RICHIAMARE','tag-blue')}</div></section>
         <section class="section"><h2>Documento e accettazione</h2><div class="fields"><div class="field"><label>Numero documento</label><input name="identity_document_number" value="{val('identity_document_number')}"></div><div class="field"><label>Data rilascio</label><input type="date" name="identity_document_date" value="{val('identity_document_date')}"></div><div class="field full"><label>Luogo firma</label><input name="signing_place" value="{val('signing_place') or val('destination_branch')}"></div></div></section>'''
 
-    def new_page(self,user):
+    def new_page(self,user,draft=None,error=""):
         q=parse_qs(urlparse(getattr(self,"path","")).query);calendar_event_id=(q.get("calendar_event_id") or [""])[0];prefill={}
         if calendar_event_id.isdigit():
             with db() as c:
@@ -4503,8 +4701,10 @@ class App(BaseHTTPRequestHandler):
             if event:
                 if event["linked_practice_id"]:return self.redirect(f'/pratiche/{event["linked_practice_id"]}')
                 prefill={"client_id":event["client_id"] or "","owner_first_name":event["client_first_name"] or "","owner_last_name":event["client_last_name"] or "","owner_phone":event["client_phone"] or "","owner_street":event["address"] or event["veterinarian_address"] or "","owner_city":event["zone"] or "","pickup_address":event["address"] or "","pickup_date":event["start_at"][:10],"destination_branch":event["destination_site"] or "Livorno","request_origin":"Veterinario" if event["veterinarian_id"] else "Privato","veterinarian_id":event["veterinarian_id"] or "","clinic_name":event["veterinarian_name"] or "","notes":event["notes"] or "","animal_name":(animal["name"] if animal else event["animal_name"]) or "","species":animal["species"] if animal else "","estimated_weight":animal["weight"] if animal else "","service_type":f'Cremazione {animal["cremation_type"].lower()}' if animal and animal["cremation_type"] else "Da decidere"}
+        if draft is not None:prefill=draft
         hidden=(f'<input type="hidden" name="calendar_event_id" value="{calendar_event_id}"><input type="hidden" name="pickup_time" value="{event["start_at"][11:16]}">' if calendar_event_id.isdigit() and event else '')
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Nuova pratica</h1><div class="sub">Inserisci subito i dati disponibili; potrai completarli in seguito.</div></div><div class="actions"><button class="btn" form="practiceForm">Crea pratica</button></div></div><form method="post" id="practiceForm">{hidden}<div class="grid form-grid">{self.fields_html(prefill)}</div><div class="actions" style="margin-top:18px"><button class="btn">Crea pratica</button><a class="btn ghost" href="{f'/calendario/{calendar_event_id}' if calendar_event_id.isdigit() else '/'}">Annulla</a></div></form></main>'''
+        error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Nuova pratica</h1><div class="sub">Inserisci subito i dati disponibili; potrai completarli in seguito.</div></div><div class="actions"><button class="btn" form="practiceForm">Crea pratica</button></div></div>{error_html}<form method="post" id="practiceForm">{hidden}<div class="grid form-grid">{self.fields_html(prefill,user)}</div><div class="actions" style="margin-top:18px"><button class="btn">Crea pratica</button><a class="btn ghost" href="{f'/calendario/{calendar_event_id}' if calendar_event_id.isdigit() else '/'}">Annulla</a></div></form></main>'''
         self.send_html(layout("Nuova pratica",body,user))
 
     def normalized_fields(self,f):
@@ -4517,9 +4717,8 @@ class App(BaseHTTPRequestHandler):
         for key in ("price_urn_2","urn_notes_2","price_cast_2","price_paw_cast_2","price_paw_cast_3","price_paw_cast_4","price_nose_cast_2","price_nose_cast_3","price_nose_cast_4","price_accessories_2","accessory_type","accessory_type_2","nose_cast_type","nose_cast_type_2","nose_cast_type_3","nose_cast_type_4","paw_cast_type","paw_cast_type_2","paw_cast_type_3","paw_cast_type_4","accessory_detail","accessory_detail_2"):
             data[key]=f.get(key,"").strip()
         for key in MONEY_FIELDS:
-            value=data.get(key,"").replace(",",".")
-            data[key]=value
-        data["invoice_total"]=data["invoice_total"].replace(",",".")
+            data[key]=normalize_money_text(data.get(key,""))
+        data["invoice_total"]=normalize_money_text(data["invoice_total"])
         allowed_accessories={"","Calco naso","Collana","Braccialetto","Calco inchiostro","Altro"}
         if data["accessory_type"] not in allowed_accessories: data["accessory_type"]="Altro"
         if data["accessory_type_2"] not in allowed_accessories: data["accessory_type_2"]="Altro"
@@ -4724,8 +4923,8 @@ class App(BaseHTTPRequestHandler):
         if not phone: return ""
         tel=re.sub(r"[^0-9+]","",phone)
         wa=self.wa_digits(phone)
-        wa_btn=f'<a class="icon-btn phone-action-btn" href="https://wa.me/{wa}" target="_blank" rel="noopener noreferrer" aria-label="Apri chat WhatsApp">{lucide("message")}</a>' if wa else ""
-        return f'{esc(phone)} <a class="icon-btn phone-action-btn" href="tel:{esc(tel)}" aria-label="Chiama">{lucide("phone")}</a> {wa_btn}'
+        wa_btn=f'<a class="icon-btn phone-action-btn whatsapp-btn" href="https://wa.me/{wa}" target="_blank" rel="noopener noreferrer" aria-label="Apri chat WhatsApp">{lucide("message")}</a>' if wa else ""
+        return f'{esc(phone)} <a class="icon-btn phone-action-btn call-btn" href="tel:{esc(tel)}" aria-label="Chiama">{lucide("phone")}</a> {wa_btn}'
 
     def whatsapp_payload_for_practice(self, p):
         template=self.whatsapp_template_name(p)
@@ -5210,18 +5409,19 @@ class App(BaseHTTPRequestHandler):
 
     def create_practice(self,user):
         f=self.form(); d=self.normalized_fields(f); stamp=now();calendar_event_id=int(f["calendar_event_id"]) if f.get("calendar_event_id","").isdigit() else None
+        if user["role"]!="admin": d["operator_name"]=user["display_name"].upper()
         error=self.validation_error(d)
-        if error: return self.send_error(400, error)
+        if error: return self.new_page(user,draft=d,error=error)
         initial=f.get("status","Ritirato")
         if initial not in STATES or (initial=="Smaltito" and d.get("service_type")!="Cremazione collettiva"): initial="Ritirato"
         with db() as c:
             calendar_event=None
             if calendar_event_id:
                 calendar_event=c.execute("SELECT * FROM calendar_events WHERE id=? AND deleted_at IS NULL AND event_type IN ('Ritiro','Ritiro in sede') AND event_status='Ritirato'",(calendar_event_id,)).fetchone()
-                if not calendar_event:return self.send_error(400,"Evento calendario non valido per la creazione pratica")
+                if not calendar_event:return self.new_page(user,draft=d,error="Evento calendario non valido per la creazione pratica")
                 if calendar_event["linked_practice_id"]:return self.redirect(f'/pratiche/{calendar_event["linked_practice_id"]}')
             conflict=self.invoice_conflict(c,d.get("invoice_number"))
-            if conflict:return self.send_error(409,f'Numero fattura già usato nella pratica {conflict["practice_number"]}')
+            if conflict:return self.new_page(user,draft=d,error=f'Numero fattura già usato nella pratica {conflict["practice_number"]}')
             if d.get("client_id"):
                 exists=c.execute("SELECT id FROM clients WHERE id=?",(d["client_id"],)).fetchone()
                 if not exists:
@@ -5256,7 +5456,7 @@ class App(BaseHTTPRequestHandler):
                 calendar_add_history(c,calendar_event_id,user["id"],"Creazione pratica","",number,stamp)
         self.redirect(f"/pratiche/{pid}")
 
-    def practice(self,user,pid):
+    def practice(self,user,pid,error=""):
         q=parse_qs(urlparse(getattr(self,"path","")).query); back_url=safe_return_path((q.get("return_to") or [""])[0],"/archivio/pratiche")
         encoded_back=quote(back_url,safe=""); practice_view=f'/pratiche/{pid}?return_to={encoded_back}'
         with db() as c:
@@ -5284,7 +5484,7 @@ class App(BaseHTTPRequestHandler):
         invoice_date = p["invoice_date"] if "invoice_date" in p.keys() and p["invoice_date"] else ""
         invoice_total_value = p["invoice_total"] if "invoice_total" in p.keys() and p["invoice_total"] else f"{effective_total(p):.2f}"
         make_invoice_checked = "checked" if "make_invoice" in p.keys() and p["make_invoice"] == "Si" else ""
-        invoice_box=f'''<div class="kv full"><small>Fattura</small><form class="invoice-inline" method="post" action="/pratiche/{pid}/fattura"><input type="hidden" name="practice_view" value="{esc(practice_view)}"><input name="invoice_number" value="{esc(invoice_value)}" placeholder="Numero fattura"><input type="date" name="invoice_date" value="{esc(invoice_date)}"><input name="invoice_total" value="{esc(invoice_total_value)}" inputmode="decimal" placeholder="Totale fattura €" aria-label="Totale fattura"><label class="modern-check"><input type="checkbox" name="make_invoice" value="Si" {make_invoice_checked}> FARE FATTURA</label><button class="btn ghost">Salva fattura</button></form></div>'''
+        invoice_box=f'''<div class="kv full"><small>Fattura</small><form class="invoice-inline" method="post" action="/pratiche/{pid}/fattura"><input type="hidden" name="practice_view" value="{esc(practice_view)}"><input name="invoice_number" value="{esc(invoice_value)}" placeholder="Numero fattura"><input type="date" name="invoice_date" value="{esc(invoice_date)}"><input name="invoice_total" value="{esc(invoice_total_value)}" inputmode="decimal" placeholder="Totale fattura €" aria-label="Totale fattura" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"><label class="modern-check"><input type="checkbox" name="make_invoice" value="Si" {make_invoice_checked}> FARE FATTURA</label><button class="btn ghost">Salva fattura</button></form></div>'''
         old_invoice_box=f'''<div class="kv"><small>Fattura</small>{esc(invoice_value) or '<span class="sub">Non inserita</span>'}</div>'''
         no_whatsapp_checked = "checked" if "no_whatsapp_message" in p.keys() and p["no_whatsapp_message"] == "Si" else ""
         no_whatsapp_note = '<div class="flash warning">Invio automatico WhatsApp disattivato per questa pratica.</div>' if no_whatsapp_checked else ''
@@ -5371,14 +5571,18 @@ class App(BaseHTTPRequestHandler):
         body=body.replace(f'<div class="kv"><small>Catalogo urna</small><b>{esc(catalog_value)}</b></div>',"")
         body=body.replace(f'<small>Stato</small><b>{esc(p["status"])}</b>',f'<small>Stato</small><span class="badge practice-status {practice_state_cls}">{esc(p["status"])}</span>')
         body=body.replace(f'<span class="badge {payment_cls}">{esc(payment_value)}</span>',f'<span class="badge {payment_cls}">{esc(payment_value)}</span><br><small>Metodo: {esc(payment_method_value)}</small>')
+        if error:
+            body=body.replace('<main class="wrap">','<main class="wrap"><div class="flash warning">'+esc(error)+'</div>',1)
         self.send_html(layout(p["practice_number"],body,user))
 
-    def edit_page(self,user,pid):
+    def edit_page(self,user,pid,draft=None,error=""):
         q=parse_qs(urlparse(getattr(self,"path","")).query);back_url=safe_return_path((q.get("return_to") or [""])[0],"/archivio/pratiche");encoded_back=quote(back_url,safe="")
         with db() as c:p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
         if not p:return self.send_error(404)
+        display=draft if draft is not None else p
         autosave=f'''<div id="practiceAutosaveStatus" class="autosave-status" data-state="saved" role="status"><span data-autosave-label>Salvato</span><small data-autosave-time>Ultimo salvataggio: —</small><button class="autosave-retry" data-autosave-retry type="button" hidden>Riprova</button></div>'''
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Modifica {esc(p['practice_number'])}</h1><div class="sub">Completa o correggi i dati della pratica.</div>{autosave}</div><div class="actions"><button class="btn" form="practiceForm">Salva modifiche</button><button class="btn ghost" form="practiceForm" name="save_and_return" value="1">Salva e torna</button></div></div><form method="post" id="practiceForm" data-autosave-url="/api/pratiche/{pid}/autosave" data-updated-at="{esc(p['updated_at'])}"><input type="hidden" name="return_to" value="{esc(back_url)}"><div class="grid form-grid">{self.fields_html(p)}</div><div class="actions" style="margin-top:18px"><button class="btn">Salva modifiche</button><button class="btn ghost" name="save_and_return" value="1">Salva e torna</button><a class="btn ghost" href="/pratiche/{pid}?return_to={encoded_back}">Annulla</a></div></form></main>'''
+        error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Modifica {esc(p['practice_number'])}</h1><div class="sub">Completa o correggi i dati della pratica.</div>{autosave}</div><div class="actions"><button class="btn" form="practiceForm">Salva modifiche</button><button class="btn ghost" form="practiceForm" name="save_and_return" value="1">Salva e torna</button></div></div>{error_html}<form method="post" id="practiceForm" data-autosave-url="/api/pratiche/{pid}/autosave" data-updated-at="{esc(p['updated_at'])}"><input type="hidden" name="return_to" value="{esc(back_url)}"><div class="grid form-grid">{self.fields_html(display,user)}</div><div class="actions" style="margin-top:18px"><button class="btn">Salva modifiche</button><button class="btn ghost" name="save_and_return" value="1">Salva e torna</button><a class="btn ghost" href="/pratiche/{pid}?return_to={encoded_back}">Annulla</a></div></form></main>'''
         self.send_html(layout("Modifica pratica",body,user))
 
     def practice_autosave(self,user,pid):
@@ -5395,6 +5599,7 @@ class App(BaseHTTPRequestHandler):
                 if (request.get("updated_at") or "")!=(previous["updated_at"] or ""):
                     return self.send_json({"ok":False,"error":"La pratica è stata modificata da un altro dispositivo. Ricarica la pagina prima di continuare.","conflict":True},409)
                 protected={"id","practice_number","status","created_at","updated_at","created_by","deleted_at","deleted_by","ddt_number","ddt_pdf","public_token","signature_data"}
+                if user["role"]!="admin": protected=protected|{"operator_name"}
                 submitted={key:("" if value is None else str(value)) for key,value in changes.items() if key in previous.keys() and key not in protected}
                 if not submitted:return self.send_json({"ok":True,"updated_at":previous["updated_at"],"saved_at":datetime.now(ROME_TZ).strftime("%H:%M"),"saved_fields":[]})
                 merged={key:("" if previous[key] is None else str(previous[key])) for key in previous.keys()}
@@ -5427,11 +5632,12 @@ class App(BaseHTTPRequestHandler):
             print(f"[PRACTICE_AUTOSAVE] pratica={pid}\n{traceback.format_exc()}",flush=True)
             return self.send_json({"ok":False,"error":"Salvataggio automatico non riuscito. I dati restano nella schermata; puoi riprovare o usare Salva modifiche."},500)
 
-    def signature_page(self,user,pid):
+    def signature_page(self,user,pid,error=""):
         with db() as c:p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
         if not p:return self.send_error(404)
         owner=esc(((p["owner_first_name"] or "")+" "+(p["owner_last_name"] or "")).strip())
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Firma proprietario</h1><div class="sub">{owner} - pratica {esc(p['practice_number'])}</div></div></div><section class="section"><p class="sub">Fai firmare qui il proprietario con il dito. La firma verrà salvata nella pratica e inserita nel PDF DDT.</p><form method="post" id="signatureForm"><canvas class="signature-pad" id="pad"></canvas><input type="hidden" name="signature_data" id="signatureData"><div class="actions" style="margin-top:14px"><button class="btn" type="submit">Salva firma</button><button class="btn ghost" type="button" id="clearPad">Cancella</button><a class="btn ghost" href="/pratiche/{pid}">Annulla</a></div></form></section><script>
+        error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Firma proprietario</h1><div class="sub">{owner} - pratica {esc(p['practice_number'])}</div></div></div>{error_html}<section class="section"><p class="sub">Fai firmare qui il proprietario con il dito. La firma verrà salvata nella pratica e inserita nel PDF DDT.</p><form method="post" id="signatureForm"><canvas class="signature-pad" id="pad"></canvas><input type="hidden" name="signature_data" id="signatureData"><div class="actions" style="margin-top:14px"><button class="btn" type="submit">Salva firma</button><button class="btn ghost" type="button" id="clearPad">Cancella</button><a class="btn ghost" href="/pratiche/{pid}">Annulla</a></div></form></section><script>
 const canvas=document.getElementById('pad'),ctx=canvas.getContext('2d');let drawing=false,last=null;
 function resize(){{const r=canvas.getBoundingClientRect(),d=window.devicePixelRatio||1;canvas.width=r.width*d;canvas.height=r.height*d;ctx.setTransform(d,0,0,d,0,0);ctx.lineWidth=3;ctx.lineCap='round';ctx.strokeStyle='#1f1f1f';}}
 function pos(e){{const r=canvas.getBoundingClientRect(),t=e.touches?e.touches[0]:e;return {{x:t.clientX-r.left,y:t.clientY-r.top}};}}
@@ -5447,7 +5653,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
     def signature_submit(self,user,pid):
         signature=self.form().get("signature_data","")
         if not signature.startswith("data:image/png;base64,"):
-            return self.send_error(400, "Firma non valida")
+            return self.signature_page(user,pid,error="Firma non valida: prova a firmare di nuovo prima di salvare.")
         with db() as c:
             p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
             if not p: return self.send_error(404)
@@ -5461,12 +5667,13 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
     def edit_submit(self,user,pid):
         form=self.form(); d=self.normalized_fields(form); stamp=now(); assignments=','.join(f'{k}=?' for k in d)
         error=self.validation_error(d)
-        if error: return self.send_error(400, error)
+        if error: return self.edit_page(user,pid,draft=d,error=error)
         with db() as c:
             previous=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
             if not previous:return self.send_error(404)
+            if user["role"]!="admin": d["operator_name"]=previous["operator_name"]
             conflict=self.invoice_conflict(c,d.get("invoice_number"),pid)
-            if conflict:return self.send_error(409,f'Numero fattura già usato nella pratica {conflict["practice_number"]}')
+            if conflict:return self.edit_page(user,pid,draft=d,error=f'Numero fattura già usato nella pratica {conflict["practice_number"]}')
             field_labels={"animal_name":"Nome animale","owner_first_name":"Nome proprietario","owner_last_name":"Cognome proprietario","owner_phone":"Telefono proprietario","owner_phone_2":"Secondo telefono","service_type":"Tipo cremazione","destination_branch":"Sede","notes":"Note","send_catalog":"Inviare catalogo","catalog_sent":"Catalogo inviato","send_estremi":"Inviare estremi","use_voucher":"Usa buono","payment_method":"Metodo di pagamento","invoice_number":"Numero fattura","invoice_date":"Data fattura","invoice_total":"Totale fattura","make_invoice":"Fare fattura",**MONEY_FIELDS}
             changes=[]
             for key,new_value in d.items():
@@ -5508,15 +5715,15 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         self.redirect(back_url if form.get("save_and_return")=="1" else f'/pratiche/{pid}?return_to={quote(back_url,safe="")}')
 
     def save_invoice(self,user,pid):
-        f=self.form();number=f.get("invoice_number","").strip();invoice_date=f.get("invoice_date","").strip();invoice_total=f.get("invoice_total","").strip().replace(",",".");make_invoice="Si" if f.get("make_invoice")=="Si" else ""
-        if invoice_date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}",invoice_date):return self.send_error(400,"Data fattura non valida")
-        if invoice_total and not re.fullmatch(r"\d+(?:\.\d{1,2})?",invoice_total):return self.send_error(400,"Totale fattura non valido")
+        f=self.form();number=f.get("invoice_number","").strip();invoice_date=f.get("invoice_date","").strip();invoice_total=normalize_money_text(f.get("invoice_total",""));make_invoice="Si" if f.get("make_invoice")=="Si" else ""
+        if invoice_date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}",invoice_date):return self.practice(user,pid,error="Data fattura non valida: usa il formato AAAA-MM-GG.")
+        if invoice_total and not re.fullmatch(r"\d+(?:\.\d{1,2})?",invoice_total):return self.practice(user,pid,error="Totale fattura non valido: inserisci solo un numero, es. 120,00.")
         with db() as c:
             current=c.execute("SELECT * FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(pid,)).fetchone()
             if not current:return self.send_error(404)
             if not invoice_total:invoice_total=f"{effective_total(current):.2f}"
             conflict=self.invoice_conflict(c,number,pid)
-            if conflict:return self.send_error(409,f'Numero fattura già usato nella pratica {conflict["practice_number"]}')
+            if conflict:return self.practice(user,pid,error=f'Numero fattura già usato nella pratica {conflict["practice_number"]}')
             c.execute("UPDATE practices SET invoice_number=?,invoice_date=?,invoice_total=?,make_invoice=?,updated_at=? WHERE id=?",(number,invoice_date,invoice_total,make_invoice,now(),pid))
             old=f'{current["invoice_number"] or "Non inserita"} · {date_it(current["invoice_date"])} · {money_it(money_value(current["invoice_total"])) if current["invoice_total"] else "Totale non inserito"}';new=f'{number or "Non inserita"} · {date_it(invoice_date)} · {money_it(money_value(invoice_total))}'
             c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,"Fattura",old,new,user["id"],now()))
@@ -5539,14 +5746,14 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
 
     def change_state(self,user,pid):
         f=self.form(); new=f.get("status",""); payment=f.get("payment_status","Da saldare"); requested_invoice=f.get("invoice_number"); no_whatsapp="Si" if f.get("no_whatsapp_message")=="Si" else ""
-        if new not in STATES or payment not in PAYMENT_STATES:return self.send_error(400)
+        if new not in STATES or payment not in PAYMENT_STATES:return self.practice(user,pid,error="Stato pratica o stato pagamento non validi.")
         with db() as c:
             old=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
             if not old:return self.send_error(404)
             invoice=old["invoice_number"] if requested_invoice is None else requested_invoice.strip()
             conflict=self.invoice_conflict(c,invoice,pid)
-            if conflict:return self.send_error(409,f'Numero fattura già usato nella pratica {conflict["practice_number"]}')
-            if new=="Smaltito" and old["service_type"]!="Cremazione collettiva": return self.send_error(400,"Smaltito è disponibile solo per la cremazione collettiva")
+            if conflict:return self.practice(user,pid,error=f'Numero fattura già usato nella pratica {conflict["practice_number"]}')
+            if new=="Smaltito" and old["service_type"]!="Cremazione collettiva": return self.practice(user,pid,error="Smaltito è disponibile solo per la cremazione collettiva.")
             old_payment=old["payment_status"] or "Da saldare"
             c.execute("UPDATE practices SET status=?,payment_status=?,invoice_number=?,no_whatsapp_message=?,updated_at=? WHERE id=?",(new,payment,invoice,no_whatsapp,now(),pid))
             updated=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
@@ -5569,13 +5776,13 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         self.redirect(safe_return_path(f.get("practice_view"),f"/pratiche/{pid}"))
 
     def quick_payment(self,user,pid):
-        form=self.form(); payment=form.get("payment_status","Da saldare"); amount=form.get("payment_amount","").strip().replace(",","."); method=form.get("payment_method","").strip(); invoice=form.get("invoice_number","").strip(); invoice_total=form.get("invoice_total","").strip().replace(",","."); invoice_date=form.get("invoice_date","").strip()
-        if payment not in PAYMENT_STATES or method not in PAYMENT_METHODS or (amount and not re.fullmatch(r"\d+(?:\.\d{1,2})?",amount)) or (invoice_total and not re.fullmatch(r"\d+(?:\.\d{1,2})?",invoice_total)) or (invoice_date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}",invoice_date)): return self.send_error(400,"Dati del pagamento non validi")
+        form=self.form(); payment=form.get("payment_status","Da saldare"); amount=normalize_money_text(form.get("payment_amount","")); method=form.get("payment_method","").strip(); invoice=form.get("invoice_number","").strip(); invoice_total=normalize_money_text(form.get("invoice_total","")); invoice_date=form.get("invoice_date","").strip()
+        if payment not in PAYMENT_STATES or method not in PAYMENT_METHODS or (amount and not re.fullmatch(r"\d+(?:\.\d{1,2})?",amount)) or (invoice_total and not re.fullmatch(r"\d+(?:\.\d{1,2})?",invoice_total)) or (invoice_date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}",invoice_date)): return self.practice(user,pid,error="Dati del pagamento non validi: controlla importo, totale fattura e data (usa solo numeri e il formato data AAAA-MM-GG).")
         with db() as c:
             row=c.execute("SELECT * FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(pid,)).fetchone()
             if not row:return self.send_error(404)
             conflict=self.invoice_conflict(c,invoice,pid)
-            if conflict:return self.send_error(409,f'Numero fattura già usato nella pratica {conflict["practice_number"]}')
+            if conflict:return self.practice(user,pid,error=f'Numero fattura già usato nella pratica {conflict["practice_number"]}')
             old=row["payment_status"] or "Da saldare"; stamp=now()
             deposit=amount if payment=="Acconto" and amount else row["deposit"]
             due=effective_total(row)
@@ -5592,11 +5799,11 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
 
     def quick_state(self,user,pid):
         form=self.form(); new=form.get("status",""); ajax=form.get("ajax")=="1"
-        if new not in STATES:return self.send_json({"ok":False,"error":"Stato pratica non valido"},400) if ajax else self.send_error(400,"Stato pratica non valido")
+        if new not in STATES:return self.send_json({"ok":False,"error":"Stato pratica non valido"},400) if ajax else self.practice(user,pid,error="Stato pratica non valido.")
         with db() as c:
             old=c.execute("SELECT * FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(pid,)).fetchone()
             if not old:return self.send_json({"ok":False,"error":"Pratica non trovata"},404) if ajax else self.send_error(404)
-            if new=="Smaltito" and old["service_type"]!="Cremazione collettiva":return self.send_error(400,"Smaltito è disponibile solo per la cremazione collettiva")
+            if new=="Smaltito" and old["service_type"]!="Cremazione collettiva":return self.send_json({"ok":False,"error":"Smaltito è disponibile solo per la cremazione collettiva"},400) if ajax else self.practice(user,pid,error="Smaltito è disponibile solo per la cremazione collettiva.")
             if old["status"]!=new:
                 stamp=now();c.execute("UPDATE practices SET status=?,updated_at=? WHERE id=?",(new,stamp,pid))
                 c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,"Cambio stato rapido",old["status"],new,user["id"],stamp))
@@ -5612,7 +5819,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             return self.send_error(403)
         f=self.form()
         if f.get("confirm_send") != "SI":
-            return self.send_error(400, "Conferma invio WhatsApp mancante")
+            return self.whatsapp_confirm_page(user,pid,error="Devi confermare l'invio prima di procedere.")
         with db() as c:
             p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
             if not p: return self.send_error(404)
@@ -5664,7 +5871,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                         self.send_whatsapp_message(c,msg_id,manual=False,user_id=user["id"],attempt_recorded=True)
         self.redirect(return_to)
 
-    def whatsapp_confirm_page(self,user,pid):
+    def whatsapp_confirm_page(self,user,pid,error=""):
         if user["role"] != "admin":
             return self.send_error(403)
         with db() as c:
@@ -5679,7 +5886,8 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         already = latest is not None
         warning = '<div class="flash warning"><b>Attenzione:</b> questo cliente ha già ricevuto o potrebbe aver già ricevuto il messaggio. Conferma solo se vuoi reinviarlo.</div>' if already else ''
         btn = "REINVIA WHATSAPP" if already else "INVIA WHATSAPP SUBITO"
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{btn}</h1><div class="sub">Conferma invio template WhatsApp per la pratica {esc(p['practice_number'])}</div></div><a class="btn ghost" href="/pratiche/{pid}">Torna alla pratica</a></div>{warning}<section class="section"><h2>Dati invio</h2><div class="kvs"><div class="kv"><small>Destinatario</small><b>+{esc(phone)}</b></div><div class="kv"><small>Template</small><b>{esc(template)}</b></div><div class="kv"><small>Lingua</small><b>{esc(payload['template']['language']['code'])}</b></div><div class="kv"><small>Nome cliente</small><b>{esc(nome_cliente)}</b></div><div class="kv"><small>Nome animale</small><b>{esc(nome_animale)}</b></div></div><form method="post" action="/pratiche/{pid}/whatsapp" onsubmit="return confirm('Confermi invio WhatsApp a +{esc(phone)} con template {esc(template)}?')"><input type="hidden" name="confirm_send" value="SI"><button class="btn" style="margin-top:18px">{btn}</button></form></section></main>'''
+        error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{btn}</h1><div class="sub">Conferma invio template WhatsApp per la pratica {esc(p['practice_number'])}</div></div><a class="btn ghost" href="/pratiche/{pid}">Torna alla pratica</a></div>{error_html}{warning}<section class="section"><h2>Dati invio</h2><div class="kvs"><div class="kv"><small>Destinatario</small><b>+{esc(phone)}</b></div><div class="kv"><small>Template</small><b>{esc(template)}</b></div><div class="kv"><small>Lingua</small><b>{esc(payload['template']['language']['code'])}</b></div><div class="kv"><small>Nome cliente</small><b>{esc(nome_cliente)}</b></div><div class="kv"><small>Nome animale</small><b>{esc(nome_animale)}</b></div></div><form method="post" action="/pratiche/{pid}/whatsapp" onsubmit="return confirm('Confermi invio WhatsApp a +{esc(phone)} con template {esc(template)}?')"><input type="hidden" name="confirm_send" value="SI"><button class="btn" style="margin-top:18px">{btn}</button></form></section></main>'''
         self.send_html(layout("Conferma WhatsApp",body,user))
 
     def public_ddt(self,token):
