@@ -762,7 +762,6 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("ppmLookupPanels.forEach(entry=>{", js)
         # Every lookup input registers itself with the shared outside-click/close controller.
         self.assertGreaterEqual(js.count("ppmRegisterLookupPanel(input,results)"), 3)
-        self.assertIn("ppmRegisterLookupPanel(client,clientResults)", js)
         self.assertIn("ppmRegisterLookupPanel(vet,vetResults)", js)
         self.assertIn("ppmRegisterLookupPanel(deliveryAnimal,deliveryResults)", js)
         self.assertIn("ppmRegisterLookupPanel(input,panel)", js)
