@@ -274,6 +274,49 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(extras["price_paw_cast"], "25.50")
         self.assertEqual(extras["tag_calco_nose"], "Si")
 
+    def test_second_calco_naso_polpastrello_fields_and_possibile_tags(self):
+        html = self.handler.fields_html()
+        for expected in (
+            'name="price_paw_cast_2"', 'name="price_nose_cast_2"',
+            "POSSIBILE ASSISTITA STREAMING", "POSSIBILE CALCO",
+            "POSSIBILE CALCO POLPASTRELLO", "POSSIBILE CALCO NASO",
+            'name="tag_possibile_assistita_streaming"', 'name="tag_possibile_calco"',
+            'name="tag_possibile_calco_paw"', 'name="tag_possibile_calco_nose"',
+        ):
+            self.assertIn(expected, html)
+        self.assertIn("+ Aggiungi calco polpastrello", app.APP_JS)
+        self.assertIn("+ Aggiungi calco naso", app.APP_JS)
+        self.assertIn("Secondo calco polpastrello", app.APP_JS)
+        self.assertIn("Secondo calco naso", app.APP_JS)
+        self.assertIn('price_paw_cast_2', app.MONEY_FIELDS)
+        self.assertIn('price_nose_cast_2', app.MONEY_FIELDS)
+        data = self.handler.normalized_fields({
+            "price_paw_cast_2": "12,50", "price_nose_cast_2": "8",
+            "tag_possibile_assistita_streaming": "Si", "tag_possibile_calco": "Si",
+            "tag_possibile_calco_paw": "Si", "tag_possibile_calco_nose": "Si",
+        })
+        self.assertEqual(data["price_paw_cast_2"], "12.50")
+        self.assertEqual(data["price_nose_cast_2"], "8")
+        self.assertEqual(data["tag_possibile_assistita_streaming"], "Si")
+        self.assertEqual(data["tag_possibile_calco"], "Si")
+        self.assertEqual(data["tag_possibile_calco_paw"], "Si")
+        self.assertEqual(data["tag_possibile_calco_nose"], "Si")
+        empty = self.handler.normalized_fields({})
+        for key in ("tag_possibile_assistita_streaming", "tag_possibile_calco", "tag_possibile_calco_paw", "tag_possibile_calco_nose"):
+            self.assertEqual(empty[key], "")
+
+    def test_possibile_tags_render_as_badges(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pid = conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                         animal_name,species,service_type,payment_status,tag_possibile_assistita_streaming,tag_possibile_calco,tag_possibile_calco_paw,tag_possibile_calco_nose)
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                         ("CR-TAGS", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Fido", "Cane", "Cremazione singola", "Da saldare", "Si", "Si", "Si", "Si")).lastrowid
+            row = conn.execute("SELECT * FROM practices WHERE id=?", (pid,)).fetchone()
+        badges = self.handler.tag_badges(row)
+        for expected in ("POSSIBILE ASSISTITA STREAMING", "POSSIBILE CALCO", "POSSIBILE CALCO POLPASTRELLO", "POSSIBILE CALCO NASO"):
+            self.assertIn(expected, badges)
+
     def test_new_budget_invoice_and_transport_fields(self):
         html=self.handler.fields_html()
         for expected in ('name="catalog_sent"','name="payment_method"','name="invoice_number"','name="invoice_date"','name="make_invoice"','Mezzo proprio'):
