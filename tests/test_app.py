@@ -565,7 +565,57 @@ class PetParadiseTests(unittest.TestCase):
         source = (app.ASSETS / "sw.js").read_text(encoding="utf-8")
         self.assertIn("addEventListener('push'", source)
         self.assertIn("addEventListener('notificationclick'", source)
-        self.assertIn("pet-paradise-shell-v7", source)
+        self.assertIn("pet-paradise-shell-__SW_VERSION__", source)
+
+    def test_service_worker_cache_name_is_versioned_and_old_caches_are_cleared(self):
+        source = (app.ASSETS / "sw.js").read_text(encoding="utf-8")
+        install_block = source.split("addEventListener('install'", 1)[1].split("addEventListener('activate'", 1)[0]
+        install_code = "\n".join(line for line in install_block.splitlines() if not line.strip().startswith("//"))
+        self.assertNotIn("self.skipWaiting()", install_code)
+        self.assertIn("keys.filter(key => key !== CACHE).map(key => caches.delete(key))", source)
+        self.assertIn("self.clients.claim();", source)
+        self.assertIn("event.data.type === 'SKIP_WAITING'", source)
+
+    def test_sw_route_serves_versioned_script_with_no_cache_header(self):
+        self.assertTrue(app.APP_VERSION and app.APP_VERSION != "dev")
+        sent = {}
+        self.handler.send_response = lambda status: sent.update(status=status)
+        self.handler.send_header = lambda k, v: sent.setdefault("headers", {}).__setitem__(k, v)
+        self.handler.end_headers = lambda: None
+        written = []
+        self.handler.wfile = type("W", (), {"write": staticmethod(lambda data: written.append(data))})()
+        self.handler.service_worker()
+        self.assertEqual(sent["status"], 200)
+        self.assertEqual(sent["headers"]["Cache-Control"], "no-cache")
+        body = written[0].decode("utf-8")
+        self.assertIn(f"pet-paradise-shell-{app.APP_VERSION}", body)
+        self.assertNotIn("__SW_VERSION__", body)
+
+    def test_app_version_is_stable_and_derived_from_source_when_no_commit_env(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("RENDER_GIT_COMMIT", None)
+            os.environ.pop("SOURCE_VERSION", None)
+            first = app._compute_app_version()
+            second = app._compute_app_version()
+        self.assertEqual(first, second)
+        self.assertNotEqual(first, "dev")
+
+    def test_app_version_changes_when_commit_env_is_set(self):
+        with patch.dict(os.environ, {"RENDER_GIT_COMMIT": "abcdef1234567890"}):
+            self.assertEqual(app._compute_app_version(), "abcdef123456")
+
+    def test_service_worker_update_flow_never_auto_applies_while_page_is_visible(self):
+        js = app.APP_JS
+        self.assertIn("function showSwUpdateBanner(", js)
+        self.assertIn("function applySwUpdateWhenSafe(", js)
+        self.assertIn("navigator.serviceWorker.addEventListener('controllerchange'", js)
+        self.assertIn("registration.waiting", js)
+        self.assertIn("registration.addEventListener('updatefound'", js)
+        # The banner path (foreground) must not postMessage immediately; only the
+        # hidden/background path is allowed to call activate() straight away.
+        apply_fn = js.split("function applySwUpdateWhenSafe(worker){", 1)[1].split("\n}", 1)[0]
+        self.assertIn("showSwUpdateBanner(activate)", apply_fn)
+        self.assertIn("document.querySelector('.sw-update-banner')?.remove()", apply_fn)
 
     def test_effective_total_and_cash_flow_use_total_d_once(self):
         whisky = {
@@ -1520,6 +1570,24 @@ class PetParadiseTests(unittest.TestCase):
         page = rendered[-1]
         self.assertIn('value="Via Cliente 9"', page)
         self.assertNotIn('value="Via Veterinario 1', page)
+
+    def test_dashboard_greeting_uses_logged_in_user_name_and_drops_quick_action_buttons(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            serena = conn.execute("SELECT * FROM users WHERE username='serena'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/"
+        self.handler.dashboard(admin)
+        admin_page = rendered[-1]
+        self.assertIn(f"{admin['display_name']} <span", admin_page)
+        self.assertNotIn(", Pet Paradise <span", admin_page)
+        self.assertNotIn(">+ Nuova pratica<", admin_page)
+        self.assertNotIn(">+ Nuovo evento<", admin_page)
+
+        self.handler.dashboard(serena)
+        serena_page = rendered[-1]
+        self.assertIn(f"{serena['display_name']} <span", serena_page)
 
     def test_operator_field_is_automatic_for_non_admin_and_manual_for_admin(self):
         with app.db() as conn:

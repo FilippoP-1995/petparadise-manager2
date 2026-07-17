@@ -47,6 +47,19 @@ HOST = os.environ.get("PPM_HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", os.environ.get("PPM_PORT", "8080")))
 ROME_TZ = ZoneInfo("Europe/Rome")
 
+
+def _compute_app_version():
+    commit = os.environ.get("RENDER_GIT_COMMIT") or os.environ.get("SOURCE_VERSION")
+    if commit:
+        return commit[:12]
+    try:
+        return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()[:12]
+    except OSError:
+        return "dev"
+
+
+APP_VERSION = _compute_app_version()
+
 STATES = [
     "Ritirato", "In programma", "Cremato", "Da consegnare", "Consegnato", "Smaltito",
 ]
@@ -871,7 +884,7 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 .practice-row-link{cursor:pointer;outline:0}.practice-row-link:focus{outline:2px solid #fb7185;outline-offset:-2px}.tag-outline-green{background:#052e2b;color:#86efac;border:2px solid #22c55e}.light-theme{color-scheme:light;--ink:#111827;--muted:#526174;--paper:#fff;--bg:#eef2f7;--line:#cbd5e1}.light-theme h1,.light-theme h2,.light-theme label,.light-theme td,.light-theme .activity-item b,.light-theme .metric-card small,.light-theme .payment-card small,.light-theme .dashboard-panel header p strong,.light-theme .conversation-main p b,.light-theme .conversation-main a,.light-theme .pagination a{color:#111827}.light-theme input,.light-theme select,.light-theme textarea,.light-theme .lookup-results,.light-theme .lookup-item,.light-theme .kv,.light-theme table,.light-theme .login{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme input::placeholder,.light-theme textarea::placeholder{color:#64748b}.light-theme th,.light-theme .sub,.light-theme .kv small,.light-theme .conversation-card dt,.light-theme .pagination{color:#526174}.light-theme th,.light-theme td,.light-theme .activity-item{border-color:#d7dee8}.light-theme .tablebox table tr:hover td,.light-theme .practice-row-link:focus td,.light-theme .lookup-item:hover,.light-theme .lookup-item:focus{background:#f1f5f9}.light-theme .btn.ghost,.light-theme .pagination a{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .badge{background:#e2e8f0;color:#1e293b}.light-theme .tag-red{background:#fee2e2;color:#991b1b}.light-theme .tag-orange{background:#ffedd5;color:#9a3412}.light-theme .tag-purple{background:#f3e8ff;color:#6b21a8}.light-theme .tag-yellow,.light-theme .pay-yellow{background:#fef9c3;color:#713f12}.light-theme .tag-pink{background:#fce7f3;color:#9d174d}.light-theme .tag-blue,.light-theme .pay-blue{background:#dbeafe;color:#1e40af}.light-theme .tag-green,.light-theme .pay-green{background:#dcfce7;color:#166534}.light-theme .tag-outline-orange{background:#fff7ed;color:#c2410c}.light-theme .tag-outline-green{background:#f0fdf4;color:#166534;border-color:#22c55e}.light-theme .selected-box{background:#ecfdf5;color:#166534;border-color:#86efac}.light-theme .nav a{color:#334155}.light-theme .nav a:hover{background:#f1f5f9;color:#111827}.light-theme .nav a:first-child{background:#fff1f2;color:#be123c;border-color:#fecdd3}.light-theme .more-menu a{color:#334155}.light-theme .more-menu a:hover{background:#f1f5f9}.light-theme .chart-grid line{stroke:#cbd5e1}.light-theme .chart-grid text,.light-theme .chart-dates text{fill:#526174}.light-theme .income-chart circle{stroke:#fff}.light-theme .install-hint{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .danger{background:#fff1f2}.light-theme .warning,.light-theme .trash-note{background:#fff7ed;color:#7c2d12}.light-theme .flash:not(.warning){background:#ecfdf5;color:#166534}.light-theme .conversation-main p b,.light-theme .conversation-main a{color:#111827}
 .practice-status{background:transparent!important;border:2px solid currentColor}.practice-status-blue{color:#60a5fa!important;border-color:#3b82f6}.practice-status-red{color:#fb7185!important;border-color:#ef4444}.practice-status-yellow{color:#fde047!important;border-color:#eab308}.practice-status-green{color:#4ade80!important;border-color:#22c55e}.light-theme .practice-status-blue{color:#1d4ed8!important}.light-theme .practice-status-red{color:#b91c1c!important}.light-theme .practice-status-yellow{color:#854d0e!important}.light-theme .practice-status-green{color:#15803d!important}
 .modern-check{display:flex;align-items:center;gap:10px;min-height:46px;padding:10px 13px;border:1px solid #3b4658;border-radius:12px;background:linear-gradient(145deg,#182130,#111925);color:#e8edf5;cursor:pointer;transition:border-color .16s,transform .16s,box-shadow .16s}.modern-check:hover{transform:translateY(-1px);border-color:#fb7185;box-shadow:0 8px 22px #02061745}.modern-check input[type=checkbox]{width:20px;height:20px;margin:0;accent-color:#ef405f}.modern-check span{font-size:12px;font-weight:800;letter-spacing:.025em}.light-theme .modern-check{background:linear-gradient(145deg,#fff,#f1f5f9);color:#172033;border-color:#cbd5e1}.invoice-inline{display:grid;gap:8px}.invoice-inline input{min-width:0}.invoice-inline .btn{width:100%}
-.pay-green{border:2px solid #22c55e!important}.pay-yellow{border:2px solid #eab308!important}.pay-blue{border:2px solid #3b82f6!important}.notification-badge{position:absolute;display:grid;place-items:center;min-width:19px;height:19px;padding:0 5px;border-radius:99px;background:#dc2626;color:#fff;font:700 11px/1 system-ui;transform:translate(13px,-13px);box-shadow:0 0 0 2px #111827}.nav-notification{position:relative}.notification-center{display:grid;gap:10px}.notification-item{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:13px;align-items:center;padding:15px;border:1px solid #334155;border-radius:13px;background:#1f2937}.notification-item.unread{border-left:4px solid #ef405f}.notification-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:#172033;font-size:21px}.notification-copy b,.notification-copy small{display:block}.notification-copy p{margin:4px 0;color:#cbd5e1}.notification-copy small{color:#94a3b8}.notification-actions{display:flex;gap:8px;align-items:center}.toggle-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.toggle-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:1px solid #334155;border-radius:11px}.toggle-row input{width:22px;height:22px}.permission-prompt{position:fixed;right:20px;bottom:20px;z-index:150;max-width:390px;padding:18px;border:1px solid #475569;border-radius:16px;background:#172033;color:#fff;box-shadow:0 24px 70px #000a}.permission-prompt p{color:#cbd5e1}.quick-payment{display:flex;gap:7px;align-items:center}.quick-payment select,.quick-payment input{min-width:110px}.quick-payment .btn{width:auto}.light-theme .notification-item,.light-theme .toggle-row,.light-theme .permission-prompt{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .notification-copy p{color:#334155}
+.pay-green{border:2px solid #22c55e!important}.pay-yellow{border:2px solid #eab308!important}.pay-blue{border:2px solid #3b82f6!important}.notification-badge{position:absolute;display:grid;place-items:center;min-width:19px;height:19px;padding:0 5px;border-radius:99px;background:#dc2626;color:#fff;font:700 11px/1 system-ui;transform:translate(13px,-13px);box-shadow:0 0 0 2px #111827}.nav-notification{position:relative}.notification-center{display:grid;gap:10px}.notification-item{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:13px;align-items:center;padding:15px;border:1px solid #334155;border-radius:13px;background:#1f2937}.notification-item.unread{border-left:4px solid #ef405f}.notification-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:#172033;font-size:21px}.notification-copy b,.notification-copy small{display:block}.notification-copy p{margin:4px 0;color:#cbd5e1}.notification-copy small{color:#94a3b8}.notification-actions{display:flex;gap:8px;align-items:center}.toggle-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.toggle-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:1px solid #334155;border-radius:11px}.toggle-row input{width:22px;height:22px}.permission-prompt{position:fixed;right:20px;bottom:20px;z-index:150;max-width:390px;padding:18px;border:1px solid #475569;border-radius:16px;background:#172033;color:#fff;box-shadow:0 24px 70px #000a}.permission-prompt p{color:#cbd5e1}.sw-update-banner{position:fixed;left:14px;right:14px;bottom:calc(14px + var(--safe-bottom));z-index:160;display:flex;align-items:center;justify-content:space-between;gap:14px;max-width:420px;margin:0 auto;padding:12px 16px;border:1px solid #475569;border-radius:14px;background:#172033;color:#fff;box-shadow:0 20px 60px #000a;animation:ppmFade .2s ease-out}.sw-update-banner button{border:0;border-radius:9px;padding:8px 14px;font-weight:700;background:var(--brand);color:#fff;cursor:pointer}.light-theme .sw-update-banner{background:#fff;color:#111827;border-color:#cbd5e1}.quick-payment{display:flex;gap:7px;align-items:center}.quick-payment select,.quick-payment input{min-width:110px}.quick-payment .btn{width:auto}.light-theme .notification-item,.light-theme .toggle-row,.light-theme .permission-prompt{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .notification-copy p{color:#334155}
 .practice-list-table{min-width:1500px}.practice-list-table th:first-child,.practice-list-table td:first-child{position:sticky;left:0;z-index:3;min-width:215px;background:#101620;box-shadow:8px 0 14px #02061735}.practice-list-table th:first-child{z-index:4}.light-theme .practice-list-table th:first-child,.light-theme .practice-list-table td:first-child{background:#fff}.inline-statuses{display:grid;gap:8px;min-width:170px}.inline-state-select{min-height:38px;padding:7px 32px 7px 10px;border-width:2px;font-weight:800}.payment-popover{position:fixed;inset:0;z-index:180;display:grid;place-items:center;padding:18px;background:#020617b8}.payment-popover[hidden]{display:none}.payment-dialog{width:min(620px,100%);max-height:90dvh;overflow:auto;padding:20px;border:1px solid #475569;border-radius:16px;background:#172033;box-shadow:0 28px 90px #000c}.payment-dialog h2{margin-bottom:6px}.payment-dialog .fields{margin-top:16px}.light-theme .payment-dialog{background:#fff;color:#111827}.message-programmato{background:#4c1d95;color:#ede9fe}.message-in_invio{background:#78350f;color:#fef3c7}.message-annullato{background:#334155;color:#cbd5e1}.conversation-error{grid-column:1/-1}.conversation-error dd{white-space:normal;color:#fca5a5}.conversation-action.actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}.conversation-action form{margin:0}
 @media(max-width:620px){.practice-list-table th:first-child,.practice-list-table td:first-child{box-sizing:border-box;width:132px;min-width:132px;max-width:132px;padding-left:12px;padding-right:10px;white-space:normal!important}}
 @media(max-width:1150px){.conversation-card{grid-template-columns:1fr 1fr}.conversation-action{grid-column:1/-1;text-align:left}}
@@ -2214,8 +2227,42 @@ function setupCalendarDraftAutosave(form){
   restore();
 }
 document.addEventListener('DOMContentLoaded',()=>{calendarInitLookups();calendarSwipeNavigation();calendarWizardSwipe();calendarSerialize();setupPracticeAutosave();calendarInitDateTimeSync();setupCalendarDraftAutosave(document.getElementById('calendarEventForm'));document.addEventListener('pointerdown',event=>{if(!event.target.closest('.calendar-datetime-row'))document.querySelectorAll('[data-time-wheel]').forEach(wheel=>wheel.hidden=true);});});
+function showSwUpdateBanner(onConfirm){
+  if(document.querySelector('.sw-update-banner'))return;
+  const bar=document.createElement('div');bar.className='sw-update-banner';
+  bar.innerHTML='<span>Nuova versione disponibile</span><button type="button">Aggiorna ora</button>';
+  bar.querySelector('button').addEventListener('click',()=>{onConfirm();bar.remove();});
+  document.body.appendChild(bar);
+}
+function applySwUpdateWhenSafe(worker){
+  let applied=false;
+  const activate=()=>{if(applied)return;applied=true;document.removeEventListener('visibilitychange',onHidden);document.querySelector('.sw-update-banner')?.remove();worker.postMessage({type:'SKIP_WAITING'});};
+  const onHidden=()=>{if(document.visibilityState==='hidden')activate();};
+  if(document.visibilityState==='hidden'){activate();return;}
+  showSwUpdateBanner(activate);
+  document.addEventListener('visibilitychange',onHidden);
+}
 if('serviceWorker' in navigator){
-  window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(error=>console.warn('Service worker non registrato',error)));
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('/sw.js').then(registration=>{
+      let reloading=false;
+      navigator.serviceWorker.addEventListener('controllerchange',()=>{
+        if(reloading)return;reloading=true;location.reload();
+      });
+      const freshLoad=!navigator.serviceWorker.controller;
+      if(registration.waiting){
+        if(freshLoad)registration.waiting.postMessage({type:'SKIP_WAITING'});
+        else applySwUpdateWhenSafe(registration.waiting);
+      }
+      registration.addEventListener('updatefound',()=>{
+        const worker=registration.installing;
+        if(!worker)return;
+        worker.addEventListener('statechange',()=>{
+          if(worker.state==='installed' && navigator.serviceWorker.controller) applySwUpdateWhenSafe(worker);
+        });
+      });
+    }).catch(error=>console.warn('Service worker non registrato',error));
+  });
 }
 function urlBase64ToUint8Array(value){
   value=(value||'').trim().replace(/^['\"]|['\"]$/g,'');
@@ -2540,6 +2587,13 @@ class App(BaseHTTPRequestHandler):
         self.send_header("Cache-Control",cache); self.send_header("Content-Length",str(len(data)))
         self.end_headers(); self.wfile.write(data)
 
+    def service_worker(self):
+        script=(ASSETS / "sw.js").read_text(encoding="utf-8").replace("__SW_VERSION__",APP_VERSION)
+        data=script.encode("utf-8")
+        self.send_response(200); self.send_header("Content-Type","application/javascript; charset=utf-8")
+        self.send_header("Cache-Control","no-cache"); self.send_header("Content-Length",str(len(data)))
+        self.end_headers(); self.wfile.write(data)
+
     def error_page(self, title, message, back="/"):
         body=f'''<main class="wrap"><section class="section"><h1>{esc(title)}</h1><p class="sub">{esc(message)}</p><div class="actions" style="margin-top:18px"><a class="btn" href="{esc(back)}">Torna indietro</a></div></section></main>'''
         self.send_html(layout(title,body,self.user()),500)
@@ -2587,7 +2641,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/cron/whatsapp": return self.whatsapp_cron()
         if path == "/webhook/whatsapp": return self.whatsapp_webhook_verify()
         if path == "/manifest.json": return self.send_static(ASSETS / "manifest.json","application/manifest+json; charset=utf-8", "no-cache")
-        if path == "/sw.js": return self.send_static(ASSETS / "sw.js","application/javascript; charset=utf-8", "no-cache")
+        if path == "/sw.js": return self.service_worker()
         static_assets={
             "/assets/company_logo.png":"company_logo.png",
             "/assets/company_logo_light.png":"company_logo_light.png",
@@ -2928,7 +2982,6 @@ class App(BaseHTTPRequestHandler):
         practice_selector=selector("pratiche_periodo",practice_period,"pagamenti_periodo",payment_period);payment_selector=selector("pagamenti_periodo",payment_period,"pratiche_periodo",practice_period)
         persistence_script='''<script>(function(){const allowed=['oggi','settimana','mese'];const url=new URL(location.href);let changed=false;['pratiche_periodo','pagamenti_periodo'].forEach(key=>{const saved=localStorage.getItem('ppm_'+key);if(!url.searchParams.has(key)&&allowed.includes(saved)&&saved!=='oggi'){url.searchParams.set(key,saved);changed=true;}});if(changed){location.replace(url);return;}document.querySelectorAll('[data-dashboard-period]').forEach(link=>link.addEventListener('click',()=>localStorage.setItem('ppm_'+link.dataset.dashboardPeriod,link.dataset.periodValue)));})();</script>'''
         hour=datetime.now().hour;greeting="Buongiorno" if hour<13 else "Buon pomeriggio" if hour<18 else "Buonasera"
-        quick_actions='''<div class="calendar-quick-actions dashboard-calendar-actions"><a class="btn" href="/nuova">+ Nuova pratica</a><a class="btn ghost" href="/calendario/nuovo">+ Nuovo evento</a></div>'''
         dashboard_sections={
             "practices": f'''<div class="dashboard-section-head"><h2 class="dashboard-heading">Pratiche / Ritiri</h2>{practice_selector}</div><section class="dashboard-states">{state_cards}</section>''',
             "payments": f'''<div class="dashboard-section-head"><h2 class="dashboard-heading">Pagamenti</h2>{payment_selector}</div><section class="dashboard-payments">{payment_cards}</section>''',
@@ -2939,7 +2992,7 @@ class App(BaseHTTPRequestHandler):
         saved_dashboard_order=[sid for sid in parse_preference_list(load_preferences(user["id"]).get("dashboard_sections","")) if sid in dashboard_sections]
         dashboard_order=saved_dashboard_order or default_dashboard_order
         sections_html=''.join(dashboard_sections[sid] for sid in dashboard_order)
-        body=f'''<main class="wrap dashboard-wrap"><section class="welcome"><div><h1>{greeting}, Pet Paradise <span aria-hidden="true">👋</span></h1><p>Panoramica operativa del periodo selezionato</p></div></section>{quick_actions}{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}{sections_html}{persistence_script}</main>'''
+        body=f'''<main class="wrap dashboard-wrap"><section class="welcome"><div><h1>{greeting}, {esc(user['display_name'])} <span aria-hidden="true">👋</span></h1><p>Panoramica operativa del periodo selezionato</p></div></section>{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}{sections_html}{persistence_script}</main>'''
         self.send_html(layout("Dashboard",body,user))
 
     def calendar_event_client_name(self,row,client_names=None,practice_owner_names=None):

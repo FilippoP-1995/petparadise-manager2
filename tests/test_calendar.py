@@ -314,8 +314,9 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("create-sheet-backdrop",pages["giorno"])
         self.handler.path = "/"
         self.handler.dashboard(self.admin)
-        self.assertIn("+ Nuova pratica", pages["current"])
-        self.assertIn("+ Nuovo evento", pages["current"])
+        self.assertNotIn("+ Nuova pratica", pages["current"])
+        self.assertNotIn("+ Nuovo evento", pages["current"])
+        self.assertIn(f"{self.admin['display_name']} <span", pages["current"])
 
     def test_non_overlapping_event_keeps_full_width_despite_other_overlaps_same_day(self):
         self.save(self.event_form("Ritiro", event_status="Da ritirare"))

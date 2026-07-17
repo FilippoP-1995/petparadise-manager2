@@ -1,4 +1,4 @@
-const CACHE = 'pet-paradise-shell-v7';
+const CACHE = 'pet-paradise-shell-__SW_VERSION__';
 const SHELL = [
   '/manifest.json',
   '/assets/company_logo.png',
@@ -11,7 +11,10 @@ const SHELL = [
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));
-  self.skipWaiting();
+  // Intentionally no self.skipWaiting() here: while a previous version is still
+  // controlling open tabs, the new worker waits until the page explicitly asks
+  // it to take over (see the SKIP_WAITING message below), so an update never
+  // interrupts something the user is in the middle of doing.
 });
 
 self.addEventListener('activate', event => {
