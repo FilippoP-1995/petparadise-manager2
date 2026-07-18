@@ -206,7 +206,7 @@ def normalize_event(form, current=None):
     if event_type=="Ritiro" and not zone:raise ValueError("La zona è obbligatoria")
     if event_type in ("Ritiro in sede","Riconsegna in sede") and site not in ("Livorno","Empoli"):raise ValueError("Seleziona la sede")
     if event_type in ("Riconsegna","Riconsegna in sede") and not animal:raise ValueError("Il nome animale è obbligatorio")
-    if event_type in ("Ritiro","Ritiro in sede"):
+    if event_type=="Ritiro":
         if _clean(form.get("location_type"),50) not in ("Privato","Veterinario"):raise ValueError("Seleziona il luogo del ritiro")
         if not _clean(form.get("address"),500):raise ValueError("L'indirizzo del luogo del ritiro è obbligatorio")
     operator=_clean(form.get("operator_name"),50).title()

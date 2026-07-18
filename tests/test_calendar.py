@@ -44,8 +44,8 @@ class OperationalCalendarTests(unittest.TestCase):
             "zone": "Livorno" if event_type in ("Ritiro", "Riconsegna") else "",
             "destination_site": "Livorno" if "in sede" in event_type else "",
             "animal_name": "Fido" if event_type in ("Riconsegna", "Riconsegna in sede") else "",
-            "location_type": "Veterinario" if event_type in ("Ritiro", "Ritiro in sede") else "",
-            "address": "Via Test 1" if event_type in ("Ritiro", "Ritiro in sede") else "",
+            "location_type": "Veterinario" if event_type == "Ritiro" else "",
+            "address": "Via Test 1" if event_type == "Ritiro" else "",
             "start_date": "2026-07-15",
             "start_time": "09:30",
             "end_date": "2026-07-15",
@@ -117,6 +117,12 @@ class OperationalCalendarTests(unittest.TestCase):
         appointment=normalize_event(self.event_form("Appuntamento",zone="Livorno"))
         self.assertEqual(appointment["zone"],"")
         self.assertEqual(parse_items(json.dumps([{"name":"","species":"","weight":"","cremation_type":"","notes":""}]),"animal"),[])
+        with self.assertRaisesRegex(ValueError,"luogo del ritiro"):
+            normalize_event(self.event_form("Ritiro",location_type=""))
+        with self.assertRaisesRegex(ValueError,"indirizzo del luogo del ritiro"):
+            normalize_event(self.event_form("Ritiro",address=""))
+        pickup_in_sede=normalize_event(self.event_form("Ritiro in sede",location_type="",address=""))
+        self.assertEqual((pickup_in_sede["location_type"],pickup_in_sede["address"]),("",""))
 
     def test_invalid_calendar_save_stays_in_wizard_without_raw_http_error(self):
         rendered=[];errors=[]
@@ -214,6 +220,23 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertEqual((event["client_id"], event["veterinarian_id"]), (client_id, vet_id))
         self.assertEqual(event["veterinarian_address"], "Via Roma 1")
         self.assertEqual((client["first_name"], vet["clinic_name"]), ("Mario", "Clinica Test"))
+
+    def test_pickup_location_block_is_hidden_only_for_ritiro_in_sede(self):
+        pickup_id = self.save(self.event_form("Ritiro"))
+        onsite_id = self.save(self.event_form("Ritiro in sede", location_type="", address=""))
+        for event_id, expect_location_block in ((pickup_id, True), (onsite_id, False)):
+            rendered = []
+            self.handler.path = f"/calendario/{event_id}/modifica"
+            self.handler.send_html = lambda html, status=200: rendered.append(html)
+            self.handler.calendar_event_form(self.admin, event_id)
+            html = rendered[-1]
+            self.assertIn("Cliente / Proprietario", html)
+            self.assertIn("Veterinario di riferimento", html)
+            if expect_location_block:
+                self.assertIn("Luogo del ritiro", html)
+                self.assertNotIn('data-calendar-types="Ritiro" hidden', html)
+            else:
+                self.assertIn('data-calendar-types="Ritiro" hidden', html)
 
     def test_delivery_zone_and_clinic_are_persisted_and_shown_without_growing_the_card(self):
         stamp = datetime.now().isoformat(timespec="seconds")
