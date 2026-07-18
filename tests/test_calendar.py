@@ -44,6 +44,8 @@ class OperationalCalendarTests(unittest.TestCase):
             "zone": "Livorno" if event_type in ("Ritiro", "Riconsegna") else "",
             "destination_site": "Livorno" if "in sede" in event_type else "",
             "animal_name": "Fido" if event_type in ("Riconsegna", "Riconsegna in sede") else "",
+            "location_type": "Veterinario" if event_type in ("Ritiro", "Ritiro in sede") else "",
+            "address": "Via Test 1" if event_type in ("Ritiro", "Ritiro in sede") else "",
             "start_date": "2026-07-15",
             "start_time": "09:30",
             "end_date": "2026-07-15",
@@ -139,10 +141,10 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("Razzauti",[row["display"] for row in response["obj"]["results"]])
         rendered=[];self.handler.path="/calendario/nuovo";self.handler.send_html=lambda html,status=200:rendered.append(html)
         self.handler.calendar_event_form(self.admin)
-        self.assertNotIn("Cerca cliente",rendered[-1])
+        self.assertIn("Cerca cliente",rendered[-1])
         self.assertIn("Cerca veterinario",rendered[-1])
         self.assertIn("calendarAddRow('animal',{})",rendered[-1])
-        self.assertNotIn("function calendarClientLookup(",app.APP_JS)
+        self.assertIn("function calendarPickupClientLookup(",app.APP_JS)
         self.assertNotIn("Veterinario/Ambulatorio",app.APP_JS)
         self.assertIn("history.back()",app.APP_JS)
         self.assertIn("Le modifiche non salvate andranno perse",app.APP_JS)
@@ -514,9 +516,8 @@ class OperationalCalendarTests(unittest.TestCase):
         self.handler.send_html = lambda html, status=200: captured.append(html)
         self.handler.calendar_event_form(self.admin)
         html = captured[0]
-        for text in ("Tipo evento", "Data e titolo", "Cerca veterinario", "+ Aggiungi animale", "Preventivo previsto", "Tutto il giorno"):
+        for text in ("Tipo evento", "Data e titolo", "Cerca veterinario", "Cerca cliente", "+ Aggiungi animale", "Preventivo previsto", "Tutto il giorno"):
             self.assertIn(text, html)
-        self.assertNotIn("Cerca cliente", html)
         for hook in ("calendarZoneOffer", "/api/clienti/search", "/api/veterinari/search"):
             self.assertIn(hook, html if hook == "calendarZoneOffer" else app.APP_JS + html)
         for operator in ("Serena","Alessio","Filippo"):
