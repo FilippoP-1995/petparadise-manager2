@@ -1363,8 +1363,12 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(app.dashboard_period_bounds("mese",date(2026,12,8)),("mese",date(2026,12,1),date(2026,12,31)))
 
     def test_dashboard_uses_operational_and_economic_dates_without_double_counting(self):
-        today=datetime.now().date();week_start=app.dashboard_period_bounds("settimana",today)[1]
-        old_day=(today-timedelta(days=35)).isoformat();today_text=today.isoformat();week_day=week_start.isoformat();stamp=app.now()
+        today=datetime.now().date();_,week_start,week_end=app.dashboard_period_bounds("settimana",today)
+        # Pick a day inside the current week that is not "today" itself, regardless of which
+        # weekday the suite happens to run on (this app's week starts on Saturday, so "today"
+        # can itself be week_start and the two must not collide).
+        week_other_day=week_end if week_start==today else week_start
+        old_day=(today-timedelta(days=35)).isoformat();today_text=today.isoformat();week_day=week_other_day.isoformat();stamp=app.now()
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();uid=admin["id"]
             def practice(code,name,status,pickup,total,total_d="",deposit="0",remaining="0",payment="Da saldare",created=old_day):
