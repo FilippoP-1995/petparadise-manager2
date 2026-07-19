@@ -238,6 +238,20 @@ class OperationalCalendarTests(unittest.TestCase):
             else:
                 self.assertIn('data-calendar-types="Ritiro" hidden', html)
 
+    def test_new_event_notification_uses_emoji_specific_to_event_type(self):
+        expected = {
+            "Ritiro": "🐾", "Ritiro in sede": "🐾",
+            "Riconsegna": "📦", "Riconsegna in sede": "📦",
+            "Appuntamento": "📅",
+        }
+        for event_type, emoji in expected.items():
+            self.handler.form = lambda event_type=event_type: self.event_form(event_type)
+            with patch("app.emit_notification", return_value=[]) as mock_emit:
+                self.handler.save_calendar_event(self.admin)
+            kind, title = mock_emit.call_args.args[1], mock_emit.call_args.args[2]
+            self.assertEqual(kind, "calendar_event_created")
+            self.assertTrue(title.startswith(emoji), f"{event_type}: {title!r}")
+
     def test_delivery_zone_and_clinic_are_persisted_and_shown_without_growing_the_card(self):
         stamp = datetime.now().isoformat(timespec="seconds")
         with app.db() as conn:
@@ -260,6 +274,11 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("Livorno", card)
         self.assertIn("Ambulatorio Riconsegna", card)
         self.assertEqual(card.count("<p>"), 2)  # details line + operator line only, no extra row added per detail
+        # The whole colored card must be a single link, not just the icon/text sub-area,
+        # so tapping anywhere on the card (not only its text) opens the event.
+        self.assertTrue(card.startswith(f'<a class="calendar-event'))
+        self.assertIn(f'href="/calendario/{event_id}"', card)
+        self.assertNotIn('<a class="calendar-event-main"', card)
 
         pages = []
         self.handler.send_html = lambda html, status=200: pages.append(html)
@@ -397,6 +416,23 @@ class OperationalCalendarTests(unittest.TestCase):
         # Server-side normalize_event already rejects an end before the start regardless of client sync bugs.
         with self.assertRaisesRegex(ValueError, "fine"):
             normalize_event(self.event_form("Ritiro", start_date="2026-07-16", end_date="2026-07-15"))
+
+    def test_editing_existing_event_preserves_its_saved_end_date_and_time(self):
+        # Regression test: changing the start date of an ALREADY SAVED event used to
+        # silently reset its already-set end date/time to match the new start, because
+        # the auto-follow sync (meant only for brand-new events) didn't know the
+        # difference between "never touched yet" and "loaded from a saved event".
+        js = app.APP_JS
+        self.assertIn("(form.dataset.draftKey||'').includes('_edit_')", js)
+        self.assertIn("if(form.end_date)form.end_date.dataset.manualEdit='1';", js)
+        self.assertIn("if(form.end_time&&form.end_time.value)form.end_time.dataset.manualEdit='1';", js)
+        event_id = self.save(self.event_form("Appuntamento", start_date="2026-07-19", start_time="14:45", end_date="2026-07-19", end_time="16:00"))
+        rendered = []
+        self.handler.path = f"/calendario/{event_id}/modifica"
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.calendar_event_form(self.admin, event_id)
+        html = rendered[-1]
+        self.assertIn(f'"ppm_calendar_draft_edit_{event_id}"', html)
 
     def test_link_existing_practice_search_covers_all_four_criteria(self):
         stamp = datetime.now().isoformat(timespec="seconds")
