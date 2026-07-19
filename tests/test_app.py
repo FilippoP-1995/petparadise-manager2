@@ -777,9 +777,11 @@ class PetParadiseTests(unittest.TestCase):
         self.assertLess(header.index(">Urna<"), header.index(">Cliente<"))
         self.assertLess(header.index(">Cliente<"), header.index(">Data recupero<"))
         self.assertLess(header.index(">Data recupero<"), header.index(">Inserito<"))
-        self.assertIn(f'data-practice-id="{older_id}"', page)
-        self.assertIn("onchange=\"toggleCremationRegistered(this)\"", page)
-        self.assertIn("function toggleCremationRegistered(input)", app.APP_JS)
+        self.assertIn(f'name="inserted_{older_id}"', page)
+        self.assertIn("onchange=\"markCremationRowPending(this)\"", page)
+        self.assertIn("function markCremationRowPending(input)", app.APP_JS)
+        self.assertIn('id="cremationForm"', page)
+        self.assertIn('form="cremationForm" type="submit"', page)  # the visible SALVA button
         self.assertNotIn('practice-row-link cremation-row-done', page)  # nothing marked INSERITO yet
 
         rendered.clear()
@@ -790,30 +792,45 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn("CR-CREM-NEW", filtered)
         self.assertNotIn("CR-CREM-CAT", filtered)
 
-    def test_toggle_cremation_registered_persists_and_marks_row_green(self):
+    def test_saving_cremation_schedule_moves_checked_animals_to_in_programma(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
             stamp = app.now()
-            pid = conn.execute(
-                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
-                   pickup_date,created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                ("CR-INSERITO", "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-15", stamp, stamp,
-                 admin["id"], "Fido"),
-            ).lastrowid
-        captured = []
-        self.handler.path = f"/pratiche/{pid}/cremazione-inserita"
-        self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
-        self.handler.form = lambda: {"value": "Si"}
-        self.handler.toggle_cremation_registered(admin, pid)
-        self.assertEqual(captured[-1], ({"ok": True, "value": "Si"}, 200))
+
+            def practice(code):
+                return conn.execute(
+                    """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                       pickup_date,created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                    (code, "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-15", stamp, stamp,
+                     admin["id"], code),
+                ).lastrowid
+
+            checked_id = practice("CR-INSERITO")
+            unchecked_id = practice("CR-NON-INSERITO")
+
+        self.handler.path = "/programma-cremazioni/salva"
+        self.handler.form = lambda: {"return_to": "/programma-cremazioni", f"inserted_{checked_id}": "1"}
+        redirected = []
+        self.handler.redirect = lambda url: redirected.append(url)
+        self.handler.save_cremation_schedule(admin)
+        self.assertEqual(redirected[-1], "/programma-cremazioni")
         with app.db() as conn:
-            self.assertEqual(conn.execute("SELECT cremation_registered FROM practices WHERE id=?", (pid,)).fetchone()["cremation_registered"], "Si")
+            checked_row = conn.execute("SELECT status,cremation_registered FROM practices WHERE id=?", (checked_id,)).fetchone()
+            unchecked_row = conn.execute("SELECT status,cremation_registered FROM practices WHERE id=?", (unchecked_id,)).fetchone()
+            self.assertEqual((checked_row["status"], checked_row["cremation_registered"]), ("In programma", "Si"))
+            self.assertEqual((unchecked_row["status"], unchecked_row["cremation_registered"]), ("Ritirato", None))
+            history = conn.execute(
+                "SELECT event_type,old_value,new_value FROM practice_history WHERE practice_id=?", (checked_id,)
+            ).fetchone()
+            self.assertEqual((history["event_type"], history["old_value"], history["new_value"]), ("Cambio stato rapido", "Ritirato", "In programma"))
+
+        # The saved practice moved out of Ritirato, so it must disappear from the list on reload.
         rendered = []
         self.handler.path = "/programma-cremazioni"
         self.handler.send_html = lambda content, *args: rendered.append(content)
         self.handler.cremation_schedule(admin)
-        self.assertIn('practice-row-link cremation-row-done', rendered[-1])
-        self.assertIn(f'data-practice-id="{pid}" checked', rendered[-1])
+        self.assertNotIn("CR-INSERITO", rendered[-1])
+        self.assertIn("CR-NON-INSERITO", rendered[-1])
 
     def test_normalization_keeps_custom_plate_and_calculates_remaining(self):
         data = self.handler.normalized_fields({
