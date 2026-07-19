@@ -38,11 +38,15 @@ class PetParadiseTests(unittest.TestCase):
               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-AUTO","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Fido","Mario","Rossi","333111","Si","250","330","100","230","Acconto")).lastrowid
             notifications_before=conn.execute("SELECT count(*) n FROM notifications").fetchone()["n"]
             whatsapp_before=conn.execute("SELECT count(*) n FROM whatsapp_messages").fetchone()["n"]
-        rendered=[];self.handler.path=f"/pratiche/{pid}/modifica";self.handler.send_html=lambda html,*args:rendered.append(html)
+        rendered=[];self.handler.path=f"/pratiche/{pid}/modifica?return_to=%2Farchivio%2Fpratiche%3Fstato%3DRitirato";self.handler.send_html=lambda html,*args:rendered.append(html)
         self.handler.edit_page(admin,pid)
         page=rendered[-1]
         self.assertIn(f'data-autosave-url="/api/pratiche/{pid}/autosave"',page)
         self.assertIn("Ultimo salvataggio",page)
+        # ANNULLA must let the user leave without saving, going straight back to where
+        # they came from (not through the practice detail page), and be reachable both
+        # from the sticky top bar and the bottom of the form.
+        self.assertEqual(page.count('href="/archivio/pratiche?stato=Ritirato">Annulla</a>'),2)
         self.assertIn("setTimeout(save,1800)",app.APP_JS)
         captured=[];self.handler.send_json=lambda obj,status=200:captured.append((obj,status))
         self.handler.form=lambda:{"updated_at":stamp,"changes_json":json.dumps({"animal_name":"Fido Junior","owner_phone":"333222"})}
@@ -721,20 +725,24 @@ class PetParadiseTests(unittest.TestCase):
             ).lastrowid
 
             def practice(code, status, service_type, pickup, provenance="", weight="", urn=None,
-                         send_catalog="", tag_avvisare=""):
+                         send_catalog="", tag_avvisare="", urn_notes="", owner_first="", owner_last=""):
                 return conn.execute(
                     """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
                        pickup_date,created_at,updated_at,created_by,animal_name,estimated_weight,provenance,
-                       urn_id,send_catalog,tag_avvisare) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                       urn_id,send_catalog,tag_avvisare,urn_notes,owner_first_name,owner_last_name)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (code, "Privato", "Livorno", status, service_type, pickup, stamp, stamp, admin["id"],
-                     code, weight, provenance, urn, send_catalog, tag_avvisare),
+                     code, weight, provenance, urn, send_catalog, tag_avvisare, urn_notes, owner_first, owner_last),
                 ).lastrowid
 
-            newer_id = practice("CR-CREM-NEW", "Ritirato", "Cremazione singola", "2026-07-16", provenance="E")
+            newer_id = practice("CR-CREM-NEW", "Ritirato", "Cremazione singola", "2026-07-16", provenance="E",
+                                 owner_first="Anna", owner_last="Verdi")
             older_id = practice("CR-CREM-OLD", "Ritirato", "Cremazione singola", "2026-07-14", provenance="L",
                                  weight="8", urn=urn_id)
             catalog_id = practice("CR-CREM-CAT", "Ritirato", "Cremazione singola", "2026-07-15",
                                    send_catalog="Si", tag_avvisare="Si")
+            freetext_id = practice("CR-CREM-FREETEXT", "Ritirato", "Cremazione singola", "2026-07-17",
+                                    urn_notes="Urna scelta a voce, non ancora in catalogo")
             practice("CR-CREM-COLLETTIVA", "Ritirato", "Cremazione collettiva", "2026-07-10")
             practice("CR-CREM-DONE", "Cremato", "Cremazione singola", "2026-07-10")
 
@@ -748,17 +756,31 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("CR-CREM-NEW", page)
         self.assertIn("CR-CREM-OLD", page)
         self.assertIn("CR-CREM-CAT", page)
+        self.assertIn("CR-CREM-FREETEXT", page)
         self.assertLess(page.index("CR-CREM-OLD"), page.index("CR-CREM-CAT"))
         self.assertLess(page.index("CR-CREM-CAT"), page.index("CR-CREM-NEW"))
-        self.assertIn("<strong>3</strong>", page)  # counter: 3 practices match both criteria
+        self.assertLess(page.index("CR-CREM-NEW"), page.index("CR-CREM-FREETEXT"))
+        self.assertIn("<strong>4</strong>", page)  # counter: 4 practices match both criteria
         self.assertIn("Cornice Bianca", page)
         self.assertIn("INVIARE CATALOGO", page)
         self.assertIn("AVVISARE", page)
         self.assertIn("L · Livorno", page)
         self.assertIn("E · Empoli", page)
+        self.assertIn("Anna Verdi", page)
+        self.assertIn("Urna scelta a voce, non ancora in catalogo", page)  # unmatched free-typed urn text still shown
         self.assertIn(f'/pratiche/{older_id}', page)
         self.assertIn(f'/pratiche/{newer_id}', page)
         self.assertIn(f'/pratiche/{catalog_id}', page)
+        self.assertIn(f'/pratiche/{freetext_id}', page)
+        # Data recupero must be the last real column, before the INSERITO checkbox.
+        header = page[page.index("<thead>"):page.index("</thead>")]
+        self.assertLess(header.index(">Urna<"), header.index(">Cliente<"))
+        self.assertLess(header.index(">Cliente<"), header.index(">Data recupero<"))
+        self.assertLess(header.index(">Data recupero<"), header.index(">Inserito<"))
+        self.assertIn(f'data-practice-id="{older_id}"', page)
+        self.assertIn("onchange=\"toggleCremationRegistered(this)\"", page)
+        self.assertIn("function toggleCremationRegistered(input)", app.APP_JS)
+        self.assertNotIn('practice-row-link cremation-row-done', page)  # nothing marked INSERITO yet
 
         rendered.clear()
         self.handler.path = "/programma-cremazioni?provenienza=L"
@@ -767,6 +789,31 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("CR-CREM-OLD", filtered)
         self.assertNotIn("CR-CREM-NEW", filtered)
         self.assertNotIn("CR-CREM-CAT", filtered)
+
+    def test_toggle_cremation_registered_persists_and_marks_row_green(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-INSERITO", "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-15", stamp, stamp,
+                 admin["id"], "Fido"),
+            ).lastrowid
+        captured = []
+        self.handler.path = f"/pratiche/{pid}/cremazione-inserita"
+        self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+        self.handler.form = lambda: {"value": "Si"}
+        self.handler.toggle_cremation_registered(admin, pid)
+        self.assertEqual(captured[-1], ({"ok": True, "value": "Si"}, 200))
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT cremation_registered FROM practices WHERE id=?", (pid,)).fetchone()["cremation_registered"], "Si")
+        rendered = []
+        self.handler.path = "/programma-cremazioni"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        self.assertIn('practice-row-link cremation-row-done', rendered[-1])
+        self.assertIn(f'data-practice-id="{pid}" checked', rendered[-1])
 
     def test_normalization_keeps_custom_plate_and_calculates_remaining(self):
         data = self.handler.normalized_fields({
@@ -947,9 +994,9 @@ class PetParadiseTests(unittest.TestCase):
             admin = conn.execute("SELECT id FROM users WHERE username='admin'").fetchone()["id"]
             stamp = app.now()
             cur = conn.execute(
-                """INSERT INTO urns(name,material,internal_code,price,quantity,low_stock_threshold,created_at,updated_at)
-                   VALUES(?,?,?,?,?,?,?,?)""",
-                ("Urna prova", "Legno", "URN-TEST", "85.00", 2, 3, stamp, stamp),
+                """INSERT INTO urns(name,material,internal_code,price,quantity,low_stock_threshold,image_path,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("Urna prova", "Legno", "URN-TEST", "85.00", 2, 3, "/assets/urns/urna-prova.jpg", stamp, stamp),
             )
             urn_id = cur.lastrowid
             self.handler.adjust_urn_stock(conn, urn_id, -1, "Utilizzata nella pratica", None, admin)
@@ -975,6 +1022,10 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('name="urn_id_2" class="hidden"', html)
         self.assertIn('name="invoice_total"', html)
         self.assertIn("Urna prova", html)
+        # Autocomplete suggestions must carry the urn's image so it shows next to each match.
+        self.assertIn('data-image="/assets/urns/urna-prova.jpg"', html)
+        self.assertIn("lookup-item-thumb", app.APP_JS)
+        self.assertIn("option.dataset.image", app.APP_JS)
 
     def test_urn_category_column_is_idempotent_and_seed_defaults_to_urna(self):
         with app.db() as conn:
@@ -1093,7 +1144,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("CR-000018",rendered[-1])
         self.assertIn(app.money_it(120),rendered[-1])
         self.assertNotIn(app.money_it(34.29),rendered[-1])
-        self.assertEqual(rendered[-1].count("CR-000018"),1)
+        self.assertEqual(rendered[-1].count("CR-000018"),2)  # once in the row's aria-label, once in its link text - still a single row
 
         self.handler.path=f"/bilanci?dal={today}&al={today}&voce=price_cremation"
         self.handler.balances_v2(admin)
@@ -1173,6 +1224,15 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Età",page);self.assertIn("Fattura",page);self.assertIn("FT-101",page)
         self.assertIn("8 anni",page);self.assertEqual(page.count('class="month-toggle"'),2)
         self.assertIn("toggleArchiveMonth",page);self.assertNotIn("Aggiorna pagamento",page);self.assertNotIn('class="quick-payment"',page)
+        # Regression test: a single click on a practice row must only select it (colored
+        # outline), not navigate away immediately; opening the practice now needs a double
+        # click, so explicit inner links (code, "Apri" button) must still work on one click.
+        self.assertNotIn("onclick=\"window.location.href=", page)
+        self.assertIn("onclick=\"practiceRowSelect(this,event)\"", page)
+        self.assertIn("ondblclick=\"practiceRowOpen(", page)
+        self.assertIn("function practiceRowSelect(row,event)", app.APP_JS)
+        self.assertIn("function practiceRowOpen(url)", app.APP_JS)
+        self.assertIn(".row-selected", app.CSS)
 
     def test_origin_veterinarian_lookup_and_safe_return_link(self):
         html=self.handler.fields_html()
