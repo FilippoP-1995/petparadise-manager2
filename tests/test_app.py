@@ -1241,13 +1241,15 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Età",page);self.assertIn("Fattura",page);self.assertIn("FT-101",page)
         self.assertIn("8 anni",page);self.assertEqual(page.count('class="month-toggle"'),2)
         self.assertIn("toggleArchiveMonth",page);self.assertNotIn("Aggiorna pagamento",page);self.assertNotIn('class="quick-payment"',page)
-        # Regression test: a single click on a practice row must only select it (colored
-        # outline), not navigate away immediately; opening the practice now needs a double
-        # click, so explicit inner links (code, "Apri" button) must still work on one click.
+        # Regression test: a single click on a practice row only selects it (colored
+        # outline) the first time; a plain second click on an already-selected row (not
+        # necessarily a fast double-click) opens it, and a real double-click still works
+        # too. Explicit inner links (code, "Apri" button) must keep working on one click.
         self.assertNotIn("onclick=\"window.location.href=", page)
-        self.assertIn("onclick=\"practiceRowSelect(this,event)\"", page)
+        self.assertIn("onclick=\"practiceRowSelect(this,event,'", page)
         self.assertIn("ondblclick=\"practiceRowOpen(", page)
-        self.assertIn("function practiceRowSelect(row,event)", app.APP_JS)
+        self.assertIn("function practiceRowSelect(row,event,url)", app.APP_JS)
+        self.assertIn("if(row.classList.contains('row-selected')){practiceRowOpen(url);return;}", app.APP_JS)
         self.assertIn("function practiceRowOpen(url)", app.APP_JS)
         self.assertIn(".row-selected", app.CSS)
 
