@@ -583,6 +583,11 @@ class OperationalCalendarTests(unittest.TestCase):
             self.assertIn(operator,html)
         for preset in ("Cremazione","Ritiro","Riconsegna","Urna","Altro"):
             self.assertIn(preset,html)
+        # Cremazione/Ritiro/Riconsegna stay fixed labels, but Urna must be a free-text
+        # field (pre-filled with "Urna" so an untouched row still saves), since the
+        # specific urn chosen varies per practice and can't be a locked preset.
+        self.assertIn("data.preset==='Urna'", app.APP_JS)
+        self.assertIn('placeholder="Nome urna o descrizione" data-key="description" value="${data.description||\'Urna\'}"', app.APP_JS)
         self.assertNotIn("Persona o azienda",html)
         self.assertNotIn("Nome animale *",html)
         self.assertNotIn("Operatore assegnato",html)
