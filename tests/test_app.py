@@ -702,11 +702,71 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("PP-PARZIALE", rendered[-1])
         self.assertIn("€ 430,00", rendered[-1])
         self.assertIn('/pratiche/', rendered[-1])
-
         self.handler.path = f"/bilanci?dal={today}&al={today}&voce=da_entrare_d"
         self.handler.balances_v2(admin)
         self.assertIn("PP-PARZIALE", rendered[-1])
         self.assertIn("€ 230,00", rendered[-1])
+        page = rendered[-1]
+        self.assertIn('class="collapse-toggle"', page)
+        self.assertIn('class="collapsible-body"', page)
+        self.assertIn("function toggleCollapsibleSection(button)", app.APP_JS)
+
+    def test_cremation_schedule_lists_ritirato_single_cremations_sorted_with_counter_urn_and_filter(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            urn_id = conn.execute(
+                "INSERT INTO urns(name,price,quantity,active,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("Cornice Bianca", "80", 5, 1, stamp, stamp),
+            ).lastrowid
+
+            def practice(code, status, service_type, pickup, provenance="", weight="", urn=None,
+                         send_catalog="", tag_avvisare=""):
+                return conn.execute(
+                    """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                       pickup_date,created_at,updated_at,created_by,animal_name,estimated_weight,provenance,
+                       urn_id,send_catalog,tag_avvisare) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (code, "Privato", "Livorno", status, service_type, pickup, stamp, stamp, admin["id"],
+                     code, weight, provenance, urn, send_catalog, tag_avvisare),
+                ).lastrowid
+
+            newer_id = practice("CR-CREM-NEW", "Ritirato", "Cremazione singola", "2026-07-16", provenance="E")
+            older_id = practice("CR-CREM-OLD", "Ritirato", "Cremazione singola", "2026-07-14", provenance="L",
+                                 weight="8", urn=urn_id)
+            catalog_id = practice("CR-CREM-CAT", "Ritirato", "Cremazione singola", "2026-07-15",
+                                   send_catalog="Si", tag_avvisare="Si")
+            practice("CR-CREM-COLLETTIVA", "Ritirato", "Cremazione collettiva", "2026-07-10")
+            practice("CR-CREM-DONE", "Cremato", "Cremazione singola", "2026-07-10")
+
+        rendered = []
+        self.handler.path = "/programma-cremazioni"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertNotIn("CR-CREM-COLLETTIVA", page)
+        self.assertNotIn("CR-CREM-DONE", page)
+        self.assertIn("CR-CREM-NEW", page)
+        self.assertIn("CR-CREM-OLD", page)
+        self.assertIn("CR-CREM-CAT", page)
+        self.assertLess(page.index("CR-CREM-OLD"), page.index("CR-CREM-CAT"))
+        self.assertLess(page.index("CR-CREM-CAT"), page.index("CR-CREM-NEW"))
+        self.assertIn("<strong>3</strong>", page)  # counter: 3 practices match both criteria
+        self.assertIn("Cornice Bianca", page)
+        self.assertIn("INVIARE CATALOGO", page)
+        self.assertIn("AVVISARE", page)
+        self.assertIn("L · Livorno", page)
+        self.assertIn("E · Empoli", page)
+        self.assertIn(f'/pratiche/{older_id}', page)
+        self.assertIn(f'/pratiche/{newer_id}', page)
+        self.assertIn(f'/pratiche/{catalog_id}', page)
+
+        rendered.clear()
+        self.handler.path = "/programma-cremazioni?provenienza=L"
+        self.handler.cremation_schedule(admin)
+        filtered = rendered[-1]
+        self.assertIn("CR-CREM-OLD", filtered)
+        self.assertNotIn("CR-CREM-NEW", filtered)
+        self.assertNotIn("CR-CREM-CAT", filtered)
 
     def test_normalization_keeps_custom_plate_and_calculates_remaining(self):
         data = self.handler.normalized_fields({
