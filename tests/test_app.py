@@ -2017,7 +2017,104 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("if(c.kind==='collaborator'){", js)
         self.assertIn("if(clientId) clientId.value='';\n      if(collaboratorId) collaboratorId.value=c.id || '';", js)
         self.assertIn("setField('owner_sdi', c.sdi_code);", js)
-        self.assertIn("if(collaboratorId) collaboratorId.value='';\n      if(collaboratorName) collaboratorName.value='';\n      if(clientId) clientId.value=c.id || '';", js)
+        self.assertIn("if(collaboratorId) collaboratorId.value='';\n      if(collaboratorName) collaboratorName.value='';\n      ppmSetCollaboratorTiers([]);\n      if(clientId) clientId.value=c.id || '';", js)
+
+    def test_humanitas_is_seeded_with_code_and_weight_tiers(self):
+        with app.db() as conn:
+            co = conn.execute("SELECT * FROM collaborators WHERE UPPER(name)='HUMANITAS CROCE VERDE'").fetchone()
+            tiers = conn.execute("SELECT * FROM collaborator_price_tiers WHERE collaborator_id=? ORDER BY CAST(weight_min AS REAL)", (co["id"],)).fetchall()
+        self.assertEqual(co["code"], "CV")
+        self.assertEqual(len(tiers), 5)
+        expected = [("0", "1", "146.40"), ("1.1", "10", "183.00"), ("10.1", "25", "244.00"), ("25.1", "45", "305.00"), ("45.1", None, "390.40")]
+        for tier, (weight_min, weight_max, price) in zip(tiers, expected):
+            self.assertEqual(tier["weight_min"], weight_min)
+            self.assertEqual(tier["weight_max"], weight_max)
+            self.assertEqual(tier["price"], price)
+
+    def test_collaborator_price_tier_crud(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            collab_id = conn.execute("SELECT id FROM collaborators WHERE UPPER(name)='HUMANITAS CROCE VERDE'").fetchone()["id"]
+        self.handler.form = lambda: {"weight_min": "0", "weight_max": "5", "price": "100,50"}
+        self.handler.redirect = lambda path: setattr(self, "redirected", path)
+        self.handler.save_collaborator_price_tier(admin, collab_id)
+        self.assertEqual(self.redirected, f"/collaboratori/{collab_id}")
+        with app.db() as conn:
+            tier = conn.execute("SELECT * FROM collaborator_price_tiers WHERE collaborator_id=? AND weight_min='0' AND weight_max='5'", (collab_id,)).fetchone()
+        self.assertEqual(tier["price"], "100.50")
+
+        self.handler.form = lambda: {"weight_min": "0", "weight_max": "5", "price": "120,00"}
+        self.handler.edit_collaborator_price_tier(admin, tier["id"])
+        with app.db() as conn:
+            updated = conn.execute("SELECT price FROM collaborator_price_tiers WHERE id=?", (tier["id"],)).fetchone()
+        self.assertEqual(updated["price"], "120.00")
+
+        self.handler.delete_collaborator_price_tier(admin, tier["id"])
+        with app.db() as conn:
+            gone = conn.execute("SELECT 1 FROM collaborator_price_tiers WHERE id=?", (tier["id"],)).fetchone()
+        self.assertIsNone(gone)
+
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = f"/collaboratori/{collab_id}"
+        self.handler.collaborator_detail(admin, collab_id)
+        self.assertIn("Listino dedicato", rendered[-1])
+        self.assertIn('value="146.40"', rendered[-1])
+
+    def test_api_collaborator_price_tiers_endpoint_and_search_includes_tiers(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            collab_id = conn.execute("SELECT id FROM collaborators WHERE UPPER(name)='HUMANITAS CROCE VERDE'").fetchone()["id"]
+        response = {}
+        self.handler.path = f"/api/collaboratori/{collab_id}/listino"
+        self.handler.send_json = lambda obj, status=200: response.update(obj=obj, status=status)
+        self.handler.api_collaborator_price_tiers(admin, collab_id)
+        self.assertEqual(len(response["obj"]["tiers"]), 5)
+
+        response2 = {}
+        self.handler.path = "/api/collaboratori/search?q=humanitas"
+        self.handler.send_json = lambda obj, status=200: response2.update(obj=obj, status=status)
+        self.handler.api_collaborators_search(admin)
+        self.assertEqual(len(response2["obj"]["results"][0]["tiers"]), 5)
+
+        response3 = {}
+        self.handler.path = "/api/clienti/search?q=humanitas"
+        self.handler.send_json = lambda obj, status=200: response3.update(obj=obj, status=status)
+        self.handler.api_clients_search(admin)
+        collab_result = next(r for r in response3["obj"]["results"] if r["kind"] == "collaborator")
+        self.assertEqual(len(collab_result["tiers"]), 5)
+
+    def test_collaborators_crud_form_has_sigla_field(self):
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/collaboratori"
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.collaborators_page(admin)
+        self.assertIn('name="code"', rendered[-1])
+        self.assertIn(">CV<", rendered[-1])
+
+    def test_weight_field_triggers_collaborator_price_autofill_js(self):
+        js = app.APP_JS
+        self.assertIn("function ppmApplyCollaboratorWeightPrice(){", js)
+        self.assertIn("weightField.addEventListener('input', ppmApplyCollaboratorWeightPrice);", js)
+        self.assertIn("ppmSetCollaboratorTiers(co.tiers);", js)
+        self.assertIn("ppmApplyCollaboratorWeightPrice();", js)
+        self.assertIn("fetch(`/api/collaboratori/${collaboratorId.value}/listino`", js)
+
+    def test_practice_lists_show_sigla_prefix_and_collaborator_name(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            collab_id = conn.execute("SELECT id FROM collaborators WHERE UPPER(name)='HUMANITAS CROCE VERDE'").fetchone()["id"]
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                         animal_name,species,service_type,payment_status,collaborator_id,collaborator_name,owner_first_name)
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                         ("CR-SIGLA", "Collaboratore", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Fido", "Cane", "Cremazione singola", "Da saldare", collab_id, "HUMANITAS CROCE VERDE", "HUMANITAS CROCE VERDE"))
+            rows = conn.execute("SELECT * FROM practices WHERE practice_number='CR-SIGLA'").fetchall()
+        self.handler.path = "/archivio/pratiche"
+        html = self.handler.practice_rows(rows)
+        self.assertIn("CV Fido", html)
+        self.assertIn("HUMANITAS CROCE VERDE", html)
 
 
 if __name__ == "__main__":
