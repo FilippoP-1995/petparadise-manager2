@@ -1982,6 +1982,15 @@ class PetParadiseTests(unittest.TestCase):
         self.assertTrue(any(href == "/collaboratori" for href, icon, label in app.SIDEBAR_LINKS))
         self.assertNotIn("/archivio/clienti", [href for href, icon, label in app.SIDEBAR_LINKS])
 
+    def test_tables_get_a_synced_top_scrollbar_on_desktop(self):
+        self.assertIn(".tablebox-scroll-top{overflow-x:auto;overflow-y:hidden;height:16px", app.CSS)
+        self.assertIn("@media(max-width:900px){.tablebox-scroll-top{display:none}}", app.CSS)
+        self.assertIn("function setupTableTopScrollbars(){", app.APP_JS)
+        self.assertIn("box.parentNode.insertBefore(topScroll, box);", app.APP_JS)
+        self.assertIn("box.scrollLeft=topScroll.scrollLeft", app.APP_JS)
+        self.assertIn("topScroll.scrollLeft=box.scrollLeft", app.APP_JS)
+        self.assertIn("document.addEventListener('DOMContentLoaded', setupTableTopScrollbars);", app.APP_JS)
+
 
 if __name__ == "__main__":
     unittest.main()
