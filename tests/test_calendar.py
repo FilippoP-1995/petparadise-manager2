@@ -361,6 +361,48 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertNotIn("+ Nuovo evento", pages["current"])
         self.assertIn(f"{self.admin['display_name']} <span", pages["current"])
 
+    def test_day_view_redesign_shows_legend_status_badges_colors_and_free_time_note(self):
+        self.save(self.event_form("Ritiro", title="RITIRO FIDO", event_status="Da confermare", start_time="08:30", end_time="09:00"))
+        self.save(self.event_form("Ritiro", title="RITIRO LUNA", event_status="Da ritirare", start_time="09:30", end_time="10:00"))
+        self.save(self.event_form("Ritiro", title="RITIRO BELLA", event_status="Ritirato", start_time="10:30", end_time="11:00"))
+        self.save(self.event_form("Ritiro", title="RITIRO ARGO", event_status="Annullato", start_time="11:30", end_time="12:00"))
+        self.save(self.event_form("Riconsegna", title="RICONSEGNA REX", start_time="13:00", end_time="13:30"))
+        self.save(self.event_form("Appuntamento", title="APPUNTAMENTO FORNITORE", start_time="14:00", end_time="14:30"))
+        rendered = []
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.path = "/calendario?vista=giorno&data=2026-07-15"
+        self.handler.calendar_page(self.admin)
+        page = rendered[-1]
+        self.assertIn("calendar-day-legend", page)
+        self.assertIn("Colore = stato del ritiro", page)
+        self.assertIn("Colore fisso = altri tipi", page)
+        self.assertIn("calendar-legend-dot calendar-yellow", page)
+        self.assertIn("calendar-legend-dot calendar-red", page)
+        self.assertIn("calendar-legend-dot calendar-green", page)
+        self.assertIn("calendar-legend-dot calendar-dark", page)
+        self.assertIn("calendar-legend-dot calendar-blue", page)
+        self.assertIn("calendar-legend-dot calendar-purple", page)
+        self.assertIn('calendar-event calendar-day-event calendar-yellow', page)
+        self.assertIn('calendar-event calendar-day-event calendar-red', page)
+        self.assertIn('calendar-event calendar-day-event calendar-green', page)
+        self.assertIn('calendar-event calendar-day-event calendar-dark', page)
+        self.assertIn('calendar-event calendar-day-event calendar-blue', page)
+        self.assertIn('calendar-event calendar-day-event calendar-purple', page)
+        self.assertIn('<span class="calendar-day-status-badge">Da confermare</span>', page)
+        self.assertIn('<span class="calendar-day-status-badge">Da ritirare</span>', page)
+        self.assertIn('<span class="calendar-day-status-badge">Ritirato</span>', page)
+        self.assertIn('<span class="calendar-day-status-badge">Annullato</span>', page)
+        self.assertIn("calendar-day-free-note", page)
+        self.assertIn("Resto della giornata libero", page)
+        self.assertIn(".calendar-day-event{display:flex", app.CSS)
+        # week/month views must stay on the original, unmodified card renderer
+        self.handler.path = "/calendario?vista=settimana&data=2026-07-15"
+        self.handler.calendar_page(self.admin)
+        week_page = rendered[-1]
+        self.assertNotIn('class="calendar-event calendar-day-event', week_page)
+        self.assertNotIn('<div class="calendar-day-legend">', week_page)
+        self.assertIn('calendar-event calendar-red', week_page)
+
     def test_non_overlapping_event_keeps_full_width_despite_other_overlaps_same_day(self):
         self.save(self.event_form("Ritiro", event_status="Da ritirare"))
         self.save(self.event_form("Appuntamento", title="APPUNTAMENTO FORNITORE", end_time="10:00"))
