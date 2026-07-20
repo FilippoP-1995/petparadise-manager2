@@ -244,6 +244,23 @@ def init_db():
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS collaborators (
+          id INTEGER PRIMARY KEY,
+          name TEXT NOT NULL,
+          address TEXT,
+          city TEXT,
+          province TEXT,
+          zip TEXT,
+          tax_code TEXT,
+          vat_number TEXT,
+          sdi_code TEXT,
+          phone TEXT,
+          email TEXT,
+          notes TEXT,
+          active INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS veterinarian_vouchers (
           id INTEGER PRIMARY KEY,
           veterinarian_id INTEGER NOT NULL REFERENCES veterinarians(id),
@@ -452,6 +469,10 @@ def init_db():
             "owner_province": "TEXT",
             "owner_zip": "TEXT",
             "collaborator_name": "TEXT",
+            "collaborator_id": "INTEGER",
+            "owner_sdi": "TEXT",
+            "origin_first_name": "TEXT",
+            "origin_last_name": "TEXT",
             "animal2_name": "TEXT",
             "animal2_species": "TEXT",
             "animal2_breed": "TEXT",
@@ -480,6 +501,9 @@ def init_db():
         for name, definition in {"short_name":"TEXT", "address":"TEXT", "city":"TEXT"}.items():
             if name not in vet_existing:
                 c.execute(f"ALTER TABLE veterinarians ADD COLUMN {name} {definition}")
+        client_existing = {row["name"] for row in c.execute("PRAGMA table_info(clients)")}
+        if "active" not in client_existing:
+            c.execute("ALTER TABLE clients ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
         urn_existing = {row["name"] for row in c.execute("PRAGMA table_info(urns)")}
         for name, definition in {"category": "TEXT NOT NULL DEFAULT 'Urna'"}.items():
             if name not in urn_existing:
@@ -504,6 +528,7 @@ def init_db():
         c.execute("CREATE INDEX IF NOT EXISTS idx_clients_phone ON clients(phone)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_clients_tax ON clients(tax_code)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_collaborators_name ON collaborators(name)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_urns_search ON urns(active,material,name)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_urn_movements_urn ON urn_movements(urn_id,created_at DESC)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_payment_movements_paid ON payment_movements(paid_at,payment_channel)")
@@ -609,6 +634,16 @@ def init_db():
                                  VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                               (pcli["owner_first_name"],pcli["owner_last_name"],pcli["owner_company"],pcli["owner_phone"],pcli["owner_phone_2"],pcli["owner_email"],pcli["owner_tax_code"],pcli["owner_vat"],pcli["owner_street"],pcli["owner_city"],pcli["owner_province"],pcli["owner_zip"],pcli["owner_address"],pcli["owner_notes"],stamp,stamp))
                 c.execute("UPDATE practices SET client_id=? WHERE id=?",(cur.lastrowid,pcli["id"]))
+        for collab_name, collab in COLLABORATORS.items():
+            existing_collab=c.execute("SELECT id FROM collaborators WHERE UPPER(name)=UPPER(?)",(collab_name,)).fetchone()
+            if existing_collab:
+                collab_id=existing_collab["id"]
+            else:
+                cur=c.execute("""INSERT INTO collaborators(name,address,city,province,zip,tax_code,vat_number,sdi_code,active,created_at,updated_at)
+                                 VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                              (collab_name, collab.get("street",""), collab.get("city",""), collab.get("province",""), collab.get("zip",""), "", collab.get("vat",""), collab.get("sdi",""), 1, stamp, stamp))
+                collab_id=cur.lastrowid
+            c.execute("UPDATE practices SET collaborator_id=? WHERE collaborator_name=? AND collaborator_id IS NULL",(collab_id,collab_name))
         if not c.execute("SELECT 1 FROM users WHERE username='admin'").fetchone():
             c.execute(
                 "INSERT INTO users(username,password_hash,display_name,role) VALUES(?,?,?,?)",
@@ -960,7 +995,7 @@ document.addEventListener('change', function(e){
     if(e.target.value === 'Veterinario' || e.target.value === 'Privato' || e.target.value === 'Collaboratore'){
       if(transporter) transporter.value = 'DATI PET PARADISE';
     }
-    toggleCollaboratorBox();
+    applyRequestOriginMode();
   }
   if(e.target && e.target.name === 'service_type'){
     toggleCollectiveVetMode();
@@ -968,17 +1003,6 @@ document.addEventListener('change', function(e){
   }
   if(e.target && e.target.name === 'tag_da_richiamare'){
     toggleCollectiveVetMode();
-  }
-  if(e.target && e.target.name === 'collaborator_name'){
-    const collaborators = {
-      'HUMANITAS CROCE VERDE': {first:'HUMANITAS', last:'CROCE VERDE', street:'VIA ROMANA, 907', zip:'55100', city:'LUCCA', province:'LU', tax:'01762490462'}
-    };
-    const data = collaborators[e.target.value];
-    if(data){
-      const set=(name,value)=>{const field=document.querySelector(`[name="${name}"]`); if(field) field.value=value;};
-      set('owner_first_name', data.first); set('owner_last_name', data.last); set('owner_street', data.street);
-      set('owner_zip', data.zip); set('owner_city', data.city); set('owner_province', data.province); set('owner_tax_code', data.tax);
-    }
   }
   if(e.target && e.target.name === 'veterinarian_id'){
     const opt = e.target.selectedOptions && e.target.selectedOptions[0];
@@ -1493,7 +1517,7 @@ function arrangeBudgetLayout(){
   };
   addRow([field('use_voucher')]);
   addRow([field('price_cremation')]);
-  addRow([field('price_pickup')],[field('payment_method')]);
+  addRow([field('price_pickup')]);
   addRow([urnSearch,priceUrn,urnSearch2,priceUrn2,field('urn_notes_2')],[field('send_catalog'),field('catalog_sent'),button('altra urna')]);
   addRow([field('price_cast'),field('price_cast_2')],[button('altro calco')]);
   addRow([field('nose_cast_type'),field('price_nose_cast'),field('nose_cast_type_2'),field('price_nose_cast_2'),field('nose_cast_type_3'),field('price_nose_cast_3'),field('nose_cast_type_4'),field('price_nose_cast_4')],buttons('calco naso'));
@@ -1506,7 +1530,7 @@ function arrangeBudgetLayout(){
   addRow([field('total_service'),field('deposit'),field('remaining_balance')],[field('send_estremi'),field('estremi_sent')]);
   addRow([field('invoice_number'),field('invoice_date'),field('invoice_total')],[field('make_invoice')]);
   addRow([field('total_text'),field('deposit_final'),field('remaining_final')]);
-  addRow([field('payment_status')]);
+  addRow([field('payment_status')],[field('payment_method')]);
   addRow([field('notes')]);
   original.filter(node=>!used.has(node)).forEach(node=>addRow([node]));
   fields.replaceChildren(workspace);fields.classList.add('budget-layout');
@@ -1524,17 +1548,37 @@ document.addEventListener('DOMContentLoaded', function(){
     const reader=new FileReader(); reader.onload=()=>{target.value=reader.result||''}; reader.readAsDataURL(selected);
   });
 });
-function toggleCollaboratorBox(){
+function applyRequestOriginMode(){
   const origin = document.querySelector('select[name="request_origin"]');
-  const box = document.getElementById('collaboratorBox');
-  if(box && origin){ box.classList.toggle('hidden', origin.value !== 'Collaboratore'); }
+  const isCollaborator = !!(origin && origin.value === 'Collaboratore');
+  const collabBox = document.getElementById('collaboratorSearchBox');
+  if(collabBox) collabBox.classList.toggle('hidden', !isCollaborator);
+  ['originFirstNameBox','originLastNameBox'].forEach(id=>{
+    const box = document.getElementById(id);
+    if(box) box.classList.toggle('hidden', !isCollaborator);
+  });
+  ['originProvenanceBox','originModeBox','originVetSearchBox'].forEach(id=>{
+    const box = document.getElementById(id);
+    if(box) box.classList.toggle('hidden', isCollaborator);
+  });
+  const originTextLabel = document.querySelector('#originTextBox label');
+  if(originTextLabel) originTextLabel.textContent = isCollaborator ? 'Indirizzo' : 'Testo libero / indirizzo diverso';
+  const vetSection = [...document.querySelectorAll('.section')].find(s=>s.querySelector(':scope > h2, h2')?.textContent.trim()==='AMBULATORIO VETERINARIO');
+  if(vetSection) vetSection.classList.toggle('hidden', isCollaborator);
+  ['price_pickup','price_delivery','price_cast','price_cast_2','nose_cast_type','price_nose_cast','paw_cast_type','price_paw_cast','price_evening','price_night','price_holiday','price_accessories','price_accessories_2','use_voucher'].forEach(name=>{
+    const field = document.querySelector(`[name="${name}"]`);
+    const row = field?.closest('.budget-row') || field?.closest('.field');
+    if(row) row.classList.toggle('hidden', isCollaborator);
+  });
+  if(typeof toggleCollectiveVetMode === 'function') toggleCollectiveVetMode();
 }
-document.addEventListener('DOMContentLoaded', toggleCollaboratorBox);
+document.addEventListener('DOMContentLoaded', applyRequestOriginMode);
 function toggleCollectiveVetMode(){
   const service = document.querySelector('select[name="service_type"]');
   const vet = document.querySelector('select[name="veterinarian_id"]');
   const callBack = document.querySelector('input[name="tag_da_richiamare"]');
-  const exempt = !!(callBack?.checked || (service && service.value === 'Cremazione collettiva'));
+  const origin = document.querySelector('select[name="request_origin"]');
+  const exempt = !!(callBack?.checked || (service && service.value === 'Cremazione collettiva') || (origin && origin.value === 'Collaboratore'));
   ['operator_name','request_origin','owner_first_name','owner_last_name','owner_phone','owner_tax_code','owner_street','owner_city','owner_province','owner_zip'].forEach(function(name){
     const field=document.querySelector(`[name="${name}"]`);
     if(field){ field.required = !exempt; }
@@ -1549,6 +1593,7 @@ document.addEventListener('DOMContentLoaded', function(){
   setupVetLookup();
   setupOriginVetLookup();
   setupOwnerVetLookup();
+  setupCollaboratorLookup();
   toggleCollectiveVetMode();
   refreshUseVoucherBox();
 });
@@ -1788,6 +1833,60 @@ function setupOwnerVetLookup(){
     const btn=e.target.closest('.lookup-item');
     if(!btn) return;
     chooseVet(JSON.parse(btn.getAttribute('data-vet')));
+  });
+}
+function setupCollaboratorLookup(){
+  const input=document.getElementById('collaboratorSearch');
+  const results=document.getElementById('collaboratorResults');
+  const idField=document.querySelector('input[name="collaborator_id"]');
+  const nameField=document.querySelector('input[name="collaborator_name"]');
+  if(!input || !results || !idField) return;
+  const fetcher=ppmLookupFetcher();
+  ppmRegisterLookupPanel(input,results);
+  ppmBindLookupEmptyClose(input,results,fetcher);
+  function setField(name,value){ const field=document.querySelector(`[name="${name}"]`); if(field) field.value=value || ''; }
+  function chooseCollaborator(co){
+    idField.value=co.id || '';
+    if(nameField) nameField.value=co.name || '';
+    setField('owner_first_name', co.name);
+    setField('owner_last_name', '');
+    setField('owner_company', co.name);
+    setField('owner_street', co.address);
+    setField('owner_city', co.city);
+    setField('owner_province', co.province);
+    setField('owner_zip', co.zip);
+    setField('owner_tax_code', co.tax_code);
+    setField('owner_vat', co.vat_number);
+    setField('owner_sdi', co.sdi_code);
+    input.value=co.display || co.name || '';
+    ppmCloseLookupPanel(results);
+  }
+  const search=ppmDebounce(async function(){
+    const q=input.value.trim();
+    if(!q){ ppmCloseLookupPanel(results); return; }
+    if(q.length < 2){ results.innerHTML=lookupHtmlState('Scrivi almeno 2 caratteri'); ppmOpenLookupPanel(results); return; }
+    results.innerHTML=lookupHtmlState('Ricerca in corso...');
+    ppmOpenLookupPanel(results);
+    const {token,signal}=fetcher.start();
+    try{
+      const res=await fetch(`/api/collaboratori/search?q=${encodeURIComponent(q)}`, {headers:{'Accept':'application/json'}, signal});
+      const data=await res.json();
+      if(fetcher.stale(token) || input.value.trim()!==q) return;
+      if(!data.ok) throw new Error(data.error || 'Errore');
+      if(!data.results.length){ results.innerHTML=lookupHtmlState('Nessun risultato'); return; }
+      results.innerHTML=data.results.map(function(co){
+        return `<button type="button" class="lookup-item" data-collaborator='${JSON.stringify(co).replace(/'/g,'&#39;')}'><b>${co.display}</b><small>${co.subtitle || ''}</small></button>`;
+      }).join('');
+    }catch(err){
+      if(err.name==='AbortError' || fetcher.stale(token)) return;
+      results.innerHTML=lookupHtmlState('Errore di rete durante la ricerca');
+    }
+  }, 300);
+  input.addEventListener('input', search);
+  results.addEventListener('click', function(e){
+    const btn=e.target.closest('.lookup-item');
+    if(!btn) return;
+    chooseCollaborator(JSON.parse(btn.getAttribute('data-collaborator')));
   });
 }
 function setupOriginVetLookup(){
@@ -2423,6 +2522,7 @@ LUCIDE_PATHS = {
     "sun": '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"/>',
     "search": '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
     "phone": '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>',
+    "briefcase": '<rect width="20" height="14" x="2" y="7" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>',
     "user": '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
 }
 
@@ -2573,8 +2673,9 @@ def collapse_advanced_search(body):
 SIDEBAR_LINKS=[
     ("/","home","Dashboard"),("/calendario","calendar","Calendario"),("/programma-cremazioni","paw","Programma Cremazioni"),("/notifiche","bell","Notifiche"),("/pratiche","archive","Archivio"),
     ("/catalogo-urne","archive","Catalogo Urne"),("/bilanci","chart","Report"),("/conversazioni-whatsapp","message","Conversazioni WhatsApp"),("/veterinari","stethoscope","Veterinari"),
+    ("/collaboratori","briefcase","Collaboratori"),
     ("/prodotti","clipboard","Prodotti"),("/ordini","receipt","Ordini"),
-    ("/archivio/pratiche","clipboard","Gestionale"),("/archivio/clienti","users","Clienti"),
+    ("/archivio/pratiche","clipboard","Gestionale"),("/clienti","users","Clienti"),
     ("/archivio/pratiche","paw","Animali"),
     ("/archivio/pratiche?pagamento=Da%20saldare","wallet","Pagamenti"),("/fatture","receipt","Fatture"),
     ("/impostazioni","settings","Impostazioni"),("/il-mio-profilo","user","Il mio profilo"),("mailto:assistenza@petparadise.it","help","Assistenza"),
@@ -2769,6 +2870,13 @@ class App(BaseHTTPRequestHandler):
         if path == "/cestino": return self.trash_page(user)
         if path == "/database-mesi": return self.redirect("/pratiche")
         if path == "/veterinari": return self.veterinarians_page(user)
+        if path == "/clienti": return self.clients_page(user)
+        match = re.fullmatch(r"/clienti/(\d+)", path)
+        if match: return self.client_detail(user, int(match.group(1)))
+        if path == "/collaboratori": return self.collaborators_page(user)
+        match = re.fullmatch(r"/collaboratori/(\d+)", path)
+        if match: return self.collaborator_detail(user, int(match.group(1)))
+        if path == "/api/collaboratori/search": return self.api_collaborators_search(user)
         match = re.fullmatch(r"/catalogo-urne/(\d+)/modifica", path)
         if match: return self.urn_edit_page(user, int(match.group(1)))
         match = re.fullmatch(r"/catalogo-urne/(\d+)", path)
@@ -2835,6 +2943,12 @@ class App(BaseHTTPRequestHandler):
         if path == "/veterinari": return self.save_veterinarian(user)
         match = re.fullmatch(r"/veterinari/(\d+)/elimina", path)
         if match: return self.delete_veterinarian(user, int(match.group(1)))
+        if path == "/clienti": return self.save_client(user)
+        match = re.fullmatch(r"/clienti/(\d+)/elimina", path)
+        if match: return self.delete_client(user, int(match.group(1)))
+        if path == "/collaboratori": return self.save_collaborator(user)
+        match = re.fullmatch(r"/collaboratori/(\d+)/elimina", path)
+        if match: return self.delete_collaborator(user, int(match.group(1)))
         match = re.fullmatch(r"/veterinari/(\d+)/buoni", path)
         if match: return self.save_manual_voucher(user, int(match.group(1)))
         match = re.fullmatch(r"/buoni/(\d+)/modifica", path)
@@ -4829,6 +4943,125 @@ class App(BaseHTTPRequestHandler):
             c.execute("UPDATE veterinarian_vouchers SET status='Usato', used_at=? WHERE id=? AND status='Maturato'",(now(),voucher_id))
         self.redirect(f"/veterinari/{row['veterinarian_id']}" if row else "/veterinari")
 
+    def clients_page(self,user):
+        q=parse_qs(urlparse(self.path).query)
+        term=q.get("q",[""])[0].strip()
+        with db() as c:
+            sql="SELECT * FROM clients WHERE active=1"
+            args=[]
+            if term:
+                like=f"%{term}%"
+                sql += " AND (first_name LIKE ? OR last_name LIKE ? OR company_name LIKE ? OR phone LIKE ? OR email LIKE ? OR tax_code LIKE ? OR vat_number LIKE ?)"
+                args += [like]*7
+            sql += " ORDER BY last_name, first_name, company_name"
+            clients=c.execute(sql,args).fetchall()
+        rows=[]
+        for cl in clients:
+            name=" ".join(x for x in (cl["first_name"],cl["last_name"]) if x).strip() or cl["company_name"] or "Cliente senza nome"
+            company_sub=f"<br><small>{esc(cl['company_name'])}</small>" if cl["company_name"] and (cl["first_name"] or cl["last_name"]) else ""
+            rows.append(f'''<tr><td><a href="/clienti/{cl['id']}"><b>{esc(name)}</b></a>{company_sub}</td><td>{esc(cl['phone'])}</td><td>{esc(cl['email'])}</td><td>{esc(cl['city'])}</td><td><a class="btn ghost" href="/clienti/{cl['id']}">Apri</a></td></tr>''')
+        rows_html=''.join(rows) or '<tr><td colspan="5" class="sub">Nessun cliente trovato.</td></tr>'
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Clienti</h1><div class="sub">Anagrafica clienti.</div></div></div><form class="section" method="get"><div class="fields"><div class="field full"><label>Ricerca cliente</label><input name="q" value="{esc(term)}" placeholder="Nome, telefono, email, codice fiscale, P.IVA"></div></div><button class="btn" style="margin-top:12px">Filtra</button></form><div style="height:14px"></div><section class="section"><h2>LISTA CLIENTI</h2><div class="tablebox"><table><thead><tr><th>Cliente</th><th>Telefono</th><th>Email</th><th>Comune</th><th>Azione</th></tr></thead><tbody>{rows_html}</tbody></table></div></section><div style="height:14px"></div><section class="section"><h2>Aggiungi cliente</h2><form method="post"><div class="fields"><div class="field"><label>Nome</label><input name="first_name"></div><div class="field"><label>Cognome</label><input name="last_name"></div><div class="field"><label>Ragione sociale</label><input name="company_name"></div><div class="field"><label>Telefono</label><input name="phone"></div><div class="field"><label>Secondo telefono</label><input name="phone_2"></div><div class="field"><label>Email</label><input type="email" name="email"></div><div class="field"><label>Codice fiscale</label><input name="tax_code"></div><div class="field"><label>Partita IVA</label><input name="vat_number"></div><div class="field full"><label>Indirizzo</label><input name="street"></div><div class="field"><label>Comune</label><input name="city"></div><div class="field"><label>Provincia</label><input name="province" maxlength="2"></div><div class="field"><label>CAP</label><input name="zip"></div><div class="field full"><label>Note</label><input name="notes"></div></div><button class="btn" style="margin-top:12px">Aggiungi cliente</button></form></section></main>'''
+        self.send_html(layout("Clienti",body,user))
+
+    def client_detail(self,user,client_id):
+        with db() as c:
+            cl=c.execute("SELECT * FROM clients WHERE id=? AND active=1",(client_id,)).fetchone()
+            practices=c.execute("SELECT id,practice_number,animal_name,status,pickup_date FROM practices WHERE client_id=? AND (deleted_at IS NULL OR deleted_at='') ORDER BY COALESCE(pickup_date,created_at) DESC",(client_id,)).fetchall()
+        if not cl: return self.send_error(404)
+        name=" ".join(x for x in (cl["first_name"],cl["last_name"]) if x).strip() or cl["company_name"] or "Cliente senza nome"
+        rows=''.join(f'''<tr><td><a href="/pratiche/{p['id']}">{esc(p['practice_number'])}</a></td><td>{esc(p['animal_name'])}</td><td>{esc(p['status'])}</td><td>{esc(date_it(p['pickup_date']) if p['pickup_date'] else '')}</td></tr>''' for p in practices) or '<tr><td colspan="4" class="sub">Nessuna pratica collegata.</td></tr>'
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{esc(name)}</h1><div class="sub">Anagrafica cliente</div></div><a class="btn ghost" href="/clienti">Torna alla lista</a></div><section class="section"><h2>Anagrafica</h2><form method="post" action="/clienti"><input type="hidden" name="id" value="{cl['id']}"><div class="fields"><div class="field"><label>Nome</label><input name="first_name" value="{esc(cl['first_name'])}"></div><div class="field"><label>Cognome</label><input name="last_name" value="{esc(cl['last_name'])}"></div><div class="field"><label>Ragione sociale</label><input name="company_name" value="{esc(cl['company_name'])}"></div><div class="field"><label>Telefono</label><input name="phone" value="{esc(cl['phone'])}"></div><div class="field"><label>Secondo telefono</label><input name="phone_2" value="{esc(cl['phone_2'])}"></div><div class="field"><label>Email</label><input type="email" name="email" value="{esc(cl['email'])}"></div><div class="field"><label>Codice fiscale</label><input name="tax_code" value="{esc(cl['tax_code'])}"></div><div class="field"><label>Partita IVA</label><input name="vat_number" value="{esc(cl['vat_number'])}"></div><div class="field full"><label>Indirizzo</label><input name="street" value="{esc(cl['street'])}"></div><div class="field"><label>Comune</label><input name="city" value="{esc(cl['city'])}"></div><div class="field"><label>Provincia</label><input name="province" value="{esc(cl['province'])}" maxlength="2"></div><div class="field"><label>CAP</label><input name="zip" value="{esc(cl['zip'])}"></div><div class="field full"><label>Note</label><input name="notes" value="{esc(cl['notes'])}"></div></div><button class="btn" style="margin-top:12px">Salva anagrafica</button></form><form method="post" action="/clienti/{cl['id']}/elimina" onsubmit="return confirm('Eliminare questo cliente dalla lista?')"><button class="btn ghost" style="margin-top:12px">Elimina cliente</button></form></section><div style="height:14px"></div><section class="section"><h2>Pratiche collegate</h2><div class="tablebox"><table><thead><tr><th>Pratica</th><th>Animale</th><th>Stato</th><th>Recupero</th></tr></thead><tbody>{rows}</tbody></table></div></section></main>'''
+        self.send_html(layout("Cliente",body,user))
+
+    def save_client(self,user):
+        f=self.form(); stamp=now()
+        data=(f.get("first_name","").strip(), f.get("last_name","").strip(), f.get("company_name","").strip(), f.get("phone","").strip(), f.get("phone_2","").strip(), f.get("email","").strip(), f.get("tax_code","").strip(), f.get("vat_number","").strip(), f.get("street","").strip(), f.get("city","").strip(), f.get("province","").strip(), f.get("zip","").strip(), f.get("notes","").strip())
+        with db() as c:
+            if f.get("id"):
+                c.execute("UPDATE clients SET first_name=?,last_name=?,company_name=?,phone=?,phone_2=?,email=?,tax_code=?,vat_number=?,street=?,city=?,province=?,zip=?,notes=?,updated_at=? WHERE id=?",data+(stamp,int(f["id"])))
+                client_id=int(f["id"])
+            else:
+                cur=c.execute("INSERT INTO clients(first_name,last_name,company_name,phone,phone_2,email,tax_code,vat_number,street,city,province,zip,notes,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",data+(1,stamp,stamp))
+                client_id=cur.lastrowid
+        self.redirect(f"/clienti/{client_id}")
+
+    def delete_client(self,user,client_id):
+        with db() as c:
+            c.execute("UPDATE clients SET active=0, updated_at=? WHERE id=?",(now(),client_id))
+        self.redirect("/clienti")
+
+    def collaborators_page(self,user):
+        q=parse_qs(urlparse(self.path).query)
+        term=q.get("q",[""])[0].strip()
+        with db() as c:
+            sql=("SELECT co.*, COUNT(p.id) practice_count FROM collaborators co "
+                 "LEFT JOIN practices p ON p.collaborator_id=co.id AND (p.deleted_at IS NULL OR p.deleted_at='') "
+                 "WHERE co.active=1")
+            args=[]
+            if term:
+                like=f"%{term}%"
+                sql += " AND (co.name LIKE ? OR co.city LIKE ? OR co.phone LIKE ? OR co.tax_code LIKE ? OR co.vat_number LIKE ?)"
+                args += [like]*5
+            sql += " GROUP BY co.id ORDER BY co.name"
+            collaborators=c.execute(sql,args).fetchall()
+        rows=''.join(f'''<tr><td><a href="/collaboratori/{co['id']}"><b>{esc(co['name'])}</b></a></td><td>{esc(co['city'])}</td><td>{esc(co['phone'])}</td><td><span class="badge tag-blue">{co['practice_count']} pratiche</span></td><td><a class="btn ghost" href="/collaboratori/{co['id']}">Apri</a></td></tr>''' for co in collaborators) or '<tr><td colspan="5" class="sub">Nessun collaboratore trovato.</td></tr>'
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Collaboratori</h1><div class="sub">Anagrafica collaboratori e pratiche collegate.</div></div></div><form class="section" method="get"><div class="fields"><div class="field full"><label>Ricerca collaboratore</label><input name="q" value="{esc(term)}" placeholder="Nome, comune, telefono, codice fiscale, P.IVA"></div></div><button class="btn" style="margin-top:12px">Filtra</button></form><div style="height:14px"></div><section class="section"><h2>LISTA COLLABORATORI</h2><div class="tablebox"><table><thead><tr><th>Collaboratore</th><th>Comune</th><th>Telefono</th><th>Pratiche</th><th>Azione</th></tr></thead><tbody>{rows}</tbody></table></div></section><div style="height:14px"></div><section class="section"><h2>Aggiungi collaboratore</h2><form method="post"><div class="fields"><div class="field full"><label>Nome</label><input name="name" required></div><div class="field full"><label>Indirizzo</label><input name="address"></div><div class="field"><label>Comune</label><input name="city"></div><div class="field"><label>Provincia</label><input name="province" maxlength="2"></div><div class="field"><label>CAP</label><input name="zip"></div><div class="field"><label>Codice fiscale</label><input name="tax_code"></div><div class="field"><label>Partita IVA</label><input name="vat_number"></div><div class="field"><label>Codice SDI</label><input name="sdi_code"></div><div class="field"><label>Telefono</label><input name="phone"></div><div class="field"><label>Email</label><input type="email" name="email"></div><div class="field full"><label>Note</label><input name="notes"></div></div><button class="btn" style="margin-top:12px">Aggiungi collaboratore</button></form></section></main>'''
+        self.send_html(layout("Collaboratori",body,user))
+
+    def collaborator_detail(self,user,collaborator_id):
+        with db() as c:
+            co=c.execute("SELECT * FROM collaborators WHERE id=? AND active=1",(collaborator_id,)).fetchone()
+            practices=c.execute("SELECT id,practice_number,animal_name,status,pickup_date FROM practices WHERE collaborator_id=? AND (deleted_at IS NULL OR deleted_at='') ORDER BY COALESCE(pickup_date,created_at) DESC",(collaborator_id,)).fetchall()
+        if not co: return self.send_error(404)
+        rows=''.join(f'''<tr><td><a href="/pratiche/{p['id']}">{esc(p['practice_number'])}</a></td><td>{esc(p['animal_name'])}</td><td>{esc(p['status'])}</td><td>{esc(date_it(p['pickup_date']) if p['pickup_date'] else '')}</td></tr>''' for p in practices) or '<tr><td colspan="4" class="sub">Nessuna pratica collegata.</td></tr>'
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{esc(co['name'])}</h1><div class="sub">Anagrafica collaboratore</div></div><a class="btn ghost" href="/collaboratori">Torna alla lista</a></div><section class="section"><h2>Anagrafica</h2><form method="post" action="/collaboratori"><input type="hidden" name="id" value="{co['id']}"><div class="fields"><div class="field full"><label>Nome</label><input name="name" value="{esc(co['name'])}" required></div><div class="field full"><label>Indirizzo</label><input name="address" value="{esc(co['address'])}"></div><div class="field"><label>Comune</label><input name="city" value="{esc(co['city'])}"></div><div class="field"><label>Provincia</label><input name="province" value="{esc(co['province'])}" maxlength="2"></div><div class="field"><label>CAP</label><input name="zip" value="{esc(co['zip'])}"></div><div class="field"><label>Codice fiscale</label><input name="tax_code" value="{esc(co['tax_code'])}"></div><div class="field"><label>Partita IVA</label><input name="vat_number" value="{esc(co['vat_number'])}"></div><div class="field"><label>Codice SDI</label><input name="sdi_code" value="{esc(co['sdi_code'])}"></div><div class="field"><label>Telefono</label><input name="phone" value="{esc(co['phone'])}"></div><div class="field"><label>Email</label><input type="email" name="email" value="{esc(co['email'])}"></div><div class="field full"><label>Note</label><input name="notes" value="{esc(co['notes'])}"></div></div><button class="btn" style="margin-top:12px">Salva anagrafica</button></form><form method="post" action="/collaboratori/{co['id']}/elimina" onsubmit="return confirm('Eliminare questo collaboratore dalla lista?')"><button class="btn ghost" style="margin-top:12px">Elimina collaboratore</button></form></section><div style="height:14px"></div><section class="section"><h2>Pratiche collegate</h2><div class="tablebox"><table><thead><tr><th>Pratica</th><th>Animale</th><th>Stato</th><th>Recupero</th></tr></thead><tbody>{rows}</tbody></table></div></section></main>'''
+        self.send_html(layout("Collaboratore",body,user))
+
+    def save_collaborator(self,user):
+        f=self.form(); stamp=now()
+        name=f.get("name","").strip()
+        if not name: return self.send_error(400,"Il nome del collaboratore è obbligatorio")
+        data=(name, f.get("address","").strip(), f.get("city","").strip(), f.get("province","").strip(), f.get("zip","").strip(), f.get("tax_code","").strip(), f.get("vat_number","").strip(), f.get("sdi_code","").strip(), f.get("phone","").strip(), f.get("email","").strip(), f.get("notes","").strip())
+        with db() as c:
+            if f.get("id"):
+                c.execute("UPDATE collaborators SET name=?,address=?,city=?,province=?,zip=?,tax_code=?,vat_number=?,sdi_code=?,phone=?,email=?,notes=?,updated_at=? WHERE id=?",data+(stamp,int(f["id"])))
+                collaborator_id=int(f["id"])
+            else:
+                cur=c.execute("INSERT INTO collaborators(name,address,city,province,zip,tax_code,vat_number,sdi_code,phone,email,notes,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",data+(1,stamp,stamp))
+                collaborator_id=cur.lastrowid
+        self.redirect(f"/collaboratori/{collaborator_id}")
+
+    def delete_collaborator(self,user,collaborator_id):
+        with db() as c:
+            c.execute("UPDATE collaborators SET active=0, updated_at=? WHERE id=?",(now(),collaborator_id))
+        self.redirect("/collaboratori")
+
+    def api_collaborators_search(self,user):
+        q=(parse_qs(urlparse(self.path).query).get("q",[""])[0] or "").strip()
+        if len(q) < 2:
+            return self.send_json({"ok":True,"query":q,"too_short":True,"results":[]})
+        tokens=[t for t in re.split(r"\s+", q) if len(t) >= 2][:5]
+        if not tokens:
+            return self.send_json({"ok":True,"query":q,"too_short":True,"results":[]})
+        searchable="COALESCE(name,'')||' '||COALESCE(city,'')||' '||COALESCE(tax_code,'')||' '||COALESCE(vat_number,'')||' '||COALESCE(phone,'')"
+        where=[]; args=[]
+        for token in tokens:
+            where.append(f"{searchable} LIKE ? COLLATE NOCASE")
+            args.append(f"%{token}%")
+        try:
+            with db() as c:
+                rows=c.execute(f"""SELECT id, name, address, city, province, zip, tax_code, vat_number, sdi_code, phone, email
+                                   FROM collaborators
+                                   WHERE active=1 AND {' AND '.join(where)}
+                                   ORDER BY CASE WHEN name LIKE ? COLLATE NOCASE THEN 0 ELSE 9 END, name
+                                   LIMIT 50""", args+[f"{q}%"]).fetchall()
+            results=[{"id":r["id"],"name":r["name"] or "","address":r["address"] or "","city":r["city"] or "","province":r["province"] or "","zip":r["zip"] or "","tax_code":r["tax_code"] or "","vat_number":r["vat_number"] or "","sdi_code":r["sdi_code"] or "","phone":r["phone"] or "","email":r["email"] or "","display":r["name"] or "Collaboratore","subtitle":" - ".join(x for x in [r["address"], r["city"]] if x)} for r in rows]
+            return self.send_json({"ok":True,"query":q,"results":results})
+        except Exception as exc:
+            print(f"[COLLABORATOR_SEARCH] errore tipo={type(exc).__name__} lunghezza_query={len(q)}", flush=True)
+            return self.send_json({"ok":False,"error":"Errore durante la ricerca collaboratori"},500)
+
     def fields_html(self,p=None,user=None):
         return self._fields_html(p,user).replace("Totale servizio €","Totale W €")
 
@@ -4862,10 +5095,10 @@ class App(BaseHTTPRequestHandler):
         return f'''<section class="section"><h2>Operatore e stati</h2><div class="fields">{operator_field}<div class="field"><label>Stato pratica</label><select name="status"><option {selected('status','Ritirato','Ritirato')}>Ritirato</option><option {selected('status','In programma','Ritirato')}>In programma</option><option {selected('status','Cremato','Ritirato')}>Cremato</option><option {selected('status','Da consegnare','Ritirato')}>Da consegnare</option><option {selected('status','Consegnato','Ritirato')}>Consegnato</option><option data-collective-only="1" {selected('status','Smaltito','Ritirato')}>Smaltito</option></select></div></div></section>
         <input type="hidden" name="urn_notes" value="{val('urn_notes')}"><select name="urn_id" class="hidden" aria-hidden="true" tabindex="-1">{urn_options(raw('urn_id'))}</select><small id="urnStockWarning" class="sub hidden"></small>
         <input type="hidden" name="price_urn_2" value="{val('price_urn_2')}"><input type="hidden" name="urn_notes_2" value="{val('urn_notes_2')}"><select name="urn_id_2" class="hidden" aria-hidden="true" tabindex="-1">{urn_options(raw('urn_id_2'))}</select><small id="urnStockWarning2" class="sub hidden"></small><input type="hidden" name="price_cast_2" value="{val('price_cast_2')}"><input type="hidden" name="price_paw_cast_2" value="{val('price_paw_cast_2')}"><input type="hidden" name="price_paw_cast_3" value="{val('price_paw_cast_3')}"><input type="hidden" name="price_paw_cast_4" value="{val('price_paw_cast_4')}"><input type="hidden" name="price_nose_cast_2" value="{val('price_nose_cast_2')}"><input type="hidden" name="price_nose_cast_3" value="{val('price_nose_cast_3')}"><input type="hidden" name="price_nose_cast_4" value="{val('price_nose_cast_4')}"><input type="hidden" name="price_accessories_2" value="{val('price_accessories_2')}"><input type="hidden" name="accessory_type" value="{val('accessory_type')}"><input type="hidden" name="accessory_type_2" value="{val('accessory_type_2')}"><input type="hidden" name="accessory_detail" value="{val('accessory_detail')}"><input type="hidden" name="accessory_detail_2" value="{val('accessory_detail_2')}"><input type="hidden" name="nose_cast_type" value="{val('nose_cast_type')}"><input type="hidden" name="nose_cast_type_2" value="{val('nose_cast_type_2')}"><input type="hidden" name="nose_cast_type_3" value="{val('nose_cast_type_3')}"><input type="hidden" name="nose_cast_type_4" value="{val('nose_cast_type_4')}"><input type="hidden" name="paw_cast_type" value="{val('paw_cast_type')}"><input type="hidden" name="paw_cast_type_2" value="{val('paw_cast_type_2')}"><input type="hidden" name="paw_cast_type_3" value="{val('paw_cast_type_3')}"><input type="hidden" name="paw_cast_type_4" value="{val('paw_cast_type_4')}"><select name="payment_status" class="hidden">{payment_options}</select><select name="payment_method" class="hidden">{payment_method_options}</select><input type="hidden" name="catalog_sent" value="{'Si' if catalog_sent_checked else ''}"><input type="hidden" name="estremi_sent" value="{'Si' if estremi_sent_checked else ''}"><input type="hidden" name="invoice_number" value="{val('invoice_number')}"><input type="hidden" name="invoice_date" value="{val('invoice_date')}"><input type="hidden" name="invoice_total" value="{val('invoice_total')}"><input type="hidden" name="make_invoice" value="{'Si' if make_invoice_checked else ''}">
-        <section class="section"><h2>Richiesta</h2><div class="fields"><div class="field"><label>Servizio *</label><select name="service_type" required><option value="" {"selected" if not raw("service_type") else ""}>SELEZIONA</option><option {selected('service_type','Da decidere')}>Da decidere</option><option {selected('service_type','Cremazione singola')}>Cremazione singola</option><option {selected('service_type','Cremazione collettiva')}>Cremazione collettiva</option></select></div><div class="field"><label>Origine richiesta *</label><select name="request_origin" required><option {selected('request_origin','Veterinario')}>Veterinario</option><option {selected('request_origin','Privato')}>Privato</option><option value="Consegna in sede" {selected('request_origin','Consegna in sede')}>Consegnato in sede</option><option {selected('request_origin','Collaboratore')}>Collaboratore</option></select></div><div class="field {'hidden' if raw('request_origin')!='Collaboratore' else ''}" id="collaboratorBox"><label>Collaboratore</label><select name="collaborator_name"><option value="">Nessun collaboratore</option><option {selected('collaborator_name','HUMANITAS CROCE VERDE')}>HUMANITAS CROCE VERDE</option></select></div><div class="field"><label>Sede di destinazione</label><select name="destination_branch"><option {selected('destination_branch','Livorno')}>Livorno</option><option {selected('destination_branch','Empoli')}>Empoli</option></select></div><div class="field"><label>Data recupero</label><input type="date" name="pickup_date" value="{val('pickup_date')}"></div></div></section>
-        <section class="section"><h2>SPEDITORE</h2><div class="fields"><input type="hidden" name="client_id" value="{val('client_id')}"><div class="field full lookup"><label>Cerca cliente in anagrafica</label><input id="clientSearch" autocomplete="off" placeholder="Scrivi nome, telefono, email, codice fiscale, città..."><div id="clientResults" class="lookup-results hidden"></div><div id="clientSelected" class="selected-box hidden"><span id="clientSelectedText"></span><button class="btn ghost" type="button" id="clearClientSelection">Cancella selezione</button></div><small class="sub">Se scegli un cliente, i campi vengono compilati automaticamente. Se li modifichi, l'anagrafica non viene aggiornata senza conferma.</small></div><div class="field full lookup"><label>Usa veterinario come speditore</label><input id="ownerVetSearch" autocomplete="off" placeholder="Scrivi per cercare il veterinario"><div id="ownerVetResults" class="lookup-results hidden"></div><select name="owner_veterinarian_id" class="hidden" aria-hidden="true" tabindex="-1">{owner_vet_options}</select><small class="sub">Compila automaticamente i dati dello speditore. Sul DDT, nel Luogo di origine, verra scritto solo il nome breve del veterinario.</small></div><div class="field"><label>Nome *</label><input name="owner_first_name" value="{val('owner_first_name')}" required></div><div class="field"><label>Cognome *</label><input name="owner_last_name" value="{val('owner_last_name')}" required></div><div class="field"><label>Ragione sociale</label><input name="owner_company" value="{val('owner_company')}"></div><div class="field"><label>Telefono *</label><input type="tel" inputmode="numeric" name="owner_phone" value="{val('owner_phone')}" required></div><div class="field"><label>Secondo telefono</label><input type="tel" inputmode="numeric" name="owner_phone_2" value="{val('owner_phone_2')}"></div><div class="field"><label>Note telefono</label><input name="owner_phone_note" value="{val('owner_phone_note')}" placeholder="Testo libero"></div><div class="field"><label>Email</label><input type="email" name="owner_email" value="{val('owner_email')}"></div><div class="field"><label>Codice fiscale *</label><input name="owner_tax_code" value="{val('owner_tax_code')}" required></div><div class="field"><label>Partita IVA</label><input name="owner_vat" value="{val('owner_vat')}"></div><div class="field full"><label>Indirizzo *</label><input name="owner_street" value="{val('owner_street') or val('owner_address')}" required></div><div class="field"><label>Comune *</label><input name="owner_city" value="{val('owner_city')}" required></div><div class="field"><label>Provincia *</label><input name="owner_province" value="{val('owner_province')}" maxlength="2" placeholder="Si compila dal comune" required></div><div class="field"><label>CAP *</label><input name="owner_zip" value="{val('owner_zip')}" inputmode="numeric" required></div><div class="field full"><label>Note cliente</label><textarea name="owner_notes" placeholder="Note anagrafiche utili">{val('owner_notes')}</textarea></div></div></section>
+        <section class="section"><h2>Richiesta</h2><div class="fields"><div class="field"><label>Servizio *</label><select name="service_type" required><option value="" {"selected" if not raw("service_type") else ""}>SELEZIONA</option><option {selected('service_type','Da decidere')}>Da decidere</option><option {selected('service_type','Cremazione singola')}>Cremazione singola</option><option {selected('service_type','Cremazione collettiva')}>Cremazione collettiva</option></select></div><div class="field"><label>Origine richiesta *</label><select name="request_origin" required><option {selected('request_origin','Veterinario')}>Veterinario</option><option {selected('request_origin','Privato')}>Privato</option><option value="Consegna in sede" {selected('request_origin','Consegna in sede')}>Consegnato in sede</option><option {selected('request_origin','Collaboratore')}>Collaboratore</option></select></div><div class="field"><label>Sede di destinazione</label><select name="destination_branch"><option {selected('destination_branch','Livorno')}>Livorno</option><option {selected('destination_branch','Empoli')}>Empoli</option></select></div><div class="field"><label>Data recupero</label><input type="date" name="pickup_date" value="{val('pickup_date')}"></div></div></section>
+        <section class="section"><h2>SPEDITORE</h2><div class="fields"><input type="hidden" name="client_id" value="{val('client_id')}"><div class="field full lookup"><label>Cerca cliente in anagrafica</label><input id="clientSearch" autocomplete="off" placeholder="Scrivi nome, telefono, email, codice fiscale, città..."><div id="clientResults" class="lookup-results hidden"></div><div id="clientSelected" class="selected-box hidden"><span id="clientSelectedText"></span><button class="btn ghost" type="button" id="clearClientSelection">Cancella selezione</button></div><small class="sub">Se scegli un cliente, i campi vengono compilati automaticamente. Se li modifichi, l'anagrafica non viene aggiornata senza conferma.</small></div><div class="field full lookup"><label>Usa veterinario come speditore</label><input id="ownerVetSearch" autocomplete="off" placeholder="Scrivi per cercare il veterinario"><div id="ownerVetResults" class="lookup-results hidden"></div><select name="owner_veterinarian_id" class="hidden" aria-hidden="true" tabindex="-1">{owner_vet_options}</select><small class="sub">Compila automaticamente i dati dello speditore. Sul DDT, nel Luogo di origine, verra scritto solo il nome breve del veterinario.</small></div><div class="field full lookup {'hidden' if raw('request_origin')!='Collaboratore' else ''}" id="collaboratorSearchBox"><label>Cerca collaboratore in anagrafica</label><input id="collaboratorSearch" autocomplete="off" placeholder="Scrivi per cercare il collaboratore"><div id="collaboratorResults" class="lookup-results hidden"></div><input type="hidden" name="collaborator_id" value="{val('collaborator_id')}"><input type="hidden" name="collaborator_name" value="{val('collaborator_name')}"><small class="sub">Compila automaticamente nome, indirizzo, P.IVA/codice fiscale e codice SDI dall'anagrafica collaboratori.</small></div><div class="field"><label>Nome *</label><input name="owner_first_name" value="{val('owner_first_name')}" required></div><div class="field"><label>Cognome *</label><input name="owner_last_name" value="{val('owner_last_name')}" required></div><div class="field"><label>Ragione sociale</label><input name="owner_company" value="{val('owner_company')}"></div><div class="field"><label>Telefono *</label><input type="tel" inputmode="numeric" name="owner_phone" value="{val('owner_phone')}" required></div><div class="field"><label>Secondo telefono</label><input type="tel" inputmode="numeric" name="owner_phone_2" value="{val('owner_phone_2')}"></div><div class="field"><label>Note telefono</label><input name="owner_phone_note" value="{val('owner_phone_note')}" placeholder="Testo libero"></div><div class="field"><label>Email</label><input type="email" name="owner_email" value="{val('owner_email')}"></div><div class="field"><label>Codice fiscale *</label><input name="owner_tax_code" value="{val('owner_tax_code')}" required></div><div class="field"><label>Partita IVA</label><input name="owner_vat" value="{val('owner_vat')}"></div><div class="field"><label>Codice SDI</label><input name="owner_sdi" value="{val('owner_sdi')}"></div><div class="field full"><label>Indirizzo *</label><input name="owner_street" value="{val('owner_street') or val('owner_address')}" required></div><div class="field"><label>Comune *</label><input name="owner_city" value="{val('owner_city')}" required></div><div class="field"><label>Provincia *</label><input name="owner_province" value="{val('owner_province')}" maxlength="2" placeholder="Si compila dal comune" required></div><div class="field"><label>CAP *</label><input name="owner_zip" value="{val('owner_zip')}" inputmode="numeric" required></div><div class="field full"><label>Note cliente</label><textarea name="owner_notes" placeholder="Note anagrafiche utili">{val('owner_notes')}</textarea></div></div></section>
         <section class="section"><h2>DESTINATARIO E LUOGO DI DESTINAZIONE</h2><p class="sub">Compilati automaticamente in base alla sede selezionata: Livorno oppure Empoli.</p></section>
-        <section class="section"><h2>LUOGO DI ORIGINE</h2><div class="fields"><div class="field"><label>Provenienza</label><select name="provenance"><option value="">Seleziona zona</option>{''.join(f'<option value="{code}" {"selected" if raw("provenance")==code else ""}>{code} · {label}</option>' for code,label in (("L","Livorno"),("E","Empoli"),("V","Viareggio"),("F","Firenze"),("P","Pisa")))}</select></div><div class="field"><label>Luogo di origine</label><select name="origin_mode"><option {selected('origin_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('origin_mode','Veterinario','IDEM SPED')}>Veterinario</option><option {selected('origin_mode','Testo libero','IDEM SPED')}>Testo libero</option></select></div><div class="field lookup"><label>Cerca veterinario o scrivi testo libero</label><input id="originVetSearch" autocomplete="off" placeholder="Nome o iniziali del veterinario"><div id="originVetResults" class="lookup-results hidden"></div><select name="origin_veterinarian_id" class="hidden" aria-hidden="true" tabindex="-1">{origin_vet_options}</select><small class="sub">Seleziona un risultato oppure continua a scrivere liberamente.</small></div><div class="field full"><label>Testo libero / indirizzo diverso</label><input name="origin_text" value="{val('origin_text') or (val('pickup_address') if raw('pickup_address_mode')=='Altro indirizzo' else '')}" placeholder="Nome breve veterinario o indirizzo diverso"></div></div></section>
+        <section class="section"><h2>LUOGO DI ORIGINE</h2><div class="fields"><div class="field" id="originProvenanceBox"><label>Provenienza</label><select name="provenance"><option value="">Seleziona zona</option>{''.join(f'<option value="{code}" {"selected" if raw("provenance")==code else ""}>{code} · {label}</option>' for code,label in (("L","Livorno"),("E","Empoli"),("V","Viareggio"),("F","Firenze"),("P","Pisa")))}</select></div><div class="field" id="originModeBox"><label>Luogo di origine</label><select name="origin_mode"><option {selected('origin_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('origin_mode','Veterinario','IDEM SPED')}>Veterinario</option><option {selected('origin_mode','Testo libero','IDEM SPED')}>Testo libero</option></select></div><div class="field lookup" id="originVetSearchBox"><label>Cerca veterinario o scrivi testo libero</label><input id="originVetSearch" autocomplete="off" placeholder="Nome o iniziali del veterinario"><div id="originVetResults" class="lookup-results hidden"></div><select name="origin_veterinarian_id" class="hidden" aria-hidden="true" tabindex="-1">{origin_vet_options}</select><small class="sub">Seleziona un risultato oppure continua a scrivere liberamente.</small></div><div class="field {'hidden' if raw('request_origin')!='Collaboratore' else ''}" id="originFirstNameBox"><label>Nome</label><input name="origin_first_name" value="{val('origin_first_name')}"></div><div class="field {'hidden' if raw('request_origin')!='Collaboratore' else ''}" id="originLastNameBox"><label>Cognome</label><input name="origin_last_name" value="{val('origin_last_name')}"></div><div class="field full" id="originTextBox"><label>{'Indirizzo' if raw('request_origin')=='Collaboratore' else 'Testo libero / indirizzo diverso'}</label><input name="origin_text" value="{val('origin_text') or (val('pickup_address') if raw('pickup_address_mode')=='Altro indirizzo' else '')}" placeholder="Nome breve veterinario o indirizzo diverso"></div></div></section>
         <section class="section"><h2>Animale</h2><div class="fields"><div class="field"><label>Specie *</label><input name="species" value="{val('species')}" required></div><div class="field"><label>Nome</label><input name="animal_name" value="{val('animal_name')}"></div><div class="field"><label>Peso</label><input name="estimated_weight" value="{val('estimated_weight')}"></div><div class="field"><label>Anni</label><input name="age_years" value="{val('age_years')}"></div><div class="field"><label>Mesi</label><input name="age_months" value="{val('age_months')}"></div><div class="field"><label>Microchip</label><input name="microchip" value="{val('microchip')}"></div><div class="field full"><label>Razza</label><input name="breed" value="{val('breed')}"></div></div><button class="btn ghost" type="button" id="showSecondAnimal" style="margin-top:12px;{'display:none' if raw('animal2_name') else ''}">+ Aggiungi altro animale</button><div id="secondAnimalBox" style="display:{'block' if raw('animal2_name') else 'none'};margin-top:14px"><h2>Secondo animale</h2><div class="fields"><div class="field"><label>Nome</label><input name="animal2_name" value="{val('animal2_name')}"></div><div class="field"><label>Specie</label><input name="animal2_species" value="{val('animal2_species')}"></div><div class="field"><label>Peso stimato (kg)</label><input name="animal2_weight" value="{val('animal2_weight')}"></div><div class="field"><label>Microchip</label><input name="animal2_microchip" value="{val('animal2_microchip')}"></div><div class="field full"><label>Razza</label><input name="animal2_breed" value="{val('animal2_breed')}"></div></div></div></section>
         <section class="section"><h2>AMBULATORIO VETERINARIO</h2><div class="fields"><div class="field full lookup"><label>VETERINARIO</label><input id="vetSearch" autocomplete="off" placeholder="Scrivi per cercare il veterinario"><div id="vetResults" class="lookup-results hidden"></div><select name="veterinarian_id">{vet_options}</select><input type="hidden" name="clinic_name" value="{val('clinic_name')}"><button class="btn ghost" type="button" id="clearVetSelection" style="margin-top:8px">Cancella veterinario</button></div><div class="field"><label>MEDICO VETERINARIO</label><input name="veterinarian_name" value="{val('veterinarian_name')}"></div><div class="field"><label><input type="checkbox" name="voucher_requested" value="Si" {voucher_checked}> BUONO</label><small class="sub">Spunta per assegnare un buono al veterinario selezionato.</small></div></div></section>
         <section class="section"><h2>TRASPORTATORE</h2><div class="fields"><div class="field"><label>Dati trasportatore</label><select name="transporter_mode"><option {selected('transporter_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('transporter_mode','DATI PET PARADISE','IDEM SPED')}>DATI PET PARADISE</option></select></div><div class="field"><label>Mezzo di trasporto</label><select name="transport_method" id="transport_method_quick"><option value="">Seleziona mezzo</option><option {selected('transport_method','Fiat Fiorino')}>Fiat Fiorino</option><option {selected('transport_method','Renault Captur')}>Renault Captur</option><option {selected('transport_method','Dr PK8')}>Dr PK8</option><option {selected('transport_method','Mezzo proprio')}>Mezzo proprio</option></select></div><div class="field"><label>Targa automezzo</label><input name="vehicle_plate" value="{val('vehicle_plate')}" placeholder="Compilata automaticamente, modificabile"></div><div class="field"><label>Temperatura</label><select name="temperature_mode"><option {selected('temperature_mode','Ambiente','Ambiente')}>Ambiente</option><option {selected('temperature_mode','Refrigerato','Ambiente')}>Refrigerato</option><option {selected('temperature_mode','Congelato','Ambiente')}>Congelato</option></select></div><div class="field"><label>Numero colli</label><input name="package_count" value="{val('package_count') or '1'}"></div><div class="field"><label>ID contenitore</label><select name="container_id"><option value="">Seleziona ID contenitore</option><option {selected('container_id','03/2021')}>03/2021</option><option {selected('container_id','04/2021')}>04/2021</option></select></div><div class="field"><label>Numero lotto</label><input name="lot_number" value="{val('lot_number') or '/'}"></div><div class="field"><label>Metodo trattamento</label><input name="treatment_method" value="{val('treatment_method') or '/'}"></div></div></section>
@@ -4893,7 +5126,7 @@ class App(BaseHTTPRequestHandler):
         self.send_html(layout("Nuova pratica",body,user))
 
     def normalized_fields(self,f):
-        keys=["client_id","owner_veterinarian_id","origin_veterinarian_id","operator_name","request_origin","collaborator_name","destination_branch","owner_first_name","owner_last_name","owner_company","owner_phone","owner_phone_2","owner_phone_note","owner_email","owner_tax_code","owner_vat","owner_notes","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","provenance","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","use_voucher","used_voucher_id","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_possibile_assistita_streaming","tag_saluto","tag_calco","tag_possibile_calco","tag_calco_urna","tag_calco_paw","tag_possibile_calco_paw","tag_calco_nose","tag_possibile_calco_nose","tag_avvisare","tag_da_richiamare","payment_status","payment_method","price_cremation","price_pickup","price_evening","price_urn","send_catalog","catalog_sent","send_estremi","estremi_sent","price_delivery","price_night","price_cast","price_paw_cast","price_nose_cast","price_holiday","price_accessories","deposit","deposit_final","remaining_balance","remaining_final","total_service","total_text","invoice_number","invoice_date","invoice_total","make_invoice","identity_document_number","identity_document_date","signing_place"]
+        keys=["client_id","owner_veterinarian_id","origin_veterinarian_id","operator_name","request_origin","collaborator_name","collaborator_id","destination_branch","owner_first_name","owner_last_name","owner_company","owner_phone","owner_phone_2","owner_phone_note","owner_email","owner_tax_code","owner_vat","owner_sdi","owner_notes","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","origin_first_name","origin_last_name","provenance","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","use_voucher","used_voucher_id","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_possibile_assistita_streaming","tag_saluto","tag_calco","tag_possibile_calco","tag_calco_urna","tag_calco_paw","tag_possibile_calco_paw","tag_calco_nose","tag_possibile_calco_nose","tag_avvisare","tag_da_richiamare","payment_status","payment_method","price_cremation","price_pickup","price_evening","price_urn","send_catalog","catalog_sent","send_estremi","estremi_sent","price_delivery","price_night","price_cast","price_paw_cast","price_nose_cast","price_holiday","price_accessories","deposit","deposit_final","remaining_balance","remaining_final","total_service","total_text","invoice_number","invoice_date","invoice_total","make_invoice","identity_document_number","identity_document_date","signing_place"]
         data = {k:f.get(k,"").strip() for k in keys}
         data["pickup_time"] = f.get("pickup_time","").strip()
         data["urn_id"] = f.get("urn_id","").strip() or None
@@ -4934,6 +5167,7 @@ class App(BaseHTTPRequestHandler):
         data["client_id"] = data["client_id"] or None
         data["owner_veterinarian_id"] = data["owner_veterinarian_id"] or None
         data["origin_veterinarian_id"] = data["origin_veterinarian_id"] or None
+        data["collaborator_id"] = data["collaborator_id"] or None
         data["provenance"] = data["provenance"].upper() if data["provenance"].upper() in ("L","E","V","F","P") else ""
         if data["use_voucher"] == "Si":
             data["payment_status"] = "Pagato"
@@ -5051,6 +5285,8 @@ class App(BaseHTTPRequestHandler):
             return 0
         if d.get("service_type") == "Cremazione collettiva":
             return 1
+        if d.get("request_origin") == "Collaboratore":
+            return 1
         required=["operator_name","service_type","request_origin","owner_first_name","owner_last_name","owner_phone","owner_tax_code","owner_street","owner_city","owner_province","owner_zip"]
         return int(all(d.get(k) for k in required))
 
@@ -5061,6 +5297,8 @@ class App(BaseHTTPRequestHandler):
         if d.get("tag_da_richiamare") == "Si":
             return ""
         if d.get("service_type") == "Cremazione collettiva":
+            return ""
+        if d.get("request_origin") == "Collaboratore":
             return ""
         labels={
             "operator_name":"Operatore","service_type":"Servizio","request_origin":"Richiesta","owner_first_name":"Nome",
