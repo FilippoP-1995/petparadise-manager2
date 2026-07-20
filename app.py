@@ -1668,20 +1668,24 @@ function setupClientLookup(){
   const selectedText=document.getElementById('clientSelectedText');
   const clearBtn=document.getElementById('clearClientSelection');
   const clientId=document.querySelector('input[name="client_id"]');
+  const collaboratorId=document.querySelector('input[name="collaborator_id"]');
+  const collaboratorName=document.querySelector('input[name="collaborator_name"]');
   if(!input || !results) return;
   const fetcher=ppmLookupFetcher();
   ppmRegisterLookupPanel(input,results);
   ppmBindLookupEmptyClose(input,results,fetcher);
   function setField(name,value){ const field=document.querySelector(`[name="${name}"]`); if(field) field.value=value || ''; }
-  function showSelected(label){
-    if(selectedText) selectedText.textContent = label ? `Cliente selezionato: ${label}` : '';
+  function showSelected(label,kind){
+    if(selectedText) selectedText.textContent = label ? `${kind==='collaborator'?'Collaboratore':'Cliente'} selezionato: ${label}` : '';
     if(selected) selected.classList.toggle('hidden', !label);
   }
   if(clientId && clientId.value){
     const first=document.querySelector('[name="owner_first_name"]')?.value || '';
     const last=document.querySelector('[name="owner_last_name"]')?.value || '';
     const company=document.querySelector('[name="owner_company"]')?.value || '';
-    showSelected(`${first} ${last}`.trim() || company);
+    showSelected(`${first} ${last}`.trim() || company, 'client');
+  }else if(collaboratorId && collaboratorId.value){
+    showSelected(collaboratorName?.value || document.querySelector('[name="owner_company"]')?.value || '', 'collaborator');
   }
   const search=ppmDebounce(async function(){
     const q=input.value.trim();
@@ -1697,10 +1701,12 @@ function setupClientLookup(){
       if(!data.ok) throw new Error(data.error || 'Errore');
       if(!data.results.length){ results.innerHTML=lookupHtmlState('Nessun risultato'); return; }
       results.innerHTML=data.results.map(function(c){
-        const label=c.display || c.company_name || 'Cliente';
+        const isCollaborator=c.kind==='collaborator';
+        const label=c.display || c.company_name || (isCollaborator?'Collaboratore':'Cliente');
         const subtitle=c.subtitle || '';
+        const kindTag=isCollaborator?'<span class="badge tag-blue" style="margin-left:6px">Collaboratore</span>':'';
         const meta=`ID ${c.id}${c.practice_count ? ' - '+c.practice_count+' pratiche' : ''}${c.last_practice ? ' - ultima '+c.last_practice : ''}`;
-        return `<button type="button" class="lookup-item" data-client='${JSON.stringify(c).replace(/'/g,'&#39;')}'><b>${label}</b><small>${subtitle}</small><small>${meta}</small></button>`;
+        return `<button type="button" class="lookup-item" data-client='${JSON.stringify(c).replace(/'/g,'&#39;')}'><b>${label}${kindTag}</b><small>${subtitle}</small><small>${meta}</small></button>`;
       }).join('');
     }catch(err){
       if(err.name==='AbortError' || fetcher.stale(token)) return;
@@ -1712,28 +1718,52 @@ function setupClientLookup(){
     const btn=e.target.closest('.lookup-item');
     if(!btn) return;
     const c=JSON.parse(btn.getAttribute('data-client'));
-    if(clientId) clientId.value=c.id || '';
-    setField('owner_first_name', c.first_name);
-    setField('owner_last_name', c.last_name);
-    setField('owner_company', c.company_name);
-    setField('owner_phone', c.phone);
-    setField('owner_phone_2', c.phone_2);
-    setField('owner_email', c.email);
-    setField('owner_tax_code', c.tax_code);
-    setField('owner_vat', c.vat_number);
-    setField('owner_street', c.street || c.address);
-    setField('owner_city', c.city);
-    setField('owner_province', c.province);
-    setField('owner_zip', c.zip);
-    setField('owner_notes', c.notes);
-    showSelected(c.display || c.company_name || `ID ${c.id}`);
+    if(c.kind==='collaborator'){
+      if(clientId) clientId.value='';
+      if(collaboratorId) collaboratorId.value=c.id || '';
+      if(collaboratorName) collaboratorName.value=c.name || '';
+      setField('owner_first_name', c.name);
+      setField('owner_last_name', '');
+      setField('owner_company', c.name);
+      setField('owner_phone', c.phone);
+      setField('owner_email', c.email);
+      setField('owner_tax_code', c.tax_code);
+      setField('owner_vat', c.vat_number);
+      setField('owner_sdi', c.sdi_code);
+      setField('owner_street', c.address);
+      setField('owner_city', c.city);
+      setField('owner_province', c.province);
+      setField('owner_zip', c.zip);
+      setField('owner_notes', c.notes);
+      showSelected(c.display || c.name || `ID ${c.id}`, 'collaborator');
+    }else{
+      if(collaboratorId) collaboratorId.value='';
+      if(collaboratorName) collaboratorName.value='';
+      if(clientId) clientId.value=c.id || '';
+      setField('owner_first_name', c.first_name);
+      setField('owner_last_name', c.last_name);
+      setField('owner_company', c.company_name);
+      setField('owner_phone', c.phone);
+      setField('owner_phone_2', c.phone_2);
+      setField('owner_email', c.email);
+      setField('owner_tax_code', c.tax_code);
+      setField('owner_vat', c.vat_number);
+      setField('owner_street', c.street || c.address);
+      setField('owner_city', c.city);
+      setField('owner_province', c.province);
+      setField('owner_zip', c.zip);
+      setField('owner_notes', c.notes);
+      showSelected(c.display || c.company_name || `ID ${c.id}`, 'client');
+    }
     input.value='';
     ppmCloseLookupPanel(results);
   });
   if(clearBtn){
     clearBtn.addEventListener('click', function(){
       if(clientId) clientId.value='';
-      ['owner_first_name','owner_last_name','owner_company','owner_phone','owner_phone_2','owner_email','owner_tax_code','owner_vat','owner_street','owner_city','owner_province','owner_zip','owner_notes'].forEach(name=>setField(name,''));
+      if(collaboratorId) collaboratorId.value='';
+      if(collaboratorName) collaboratorName.value='';
+      ['owner_first_name','owner_last_name','owner_company','owner_phone','owner_phone_2','owner_email','owner_tax_code','owner_vat','owner_sdi','owner_street','owner_city','owner_province','owner_zip','owner_notes'].forEach(name=>setField(name,''));
       showSelected('');
       input.value='';
       ppmCloseLookupPanel(results);
@@ -4633,8 +4663,23 @@ class App(BaseHTTPRequestHandler):
             for r in rows:
                 display=" ".join(x for x in [r["first_name"], r["last_name"]] if x).strip() or r["company_name"] or "Cliente senza nome"
                 subtitle=" - ".join(x for x in [r["company_name"], r["phone"], r["email"], r["city"] or r["address"]] if x)
-                results.append({"id":r["id"],"first_name":r["first_name"] or "","last_name":r["last_name"] or "","company_name":r["company_name"] or "","phone":r["phone"] or "","phone_2":r["phone_2"] or "","email":r["email"] or "","tax_code":r["tax_code"] or "","vat_number":r["vat_number"] or "","street":r["street"] or "","city":r["city"] or "","province":r["province"] or "","zip":r["zip"] or "","address":r["address"] or "","notes":r["notes"] or "","display":display,"subtitle":subtitle,"practice_count":r["practice_count"] or 0,"last_practice":(r["last_practice"] or "")[:10]})
-            return self.send_json({"ok":True,"query":q,"results":results})
+                results.append({"kind":"client","id":r["id"],"first_name":r["first_name"] or "","last_name":r["last_name"] or "","company_name":r["company_name"] or "","phone":r["phone"] or "","phone_2":r["phone_2"] or "","email":r["email"] or "","tax_code":r["tax_code"] or "","vat_number":r["vat_number"] or "","street":r["street"] or "","city":r["city"] or "","province":r["province"] or "","zip":r["zip"] or "","address":r["address"] or "","notes":r["notes"] or "","display":display,"subtitle":subtitle,"practice_count":r["practice_count"] or 0,"last_practice":(r["last_practice"] or "")[:10]})
+            collab_searchable="COALESCE(name,'')||' '||COALESCE(city,'')||' '||COALESCE(tax_code,'')||' '||COALESCE(vat_number,'')||' '||COALESCE(phone,'')||' '||COALESCE(email,'')"
+            collab_where=[]; collab_args=[]
+            for token in tokens:
+                collab_where.append(f"{collab_searchable} LIKE ? COLLATE NOCASE")
+                collab_args.append(f"%{token}%")
+            with db() as c:
+                collab_rows=c.execute(f"""SELECT id, name, address, city, province, zip, tax_code, vat_number, sdi_code, phone, email, notes,
+                                           (SELECT COUNT(*) FROM practices p WHERE p.collaborator_id=collaborators.id) AS practice_count
+                                    FROM collaborators
+                                    WHERE active=1 AND {' AND '.join(collab_where)}
+                                    ORDER BY CASE WHEN UPPER(name)=UPPER(?) THEN 0 ELSE 9 END, name
+                                    LIMIT 50""", collab_args+[q]).fetchall()
+            for r in collab_rows:
+                subtitle=" - ".join(x for x in [r["address"], r["city"], r["phone"]] if x)
+                results.append({"kind":"collaborator","id":r["id"],"name":r["name"] or "","address":r["address"] or "","city":r["city"] or "","province":r["province"] or "","zip":r["zip"] or "","tax_code":r["tax_code"] or "","vat_number":r["vat_number"] or "","sdi_code":r["sdi_code"] or "","phone":r["phone"] or "","email":r["email"] or "","notes":r["notes"] or "","display":r["name"] or "Collaboratore senza nome","subtitle":subtitle,"practice_count":r["practice_count"] or 0})
+            return self.send_json({"ok":True,"query":q,"results":results[:50]})
         except Exception as exc:
             print(f"[CLIENT_SEARCH] errore tipo={type(exc).__name__} lunghezza_query={len(q)}", flush=True)
             return self.send_json({"ok":False,"error":"Errore durante la ricerca clienti"},500)
