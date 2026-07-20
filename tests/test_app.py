@@ -334,7 +334,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(selectors, app.APP_JS)
 
     def test_cremazione_collettiva_relaxes_required_fields(self):
-        self.assertIn("const exempt = !!(callBack?.checked || (service && service.value === 'Cremazione collettiva'));", app.APP_JS)
+        self.assertIn("const exempt = !!(callBack?.checked || (service && service.value === 'Cremazione collettiva') || (origin && origin.value === 'Collaboratore'));", app.APP_JS)
         no_error = self.handler.validation_error({"service_type": "Cremazione collettiva"})
         self.assertEqual(no_error, "")
         self.assertEqual(self.handler.is_complete({"service_type": "Cremazione collettiva"}), 1)
@@ -1649,11 +1649,12 @@ class PetParadiseTests(unittest.TestCase):
     def test_arrange_budget_layout_places_payment_status_between_remaining_final_and_notes(self):
         js = app.APP_JS
         remaining_final_idx = js.index("addRow([field('total_text'),field('deposit_final'),field('remaining_final')]);")
-        payment_status_idx = js.index("addRow([field('payment_status')]);")
+        payment_status_idx = js.index("addRow([field('payment_status')],[field('payment_method')]);")
         notes_idx = js.index("addRow([field('notes')]);")
         self.assertLess(remaining_final_idx, payment_status_idx)
         self.assertLess(payment_status_idx, notes_idx)
         self.assertNotIn("addRow([field('price_cremation')],[field('payment_status')]);", js)
+        self.assertNotIn("addRow([field('price_pickup')],[field('payment_method')]);", js)
 
     def test_accessory_field_labels_are_renamed(self):
         js = app.APP_JS
@@ -1854,6 +1855,132 @@ class PetParadiseTests(unittest.TestCase):
         with app.db() as conn:
             unchanged = conn.execute("SELECT * FROM users WHERE id=?", (admin["id"],)).fetchone()
         self.assertTrue(app.password_ok("petparadise", unchanged["password_hash"]))
+
+    def test_clients_crud_add_edit_delete(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.form = lambda: {"first_name": "Mario", "last_name": "Rossi", "phone": "3331112222", "email": "mario@example.it", "tax_code": "RSSMRA80A01H501U", "city": "Livorno"}
+        self.handler.redirect = lambda path: setattr(self, "redirected", path)
+        self.handler.save_client(admin)
+        client_id = int(self.redirected.rsplit("/", 1)[-1])
+
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/clienti"
+        self.handler.clients_page(admin)
+        self.assertIn("Mario", rendered[-1])
+        self.assertIn("Rossi", rendered[-1])
+
+        rendered.clear()
+        self.handler.path = f"/clienti/{client_id}"
+        self.handler.client_detail(admin, client_id)
+        self.assertIn('value="Mario"', rendered[-1])
+        self.assertIn("Pratiche collegate", rendered[-1])
+
+        self.handler.form = lambda: {"id": str(client_id), "first_name": "Mario", "last_name": "Verdi", "phone": "3331112222", "city": "Pisa"}
+        self.handler.save_client(admin)
+        with app.db() as conn:
+            updated = conn.execute("SELECT * FROM clients WHERE id=?", (client_id,)).fetchone()
+        self.assertEqual(updated["last_name"], "Verdi")
+        self.assertEqual(updated["city"], "Pisa")
+
+        self.handler.delete_client(admin, client_id)
+        with app.db() as conn:
+            deleted = conn.execute("SELECT active FROM clients WHERE id=?", (client_id,)).fetchone()
+        self.assertEqual(deleted["active"], 0)
+        rendered.clear()
+        self.handler.path = "/clienti"
+        self.handler.clients_page(admin)
+        self.assertIn("Nessun cliente trovato.", rendered[-1])
+
+    def test_collaborators_crud_and_humanitas_seeded(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            seeded = conn.execute("SELECT * FROM collaborators WHERE UPPER(name)='HUMANITAS CROCE VERDE'").fetchone()
+        self.assertIsNotNone(seeded)
+        self.assertEqual(seeded["vat_number"], "01762490462")
+        self.assertEqual(seeded["sdi_code"], "M5UXCR1")
+
+        self.handler.form = lambda: {"name": "Rifugio Test", "address": "Via Prova 9", "city": "Empoli", "province": "FI", "zip": "50053", "vat_number": "12345678901", "sdi_code": "ABCD123"}
+        self.handler.redirect = lambda path: setattr(self, "redirected", path)
+        self.handler.save_collaborator(admin)
+        collab_id = int(self.redirected.rsplit("/", 1)[-1])
+
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/collaboratori"
+        self.handler.collaborators_page(admin)
+        self.assertIn("Rifugio Test", rendered[-1])
+        self.assertIn("HUMANITAS CROCE VERDE", rendered[-1])
+
+        self.handler.form = lambda: {"id": str(collab_id), "name": "Rifugio Test Aggiornato", "city": "Empoli"}
+        self.handler.save_collaborator(admin)
+        with app.db() as conn:
+            updated = conn.execute("SELECT name FROM collaborators WHERE id=?", (collab_id,)).fetchone()
+        self.assertEqual(updated["name"], "Rifugio Test Aggiornato")
+
+        self.handler.delete_collaborator(admin, collab_id)
+        with app.db() as conn:
+            deleted = conn.execute("SELECT active FROM collaborators WHERE id=?", (collab_id,)).fetchone()
+        self.assertEqual(deleted["active"], 0)
+
+    def test_collaborator_detail_groups_linked_practices(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            collab_id = conn.execute("INSERT INTO collaborators(name,active,created_at,updated_at) VALUES(?,?,?,?)", ("Canile Amico", 1, stamp, stamp)).lastrowid
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                         animal_name,species,service_type,payment_status,collaborator_id)
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                         ("CR-COLLAB", "Collaboratore", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Rex", "Cane", "Cremazione singola", "Da saldare", collab_id))
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = f"/collaboratori/{collab_id}"
+        self.handler.collaborator_detail(admin, collab_id)
+        self.assertIn("CR-COLLAB", rendered[-1])
+        self.assertIn("Rex", rendered[-1])
+
+    def test_api_collaborators_search_returns_autofill_fields(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        response = {}
+        self.handler.path = "/api/collaboratori/search?q=humanitas"
+        self.handler.send_json = lambda obj, status=200: response.update(obj=obj, status=status)
+        self.handler.api_collaborators_search(admin)
+        result = response["obj"]["results"][0]
+        self.assertEqual(result["name"], "HUMANITAS CROCE VERDE")
+        self.assertEqual(result["vat_number"], "01762490462")
+        self.assertEqual(result["sdi_code"], "M5UXCR1")
+
+    def test_practice_form_has_collaborator_search_and_dynamic_sections(self):
+        html = self.handler.fields_html()
+        self.assertIn('id="collaboratorSearch"', html)
+        self.assertIn('id="collaboratorResults"', html)
+        self.assertIn('name="collaborator_id"', html)
+        self.assertIn('name="owner_sdi"', html)
+        self.assertIn('id="originFirstNameBox"', html)
+        self.assertIn('id="originLastNameBox"', html)
+        self.assertNotIn('id="collaboratorBox"', html)
+        self.assertIn("function setupCollaboratorLookup(){", app.APP_JS)
+        self.assertIn("function applyRequestOriginMode(){", app.APP_JS)
+        self.assertIn("/api/collaboratori/search", app.APP_JS)
+        self.assertNotIn("function toggleCollaboratorBox(){", app.APP_JS)
+
+    def test_normalized_fields_handles_collaborator_and_origin_name_fields(self):
+        data = self.handler.normalized_fields({
+            "collaborator_id": "5", "collaborator_name": "Rifugio Test",
+            "owner_sdi": "ABCD123", "origin_first_name": "Anna", "origin_last_name": "Bianchi",
+        })
+        self.assertEqual(data["collaborator_id"], "5")
+        self.assertEqual(data["owner_sdi"], "ABCD123")
+        self.assertEqual(data["origin_first_name"], "Anna")
+        self.assertEqual(data["origin_last_name"], "Bianchi")
+        empty = self.handler.normalized_fields({})
+        self.assertIsNone(empty["collaborator_id"])
+
+    def test_sidebar_nav_links_to_clients_and_collaborators_crud(self):
+        self.assertTrue(any(href == "/clienti" for href, icon, label in app.SIDEBAR_LINKS))
+        self.assertTrue(any(href == "/collaboratori" for href, icon, label in app.SIDEBAR_LINKS))
+        self.assertNotIn("/archivio/clienti", [href for href, icon, label in app.SIDEBAR_LINKS])
 
 
 if __name__ == "__main__":
