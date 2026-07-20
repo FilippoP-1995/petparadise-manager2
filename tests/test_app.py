@@ -442,7 +442,7 @@ class PetParadiseTests(unittest.TestCase):
 
     def test_clear_client_selection_also_clears_autofilled_fields(self):
         self.assertIn(
-            "['owner_first_name','owner_last_name','owner_company','owner_phone','owner_phone_2','owner_email','owner_tax_code','owner_vat','owner_street','owner_city','owner_province','owner_zip','owner_notes'].forEach(name=>setField(name,''));",
+            "['owner_first_name','owner_last_name','owner_company','owner_phone','owner_phone_2','owner_email','owner_tax_code','owner_vat','owner_sdi','owner_street','owner_city','owner_province','owner_zip','owner_notes'].forEach(name=>setField(name,''));",
             app.APP_JS,
         )
 
@@ -1990,6 +1990,34 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("box.scrollLeft=topScroll.scrollLeft", app.APP_JS)
         self.assertIn("topScroll.scrollLeft=box.scrollLeft", app.APP_JS)
         self.assertIn("document.addEventListener('DOMContentLoaded', setupTableTopScrollbars);", app.APP_JS)
+
+    def test_client_search_api_also_returns_matching_collaborators(self):
+        with app.db() as conn:
+            stamp = app.now()
+            conn.execute(
+                "INSERT INTO collaborators(name,address,city,province,zip,tax_code,vat_number,sdi_code,phone,email,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                ("Canile Sperandio", "Via dei Cani 3", "Pisa", "PI", "56100", "", "98765432100", "XYZ999", "0501112222", "canile@example.it", 1, stamp, stamp),
+            )
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        response = {}
+        self.handler.path = "/api/clienti/search?q=sperandio"
+        self.handler.send_json = lambda obj, status=200: response.update(obj=obj, status=status)
+        self.handler.api_clients_search(admin)
+        results = response["obj"]["results"]
+        self.assertEqual(len(results), 1)
+        result = results[0]
+        self.assertEqual(result["kind"], "collaborator")
+        self.assertEqual(result["name"], "Canile Sperandio")
+        self.assertEqual(result["vat_number"], "98765432100")
+        self.assertEqual(result["sdi_code"], "XYZ999")
+
+    def test_client_lookup_js_fills_collaborator_fields_and_clears_client_id(self):
+        js = app.APP_JS
+        self.assertIn("if(c.kind==='collaborator'){", js)
+        self.assertIn("if(clientId) clientId.value='';\n      if(collaboratorId) collaboratorId.value=c.id || '';", js)
+        self.assertIn("setField('owner_sdi', c.sdi_code);", js)
+        self.assertIn("if(collaboratorId) collaboratorId.value='';\n      if(collaboratorName) collaboratorName.value='';\n      if(clientId) clientId.value=c.id || '';", js)
 
 
 if __name__ == "__main__":
