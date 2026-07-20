@@ -1443,6 +1443,34 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("saveTagState",app.APP_JS)
         self.assertIn("saveInvoiceNumber",app.APP_JS)
 
+    def test_catalog_estremi_dropdowns_are_colored_by_selected_state(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid_send=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                         animal_name,service_type,payment_status,send_catalog,send_estremi)
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                         ("CR-COLOR1","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Luna","Cremazione singola","Da saldare","Si","Si")).lastrowid
+            pid_sent=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                         animal_name,service_type,payment_status,catalog_sent,estremi_sent)
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                         ("CR-COLOR2","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Rex","Cremazione singola","Da saldare","Si","Si")).lastrowid
+            rows_send=conn.execute("SELECT * FROM practices WHERE id=?",(pid_send,)).fetchall()
+            rows_sent=conn.execute("SELECT * FROM practices WHERE id=?",(pid_sent,)).fetchall()
+        self.handler.path="/archivio/pratiche"
+        page_send=self.handler.practice_rows(rows_send,True)
+        page_sent=self.handler.practice_rows(rows_sent,True)
+        self.assertIn('class="inline-state-select tag-select-orange"',page_send)
+        self.assertIn('class="inline-state-select tag-select-green"',page_sent)
+        self.assertIn(".tag-select-orange{color:#fb923c!important}",app.CSS)
+        self.assertIn(".tag-select-green{color:#4ade80!important}",app.CSS)
+        self.assertIn("select.classList.add('tag-select-orange')",app.APP_JS)
+
+    def test_row_selection_deselects_on_outside_click_and_sticky_column_stays_opaque(self):
+        self.assertIn("document.addEventListener('click',(event)=>{",app.APP_JS)
+        self.assertIn("if(event.target.closest('tr.practice-row-link.row-selected'))return;",app.APP_JS)
+        self.assertIn(".practice-row-link.row-selected td:first-child{background:#502d40!important}",app.CSS)
+        self.assertIn(".light-theme .practice-row-link.row-selected td:first-child{background:#fde3e7!important}",app.CSS)
+
     def test_archive_page_always_shows_financial_columns(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
