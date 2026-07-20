@@ -88,6 +88,14 @@ COLLABORATORS = {
         "province": "LU",
         "vat": "01762490462",
         "sdi": "M5UXCR1",
+        "code": "CV",
+        "tiers": [
+            ("0", "1", "146.40"),
+            ("1.1", "10", "183.00"),
+            ("10.1", "25", "244.00"),
+            ("25.1", "45", "305.00"),
+            ("45.1", "", "390.40"),
+        ],
     }
 }
 
@@ -258,6 +266,15 @@ def init_db():
           email TEXT,
           notes TEXT,
           active INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS collaborator_price_tiers (
+          id INTEGER PRIMARY KEY,
+          collaborator_id INTEGER NOT NULL REFERENCES collaborators(id),
+          weight_min TEXT NOT NULL,
+          weight_max TEXT,
+          price TEXT NOT NULL,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
         );
@@ -504,6 +521,9 @@ def init_db():
         client_existing = {row["name"] for row in c.execute("PRAGMA table_info(clients)")}
         if "active" not in client_existing:
             c.execute("ALTER TABLE clients ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
+        collaborator_existing = {row["name"] for row in c.execute("PRAGMA table_info(collaborators)")}
+        if "code" not in collaborator_existing:
+            c.execute("ALTER TABLE collaborators ADD COLUMN code TEXT")
         urn_existing = {row["name"] for row in c.execute("PRAGMA table_info(urns)")}
         for name, definition in {"category": "TEXT NOT NULL DEFAULT 'Urna'"}.items():
             if name not in urn_existing:
@@ -529,6 +549,7 @@ def init_db():
         c.execute("CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_clients_tax ON clients(tax_code)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_collaborators_name ON collaborators(name)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_collaborator_price_tiers_collaborator ON collaborator_price_tiers(collaborator_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_urns_search ON urns(active,material,name)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_urn_movements_urn ON urn_movements(urn_id,created_at DESC)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_payment_movements_paid ON payment_movements(paid_at,payment_channel)")
@@ -639,11 +660,16 @@ def init_db():
             if existing_collab:
                 collab_id=existing_collab["id"]
             else:
-                cur=c.execute("""INSERT INTO collaborators(name,address,city,province,zip,tax_code,vat_number,sdi_code,active,created_at,updated_at)
-                                 VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-                              (collab_name, collab.get("street",""), collab.get("city",""), collab.get("province",""), collab.get("zip",""), "", collab.get("vat",""), collab.get("sdi",""), 1, stamp, stamp))
+                cur=c.execute("""INSERT INTO collaborators(name,address,city,province,zip,tax_code,vat_number,sdi_code,code,active,created_at,updated_at)
+                                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                              (collab_name, collab.get("street",""), collab.get("city",""), collab.get("province",""), collab.get("zip",""), "", collab.get("vat",""), collab.get("sdi",""), collab.get("code",""), 1, stamp, stamp))
                 collab_id=cur.lastrowid
             c.execute("UPDATE practices SET collaborator_id=? WHERE collaborator_name=? AND collaborator_id IS NULL",(collab_id,collab_name))
+            if collab.get("code") and not c.execute("SELECT code FROM collaborators WHERE id=? AND code IS NOT NULL AND code<>''",(collab_id,)).fetchone():
+                c.execute("UPDATE collaborators SET code=? WHERE id=?",(collab.get("code",""),collab_id))
+            if collab.get("tiers") and not c.execute("SELECT 1 FROM collaborator_price_tiers WHERE collaborator_id=?",(collab_id,)).fetchone():
+                for weight_min,weight_max,price in collab["tiers"]:
+                    c.execute("INSERT INTO collaborator_price_tiers(collaborator_id,weight_min,weight_max,price,created_at,updated_at) VALUES(?,?,?,?,?,?)",(collab_id,weight_min,weight_max or None,price,stamp,stamp))
         if not c.execute("SELECT 1 FROM users WHERE username='admin'").fetchone():
             c.execute(
                 "INSERT INTO users(username,password_hash,display_name,role) VALUES(?,?,?,?)",
@@ -1084,6 +1110,36 @@ function ppmFormat(value){
   if(!value) return '';
   return Number.isInteger(value) ? String(value) : value.toFixed(2).replace('.', ',');
 }
+let ppmCollaboratorTiers=[];
+function ppmSetCollaboratorTiers(tiers){
+  ppmCollaboratorTiers=Array.isArray(tiers)?tiers:[];
+}
+function ppmApplyCollaboratorWeightPrice(){
+  if(!ppmCollaboratorTiers.length) return;
+  const weightField=document.querySelector('[name="estimated_weight"]');
+  const priceField=document.querySelector('[name="price_cremation"]');
+  if(!weightField || !priceField || !weightField.value.trim()) return;
+  const weight=ppmNumber(weightField.value);
+  const tier=ppmCollaboratorTiers.find(function(t){
+    const min=ppmNumber(t.weight_min);
+    const max=(t.weight_max===''||t.weight_max===null||t.weight_max===undefined)?Infinity:ppmNumber(t.weight_max);
+    return weight>=min && weight<=max;
+  });
+  if(!tier) return;
+  priceField.value=ppmFormat(ppmNumber(tier.price));
+  priceField.dispatchEvent(new Event('input',{bubbles:true}));
+}
+document.addEventListener('DOMContentLoaded', function(){
+  const weightField=document.querySelector('[name="estimated_weight"]');
+  if(weightField) weightField.addEventListener('input', ppmApplyCollaboratorWeightPrice);
+  const collaboratorId=document.querySelector('input[name="collaborator_id"]');
+  if(collaboratorId && collaboratorId.value){
+    fetch(`/api/collaboratori/${collaboratorId.value}/listino`, {headers:{'Accept':'application/json'}})
+      .then(function(res){ return res.json(); })
+      .then(function(data){ if(data.ok) ppmSetCollaboratorTiers(data.tiers); })
+      .catch(function(){});
+  }
+});
 function ppmFormatInvoiceTotal(value){
   const number = typeof value === 'number' ? value : ppmNumber(value);
   return number.toFixed(2).replace('.', ',');
@@ -1736,9 +1792,12 @@ function setupClientLookup(){
       setField('owner_zip', c.zip);
       setField('owner_notes', c.notes);
       showSelected(c.display || c.name || `ID ${c.id}`, 'collaborator');
+      ppmSetCollaboratorTiers(c.tiers);
+      ppmApplyCollaboratorWeightPrice();
     }else{
       if(collaboratorId) collaboratorId.value='';
       if(collaboratorName) collaboratorName.value='';
+      ppmSetCollaboratorTiers([]);
       if(clientId) clientId.value=c.id || '';
       setField('owner_first_name', c.first_name);
       setField('owner_last_name', c.last_name);
@@ -1764,6 +1823,7 @@ function setupClientLookup(){
       if(collaboratorId) collaboratorId.value='';
       if(collaboratorName) collaboratorName.value='';
       ['owner_first_name','owner_last_name','owner_company','owner_phone','owner_phone_2','owner_email','owner_tax_code','owner_vat','owner_sdi','owner_street','owner_city','owner_province','owner_zip','owner_notes'].forEach(name=>setField(name,''));
+      ppmSetCollaboratorTiers([]);
       showSelected('');
       input.value='';
       ppmCloseLookupPanel(results);
@@ -1909,6 +1969,8 @@ function setupCollaboratorLookup(){
     setField('owner_vat', co.vat_number);
     setField('owner_sdi', co.sdi_code);
     input.value=co.display || co.name || '';
+    ppmSetCollaboratorTiers(co.tiers);
+    ppmApplyCollaboratorWeightPrice();
     ppmCloseLookupPanel(results);
   }
   const search=ppmDebounce(async function(){
@@ -2927,6 +2989,8 @@ class App(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/collaboratori/(\d+)", path)
         if match: return self.collaborator_detail(user, int(match.group(1)))
         if path == "/api/collaboratori/search": return self.api_collaborators_search(user)
+        match = re.fullmatch(r"/api/collaboratori/(\d+)/listino", path)
+        if match: return self.api_collaborator_price_tiers(user, int(match.group(1)))
         match = re.fullmatch(r"/catalogo-urne/(\d+)/modifica", path)
         if match: return self.urn_edit_page(user, int(match.group(1)))
         match = re.fullmatch(r"/catalogo-urne/(\d+)", path)
@@ -2999,6 +3063,12 @@ class App(BaseHTTPRequestHandler):
         if path == "/collaboratori": return self.save_collaborator(user)
         match = re.fullmatch(r"/collaboratori/(\d+)/elimina", path)
         if match: return self.delete_collaborator(user, int(match.group(1)))
+        match = re.fullmatch(r"/collaboratori/(\d+)/listino", path)
+        if match: return self.save_collaborator_price_tier(user, int(match.group(1)))
+        match = re.fullmatch(r"/listino/(\d+)/modifica", path)
+        if match: return self.edit_collaborator_price_tier(user, int(match.group(1)))
+        match = re.fullmatch(r"/listino/(\d+)/elimina", path)
+        if match: return self.delete_collaborator_price_tier(user, int(match.group(1)))
         match = re.fullmatch(r"/veterinari/(\d+)/buoni", path)
         if match: return self.save_manual_voucher(user, int(match.group(1)))
         match = re.fullmatch(r"/buoni/(\d+)/modifica", path)
@@ -3644,6 +3714,11 @@ class App(BaseHTTPRequestHandler):
             if urn_ids:
                 marks=','.join('?' for _ in urn_ids)
                 urn_names={r["id"]:r["name"] for r in c.execute(f"SELECT id,name FROM urns WHERE id IN ({marks})",tuple(urn_ids))}
+            collaborator_ids={int(row["collaborator_id"]) for row in rows if "collaborator_id" in row.keys() and row["collaborator_id"]}
+            collaborator_codes={}
+            if collaborator_ids:
+                marks=','.join('?' for _ in collaborator_ids)
+                collaborator_codes={r["id"]:(r["code"] or "") for r in c.execute(f"SELECT id,code FROM collaborators WHERE id IN ({marks})",tuple(collaborator_ids))}
         def urn_cell(row):
             labels=[]
             for id_key,note_key in (("urn_id","urn_notes"),("urn_id_2","urn_notes_2")):
@@ -3661,11 +3736,15 @@ class App(BaseHTTPRequestHandler):
             weight=(row["estimated_weight"] or "").strip()
             weight_cell=f'{esc(weight)} kg' if weight else '<span class="sub">-</span>'
             client=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip() or row["owner_company"] or ""
+            if "collaborator_name" in row.keys() and row["collaborator_name"]:
+                client=row["collaborator_name"]
             client_cell=esc(client) if client else '<span class="sub">-</span>'
+            collab_code=collaborator_codes.get(int(row["collaborator_id"])) if "collaborator_id" in row.keys() and row["collaborator_id"] else ""
+            animal_prefix=f"{esc(collab_code)} " if collab_code else ""
             url=f'/pratiche/{row["id"]}'
             registered=row["cremation_registered"]=="Si"
             checkbox=f'''<label class="cremation-check" onclick="event.stopPropagation()"><input type="checkbox" form="cremationForm" name="inserted_{row['id']}" value="1" {"checked" if registered else ""} onchange="markCremationRowPending(this)"> INSERITO</label>'''
-            table_rows.append(f'''<tr class="practice-row-link {"cremation-row-done" if registered else ""}" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}><td>{esc(row["animal_name"] or "Da inserire")}</td><td>{weight_cell}</td><td>{provenance_cell}</td><td>{self.tag_badges(row)}</td><td>{urn_cell(row)}</td><td>{client_cell}</td><td>{esc(date_it(row["pickup_date"] or row["created_at"]))}</td><td>{checkbox}</td></tr>''')
+            table_rows.append(f'''<tr class="practice-row-link {"cremation-row-done" if registered else ""}" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}><td>{animal_prefix}{esc(row["animal_name"] or "Da inserire")}</td><td>{weight_cell}</td><td>{provenance_cell}</td><td>{self.tag_badges(row)}</td><td>{urn_cell(row)}</td><td>{client_cell}</td><td>{esc(date_it(row["pickup_date"] or row["created_at"]))}</td><td>{checkbox}</td></tr>''')
         table_body=''.join(table_rows) or '<tr><td colspan="8" class="sub">Nessuna cremazione singola in attesa.</td></tr>'
         filter_options='<option value="">Tutte le provenienze</option>'+''.join(f'<option value="{code}" {"selected" if provenance_filter==code else ""}>{esc(code)} · {esc(label)}</option>' for code,label in PROVENANCE_LABELS.items())
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>Programma Cremazioni</h1><p class="sub">Spunta INSERITO gli animali entrati nel programma settimanale, poi salva: passano automaticamente allo stato In programma.</p></div><div class="actions"><button class="btn" form="cremationForm" type="submit">Salva</button></div></div><form id="cremationForm" method="post" action="/programma-cremazioni/salva"><input type="hidden" name="return_to" value="{esc(self.path)}"></form><section class="balance-grid" style="grid-template-columns:max-content"><div class="balance-total"><small>Animali in attesa di cremazione singola</small><strong>{len(rows)}</strong></div></section><form class="section" method="get" style="margin-bottom:16px"><div class="fields"><div class="field"><label>Provenienza</label><select name="provenienza" onchange="this.form.submit()">{filter_options}</select></div></div></form><div class="tablebox"><table><thead><tr><th>Animale</th><th>Peso</th><th>Provenienza</th><th>Etichette</th><th>Urna</th><th>Cliente</th><th>Data recupero</th><th>Inserito</th></tr></thead><tbody>{table_body}</tbody></table></div></main>'''
@@ -3899,13 +3978,23 @@ class App(BaseHTTPRequestHandler):
         title,include,amount_for=specs[kind]
         with db() as c:
             rows=c.execute("SELECT * FROM practices WHERE deleted_at IS NULL OR deleted_at='' ORDER BY updated_at DESC,id DESC").fetchall()
+            collaborator_ids={int(row["collaborator_id"]) for row in rows if "collaborator_id" in row.keys() and row["collaborator_id"]}
+            collaborator_codes={}
+            if collaborator_ids:
+                marks=','.join('?' for _ in collaborator_ids)
+                collaborator_codes={r["id"]:(r["code"] or "") for r in c.execute(f"SELECT id,code FROM collaborators WHERE id IN ({marks})",tuple(collaborator_ids))}
         groups=[(False,title,"#3b82f6"),(True,f"{title} D","#f59e0b")]; sections=[]
         for is_d,label,color in groups:
             selected=[row for row in rows if include(row) and uses_total_d(row)==is_d]; total=sum(amount_for(row) for row in selected)
             body=[]
             for row in selected:
-                owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip(); url=f'/pratiche/{row["id"]}'
-                body.append(f'''<tr class="practice-row-link" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}><td><a href="{url}"><b>{esc(row["practice_number"])}</b></a></td><td>{esc(row["animal_name"] or "")}</td><td>{esc(owner)}</td><td>{money_it(effective_total(row))}</td><td>{money_it(money_value(row["deposit"]))}</td><td><b>{money_it(amount_for(row))}</b></td><td>{esc(row["payment_status"] or "Da saldare")}</td><td><a class="btn ghost" href="{url}">Apri</a></td></tr>''')
+                owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip()
+                if "collaborator_name" in row.keys() and row["collaborator_name"]:
+                    owner=row["collaborator_name"]
+                collab_code=collaborator_codes.get(int(row["collaborator_id"])) if "collaborator_id" in row.keys() and row["collaborator_id"] else ""
+                animal_prefix=f"{esc(collab_code)} " if collab_code else ""
+                url=f'/pratiche/{row["id"]}'
+                body.append(f'''<tr class="practice-row-link" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}><td><a href="{url}"><b>{esc(row["practice_number"])}</b></a></td><td>{animal_prefix}{esc(row["animal_name"] or "")}</td><td>{esc(owner)}</td><td>{money_it(effective_total(row))}</td><td>{money_it(money_value(row["deposit"]))}</td><td><b>{money_it(amount_for(row))}</b></td><td>{esc(row["payment_status"] or "Da saldare")}</td><td><a class="btn ghost" href="{url}">Apri</a></td></tr>''')
             table=''.join(body) or '<tr><td colspan="8" class="sub">Nessuna pratica in questa categoria.</td></tr>'
             sections.append(f'''<section class="dashboard-panel" style="margin-bottom:20px;border-top:4px solid {color}"><header><div><h2>{esc(label)}</h2><p>{len(selected)} pratiche</p></div><strong>{money_it(total)}</strong></header><div class="tablebox"><table><thead><tr><th>Pratica</th><th>Animale</th><th>Cliente</th><th>Totale</th><th>Acconto</th><th>{esc(title)}</th><th>Stato</th><th></th></tr></thead><tbody>{table}</tbody></table></div></section>''')
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>Pagamenti · {esc(title)}</h1><p class="sub">Separazione tra Totale W e Totale D (contanti).</p></div><a class="btn ghost" href="/">Dashboard</a></div>{''.join(sections)}</main>'''
@@ -3932,13 +4021,23 @@ class App(BaseHTTPRequestHandler):
                                (prefix,date_from.isoformat(),date_to.isoformat())).fetchall()
         def amount_for(row):return outstanding_amount(row) if kind=="da-saldare" else money_value(row["dashboard_amount"])
         def row_is_d(row):return uses_total_d(row) if kind=="da-saldare" else row["dashboard_channel"]=="D"
+        collaborator_ids={int(row["collaborator_id"]) for row in rows if "collaborator_id" in row.keys() and row["collaborator_id"]}
+        collaborator_codes={}
+        if collaborator_ids:
+            marks=','.join('?' for _ in collaborator_ids)
+            with db() as c:collaborator_codes={r["id"]:(r["code"] or "") for r in c.execute(f"SELECT id,code FROM collaborators WHERE id IN ({marks})",tuple(collaborator_ids))}
         groups=[(False,title,"#3b82f6"),(True,f"{title} D","#f59e0b")];sections=[]
         for is_d,label,color in groups:
             selected=[row for row in rows if row_is_d(row)==is_d];total=sum(amount_for(row) for row in selected);table_rows=[]
             for row in selected:
-                owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip();url=f'/pratiche/{row["id"]}?return_to={quote(self.path,safe="")}'
+                owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip()
+                if "collaborator_name" in row.keys() and row["collaborator_name"]:
+                    owner=row["collaborator_name"]
+                collab_code=collaborator_codes.get(int(row["collaborator_id"])) if "collaborator_id" in row.keys() and row["collaborator_id"] else ""
+                animal_prefix=f"{esc(collab_code)} " if collab_code else ""
+                url=f'/pratiche/{row["id"]}?return_to={quote(self.path,safe="")}'
                 economic_date=date_it(row["dashboard_paid_at"]) if kind!="da-saldare" else "Aperta"
-                table_rows.append(f'''<tr class="practice-row-link" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}><td>{esc(economic_date)}</td><td><a href="{url}"><b>{esc(row["practice_number"])}</b></a></td><td>{esc(row["animal_name"] or "")}</td><td>{esc(owner)}</td><td>{money_it(effective_total(row))}</td><td>{money_it(money_value(row["deposit"]))}</td><td><b>{money_it(amount_for(row))}</b></td><td>{esc(row["payment_status"] or "Da saldare")}</td><td><a class="btn ghost" href="{url}">Apri</a></td></tr>''')
+                table_rows.append(f'''<tr class="practice-row-link" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}><td>{esc(economic_date)}</td><td><a href="{url}"><b>{esc(row["practice_number"])}</b></a></td><td>{animal_prefix}{esc(row["animal_name"] or "")}</td><td>{esc(owner)}</td><td>{money_it(effective_total(row))}</td><td>{money_it(money_value(row["deposit"]))}</td><td><b>{money_it(amount_for(row))}</b></td><td>{esc(row["payment_status"] or "Da saldare")}</td><td><a class="btn ghost" href="{url}">Apri</a></td></tr>''')
             table=''.join(table_rows) or '<tr><td colspan="9" class="sub">Nessuna pratica in questa categoria.</td></tr>'
             sections.append(f'''<section class="dashboard-panel" style="margin-bottom:20px;border-top:4px solid {color}"><header><div><h2>{esc(label)}</h2><p>{len(selected)} pratiche</p></div><strong>{money_it(total)}</strong></header><div class="tablebox"><table><thead><tr><th>Data economica</th><th>Pratica</th><th>Animale</th><th>Cliente</th><th>Totale</th><th>Acconto</th><th>{esc(title)}</th><th>Stato</th><th></th></tr></thead><tbody>{table}</tbody></table></div></section>''')
         period_note="Tutte le rimanenze attualmente aperte: non esiste una scadenza di saldo." if kind=="da-saldare" else f"Incassi registrati dal {date_it(date_from.isoformat())} al {date_it(date_to.isoformat())}."
@@ -4567,16 +4666,26 @@ class App(BaseHTTPRequestHandler):
         if urn_ids:
             marks=','.join('?' for _ in urn_ids)
             with db() as c:urn_names={row["id"]:row["name"] for row in c.execute(f"SELECT id,name FROM urns WHERE id IN ({marks})",tuple(urn_ids))}
+        collaborator_ids={int(row["collaborator_id"]) for row in rows if "collaborator_id" in row.keys() and row["collaborator_id"]}
+        collaborator_codes={}
+        if collaborator_ids:
+            marks=','.join('?' for _ in collaborator_ids)
+            with db() as c:collaborator_codes={row["id"]:(row["code"] or "") for row in c.execute(f"SELECT id,code FROM collaborators WHERE id IN ({marks})",tuple(collaborator_ids))}
         html=[]
         for r in rows:
             code=str(r['practice_number'] or '')
             code_cls='practice-code-cr' if code.startswith('CR-') else 'practice-code-sm' if code.startswith('SM-') else ''
+            collaborator_code=collaborator_codes.get(int(r["collaborator_id"])) if "collaborator_id" in r.keys() and r["collaborator_id"] else ""
+            sigla_prefix=f"{esc(collaborator_code)} " if collaborator_code else ""
             if (r['service_type'] or '') == 'Cremazione collettiva':
                 animal_cell='/'
             else:
                 animal_meta=esc(r['species']) + ((' - '+esc(r['estimated_weight'])+' kg') if r['estimated_weight'] else '')
-                animal_cell=f'{esc(r["animal_name"] or "Da inserire")}<br><small>{animal_meta}</small>'
-            owner=esc((r['owner_first_name'] or '')+' '+(r['owner_last_name'] or ''))
+                animal_cell=f'{sigla_prefix}{esc(r["animal_name"] or "Da inserire")}<br><small>{animal_meta}</small>'
+            owner_name=((r['owner_first_name'] or '')+' '+(r['owner_last_name'] or '')).strip()
+            if "collaborator_name" in r.keys() and r["collaborator_name"]:
+                owner_name=r["collaborator_name"]
+            owner=esc(owner_name)
             age_parts=[]
             if r["age_years"]: age_parts.append(f'{esc(r["age_years"])} anni')
             if r["age_months"]: age_parts.append(f'{esc(r["age_months"])} mesi')
@@ -4678,7 +4787,7 @@ class App(BaseHTTPRequestHandler):
                                     LIMIT 50""", collab_args+[q]).fetchall()
             for r in collab_rows:
                 subtitle=" - ".join(x for x in [r["address"], r["city"], r["phone"]] if x)
-                results.append({"kind":"collaborator","id":r["id"],"name":r["name"] or "","address":r["address"] or "","city":r["city"] or "","province":r["province"] or "","zip":r["zip"] or "","tax_code":r["tax_code"] or "","vat_number":r["vat_number"] or "","sdi_code":r["sdi_code"] or "","phone":r["phone"] or "","email":r["email"] or "","notes":r["notes"] or "","display":r["name"] or "Collaboratore senza nome","subtitle":subtitle,"practice_count":r["practice_count"] or 0})
+                results.append({"kind":"collaborator","id":r["id"],"name":r["name"] or "","address":r["address"] or "","city":r["city"] or "","province":r["province"] or "","zip":r["zip"] or "","tax_code":r["tax_code"] or "","vat_number":r["vat_number"] or "","sdi_code":r["sdi_code"] or "","phone":r["phone"] or "","email":r["email"] or "","notes":r["notes"] or "","display":r["name"] or "Collaboratore senza nome","subtitle":subtitle,"practice_count":r["practice_count"] or 0,"tiers":self.collaborator_tiers_payload(c,r["id"])})
             return self.send_json({"ok":True,"query":q,"results":results[:50]})
         except Exception as exc:
             print(f"[CLIENT_SEARCH] errore tipo={type(exc).__name__} lunghezza_query={len(q)}", flush=True)
@@ -5070,30 +5179,32 @@ class App(BaseHTTPRequestHandler):
                 args += [like]*5
             sql += " GROUP BY co.id ORDER BY co.name"
             collaborators=c.execute(sql,args).fetchall()
-        rows=''.join(f'''<tr><td><a href="/collaboratori/{co['id']}"><b>{esc(co['name'])}</b></a></td><td>{esc(co['city'])}</td><td>{esc(co['phone'])}</td><td><span class="badge tag-blue">{co['practice_count']} pratiche</span></td><td><a class="btn ghost" href="/collaboratori/{co['id']}">Apri</a></td></tr>''' for co in collaborators) or '<tr><td colspan="5" class="sub">Nessun collaboratore trovato.</td></tr>'
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Collaboratori</h1><div class="sub">Anagrafica collaboratori e pratiche collegate.</div></div></div><form class="section" method="get"><div class="fields"><div class="field full"><label>Ricerca collaboratore</label><input name="q" value="{esc(term)}" placeholder="Nome, comune, telefono, codice fiscale, P.IVA"></div></div><button class="btn" style="margin-top:12px">Filtra</button></form><div style="height:14px"></div><section class="section"><h2>LISTA COLLABORATORI</h2><div class="tablebox"><table><thead><tr><th>Collaboratore</th><th>Comune</th><th>Telefono</th><th>Pratiche</th><th>Azione</th></tr></thead><tbody>{rows}</tbody></table></div></section><div style="height:14px"></div><section class="section"><h2>Aggiungi collaboratore</h2><form method="post"><div class="fields"><div class="field full"><label>Nome</label><input name="name" required></div><div class="field full"><label>Indirizzo</label><input name="address"></div><div class="field"><label>Comune</label><input name="city"></div><div class="field"><label>Provincia</label><input name="province" maxlength="2"></div><div class="field"><label>CAP</label><input name="zip"></div><div class="field"><label>Codice fiscale</label><input name="tax_code"></div><div class="field"><label>Partita IVA</label><input name="vat_number"></div><div class="field"><label>Codice SDI</label><input name="sdi_code"></div><div class="field"><label>Telefono</label><input name="phone"></div><div class="field"><label>Email</label><input type="email" name="email"></div><div class="field full"><label>Note</label><input name="notes"></div></div><button class="btn" style="margin-top:12px">Aggiungi collaboratore</button></form></section></main>'''
+        rows=''.join(f'''<tr><td><a href="/collaboratori/{co['id']}"><b>{esc(co['name'])}</b></a></td><td>{esc(co['code']) if 'code' in co.keys() and co['code'] else '-'}</td><td>{esc(co['city'])}</td><td>{esc(co['phone'])}</td><td><span class="badge tag-blue">{co['practice_count']} pratiche</span></td><td><a class="btn ghost" href="/collaboratori/{co['id']}">Apri</a></td></tr>''' for co in collaborators) or '<tr><td colspan="6" class="sub">Nessun collaboratore trovato.</td></tr>'
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Collaboratori</h1><div class="sub">Anagrafica collaboratori e pratiche collegate.</div></div></div><form class="section" method="get"><div class="fields"><div class="field full"><label>Ricerca collaboratore</label><input name="q" value="{esc(term)}" placeholder="Nome, comune, telefono, codice fiscale, P.IVA"></div></div><button class="btn" style="margin-top:12px">Filtra</button></form><div style="height:14px"></div><section class="section"><h2>LISTA COLLABORATORI</h2><div class="tablebox"><table><thead><tr><th>Collaboratore</th><th>Sigla</th><th>Comune</th><th>Telefono</th><th>Pratiche</th><th>Azione</th></tr></thead><tbody>{rows}</tbody></table></div></section><div style="height:14px"></div><section class="section"><h2>Aggiungi collaboratore</h2><form method="post"><div class="fields"><div class="field full"><label>Nome</label><input name="name" required></div><div class="field"><label>Sigla</label><input name="code" maxlength="8" placeholder="Es. CV" style="text-transform:uppercase"></div><div class="field full"><label>Indirizzo</label><input name="address"></div><div class="field"><label>Comune</label><input name="city"></div><div class="field"><label>Provincia</label><input name="province" maxlength="2"></div><div class="field"><label>CAP</label><input name="zip"></div><div class="field"><label>Codice fiscale</label><input name="tax_code"></div><div class="field"><label>Partita IVA</label><input name="vat_number"></div><div class="field"><label>Codice SDI</label><input name="sdi_code"></div><div class="field"><label>Telefono</label><input name="phone"></div><div class="field"><label>Email</label><input type="email" name="email"></div><div class="field full"><label>Note</label><input name="notes"></div></div><button class="btn" style="margin-top:12px">Aggiungi collaboratore</button></form></section></main>'''
         self.send_html(layout("Collaboratori",body,user))
 
     def collaborator_detail(self,user,collaborator_id):
         with db() as c:
             co=c.execute("SELECT * FROM collaborators WHERE id=? AND active=1",(collaborator_id,)).fetchone()
             practices=c.execute("SELECT id,practice_number,animal_name,status,pickup_date FROM practices WHERE collaborator_id=? AND (deleted_at IS NULL OR deleted_at='') ORDER BY COALESCE(pickup_date,created_at) DESC",(collaborator_id,)).fetchall()
+            tiers=c.execute("SELECT * FROM collaborator_price_tiers WHERE collaborator_id=? ORDER BY CAST(weight_min AS REAL)",(collaborator_id,)).fetchall()
         if not co: return self.send_error(404)
         rows=''.join(f'''<tr><td><a href="/pratiche/{p['id']}">{esc(p['practice_number'])}</a></td><td>{esc(p['animal_name'])}</td><td>{esc(p['status'])}</td><td>{esc(date_it(p['pickup_date']) if p['pickup_date'] else '')}</td></tr>''' for p in practices) or '<tr><td colspan="4" class="sub">Nessuna pratica collegata.</td></tr>'
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{esc(co['name'])}</h1><div class="sub">Anagrafica collaboratore</div></div><a class="btn ghost" href="/collaboratori">Torna alla lista</a></div><section class="section"><h2>Anagrafica</h2><form method="post" action="/collaboratori"><input type="hidden" name="id" value="{co['id']}"><div class="fields"><div class="field full"><label>Nome</label><input name="name" value="{esc(co['name'])}" required></div><div class="field full"><label>Indirizzo</label><input name="address" value="{esc(co['address'])}"></div><div class="field"><label>Comune</label><input name="city" value="{esc(co['city'])}"></div><div class="field"><label>Provincia</label><input name="province" value="{esc(co['province'])}" maxlength="2"></div><div class="field"><label>CAP</label><input name="zip" value="{esc(co['zip'])}"></div><div class="field"><label>Codice fiscale</label><input name="tax_code" value="{esc(co['tax_code'])}"></div><div class="field"><label>Partita IVA</label><input name="vat_number" value="{esc(co['vat_number'])}"></div><div class="field"><label>Codice SDI</label><input name="sdi_code" value="{esc(co['sdi_code'])}"></div><div class="field"><label>Telefono</label><input name="phone" value="{esc(co['phone'])}"></div><div class="field"><label>Email</label><input type="email" name="email" value="{esc(co['email'])}"></div><div class="field full"><label>Note</label><input name="notes" value="{esc(co['notes'])}"></div></div><button class="btn" style="margin-top:12px">Salva anagrafica</button></form><form method="post" action="/collaboratori/{co['id']}/elimina" onsubmit="return confirm('Eliminare questo collaboratore dalla lista?')"><button class="btn ghost" style="margin-top:12px">Elimina collaboratore</button></form></section><div style="height:14px"></div><section class="section"><h2>Pratiche collegate</h2><div class="tablebox"><table><thead><tr><th>Pratica</th><th>Animale</th><th>Stato</th><th>Recupero</th></tr></thead><tbody>{rows}</tbody></table></div></section></main>'''
+        tier_rows=''.join(f'''<tr><form method="post" action="/listino/{t['id']}/modifica"><td><input name="weight_min" value="{esc(t['weight_min'])}" inputmode="decimal" style="width:80px" required></td><td><input name="weight_max" value="{esc(t['weight_max'] or '')}" inputmode="decimal" placeholder="senza limite" style="width:100px"></td><td><input name="price" value="{esc(t['price'])}" inputmode="decimal" style="width:100px" required></td><td><button class="btn ghost">Salva</button></form><form method="post" action="/listino/{t['id']}/elimina" onsubmit="return confirm('Eliminare questa fascia di peso?')"><button class="btn ghost">Elimina</button></form></td></tr>''' for t in tiers) or '<tr><td colspan="4" class="sub">Nessuna fascia di peso inserita.</td></tr>'
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{esc(co['name'])}</h1><div class="sub">Anagrafica collaboratore</div></div><a class="btn ghost" href="/collaboratori">Torna alla lista</a></div><section class="section"><h2>Anagrafica</h2><form method="post" action="/collaboratori"><input type="hidden" name="id" value="{co['id']}"><div class="fields"><div class="field full"><label>Nome</label><input name="name" value="{esc(co['name'])}" required></div><div class="field"><label>Sigla</label><input name="code" value="{esc(co['code']) if 'code' in co.keys() else ''}" maxlength="8" placeholder="Es. CV" style="text-transform:uppercase"></div><div class="field full"><label>Indirizzo</label><input name="address" value="{esc(co['address'])}"></div><div class="field"><label>Comune</label><input name="city" value="{esc(co['city'])}"></div><div class="field"><label>Provincia</label><input name="province" value="{esc(co['province'])}" maxlength="2"></div><div class="field"><label>CAP</label><input name="zip" value="{esc(co['zip'])}"></div><div class="field"><label>Codice fiscale</label><input name="tax_code" value="{esc(co['tax_code'])}"></div><div class="field"><label>Partita IVA</label><input name="vat_number" value="{esc(co['vat_number'])}"></div><div class="field"><label>Codice SDI</label><input name="sdi_code" value="{esc(co['sdi_code'])}"></div><div class="field"><label>Telefono</label><input name="phone" value="{esc(co['phone'])}"></div><div class="field"><label>Email</label><input type="email" name="email" value="{esc(co['email'])}"></div><div class="field full"><label>Note</label><input name="notes" value="{esc(co['notes'])}"></div></div><button class="btn" style="margin-top:12px">Salva anagrafica</button></form><form method="post" action="/collaboratori/{co['id']}/elimina" onsubmit="return confirm('Eliminare questo collaboratore dalla lista?')"><button class="btn ghost" style="margin-top:12px">Elimina collaboratore</button></form></section><div style="height:14px"></div><section class="section"><h2>Listino dedicato</h2><p class="sub">Fasce di peso e prezzo: inserendo il peso dell'animale durante la creazione della pratica, il campo Cremazione del preventivo si compila automaticamente con il prezzo della fascia corrispondente. Lascia "A (kg)" vuoto per l'ultima fascia senza limite superiore.</p><div class="tablebox"><table><thead><tr><th>Da (kg)</th><th>A (kg)</th><th>Prezzo €</th><th>Azione</th></tr></thead><tbody>{tier_rows}</tbody></table></div><form method="post" action="/collaboratori/{co['id']}/listino" style="margin-top:14px"><div class="fields"><div class="field"><label>Da (kg)</label><input name="weight_min" required inputmode="decimal" placeholder="Es. 0"></div><div class="field"><label>A (kg)</label><input name="weight_max" inputmode="decimal" placeholder="Vuoto = senza limite"></div><div class="field"><label>Prezzo €</label><input name="price" required inputmode="decimal" placeholder="Es. 150,00"></div></div><button class="btn" style="margin-top:12px">Aggiungi fascia</button></form></section><div style="height:14px"></div><section class="section"><h2>Pratiche collegate</h2><div class="tablebox"><table><thead><tr><th>Pratica</th><th>Animale</th><th>Stato</th><th>Recupero</th></tr></thead><tbody>{rows}</tbody></table></div></section></main>'''
         self.send_html(layout("Collaboratore",body,user))
 
     def save_collaborator(self,user):
         f=self.form(); stamp=now()
         name=f.get("name","").strip()
         if not name: return self.send_error(400,"Il nome del collaboratore è obbligatorio")
-        data=(name, f.get("address","").strip(), f.get("city","").strip(), f.get("province","").strip(), f.get("zip","").strip(), f.get("tax_code","").strip(), f.get("vat_number","").strip(), f.get("sdi_code","").strip(), f.get("phone","").strip(), f.get("email","").strip(), f.get("notes","").strip())
+        data=(name, f.get("address","").strip(), f.get("city","").strip(), f.get("province","").strip(), f.get("zip","").strip(), f.get("tax_code","").strip(), f.get("vat_number","").strip(), f.get("sdi_code","").strip(), f.get("code","").strip().upper(), f.get("phone","").strip(), f.get("email","").strip(), f.get("notes","").strip())
         with db() as c:
             if f.get("id"):
-                c.execute("UPDATE collaborators SET name=?,address=?,city=?,province=?,zip=?,tax_code=?,vat_number=?,sdi_code=?,phone=?,email=?,notes=?,updated_at=? WHERE id=?",data+(stamp,int(f["id"])))
+                c.execute("UPDATE collaborators SET name=?,address=?,city=?,province=?,zip=?,tax_code=?,vat_number=?,sdi_code=?,code=?,phone=?,email=?,notes=?,updated_at=? WHERE id=?",data+(stamp,int(f["id"])))
                 collaborator_id=int(f["id"])
             else:
-                cur=c.execute("INSERT INTO collaborators(name,address,city,province,zip,tax_code,vat_number,sdi_code,phone,email,notes,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",data+(1,stamp,stamp))
+                cur=c.execute("INSERT INTO collaborators(name,address,city,province,zip,tax_code,vat_number,sdi_code,code,phone,email,notes,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",data+(1,stamp,stamp))
                 collaborator_id=cur.lastrowid
         self.redirect(f"/collaboratori/{collaborator_id}")
 
@@ -5101,6 +5212,10 @@ class App(BaseHTTPRequestHandler):
         with db() as c:
             c.execute("UPDATE collaborators SET active=0, updated_at=? WHERE id=?",(now(),collaborator_id))
         self.redirect("/collaboratori")
+
+    def collaborator_tiers_payload(self,c,collaborator_id):
+        rows=c.execute("SELECT id,weight_min,weight_max,price FROM collaborator_price_tiers WHERE collaborator_id=? ORDER BY CAST(weight_min AS REAL)",(collaborator_id,)).fetchall()
+        return [{"id":r["id"],"weight_min":r["weight_min"] or "","weight_max":r["weight_max"] or "","price":r["price"] or ""} for r in rows]
 
     def api_collaborators_search(self,user):
         q=(parse_qs(urlparse(self.path).query).get("q",[""])[0] or "").strip()
@@ -5121,11 +5236,45 @@ class App(BaseHTTPRequestHandler):
                                    WHERE active=1 AND {' AND '.join(where)}
                                    ORDER BY CASE WHEN name LIKE ? COLLATE NOCASE THEN 0 ELSE 9 END, name
                                    LIMIT 50""", args+[f"{q}%"]).fetchall()
-            results=[{"id":r["id"],"name":r["name"] or "","address":r["address"] or "","city":r["city"] or "","province":r["province"] or "","zip":r["zip"] or "","tax_code":r["tax_code"] or "","vat_number":r["vat_number"] or "","sdi_code":r["sdi_code"] or "","phone":r["phone"] or "","email":r["email"] or "","display":r["name"] or "Collaboratore","subtitle":" - ".join(x for x in [r["address"], r["city"]] if x)} for r in rows]
+                results=[{"id":r["id"],"name":r["name"] or "","address":r["address"] or "","city":r["city"] or "","province":r["province"] or "","zip":r["zip"] or "","tax_code":r["tax_code"] or "","vat_number":r["vat_number"] or "","sdi_code":r["sdi_code"] or "","phone":r["phone"] or "","email":r["email"] or "","display":r["name"] or "Collaboratore","subtitle":" - ".join(x for x in [r["address"], r["city"]] if x),"tiers":self.collaborator_tiers_payload(c,r["id"])} for r in rows]
             return self.send_json({"ok":True,"query":q,"results":results})
         except Exception as exc:
             print(f"[COLLABORATOR_SEARCH] errore tipo={type(exc).__name__} lunghezza_query={len(q)}", flush=True)
             return self.send_json({"ok":False,"error":"Errore durante la ricerca collaboratori"},500)
+
+    def api_collaborator_price_tiers(self,user,collaborator_id):
+        with db() as c:
+            tiers=self.collaborator_tiers_payload(c,collaborator_id)
+        return self.send_json({"ok":True,"tiers":tiers})
+
+    def save_collaborator_price_tier(self,user,collaborator_id):
+        f=self.form(); stamp=now()
+        weight_min=f.get("weight_min","").strip().replace(",",".")
+        weight_max=f.get("weight_max","").strip().replace(",",".")
+        price=f.get("price","").strip().replace(",",".")
+        with db() as c:
+            c.execute("INSERT INTO collaborator_price_tiers(collaborator_id,weight_min,weight_max,price,created_at,updated_at) VALUES(?,?,?,?,?,?)",(collaborator_id,weight_min,weight_max or None,price,stamp,stamp))
+        self.redirect(f"/collaboratori/{collaborator_id}")
+
+    def edit_collaborator_price_tier(self,user,tier_id):
+        f=self.form(); stamp=now()
+        weight_min=f.get("weight_min","").strip().replace(",",".")
+        weight_max=f.get("weight_max","").strip().replace(",",".")
+        price=f.get("price","").strip().replace(",",".")
+        with db() as c:
+            row=c.execute("SELECT collaborator_id FROM collaborator_price_tiers WHERE id=?",(tier_id,)).fetchone()
+            if not row: return self.send_error(404)
+            c.execute("UPDATE collaborator_price_tiers SET weight_min=?,weight_max=?,price=?,updated_at=? WHERE id=?",(weight_min,weight_max or None,price,stamp,tier_id))
+            collaborator_id=row["collaborator_id"]
+        self.redirect(f"/collaboratori/{collaborator_id}")
+
+    def delete_collaborator_price_tier(self,user,tier_id):
+        with db() as c:
+            row=c.execute("SELECT collaborator_id FROM collaborator_price_tiers WHERE id=?",(tier_id,)).fetchone()
+            if not row: return self.send_error(404)
+            c.execute("DELETE FROM collaborator_price_tiers WHERE id=?",(tier_id,))
+            collaborator_id=row["collaborator_id"]
+        self.redirect(f"/collaboratori/{collaborator_id}")
 
     def fields_html(self,p=None,user=None):
         return self._fields_html(p,user).replace("Totale servizio €","Totale W €")
@@ -6391,11 +6540,21 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
     def trash_page(self,user):
         with db() as c:
             rows=c.execute("SELECT * FROM practices WHERE deleted_at IS NOT NULL AND deleted_at<>'' ORDER BY deleted_at DESC, id DESC").fetchall()
+            collaborator_ids={int(row["collaborator_id"]) for row in rows if "collaborator_id" in row.keys() and row["collaborator_id"]}
+            collaborator_codes={}
+            if collaborator_ids:
+                marks=','.join('?' for _ in collaborator_ids)
+                collaborator_codes={r["id"]:(r["code"] or "") for r in c.execute(f"SELECT id,code FROM collaborators WHERE id IN ({marks})",tuple(collaborator_ids))}
         if rows:
             body_rows=[]
             for r in rows:
-                animal='/' if (r['service_type'] or '') == 'Cremazione collettiva' else esc(r['animal_name'] or 'Da inserire')
-                owner=esc(((r['owner_first_name'] or '')+' '+(r['owner_last_name'] or '')).strip())
+                collab_code=collaborator_codes.get(int(r["collaborator_id"])) if "collaborator_id" in r.keys() and r["collaborator_id"] else ""
+                animal_prefix=f"{esc(collab_code)} " if collab_code else ""
+                animal='/' if (r['service_type'] or '') == 'Cremazione collettiva' else f'{animal_prefix}{esc(r["animal_name"] or "Da inserire")}'
+                owner_name=((r['owner_first_name'] or '')+' '+(r['owner_last_name'] or '')).strip()
+                if "collaborator_name" in r.keys() and r["collaborator_name"]:
+                    owner_name=r["collaborator_name"]
+                owner=esc(owner_name)
                 display_number=r["original_practice_number"] or r["practice_number"]
                 body_rows.append(f'''<tr><td>{esc(date_it(r["pickup_date"] or r["created_at"]))}</td><td><a href="/pratiche/{r["id"]}"><b>{esc(display_number)}</b></a><br><small>Cestinata il {esc((r["deleted_at"] or "").replace("T"," "))}</small></td><td>{animal}</td><td>{owner}</td><td>{esc(r["clinic_name"] or "-")}</td><td><div class="actions"><form method="post" action="/pratiche/{r["id"]}/ripristina" onsubmit="return confirm('Ripristinare questa pratica?')"><button class="btn ghost">Ripristina</button></form><form method="post" action="/pratiche/{r["id"]}/elimina-definitiva" onsubmit="return confirm('Sei sicuro di voler eliminare definitivamente questa pratica?') && confirm('Questa operazione e irreversibile.')"><input type="hidden" name="confirm_delete" value="ELIMINA DEFINITIVAMENTE"><button class="btn danger-btn">Elimina definitivamente</button></form></div></td></tr>''')
             content=f'''<div class="trash-note">Le pratiche nel Cestino non compaiono in Dashboard e Archivio. Ripristinale se sono state eliminate per errore.</div><div class="tablebox"><table><thead><tr><th>Data recupero</th><th>Pratica</th><th>Animale</th><th>Speditore</th><th>Veterinario</th><th>Azioni</th></tr></thead><tbody>{''.join(body_rows)}</tbody></table></div>'''
