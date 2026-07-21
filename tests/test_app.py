@@ -895,6 +895,53 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn("Conferma scarico", same_period_page)
         self.assertIn("Nessuna pratica da confermare nel periodo selezionato", same_period_page)
 
+    def test_disposal_page_shows_animal_weight_and_group_kg_totals(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            for number, weight in (("PP-KG-1", "10"), ("PP-KG-2", "5,5")):
+                conn.execute(
+                    """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
+                       created_at,updated_at,created_by,service_type,estimated_weight)
+                       VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                    (number, "Privato", "Livorno", "Ritirato", "2026-07-15", stamp, stamp, admin["id"], "Cremazione collettiva", weight),
+                )
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/smaltimenti?dal=2026-07-01&al=2026-07-31"
+        self.handler.disposal_page(admin)
+        page = rendered[-1]
+        self.assertIn("10 kg", page)
+        self.assertIn("5,5 kg", page)
+        self.assertIn("15,5 kg", page)
+        self.assertIn("<th>Peso</th>", page)
+
+    def test_disposal_page_filters_by_practice_status(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
+                   created_at,updated_at,created_by,service_type) VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("PP-STATOF-PENDING", "Privato", "Livorno", "Ritirato", "2026-07-15", stamp, stamp, admin["id"], "Cremazione collettiva"),
+            )
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
+                   created_at,updated_at,created_by,service_type) VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("PP-STATOF-DONE", "Privato", "Livorno", "Smaltito", "2026-07-16", stamp, stamp, admin["id"], "Cremazione collettiva"),
+            )
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/smaltimenti?dal=2026-07-01&al=2026-07-31&stato=da_confermare"
+        self.handler.disposal_page(admin)
+        pending_only_page = rendered[-1]
+        self.assertIn("PP-STATOF-PENDING", pending_only_page)
+        self.assertNotIn("PP-STATOF-DONE", pending_only_page)
+        self.assertIn("1 da confermare · 1 già smaltite", pending_only_page)
+        rendered_done = []; self.handler.send_html = lambda content, *a: rendered_done.append(content)
+        self.handler.path = "/smaltimenti?dal=2026-07-01&al=2026-07-31&stato=smaltito"
+        self.handler.disposal_page(admin)
+        done_only_page = rendered_done[-1]
+        self.assertNotIn("PP-STATOF-PENDING", done_only_page)
+        self.assertIn("PP-STATOF-DONE", done_only_page)
+        self.assertIn("1 da confermare · 1 già smaltite", done_only_page)
+
     def test_disposal_confirm_rejects_empty_period_without_creating_batch(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
