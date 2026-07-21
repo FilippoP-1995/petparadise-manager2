@@ -3065,7 +3065,7 @@ SIDEBAR_LINKS=[
     ("/impostazioni","settings","Impostazioni"),("/il-mio-profilo","user","Il mio profilo"),("mailto:assistenza@petparadise.it","help","Assistenza"),
 ]
 DASHBOARD_SECTION_LABELS=[
-    ("practices","Pratiche / Ritiri"),("payments","Pagamenti"),("income_chart","Entrate settimana in corso"),("recent_practices","Ultime 10 pratiche"),
+    ("practices","Pratiche / Ritiri"),("payments","Pagamenti"),("income_chart","Entrate anno in corso"),("recent_practices","Ultime 10 pratiche"),
 ]
 BOTTOM_NAV_DEFAULT_SLOTS=["Dashboard","Calendario","Archivio"]
 
@@ -3510,7 +3510,8 @@ class App(BaseHTTPRequestHandler):
         q=parse_qs(urlparse(getattr(self,"path","/")).query);today=datetime.now().date()
         practice_period,practice_from,practice_to=dashboard_period_bounds((q.get("pratiche_periodo") or ["oggi"])[0],today)
         payment_period,payment_from,payment_to=dashboard_period_bounds((q.get("pagamenti_periodo") or ["oggi"])[0],today)
-        _,week_start,week_end=dashboard_period_bounds("settimana",today);days=[week_start+timedelta(days=offset) for offset in range(7)]
+        year_start=today.replace(month=1,day=1);year_end=today.replace(month=12,day=31)
+        months=[year_start.replace(month=m) for m in range(1,13)]
         active="p.deleted_at IS NULL OR p.deleted_at=''"
         ritiro_date=dashboard_practice_date_sql("ritirati","p");programma_date=dashboard_practice_date_sql("in_programma","p");consegna_date=dashboard_practice_date_sql("consegnati","p")
         with db() as c:
@@ -3527,10 +3528,10 @@ class App(BaseHTTPRequestHandler):
                                          WHERE ({active}) AND m.amount>0 AND date(m.paid_at) BETWEEN date(?) AND date(?)
                                          AND m.payment_type IN ('acconto_ordinario','acconto_d','saldo_ordinario','saldo_d')
                                          GROUP BY category""",(payment_from.isoformat(),payment_to.isoformat())).fetchall()}
-            income_rows=c.execute(f"""SELECT date(m.paid_at) day,COALESCE(sum(m.amount),0) amount
+            income_rows=c.execute(f"""SELECT strftime('%Y-%m',m.paid_at) month,COALESCE(sum(m.amount),0) amount
                                       FROM payment_movements m JOIN practices p ON p.id=m.practice_id
                                       WHERE ({active}) AND date(m.paid_at) BETWEEN date(?) AND date(?)
-                                      GROUP BY date(m.paid_at)""",(week_start.isoformat(),week_end.isoformat())).fetchall()
+                                      GROUP BY strftime('%Y-%m',m.paid_at)""",(year_start.isoformat(),year_end.isoformat())).fetchall()
             recent=c.execute("SELECT * FROM practices WHERE deleted_at IS NULL OR deleted_at='' ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) DESC,id DESC LIMIT 10").fetchall()
             incomplete=c.execute("SELECT count(*) n FROM practices WHERE (deleted_at IS NULL OR deleted_at='') AND data_complete=0 AND status!='Consegnato'").fetchone()["n"]
         def state_url(event,state="",include_dates=True):
@@ -3554,10 +3555,11 @@ class App(BaseHTTPRequestHandler):
         payment_query=urlencode({"dal":payment_from.isoformat(),"al":payment_to.isoformat(),"periodo":payment_period})
         payment_specs=[("Da saldare","Da saldare","wallet","payment-due",f"/pagamenti/da-saldare?{payment_query}"),("Acconto","Acconti","receipt","payment-deposit",f"/pagamenti/acconti?{payment_query}"),("Pagato","Pagati","chart","payment-paid",f"/pagamenti/pagati?{payment_query}")]
         payment_cards=''.join(f'<a class="payment-card {cls}" data-dashboard-payment="{state}" data-count="{payment_counts[state]}" data-amount="{payment_totals[state]:.2f}" href="{href}"><span><small>{label}</small><strong>{payment_counts[state]}</strong><em>{money_it(payment_totals[state])}</em>{"<small>Tutte le rimanenze aperte</small>" if state=="Da saldare" else ""}</span><span class="metric-icon">{lucide(icon)}</span></a>' for state,label,icon,cls,href in payment_specs)
-        income_by_day={day.isoformat():0.0 for day in days}
+        income_by_month={month.strftime('%Y-%m'):0.0 for month in months}
         for row in income_rows:
-            if row["day"] in income_by_day:income_by_day[row["day"]]+=money_value(row["amount"])
-        income_values=[income_by_day[day.isoformat()] for day in days];income_total=sum(income_values);chart=income_chart(income_values,[day.strftime("%d/%m") for day in days])
+            if row["month"] in income_by_month:income_by_month[row["month"]]+=money_value(row["amount"])
+        month_labels_it=("Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic")
+        income_values=[income_by_month[month.strftime('%Y-%m')] for month in months];income_total=sum(income_values);chart=income_chart(income_values,list(month_labels_it))
         def selector(key,current,other_key,other):
             links=[]
             for value,label in (("oggi","Oggi"),("settimana","Settimana"),("mese","Mese")):
@@ -3569,7 +3571,7 @@ class App(BaseHTTPRequestHandler):
         dashboard_sections={
             "practices": f'''<div class="dashboard-section-head"><h2 class="dashboard-heading">Pratiche / Ritiri</h2>{practice_selector}</div><section class="dashboard-states">{state_cards}</section>''',
             "payments": f'''<div class="dashboard-section-head"><h2 class="dashboard-heading">Pagamenti</h2>{payment_selector}</div><section class="dashboard-payments">{payment_cards}</section>''',
-            "income_chart": f'''<section class="dashboard-chart-only"><a class="dashboard-panel income-panel" href="/bilanci?dal={week_start.isoformat()}&al={week_end.isoformat()}" aria-label="Apri Bilanci: entrate della settimana in corso"><header><div><h2>Entrate settimana in corso</h2><p>{week_start.strftime('%d/%m/%Y')} - {week_end.strftime('%d/%m/%Y')} · Totale: <strong>{money_it(income_total)}</strong></p></div><span class="panel-link">Apri Bilanci →</span></header>{chart}</a></section>''',
+            "income_chart": f'''<section class="dashboard-chart-only"><a class="dashboard-panel income-panel" href="/bilanci?dal={year_start.isoformat()}&al={year_end.isoformat()}" aria-label="Apri Bilanci: entrate dell'anno in corso"><header><div><h2>Entrate anno in corso</h2><p>{year_start.strftime('%d/%m/%Y')} - {year_end.strftime('%d/%m/%Y')} · Totale: <strong>{money_it(income_total)}</strong></p></div><span class="panel-link">Apri Bilanci →</span></header>{chart}</a></section>''',
             "recent_practices": f'''<section class="dashboard-recent"><div class="titlebar"><h2>Ultime 10 pratiche per data recupero</h2><a href="/archivio/pratiche">Apri archivio</a></div><div class="tablebox dashboard-table-scroll"><table class="practice-list-table"><thead><tr><th>Animale</th><th>Età</th><th>Proprietario</th><th>Data recupero</th><th>Codice pratica</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Totale pagato</th><th>Fattura</th><th>Totale W</th><th>TOTALE D</th><th>Acconto</th><th>Rimanenza</th><th>Stati</th></tr></thead><tbody>{self.practice_rows(recent,True)}</tbody></table></div></section>''',
         }
         default_dashboard_order=[sid for sid,_ in DASHBOARD_SECTION_LABELS]

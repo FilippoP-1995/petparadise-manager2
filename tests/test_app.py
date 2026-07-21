@@ -2235,7 +2235,10 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('data-dashboard-payment="Da saldare" data-count="3" data-amount="480.00"',page)
         self.assertIn('data-dashboard-payment="Acconto" data-count="2" data-amount="200.00"',page)
         self.assertIn('data-dashboard-payment="Pagato" data-count="1" data-amount="200.00"',page)
-        self.assertIn("Entrate settimana in corso",page);self.assertIn("400,00",page)
+        year_start=today.replace(month=1,day=1)
+        old_in_same_year=datetime.strptime(old_day,"%Y-%m-%d").date()>=year_start
+        expected_year_income=400.0+(100.0 if old_in_same_year else 0.0)
+        self.assertIn("Entrate anno in corso",page);self.assertIn(app.money_it(expected_year_income),page)
         self.assertIn("Ultime 10 pratiche per data recupero",page);self.assertIn("Apri archivio",page)
         self.assertNotIn("Attività recenti",page);self.assertNotIn("Centro notifiche",page)
         self.assertEqual(page.count('class="period-selector"'),2);self.assertIn("/notifiche",page)
@@ -2275,7 +2278,7 @@ class PetParadiseTests(unittest.TestCase):
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
         rendered=[]; self.handler.send_html=lambda content,*args: rendered.append(content)
         self.handler.dashboard(admin)
-        self.assertIn("Entrate settimana in corso",rendered[-1])
+        self.assertIn("Entrate anno in corso",rendered[-1])
         self.assertIn("Totale W",rendered[-1])
         self.assertNotIn("Totale calcolato",rendered[-1])
         self.handler.path="/bilanci"
@@ -2488,7 +2491,7 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path = "/"
         self.handler.dashboard(alessio)
         default_page = rendered[-1]
-        for section_text in ("Pratiche / Ritiri", "Pagamenti", "Entrate settimana in corso", "Ultime 10 pratiche per data recupero"):
+        for section_text in ("Pratiche / Ritiri", "Pagamenti", "Entrate anno in corso", "Ultime 10 pratiche per data recupero"):
             self.assertIn(section_text, default_page)
         self.assertNotIn("light-theme", default_page.split("<body", 1)[1].split(">", 1)[0])
 
@@ -2512,7 +2515,7 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.dashboard(serena)
         serena_page = rendered[-1]
         self.assertNotIn("Pratiche / Ritiri", serena_page)
-        self.assertNotIn("Entrate settimana in corso", serena_page)
+        self.assertNotIn("Entrate anno in corso", serena_page)
         payments_index = serena_page.index('<h2 class="dashboard-heading">Pagamenti</h2>')
         recent_index = serena_page.index("<h2>Ultime 10 pratiche per data recupero</h2>")
         self.assertLess(payments_index, recent_index)
@@ -2521,7 +2524,7 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path = "/"
         self.handler.dashboard(alessio)
         alessio_page = rendered[-1]
-        for section_text in ("Pratiche / Ritiri", "Pagamenti", "Entrate settimana in corso", "Ultime 10 pratiche per data recupero"):
+        for section_text in ("Pratiche / Ritiri", "Pagamenti", "Entrate anno in corso", "Ultime 10 pratiche per data recupero"):
             self.assertIn(section_text, alessio_page)
         self.assertNotIn("light-theme", alessio_page.split("<body", 1)[1].split(">", 1)[0])
 
