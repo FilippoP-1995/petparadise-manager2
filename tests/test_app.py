@@ -2993,6 +2993,17 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('name="code"', rendered[-1])
         self.assertIn(">CV<", rendered[-1])
 
+    def test_collaborators_add_form_is_collapsed_behind_a_button(self):
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/collaboratori"
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.collaborators_page(admin)
+        page = rendered[-1]
+        self.assertIn('<details class="advanced-search"><summary>Aggiungi collaboratore</summary>', page)
+        self.assertNotIn('<section class="section"><h2>Aggiungi collaboratore</h2>', page)
+
     def test_weight_field_triggers_collaborator_price_autofill_js(self):
         js = app.APP_JS
         self.assertIn("function ppmApplyCollaboratorWeightPrice(){", js)
