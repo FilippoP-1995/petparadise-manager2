@@ -727,6 +727,78 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('class="collapsible-body"', page)
         self.assertIn("function toggleCollapsibleSection(button)", app.APP_JS)
 
+    def test_expense_create_edit_delete_lifecycle_and_validation(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.form = lambda: {"dal": "2026-06-01", "al": "2026-06-01", "expense_date": "", "amount": "", "channel": "", "description": ""}
+        pages = []
+        self.handler.expense_form_page = lambda user, eid=None, error="", draft=None: pages.append(error)
+        self.handler.expense_create(admin)
+        self.assertIn("data valida", pages[-1])
+        redirects = []
+        self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.form = lambda: {"dal": "2026-06-01", "al": "2026-06-01", "expense_date": "2026-06-01", "amount": "50,00", "channel": "W", "description": "Acquisto materiale imballaggio", "category": "Materiali"}
+        self.handler.expense_create(admin)
+        self.assertEqual(redirects[-1], "/bilanci?dal=2026-06-01&al=2026-06-01")
+        with app.db() as conn:
+            row = conn.execute("SELECT * FROM expenses WHERE description='Acquisto materiale imballaggio'").fetchone()
+        self.assertEqual((row["amount"], row["channel"], row["category"], row["created_by"]), ("50.00", "W", "Materiali", admin["id"]))
+        eid = row["id"]
+        self.handler.form = lambda: {"dal": "2026-06-01", "al": "2026-06-01", "expense_date": "2026-06-02", "amount": "75,50", "channel": "D", "description": "Assicurazione furgone", "category": "Altro", "category_custom": "Assicurazione"}
+        self.handler.expense_action(admin, eid, "modifica")
+        with app.db() as conn:
+            row = conn.execute("SELECT * FROM expenses WHERE id=?", (eid,)).fetchone()
+        self.assertEqual((row["expense_date"], row["amount"], row["channel"], row["description"], row["category"]),
+                          ("2026-06-02", "75.50", "D", "Assicurazione furgone", "Assicurazione"))
+        self.handler.form = lambda: {"dal": "2026-06-01", "al": "2026-06-01"}
+        self.handler.expense_action(admin, eid, "elimina")
+        with app.db() as conn:
+            self.assertIsNone(conn.execute("SELECT * FROM expenses WHERE id=?", (eid,)).fetchone())
+
+    def test_balances_totals_are_net_of_expenses_independently_per_channel(self):
+        today = app.datetime.now().date().isoformat()
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            base = ("Privato", "Livorno", "Ritirato", today, stamp, stamp, admin["id"])
+            w_id = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
+                   created_at,updated_at,created_by,animal_name,price_cremation,total_service,deposit,payment_status)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("PP-NETW", *base, "Argo", "820", "820", "0", "Pagato"),
+            ).lastrowid
+            d_id = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
+                   created_at,updated_at,created_by,animal_name,price_cremation,total_service,total_text,deposit,payment_status)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("PP-NETD", *base, "Bilbo", "500", "500", "500", "0", "Pagato"),
+            ).lastrowid
+            self.handler.add_payment_movement(conn, w_id, "saldo_ordinario", "W", 820, admin["id"], "Test", stamp)
+            self.handler.add_payment_movement(conn, d_id, "saldo_d", "D", 500, admin["id"], "Test", stamp)
+            conn.execute("INSERT INTO expenses(expense_date,amount,channel,description,category,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                         (today, "50.00", "W", "Materiale imballaggio", "Materiali", admin["id"], stamp, admin["id"], stamp))
+            conn.execute("INSERT INTO expenses(expense_date,amount,channel,description,category,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                         (today, "120.00", "D", "Fornitore urne", "Fornitori", admin["id"], stamp, admin["id"], stamp))
+        rendered = []
+        self.handler.send_html = lambda content: rendered.append(content)
+        self.handler.path = f"/bilanci?dal={today}&al={today}&voce=totale_calcolato"
+        self.handler.balances_v2(admin)
+        page = rendered[-1]
+        self.assertIn("€ 770,00", page)
+        self.assertIn("Entrate lorde: € 820,00 · Uscite: € 50,00", page)
+        self.handler.path = f"/bilanci?dal={today}&al={today}&voce=totale_d"
+        self.handler.balances_v2(admin)
+        page = rendered[-1]
+        self.assertIn("€ 380,00", page)
+        self.assertIn("Entrate lorde: € 500,00 · Uscite: € 120,00", page)
+        self.handler.path = f"/bilanci?dal={today}&al={today}"
+        self.handler.balances_v2(admin)
+        page = rendered[-1]
+        self.assertIn("Materiale imballaggio", page)
+        self.assertIn("Fornitore urne", page)
+        self.assertIn("+ Registra uscita", page)
+        self.assertIn("Uscite del periodo", page)
+        self.assertIn("€ 1.150,00", page)
+
     def test_balances_table_shows_sticky_animal_column_with_collaborator_sigla(self):
         today = app.datetime.now().date().isoformat()
         with app.db() as conn:
