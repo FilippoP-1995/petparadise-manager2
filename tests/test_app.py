@@ -780,24 +780,138 @@ class PetParadiseTests(unittest.TestCase):
                          (today, "120.00", "D", "Fornitore urne", "Fornitori", admin["id"], stamp, admin["id"], stamp))
         rendered = []
         self.handler.send_html = lambda content: rendered.append(content)
-        self.handler.path = f"/bilanci?dal={today}&al={today}&voce=totale_calcolato"
-        self.handler.balances_v2(admin)
-        page = rendered[-1]
-        self.assertIn("€ 770,00", page)
-        self.assertIn("Entrate lorde: € 820,00 · Uscite: € 50,00", page)
-        self.handler.path = f"/bilanci?dal={today}&al={today}&voce=totale_d"
-        self.handler.balances_v2(admin)
-        page = rendered[-1]
-        self.assertIn("€ 380,00", page)
-        self.assertIn("Entrate lorde: € 500,00 · Uscite: € 120,00", page)
         self.handler.path = f"/bilanci?dal={today}&al={today}"
         self.handler.balances_v2(admin)
         page = rendered[-1]
+        self.assertIn('<small>Entrate W</small><strong>€ 820,00</strong>', page)
+        self.assertIn('<small>Uscite W</small><strong>€ 50,00</strong>', page)
+        self.assertIn('<small>Totale W</small><strong>€ 770,00</strong>', page)
+        self.assertIn('<small>Entrate D</small><strong>€ 500,00</strong>', page)
+        self.assertIn('<small>Uscite D</small><strong>€ 120,00</strong>', page)
+        self.assertIn('<small>Totale D</small><strong>€ 380,00</strong>', page)
+        self.assertIn('class="balance-card balance-card-static"', page)
+        self.assertIn("€ 1.150,00", page)
+        self.assertIn("Entrate lorde: € 1.320,00 · Uscite: € 170,00", page)
         self.assertIn("Materiale imballaggio", page)
         self.assertIn("Fornitore urne", page)
         self.assertIn("+ Registra uscita", page)
         self.assertIn("Uscite del periodo", page)
-        self.assertIn("€ 1.150,00", page)
+        self.handler.path = f"/bilanci?dal={today}&al={today}&voce=totale_calcolato"
+        self.handler.balances_v2(admin)
+        page = rendered[-1]
+        self.assertIn("€ 820,00", page)
+        self.handler.path = f"/bilanci?dal={today}&al={today}&voce=totale_d"
+        self.handler.balances_v2(admin)
+        page = rendered[-1]
+        self.assertIn("€ 500,00", page)
+
+    def test_disposal_page_groups_by_branch_and_channel_and_excludes_ineligible(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            def collettiva(number, branch, total_text, pickup, status="Ritirato"):
+                return conn.execute(
+                    """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
+                       created_at,updated_at,created_by,service_type,total_text)
+                       VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                    (number, "Privato", branch, status, pickup, stamp, stamp, admin["id"], "Cremazione collettiva", total_text),
+                ).lastrowid
+            collettiva("PP-DISP-LI-W1", "Livorno", "", "2026-07-15")
+            collettiva("PP-DISP-LI-W2", "Livorno", "", "2026-07-16")
+            collettiva("PP-DISP-LI-D1", "Livorno", "300", "2026-07-17")
+            collettiva("PP-DISP-EM-W1", "Empoli", "", "2026-07-18")
+            collettiva("PP-DISP-ALREADY", "Livorno", "", "2026-07-16", status="Smaltito")
+            collettiva("PP-DISP-OUTSIDE", "Livorno", "", "2026-06-01")
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
+                            created_at,updated_at,created_by,service_type,animal_name)
+                            VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                         ("PP-DISP-SINGOLA", "Privato", "Livorno", "Ritirato", "2026-07-15", stamp, stamp, admin["id"], "Cremazione singola", "Fido"))
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/smaltimenti?dal=2026-07-01&al=2026-07-31"
+        self.handler.disposal_page(admin)
+        page = rendered[-1]
+        self.assertIn("PP-DISP-LI-W1", page)
+        self.assertIn("PP-DISP-LI-W2", page)
+        self.assertIn("PP-DISP-LI-D1", page)
+        self.assertIn("PP-DISP-EM-W1", page)
+        self.assertNotIn("PP-DISP-ALREADY", page)
+        self.assertNotIn("PP-DISP-OUTSIDE", page)
+        self.assertNotIn("PP-DISP-SINGOLA", page)
+        self.assertIn("Livorno · Circuito W", page)
+        self.assertIn("Livorno · Circuito D", page)
+        self.assertIn("Empoli · Circuito W", page)
+        self.assertIn("Conferma scarico", page)
+        self.assertIn("cambierà lo stato di 4 pratiche in Smaltito", page)
+
+    def test_disposal_confirm_updates_statuses_records_history_and_excludes_from_future_periods(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            w_id = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
+                   created_at,updated_at,created_by,service_type) VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("PP-CONF-W", "Privato", "Livorno", "Ritirato", "2026-07-15", stamp, stamp, admin["id"], "Cremazione collettiva"),
+            ).lastrowid
+            d_id = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
+                   created_at,updated_at,created_by,service_type,total_text) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("PP-CONF-D", "Privato", "Empoli", "Ritirato", "2026-07-16", stamp, stamp, admin["id"], "Cremazione collettiva", "250"),
+            ).lastrowid
+        redirects = []; self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.form = lambda: {"dal": "2026-07-01", "al": "2026-07-31"}
+        self.handler.disposal_confirm(admin)
+        self.assertEqual(len(redirects), 1)
+        self.assertTrue(redirects[-1].startswith("/smaltimenti/storico/"))
+        batch_id = int(redirects[-1].rsplit("/", 1)[-1])
+        with app.db() as conn:
+            for pid in (w_id, d_id):
+                row = conn.execute("SELECT status FROM practices WHERE id=?", (pid,)).fetchone()
+                self.assertEqual(row["status"], "Smaltito")
+            batch = conn.execute("SELECT * FROM disposal_batches WHERE id=?", (batch_id,)).fetchone()
+            self.assertEqual(batch["total_count"], 2)
+            self.assertEqual(batch["period_from"], "2026-07-01")
+            self.assertEqual(batch["period_to"], "2026-07-31")
+            breakdown = app.json.loads(batch["breakdown_json"])
+            self.assertEqual(breakdown, {"Livorno|W": 1, "Empoli|D": 1})
+            linked = {row["practice_id"] for row in conn.execute("SELECT practice_id FROM disposal_batch_practices WHERE batch_id=?", (batch_id,))}
+            self.assertEqual(linked, {w_id, d_id})
+            history_events = conn.execute("SELECT event_type,new_value FROM practice_history WHERE practice_id=?", (w_id,)).fetchall()
+            self.assertTrue(any(h["event_type"] == "Smaltimento" and h["new_value"] == "Smaltito" for h in history_events))
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/smaltimenti?dal=2026-08-01&al=2026-08-31"
+        self.handler.disposal_page(admin)
+        page = rendered[-1]
+        self.assertNotIn("PP-CONF-W", page)
+        self.assertNotIn("PP-CONF-D", page)
+        self.assertIn("Nessuna pratica di cremazione collettiva da smaltire", page)
+
+    def test_disposal_confirm_rejects_empty_period_without_creating_batch(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/smaltimenti"
+        self.handler.form = lambda: {"dal": "2026-09-01", "al": "2026-09-30"}
+        self.handler.disposal_confirm(admin)
+        self.assertIn("Nessuna pratica", rendered[-1])
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT count(*) n FROM disposal_batches").fetchone()["n"], 0)
+
+    def test_disposal_batch_detail_shows_frozen_breakdown_and_linked_practices(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
+                   created_at,updated_at,created_by,service_type) VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("PP-BATCH", "Privato", "Livorno", "Ritirato", "2026-07-15", stamp, stamp, admin["id"], "Cremazione collettiva"),
+            )
+        redirects = []; self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.form = lambda: {"dal": "2026-07-01", "al": "2026-07-31"}
+        self.handler.disposal_confirm(admin)
+        batch_id = int(redirects[-1].rsplit("/", 1)[-1])
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.disposal_batch_detail(admin, batch_id)
+        page = rendered[-1]
+        self.assertIn("PP-BATCH", page)
+        self.assertIn("Livorno · Circuito W", page)
+        self.assertIn("<b>1</b>", page)
 
     def test_balances_table_shows_sticky_animal_column_with_collaborator_sigla(self):
         today = app.datetime.now().date().isoformat()
@@ -1377,6 +1491,39 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn("Firma su telefono",rendered[-1])
         with app.db() as conn:
             self.assertEqual(conn.execute("SELECT count(*) n FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["n"],0)
+
+    def test_practice_summary_shows_every_multiple_urn_cast_and_accessory_item(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,
+                                created_by,animal_name,service_type,urn_notes,price_urn,urn_notes_2,price_urn_2,
+                                price_cast,price_cast_2,price_paw_cast,price_paw_cast_2,price_paw_cast_3,price_paw_cast_4,
+                                price_nose_cast,price_nose_cast_2,price_nose_cast_3,price_nose_cast_4,
+                                price_accessories,price_accessories_2,payment_status)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                             ("PP-MULTI","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Rex","Cremazione singola",
+                              "Urna base","80","Urna scorta","90",
+                              "50","55","20","21","22","23",
+                              "30","31","32","33",
+                              "10","11","Da saldare")).lastrowid
+        rendered=[]; self.handler.send_html=lambda content,*args: rendered.append(content)
+        self.handler.practice(admin,pid)
+        page=rendered[-1]
+        self.assertIn("Urna base",page)
+        self.assertIn("Urna scorta",page)
+        for label,amount in (("Calco","€ 50,00"),("Secondo calco","€ 55,00"),
+                              ("Calco polpastrello","€ 20,00"),("Secondo calco polpastrello","€ 21,00"),
+                              ("Calco naso","€ 30,00"),("Secondo calco naso","€ 31,00"),
+                              ("Accessori","€ 10,00"),("Secondi accessori","€ 11,00")):
+            self.assertIn(f'<small>{label}</small><b>{amount}</b>',page)
+        paw_alt_count=page.count('<small>Altro calco polpastrello</small>')
+        nose_alt_count=page.count('<small>Altro calco naso</small>')
+        self.assertEqual(paw_alt_count,2)
+        self.assertEqual(nose_alt_count,2)
+        self.assertIn("€ 22,00",page)
+        self.assertIn("€ 23,00",page)
+        self.assertIn("€ 32,00",page)
+        self.assertIn("€ 33,00",page)
 
     def test_archive_tables_show_age_invoice_and_collapsible_months(self):
         with app.db() as conn:

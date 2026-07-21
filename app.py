@@ -399,6 +399,20 @@ def init_db():
           updated_by INTEGER REFERENCES users(id),
           updated_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS disposal_batches (
+          id INTEGER PRIMARY KEY,
+          period_from TEXT NOT NULL,
+          period_to TEXT NOT NULL,
+          confirmed_at TEXT NOT NULL,
+          confirmed_by INTEGER REFERENCES users(id),
+          total_count INTEGER NOT NULL,
+          breakdown_json TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS disposal_batch_practices (
+          id INTEGER PRIMARY KEY,
+          batch_id INTEGER NOT NULL REFERENCES disposal_batches(id) ON DELETE CASCADE,
+          practice_id INTEGER NOT NULL REFERENCES practices(id) ON DELETE CASCADE
+        );
         INSERT OR IGNORE INTO settings(key,value) VALUES('next_practice_number','1');
         INSERT OR IGNORE INTO settings(key,value) VALUES('next_cr_number','1');
         INSERT OR IGNORE INTO settings(key,value) VALUES('next_sm_number','1');
@@ -1026,12 +1040,14 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .light-theme .calendar-day-free-note{color:#526174}
 @media(max-width:520px){.calendar-day-event{flex-wrap:wrap;align-items:flex-start;gap:4px 12px}.calendar-day-event .calendar-event-time{order:-1;flex-basis:100%}.calendar-day-event .calendar-event-icon{order:0}.calendar-day-event .calendar-event-copy{order:1}}
 .balance-total-secondary{margin-top:6px!important;color:#94a3b8;font-size:11px;font-weight:500}
-.balance-card-secondary{display:block;margin-top:2px;color:#94a3b8;font-size:10.5px;font-weight:500;line-height:1.35}
 .expenses-section{margin-top:18px}
 .expenses-channel-title{margin:16px 0 8px;font-size:13px;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em}
 .expenses-channel-title:first-child{margin-top:0}
 .expenses-section .actions{display:flex;gap:8px;flex-wrap:nowrap}
-.light-theme .balance-total-secondary,.light-theme .balance-card-secondary,.light-theme .expenses-channel-title{color:#526174}
+.balance-card-static{cursor:default}
+.balance-card-static:hover{transform:none;border-color:#334155}
+.light-theme .balance-total-secondary,.light-theme .expenses-channel-title{color:#526174}
+.light-theme .balance-card-static:hover{border-color:#cbd5e1}
 """
 
 APP_JS = r"""
@@ -3024,7 +3040,7 @@ def collapse_advanced_search(body):
 
 SIDEBAR_LINKS=[
     ("/","home","Dashboard"),("/calendario","calendar","Calendario"),("/programma-cremazioni","paw","Programma Cremazioni"),("/notifiche","bell","Notifiche"),("/pratiche","archive","Archivio"),
-    ("/catalogo-urne","archive","Catalogo Urne"),("/bilanci","chart","Report"),("/conversazioni-whatsapp","message","Conversazioni WhatsApp"),("/veterinari","stethoscope","Veterinari"),
+    ("/catalogo-urne","archive","Catalogo Urne"),("/bilanci","chart","Report"),("/smaltimenti","archive","Smaltimenti"),("/conversazioni-whatsapp","message","Conversazioni WhatsApp"),("/veterinari","stethoscope","Veterinari"),
     ("/collaboratori","briefcase","Collaboratori"),
     ("/prodotti","clipboard","Prodotti"),("/ordini","receipt","Ordini"),
     ("/archivio/pratiche","clipboard","Gestionale"),("/clienti","users","Clienti"),
@@ -3193,6 +3209,9 @@ class App(BaseHTTPRequestHandler):
         if path == "/bilanci/uscite/nuova": return self.expense_form_page(user)
         match = re.fullmatch(r"/bilanci/uscite/(\d+)/modifica",path)
         if match: return self.expense_form_page(user,int(match.group(1)))
+        if path == "/smaltimenti": return self.disposal_page(user)
+        match = re.fullmatch(r"/smaltimenti/storico/(\d+)",path)
+        if match: return self.disposal_batch_detail(user,int(match.group(1)))
         if path == "/programma-cremazioni": return self.cremation_schedule(user)
         match = re.fullmatch(r"/pagamenti/(da-saldare|acconti|pagati)", path)
         if match: return self.payment_overview(user,match.group(1))
@@ -3283,6 +3302,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/bilanci/uscite": return self.expense_create(user)
         match = re.fullmatch(r"/bilanci/uscite/(\d+)/(modifica|elimina)",path)
         if match: return self.expense_action(user,int(match.group(1)),match.group(2))
+        if path == "/smaltimenti/conferma": return self.disposal_confirm(user)
         if path == "/api/push/subscribe": return self.push_subscribe(user)
         if path == "/api/push/unsubscribe": return self.push_unsubscribe(user)
         if path == "/api/push/test": return self.push_test(user)
@@ -4305,20 +4325,25 @@ class App(BaseHTTPRequestHandler):
         gross_w=breakdown["totale_calcolato"]; gross_d=breakdown["totale_d"]
         expense_w=sum(money_value(e["amount"]) for e in expenses if e["channel"]=="W")
         expense_d=sum(money_value(e["amount"]) for e in expenses if e["channel"]=="D")
-        breakdown["totale_calcolato"]=gross_w-expense_w
-        breakdown["totale_d"]=gross_d-expense_d
-        gross_by_key={"totale_calcolato":gross_w,"totale_d":gross_d}
-        expense_by_key={"totale_calcolato":expense_w,"totale_d":expense_d}
+        net_w=gross_w-expense_w; net_d=gross_d-expense_d
         gross_all=sum(money_value(row["amount"]) for row in movements)
         shown_total=breakdown[selected] if selected else gross_all-(expense_w+expense_d)
         def render_balance_card(key,label):
             active="active" if selected==key else ""
             href=f"/bilanci?dal={quote(date_from)}&al={quote(date_to)}&voce={quote(key)}"
-            if key in gross_by_key:
-                secondary=f'<span class="balance-card-secondary">Entrate lorde: {money_it(gross_by_key[key])} · Uscite: {money_it(expense_by_key[key])}</span>'
-                return f'<a class="balance-card {active}" href="{href}"><small>{label}</small><strong>{money_it(breakdown[key])}</strong>{secondary}</a>'
             return f'<a class="balance-card {active}" href="{href}"><small>{label}</small><strong>{money_it(breakdown[key])}</strong></a>'
-        cards=''.join(render_balance_card(key,label) for key,label,_ in categories)
+        def static_card(label,value):
+            return f'<div class="balance-card balance-card-static"><small>{label}</small><strong>{money_it(value)}</strong></div>'
+        card_parts=[]
+        for key,label,_ in categories:
+            card_parts.append(render_balance_card(key,label))
+            if key=="totale_calcolato":
+                card_parts.append(static_card("Uscite W",expense_w))
+                card_parts.append(static_card("Totale W",net_w))
+            elif key=="totale_d":
+                card_parts.append(static_card("Uscite D",expense_d))
+                card_parts.append(static_card("Totale D",net_d))
+        cards=''.join(card_parts)
         type_labels={"acconto_ordinario":"Acconto W","saldo_ordinario":"Saldo W","acconto_d":"Acconto D","saldo_d":"Saldo D","rettifica":"Rettifica"}
         table_rows=[]; chart_by_day={}
         component_selected=bool(selected and category_fields.get(selected))
@@ -4365,9 +4390,7 @@ class App(BaseHTTPRequestHandler):
             subtitle="Risultati filtrati per data economica"
         chart_description="Ogni voce è conteggiata una sola volta per pratica, senza ripartizioni proporzionali." if component_selected else "Incassi registrati nella loro data effettiva."
         amount_heading="Valore inserito" if component_selected else "Importo"
-        if selected in gross_by_key:
-            total_secondary=f'<small class="balance-total-secondary">Entrate lorde: {money_it(gross_by_key[selected])} · Uscite: {money_it(expense_by_key[selected])}</small>'
-        elif not selected and (expense_w+expense_d)>0.004:
+        if not selected and (expense_w+expense_d)>0.004:
             total_secondary=f'<small class="balance-total-secondary">Entrate lorde: {money_it(gross_all)} · Uscite: {money_it(expense_w+expense_d)}</small>'
         else:
             total_secondary=''
@@ -4383,6 +4406,88 @@ class App(BaseHTTPRequestHandler):
         expenses_section=f'''<section class="tablebox balance-table expenses-section"><div class="section-collapse-head"><h2>Uscite del periodo</h2><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><h3 class="expenses-channel-title">Circuito W</h3><table><thead><tr><th>Data</th><th>Categoria</th><th>Descrizione</th><th>Importo</th><th></th></tr></thead><tbody>{expense_rows_html("W")}</tbody></table><h3 class="expenses-channel-title">Circuito D</h3><table><thead><tr><th>Data</th><th>Categoria</th><th>Descrizione</th><th>Importo</th><th></th></tr></thead><tbody>{expense_rows_html("D")}</tbody></table></div></section>'''
         body=f'''<main class="wrap balances-wrap"><div class="titlebar"><div><h1>Bilanci</h1><p class="sub">{subtitle} dal {esc(date_it(date_from))} al {esc(date_it(date_to))}</p></div><div class="actions"><a class="btn" href="{new_expense_url}">+ Registra uscita</a></div><div class="balance-total"><small>{esc(category_map.get(selected,"Entrate totali"))}</small><strong>{money_it(shown_total)}</strong>{total_secondary}</div></div><section class="balance-grid">{cards}</section><section class="dashboard-panel balance-chart"><header><div><h2>Andamento nel periodo filtrato</h2><p>{chart_description}</p></div></header>{chart}</section>{expenses_section}<section class="tablebox balance-table"><div class="section-collapse-head"><h2>Elenco pratiche</h2><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><table class="balance-list-table"><thead><tr><th>Animale</th><th>Data economica</th><th>Movimento</th><th>Pratica</th><th>Cliente</th><th>{amount_heading}</th><th>Totale</th><th>Acconto</th><th>Rimanenza</th><th>Stato</th><th></th></tr></thead><tbody>{table_body}</tbody></table></div></section><section class="search-after-results"><h2>Filtra bilanci</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field full"><label>Voce</label><select name="voce">{options}</select></div></div><button class="btn" style="margin-top:12px">Applica filtri</button><a class="btn ghost" style="margin-top:12px" href="/bilanci">Ultimi 7 giorni</a></form></section></main>'''
         self.send_html(layout("Bilanci",body,user))
+
+    def disposal_contact_for(self,row):
+        owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip()
+        return owner or row["clinic_name"] or row["veterinarian_name"] or "-"
+
+    def disposal_eligible_practices(self,c,date_from,date_to):
+        return c.execute("""SELECT * FROM practices WHERE (deleted_at IS NULL OR deleted_at='')
+                            AND service_type='Cremazione collettiva' AND status!='Smaltito'
+                            AND date(COALESCE(NULLIF(pickup_date,''),created_at)) BETWEEN date(?) AND date(?)
+                            ORDER BY destination_branch,date(COALESCE(NULLIF(pickup_date,''),created_at))""",(date_from,date_to)).fetchall()
+
+    def disposal_page(self,user,error=""):
+        q=parse_qs(urlparse(self.path).query)
+        today=datetime.now().date(); default_from=today-timedelta(days=28)
+        date_from=(q.get("dal") or [default_from.isoformat()])[0].strip()
+        date_to=(q.get("al") or [today.isoformat()])[0].strip()
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_from): date_from=default_from.isoformat()
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_to): date_to=today.isoformat()
+        with db() as c:
+            eligible=self.disposal_eligible_practices(c,date_from,date_to)
+            history=c.execute("""SELECT b.*,u.display_name FROM disposal_batches b LEFT JOIN users u ON u.id=b.confirmed_by
+                                 ORDER BY b.confirmed_at DESC""").fetchall()
+        groups={}
+        for row in eligible:
+            branch=row["destination_branch"] or "Non indicata"
+            channel=payment_channel(row)
+            groups.setdefault((branch,channel),[]).append(row)
+        group_sections=[]
+        for (branch,channel),rows in sorted(groups.items(),key=lambda item:(item[0][0],item[0][1])):
+            rows_html=''.join(f'''<tr><td>{esc(r["animal_name"] or "Da inserire")}</td><td>{esc(self.disposal_contact_for(r))}</td><td>{esc(date_it(r["pickup_date"] or r["created_at"]))}</td><td><a href="/pratiche/{r["id"]}">{esc(r["practice_number"])}</a></td></tr>''' for r in rows)
+            group_sections.append(f'''<section class="section disposal-group"><div class="section-collapse-head"><h2>{esc(branch)} · Circuito {esc(channel)}</h2><span class="badge">{len(rows)} animali</span><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><table><thead><tr><th>Animale</th><th>Proprietario/Veterinario</th><th>Data recupero</th><th>Pratica</th></tr></thead><tbody>{rows_html}</tbody></table></div></section>''')
+        total_count=len(eligible)
+        breakdown_summary=''.join(f'<div class="kv"><small>{esc(branch)} · Circuito {esc(channel)}</small><b>{len(rows)}</b></div>' for (branch,channel),rows in sorted(groups.items(),key=lambda item:(item[0][0],item[0][1])))
+        error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
+        if total_count:
+            confirm_form=f'''<form method="post" action="/smaltimenti/conferma" onsubmit="return confirm('Sei sicuro? Questa azione cambierà lo stato di {total_count} pratiche in Smaltito')"><input type="hidden" name="dal" value="{esc(date_from)}"><input type="hidden" name="al" value="{esc(date_to)}"><button class="btn">Conferma scarico</button></form>'''
+        else:
+            confirm_form='<p class="sub">Nessuna pratica di cremazione collettiva da smaltire nel periodo selezionato.</p>'
+        history_rows=''.join(f'''<tr><td>{esc(date_it(b["confirmed_at"]))}</td><td>{esc(date_it(b["period_from"]))} → {esc(date_it(b["period_to"]))}</td><td><b>{b["total_count"]}</b></td><td>{esc(b["display_name"] or "-")}</td><td><a class="btn ghost" href="/smaltimenti/storico/{b["id"]}">Apri</a></td></tr>''' for b in history) or '<tr><td colspan="5" class="sub">Nessuno scarico registrato.</td></tr>'
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Smaltimenti</h1><p class="sub">Conferimenti periodici delle cremazioni collettive alla ditta esterna di smaltimento.</p></div></div>{error_html}<section class="section"><h2>Periodo</h2><form method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div></div><button class="btn" style="margin-top:12px">Applica periodo</button></form></section><section class="section"><h2>Riepilogo periodo {esc(date_it(date_from))} - {esc(date_it(date_to))}</h2><div class="kvs">{breakdown_summary or '<span class="sub">Nessun dato per il periodo selezionato.</span>'}<div class="kv"><small>Totale generale</small><b>{total_count}</b></div></div><div class="actions" style="margin-top:14px">{confirm_form}</div></section>{''.join(group_sections)}<section class="tablebox"><div class="section-collapse-head"><h2>Storico scarichi</h2><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><table><thead><tr><th>Data conferma</th><th>Periodo</th><th>Totale animali</th><th>Confermato da</th><th></th></tr></thead><tbody>{history_rows}</tbody></table></div></section></main>'''
+        self.send_html(layout("Smaltimenti",body,user))
+
+    def disposal_confirm(self,user):
+        f=self.form()
+        date_from=f.get("dal","").strip(); date_to=f.get("al","").strip()
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_from) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_to):
+            return self.disposal_page(user,error="Periodo non valido.")
+        with db() as c:
+            eligible=self.disposal_eligible_practices(c,date_from,date_to)
+            if not eligible:
+                return self.disposal_page(user,error="Nessuna pratica di cremazione collettiva da smaltire nel periodo selezionato.")
+            breakdown={}
+            for row in eligible:
+                branch=row["destination_branch"] or "Non indicata"
+                channel=payment_channel(row)
+                key=f"{branch}|{channel}"
+                breakdown[key]=breakdown.get(key,0)+1
+            stamp=now()
+            cur=c.execute("INSERT INTO disposal_batches(period_from,period_to,confirmed_at,confirmed_by,total_count,breakdown_json) VALUES(?,?,?,?,?,?)",
+                          (date_from,date_to,stamp,user["id"],len(eligible),json.dumps(breakdown,ensure_ascii=False)))
+            batch_id=cur.lastrowid
+            for row in eligible:
+                c.execute("INSERT INTO disposal_batch_practices(batch_id,practice_id) VALUES(?,?)",(batch_id,row["id"]))
+                c.execute("UPDATE practices SET status='Smaltito',updated_at=? WHERE id=?",(stamp,row["id"]))
+                c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,note,user_id,created_at) VALUES(?,?,?,?,?,?,?)",
+                          (row["id"],"Smaltimento",row["status"],"Smaltito",f"Scarico #{batch_id} ({date_from} → {date_to})",user["id"],stamp))
+        self.redirect(f"/smaltimenti/storico/{batch_id}")
+
+    def disposal_batch_detail(self,user,batch_id):
+        with db() as c:
+            batch=c.execute("SELECT b.*,u.display_name FROM disposal_batches b LEFT JOIN users u ON u.id=b.confirmed_by WHERE b.id=?",(batch_id,)).fetchone()
+            if not batch:return self.send_error(404)
+            practices=c.execute("""SELECT p.* FROM disposal_batch_practices dbp JOIN practices p ON p.id=dbp.practice_id
+                                   WHERE dbp.batch_id=? ORDER BY p.destination_branch,p.pickup_date""",(batch_id,)).fetchall()
+        try:
+            breakdown=json.loads(batch["breakdown_json"] or "{}")
+        except (ValueError,TypeError):
+            breakdown={}
+        breakdown_html=''.join(f'<div class="kv"><small>{esc(key.replace("|"," · Circuito "))}</small><b>{count}</b></div>' for key,count in breakdown.items())
+        rows_html=''.join(f'''<tr><td>{esc(r["destination_branch"] or "-")}</td><td>{esc(r["animal_name"] or "Da inserire")}</td><td>{esc(self.disposal_contact_for(r))}</td><td>{esc(date_it(r["pickup_date"] or r["created_at"]))}</td><td><a href="/pratiche/{r["id"]}">{esc(r["practice_number"])}</a></td></tr>''' for r in practices) or '<tr><td colspan="5" class="sub">Nessuna pratica collegata.</td></tr>'
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Scarico del {esc(date_it(batch["confirmed_at"]))}</h1><p class="sub">Periodo {esc(date_it(batch["period_from"]))} → {esc(date_it(batch["period_to"]))} · confermato da {esc(batch["display_name"] or "-")}</p></div><a class="btn ghost" href="/smaltimenti">Torna a Smaltimenti</a></div><section class="section"><h2>Riepilogo</h2><div class="kvs">{breakdown_html}<div class="kv"><small>Totale generale</small><b>{batch["total_count"]}</b></div></div></section><section class="tablebox"><table><thead><tr><th>Sede</th><th>Animale</th><th>Proprietario/Veterinario</th><th>Data recupero</th><th>Pratica</th></tr></thead><tbody>{rows_html}</tbody></table></section></main>'''
+        self.send_html(layout("Dettaglio scarico",body,user))
 
     def payment_overview_legacy(self,user,kind):
         specs={
@@ -6610,7 +6715,7 @@ class App(BaseHTTPRequestHandler):
         total_w=calculated_service_total(p);total_d_raw=(p["total_text"] or "").strip();total_d=money_value(total_d_raw)
         practice_total=effective_total(p);paid_total=received_amount(p);due_total=outstanding_amount(p);deposit_total=money_value(p["deposit"])
         remaining_total=money_value(p["remaining_balance"]) if (p["remaining_balance"] or "").strip() else due_total
-        estimate_fields=(("price_cremation","Cremazione"),("price_pickup","Ritiro"),("price_delivery","Riconsegna"),("price_cast","Calco"),("price_cast_2","Secondo calco"),("price_paw_cast","Calco polpastrello"),("price_nose_cast","Calco naso"),("price_evening","Serale"),("price_night","Notturno"),("price_holiday","Festivo"),("price_accessories","Accessori"),("price_accessories_2","Secondi accessori"))
+        estimate_fields=(("price_cremation","Cremazione"),("price_pickup","Ritiro"),("price_delivery","Riconsegna"),("price_cast","Calco"),("price_cast_2","Secondo calco"),("price_paw_cast","Calco polpastrello"),("price_paw_cast_2","Secondo calco polpastrello"),("price_paw_cast_3","Altro calco polpastrello"),("price_paw_cast_4","Altro calco polpastrello"),("price_nose_cast","Calco naso"),("price_nose_cast_2","Secondo calco naso"),("price_nose_cast_3","Altro calco naso"),("price_nose_cast_4","Altro calco naso"),("price_evening","Serale"),("price_night","Notturno"),("price_holiday","Festivo"),("price_accessories","Accessori"),("price_accessories_2","Secondi accessori"))
         estimate_rows=[]
         for key,label in estimate_fields:
             raw_value=(p[key] or "").strip()
