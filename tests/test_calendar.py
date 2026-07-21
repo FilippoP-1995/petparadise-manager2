@@ -1,4 +1,5 @@
 import json
+import re
 import tempfile
 import unittest
 from datetime import datetime, timedelta
@@ -326,7 +327,8 @@ class OperationalCalendarTests(unittest.TestCase):
             self.handler.calendar_page(self.admin)
             pages[view] = pages["current"]
         self.assertIn("Calendario operativo", pages["giorno"])
-        self.assertIn("data-calendar-swipe", pages["giorno"])
+        self.assertNotIn("data-calendar-swipe", pages["giorno"])
+        self.assertNotIn("data-calendar-swipe", app.APP_JS)
         self.assertIn("calendar-week-scroll", pages["settimana"])
         self.assertNotIn('calendar-week-scroll" data-calendar-swipe', pages["settimana"])
         self.assertIn("calendar-week-time-column", pages["settimana"])
@@ -403,7 +405,7 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertNotIn('<div class="calendar-day-legend">', week_page)
         self.assertIn('calendar-week-v2-event calendar-red', week_page)
 
-    def test_week_view_shows_compact_cards_operator_avatar_swipe_hook_and_today_highlight(self):
+    def test_week_view_shows_compact_cards_operator_avatar_no_swipe_hook_and_today_highlight(self):
         today = datetime.now().date()
         self.save(self.event_form("Ritiro", title="RITIRO FIDO", event_status="Ritirato", operator_name="Alessio",
                                    start_date=today.isoformat(), end_date=today.isoformat()))
@@ -412,7 +414,8 @@ class OperationalCalendarTests(unittest.TestCase):
         self.handler.path = f"/calendario?vista=settimana&data={today.isoformat()}"
         self.handler.calendar_page(self.admin)
         page = rendered[-1]
-        self.assertIn('calendar-week-v2-scroll" data-calendar-swipe', page)
+        self.assertIn('class="calendar-week-v2-scroll">', page)
+        self.assertNotIn("data-calendar-swipe", page)
         self.assertIn("calendar-week-v2-day is-today", page)
         self.assertIn("calendar-week-v2-event calendar-green", page)
         self.assertIn("calendar-avatar calendar-avatar-xs calendar-avatar-alessio", page)
@@ -449,6 +452,41 @@ class OperationalCalendarTests(unittest.TestCase):
         card_style = page[card_start:isolated_pos]
         self.assertIn("--event-lanes:1", card_style)
         self.assertIn("--event-lanes:2", page)
+
+    def test_day_view_compact_height_for_same_day_multihour_vs_elongated_for_multiday(self):
+        self.save(self.event_form("Appuntamento", title="EVENTO STESSO GIORNO", start_time="09:00", end_time="17:00"))
+        self.save(self.event_form("Appuntamento", title="EVENTO MULTI GIORNO",
+                                   start_date="2026-07-15", start_time="09:30", end_date="2026-07-17", end_time="10:30"))
+        rendered = []
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.path = "/calendario?vista=giorno&data=2026-07-15"
+        self.handler.calendar_page(self.admin)
+        page = rendered[-1]
+
+        def event_height(title):
+            title_pos = page.index(title)
+            card_start = page.rindex('<div class="calendar-timeline-event"', 0, title_pos)
+            style = page[card_start:title_pos]
+            return float(re.search(r"--event-height:([\d.]+)px", style).group(1))
+
+        same_day_height = event_height("EVENTO STESSO GIORNO")
+        multi_day_height = event_height("EVENTO MULTI GIORNO")
+        self.assertAlmostEqual(same_day_height, 44.0, places=1)
+        self.assertGreater(multi_day_height, 300)
+        self.assertIn("09:00", page)
+        self.assertIn("17:00", page)
+        self.assertIn("2026-07-15 → 2026-07-17", page)
+
+    def test_calendar_css_touch_targets_alignment_colors_and_opacity_fixes(self):
+        self.assertIn(".calendar-date-nav .btn{min-width:44px;min-height:44px;padding:0;font-size:19px}", app.CSS)
+        self.assertIn(".calendar-date-nav{grid-template-columns:44px minmax(0,1fr) 44px}.calendar-day-timeline{padding-left:38px}", app.CSS)
+        self.assertIn(".calendar-day-event{flex-wrap:wrap;align-items:center;gap:4px 12px}", app.CSS)
+        self.assertIn("background:color-mix(in srgb,currentColor 24%,#15202f)", app.CSS)
+        self.assertIn("color-mix(in srgb,currentColor 18%,#fff)", app.CSS)
+        self.assertIn("background:color-mix(in srgb,currentColor 26%,#15202f)", app.CSS)
+        self.assertIn("background:color-mix(in srgb,currentColor 38%,transparent)", app.CSS)
+        self.assertNotIn(".calendar-week-v2-event-title{flex:1;min-width:0;font-size:11.5px;font-weight:650;color:#e7ecf3", app.CSS)
+        self.assertNotIn(".calendar-month-v2-pill{display:block;padding:2px 6px;border-radius:5px;background:color-mix(in srgb,currentColor 20%,transparent);color:inherit", app.CSS)
 
     def test_calendar_draft_autosave_has_separate_keys_and_excludes_sensitive_fields(self):
         rendered = []
