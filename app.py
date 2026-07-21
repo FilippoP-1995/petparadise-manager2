@@ -4493,14 +4493,15 @@ class App(BaseHTTPRequestHandler):
         def disposal_row_html(r,status_label,status_class):
             weight=money_value(r["estimated_weight"]) if r["estimated_weight"] else 0.0
             weight_cell=kg_it(weight) if weight else '<span class="sub">-</span>'
-            return f'''<tr><td>{esc(r["animal_name"] or "Da inserire")}</td><td>{weight_cell}</td><td>{esc(self.disposal_contact_for(r))}</td><td>{esc(date_it(r["pickup_date"] or r["created_at"]))}</td><td><a href="/pratiche/{r["id"]}">{esc(r["practice_number"])}</a></td><td><span class="badge {status_class}">{status_label}</span></td></tr>'''
+            url=f'/pratiche/{r["id"]}'
+            return f'''<tr class="practice-row-link" {row_open_attrs(url,f'Apri pratica {r["practice_number"]}')}><td>{esc(r["animal_name"] or "Da inserire")}</td><td>{weight_cell}</td><td>{esc(self.disposal_contact_for(r))}</td><td>{esc(date_it(r["pickup_date"] or r["created_at"]))}</td><td><a href="{url}">{esc(r["practice_number"])}</a></td><td><span class="badge {status_class}">{status_label}</span></td></tr>'''
         group_sections=[]
         for (branch,channel),data in sorted(display_groups.items(),key=lambda item:(item[0][0],item[0][1])):
             rows_html=''.join(disposal_row_html(r,"Da confermare","tag-orange") for r in data["pending"])+''.join(disposal_row_html(r,"Già smaltita","tag-green") for r in data["done"])
             group_total=len(data["pending"])+len(data["done"])
             group_kg=sum(money_value(r["estimated_weight"]) for r in data["pending"]+data["done"] if r["estimated_weight"])
             total_row=f'<tr class="disposal-group-total"><td><b>Totale</b></td><td><b>{kg_it(group_kg)}</b></td><td colspan="4"></td></tr>'
-            group_sections.append(f'''<section class="section disposal-group"><div class="section-collapse-head"><h2>{esc(branch)} · Circuito {esc(channel)}</h2><span class="badge">{group_total} animali</span><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><table><thead><tr><th>Animale</th><th>Peso</th><th>Proprietario/Veterinario</th><th>Data recupero</th><th>Pratica</th><th>Stato</th></tr></thead><tbody>{rows_html}{total_row}</tbody></table></div></section>''')
+            group_sections.append(f'''<section class="tablebox disposal-group"><div class="section-collapse-head"><h2>{esc(branch)} · Circuito {esc(channel)}</h2><span class="badge">{group_total} animali</span><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><table><thead><tr><th>Animale</th><th>Peso</th><th>Proprietario/Veterinario</th><th>Data recupero</th><th>Pratica</th><th>Stato</th></tr></thead><tbody>{rows_html}{total_row}</tbody></table></div></section>''')
         filter_note='<p class="sub">Nessuna pratica corrisponde al filtro di stato selezionato per questo periodo.</p>' if not display_groups and full_groups else ''
         total_count=len(eligible)
         total_already=len(already_done)
@@ -4566,7 +4567,8 @@ class App(BaseHTTPRequestHandler):
                 weight=money_value(r["estimated_weight"]) if r["estimated_weight"] else 0.0
                 group_kg+=weight
                 weight_cell=kg_it(weight) if weight else '<span class="sub">-</span>'
-                row_parts.append(f'''<tr><td>{esc(r["destination_branch"] or "-")}</td><td>{esc(r["animal_name"] or "Da inserire")}</td><td>{weight_cell}</td><td>{esc(self.disposal_contact_for(r))}</td><td>{esc(date_it(r["pickup_date"] or r["created_at"]))}</td><td><a href="/pratiche/{r["id"]}">{esc(r["practice_number"])}</a></td></tr>''')
+                url=f'/pratiche/{r["id"]}'
+                row_parts.append(f'''<tr class="practice-row-link" {row_open_attrs(url,f'Apri pratica {r["practice_number"]}')}><td>{esc(r["destination_branch"] or "-")}</td><td>{esc(r["animal_name"] or "Da inserire")}</td><td>{weight_cell}</td><td>{esc(self.disposal_contact_for(r))}</td><td>{esc(date_it(r["pickup_date"] or r["created_at"]))}</td><td><a href="{url}">{esc(r["practice_number"])}</a></td></tr>''')
             grand_kg+=group_kg
             row_parts.append(f'<tr class="disposal-group-total"><td colspan="2"><b>Totale {esc(branch)} · Circuito {esc(channel)}</b></td><td><b>{kg_it(group_kg)}</b></td><td colspan="3"></td></tr>')
         if practices:

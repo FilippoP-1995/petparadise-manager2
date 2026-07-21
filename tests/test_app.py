@@ -1010,6 +1010,35 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Livorno · Circuito W", page)
         self.assertIn("<b>1</b>", page)
 
+    def test_disposal_rows_are_clickable_and_tables_scroll_horizontally_on_mobile(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
+                   created_at,updated_at,created_by,service_type) VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("PP-ROWCLICK", "Privato", "Livorno", "Ritirato", "2026-07-15", stamp, stamp, admin["id"], "Cremazione collettiva"),
+            ).lastrowid
+
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/smaltimenti?dal=2026-07-01&al=2026-07-31"
+        self.handler.disposal_page(admin)
+        page = rendered[-1]
+        url = f"/pratiche/{pid}"
+        self.assertIn(f'''<tr class="practice-row-link" tabindex="0" role="link" aria-label="Apri pratica PP-ROWCLICK" onclick="practiceRowSelect(this,event,'{url}')"''', page)
+        # The disposal group must be a scrollable .tablebox (like every other list in the app),
+        # not a plain .section, so mobile users can swipe right to see the trailing columns.
+        self.assertIn('<section class="tablebox disposal-group">', page)
+        self.assertNotIn('<section class="section disposal-group">', page)
+
+        redirects = []; self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.form = lambda: {"dal": "2026-07-01", "al": "2026-07-31"}
+        self.handler.disposal_confirm(admin)
+        batch_id = int(redirects[-1].rsplit("/", 1)[-1])
+        rendered.clear()
+        self.handler.disposal_batch_detail(admin, batch_id)
+        detail_page = rendered[-1]
+        self.assertIn(f'''<tr class="practice-row-link" tabindex="0" role="link" aria-label="Apri pratica PP-ROWCLICK" onclick="practiceRowSelect(this,event,'{url}')"''', detail_page)
+
     def test_balances_table_shows_sticky_animal_column_with_collaborator_sigla(self):
         today = app.datetime.now().date().isoformat()
         with app.db() as conn:
