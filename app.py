@@ -75,6 +75,9 @@ PAYMENT_METHODS = [
 ]
 
 EXPENSE_CATEGORIES = ["Fornitori", "Manutenzione", "Carburante", "Materiali", "Altro"]
+INCOME_CATEGORIES = ["Rimborso", "Vendita", "Altro"]
+COLLAB_BILLING_STATES = ("Da fatturare", "Fatturato", "Incassato")
+MONTH_NAMES_IT = ("Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno","Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre")
 
 MONEY_FIELDS = {
     "price_cremation":"Cremazione", "price_pickup":"Ritiro", "price_urn":"Urna", "price_urn_2":"Seconda urna",
@@ -401,6 +404,18 @@ def init_db():
           updated_by INTEGER REFERENCES users(id),
           updated_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS incomes (
+          id INTEGER PRIMARY KEY,
+          income_date TEXT NOT NULL,
+          amount TEXT NOT NULL,
+          channel TEXT NOT NULL,
+          description TEXT NOT NULL,
+          category TEXT,
+          created_by INTEGER REFERENCES users(id),
+          created_at TEXT NOT NULL,
+          updated_by INTEGER REFERENCES users(id),
+          updated_at TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS disposal_batches (
           id INTEGER PRIMARY KEY,
           period_from TEXT NOT NULL,
@@ -418,6 +433,7 @@ def init_db():
         INSERT OR IGNORE INTO settings(key,value) VALUES('next_practice_number','1');
         INSERT OR IGNORE INTO settings(key,value) VALUES('next_cr_number','1');
         INSERT OR IGNORE INTO settings(key,value) VALUES('next_sm_number','1');
+        INSERT OR IGNORE INTO settings(key,value) VALUES('next_collab_number','1');
         INSERT OR IGNORE INTO settings(key,value) VALUES('next_ddt_number','1');
         INSERT OR IGNORE INTO settings(key,value) VALUES('order_recipient_email','[QUI INSERIRÒ IL MIO INDIRIZZO EMAIL]');
         INSERT OR IGNORE INTO settings(key,value) VALUES('order_email_subject','Ordine boccioni acqua - Pet Paradise');
@@ -542,6 +558,8 @@ def init_db():
             "paid_at": "TEXT",
             "cremation_registered": "TEXT",
             "cremation_queued": "TEXT",
+            "billing_status": "TEXT",
+            "billing_invoiced_at": "TEXT",
         }
         existing = {row["name"] for row in c.execute("PRAGMA table_info(practices)")}
         for name, definition in extra_columns.items():
@@ -912,7 +930,9 @@ def next_number(conn, key, prefix=""):
     return f"{prefix}{value:06d}" if prefix else value
 
 
-def practice_code_prefix(service_type):
+def practice_code_prefix(service_type, request_origin=None):
+    if request_origin == "Collaboratore":
+        return "COL-", "next_collab_number"
     if service_type == "Cremazione singola":
         return "CR-", "next_cr_number"
     if service_type == "Cremazione collettiva":
@@ -920,8 +940,8 @@ def practice_code_prefix(service_type):
     return "PP-", "next_practice_number"
 
 
-def next_practice_code(conn, service_type):
-    prefix, key = practice_code_prefix(service_type)
+def next_practice_code(conn, service_type, request_origin=None):
+    prefix, key = practice_code_prefix(service_type, request_origin)
     return next_number(conn, key, prefix)
 
 
@@ -3283,6 +3303,9 @@ class App(BaseHTTPRequestHandler):
         if path == "/bilanci/uscite/nuova": return self.expense_form_page(user)
         match = re.fullmatch(r"/bilanci/uscite/(\d+)/modifica",path)
         if match: return self.expense_form_page(user,int(match.group(1)))
+        if path == "/bilanci/entrate/nuova": return self.income_form_page(user)
+        match = re.fullmatch(r"/bilanci/entrate/(\d+)/modifica",path)
+        if match: return self.income_form_page(user,int(match.group(1)))
         if path == "/smaltimenti": return self.disposal_page(user)
         match = re.fullmatch(r"/smaltimenti/storico/(\d+)",path)
         if match: return self.disposal_batch_detail(user,int(match.group(1)))
@@ -3374,6 +3397,9 @@ class App(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/calendario/(\d+)/commenti/(\d+)/(modifica|elimina)",path)
         if match: return self.calendar_comment_action(user,int(match.group(1)),int(match.group(2)),match.group(3))
         if path == "/bilanci/uscite": return self.expense_create(user)
+        match = re.fullmatch(r"/bilanci/entrate/(\d+)/(modifica|elimina)",path)
+        if match: return self.income_action(user,int(match.group(1)),match.group(2))
+        if path == "/bilanci/entrate": return self.income_create(user)
         match = re.fullmatch(r"/bilanci/uscite/(\d+)/(modifica|elimina)",path)
         if match: return self.expense_action(user,int(match.group(1)),match.group(2))
         if path == "/smaltimenti/conferma": return self.disposal_confirm(user)
@@ -3403,6 +3429,8 @@ class App(BaseHTTPRequestHandler):
         if path == "/collaboratori": return self.save_collaborator(user)
         match = re.fullmatch(r"/collaboratori/(\d+)/elimina", path)
         if match: return self.delete_collaborator(user, int(match.group(1)))
+        match = re.fullmatch(r"/collaboratori/(\d+)/fattura-mese/(fatturato|incassato)", path)
+        if match: return self.collaborator_mark_month(user, int(match.group(1)), match.group(2))
         match = re.fullmatch(r"/collaboratori/(\d+)/listino", path)
         if match: return self.save_collaborator_price_tier(user, int(match.group(1)))
         match = re.fullmatch(r"/listino/(\d+)/modifica", path)
@@ -4414,6 +4442,82 @@ class App(BaseHTTPRequestHandler):
                       (data["expense_date"],data["amount"],data["channel"],data["description"],data["category"],user["id"],stamp,eid))
         self.redirect(f"/bilanci{back_qs}")
 
+    def normalized_income_fields(self,f):
+        income_date=f.get("income_date","").strip()
+        amount=normalize_money_text(f.get("amount",""))
+        channel=f.get("channel","").strip()
+        description=f.get("description","").strip()
+        category_choice=f.get("category","").strip()
+        category_custom=f.get("category_custom","").strip()
+        category=category_custom if category_choice=="Altro" and category_custom else category_choice if category_choice!="Altro" else ""
+        error=""
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",income_date):
+            error="Indica una data valida per l'entrata."
+        elif not amount or not re.fullmatch(r"\d+(?:\.\d{1,2})?",amount) or money_value(amount)<=0:
+            error="Indica un importo valido per l'entrata."
+        elif channel not in ("W","D"):
+            error="Seleziona il circuito W o D."
+        elif not description:
+            error="Indica una descrizione per l'entrata."
+        return {"income_date":income_date,"amount":amount,"channel":channel,"description":description,"category":category},error
+
+    def income_form_page(self,user,iid=None,error="",draft=None):
+        q=parse_qs(urlparse(self.path).query)
+        date_from=(q.get("dal") or [""])[0].strip()
+        date_to=(q.get("al") or [""])[0].strip()
+        back_qs=f"?dal={quote(date_from)}&al={quote(date_to)}" if date_from and date_to else ""
+        income=None
+        if iid:
+            with db() as c:
+                income=c.execute("SELECT * FROM incomes WHERE id=?",(iid,)).fetchone()
+            if not income:return self.send_error(404)
+        today=datetime.now().date().isoformat()
+        if draft is not None:
+            income_date=draft.get("income_date",""); amount=draft.get("amount",""); channel=draft.get("channel","W")
+            description=draft.get("description",""); category=draft.get("category","")
+        elif income is not None:
+            income_date=income["income_date"]; amount=income["amount"]; channel=income["channel"]
+            description=income["description"]; category=income["category"] or ""
+        else:
+            income_date=date_to or today; amount=""; channel="W"; description=""; category=""
+        category_is_custom=bool(category) and category not in INCOME_CATEGORIES
+        category_select_value="Altro" if category_is_custom else category
+        category_options=''.join(f'<option value="{esc(opt)}" {"selected" if opt==category_select_value else ""}>{esc(label)}</option>' for opt,label in [("","Nessuna categoria"),*[(c,c) for c in INCOME_CATEGORIES]])
+        title="Modifica entrata" if income else "Registra entrata"
+        action=f"/bilanci/entrate/{iid}/modifica" if income else "/bilanci/entrate"
+        error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{title}</h1><div class="sub">Registra un'entrata indipendente dalle pratiche.</div></div></div>{error_html}<form method="post" action="{action}" class="section"><input type="hidden" name="dal" value="{esc(date_from)}"><input type="hidden" name="al" value="{esc(date_to)}"><div class="fields"><div class="field"><label>Data *</label><input type="date" name="income_date" value="{esc(income_date)}" required></div><div class="field"><label>Importo € *</label><input name="amount" value="{esc(amount)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 50,00" required></div><div class="field"><label>Circuito *</label><select name="channel" required><option value="W" {"selected" if channel=="W" else ""}>W</option><option value="D" {"selected" if channel=="D" else ""}>D</option></select></div><div class="field full"><label>Descrizione / causale *</label><input name="description" value="{esc(description)}" required placeholder="Es. Rimborso assicurazione"></div><div class="field"><label>Categoria</label><select name="category" onchange="document.getElementById('incomeCategoryCustom').hidden=this.value!=='Altro'">{category_options}</select></div><div class="field" id="incomeCategoryCustom" {"" if category_is_custom else "hidden"}><label>Specifica categoria</label><input name="category_custom" value="{esc(category if category_is_custom else '')}" placeholder="Es. Cessione attrezzatura"></div></div><div class="actions" style="margin-top:16px"><button class="btn">Salva entrata</button><a class="btn ghost" href="/bilanci{back_qs}">Annulla</a></div></form></main>'''
+        self.send_html(layout(title,body,user))
+
+    def income_create(self,user):
+        f=self.form()
+        date_from=f.get("dal","").strip(); date_to=f.get("al","").strip()
+        back_qs=f"?dal={quote(date_from)}&al={quote(date_to)}" if date_from and date_to else ""
+        data,error=self.normalized_income_fields(f)
+        if error:return self.income_form_page(user,error=error,draft=data)
+        stamp=now()
+        with db() as c:
+            c.execute("INSERT INTO incomes(income_date,amount,channel,description,category,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                      (data["income_date"],data["amount"],data["channel"],data["description"],data["category"],user["id"],stamp,user["id"],stamp))
+        self.redirect(f"/bilanci{back_qs}")
+
+    def income_action(self,user,iid,action):
+        f=self.form()
+        date_from=f.get("dal","").strip(); date_to=f.get("al","").strip()
+        back_qs=f"?dal={quote(date_from)}&al={quote(date_to)}" if date_from and date_to else ""
+        with db() as c:
+            income=c.execute("SELECT * FROM incomes WHERE id=?",(iid,)).fetchone()
+            if not income:return self.send_error(404)
+            if action=="elimina":
+                c.execute("DELETE FROM incomes WHERE id=?",(iid,))
+                return self.redirect(f"/bilanci{back_qs}")
+            data,error=self.normalized_income_fields(f)
+            if error:return self.income_form_page(user,iid,error=error,draft=data)
+            stamp=now()
+            c.execute("UPDATE incomes SET income_date=?,amount=?,channel=?,description=?,category=?,updated_by=?,updated_at=? WHERE id=?",
+                      (data["income_date"],data["amount"],data["channel"],data["description"],data["category"],user["id"],stamp,iid))
+        self.redirect(f"/bilanci{back_qs}")
+
     def balances_v2(self,user):
         q=parse_qs(urlparse(self.path).query); today=datetime.now().date(); default_from=today-timedelta(days=6)
         date_from=(q.get("dal") or [default_from.isoformat()])[0].strip(); date_to=(q.get("al") or [today.isoformat()])[0].strip()
@@ -4431,13 +4535,22 @@ class App(BaseHTTPRequestHandler):
         with db() as c:
             movements=c.execute("""SELECT m.id movement_id,m.payment_type,m.payment_channel,m.amount,m.paid_at,p.*
                                    FROM payment_movements m JOIN practices p ON p.id=m.practice_id
-                                   WHERE (p.deleted_at IS NULL OR p.deleted_at='') AND date(m.paid_at) BETWEEN date(?) AND date(?)
+                                   WHERE (p.deleted_at IS NULL OR p.deleted_at='') AND COALESCE(p.request_origin,'')!='Collaboratore'
+                                   AND date(m.paid_at) BETWEEN date(?) AND date(?)
                                    ORDER BY datetime(m.paid_at) DESC,m.id DESC""",(date_from,date_to)).fetchall()
             outstanding=c.execute("""SELECT * FROM practices WHERE (deleted_at IS NULL OR deleted_at='')
+                                     AND COALESCE(request_origin,'')!='Collaboratore'
                                      AND date(COALESCE(NULLIF(pickup_date,''),created_at)) BETWEEN date(?) AND date(?)
                                      ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) DESC,id DESC""",(date_from,date_to)).fetchall()
             expenses=c.execute("""SELECT * FROM expenses WHERE date(expense_date) BETWEEN date(?) AND date(?)
                                   ORDER BY date(expense_date) DESC,id DESC""",(date_from,date_to)).fetchall()
+            incomes=c.execute("""SELECT * FROM incomes WHERE date(income_date) BETWEEN date(?) AND date(?)
+                                 ORDER BY date(income_date) DESC,id DESC""",(date_from,date_to)).fetchall()
+            collab_rows=c.execute("""SELECT p.*, co.name AS collaborator_display_name FROM practices p
+                                     LEFT JOIN collaborators co ON co.id=p.collaborator_id
+                                     WHERE (p.deleted_at IS NULL OR p.deleted_at='') AND p.request_origin='Collaboratore'
+                                     AND date(COALESCE(NULLIF(p.pickup_date,''),p.created_at)) BETWEEN date(?) AND date(?)
+                                     ORDER BY date(COALESCE(NULLIF(p.pickup_date,''),p.created_at))""",(date_from,date_to)).fetchall()
 
         def movement_amount(row,key):
             amount=money_value(row["amount"]); is_d=row["payment_channel"]=="D"
@@ -4469,9 +4582,11 @@ class App(BaseHTTPRequestHandler):
         gross_w=breakdown["totale_calcolato"]; gross_d=breakdown["totale_d"]
         expense_w=sum(money_value(e["amount"]) for e in expenses if e["channel"]=="W")
         expense_d=sum(money_value(e["amount"]) for e in expenses if e["channel"]=="D")
-        net_w=gross_w-expense_w; net_d=gross_d-expense_d
+        income_w=sum(money_value(i["amount"]) for i in incomes if i["channel"]=="W")
+        income_d=sum(money_value(i["amount"]) for i in incomes if i["channel"]=="D")
+        net_w=gross_w-expense_w+income_w; net_d=gross_d-expense_d+income_d
         gross_all=sum(money_value(row["amount"]) for row in movements)
-        shown_total=breakdown[selected] if selected else gross_all-(expense_w+expense_d)
+        shown_total=breakdown[selected] if selected else gross_all-(expense_w+expense_d)+(income_w+income_d)
         def render_balance_card(key,label):
             active="active" if selected==key else ""
             href=f"/bilanci?dal={quote(date_from)}&al={quote(date_to)}&voce={quote(key)}"
@@ -4482,9 +4597,11 @@ class App(BaseHTTPRequestHandler):
         for key,label,_ in categories:
             card_parts.append(render_balance_card(key,label))
             if key=="totale_calcolato":
+                card_parts.append(static_card("Altre entrate W",income_w))
                 card_parts.append(static_card("Uscite W",expense_w))
                 card_parts.append(static_card("Totale W",net_w))
             elif key=="totale_d":
+                card_parts.append(static_card("Altre entrate D",income_d))
                 card_parts.append(static_card("Uscite D",expense_d))
                 card_parts.append(static_card("Totale D",net_d))
         cards=''.join(card_parts)
@@ -4534,8 +4651,11 @@ class App(BaseHTTPRequestHandler):
             subtitle="Risultati filtrati per data economica"
         chart_description="Ogni voce è conteggiata una sola volta per pratica, senza ripartizioni proporzionali." if component_selected else "Incassi registrati nella loro data effettiva."
         amount_heading="Valore inserito" if component_selected else "Importo"
-        if not selected and (expense_w+expense_d)>0.004:
-            total_secondary=f'<small class="balance-total-secondary">Entrate lorde: {money_it(gross_all)} · Uscite: {money_it(expense_w+expense_d)}</small>'
+        if not selected and (expense_w+expense_d+income_w+income_d)>0.004:
+            secondary_parts=[f"Entrate lorde: {money_it(gross_all)}"]
+            if (income_w+income_d)>0.004:secondary_parts.append(f"Altre entrate: {money_it(income_w+income_d)}")
+            if (expense_w+expense_d)>0.004:secondary_parts.append(f"Uscite: {money_it(expense_w+expense_d)}")
+            total_secondary=f'<small class="balance-total-secondary">{" · ".join(secondary_parts)}</small>'
         else:
             total_secondary=''
         new_expense_url=f'/bilanci/uscite/nuova?dal={quote(date_from)}&al={quote(date_to)}'
@@ -4548,7 +4668,30 @@ class App(BaseHTTPRequestHandler):
                 out.append(f'''<tr><td>{esc(date_it(e["expense_date"]))}</td><td>{esc(e["category"] or "-")}</td><td>{esc(e["description"])}</td><td><b>{money_it(money_value(e["amount"]))}</b></td><td class="actions"><a class="btn ghost" href="{edit_url}">Modifica</a><form method="post" action="/bilanci/uscite/{e["id"]}/elimina" onsubmit="return confirm('Eliminare questa uscita?')" style="display:inline"><input type="hidden" name="dal" value="{esc(date_from)}"><input type="hidden" name="al" value="{esc(date_to)}"><button class="btn danger-btn" type="submit">Elimina</button></form></td></tr>''')
             return ''.join(out)
         expenses_section=f'''<section class="tablebox balance-table expenses-section"><div class="section-collapse-head"><h2>Uscite del periodo</h2><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><h3 class="expenses-channel-title">Circuito W</h3><table><thead><tr><th>Data</th><th>Categoria</th><th>Descrizione</th><th>Importo</th><th></th></tr></thead><tbody>{expense_rows_html("W")}</tbody></table><h3 class="expenses-channel-title">Circuito D</h3><table><thead><tr><th>Data</th><th>Categoria</th><th>Descrizione</th><th>Importo</th><th></th></tr></thead><tbody>{expense_rows_html("D")}</tbody></table></div></section>'''
-        body=f'''<main class="wrap balances-wrap"><div class="titlebar"><div><h1>Bilanci</h1><p class="sub">{subtitle} dal {esc(date_it(date_from))} al {esc(date_it(date_to))}</p></div><div class="actions"><a class="btn" href="{new_expense_url}">+ Registra uscita</a></div><div class="balance-total"><small>{esc(category_map.get(selected,"Entrate totali"))}</small><strong>{money_it(shown_total)}</strong>{total_secondary}</div></div><section class="balance-grid">{cards}</section><section class="dashboard-panel balance-chart"><header><div><h2>Andamento nel periodo filtrato</h2><p>{chart_description}</p></div></header>{chart}</section>{expenses_section}<section class="tablebox balance-table"><div class="section-collapse-head"><h2>Elenco pratiche</h2><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><table class="balance-list-table"><thead><tr><th>Animale</th><th>Data economica</th><th>Movimento</th><th>Pratica</th><th>Cliente</th><th>{amount_heading}</th><th>Totale</th><th>Acconto</th><th>Rimanenza</th><th>Stato</th><th></th></tr></thead><tbody>{table_body}</tbody></table></div></section><section class="search-after-results"><h2>Filtra bilanci</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field full"><label>Voce</label><select name="voce">{options}</select></div></div><button class="btn" style="margin-top:12px">Applica filtri</button><a class="btn ghost" style="margin-top:12px" href="/bilanci">Ultimi 7 giorni</a></form></section></main>'''
+        new_income_url=f'/bilanci/entrate/nuova?dal={quote(date_from)}&al={quote(date_to)}'
+        def income_rows_html(channel):
+            rows=[i for i in incomes if i["channel"]==channel]
+            if not rows:return '<tr><td colspan="5" class="sub">Nessuna entrata registrata nel periodo.</td></tr>'
+            out=[]
+            for i in rows:
+                edit_url=f'/bilanci/entrate/{i["id"]}/modifica?dal={quote(date_from)}&al={quote(date_to)}'
+                out.append(f'''<tr><td>{esc(date_it(i["income_date"]))}</td><td>{esc(i["category"] or "-")}</td><td>{esc(i["description"])}</td><td><b>{money_it(money_value(i["amount"]))}</b></td><td class="actions"><a class="btn ghost" href="{edit_url}">Modifica</a><form method="post" action="/bilanci/entrate/{i["id"]}/elimina" onsubmit="return confirm('Eliminare questa entrata?')" style="display:inline"><input type="hidden" name="dal" value="{esc(date_from)}"><input type="hidden" name="al" value="{esc(date_to)}"><button class="btn danger-btn" type="submit">Elimina</button></form></td></tr>''')
+            return ''.join(out)
+        incomes_section=f'''<section class="tablebox balance-table expenses-section"><div class="section-collapse-head"><h2>Altre entrate del periodo</h2><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><h3 class="expenses-channel-title">Circuito W</h3><table><thead><tr><th>Data</th><th>Categoria</th><th>Descrizione</th><th>Importo</th><th></th></tr></thead><tbody>{income_rows_html("W")}</tbody></table><h3 class="expenses-channel-title">Circuito D</h3><table><thead><tr><th>Data</th><th>Categoria</th><th>Descrizione</th><th>Importo</th><th></th></tr></thead><tbody>{income_rows_html("D")}</tbody></table></div></section>'''
+        collab_totals={"Da fatturare":0.0,"Fatturato":0.0,"Incassato":0.0}
+        collab_by_id={}
+        for crow in collab_rows:
+            cstatus=crow["billing_status"] or "Da fatturare"
+            if cstatus not in collab_totals:cstatus="Da fatturare"
+            camount=effective_total(crow)
+            collab_totals[cstatus]+=camount
+            ckey=crow["collaborator_id"] or 0
+            cname=crow["collaborator_display_name"] or crow["collaborator_name"] or "Collaboratore non specificato"
+            centry=collab_by_id.setdefault(ckey,{"name":cname,"totals":{"Da fatturare":0.0,"Fatturato":0.0,"Incassato":0.0}})
+            centry["totals"][cstatus]+=camount
+        collab_rows_html=''.join(f'''<tr><td>{esc(centry["name"])}</td><td>{money_it(centry["totals"]["Da fatturare"])}</td><td>{money_it(centry["totals"]["Fatturato"])}</td><td>{money_it(centry["totals"]["Incassato"])}</td><td><b>{money_it(sum(centry["totals"].values()))}</b></td></tr>''' for ckey,centry in sorted(collab_by_id.items(),key=lambda item:item[1]["name"])) or '<tr><td colspan="5" class="sub">Nessuna pratica collaboratore nel periodo.</td></tr>'
+        collab_section=f'''<section class="tablebox balance-table balances-collab-section"><div class="section-collapse-head"><h2>Collaboratori</h2><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><p class="sub">Conto separato dai circuiti W e D, basato sul mese di competenza (data di recupero) delle pratiche origine Collaboratore.</p><div class="balance-grid"><div class="balance-card-static"><small>Da fatturare</small><strong>{money_it(collab_totals["Da fatturare"])}</strong></div><div class="balance-card-static"><small>Fatturato</small><strong>{money_it(collab_totals["Fatturato"])}</strong></div><div class="balance-card-static"><small>Incassato</small><strong>{money_it(collab_totals["Incassato"])}</strong></div></div><table><thead><tr><th>Collaboratore</th><th>Da fatturare</th><th>Fatturato</th><th>Incassato</th><th>Totale</th></tr></thead><tbody>{collab_rows_html}</tbody></table></div></section>'''
+        body=f'''<main class="wrap balances-wrap"><div class="titlebar"><div><h1>Bilanci</h1><p class="sub">{subtitle} dal {esc(date_it(date_from))} al {esc(date_it(date_to))}</p></div><div class="actions"><a class="btn" href="{new_expense_url}">+ Registra uscita</a><a class="btn" href="{new_income_url}">+ Registra entrata</a></div><div class="balance-total"><small>{esc(category_map.get(selected,"Entrate totali"))}</small><strong>{money_it(shown_total)}</strong>{total_secondary}</div></div><section class="balance-grid">{cards}</section><section class="dashboard-panel balance-chart"><header><div><h2>Andamento nel periodo filtrato</h2><p>{chart_description}</p></div></header>{chart}</section>{expenses_section}{incomes_section}{collab_section}<section class="tablebox balance-table"><div class="section-collapse-head"><h2>Elenco pratiche</h2><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><table class="balance-list-table"><thead><tr><th>Animale</th><th>Data economica</th><th>Movimento</th><th>Pratica</th><th>Cliente</th><th>{amount_heading}</th><th>Totale</th><th>Acconto</th><th>Rimanenza</th><th>Stato</th><th></th></tr></thead><tbody>{table_body}</tbody></table></div></section><section class="search-after-results"><h2>Filtra bilanci</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field full"><label>Voce</label><select name="voce">{options}</select></div></div><button class="btn" style="margin-top:12px">Applica filtri</button><a class="btn ghost" style="margin-top:12px" href="/bilanci">Ultimi 7 giorni</a></form></section></main>'''
         self.send_html(layout("Bilanci",body,user))
 
     def disposal_contact_for(self,row):
@@ -5930,13 +6073,55 @@ class App(BaseHTTPRequestHandler):
     def collaborator_detail(self,user,collaborator_id):
         with db() as c:
             co=c.execute("SELECT * FROM collaborators WHERE id=? AND active=1",(collaborator_id,)).fetchone()
-            practices=c.execute("SELECT id,practice_number,animal_name,status,pickup_date FROM practices WHERE collaborator_id=? AND (deleted_at IS NULL OR deleted_at='') ORDER BY COALESCE(pickup_date,created_at) DESC",(collaborator_id,)).fetchall()
+            if not co: return self.send_error(404)
+            practices=c.execute("SELECT * FROM practices WHERE collaborator_id=? AND (deleted_at IS NULL OR deleted_at='') ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) DESC,id DESC",(collaborator_id,)).fetchall()
             tiers=c.execute("SELECT * FROM collaborator_price_tiers WHERE collaborator_id=? ORDER BY CAST(weight_min AS REAL)",(collaborator_id,)).fetchall()
-        if not co: return self.send_error(404)
-        rows=''.join(f'''<tr><td><a href="/pratiche/{p['id']}">{esc(p['practice_number'])}</a></td><td>{esc(p['animal_name'])}</td><td>{esc(p['status'])}</td><td>{esc(date_it(p['pickup_date']) if p['pickup_date'] else '')}</td></tr>''' for p in practices) or '<tr><td colspan="4" class="sub">Nessuna pratica collegata.</td></tr>'
+        months={}
+        for p in practices:
+            effective_date=p["pickup_date"] or p["created_at"] or ""
+            months.setdefault(effective_date[:7],[]).append(p)
+        def month_label(key):
+            try:
+                year,month=key.split("-");return f"{MONTH_NAMES_IT[int(month)-1]} {year}"
+            except (ValueError,IndexError):return "Data non indicata"
+        billing_badge_cls={"Da fatturare":"pay-yellow","Fatturato":"pay-blue","Incassato":"pay-green"}
+        month_sections=[]
+        for month_key in sorted(months.keys(),reverse=True):
+            month_practices=months[month_key]
+            month_total=sum(effective_total(p) for p in month_practices)
+            pending=sum(1 for p in month_practices if (p["billing_status"] or "Da fatturare")=="Da fatturare")
+            invoiced=sum(1 for p in month_practices if p["billing_status"]=="Fatturato")
+            animal_rows=''.join(f'''<tr><td>{esc(p["animal_name"] or "Da inserire")}</td><td>{esc(date_it(p["pickup_date"] or p["created_at"]))}</td><td>{money_it(effective_total(p))}</td><td><span class="badge {billing_badge_cls.get(p["billing_status"] or "Da fatturare","pay-yellow")}">{esc(p["billing_status"] or "Da fatturare")}</span></td><td><a href="/pratiche/{p["id"]}">{esc(p["practice_number"])}</a></td></tr>''' for p in month_practices)
+            actions=[]
+            if pending:
+                actions.append(f'<form method="post" action="/collaboratori/{collaborator_id}/fattura-mese/fatturato" onsubmit="return confirm(\'Confermi di aver inviato la fattura per questo mese?\')"><input type="hidden" name="mese" value="{month_key}"><button class="btn ghost" type="submit">Segna mese come fatturato ({pending})</button></form>')
+            if invoiced:
+                actions.append(f'<form method="post" action="/collaboratori/{collaborator_id}/fattura-mese/incassato" onsubmit="return confirm(\'Confermi di aver incassato la fattura per questo mese?\')"><input type="hidden" name="mese" value="{month_key}"><button class="btn ghost" type="submit">Segna mese come incassato ({invoiced})</button></form>')
+            actions_html=''.join(actions) or '<span class="sub">Mese completamente incassato.</span>'
+            month_sections.append(f'''<section class="section collaborator-month"><div class="section-collapse-head"><h2>{esc(month_label(month_key))}</h2><span class="badge">{money_it(month_total)}</span><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><table><thead><tr><th>Animale</th><th>Data</th><th>Importo</th><th>Stato fatturazione</th><th>Pratica</th></tr></thead><tbody>{animal_rows}</tbody></table><div class="actions" style="margin-top:12px">{actions_html}</div></div></section>''')
+        months_html=''.join(month_sections) or '<section class="section empty-state"><p>Nessuna pratica collegata a questo collaboratore.</p></section>'
         tier_rows=''.join(f'''<tr><form method="post" action="/listino/{t['id']}/modifica"><td><input name="weight_min" value="{esc(t['weight_min'])}" inputmode="decimal" style="width:80px" required></td><td><input name="weight_max" value="{esc(t['weight_max'] or '')}" inputmode="decimal" placeholder="senza limite" style="width:100px"></td><td><input name="price" value="{esc(t['price'])}" inputmode="decimal" style="width:100px" required></td><td><button class="btn ghost">Salva</button></form><form method="post" action="/listino/{t['id']}/elimina" onsubmit="return confirm('Eliminare questa fascia di peso?')"><button class="btn ghost">Elimina</button></form></td></tr>''' for t in tiers) or '<tr><td colspan="4" class="sub">Nessuna fascia di peso inserita.</td></tr>'
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{esc(co['name'])}</h1><div class="sub">Anagrafica collaboratore</div></div><a class="btn ghost" href="/collaboratori">Torna alla lista</a></div><section class="section"><h2>Anagrafica</h2><form method="post" action="/collaboratori"><input type="hidden" name="id" value="{co['id']}"><div class="fields"><div class="field full"><label>Nome</label><input name="name" value="{esc(co['name'])}" required></div><div class="field"><label>Sigla</label><input name="code" value="{esc(co['code']) if 'code' in co.keys() else ''}" maxlength="8" placeholder="Es. CV" style="text-transform:uppercase"></div><div class="field full"><label>Indirizzo</label><input name="address" value="{esc(co['address'])}"></div><div class="field"><label>Comune</label><input name="city" value="{esc(co['city'])}"></div><div class="field"><label>Provincia</label><input name="province" value="{esc(co['province'])}" maxlength="2"></div><div class="field"><label>CAP</label><input name="zip" value="{esc(co['zip'])}"></div><div class="field"><label>Codice fiscale</label><input name="tax_code" value="{esc(co['tax_code'])}"></div><div class="field"><label>Partita IVA</label><input name="vat_number" value="{esc(co['vat_number'])}"></div><div class="field"><label>Codice SDI</label><input name="sdi_code" value="{esc(co['sdi_code'])}"></div><div class="field"><label>Telefono</label><input name="phone" value="{esc(co['phone'])}"></div><div class="field"><label>Email</label><input type="email" name="email" value="{esc(co['email'])}"></div><div class="field full"><label>Note</label><input name="notes" value="{esc(co['notes'])}"></div></div><button class="btn" style="margin-top:12px">Salva anagrafica</button></form><form method="post" action="/collaboratori/{co['id']}/elimina" onsubmit="return confirm('Eliminare questo collaboratore dalla lista?')"><button class="btn ghost" style="margin-top:12px">Elimina collaboratore</button></form></section><div style="height:14px"></div><section class="section"><h2>Listino dedicato</h2><p class="sub">Fasce di peso e prezzo: inserendo il peso dell'animale durante la creazione della pratica, il campo Cremazione del preventivo si compila automaticamente con il prezzo della fascia corrispondente. Lascia "A (kg)" vuoto per l'ultima fascia senza limite superiore.</p><div class="tablebox"><table><thead><tr><th>Da (kg)</th><th>A (kg)</th><th>Prezzo €</th><th>Azione</th></tr></thead><tbody>{tier_rows}</tbody></table></div><form method="post" action="/collaboratori/{co['id']}/listino" style="margin-top:14px"><div class="fields"><div class="field"><label>Da (kg)</label><input name="weight_min" required inputmode="decimal" placeholder="Es. 0"></div><div class="field"><label>A (kg)</label><input name="weight_max" inputmode="decimal" placeholder="Vuoto = senza limite"></div><div class="field"><label>Prezzo €</label><input name="price" required inputmode="decimal" placeholder="Es. 150,00"></div></div><button class="btn" style="margin-top:12px">Aggiungi fascia</button></form></section><div style="height:14px"></div><section class="section"><h2>Pratiche collegate</h2><div class="tablebox"><table><thead><tr><th>Pratica</th><th>Animale</th><th>Stato</th><th>Recupero</th></tr></thead><tbody>{rows}</tbody></table></div></section></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{esc(co['name'])}</h1><div class="sub">Anagrafica collaboratore</div></div><a class="btn ghost" href="/collaboratori">Torna alla lista</a></div><section class="section"><h2>Anagrafica</h2><form method="post" action="/collaboratori"><input type="hidden" name="id" value="{co['id']}"><div class="fields"><div class="field full"><label>Nome</label><input name="name" value="{esc(co['name'])}" required></div><div class="field"><label>Sigla</label><input name="code" value="{esc(co['code']) if 'code' in co.keys() else ''}" maxlength="8" placeholder="Es. CV" style="text-transform:uppercase"></div><div class="field full"><label>Indirizzo</label><input name="address" value="{esc(co['address'])}"></div><div class="field"><label>Comune</label><input name="city" value="{esc(co['city'])}"></div><div class="field"><label>Provincia</label><input name="province" value="{esc(co['province'])}" maxlength="2"></div><div class="field"><label>CAP</label><input name="zip" value="{esc(co['zip'])}"></div><div class="field"><label>Codice fiscale</label><input name="tax_code" value="{esc(co['tax_code'])}"></div><div class="field"><label>Partita IVA</label><input name="vat_number" value="{esc(co['vat_number'])}"></div><div class="field"><label>Codice SDI</label><input name="sdi_code" value="{esc(co['sdi_code'])}"></div><div class="field"><label>Telefono</label><input name="phone" value="{esc(co['phone'])}"></div><div class="field"><label>Email</label><input type="email" name="email" value="{esc(co['email'])}"></div><div class="field full"><label>Note</label><input name="notes" value="{esc(co['notes'])}"></div></div><button class="btn" style="margin-top:12px">Salva anagrafica</button></form><form method="post" action="/collaboratori/{co['id']}/elimina" onsubmit="return confirm('Eliminare questo collaboratore dalla lista?')"><button class="btn ghost" style="margin-top:12px">Elimina collaboratore</button></form></section><div style="height:14px"></div><section class="section"><h2>Listino dedicato</h2><p class="sub">Fasce di peso e prezzo: inserendo il peso dell'animale durante la creazione della pratica, il campo Cremazione del preventivo si compila automaticamente con il prezzo della fascia corrispondente. Lascia "A (kg)" vuoto per l'ultima fascia senza limite superiore.</p><div class="tablebox"><table><thead><tr><th>Da (kg)</th><th>A (kg)</th><th>Prezzo €</th><th>Azione</th></tr></thead><tbody>{tier_rows}</tbody></table></div><form method="post" action="/collaboratori/{co['id']}/listino" style="margin-top:14px"><div class="fields"><div class="field"><label>Da (kg)</label><input name="weight_min" required inputmode="decimal" placeholder="Es. 0"></div><div class="field"><label>A (kg)</label><input name="weight_max" inputmode="decimal" placeholder="Vuoto = senza limite"></div><div class="field"><label>Prezzo €</label><input name="price" required inputmode="decimal" placeholder="Es. 150,00"></div></div><button class="btn" style="margin-top:12px">Aggiungi fascia</button></form></section><div style="height:14px"></div><section class="titlebar"><h2>Riepilogo mensile</h2><p class="sub">Animali portati da questo collaboratore, raggruppati per mese di recupero, con stato di fatturazione.</p></section>{months_html}</main>'''
         self.send_html(layout("Collaboratore",body,user))
+
+    def collaborator_mark_month(self,user,collaborator_id,action):
+        f=self.form()
+        month=f.get("mese","").strip()
+        if not re.fullmatch(r"\d{4}-\d{2}",month):
+            return self.send_error(400,"Mese non valido")
+        from_status="Da fatturare" if action=="fatturato" else "Fatturato"
+        to_status="Fatturato" if action=="fatturato" else "Incassato"
+        stamp=now()
+        with db() as c:
+            rows=c.execute("""SELECT id,status FROM practices WHERE collaborator_id=? AND (deleted_at IS NULL OR deleted_at='')
+                              AND COALESCE(billing_status,'Da fatturare')=?
+                              AND strftime('%Y-%m',COALESCE(NULLIF(pickup_date,''),created_at))=?""",
+                           (collaborator_id,from_status,month)).fetchall()
+            for row in rows:
+                c.execute("UPDATE practices SET billing_status=?,billing_invoiced_at=?,updated_at=? WHERE id=?",(to_status,stamp,stamp,row["id"]))
+                c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,note,user_id,created_at) VALUES(?,?,?,?,?,?,?)",
+                          (row["id"],"Fatturazione collaboratore",from_status,to_status,f"Mese {month}",user["id"],stamp))
+        self.redirect(f"/collaboratori/{collaborator_id}")
 
     def save_collaborator(self,user):
         f=self.form(); stamp=now()
@@ -6826,9 +7011,10 @@ class App(BaseHTTPRequestHandler):
                     d["client_id"]=self.create_client_from_practice_data(c,d)
                 else:
                     d["client_id"]=None
-            number=next_practice_code(c,d["service_type"])
-            cols=list(d)+["practice_number","status","data_complete","created_at","updated_at","created_by"]
-            values=list(d.values())+[number,initial,self.is_complete(d),stamp,stamp,user["id"]]
+            number=next_practice_code(c,d["service_type"],d.get("request_origin"))
+            billing_status="Da fatturare" if d.get("request_origin")=="Collaboratore" else ""
+            cols=list(d)+["practice_number","status","data_complete","created_at","updated_at","created_by","billing_status"]
+            values=list(d.values())+[number,initial,self.is_complete(d),stamp,stamp,user["id"],billing_status]
             marks=','.join('?' for _ in cols)
             cur=c.execute(f"INSERT INTO practices({','.join(cols)}) VALUES({marks})",values); pid=cur.lastrowid
             self.sync_practice_urn(c,pid,None,d.get("urn_id"),user["id"])
