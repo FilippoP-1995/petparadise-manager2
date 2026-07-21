@@ -72,6 +72,8 @@ PAYMENT_METHODS = [
     "", "Pos", "Contanti", "Bonifico",
 ]
 
+EXPENSE_CATEGORIES = ["Fornitori", "Manutenzione", "Carburante", "Materiali", "Altro"]
+
 MONEY_FIELDS = {
     "price_cremation":"Cremazione", "price_pickup":"Ritiro", "price_urn":"Urna", "price_urn_2":"Seconda urna",
     "price_delivery":"Riconsegna", "price_cast":"Calco", "price_cast_2":"Secondo calco", "price_paw_cast":"Calco polpastrello", "price_paw_cast_2":"Secondo calco polpastrello", "price_paw_cast_3":"Altro calco polpastrello", "price_paw_cast_4":"Altro calco polpastrello", "price_nose_cast":"Calco naso", "price_nose_cast_2":"Secondo calco naso", "price_nose_cast_3":"Altro calco naso", "price_nose_cast_4":"Altro calco naso", "price_evening":"Serale",
@@ -384,6 +386,18 @@ def init_db():
           user_id INTEGER REFERENCES users(id),
           notes TEXT,
           created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS expenses (
+          id INTEGER PRIMARY KEY,
+          expense_date TEXT NOT NULL,
+          amount TEXT NOT NULL,
+          channel TEXT NOT NULL,
+          description TEXT NOT NULL,
+          category TEXT,
+          created_by INTEGER REFERENCES users(id),
+          created_at TEXT NOT NULL,
+          updated_by INTEGER REFERENCES users(id),
+          updated_at TEXT NOT NULL
         );
         INSERT OR IGNORE INTO settings(key,value) VALUES('next_practice_number','1');
         INSERT OR IGNORE INTO settings(key,value) VALUES('next_cr_number','1');
@@ -1011,6 +1025,13 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .calendar-day-free-note{position:absolute;left:0;right:8px;padding:8px 4px 0;color:#7f8b9d;font-size:12px;font-style:italic}
 .light-theme .calendar-day-free-note{color:#526174}
 @media(max-width:520px){.calendar-day-event{flex-wrap:wrap;align-items:flex-start;gap:4px 12px}.calendar-day-event .calendar-event-time{order:-1;flex-basis:100%}.calendar-day-event .calendar-event-icon{order:0}.calendar-day-event .calendar-event-copy{order:1}}
+.balance-total-secondary{margin-top:6px!important;color:#94a3b8;font-size:11px;font-weight:500}
+.balance-card-secondary{display:block;margin-top:2px;color:#94a3b8;font-size:10.5px;font-weight:500;line-height:1.35}
+.expenses-section{margin-top:18px}
+.expenses-channel-title{margin:16px 0 8px;font-size:13px;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em}
+.expenses-channel-title:first-child{margin-top:0}
+.expenses-section .actions{display:flex;gap:8px;flex-wrap:nowrap}
+.light-theme .balance-total-secondary,.light-theme .balance-card-secondary,.light-theme .expenses-channel-title{color:#526174}
 """
 
 APP_JS = r"""
@@ -3169,6 +3190,9 @@ class App(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/calendario/(\d+)",path)
         if match: return self.calendar_event_detail(user,int(match.group(1)))
         if path == "/bilanci": return self.balances_v2(user)
+        if path == "/bilanci/uscite/nuova": return self.expense_form_page(user)
+        match = re.fullmatch(r"/bilanci/uscite/(\d+)/modifica",path)
+        if match: return self.expense_form_page(user,int(match.group(1)))
         if path == "/programma-cremazioni": return self.cremation_schedule(user)
         match = re.fullmatch(r"/pagamenti/(da-saldare|acconti|pagati)", path)
         if match: return self.payment_overview(user,match.group(1))
@@ -3256,6 +3280,9 @@ class App(BaseHTTPRequestHandler):
         if match: return self.calendar_event_action(user,int(match.group(1)),match.group(2))
         match = re.fullmatch(r"/calendario/(\d+)/commenti/(\d+)/(modifica|elimina)",path)
         if match: return self.calendar_comment_action(user,int(match.group(1)),int(match.group(2)),match.group(3))
+        if path == "/bilanci/uscite": return self.expense_create(user)
+        match = re.fullmatch(r"/bilanci/uscite/(\d+)/(modifica|elimina)",path)
+        if match: return self.expense_action(user,int(match.group(1)),match.group(2))
         if path == "/api/push/subscribe": return self.push_subscribe(user)
         if path == "/api/push/unsubscribe": return self.push_unsubscribe(user)
         if path == "/api/push/test": return self.push_test(user)
@@ -4147,6 +4174,82 @@ class App(BaseHTTPRequestHandler):
         body=f'''<main class="wrap balances-wrap"><div class="titlebar"><div><h1>Bilanci</h1><p class="sub">{subtitle} dal {esc(date_it(date_from))} al {esc(date_it(date_to))}</p></div><div class="balance-total"><small>{esc(category_map.get(selected,"Entrate totali"))}</small><strong>{money_it(shown_total)}</strong></div></div><section class="balance-grid">{cards}</section><section class="dashboard-panel balance-chart"><header><div><h2>Andamento nel periodo filtrato</h2><p>Il grafico si aggiorna con date e voce selezionate.</p></div></header>{chart}</section><section class="tablebox balance-table"><table><thead><tr><th>Data</th><th>Pratica</th><th>Cliente</th><th>Voce</th><th>Importo</th><th></th></tr></thead><tbody>{table_body}</tbody></table></section><section class="search-after-results"><h2>Filtra bilanci</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field full"><label>Voce</label><select name="voce">{options}</select></div></div><button class="btn" style="margin-top:12px">Applica filtri</button><a class="btn ghost" style="margin-top:12px" href="/bilanci">Ultimi 7 giorni</a></form></section></main>'''
         self.send_html(layout("Bilanci",body,user))
 
+    def normalized_expense_fields(self,f):
+        expense_date=f.get("expense_date","").strip()
+        amount=normalize_money_text(f.get("amount",""))
+        channel=f.get("channel","").strip()
+        description=f.get("description","").strip()
+        category_choice=f.get("category","").strip()
+        category_custom=f.get("category_custom","").strip()
+        category=category_custom if category_choice=="Altro" and category_custom else category_choice if category_choice!="Altro" else ""
+        error=""
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",expense_date):
+            error="Indica una data valida per l'uscita."
+        elif not amount or not re.fullmatch(r"\d+(?:\.\d{1,2})?",amount) or money_value(amount)<=0:
+            error="Indica un importo valido per l'uscita."
+        elif channel not in ("W","D"):
+            error="Seleziona il circuito W o D."
+        elif not description:
+            error="Indica una descrizione per l'uscita."
+        return {"expense_date":expense_date,"amount":amount,"channel":channel,"description":description,"category":category},error
+
+    def expense_form_page(self,user,eid=None,error="",draft=None):
+        q=parse_qs(urlparse(self.path).query)
+        date_from=(q.get("dal") or [""])[0].strip()
+        date_to=(q.get("al") or [""])[0].strip()
+        back_qs=f"?dal={quote(date_from)}&al={quote(date_to)}" if date_from and date_to else ""
+        expense=None
+        if eid:
+            with db() as c:
+                expense=c.execute("SELECT * FROM expenses WHERE id=?",(eid,)).fetchone()
+            if not expense:return self.send_error(404)
+        today=datetime.now().date().isoformat()
+        if draft is not None:
+            expense_date=draft.get("expense_date",""); amount=draft.get("amount",""); channel=draft.get("channel","W")
+            description=draft.get("description",""); category=draft.get("category","")
+        elif expense is not None:
+            expense_date=expense["expense_date"]; amount=expense["amount"]; channel=expense["channel"]
+            description=expense["description"]; category=expense["category"] or ""
+        else:
+            expense_date=date_to or today; amount=""; channel="W"; description=""; category=""
+        category_is_custom=bool(category) and category not in EXPENSE_CATEGORIES
+        category_select_value="Altro" if category_is_custom else category
+        category_options=''.join(f'<option value="{esc(opt)}" {"selected" if opt==category_select_value else ""}>{esc(label)}</option>' for opt,label in [("","Nessuna categoria"),*[(c,c) for c in EXPENSE_CATEGORIES]])
+        title="Modifica uscita" if expense else "Registra uscita"
+        action=f"/bilanci/uscite/{eid}/modifica" if expense else "/bilanci/uscite"
+        error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{title}</h1><div class="sub">Registra un'uscita indipendente dalle pratiche.</div></div></div>{error_html}<form method="post" action="{action}" class="section"><input type="hidden" name="dal" value="{esc(date_from)}"><input type="hidden" name="al" value="{esc(date_to)}"><div class="fields"><div class="field"><label>Data *</label><input type="date" name="expense_date" value="{esc(expense_date)}" required></div><div class="field"><label>Importo € *</label><input name="amount" value="{esc(amount)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 50,00" required></div><div class="field"><label>Circuito *</label><select name="channel" required><option value="W" {"selected" if channel=="W" else ""}>W</option><option value="D" {"selected" if channel=="D" else ""}>D</option></select></div><div class="field full"><label>Descrizione / causale *</label><input name="description" value="{esc(description)}" required placeholder="Es. Acquisto materiale imballaggio"></div><div class="field"><label>Categoria</label><select name="category" onchange="document.getElementById('expenseCategoryCustom').hidden=this.value!=='Altro'">{category_options}</select></div><div class="field" id="expenseCategoryCustom" {"" if category_is_custom else "hidden"}><label>Specifica categoria</label><input name="category_custom" value="{esc(category if category_is_custom else '')}" placeholder="Es. Assicurazione"></div></div><div class="actions" style="margin-top:16px"><button class="btn">Salva uscita</button><a class="btn ghost" href="/bilanci{back_qs}">Annulla</a></div></form></main>'''
+        self.send_html(layout(title,body,user))
+
+    def expense_create(self,user):
+        f=self.form()
+        date_from=f.get("dal","").strip(); date_to=f.get("al","").strip()
+        back_qs=f"?dal={quote(date_from)}&al={quote(date_to)}" if date_from and date_to else ""
+        data,error=self.normalized_expense_fields(f)
+        if error:return self.expense_form_page(user,error=error,draft=data)
+        stamp=now()
+        with db() as c:
+            c.execute("INSERT INTO expenses(expense_date,amount,channel,description,category,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                      (data["expense_date"],data["amount"],data["channel"],data["description"],data["category"],user["id"],stamp,user["id"],stamp))
+        self.redirect(f"/bilanci{back_qs}")
+
+    def expense_action(self,user,eid,action):
+        f=self.form()
+        date_from=f.get("dal","").strip(); date_to=f.get("al","").strip()
+        back_qs=f"?dal={quote(date_from)}&al={quote(date_to)}" if date_from and date_to else ""
+        with db() as c:
+            expense=c.execute("SELECT * FROM expenses WHERE id=?",(eid,)).fetchone()
+            if not expense:return self.send_error(404)
+            if action=="elimina":
+                c.execute("DELETE FROM expenses WHERE id=?",(eid,))
+                return self.redirect(f"/bilanci{back_qs}")
+            data,error=self.normalized_expense_fields(f)
+            if error:return self.expense_form_page(user,eid,error=error,draft=data)
+            stamp=now()
+            c.execute("UPDATE expenses SET expense_date=?,amount=?,channel=?,description=?,category=?,updated_by=?,updated_at=? WHERE id=?",
+                      (data["expense_date"],data["amount"],data["channel"],data["description"],data["category"],user["id"],stamp,eid))
+        self.redirect(f"/bilanci{back_qs}")
+
     def balances_v2(self,user):
         q=parse_qs(urlparse(self.path).query); today=datetime.now().date(); default_from=today-timedelta(days=6)
         date_from=(q.get("dal") or [default_from.isoformat()])[0].strip(); date_to=(q.get("al") or [today.isoformat()])[0].strip()
@@ -4169,6 +4272,8 @@ class App(BaseHTTPRequestHandler):
             outstanding=c.execute("""SELECT * FROM practices WHERE (deleted_at IS NULL OR deleted_at='')
                                      AND date(COALESCE(NULLIF(pickup_date,''),created_at)) BETWEEN date(?) AND date(?)
                                      ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) DESC,id DESC""",(date_from,date_to)).fetchall()
+            expenses=c.execute("""SELECT * FROM expenses WHERE date(expense_date) BETWEEN date(?) AND date(?)
+                                  ORDER BY date(expense_date) DESC,id DESC""",(date_from,date_to)).fetchall()
 
         def movement_amount(row,key):
             amount=money_value(row["amount"]); is_d=row["payment_channel"]=="D"
@@ -4197,8 +4302,23 @@ class App(BaseHTTPRequestHandler):
             elif key=="da_entrare_d": breakdown[key]=sum(outstanding_amount(row) for row in outstanding if uses_total_d(row))
             elif category_fields.get(key): breakdown[key]=sum(component_amount(row,key) for row in component_rows)
             else: breakdown[key]=sum(movement_amount(row,key) for row in movements)
-        shown_total=breakdown[selected] if selected else sum(money_value(row["amount"]) for row in movements)
-        cards=''.join(f'<a class="balance-card {"active" if selected==key else ""}" href="/bilanci?dal={quote(date_from)}&al={quote(date_to)}&voce={quote(key)}"><small>{label}</small><strong>{money_it(breakdown[key])}</strong></a>' for key,label,_ in categories)
+        gross_w=breakdown["totale_calcolato"]; gross_d=breakdown["totale_d"]
+        expense_w=sum(money_value(e["amount"]) for e in expenses if e["channel"]=="W")
+        expense_d=sum(money_value(e["amount"]) for e in expenses if e["channel"]=="D")
+        breakdown["totale_calcolato"]=gross_w-expense_w
+        breakdown["totale_d"]=gross_d-expense_d
+        gross_by_key={"totale_calcolato":gross_w,"totale_d":gross_d}
+        expense_by_key={"totale_calcolato":expense_w,"totale_d":expense_d}
+        gross_all=sum(money_value(row["amount"]) for row in movements)
+        shown_total=breakdown[selected] if selected else gross_all-(expense_w+expense_d)
+        def render_balance_card(key,label):
+            active="active" if selected==key else ""
+            href=f"/bilanci?dal={quote(date_from)}&al={quote(date_to)}&voce={quote(key)}"
+            if key in gross_by_key:
+                secondary=f'<span class="balance-card-secondary">Entrate lorde: {money_it(gross_by_key[key])} · Uscite: {money_it(expense_by_key[key])}</span>'
+                return f'<a class="balance-card {active}" href="{href}"><small>{label}</small><strong>{money_it(breakdown[key])}</strong>{secondary}</a>'
+            return f'<a class="balance-card {active}" href="{href}"><small>{label}</small><strong>{money_it(breakdown[key])}</strong></a>'
+        cards=''.join(render_balance_card(key,label) for key,label,_ in categories)
         type_labels={"acconto_ordinario":"Acconto W","saldo_ordinario":"Saldo W","acconto_d":"Acconto D","saldo_d":"Saldo D","rettifica":"Rettifica"}
         table_rows=[]; chart_by_day={}
         component_selected=bool(selected and category_fields.get(selected))
@@ -4245,7 +4365,23 @@ class App(BaseHTTPRequestHandler):
             subtitle="Risultati filtrati per data economica"
         chart_description="Ogni voce è conteggiata una sola volta per pratica, senza ripartizioni proporzionali." if component_selected else "Incassi registrati nella loro data effettiva."
         amount_heading="Valore inserito" if component_selected else "Importo"
-        body=f'''<main class="wrap balances-wrap"><div class="titlebar"><div><h1>Bilanci</h1><p class="sub">{subtitle} dal {esc(date_it(date_from))} al {esc(date_it(date_to))}</p></div><div class="balance-total"><small>{esc(category_map.get(selected,"Entrate totali"))}</small><strong>{money_it(shown_total)}</strong></div></div><section class="balance-grid">{cards}</section><section class="dashboard-panel balance-chart"><header><div><h2>Andamento nel periodo filtrato</h2><p>{chart_description}</p></div></header>{chart}</section><section class="tablebox balance-table"><div class="section-collapse-head"><h2>Elenco pratiche</h2><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><table class="balance-list-table"><thead><tr><th>Animale</th><th>Data economica</th><th>Movimento</th><th>Pratica</th><th>Cliente</th><th>{amount_heading}</th><th>Totale</th><th>Acconto</th><th>Rimanenza</th><th>Stato</th><th></th></tr></thead><tbody>{table_body}</tbody></table></div></section><section class="search-after-results"><h2>Filtra bilanci</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field full"><label>Voce</label><select name="voce">{options}</select></div></div><button class="btn" style="margin-top:12px">Applica filtri</button><a class="btn ghost" style="margin-top:12px" href="/bilanci">Ultimi 7 giorni</a></form></section></main>'''
+        if selected in gross_by_key:
+            total_secondary=f'<small class="balance-total-secondary">Entrate lorde: {money_it(gross_by_key[selected])} · Uscite: {money_it(expense_by_key[selected])}</small>'
+        elif not selected and (expense_w+expense_d)>0.004:
+            total_secondary=f'<small class="balance-total-secondary">Entrate lorde: {money_it(gross_all)} · Uscite: {money_it(expense_w+expense_d)}</small>'
+        else:
+            total_secondary=''
+        new_expense_url=f'/bilanci/uscite/nuova?dal={quote(date_from)}&al={quote(date_to)}'
+        def expense_rows_html(channel):
+            rows=[e for e in expenses if e["channel"]==channel]
+            if not rows:return '<tr><td colspan="5" class="sub">Nessuna uscita registrata nel periodo.</td></tr>'
+            out=[]
+            for e in rows:
+                edit_url=f'/bilanci/uscite/{e["id"]}/modifica?dal={quote(date_from)}&al={quote(date_to)}'
+                out.append(f'''<tr><td>{esc(date_it(e["expense_date"]))}</td><td>{esc(e["category"] or "-")}</td><td>{esc(e["description"])}</td><td><b>{money_it(money_value(e["amount"]))}</b></td><td class="actions"><a class="btn ghost" href="{edit_url}">Modifica</a><form method="post" action="/bilanci/uscite/{e["id"]}/elimina" onsubmit="return confirm('Eliminare questa uscita?')" style="display:inline"><input type="hidden" name="dal" value="{esc(date_from)}"><input type="hidden" name="al" value="{esc(date_to)}"><button class="btn danger-btn" type="submit">Elimina</button></form></td></tr>''')
+            return ''.join(out)
+        expenses_section=f'''<section class="tablebox balance-table expenses-section"><div class="section-collapse-head"><h2>Uscite del periodo</h2><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><h3 class="expenses-channel-title">Circuito W</h3><table><thead><tr><th>Data</th><th>Categoria</th><th>Descrizione</th><th>Importo</th><th></th></tr></thead><tbody>{expense_rows_html("W")}</tbody></table><h3 class="expenses-channel-title">Circuito D</h3><table><thead><tr><th>Data</th><th>Categoria</th><th>Descrizione</th><th>Importo</th><th></th></tr></thead><tbody>{expense_rows_html("D")}</tbody></table></div></section>'''
+        body=f'''<main class="wrap balances-wrap"><div class="titlebar"><div><h1>Bilanci</h1><p class="sub">{subtitle} dal {esc(date_it(date_from))} al {esc(date_it(date_to))}</p></div><div class="actions"><a class="btn" href="{new_expense_url}">+ Registra uscita</a></div><div class="balance-total"><small>{esc(category_map.get(selected,"Entrate totali"))}</small><strong>{money_it(shown_total)}</strong>{total_secondary}</div></div><section class="balance-grid">{cards}</section><section class="dashboard-panel balance-chart"><header><div><h2>Andamento nel periodo filtrato</h2><p>{chart_description}</p></div></header>{chart}</section>{expenses_section}<section class="tablebox balance-table"><div class="section-collapse-head"><h2>Elenco pratiche</h2><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><table class="balance-list-table"><thead><tr><th>Animale</th><th>Data economica</th><th>Movimento</th><th>Pratica</th><th>Cliente</th><th>{amount_heading}</th><th>Totale</th><th>Acconto</th><th>Rimanenza</th><th>Stato</th><th></th></tr></thead><tbody>{table_body}</tbody></table></div></section><section class="search-after-results"><h2>Filtra bilanci</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field full"><label>Voce</label><select name="voce">{options}</select></div></div><button class="btn" style="margin-top:12px">Applica filtri</button><a class="btn ghost" style="margin-top:12px" href="/bilanci">Ultimi 7 giorni</a></form></section></main>'''
         self.send_html(layout("Bilanci",body,user))
 
     def payment_overview_legacy(self,user,kind):
