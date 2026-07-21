@@ -1064,8 +1064,8 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .calendar-day-time-single{font-size:12px;font-weight:700;color:currentColor;white-space:nowrap}
 .light-theme .calendar-day-time small{color:#526174}
 .calendar-day-status-badge{display:inline-block;margin-left:8px;padding:2px 9px;border-radius:99px;background:color-mix(in srgb,currentColor 18%,transparent);color:inherit;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;vertical-align:middle}
-.calendar-day-free-note{position:absolute;left:0;right:8px;padding:8px 4px 0;color:#7f8b9d;font-size:12px;font-style:italic}
-.light-theme .calendar-day-free-note{color:#526174}
+.calendar-day-hour-sep{padding:10px 4px 2px;color:#7f8b9d;font-size:11px;font-weight:700;letter-spacing:.04em}
+.light-theme .calendar-day-hour-sep{color:#526174}
 @media(max-width:520px){.calendar-day-event{flex-wrap:wrap;align-items:center;gap:4px 12px}.calendar-day-event .calendar-day-time{order:-1;flex-basis:100%;flex-direction:row;gap:6px}.calendar-day-event .calendar-event-icon{order:0}.calendar-day-event .calendar-event-copy{order:1}}
 .calendar-avatar{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;border-radius:50%;font-weight:800;color:#fff;line-height:1}
 .calendar-avatar-md{width:30px;height:30px;font-size:13px;margin-left:auto}
@@ -3811,68 +3811,24 @@ class App(BaseHTTPRequestHandler):
         switch_active={"mista_settimana":"settimana","mista_mese":"mese","compatto":"mese"}.get(view,view)
         switch=''.join(f'<a data-calendar-view="{key}" class="{"active" if switch_active==key else ""}" href="{view_url(selected_date,key)}">{label}</a>' for key,label in (("giorno","Giorno"),("settimana","Settimana"),("mese","Mese")))
         selected_rows=by_day.get(selected,[])
-        timeline_start,timeline_end,pixels_per_hour=8*60,22*60,58
-        timeline_height=((timeline_end-timeline_start)//60)*pixels_per_hour
-        timeline_lines=''.join(f'<div class="calendar-timeline-line" style="top:{(hour*60-timeline_start)/60*pixels_per_hour}px"><time>{hour:02d}:00</time><span></span></div>' for hour in range(8,23))
-        def positioned_events(day_value,event_rows,class_name,card_fn=None):
-            render_card=card_fn or self.calendar_event_card
-            day_key=day_value.isoformat() if isinstance(day_value,date) else str(day_value)
-            placements=[];lane_ends=[]
-            def clock_minutes(value,fallback):
-                try:
-                    hour,minute=(int(part) for part in value.split(":"));return hour*60+minute
-                except (ValueError,AttributeError):return fallback
-            for row in sorted(event_rows,key=lambda item:(item["start_at"] or "",item["id"])):
-                raw_start=row["start_at"] or "";raw_end=row["end_at"] or raw_start
-                starts_before=raw_start[:10] and raw_start[:10]<day_key;ends_after=raw_end[:10] and raw_end[:10]>day_key
-                is_multiday=bool(row["all_day"] or starts_before or ends_after)
-                minutes=timeline_start if row["all_day"] or starts_before else clock_minutes(raw_start[11:16],timeline_start)
-                natural_end=timeline_end if ends_after else clock_minutes(raw_end[11:16],minutes+60)
-                minutes=max(timeline_start,min(timeline_end-45,minutes));display_end=max(minutes+45,min(timeline_end,natural_end))
-                # A same-day event is always drawn as a compact block at its start time (real duration
-                # is shown as text in the card, not as block height); only a genuinely multi-day event
-                # gets a visually elongated block spanning the covered portion of this day's timeline.
-                visual_end=display_end if is_multiday else min(display_end,minutes+45)
-                lane=next((index for index,end_minute in enumerate(lane_ends) if end_minute<=minutes),len(lane_ends))
-                if lane==len(lane_ends):lane_ends.append(display_end)
-                else:lane_ends[lane]=display_end
-                placements.append((row,minutes,display_end,lane,visual_end))
-            cluster_lane_count=[1]*len(placements);cluster_start=0;cluster_end=None
-            for index,(_,minutes,display_end,_,_) in enumerate(placements):
-                if cluster_end is not None and minutes>=cluster_end:
-                    count=max(placements[i][3] for i in range(cluster_start,index))+1
-                    for i in range(cluster_start,index):cluster_lane_count[i]=count
-                    cluster_start=index;cluster_end=None
-                cluster_end=display_end if cluster_end is None else max(cluster_end,display_end)
-            if placements:
-                count=max(placements[i][3] for i in range(cluster_start,len(placements)))+1
-                for i in range(cluster_start,len(placements)):cluster_lane_count[i]=count
-            rendered=[]
-            for index,(row,minutes,display_end,lane,visual_end) in enumerate(placements):
-                top=max(0,(minutes-timeline_start)/60*pixels_per_hour);height=max(44,(visual_end-minutes)/60*pixels_per_hour-3)
-                style=f'--event-lane:{lane};--event-lanes:{cluster_lane_count[index]};--event-height:{height:.1f}px;top:{top:.1f}px'
-                rendered.append(f'<div class="{class_name}" style="{style}">{render_card(row,client_names=client_names,practice_owner_names=practice_owner_names)}</div>')
-            return ''.join(rendered)
-        timeline_events=positioned_events(selected_date,selected_rows,"calendar-timeline-event",card_fn=self.calendar_day_event_card)
+        # Day view is a simple chronological list: every event row shares the same fixed
+        # height regardless of its duration (no hourly grid, no proportional block sizing).
+        day_rows_sorted=sorted(selected_rows,key=lambda item:(item["start_at"] or "",item["id"]))
+        def day_row_hour(row):
+            raw_start=row["start_at"] or ""
+            if row["all_day"] or (raw_start[:10] and raw_start[:10]<selected):return None
+            return raw_start[11:13] if len(raw_start)>=13 else None
+        day_list_parts=[];last_hour=None
+        for row in day_rows_sorted:
+            hour=day_row_hour(row)
+            if hour is not None and hour!=last_hour:
+                day_list_parts.append(f'<div class="calendar-day-hour-sep"><span>{hour}:00</span></div>')
+            if hour is not None:last_hour=hour
+            day_list_parts.append(self.calendar_day_event_card(row,client_names=client_names,practice_owner_names=practice_owner_names))
+        day_events_html=''.join(day_list_parts)
         day_legend='''<div class="calendar-day-legend"><div class="calendar-day-legend-group"><span class="calendar-day-legend-title">Colore = stato del ritiro</span><span class="calendar-legend-item"><span class="calendar-legend-dot calendar-yellow"></span>Da confermare</span><span class="calendar-legend-item"><span class="calendar-legend-dot calendar-red"></span>Da ritirare</span><span class="calendar-legend-item"><span class="calendar-legend-dot calendar-green"></span>Ritirato</span><span class="calendar-legend-item"><span class="calendar-legend-dot calendar-dark"></span>Annullato</span></div><div class="calendar-day-legend-group"><span class="calendar-day-legend-title">Colore fisso = altri tipi</span><span class="calendar-legend-item"><span class="calendar-legend-dot calendar-blue"></span>Riconsegna</span><span class="calendar-legend-item"><span class="calendar-legend-dot calendar-purple"></span>Appuntamento</span></div></div>'''
-        def clock_minutes_of(value,fallback):
-            try:
-                hour,minute=(int(part) for part in value.split(":"));return hour*60+minute
-            except (ValueError,AttributeError):return fallback
-        day_last_end=timeline_start;day_open_ended=False
-        for row in selected_rows:
-            raw_start=row["start_at"] or "";raw_end=row["end_at"] or raw_start
-            if row["all_day"] or (raw_start[:10] and raw_start[:10]<selected):
-                day_open_ended=True;continue
-            ends_after=raw_end[:10] and raw_end[:10]>selected
-            end_minutes=timeline_end if ends_after else clock_minutes_of(raw_end[11:16],clock_minutes_of(raw_start[11:16],timeline_start)+60)
-            day_last_end=max(day_last_end,min(timeline_end,end_minutes))
-        free_note=''
-        if selected_rows and not day_open_ended and (timeline_end-day_last_end)>=60:
-            free_top=(day_last_end-timeline_start)/60*pixels_per_hour
-            free_note=f'<div class="calendar-day-free-note" style="top:{free_top:.1f}px">Resto della giornata libero</div>'
         if selected_rows:
-            day_view=f'<section class="calendar-day-view">{operator_legend}{day_legend}<div class="calendar-day-timeline" style="--timeline-height:{timeline_height}px"><div class="calendar-timeline-grid">{timeline_lines}</div><div class="calendar-timeline-events">{timeline_events}{free_note}</div></div></section>'
+            day_view=f'<section class="calendar-day-view">{operator_legend}{day_legend}<div class="calendar-day-list">{day_events_html}</div></section>'
         else:
             day_view=f'<section class="calendar-day-view">{operator_legend}{day_legend}<section class="calendar-day-list"><section class="section empty-state"><p>Nessun evento</p><a class="btn" href="/calendario/nuovo?data={selected}">+ Crea evento in questa data</a></section></section></section>'
         week_days=[start+timedelta(days=i) for i in range(7)]

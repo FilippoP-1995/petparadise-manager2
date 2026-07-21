@@ -338,9 +338,8 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("calendar-month", pages["mese"])
         self.assertIn("calendar-dot-red", pages["mese"])
         self.assertIn("calendar-event-icon", pages["giorno"])
-        self.assertIn("--event-lanes:2", pages["giorno"])
-        self.assertIn("--event-lane:0", pages["giorno"])
-        self.assertIn("--event-lane:1", pages["giorno"])
+        self.assertIn('class="calendar-day-list"', pages["giorno"])
+        self.assertNotIn('<div class="calendar-day-timeline"', pages["giorno"])
         self.assertEqual(pages["giorno"].count('data-calendar-view="'), 3)
         for label in ("Giorno", "Settimana", "Mese"):
             self.assertIn(f">{label}</a>", pages["giorno"])
@@ -363,7 +362,7 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertNotIn("+ Nuovo evento", pages["current"])
         self.assertIn(f"{self.admin['display_name']} <span", pages["current"])
 
-    def test_day_view_redesign_shows_legend_status_badges_colors_and_free_time_note(self):
+    def test_day_view_redesign_shows_legend_status_badges_and_colors(self):
         self.save(self.event_form("Ritiro", title="RITIRO FIDO", event_status="Da confermare", start_time="08:30", end_time="09:00"))
         self.save(self.event_form("Ritiro", title="RITIRO LUNA", event_status="Da ritirare", start_time="09:30", end_time="10:00"))
         self.save(self.event_form("Ritiro", title="RITIRO BELLA", event_status="Ritirato", start_time="10:30", end_time="11:00"))
@@ -394,8 +393,7 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn('<span class="calendar-day-status-badge">Da ritirare</span>', page)
         self.assertIn('<span class="calendar-day-status-badge">Ritirato</span>', page)
         self.assertIn('<span class="calendar-day-status-badge">Annullato</span>', page)
-        self.assertIn("calendar-day-free-note", page)
-        self.assertIn("Resto della giornata libero", page)
+        self.assertNotIn("calendar-day-free-note", page)
         self.assertIn(".calendar-day-event{display:flex", app.CSS)
         # week view has its own distinct compact card, not the day-only markup
         self.handler.path = "/calendario?vista=settimana&data=2026-07-15"
@@ -438,7 +436,7 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertEqual(page.count('class="calendar-month-v2-pill '), 3)
         self.assertNotIn('<div class="calendar-operator-legend">', page)
 
-    def test_non_overlapping_event_keeps_full_width_despite_other_overlaps_same_day(self):
+    def test_day_view_lists_events_in_chronological_order_without_grid_or_lanes(self):
         self.save(self.event_form("Ritiro", event_status="Da ritirare"))
         self.save(self.event_form("Appuntamento", title="APPUNTAMENTO FORNITORE", end_time="10:00"))
         self.save(self.event_form("Appuntamento", title="EVENTO ISOLATO", start_time="14:00", end_time="15:00"))
@@ -447,13 +445,18 @@ class OperationalCalendarTests(unittest.TestCase):
         self.handler.path = "/calendario?vista=giorno&data=2026-07-15"
         self.handler.calendar_page(self.admin)
         page = rendered[-1]
-        isolated_pos = page.index("EVENTO ISOLATO")
-        card_start = page.rindex('<div class="calendar-timeline-event"', 0, isolated_pos)
-        card_style = page[card_start:isolated_pos]
-        self.assertIn("--event-lanes:1", card_style)
-        self.assertIn("--event-lanes:2", page)
+        self.assertNotIn('style="--event-lane', page)
+        self.assertNotIn('style="--event-height', page)
+        self.assertNotIn('<div class="calendar-timeline-event"', page)
+        self.assertNotIn('<div class="calendar-day-timeline"', page)
+        ritiro_pos = page.index("RITIRO LIVORNO")
+        fornitore_pos = page.index("PROMEMORIA FORNITORE")
+        isolato_pos = page.index("EVENTO ISOLATO")
+        self.assertLess(ritiro_pos, fornitore_pos)
+        self.assertLess(fornitore_pos, isolato_pos)
 
-    def test_day_view_compact_height_for_same_day_multihour_vs_elongated_for_multiday(self):
+    def test_day_view_same_row_structure_for_short_long_and_multiday_events(self):
+        self.save(self.event_form("Appuntamento", title="EVENTO BREVE", start_time="08:10", end_time="08:20"))
         self.save(self.event_form("Appuntamento", title="EVENTO STESSO GIORNO", start_time="09:00", end_time="17:00"))
         self.save(self.event_form("Appuntamento", title="EVENTO MULTI GIORNO",
                                    start_date="2026-07-15", start_time="09:30", end_date="2026-07-17", end_time="10:30"))
@@ -462,20 +465,25 @@ class OperationalCalendarTests(unittest.TestCase):
         self.handler.path = "/calendario?vista=giorno&data=2026-07-15"
         self.handler.calendar_page(self.admin)
         page = rendered[-1]
-
-        def event_height(title):
-            title_pos = page.index(title)
-            card_start = page.rindex('<div class="calendar-timeline-event"', 0, title_pos)
-            style = page[card_start:title_pos]
-            return float(re.search(r"--event-height:([\d.]+)px", style).group(1))
-
-        same_day_height = event_height("EVENTO STESSO GIORNO")
-        multi_day_height = event_height("EVENTO MULTI GIORNO")
-        self.assertAlmostEqual(same_day_height, 44.0, places=1)
-        self.assertGreater(multi_day_height, 300)
+        # No per-event height/lane math survives: every row is the same plain card,
+        # stacked in a simple chronological list (no hourly grid behind it).
+        self.assertNotIn('style="--event-height', page)
+        self.assertNotIn('style="--event-lane', page)
+        self.assertNotIn('<div class="calendar-timeline-event"', page)
+        self.assertNotIn('<div class="calendar-day-timeline"', page)
+        self.assertEqual(page.count('class="calendar-event calendar-day-event'), 3)
+        self.assertIn("08:10", page)
+        self.assertIn("08:20", page)
         self.assertIn("09:00", page)
         self.assertIn("17:00", page)
         self.assertIn("2026-07-15 → 2026-07-17", page)
+        self.assertIn('class="calendar-day-hour-sep"><span>08:00</span>', page)
+        self.assertIn('class="calendar-day-hour-sep"><span>09:00</span>', page)
+        breve_pos = page.index("EVENTO BREVE")
+        stesso_pos = page.index("EVENTO STESSO GIORNO")
+        multi_pos = page.index("EVENTO MULTI GIORNO")
+        self.assertLess(breve_pos, stesso_pos)
+        self.assertLess(stesso_pos, multi_pos)
 
     def test_calendar_css_touch_targets_alignment_colors_and_opacity_fixes(self):
         self.assertIn(".calendar-date-nav .btn{min-width:44px;min-height:44px;padding:0;font-size:19px}", app.CSS)
