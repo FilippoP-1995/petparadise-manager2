@@ -67,6 +67,44 @@ class PetParadiseTests(unittest.TestCase):
         with app.db() as conn:self.assertEqual(conn.execute("SELECT animal_name FROM practices WHERE id=?",(pid,)).fetchone()["animal_name"],"Fido Junior")
         self.assertNotEqual(new_version,stamp)
 
+    def test_invoice_total_recomputes_on_preventivo_changes_unless_manually_edited(self):
+        stamp = "2026-07-15T10:00:00"
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,
+                   created_by,animal_name,tag_da_richiamare,price_cremation,total_service,invoice_total,invoice_total_manual,payment_status)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-INVAUTO", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Fido", "Si",
+                 "100", "100.00", "100.00", "", "Da saldare"),
+            ).lastrowid
+
+        # Bumping an economic field must re-flow into invoice_total automatically (auto mode, not yet edited by hand).
+        captured = []
+        self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+        self.handler.form = lambda: {"updated_at": stamp, "changes_json": json.dumps({"price_cremation": "150"})}
+        self.handler.practice_autosave(admin, pid)
+        self.assertEqual(captured[-1][1], 200)
+        version = captured[-1][0]["updated_at"]
+        with app.db() as conn:
+            row = conn.execute("SELECT total_service,invoice_total,invoice_total_manual FROM practices WHERE id=?", (pid,)).fetchone()
+            self.assertEqual((row["total_service"], row["invoice_total"], row["invoice_total_manual"]), ("150.00", "150.00", ""))
+
+        # The user now types a custom invoice total by hand: the manual flag flips and future
+        # preventivo edits must no longer silently overwrite what they typed.
+        self.handler.form = lambda: {"updated_at": version, "changes_json": json.dumps({"invoice_total": "999.00", "invoice_total_manual": "Si"})}
+        self.handler.practice_autosave(admin, pid)
+        version = captured[-1][0]["updated_at"]
+        with app.db() as conn:
+            row = conn.execute("SELECT invoice_total,invoice_total_manual FROM practices WHERE id=?", (pid,)).fetchone()
+            self.assertEqual((row["invoice_total"], row["invoice_total_manual"]), ("999.00", "Si"))
+
+        self.handler.form = lambda: {"updated_at": version, "changes_json": json.dumps({"price_cremation": "200"})}
+        self.handler.practice_autosave(admin, pid)
+        with app.db() as conn:
+            row = conn.execute("SELECT total_service,invoice_total FROM practices WHERE id=?", (pid,)).fetchone()
+            self.assertEqual((row["total_service"], row["invoice_total"]), ("200.00", "999.00"))
+
     def test_notification_schema_and_preferences(self):
         with app.db() as conn:
             tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -1054,17 +1092,18 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(f'/pratiche/{newer_id}', page)
         self.assertIn(f'/pratiche/{catalog_id}', page)
         self.assertIn(f'/pratiche/{freetext_id}', page)
-        # Data recupero must be the last real column, before the INSERITO checkbox.
+        # Data recupero -> Pagamento -> Inserito must be the trailing column order.
         header = page[page.index("<thead>"):page.index("</thead>")]
         self.assertLess(header.index(">Urna<"), header.index(">Cliente<"))
         self.assertLess(header.index(">Cliente<"), header.index(">Data recupero<"))
-        self.assertLess(header.index(">Data recupero<"), header.index(">Inserito<"))
-        self.assertIn(f'name="inserted_{older_id}"', page)
-        self.assertIn("onchange=\"markCremationRowPending(this)\"", page)
-        self.assertIn("function markCremationRowPending(input)", app.APP_JS)
-        self.assertIn('id="cremationForm"', page)
-        self.assertIn('form="cremationForm" type="submit"', page)  # the visible SALVA button
-        self.assertNotIn('practice-row-link cremation-row-done', page)  # nothing marked INSERITO yet
+        self.assertLess(header.index(">Data recupero<"), header.index(">Pagamento<"))
+        self.assertLess(header.index(">Pagamento<"), header.index(">Inserito<"))
+        self.assertIn(f'data-cremation-id="{older_id}"', page)
+        self.assertIn("onchange=\"toggleCremationQueue(this)\"", page)
+        self.assertIn("async function toggleCremationQueue(input)", app.APP_JS)
+        self.assertIn("Nessun animale spuntato come INSERITO da completare.", page)
+        self.assertNotIn('practice-row-link cremation-row-done', page)  # nothing queued yet
+        self.assertIn("Da saldare", page)  # default payment badge for practices with no payment set
 
         rendered.clear()
         self.handler.path = "/programma-cremazioni?provenienza=L"
@@ -1074,45 +1113,112 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn("CR-CREM-NEW", filtered)
         self.assertNotIn("CR-CREM-CAT", filtered)
 
-    def test_saving_cremation_schedule_moves_checked_animals_to_in_programma(self):
+    def test_cremation_toggle_queue_persists_checkbox_without_changing_status(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-QUEUE", "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-15", stamp, stamp,
+                 admin["id"], "CR-QUEUE"),
+            ).lastrowid
+
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.form = lambda: {"queued": "1"}
+        self.handler.cremation_toggle_queue(admin, pid)
+        self.assertEqual(responses[-1], ({"ok": True, "queued": True}, 200))
+        with app.db() as conn:
+            row = conn.execute("SELECT status,cremation_queued FROM practices WHERE id=?", (pid,)).fetchone()
+            self.assertEqual((row["status"], row["cremation_queued"]), ("Ritirato", "Si"))
+
+        # Still checked and still in the list on a fresh page load (survives navigation without an explicit finalize).
+        rendered = []
+        self.handler.path = "/programma-cremazioni"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn("CR-QUEUE", page)
+        self.assertIn(f'data-cremation-id="{pid}" checked', page)
+        self.assertIn('practice-row-link cremation-row-done', page)
+        self.assertIn("1 animali spuntati INSERITO passeranno allo stato In programma", page)
+
+        # Unchecking clears the persisted flag.
+        responses.clear()
+        self.handler.form = lambda: {"queued": "0"}
+        self.handler.cremation_toggle_queue(admin, pid)
+        self.assertEqual(responses[-1], ({"ok": True, "queued": False}, 200))
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT cremation_queued FROM practices WHERE id=?", (pid,)).fetchone()["cremation_queued"], "")
+
+    def test_complete_cremation_session_moves_only_queued_animals_to_in_programma(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
             stamp = app.now()
 
-            def practice(code):
+            def practice(code, queued=""):
                 return conn.execute(
                     """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
-                       pickup_date,created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                       pickup_date,created_at,updated_at,created_by,animal_name,cremation_queued) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
                     (code, "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-15", stamp, stamp,
-                     admin["id"], code),
+                     admin["id"], code, queued),
                 ).lastrowid
 
-            checked_id = practice("CR-INSERITO")
-            unchecked_id = practice("CR-NON-INSERITO")
+            queued_id = practice("CR-INSERITO", queued="Si")
+            unqueued_id = practice("CR-NON-INSERITO")
 
-        self.handler.path = "/programma-cremazioni/salva"
-        self.handler.form = lambda: {"return_to": "/programma-cremazioni", f"inserted_{checked_id}": "1"}
+        self.handler.path = "/programma-cremazioni"
+        self.handler.form = lambda: {"return_to": "/programma-cremazioni"}
         redirected = []
         self.handler.redirect = lambda url: redirected.append(url)
-        self.handler.save_cremation_schedule(admin)
+        self.handler.complete_cremation_session(admin)
         self.assertEqual(redirected[-1], "/programma-cremazioni")
         with app.db() as conn:
-            checked_row = conn.execute("SELECT status,cremation_registered FROM practices WHERE id=?", (checked_id,)).fetchone()
-            unchecked_row = conn.execute("SELECT status,cremation_registered FROM practices WHERE id=?", (unchecked_id,)).fetchone()
-            self.assertEqual((checked_row["status"], checked_row["cremation_registered"]), ("In programma", "Si"))
-            self.assertEqual((unchecked_row["status"], unchecked_row["cremation_registered"]), ("Ritirato", None))
+            queued_row = conn.execute("SELECT status,cremation_registered,cremation_queued FROM practices WHERE id=?", (queued_id,)).fetchone()
+            unqueued_row = conn.execute("SELECT status,cremation_registered,cremation_queued FROM practices WHERE id=?", (unqueued_id,)).fetchone()
+            self.assertEqual((queued_row["status"], queued_row["cremation_registered"], queued_row["cremation_queued"]), ("In programma", "Si", ""))
+            self.assertEqual((unqueued_row["status"], unqueued_row["cremation_registered"]), ("Ritirato", None))
             history = conn.execute(
-                "SELECT event_type,old_value,new_value FROM practice_history WHERE practice_id=?", (checked_id,)
+                "SELECT event_type,old_value,new_value FROM practice_history WHERE practice_id=?", (queued_id,)
             ).fetchone()
             self.assertEqual((history["event_type"], history["old_value"], history["new_value"]), ("Cambio stato rapido", "Ritirato", "In programma"))
 
-        # The saved practice moved out of Ritirato, so it must disappear from the list on reload.
+        # The finalized practice moved out of Ritirato, so it must disappear from the list on reload.
         rendered = []
         self.handler.path = "/programma-cremazioni"
         self.handler.send_html = lambda content, *args: rendered.append(content)
         self.handler.cremation_schedule(admin)
         self.assertNotIn("CR-INSERITO", rendered[-1])
         self.assertIn("CR-NON-INSERITO", rendered[-1])
+
+    def test_cremation_schedule_shows_payment_status_amount_and_channel(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,payment_status,price_cremation)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-PAID-W", "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-15", stamp, stamp,
+                 admin["id"], "CR-PAID-W", "Pagato", "150"),
+            )
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,payment_status,total_text)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-DUE-D", "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-16", stamp, stamp,
+                 admin["id"], "CR-DUE-D", "Da saldare", "200"),
+            )
+        rendered = []
+        self.handler.path = "/programma-cremazioni"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn("€ 150,00", page)
+        self.assertIn("€ 200,00", page)
+        self.assertIn('badge pay-green">Pagato</span> € 150,00 · W', page)
+        self.assertIn('badge pay-yellow">Da saldare</span> € 200,00 · D', page)
 
     def test_normalization_keeps_custom_plate_and_calculates_remaining(self):
         data = self.handler.normalized_fields({
