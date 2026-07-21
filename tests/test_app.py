@@ -830,10 +830,16 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('class="balance-card balance-card-static"', page)
         self.assertIn("€ 1.150,00", page)
         self.assertIn("Entrate lorde: € 1.320,00 · Uscite: € 170,00", page)
-        self.assertIn("Materiale imballaggio", page)
-        self.assertIn("Fornitore urne", page)
         self.assertIn("+ Registra uscita", page)
-        self.assertIn("Uscite del periodo", page)
+        self.assertIn('<small>Uscite</small><strong>€ 170,00</strong>', page)
+        self.assertNotIn("Materiale imballaggio", page)
+        self.assertIn(f"dettaglio=uscite", page)
+        self.handler.path = f"/bilanci?dal={today}&al={today}&dettaglio=uscite"
+        self.handler.balances_v2(admin)
+        detail_page = rendered[-1]
+        self.assertIn("Uscite del periodo", detail_page)
+        self.assertIn("Materiale imballaggio", detail_page)
+        self.assertIn("Fornitore urne", detail_page)
         self.handler.path = f"/bilanci?dal={today}&al={today}&voce=totale_calcolato"
         self.handler.balances_v2(admin)
         page = rendered[-1]
@@ -893,9 +899,14 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('<small>Altre entrate W</small><strong>€ 60,00</strong>', page)
         self.assertIn('<small>Totale W</small><strong>€ 880,00</strong>', page)
         self.assertIn("Entrate lorde: € 820,00 · Altre entrate: € 60,00", page)
-        self.assertIn("Rimborso assicurazione", page)
         self.assertIn("+ Registra entrata", page)
-        self.assertIn("Altre entrate del periodo", page)
+        self.assertIn('<small>Altre entrate</small><strong>€ 60,00</strong>', page)
+        self.assertNotIn("Rimborso assicurazione", page)
+        self.handler.path = f"/bilanci?dal={today}&al={today}&dettaglio=entrate"
+        self.handler.balances_v2(admin)
+        detail_page = rendered[-1]
+        self.assertIn("Altre entrate del periodo", detail_page)
+        self.assertIn("Rimborso assicurazione", detail_page)
 
     def test_balances_excludes_collaborator_practices_and_shows_dedicated_panel(self):
         today = app.datetime.now().date().isoformat()
@@ -921,10 +932,15 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('<small>Totale W</small><strong>€ 0,00</strong>', page)
         self.assertNotIn("COL-000001", page)
         self.assertIn("Collaboratori", page)
-        self.assertIn("HUMANITAS CROCE VERDE", page)
-        self.assertIn('<small>Da fatturare</small><strong>€ 200,00</strong>', page)
-        self.assertIn('<small>Fatturato</small><strong>€ 0,00</strong>', page)
-        self.assertIn('<small>Incassato</small><strong>€ 0,00</strong>', page)
+        self.assertIn('<small>Collaboratori</small><strong>€ 200,00</strong>', page)
+        self.assertNotIn("HUMANITAS CROCE VERDE", page)
+        self.handler.path = f"/bilanci?dal={today}&al={today}&dettaglio=collaboratori"
+        self.handler.balances_v2(admin)
+        detail_page = rendered[-1]
+        self.assertIn("HUMANITAS CROCE VERDE", detail_page)
+        self.assertIn('<small>Da fatturare</small><strong>€ 200,00</strong>', detail_page)
+        self.assertIn('<small>Fatturato</small><strong>€ 0,00</strong>', detail_page)
+        self.assertIn('<small>Incassato</small><strong>€ 0,00</strong>', detail_page)
 
     def test_collaborator_practice_gets_separate_col_numbering_and_billing_status(self):
         with app.db() as conn:
