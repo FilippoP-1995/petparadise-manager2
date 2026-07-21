@@ -833,7 +833,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("PP-DISP-LI-W2", page)
         self.assertIn("PP-DISP-LI-D1", page)
         self.assertIn("PP-DISP-EM-W1", page)
-        self.assertNotIn("PP-DISP-ALREADY", page)
+        self.assertIn("PP-DISP-ALREADY", page)
         self.assertNotIn("PP-DISP-OUTSIDE", page)
         self.assertNotIn("PP-DISP-SINGOLA", page)
         self.assertIn("Livorno · Circuito W", page)
@@ -841,6 +841,9 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Empoli · Circuito W", page)
         self.assertIn("Conferma scarico", page)
         self.assertIn("cambierà lo stato di 4 pratiche in Smaltito", page)
+        self.assertIn("Da confermare", page)
+        self.assertIn("Già smaltita", page)
+        self.assertIn("4 da confermare · 1 già smaltite", page)
 
     def test_disposal_confirm_updates_statuses_records_history_and_excludes_from_future_periods(self):
         with app.db() as conn:
@@ -882,6 +885,15 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn("PP-CONF-W", page)
         self.assertNotIn("PP-CONF-D", page)
         self.assertIn("Nessuna pratica di cremazione collettiva da smaltire", page)
+        rendered_same = []; self.handler.send_html = lambda content, *a: rendered_same.append(content)
+        self.handler.path = "/smaltimenti?dal=2026-07-01&al=2026-07-31"
+        self.handler.disposal_page(admin)
+        same_period_page = rendered_same[-1]
+        self.assertIn("PP-CONF-W", same_period_page)
+        self.assertIn("PP-CONF-D", same_period_page)
+        self.assertIn("Già smaltita", same_period_page)
+        self.assertNotIn("Conferma scarico", same_period_page)
+        self.assertIn("Nessuna pratica da confermare nel periodo selezionato", same_period_page)
 
     def test_disposal_confirm_rejects_empty_period_without_creating_batch(self):
         with app.db() as conn:
