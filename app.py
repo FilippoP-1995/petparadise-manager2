@@ -28,6 +28,8 @@ from calendar_service import (
     parse_items as calendar_parse_items, period_bounds as calendar_period_bounds,
     schedule_event_notifications, sync_children as calendar_sync_children,
 )
+CALENDAR_OPERATOR_SLUGS={"Serena":"serena","Alessio":"alessio","Filippo":"filippo","Gianluca":"gianluca"}
+
 from pdf_service import generate_ddt
 from notification_service import (
     NOTIFICATION_TYPES,
@@ -1036,11 +1038,67 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .light-theme .calendar-legend-item{color:#111827}
 .calendar-day-event{display:flex;align-items:center;gap:12px;padding:10px 14px}
 .calendar-day-event .calendar-event-copy{flex:1;min-width:0}
-.calendar-day-event .calendar-event-time{display:block;flex:0 0 auto;position:static;top:auto;left:auto;height:auto;padding:0;border:0;color:inherit;font-weight:750;font-size:13px;align-self:center}
+.calendar-day-time{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;flex:0 0 54px;line-height:1.2}
+.calendar-day-time b{font-size:14px;font-weight:800;color:currentColor}
+.calendar-day-time small{font-size:11px;font-weight:600;color:#94a3b8}
+.calendar-day-time-single{font-size:12px;font-weight:700;color:currentColor;white-space:nowrap}
+.light-theme .calendar-day-time small{color:#526174}
 .calendar-day-status-badge{display:inline-block;margin-left:8px;padding:2px 9px;border-radius:99px;background:color-mix(in srgb,currentColor 18%,transparent);color:inherit;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;vertical-align:middle}
 .calendar-day-free-note{position:absolute;left:0;right:8px;padding:8px 4px 0;color:#7f8b9d;font-size:12px;font-style:italic}
 .light-theme .calendar-day-free-note{color:#526174}
-@media(max-width:520px){.calendar-day-event{flex-wrap:wrap;align-items:flex-start;gap:4px 12px}.calendar-day-event .calendar-event-time{order:-1;flex-basis:100%}.calendar-day-event .calendar-event-icon{order:0}.calendar-day-event .calendar-event-copy{order:1}}
+@media(max-width:520px){.calendar-day-event{flex-wrap:wrap;align-items:flex-start;gap:4px 12px}.calendar-day-event .calendar-day-time{order:-1;flex-basis:100%;flex-direction:row;gap:6px}.calendar-day-event .calendar-event-icon{order:0}.calendar-day-event .calendar-event-copy{order:1}}
+.calendar-avatar{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;border-radius:50%;font-weight:800;color:#fff;line-height:1}
+.calendar-avatar-md{width:30px;height:30px;font-size:13px;margin-left:auto}
+.calendar-avatar-sm{width:22px;height:22px;font-size:10px}
+.calendar-avatar-xs{width:18px;height:18px;font-size:9px}
+.calendar-avatar-serena{background:#f43f5e}
+.calendar-avatar-alessio{background:#14b8a6}
+.calendar-avatar-filippo{background:#eab308}
+.calendar-avatar-gianluca{background:#7c3aed}
+.calendar-avatar-other{background:#64748b}
+.calendar-operator-legend{display:flex;flex-wrap:wrap;gap:14px;margin-bottom:12px;padding:10px 15px;border:1px solid #3a495e;border-radius:13px;background:#1b2636}
+.calendar-operator-legend .calendar-legend-item{gap:7px;font-weight:650}
+.light-theme .calendar-operator-legend{background:#fff;border-color:#cbd5e1}
+.light-theme .calendar-operator-legend .calendar-legend-item{color:#111827}
+.calendar-week-v2-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid #293648;border-radius:12px;background:#101925}
+.calendar-week-v2-grid{display:grid;grid-template-columns:repeat(7,minmax(150px,1fr));gap:0;min-width:1040px}
+.calendar-week-v2-day{min-height:220px;padding:0;border-right:1px solid #293648}
+.calendar-week-v2-day:last-child{border-right:0}
+.calendar-week-v2-day>header{position:sticky;top:0;z-index:2;display:flex;align-items:baseline;gap:7px;padding:10px 12px;border-bottom:1px solid #293648;background:#101925}
+.calendar-week-v2-dow{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8}
+.calendar-week-v2-daynum{font-size:16px;font-weight:800;color:#f8fafc}
+.calendar-week-v2-day.is-today>header{background:color-mix(in srgb,#ef405f 14%,#101925)}
+.calendar-week-v2-day.is-today>header .calendar-week-v2-daynum{color:#fb7185}
+.calendar-week-v2-day.is-today{box-shadow:inset 2px 0 0 #ef405f}
+.calendar-week-v2-events{display:grid;gap:6px;padding:8px}
+.calendar-week-v2-empty{margin:8px 4px;color:#7f8b9d;font-size:12px;font-style:italic}
+.calendar-week-v2-event{display:flex;align-items:center;gap:7px;padding:7px 9px;border:1px solid color-mix(in srgb,currentColor 45%,#334155);border-left:3px solid currentColor;border-radius:8px;background:color-mix(in srgb,currentColor 8%,#15202f);color:inherit;overflow:hidden}
+.calendar-week-v2-event-time{flex:0 0 auto;font-size:10px;font-weight:700;color:currentColor}
+.calendar-week-v2-event-title{flex:1;min-width:0;font-size:11.5px;font-weight:650;color:#e7ecf3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.light-theme .calendar-week-v2-scroll,.light-theme .calendar-week-v2-day>header{background:#fff;border-color:#d7dee8}
+.light-theme .calendar-week-v2-daynum{color:#111827}
+.light-theme .calendar-week-v2-event{background:color-mix(in srgb,currentColor 6%,#fff)}
+.light-theme .calendar-week-v2-event-title{color:#111827}
+.light-theme .calendar-week-v2-empty{color:#526174}
+.light-theme .calendar-week-v2-day.is-today>header{background:#fde3e7}
+.light-theme .calendar-week-v2-day.is-today>header .calendar-week-v2-daynum{color:#be123c}
+@media(max-width:900px){.calendar-week-v2-grid{grid-template-columns:repeat(7,minmax(130px,1fr));min-width:910px}}
+.calendar-month-v2-dow-row{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));margin-bottom:4px}
+.calendar-month-v2-dow{padding:4px 6px;color:#94a3b8;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;text-align:center}
+.calendar-month-v2-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:0;border-top:1px solid #293648;border-left:1px solid #293648;border-radius:11px;overflow:hidden}
+.calendar-month-v2-cell{min-height:88px;padding:5px;border-right:1px solid #293648;border-bottom:1px solid #293648;background:#0f1723}
+.calendar-month-v2-cell.is-other-month{background:#0b121b;opacity:.55}
+.calendar-month-v2-cell.is-today{box-shadow:inset 0 0 0 2px #ef405f}
+.calendar-month-v2-num{display:inline-block;min-width:20px;margin-bottom:3px;color:#cbd5e1;font-size:12px;font-weight:700;text-align:center}
+.calendar-month-v2-cell.is-today .calendar-month-v2-num{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#ef405f;color:#fff}
+.calendar-month-v2-pills{display:grid;gap:2px}
+.calendar-month-v2-pill{display:block;padding:2px 6px;border-radius:5px;background:color-mix(in srgb,currentColor 20%,transparent);color:inherit;font-size:10px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.calendar-month-v2-more{display:block;padding:1px 6px;color:#94a3b8;font-size:10px;font-weight:700}
+.light-theme .calendar-month-v2-cell{background:#fff}
+.light-theme .calendar-month-v2-cell.is-other-month{background:#f1f5f9}
+.light-theme .calendar-month-v2-num{color:#111827}
+.light-theme .calendar-month-v2-more{color:#526174}
+@media(max-width:620px){.calendar-month-v2-cell{min-height:64px;padding:3px}.calendar-month-v2-pill{font-size:9px;padding:1px 4px}.calendar-month-v2-dow{font-size:9px;padding:3px 2px}}
 .balance-total-secondary{margin-top:6px!important;color:#94a3b8;font-size:11px;font-weight:500}
 .expenses-section{margin-top:18px}
 .expenses-channel-title{margin:16px 0 8px;font-size:13px;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em}
@@ -3581,6 +3639,12 @@ class App(BaseHTTPRequestHandler):
         body=f'''<main class="wrap dashboard-wrap"><section class="welcome"><div><h1>{greeting}, {esc(user['display_name'])} <span aria-hidden="true">👋</span></h1><p>Panoramica operativa del periodo selezionato</p></div></section>{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}{sections_html}{persistence_script}</main>'''
         self.send_html(layout("Dashboard",body,user))
 
+    def calendar_operator_avatar(self,operator_name,size="md"):
+        if not operator_name:return ''
+        slug=CALENDAR_OPERATOR_SLUGS.get(operator_name,"other")
+        initial=esc(operator_name.strip()[:1].upper())
+        return f'<span class="calendar-avatar calendar-avatar-{size} calendar-avatar-{slug}" title="{esc(operator_name)}">{initial}</span>'
+
     def calendar_event_client_name(self,row,client_names=None,practice_owner_names=None):
         client_names=client_names or {};practice_owner_names=practice_owner_names or {}
         if row["client_id"] and client_names.get(row["client_id"]):return client_names[row["client_id"]]
@@ -3619,8 +3683,13 @@ class App(BaseHTTPRequestHandler):
     def calendar_day_event_card(self,row,compact=False,client_names=None,practice_owner_names=None):
         cls=event_color_class(row)
         start=(row["start_at"] or "");end=(row["end_at"] or "")
-        time_text="Tutto il giorno" if row["all_day"] else start[11:16]
-        if start[:10]!=end[:10]:time_text=f'{start[:10]} → {end[:10]}'
+        if row["all_day"]:
+            time_html='<span class="calendar-day-time-single">Tutto il giorno</span>'
+        elif start[:10]!=end[:10]:
+            time_html=f'<span class="calendar-day-time-single">{esc(start[:10])} → {esc(end[:10])}</span>'
+        else:
+            start_time=start[11:16];end_time=end[11:16]
+            time_html=f'<b>{esc(start_time)}</b>'+(f'<small>{esc(end_time)}</small>' if end_time and end_time!=start_time else '')
         details=[]
         client_display=self.calendar_event_client_name(row,client_names,practice_owner_names)
         if client_display:details.append(client_display)
@@ -3639,8 +3708,22 @@ class App(BaseHTTPRequestHandler):
         client_missing=f'<span class="calendar-client-missing" title="Cliente da completare">{lucide("user")}</span>' if row["event_type"] in ("Ritiro","Ritiro in sede") and not client_display else ''
         status_badge=f'<span class="calendar-day-status-badge">{esc(row["event_status"])}</span>' if row["event_type"] in ("Ritiro","Ritiro in sede") and row["event_status"] else ''
         subtitle=esc(' · '.join(details) or ('Promemoria' if row['event_type']=='Appuntamento' else row['event_type']))
-        operator=esc(row['operator_name'] or row['assigned_name'] or row['creator_name'])
-        return f'''<a class="calendar-event calendar-day-event {cls}" href="/calendario/{row['id']}"><span class="calendar-event-icon">{lucide(icon_name)}</span><span class="calendar-event-copy"><h3>{esc(display_title)}{status_badge}{client_missing}</h3><p>{subtitle}</p>{f"<p>{operator}</p>" if operator else ""}</span><time class="calendar-event-time">{esc(time_text)}</time></a>'''
+        operator_name=row['operator_name'] or row['assigned_name'] or row['creator_name']
+        avatar=self.calendar_operator_avatar(operator_name)
+        return f'''<a class="calendar-event calendar-day-event {cls}" href="/calendario/{row['id']}"><span class="calendar-day-time">{time_html}</span><span class="calendar-event-icon">{lucide(icon_name)}</span><span class="calendar-event-copy"><h3>{esc(display_title)}{status_badge}{client_missing}</h3><p>{subtitle}</p></span>{avatar}</a>'''
+
+    def calendar_event_display_title(self,row):
+        title=row["title"]
+        if row["event_type"]=="Appuntamento":title=re.sub(r"^APPUNTAMENTO\b","PROMEMORIA",title,flags=re.I)
+        return title
+
+    def calendar_week_event_card(self,row,client_names=None,practice_owner_names=None):
+        cls=event_color_class(row)
+        time_text="Tutto il giorno" if row["all_day"] else (row["start_at"] or "")[11:16]
+        display_title=self.calendar_event_display_title(row)
+        operator_name=row['operator_name'] or row['assigned_name'] or row['creator_name']
+        avatar=self.calendar_operator_avatar(operator_name,"xs")
+        return f'<a class="calendar-week-v2-event {cls}" href="/calendario/{row["id"]}"><span class="calendar-week-v2-event-time">{esc(time_text)}</span><span class="calendar-week-v2-event-title">{esc(display_title)}</span>{avatar}</a>'
 
     def calendar_page(self,user):
         q=parse_qs(urlparse(self.path).query);selected=(q.get("data") or [datetime.now().date().isoformat()])[0]
@@ -3680,10 +3763,11 @@ class App(BaseHTTPRequestHandler):
             cursor=max(start,date.fromisoformat(row["start_at"][:10]));last=min(end,date.fromisoformat(row["end_at"][:10]))
             while cursor<=last:by_day.setdefault(cursor.isoformat(),[]).append(row);cursor+=timedelta(days=1)
         selected_date=date.fromisoformat(selected)
+        today_date=datetime.now().date()
+        operator_legend='<div class="calendar-operator-legend">'+''.join(f'<span class="calendar-legend-item">{self.calendar_operator_avatar(name,"xs")}{esc(name)}</span>' for name in CALENDAR_OPERATORS)+'</div>'
         month_names=("Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno","Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre")
         day_names=("Lun","Mar","Mer","Gio","Ven","Sab","Dom")
         day_names_full=("Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica")
-        def italian_short_day(value):return f"{day_names[value.weekday()]} {value.day}"
         def italian_long_date(value):return f"{day_names_full[value.weekday()]} {value.day} {month_names[value.month-1]}"
         if view=="giorno":
             prev_target,next_target=selected_date-timedelta(days=1),selected_date+timedelta(days=1)
@@ -3757,17 +3841,37 @@ class App(BaseHTTPRequestHandler):
             free_top=(day_last_end-timeline_start)/60*pixels_per_hour
             free_note=f'<div class="calendar-day-free-note" style="top:{free_top:.1f}px">Resto della giornata libero</div>'
         if selected_rows:
-            day_view=f'<section class="calendar-day-view">{day_legend}<div class="calendar-day-timeline" style="--timeline-height:{timeline_height}px"><div class="calendar-timeline-grid">{timeline_lines}</div><div class="calendar-timeline-events">{timeline_events}{free_note}</div></div></section>'
+            day_view=f'<section class="calendar-day-view">{operator_legend}{day_legend}<div class="calendar-day-timeline" style="--timeline-height:{timeline_height}px"><div class="calendar-timeline-grid">{timeline_lines}</div><div class="calendar-timeline-events">{timeline_events}{free_note}</div></div></section>'
         else:
-            day_view=f'<section class="calendar-day-view">{day_legend}<section class="calendar-day-list"><section class="section empty-state"><p>Nessun evento</p><a class="btn" href="/calendario/nuovo?data={selected}">+ Crea evento in questa data</a></section></section></section>'
+            day_view=f'<section class="calendar-day-view">{operator_legend}{day_legend}<section class="calendar-day-list"><section class="section empty-state"><p>Nessun evento</p><a class="btn" href="/calendario/nuovo?data={selected}">+ Crea evento in questa data</a></section></section></section>'
         week_days=[start+timedelta(days=i) for i in range(7)]
-        week_axis=''.join(f'<time style="top:{(hour*60-timeline_start)/60*pixels_per_hour}px">{hour:02d}:00</time>' for hour in range(8,23))
-        week_grid_lines=''.join(f'<span class="calendar-week-grid-line" style="top:{(hour*60-timeline_start)/60*pixels_per_hour}px"></span>' for hour in range(8,23))
-        week_columns=''.join(f'''<div class="calendar-day-column {'is-selected' if day==selected_date else ''}"><header><a href="{view_url(day,'giorno')}"><b>{italian_short_day(day)}</b></a></header><div class="calendar-week-day-body" style="--timeline-height:{timeline_height}px">{week_grid_lines}<div class="calendar-week-events">{positioned_events(day,by_day.get(day.isoformat(),[]),'calendar-week-event')}</div></div></div>''' for day in week_days)
-        week_view=f'<div class="calendar-week-scroll"><section class="calendar-week"><div class="calendar-week-time-column"><header>ORA</header><div class="calendar-week-axis" style="--timeline-height:{timeline_height}px">{week_axis}</div></div>{week_columns}</section></div>'
+        def week_day_sort_key(row):return (0 if row["all_day"] else 1,row["start_at"] or "")
+        def week_day_events_html(day):
+            day_rows=sorted(by_day.get(day.isoformat(),[]),key=week_day_sort_key)
+            if not day_rows:return '<p class="calendar-week-v2-empty">Nessun evento</p>'
+            return ''.join(self.calendar_week_event_card(row,client_names=client_names,practice_owner_names=practice_owner_names) for row in day_rows)
+        week_columns=''.join(f'''<div class="calendar-week-v2-day{' is-today' if day==today_date else ''}"><header><a href="{view_url(day,'giorno')}"><span class="calendar-week-v2-dow">{day_names[day.weekday()]}</span><span class="calendar-week-v2-daynum">{day.day}</span></a></header><div class="calendar-week-v2-events">{week_day_events_html(day)}</div></div>''' for day in week_days)
+        week_view=f'<section class="calendar-week-v2">{operator_legend}<div class="calendar-week-v2-scroll" data-calendar-swipe><div class="calendar-week-v2-grid">{week_columns}</div></div></section>'
         month_start=start;offset=month_start.weekday();grid_start=month_start-timedelta(days=offset);month_days=[grid_start+timedelta(days=i) for i in range(42)]
         compact=view=="compatto"
-        month_grid='<section class="calendar-month">'+''.join(f'''<div class="calendar-month-day {'selected' if day.isoformat()==selected else ''}"><a href="{view_url(day,'mese')}">{day.day}</a><div class="calendar-dots">{''.join(f'<span class="calendar-dot {event_color_class(row)}" title="{esc(row["title"])}"></span>' for row in by_day.get(day.isoformat(),[]))}</div></div>''' for day in month_days)+'</section>'
+        month_pill_limit=3
+        def month_pill(row):
+            cls=event_color_class(row)
+            title=self.calendar_event_display_title(row)
+            return f'<a class="calendar-month-v2-pill {cls}" href="/calendario/{row["id"]}" title="{esc(title)}">{esc(title)}</a>'
+        def month_cell(day):
+            day_rows=by_day.get(day.isoformat(),[])
+            shown=day_rows[:month_pill_limit];extra=len(day_rows)-month_pill_limit
+            pills=''.join(month_pill(row) for row in shown)
+            more=f'<a class="calendar-month-v2-more" href="{view_url(day,"giorno")}">+{extra} altri</a>' if extra>0 else ''
+            classes=['calendar-month-v2-cell']
+            if day==today_date:classes.append('is-today')
+            if day.month!=selected_date.month:classes.append('is-other-month')
+            if day.isoformat()==selected:classes.append('selected')
+            cell_href=view_url(day,'mese')
+            return f'<div class="{" ".join(classes)}"><a class="calendar-month-v2-num" href="{cell_href}">{day.day}</a><div class="calendar-month-v2-pills">{pills}{more}</div></div>'
+        month_dow_header=''.join(f'<div class="calendar-month-v2-dow">{name}</div>' for name in day_names)
+        month_grid=f'<section class="calendar-month-v2"><div class="calendar-month-v2-dow-row">{month_dow_header}</div><div class="calendar-month-v2-grid">'+''.join(month_cell(day) for day in month_days)+'</div></section>'
         month_agenda=''.join(self.calendar_event_card(row,client_names=client_names,practice_owner_names=practice_owner_names) for row in selected_rows) or '<p class="sub calendar-month-empty">Nessun evento</p>'
         month_view=f'<div class="calendar-month-composition">{month_grid}<section class="calendar-month-agenda"><header><h2>{italian_long_date(selected_date)}</h2><span class="badge">{len(selected_rows)} eventi</span></header><div class="calendar-day-list">{month_agenda}</div></section></div>'
         if view=="giorno":content=day_view
