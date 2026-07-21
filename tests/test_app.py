@@ -2018,6 +2018,19 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('<details class="advanced-search">',collapsed);self.assertIn('<summary>Ricerca avanzata</summary>',collapsed)
         self.assertNotIn(' open',collapsed);self.assertIn('advanced-search-form',collapsed)
         self.assertEqual(app.collapse_advanced_search('<form method="get"><input name="q"></form>'),'<form method="get"><input name="q"></form>')
+        opted_out='<form class="section no-advanced-collapse" method="get"><input name="q"><select name="stato"></select></form>'
+        self.assertEqual(app.collapse_advanced_search(opted_out),opted_out)
+
+    def test_urn_catalog_search_bar_is_always_visible_not_collapsed(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda html, *args: rendered.append(html)
+        self.handler.path = "/catalogo-urne"
+        self.handler.urn_catalog_page(admin)
+        page = rendered[-1]
+        self.assertIn('id="urnCatalogSearch"', page)
+        self.assertNotIn('<details class="advanced-search"><summary>Ricerca avanzata</summary><form class="section urn-filter', page)
 
     def test_practice_list_order_sticky_urn_and_inline_statuses(self):
         with app.db() as conn:
