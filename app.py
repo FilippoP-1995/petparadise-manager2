@@ -2917,6 +2917,11 @@ def money_it(value):
     return f"€ {value:,.2f}".replace(",","X").replace(".",",").replace("X",".")
 
 
+def kg_it(value):
+    if not value:return "0 kg"
+    return f"{round(value,2):g}".replace(".",",")+" kg"
+
+
 def effective_total(practice):
     keys=practice.keys() if hasattr(practice,"keys") else practice
     definitive=practice["total_text"] if "total_text" in keys else ""
@@ -4430,30 +4435,43 @@ class App(BaseHTTPRequestHandler):
         date_to=(q.get("al") or [today.isoformat()])[0].strip()
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_from): date_from=default_from.isoformat()
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_to): date_to=today.isoformat()
+        stato_filter=(q.get("stato") or [""])[0].strip()
+        if stato_filter not in ("","da_confermare","smaltito"): stato_filter=""
         with db() as c:
             eligible=self.disposal_eligible_practices(c,date_from,date_to)
             already_done=self.disposal_already_done_practices(c,date_from,date_to)
             history=c.execute("""SELECT b.*,u.display_name FROM disposal_batches b LEFT JOIN users u ON u.id=b.confirmed_by
                                  ORDER BY b.confirmed_at DESC""").fetchall()
-        groups={}
-        for row in eligible:
-            branch=row["destination_branch"] or "Non indicata"
-            channel=payment_channel(row)
-            groups.setdefault((branch,channel),{"pending":[],"done":[]})["pending"].append(row)
-        for row in already_done:
-            branch=row["destination_branch"] or "Non indicata"
-            channel=payment_channel(row)
-            groups.setdefault((branch,channel),{"pending":[],"done":[]})["done"].append(row)
+        def build_groups(pending_rows,done_rows):
+            groups={}
+            for row in pending_rows:
+                branch=row["destination_branch"] or "Non indicata"
+                channel=payment_channel(row)
+                groups.setdefault((branch,channel),{"pending":[],"done":[]})["pending"].append(row)
+            for row in done_rows:
+                branch=row["destination_branch"] or "Non indicata"
+                channel=payment_channel(row)
+                groups.setdefault((branch,channel),{"pending":[],"done":[]})["done"].append(row)
+            return groups
+        full_groups=build_groups(eligible,already_done)
+        show_pending=stato_filter!="smaltito"
+        show_done=stato_filter!="da_confermare"
+        display_groups=build_groups(eligible if show_pending else [],already_done if show_done else [])
         def disposal_row_html(r,status_label,status_class):
-            return f'''<tr><td>{esc(r["animal_name"] or "Da inserire")}</td><td>{esc(self.disposal_contact_for(r))}</td><td>{esc(date_it(r["pickup_date"] or r["created_at"]))}</td><td><a href="/pratiche/{r["id"]}">{esc(r["practice_number"])}</a></td><td><span class="badge {status_class}">{status_label}</span></td></tr>'''
+            weight=money_value(r["estimated_weight"]) if r["estimated_weight"] else 0.0
+            weight_cell=kg_it(weight) if weight else '<span class="sub">-</span>'
+            return f'''<tr><td>{esc(r["animal_name"] or "Da inserire")}</td><td>{weight_cell}</td><td>{esc(self.disposal_contact_for(r))}</td><td>{esc(date_it(r["pickup_date"] or r["created_at"]))}</td><td><a href="/pratiche/{r["id"]}">{esc(r["practice_number"])}</a></td><td><span class="badge {status_class}">{status_label}</span></td></tr>'''
         group_sections=[]
-        for (branch,channel),data in sorted(groups.items(),key=lambda item:(item[0][0],item[0][1])):
+        for (branch,channel),data in sorted(display_groups.items(),key=lambda item:(item[0][0],item[0][1])):
             rows_html=''.join(disposal_row_html(r,"Da confermare","tag-orange") for r in data["pending"])+''.join(disposal_row_html(r,"Già smaltita","tag-green") for r in data["done"])
             group_total=len(data["pending"])+len(data["done"])
-            group_sections.append(f'''<section class="section disposal-group"><div class="section-collapse-head"><h2>{esc(branch)} · Circuito {esc(channel)}</h2><span class="badge">{group_total} animali</span><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><table><thead><tr><th>Animale</th><th>Proprietario/Veterinario</th><th>Data recupero</th><th>Pratica</th><th>Stato</th></tr></thead><tbody>{rows_html}</tbody></table></div></section>''')
+            group_kg=sum(money_value(r["estimated_weight"]) for r in data["pending"]+data["done"] if r["estimated_weight"])
+            total_row=f'<tr class="disposal-group-total"><td><b>Totale</b></td><td><b>{kg_it(group_kg)}</b></td><td colspan="4"></td></tr>'
+            group_sections.append(f'''<section class="section disposal-group"><div class="section-collapse-head"><h2>{esc(branch)} · Circuito {esc(channel)}</h2><span class="badge">{group_total} animali</span><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><table><thead><tr><th>Animale</th><th>Peso</th><th>Proprietario/Veterinario</th><th>Data recupero</th><th>Pratica</th><th>Stato</th></tr></thead><tbody>{rows_html}{total_row}</tbody></table></div></section>''')
+        filter_note='<p class="sub">Nessuna pratica corrisponde al filtro di stato selezionato per questo periodo.</p>' if not display_groups and full_groups else ''
         total_count=len(eligible)
         total_already=len(already_done)
-        breakdown_summary=''.join(f'<div class="kv"><small>{esc(branch)} · Circuito {esc(channel)}</small><b>{len(data["pending"])+len(data["done"])}</b><small>{len(data["pending"])} da confermare · {len(data["done"])} già smaltite</small></div>' for (branch,channel),data in sorted(groups.items(),key=lambda item:(item[0][0],item[0][1])))
+        breakdown_summary=''.join(f'<div class="kv"><small>{esc(branch)} · Circuito {esc(channel)}</small><b>{len(data["pending"])+len(data["done"])}</b><small>{len(data["pending"])} da confermare · {len(data["done"])} già smaltite</small></div>' for (branch,channel),data in sorted(full_groups.items(),key=lambda item:(item[0][0],item[0][1])))
         error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
         if total_count:
             confirm_form=f'''<form method="post" action="/smaltimenti/conferma" onsubmit="return confirm('Sei sicuro? Questa azione cambierà lo stato di {total_count} pratiche in Smaltito')"><input type="hidden" name="dal" value="{esc(date_from)}"><input type="hidden" name="al" value="{esc(date_to)}"><button class="btn">Conferma scarico</button></form>'''
@@ -4462,7 +4480,8 @@ class App(BaseHTTPRequestHandler):
         else:
             confirm_form='<p class="sub">Nessuna pratica di cremazione collettiva da smaltire nel periodo selezionato.</p>'
         history_rows=''.join(f'''<tr><td>{esc(date_it(b["confirmed_at"]))}</td><td>{esc(date_it(b["period_from"]))} → {esc(date_it(b["period_to"]))}</td><td><b>{b["total_count"]}</b></td><td>{esc(b["display_name"] or "-")}</td><td><a class="btn ghost" href="/smaltimenti/storico/{b["id"]}">Apri</a></td></tr>''' for b in history) or '<tr><td colspan="5" class="sub">Nessuno scarico registrato.</td></tr>'
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Smaltimenti</h1><p class="sub">Conferimenti periodici delle cremazioni collettive alla ditta esterna di smaltimento.</p></div></div>{error_html}<section class="section"><h2>Periodo</h2><form method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div></div><button class="btn" style="margin-top:12px">Applica periodo</button></form></section><section class="section"><h2>Riepilogo periodo {esc(date_it(date_from))} - {esc(date_it(date_to))}</h2><div class="kvs">{breakdown_summary or '<span class="sub">Nessun dato per il periodo selezionato.</span>'}<div class="kv"><small>Totale generale</small><b>{total_count+total_already}</b><small>{total_count} da confermare · {total_already} già smaltite</small></div></div><div class="actions" style="margin-top:14px">{confirm_form}</div></section>{''.join(group_sections)}<section class="tablebox"><div class="section-collapse-head"><h2>Storico scarichi</h2><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><table><thead><tr><th>Data conferma</th><th>Periodo</th><th>Totale animali</th><th>Confermato da</th><th></th></tr></thead><tbody>{history_rows}</tbody></table></div></section></main>'''
+        stato_options=''.join(f'<option value="{esc(value)}"{" selected" if stato_filter==value else ""}>{esc(label)}</option>' for value,label in (("","Tutte"),("da_confermare","Da confermare"),("smaltito","Già smaltite")))
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Smaltimenti</h1><p class="sub">Conferimenti periodici delle cremazioni collettive alla ditta esterna di smaltimento.</p></div></div>{error_html}<section class="section"><h2>Periodo</h2><form method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Stato pratica</label><select name="stato">{stato_options}</select></div></div><button class="btn" style="margin-top:12px">Applica periodo</button></form></section><section class="section"><h2>Riepilogo periodo {esc(date_it(date_from))} - {esc(date_it(date_to))}</h2><div class="kvs">{breakdown_summary or '<span class="sub">Nessun dato per il periodo selezionato.</span>'}<div class="kv"><small>Totale generale</small><b>{total_count+total_already}</b><small>{total_count} da confermare · {total_already} già smaltite</small></div></div><div class="actions" style="margin-top:14px">{confirm_form}</div></section>{filter_note}{''.join(group_sections)}<section class="tablebox"><div class="section-collapse-head"><h2>Storico scarichi</h2><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><table><thead><tr><th>Data conferma</th><th>Periodo</th><th>Totale animali</th><th>Confermato da</th><th></th></tr></thead><tbody>{history_rows}</tbody></table></div></section></main>'''
         self.send_html(layout("Smaltimenti",body,user))
 
     def disposal_confirm(self,user):
@@ -4502,8 +4521,25 @@ class App(BaseHTTPRequestHandler):
         except (ValueError,TypeError):
             breakdown={}
         breakdown_html=''.join(f'<div class="kv"><small>{esc(key.replace("|"," · Circuito "))}</small><b>{count}</b></div>' for key,count in breakdown.items())
-        rows_html=''.join(f'''<tr><td>{esc(r["destination_branch"] or "-")}</td><td>{esc(r["animal_name"] or "Da inserire")}</td><td>{esc(self.disposal_contact_for(r))}</td><td>{esc(date_it(r["pickup_date"] or r["created_at"]))}</td><td><a href="/pratiche/{r["id"]}">{esc(r["practice_number"])}</a></td></tr>''' for r in practices) or '<tr><td colspan="5" class="sub">Nessuna pratica collegata.</td></tr>'
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Scarico del {esc(date_it(batch["confirmed_at"]))}</h1><p class="sub">Periodo {esc(date_it(batch["period_from"]))} → {esc(date_it(batch["period_to"]))} · confermato da {esc(batch["display_name"] or "-")}</p></div><a class="btn ghost" href="/smaltimenti">Torna a Smaltimenti</a></div><section class="section"><h2>Riepilogo</h2><div class="kvs">{breakdown_html}<div class="kv"><small>Totale generale</small><b>{batch["total_count"]}</b></div></div></section><section class="tablebox"><table><thead><tr><th>Sede</th><th>Animale</th><th>Proprietario/Veterinario</th><th>Data recupero</th><th>Pratica</th></tr></thead><tbody>{rows_html}</tbody></table></section></main>'''
+        weight_groups={}
+        for r in practices:
+            branch=r["destination_branch"] or "Non indicata"
+            channel=payment_channel(r)
+            weight_groups.setdefault((branch,channel),[]).append(r)
+        row_parts=[]; grand_kg=0.0
+        for (branch,channel),rows in sorted(weight_groups.items(),key=lambda item:(item[0][0],item[0][1])):
+            group_kg=0.0
+            for r in rows:
+                weight=money_value(r["estimated_weight"]) if r["estimated_weight"] else 0.0
+                group_kg+=weight
+                weight_cell=kg_it(weight) if weight else '<span class="sub">-</span>'
+                row_parts.append(f'''<tr><td>{esc(r["destination_branch"] or "-")}</td><td>{esc(r["animal_name"] or "Da inserire")}</td><td>{weight_cell}</td><td>{esc(self.disposal_contact_for(r))}</td><td>{esc(date_it(r["pickup_date"] or r["created_at"]))}</td><td><a href="/pratiche/{r["id"]}">{esc(r["practice_number"])}</a></td></tr>''')
+            grand_kg+=group_kg
+            row_parts.append(f'<tr class="disposal-group-total"><td colspan="2"><b>Totale {esc(branch)} · Circuito {esc(channel)}</b></td><td><b>{kg_it(group_kg)}</b></td><td colspan="3"></td></tr>')
+        if practices:
+            row_parts.append(f'<tr class="disposal-grand-total"><td colspan="2"><b>Totale generale</b></td><td><b>{kg_it(grand_kg)}</b></td><td colspan="3"></td></tr>')
+        rows_html=''.join(row_parts) or '<tr><td colspan="6" class="sub">Nessuna pratica collegata.</td></tr>'
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Scarico del {esc(date_it(batch["confirmed_at"]))}</h1><p class="sub">Periodo {esc(date_it(batch["period_from"]))} → {esc(date_it(batch["period_to"]))} · confermato da {esc(batch["display_name"] or "-")}</p></div><a class="btn ghost" href="/smaltimenti">Torna a Smaltimenti</a></div><section class="section"><h2>Riepilogo</h2><div class="kvs">{breakdown_html}<div class="kv"><small>Totale generale</small><b>{batch["total_count"]}</b></div></div></section><section class="tablebox"><table><thead><tr><th>Sede</th><th>Animale</th><th>Peso</th><th>Proprietario/Veterinario</th><th>Data recupero</th><th>Pratica</th></tr></thead><tbody>{rows_html}</tbody></table></section></main>'''
         self.send_html(layout("Dettaglio scarico",body,user))
 
     def payment_overview_legacy(self,user,kind):
