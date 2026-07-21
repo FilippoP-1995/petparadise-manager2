@@ -4546,23 +4546,24 @@ class App(BaseHTTPRequestHandler):
         net_w=gross_w-expense_w+income_w; net_d=gross_d-expense_d+income_d
         gross_all=sum(money_value(row["amount"]) for row in movements)
         shown_total=breakdown[selected] if selected else gross_all-(expense_w+expense_d)+(income_w+income_d)
+        period_params=f'dal={quote(date_from)}&al={quote(date_to)}'
         def render_balance_card(key,label):
             active="active" if selected==key else ""
-            href=f"/bilanci?dal={quote(date_from)}&al={quote(date_to)}&voce={quote(key)}"
+            href=f"/bilanci?{period_params}&voce={quote(key)}"
             return f'<a class="balance-card {active}" href="{href}"><small>{label}</small><strong>{money_it(breakdown[key])}</strong></a>'
-        def static_card(label,value):
-            return f'<div class="balance-card balance-card-static"><small>{label}</small><strong>{money_it(value)}</strong></div>'
+        def linked_card(label,value,dettaglio_key):
+            return f'<a class="balance-card" href="/bilanci?{period_params}&dettaglio={dettaglio_key}"><small>{label}</small><strong>{money_it(value)}</strong></a>'
         card_parts=[]
         for key,label,_ in categories:
             card_parts.append(render_balance_card(key,label))
             if key=="totale_calcolato":
-                card_parts.append(static_card("Altre entrate W",income_w))
-                card_parts.append(static_card("Uscite W",expense_w))
-                card_parts.append(static_card("Totale W",net_w))
+                card_parts.append(linked_card("Altre entrate W",income_w,"entrate_w"))
+                card_parts.append(linked_card("Uscite W",expense_w,"uscite_w"))
+                card_parts.append(linked_card("Totale W",net_w,"totale_w"))
             elif key=="totale_d":
-                card_parts.append(static_card("Altre entrate D",income_d))
-                card_parts.append(static_card("Uscite D",expense_d))
-                card_parts.append(static_card("Totale D",net_d))
+                card_parts.append(linked_card("Altre entrate D",income_d,"entrate_d"))
+                card_parts.append(linked_card("Uscite D",expense_d,"uscite_d"))
+                card_parts.append(linked_card("Totale D",net_d,"totale_d"))
         cards=''.join(card_parts)
         type_labels={"acconto_ordinario":"Acconto W","saldo_ordinario":"Saldo W","acconto_d":"Acconto D","saldo_d":"Saldo D","rettifica":"Rettifica"}
         table_rows=[]; chart_by_day={}
@@ -4626,7 +4627,11 @@ class App(BaseHTTPRequestHandler):
                 edit_url=f'/bilanci/uscite/{e["id"]}/modifica?dal={quote(date_from)}&al={quote(date_to)}'
                 out.append(f'''<tr><td>{esc(date_it(e["expense_date"]))}</td><td>{esc(e["category"] or "-")}</td><td>{esc(e["description"])}</td><td><b>{money_it(money_value(e["amount"]))}</b></td><td class="actions"><a class="btn ghost" href="{edit_url}">Modifica</a><form method="post" action="/bilanci/uscite/{e["id"]}/elimina" onsubmit="return confirm('Eliminare questa uscita?')" style="display:inline"><input type="hidden" name="dal" value="{esc(date_from)}"><input type="hidden" name="al" value="{esc(date_to)}"><button class="btn danger-btn" type="submit">Elimina</button></form></td></tr>''')
             return ''.join(out)
-        expenses_section=f'''<section class="tablebox balance-table expenses-section"><h2>Uscite del periodo</h2><h3 class="expenses-channel-title">Circuito W</h3><table><thead><tr><th>Data</th><th>Categoria</th><th>Descrizione</th><th>Importo</th><th></th></tr></thead><tbody>{expense_rows_html("W")}</tbody></table><h3 class="expenses-channel-title">Circuito D</h3><table><thead><tr><th>Data</th><th>Categoria</th><th>Descrizione</th><th>Importo</th><th></th></tr></thead><tbody>{expense_rows_html("D")}</tbody></table></section>'''
+        def expense_channel_block(channel):
+            return f'<h3 class="expenses-channel-title">Circuito {channel}</h3><table><thead><tr><th>Data</th><th>Categoria</th><th>Descrizione</th><th>Importo</th><th></th></tr></thead><tbody>{expense_rows_html(channel)}</tbody></table>'
+        expenses_section=f'''<section class="tablebox balance-table expenses-section"><h2>Uscite del periodo</h2>{expense_channel_block("W")}{expense_channel_block("D")}</section>'''
+        expenses_section_w=f'''<section class="tablebox balance-table expenses-section"><h2>Uscite del periodo — Circuito W</h2>{expense_channel_block("W")}</section>'''
+        expenses_section_d=f'''<section class="tablebox balance-table expenses-section"><h2>Uscite del periodo — Circuito D</h2>{expense_channel_block("D")}</section>'''
         new_income_url=f'/bilanci/entrate/nuova?dal={quote(date_from)}&al={quote(date_to)}'
         def income_rows_html(channel):
             rows=[i for i in incomes if i["channel"]==channel]
@@ -4636,7 +4641,10 @@ class App(BaseHTTPRequestHandler):
                 edit_url=f'/bilanci/entrate/{i["id"]}/modifica?dal={quote(date_from)}&al={quote(date_to)}'
                 out.append(f'''<tr><td>{esc(date_it(i["income_date"]))}</td><td>{esc(i["category"] or "-")}</td><td>{esc(i["description"])}</td><td><b>{money_it(money_value(i["amount"]))}</b></td><td class="actions"><a class="btn ghost" href="{edit_url}">Modifica</a><form method="post" action="/bilanci/entrate/{i["id"]}/elimina" onsubmit="return confirm('Eliminare questa entrata?')" style="display:inline"><input type="hidden" name="dal" value="{esc(date_from)}"><input type="hidden" name="al" value="{esc(date_to)}"><button class="btn danger-btn" type="submit">Elimina</button></form></td></tr>''')
             return ''.join(out)
-        incomes_section=f'''<section class="tablebox balance-table expenses-section"><h2>Altre entrate del periodo</h2><h3 class="expenses-channel-title">Circuito W</h3><table><thead><tr><th>Data</th><th>Categoria</th><th>Descrizione</th><th>Importo</th><th></th></tr></thead><tbody>{income_rows_html("W")}</tbody></table><h3 class="expenses-channel-title">Circuito D</h3><table><thead><tr><th>Data</th><th>Categoria</th><th>Descrizione</th><th>Importo</th><th></th></tr></thead><tbody>{income_rows_html("D")}</tbody></table></section>'''
+        def income_channel_block(channel):
+            return f'<h3 class="expenses-channel-title">Circuito {channel}</h3><table><thead><tr><th>Data</th><th>Categoria</th><th>Descrizione</th><th>Importo</th><th></th></tr></thead><tbody>{income_rows_html(channel)}</tbody></table>'
+        incomes_section_w=f'''<section class="tablebox balance-table expenses-section"><h2>Altre entrate del periodo — Circuito W</h2>{income_channel_block("W")}</section>'''
+        incomes_section_d=f'''<section class="tablebox balance-table expenses-section"><h2>Altre entrate del periodo — Circuito D</h2>{income_channel_block("D")}</section>'''
         collab_totals={"Da fatturare":0.0,"Fatturato":0.0,"Incassato":0.0}
         collab_by_id={}
         for crow in collab_rows:
@@ -4650,19 +4658,32 @@ class App(BaseHTTPRequestHandler):
             centry["totals"][cstatus]+=camount
         collab_rows_html=''.join(f'''<tr><td>{esc(centry["name"])}</td><td>{money_it(centry["totals"]["Da fatturare"])}</td><td>{money_it(centry["totals"]["Fatturato"])}</td><td>{money_it(centry["totals"]["Incassato"])}</td><td><b>{money_it(sum(centry["totals"].values()))}</b></td></tr>''' for ckey,centry in sorted(collab_by_id.items(),key=lambda item:item[1]["name"])) or '<tr><td colspan="5" class="sub">Nessuna pratica collaboratore nel periodo.</td></tr>'
         collab_section=f'''<section class="tablebox balance-table balances-collab-section"><h2>Collaboratori</h2><p class="sub">Conto separato dai circuiti W e D, basato sul mese di competenza (data di recupero) delle pratiche origine Collaboratore.</p><div class="balance-grid"><div class="balance-card-static"><small>Da fatturare</small><strong>{money_it(collab_totals["Da fatturare"])}</strong></div><div class="balance-card-static"><small>Fatturato</small><strong>{money_it(collab_totals["Fatturato"])}</strong></div><div class="balance-card-static"><small>Incassato</small><strong>{money_it(collab_totals["Incassato"])}</strong></div></div><table><thead><tr><th>Collaboratore</th><th>Da fatturare</th><th>Fatturato</th><th>Incassato</th><th>Totale</th></tr></thead><tbody>{collab_rows_html}</tbody></table></section>'''
-        period_params=f'dal={quote(date_from)}&al={quote(date_to)}'
+        def totale_section(channel_label,gross,expense,income,net,entrate_key,dettaglio_prefix):
+            return f'''<section class="tablebox balance-table"><h2>Totale {channel_label}</h2><p class="sub">Entrate lorde − Uscite + Altre entrate, nel periodo selezionato.</p><div class="balance-grid">
+<a class="balance-card" href="/bilanci?{period_params}&voce={entrate_key}"><small>Entrate lorde {channel_label}</small><strong>{money_it(gross)}</strong></a>
+<a class="balance-card" href="/bilanci?{period_params}&dettaglio=uscite_{dettaglio_prefix}"><small>Uscite {channel_label}</small><strong>{money_it(expense)}</strong></a>
+<a class="balance-card" href="/bilanci?{period_params}&dettaglio=entrate_{dettaglio_prefix}"><small>Altre entrate {channel_label}</small><strong>{money_it(income)}</strong></a>
+<div class="balance-card-static"><small>Totale {channel_label}</small><strong>{money_it(net)}</strong></div>
+</div></section>'''
+        totale_w_section=totale_section("W",gross_w,expense_w,income_w,net_w,"totale_calcolato","w")
+        totale_d_section=totale_section("D",gross_d,expense_d,income_d,net_d,"totale_d","d")
         extra_cards_html=(
             f'<a class="balance-card" href="/bilanci?{period_params}&dettaglio=uscite"><small>Uscite</small><strong>{money_it(expense_w+expense_d)}</strong></a>'
-            f'<a class="balance-card" href="/bilanci?{period_params}&dettaglio=entrate"><small>Altre entrate</small><strong>{money_it(income_w+income_d)}</strong></a>'
             f'<a class="balance-card" href="/bilanci?{period_params}&dettaglio=collaboratori"><small>Collaboratori</small><strong>{money_it(collab_totals["Da fatturare"])}</strong></a>'
         )
         detail=(q.get("dettaglio") or [""])[0].strip()
-        if detail in ("uscite","entrate","collaboratori"):
-            detail_title,detail_section=({
-                "uscite":("Uscite del periodo",expenses_section),
-                "entrate":("Altre entrate del periodo",incomes_section),
-                "collaboratori":("Collaboratori",collab_section),
-            })[detail]
+        detail_map={
+            "uscite":("Uscite del periodo",expenses_section),
+            "uscite_w":("Uscite del periodo — Circuito W",expenses_section_w),
+            "uscite_d":("Uscite del periodo — Circuito D",expenses_section_d),
+            "entrate_w":("Altre entrate del periodo — Circuito W",incomes_section_w),
+            "entrate_d":("Altre entrate del periodo — Circuito D",incomes_section_d),
+            "totale_w":("Totale W",totale_w_section),
+            "totale_d":("Totale D",totale_d_section),
+            "collaboratori":("Collaboratori",collab_section),
+        }
+        if detail in detail_map:
+            detail_title,detail_section=detail_map[detail]
             detail_body=f'''<main class="wrap balances-wrap"><div class="titlebar"><div><h1>{detail_title}</h1><p class="sub">dal {esc(date_it(date_from))} al {esc(date_it(date_to))}</p></div><a class="btn ghost" href="/bilanci?{period_params}">← Torna a Bilanci</a></div>{detail_section}</main>'''
             self.send_html(layout(detail_title,detail_body,user))
             return

@@ -822,12 +822,11 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.balances_v2(admin)
         page = rendered[-1]
         self.assertIn('<small>Entrate W</small><strong>€ 820,00</strong>', page)
-        self.assertIn('<small>Uscite W</small><strong>€ 50,00</strong>', page)
-        self.assertIn('<small>Totale W</small><strong>€ 770,00</strong>', page)
+        self.assertIn('<a class="balance-card" href="/bilanci?dal={0}&al={0}&dettaglio=uscite_w"><small>Uscite W</small><strong>€ 50,00</strong></a>'.format(today), page)
+        self.assertIn('<a class="balance-card" href="/bilanci?dal={0}&al={0}&dettaglio=totale_w"><small>Totale W</small><strong>€ 770,00</strong></a>'.format(today), page)
         self.assertIn('<small>Entrate D</small><strong>€ 500,00</strong>', page)
-        self.assertIn('<small>Uscite D</small><strong>€ 120,00</strong>', page)
-        self.assertIn('<small>Totale D</small><strong>€ 380,00</strong>', page)
-        self.assertIn('class="balance-card balance-card-static"', page)
+        self.assertIn('<a class="balance-card" href="/bilanci?dal={0}&al={0}&dettaglio=uscite_d"><small>Uscite D</small><strong>€ 120,00</strong></a>'.format(today), page)
+        self.assertIn('<a class="balance-card" href="/bilanci?dal={0}&al={0}&dettaglio=totale_d"><small>Totale D</small><strong>€ 380,00</strong></a>'.format(today), page)
         self.assertIn("€ 1.150,00", page)
         self.assertIn("Entrate lorde: € 1.320,00 · Uscite: € 170,00", page)
         self.assertIn("+ Registra uscita", page)
@@ -840,6 +839,19 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Uscite del periodo", detail_page)
         self.assertIn("Materiale imballaggio", detail_page)
         self.assertIn("Fornitore urne", detail_page)
+        self.handler.path = f"/bilanci?dal={today}&al={today}&dettaglio=uscite_w"
+        self.handler.balances_v2(admin)
+        detail_page = rendered[-1]
+        self.assertIn("Uscite del periodo — Circuito W", detail_page)
+        self.assertIn("Materiale imballaggio", detail_page)
+        self.assertNotIn("Fornitore urne", detail_page)
+        self.handler.path = f"/bilanci?dal={today}&al={today}&dettaglio=totale_w"
+        self.handler.balances_v2(admin)
+        detail_page = rendered[-1]
+        self.assertIn("Totale W", detail_page)
+        self.assertIn('<small>Entrate lorde W</small><strong>€ 820,00</strong>', detail_page)
+        self.assertIn('<small>Uscite W</small><strong>€ 50,00</strong>', detail_page)
+        self.assertIn('<small>Totale W</small><strong>€ 770,00</strong>', detail_page)
         self.handler.path = f"/bilanci?dal={today}&al={today}&voce=totale_calcolato"
         self.handler.balances_v2(admin)
         page = rendered[-1]
@@ -896,16 +908,18 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.balances_v2(admin)
         page = rendered[-1]
         self.assertIn('<small>Entrate W</small><strong>€ 820,00</strong>', page)
-        self.assertIn('<small>Altre entrate W</small><strong>€ 60,00</strong>', page)
+        self.assertIn('<a class="balance-card" href="/bilanci?dal={0}&al={0}&dettaglio=entrate_w"><small>Altre entrate W</small><strong>€ 60,00</strong></a>'.format(today), page)
         self.assertIn('<small>Totale W</small><strong>€ 880,00</strong>', page)
         self.assertIn("Entrate lorde: € 820,00 · Altre entrate: € 60,00", page)
         self.assertIn("+ Registra entrata", page)
-        self.assertIn('<small>Altre entrate</small><strong>€ 60,00</strong>', page)
+        # The generic combined "Altre entrate" card was removed: an income is already
+        # covered by either the W or the D per-channel card, never both.
+        self.assertNotIn('<small>Altre entrate</small>', page)
         self.assertNotIn("Rimborso assicurazione", page)
-        self.handler.path = f"/bilanci?dal={today}&al={today}&dettaglio=entrate"
+        self.handler.path = f"/bilanci?dal={today}&al={today}&dettaglio=entrate_w"
         self.handler.balances_v2(admin)
         detail_page = rendered[-1]
-        self.assertIn("Altre entrate del periodo", detail_page)
+        self.assertIn("Altre entrate del periodo — Circuito W", detail_page)
         self.assertIn("Rimborso assicurazione", detail_page)
 
     def test_balances_excludes_collaborator_practices_and_shows_dedicated_panel(self):
