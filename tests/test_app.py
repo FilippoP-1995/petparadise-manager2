@@ -843,6 +843,181 @@ class PetParadiseTests(unittest.TestCase):
         page = rendered[-1]
         self.assertIn("€ 500,00", page)
 
+    def test_income_create_edit_delete_lifecycle_and_validation(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.form = lambda: {"dal": "2026-06-01", "al": "2026-06-01", "income_date": "", "amount": "", "channel": "", "description": ""}
+        pages = []
+        self.handler.income_form_page = lambda user, iid=None, error="", draft=None: pages.append(error)
+        self.handler.income_create(admin)
+        self.assertIn("data valida", pages[-1])
+        redirects = []
+        self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.form = lambda: {"dal": "2026-06-01", "al": "2026-06-01", "income_date": "2026-06-01", "amount": "50,00", "channel": "W", "description": "Rimborso assicurazione", "category": "Rimborso"}
+        self.handler.income_create(admin)
+        self.assertEqual(redirects[-1], "/bilanci?dal=2026-06-01&al=2026-06-01")
+        with app.db() as conn:
+            row = conn.execute("SELECT * FROM incomes WHERE description='Rimborso assicurazione'").fetchone()
+        self.assertEqual((row["amount"], row["channel"], row["category"], row["created_by"]), ("50.00", "W", "Rimborso", admin["id"]))
+        iid = row["id"]
+        self.handler.form = lambda: {"dal": "2026-06-01", "al": "2026-06-01", "income_date": "2026-06-02", "amount": "75,50", "channel": "D", "description": "Vendita accessori", "category": "Altro", "category_custom": "Cessione attrezzatura"}
+        self.handler.income_action(admin, iid, "modifica")
+        with app.db() as conn:
+            row = conn.execute("SELECT * FROM incomes WHERE id=?", (iid,)).fetchone()
+        self.assertEqual((row["income_date"], row["amount"], row["channel"], row["description"], row["category"]),
+                          ("2026-06-02", "75.50", "D", "Vendita accessori", "Cessione attrezzatura"))
+        self.handler.form = lambda: {"dal": "2026-06-01", "al": "2026-06-01"}
+        self.handler.income_action(admin, iid, "elimina")
+        with app.db() as conn:
+            self.assertIsNone(conn.execute("SELECT * FROM incomes WHERE id=?", (iid,)).fetchone())
+
+    def test_balances_shows_altre_entrate_cards_and_registra_entrata_button(self):
+        today = app.datetime.now().date().isoformat()
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            base = ("Privato", "Livorno", "Ritirato", today, stamp, stamp, admin["id"])
+            w_id = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
+                   created_at,updated_at,created_by,animal_name,price_cremation,total_service,deposit,payment_status)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("PP-INCW", *base, "Argo", "820", "820", "0", "Pagato"),
+            ).lastrowid
+            self.handler.add_payment_movement(conn, w_id, "saldo_ordinario", "W", 820, admin["id"], "Test", stamp)
+            conn.execute("INSERT INTO incomes(income_date,amount,channel,description,category,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                         (today, "60.00", "W", "Rimborso assicurazione", "Rimborso", admin["id"], stamp, admin["id"], stamp))
+        rendered = []; self.handler.send_html = lambda content: rendered.append(content)
+        self.handler.path = f"/bilanci?dal={today}&al={today}"
+        self.handler.balances_v2(admin)
+        page = rendered[-1]
+        self.assertIn('<small>Entrate W</small><strong>€ 820,00</strong>', page)
+        self.assertIn('<small>Altre entrate W</small><strong>€ 60,00</strong>', page)
+        self.assertIn('<small>Totale W</small><strong>€ 880,00</strong>', page)
+        self.assertIn("Entrate lorde: € 820,00 · Altre entrate: € 60,00", page)
+        self.assertIn("Rimborso assicurazione", page)
+        self.assertIn("+ Registra entrata", page)
+        self.assertIn("Altre entrate del periodo", page)
+
+    def test_balances_excludes_collaborator_practices_and_shows_dedicated_panel(self):
+        today = app.datetime.now().date().isoformat()
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            collab_id = conn.execute("SELECT id FROM collaborators WHERE UPPER(name)='HUMANITAS CROCE VERDE'").fetchone()["id"]
+            collab_pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
+                   created_at,updated_at,created_by,animal_name,price_cremation,total_service,payment_status,
+                   collaborator_id,collaborator_name,billing_status)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("COL-000001", "Collaboratore", "Livorno", "Ritirato", today, stamp, stamp, admin["id"], "Rex",
+                 "200", "200", "Pagato", collab_id, "HUMANITAS CROCE VERDE", "Da fatturare"),
+            ).lastrowid
+            # Defensive: even if a payment movement somehow exists for a collaborator practice
+            # (e.g. quick-paid by mistake), it must never leak into the direct W/D totals.
+            self.handler.add_payment_movement(conn, collab_pid, "saldo_ordinario", "W", 200, admin["id"], "Test", stamp)
+        rendered = []; self.handler.send_html = lambda content: rendered.append(content)
+        self.handler.path = f"/bilanci?dal={today}&al={today}"
+        self.handler.balances_v2(admin)
+        page = rendered[-1]
+        self.assertIn('<small>Entrate W</small><strong>€ 0,00</strong>', page)
+        self.assertIn('<small>Totale W</small><strong>€ 0,00</strong>', page)
+        self.assertNotIn("COL-000001", page)
+        self.assertIn("Collaboratori", page)
+        self.assertIn("HUMANITAS CROCE VERDE", page)
+        self.assertIn('<small>Da fatturare</small><strong>€ 200,00</strong>', page)
+        self.assertIn('<small>Fatturato</small><strong>€ 0,00</strong>', page)
+        self.assertIn('<small>Incassato</small><strong>€ 0,00</strong>', page)
+
+    def test_collaborator_practice_gets_separate_col_numbering_and_billing_status(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        redirects = []; self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.form = lambda: {"operator_name": "ALESSIO", "service_type": "Cremazione singola", "request_origin": "Collaboratore", "destination_branch": "Livorno", "collaborator_name": "HUMANITAS CROCE VERDE"}
+        self.handler.create_practice(admin)
+        collab_pid = int(redirects[-1].split("/pratiche/")[1])
+        with app.db() as conn:
+            collab_practice = conn.execute("SELECT * FROM practices WHERE id=?", (collab_pid,)).fetchone()
+        self.assertTrue(collab_practice["practice_number"].startswith("COL-"))
+        self.assertEqual(collab_practice["billing_status"], "Da fatturare")
+
+        redirects.clear()
+        self.handler.form = lambda: {"operator_name": "ALESSIO", "service_type": "Cremazione singola", "request_origin": "Privato", "destination_branch": "Livorno", "tag_da_richiamare": "Si"}
+        self.handler.create_practice(admin)
+        normal_pid = int(redirects[-1].split("/pratiche/")[1])
+        with app.db() as conn:
+            normal_practice = conn.execute("SELECT * FROM practices WHERE id=?", (normal_pid,)).fetchone()
+        self.assertTrue(normal_practice["practice_number"].startswith("CR-"))
+        self.assertEqual(normal_practice["billing_status"], "")
+
+        # The COL- counter is independent from CR-: creating a normal practice in between
+        # must not consume a collaborator number.
+        redirects.clear()
+        self.handler.form = lambda: {"operator_name": "ALESSIO", "service_type": "Cremazione singola", "request_origin": "Collaboratore", "destination_branch": "Livorno", "collaborator_name": "HUMANITAS CROCE VERDE", "confirm_new_client": "SI"}
+        self.handler.create_practice(admin)
+        second_collab_pid = int(redirects[-1].split("/pratiche/")[1])
+        with app.db() as conn:
+            second_collab = conn.execute("SELECT practice_number FROM practices WHERE id=?", (second_collab_pid,)).fetchone()
+        first_num = int(collab_practice["practice_number"].split("-")[1])
+        second_num = int(second_collab["practice_number"].split("-")[1])
+        self.assertEqual(second_num, first_num + 1)
+
+    def test_collaborator_detail_groups_by_month_and_marks_month_billing_status(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            collab_id = conn.execute("SELECT id FROM collaborators WHERE UPPER(name)='HUMANITAS CROCE VERDE'").fetchone()["id"]
+            p1 = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
+                   created_at,updated_at,created_by,animal_name,price_cremation,total_service,payment_status,
+                   collaborator_id,collaborator_name,billing_status)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("COL-100001", "Collaboratore", "Livorno", "Ritirato", "2026-06-05", stamp, stamp, admin["id"], "Rex",
+                 "100", "100", "Da saldare", collab_id, "HUMANITAS CROCE VERDE", "Da fatturare"),
+            ).lastrowid
+            p2 = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
+                   created_at,updated_at,created_by,animal_name,price_cremation,total_service,payment_status,
+                   collaborator_id,collaborator_name,billing_status)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("COL-100002", "Collaboratore", "Livorno", "Ritirato", "2026-06-20", stamp, stamp, admin["id"], "Otto",
+                 "150", "150", "Da saldare", collab_id, "HUMANITAS CROCE VERDE", "Da fatturare"),
+            ).lastrowid
+        rendered = []; self.handler.send_html = lambda content: rendered.append(content)
+        self.handler.collaborator_detail(admin, collab_id)
+        page = rendered[-1]
+        self.assertIn("Giugno 2026", page)
+        self.assertIn("Rex", page)
+        self.assertIn("Otto", page)
+        self.assertIn("€ 250,00", page)
+        self.assertIn("Segna mese come fatturato (2)", page)
+
+        redirects = []; self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.form = lambda: {"mese": "2026-06"}
+        self.handler.collaborator_mark_month(admin, collab_id, "fatturato")
+        self.assertEqual(redirects[-1], f"/collaboratori/{collab_id}")
+        with app.db() as conn:
+            row1 = conn.execute("SELECT billing_status,billing_invoiced_at FROM practices WHERE id=?", (p1,)).fetchone()
+            row2 = conn.execute("SELECT billing_status FROM practices WHERE id=?", (p2,)).fetchone()
+        self.assertEqual(row1["billing_status"], "Fatturato")
+        self.assertIsNotNone(row1["billing_invoiced_at"])
+        self.assertNotEqual(row1["billing_invoiced_at"], "")
+        self.assertEqual(row2["billing_status"], "Fatturato")
+
+        rendered.clear()
+        self.handler.collaborator_detail(admin, collab_id)
+        page = rendered[-1]
+        self.assertIn("Segna mese come incassato (2)", page)
+        self.assertNotIn("Segna mese come fatturato", page)
+
+        self.handler.form = lambda: {"mese": "2026-06"}
+        self.handler.collaborator_mark_month(admin, collab_id, "incassato")
+        with app.db() as conn:
+            row1 = conn.execute("SELECT billing_status FROM practices WHERE id=?", (p1,)).fetchone()
+            row2 = conn.execute("SELECT billing_status FROM practices WHERE id=?", (p2,)).fetchone()
+        self.assertEqual(row1["billing_status"], "Incassato")
+        self.assertEqual(row2["billing_status"], "Incassato")
+        rendered.clear()
+        self.handler.collaborator_detail(admin, collab_id)
+        page = rendered[-1]
+        self.assertIn("Mese completamente incassato.", page)
+
     def test_disposal_page_groups_by_branch_and_channel_and_excludes_ineligible(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
@@ -1044,13 +1219,18 @@ class PetParadiseTests(unittest.TestCase):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
             stamp = app.now()
+            # Note: request_origin stays "Privato" here (not "Collaboratore") because practices
+            # originating from a collaborator are now excluded from the direct Bilanci totals/list
+            # entirely (see test_balances_excludes_collaborator_practices_and_shows_dedicated_panel);
+            # this test only exercises the sticky-column/sigla-prefix rendering mechanism, which is
+            # keyed off collaborator_id and is independent of that exclusion.
             collab_id=conn.execute("INSERT INTO collaborators(name,code,created_at,updated_at) VALUES(?,?,?,?)",("Humanitas Croce Verde","CV",stamp,stamp)).lastrowid
             pid=conn.execute(
                 """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
                    created_at,updated_at,created_by,animal_name,species,estimated_weight,collaborator_id,
                    price_cremation,total_service,deposit,payment_status)
                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                ("PP-BILANCIOANIMALE","Collaboratore","Livorno","Ritirato",today,stamp,stamp,admin["id"],
+                ("PP-BILANCIOANIMALE","Privato","Livorno","Ritirato",today,stamp,stamp,admin["id"],
                  "Fido","Cane","12",collab_id,"150","150","150","Pagato"),
             ).lastrowid
             self.handler.add_payment_movement(conn,pid,"saldo_ordinario","W",150,admin["id"],"Test",stamp)
