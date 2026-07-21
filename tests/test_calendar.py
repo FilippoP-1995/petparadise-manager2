@@ -395,13 +395,45 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("calendar-day-free-note", page)
         self.assertIn("Resto della giornata libero", page)
         self.assertIn(".calendar-day-event{display:flex", app.CSS)
-        # week/month views must stay on the original, unmodified card renderer
+        # week view has its own distinct compact card, not the day-only markup
         self.handler.path = "/calendario?vista=settimana&data=2026-07-15"
         self.handler.calendar_page(self.admin)
         week_page = rendered[-1]
         self.assertNotIn('class="calendar-event calendar-day-event', week_page)
         self.assertNotIn('<div class="calendar-day-legend">', week_page)
-        self.assertIn('calendar-event calendar-red', week_page)
+        self.assertIn('calendar-week-v2-event calendar-red', week_page)
+
+    def test_week_view_shows_compact_cards_operator_avatar_swipe_hook_and_today_highlight(self):
+        today = datetime.now().date()
+        self.save(self.event_form("Ritiro", title="RITIRO FIDO", event_status="Ritirato", operator_name="Alessio",
+                                   start_date=today.isoformat(), end_date=today.isoformat()))
+        rendered = []
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.path = f"/calendario?vista=settimana&data={today.isoformat()}"
+        self.handler.calendar_page(self.admin)
+        page = rendered[-1]
+        self.assertIn('calendar-week-v2-scroll" data-calendar-swipe', page)
+        self.assertIn("calendar-week-v2-day is-today", page)
+        self.assertIn("calendar-week-v2-event calendar-green", page)
+        self.assertIn("calendar-avatar calendar-avatar-xs calendar-avatar-alessio", page)
+        self.assertIn("Nessun evento", page)
+        self.assertIn("calendar-operator-legend", page)
+
+    def test_month_view_shows_pill_overflow_link_and_today_highlight(self):
+        today = datetime.now().date()
+        for i in range(5):
+            self.save(self.event_form("Ritiro", title=f"RITIRO ANIMALE {i}",
+                                       start_date=today.isoformat(), end_date=today.isoformat()))
+        rendered = []
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.path = f"/calendario?vista=mese&data={today.isoformat()}"
+        self.handler.calendar_page(self.admin)
+        page = rendered[-1]
+        self.assertIn("calendar-month-v2-cell is-today", page)
+        self.assertIn("+2 altri", page)
+        self.assertIn("calendar-month-v2-dow", page)
+        self.assertEqual(page.count('class="calendar-month-v2-pill '), 3)
+        self.assertNotIn('<div class="calendar-operator-legend">', page)
 
     def test_non_overlapping_event_keeps_full_width_despite_other_overlaps_same_day(self):
         self.save(self.event_form("Ritiro", event_status="Da ritirare"))
