@@ -105,6 +105,30 @@ class PetParadiseTests(unittest.TestCase):
             row = conn.execute("SELECT total_service,invoice_total FROM practices WHERE id=?", (pid,)).fetchone()
             self.assertEqual((row["total_service"], row["invoice_total"]), ("200.00", "999.00"))
 
+    def test_autosave_clears_catalog_checkboxes_when_urn_is_filled_in(self):
+        stamp = "2026-07-15T10:00:00"
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   animal_name,owner_first_name,owner_last_name,owner_phone,tag_da_richiamare,send_catalog)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-CATALOGO", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Fido", "Mario", "Rossi", "333111", "Si", "Si"),
+            ).lastrowid
+        captured = []
+        self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+        # Filling in urn_notes with a real choice must clear send_catalog too, in the
+        # same autosave write — not just in the in-memory normalization.
+        self.handler.form = lambda: {"updated_at": stamp, "changes_json": json.dumps({"urn_notes": "Urna in legno chiaro"})}
+        self.handler.practice_autosave(admin, pid)
+        self.assertEqual(captured[-1][1], 200)
+        self.assertIn("send_catalog", captured[-1][0]["saved_fields"])
+        with app.db() as conn:
+            row = conn.execute("SELECT urn_notes,send_catalog,catalog_sent FROM practices WHERE id=?", (pid,)).fetchone()
+        self.assertEqual(row["urn_notes"], "Urna in legno chiaro")
+        self.assertEqual(row["send_catalog"], "")
+        self.assertFalse(row["catalog_sent"])
+
     def test_notification_schema_and_preferences(self):
         with app.db() as conn:
             tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -417,6 +441,20 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(data["send_estremi"], "", "estremi_sent=Si must clear send_estremi like catalog_sent does")
         data_with_d = self.handler.normalized_fields({"total_text": "360", "deposit_final": "100"})
         self.assertEqual(data_with_d["remaining_final"], "260.00")
+
+    def test_catalog_checkboxes_auto_uncheck_when_urn_is_decided(self):
+        # Placeholder/undecided urn text must NOT clear the checkboxes.
+        for placeholder in ("", "/", "Da decidere", "da decidere", "  /  "):
+            data = self.handler.normalized_fields({"send_catalog": "Si", "urn_notes": placeholder})
+            self.assertEqual(data["send_catalog"], "Si", f"placeholder {placeholder!r} should not clear send_catalog")
+        # A real free-text urn choice clears both checkboxes.
+        data = self.handler.normalized_fields({"send_catalog": "Si", "catalog_sent": "Si", "urn_notes": "Urna in legno chiaro"})
+        self.assertEqual(data["send_catalog"], "")
+        self.assertEqual(data["catalog_sent"], "")
+        # Selecting a catalog urn (urn_id set) also clears both, even with empty notes.
+        data = self.handler.normalized_fields({"send_catalog": "Si", "catalog_sent": "Si", "urn_id": "5"})
+        self.assertEqual(data["send_catalog"], "")
+        self.assertEqual(data["catalog_sent"], "")
 
     def test_invoice_total_always_sources_from_totale_w_never_totale_d(self):
         # Even when Totale D is present (and larger), the auto-computed invoice total

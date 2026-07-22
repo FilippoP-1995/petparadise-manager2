@@ -6381,6 +6381,10 @@ class App(BaseHTTPRequestHandler):
         data["catalog_sent"] = "Si" if data["catalog_sent"] == "Si" else ""
         if data["catalog_sent"] == "Si":
             data["send_catalog"] = ""
+        urn_notes_norm = data["urn_notes"].strip().lower()
+        if data["urn_id"] or urn_notes_norm not in ("", "/", "da decidere"):
+            data["send_catalog"] = ""
+            data["catalog_sent"] = ""
         data["send_estremi"] = "Si" if data["send_estremi"] == "Si" else ""
         data["estremi_sent"] = "Si" if data["estremi_sent"] == "Si" else ""
         if data["estremi_sent"] == "Si":
@@ -7283,6 +7287,7 @@ class App(BaseHTTPRequestHandler):
                 if requested&economic:dependencies|={"total_service","remaining_balance","invoice_total","payment_status","urn_notes","urn_notes_2","price_urn","price_urn_2","tag_calco_urna"}
                 if requested&address:dependencies|={"owner_address","pickup_address","pickup_address_mode","origin_mode","origin_text","provenance","transporter_mode","transport_method","vehicle_plate","clinic_name","owner_first_name","owner_last_name","owner_company","owner_phone","owner_city","owner_zip","owner_province"}
                 if requested&{"catalog_sent","send_catalog"}:dependencies|={"catalog_sent","send_catalog"}
+                if requested&{"urn_id","urn_notes"}:dependencies|={"send_catalog","catalog_sent"}
                 update_keys=[key for key in normalized if key in requested|dependencies and key in previous.keys() and compact_text(previous[key])!=compact_text(normalized[key])]
                 if not update_keys:return self.send_json({"ok":True,"updated_at":previous["updated_at"],"saved_at":datetime.now(ROME_TZ).strftime("%H:%M"),"saved_fields":[]})
                 conflict=self.invoice_conflict(c,normalized.get("invoice_number"),pid) if "invoice_number" in update_keys else None
