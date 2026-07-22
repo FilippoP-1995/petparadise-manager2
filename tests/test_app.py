@@ -395,6 +395,16 @@ class PetParadiseTests(unittest.TestCase):
         selectors = "['[name=\"owner_veterinarian_id\"]','#clientSearch','[name=\"owner_first_name\"]','[name=\"owner_last_name\"]','[name=\"owner_phone\"]','[name=\"owner_phone_2\"]','[name=\"owner_phone_note\"]'"
         self.assertIn(selectors, app.APP_JS)
 
+    def test_notes_field_moved_out_of_preventivo_into_its_own_section(self):
+        html = self.handler.fields_html()
+        preventivo_start = html.index('<section class="section"><h2>Preventivo</h2>')
+        preventivo_end = html.index('</section>', preventivo_start)
+        preventivo_html = html[preventivo_start:preventivo_end]
+        self.assertNotIn('name="notes"', preventivo_html, "NOTE must no longer live inside the Preventivo section")
+        self.assertIn('<section class="section"><h2>Note</h2><div class="fields"><div class="field full"><label>NOTE</label><textarea name="notes">', html)
+        notes_section_pos = html.index('<section class="section"><h2>Note</h2>')
+        self.assertGreater(notes_section_pos, preventivo_end, "the Note section must come after Preventivo")
+
     def test_cremazione_collettiva_relaxes_required_fields(self):
         self.assertIn("const exempt = !!(callBack?.checked || (service && service.value === 'Cremazione collettiva') || (origin && origin.value === 'Collaboratore'));", app.APP_JS)
         no_error = self.handler.validation_error({"service_type": "Cremazione collettiva"})
@@ -509,7 +519,7 @@ class PetParadiseTests(unittest.TestCase):
             row = conn.execute("SELECT remaining_balance,remaining_final FROM practices WHERE id=?", (pid,)).fetchone()
         self.assertEqual((row["remaining_balance"], row["remaining_final"]), ("0.00", "0.00"))
 
-    def test_practice_summary_shows_notes_at_top_when_present(self):
+    def test_practice_summary_shows_notes_in_own_section_between_riepilogo_and_economic_data(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
             with_note = conn.execute(
@@ -525,14 +535,21 @@ class PetParadiseTests(unittest.TestCase):
         rendered = []; self.handler.send_html = lambda content, *args: rendered.append(content)
         self.handler.practice(admin, with_note)
         page = rendered[-1]
+        # Notes are no longer a kv inside the Riepilogo grid: they get their own
+        # section, appearing after Riepilogo (whose grid must stay untouched) and
+        # before Dati economici.
+        self.assertNotIn('<div class="kv"><small>Nota</small>', page)
         riepilogo_pos = page.index("<h2>Riepilogo</h2>")
-        note_pos = page.index("Attenzione: cliente da richiamare")
-        stato_pos = page.index("<small>Stato</small>")
-        self.assertLess(riepilogo_pos, note_pos)
-        self.assertLess(note_pos, stato_pos, "the note must appear before the rest of the riepilogo grid")
+        note_section_pos = page.index('<div class="section"><h2>Note</h2>')
+        note_text_pos = page.index("Attenzione: cliente da richiamare")
+        economic_pos = page.index("<h2>Dati economici</h2>")
+        self.assertLess(riepilogo_pos, note_section_pos)
+        self.assertLess(note_section_pos, note_text_pos)
+        self.assertLess(note_text_pos, economic_pos)
+        self.assertEqual(page.count('<div class="section"><h2>Note</h2>'), 1, "notes must render in exactly one section, not duplicated")
         self.handler.practice(admin, without_note)
         page_without = rendered[-1]
-        self.assertNotIn('<div class="kv"><small>Nota</small>', page_without)
+        self.assertIn('<div class="section"><h2>Note</h2><p><span class="sub">Nessuna nota.</span></p></div>', page_without)
 
     def test_practice_summary_speditore_shows_address_and_tax_code(self):
         with app.db() as conn:
@@ -2796,15 +2813,16 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Campi obbligatori mancanti", rendered[-1])
         self.assertIn("Servizio", rendered[-1])
 
-    def test_arrange_budget_layout_places_payment_status_between_remaining_final_and_notes(self):
+    def test_arrange_budget_layout_places_payment_status_after_remaining_final(self):
         js = app.APP_JS
         remaining_final_idx = js.index("addRow([field('total_text'),field('deposit_final'),field('remaining_final')]);")
         payment_status_idx = js.index("addRow([field('payment_status')],[field('payment_method')]);")
-        notes_idx = js.index("addRow([field('notes')]);")
         self.assertLess(remaining_final_idx, payment_status_idx)
-        self.assertLess(payment_status_idx, notes_idx)
         self.assertNotIn("addRow([field('price_cremation')],[field('payment_status')]);", js)
         self.assertNotIn("addRow([field('price_pickup')],[field('payment_method')]);", js)
+        # notes moved out of the Preventivo section entirely, so it's no longer part
+        # of the budget-layout row arrangement.
+        self.assertNotIn("addRow([field('notes')]);", js)
 
     def test_accessory_field_labels_are_renamed(self):
         js = app.APP_JS
