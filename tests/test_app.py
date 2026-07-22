@@ -407,11 +407,110 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("ESTREMI INVIATI", app.APP_JS)
         self.assertEqual(app.MONEY_FIELDS.get("deposit_final"), "Acconto D")
         self.assertEqual(app.MONEY_FIELDS.get("remaining_final"), "Rimanenza D")
+        # remaining_final is derived server-side from total_text (Totale D) minus
+        # deposit_final, not passed through as-is: with no Totale D on this practice,
+        # there is nothing owed on that circuit regardless of what was submitted.
         data = self.handler.normalized_fields({"deposit_final": "50,25", "remaining_final": "100", "estremi_sent": "Si", "send_estremi": "Si"})
         self.assertEqual(data["deposit_final"], "50.25")
-        self.assertEqual(data["remaining_final"], "100")
+        self.assertEqual(data["remaining_final"], "")
         self.assertEqual(data["estremi_sent"], "Si")
         self.assertEqual(data["send_estremi"], "", "estremi_sent=Si must clear send_estremi like catalog_sent does")
+        data_with_d = self.handler.normalized_fields({"total_text": "360", "deposit_final": "100"})
+        self.assertEqual(data_with_d["remaining_final"], "260.00")
+
+    def test_invoice_total_always_sources_from_totale_w_never_totale_d(self):
+        # Even when Totale D is present (and larger), the auto-computed invoice total
+        # must always come from Totale W, never from the D circuit.
+        data = self.handler.normalized_fields({
+            "price_cremation": "450", "total_text": "360", "deposit": "450", "payment_status": "Pagato",
+        })
+        self.assertEqual(data["total_service"], "450.00")
+        self.assertEqual(data["invoice_total"], "450.00")
+
+    def test_pagato_forces_remaining_w_and_d_to_zero_even_if_deposit_is_short(self):
+        # A practice flipped to Pagato by hand, without the deposit fields being
+        # updated to match, must never show a leftover balance on either circuit.
+        data = self.handler.normalized_fields({
+            "price_cremation": "450", "total_text": "360", "deposit": "50", "deposit_final": "10",
+            "payment_status": "Pagato",
+        })
+        self.assertEqual(data["remaining_balance"], "0.00")
+        self.assertEqual(data["remaining_final"], "0.00")
+
+    def test_quick_payment_zeroes_remaining_final_too_when_marked_pagato(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   owner_first_name,service_type,payment_status,total_service,total_text,deposit,deposit_final,remaining_balance,remaining_final)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-PAY-WD", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Mario",
+                 "Cremazione singola", "Acconto", "450", "360", "50", "10", "400.00", "350.00"),
+            ).lastrowid
+        self.handler.form = lambda: {"payment_status": "Pagato", "payment_method": "Pos", "payment_amount": "450,00",
+                                      "invoice_number": "", "invoice_total": "", "invoice_date": "2026-07-14",
+                                      "economic_at": "2026-07-14"}
+        self.handler.redirect = lambda path: None; self.handler.headers = {}
+        self.handler.quick_payment(admin, pid)
+        with app.db() as conn:
+            row = conn.execute("SELECT remaining_balance,remaining_final FROM practices WHERE id=?", (pid,)).fetchone()
+        self.assertEqual((row["remaining_balance"], row["remaining_final"]), ("0.00", "0.00"))
+
+    def test_startup_backfill_zeroes_stale_remaining_on_existing_pagato_practices(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   animal_name,payment_status,total_service,total_text,remaining_balance,remaining_final)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-000064", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Fido",
+                 "Pagato", "450", "360", "450.00", "360.00"),
+            ).lastrowid
+        app.init_db()  # idempotent startup migration must clean up stale data on every run
+        with app.db() as conn:
+            row = conn.execute("SELECT remaining_balance,remaining_final FROM practices WHERE id=?", (pid,)).fetchone()
+        self.assertEqual((row["remaining_balance"], row["remaining_final"]), ("0.00", "0.00"))
+
+    def test_practice_summary_shows_notes_at_top_when_present(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            with_note = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   animal_name,notes) VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("CR-NOTE", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Fido", "Attenzione: cliente da richiamare"),
+            ).lastrowid
+            without_note = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   animal_name) VALUES(?,?,?,?,?,?,?,?)""",
+                ("CR-NONOTE", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Rex"),
+            ).lastrowid
+        rendered = []; self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.practice(admin, with_note)
+        page = rendered[-1]
+        riepilogo_pos = page.index("<h2>Riepilogo</h2>")
+        note_pos = page.index("Attenzione: cliente da richiamare")
+        stato_pos = page.index("<small>Stato</small>")
+        self.assertLess(riepilogo_pos, note_pos)
+        self.assertLess(note_pos, stato_pos, "the note must appear before the rest of the riepilogo grid")
+        self.handler.practice(admin, without_note)
+        page_without = rendered[-1]
+        self.assertNotIn('<div class="kv"><small>Nota</small>', page_without)
+
+    def test_practice_summary_speditore_shows_address_and_tax_code(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   animal_name,owner_first_name,owner_last_name,owner_street,owner_city,owner_province,owner_zip,owner_tax_code)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-ADDR", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Fido",
+                 "Mario", "Rossi", "Via Roma 1", "Livorno", "LI", "57100", "RSSMRA80A01H501U"),
+            ).lastrowid
+        rendered = []; self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.practice(admin, pid)
+        page = rendered[-1]
+        self.assertIn("Via Roma 1, 57100 Livorno (LI)", page)
+        self.assertIn("CF: RSSMRA80A01H501U", page)
         self.assertIn("e.target.name === 'deposit_final'", app.APP_JS)
         self.assertNotIn("definitive > 0 ? definitive : ppmNumber(totalField ? totalField.value : 0);\n  const remaining", app.APP_JS)
 

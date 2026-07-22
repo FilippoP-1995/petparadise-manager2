@@ -776,6 +776,11 @@ def init_db():
                              VALUES(?,?,?,?,?,?,?,?)""",(practice["id"],"saldo_d" if channel=="D" else "saldo_ordinario",channel,balance,economic_at,practice["created_by"],"Migrazione dati esistenti: data ricavata dall'ultimo aggiornamento",now()))
             if (practice["payment_status"] or "") == "Pagato":
                 c.execute("UPDATE practices SET paid_at=COALESCE(paid_at,?) WHERE id=?",(economic_at,practice["id"]))
+        # A practice marked Pagato can never have anything left to collect: clear any
+        # stale remaining balance left over on either circuit (e.g. from a status
+        # flipped by hand without updating the deposit). Idempotent, safe to rerun.
+        c.execute("UPDATE practices SET remaining_balance='0.00' WHERE payment_status='Pagato' AND CAST(COALESCE(remaining_balance,'0') AS REAL)<>0")
+        c.execute("UPDATE practices SET remaining_final='0.00' WHERE payment_status='Pagato' AND CAST(COALESCE(remaining_final,'0') AS REAL)<>0")
         ensure_notification_schema(c)
         ensure_calendar_schema(c)
 
@@ -5148,7 +5153,7 @@ class App(BaseHTTPRequestHandler):
         table=[]
         for row in rows:
             owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip();url=f'/pratiche/{row["id"]}'
-            invoice_total=money_value(row["invoice_total"]) if "invoice_total" in row.keys() and row["invoice_total"] else effective_total(row)
+            invoice_total=money_value(row["invoice_total"]) if "invoice_total" in row.keys() and row["invoice_total"] else money_value(row["total_service"])
             table.append(f'''<tr class="practice-row-link" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}><td><b>{esc(row["invoice_number"])}</b></td><td>{esc(date_it(row["invoice_date"]))}</td><td><a href="{url}">{esc(row["practice_number"])}</a></td><td>{esc(owner)}</td><td>{esc(row["animal_name"] or "")}</td><td>{money_it(invoice_total)}</td><td><a class="btn ghost" href="{url}">Apri</a></td></tr>''')
         reminder_html=''.join(f'<a class="event" href="/pratiche/{row["id"]}"><b>{esc(row["practice_number"])}</b> · {esc(((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip())} · {esc(row["animal_name"] or "")}</a>' for row in reminders) or '<p class="sub">Nessuna fattura da ricordare.</p>'
         empty='<tr><td colspan="7" class="sub">Nessuna fattura trovata.</td></tr>'
@@ -5599,7 +5604,7 @@ class App(BaseHTTPRequestHandler):
         method_options=''.join(f'<option value="{esc(method)}" {"selected" if method==method_value else ""}>{esc(method or "Metodo di pagamento")}</option>' for method in PAYMENT_METHODS)
         amount_value=r["payment_amount"] if "payment_amount" in r.keys() and r["payment_amount"] else (r["deposit"] if payment=="Acconto" else f'{effective_total(r):.2f}' if payment=="Pagato" else "")
         invoice_number=r["invoice_number"] if "invoice_number" in r.keys() and r["invoice_number"] else ""
-        invoice_total=r["invoice_total"] if "invoice_total" in r.keys() and r["invoice_total"] else f'{effective_total(r):.2f}'
+        invoice_total=r["invoice_total"] if "invoice_total" in r.keys() and r["invoice_total"] else f'{money_value(r["total_service"]):.2f}'
         invoice_date=r["invoice_date"] if "invoice_date" in r.keys() and r["invoice_date"] else ""
         modal_id=f'paymentPopover{r["id"]}'
         return_to=esc(getattr(self,"path",""))
@@ -6488,11 +6493,21 @@ class App(BaseHTTPRequestHandler):
                 data["urn_id_2"]=None
         calculated=calculated_service_total(data)
         data["total_service"]=(f"{calculated:.2f}" if calculated else "")
-        if data["invoice_total_manual"]!="Si":data["invoice_total"]=data["total_text"] or data["total_service"]
+        if data["invoice_total_manual"]!="Si":data["invoice_total"]=data["total_service"]
         due=effective_total(data)
-        data["remaining_balance"]=(f"{max(0.0, due-money_value(data['deposit'])):.2f}" if due else "")
         if due and money_value(data["deposit"]) >= due:
             data["payment_status"]="Pagato"
+        # A practice marked Pagato can never have anything left to collect, on either
+        # circuit: force both remaining fields to zero regardless of the recorded
+        # deposit (a status flipped by hand without updating the deposit must not
+        # leave a stale balance behind).
+        if data["payment_status"]=="Pagato":
+            data["remaining_balance"]="0.00"
+            data["remaining_final"]="0.00" if money_value(data["total_text"]) else ""
+        else:
+            data["remaining_balance"]=(f"{max(0.0, due-money_value(data['deposit'])):.2f}" if due else "")
+            due_d=money_value(data["total_text"])
+            data["remaining_final"]=(f"{max(0.0, due_d-money_value(data['deposit_final'])):.2f}" if due_d else "")
         return data
 
     def is_complete(self,d):
@@ -7123,7 +7138,7 @@ class App(BaseHTTPRequestHandler):
         if p["price_urn_2"]: urn_parts.append(money_it(money_value(p["price_urn_2"])))
         invoice_value = p["invoice_number"] if "invoice_number" in p.keys() and p["invoice_number"] else ""
         invoice_date = p["invoice_date"] if "invoice_date" in p.keys() and p["invoice_date"] else ""
-        invoice_total_value = p["invoice_total"] if "invoice_total" in p.keys() and p["invoice_total"] else f"{effective_total(p):.2f}"
+        invoice_total_value = p["invoice_total"] if "invoice_total" in p.keys() and p["invoice_total"] else f"{money_value(p['total_service']):.2f}"
         method_control=f'''<form class="method-inline-form" onsubmit="return false"><input type="hidden" name="payment_status" value="{esc(payment_value)}"><input type="hidden" name="payment_amount" value="{esc(payment_amount_value)}"><input type="hidden" name="invoice_number" value="{esc(invoice_value)}"><input type="hidden" name="invoice_total" value="{esc(invoice_total_value)}"><input type="hidden" name="invoice_date" value="{esc(invoice_date)}"><select name="payment_method" class="inline-state-select" data-method-endpoint="/pratiche/{pid}/pagamento-rapido" data-saved-value="{esc(p['payment_method'] or '')}" aria-label="Metodo di pagamento" onchange="saveMethodSelect(this)">{method_select_options}</select><span class="inline-save-note" aria-live="polite"></span></form>'''
         make_invoice_checked = "checked" if "make_invoice" in p.keys() and p["make_invoice"] == "Si" else ""
         invoice_box=f'''<div class="kv full"><small>Fattura</small><form class="invoice-inline" method="post" action="/pratiche/{pid}/fattura"><input type="hidden" name="practice_view" value="{esc(practice_view)}"><input name="invoice_number" value="{esc(invoice_value)}" placeholder="Numero fattura"><input type="date" name="invoice_date" value="{esc(invoice_date)}"><input name="invoice_total" value="{esc(invoice_total_value)}" inputmode="decimal" placeholder="Totale fattura €" aria-label="Totale fattura" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"><label class="modern-check"><input type="checkbox" name="make_invoice" value="Si" {make_invoice_checked}> FARE FATTURA</label><button class="btn ghost">Salva fattura</button></form></div>'''
@@ -7175,6 +7190,9 @@ class App(BaseHTTPRequestHandler):
             change=f'{esc(old_value)} → {esc(new_value)}' if old_value and new_value else esc(new_value or old_value)
             hist_items.append(f'<div class="event"><b>{esc(h["event_type"])}</b>{f"<br><span>{change}</span>" if change else ""}{f"<br><span class=\"sub\">{esc(note)}</span>" if note else ""}<br><small class="sub">{esc(h["created_at"].replace("T"," "))} - {esc(h["display_name"] or "Sistema")}</small></div>')
         hist=''.join(hist_items) or '<p class="sub">Nessuna modifica registrata.</p>'
+        owner_city_line=' '.join(x for x in (p['owner_zip'],p['owner_city']) if x)
+        if p['owner_province']:owner_city_line=f"{owner_city_line} ({p['owner_province']})".strip()
+        owner_address_display=', '.join(x for x in (p['owner_street'] or p['owner_address'],owner_city_line) if x)
         ddt=f'DDT n. {p["ddt_number"]} del {esc(p["ddt_date"])}' if p["ddt_number"] else 'Numero DDT non ancora assegnato'
         if p['ddt_pdf']:
             share_token = p["ddt_share_token"] if "ddt_share_token" in p.keys() and p["ddt_share_token"] else secrets.token_urlsafe(18)
@@ -7194,7 +7212,7 @@ class App(BaseHTTPRequestHandler):
           {'' if p['data_complete'] else '<div class="flash warning">Questa pratica contiene ancora dati da completare.</div>'}
           <section class="grid practice-layout">
             <div class="grid">
-              <div class="section"><h2>Riepilogo</h2><div class="kvs"><div class="kv"><small>Stato</small>{self.status_badges(p)}{tag_badges_html}</div><div class="kv"><small>Speditore</small>{esc((p['owner_first_name'] or '')+' '+(p['owner_last_name'] or ''))}<br>{self.phone_action_buttons(p['owner_phone'])}{('<br>'+self.phone_action_buttons(p['owner_phone_2'])) if 'owner_phone_2' in p.keys() and p['owner_phone_2'] else ''}</div><div class="kv"><small>Animale</small>{esc(p['species'])} - {esc(p['breed'])}<br>{esc(p['estimated_weight'])} kg{animal_age}</div>{animal2_block}<div class="kv"><small>Sede</small><b>{esc(p['destination_branch'])}</b></div><div class="kv"><small>Origine</small><b>{esc(p['request_origin'])}</b></div><div class="kv"><small>Veterinario</small>{esc(p['clinic_name'])}<br>{esc(p['veterinarian_name'])}</div><div class="kv"><small>Catalogo urna</small><b>{esc(catalog_value)}</b></div></div></div>
+              <div class="section"><h2>Riepilogo</h2><div class="kvs">{f'<div class="kv"><small>Nota</small>{esc(p["notes"])}</div>' if p["notes"] else ''}<div class="kv"><small>Stato</small>{self.status_badges(p)}{tag_badges_html}</div><div class="kv"><small>Speditore</small>{esc((p['owner_first_name'] or '')+' '+(p['owner_last_name'] or ''))}<br>{self.phone_action_buttons(p['owner_phone'])}{('<br>'+self.phone_action_buttons(p['owner_phone_2'])) if 'owner_phone_2' in p.keys() and p['owner_phone_2'] else ''}{f'<br>{esc(owner_address_display)}' if owner_address_display else ''}{f'<br>CF: {esc(p["owner_tax_code"])}' if p['owner_tax_code'] else ''}</div><div class="kv"><small>Animale</small>{esc(p['species'])} - {esc(p['breed'])}<br>{esc(p['estimated_weight'])} kg{animal_age}</div>{animal2_block}<div class="kv"><small>Sede</small><b>{esc(p['destination_branch'])}</b></div><div class="kv"><small>Origine</small><b>{esc(p['request_origin'])}</b></div><div class="kv"><small>Veterinario</small>{esc(p['clinic_name'])}<br>{esc(p['veterinarian_name'])}</div><div class="kv"><small>Catalogo urna</small><b>{esc(catalog_value)}</b></div></div></div>
               {economic_block}
               <div class="section"><h2>Firma proprietario</h2><p class="sub">{'Firma salvata.' if p['signature_data'] else 'Firma non ancora salvata.'}</p><a class="btn ghost" href="/pratiche/{pid}/firma">Apri firma</a></div>
               {whatsapp_block}
@@ -7364,7 +7382,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             current=c.execute("SELECT * FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(pid,)).fetchone()
             if not current:return self.send_error(404)
             invoice_total_manual=current["invoice_total_manual"] if "invoice_total_manual" in current.keys() else ""
-            if not invoice_total:invoice_total=f"{effective_total(current):.2f}"
+            if not invoice_total:invoice_total=f"{money_value(current['total_service']):.2f}"
             else:invoice_total_manual="Si"
             conflict=self.invoice_conflict(c,number,pid)
             if conflict:return self.practice(user,pid,error=f'Numero fattura già usato nella pratica {conflict["practice_number"]}')
@@ -7478,7 +7496,10 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 error="Indica la data in cui il pagamento è stato ricevuto per impostare lo stato Acconto o Pagato."
                 return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
             remaining=0.0 if payment=="Pagato" else max(0.0,due-money_value(deposit))
-            c.execute("UPDATE practices SET payment_status=?,payment_method=?,payment_amount=?,deposit=?,remaining_balance=?,invoice_number=?,invoice_total=?,invoice_date=?,updated_at=? WHERE id=?",(payment,method,amount,deposit,f"{remaining:.2f}",invoice,invoice_total or row["invoice_total"],invoice_date,stamp,pid))
+            due_d=money_value(row["total_text"])
+            if payment=="Pagato":remaining_final="0.00" if due_d else ""
+            else:remaining_final=(f"{max(0.0,due_d-money_value(row['deposit_final'])):.2f}" if due_d else "")
+            c.execute("UPDATE practices SET payment_status=?,payment_method=?,payment_amount=?,deposit=?,remaining_balance=?,remaining_final=?,invoice_number=?,invoice_total=?,invoice_date=?,updated_at=? WHERE id=?",(payment,method,amount,deposit,f"{remaining:.2f}",remaining_final,invoice,invoice_total or row["invoice_total"],invoice_date,stamp,pid))
             updated=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
             self.reconcile_payment_movements(c,pid,row,updated,user["id"],"Pagamento rapido",economic_at)
             c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,"Pagamento rapido",old,f'{payment}' + (f' · {money_it(money_value(amount))}' if amount else ''),user["id"],stamp))
