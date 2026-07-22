@@ -868,12 +868,30 @@ class OperationalCalendarTests(unittest.TestCase):
             after = {table: conn.execute(f"SELECT count(*) n FROM {table}").fetchone()["n"] for table in before}
         self.assertEqual(before, after)
 
+    def test_day_view_single_event_does_not_stretch_to_fill_list_min_height(self):
+        # calendar-day-list used to keep a leftover min-height:260px from the old
+        # hourly timeline layout; with just one event in the day, that single grid
+        # row stretched to fill the whole 260px instead of staying compact.
+        self.save(self.event_form("Appuntamento", title="EVENTO UNICO", start_time="10:00", end_time="10:30"))
+        rendered = []
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.path = "/calendario?vista=giorno&data=2026-07-15"
+        self.handler.calendar_page(self.admin)
+        page = rendered[-1]
+        self.assertEqual(page.count('class="calendar-event calendar-day-event'), 1)
+        self.assertIn(".calendar-day-list{display:grid;gap:10px;min-height:0;align-content:start}", app.CSS)
+        self.assertNotIn(".calendar-day-list{display:grid;gap:10px;min-height:260px}", app.CSS)
+
     def test_week_and_day_blocks_are_as_compact_as_month_pill(self):
         self.assertIn(".calendar-week-v2-event{display:flex;align-items:center;gap:4px;padding:2px 6px;", app.CSS)
         self.assertIn(".calendar-week-v2-event-title{flex:1;min-width:0;font-size:9px;", app.CSS)
         self.assertIn(".calendar-month-v2-pill{display:block;padding:2px 6px;border-radius:5px;background:color-mix(in srgb,currentColor 38%,transparent);font-size:9px;", app.CSS)
-        self.assertIn(".calendar-day-event{display:flex;align-items:center;gap:6px;padding:3px 8px;min-height:0}", app.CSS)
-        self.assertIn(".calendar-day-event h3{font-size:10px", app.CSS)
+        self.assertIn(".calendar-day-event{display:flex;align-items:center;gap:6px;padding:2px 8px;min-height:0}", app.CSS)
+        self.assertIn(".calendar-day-event h3{font-size:9px", app.CSS)
+        # The day list must not force a tall min-height on its own: with a single
+        # event this used to stretch that one row to fill 260px (a leftover from
+        # the old hourly timeline layout), making the lone event look huge.
+        self.assertIn(".calendar-day-list{display:grid;gap:10px;min-height:0;align-content:start}", app.CSS)
 
     def test_month_agenda_uses_event_color_class_consistently(self):
         # calendar_event_card (month agenda list) used to compute its own divergent
