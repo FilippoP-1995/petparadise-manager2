@@ -1113,9 +1113,21 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .calendar-day-time-single{font-size:9px;font-weight:700;color:currentColor;white-space:nowrap}
 .light-theme .calendar-day-time small{color:#526174}
 .calendar-day-status-badge{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:99px;background:color-mix(in srgb,currentColor 18%,transparent);color:inherit;font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;vertical-align:middle}
-.calendar-day-hour-sep{padding:8px 4px 2px;color:#7f8b9d;font-size:10px;font-weight:700;letter-spacing:.04em}
-.light-theme .calendar-day-hour-sep{color:#526174}
 @media(max-width:520px){.calendar-day-event{flex-wrap:wrap;align-items:center;gap:2px 8px}.calendar-day-event .calendar-day-time{order:-1;flex-basis:100%;flex-direction:row;gap:6px}.calendar-day-event .calendar-event-icon{order:0}.calendar-day-event .calendar-event-copy{order:1}}
+.calendar-day-hours{position:relative;max-height:510px;overflow-y:auto;border:1px solid #293648;border-radius:12px;background:#101925}
+.calendar-day-hour-row{display:flex;align-items:flex-start;gap:8px;padding:4px 10px;border-bottom:1px solid #1c2735;min-height:34px}
+.calendar-day-hour-row:last-child{border-bottom:0}
+.calendar-day-hour-label{flex:0 0 40px;padding-top:2px;color:#7f8b9d;font-size:10px;font-weight:700}
+.calendar-day-hour-events{flex:1;display:flex;flex-direction:column;gap:4px;min-width:0}
+.calendar-day-allday{display:flex;align-items:center;gap:8px;padding:6px 10px;margin-bottom:8px;border:1px solid #293648;border-radius:10px;background:#141f2c}
+.calendar-day-allday-label{flex:0 0 auto;color:#7f8b9d;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
+.calendar-day-allday-events{flex:1;display:flex;flex-direction:column;gap:4px;min-width:0}
+.calendar-day-empty-notice{margin-bottom:10px}
+.light-theme .calendar-day-hours{background:#fff;border-color:#d7dee8}
+.light-theme .calendar-day-hour-row{border-color:#e2e8f0}
+.light-theme .calendar-day-hour-label{color:#526174}
+.light-theme .calendar-day-allday{background:#fff;border-color:#d7dee8}
+.light-theme .calendar-day-allday-label{color:#526174}
 .calendar-avatar{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;border-radius:50%;font-weight:800;color:#fff;line-height:1}
 .calendar-avatar-md{width:30px;height:30px;font-size:13px;margin-left:auto}
 .calendar-avatar-sm{width:22px;height:22px;font-size:10px}
@@ -3809,7 +3821,14 @@ class App(BaseHTTPRequestHandler):
         display_title=self.calendar_event_display_title(row)
         operator_name=row['operator_name'] or row['assigned_name'] or row['creator_name']
         avatar=self.calendar_operator_avatar(operator_name,"xs",color_settings["operators"].get(operator_name))
-        return f'<a class="calendar-week-v2-event {cls}" href="/calendario/{row["id"]}" style="color:{hex_}"><span class="calendar-week-v2-event-time">{esc(time_text)}</span><span class="calendar-week-v2-event-title">{esc(display_title)}</span>{avatar}</a>'
+        return f'<div class="calendar-week-v2-event {cls}" style="color:{hex_}"><span class="calendar-week-v2-event-time">{esc(time_text)}</span><span class="calendar-week-v2-event-title">{esc(display_title)}</span>{avatar}</div>'
+
+    def calendar_legend_html(self,color_settings):
+        legend_default_class={"Da confermare":"calendar-yellow","Da ritirare":"calendar-red","Ritirato":"calendar-green","Annullato":"calendar-dark","Riconsegna":"calendar-blue","Appuntamento":"calendar-purple"}
+        legend_operator_items=''.join(f'<span class="calendar-legend-item">{self.calendar_operator_avatar(name,"xs",color_settings["operators"].get(name))}{esc(name)}</span>' for name in CALENDAR_OPERATORS)
+        legend_status_items=''.join(f'<span class="calendar-legend-item"><span class="calendar-legend-dot {legend_default_class[key]}" style="color:{esc(color_settings["types"][key])}"></span>{esc(key)}</span>' for key in ("Da confermare","Da ritirare","Ritirato","Annullato"))
+        legend_type_items=''.join(f'<span class="calendar-legend-item"><span class="calendar-legend-dot {legend_default_class[key]}" style="color:{esc(color_settings["types"][key])}"></span>{esc(key)}</span>' for key in ("Riconsegna","Appuntamento"))
+        return f'<section class="calendar-legend-section"><div class="calendar-operator-legend">{legend_operator_items}</div><div class="calendar-day-legend"><div class="calendar-day-legend-group"><span class="calendar-day-legend-title">Colore = stato del ritiro</span>{legend_status_items}</div><div class="calendar-day-legend-group"><span class="calendar-day-legend-title">Colore fisso = altri tipi</span>{legend_type_items}</div></div></section>'
 
     def calendar_page(self,user):
         q=parse_qs(urlparse(self.path).query);selected=(q.get("data") or [datetime.now().date().isoformat()])[0]
@@ -3851,11 +3870,6 @@ class App(BaseHTTPRequestHandler):
             while cursor<=last:by_day.setdefault(cursor.isoformat(),[]).append(row);cursor+=timedelta(days=1)
         selected_date=date.fromisoformat(selected)
         today_date=datetime.now().date()
-        legend_default_class={"Da confermare":"calendar-yellow","Da ritirare":"calendar-red","Ritirato":"calendar-green","Annullato":"calendar-dark","Riconsegna":"calendar-blue","Appuntamento":"calendar-purple"}
-        legend_operator_items=''.join(f'<span class="calendar-legend-item">{self.calendar_operator_avatar(name,"xs",color_settings["operators"].get(name))}{esc(name)}</span>' for name in CALENDAR_OPERATORS)
-        legend_status_items=''.join(f'<span class="calendar-legend-item"><span class="calendar-legend-dot {legend_default_class[key]}" style="color:{esc(color_settings["types"][key])}"></span>{esc(key)}</span>' for key in ("Da confermare","Da ritirare","Ritirato","Annullato"))
-        legend_type_items=''.join(f'<span class="calendar-legend-item"><span class="calendar-legend-dot {legend_default_class[key]}" style="color:{esc(color_settings["types"][key])}"></span>{esc(key)}</span>' for key in ("Riconsegna","Appuntamento"))
-        legend_html=f'<section class="calendar-legend-section"><div class="calendar-operator-legend">{legend_operator_items}</div><div class="calendar-day-legend"><div class="calendar-day-legend-group"><span class="calendar-day-legend-title">Colore = stato del ritiro</span>{legend_status_items}</div><div class="calendar-day-legend-group"><span class="calendar-day-legend-title">Colore fisso = altri tipi</span>{legend_type_items}</div></div></section>'
         month_names=("Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno","Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre")
         day_names=("Lun","Mar","Mer","Gio","Ven","Sab","Dom")
         day_names_full=("Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica")
@@ -3876,32 +3890,33 @@ class App(BaseHTTPRequestHandler):
         switch_active={"mista_settimana":"settimana","mista_mese":"mese","compatto":"mese"}.get(view,view)
         switch=''.join(f'<a data-calendar-view="{key}" class="{"active" if switch_active==key else ""}" href="{view_url(selected_date,key)}">{label}</a>' for key,label in (("giorno","Giorno"),("settimana","Settimana"),("mese","Mese")))
         selected_rows=by_day.get(selected,[])
-        # Day view is a simple chronological list: every event row shares the same fixed
-        # height regardless of its duration (no hourly grid, no proportional block sizing).
+        # Day view: a full 00:00-24:00 hour timeline is always rendered (every hour row
+        # exists even if empty), but every event card keeps the same fixed compact size
+        # regardless of its duration (no proportional/lane block sizing). The timeline
+        # scrolls to show 7:00-22:00 by default; the rest is reachable by scrolling.
         day_rows_sorted=sorted(selected_rows,key=lambda item:(item["start_at"] or "",item["id"]))
         def day_row_hour(row):
             raw_start=row["start_at"] or ""
             if row["all_day"] or (raw_start[:10] and raw_start[:10]<selected):return None
-            return raw_start[11:13] if len(raw_start)>=13 else None
-        day_list_parts=[];last_hour=None
+            return int(raw_start[11:13]) if len(raw_start)>=13 else 0
+        allday_cards=[];hour_events={hour:[] for hour in range(24)}
         for row in day_rows_sorted:
+            card=self.calendar_day_event_card(row,client_names=client_names,practice_owner_names=practice_owner_names,color_settings=color_settings)
             hour=day_row_hour(row)
-            if hour is not None and hour!=last_hour:
-                day_list_parts.append(f'<div class="calendar-day-hour-sep"><span>{hour}:00</span></div>')
-            if hour is not None:last_hour=hour
-            day_list_parts.append(self.calendar_day_event_card(row,client_names=client_names,practice_owner_names=practice_owner_names,color_settings=color_settings))
-        day_events_html=''.join(day_list_parts)
-        if selected_rows:
-            day_view=f'<section class="calendar-day-view"><div class="calendar-day-list">{day_events_html}</div></section>'
-        else:
-            day_view=f'<section class="calendar-day-view"><section class="calendar-day-list"><section class="section empty-state"><p>Nessun evento</p><a class="btn" href="/calendario/nuovo?data={selected}">+ Crea evento in questa data</a></section></section></section>'
+            if hour is None:allday_cards.append(card)
+            else:hour_events[hour].append(card)
+        allday_html=f'<div class="calendar-day-allday"><span class="calendar-day-allday-label">Tutto il giorno</span><div class="calendar-day-allday-events">{"".join(allday_cards)}</div></div>' if allday_cards else ''
+        hour_rows_html=''.join(f'<div class="calendar-day-hour-row" data-hour="{hour}"><span class="calendar-day-hour-label">{hour:02d}:00</span><div class="calendar-day-hour-events">{"".join(hour_events[hour])}</div></div>' for hour in range(24))
+        empty_notice='' if selected_rows else f'<section class="section empty-state calendar-day-empty-notice"><p>Nessun evento</p><a class="btn" href="/calendario/nuovo?data={selected}">+ Crea evento in questa data</a></section>'
+        day_scroll_script='<script>(function(){const c=document.getElementById("calendarDayHours");const r=c&&c.querySelector(\'[data-hour="7"]\');if(c&&r)c.scrollTop=r.offsetTop;})();</script>'
+        day_view=f'<section class="calendar-day-view">{empty_notice}{allday_html}<div class="calendar-day-hours" id="calendarDayHours">{hour_rows_html}</div>{day_scroll_script}</section>'
         week_days=[start+timedelta(days=i) for i in range(7)]
         def week_day_sort_key(row):return (0 if row["all_day"] else 1,row["start_at"] or "")
         def week_day_events_html(day):
             day_rows=sorted(by_day.get(day.isoformat(),[]),key=week_day_sort_key)
             if not day_rows:return '<p class="calendar-week-v2-empty">Nessun evento</p>'
             return ''.join(self.calendar_week_event_card(row,client_names=client_names,practice_owner_names=practice_owner_names,color_settings=color_settings) for row in day_rows)
-        week_columns=''.join(f'''<div class="calendar-week-v2-day{' is-today' if day==today_date else ''}"><header><a href="{view_url(day,'giorno')}"><span class="calendar-week-v2-dow">{day_names[day.weekday()]}</span><span class="calendar-week-v2-daynum">{day.day}</span></a></header><div class="calendar-week-v2-events">{week_day_events_html(day)}</div></div>''' for day in week_days)
+        week_columns=''.join(f'''<a class="calendar-week-v2-day{' is-today' if day==today_date else ''}" href="{view_url(day,'giorno')}"><header><span class="calendar-week-v2-dow">{day_names[day.weekday()]}</span><span class="calendar-week-v2-daynum">{day.day}</span></header><div class="calendar-week-v2-events">{week_day_events_html(day)}</div></a>''' for day in week_days)
         week_view=f'<section class="calendar-week-v2"><div class="calendar-week-v2-scroll"><div class="calendar-week-v2-grid">{week_columns}</div></div></section>'
         month_start=start;offset=month_start.weekday();grid_start=month_start-timedelta(days=offset);month_days=[grid_start+timedelta(days=i) for i in range(42)]
         compact=view=="compatto"
@@ -3910,18 +3925,18 @@ class App(BaseHTTPRequestHandler):
             cls=event_color_class(row)
             hex_=event_color_hex(row,color_settings)
             title=self.calendar_event_display_title(row)
-            return f'<a class="calendar-month-v2-pill {cls}" href="/calendario/{row["id"]}" title="{esc(title)}" style="color:{hex_}">{esc(title)}</a>'
+            return f'<span class="calendar-month-v2-pill {cls}" title="{esc(title)}" style="color:{hex_}">{esc(title)}</span>'
         def month_cell(day):
             day_rows=by_day.get(day.isoformat(),[])
             shown=day_rows[:month_pill_limit];extra=len(day_rows)-month_pill_limit
             pills=''.join(month_pill(row) for row in shown)
-            more=f'<a class="calendar-month-v2-more" href="{view_url(day,"giorno")}">+{extra} altri</a>' if extra>0 else ''
+            more=f'<span class="calendar-month-v2-more">+{extra} altri</span>' if extra>0 else ''
             classes=['calendar-month-v2-cell']
             if day==today_date:classes.append('is-today')
             if day.month!=selected_date.month:classes.append('is-other-month')
             if day.isoformat()==selected:classes.append('selected')
-            cell_href=view_url(day,'mese')
-            return f'<div class="{" ".join(classes)}"><a class="calendar-month-v2-num" href="{cell_href}">{day.day}</a><div class="calendar-month-v2-pills">{pills}{more}</div></div>'
+            cell_href=view_url(day,'giorno')
+            return f'<a class="{" ".join(classes)}" href="{cell_href}"><span class="calendar-month-v2-num">{day.day}</span><div class="calendar-month-v2-pills">{pills}{more}</div></a>'
         month_dow_header=''.join(f'<div class="calendar-month-v2-dow">{name}</div>' for name in day_names)
         month_grid=f'<section class="calendar-month-v2"><div class="calendar-month-v2-dow-row">{month_dow_header}</div><div class="calendar-month-v2-grid">'+''.join(month_cell(day) for day in month_days)+'</div></section>'
         month_agenda=''.join(self.calendar_event_card(row,client_names=client_names,practice_owner_names=practice_owner_names,color_settings=color_settings) for row in selected_rows) or '<p class="sub calendar-month-empty">Nessun evento</p>'
@@ -3943,20 +3958,22 @@ class App(BaseHTTPRequestHandler):
             else:date_title=f"{start.day} {month_names[start.month-1]} {start.year} – {end.day} {month_names[end.month-1]} {end.year}"
         elif view in ("mese","mista_mese","compatto"):date_title=f"{month_names[selected_date.month-1]} {selected_date.year}"
         else:date_title=f"{selected_date.day} {month_names[selected_date.month-1]} {selected_date.year}"
-        body=f'''<main class="wrap calendar-wrap"><div class="titlebar calendar-main-title"><div><h1>Calendario operativo</h1><p class="sub">Ritiri, riconsegne e promemoria</p></div><div class="calendar-quick-actions"><a class="icon-btn" href="/calendario/cestino" aria-label="Cestino" title="Cestino">{lucide("trash-2")}</a><a class="icon-btn calendar-settings-link" href="/calendario/impostazioni" aria-label="Impostazioni" title="Impostazioni">{lucide("settings")}</a></div></div><nav class="calendar-date-nav"><a class="btn ghost" data-calendar-prev href="{view_url(prev_target)}" aria-label="Periodo precedente">←</a><label class="calendar-date-title"><span>{date_title}</span><input type="date" value="{selected}" onchange="const u=new URL(location.href);u.searchParams.set('data',this.value);location.href=u"></label><a class="btn ghost" data-calendar-next href="{view_url(next_target)}" aria-label="Periodo successivo">→</a><a class="btn ghost calendar-today" href="{view_url(datetime.now().date())}">OGGI</a></nav><div class="calendar-toolbar"><nav class="calendar-view-switch">{switch}</nav></div>{content}{filters_html}{legend_html}{preference_script}</main>'''
+        body=f'''<main class="wrap calendar-wrap"><div class="titlebar calendar-main-title"><div><h1>Calendario operativo</h1><p class="sub">Ritiri, riconsegne e promemoria</p></div><div class="calendar-quick-actions"><a class="icon-btn" href="/calendario/cestino" aria-label="Cestino" title="Cestino">{lucide("trash-2")}</a><a class="icon-btn calendar-settings-link" href="/calendario/impostazioni" aria-label="Impostazioni" title="Impostazioni">{lucide("settings")}</a></div></div><nav class="calendar-date-nav"><a class="btn ghost" data-calendar-prev href="{view_url(prev_target)}" aria-label="Periodo precedente">←</a><label class="calendar-date-title"><span>{date_title}</span><input type="date" value="{selected}" onchange="const u=new URL(location.href);u.searchParams.set('data',this.value);location.href=u"></label><a class="btn ghost" data-calendar-next href="{view_url(next_target)}" aria-label="Periodo successivo">→</a><a class="btn ghost calendar-today" href="{view_url(datetime.now().date())}">OGGI</a></nav><div class="calendar-toolbar"><nav class="calendar-view-switch">{switch}</nav></div>{content}{filters_html}{preference_script}</main>'''
         self.send_html(layout("Calendario operativo",body,user))
 
     def calendar_settings(self,user):
         choices=''.join(f'''<label class="calendar-type-option"><input type="radio" name="calendar_view" value="{key}"><span><b>{label}</b></span></label>''' for key,label in (("giorno","Giorno"),("settimana","Settimana"),("mese","Mese"),("mista_settimana","Mista Giorno + Settimana"),("mista_mese","Mista Mese + Elenco"),("compatto","Mese compatto")))
+        with db() as c:legend_color_settings=calendar_color_settings(c)
+        legend_section=f'<div style="height:14px"></div><section class="section"><h2>Legenda colori</h2><p class="sub">Significato dei colori usati nel calendario, per operatore e per stato/tipo evento.</p>{self.calendar_legend_html(legend_color_settings)}</section>'
         colors_section=''
         if user["role"]=="admin":
-            with db() as c:color_settings=calendar_color_settings(c)
+            color_settings=legend_color_settings
             def swatch_row(field_name,current_hex):
                 return ''.join(f'<label class="calendar-color-swatch{" is-selected" if hexval==current_hex else ""}" style="background:{hexval}"><input type="radio" name="{field_name}" value="{hexval}" {"checked" if hexval==current_hex else ""}></label>' for hexval in CALENDAR_COLOR_PALETTE)
             operator_rows=''.join(f'<div class="calendar-color-row"><span class="calendar-color-row-label">{esc(name)}</span><div class="calendar-color-swatches">{swatch_row(f"operator_{name}",color_settings["operators"][name])}</div></div>' for name in CALENDAR_OPERATORS)
             type_rows=''.join(f'<div class="calendar-color-row"><span class="calendar-color-row-label">{esc(key)}</span><div class="calendar-color-swatches">{swatch_row(f"type_{key.replace(chr(32),chr(95))}",color_settings["types"][key])}</div></div>' for key in DEFAULT_CALENDAR_TYPE_COLORS)
             colors_section=f'''<div style="height:14px"></div><section class="section"><h2>Colori Calendario</h2><p class="sub">Personalizza i colori assegnati agli operatori e ai tipi/stati evento nel calendario.</p><form method="post" action="/calendario/impostazioni"><h3>Operatori</h3>{operator_rows}<h3>Stato / tipo evento</h3>{type_rows}<button class="btn" style="margin-top:16px">Salva colori</button></form></section>'''
-        body=f'''<main class="wrap calendar-form"><div class="titlebar"><div><h1>Impostazioni Calendario</h1><p class="sub">Scegli la visualizzazione predefinita su questo dispositivo.</p></div><a class="btn ghost" href="/calendario">×</a></div><form class="section" onsubmit="event.preventDefault();localStorage.setItem('ppm_calendar_view',this.calendar_view.value);location.href='/calendario?vista='+encodeURIComponent(this.calendar_view.value)"><div class="calendar-type-grid">{choices}</div><button class="btn" style="margin-top:16px">Salva preferenza</button></form>{colors_section}<script>document.addEventListener('DOMContentLoaded',()=>{{const saved=localStorage.getItem('ppm_calendar_view')||'giorno';const choice=document.querySelector('[name=calendar_view][value="'+saved+'"]');if(choice)choice.checked=true;}});</script></main>'''
+        body=f'''<main class="wrap calendar-form"><div class="titlebar"><div><h1>Impostazioni Calendario</h1><p class="sub">Scegli la visualizzazione predefinita su questo dispositivo.</p></div><a class="btn ghost" href="/calendario">×</a></div><form class="section" onsubmit="event.preventDefault();localStorage.setItem('ppm_calendar_view',this.calendar_view.value);location.href='/calendario?vista='+encodeURIComponent(this.calendar_view.value)"><div class="calendar-type-grid">{choices}</div><button class="btn" style="margin-top:16px">Salva preferenza</button></form>{legend_section}{colors_section}<script>document.addEventListener('DOMContentLoaded',()=>{{const saved=localStorage.getItem('ppm_calendar_view')||'giorno';const choice=document.querySelector('[name=calendar_view][value="'+saved+'"]');if(choice)choice.checked=true;}});</script></main>'''
         self.send_html(layout("Impostazioni Calendario",body,user))
 
     def save_calendar_colors(self,user):
