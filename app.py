@@ -11,6 +11,7 @@ import secrets
 import sqlite3
 import threading
 import traceback
+import unicodedata
 import urllib.error
 import urllib.request
 from datetime import date, datetime, timedelta
@@ -199,10 +200,24 @@ DEFAULT_VETERINARIANS = [
 ]
 
 
+def unaccent(value):
+    """Fold accents/diacritics and case so searches match regardless of special characters
+    (e.g. typing "Milu" must find "Milù")."""
+    if value is None:
+        return ""
+    text = unicodedata.normalize("NFD", str(value))
+    return "".join(c for c in text if not unicodedata.combining(c)).lower()
+
+
+def like_term(term):
+    return f"%{unaccent(term)}%"
+
+
 def db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.create_function("UNACCENT", 1, unaccent, deterministic=True)
     return conn
 
 
@@ -2650,7 +2665,7 @@ function calendarAllDayChanged(box){const form=box.form;form.querySelectorAll('[
 function calendarHtml(value){return String(value||'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));}
 function calendarDateIt(value){const match=String(value||'').match(/^(\d{4})-(\d{2})-(\d{2})/);return match?`${match[3]}/${match[2]}/${match[1]}`:String(value||'');}
 function formatVisibleDates(root=document.body){const excluded=new Set(['SCRIPT','STYLE','NOSCRIPT','TEXTAREA','INPUT','SELECT','OPTION','CODE','PRE']);const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);const nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);nodes.forEach(node=>{if(!node.parentElement||excluded.has(node.parentElement.tagName))return;node.nodeValue=node.nodeValue.replace(/\b(\d{4})-(\d{2})-(\d{2})(?=T|\b)/g,(_,year,month,day)=>`${day}/${month}/${year}`);});}
-function calendarZoneMatches(value){const query=value.trim().toLocaleLowerCase('it');return (window.CALENDAR_ZONES||[]).filter(zone=>zone.toLocaleLowerCase('it').includes(query)).slice(0,8);}
+function calendarZoneMatches(value){const norm=v=>v.toLocaleLowerCase('it').normalize('NFD').replace(/[̀-ͯ]/g,'');const query=norm(value.trim());return (window.CALENDAR_ZONES||[]).filter(zone=>norm(zone).includes(query)).slice(0,8);}
 function calendarZoneInput(input){const results=input.parentElement.querySelector('.calendar-zone-results');const matches=calendarZoneMatches(input.value);if(!input.value.trim()||!matches.length){ppmCloseLookupPanel(results);}else{results.innerHTML=matches.map(zone=>`<button type="button" data-zone="${calendarHtml(zone)}">${calendarHtml(zone)}</button>`).join('');ppmOpenLookupPanel(results);}results.onclick=e=>{const button=e.target.closest('[data-zone]');if(!button)return;input.value=button.dataset.zone;ppmCloseLookupPanel(results);calendarAutoTitle();};calendarAutoTitle();}
 function calendarZoneOffer(input){setTimeout(()=>{const results=input.parentElement.querySelector('.calendar-zone-results');if(results)ppmCloseLookupPanel(results);const value=input.value.trim();if(!value)return;const known=(window.CALENDAR_ZONES||[]).some(zone=>zone.toLocaleLowerCase('it')===value.toLocaleLowerCase('it'));const save=input.closest('.field')?.querySelector('input[name="save_zone"]');if(!known&&save&&!save.checked&&confirm(`Vuoi aggiungere ${value} ai suggerimenti?`))save.checked=true;},150);}
 function calendarTimeParts(input){const digits=input.value.replace(/\D/g,'').slice(0,4);if(!digits)return {hour:0,minute:0,digits};if(digits.length<=2)return {hour:Math.min(23,Number(digits)||0),minute:0,digits};const hour=digits.length===3?Number(digits[0]):Number(digits.slice(0,2)),minute=Number(digits.slice(-2));return {hour:Math.min(23,hour||0),minute:Math.min(59,minute||0),digits};}
@@ -5144,7 +5159,7 @@ class App(BaseHTTPRequestHandler):
         q=parse_qs(urlparse(self.path).query); term=(q.get("q") or [""])[0].strip(); date_from=(q.get("dal") or [""])[0].strip(); date_to=(q.get("al") or [""])[0].strip()
         where=["(deleted_at IS NULL OR deleted_at='')","COALESCE(invoice_number,'')<>''"]; args=[]
         if term:
-            where.append("(invoice_number LIKE ? OR practice_number LIKE ? OR owner_first_name LIKE ? OR owner_last_name LIKE ? OR animal_name LIKE ?)");args.extend([f"%{term}%"]*5)
+            where.append("(UNACCENT(invoice_number) LIKE ? OR UNACCENT(practice_number) LIKE ? OR UNACCENT(owner_first_name) LIKE ? OR UNACCENT(owner_last_name) LIKE ? OR UNACCENT(animal_name) LIKE ?)");args.extend([like_term(term)]*5)
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_from): where.append("date(invoice_date)>=date(?)");args.append(date_from)
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_to): where.append("date(invoice_date)<=date(?)");args.append(date_to)
         with db() as c:
@@ -5168,7 +5183,7 @@ class App(BaseHTTPRequestHandler):
         category=category_options_map[category_param]
         where=["active=1","category=?"]; args=[category]
         if term:
-            where.append("(name LIKE ? OR material LIKE ? OR COALESCE(internal_code,'') LIKE ?)"); args.extend([f"%{term}%"]*3)
+            where.append("(UNACCENT(name) LIKE ? OR UNACCENT(material) LIKE ? OR UNACCENT(COALESCE(internal_code,'')) LIKE ?)"); args.extend([like_term(term)]*3)
         if material: where.append("material=?"); args.append(material)
         if availability=="disponibile": where.append("quantity>low_stock_threshold")
         elif availability=="bassa": where.append("quantity>0 AND quantity<=low_stock_threshold")
@@ -5195,7 +5210,7 @@ class App(BaseHTTPRequestHandler):
         availability_options=''.join(f'<option value="{value}" {"selected" if display_availability==value else ""}>{label}</option>' for value,label in (("","Tutte le disponibilita"),("disponibile","Disponibili"),("bassa","Scorte basse"),("esaurita","Esaurite")))
         empty='<section id="urnLiveEmpty" class="section empty-state">Nessuna urna corrisponde ai filtri. Puoi aggiungerne una nuova.</section>'
         content=f'<section id="urnCatalogGrid" class="urn-grid">{"".join(cards)}</section><section id="urnLiveEmpty" class="section empty-state" style="display:none">Nessuna urna corrisponde alla ricerca.</section>' if cards else empty
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Catalogo Urne</h1><p class="sub">Catalogo e magazzino collegati alle pratiche.</p></div><a class="btn" href="/catalogo-urne/nuova?categoria={category_param}">{new_item_label}</a></div><nav class="calendar-tabs urn-tabs">{tabs_html}</nav><section class="urn-stats">{stat_html}</section><form class="section urn-filter no-advanced-collapse" method="get"><input type="hidden" name="categoria" value="{category_param}"><div class="fields"><div class="field full"><label>Cerca urna</label><input id="urnCatalogSearch" name="q" value="{esc(display_term)}" placeholder="Inizia a scrivere il nome dell urna" autocomplete="off"></div><div class="field"><label>Materiale</label><select name="materiale">{material_options}</select></div><div class="field"><label>Disponibilita</label><select name="disponibilita">{availability_options}</select></div></div><button class="btn" style="margin-top:12px">Filtra</button></form>{content}<script>(function(){{const input=document.getElementById("urnCatalogSearch"),grid=document.getElementById("urnCatalogGrid"),empty=document.getElementById("urnLiveEmpty");if(!input||!grid)return;const cards=[...grid.querySelectorAll(".urn-card")];const normalize=v=>String(v||"").toLocaleLowerCase("it").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();input.addEventListener("input",()=>{{const words=normalize(input.value).split(/\s+/).filter(Boolean);let visible=0;cards.forEach(card=>{{const hay=normalize(card.dataset.urnSearch);const show=words.every(word=>hay.includes(word));card.style.display=show?"":"none";if(show)visible++;}});if(empty)empty.style.display=visible?"none":"block";}});}})();</script></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Catalogo Urne</h1><p class="sub">Catalogo e magazzino collegati alle pratiche.</p></div><a class="btn" href="/catalogo-urne/nuova?categoria={category_param}">{new_item_label}</a></div><nav class="calendar-tabs urn-tabs">{tabs_html}</nav><section class="urn-stats">{stat_html}</section><form class="section urn-filter no-advanced-collapse" method="get"><input type="hidden" name="categoria" value="{category_param}"><div class="fields"><div class="field full"><label>Cerca urna</label><input id="urnCatalogSearch" name="q" value="{esc(display_term)}" placeholder="Inizia a scrivere il nome dell urna" autocomplete="off"></div><div class="field"><label>Materiale</label><select name="materiale">{material_options}</select></div><div class="field"><label>Disponibilita</label><select name="disponibilita">{availability_options}</select></div></div><button class="btn" style="margin-top:12px">Filtra</button></form>{content}<script>(function(){{const input=document.getElementById("urnCatalogSearch"),grid=document.getElementById("urnCatalogGrid"),empty=document.getElementById("urnLiveEmpty");if(!input||!grid)return;const cards=[...grid.querySelectorAll(".urn-card")];input.addEventListener("input",()=>{{const words=normalizeUrnSearch(input.value).split(/\s+/).filter(Boolean);let visible=0;cards.forEach(card=>{{const hay=normalizeUrnSearch(card.dataset.urnSearch);const show=words.every(word=>hay.includes(word));card.style.display=show?"":"none";if(show)visible++;}});if(empty)empty.style.display=visible?"none":"block";}});}})();</script></main>'''
         self.send_html(layout("Catalogo Urne",body,user))
 
     def urn_edit_page(self,user,urn_id=None,draft=None,error=""):
@@ -5315,7 +5330,7 @@ class App(BaseHTTPRequestHandler):
         where=["wm.manual=0","(wm.sent_at IS NOT NULL OR wm.status IN ('programmato','in_invio','accettato_da_meta','consegnato','letto','fallito','annullato'))"]
         args=[]
         if term:
-            like=f"%{term}%"; where.append("(COALESCE(p.owner_first_name,'')||' '||COALESCE(p.owner_last_name,'') LIKE ? OR COALESCE(p.owner_company,'') LIKE ? OR COALESCE(p.animal_name,'') LIKE ? OR COALESCE(wm.recipient_phone,'') LIKE ?)"); args.extend([like]*4)
+            like=like_term(term); where.append("(UNACCENT(COALESCE(p.owner_first_name,'')||' '||COALESCE(p.owner_last_name,'')) LIKE ? OR UNACCENT(COALESCE(p.owner_company,'')) LIKE ? OR UNACCENT(COALESCE(p.animal_name,'')) LIKE ? OR UNACCENT(COALESCE(wm.recipient_phone,'')) LIKE ?)"); args.extend([like]*4)
         if date_from and re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_from): where.append(f"date({event_date})>=date(?)"); args.append(date_from)
         else: date_from=""
         if date_to and re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_to): where.append(f"date({event_date})<=date(?)"); args.append(date_to)
@@ -5358,7 +5373,7 @@ class App(BaseHTTPRequestHandler):
             c.execute("UPDATE notifications SET is_read=1,read_at=COALESCE(read_at,?) WHERE user_id=? AND is_read=0",(now(),user["id"]))
         where=["n.user_id=?"]; args=[user["id"]]
         if term:
-            where.append("(n.title LIKE ? OR n.text LIKE ? OR COALESCE(p.practice_number,'') LIKE ?)"); args.extend([f"%{term}%"]*3)
+            where.append("(UNACCENT(n.title) LIKE ? OR UNACCENT(n.text) LIKE ? OR UNACCENT(COALESCE(p.practice_number,'')) LIKE ?)"); args.extend([like_term(term)]*3)
         if kind in NOTIFICATION_TYPES: where.append("n.type=?"); args.append(kind)
         else: kind=""
         if state in ("lette","non_lette"): where.append("n.is_read=?"); args.append(1 if state=="lette" else 0)
@@ -5687,8 +5702,8 @@ class App(BaseHTTPRequestHandler):
         sql="SELECT owner_first_name, owner_last_name, owner_phone, owner_phone_2, owner_email, owner_tax_code, owner_address, owner_city, owner_province, owner_zip, COUNT(*) n, MAX(created_at) last_date FROM practices WHERE (deleted_at IS NULL OR deleted_at='') AND COALESCE(owner_first_name,'')||COALESCE(owner_last_name,'')||COALESCE(owner_phone,'')<>''"
         args=[]
         if term:
-            like=f"%{term}%"
-            sql+=" AND (owner_first_name LIKE ? OR owner_last_name LIKE ? OR owner_first_name||' '||owner_last_name LIKE ? OR owner_phone LIKE ? OR owner_phone_2 LIKE ? OR owner_email LIKE ? OR owner_tax_code LIKE ? OR owner_address LIKE ? OR owner_city LIKE ?)"
+            like=like_term(term)
+            sql+=" AND (UNACCENT(owner_first_name) LIKE ? OR UNACCENT(owner_last_name) LIKE ? OR UNACCENT(owner_first_name||' '||owner_last_name) LIKE ? OR UNACCENT(owner_phone) LIKE ? OR UNACCENT(owner_phone_2) LIKE ? OR UNACCENT(owner_email) LIKE ? OR UNACCENT(owner_tax_code) LIKE ? OR UNACCENT(owner_address) LIKE ? OR UNACCENT(owner_city) LIKE ?)"
             args=[like]*9
         sql+=" GROUP BY owner_first_name, owner_last_name, owner_phone ORDER BY last_date DESC"
         with db() as c:
@@ -5707,8 +5722,8 @@ class App(BaseHTTPRequestHandler):
         searchable="COALESCE(first_name,'')||' '||COALESCE(last_name,'')||' '||COALESCE(company_name,'')||' '||COALESCE(phone,'')||' '||COALESCE(phone_2,'')||' '||COALESCE(email,'')||' '||COALESCE(tax_code,'')||' '||COALESCE(vat_number,'')||' '||COALESCE(street,'')||' '||COALESCE(city,'')||' '||COALESCE(address,'')"
         where=[]; args=[]
         for token in tokens:
-            where.append(f"{searchable} LIKE ? COLLATE NOCASE")
-            args.append(f"%{token}%")
+            where.append(f"UNACCENT({searchable}) LIKE ?")
+            args.append(like_term(token))
         digits=only_digits(q)
         try:
             with db() as c:
@@ -5733,8 +5748,8 @@ class App(BaseHTTPRequestHandler):
             collab_searchable="COALESCE(name,'')||' '||COALESCE(city,'')||' '||COALESCE(tax_code,'')||' '||COALESCE(vat_number,'')||' '||COALESCE(phone,'')||' '||COALESCE(email,'')"
             collab_where=[]; collab_args=[]
             for token in tokens:
-                collab_where.append(f"{collab_searchable} LIKE ? COLLATE NOCASE")
-                collab_args.append(f"%{token}%")
+                collab_where.append(f"UNACCENT({collab_searchable}) LIKE ?")
+                collab_args.append(like_term(token))
             with db() as c:
                 collab_rows=c.execute(f"""SELECT id, name, address, city, province, zip, tax_code, vat_number, sdi_code, phone, email, notes,
                                            (SELECT COUNT(*) FROM practices p WHERE p.collaborator_id=collaborators.id) AS practice_count
@@ -5776,7 +5791,7 @@ class App(BaseHTTPRequestHandler):
         searchable="COALESCE(animal_name,'')||' '||COALESCE(owner_first_name,'')||' '||COALESCE(owner_last_name,'')||' '||COALESCE(species,'')||' '||COALESCE(practice_number,'')"
         where=[];args=[]
         for token in tokens:
-            where.append(f"{searchable} LIKE ? COLLATE NOCASE");args.append(f"%{token}%")
+            where.append(f"UNACCENT({searchable}) LIKE ?");args.append(like_term(token))
         try:
             with db() as c:
                 rows=c.execute(f"""SELECT * FROM practices
@@ -5805,7 +5820,7 @@ class App(BaseHTTPRequestHandler):
         searchable="COALESCE(animal_name,'')||' '||COALESCE(owner_first_name,'')||' '||COALESCE(owner_last_name,'')||' '||COALESCE(clinic_name,'')||' '||COALESCE(veterinarian_name,'')||' '||COALESCE(practice_number,'')"
         where=[];args=[]
         for token in tokens:
-            where.append(f"{searchable} LIKE ? COLLATE NOCASE");args.append(f"%{token}%")
+            where.append(f"UNACCENT({searchable}) LIKE ?");args.append(like_term(token))
         try:
             with db() as c:
                 rows=c.execute(f"""SELECT * FROM practices
@@ -5837,8 +5852,8 @@ class App(BaseHTTPRequestHandler):
         searchable="COALESCE(short_name,'')||' '||COALESCE(clinic_name,'')||' '||COALESCE(doctor_name,'')||' '||COALESCE(phone,'')||' '||COALESCE(address,'')||' '||COALESCE(city,'')"
         where=[]; args=[]
         for token in tokens:
-            where.append(f"{searchable} LIKE ? COLLATE NOCASE")
-            args.append(f"%{token}%")
+            where.append(f"UNACCENT({searchable}) LIKE ?")
+            args.append(like_term(token))
         try:
             with db() as c:
                 rows=c.execute(f"""SELECT id, short_name, clinic_name, doctor_name, phone, address, city, notes
@@ -5897,21 +5912,21 @@ class App(BaseHTTPRequestHandler):
         event_select=f", {event_date_sql} AS dashboard_event_date" if event_date_sql else ""
         sql=f"SELECT practices.*{event_select} FROM practices WHERE (deleted_at IS NULL OR deleted_at='')"; args=[]
         if term:
-            like=f"%{term}%"
-            sql+=" AND (practice_number LIKE ? OR animal_name LIKE ? OR owner_first_name||' '||owner_last_name LIKE ? OR owner_phone LIKE ? OR owner_phone_2 LIKE ? OR microchip LIKE ? OR clinic_name LIKE ? OR veterinarian_name LIKE ? OR collaborator_name LIKE ? OR CAST(ddt_number AS TEXT) LIKE ?)"
+            like=like_term(term)
+            sql+=" AND (UNACCENT(practice_number) LIKE ? OR UNACCENT(animal_name) LIKE ? OR UNACCENT(owner_first_name||' '||owner_last_name) LIKE ? OR UNACCENT(owner_phone) LIKE ? OR UNACCENT(owner_phone_2) LIKE ? OR UNACCENT(microchip) LIKE ? OR UNACCENT(clinic_name) LIKE ? OR UNACCENT(veterinarian_name) LIKE ? OR UNACCENT(collaborator_name) LIKE ? OR UNACCENT(CAST(ddt_number AS TEXT)) LIKE ?)"
             args += [like]*10
         if quick:
-            like=f"%{quick}%"
-            sql+=" AND (animal_name LIKE ? OR owner_first_name LIKE ? OR owner_last_name LIKE ? OR owner_first_name||' '||owner_last_name LIKE ?)"
+            like=like_term(quick)
+            sql+=" AND (UNACCENT(animal_name) LIKE ? OR UNACCENT(owner_first_name) LIKE ? OR UNACCENT(owner_last_name) LIKE ? OR UNACCENT(owner_first_name||' '||owner_last_name) LIKE ?)"
             args += [like]*4
         if animal:
-            sql += " AND animal_name LIKE ?"; args.append(f"%{animal}%")
+            sql += " AND UNACCENT(animal_name) LIKE ?"; args.append(like_term(animal))
         if service:
             sql += " AND service_type=?"; args.append(service)
         if vet:
-            like=f"%{vet}%"; sql += " AND (clinic_name LIKE ? OR veterinarian_name LIKE ?)"; args += [like,like]
+            like=like_term(vet); sql += " AND (UNACCENT(clinic_name) LIKE ? OR UNACCENT(veterinarian_name) LIKE ?)"; args += [like,like]
         if collaborator:
-            sql += " AND collaborator_name LIKE ?"; args.append(f"%{collaborator}%")
+            sql += " AND UNACCENT(collaborator_name) LIKE ?"; args.append(like_term(collaborator))
         if spesa_min:
             sql += " AND CAST(REPLACE(COALESCE(NULLIF(total_text,''),total_service), ',', '.') AS REAL) >= ?"; args.append(float(spesa_min) if re.match(r"^-?\d+(\.\d+)?$", spesa_min) else 0)
         if spesa_max:
@@ -5980,8 +5995,8 @@ class App(BaseHTTPRequestHandler):
                  "FROM veterinarians v LEFT JOIN veterinarian_vouchers vv ON vv.veterinarian_id=v.id WHERE v.active=1")
             args=[]
             if term:
-                like=f"%{term}%"
-                sql += " AND (v.short_name LIKE ? OR v.clinic_name LIKE ? OR v.doctor_name LIKE ? OR v.address LIKE ? OR v.city LIKE ? OR v.phone LIKE ?)"
+                like=like_term(term)
+                sql += " AND (UNACCENT(v.short_name) LIKE ? OR UNACCENT(v.clinic_name) LIKE ? OR UNACCENT(v.doctor_name) LIKE ? OR UNACCENT(v.address) LIKE ? OR UNACCENT(v.city) LIKE ? OR UNACCENT(v.phone) LIKE ?)"
                 args += [like]*6
             sql += " GROUP BY v.id"
             if voucher_filter == "Maturati": sql += " HAVING available_vouchers>0"
@@ -6081,8 +6096,8 @@ class App(BaseHTTPRequestHandler):
             sql="SELECT * FROM clients WHERE active=1"
             args=[]
             if term:
-                like=f"%{term}%"
-                sql += " AND (first_name LIKE ? OR last_name LIKE ? OR company_name LIKE ? OR phone LIKE ? OR email LIKE ? OR tax_code LIKE ? OR vat_number LIKE ?)"
+                like=like_term(term)
+                sql += " AND (UNACCENT(first_name) LIKE ? OR UNACCENT(last_name) LIKE ? OR UNACCENT(company_name) LIKE ? OR UNACCENT(phone) LIKE ? OR UNACCENT(email) LIKE ? OR UNACCENT(tax_code) LIKE ? OR UNACCENT(vat_number) LIKE ?)"
                 args += [like]*7
             sql += " ORDER BY last_name, first_name, company_name"
             clients=c.execute(sql,args).fetchall()
@@ -6131,8 +6146,8 @@ class App(BaseHTTPRequestHandler):
                  "WHERE co.active=1")
             args=[]
             if term:
-                like=f"%{term}%"
-                sql += " AND (co.name LIKE ? OR co.city LIKE ? OR co.phone LIKE ? OR co.tax_code LIKE ? OR co.vat_number LIKE ?)"
+                like=like_term(term)
+                sql += " AND (UNACCENT(co.name) LIKE ? OR UNACCENT(co.city) LIKE ? OR UNACCENT(co.phone) LIKE ? OR UNACCENT(co.tax_code) LIKE ? OR UNACCENT(co.vat_number) LIKE ?)"
                 args += [like]*5
             sql += " GROUP BY co.id ORDER BY co.name"
             collaborators=c.execute(sql,args).fetchall()
@@ -6226,8 +6241,8 @@ class App(BaseHTTPRequestHandler):
         searchable="COALESCE(name,'')||' '||COALESCE(city,'')||' '||COALESCE(tax_code,'')||' '||COALESCE(vat_number,'')||' '||COALESCE(phone,'')"
         where=[]; args=[]
         for token in tokens:
-            where.append(f"{searchable} LIKE ? COLLATE NOCASE")
-            args.append(f"%{token}%")
+            where.append(f"UNACCENT({searchable}) LIKE ?")
+            args.append(like_term(token))
         try:
             with db() as c:
                 rows=c.execute(f"""SELECT id, name, address, city, province, zip, tax_code, vat_number, sdi_code, phone, email
@@ -7212,7 +7227,7 @@ class App(BaseHTTPRequestHandler):
           {'' if p['data_complete'] else '<div class="flash warning">Questa pratica contiene ancora dati da completare.</div>'}
           <section class="grid practice-layout">
             <div class="grid">
-              <div class="section"><h2>Riepilogo</h2><div class="kvs">{f'<div class="kv"><small>Nota</small>{esc(p["notes"])}</div>' if p["notes"] else ''}<div class="kv"><small>Stato</small>{self.status_badges(p)}{tag_badges_html}</div><div class="kv"><small>Speditore</small>{esc((p['owner_first_name'] or '')+' '+(p['owner_last_name'] or ''))}<br>{self.phone_action_buttons(p['owner_phone'])}{('<br>'+self.phone_action_buttons(p['owner_phone_2'])) if 'owner_phone_2' in p.keys() and p['owner_phone_2'] else ''}{f'<br>{esc(owner_address_display)}' if owner_address_display else ''}{f'<br>CF: {esc(p["owner_tax_code"])}' if p['owner_tax_code'] else ''}</div><div class="kv"><small>Animale</small>{esc(p['species'])} - {esc(p['breed'])}<br>{esc(p['estimated_weight'])} kg{animal_age}</div>{animal2_block}<div class="kv"><small>Sede</small><b>{esc(p['destination_branch'])}</b></div><div class="kv"><small>Origine</small><b>{esc(p['request_origin'])}</b></div><div class="kv"><small>Veterinario</small>{esc(p['clinic_name'])}<br>{esc(p['veterinarian_name'])}</div><div class="kv"><small>Catalogo urna</small><b>{esc(catalog_value)}</b></div></div></div>
+              <div class="section"><h2>Riepilogo</h2><div class="kvs">{f'<div class="kv"><small>Nota</small>{esc(p["notes"])}</div>' if p["notes"] else ''}<div class="kv"><small>Stato</small>{self.status_badges(p)}{tag_badges_html}</div><div class="kv"><small>{"Totale pagato" if payment_value=="Pagato" else "Totale da pagare"} {payment_channel(p)}</small><b>{money_it(paid_total if payment_value=="Pagato" else due_total)}</b></div><div class="kv"><small>Speditore</small>{esc((p['owner_first_name'] or '')+' '+(p['owner_last_name'] or ''))}<br>{self.phone_action_buttons(p['owner_phone'])}{('<br>'+self.phone_action_buttons(p['owner_phone_2'])) if 'owner_phone_2' in p.keys() and p['owner_phone_2'] else ''}{f'<br>{esc(owner_address_display)}' if owner_address_display else ''}{f'<br>CF: {esc(p["owner_tax_code"])}' if p['owner_tax_code'] else ''}</div><div class="kv"><small>Animale</small>{esc(p['species'])} - {esc(p['breed'])}<br>{esc(p['estimated_weight'])} kg{animal_age}</div>{animal2_block}<div class="kv"><small>Sede</small><b>{esc(p['destination_branch'])}</b></div><div class="kv"><small>Origine</small><b>{esc(p['request_origin'])}</b></div><div class="kv"><small>Veterinario</small>{esc(p['clinic_name'])}<br>{esc(p['veterinarian_name'])}</div><div class="kv"><small>Catalogo urna</small><b>{esc(catalog_value)}</b></div></div></div>
               {economic_block}
               <div class="section"><h2>Firma proprietario</h2><p class="sub">{'Firma salvata.' if p['signature_data'] else 'Firma non ancora salvata.'}</p><a class="btn ghost" href="/pratiche/{pid}/firma">Apri firma</a></div>
               {whatsapp_block}

@@ -511,11 +511,98 @@ class PetParadiseTests(unittest.TestCase):
         page = rendered[-1]
         self.assertIn("Via Roma 1, 57100 Livorno (LI)", page)
         self.assertIn("CF: RSSMRA80A01H501U", page)
+
+    def test_practice_summary_shows_total_due_or_paid_matching_active_channel(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            due_w = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   animal_name,payment_status,price_cremation,total_service,deposit)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-RIEP-W", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Fido",
+                 "Acconto", "300", "300.00", "100"),
+            ).lastrowid
+            paid_d = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   animal_name,payment_status,total_text,payment_amount)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-RIEP-D", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Rex",
+                 "Pagato", "360", "360.00"),
+            ).lastrowid
+        rendered = []; self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.practice(admin, due_w)
+        page = rendered[-1]
+        self.assertIn('<small>Totale da pagare W</small><b>€ 200,00</b>', page)
+        self.handler.practice(admin, paid_d)
+        page = rendered[-1]
+        self.assertIn('<small>Totale pagato D</small><b>€ 360,00</b>', page)
         self.assertIn("e.target.name === 'deposit_final'", app.APP_JS)
         self.assertNotIn("definitive > 0 ? definitive : ppmNumber(totalField ? totalField.value : 0);\n  const remaining", app.APP_JS)
 
     def test_fare_fattura_unchecked_when_invoice_number_filled(self):
         self.assertIn("if(makeInvoice&&invoiceNumber.value.trim())makeInvoice.checked=false;", app.APP_JS)
+
+    def test_unaccent_helper_folds_accents_case_and_handles_empty_input(self):
+        self.assertEqual(app.unaccent("Milù"), "milu")
+        self.assertEqual(app.unaccent("MILÙ"), "milu")
+        self.assertEqual(app.unaccent("Città è perché"), "citta e perche")
+        self.assertEqual(app.unaccent(None), "")
+        self.assertEqual(app.unaccent(""), "")
+        self.assertEqual(app.like_term("Milù"), "%milu%")
+
+    def test_header_search_is_accent_insensitive(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                         owner_first_name,owner_last_name,animal_name,species,estimated_weight,service_type,pickup_date,payment_status)
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                         ("CR-ACCENT", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Anna", "Verdi", "Milù", "Gatto", "4", "Cremazione singola", "2026-07-20", "Da saldare"))
+        self.handler.path = "/api/calendario/pratiche/search?q=Milu"
+        payload = []
+        self.handler.send_json = lambda obj, status=200: payload.append(obj)
+        self.handler.api_calendar_practices_search(None)
+        results = payload[0]["results"]
+        self.assertTrue(any(r["display"].endswith("Milù") for r in results))
+
+    def test_client_search_is_accent_insensitive(self):
+        with app.db() as conn:
+            stamp = app.now()
+            conn.execute(
+                """INSERT INTO clients(first_name,last_name,phone,created_at,updated_at) VALUES(?,?,?,?,?)""",
+                ("Milù", "Città", "0501234567", stamp, stamp),
+            )
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        response = {}
+        self.handler.path = "/api/clienti/search?q=Milu Citta"
+        self.handler.send_json = lambda obj, status=200: response.update(obj=obj, status=status)
+        self.handler.api_clients_search(admin)
+        results = response["obj"]["results"]
+        self.assertTrue(any(r["display"] == "Milù Città" for r in results))
+
+    def test_urn_catalog_search_is_accent_insensitive(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.form = lambda: {"category": "Urna", "name": "Urna Perù", "material": "Legno", "price": "50.00", "quantity": "1", "low_stock_threshold": "1"}
+        self.handler.redirect = lambda path: setattr(self, "redirected", path)
+        self.handler.save_urn(admin)
+        rendered = []
+        self.handler.send_html = lambda html, *args: rendered.append(html)
+        self.handler.path = "/catalogo-urne?q=Peru"
+        self.handler.urn_catalog_page(admin)
+        page = rendered[-1]
+        self.assertIn("Urna Perù", page)
+
+    def test_archive_search_is_accent_insensitive(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                         animal_name,payment_status) VALUES(?,?,?,?,?,?,?,?,?)""",
+                         ("CR-ARCH-ACCENT", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Milù", "Da saldare"))
+        self.handler.path = "/archivio/pratiche?q=Milu"
+        rendered = []
+        self.handler.send_html = lambda html, *args: rendered.append(html)
+        self.handler.archive(admin)
+        self.assertIn("Milù", rendered[-1])
 
     def test_header_search_result_field_order(self):
         with app.db() as conn:
