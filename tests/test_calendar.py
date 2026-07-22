@@ -395,13 +395,17 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn('<span class="calendar-day-status-badge">Annullato</span>', page)
         self.assertNotIn("calendar-day-free-note", page)
         self.assertIn(".calendar-day-event{display:flex", app.CSS)
-        # week view has its own distinct compact card, not the day-only markup
+        # week view has its own distinct compact card, not the day-only markup;
+        # the combined legend now lives once at the bottom of every view.
         self.handler.path = "/calendario?vista=settimana&data=2026-07-15"
         self.handler.calendar_page(self.admin)
         week_page = rendered[-1]
         self.assertNotIn('class="calendar-event calendar-day-event', week_page)
-        self.assertNotIn('<div class="calendar-day-legend">', week_page)
+        self.assertIn('<div class="calendar-day-legend">', week_page)
         self.assertIn('calendar-week-v2-event calendar-red', week_page)
+        legend_pos = week_page.index('<section class="calendar-legend-section">')
+        grid_pos = week_page.index('<div class="calendar-week-v2-grid">')
+        self.assertLess(grid_pos, legend_pos)
 
     def test_week_view_shows_compact_cards_operator_avatar_no_swipe_hook_and_today_highlight(self):
         today = datetime.now().date()
@@ -434,7 +438,11 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("+2 altri", page)
         self.assertIn("calendar-month-v2-dow", page)
         self.assertEqual(page.count('class="calendar-month-v2-pill '), 3)
-        self.assertNotIn('<div class="calendar-operator-legend">', page)
+        # the combined legend now appears once at the bottom, in every view including Month
+        self.assertIn('<div class="calendar-operator-legend">', page)
+        grid_pos = page.index('<div class="calendar-month-v2-grid">')
+        legend_pos = page.index('<section class="calendar-legend-section">')
+        self.assertLess(grid_pos, legend_pos)
 
     def test_day_view_lists_events_in_chronological_order_without_grid_or_lanes(self):
         self.save(self.event_form("Ritiro", event_status="Da ritirare"))
@@ -488,7 +496,7 @@ class OperationalCalendarTests(unittest.TestCase):
     def test_calendar_css_touch_targets_alignment_colors_and_opacity_fixes(self):
         self.assertIn(".calendar-date-nav .btn{min-width:44px;min-height:44px;padding:0;font-size:19px}", app.CSS)
         self.assertIn(".calendar-date-nav{grid-template-columns:44px minmax(0,1fr) 44px}.calendar-day-timeline{padding-left:38px}", app.CSS)
-        self.assertIn(".calendar-day-event{flex-wrap:wrap;align-items:center;gap:4px 12px}", app.CSS)
+        self.assertIn(".calendar-day-event{flex-wrap:wrap;align-items:center;gap:2px 8px}", app.CSS)
         self.assertIn("background:color-mix(in srgb,currentColor 24%,#15202f)", app.CSS)
         self.assertIn("color-mix(in srgb,currentColor 18%,#fff)", app.CSS)
         self.assertIn("background:color-mix(in srgb,currentColor 26%,#15202f)", app.CSS)
@@ -859,6 +867,98 @@ class OperationalCalendarTests(unittest.TestCase):
         with app.db() as conn:
             after = {table: conn.execute(f"SELECT count(*) n FROM {table}").fetchone()["n"] for table in before}
         self.assertEqual(before, after)
+
+    def test_week_and_day_blocks_are_as_compact_as_month_pill(self):
+        self.assertIn(".calendar-week-v2-event{display:flex;align-items:center;gap:4px;padding:2px 6px;", app.CSS)
+        self.assertIn(".calendar-week-v2-event-title{flex:1;min-width:0;font-size:9px;", app.CSS)
+        self.assertIn(".calendar-month-v2-pill{display:block;padding:2px 6px;border-radius:5px;background:color-mix(in srgb,currentColor 38%,transparent);font-size:9px;", app.CSS)
+        self.assertIn(".calendar-day-event{display:flex;align-items:center;gap:6px;padding:3px 8px;min-height:0}", app.CSS)
+        self.assertIn(".calendar-day-event h3{font-size:10px", app.CSS)
+
+    def test_month_agenda_uses_event_color_class_consistently(self):
+        # calendar_event_card (month agenda list) used to compute its own divergent
+        # color mapping that dropped the "Da confermare"->yellow bucket for Ritiro;
+        # it must now match event_color_class exactly, like the other two card types.
+        self.save(self.event_form("Ritiro", title="RITIRO GIALLO", event_status="Da confermare"))
+        rendered = []
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.path = "/calendario?vista=mese&data=2026-07-15"
+        self.handler.calendar_page(self.admin)
+        page = rendered[-1]
+        self.assertIn('class="calendar-event calendar-yellow"', page)
+
+    def test_calendar_color_settings_defaults_and_persist_custom_choice(self):
+        with app.db() as conn:
+            defaults = app.calendar_color_settings(conn)
+        self.assertEqual(defaults["operators"]["Serena"], "#f43f5e")
+        self.assertEqual(defaults["types"]["Ritirato"], "#4ade80")
+        with app.db() as conn:
+            conn.execute("INSERT INTO settings(key,value) VALUES('calendar_colors',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                         (json.dumps({"operators": {"Serena": "#22d3ee"}, "types": {"Ritirato": "#fb923c"}}),))
+        with app.db() as conn:
+            updated = app.calendar_color_settings(conn)
+        self.assertEqual(updated["operators"]["Serena"], "#22d3ee")
+        self.assertEqual(updated["types"]["Ritirato"], "#fb923c")
+        self.assertEqual(updated["operators"]["Alessio"], "#14b8a6")  # untouched keys keep the default
+
+    def test_calendar_color_settings_ignores_values_outside_the_palette(self):
+        with app.db() as conn:
+            conn.execute("INSERT INTO settings(key,value) VALUES('calendar_colors',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                         (json.dumps({"operators": {"Serena": "#000000"}, "types": {}}),))
+        with app.db() as conn:
+            settings = app.calendar_color_settings(conn)
+        self.assertEqual(settings["operators"]["Serena"], "#f43f5e")  # rejected, default kept
+
+    def test_save_calendar_colors_requires_admin_and_persists_valid_choices(self):
+        with app.db() as conn:
+            conn.execute("INSERT INTO users(username,password_hash,display_name,role) VALUES('operatore','x','Operatore','operator')")
+            operator = conn.execute("SELECT * FROM users WHERE username='operatore'").fetchone()
+        errors = []
+        self.handler.send_error = lambda status, message="": errors.append(status)
+        self.handler.form = lambda: {"operator_Serena": "#22d3ee", "type_Ritirato": "#fb923c"}
+        self.handler.save_calendar_colors(operator)
+        self.assertEqual(errors, [403])
+        with app.db() as conn:
+            self.assertIsNone(conn.execute("SELECT value FROM settings WHERE key='calendar_colors'").fetchone())
+
+        self.handler.save_calendar_colors(self.admin)
+        self.assertEqual(self.redirected, "/calendario/impostazioni")
+        with app.db() as conn:
+            settings = app.calendar_color_settings(conn)
+        self.assertEqual(settings["operators"]["Serena"], "#22d3ee")
+        self.assertEqual(settings["types"]["Ritirato"], "#fb923c")
+
+        # A value not in the known palette must be rejected, keeping the previous color.
+        self.handler.form = lambda: {"operator_Serena": "#123456"}
+        self.handler.save_calendar_colors(self.admin)
+        with app.db() as conn:
+            settings = app.calendar_color_settings(conn)
+        self.assertEqual(settings["operators"]["Serena"], "#22d3ee")
+
+    def test_custom_colors_are_reflected_inline_on_rendered_cards_and_legend(self):
+        with app.db() as conn:
+            conn.execute("INSERT INTO settings(key,value) VALUES('calendar_colors',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                         (json.dumps({"operators": {"Serena": "#22d3ee"}, "types": {"Da confermare": "#fb923c"}}),))
+        self.save(self.event_form("Ritiro", title="RITIRO CUSTOM", event_status="Da confermare", operator_name="Serena"))
+        rendered = []
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.path = "/calendario?vista=giorno&data=2026-07-15"
+        self.handler.calendar_page(self.admin)
+        page = rendered[-1]
+        self.assertIn('style="color:#fb923c"', page)
+        self.assertIn('style="background:#22d3ee"', page)
+
+    def test_calendar_settings_shows_color_section_only_for_admin(self):
+        with app.db() as conn:
+            conn.execute("INSERT INTO users(username,password_hash,display_name,role) VALUES('operatore','x','Operatore','operator')")
+            operator = conn.execute("SELECT * FROM users WHERE username='operatore'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.calendar_settings(self.admin)
+        self.assertIn("Colori Calendario", rendered[-1])
+        self.assertIn('action="/calendario/impostazioni"', rendered[-1])
+        self.handler.calendar_settings(operator)
+        self.assertNotIn("Colori Calendario", rendered[-1])
 
 
 if __name__ == "__main__":
