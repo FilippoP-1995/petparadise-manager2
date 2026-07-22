@@ -3775,14 +3775,24 @@ class App(BaseHTTPRequestHandler):
         client_missing=f'<span class="calendar-client-missing" title="Cliente da completare">{lucide("user")}</span>' if row["event_type"] in ("Ritiro","Ritiro in sede") and not client_display else ''
         return f'''<a class="calendar-event {cls}" href="/calendario/{row['id']}" style="color:{hex_}"><time class="calendar-event-time">{esc(time_text)}</time><span class="calendar-event-main"><span class="calendar-event-icon">{lucide(icon_name)}</span><span class="calendar-event-copy"><h3>{esc(display_title)}{client_missing}</h3><p>{esc(' · '.join(details) or ('Promemoria' if row['event_type']=='Appuntamento' else row['event_type']))}</p><p>{esc(row['operator_name'] or row['assigned_name'] or row['creator_name'])}</p></span></span></a>'''
 
-    def calendar_day_event_card(self,row,compact=False,client_names=None,practice_owner_names=None,color_settings=None):
+    def calendar_day_event_card(self,row,selected=None,compact=False,client_names=None,practice_owner_names=None,color_settings=None):
         color_settings=color_settings or DEFAULT_CALENDAR_COLOR_SETTINGS
         cls=event_color_class(row);hex_=event_color_hex(row,color_settings)
         start=(row["start_at"] or "");end=(row["end_at"] or "")
         if row["all_day"]:
             time_html='<span class="calendar-day-time-single">Tutto il giorno</span>'
         elif start[:10]!=end[:10]:
-            time_html=f'<span class="calendar-day-time-single">{esc(start[:10])} → {esc(end[:10])}</span>'
+            # Multi-day event: show the time window that applies to the specific day
+            # being viewed, not the overall date range -- the start time on the first
+            # day, the end time on the last day, and midnight-to-midnight on any day
+            # in between.
+            if selected==start[:10]:
+                start_time,end_time=start[11:16],"00:00"
+            elif selected==end[:10]:
+                start_time,end_time="00:00",end[11:16]
+            else:
+                start_time,end_time="00:00","00:00"
+            time_html=f'<b>{esc(start_time)}</b><small>{esc(end_time)}</small>'
         else:
             start_time=start[11:16];end_time=end[11:16]
             time_html=f'<b>{esc(start_time)}</b>'+(f'<small>{esc(end_time)}</small>' if end_time and end_time!=start_time else '')
@@ -3900,7 +3910,7 @@ class App(BaseHTTPRequestHandler):
             return int(raw_start[11:13]) if len(raw_start)>=13 else 0
         allday_cards=[];hour_events={hour:[] for hour in range(24)}
         for row in day_rows_sorted:
-            card=self.calendar_day_event_card(row,client_names=client_names,practice_owner_names=practice_owner_names,color_settings=color_settings)
+            card=self.calendar_day_event_card(row,selected=selected,client_names=client_names,practice_owner_names=practice_owner_names,color_settings=color_settings)
             hour=day_row_hour(row)
             if hour is None:allday_cards.append(card)
             else:hour_events[hour].append(card)
