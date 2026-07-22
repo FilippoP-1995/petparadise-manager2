@@ -489,7 +489,9 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("08:20", page)
         self.assertIn("09:00", page)
         self.assertIn("17:00", page)
-        self.assertIn("2026-07-15 → 2026-07-17", page)
+        # On the day it starts, a multi-day event shows its real start time paired
+        # with midnight (the boundary of that day), not the whole date range.
+        self.assertIn('<b>09:30</b><small>00:00</small>', page)
         # The full 00:00-24:00 hour timeline is always rendered; each event lands in
         # the hour row matching its start time.
         hour8_pos = page.index('data-hour="8"')
@@ -501,6 +503,36 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertLess(breve_pos, hour9_pos)
         self.assertLess(hour9_pos, stesso_pos)
         self.assertLess(stesso_pos, multi_pos)
+
+    def test_day_view_shows_per_day_time_window_for_multiday_event_not_date_range(self):
+        # A pickup starting 11:00 on 2026-07-22 and ending 18:00 on 2026-07-23: each
+        # day's view must show the boundary time that applies to that specific day.
+        self.save(self.event_form("Ritiro", title="RITIRO FIRENZE",
+                                   start_date="2026-07-22", start_time="11:00",
+                                   end_date="2026-07-23", end_time="18:00"))
+        rendered = []
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.path = "/calendario?vista=giorno&data=2026-07-22"
+        self.handler.calendar_page(self.admin)
+        first_day_page = rendered[-1]
+        self.assertIn('<b>11:00</b><small>00:00</small>', first_day_page)
+        self.assertNotIn("2026-07-22 → 2026-07-23", first_day_page)
+        self.handler.path = "/calendario?vista=giorno&data=2026-07-23"
+        self.handler.calendar_page(self.admin)
+        second_day_page = rendered[-1]
+        self.assertIn('<b>00:00</b><small>18:00</small>', second_day_page)
+        self.assertNotIn("2026-07-22 → 2026-07-23", second_day_page)
+
+    def test_day_view_shows_midnight_to_midnight_on_middle_day_of_multiday_event(self):
+        self.save(self.event_form("Riconsegna", title="RICONSEGNA LUNGA",
+                                   start_date="2026-07-10", start_time="08:00",
+                                   end_date="2026-07-13", end_time="16:00"))
+        rendered = []
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.path = "/calendario?vista=giorno&data=2026-07-11"
+        self.handler.calendar_page(self.admin)
+        page = rendered[-1]
+        self.assertIn('<b>00:00</b><small>00:00</small>', page)
 
     def test_calendar_css_touch_targets_alignment_colors_and_opacity_fixes(self):
         self.assertIn(".calendar-date-nav .btn{min-width:44px;min-height:44px;padding:0;font-size:19px}", app.CSS)
