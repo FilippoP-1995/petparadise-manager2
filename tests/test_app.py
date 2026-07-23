@@ -2187,6 +2187,29 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("€ 32,00",page)
         self.assertIn("€ 33,00",page)
 
+    def test_practice_summary_shows_delivery_location_next_to_riconsegna(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp=app.now()
+            pid_home=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,
+                                created_by,animal_name,service_type,price_delivery,delivery_at_home,payment_status)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                             ("PP-DELIVHOME","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Rex","Cremazione singola","40","Si","Da saldare")).lastrowid
+            pid_clinic=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,
+                                created_by,animal_name,service_type,price_delivery,delivery_at_clinic,payment_status)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                             ("PP-DELIVCLINIC","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Fido","Cremazione singola","40","Si","Da saldare")).lastrowid
+            pid_neither=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,
+                                created_by,animal_name,service_type,price_delivery,payment_status)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                             ("PP-DELIVNONE","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Luna","Cremazione singola","40","Da saldare")).lastrowid
+        rendered=[]; self.handler.send_html=lambda content,*args: rendered.append(content)
+        self.handler.practice(admin,pid_home)
+        self.assertIn('<small>Riconsegna</small><b>€ 40,00</b><br><small class="sub">A CASA</small>',rendered[-1])
+        self.handler.practice(admin,pid_clinic)
+        self.assertIn('<small>Riconsegna</small><b>€ 40,00</b><br><small class="sub">IN AMBULATORIO</small>',rendered[-1])
+        self.handler.practice(admin,pid_neither)
+        self.assertIn('<small>Riconsegna</small><b>€ 40,00</b></div>',rendered[-1])
+
     def test_archive_tables_show_age_invoice_and_collapsible_months(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
