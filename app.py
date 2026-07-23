@@ -100,8 +100,6 @@ PAYMENT_METHODS = [
     "", "Pos", "Contanti", "Bonifico", "Altro",
 ]
 
-EXPENSE_CATEGORIES = ["Fornitori", "Manutenzione", "Carburante", "Materiali", "Altro"]
-INCOME_CATEGORIES = ["Rimborso", "Vendita", "Altro"]
 COLLAB_BILLING_STATES = ("Da fatturare", "Fatturato", "Incassato")
 MONTH_NAMES_IT = ("Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno","Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre")
 
@@ -433,30 +431,6 @@ def init_db():
           user_id INTEGER REFERENCES users(id),
           notes TEXT,
           created_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS expenses (
-          id INTEGER PRIMARY KEY,
-          expense_date TEXT NOT NULL,
-          amount TEXT NOT NULL,
-          channel TEXT NOT NULL,
-          description TEXT NOT NULL,
-          category TEXT,
-          created_by INTEGER REFERENCES users(id),
-          created_at TEXT NOT NULL,
-          updated_by INTEGER REFERENCES users(id),
-          updated_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS incomes (
-          id INTEGER PRIMARY KEY,
-          income_date TEXT NOT NULL,
-          amount TEXT NOT NULL,
-          channel TEXT NOT NULL,
-          description TEXT NOT NULL,
-          category TEXT,
-          created_by INTEGER REFERENCES users(id),
-          created_at TEXT NOT NULL,
-          updated_by INTEGER REFERENCES users(id),
-          updated_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS disposal_batches (
           id INTEGER PRIMARY KEY,
@@ -1035,30 +1009,30 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 .app-header{position:fixed;left:212px;right:0;top:0;height:76px;z-index:40;display:flex;align-items:center;justify-content:flex-end;gap:20px;padding:14px 30px;background:#111827e8;border-bottom:1px solid #263246;backdrop-filter:blur(16px)}.header-search{width:min(640px,48vw);display:flex;align-items:center;gap:9px;padding:0 13px;border:1px solid #334155;border-radius:11px;background:#172033}.header-search input{min-height:42px;padding:8px 0;background:transparent;border:0}.header-search input:focus{outline:0}.header-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;width:100%}.icon-btn{display:inline-grid;place-items:center;width:42px;height:42px;padding:0;border:1px solid #334155;border-radius:11px;background:#172033;color:#cbd5e1;cursor:pointer}.icon-btn:hover{color:#fff;border-color:#ef405f}.phone-action-btn{width:30px;height:30px;border-radius:9px;vertical-align:middle}.phone-action-btn .icon{width:15px;height:15px}.phone-action-btn.call-btn{background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;border-color:transparent}.phone-action-btn.call-btn:hover{color:#fff;border-color:transparent;filter:brightness(1.1)}.phone-action-btn.whatsapp-btn{background:linear-gradient(135deg,#22c55e,#15803d);color:#fff;border-color:transparent}.phone-action-btn.whatsapp-btn:hover{color:#fff;border-color:transparent;filter:brightness(1.1)}.header-new{gap:7px}.header-actions time{min-width:104px;padding:6px 10px;border:1px solid #334155;border-radius:10px;text-align:center;font-weight:700;background:#172033}.header-actions time small{display:block;color:#94a3b8;font-size:10px;text-transform:capitalize}.wrap{max-width:1600px;margin-left:212px;margin-right:auto;padding:106px 30px 42px}
 .dashboard-wrap{max-width:1500px}.welcome{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}.welcome h1{font-size:30px}.welcome p{margin:7px 0 0;color:#94a3b8}.dashboard-heading{margin:24px 0 12px;font-size:15px;color:#dce4ef}.dashboard-states{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.metric-card,.payment-card{position:relative;min-height:126px;display:flex;align-items:center;justify-content:space-between;gap:15px;padding:20px;border:1px solid #334155;border-radius:14px;background:#1f2937;overflow:hidden;box-shadow:0 14px 36px #03071235;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}.metric-card:before,.payment-card:before{content:"";position:absolute;inset:0;background:linear-gradient(120deg,var(--card-glow),transparent 62%);pointer-events:none}.metric-card:hover,.payment-card:hover{transform:translateY(-3px);border-color:#56657a;box-shadow:0 20px 44px #03071260}.metric-copy,.payment-card>span:first-child{position:relative;display:flex;flex-direction:column}.metric-card small,.payment-card small{font-style:normal;color:#e2e8f0}.metric-card strong,.payment-card strong{margin-top:4px;font-size:30px;line-height:1.05}.metric-card em,.payment-card em{margin-top:9px;color:#94a3b8;font-size:12px;font-style:normal}.metric-icon,.activity-icon{position:relative;display:grid;place-items:center;width:46px;height:46px;border-radius:12px;background:var(--icon-bg);color:var(--icon-color);box-shadow:0 8px 22px var(--icon-shadow)}.state-red{--card-glow:#83184375;--icon-bg:#881337;--icon-color:#fb7185;--icon-shadow:#e11d4840}.state-blue{--card-glow:#17255480;--icon-bg:#172554;--icon-color:#60a5fa;--icon-shadow:#2563eb40}.state-purple{--card-glow:#3b076480;--icon-bg:#3b0764;--icon-color:#c084fc;--icon-shadow:#9333ea40}.state-green{--card-glow:#052e2b85;--icon-bg:#064e3b;--icon-color:#4ade80;--icon-shadow:#16a34a40}
 .dashboard-payments{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.payment-card{min-height:116px}.payment-due{--card-glow:#713f123d;--icon-bg:#573713;--icon-color:#fbbf24;--icon-shadow:#f59e0b35}.payment-deposit{--card-glow:#17255465;--icon-bg:#172554;--icon-color:#60a5fa;--icon-shadow:#2563eb35}.payment-paid{--card-glow:#052e2b75;--icon-bg:#064e3b;--icon-color:#4ade80;--icon-shadow:#16a34a35}
-.dashboard-lower{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(350px,.8fr);gap:16px;margin-top:24px}.dashboard-panel{min-height:350px;padding:20px;border:1px solid #334155;border-radius:15px;background:#1f2937;box-shadow:0 18px 48px #03071235}.dashboard-panel>header{display:flex;align-items:flex-start;justify-content:space-between;gap:15px}.dashboard-panel h2{margin:0;font-size:16px}.dashboard-panel header p{margin:8px 0 0;color:#94a3b8}.dashboard-panel header p strong{color:#fff;font-size:21px}.dashboard-panel header a{color:#fb7185;font-size:13px}.income-chart{display:block;width:100%;height:auto;margin-top:14px}.chart-grid line{stroke:#334155;stroke-width:1}.chart-grid text,.chart-dates text{fill:#94a3b8;font-size:11px}.chart-area{fill:url(#incomeArea)}.chart-line{fill:none;stroke:#ef405f;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 5px 8px #ef405f55)}.income-chart circle{fill:#fb7185;stroke:#1f2937;stroke-width:2}
+.dashboard-panel{min-height:350px;padding:20px;border:1px solid #334155;border-radius:15px;background:#1f2937;box-shadow:0 18px 48px #03071235}.dashboard-panel>header{display:flex;align-items:flex-start;justify-content:space-between;gap:15px}.dashboard-panel h2{margin:0;font-size:16px}.dashboard-panel header p{margin:8px 0 0;color:#94a3b8}.dashboard-panel header p strong{color:#fff;font-size:21px}.dashboard-panel header a{color:#fb7185;font-size:13px}
 .activity-list{display:flex;flex-direction:column;margin-top:14px}.activity-item{display:grid;grid-template-columns:42px minmax(0,1fr) auto;align-items:center;gap:11px;padding:12px 0;border-bottom:1px solid #334155}.activity-item:last-child{border-bottom:0}.activity-item b,.activity-item small{display:block}.activity-item b{font-size:13px}.activity-item small{margin-top:3px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.activity-item time{color:#94a3b8;font-size:11px}.activity-icon{width:38px;height:38px;--icon-bg:#243244;--icon-color:#5eead4;--icon-shadow:transparent}.activity-1 .activity-icon{--icon-bg:#422006;--icon-color:#fbbf24}.activity-2 .activity-icon{--icon-bg:#3b0764;--icon-color:#c084fc}.activity-3 .activity-icon{--icon-bg:#4c0519;--icon-color:#fb7185}.activity-empty{padding:40px 10px;color:#94a3b8;text-align:center}
 .bottom-nav,.more-menu,.more-backdrop{display:none}.tag-red{background:#7f1d2d;color:#fecdd3}.tag-orange{background:#7c2d12;color:#fed7aa}.tag-outline-orange{background:#3b1d0c;color:#fdba74;border-color:#f97316}.tag-purple{background:#4c1d95;color:#e9d5ff}.tag-yellow{background:#713f12;color:#fef08a}.tag-pink{background:#831843;color:#fbcfe8}.tag-blue{background:#1e3a8a;color:#bfdbfe}.tag-green{background:#14532d;color:#bbf7d0}
 .search-after-results{margin-top:32px}.search-after-results>h2{display:none}.search-after-results .section{box-shadow:0 12px 34px #0307122e}.advanced-search{margin:16px 0 24px;border:1px solid var(--line);border-radius:14px;background:#202c3d;overflow:hidden}.advanced-search summary{display:flex;align-items:center;justify-content:space-between;min-height:48px;padding:12px 16px;cursor:pointer;font-weight:600;list-style:none}.advanced-search summary::-webkit-details-marker{display:none}.advanced-search summary:after{content:'+';font-size:22px;line-height:1}.advanced-search[open] summary:after{content:'−'}.advanced-search form{margin:0;border:0;border-top:1px solid var(--line);border-radius:0;box-shadow:none!important}.light-theme .advanced-search{background:#fff}
 .dashboard-recent{margin-top:26px}.dashboard-recent .titlebar{margin-bottom:12px}.dashboard-recent .titlebar a{color:#fb7185}.load-previous-month{display:flex;justify-content:center;padding:8px 0 24px}.load-previous-month .btn{width:auto;min-width:240px}.budget-add{align-self:end;width:auto!important;min-height:42px;margin-top:auto}.budget-layout{display:block}.budget-workspace{display:grid;gap:12px}.budget-row{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(270px,.75fr);gap:16px;padding:12px;border:1px solid #334155;border-radius:13px;background:#11192566}.budget-cell{display:grid;align-content:start;gap:10px;min-width:0}.budget-cell-right .modern-check{min-height:42px}.budget-cell-right .field{min-width:0}.budget-cell:empty{display:none}.economic-estimate{margin-top:20px;padding-top:18px;border-top:1px solid #3b4658}.economic-estimate h3{margin:0 0 12px;font-size:15px}.catalog-summary-form{display:grid;gap:8px;margin-top:9px}.catalog-summary-form .modern-check{min-height:40px;padding:8px 10px}.light-theme .budget-row{border-color:#cbd5e1;background:#f8fafc}.light-theme .economic-estimate{border-color:#cbd5e1}
 *:focus-visible{outline:3px solid #fb7185!important;outline-offset:3px}.light-theme{background:#eef2f7;color:#111827}.light-theme .app-header,.light-theme .top{background:#fff;color:#111827}.light-theme .dashboard-panel,.light-theme .metric-card,.light-theme .payment-card,.light-theme .section,.light-theme .tablebox{background:#fff;color:#111827}.light-theme .header-search,.light-theme .icon-btn,.light-theme .header-actions time{background:#f8fafc;color:#111827}.light-theme .welcome p,.light-theme .metric-card em,.light-theme .payment-card em,.light-theme .activity-item small,.light-theme .activity-item time{color:#64748b}
-@media(max-width:1100px){.dashboard-states{grid-template-columns:repeat(2,1fr)}.dashboard-lower{grid-template-columns:1fr}.header-actions time{display:none}}
-@media(max-width:900px){body{min-height:100dvh;padding-bottom:calc(82px + var(--safe-bottom))}#main-content{min-height:100dvh;padding-left:var(--safe-left);padding-right:var(--safe-right)}.top{position:fixed;left:var(--safe-left);right:var(--safe-right);top:0;width:auto;height:calc(64px + var(--safe-top));min-height:calc(64px + var(--safe-top));padding:calc(7px + var(--safe-top)) 14px 7px;border-right:0;border-bottom:1px solid #263246}.top .nav{display:none}.brand-copy{display:inline}.brand-logo{width:42px;height:42px}.app-header{position:fixed;left:auto;right:calc(10px + var(--safe-right));top:calc(7px + var(--safe-top));width:auto;height:50px;padding:0;background:transparent;border:0;backdrop-filter:none}.header-search,.header-actions time,.header-new span{display:none}.header-actions{gap:7px}.header-new{width:42px;height:42px;padding:0}.wrap{margin-left:0;padding:calc(88px + var(--safe-top)) 14px 22px}.bottom-nav{position:fixed;display:grid;grid-template-columns:repeat(5,1fr);align-items:end;left:0;right:0;bottom:0;z-index:90;height:calc(72px + var(--safe-bottom));padding:6px max(8px,var(--safe-right)) calc(5px + var(--safe-bottom)) max(8px,var(--safe-left));background:#0b1220ed;border-top:1px solid #334155;backdrop-filter:blur(18px)}.bottom-nav a,.bottom-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:0;background:transparent;color:#94a3b8;font-size:10px;transition:transform .1s ease,background-color .1s ease}.bottom-nav a:active,.bottom-nav button:active{background:#1d2938;transform:scale(.94)}.bottom-nav .bottom-new:active{transform:scale(.92)}.light-theme .bottom-nav a:active,.light-theme .bottom-nav button:active{background:#f1f5f9}.bottom-nav .icon{width:21px;height:21px}.bottom-nav a:first-child{color:#fb7185}.bottom-nav .bottom-new{align-self:center;width:52px;height:52px;margin:-18px auto 0;border-radius:50%;background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;box-shadow:0 8px 28px #ef405f70}.bottom-new span{display:none}.more-backdrop{position:fixed;display:block;inset:0;z-index:94;background:#020617aa;opacity:0;pointer-events:none;transition:opacity .2s}.more-menu{position:fixed;display:flex;flex-direction:column;gap:5px;left:calc(14px + var(--safe-left));right:calc(14px + var(--safe-right));bottom:calc(82px + var(--safe-bottom));z-index:95;max-height:72dvh;padding:16px;border:1px solid #334155;border-radius:18px;background:#111827;box-shadow:0 25px 80px #0009;overflow:auto;transform:translateY(120%);opacity:0;transition:transform .22s ease,opacity .22s}.more-menu a{display:flex;align-items:center;gap:11px;padding:11px;border-radius:10px;color:#e2e8f0}.more-menu a:hover{background:#1f2937}.more-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}.more-title .icon-btn{font-size:24px}.more-open .more-menu{transform:none;opacity:1}.more-open .more-backdrop{opacity:1;pointer-events:auto}.install-hint{left:calc(14px + var(--safe-left));right:calc(14px + var(--safe-right));bottom:calc(14px + var(--safe-bottom))}.skip-link{top:calc(8px + var(--safe-top));left:calc(8px + var(--safe-left))}.light-theme .bottom-nav,.light-theme .more-menu{background:#fff}.dashboard-lower{grid-template-columns:1fr}}
+@media(max-width:1100px){.dashboard-states{grid-template-columns:repeat(2,1fr)}.header-actions time{display:none}}
+@media(max-width:900px){body{min-height:100dvh;padding-bottom:calc(82px + var(--safe-bottom))}#main-content{min-height:100dvh;padding-left:var(--safe-left);padding-right:var(--safe-right)}.top{position:fixed;left:var(--safe-left);right:var(--safe-right);top:0;width:auto;height:calc(64px + var(--safe-top));min-height:calc(64px + var(--safe-top));padding:calc(7px + var(--safe-top)) 14px 7px;border-right:0;border-bottom:1px solid #263246}.top .nav{display:none}.brand-copy{display:inline}.brand-logo{width:42px;height:42px}.app-header{position:fixed;left:auto;right:calc(10px + var(--safe-right));top:calc(7px + var(--safe-top));width:auto;height:50px;padding:0;background:transparent;border:0;backdrop-filter:none}.header-search,.header-actions time,.header-new span{display:none}.header-actions{gap:7px}.header-new{width:42px;height:42px;padding:0}.wrap{margin-left:0;padding:calc(88px + var(--safe-top)) 14px 22px}.bottom-nav{position:fixed;display:grid;grid-template-columns:repeat(5,1fr);align-items:end;left:0;right:0;bottom:0;z-index:90;height:calc(72px + var(--safe-bottom));padding:6px max(8px,var(--safe-right)) calc(5px + var(--safe-bottom)) max(8px,var(--safe-left));background:#0b1220ed;border-top:1px solid #334155;backdrop-filter:blur(18px)}.bottom-nav a,.bottom-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:0;background:transparent;color:#94a3b8;font-size:10px;transition:transform .1s ease,background-color .1s ease}.bottom-nav a:active,.bottom-nav button:active{background:#1d2938;transform:scale(.94)}.bottom-nav .bottom-new:active{transform:scale(.92)}.light-theme .bottom-nav a:active,.light-theme .bottom-nav button:active{background:#f1f5f9}.bottom-nav .icon{width:21px;height:21px}.bottom-nav a:first-child{color:#fb7185}.bottom-nav .bottom-new{align-self:center;width:52px;height:52px;margin:-18px auto 0;border-radius:50%;background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;box-shadow:0 8px 28px #ef405f70}.bottom-new span{display:none}.more-backdrop{position:fixed;display:block;inset:0;z-index:94;background:#020617aa;opacity:0;pointer-events:none;transition:opacity .2s}.more-menu{position:fixed;display:flex;flex-direction:column;gap:5px;left:calc(14px + var(--safe-left));right:calc(14px + var(--safe-right));bottom:calc(82px + var(--safe-bottom));z-index:95;max-height:72dvh;padding:16px;border:1px solid #334155;border-radius:18px;background:#111827;box-shadow:0 25px 80px #0009;overflow:auto;transform:translateY(120%);opacity:0;transition:transform .22s ease,opacity .22s}.more-menu a{display:flex;align-items:center;gap:11px;padding:11px;border-radius:10px;color:#e2e8f0}.more-menu a:hover{background:#1f2937}.more-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}.more-title .icon-btn{font-size:24px}.more-open .more-menu{transform:none;opacity:1}.more-open .more-backdrop{opacity:1;pointer-events:auto}.install-hint{left:calc(14px + var(--safe-left));right:calc(14px + var(--safe-right));bottom:calc(14px + var(--safe-bottom))}.skip-link{top:calc(8px + var(--safe-top));left:calc(8px + var(--safe-left))}.light-theme .bottom-nav,.light-theme .more-menu{background:#fff}}
 @media(max-width:900px){.app-header .header-search{position:fixed;display:flex;left:calc(14px + var(--safe-left));right:calc(14px + var(--safe-right));top:calc(70px + var(--safe-top));width:auto;height:44px;z-index:41;background:#172033;box-shadow:0 8px 24px #02061740}.app-header .header-search input{min-width:0;height:42px}.app-header .header-actions{width:auto}.wrap{padding-top:calc(136px + var(--safe-top))}.light-theme .app-header .header-search{background:#fff;border-color:#cbd5e1;box-shadow:0 8px 24px #64748b20}}
-@media(max-width:620px){.brand-copy{display:none}.dashboard-states,.dashboard-payments{grid-template-columns:1fr}.metric-card,.payment-card{min-height:104px}.dashboard-panel{padding:15px;min-height:0}.welcome h1{font-size:24px}.dashboard-lower{margin-top:18px}.income-chart{min-width:0}.activity-item{grid-template-columns:38px minmax(0,1fr)}.activity-item time{display:none}}
-.income-panel{display:block;color:inherit;transition:transform .18s ease,border-color .18s ease}.income-panel:hover{transform:translateY(-2px);border-color:#fb7185}.panel-link{color:#fb7185;font-size:12px;font-weight:700}.balance-total{min-width:210px;padding:14px 18px;border:1px solid #334155;border-radius:14px;background:#1f2937;text-align:right}.balance-total small,.balance-total strong{display:block}.balance-total small{color:#94a3b8}.balance-total strong{margin-top:3px;color:#fb7185;font-size:25px}.balance-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:20px}.balance-card{display:flex;flex-direction:column;gap:7px;padding:17px;border:1px solid #334155;border-radius:13px;background:#1f2937;transition:transform .15s,border-color .15s}.balance-card:hover,.balance-card.active{transform:translateY(-2px);border-color:#fb7185}.balance-card small{color:#94a3b8}.balance-card strong{font-size:20px}.balance-table{margin-top:4px}.light-theme .balance-card,.light-theme .balance-total{background:#fff;color:#111827}
+@media(max-width:620px){.brand-copy{display:none}.dashboard-states,.dashboard-payments{grid-template-columns:1fr}.metric-card,.payment-card{min-height:104px}.dashboard-panel{padding:15px;min-height:0}.welcome h1{font-size:24px}.activity-item{grid-template-columns:38px minmax(0,1fr)}.activity-item time{display:none}}
+
 .section-collapse-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:12px}.section-collapse-head h2{margin:0}.collapse-toggle{display:grid;place-items:center;width:32px;height:32px;padding:0;border:1px solid #334155;border-radius:9px;background:#172033;color:#e7ecf3;font-size:18px;font-weight:700;line-height:1;cursor:pointer}.collapse-toggle:hover{border-color:#ef405f;color:#fff}.collapsible-body[hidden]{display:none}.light-theme .collapse-toggle{background:#fff;border-color:#cbd5e1;color:#111827}
-@media(max-width:620px){.balance-grid{grid-template-columns:1fr 1fr}.balance-total{width:100%;text-align:left}.balances-wrap .titlebar{align-items:stretch}.panel-link{display:none}}
+
 .conversation-list{display:flex;flex-direction:column;gap:12px}.conversation-card{display:grid;grid-template-columns:minmax(280px,1.2fr) minmax(420px,1fr) auto;align-items:center;gap:20px;padding:18px;border:1px solid #334155;border-radius:15px;background:#1f2937;box-shadow:0 12px 34px #0307122e}.conversation-main{display:grid;grid-template-columns:46px minmax(0,1fr);align-items:center;gap:13px}.conversation-avatar{display:grid;place-items:center;width:46px;height:46px;border-radius:13px;background:#064e3b;color:#4ade80}.conversation-main h2{margin:0 0 5px;font-size:16px}.conversation-main p{margin:3px 0;color:#94a3b8;font-size:13px}.conversation-main p b,.conversation-main a{color:#e2e8f0}.conversation-message{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.conversation-card dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin:0}.conversation-card dl div{min-width:0}.conversation-card dt{color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:.05em}.conversation-card dd{margin:4px 0 0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.conversation-action{text-align:right}.whatsapp-open{background:linear-gradient(135deg,#22c55e,#15803d);white-space:nowrap}.message-accettato_da_meta{background:#1e3a8a;color:#bfdbfe}.message-consegnato{background:#14532d;color:#bbf7d0}.message-letto{background:#164e63;color:#a5f3fc}.message-fallito{background:#7f1d1d;color:#fecaca}.pagination{display:flex;align-items:center;justify-content:center;gap:18px;margin:20px 0;color:#94a3b8}.pagination a,.page-disabled{padding:9px 13px;border:1px solid #334155;border-radius:10px}.pagination a{color:#f8fafc;background:#1f2937}.page-disabled{opacity:.45}.light-theme .conversation-card{background:#fff;color:#111827}.light-theme .conversation-main p{color:#64748b}
-.practice-row-link{cursor:pointer;outline:0}.practice-row-link:focus{outline:2px solid #fb7185;outline-offset:-2px}.practice-row-link.row-selected{outline:2px solid #ef405f;outline-offset:-2px}.practice-row-link.row-selected td{background:#ef405f40!important}.practice-row-link.row-selected td:first-child{background:#502d40!important}.light-theme .practice-row-link.row-selected td{background:#ef405f26!important}.light-theme .practice-row-link.row-selected td:first-child{background:#fde3e7!important}.tag-select-orange{color:#fb923c!important}.tag-select-green{color:#4ade80!important}.light-theme .tag-select-orange{color:#c2410c!important}.light-theme .tag-select-green{color:#15803d!important}.cremation-row-done td{color:#22c55e}.cremation-row-done .badge,.cremation-row-done .sub{color:inherit}.cremation-check{display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-weight:700;font-size:12px;white-space:nowrap}.cremation-check input{width:auto}.tag-outline-green{background:#052e2b;color:#86efac;border:2px solid #22c55e}.light-theme{color-scheme:light;--ink:#111827;--muted:#526174;--paper:#fff;--bg:#eef2f7;--line:#cbd5e1}.light-theme h1,.light-theme h2,.light-theme label,.light-theme td,.light-theme .activity-item b,.light-theme .metric-card small,.light-theme .payment-card small,.light-theme .dashboard-panel header p strong,.light-theme .conversation-main p b,.light-theme .conversation-main a,.light-theme .pagination a{color:#111827}.light-theme input,.light-theme select,.light-theme textarea,.light-theme .lookup-results,.light-theme .lookup-item,.light-theme .kv,.light-theme table,.light-theme .login{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme input::placeholder,.light-theme textarea::placeholder{color:#64748b}.light-theme th,.light-theme .sub,.light-theme .kv small,.light-theme .conversation-card dt,.light-theme .pagination{color:#526174}.light-theme th,.light-theme td,.light-theme .activity-item{border-color:#d7dee8}.light-theme .tablebox table tr:hover td,.light-theme .practice-row-link:focus td,.light-theme .lookup-item:hover,.light-theme .lookup-item:focus{background:#f1f5f9}.light-theme .btn.ghost,.light-theme .pagination a{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .badge{background:#e2e8f0;color:#1e293b}.light-theme .tag-red{background:#fee2e2;color:#991b1b}.light-theme .tag-orange{background:#ffedd5;color:#9a3412}.light-theme .tag-purple{background:#f3e8ff;color:#6b21a8}.light-theme .tag-yellow,.light-theme .pay-yellow{background:#fef9c3;color:#713f12}.light-theme .tag-pink{background:#fce7f3;color:#9d174d}.light-theme .tag-blue,.light-theme .pay-blue{background:#dbeafe;color:#1e40af}.light-theme .tag-green,.light-theme .pay-green{background:#dcfce7;color:#166534}.light-theme .tag-outline-orange{background:#fff7ed;color:#c2410c}.light-theme .tag-outline-green{background:#f0fdf4;color:#166534;border-color:#22c55e}.light-theme .selected-box{background:#ecfdf5;color:#166534;border-color:#86efac}.light-theme .nav a{color:#334155}.light-theme .nav a:hover{background:#f1f5f9;color:#111827}.light-theme .nav a:first-child{background:#fff1f2;color:#be123c;border-color:#fecdd3}.light-theme .more-menu a{color:#334155}.light-theme .more-menu a:hover{background:#f1f5f9}.light-theme .chart-grid line{stroke:#cbd5e1}.light-theme .chart-grid text,.light-theme .chart-dates text{fill:#526174}.light-theme .income-chart circle{stroke:#fff}.light-theme .install-hint{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .danger{background:#fff1f2}.light-theme .warning,.light-theme .trash-note{background:#fff7ed;color:#7c2d12}.light-theme .flash:not(.warning){background:#ecfdf5;color:#166534}.light-theme .conversation-main p b,.light-theme .conversation-main a{color:#111827}
+.practice-row-link{cursor:pointer;outline:0}.practice-row-link:focus{outline:2px solid #fb7185;outline-offset:-2px}.practice-row-link.row-selected{outline:2px solid #ef405f;outline-offset:-2px}.practice-row-link.row-selected td{background:#ef405f40!important}.practice-row-link.row-selected td:first-child{background:#502d40!important}.light-theme .practice-row-link.row-selected td{background:#ef405f26!important}.light-theme .practice-row-link.row-selected td:first-child{background:#fde3e7!important}.tag-select-orange{color:#fb923c!important}.tag-select-green{color:#4ade80!important}.light-theme .tag-select-orange{color:#c2410c!important}.light-theme .tag-select-green{color:#15803d!important}.cremation-row-done td{color:#22c55e}.cremation-row-done .badge,.cremation-row-done .sub{color:inherit}.cremation-check{display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-weight:700;font-size:12px;white-space:nowrap}.cremation-check input{width:auto}.tag-outline-green{background:#052e2b;color:#86efac;border:2px solid #22c55e}.light-theme{color-scheme:light;--ink:#111827;--muted:#526174;--paper:#fff;--bg:#eef2f7;--line:#cbd5e1}.light-theme h1,.light-theme h2,.light-theme label,.light-theme td,.light-theme .activity-item b,.light-theme .metric-card small,.light-theme .payment-card small,.light-theme .dashboard-panel header p strong,.light-theme .conversation-main p b,.light-theme .conversation-main a,.light-theme .pagination a{color:#111827}.light-theme input,.light-theme select,.light-theme textarea,.light-theme .lookup-results,.light-theme .lookup-item,.light-theme .kv,.light-theme table,.light-theme .login{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme input::placeholder,.light-theme textarea::placeholder{color:#64748b}.light-theme th,.light-theme .sub,.light-theme .kv small,.light-theme .conversation-card dt,.light-theme .pagination{color:#526174}.light-theme th,.light-theme td,.light-theme .activity-item{border-color:#d7dee8}.light-theme .tablebox table tr:hover td,.light-theme .practice-row-link:focus td,.light-theme .lookup-item:hover,.light-theme .lookup-item:focus{background:#f1f5f9}.light-theme .btn.ghost,.light-theme .pagination a{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .badge{background:#e2e8f0;color:#1e293b}.light-theme .tag-red{background:#fee2e2;color:#991b1b}.light-theme .tag-orange{background:#ffedd5;color:#9a3412}.light-theme .tag-purple{background:#f3e8ff;color:#6b21a8}.light-theme .tag-yellow,.light-theme .pay-yellow{background:#fef9c3;color:#713f12}.light-theme .tag-pink{background:#fce7f3;color:#9d174d}.light-theme .tag-blue,.light-theme .pay-blue{background:#dbeafe;color:#1e40af}.light-theme .tag-green,.light-theme .pay-green{background:#dcfce7;color:#166534}.light-theme .tag-outline-orange{background:#fff7ed;color:#c2410c}.light-theme .tag-outline-green{background:#f0fdf4;color:#166534;border-color:#22c55e}.light-theme .selected-box{background:#ecfdf5;color:#166534;border-color:#86efac}.light-theme .nav a{color:#334155}.light-theme .nav a:hover{background:#f1f5f9;color:#111827}.light-theme .nav a:first-child{background:#fff1f2;color:#be123c;border-color:#fecdd3}.light-theme .more-menu a{color:#334155}.light-theme .more-menu a:hover{background:#f1f5f9}.light-theme .install-hint{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .danger{background:#fff1f2}.light-theme .warning,.light-theme .trash-note{background:#fff7ed;color:#7c2d12}.light-theme .flash:not(.warning){background:#ecfdf5;color:#166534}.light-theme .conversation-main p b,.light-theme .conversation-main a{color:#111827}
 .practice-status{background:transparent!important;border:2px solid currentColor}.practice-status-blue{color:#60a5fa!important;border-color:#3b82f6}.practice-status-red{color:#fb7185!important;border-color:#ef4444}.practice-status-yellow{color:#fde047!important;border-color:#eab308}.practice-status-green{color:#4ade80!important;border-color:#22c55e}.light-theme .practice-status-blue{color:#1d4ed8!important}.light-theme .practice-status-red{color:#b91c1c!important}.light-theme .practice-status-yellow{color:#854d0e!important}.light-theme .practice-status-green{color:#15803d!important}
 .modern-check{display:flex;align-items:center;gap:10px;min-height:46px;padding:10px 13px;border:1px solid #3b4658;border-radius:12px;background:linear-gradient(145deg,#182130,#111925);color:#e8edf5;cursor:pointer;transition:border-color .16s,transform .16s,box-shadow .16s}.modern-check:hover{transform:translateY(-1px);border-color:#fb7185;box-shadow:0 8px 22px #02061745}.modern-check input[type=checkbox]{width:20px;height:20px;margin:0;accent-color:#ef405f}.modern-check span{font-size:12px;font-weight:800;letter-spacing:.025em}.light-theme .modern-check{background:linear-gradient(145deg,#fff,#f1f5f9);color:#172033;border-color:#cbd5e1}.invoice-inline{display:grid;gap:8px}.invoice-inline input{min-width:0}.invoice-inline .btn{width:100%}
 .pay-green{border:2px solid #22c55e!important}.pay-yellow{border:2px solid #eab308!important}.pay-blue{border:2px solid #3b82f6!important}.notification-badge{position:absolute;display:grid;place-items:center;min-width:19px;height:19px;padding:0 5px;border-radius:99px;background:#dc2626;color:#fff;font:700 11px/1 system-ui;transform:translate(13px,-13px);box-shadow:0 0 0 2px #111827}.nav-notification{position:relative}.notification-center{display:grid;gap:10px}.notification-item{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:13px;align-items:center;padding:15px;border:1px solid #334155;border-radius:13px;background:#1f2937}.notification-item.unread{border-left:4px solid #ef405f}.notification-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:#172033;font-size:21px}.notification-copy b,.notification-copy small{display:block}.notification-copy p{margin:4px 0;color:#cbd5e1}.notification-copy small{color:#94a3b8}.notification-actions{display:flex;gap:8px;align-items:center}.toggle-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.toggle-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:1px solid #334155;border-radius:11px}.toggle-row input{width:22px;height:22px}.permission-prompt{position:fixed;right:20px;bottom:20px;z-index:150;max-width:390px;padding:18px;border:1px solid #475569;border-radius:16px;background:#172033;color:#fff;box-shadow:0 24px 70px #000a}.permission-prompt p{color:#cbd5e1}.sw-update-banner{position:fixed;left:14px;right:14px;bottom:calc(14px + var(--safe-bottom));z-index:160;display:flex;align-items:center;justify-content:space-between;gap:14px;max-width:420px;margin:0 auto;padding:12px 16px;border:1px solid #475569;border-radius:14px;background:#172033;color:#fff;box-shadow:0 20px 60px #000a;animation:ppmFade .2s ease-out}.sw-update-banner button{border:0;border-radius:9px;padding:8px 14px;font-weight:700;background:var(--brand);color:#fff;cursor:pointer}.light-theme .sw-update-banner{background:#fff;color:#111827;border-color:#cbd5e1}.quick-payment{display:flex;gap:7px;align-items:center}.quick-payment select,.quick-payment input{min-width:110px}.quick-payment .btn{width:auto}.light-theme .notification-item,.light-theme .toggle-row,.light-theme .permission-prompt{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .notification-copy p{color:#334155}
-.practice-list-table{min-width:1500px}.practice-list-table th:first-child,.practice-list-table td:first-child{position:sticky;left:0;z-index:3;min-width:215px;background:#101620;box-shadow:8px 0 14px #02061735}.practice-list-table th:first-child{z-index:4}.light-theme .practice-list-table th:first-child,.light-theme .practice-list-table td:first-child{background:#fff}.inline-statuses{display:grid;gap:8px;min-width:170px}.inline-state-select{min-height:38px;padding:7px 32px 7px 10px;border-width:2px;font-weight:800}.inline-tag-form{display:flex;flex-direction:column;gap:2px}.invoice-inline-cell{display:grid;gap:4px;min-width:130px}.invoice-inline-input{min-height:34px;padding:6px 9px;font-size:12px}.invoice-inline-input.input-error{border-color:#ef4444}.balance-list-table th:first-child,.balance-list-table td:first-child{position:sticky;left:0;z-index:3;min-width:170px;background:var(--paper)}.balance-list-table th:first-child{z-index:4}.payment-popover{position:fixed;inset:0;z-index:180;display:grid;place-items:center;padding:18px;background:#020617b8}.payment-popover[hidden]{display:none}.payment-dialog{width:min(620px,100%);max-height:90dvh;overflow:auto;padding:20px;border:1px solid #475569;border-radius:16px;background:#172033;box-shadow:0 28px 90px #000c}.payment-dialog h2{margin-bottom:6px}.payment-dialog .fields{margin-top:16px}.light-theme .payment-dialog{background:#fff;color:#111827}.message-programmato{background:#4c1d95;color:#ede9fe}.message-in_invio{background:#78350f;color:#fef3c7}.message-annullato{background:#334155;color:#cbd5e1}.conversation-error{grid-column:1/-1}.conversation-error dd{white-space:normal;color:#fca5a5}.conversation-action.actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}.conversation-action form{margin:0}
+.practice-list-table{min-width:1500px}.practice-list-table th:first-child,.practice-list-table td:first-child{position:sticky;left:0;z-index:3;min-width:215px;background:#101620;box-shadow:8px 0 14px #02061735}.practice-list-table th:first-child{z-index:4}.light-theme .practice-list-table th:first-child,.light-theme .practice-list-table td:first-child{background:#fff}.inline-statuses{display:grid;gap:8px;min-width:170px}.inline-state-select{min-height:38px;padding:7px 32px 7px 10px;border-width:2px;font-weight:800}.inline-tag-form{display:flex;flex-direction:column;gap:2px}.invoice-inline-cell{display:grid;gap:4px;min-width:130px}.invoice-inline-input{min-height:34px;padding:6px 9px;font-size:12px}.invoice-inline-input.input-error{border-color:#ef4444}.payment-popover{position:fixed;inset:0;z-index:180;display:grid;place-items:center;padding:18px;background:#020617b8}.payment-popover[hidden]{display:none}.payment-dialog{width:min(620px,100%);max-height:90dvh;overflow:auto;padding:20px;border:1px solid #475569;border-radius:16px;background:#172033;box-shadow:0 28px 90px #000c}.payment-dialog h2{margin-bottom:6px}.payment-dialog .fields{margin-top:16px}.light-theme .payment-dialog{background:#fff;color:#111827}.message-programmato{background:#4c1d95;color:#ede9fe}.message-in_invio{background:#78350f;color:#fef3c7}.message-annullato{background:#334155;color:#cbd5e1}.conversation-error{grid-column:1/-1}.conversation-error dd{white-space:normal;color:#fca5a5}.conversation-action.actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}.conversation-action form{margin:0}
 @media(max-width:620px){.practice-list-table th:first-child,.practice-list-table td:first-child{box-sizing:border-box;width:132px;min-width:132px;max-width:132px;padding-left:12px;padding-right:10px;white-space:normal!important}}
 @media(max-width:1150px){.conversation-card{grid-template-columns:1fr 1fr}.conversation-action{grid-column:1/-1;text-align:left}}
 @media(max-width:700px){.conversation-card{grid-template-columns:1fr;gap:14px}.conversation-card dl{grid-template-columns:1fr 1fr}.conversation-action{grid-column:auto}.conversation-action.actions{justify-content:stretch}.conversation-action form,.conversation-action .btn{width:100%}.pagination{gap:8px;justify-content:space-between}.pagination span{font-size:11px;text-align:center}.conversation-message{white-space:normal}.conversations-wrap .titlebar h1{font-size:24px}}
 @media(max-width:700px){.practice-layout{display:block!important}.practice-layout>.grid,.practice-layout>aside{width:100%;min-width:0}.practice-layout>aside{margin-top:16px}.practice-layout .kvs{grid-template-columns:1fr}.practice-layout .section{max-width:100%;overflow-wrap:anywhere}.toggle-list{grid-template-columns:1fr}.notification-item{grid-template-columns:40px minmax(0,1fr)}.notification-actions{grid-column:1/-1}.notification-actions .btn{width:100%}.permission-prompt{left:14px;right:14px;bottom:calc(84px + var(--safe-bottom));max-width:none}.quick-payment{min-width:430px}}
-.balance-chart{min-height:0;margin:0 0 20px}.article-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.article-card{display:flex;flex-direction:column;gap:16px;min-height:170px;padding:20px;border:1px solid #334155;border-radius:15px;background:#1f2937}.article-card h2{margin:0;font-size:18px}.article-card p{margin:0;color:#94a3b8}.article-card form{margin-top:auto}.article-card .btn{width:100%}.light-theme .article-card{background:#fff;color:#111827;border-color:#cbd5e1}
+.article-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.article-card{display:flex;flex-direction:column;gap:16px;min-height:170px;padding:20px;border:1px solid #334155;border-radius:15px;background:#1f2937}.article-card h2{margin:0;font-size:18px}.article-card p{margin:0;color:#94a3b8}.article-card form{margin-top:auto}.article-card .btn{width:100%}.light-theme .article-card{background:#fff;color:#111827;border-color:#cbd5e1}
 .urn-stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:20px}.urn-stat,.urn-card{padding:17px;border:1px solid #334155;border-radius:14px;background:#1f2937}.urn-stat small,.urn-meta{color:#94a3b8}.urn-stat strong{display:block;margin-top:5px;font-size:24px}.urn-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}.urn-card{display:flex;flex-direction:column;gap:12px;min-width:0}.urn-card img,.urn-placeholder{width:100%;aspect-ratio:4/3;border-radius:10px;object-fit:cover;background:#111827}.urn-placeholder{display:grid;place-items:center;color:#64748b;font-weight:700}.urn-card h2{margin:0}.urn-card .actions{margin-top:auto}.stock-good{color:#86efac}.stock-low{color:#fdba74}.stock-out{color:#fca5a5}.light-theme .urn-stat,.light-theme .urn-card{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .urn-placeholder{background:#e2e8f0}.urn-filter{margin-bottom:20px}.urn-detail{grid-template-columns:minmax(280px,.7fr) minmax(0,1.3fr)}
 @media(max-width:900px){.app-header{position:fixed;left:0;right:0}.app-header .header-actions{position:absolute;right:calc(10px + var(--safe-right));top:calc(7px + var(--safe-top))}.app-header .header-search{position:fixed;left:calc(14px + var(--safe-left));right:calc(14px + var(--safe-right));top:calc(70px + var(--safe-top))}.article-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:900px){.urn-stats{grid-template-columns:repeat(2,1fr)}.urn-grid{grid-template-columns:1fr 1fr}.urn-detail{grid-template-columns:1fr}}
@@ -1066,10 +1040,10 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 @media(max-width:900px){.top{z-index:42}.top .brand{width:48px;padding:0}.top .brand-copy{display:none}.app-header{left:calc(64px + var(--safe-left));right:var(--safe-right);top:0;z-index:43;width:auto;height:calc(64px + var(--safe-top));padding:calc(7px + var(--safe-top)) 8px 7px 0;background:transparent;border:0;backdrop-filter:none}.app-header .header-actions{position:static;display:flex;width:100%;height:100%;gap:5px}.app-header .header-search{position:static;display:flex;flex:1 1 auto;min-width:0;width:auto;height:42px;padding:0 9px;background:#172033;box-shadow:none}.app-header .header-search input{min-width:0;height:40px;min-height:40px;font-size:16px}.app-header .header-search .icon{width:17px;height:17px;flex-basis:17px}.app-header .icon-btn,.app-header .header-new{flex:0 0 38px;width:38px;height:38px;min-height:38px;padding:0}.app-header .header-actions time,.app-header .header-new span{display:none}.wrap{padding-top:calc(88px + var(--safe-top))}.light-theme .app-header .header-search{background:#f8fafc;border-color:#cbd5e1;box-shadow:none}}
 @media(max-width:390px){.app-header{left:calc(58px + var(--safe-left));padding-right:5px}.app-header .header-actions{gap:4px}.app-header .header-search{padding:0 7px}.app-header .icon-btn,.app-header .header-new{flex-basis:35px;width:35px;height:35px;min-height:35px}.top{padding-left:10px;padding-right:10px}.top .brand-logo{width:38px;height:38px}}
 /* Cleaner, lighter dark theme */
-body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;border-color:#344156}.app-header{background:#172131ed;border-color:#344156}.section,.card,.tablebox,.login{background:linear-gradient(145deg,#202c3d,#1b2636);border-color:#38475c;box-shadow:0 12px 34px #080d162b}.section[class*="section-tone-"]{background:linear-gradient(145deg,color-mix(in srgb,var(--section-accent) 5%,#202c3d),#1b2636 76%)}.dashboard-panel,.metric-card,.payment-card,.balance-card,.balance-total,.conversation-card,.article-card,.urn-stat,.urn-card{background:#202c3d;border-color:#3a495e;box-shadow:0 12px 32px #080d1626}.tablebox,table{background:#1b2636}.practice-list-table th:first-child,.practice-list-table td:first-child{background:#1b2636}.kv,input,select,textarea,.header-search,.icon-btn,.header-actions time{background:#182334;border-color:#3b4a5f}.tablebox table tr:hover td{background:#253247}.lookup-results,.lookup-item{background:#202c3d;border-color:#3b4a5f}.lookup-item:hover,.lookup-item:focus{background:#29384d}h1{font-weight:650}h2{font-weight:600}b,strong{font-weight:600}label{font-weight:550}.nav a,.nav button{font-weight:500}.btn{font-weight:600}.badge,.inline-state-select{font-weight:600}th{font-weight:600;letter-spacing:.035em}.metric-card strong,.payment-card strong,.stat b{font-weight:650}.light-theme .practice-list-table th:first-child,.light-theme .practice-list-table td:first-child{background:#fff}
-.dashboard-section-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:24px 0 12px}.dashboard-section-head .dashboard-heading{margin:0}.period-selector{display:inline-grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px;padding:3px;border:1px solid #3b4a5f;border-radius:12px;background:#182334}.period-selector a{display:grid;place-items:center;min-width:88px;min-height:38px;padding:8px 12px;border-radius:9px;color:#aeb9c8;font-size:13px;font-weight:600}.period-selector a:hover{color:#fff;background:#253248}.period-selector a.active{color:#fff;background:#ef405f;box-shadow:0 5px 14px #ef405f40}.dashboard-chart-only{margin-top:24px}.dashboard-chart-only .dashboard-panel{display:block;min-height:0}.light-theme .period-selector{background:#f1f5f9;border-color:#cbd5e1}.light-theme .period-selector a{color:#526174}.light-theme .period-selector a.active{color:#fff}.state-yellow{--card-glow:#713f124f;--icon-bg:#573713;--icon-color:#fde047;--icon-shadow:#eab30840}.inline-save-note{min-height:16px;color:#86efac;font-size:11px}.inline-save-note.error{color:#fca5a5}
+body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;border-color:#344156}.app-header{background:#172131ed;border-color:#344156}.section,.card,.tablebox,.login{background:linear-gradient(145deg,#202c3d,#1b2636);border-color:#38475c;box-shadow:0 12px 34px #080d162b}.section[class*="section-tone-"]{background:linear-gradient(145deg,color-mix(in srgb,var(--section-accent) 5%,#202c3d),#1b2636 76%)}.dashboard-panel,.metric-card,.payment-card,.conversation-card,.article-card,.urn-stat,.urn-card{background:#202c3d;border-color:#3a495e;box-shadow:0 12px 32px #080d1626}.tablebox,table{background:#1b2636}.practice-list-table th:first-child,.practice-list-table td:first-child{background:#1b2636}.kv,input,select,textarea,.header-search,.icon-btn,.header-actions time{background:#182334;border-color:#3b4a5f}.tablebox table tr:hover td{background:#253247}.lookup-results,.lookup-item{background:#202c3d;border-color:#3b4a5f}.lookup-item:hover,.lookup-item:focus{background:#29384d}h1{font-weight:650}h2{font-weight:600}b,strong{font-weight:600}label{font-weight:550}.nav a,.nav button{font-weight:500}.btn{font-weight:600}.badge,.inline-state-select{font-weight:600}th{font-weight:600;letter-spacing:.035em}.metric-card strong,.payment-card strong,.stat b{font-weight:650}.light-theme .practice-list-table th:first-child,.light-theme .practice-list-table td:first-child{background:#fff}
+.dashboard-section-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:24px 0 12px}.dashboard-section-head .dashboard-heading{margin:0}.period-selector{display:inline-grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px;padding:3px;border:1px solid #3b4a5f;border-radius:12px;background:#182334}.period-selector a{display:grid;place-items:center;min-width:88px;min-height:38px;padding:8px 12px;border-radius:9px;color:#aeb9c8;font-size:13px;font-weight:600}.period-selector a:hover{color:#fff;background:#253248}.period-selector a.active{color:#fff;background:#ef405f;box-shadow:0 5px 14px #ef405f40}.light-theme .period-selector{background:#f1f5f9;border-color:#cbd5e1}.light-theme .period-selector a{color:#526174}.light-theme .period-selector a.active{color:#fff}.state-yellow{--card-glow:#713f124f;--icon-bg:#573713;--icon-color:#fde047;--icon-shadow:#eab30840}.inline-save-note{min-height:16px;color:#86efac;font-size:11px}.inline-save-note.error{color:#fca5a5}
 .water-order-card{max-width:620px;margin:0 auto;padding:28px;text-align:center}.water-order-card h1{margin-bottom:6px}.water-order-card .sub{margin-bottom:24px}.quantity-stepper{display:grid;grid-template-columns:64px minmax(100px,160px) 64px;justify-content:center;align-items:center;gap:12px}.quantity-stepper button{width:64px;height:64px;border-radius:18px;font-size:32px}.quantity-stepper input{height:76px;text-align:center;font-size:34px;font-weight:650;padding:8px}.quick-quantities{display:flex;justify-content:center;gap:9px;flex-wrap:wrap;margin:16px 0 22px}.quick-quantities button{min-height:44px}.order-now{width:min(100%,420px);min-height:58px;font-size:17px}.last-order{margin:18px 0 0}.order-secondary-actions{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:18px}.recent-orders{margin-top:22px}.order-preview{margin:0;padding:16px;border:1px solid #3b4a5f;border-radius:12px;background:#182334;color:#e7ecf3;font:400 14px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}.light-theme .order-preview{background:#f8fafc;color:#24312c;border-color:#cbd5e1}.orders-wrap .tablebox{margin-top:14px}.order-modal[hidden]{display:none}.order-modal{position:fixed;inset:0;z-index:1200;display:grid;place-items:center;padding:20px;background:rgba(4,10,20,.72)}.order-modal-card{width:min(560px,100%);max-height:min(720px,calc(100dvh - 40px));overflow:auto;padding:24px;border:1px solid var(--line);border-radius:18px;background:#202c3d;box-shadow:0 24px 70px rgba(0,0,0,.45)}.light-theme .order-modal-card{background:#fff}.order-modal-card .order-preview{max-height:210px;overflow:auto}.modal-open{overflow:hidden}.admin-order-settings{max-width:820px}.admin-order-settings textarea{min-height:240px}
-@media(max-width:620px){.dashboard-section-head{align-items:stretch;flex-direction:column;gap:9px}.period-selector{width:100%}.period-selector a{min-width:0;min-height:44px;padding:8px 5px}.dashboard-chart-only{margin-top:18px}.dashboard-wrap{padding-bottom:calc(28px + var(--safe-bottom))}.water-order-card{padding:22px 15px}.quantity-stepper{grid-template-columns:58px minmax(86px,130px) 58px;gap:8px}.quantity-stepper button{width:58px;height:58px}.quantity-stepper input{height:68px;font-size:30px}.order-now{width:100%}.orders-wrap .tablebox{max-width:100%;overflow-x:auto}.orders-wrap{padding-bottom:calc(92px + var(--safe-bottom))}.order-modal{padding:12px 12px calc(78px + var(--safe-bottom))}.order-modal-card{padding:18px;max-height:calc(100dvh - 110px - var(--safe-bottom))}}
+@media(max-width:620px){.dashboard-section-head{align-items:stretch;flex-direction:column;gap:9px}.period-selector{width:100%}.period-selector a{min-width:0;min-height:44px;padding:8px 5px}.dashboard-wrap{padding-bottom:calc(28px + var(--safe-bottom))}.water-order-card{padding:22px 15px}.quantity-stepper{grid-template-columns:58px minmax(86px,130px) 58px;gap:8px}.quantity-stepper button{width:58px;height:58px}.quantity-stepper input{height:68px;font-size:30px}.order-now{width:100%}.orders-wrap .tablebox{max-width:100%;overflow-x:auto}.orders-wrap{padding-bottom:calc(92px + var(--safe-bottom))}.order-modal{padding:12px 12px calc(78px + var(--safe-bottom))}.order-modal-card{padding:18px;max-height:calc(100dvh - 110px - var(--safe-bottom))}}
 .calendar-wrap{max-width:1700px}.calendar-toolbar,.calendar-nav,.calendar-view-switch,.calendar-quick-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.calendar-quick-actions .btn{flex:1}.calendar-toolbar{justify-content:space-between;margin-bottom:16px}.calendar-view-switch{padding:4px;border:1px solid #3b4a5f;border-radius:13px;background:#182334}.calendar-view-switch a{min-height:40px;padding:9px 12px;border-radius:9px;color:#aeb9c8}.calendar-view-switch a.active{background:#ef405f;color:#fff}.calendar-board{display:grid;gap:12px}.calendar-day-list{display:grid;gap:10px;min-height:0;align-content:start}.calendar-event-shell{position:relative;overflow:hidden;border-radius:14px;touch-action:pan-y}.calendar-swipe-actions{position:absolute;inset:0;display:flex;align-items:stretch;justify-content:space-between;pointer-events:none}.calendar-swipe-action{display:flex;align-items:center;justify-content:center;min-width:112px;padding:0 18px;font-weight:800;letter-spacing:.01em;color:#fff;opacity:.96}.calendar-swipe-action.complete{background:#059669}.calendar-swipe-action.cancel{background:#dc2626}.calendar-event{position:relative;z-index:2;display:grid;grid-template-columns:72px minmax(0,1fr);gap:13px;align-items:center;padding:13px 15px;border:1px solid #3a495e;border-left:4px solid currentColor;border-radius:14px;background:#202c3d;box-shadow:0 8px 24px #080d1626;transition:transform .18s ease,box-shadow .18s ease;will-change:transform}.calendar-event.swiping{transition:none;box-shadow:0 12px 30px #05080f55}.calendar-event-time{align-self:stretch;display:flex;align-items:center;justify-content:center;padding-right:12px;border-right:1px solid #3a495e;color:#aeb9c8;font-size:13px;font-weight:750}.calendar-event-main{display:block;min-width:0;color:inherit}.calendar-event h3{margin:0 0 4px;font-size:15px;color:currentColor}.calendar-event p{margin:2px 0;color:#aeb9c8;font-size:12px}.calendar-red{color:#fb7185}.calendar-yellow{color:#fde047}.calendar-green{color:#4ade80}.calendar-blue{color:#60a5fa}.calendar-purple{color:#c084fc}.calendar-dark{color:#94a3b8}.calendar-week{display:grid;grid-template-columns:repeat(7,minmax(170px,1fr));gap:8px;min-width:1190px}.calendar-week-scroll{overflow-x:auto;padding-bottom:8px}.calendar-day-column{min-height:520px;padding:10px;border:1px solid #3a495e;border-radius:14px;background:#1b2636}.calendar-day-column>header{position:sticky;top:0;padding:8px;background:#1b2636;z-index:2}.calendar-day-column .calendar-event{grid-template-columns:1fr;padding:10px;margin-top:8px}.calendar-day-column .calendar-event-time{font-weight:600}.calendar-month{display:grid;grid-template-columns:repeat(7,minmax(105px,1fr));gap:5px}.calendar-month-day{min-height:128px;padding:8px;border:1px solid #3a495e;border-radius:11px;background:#1b2636;overflow:hidden}.calendar-month-day.selected{outline:2px solid #ef405f}.calendar-month-day>a{display:block;font-weight:600;margin-bottom:6px}.calendar-band{display:block;margin:4px 0;padding:4px 6px;border-left:3px solid currentColor;border-radius:6px;background:#253247;color:inherit;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.calendar-dots{display:flex;gap:4px;flex-wrap:wrap}.calendar-dot{width:7px;height:7px;border-radius:50%;background:currentColor}.calendar-mixed{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(320px,.7fr);gap:16px}.calendar-form{max-width:980px;margin:auto}.calendar-steps{display:flex;justify-content:center;gap:8px;margin-bottom:18px}.calendar-steps button{display:grid;place-items:center;width:36px;height:36px;padding:0;border:1px solid #475569;border-radius:50%;background:#253247;color:#e7ecf3;font-weight:750;cursor:pointer}.calendar-steps button.active{border-color:#ef405f;background:#ef405f;color:#fff}.calendar-steps button:hover{border-color:#fb7185}.calendar-type-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}.calendar-type-option{display:flex;min-height:92px;padding:14px;border:1px solid #3b4a5f;border-radius:15px;background:#202c3d;cursor:pointer}.calendar-type-option input{width:auto}.calendar-type-option:has(input:checked){border-color:#ef405f;box-shadow:0 0 0 2px #ef405f35}.calendar-form-step[hidden]{display:none}.calendar-repeat-list{display:grid;gap:10px}.calendar-repeat-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr)) auto;gap:8px}.calendar-tabs{display:flex;gap:5px;border-bottom:1px solid #3b4a5f;margin-bottom:16px}.calendar-tabs a{padding:10px 13px}.calendar-tabs a.active{color:#fb7185;border-bottom:2px solid #fb7185}.calendar-detail-grid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(300px,.7fr);gap:16px}.calendar-comment{padding:12px;border:1px solid #3b4a5f;border-radius:12px;background:#182334}.calendar-comment+.calendar-comment{margin-top:8px}.calendar-fab{position:fixed;right:30px;bottom:30px;z-index:30;width:58px;height:58px;border-radius:50%;font-size:27px}.calendar-status-modal{max-width:430px;text-align:center}.calendar-status-modal-icon{display:grid;place-items:center;width:58px;height:58px;margin:0 auto 14px;border-radius:18px;background:#ef405f;color:#fff;font-size:30px;font-weight:900}.calendar-status-modal .actions{justify-content:center;margin-top:18px}.calendar-status-modal .btn{min-width:140px}.light-theme .calendar-event,.light-theme .calendar-day-column,.light-theme .calendar-month-day,.light-theme .calendar-type-option{background:#fff;border-color:#cbd5e1}.light-theme .calendar-subblock{border-color:#cbd5e1}.light-theme .calendar-day-column>header{background:#fff}.light-theme .calendar-event p,.light-theme .calendar-event-time{color:#526174}
 @media(max-width:900px){.calendar-wrap{padding-bottom:calc(100px + var(--safe-bottom))}.calendar-toolbar{align-items:stretch;flex-direction:column}.calendar-view-switch{display:grid;grid-template-columns:repeat(3,1fr);overflow:auto}.calendar-view-switch a{text-align:center;white-space:nowrap}.calendar-mixed,.calendar-detail-grid{grid-template-columns:1fr}.calendar-month{grid-template-columns:repeat(7,minmax(43px,1fr));gap:3px}.calendar-month-day{min-height:76px;padding:5px}.calendar-month-day .calendar-band{display:none}.calendar-month-day>a{font-size:12px}.calendar-type-grid{grid-template-columns:1fr}.calendar-repeat-row{grid-template-columns:1fr 1fr}.calendar-repeat-row .full-mobile{grid-column:1/-1}.calendar-event{grid-template-columns:58px minmax(0,1fr);padding:12px 13px}.calendar-event-time{padding-right:9px}.calendar-swipe-action{min-width:96px;padding:0 14px;font-size:13px}.calendar-fab{right:18px;bottom:calc(88px + var(--safe-bottom))}.calendar-form{padding-bottom:calc(90px + var(--safe-bottom))}.header-event-new{display:none!important}}
 .calendar-date-nav{display:grid;grid-template-columns:48px minmax(0,1fr) 48px;gap:8px;width:min(560px,100%);margin:0 auto 16px}.calendar-date-nav .calendar-date-title{position:relative;display:grid;place-items:center;min-height:46px;border:1px solid #3b4a5f;border-radius:13px;background:#182334;font-weight:700;cursor:pointer}.calendar-date-title input{position:absolute;inset:0;opacity:0;cursor:pointer}.calendar-today{grid-column:1/-1;width:100%}.calendar-settings-link{white-space:nowrap}.calendar-dot{width:8px;height:8px}.calendar-dot-red{color:#fb7185}.calendar-dot-yellow{color:#fde047}.calendar-dot-blue{color:#60a5fa}.calendar-dot-cyan{color:#22d3ee}.calendar-dot-purple{color:#c084fc}.calendar-dot-gray{color:#94a3b8}.calendar-month-day .calendar-dots{margin:5px 0}.calendar-form-step{animation:calendarStepIn .2s ease both;touch-action:pan-y}.calendar-form-step.step-back{animation-name:calendarStepBack}@keyframes calendarStepIn{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:none}}@keyframes calendarStepBack{from{opacity:0;transform:translateX(-18px)}to{opacity:1;transform:none}}.calendar-first-operator{max-width:340px;margin-bottom:18px}.calendar-title-zone-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.8fr);gap:13px;grid-column:1/-1}.calendar-time-control{display:grid;grid-template-columns:minmax(0,1fr) 44px;gap:7px}.calendar-time-control button{width:44px;min-height:44px;padding:0}.calendar-native-time{position:absolute!important;width:1px!important;height:1px!important;opacity:0;pointer-events:none}.calendar-zone-results{display:grid;position:absolute;left:0;right:0;top:100%;z-index:30;margin-top:5px;padding:6px;border:1px solid #475569;border-radius:12px;background:#182334;box-shadow:0 18px 45px #0008}.calendar-zone-field{position:relative}.calendar-zone-results button{padding:10px;border:0;border-radius:8px;background:transparent;color:#e7ecf3;text-align:left}.calendar-zone-results button:hover{background:#253247}.calendar-estimate-preset{display:flex;align-items:center;padding:0 10px;font-weight:650}.calendar-other-description{grid-column:span 3}.calendar-wizard-error{min-height:20px;color:#fca5a5;font-size:12px}.calendar-validation{margin-bottom:14px}.calendar-form [aria-invalid="true"]{border-color:#fb7185;box-shadow:0 0 0 3px #fb718533}.calendar-animal-title{grid-column:1/-1;color:#fda4af;font-size:12px;letter-spacing:.06em}.lookup-kind{display:inline-flex;margin-right:7px;padding:2px 6px;border-radius:99px;background:#334155;color:#f8fafc;font-size:10px}.create-sheet-backdrop{position:fixed;display:block;inset:0;z-index:96;background:#020617aa;opacity:0;pointer-events:none;transition:opacity .2s}.create-sheet{position:fixed;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;left:50%;bottom:calc(82px + var(--safe-bottom));z-index:97;width:min(390px,calc(100% - 24px));padding:10px;border:1px solid #7f1d2d;border-radius:16px;background:#172131;box-shadow:0 20px 55px #0009;opacity:0;pointer-events:none;transform:translate(-50%,18px) scale(.97);transition:opacity .18s,transform .2s cubic-bezier(.2,.8,.2,1)}.create-sheet a{display:flex;align-items:center;justify-content:center;gap:8px;min-height:46px;padding:9px 10px;border-radius:11px;background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;font-size:12px;font-weight:750;text-align:center}.create-sheet .icon{width:18px;height:18px;color:#fff}.create-menu-open .create-sheet{opacity:1;pointer-events:auto;transform:translate(-50%,0) scale(1)}.create-menu-open .create-sheet-backdrop{opacity:1;pointer-events:auto}.autosave-status{position:sticky;top:76px;z-index:4;display:flex;align-items:center;gap:8px;width:max-content;max-width:100%;margin:0 0 14px auto;padding:7px 11px;border:1px solid #334155;border-radius:99px;background:#111827e8;color:#cbd5e1;font-size:12px;backdrop-filter:blur(12px)}.autosave-status[data-state="saving"]{color:#fde68a}.autosave-status[data-state="saved"]{color:#86efac}.autosave-status[data-state="error"],.autosave-status[data-state="conflict"]{color:#fca5a5}.autosave-retry{border:0;background:transparent;color:inherit;text-decoration:underline;cursor:pointer}.light-theme .calendar-date-title,.light-theme .calendar-zone-results,.light-theme .create-sheet,.light-theme .autosave-status{background:#fff}.light-theme .calendar-zone-results button{color:#111827}.light-theme .create-sheet a{color:#fff}
@@ -1192,15 +1166,6 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .light-theme .calendar-month-v2-num{color:#111827}
 .light-theme .calendar-month-v2-more{color:#526174}
 @media(max-width:620px){.calendar-month-v2-cell{min-height:64px;padding:3px}.calendar-month-v2-pill{font-size:8px;padding:1px 4px}.calendar-month-v2-dow{font-size:9px;padding:3px 2px}}
-.balance-total-secondary{margin-top:6px!important;color:#94a3b8;font-size:11px;font-weight:500}
-.expenses-section{margin-top:18px}
-.expenses-channel-title{margin:16px 0 8px;font-size:13px;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em}
-.expenses-channel-title:first-child{margin-top:0}
-.expenses-section .actions{display:flex;gap:8px;flex-wrap:nowrap}
-.balance-card-static{cursor:default}
-.balance-card-static:hover{transform:none;border-color:#334155}
-.light-theme .balance-total-secondary,.light-theme .expenses-channel-title{color:#526174}
-.light-theme .balance-card-static:hover{border-color:#cbd5e1}
 """
 
 APP_JS = r"""
@@ -3171,25 +3136,6 @@ def row_open_attrs(url,label=""):
     return f'''tabindex="0" role="link"{aria} onclick="practiceRowSelect(this,event,'{url}')" ondblclick="practiceRowOpen('{url}')" onkeydown="if(event.key==='Enter'||event.key===' '){{event.preventDefault();practiceRowOpen('{url}')}}"'''
 
 
-def income_chart(values,labels):
-    width,height=660,240; left,right,top,bottom=56,18,20,42
-    plot_w,plot_h=width-left-right,height-top-bottom
-    maximum=max(max(values,default=0),1)
-    points=[]
-    for index,value in enumerate(values):
-        x=left+(plot_w*index/max(len(values)-1,1)); y=top+plot_h-(value/maximum*plot_h)
-        points.append((x,y))
-    line=" ".join(f"{x:.1f},{y:.1f}" for x,y in points)
-    area=f"M {left},{top+plot_h} L "+" L ".join(f"{x:.1f},{y:.1f}" for x,y in points)+f" L {left+plot_w},{top+plot_h} Z"
-    grid=[]
-    for step in range(4):
-        y=top+plot_h-(plot_h*step/3); amount=maximum*step/3
-        grid.append(f'<line x1="{left}" y1="{y:.1f}" x2="{left+plot_w}" y2="{y:.1f}"/><text x="{left-8}" y="{y+4:.1f}" text-anchor="end">€ {amount:,.0f}</text>')
-    dates=''.join(f'<text x="{points[i][0]:.1f}" y="{height-12}" text-anchor="middle">{esc(label)}</text>' for i,label in enumerate(labels))
-    palette=("#fb4c67","#f59e0b","#22c55e","#14b8a6","#3b82f6","#8b5cf6","#ec4899")
-    bars=''.join(f'<rect x="{x-12:.1f}" y="{y:.1f}" width="24" height="{top+plot_h-y:.1f}" rx="7" fill="{palette[i%len(palette)]}" opacity=".72"><title>{esc(labels[i])}: {money_it(values[i])}</title></rect>' for i,(x,y) in enumerate(points))
-    dots=''.join(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="5" style="fill:{palette[i%len(palette)]}"><title>{esc(labels[i])}: {money_it(values[i])}</title></circle>' for i,(x,y) in enumerate(points))
-    return f'''<svg class="income-chart" viewBox="0 0 {width} {height}" role="img" aria-label="Entrate giornaliere nel periodo selezionato"><defs><linearGradient id="incomeArea" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fb4c67" stop-opacity=".38"/><stop offset=".5" stop-color="#3b82f6" stop-opacity=".20"/><stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/></linearGradient></defs><g class="chart-grid">{''.join(grid)}</g><path class="chart-area" d="{area}"/>{bars}<polyline class="chart-line" points="{line}"/>{dots}<g class="chart-dates">{dates}</g></svg>'''
 
 
 def collapse_advanced_search(body):
@@ -3205,7 +3151,7 @@ def collapse_advanced_search(body):
 
 SIDEBAR_LINKS=[
     ("/","home","Dashboard"),("/calendario","calendar","Calendario"),("/programma-cremazioni","paw","Programma Cremazioni"),("/notifiche","bell","Notifiche"),("/pratiche","archive","Archivio"),
-    ("/catalogo-urne","archive","Catalogo Urne"),("/bilanci","chart","Report"),("/smaltimenti","archive","Smaltimenti"),("/conversazioni-whatsapp","message","Conversazioni WhatsApp"),("/veterinari","stethoscope","Veterinari"),
+    ("/catalogo-urne","archive","Catalogo Urne"),("/smaltimenti","archive","Smaltimenti"),("/conversazioni-whatsapp","message","Conversazioni WhatsApp"),("/veterinari","stethoscope","Veterinari"),
     ("/collaboratori","briefcase","Collaboratori"),
     ("/prodotti","clipboard","Prodotti"),("/ordini","receipt","Ordini"),
     ("/archivio/pratiche","clipboard","Gestionale"),("/clienti","users","Clienti"),
@@ -3214,7 +3160,7 @@ SIDEBAR_LINKS=[
     ("/impostazioni","settings","Impostazioni"),("/il-mio-profilo","user","Il mio profilo"),("mailto:assistenza@petparadise.it","help","Assistenza"),
 ]
 DASHBOARD_SECTION_LABELS=[
-    ("practices","Pratiche / Ritiri"),("payments","Pagamenti"),("income_chart","Entrate anno in corso"),("recent_practices","Ultime 10 pratiche"),
+    ("practices","Pratiche / Ritiri"),("payments","Pagamenti"),("recent_practices","Ultime 10 pratiche"),
 ]
 BOTTOM_NAV_DEFAULT_SLOTS=["Dashboard","Calendario","Archivio"]
 
@@ -3370,13 +3316,6 @@ class App(BaseHTTPRequestHandler):
         if match: return self.calendar_event_form(user,int(match.group(1)))
         match = re.fullmatch(r"/calendario/(\d+)",path)
         if match: return self.calendar_event_detail(user,int(match.group(1)))
-        if path == "/bilanci": return self.balances_v2(user)
-        if path == "/bilanci/uscite/nuova": return self.expense_form_page(user)
-        match = re.fullmatch(r"/bilanci/uscite/(\d+)/modifica",path)
-        if match: return self.expense_form_page(user,int(match.group(1)))
-        if path == "/bilanci/entrate/nuova": return self.income_form_page(user)
-        match = re.fullmatch(r"/bilanci/entrate/(\d+)/modifica",path)
-        if match: return self.income_form_page(user,int(match.group(1)))
         if path == "/smaltimenti": return self.disposal_page(user)
         match = re.fullmatch(r"/smaltimenti/storico/(\d+)",path)
         if match: return self.disposal_batch_detail(user,int(match.group(1)))
@@ -3467,12 +3406,6 @@ class App(BaseHTTPRequestHandler):
         if match: return self.calendar_event_action(user,int(match.group(1)),match.group(2))
         match = re.fullmatch(r"/calendario/(\d+)/commenti/(\d+)/(modifica|elimina)",path)
         if match: return self.calendar_comment_action(user,int(match.group(1)),int(match.group(2)),match.group(3))
-        if path == "/bilanci/uscite": return self.expense_create(user)
-        match = re.fullmatch(r"/bilanci/entrate/(\d+)/(modifica|elimina)",path)
-        if match: return self.income_action(user,int(match.group(1)),match.group(2))
-        if path == "/bilanci/entrate": return self.income_create(user)
-        match = re.fullmatch(r"/bilanci/uscite/(\d+)/(modifica|elimina)",path)
-        if match: return self.expense_action(user,int(match.group(1)),match.group(2))
         if path == "/smaltimenti/conferma": return self.disposal_confirm(user)
         if path == "/api/push/subscribe": return self.push_subscribe(user)
         if path == "/api/push/unsubscribe": return self.push_unsubscribe(user)
@@ -3607,69 +3540,11 @@ class App(BaseHTTPRequestHandler):
             c.execute("UPDATE users SET password_hash=?,must_change_password=0 WHERE id=?",(password_hash(new),user["id"]))
         return self.redirect(return_to)
 
-    def dashboard_legacy(self,user):
-        today=datetime.now().date()
-        week_start=today-timedelta(days=(today.weekday()-5)%7)
-        days=[week_start+timedelta(days=offset) for offset in range(7)]
-        week_end=days[-1]
-        with db() as c:
-            active_where="deleted_at IS NULL OR deleted_at=''"
-            counts={r["status"]:r["n"] for r in c.execute(f"SELECT status,count(*) n FROM practices WHERE {active_where} GROUP BY status")}
-            payment_counts={r["payment_status"]:r["n"] for r in c.execute(f"SELECT COALESCE(payment_status,'Da saldare') payment_status,count(*) n FROM practices WHERE {active_where} GROUP BY COALESCE(payment_status,'Da saldare')")}
-            payment_rows=c.execute(f"SELECT *,COALESCE(payment_status,'Da saldare') normalized_payment_status FROM practices WHERE {active_where}").fetchall()
-            income_rows=c.execute(f"""SELECT date(m.paid_at) day,COALESCE(sum(m.amount),0) amount
-                                      FROM payment_movements m JOIN practices p ON p.id=m.practice_id
-                                      WHERE (p.deleted_at IS NULL OR p.deleted_at='') AND date(m.paid_at) BETWEEN date(?) AND date(?)
-                                      GROUP BY date(m.paid_at)""",(week_start.isoformat(),week_end.isoformat())).fetchall()
-            recent=c.execute(f"SELECT * FROM practices WHERE {active_where} ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) DESC,id DESC LIMIT 10").fetchall()
-            activity=c.execute("""SELECT h.event_type,h.new_value,h.created_at,p.id practice_id,p.practice_number
-                                  FROM practice_history h JOIN practices p ON p.id=h.practice_id
-                                  WHERE p.deleted_at IS NULL OR p.deleted_at=''
-                                  ORDER BY h.created_at DESC,h.id DESC LIMIT 6""").fetchall()
-            incomplete=c.execute(f"SELECT count(*) n FROM practices WHERE ({active_where}) AND data_complete=0 AND status!='Consegnata'").fetchone()["n"]
-            notification_recent=c.execute("SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC,id DESC LIMIT 5",(user["id"],)).fetchall()
-            notification_unread=c.execute("SELECT count(*) n FROM notifications WHERE user_id=? AND is_read=0",(user["id"],)).fetchone()["n"]
-        state_cards=[]
-        state_specs=[("Ritirato","Ritirati","archive","state-yellow"),("In programma","In programma","calendar","state-red"),("Cremato","Cremati","archive","state-blue"),("Da consegnare","Da consegnare","clipboard","state-purple"),("Consegnato","Consegnati","home","state-green")]
-        for state,label,icon,cls in state_specs:
-            state_cards.append(f'<a class="metric-card {cls}" href="/archivio/pratiche?stato={quote(state)}"><span class="metric-copy"><small>{label}</small><strong>{counts.get(state,0)}</strong><em>{"Nessuna pratica" if not counts.get(state,0) else "Apri elenco"}</em></span><span class="metric-icon">{lucide(icon)}</span></a>')
-        payment_totals={
-            "Da saldare":sum(outstanding_amount(row) for row in payment_rows if outstanding_amount(row)>0),
-            "Acconto":sum(money_value(row["deposit"]) for row in payment_rows),
-            "Pagato":sum(received_amount(row) for row in payment_rows if row["normalized_payment_status"]=="Pagato"),
-        }
-        payment_counts["Acconto"]=sum(1 for row in payment_rows if money_value(row["deposit"])>0)
-        payment_specs=[("Da saldare","Da saldare","wallet","payment-due","/pagamenti/da-saldare"),("Acconto","Acconti","receipt","payment-deposit","/pagamenti/acconti"),("Pagato","Pagati","chart","payment-paid","/pagamenti/pagati")]
-        payment_cards=''.join(f'<a class="payment-card {cls}" href="{href}"><span><small>{label}</small><strong>{payment_counts.get(state,0)}</strong><em>{money_it(payment_totals[state])}</em></span><span class="metric-icon">{lucide(icon)}</span></a>' for state,label,icon,cls,href in payment_specs)
-        income_by_day={day.isoformat():0.0 for day in days}
-        for row in income_rows:
-            if row["day"] in income_by_day: income_by_day[row["day"]]+=money_value(row["amount"])
-        income_values=[income_by_day[day.isoformat()] for day in days]; income_total=sum(income_values)
-        chart=income_chart(income_values,[day.strftime("%d/%m") for day in days])
-        timeline=[]
-        for index,event in enumerate(activity):
-            label=event["event_type"] or "Aggiornamento pratica"; detail=event["new_value"] or event["practice_number"] or ""
-            when=(event["created_at"] or "").replace("T"," ")[:16]
-            timeline.append(f'<a class="activity-item activity-{index%4}" href="/pratiche/{event["practice_id"]}"><span class="activity-icon">{lucide("clipboard")}</span><span><b>{esc(label)}</b><small>{esc(detail)}</small></span><time>{esc(when)}</time></a>')
-        if not timeline: timeline.append('<div class="activity-empty">Le nuove attività compariranno qui.</div>')
-        notification_items=''.join(f'''<a class="activity-item" href="/notifiche/{item['id']}/apri"><span class="activity-icon">{NOTIFICATION_TYPES.get(item['type'],('', '🔔'))[1]}</span><span><b>{esc(item['title'])}</b><small>{esc(item['text'])}</small></span><time>{esc((item['created_at'] or '')[11:16])}</time></a>''' for item in notification_recent) or '<div class="activity-empty">Nessuna notifica.</div>'
-        notification_panel=f'''<article class="dashboard-panel activity-panel" style="margin-top:16px"><header><div><h2>Centro notifiche</h2><p><strong>{notification_unread}</strong> non lette</p></div><a href="/notifiche">Visualizza tutte</a></header><div class="activity-list">{notification_items}</div></article>'''
-        hour=datetime.now().hour; greeting="Buongiorno" if hour < 13 else "Buon pomeriggio" if hour < 18 else "Buonasera"
-        body=f'''<main class="wrap dashboard-wrap"><section class="welcome"><div><h1>{greeting}, Pet Paradise <span aria-hidden="true">👋</span></h1><p>Panoramica aggiornata dell'attività</p></div></section>{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}<h2 class="dashboard-heading">Pratiche</h2><section class="dashboard-states">{''.join(state_cards)}</section><h2 class="dashboard-heading">Pagamenti</h2><section class="dashboard-payments">{payment_cards}</section><section class="dashboard-lower"><a class="dashboard-panel income-panel" href="/bilanci" aria-label="Apri Bilanci: entrate degli ultimi sette giorni"><header><div><h2>Entrate ultimi 7 giorni</h2><p>Totale: <strong>{money_it(income_total)}</strong></p></div><span class="panel-link">Apri Bilanci →</span></header>{chart}</a><article class="dashboard-panel activity-panel"><header><h2>Attività recenti</h2><a href="/archivio/pratiche">Vedi tutte</a></header><div class="activity-list">{''.join(timeline)}</div></article></section>{notification_panel}<section class="dashboard-recent"><div class="titlebar"><h2>Ultime 10 pratiche per data recupero</h2><a href="/archivio/pratiche">Apri archivio</a></div><div class="tablebox dashboard-table-scroll"><table class="practice-list-table"><thead><tr><th>Animale</th><th>Età</th><th>Proprietario</th><th>Data recupero</th><th>Codice pratica</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Totale pagato</th><th>Fattura</th><th>Totale W</th><th>TOTALE D</th><th>Acconto</th><th>Rimanenza</th><th>Stati</th></tr></thead><tbody>{self.practice_rows(recent,True)}</tbody></table></div></section></main>'''
-        week_range=f"{week_start.strftime('%d/%m/%Y')} - {week_end.strftime('%d/%m/%Y')}"
-        body=body.replace("Entrate ultimi 7 giorni", "Entrate settimana in corso")
-        body=body.replace("Totale: <strong>", f"{week_range} · Totale: <strong>", 1)
-        body=body.replace('href="/bilanci" aria-label="Apri Bilanci: entrate degli ultimi sette giorni"', f'href="/bilanci?dal={week_start.isoformat()}&al={week_end.isoformat()}" aria-label="Apri Bilanci: entrate della settimana in corso"')
-        dashboard_actions='''<div class="calendar-quick-actions"><a class="btn" href="/nuova">+ Nuova pratica</a><a class="btn ghost" href="/calendario/nuovo">+ Nuovo evento</a></div>'''
-        body=body.replace("</section>",dashboard_actions+"</section>",1)
-        self.send_html(layout("Dashboard",body,user))
 
     def dashboard(self,user):
         q=parse_qs(urlparse(getattr(self,"path","/")).query);today=datetime.now().date()
         practice_period,practice_from,practice_to=dashboard_period_bounds((q.get("pratiche_periodo") or ["oggi"])[0],today)
         payment_period,payment_from,payment_to=dashboard_period_bounds((q.get("pagamenti_periodo") or ["oggi"])[0],today)
-        year_start=today.replace(month=1,day=1);year_end=today.replace(month=12,day=31)
-        months=[year_start.replace(month=m) for m in range(1,13)]
         active="p.deleted_at IS NULL OR p.deleted_at=''"
         ritiro_date=dashboard_practice_date_sql("ritirati","p");programma_date=dashboard_practice_date_sql("in_programma","p");consegna_date=dashboard_practice_date_sql("consegnati","p")
         with db() as c:
@@ -3686,10 +3561,6 @@ class App(BaseHTTPRequestHandler):
                                          WHERE ({active}) AND m.amount>0 AND date(m.paid_at) BETWEEN date(?) AND date(?)
                                          AND m.payment_type IN ('acconto_ordinario','acconto_d','saldo_ordinario','saldo_d')
                                          GROUP BY category""",(payment_from.isoformat(),payment_to.isoformat())).fetchall()}
-            income_rows=c.execute(f"""SELECT strftime('%Y-%m',m.paid_at) month,COALESCE(sum(m.amount),0) amount
-                                      FROM payment_movements m JOIN practices p ON p.id=m.practice_id
-                                      WHERE ({active}) AND date(m.paid_at) BETWEEN date(?) AND date(?)
-                                      GROUP BY strftime('%Y-%m',m.paid_at)""",(year_start.isoformat(),year_end.isoformat())).fetchall()
             recent=c.execute("SELECT * FROM practices WHERE deleted_at IS NULL OR deleted_at='' ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) DESC,id DESC LIMIT 10").fetchall()
             incomplete=c.execute("SELECT count(*) n FROM practices WHERE (deleted_at IS NULL OR deleted_at='') AND data_complete=0 AND status!='Consegnato'").fetchone()["n"]
         def state_url(event,state="",include_dates=True):
@@ -3713,11 +3584,6 @@ class App(BaseHTTPRequestHandler):
         payment_query=urlencode({"dal":payment_from.isoformat(),"al":payment_to.isoformat(),"periodo":payment_period})
         payment_specs=[("Da saldare","Da saldare","wallet","payment-due",f"/pagamenti/da-saldare?{payment_query}"),("Acconto","Acconti","receipt","payment-deposit",f"/pagamenti/acconti?{payment_query}"),("Pagato","Pagati","chart","payment-paid",f"/pagamenti/pagati?{payment_query}")]
         payment_cards=''.join(f'<a class="payment-card {cls}" data-dashboard-payment="{state}" data-count="{payment_counts[state]}" data-amount="{payment_totals[state]:.2f}" href="{href}"><span><small>{label}</small><strong>{payment_counts[state]}</strong><em>{money_it(payment_totals[state])}</em>{"<small>Tutte le rimanenze aperte</small>" if state=="Da saldare" else ""}</span><span class="metric-icon">{lucide(icon)}</span></a>' for state,label,icon,cls,href in payment_specs)
-        income_by_month={month.strftime('%Y-%m'):0.0 for month in months}
-        for row in income_rows:
-            if row["month"] in income_by_month:income_by_month[row["month"]]+=money_value(row["amount"])
-        month_labels_it=("Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic")
-        income_values=[income_by_month[month.strftime('%Y-%m')] for month in months];income_total=sum(income_values);chart=income_chart(income_values,list(month_labels_it))
         def selector(key,current,other_key,other):
             links=[]
             for value,label in (("oggi","Oggi"),("settimana","Settimana"),("mese","Mese")):
@@ -3729,7 +3595,6 @@ class App(BaseHTTPRequestHandler):
         dashboard_sections={
             "practices": f'''<div class="dashboard-section-head"><h2 class="dashboard-heading">Pratiche / Ritiri</h2>{practice_selector}</div><section class="dashboard-states">{state_cards}</section>''',
             "payments": f'''<div class="dashboard-section-head"><h2 class="dashboard-heading">Pagamenti</h2>{payment_selector}</div><section class="dashboard-payments">{payment_cards}</section>''',
-            "income_chart": f'''<section class="dashboard-chart-only"><a class="dashboard-panel income-panel" href="/bilanci?dal={year_start.isoformat()}&al={year_end.isoformat()}" aria-label="Apri Bilanci: entrate dell'anno in corso"><header><div><h2>Entrate anno in corso</h2><p>{year_start.strftime('%d/%m/%Y')} - {year_end.strftime('%d/%m/%Y')} · Totale: <strong>{money_it(income_total)}</strong></p></div><span class="panel-link">Apri Bilanci →</span></header>{chart}</a></section>''',
             "recent_practices": f'''<section class="dashboard-recent"><div class="titlebar"><h2>Ultime 10 pratiche per data recupero</h2><a href="/archivio/pratiche">Apri archivio</a></div><div class="tablebox dashboard-table-scroll"><table class="practice-list-table"><thead><tr><th>Animale</th><th>Età</th><th>Proprietario</th><th>Data recupero</th><th>Codice pratica</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Totale pagato</th><th>Fattura</th><th>Totale W</th><th>TOTALE D</th><th>Acconto</th><th>Rimanenza</th><th>Stati</th></tr></thead><tbody>{self.practice_rows(recent,True)}</tbody></table></div></section>''',
         }
         default_dashboard_order=[sid for sid,_ in DASHBOARD_SECTION_LABELS]
@@ -4317,7 +4182,7 @@ class App(BaseHTTPRequestHandler):
             complete_form=f'''<form id="cremationCompleteForm" method="post" action="/programma-cremazioni/completa" onsubmit="return confirm('Confermi il completamento della sessione? {queued_count} animali spuntati INSERITO passeranno allo stato In programma.')"><input type="hidden" name="return_to" value="{esc(self.path)}"><button class="btn" type="submit">SESSIONE COMPLETATA</button></form>'''
         else:
             complete_form='<p class="sub">Nessun animale spuntato come INSERITO da completare.</p>'
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Programma Cremazioni</h1><p class="sub">Spunta INSERITO gli animali entrati nel programma settimanale: la spunta si salva subito e resta visibile finché non premi SESSIONE COMPLETATA, che sposta gli animali spuntati allo stato In programma.</p></div><div class="actions">{complete_form}</div></div><section class="balance-grid" style="grid-template-columns:max-content"><div class="balance-total"><small>Animali in attesa di cremazione singola</small><strong>{len(rows)}</strong></div></section><form class="section" method="get" style="margin-bottom:16px"><div class="fields"><div class="field"><label>Provenienza</label><select name="provenienza" onchange="this.form.submit()">{filter_options}</select></div></div></form><div class="tablebox"><table><thead><tr><th>Animale</th><th>Peso</th><th>Provenienza</th><th>Etichette</th><th>Urna</th><th>Cliente</th><th>Data recupero</th><th>Pagamento</th><th>Inserito</th></tr></thead><tbody>{table_body}</tbody></table></div></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Programma Cremazioni</h1><p class="sub">Spunta INSERITO gli animali entrati nel programma settimanale: la spunta si salva subito e resta visibile finché non premi SESSIONE COMPLETATA, che sposta gli animali spuntati allo stato In programma.</p></div><div class="actions">{complete_form}</div></div><section class="kvs" style="grid-template-columns:max-content;margin-bottom:20px"><div class="kv"><small>Animali in attesa di cremazione singola</small><strong>{len(rows)}</strong></div></section><form class="section" method="get" style="margin-bottom:16px"><div class="fields"><div class="field"><label>Provenienza</label><select name="provenienza" onchange="this.form.submit()">{filter_options}</select></div></div></form><div class="tablebox"><table><thead><tr><th>Animale</th><th>Peso</th><th>Provenienza</th><th>Etichette</th><th>Urna</th><th>Cliente</th><th>Data recupero</th><th>Pagamento</th><th>Inserito</th></tr></thead><tbody>{table_body}</tbody></table></div></main>'''
         self.send_html(layout("Programma Cremazioni",body,user))
 
     def cremation_toggle_queue(self,user,pid):
@@ -4341,421 +4206,16 @@ class App(BaseHTTPRequestHandler):
                 c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(row["id"],"Cambio stato rapido","Ritirato","In programma",user["id"],stamp))
         return self.redirect(safe_return_path(form.get("return_to"),"/programma-cremazioni"))
 
-    def balances(self,user):
-        q=parse_qs(urlparse(self.path).query); today=datetime.now().date()
-        date_from=(q.get("dal") or [(today-timedelta(days=6)).isoformat()])[0].strip()
-        date_to=(q.get("al") or [today.isoformat()])[0].strip()
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_from): date_from=(today-timedelta(days=6)).isoformat()
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_to): date_to=today.isoformat()
-        categories=[
-            ("price_cremation","Cremazione",("price_cremation",)),("price_pickup","Ritiro",("price_pickup",)),("price_urn","Urna",("price_urn","price_urn_2")),
-            ("price_delivery","Riconsegna",("price_delivery",)),("price_cast","Calco",("price_cast","price_cast_2","price_paw_cast","price_nose_cast")),("price_evening","Serale",("price_evening",)),
-            ("price_night","Notturno",("price_night",)),("price_holiday","Festivo",("price_holiday",)),("price_accessories","Accessori",("price_accessories","price_accessories_2")),
-            ("totale_calcolato","Entrate W",()),("totale_d","Entrate D",()),
-            ("da_entrare","Da entrare W",()),("da_entrare_d","Da entrare D",()),
-        ]
-        category_map={key:label for key,label,_ in categories}; category_fields={key:fields for key,_,fields in categories}; selected=(q.get("voce") or [""])[0].strip()
-        if selected not in category_map: selected=""
-        with db() as c:
-            rows=c.execute("""SELECT * FROM practices
-                              WHERE (deleted_at IS NULL OR deleted_at='')
-                                AND date(COALESCE(NULLIF(pickup_date,''),created_at)) BETWEEN date(?) AND date(?)
-                              ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) DESC,id DESC""",(date_from,date_to)).fetchall()
-        breakdown={key:sum(sum(money_value(row[field]) for field in fields) for row in rows) for key,_,fields in categories if fields}
-        breakdown["totale_calcolato"]=sum(calculated_service_total(row) for row in rows if not (row["total_text"] or "").strip())
-        breakdown["totale_d"]=sum(money_value(row["total_text"]) for row in rows if (row["total_text"] or "").strip())
-        breakdown["da_entrare"]=sum(effective_total(row) for row in rows if (row["payment_status"] or "Da saldare")=="Da saldare")
-        breakdown["da_entrare_d"]=sum(money_value(row["total_text"]) for row in rows if (row["payment_status"] or "Da saldare")!="Pagato" and (row["total_text"] or "").strip())
-        grand_total=sum(effective_total(row) for row in rows if row["payment_status"]=="Pagato")
-        shown_total=breakdown[selected] if selected else grand_total
-        cards=''.join(f'<a class="balance-card {"active" if selected==key else ""}" href="/bilanci?dal={quote(date_from)}&al={quote(date_to)}&voce={quote(key)}"><small>{label}</small><strong>{money_it(breakdown[key])}</strong></a>' for key,label,_ in categories)
-        table_rows=[]
-        for row in rows:
-            if selected=="da_entrare":
-                if (row["payment_status"] or "Da saldare")!="Da saldare": continue
-                amount=effective_total(row)
-            elif selected=="da_entrare_d":
-                if (row["payment_status"] or "Da saldare")=="Pagato" or not (row["total_text"] or "").strip(): continue
-                amount=money_value(row["total_text"])
-                if amount==0: continue
-            elif selected=="totale_calcolato":
-                if (row["total_text"] or "").strip(): continue
-                amount=calculated_service_total(row)
-                if amount==0: continue
-            elif selected=="totale_d":
-                if not (row["total_text"] or "").strip(): continue
-                amount=money_value(row["total_text"])
-                if amount==0: continue
-            elif selected:
-                amount=sum(money_value(row[field]) for field in category_fields[selected])
-                if amount==0: continue
-            else:
-                if row["payment_status"]!="Pagato": continue
-                amount=effective_total(row)
-            owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip()
-            effective_date=(row["pickup_date"] or row["created_at"] or "")[:10]
-            table_rows.append(f'<tr><td>{esc(date_it(effective_date))}</td><td><a href="/pratiche/{row["id"]}"><b>{esc(row["practice_number"])}</b></a></td><td>{esc(owner)}</td><td>{esc(category_map.get(selected,"Totale pratica"))}</td><td><b>{money_it(amount)}</b></td></tr>')
-        table_body=''.join(table_rows) or '<tr><td colspan="5" class="sub">Nessuna entrata nel periodo selezionato.</td></tr>'
-        options='<option value="">Entrate pagate</option>'+''.join(f'<option value="{key}" {"selected" if selected==key else ""}>{label}</option>' for key,label,_ in categories)
-        subtitle="Pratiche contenenti la voce selezionata" if selected else "Entrate delle pratiche pagate"
-        body=f'''<main class="wrap balances-wrap"><div class="titlebar"><div><h1>Bilanci</h1><p class="sub">{subtitle} dal {esc(date_it(date_from))} al {esc(date_it(date_to))}</p></div><div class="balance-total"><small>{esc(category_map.get(selected,"Entrate totali"))}</small><strong>{money_it(shown_total)}</strong></div></div><section class="balance-grid">{cards}</section><section class="tablebox balance-table"><table><thead><tr><th>Data</th><th>Pratica</th><th>Cliente</th><th>Voce</th><th>Importo</th></tr></thead><tbody>{table_body}</tbody></table></section><section class="search-after-results"><h2>Filtra bilanci</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field full"><label>Voce</label><select name="voce">{options}</select></div></div><button class="btn" style="margin-top:12px">Applica filtri</button><a class="btn ghost" style="margin-top:12px" href="/bilanci">Ultimi 7 giorni</a></form></section></main>'''
-        self.send_html(layout("Bilanci",body,user))
 
-    def balances_legacy_v2(self,user):
-        q=parse_qs(urlparse(self.path).query); today=datetime.now().date()
-        default_from=today-timedelta(days=6)
-        date_from=(q.get("dal") or [default_from.isoformat()])[0].strip()
-        date_to=(q.get("al") or [today.isoformat()])[0].strip()
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_from): date_from=default_from.isoformat()
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_to): date_to=today.isoformat()
-        categories=[
-            ("price_cremation","Cremazione",("price_cremation",)),("price_pickup","Ritiro",("price_pickup",)),("price_urn","Urna",("price_urn","price_urn_2")),
-            ("price_delivery","Riconsegna",("price_delivery",)),("price_cast","Calco",("price_cast","price_cast_2","price_paw_cast","price_nose_cast")),("price_evening","Serale",("price_evening",)),
-            ("price_night","Notturno",("price_night",)),("price_holiday","Festivo",("price_holiday",)),("price_accessories","Accessori",("price_accessories","price_accessories_2")),
-            ("totale_calcolato","Entrate W",()),("totale_d","Entrate D",()),
-            ("da_entrare","Da entrare W",()),("da_entrare_d","Da entrare D",()),
-        ]
-        category_map={key:label for key,label,_ in categories}; category_fields={key:fields for key,_,fields in categories}
-        selected=(q.get("voce") or [""])[0].strip()
-        if selected not in category_map: selected=""
-        with db() as c:
-            rows=c.execute("""SELECT * FROM practices WHERE (deleted_at IS NULL OR deleted_at='')
-                              AND date(COALESCE(NULLIF(pickup_date,''),created_at)) BETWEEN date(?) AND date(?)
-                              ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) DESC,id DESC""",(date_from,date_to)).fetchall()
 
-        def amount_for(row,key):
-            definitive=uses_total_d(row)
-            if key=="totale_calcolato": return 0.0 if definitive else received_amount(row)
-            if key=="totale_d": return received_amount(row) if definitive else 0.0
-            if key=="da_entrare": return 0.0 if definitive else outstanding_amount(row)
-            if key=="da_entrare_d": return outstanding_amount(row) if definitive else 0.0
-            if key in category_fields:
-                if definitive: return 0.0
-                due=effective_total(row)
-                ratio=min(1.0, received_amount(row)/due) if due else 0.0
-                return sum(money_value(row[field]) for field in category_fields[key])*ratio
-            return received_amount(row)
 
-        breakdown={key:sum(amount_for(row,key) for row in rows) for key,_,_ in categories}
-        shown_total=breakdown[selected] if selected else sum(received_amount(row) for row in rows)
-        cards=''.join(f'<a class="balance-card {"active" if selected==key else ""}" href="/bilanci?dal={quote(date_from)}&al={quote(date_to)}&voce={quote(key)}"><small>{label}</small><strong>{money_it(breakdown[key])}</strong></a>' for key,label,_ in categories)
-        table_rows=[]; chart_by_day={}
-        for row in rows:
-            amount=amount_for(row,selected)
-            if amount <= 0: continue
-            owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip()
-            effective_date=(row["pickup_date"] or row["created_at"] or "")[:10]
-            chart_by_day[effective_date]=chart_by_day.get(effective_date,0.0)+amount
-            url=f'/pratiche/{row["id"]}'
-            row_label=f'Apri pratica {row["practice_number"]}'
-            table_rows.append(f'<tr class="practice-row-link" {row_open_attrs(url,row_label)}><td>{esc(date_it(effective_date))}</td><td><a href="{url}"><b>{esc(row["practice_number"])}</b></a></td><td>{esc(owner)}</td><td>{esc(category_map.get(selected,"Entrata incassata"))}</td><td><b>{money_it(amount)}</b></td><td><a class="btn ghost" href="{url}">Apri</a></td></tr>')
-        start_date=datetime.strptime(date_from,"%Y-%m-%d").date(); end_date=datetime.strptime(date_to,"%Y-%m-%d").date()
-        chart_days=[]; cursor=start_date
-        while cursor<=end_date:
-            chart_days.append(cursor); cursor+=timedelta(days=1)
-        chart=income_chart([chart_by_day.get(day.isoformat(),0.0) for day in chart_days],[day.strftime("%d/%m") for day in chart_days])
-        table_body=''.join(table_rows) or '<tr><td colspan="6" class="sub">Nessun importo nel periodo selezionato.</td></tr>'
-        options='<option value="">Tutte le entrate incassate</option>'+''.join(f'<option value="{key}" {"selected" if selected==key else ""}>{label}</option>' for key,label,_ in categories)
-        subtitle="Risultati filtrati" if selected else "Denaro effettivamente incassato"
-        body=f'''<main class="wrap balances-wrap"><div class="titlebar"><div><h1>Bilanci</h1><p class="sub">{subtitle} dal {esc(date_it(date_from))} al {esc(date_it(date_to))}</p></div><div class="balance-total"><small>{esc(category_map.get(selected,"Entrate totali"))}</small><strong>{money_it(shown_total)}</strong></div></div><section class="balance-grid">{cards}</section><section class="dashboard-panel balance-chart"><header><div><h2>Andamento nel periodo filtrato</h2><p>Il grafico si aggiorna con date e voce selezionate.</p></div></header>{chart}</section><section class="tablebox balance-table"><table><thead><tr><th>Data</th><th>Pratica</th><th>Cliente</th><th>Voce</th><th>Importo</th><th></th></tr></thead><tbody>{table_body}</tbody></table></section><section class="search-after-results"><h2>Filtra bilanci</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field full"><label>Voce</label><select name="voce">{options}</select></div></div><button class="btn" style="margin-top:12px">Applica filtri</button><a class="btn ghost" style="margin-top:12px" href="/bilanci">Ultimi 7 giorni</a></form></section></main>'''
-        self.send_html(layout("Bilanci",body,user))
 
-    def normalized_expense_fields(self,f):
-        expense_date=f.get("expense_date","").strip()
-        amount=normalize_money_text(f.get("amount",""))
-        channel=f.get("channel","").strip()
-        description=f.get("description","").strip()
-        category_choice=f.get("category","").strip()
-        category_custom=f.get("category_custom","").strip()
-        category=category_custom if category_choice=="Altro" and category_custom else category_choice if category_choice!="Altro" else ""
-        error=""
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",expense_date):
-            error="Indica una data valida per l'uscita."
-        elif not amount or not re.fullmatch(r"\d+(?:\.\d{1,2})?",amount) or money_value(amount)<=0:
-            error="Indica un importo valido per l'uscita."
-        elif channel not in ("W","D"):
-            error="Seleziona il circuito W o D."
-        elif not description:
-            error="Indica una descrizione per l'uscita."
-        return {"expense_date":expense_date,"amount":amount,"channel":channel,"description":description,"category":category},error
 
-    def expense_form_page(self,user,eid=None,error="",draft=None):
-        q=parse_qs(urlparse(self.path).query)
-        date_from=(q.get("dal") or [""])[0].strip()
-        date_to=(q.get("al") or [""])[0].strip()
-        back_qs=f"?dal={quote(date_from)}&al={quote(date_to)}" if date_from and date_to else ""
-        expense=None
-        if eid:
-            with db() as c:
-                expense=c.execute("SELECT * FROM expenses WHERE id=?",(eid,)).fetchone()
-            if not expense:return self.send_error(404)
-        today=datetime.now().date().isoformat()
-        if draft is not None:
-            expense_date=draft.get("expense_date",""); amount=draft.get("amount",""); channel=draft.get("channel","W")
-            description=draft.get("description",""); category=draft.get("category","")
-        elif expense is not None:
-            expense_date=expense["expense_date"]; amount=expense["amount"]; channel=expense["channel"]
-            description=expense["description"]; category=expense["category"] or ""
-        else:
-            expense_date=date_to or today; amount=""; channel="W"; description=""; category=""
-        category_is_custom=bool(category) and category not in EXPENSE_CATEGORIES
-        category_select_value="Altro" if category_is_custom else category
-        category_options=''.join(f'<option value="{esc(opt)}" {"selected" if opt==category_select_value else ""}>{esc(label)}</option>' for opt,label in [("","Nessuna categoria"),*[(c,c) for c in EXPENSE_CATEGORIES]])
-        title="Modifica uscita" if expense else "Registra uscita"
-        action=f"/bilanci/uscite/{eid}/modifica" if expense else "/bilanci/uscite"
-        error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{title}</h1><div class="sub">Registra un'uscita indipendente dalle pratiche.</div></div></div>{error_html}<form method="post" action="{action}" class="section"><input type="hidden" name="dal" value="{esc(date_from)}"><input type="hidden" name="al" value="{esc(date_to)}"><div class="fields"><div class="field"><label>Data *</label><input type="date" name="expense_date" value="{esc(expense_date)}" required></div><div class="field"><label>Importo € *</label><input name="amount" value="{esc(amount)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 50,00" required></div><div class="field"><label>Circuito *</label><select name="channel" required><option value="W" {"selected" if channel=="W" else ""}>W</option><option value="D" {"selected" if channel=="D" else ""}>D</option></select></div><div class="field full"><label>Descrizione / causale *</label><input name="description" value="{esc(description)}" required placeholder="Es. Acquisto materiale imballaggio"></div><div class="field"><label>Categoria</label><select name="category" onchange="document.getElementById('expenseCategoryCustom').hidden=this.value!=='Altro'">{category_options}</select></div><div class="field" id="expenseCategoryCustom" {"" if category_is_custom else "hidden"}><label>Specifica categoria</label><input name="category_custom" value="{esc(category if category_is_custom else '')}" placeholder="Es. Assicurazione"></div></div><div class="actions" style="margin-top:16px"><button class="btn">Salva uscita</button><a class="btn ghost" href="/bilanci{back_qs}">Annulla</a></div></form></main>'''
-        self.send_html(layout(title,body,user))
 
-    def expense_create(self,user):
-        f=self.form()
-        date_from=f.get("dal","").strip(); date_to=f.get("al","").strip()
-        back_qs=f"?dal={quote(date_from)}&al={quote(date_to)}" if date_from and date_to else ""
-        data,error=self.normalized_expense_fields(f)
-        if error:return self.expense_form_page(user,error=error,draft=data)
-        stamp=now()
-        with db() as c:
-            c.execute("INSERT INTO expenses(expense_date,amount,channel,description,category,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                      (data["expense_date"],data["amount"],data["channel"],data["description"],data["category"],user["id"],stamp,user["id"],stamp))
-        self.redirect(f"/bilanci{back_qs}")
 
-    def expense_action(self,user,eid,action):
-        f=self.form()
-        date_from=f.get("dal","").strip(); date_to=f.get("al","").strip()
-        back_qs=f"?dal={quote(date_from)}&al={quote(date_to)}" if date_from and date_to else ""
-        with db() as c:
-            expense=c.execute("SELECT * FROM expenses WHERE id=?",(eid,)).fetchone()
-            if not expense:return self.send_error(404)
-            if action=="elimina":
-                c.execute("DELETE FROM expenses WHERE id=?",(eid,))
-                return self.redirect(f"/bilanci{back_qs}")
-            data,error=self.normalized_expense_fields(f)
-            if error:return self.expense_form_page(user,eid,error=error,draft=data)
-            stamp=now()
-            c.execute("UPDATE expenses SET expense_date=?,amount=?,channel=?,description=?,category=?,updated_by=?,updated_at=? WHERE id=?",
-                      (data["expense_date"],data["amount"],data["channel"],data["description"],data["category"],user["id"],stamp,eid))
-        self.redirect(f"/bilanci{back_qs}")
 
-    def normalized_income_fields(self,f):
-        income_date=f.get("income_date","").strip()
-        amount=normalize_money_text(f.get("amount",""))
-        channel=f.get("channel","").strip()
-        description=f.get("description","").strip()
-        category_choice=f.get("category","").strip()
-        category_custom=f.get("category_custom","").strip()
-        category=category_custom if category_choice=="Altro" and category_custom else category_choice if category_choice!="Altro" else ""
-        error=""
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",income_date):
-            error="Indica una data valida per l'entrata."
-        elif not amount or not re.fullmatch(r"\d+(?:\.\d{1,2})?",amount) or money_value(amount)<=0:
-            error="Indica un importo valido per l'entrata."
-        elif channel not in ("W","D"):
-            error="Seleziona il circuito W o D."
-        elif not description:
-            error="Indica una descrizione per l'entrata."
-        return {"income_date":income_date,"amount":amount,"channel":channel,"description":description,"category":category},error
 
-    def income_form_page(self,user,iid=None,error="",draft=None):
-        q=parse_qs(urlparse(self.path).query)
-        date_from=(q.get("dal") or [""])[0].strip()
-        date_to=(q.get("al") or [""])[0].strip()
-        back_qs=f"?dal={quote(date_from)}&al={quote(date_to)}" if date_from and date_to else ""
-        income=None
-        if iid:
-            with db() as c:
-                income=c.execute("SELECT * FROM incomes WHERE id=?",(iid,)).fetchone()
-            if not income:return self.send_error(404)
-        today=datetime.now().date().isoformat()
-        if draft is not None:
-            income_date=draft.get("income_date",""); amount=draft.get("amount",""); channel=draft.get("channel","W")
-            description=draft.get("description",""); category=draft.get("category","")
-        elif income is not None:
-            income_date=income["income_date"]; amount=income["amount"]; channel=income["channel"]
-            description=income["description"]; category=income["category"] or ""
-        else:
-            income_date=date_to or today; amount=""; channel="W"; description=""; category=""
-        category_is_custom=bool(category) and category not in INCOME_CATEGORIES
-        category_select_value="Altro" if category_is_custom else category
-        category_options=''.join(f'<option value="{esc(opt)}" {"selected" if opt==category_select_value else ""}>{esc(label)}</option>' for opt,label in [("","Nessuna categoria"),*[(c,c) for c in INCOME_CATEGORIES]])
-        title="Modifica entrata" if income else "Registra entrata"
-        action=f"/bilanci/entrate/{iid}/modifica" if income else "/bilanci/entrate"
-        error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{title}</h1><div class="sub">Registra un'entrata indipendente dalle pratiche.</div></div></div>{error_html}<form method="post" action="{action}" class="section"><input type="hidden" name="dal" value="{esc(date_from)}"><input type="hidden" name="al" value="{esc(date_to)}"><div class="fields"><div class="field"><label>Data *</label><input type="date" name="income_date" value="{esc(income_date)}" required></div><div class="field"><label>Importo € *</label><input name="amount" value="{esc(amount)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 50,00" required></div><div class="field"><label>Circuito *</label><select name="channel" required><option value="W" {"selected" if channel=="W" else ""}>W</option><option value="D" {"selected" if channel=="D" else ""}>D</option></select></div><div class="field full"><label>Descrizione / causale *</label><input name="description" value="{esc(description)}" required placeholder="Es. Rimborso assicurazione"></div><div class="field"><label>Categoria</label><select name="category" onchange="document.getElementById('incomeCategoryCustom').hidden=this.value!=='Altro'">{category_options}</select></div><div class="field" id="incomeCategoryCustom" {"" if category_is_custom else "hidden"}><label>Specifica categoria</label><input name="category_custom" value="{esc(category if category_is_custom else '')}" placeholder="Es. Cessione attrezzatura"></div></div><div class="actions" style="margin-top:16px"><button class="btn">Salva entrata</button><a class="btn ghost" href="/bilanci{back_qs}">Annulla</a></div></form></main>'''
-        self.send_html(layout(title,body,user))
 
-    def income_create(self,user):
-        f=self.form()
-        date_from=f.get("dal","").strip(); date_to=f.get("al","").strip()
-        back_qs=f"?dal={quote(date_from)}&al={quote(date_to)}" if date_from and date_to else ""
-        data,error=self.normalized_income_fields(f)
-        if error:return self.income_form_page(user,error=error,draft=data)
-        stamp=now()
-        with db() as c:
-            c.execute("INSERT INTO incomes(income_date,amount,channel,description,category,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                      (data["income_date"],data["amount"],data["channel"],data["description"],data["category"],user["id"],stamp,user["id"],stamp))
-        self.redirect(f"/bilanci{back_qs}")
-
-    def income_action(self,user,iid,action):
-        f=self.form()
-        date_from=f.get("dal","").strip(); date_to=f.get("al","").strip()
-        back_qs=f"?dal={quote(date_from)}&al={quote(date_to)}" if date_from and date_to else ""
-        with db() as c:
-            income=c.execute("SELECT * FROM incomes WHERE id=?",(iid,)).fetchone()
-            if not income:return self.send_error(404)
-            if action=="elimina":
-                c.execute("DELETE FROM incomes WHERE id=?",(iid,))
-                return self.redirect(f"/bilanci{back_qs}")
-            data,error=self.normalized_income_fields(f)
-            if error:return self.income_form_page(user,iid,error=error,draft=data)
-            stamp=now()
-            c.execute("UPDATE incomes SET income_date=?,amount=?,channel=?,description=?,category=?,updated_by=?,updated_at=? WHERE id=?",
-                      (data["income_date"],data["amount"],data["channel"],data["description"],data["category"],user["id"],stamp,iid))
-        self.redirect(f"/bilanci{back_qs}")
-
-    def balances_v2(self,user):
-        q=parse_qs(urlparse(self.path).query)
-        today=datetime.now().date(); default_from=today-timedelta(days=6)
-        date_from=(q.get("dal") or [default_from.isoformat()])[0].strip()
-        date_to=(q.get("al") or [today.isoformat()])[0].strip()
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_from):date_from=default_from.isoformat()
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_to):date_to=today.isoformat()
-        category=(q.get("categoria") or [""])[0].strip()
-        movement_type=(q.get("tipo") or [""])[0].strip()
-        method=(q.get("metodo") or [""])[0].strip()
-        collaborator_filter=(q.get("collaboratore") or [""])[0].strip()
-        search=(q.get("q") or [""])[0].strip()
-        legacy_filter=(q.get("voce") or [""])[0].strip()
-        legacy_filters={
-            "acconti_w":("Entrate W","acconto"),"saldi_w":("Entrate W","saldo"),"totale_calcolato":("Entrate W",""),
-            "acconti_d":("Entrate D","acconto"),"saldi_d":("Entrate D","saldo"),"totale_d":("Entrate D",""),
-        }
-        if not category and not movement_type and legacy_filter in legacy_filters:
-            category,movement_type=legacy_filters[legacy_filter]
-        categories=("Entrate W","Entrate D","Collaboratori","Uscite W","Uscite D")
-        if category not in ("",*categories):category=""
-        if movement_type not in ("","acconto","saldo","entrata","uscita"):movement_type=""
-        if method not in PAYMENT_METHODS:method=""
-        if collaborator_filter and not collaborator_filter.isdigit():collaborator_filter=""
-        with db() as c:
-            payment_rows=c.execute("""SELECT m.*,p.practice_number,p.animal_name,p.owner_first_name,p.owner_last_name,
-                                             p.owner_company,p.request_origin,p.collaborator_id,p.collaborator_name,
-                                             co.name collaborator_display_name
-                                       FROM payment_movements m JOIN practices p ON p.id=m.practice_id
-                                       LEFT JOIN collaborators co ON co.id=p.collaborator_id
-                                       WHERE (p.deleted_at IS NULL OR p.deleted_at='')
-                                         AND m.amount>0 AND m.payment_type!='rettifica'
-                                       ORDER BY datetime(m.paid_at),m.id""").fetchall()
-            practice_totals={row["id"]:effective_total(row) for row in c.execute(
-                "SELECT * FROM practices WHERE (deleted_at IS NULL OR deleted_at='')"
-            ).fetchall()}
-            income_rows=c.execute("""SELECT * FROM incomes
-                                     WHERE date(income_date) BETWEEN date(?) AND date(?)
-                                     ORDER BY date(income_date) DESC,id DESC""",(date_from,date_to)).fetchall()
-            expense_rows=c.execute("""SELECT * FROM expenses
-                                      WHERE date(expense_date) BETWEEN date(?) AND date(?)
-                                      ORDER BY date(expense_date) DESC,id DESC""",(date_from,date_to)).fetchall()
-            collaborators=c.execute("SELECT id,name FROM collaborators WHERE active=1 ORDER BY name").fetchall()
-        entries=[]
-        seen_payments=set()
-        received_by_practice={}
-        for row in payment_rows:
-            saved_category=(row["movement_category"] or "").strip()
-            if saved_category not in ("W","D","Collaboratori"):
-                saved_category="Collaboratori" if row["request_origin"]=="Collaboratore" or row["collaborator_id"] else "D" if (row["payment_method"] or "")=="Contanti" or row["payment_channel"]=="D" else "W"
-            display_category={"W":"Entrate W","D":"Entrate D","Collaboratori":"Collaboratori"}[saved_category]
-            owner=" ".join(value for value in (row["owner_first_name"],row["owner_last_name"]) if value).strip() or row["owner_company"] or "-"
-            payment_kind="acconto" if (row["payment_type"] or "").startswith("acconto") else "saldo"
-            payment_date=(row["paid_at"] or "")[:10]
-            amount=round(money_value(row["amount"]),2)
-            payment_key=(row["practice_id"],payment_kind,payment_date,row["payment_method"] or "",saved_category,amount)
-            if payment_key in seen_payments:
-                continue
-            seen_payments.add(payment_key)
-            due=round(practice_totals.get(row["practice_id"],0.0),2)
-            already_received=received_by_practice.get(row["practice_id"],0.0)
-            if due>0:
-                amount=min(amount,round(max(0.0,due-already_received),2))
-            if amount<=0:
-                continue
-            received_by_practice[row["practice_id"]]=round(already_received+amount,2)
-            if not (date_from<=payment_date<=date_to):
-                continue
-            entries.append({"id":f'p{row["id"]}',"date":(row["paid_at"] or "")[:10],"category":display_category,
-                            "type":payment_kind,"label":"Acconto" if payment_kind=="acconto" else "Saldo",
-                            "method":row["payment_method"] or "Non indicato","amount":amount,
-                            "signed":amount,"practice_id":row["practice_id"],
-                            "reference":row["practice_number"] or "-","subject":row["animal_name"] or owner,
-                            "collaborator_id":str(row["collaborator_id"] or ""),"collaborator":row["collaborator_display_name"] or row["collaborator_name"] or ""})
-        for row in income_rows:
-            display_category="Entrate D" if row["channel"]=="D" else "Entrate W"
-            entries.append({"id":f'i{row["id"]}',"date":row["income_date"],"category":display_category,
-                            "type":"entrata","label":"Entrata manuale","method":"Altro",
-                            "amount":money_value(row["amount"]),"signed":money_value(row["amount"]),
-                            "practice_id":None,"reference":row["description"],"subject":row["category"] or "-",
-                            "collaborator_id":"","collaborator":""})
-        for row in expense_rows:
-            display_category="Uscite D" if row["channel"]=="D" else "Uscite W"
-            entries.append({"id":f'e{row["id"]}',"date":row["expense_date"],"category":display_category,
-                            "type":"uscita","label":"Uscita","method":"Contanti" if row["channel"]=="D" else "Altro",
-                            "amount":money_value(row["amount"]),"signed":-money_value(row["amount"]),
-                            "practice_id":None,"reference":row["description"],"subject":row["category"] or "-",
-                            "collaborator_id":"","collaborator":""})
-        needle=search.casefold()
-        filtered=[]
-        for entry in entries:
-            if category and entry["category"]!=category:continue
-            if movement_type and entry["type"]!=movement_type:continue
-            if method and entry["method"]!=method:continue
-            if collaborator_filter and entry["collaborator_id"]!=collaborator_filter:continue
-            haystack=" ".join(str(entry[key]) for key in ("category","label","method","reference","subject","collaborator")).casefold()
-            if needle and needle not in haystack:continue
-            filtered.append(entry)
-        filtered.sort(key=lambda entry:(entry["date"],entry["id"]),reverse=True)
-        totals={name:sum(entry["amount"] for entry in filtered if entry["category"]==name) for name in categories}
-        balance_w=totals["Entrate W"]-totals["Uscite W"]
-        balance_d=totals["Entrate D"]-totals["Uscite D"]
-        net_total=balance_w+balance_d+totals["Collaboratori"]
-        shown_total=totals[category] if category else net_total
-        base_params={"dal":date_from,"al":date_to}
-        if movement_type:base_params["tipo"]=movement_type
-        if method:base_params["metodo"]=method
-        if collaborator_filter:base_params["collaboratore"]=collaborator_filter
-        if search:base_params["q"]=search
-        def query_url(extra=None):
-            params={**base_params,**(extra or {})}
-            return "/bilanci?"+urlencode(params)
-        cards=[]
-        for name in categories:
-            cards.append(f'<a class="balance-card {"active" if category==name else ""}" href="{esc(query_url({"categoria":name}))}"><small>{esc(name)}</small><strong>{money_it(totals[name])}</strong></a>')
-        cards.append(f'<div class="balance-card-static"><small>Saldo W</small><strong>{money_it(balance_w)}</strong></div>')
-        cards.append(f'<div class="balance-card-static"><small>Saldo D</small><strong>{money_it(balance_d)}</strong></div>')
-        cards.append(f'<div class="balance-card-static"><small>Totale netto</small><strong>{money_it(net_total)}</strong></div>')
-        rows=[]
-        chart_by_day={}
-        for entry in filtered:
-            chart_by_day[entry["date"]]=chart_by_day.get(entry["date"],0.0)+entry["signed"]
-            reference=esc(entry["reference"])
-            action=""
-            if entry["practice_id"]:
-                url=f'/pratiche/{entry["practice_id"]}'
-                reference=f'<a href="{url}"><b>{reference}</b></a>'
-                action=f'<a class="btn ghost" href="{url}">Apri</a>'
-            rows.append(f'''<tr><td>{esc(date_it(entry["date"]))}</td><td>{esc(entry["category"])}</td><td>{esc(entry["label"])}</td><td>{reference}</td><td>{esc(entry["subject"])}</td><td>{esc(entry["method"])}</td><td><b>{money_it(entry["amount"])}</b></td><td>{action}</td></tr>''')
-        table_body=''.join(rows) or '<tr><td colspan="8" class="sub">Nessun movimento corrisponde ai filtri selezionati.</td></tr>'
-        start_date=datetime.strptime(date_from,"%Y-%m-%d").date();end_date=datetime.strptime(date_to,"%Y-%m-%d").date()
-        chart_days=[];cursor=start_date
-        while cursor<=end_date:chart_days.append(cursor);cursor+=timedelta(days=1)
-        chart=income_chart([chart_by_day.get(day.isoformat(),0.0) for day in chart_days],[day.strftime("%d/%m") for day in chart_days])
-        category_options=''.join(f'<option value="{esc(value)}" {"selected" if category==value else ""}>{esc(value or "Tutte le categorie")}</option>' for value in ("",*categories))
-        type_options=''.join(f'<option value="{value}" {"selected" if movement_type==value else ""}>{label}</option>' for value,label in (("","Tutti i movimenti"),("acconto","Acconti"),("saldo","Saldi"),("entrata","Entrate manuali"),("uscita","Uscite")))
-        method_options=''.join(f'<option value="{esc(value)}" {"selected" if method==value else ""}>{esc(value or "Tutti i metodi")}</option>' for value in PAYMENT_METHODS)
-        collaborator_options='<option value="">Tutti i collaboratori</option>'+''.join(f'<option value="{row["id"]}" {"selected" if collaborator_filter==str(row["id"]) else ""}>{esc(row["name"])}</option>' for row in collaborators)
-        body=f'''<main class="wrap balances-wrap"><div class="titlebar"><div><h1>Bilanci</h1><p class="sub">Movimenti effettivi dal {esc(date_it(date_from))} al {esc(date_it(date_to))}</p></div><div class="actions"><a class="btn" href="/bilanci/uscite/nuova?dal={quote(date_from)}&al={quote(date_to)}">+ Registra uscita</a><a class="btn" href="/bilanci/entrate/nuova?dal={quote(date_from)}&al={quote(date_to)}">+ Registra entrata</a></div><div class="balance-total"><small>{"Totale "+esc(category) if category else "Totale netto filtrato"}</small><strong>{money_it(shown_total)}</strong></div></div>
-        <section class="balance-grid">{''.join(cards)}</section>
-        <section class="search-after-results"><h2>Ricerca</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Categoria</label><select name="categoria">{category_options}</select></div><div class="field"><label>Tipo movimento</label><select name="tipo">{type_options}</select></div><div class="field"><label>Metodo</label><select name="metodo">{method_options}</select></div><div class="field"><label>Collaboratore</label><select name="collaboratore">{collaborator_options}</select></div><div class="field full"><label>Cerca</label><input name="q" value="{esc(search)}" placeholder="Pratica, animale, collaboratore o descrizione"></div></div><div class="actions" style="margin-top:12px"><button class="btn">Applica filtri</button><a class="btn ghost" href="/bilanci">Azzera filtri</a></div></form></section>
-        <section class="dashboard-panel balance-chart"><header><div><h2>Andamento del flusso</h2><p>Entrate positive e uscite negative, calcolate sugli stessi movimenti dell'elenco.</p></div></header>{chart}</section>
-        <section class="tablebox balance-table"><div class="section-collapse-head"><h2>Movimenti filtrati</h2><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><table class="balance-list-table"><thead><tr><th>Data</th><th>Categoria</th><th>Tipo</th><th>Pratica / descrizione</th><th>Animale / categoria</th><th>Metodo</th><th>Importo</th><th></th></tr></thead><tbody>{table_body}</tbody></table></div></section></main>'''
-        self.send_html(layout("Bilanci",body,user))
 
     def disposal_contact_for(self,row):
         owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip()

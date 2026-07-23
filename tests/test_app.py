@@ -970,203 +970,11 @@ class PetParadiseTests(unittest.TestCase):
             saved=conn.execute("SELECT total_service,total_text,deposit FROM practices WHERE id=?",(d_id,)).fetchone()
         self.assertEqual(tuple(saved),("410","330","100"))
 
-    def test_balances_total_d_filter_includes_whisky_and_partial_cash_flow(self):
-        today = app.datetime.now().date().isoformat()
-        with app.db() as conn:
-            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
-            stamp = app.now()
-            base = ("Privato", "Livorno", "Ritirato", today, stamp, stamp, admin["id"])
-            paid_id=conn.execute(
-                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
-                   created_at,updated_at,created_by,animal_name,price_cremation,total_service,total_text,deposit,payment_status)
-                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                ("PP-WHISKY", *base, "Whisky", "410", "410", "330", "0", "Pagato"),
-            ).lastrowid
-            partial_id=conn.execute(
-                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
-                   created_at,updated_at,created_by,animal_name,price_cremation,total_service,total_text,deposit,payment_status)
-                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                ("PP-PARZIALE", *base, "Parziale", "410", "410", "330", "100", "Acconto"),
-            ).lastrowid
-            self.handler.add_payment_movement(conn,paid_id,"saldo_d","D",330,admin["id"],"Test",stamp)
-            self.handler.add_payment_movement(conn,partial_id,"acconto_d","D",100,admin["id"],"Test",stamp)
 
-        rendered = []
-        self.handler.send_html = lambda content: rendered.append(content)
-        self.handler.path = f"/bilanci?dal={today}&al={today}&voce=totale_d"
-        self.handler.balances_v2(admin)
-        self.assertIn("PP-WHISKY", rendered[-1])
-        self.assertIn("PP-PARZIALE", rendered[-1])
-        self.assertIn("€ 430,00", rendered[-1])
-        self.assertIn('/pratiche/', rendered[-1])
-        self.handler.path = f"/bilanci?dal={today}&al={today}&voce=acconti_d"
-        self.handler.balances_v2(admin)
-        self.assertIn("PP-PARZIALE", rendered[-1])
-        self.assertNotIn("PP-WHISKY", rendered[-1])
-        self.assertIn("€ 100,00", rendered[-1])
-        self.assertNotIn("€ 230,00", rendered[-1])
-        page = rendered[-1]
-        self.assertIn('class="collapse-toggle"', page)
-        self.assertIn('class="collapsible-body"', page)
-        self.assertIn("function toggleCollapsibleSection(button)", app.APP_JS)
 
-    def test_expense_create_edit_delete_lifecycle_and_validation(self):
-        with app.db() as conn:
-            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
-        self.handler.form = lambda: {"dal": "2026-06-01", "al": "2026-06-01", "expense_date": "", "amount": "", "channel": "", "description": ""}
-        pages = []
-        self.handler.expense_form_page = lambda user, eid=None, error="", draft=None: pages.append(error)
-        self.handler.expense_create(admin)
-        self.assertIn("data valida", pages[-1])
-        redirects = []
-        self.handler.redirect = lambda path: redirects.append(path)
-        self.handler.form = lambda: {"dal": "2026-06-01", "al": "2026-06-01", "expense_date": "2026-06-01", "amount": "50,00", "channel": "W", "description": "Acquisto materiale imballaggio", "category": "Materiali"}
-        self.handler.expense_create(admin)
-        self.assertEqual(redirects[-1], "/bilanci?dal=2026-06-01&al=2026-06-01")
-        with app.db() as conn:
-            row = conn.execute("SELECT * FROM expenses WHERE description='Acquisto materiale imballaggio'").fetchone()
-        self.assertEqual((row["amount"], row["channel"], row["category"], row["created_by"]), ("50.00", "W", "Materiali", admin["id"]))
-        eid = row["id"]
-        self.handler.form = lambda: {"dal": "2026-06-01", "al": "2026-06-01", "expense_date": "2026-06-02", "amount": "75,50", "channel": "D", "description": "Assicurazione furgone", "category": "Altro", "category_custom": "Assicurazione"}
-        self.handler.expense_action(admin, eid, "modifica")
-        with app.db() as conn:
-            row = conn.execute("SELECT * FROM expenses WHERE id=?", (eid,)).fetchone()
-        self.assertEqual((row["expense_date"], row["amount"], row["channel"], row["description"], row["category"]),
-                          ("2026-06-02", "75.50", "D", "Assicurazione furgone", "Assicurazione"))
-        self.handler.form = lambda: {"dal": "2026-06-01", "al": "2026-06-01"}
-        self.handler.expense_action(admin, eid, "elimina")
-        with app.db() as conn:
-            self.assertIsNone(conn.execute("SELECT * FROM expenses WHERE id=?", (eid,)).fetchone())
 
-    def test_balances_totals_are_net_of_expenses_independently_per_channel(self):
-        today = app.datetime.now().date().isoformat()
-        with app.db() as conn:
-            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
-            base = ("Privato", "Livorno", "Ritirato", today, stamp, stamp, admin["id"])
-            w_id = conn.execute(
-                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
-                   created_at,updated_at,created_by,animal_name,price_cremation,total_service,deposit,payment_status)
-                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                ("PP-NETW", *base, "Argo", "820", "820", "0", "Pagato"),
-            ).lastrowid
-            d_id = conn.execute(
-                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
-                   created_at,updated_at,created_by,animal_name,price_cremation,total_service,total_text,deposit,payment_status)
-                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                ("PP-NETD", *base, "Bilbo", "500", "500", "500", "0", "Pagato"),
-            ).lastrowid
-            self.handler.add_payment_movement(conn, w_id, "saldo_ordinario", "W", 820, admin["id"], "Test", stamp)
-            self.handler.add_payment_movement(conn, d_id, "saldo_d", "D", 500, admin["id"], "Test", stamp)
-            conn.execute("INSERT INTO expenses(expense_date,amount,channel,description,category,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                         (today, "50.00", "W", "Materiale imballaggio", "Materiali", admin["id"], stamp, admin["id"], stamp))
-            conn.execute("INSERT INTO expenses(expense_date,amount,channel,description,category,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                         (today, "120.00", "D", "Fornitore urne", "Fornitori", admin["id"], stamp, admin["id"], stamp))
-        rendered = []
-        self.handler.send_html = lambda content: rendered.append(content)
-        self.handler.path = f"/bilanci?dal={today}&al={today}"
-        self.handler.balances_v2(admin)
-        page = rendered[-1]
-        self.assertIn('<small>Entrate W</small><strong>€ 820,00</strong>', page)
-        self.assertIn('<small>Uscite W</small><strong>€ 50,00</strong>', page)
-        self.assertIn('<small>Saldo W</small><strong>€ 770,00</strong>', page)
-        self.assertIn('<small>Entrate D</small><strong>€ 500,00</strong>', page)
-        self.assertIn('<small>Uscite D</small><strong>€ 120,00</strong>', page)
-        self.assertIn('<small>Saldo D</small><strong>€ 380,00</strong>', page)
-        self.assertIn('<div class="balance-total"><small>Totale netto filtrato</small><strong>€ 1.150,00</strong>', page)
-        self.assertIn("+ Registra uscita", page)
-        self.assertIn("Materiale imballaggio", page)
-        self.handler.path = f"/bilanci?dal={today}&al={today}&categoria=Uscite+W"
-        self.handler.balances_v2(admin)
-        detail_page = rendered[-1]
-        self.assertIn("Materiale imballaggio", detail_page)
-        self.assertNotIn("Fornitore urne", detail_page)
-        self.assertIn('<small>Uscite W</small><strong>€ 50,00</strong>', detail_page)
 
-    def test_income_create_edit_delete_lifecycle_and_validation(self):
-        with app.db() as conn:
-            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
-        self.handler.form = lambda: {"dal": "2026-06-01", "al": "2026-06-01", "income_date": "", "amount": "", "channel": "", "description": ""}
-        pages = []
-        self.handler.income_form_page = lambda user, iid=None, error="", draft=None: pages.append(error)
-        self.handler.income_create(admin)
-        self.assertIn("data valida", pages[-1])
-        redirects = []
-        self.handler.redirect = lambda path: redirects.append(path)
-        self.handler.form = lambda: {"dal": "2026-06-01", "al": "2026-06-01", "income_date": "2026-06-01", "amount": "50,00", "channel": "W", "description": "Rimborso assicurazione", "category": "Rimborso"}
-        self.handler.income_create(admin)
-        self.assertEqual(redirects[-1], "/bilanci?dal=2026-06-01&al=2026-06-01")
-        with app.db() as conn:
-            row = conn.execute("SELECT * FROM incomes WHERE description='Rimborso assicurazione'").fetchone()
-        self.assertEqual((row["amount"], row["channel"], row["category"], row["created_by"]), ("50.00", "W", "Rimborso", admin["id"]))
-        iid = row["id"]
-        self.handler.form = lambda: {"dal": "2026-06-01", "al": "2026-06-01", "income_date": "2026-06-02", "amount": "75,50", "channel": "D", "description": "Vendita accessori", "category": "Altro", "category_custom": "Cessione attrezzatura"}
-        self.handler.income_action(admin, iid, "modifica")
-        with app.db() as conn:
-            row = conn.execute("SELECT * FROM incomes WHERE id=?", (iid,)).fetchone()
-        self.assertEqual((row["income_date"], row["amount"], row["channel"], row["description"], row["category"]),
-                          ("2026-06-02", "75.50", "D", "Vendita accessori", "Cessione attrezzatura"))
-        self.handler.form = lambda: {"dal": "2026-06-01", "al": "2026-06-01"}
-        self.handler.income_action(admin, iid, "elimina")
-        with app.db() as conn:
-            self.assertIsNone(conn.execute("SELECT * FROM incomes WHERE id=?", (iid,)).fetchone())
 
-    def test_balances_shows_altre_entrate_cards_and_registra_entrata_button(self):
-        today = app.datetime.now().date().isoformat()
-        with app.db() as conn:
-            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
-            base = ("Privato", "Livorno", "Ritirato", today, stamp, stamp, admin["id"])
-            w_id = conn.execute(
-                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
-                   created_at,updated_at,created_by,animal_name,price_cremation,total_service,deposit,payment_status)
-                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                ("PP-INCW", *base, "Argo", "820", "820", "0", "Pagato"),
-            ).lastrowid
-            self.handler.add_payment_movement(conn, w_id, "saldo_ordinario", "W", 820, admin["id"], "Test", stamp)
-            conn.execute("INSERT INTO incomes(income_date,amount,channel,description,category,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                         (today, "60.00", "W", "Rimborso assicurazione", "Rimborso", admin["id"], stamp, admin["id"], stamp))
-        rendered = []; self.handler.send_html = lambda content: rendered.append(content)
-        self.handler.path = f"/bilanci?dal={today}&al={today}"
-        self.handler.balances_v2(admin)
-        page = rendered[-1]
-        self.assertIn('<small>Entrate W</small><strong>€ 880,00</strong>', page)
-        self.assertIn('<small>Saldo W</small><strong>€ 880,00</strong>', page)
-        self.assertIn("+ Registra entrata", page)
-        self.assertIn("Rimborso assicurazione", page)
-        self.handler.path = f"/bilanci?dal={today}&al={today}&categoria=Entrate+W&tipo=entrata"
-        self.handler.balances_v2(admin)
-        detail_page = rendered[-1]
-        self.assertIn("Rimborso assicurazione", detail_page)
-        self.assertNotIn("PP-INCW", detail_page)
-
-    def test_balances_excludes_collaborator_practices_and_shows_dedicated_panel(self):
-        today = app.datetime.now().date().isoformat()
-        with app.db() as conn:
-            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
-            collab_id = conn.execute("SELECT id FROM collaborators WHERE UPPER(name)='HUMANITAS CROCE VERDE'").fetchone()["id"]
-            collab_pid = conn.execute(
-                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
-                   created_at,updated_at,created_by,animal_name,price_cremation,total_service,payment_status,
-                   collaborator_id,collaborator_name,billing_status)
-                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                ("COL-000001", "Collaboratore", "Livorno", "Ritirato", today, stamp, stamp, admin["id"], "Rex",
-                 "200", "200", "Pagato", collab_id, "HUMANITAS CROCE VERDE", "Da fatturare"),
-            ).lastrowid
-            # Defensive: even if a payment movement somehow exists for a collaborator practice
-            # (e.g. quick-paid by mistake), it must never leak into the direct W/D totals.
-            self.handler.add_payment_movement(conn, collab_pid, "saldo_ordinario", "W", 200, admin["id"], "Test", stamp)
-        rendered = []; self.handler.send_html = lambda content: rendered.append(content)
-        self.handler.path = f"/bilanci?dal={today}&al={today}"
-        self.handler.balances_v2(admin)
-        page = rendered[-1]
-        self.assertIn('<small>Entrate W</small><strong>€ 0,00</strong>', page)
-        self.assertIn("COL-000001", page)
-        self.assertIn("Collaboratori", page)
-        self.assertIn('<small>Collaboratori</small><strong>€ 200,00</strong>', page)
-        self.handler.path = f"/bilanci?dal={today}&al={today}&categoria=Collaboratori"
-        self.handler.balances_v2(admin)
-        detail_page = rendered[-1]
-        self.assertIn("COL-000001", detail_page)
-        self.assertNotIn('<small>Entrate W</small><strong>€ 200,00</strong>', detail_page)
 
     def test_collaborator_practice_gets_separate_col_numbering_and_billing_status(self):
         with app.db() as conn:
@@ -1472,35 +1280,6 @@ class PetParadiseTests(unittest.TestCase):
         detail_page = rendered[-1]
         self.assertIn(f'''<tr class="practice-row-link" tabindex="0" role="link" aria-label="Apri pratica PP-ROWCLICK" onclick="practiceRowSelect(this,event,'{url}')"''', detail_page)
 
-    def test_balances_table_shows_sticky_animal_column_with_collaborator_sigla(self):
-        today = app.datetime.now().date().isoformat()
-        with app.db() as conn:
-            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
-            stamp = app.now()
-            # Note: request_origin stays "Privato" here (not "Collaboratore") because practices
-            # originating from a collaborator are now excluded from the direct Bilanci totals/list
-            # entirely (see test_balances_excludes_collaborator_practices_and_shows_dedicated_panel);
-            # this test only exercises the sticky-column/sigla-prefix rendering mechanism, which is
-            # keyed off collaborator_id and is independent of that exclusion.
-            collab_id=conn.execute("INSERT INTO collaborators(name,code,created_at,updated_at) VALUES(?,?,?,?)",("Humanitas Croce Verde","CV",stamp,stamp)).lastrowid
-            pid=conn.execute(
-                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
-                   created_at,updated_at,created_by,animal_name,species,estimated_weight,collaborator_id,
-                   price_cremation,total_service,deposit,payment_status)
-                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                ("PP-BILANCIOANIMALE","Privato","Livorno","Ritirato",today,stamp,stamp,admin["id"],
-                 "Fido","Cane","12",collab_id,"150","150","150","Pagato"),
-            ).lastrowid
-            self.handler.add_payment_movement(conn,pid,"saldo_ordinario","W",150,admin["id"],"Test",stamp)
-        rendered = []
-        self.handler.send_html = lambda content: rendered.append(content)
-        self.handler.path = f"/bilanci?dal={today}&al={today}"
-        self.handler.balances_v2(admin)
-        page = rendered[-1]
-        self.assertIn("<th>Data</th><th>Categoria</th>", page)
-        self.assertIn("Fido", page)
-        self.assertIn("Collaboratori", page)
-        self.assertIn("balance-list-table", page)
 
     def test_cremation_schedule_lists_ritirato_single_cremations_sorted_with_counter_urn_and_filter(self):
         with app.db() as conn:
@@ -1716,7 +1495,7 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.dashboard(admin)
         page = rendered[-1]
         expected_order = [
-            "Dashboard", "Calendario", "Notifiche", "Archivio", "Catalogo Urne", "Report",
+            "Dashboard", "Calendario", "Notifiche", "Archivio", "Catalogo Urne",
             "Conversazioni WhatsApp", "Veterinari", "Prodotti", "Ordini", "Gestionale", "Clienti",
         ]
         positions = [page.index(f">{label}</span>") for label in expected_order]
@@ -2023,53 +1802,6 @@ class PetParadiseTests(unittest.TestCase):
             totals={row["day"]:row["amount"] for row in conn.execute("SELECT date(paid_at) day,sum(amount) amount FROM payment_movements WHERE practice_id=? GROUP BY date(paid_at)",(pid,))}
         self.assertEqual(totals,{"2026-07-10":100.0,"2026-07-15":230.0})
 
-        rendered=[]; self.handler.send_html=lambda content: rendered.append(content)
-        self.handler.path="/bilanci?dal=2026-07-15&al=2026-07-15&voce=totale_d"
-        self.handler.balances_v2(admin)
-        self.assertIn("PP-RAFFAELE",rendered[-1])
-        self.assertIn("PP-DATA-SALDO",rendered[-1])
-        self.assertIn("230,00",rendered[-1])
-        self.assertNotIn("100,00</b>",rendered[-1])
-        self.handler.path="/bilanci?dal=2026-07-10&al=2026-07-10&voce=totale_d"
-        self.handler.balances_v2(admin)
-        self.assertIn("PP-RAFFAELE",rendered[-1])
-        self.assertNotIn("PP-DATA-SALDO",rendered[-1])
-        self.assertIn("100,00",rendered[-1])
-        self.assertNotIn("230,00</b>",rendered[-1])
-
-    def test_balances_only_include_individual_payments_in_selected_period(self):
-        today="2026-07-15"; old_day="2026-07-10"; stamp=f"{today}T10:00:00"
-        with app.db() as conn:
-            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
-            first=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,
-                                 created_by,price_cremation,price_night,total_service,deposit,payment_status)
-                                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-                               ("CR-000018","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"380","120","420","120","Acconto")).lastrowid
-            second=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,
-                                  created_by,price_cremation,total_service,deposit,payment_status)
-                                  VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-                                ("CR-000019","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"360","420","90","Acconto")).lastrowid
-            self.handler.add_payment_movement(conn,first,"acconto_ordinario","ordinario",40,admin["id"],"Prima parte",f"{old_day}T09:00:00")
-            self.handler.add_payment_movement(conn,first,"acconto_ordinario","ordinario",80,admin["id"],"Seconda parte",stamp)
-            self.handler.add_payment_movement(conn,second,"acconto_ordinario","ordinario",90,admin["id"],"Acconto",stamp)
-
-        rendered=[]; self.handler.send_html=lambda content: rendered.append(content)
-        self.handler.path=f"/bilanci?dal={today}&al={today}"
-        self.handler.balances_v2(admin)
-        self.assertIn("CR-000018",rendered[-1])
-        self.assertIn("CR-000019",rendered[-1])
-        self.assertIn(app.money_it(170),rendered[-1])
-        self.assertNotIn(app.money_it(210),rendered[-1])
-        self.assertNotIn(app.money_it(40),rendered[-1])
-        self.assertEqual(rendered[-1].count("<b>CR-000018</b>"),1)
-
-        self.handler.path=f"/bilanci?dal={old_day}&al={old_day}"
-        self.handler.balances_v2(admin)
-        self.assertIn("CR-000018",rendered[-1])
-        self.assertNotIn("CR-000019",rendered[-1])
-        self.assertIn(app.money_it(40),rendered[-1])
-        self.assertNotIn(app.money_it(80),rendered[-1])
-        self.assertNotIn(app.money_it(90),rendered[-1])
 
     def test_practice_changes_never_reconcile_or_rewrite_payment_movements(self):
         with app.db() as conn:
@@ -2671,41 +2403,9 @@ class PetParadiseTests(unittest.TestCase):
             self.assertEqual(len(movements),2)
             self.assertEqual((movements[0]["payment_type"],movements[0]["paid_at"],float(movements[0]["amount"])),("acconto","2026-06-01",200.0))
             self.assertEqual((movements[1]["payment_type"],movements[1]["paid_at"],float(movements[1]["amount"])),("saldo","2026-06-20",300.0))
-        self.handler.path=f"/bilanci?dal=2026-06-01&al=2026-06-01"
-        rendered=[];self.handler.send_html=lambda content:rendered.append(content)
-        self.handler.balances_v2(admin)
-        self.assertIn("€ 200,00",rendered[-1])
-        self.handler.path=f"/bilanci?dal=2026-06-20&al=2026-06-20"
-        self.handler.balances_v2(admin)
-        self.assertIn("€ 300,00",rendered[-1])
 
-    def test_balance_movement_filters_use_the_same_rows_and_totals(self):
-        day="2026-07-21"; stamp=f"{day}T10:00:00"
-        with app.db() as conn:
-            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
-            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
-                                owner_first_name,service_type,payment_status,price_cremation,total_service)
-                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-                             ("CR-LEDGER","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Mario","Cremazione singola","Acconto","200","200")).lastrowid
-            self.handler.add_payment_movement(conn,pid,"acconto","W",80,admin["id"],"Acconto",stamp,payment_method="Pos",movement_category="W")
-            self.handler.add_payment_movement(conn,pid,"saldo","W",20,admin["id"],"Saldo",stamp,payment_method="Pos",movement_category="W")
-            self.handler.add_payment_movement(conn,pid,"acconto","D",30,admin["id"],"Acconto D",stamp,payment_method="Contanti",movement_category="D")
-        rendered=[];self.handler.send_html=lambda content:rendered.append(content)
-        def total(page):return re.search(r'<div class="balance-total"><small>[^<]*</small><strong>([^<]*)</strong>',page).group(1)
-        for query,expected,expected_rows,card_values in (
-            ("categoria=Entrate+W",app.money_it(100),2,{"Entrate W":100,"Entrate D":0}),
-            ("categoria=Entrate+D",app.money_it(30),1,{"Entrate W":0,"Entrate D":30}),
-            ("tipo=acconto",app.money_it(110),2,{"Entrate W":80,"Entrate D":30}),
-            ("metodo=Pos",app.money_it(100),2,{"Entrate W":100,"Entrate D":0}),
-        ):
-            self.handler.path=f"/bilanci?dal={day}&al={day}&{query}"
-            self.handler.balances_v2(admin);page=rendered[-1]
-            self.assertEqual(total(page),expected)
-            self.assertEqual(page.count("<b>CR-LEDGER</b>"),expected_rows)
-            for label,value in card_values.items():
-                self.assertIn(f"<small>{label}</small><strong>{app.money_it(value)}</strong>",page)
 
-    def test_new_balance_ledger_classifies_each_cash_movement_once(self):
+    def test_payment_ledger_classifies_each_cash_movement_once(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
@@ -2735,42 +2435,7 @@ class PetParadiseTests(unittest.TestCase):
             self.assertEqual(tuple(rows[2]),(collab_pid,"saldo","Contanti","Collaboratori",150.0,"2026-07-20"))
             conn.execute("UPDATE practices SET notes='Modifica senza pagamento',updated_at=? WHERE id=?",(app.now(),pid))
             self.assertEqual(conn.execute("SELECT count(*) n FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["n"],2)
-        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
-        self.handler.path="/bilanci?dal=2026-07-20&al=2026-07-20"
-        self.handler.balances_v2(admin);page=rendered[-1]
-        self.assertIn('<small>Entrate W</small><strong>€ 200,00</strong>',page)
-        self.assertIn('<small>Entrate D</small><strong>€ 0,00</strong>',page)
-        self.assertIn('<small>Collaboratori</small><strong>€ 150,00</strong>',page)
-        self.assertNotIn("€ 100,00</b>",page)
-        self.handler.path="/bilanci?dal=2026-07-20&al=2026-07-20&categoria=Collaboratori"
-        self.handler.balances_v2(admin);page=rendered[-1]
-        self.assertIn("COL-NEW-LEDGER",page)
-        self.assertNotIn("CR-NEW-LEDGER",page)
-        self.assertIn('<div class="balance-total"><small>Totale Collaboratori</small><strong>€ 150,00</strong>',page)
 
-    def test_balances_hide_duplicate_cash_movements_and_never_exceed_practice_total(self):
-        day="2026-07-22";stamp=f"{day}T10:00:00"
-        with app.db() as conn:
-            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
-            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
-                                animal_name,service_type,payment_status,price_cremation,total_service)
-                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-                             ("CR-000017","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Molly","Cremazione singola","Pagato","180","180")).lastrowid
-            movement=(pid,"acconto","D","Contanti","D",180,day,admin["id"],"Pagamento registrato",stamp)
-            conn.execute("""INSERT INTO payment_movements(practice_id,payment_type,payment_channel,payment_method,movement_category,
-                            amount,paid_at,user_id,notes,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)""",movement)
-            conn.execute("""INSERT INTO payment_movements(practice_id,payment_type,payment_channel,payment_method,movement_category,
-                            amount,paid_at,user_id,notes,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)""",movement)
-            conn.execute("""INSERT INTO payment_movements(practice_id,payment_type,payment_channel,payment_method,movement_category,
-                            amount,paid_at,user_id,notes,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                         (pid,"saldo","D","Contanti","D",180,day,admin["id"],"Pagamento registrato",stamp))
-        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
-        self.handler.path=f"/bilanci?dal={day}&al={day}&categoria=Entrate+D"
-        self.handler.balances_v2(admin);page=rendered[-1]
-        self.assertEqual(page.count("<b>CR-000017</b>"),1)
-        self.assertEqual(page.count(">Molly<"),1)
-        self.assertIn('<div class="balance-total"><small>Totale Entrate D</small><strong>€ 180,00</strong>',page)
-        self.assertNotIn("€ 360,00",page)
 
     def test_payment_dialog_is_identical_in_list_and_inside_practice(self):
         with app.db() as conn:
@@ -2788,12 +2453,12 @@ class PetParadiseTests(unittest.TestCase):
             self.assertIn(token,dialog)
             self.assertIn(token,page)
 
-    def test_balances_filters_acconto_and_saldo_by_their_own_movement_date_not_practice(self):
+    def test_acconto_and_saldo_keep_their_own_movement_dates(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
                                 owner_first_name,service_type,payment_status,price_cremation,total_service)
-                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-BILANCI-TEST","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Mario","Cremazione singola","Da saldare","350","350")).lastrowid
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-PAYMENT-DATE","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Mario","Cremazione singola","Da saldare","350","350")).lastrowid
         responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
         self.handler.form=lambda:{"payment_status":"Acconto","payment_method":"Contanti","payment_amount":"100,00","economic_at":"2026-07-19","ajax":"1"}
         self.handler.quick_payment(admin,pid)
@@ -2806,27 +2471,6 @@ class PetParadiseTests(unittest.TestCase):
             self.assertEqual(len(movements),2)
             self.assertEqual((movements[0]["payment_type"],movements[0]["paid_at"],float(movements[0]["amount"])),("acconto","2026-07-19",100.0))
             self.assertEqual((movements[1]["payment_type"],movements[1]["paid_at"],float(movements[1]["amount"])),("saldo","2026-07-24",250.0))
-        rendered=[];self.handler.send_html=lambda content:rendered.append(content)
-        def balance_total(page):
-            return re.search(r'<div class="balance-total"><small>[^<]*</small><strong>([^<]*)</strong>',page).group(1)
-        self.handler.path="/bilanci?dal=2026-07-20&al=2026-07-25"
-        self.handler.balances_v2(admin)
-        page=rendered[-1]
-        self.assertIn("Saldo",page)
-        self.assertNotIn("€ 100,00</b>",page)
-        self.assertEqual(balance_total(page),"€ 250,00")
-        self.handler.path="/bilanci?dal=2026-07-18&al=2026-07-22"
-        self.handler.balances_v2(admin)
-        page=rendered[-1]
-        self.assertIn("Acconto",page)
-        self.assertNotIn("€ 250,00</b>",page)
-        self.assertEqual(balance_total(page),"€ 100,00")
-        self.handler.path="/bilanci?dal=2026-07-18&al=2026-07-25"
-        self.handler.balances_v2(admin)
-        page=rendered[-1]
-        self.assertIn("Acconto",page)
-        self.assertIn("Saldo",page)
-        self.assertEqual(balance_total(page),"€ 350,00")
 
     def test_create_and_edit_practice_require_payment_date_on_transition(self):
         with app.db() as conn:
@@ -2899,10 +2543,8 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('data-dashboard-payment="Da saldare" data-count="3" data-amount="480.00"',page)
         self.assertIn('data-dashboard-payment="Acconto" data-count="2" data-amount="200.00"',page)
         self.assertIn('data-dashboard-payment="Pagato" data-count="1" data-amount="200.00"',page)
-        year_start=today.replace(month=1,day=1)
-        old_in_same_year=datetime.strptime(old_day,"%Y-%m-%d").date()>=year_start
-        expected_year_income=400.0+(100.0 if old_in_same_year else 0.0)
-        self.assertIn("Entrate anno in corso",page);self.assertIn(app.money_it(expected_year_income),page)
+        self.assertNotIn("Entrate anno in corso",page)
+        self.assertNotIn("/bilanci",page)
         self.assertIn("Ultime 10 pratiche per data recupero",page);self.assertIn("Apri archivio",page)
         self.assertNotIn("Attività recenti",page);self.assertNotIn("Centro notifiche",page)
         self.assertEqual(page.count('class="period-selector"'),2);self.assertIn("/notifiche",page)
@@ -2932,25 +2574,32 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn("CR-CURRENT",rendered[-1])
 
     def test_dashboard_layout_is_compact_responsive_and_ios_safe(self):
-        for token in (".dashboard-section-head",".period-selector","min-height:44px","var(--safe-bottom)",".dashboard-chart-only"):
+        for token in (".dashboard-section-head",".period-selector","min-height:44px","var(--safe-bottom)"):
             self.assertIn(token,app.CSS)
+        self.assertNotIn(".dashboard-chart-only",app.CSS)
         dashboard_constants="".join(value for value in app.App.dashboard.__code__.co_consts if isinstance(value,str))
         self.assertIn("localStorage.getItem('ppm_'+key)",dashboard_constants)
 
-    def test_dashboard_balances_and_payment_pages_render(self):
+    def test_balances_section_is_removed_and_payment_pages_still_render(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            tables={row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        self.assertNotIn("expenses",tables)
+        self.assertNotIn("incomes",tables)
+        self.assertFalse(hasattr(app.App,"balances_v2"))
+        self.assertNotIn(("/bilanci","chart","Report"),app.SIDEBAR_LINKS)
         rendered=[]; self.handler.send_html=lambda content,*args: rendered.append(content)
         self.handler.dashboard(admin)
-        self.assertIn("Entrate anno in corso",rendered[-1])
+        self.assertNotIn("Entrate anno in corso",rendered[-1])
+        self.assertNotIn("/bilanci",rendered[-1])
         self.assertIn("Totale W",rendered[-1])
         self.assertNotIn("Totale calcolato",rendered[-1])
+        errors=[]
+        self.handler.require_user=lambda:admin
+        self.handler.send_error=lambda code,*args:errors.append(code)
         self.handler.path="/bilanci"
-        self.handler.balances_v2(admin)
-        self.assertIn("<th>Data</th><th>Categoria</th>",rendered[-1])
-        self.assertIn("Entrate W",rendered[-1])
-        self.assertIn("Collaboratori",rendered[-1])
-        self.assertIn("Uscite D",rendered[-1])
+        self.handler.do_GET()
+        self.assertEqual(errors,[404])
         self.handler.payment_overview(admin,"da-saldare")
         self.assertIn("Da saldare D",rendered[-1])
         self.assertIn("Totale W e Totale D",rendered[-1])
@@ -3157,7 +2806,7 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path = "/"
         self.handler.dashboard(alessio)
         default_page = rendered[-1]
-        for section_text in ("Pratiche / Ritiri", "Pagamenti", "Entrate anno in corso", "Ultime 10 pratiche per data recupero"):
+        for section_text in ("Pratiche / Ritiri", "Pagamenti", "Ultime 10 pratiche per data recupero"):
             self.assertIn(section_text, default_page)
         self.assertNotIn("light-theme", default_page.split("<body", 1)[1].split(">", 1)[0])
 
@@ -3190,7 +2839,7 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path = "/"
         self.handler.dashboard(alessio)
         alessio_page = rendered[-1]
-        for section_text in ("Pratiche / Ritiri", "Pagamenti", "Entrate anno in corso", "Ultime 10 pratiche per data recupero"):
+        for section_text in ("Pratiche / Ritiri", "Pagamenti", "Ultime 10 pratiche per data recupero"):
             self.assertIn(section_text, alessio_page)
         self.assertNotIn("light-theme", alessio_page.split("<body", 1)[1].split(">", 1)[0])
 
