@@ -424,7 +424,7 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertNotIn('<div class="calendar-operator-legend">', page)
         # Clicking anywhere on the day column -- today's cell included -- opens the
         # Day view for that date, not an individual event's detail page.
-        self.assertIn(f'<a class="calendar-week-v2-day is-today" href="/calendario?vista=giorno&data={today.isoformat()}">', page)
+        self.assertIn(f'<a class="calendar-week-v2-day is-today" href="/calendario?vista=giorno&data={today.isoformat()}&da=settimana">', page)
         self.assertNotIn('<a class="calendar-week-v2-event', page)
 
     def test_month_view_shows_pill_overflow_link_and_today_highlight(self):
@@ -446,7 +446,7 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertNotIn('<section class="calendar-legend-section">', page)
         # Clicking anywhere on the day cell -- pills included -- opens the Day view
         # for that date, not an individual event's detail page.
-        self.assertIn(f'href="/calendario?vista=giorno&data={today.isoformat()}"', page)
+        self.assertIn(f'href="/calendario?vista=giorno&data={today.isoformat()}&da=mese"', page)
         self.assertNotIn('<a class="calendar-month-v2-pill', page)
 
     def test_day_view_lists_events_in_chronological_order_without_grid_or_lanes(self):
@@ -695,6 +695,47 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("Apri pratica", rendered[-1])
         self.assertIn("PP-LINK-04", rendered[-1])
 
+    def test_event_detail_merges_note_into_dettagli_and_removes_separate_tab(self):
+        event_id = self.save(self.event_form("Appuntamento", title="APPUNTAMENTO NOTE", notes="Richiamare il cliente prima delle 18"))
+        rendered = []
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(self.admin, event_id)
+        page = rendered[-1]
+        # The note text is now shown directly on the Dettagli tab (the default view).
+        self.assertIn("Richiamare il cliente prima delle 18", page)
+        # There is no more a standalone "Note" tab link.
+        self.assertNotIn(f'href="/calendario/{event_id}?tab=note"', page)
+        self.assertEqual(page.count('<h2>Note</h2>'), 1)
+
+        # Fetching the old tab=note URL falls back to the (now merged) Dettagli tab
+        # rather than a blank/broken panel.
+        self.handler.path = f"/calendario/{event_id}?tab=note"
+        self.handler.calendar_event_detail(self.admin, event_id)
+        self.assertIn("Richiamare il cliente prima delle 18", rendered[-1])
+
+    def test_event_detail_datetime_field_renamed_and_collapses_same_day_range(self):
+        same_day_id = self.save(self.event_form("Appuntamento", title="STESSO GIORNO",
+                                                 start_date="2026-07-22", start_time="14:00",
+                                                 end_date="2026-07-22", end_time="14:30"))
+        multi_day_id = self.save(self.event_form("Appuntamento", title="MULTI GIORNO",
+                                                  start_date="2026-07-22", start_time="11:00",
+                                                  end_date="2026-07-23", end_time="18:00"))
+        rendered = []
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.path = f"/calendario/{same_day_id}"
+        self.handler.calendar_event_detail(self.admin, same_day_id)
+        page = rendered[-1]
+        self.assertIn("<small>Data e ora</small>", page)
+        self.assertNotIn("<small>Intervallo</small>", page)
+        # Only one date shown (not repeated), followed by the time range.
+        self.assertIn("<b>22/07/2026 14:00 → 14:30</b>", page)
+
+        self.handler.path = f"/calendario/{multi_day_id}"
+        self.handler.calendar_event_detail(self.admin, multi_day_id)
+        page = rendered[-1]
+        self.assertIn("<b>22/07/2026 11:00 → 23/07/2026 18:00</b>", page)
+
     def test_delivery_clinic_hidden_for_riconsegna_in_sede_but_shown_for_riconsegna(self):
         rendered = []
         self.handler.path = "/calendario/nuovo"
@@ -785,6 +826,43 @@ class OperationalCalendarTests(unittest.TestCase):
         for value in ("giorno","settimana","mese","mista_settimana","mista_mese","compatto"):
             self.assertIn(f'value="{value}"',html)
         self.assertIn("localStorage.setItem('ppm_calendar_view'",html)
+
+    def test_calendar_page_never_overwrites_saved_view_preference_just_by_viewing(self):
+        # Visiting a specific vista (e.g. opening a single day from Month) must not
+        # silently change the user's saved default -- only the Settings page's own
+        # explicit "Salva preferenza" write should do that.
+        rendered = []
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.path = "/calendario?vista=giorno&data=2026-07-15"
+        self.handler.calendar_page(self.admin)
+        page = rendered[-1]
+        self.assertNotIn("localStorage.setItem('ppm_calendar_view'", page)
+        # The read-and-redirect part must still be present, so a bare /calendario
+        # visit still restores whatever preference was actually saved.
+        self.assertIn("localStorage.getItem('ppm_calendar_view')", page)
+        self.assertIn("url.searchParams.set('vista',saved);location.replace(url);", page)
+
+    def test_day_view_shows_back_button_when_opened_from_month_or_week(self):
+        rendered = []
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        # No back button when Day view is reached without a "da" origin marker.
+        self.handler.path = "/calendario?vista=giorno&data=2026-07-15"
+        self.handler.calendar_page(self.admin)
+        self.assertNotIn('class="btn ghost calendar-back-btn"', rendered[-1])
+        # Opened from Month.
+        self.handler.path = "/calendario?vista=giorno&data=2026-07-15&da=mese"
+        self.handler.calendar_page(self.admin)
+        page = rendered[-1]
+        self.assertIn('<a class="btn ghost calendar-back-btn" href="/calendario?vista=mese&data=2026-07-15">← Torna a Mese</a>', page)
+        # Opened from Week.
+        self.handler.path = "/calendario?vista=giorno&data=2026-07-15&da=settimana"
+        self.handler.calendar_page(self.admin)
+        page = rendered[-1]
+        self.assertIn('<a class="btn ghost calendar-back-btn" href="/calendario?vista=settimana&data=2026-07-15">← Torna a Settimana</a>', page)
+        # The back button only makes sense on Day view -- not on Week/Month themselves.
+        self.handler.path = "/calendario?vista=settimana&data=2026-07-15&da=mese"
+        self.handler.calendar_page(self.admin)
+        self.assertNotIn('class="btn ghost calendar-back-btn"', rendered[-1])
 
     def test_comments_history_status_soft_delete_and_restore(self):
         event_id = self.save(self.event_form("Ritiro"))
@@ -1083,14 +1161,23 @@ class OperationalCalendarTests(unittest.TestCase):
     def test_week_and_month_empty_day_cells_still_link_to_day_view(self):
         rendered = []
         self.handler.send_html = lambda html, status=200: rendered.append(html)
+        # Week: a single click on any day column -- empty or not -- opens Day view directly.
         self.handler.path = "/calendario?vista=settimana&data=2026-07-15"
         self.handler.calendar_page(self.admin)
         week_page = rendered[-1]
-        self.assertIn('<a class="calendar-week-v2-day" href="/calendario?vista=giorno&data=2026-07-13">', week_page)
+        self.assertIn('<a class="calendar-week-v2-day" href="/calendario?vista=giorno&data=2026-07-13&da=settimana">', week_page)
+        # Month: the first click on a not-yet-selected day only selects it (stays on
+        # month view, updates data=), even if the day is empty.
         self.handler.path = "/calendario?vista=mese&data=2026-07-15"
         self.handler.calendar_page(self.admin)
         month_page = rendered[-1]
-        self.assertIn('<a class="calendar-month-v2-cell" href="/calendario?vista=giorno&data=2026-07-02">', month_page)
+        self.assertIn('<a class="calendar-month-v2-cell" href="/calendario?vista=mese&data=2026-07-02">', month_page)
+        self.assertNotIn('<a class="calendar-month-v2-cell" href="/calendario?vista=giorno&data=2026-07-02', month_page)
+        # A second click -- now that 2026-07-02 is the selected day -- opens Day view.
+        self.handler.path = "/calendario?vista=mese&data=2026-07-02"
+        self.handler.calendar_page(self.admin)
+        month_page = rendered[-1]
+        self.assertIn('<a class="calendar-month-v2-cell selected" href="/calendario?vista=giorno&data=2026-07-02&da=mese">', month_page)
 
 
 if __name__ == "__main__":
