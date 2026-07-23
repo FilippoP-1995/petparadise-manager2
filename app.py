@@ -4616,6 +4616,8 @@ class App(BaseHTTPRequestHandler):
         categories=[
             ("acconti_w","Acconti W",()),("saldi_w","Saldi W",()),("totale_calcolato","Entrate W",()),
             ("acconti_d","Acconti D",()),("saldi_d","Saldi D",()),("totale_d","Entrate D",()),
+            ("altre_entrate_w","Altre entrate W",()),("altre_entrate_d","Altre entrate D",()),
+            ("uscite_w","Uscite W",()),("uscite_d","Uscite D",()),
         ]
         category_map={key:label for key,label,_ in categories}; category_fields={key:fields for key,_,fields in categories}
         selected=(q.get("voce") or [""])[0].strip(); selected=selected if selected in category_map else ""
@@ -4662,6 +4664,10 @@ class App(BaseHTTPRequestHandler):
         component_rows=[item["row"] for item in practice_movements.values() if item["row"] is not None and item["net"]>0.004]
 
         breakdown={key:sum(movement_amount(row,key) for row in movements) for key,_,_ in categories}
+        breakdown["altre_entrate_w"]=sum(money_value(row["amount"]) for row in incomes if row["channel"]=="W")
+        breakdown["altre_entrate_d"]=sum(money_value(row["amount"]) for row in incomes if row["channel"]=="D")
+        breakdown["uscite_w"]=sum(money_value(row["amount"]) for row in expenses if row["channel"]=="W")
+        breakdown["uscite_d"]=sum(money_value(row["amount"]) for row in expenses if row["channel"]=="D")
         gross_w=breakdown["totale_calcolato"]; gross_d=breakdown["totale_d"]
         expense_w=sum(money_value(e["amount"]) for e in expenses if e["channel"]=="W")
         expense_d=sum(money_value(e["amount"]) for e in expenses if e["channel"]=="D")
@@ -4669,7 +4675,7 @@ class App(BaseHTTPRequestHandler):
         income_d=sum(money_value(i["amount"]) for i in incomes if i["channel"]=="D")
         net_w=gross_w-expense_w+income_w; net_d=gross_d-expense_d+income_d
         gross_all=sum(money_value(row["amount"]) for row in movements)
-        shown_total=breakdown[selected] if selected else gross_all
+        shown_total=breakdown[selected] if selected else gross_all+income_w+income_d-expense_w-expense_d
         period_params=f'dal={quote(date_from)}&al={quote(date_to)}'
         def render_balance_card(key,label):
             active="active" if selected==key else ""
@@ -4677,58 +4683,59 @@ class App(BaseHTTPRequestHandler):
             return f'<a class="balance-card {active}" href="{href}"><small>{label}</small><strong>{money_it(breakdown[key])}</strong></a>'
         def linked_card(label,value,dettaglio_key):
             return f'<a class="balance-card" href="/bilanci?{period_params}&dettaglio={dettaglio_key}"><small>{label}</small><strong>{money_it(value)}</strong></a>'
-        card_parts=[]
-        for key,label,_ in categories:
-            card_parts.append(render_balance_card(key,label))
-            if key=="totale_calcolato":
-                card_parts.append(linked_card("Altre entrate W",income_w,"entrate_w"))
-                card_parts.append(linked_card("Uscite W",expense_w,"uscite_w"))
-                card_parts.append(linked_card("Totale W",net_w,"totale_w"))
-            elif key=="totale_d":
-                card_parts.append(linked_card("Altre entrate D",income_d,"entrate_d"))
-                card_parts.append(linked_card("Uscite D",expense_d,"uscite_d"))
-                card_parts.append(linked_card("Totale D",net_d,"totale_d"))
+        card_parts=[render_balance_card(key,label) for key,label,_ in categories]
         cards=''.join(card_parts)
         type_labels={"acconto_ordinario":"Acconto W","saldo_ordinario":"Saldo W","acconto_d":"Acconto D","saldo_d":"Saldo D","rettifica":"Rettifica"}
         table_rows=[]; chart_by_day={}
-        component_selected=bool(selected and category_fields.get(selected))
-        if component_selected:
-            source=component_rows
-        else:
-            source=movements
-        collaborator_ids={int(row["collaborator_id"]) for row in source if "collaborator_id" in row.keys() and row["collaborator_id"]}
+        payment_keys={"acconti_w","saldi_w","totale_calcolato","acconti_d","saldi_d","totale_d"}
+        source=[]
+        if not selected or selected in payment_keys:
+            source.extend(("payment",row) for row in movements if not selected or abs(movement_amount(row,selected))>=0.005)
+        if not selected or selected=="altre_entrate_w":
+            source.extend(("income",row) for row in incomes if row["channel"]=="W")
+        if not selected or selected=="altre_entrate_d":
+            source.extend(("income",row) for row in incomes if row["channel"]=="D")
+        if not selected or selected=="uscite_w":
+            source.extend(("expense",row) for row in expenses if row["channel"]=="W")
+        if not selected or selected=="uscite_d":
+            source.extend(("expense",row) for row in expenses if row["channel"]=="D")
+        source.sort(key=lambda item:((item[1]["paid_at"] if item[0]=="payment" else item[1]["income_date"] if item[0]=="income" else item[1]["expense_date"]) or "",item[1]["id"]),reverse=True)
+        collaborator_ids={int(row["collaborator_id"]) for kind,row in source if kind=="payment" and "collaborator_id" in row.keys() and row["collaborator_id"]}
         collaborator_codes={}
         if collaborator_ids:
             marks=','.join('?' for _ in collaborator_ids)
             with db() as c:collaborator_codes={row["id"]:(row["code"] or "") for row in c.execute(f"SELECT id,code FROM collaborators WHERE id IN ({marks})",tuple(collaborator_ids))}
-        for row in source:
-            if component_selected: amount=component_amount(row,selected)
-            else: amount=movement_amount(row,selected)
-            if abs(amount)<0.005: continue
-            owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip(); url=f'/pratiche/{row["id"]}'
-            economic_date=(row["paid_at"] or "")[:10]
-            movement_label=f'{category_map[selected]} · valore inserito' if component_selected else type_labels.get(row["payment_type"],row["payment_type"] or "Incasso")
-            chart_by_day[economic_date]=chart_by_day.get(economic_date,0.0)+amount
-            channel_label="D" if row["payment_channel"]=="D" else "W"
-            collaborator_code=collaborator_codes.get(int(row["collaborator_id"])) if "collaborator_id" in row.keys() and row["collaborator_id"] else ""
-            sigla_prefix=f"{esc(collaborator_code)} " if collaborator_code else ""
-            if "service_type" in row.keys() and (row["service_type"] or "")=="Cremazione collettiva":
-                animal_cell=esc(row["species"]) if "species" in row.keys() and row["species"] else '<span class="sub">-</span>'
+        for kind,row in source:
+            if kind=="payment":
+                amount=money_value(row["amount"]); economic_date=(row["paid_at"] or "")[:10]
+                owner=esc(((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip()); url=f'/pratiche/{row["id"]}'
+                movement_label=type_labels.get(row["payment_type"],row["payment_type"] or "Incasso")
+                channel_label="D" if row["payment_channel"]=="D" else "W"
+                collaborator_code=collaborator_codes.get(int(row["collaborator_id"])) if "collaborator_id" in row.keys() and row["collaborator_id"] else ""
+                sigla_prefix=f"{esc(collaborator_code)} " if collaborator_code else ""
+                if (row["service_type"] or "")=="Cremazione collettiva": animal_cell=esc(row["species"]) if row["species"] else '<span class="sub">-</span>'
+                else:
+                    animal_meta=esc(row["species"]) + ((' - '+esc(row["estimated_weight"])+' kg') if row["estimated_weight"] else '')
+                    animal_cell=f'{sigla_prefix}{esc(row["animal_name"] or "Da inserire")}<br><small>{animal_meta}</small>'
+                reference=f'<a href="{url}"><b>{esc(row["practice_number"])}</b></a>'
+                action=f'<a class="btn ghost" href="{url}">Apri</a>'
+                row_attrs=f'class="practice-row-link" {row_open_attrs(url,"Apri pratica "+str(row["practice_number"]))}'
             else:
-                animal_meta=esc(row["species"]) + ((' - '+esc(row["estimated_weight"])+' kg') if row["estimated_weight"] else '') if "species" in row.keys() else ''
-                animal_cell=f'{sigla_prefix}{esc(row["animal_name"] or "Da inserire")}<br><small>{animal_meta}</small>'
-            table_rows.append(f'''<tr class="practice-row-link" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}><td>{animal_cell}</td><td>{esc(date_it(economic_date))}</td><td>{esc(movement_label)}</td><td><a href="{url}"><b>{esc(row["practice_number"])}</b></a></td><td>{esc(owner)}</td><td><b>{money_it(amount)}</b></td><td>{esc(channel_label)}</td><td><a class="btn ghost" href="{url}">Apri</a></td></tr>''')
+                amount=money_value(row["amount"]) * (-1 if kind=="expense" and not selected else 1)
+                economic_date=(row["expense_date"] if kind=="expense" else row["income_date"])[:10]
+                movement_label="Uscita" if kind=="expense" else "Altra entrata"
+                channel_label=row["channel"]; animal_cell='<span class="sub">-</span>'; owner=esc(row["category"] or "-")
+                reference=esc(row["description"]); action=""; row_attrs=""
+            chart_by_day[economic_date]=chart_by_day.get(economic_date,0.0)+amount
+            table_rows.append(f'''<tr {row_attrs}><td>{animal_cell}</td><td>{esc(date_it(economic_date))}</td><td>{esc(movement_label)}</td><td>{reference}</td><td>{owner}</td><td><b>{money_it(amount)}</b></td><td>{esc(channel_label)}</td><td>{action}</td></tr>''')
         start_date=datetime.strptime(date_from,"%Y-%m-%d").date(); end_date=datetime.strptime(date_to,"%Y-%m-%d").date(); chart_days=[]; cursor=start_date
         while cursor<=end_date: chart_days.append(cursor); cursor+=timedelta(days=1)
         chart=income_chart([chart_by_day.get(day.isoformat(),0.0) for day in chart_days],[day.strftime("%d/%m") for day in chart_days])
         table_body=''.join(table_rows) or '<tr><td colspan="8" class="sub">Nessun importo nel periodo selezionato.</td></tr>'
-        options='<option value="">Tutti gli incassi</option>'+''.join(f'<option value="{key}" {"selected" if selected==key else ""}>{label}</option>' for key,label,_ in categories)
-        if component_selected:
-            subtitle="Valori integrali inseriti nelle pratiche con incassi nel periodo"
-        else:
-            subtitle="Incassi effettivi filtrati per data del pagamento"
-        chart_description="Ogni acconto e saldo è conteggiato esclusivamente nella propria data di incasso."
-        amount_heading="Valore inserito" if component_selected else "Importo"
+        options='<option value="">Tutti i movimenti</option>'+''.join(f'<option value="{key}" {"selected" if selected==key else ""}>{label}</option>' for key,label,_ in categories)
+        subtitle="Movimenti effettivi filtrati per data e tipologia"
+        chart_description="Ogni movimento è conteggiato esclusivamente nella propria data effettiva."
+        amount_heading="Importo"
         if not selected and (expense_w+expense_d+income_w+income_d)>0.004:
             secondary_parts=[f"Entrate lorde: {money_it(gross_all)}"]
             if (income_w+income_d)>0.004:secondary_parts.append(f"Altre entrate: {money_it(income_w+income_d)}")
@@ -4785,10 +4792,7 @@ class App(BaseHTTPRequestHandler):
 </div></section>'''
         totale_w_section=totale_section("W",gross_w,expense_w,income_w,net_w,"totale_calcolato","w")
         totale_d_section=totale_section("D",gross_d,expense_d,income_d,net_d,"totale_d","d")
-        extra_cards_html=(
-            f'<a class="balance-card" href="/bilanci?{period_params}&dettaglio=uscite"><small>Uscite</small><strong>{money_it(expense_w+expense_d)}</strong></a>'
-            f'<a class="balance-card" href="/bilanci?{period_params}&dettaglio=collaboratori"><small>Collaboratori</small><strong>{money_it(collab_totals["Da fatturare"])}</strong></a>'
-        )
+        extra_cards_html=f'<a class="balance-card" href="/bilanci?{period_params}&dettaglio=collaboratori"><small>Collaboratori</small><strong>{money_it(collab_totals["Da fatturare"])}</strong></a>'
         detail=(q.get("dettaglio") or [""])[0].strip()
         detail_map={
             "uscite":("Uscite del periodo",expenses_section),
@@ -4805,7 +4809,7 @@ class App(BaseHTTPRequestHandler):
             detail_body=f'''<main class="wrap balances-wrap"><div class="titlebar"><div><h1>{detail_title}</h1><p class="sub">dal {esc(date_it(date_from))} al {esc(date_it(date_to))}</p></div><a class="btn ghost" href="/bilanci?{period_params}">← Torna a Bilanci</a></div>{detail_section}</main>'''
             self.send_html(layout(detail_title,detail_body,user))
             return
-        body=f'''<main class="wrap balances-wrap"><div class="titlebar"><div><h1>Bilanci</h1><p class="sub">{subtitle} dal {esc(date_it(date_from))} al {esc(date_it(date_to))}</p></div><div class="actions"><a class="btn" href="{new_expense_url}">+ Registra uscita</a><a class="btn" href="{new_income_url}">+ Registra entrata</a></div><div class="balance-total"><small>{esc(category_map.get(selected,"Entrate totali"))}</small><strong>{money_it(shown_total)}</strong>{total_secondary}</div></div><section class="balance-grid">{cards}{extra_cards_html}</section><section class="dashboard-panel balance-chart"><header><div><h2>Andamento nel periodo filtrato</h2><p>{chart_description}</p></div></header>{chart}</section><section class="tablebox balance-table"><div class="section-collapse-head"><h2>Elenco incassi</h2><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><table class="balance-list-table"><thead><tr><th>Animale</th><th>Data incasso</th><th>Movimento</th><th>Pratica</th><th>Cliente</th><th>{amount_heading}</th><th>Circuito</th><th></th></tr></thead><tbody>{table_body}</tbody></table></div></section><section class="search-after-results"><h2>Filtra bilanci</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field full"><label>Voce</label><select name="voce">{options}</select></div></div><button class="btn" style="margin-top:12px">Applica filtri</button><a class="btn ghost" style="margin-top:12px" href="/bilanci">Ultimi 7 giorni</a></form></section></main>'''
+        body=f'''<main class="wrap balances-wrap"><div class="titlebar"><div><h1>Bilanci</h1><p class="sub">{subtitle} dal {esc(date_it(date_from))} al {esc(date_it(date_to))}</p></div><div class="actions"><a class="btn" href="{new_expense_url}">+ Registra uscita</a><a class="btn" href="{new_income_url}">+ Registra entrata</a></div><div class="balance-total"><small>{esc(category_map.get(selected,"Saldo movimenti"))}</small><strong>{money_it(shown_total)}</strong>{total_secondary}</div></div><section class="balance-grid">{cards}{extra_cards_html}</section><section class="dashboard-panel balance-chart"><header><div><h2>Andamento nel periodo filtrato</h2><p>{chart_description}</p></div></header>{chart}</section><section class="tablebox balance-table"><div class="section-collapse-head"><h2>Elenco movimenti</h2><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><table class="balance-list-table"><thead><tr><th>Animale</th><th>Data movimento</th><th>Movimento</th><th>Pratica / descrizione</th><th>Cliente / categoria</th><th>{amount_heading}</th><th>Circuito</th><th></th></tr></thead><tbody>{table_body}</tbody></table></div></section><section class="search-after-results"><h2>Filtra bilanci</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}" onchange="this.form.submit()"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}" onchange="this.form.submit()"></div><div class="field full"><label>Tipo di movimento</label><select name="voce" onchange="this.form.submit()">{options}</select></div></div><button class="btn" style="margin-top:12px">Applica filtri</button><a class="btn ghost" style="margin-top:12px" href="/bilanci">Ultimi 7 giorni</a></form></section></main>'''
         self.send_html(layout("Bilanci",body,user))
 
     def disposal_contact_for(self,row):
@@ -5658,7 +5662,7 @@ class App(BaseHTTPRequestHandler):
         return f'''<div class="inline-statuses" onclick="event.stopPropagation()">
         <form method="post" action="/pratiche/{r['id']}/stato-rapido" onsubmit="return savePracticeState(this,event)"><input type="hidden" name="return_to" value="{return_to}"><select class="inline-state-select practice-status {status_cls}" name="status" aria-label="Stato pratica" data-saved-value="{esc(r['status'])}" onchange="savePracticeState(this.form)">{state_options}</select><span class="inline-save-note" aria-live="polite"></span></form>
         <select class="inline-state-select {pay_cls}" aria-label="Stato pagamento" data-payment-popover="{modal_id}" data-saved-value="{esc(payment)}" onchange="openPaymentPopover(this)">{payment_options}</select>
-        <div class="payment-popover" id="{modal_id}" hidden onclick="if(event.target===this)closePaymentPopover(this)"><form class="payment-dialog" method="post" action="/pratiche/{r['id']}/pagamento-rapido"><div class="titlebar"><div><h2>Pagamento · {esc(r['practice_number'])}</h2><p class="sub">Registra i dettagli senza lasciare questa lista.</p></div><button class="btn ghost" type="button" onclick="closePaymentPopover(this)">Chiudi</button></div><input type="hidden" name="return_to" value="{return_to}"><div class="fields"><div class="field"><label>Stato pagamento</label><select name="payment_status" onchange="ppmSyncPaymentDateField(this.closest('.payment-popover'))">{payment_options}</select></div><div class="field"><label>Metodo di pagamento</label><select name="payment_method">{method_options}</select></div><div class="field"><label>Totale incassato €</label><input name="payment_amount" value="{esc(amount_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field" data-payment-date-field hidden><label>DATA DEL PAGAMENTO</label><input type="date" name="economic_at" data-payment-date-input><small class="sub">Indica quando il pagamento è stato ricevuto (non è per forza oggi).</small></div><div class="field"><label>Numero fattura</label><input name="invoice_number" value="{esc(invoice_number)}"></div><div class="field"><label>Totale fattura €</label><input name="invoice_total" value="{esc(invoice_total)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field"><label>Data fattura</label><input type="date" name="invoice_date" value="{esc(invoice_date)}"></div></div><button class="btn" style="margin-top:16px">Salva pagamento</button></form></div></div>'''
+        <div class="payment-popover" id="{modal_id}" hidden onclick="if(event.target===this)closePaymentPopover(this)"><form class="payment-dialog" method="post" action="/pratiche/{r['id']}/pagamento-rapido"><div class="titlebar"><div><h2>Pagamento · {esc(r['practice_number'])}</h2><p class="sub">Registra i dettagli senza lasciare questa lista.</p></div><button class="btn ghost" type="button" onclick="closePaymentPopover(this)">Chiudi</button></div><input type="hidden" name="return_to" value="{return_to}"><div class="fields"><div class="field"><label>Stato pagamento</label><select name="payment_status" onchange="ppmSyncPaymentDateField(this.closest('.payment-popover'))">{payment_options}</select></div><div class="field"><label>Metodo di pagamento</label><select name="payment_method">{method_options}</select></div><div class="field"><label>Importo versato ora €</label><input name="payment_amount" value="{esc(amount_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"><small class="sub">Inserisci solo il movimento ricevuto in questa data, non il totale della pratica.</small></div><div class="field" data-payment-date-field hidden><label>DATA DEL PAGAMENTO</label><input type="date" name="economic_at" data-payment-date-input><small class="sub">Indica quando il pagamento è stato ricevuto (non è per forza oggi).</small></div><div class="field"><label>Numero fattura</label><input name="invoice_number" value="{esc(invoice_number)}"></div><div class="field"><label>Totale fattura €</label><input name="invoice_total" value="{esc(invoice_total)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field"><label>Data fattura</label><input type="date" name="invoice_date" value="{esc(invoice_date)}"></div></div><button class="btn" style="margin-top:16px">Salva pagamento</button></form></div></div>'''
 
     def practice_rows(self,rows,show_financials=False):
         rows=list(rows)
@@ -7549,6 +7553,16 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             deposit=amount if payment=="Acconto" and amount else row["deposit"]
             due=effective_total(row)
             if payment!="Pagato" and due and money_value(deposit)>=due: payment="Pagato"
+            if payment in ("Acconto","Pagato") and payment!=old:
+                already_received=money_value(c.execute("SELECT COALESCE(SUM(amount),0) amount FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["amount"])
+                actual_now=money_value(amount)
+                remaining_due=max(0.0,due-already_received)
+                if actual_now<=0:
+                    error="Indica l'importo effettivamente versato in questo movimento."
+                    return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
+                if payment=="Pagato" and abs(actual_now-remaining_due)>=0.005:
+                    error=f"Per impostare Pagato, registra esclusivamente il saldo effettivo di {money_it(remaining_due)}."
+                    return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
             if payment_status_needs_date(old,payment,economic_at):
                 error="Indica la data in cui il pagamento è stato ricevuto per impostare lo stato Acconto o Pagato."
                 return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
