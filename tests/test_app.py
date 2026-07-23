@@ -998,10 +998,12 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("PP-PARZIALE", rendered[-1])
         self.assertIn("€ 430,00", rendered[-1])
         self.assertIn('/pratiche/', rendered[-1])
-        self.handler.path = f"/bilanci?dal={today}&al={today}&voce=da_entrare_d"
+        self.handler.path = f"/bilanci?dal={today}&al={today}&voce=acconti_d"
         self.handler.balances_v2(admin)
         self.assertIn("PP-PARZIALE", rendered[-1])
-        self.assertIn("€ 230,00", rendered[-1])
+        self.assertNotIn("PP-WHISKY", rendered[-1])
+        self.assertIn("€ 100,00", rendered[-1])
+        self.assertNotIn("€ 230,00", rendered[-1])
         page = rendered[-1]
         self.assertIn('class="collapse-toggle"', page)
         self.assertIn('class="collapsible-body"', page)
@@ -2067,8 +2069,8 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("100,00",rendered[-1])
         self.assertNotIn("230,00</b>",rendered[-1])
 
-    def test_balance_components_show_entered_values_without_proration(self):
-        today=app.datetime.now().date().isoformat(); stamp=f"{today}T10:00:00"
+    def test_balances_only_include_individual_payments_in_selected_period(self):
+        today="2026-07-15"; old_day="2026-07-10"; stamp=f"{today}T10:00:00"
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
             first=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,
@@ -2079,31 +2081,27 @@ class PetParadiseTests(unittest.TestCase):
                                   created_by,price_cremation,total_service,deposit,payment_status)
                                   VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
                                 ("CR-000019","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"360","420","90","Acconto")).lastrowid
-            self.handler.add_payment_movement(conn,first,"acconto_ordinario","ordinario",40,admin["id"],"Prima parte",stamp)
+            self.handler.add_payment_movement(conn,first,"acconto_ordinario","ordinario",40,admin["id"],"Prima parte",f"{old_day}T09:00:00")
             self.handler.add_payment_movement(conn,first,"acconto_ordinario","ordinario",80,admin["id"],"Seconda parte",stamp)
             self.handler.add_payment_movement(conn,second,"acconto_ordinario","ordinario",90,admin["id"],"Acconto",stamp)
 
         rendered=[]; self.handler.send_html=lambda content: rendered.append(content)
-        self.handler.path=f"/bilanci?dal={today}&al={today}&voce=price_night"
+        self.handler.path=f"/bilanci?dal={today}&al={today}"
         self.handler.balances_v2(admin)
         self.assertIn("CR-000018",rendered[-1])
-        self.assertIn(app.money_it(120),rendered[-1])
-        self.assertNotIn(app.money_it(34.29),rendered[-1])
+        self.assertIn("CR-000019",rendered[-1])
+        self.assertIn(app.money_it(170),rendered[-1])
+        self.assertNotIn(app.money_it(210),rendered[-1])
+        self.assertNotIn(app.money_it(40),rendered[-1])
         self.assertEqual(rendered[-1].count("CR-000018"),2)  # once in the row's aria-label, once in its link text - still a single row
 
-        self.handler.path=f"/bilanci?dal={today}&al={today}&voce=price_cremation"
+        self.handler.path=f"/bilanci?dal={old_day}&al={old_day}"
         self.handler.balances_v2(admin)
-        self.assertIn(app.money_it(740),rendered[-1])
-        self.assertIn(app.money_it(380),rendered[-1])
-        self.assertIn(app.money_it(360),rendered[-1])
-        self.assertNotIn(app.money_it(108.62),rendered[-1])
-        self.assertNotIn(app.money_it(77.14),rendered[-1])
-
-        self.handler.path=f"/bilanci?dal={today}&al={today}&voce=totale_calcolato"
-        self.handler.balances_v2(admin)
-        self.assertIn("Entrate W",rendered[-1])
-        self.assertIn("Acconto W",rendered[-1])
-        self.assertIn("Totale W",rendered[-1])
+        self.assertIn("CR-000018",rendered[-1])
+        self.assertNotIn("CR-000019",rendered[-1])
+        self.assertIn(app.money_it(40),rendered[-1])
+        self.assertNotIn(app.money_it(80),rendered[-1])
+        self.assertNotIn(app.money_it(90),rendered[-1])
 
     def test_payment_reconciliation_caps_due_and_removes_paid_income(self):
         with app.db() as conn:
@@ -2875,9 +2873,10 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn("Totale calcolato",rendered[-1])
         self.handler.path="/bilanci"
         self.handler.balances_v2(admin)
-        self.assertIn("Data economica",rendered[-1])
+        self.assertIn("Data incasso",rendered[-1])
         self.assertIn("Entrate W",rendered[-1])
-        self.assertIn("Da entrare W",rendered[-1])
+        self.assertIn("Acconti W",rendered[-1])
+        self.assertIn("Saldi W",rendered[-1])
         self.handler.payment_overview(admin,"da-saldare")
         self.assertIn("Da saldare D",rendered[-1])
         self.assertIn("Totale W e Totale D",rendered[-1])
