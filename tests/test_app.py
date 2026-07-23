@@ -1,6 +1,7 @@
 import os
 import io
 import json
+import re
 import socket
 import tempfile
 import unittest
@@ -2689,6 +2690,48 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path=f"/bilanci?dal=2026-06-20&al=2026-06-20"
         self.handler.balances_v2(admin)
         self.assertIn("€ 300,00",rendered[-1])
+
+    def test_balances_filters_acconto_and_saldo_by_their_own_movement_date_not_practice(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-BILANCI-TEST","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Mario","Cremazione singola","Da saldare","350","350")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"payment_status":"Acconto","payment_method":"Contanti","payment_amount":"100,00","economic_at":"2026-07-19","ajax":"1"}
+        self.handler.quick_payment(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"])
+        self.handler.form=lambda:{"payment_status":"Pagato","payment_method":"Contanti","payment_amount":"350,00","economic_at":"2026-07-24","ajax":"1"}
+        self.handler.quick_payment(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"])
+        with app.db() as conn:
+            movements=conn.execute("SELECT payment_type,paid_at,amount FROM payment_movements WHERE practice_id=? ORDER BY id",(pid,)).fetchall()
+            self.assertEqual(len(movements),2)
+            self.assertEqual((movements[0]["payment_type"],movements[0]["paid_at"],float(movements[0]["amount"])),("acconto_ordinario","2026-07-19",100.0))
+            self.assertEqual((movements[1]["payment_type"],movements[1]["paid_at"],float(movements[1]["amount"])),("saldo_ordinario","2026-07-24",250.0))
+        acconto_row=f'<td>Acconto W</td><td><a href="/pratiche/{pid}"><b>CR-BILANCI-TEST</b></a></td><td>Mario</td><td><b>€ 100,00</b></td>'
+        saldo_row=f'<td>Saldo W</td><td><a href="/pratiche/{pid}"><b>CR-BILANCI-TEST</b></a></td><td>Mario</td><td><b>€ 250,00</b></td>'
+        rendered=[];self.handler.send_html=lambda content:rendered.append(content)
+        def balance_total(page):
+            return re.search(r'<div class="balance-total"><small>[^<]*</small><strong>([^<]*)</strong>',page).group(1)
+        self.handler.path="/bilanci?dal=2026-07-20&al=2026-07-25"
+        self.handler.balances_v2(admin)
+        page=rendered[-1]
+        self.assertIn(saldo_row,page)
+        self.assertNotIn(acconto_row,page)
+        self.assertEqual(balance_total(page),"€ 250,00")
+        self.handler.path="/bilanci?dal=2026-07-18&al=2026-07-22"
+        self.handler.balances_v2(admin)
+        page=rendered[-1]
+        self.assertIn(acconto_row,page)
+        self.assertNotIn(saldo_row,page)
+        self.assertEqual(balance_total(page),"€ 100,00")
+        self.handler.path="/bilanci?dal=2026-07-18&al=2026-07-25"
+        self.handler.balances_v2(admin)
+        page=rendered[-1]
+        self.assertIn(acconto_row,page)
+        self.assertIn(saldo_row,page)
+        self.assertEqual(balance_total(page),"€ 350,00")
 
     def test_create_and_edit_practice_require_payment_date_on_transition(self):
         with app.db() as conn:
