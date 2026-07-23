@@ -2748,6 +2748,30 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn("CR-NEW-LEDGER",page)
         self.assertIn('<div class="balance-total"><small>Totale Collaboratori</small><strong>€ 150,00</strong>',page)
 
+    def test_balances_hide_duplicate_cash_movements_and_never_exceed_practice_total(self):
+        day="2026-07-22";stamp=f"{day}T10:00:00"
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                animal_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                             ("CR-000017","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Molly","Cremazione singola","Pagato","180","180")).lastrowid
+            movement=(pid,"acconto","D","Contanti","D",180,day,admin["id"],"Pagamento registrato",stamp)
+            conn.execute("""INSERT INTO payment_movements(practice_id,payment_type,payment_channel,payment_method,movement_category,
+                            amount,paid_at,user_id,notes,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)""",movement)
+            conn.execute("""INSERT INTO payment_movements(practice_id,payment_type,payment_channel,payment_method,movement_category,
+                            amount,paid_at,user_id,notes,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)""",movement)
+            conn.execute("""INSERT INTO payment_movements(practice_id,payment_type,payment_channel,payment_method,movement_category,
+                            amount,paid_at,user_id,notes,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                         (pid,"saldo","D","Contanti","D",180,day,admin["id"],"Pagamento registrato",stamp))
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path=f"/bilanci?dal={day}&al={day}&categoria=Entrate+D"
+        self.handler.balances_v2(admin);page=rendered[-1]
+        self.assertEqual(page.count("<b>CR-000017</b>"),1)
+        self.assertEqual(page.count(">Molly<"),1)
+        self.assertIn('<div class="balance-total"><small>Totale Entrate D</small><strong>€ 180,00</strong>',page)
+        self.assertNotIn("€ 360,00",page)
+
     def test_payment_dialog_is_identical_in_list_and_inside_practice(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()

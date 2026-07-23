@@ -4640,12 +4640,14 @@ class App(BaseHTTPRequestHandler):
             payment_rows=c.execute("""SELECT m.*,p.practice_number,p.animal_name,p.owner_first_name,p.owner_last_name,
                                              p.owner_company,p.request_origin,p.collaborator_id,p.collaborator_name,
                                              co.name collaborator_display_name
-                                      FROM payment_movements m JOIN practices p ON p.id=m.practice_id
-                                      LEFT JOIN collaborators co ON co.id=p.collaborator_id
-                                      WHERE (p.deleted_at IS NULL OR p.deleted_at='')
-                                        AND m.amount>0 AND m.payment_type!='rettifica'
-                                        AND date(m.paid_at) BETWEEN date(?) AND date(?)
-                                      ORDER BY datetime(m.paid_at) DESC,m.id DESC""",(date_from,date_to)).fetchall()
+                                       FROM payment_movements m JOIN practices p ON p.id=m.practice_id
+                                       LEFT JOIN collaborators co ON co.id=p.collaborator_id
+                                       WHERE (p.deleted_at IS NULL OR p.deleted_at='')
+                                         AND m.amount>0 AND m.payment_type!='rettifica'
+                                       ORDER BY datetime(m.paid_at),m.id""").fetchall()
+            practice_totals={row["id"]:effective_total(row) for row in c.execute(
+                "SELECT * FROM practices WHERE (deleted_at IS NULL OR deleted_at='')"
+            ).fetchall()}
             income_rows=c.execute("""SELECT * FROM incomes
                                      WHERE date(income_date) BETWEEN date(?) AND date(?)
                                      ORDER BY date(income_date) DESC,id DESC""",(date_from,date_to)).fetchall()
@@ -4654,6 +4656,8 @@ class App(BaseHTTPRequestHandler):
                                       ORDER BY date(expense_date) DESC,id DESC""",(date_from,date_to)).fetchall()
             collaborators=c.execute("SELECT id,name FROM collaborators WHERE active=1 ORDER BY name").fetchall()
         entries=[]
+        seen_payments=set()
+        received_by_practice={}
         for row in payment_rows:
             saved_category=(row["movement_category"] or "").strip()
             if saved_category not in ("W","D","Collaboratori"):
@@ -4661,10 +4665,25 @@ class App(BaseHTTPRequestHandler):
             display_category={"W":"Entrate W","D":"Entrate D","Collaboratori":"Collaboratori"}[saved_category]
             owner=" ".join(value for value in (row["owner_first_name"],row["owner_last_name"]) if value).strip() or row["owner_company"] or "-"
             payment_kind="acconto" if (row["payment_type"] or "").startswith("acconto") else "saldo"
+            payment_date=(row["paid_at"] or "")[:10]
+            amount=round(money_value(row["amount"]),2)
+            payment_key=(row["practice_id"],payment_kind,payment_date,row["payment_method"] or "",saved_category,amount)
+            if payment_key in seen_payments:
+                continue
+            seen_payments.add(payment_key)
+            due=round(practice_totals.get(row["practice_id"],0.0),2)
+            already_received=received_by_practice.get(row["practice_id"],0.0)
+            if due>0:
+                amount=min(amount,round(max(0.0,due-already_received),2))
+            if amount<=0:
+                continue
+            received_by_practice[row["practice_id"]]=round(already_received+amount,2)
+            if not (date_from<=payment_date<=date_to):
+                continue
             entries.append({"id":f'p{row["id"]}',"date":(row["paid_at"] or "")[:10],"category":display_category,
                             "type":payment_kind,"label":"Acconto" if payment_kind=="acconto" else "Saldo",
-                            "method":row["payment_method"] or "Non indicato","amount":money_value(row["amount"]),
-                            "signed":money_value(row["amount"]),"practice_id":row["practice_id"],
+                            "method":row["payment_method"] or "Non indicato","amount":amount,
+                            "signed":amount,"practice_id":row["practice_id"],
                             "reference":row["practice_number"] or "-","subject":row["animal_name"] or owner,
                             "collaborator_id":str(row["collaborator_id"] or ""),"collaborator":row["collaborator_display_name"] or row["collaborator_name"] or ""})
         for row in income_rows:
@@ -6993,6 +7012,13 @@ class App(BaseHTTPRequestHandler):
         else:
             category="D" if method=="Contanti" or channel=="D" else "W"
         normalized_channel=category
+        duplicate=c.execute("""SELECT id FROM payment_movements
+                               WHERE practice_id=? AND payment_type=? AND date(paid_at)=date(?)
+                                 AND COALESCE(payment_method,'')=? AND COALESCE(movement_category,'')=?
+                                 AND ABS(amount-?)<0.005
+                               LIMIT 1""",
+                            (practice_id,payment_type,stamp,method,category,amount)).fetchone()
+        if duplicate:return
         c.execute("""INSERT INTO payment_movements(
                        practice_id,payment_type,payment_channel,payment_method,movement_category,
                        amount,paid_at,user_id,notes,created_at
