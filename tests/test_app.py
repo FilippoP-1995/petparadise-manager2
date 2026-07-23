@@ -1067,15 +1067,17 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.balances_v2(admin)
         page = rendered[-1]
         self.assertIn('<small>Entrate W</small><strong>€ 820,00</strong>', page)
-        self.assertIn(f'href="/bilanci?dal={today}&al={today}&voce=uscite_w"', page)
-        self.assertIn('<small>Uscite W</small><strong>€ 50,00</strong>', page)
+        self.assertIn('<a class="balance-card" href="/bilanci?dal={0}&al={0}&dettaglio=uscite_w"><small>Uscite W</small><strong>€ 50,00</strong></a>'.format(today), page)
+        self.assertIn('<a class="balance-card" href="/bilanci?dal={0}&al={0}&dettaglio=totale_w"><small>Totale W</small><strong>€ 770,00</strong></a>'.format(today), page)
         self.assertIn('<small>Entrate D</small><strong>€ 500,00</strong>', page)
-        self.assertIn(f'href="/bilanci?dal={today}&al={today}&voce=uscite_d"', page)
-        self.assertIn('<small>Uscite D</small><strong>€ 120,00</strong>', page)
-        self.assertIn("€ 1.150,00", page)
+        self.assertIn('<a class="balance-card" href="/bilanci?dal={0}&al={0}&dettaglio=uscite_d"><small>Uscite D</small><strong>€ 120,00</strong></a>'.format(today), page)
+        self.assertIn('<a class="balance-card" href="/bilanci?dal={0}&al={0}&dettaglio=totale_d"><small>Totale D</small><strong>€ 380,00</strong></a>'.format(today), page)
+        self.assertIn('<div class="balance-total"><small>Entrate totali</small><strong>€ 1.320,00</strong>', page)
         self.assertIn("Entrate lorde: € 1.320,00 · Uscite: € 170,00", page)
         self.assertIn("+ Registra uscita", page)
-        self.assertIn("Materiale imballaggio", page)
+        self.assertIn('<small>Uscite</small><strong>€ 170,00</strong>', page)
+        self.assertNotIn("Materiale imballaggio", page)
+        self.assertIn(f"dettaglio=uscite", page)
         self.handler.path = f"/bilanci?dal={today}&al={today}&dettaglio=uscite"
         self.handler.balances_v2(admin)
         detail_page = rendered[-1]
@@ -1151,14 +1153,14 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.balances_v2(admin)
         page = rendered[-1]
         self.assertIn('<small>Entrate W</small><strong>€ 820,00</strong>', page)
-        self.assertIn(f'href="/bilanci?dal={today}&al={today}&voce=altre_entrate_w"', page)
-        self.assertIn('<small>Altre entrate W</small><strong>€ 60,00</strong>', page)
+        self.assertIn('<a class="balance-card" href="/bilanci?dal={0}&al={0}&dettaglio=entrate_w"><small>Altre entrate W</small><strong>€ 60,00</strong></a>'.format(today), page)
+        self.assertIn('<small>Totale W</small><strong>€ 880,00</strong>', page)
         self.assertIn("Entrate lorde: € 820,00 · Altre entrate: € 60,00", page)
         self.assertIn("+ Registra entrata", page)
         # The generic combined "Altre entrate" card was removed: an income is already
         # covered by either the W or the D per-channel card, never both.
         self.assertNotIn('<small>Altre entrate</small>', page)
-        self.assertIn("Rimborso assicurazione", page)
+        self.assertNotIn("Rimborso assicurazione", page)
         self.handler.path = f"/bilanci?dal={today}&al={today}&dettaglio=entrate_w"
         self.handler.balances_v2(admin)
         detail_page = rendered[-1]
@@ -1186,6 +1188,7 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.balances_v2(admin)
         page = rendered[-1]
         self.assertIn('<small>Entrate W</small><strong>€ 0,00</strong>', page)
+        self.assertIn('<small>Totale W</small><strong>€ 0,00</strong>', page)
         self.assertNotIn("COL-000001", page)
         self.assertIn("Collaboratori", page)
         self.assertIn('<small>Collaboratori</small><strong>€ 200,00</strong>', page)
@@ -2329,7 +2332,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("<th>Veterinario</th><th>Provenienza</th><th>Sede</th>",rendered)
         self.assertIn("stato-rapido",page)
         self.assertIn("pagamento-rapido",page)
-        self.assertIn("Importo versato ora",page)
+        self.assertIn("Totale incassato",page)
         self.assertIn("Numero fattura",page)
         self.assertIn("practice-list-table td:first-child",app.CSS)
         self.assertIn("width:132px;min-width:132px;max-width:132px",app.CSS)
@@ -2723,22 +2726,21 @@ class PetParadiseTests(unittest.TestCase):
                                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
                              ("CR-LEDGER","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Mario","Cremazione singola","Acconto","200","200")).lastrowid
             self.handler.add_payment_movement(conn,pid,"acconto_ordinario","ordinario",80,admin["id"],"Acconto",stamp)
-            conn.execute("INSERT INTO incomes(income_date,amount,channel,description,category,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                         (day,25,"W","Rimborso","Altro",admin["id"],stamp,admin["id"],stamp))
-            conn.execute("INSERT INTO expenses(expense_date,amount,channel,description,category,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                         (day,15,"W","Materiale","Materiali",admin["id"],stamp,admin["id"],stamp))
+            self.handler.add_payment_movement(conn,pid,"saldo_ordinario","ordinario",20,admin["id"],"Saldo",stamp)
+            self.handler.add_payment_movement(conn,pid,"acconto_d","D",30,admin["id"],"Acconto D",stamp)
         rendered=[];self.handler.send_html=lambda content:rendered.append(content)
         def total(page):return re.search(r'<div class="balance-total"><small>[^<]*</small><strong>([^<]*)</strong>',page).group(1)
-        for key,expected,present,absent in (
-            ("acconti_w",app.money_it(80),"CR-LEDGER",("Rimborso","Materiale")),
-            ("altre_entrate_w",app.money_it(25),"Rimborso",("CR-LEDGER","Materiale")),
-            ("uscite_w",app.money_it(15),"Materiale",("CR-LEDGER","Rimborso")),
+        for key,expected,expected_rows,card_values in (
+            ("acconti_w",app.money_it(80),1,{"Acconti W":80,"Saldi W":0,"Entrate W":80,"Entrate D":0}),
+            ("totale_calcolato",app.money_it(100),2,{"Acconti W":80,"Saldi W":20,"Entrate W":100,"Entrate D":0}),
+            ("totale_d",app.money_it(30),1,{"Acconti W":0,"Entrate W":0,"Acconti D":30,"Entrate D":30}),
         ):
             self.handler.path=f"/bilanci?dal={day}&al={day}&voce={key}"
             self.handler.balances_v2(admin);page=rendered[-1]
             self.assertEqual(total(page),expected)
-            self.assertIn(present,page)
-            for value in absent:self.assertNotIn(value,page)
+            self.assertEqual(page.count("<b>CR-LEDGER</b>"),expected_rows)
+            for label,value in card_values.items():
+                self.assertIn(f"<small>{label}</small><strong>{app.money_it(value)}</strong>",page)
 
     def test_balances_filters_acconto_and_saldo_by_their_own_movement_date_not_practice(self):
         with app.db() as conn:
@@ -2901,7 +2903,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn("Totale calcolato",rendered[-1])
         self.handler.path="/bilanci"
         self.handler.balances_v2(admin)
-        self.assertIn("Data movimento",rendered[-1])
+        self.assertIn("Data incasso",rendered[-1])
         self.assertIn("Entrate W",rendered[-1])
         self.assertIn("Acconti W",rendered[-1])
         self.assertIn("Saldi W",rendered[-1])
