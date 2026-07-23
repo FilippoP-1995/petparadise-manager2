@@ -1288,7 +1288,7 @@ document.addEventListener('change', function(e){
   }
   if(e.target && e.target.name === 'use_voucher'){
     const pay=document.querySelector('select[name="payment_status"]');
-    if(e.target.checked && pay) pay.value='Pagato';
+    if(e.target.checked && pay){pay.value='Pagato';pay.dispatchEvent(new Event('change',{bubbles:true}));}
     refreshUseVoucherBox();
   }
   if(e.target && e.target.id === 'transport_method_quick'){
@@ -4708,7 +4708,7 @@ class App(BaseHTTPRequestHandler):
             collaborator_code=collaborator_codes.get(int(row["collaborator_id"])) if "collaborator_id" in row.keys() and row["collaborator_id"] else ""
             sigla_prefix=f"{esc(collaborator_code)} " if collaborator_code else ""
             if "service_type" in row.keys() and (row["service_type"] or "")=="Cremazione collettiva":
-                animal_cell='/'
+                animal_cell=esc(row["species"]) if "species" in row.keys() and row["species"] else '<span class="sub">-</span>'
             else:
                 animal_meta=esc(row["species"]) + ((' - '+esc(row["estimated_weight"])+' kg') if row["estimated_weight"] else '') if "species" in row.keys() else ''
                 animal_cell=f'{sigla_prefix}{esc(row["animal_name"] or "Da inserire")}<br><small>{animal_meta}</small>'
@@ -4854,7 +4854,8 @@ class App(BaseHTTPRequestHandler):
             weight=money_value(r["estimated_weight"]) if r["estimated_weight"] else 0.0
             weight_cell=kg_it(weight) if weight else '<span class="sub">-</span>'
             url=f'/pratiche/{r["id"]}'
-            return f'''<tr class="practice-row-link" {row_open_attrs(url,f'Apri pratica {r["practice_number"]}')}><td>{esc(r["animal_name"] or "Da inserire")}</td><td>{weight_cell}</td><td>{esc(self.disposal_contact_for(r))}</td><td>{esc(date_it(r["pickup_date"] or r["created_at"]))}</td><td><a href="{url}">{esc(r["practice_number"])}</a></td><td><span class="badge {status_class}">{status_label}</span></td></tr>'''
+            animal_cell=esc(r["species"]) if r["species"] else '<span class="sub">-</span>'
+            return f'''<tr class="practice-row-link" {row_open_attrs(url,f'Apri pratica {r["practice_number"]}')}><td>{animal_cell}</td><td>{weight_cell}</td><td>{esc(self.disposal_contact_for(r))}</td><td>{esc(date_it(r["pickup_date"] or r["created_at"]))}</td><td><a href="{url}">{esc(r["practice_number"])}</a></td><td><span class="badge {status_class}">{status_label}</span></td></tr>'''
         group_sections=[]
         for (branch,channel),data in sorted(display_groups.items(),key=lambda item:(item[0][0],item[0][1])):
             rows_html=''.join(disposal_row_html(r,"Da confermare","tag-orange") for r in data["pending"])+''.join(disposal_row_html(r,"Già smaltita","tag-green") for r in data["done"])
@@ -4928,7 +4929,8 @@ class App(BaseHTTPRequestHandler):
                 group_kg+=weight
                 weight_cell=kg_it(weight) if weight else '<span class="sub">-</span>'
                 url=f'/pratiche/{r["id"]}'
-                row_parts.append(f'''<tr class="practice-row-link" {row_open_attrs(url,f'Apri pratica {r["practice_number"]}')}><td>{esc(r["destination_branch"] or "-")}</td><td>{esc(r["animal_name"] or "Da inserire")}</td><td>{weight_cell}</td><td>{esc(self.disposal_contact_for(r))}</td><td>{esc(date_it(r["pickup_date"] or r["created_at"]))}</td><td><a href="{url}">{esc(r["practice_number"])}</a></td></tr>''')
+                animal_cell=esc(r["species"]) if r["species"] else '<span class="sub">-</span>'
+                row_parts.append(f'''<tr class="practice-row-link" {row_open_attrs(url,f'Apri pratica {r["practice_number"]}')}><td>{esc(r["destination_branch"] or "-")}</td><td>{animal_cell}</td><td>{weight_cell}</td><td>{esc(self.disposal_contact_for(r))}</td><td>{esc(date_it(r["pickup_date"] or r["created_at"]))}</td><td><a href="{url}">{esc(r["practice_number"])}</a></td></tr>''')
             grand_kg+=group_kg
             row_parts.append(f'<tr class="disposal-group-total"><td colspan="2"><b>Totale {esc(branch)} · Circuito {esc(channel)}</b></td><td><b>{kg_it(group_kg)}</b></td><td colspan="3"></td></tr>')
         if practices:
@@ -5005,7 +5007,8 @@ class App(BaseHTTPRequestHandler):
                 animal_prefix=f"{esc(collab_code)} " if collab_code else ""
                 url=f'/pratiche/{row["id"]}?return_to={quote(self.path,safe="")}'
                 economic_date=date_it(row["dashboard_paid_at"]) if kind!="da-saldare" else "Aperta"
-                table_rows.append(f'''<tr class="practice-row-link" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}><td>{esc(economic_date)}</td><td><a href="{url}"><b>{esc(row["practice_number"])}</b></a></td><td>{animal_prefix}{esc(row["animal_name"] or "")}</td><td>{esc(owner)}</td><td>{money_it(effective_total(row))}</td><td>{money_it(money_value(row["deposit"]))}</td><td><b>{money_it(amount_for(row))}</b></td><td>{esc(row["payment_status"] or "Da saldare")}</td><td><a class="btn ghost" href="{url}">Apri</a></td></tr>''')
+                animal_cell=esc(row["species"]) if (row["service_type"] or "")=="Cremazione collettiva" else f'{animal_prefix}{esc(row["animal_name"] or "")}'
+                table_rows.append(f'''<tr class="practice-row-link" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}><td>{esc(economic_date)}</td><td><a href="{url}"><b>{esc(row["practice_number"])}</b></a></td><td>{animal_cell}</td><td>{esc(owner)}</td><td>{money_it(effective_total(row))}</td><td>{money_it(money_value(row["deposit"]))}</td><td><b>{money_it(amount_for(row))}</b></td><td>{esc(row["payment_status"] or "Da saldare")}</td><td><a class="btn ghost" href="{url}">Apri</a></td></tr>''')
             table=''.join(table_rows) or '<tr><td colspan="9" class="sub">Nessuna pratica in questa categoria.</td></tr>'
             sections.append(f'''<section class="dashboard-panel" style="margin-bottom:20px;border-top:4px solid {color}"><header><div><h2>{esc(label)}</h2><p>{len(selected)} pratiche</p></div><strong>{money_it(total)}</strong></header><div class="tablebox"><table><thead><tr><th>Data economica</th><th>Pratica</th><th>Animale</th><th>Cliente</th><th>Totale</th><th>Acconto</th><th>{esc(title)}</th><th>Stato</th><th></th></tr></thead><tbody>{table}</tbody></table></div></section>''')
         period_note="Tutte le rimanenze attualmente aperte: non esiste una scadenza di saldo." if kind=="da-saldare" else f"Incassi registrati dal {date_it(date_from.isoformat())} al {date_it(date_to.isoformat())}."
@@ -5675,7 +5678,7 @@ class App(BaseHTTPRequestHandler):
             collaborator_code=collaborator_codes.get(int(r["collaborator_id"])) if "collaborator_id" in r.keys() and r["collaborator_id"] else ""
             sigla_prefix=f"{esc(collaborator_code)} " if collaborator_code else ""
             if (r['service_type'] or '') == 'Cremazione collettiva':
-                animal_cell='/'
+                animal_cell=esc(r['species']) if r['species'] else '<span class="sub">-</span>'
             else:
                 animal_meta=esc(r['species']) + ((' - '+esc(r['estimated_weight'])+' kg') if r['estimated_weight'] else '')
                 animal_cell=f'{sigla_prefix}{esc(r["animal_name"] or "Da inserire")}<br><small>{animal_meta}</small>'
@@ -6202,7 +6205,7 @@ class App(BaseHTTPRequestHandler):
             month_total=sum(effective_total(p) for p in month_practices)
             pending=sum(1 for p in month_practices if (p["billing_status"] or "Da fatturare")=="Da fatturare")
             invoiced=sum(1 for p in month_practices if p["billing_status"]=="Fatturato")
-            animal_rows=''.join(f'''<tr><td>{esc(p["animal_name"] or "Da inserire")}</td><td>{esc(date_it(p["pickup_date"] or p["created_at"]))}</td><td>{money_it(effective_total(p))}</td><td><span class="badge {billing_badge_cls.get(p["billing_status"] or "Da fatturare","pay-yellow")}">{esc(p["billing_status"] or "Da fatturare")}</span></td><td><a href="/pratiche/{p["id"]}">{esc(p["practice_number"])}</a></td></tr>''' for p in month_practices)
+            animal_rows=''.join(f'''<tr><td>{esc(p["species"]) if (p["service_type"] or "")=="Cremazione collettiva" else esc(p["animal_name"] or "Da inserire")}</td><td>{esc(date_it(p["pickup_date"] or p["created_at"]))}</td><td>{money_it(effective_total(p))}</td><td><span class="badge {billing_badge_cls.get(p["billing_status"] or "Da fatturare","pay-yellow")}">{esc(p["billing_status"] or "Da fatturare")}</span></td><td><a href="/pratiche/{p["id"]}">{esc(p["practice_number"])}</a></td></tr>''' for p in month_practices)
             actions=[]
             if pending:
                 actions.append(f'<form method="post" action="/collaboratori/{collaborator_id}/fattura-mese/fatturato" onsubmit="return confirm(\'Confermi di aver inviato la fattura per questo mese?\')"><input type="hidden" name="mese" value="{month_key}"><button class="btn ghost" type="submit">Segna mese come fatturato ({pending})</button></form>')
@@ -7413,7 +7416,6 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 if previous["status"]=="Consegnato" and requested_status!="Consegnato": self.cancel_whatsapp_scheduled(c,pid,user["id"],"Pratica spostata da Consegnato")
                 elif requested_status=="Consegnato": self.schedule_whatsapp_thanks(c,pid,user["id"])
                 if requested_status=="Consegnato": emit_notification(c,"practice_delivered","📦 Pratica consegnata",f'{d.get("animal_name") or previous["practice_number"]}\nCliente: {d.get("owner_first_name","")} {d.get("owner_last_name","")}',pid,user["id"],db_path=DB_PATH)
-                elif requested_status=="Da consegnare": emit_notification(c,"delivery_scheduled","📅 Consegna programmata",d.get("animal_name") or previous["practice_number"],pid,user["id"],db_path=DB_PATH)
             if (previous["payment_status"] or "Da saldare") != d["payment_status"] and d["payment_status"]=="Pagato":
                 emit_notification(c,"payment_received","💰 Pagamento ricevuto",f'{d.get("owner_first_name","")} {d.get("owner_last_name","")}\n{money_it(effective_total(d))}',pid,user["id"],db_path=DB_PATH)
             if previous["catalog_sent"]!="Si" and d.get("catalog_sent")=="Si":
@@ -7517,8 +7519,6 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 self.schedule_whatsapp_thanks(c,pid,user["id"])
             if old["status"]!=new and new=="Consegnato":
                 emit_notification(c,"practice_delivered","📦 Pratica consegnata",f'{old["animal_name"] or old["practice_number"]}\nCliente: {(old["owner_first_name"] or "")} {(old["owner_last_name"] or "")}',pid,user["id"],db_path=DB_PATH)
-            elif old["status"]!=new and new=="Da consegnare":
-                emit_notification(c,"delivery_scheduled","📅 Consegna programmata",f'{old["animal_name"] or old["practice_number"]} · {(old["owner_first_name"] or "")} {(old["owner_last_name"] or "")}',pid,user["id"],db_path=DB_PATH)
             if old_payment!=payment and payment=="Pagato":
                 emit_notification(c,"payment_received","💰 Pagamento ricevuto",f'{(old["owner_first_name"] or "")} {(old["owner_last_name"] or "")}\n{money_it(effective_total(old))}',pid,user["id"],db_path=DB_PATH)
         self.redirect(safe_return_path(f.get("practice_view"),f"/pratiche/{pid}"))
@@ -7569,7 +7569,6 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 if old["status"]=="Consegnato" and new!="Consegnato":self.cancel_whatsapp_scheduled(c,pid,user["id"],"Pratica spostata da Consegnato")
                 elif old["status"]!="Consegnato" and new=="Consegnato":self.schedule_whatsapp_thanks(c,pid,user["id"])
                 if new=="Consegnato":emit_notification(c,"practice_delivered","📦 Pratica consegnata",old["animal_name"] or old["practice_number"],pid,user["id"],db_path=DB_PATH)
-                elif new=="Da consegnare":emit_notification(c,"delivery_scheduled","📅 Consegna programmata",old["animal_name"] or old["practice_number"],pid,user["id"],db_path=DB_PATH)
         if ajax:return self.send_json({"ok":True,"status":new,"practice_id":pid})
         return self.redirect(safe_return_path(form.get("return_to") or self.headers.get("Referer"),"/"))
 
@@ -7680,7 +7679,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             for r in rows:
                 collab_code=collaborator_codes.get(int(r["collaborator_id"])) if "collaborator_id" in r.keys() and r["collaborator_id"] else ""
                 animal_prefix=f"{esc(collab_code)} " if collab_code else ""
-                animal='/' if (r['service_type'] or '') == 'Cremazione collettiva' else f'{animal_prefix}{esc(r["animal_name"] or "Da inserire")}'
+                animal=(esc(r['species']) or '<span class="sub">-</span>') if (r['service_type'] or '') == 'Cremazione collettiva' else f'{animal_prefix}{esc(r["animal_name"] or "Da inserire")}'
                 owner_name=((r['owner_first_name'] or '')+' '+(r['owner_last_name'] or '')).strip()
                 if "collaborator_name" in r.keys() and r["collaborator_name"]:
                     owner_name=r["collaborator_name"]

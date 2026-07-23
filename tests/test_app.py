@@ -1398,6 +1398,22 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("15,5 kg", page)
         self.assertIn("<th>Peso</th>", page)
 
+    def test_disposal_page_shows_species_in_animal_column_not_da_inserire(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
+                   created_at,updated_at,created_by,service_type,species)
+                   VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("PP-SPECIE", "Privato", "Livorno", "Ritirato", "2026-07-15", stamp, stamp, admin["id"], "Cremazione collettiva", "Cane"),
+            )
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/smaltimenti?dal=2026-07-01&al=2026-07-31"
+        self.handler.disposal_page(admin)
+        page = rendered[-1]
+        self.assertIn("<td>Cane</td>", page)
+        self.assertNotIn("Da inserire", page)
+
     def test_disposal_page_filters_by_practice_status(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
@@ -2298,6 +2314,18 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("practice-list-table td:first-child",app.CSS)
         self.assertIn("width:132px;min-width:132px;max-width:132px",app.CSS)
 
+    def test_practice_rows_shows_species_not_slash_for_collective_cremation(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                         species,service_type) VALUES(?,?,?,?,?,?,?,?,?)""",
+                         ("CR-COLLETTIVA","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Gatto","Cremazione collettiva"))
+            rows=conn.execute("SELECT * FROM practices WHERE practice_number='CR-COLLETTIVA'").fetchall()
+        self.handler.path="/archivio/pratiche"
+        page=self.handler.practice_rows(rows)
+        self.assertIn("<td>Gatto</td>",page)
+        self.assertNotIn("<td>/</td>",page)
+
     def test_archive_list_shows_inline_catalog_estremi_and_invoice_controls(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
@@ -2426,6 +2454,40 @@ class PetParadiseTests(unittest.TestCase):
         with app.db() as conn:self.assertEqual(conn.execute("SELECT status FROM practices WHERE id=?",(pid,)).fetchone()["status"],"Cremato")
         self.assertEqual(responses[-1][0]["status"],"Cremato")
         self.assertIn("savePracticeState",app.APP_JS)
+
+    def test_use_voucher_checkbox_triggers_payment_date_prompt(self):
+        # Setting payment_status='Pagato' via JS on the USA BUONO checkbox must fire a
+        # real change event, so the existing date-prompt listener (setupPaymentStatusDatePrompt)
+        # actually asks for the payment date instead of silently skipping it.
+        js = app.APP_JS
+        self.assertIn("if(e.target.checked && pay){pay.value='Pagato';pay.dispatchEvent(new Event('change',{bubbles:true}));}", js)
+
+    def test_no_notification_when_status_set_to_da_consegnare(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid_quick=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,service_type)
+                                VALUES(?,?,?,?,?,?,?,?)""",("CR-NONOTIF1","Privato","Livorno","Cremato",stamp,stamp,admin["id"],"Cremazione singola")).lastrowid
+            pid_full=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,service_type)
+                                VALUES(?,?,?,?,?,?,?,?)""",("CR-NONOTIF2","Privato","Livorno","Cremato",stamp,stamp,admin["id"],"Cremazione singola")).lastrowid
+            notifications_before=conn.execute("SELECT count(*) n FROM notifications").fetchone()["n"]
+        # Quick inline status change (archive/list dropdown).
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"status":"Da consegnare","ajax":"1"}
+        self.handler.quick_state(admin,pid_quick)
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT count(*) n FROM notifications").fetchone()["n"],notifications_before)
+        # Full status-change form (practice detail page).
+        self.handler.form=lambda:{"status":"Da consegnare","payment_status":"Da saldare"}
+        self.handler.redirect=lambda path:setattr(self,"redirected",path)
+        self.handler.change_state(admin,pid_full)
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT count(*) n FROM notifications").fetchone()["n"],notifications_before)
+            self.assertEqual(conn.execute("SELECT status FROM practices WHERE id=?",(pid_full,)).fetchone()["status"],"Da consegnare")
+        # Sanity check: "Consegnato" still emits its own notification as before.
+        self.handler.form=lambda:{"status":"Consegnato","ajax":"1"}
+        self.handler.quick_state(admin,pid_quick)
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT count(*) n FROM notifications").fetchone()["n"],notifications_before+1)
 
     def test_scheduled_whatsapp_appears_in_conversations(self):
         with app.db() as conn:
