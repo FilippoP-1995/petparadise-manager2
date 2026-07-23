@@ -338,9 +338,9 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("calendar-month", pages["mese"])
         self.assertIn("calendar-dot-red", pages["mese"])
         self.assertIn("calendar-event-icon", pages["giorno"])
-        self.assertIn('class="calendar-day-hours" id="calendarDayHours"', pages["giorno"])
-        self.assertEqual(pages["giorno"].count('class="calendar-day-hour-row" data-hour="'), 24)
-        self.assertIn('data-hour="7"', pages["giorno"])
+        self.assertIn('class="calendar-day-list"', pages["giorno"])
+        self.assertNotIn('class="calendar-day-hours"', pages["giorno"])
+        self.assertNotIn('data-hour="', pages["giorno"])
         self.assertNotIn('<div class="calendar-day-timeline"', pages["giorno"])
         self.assertEqual(pages["giorno"].count('data-calendar-view="'), 3)
         for label in ("Giorno", "Settimana", "Mese"):
@@ -492,16 +492,12 @@ class OperationalCalendarTests(unittest.TestCase):
         # On the day it starts, a multi-day event shows its real start time paired
         # with midnight (the boundary of that day), not the whole date range.
         self.assertIn('<b>09:30</b><small>00:00</small>', page)
-        # The full 00:00-24:00 hour timeline is always rendered; each event lands in
-        # the hour row matching its start time.
-        hour8_pos = page.index('data-hour="8"')
-        hour9_pos = page.index('data-hour="9"')
+        # No hourly timeline/grid: events are just sorted chronologically by the
+        # start time assigned when they were created.
         breve_pos = page.index("EVENTO BREVE")
         stesso_pos = page.index("EVENTO STESSO GIORNO")
         multi_pos = page.index("EVENTO MULTI GIORNO")
-        self.assertLess(hour8_pos, breve_pos)
-        self.assertLess(breve_pos, hour9_pos)
-        self.assertLess(hour9_pos, stesso_pos)
+        self.assertLess(breve_pos, stesso_pos)
         self.assertLess(stesso_pos, multi_pos)
 
     def test_day_view_shows_per_day_time_window_for_multiday_event_not_date_range(self):
@@ -535,8 +531,8 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn('<b>00:00</b><small>00:00</small>', page)
 
     def test_calendar_css_touch_targets_alignment_colors_and_opacity_fixes(self):
-        self.assertIn(".calendar-date-nav .btn{min-width:44px;min-height:44px;padding:0;font-size:19px}", app.CSS)
-        self.assertIn(".calendar-date-nav{grid-template-columns:44px minmax(0,1fr) 44px}.calendar-day-timeline{padding-left:38px}", app.CSS)
+        self.assertIn(".calendar-date-nav .btn{min-width:52px;min-height:52px;padding:0;font-size:21px}", app.CSS)
+        self.assertIn(".calendar-date-nav{grid-template-columns:52px minmax(0,1fr) 52px}.calendar-day-timeline{padding-left:38px}", app.CSS)
         self.assertIn(".calendar-day-event{flex-wrap:wrap;align-items:center;gap:2px 8px}", app.CSS)
         self.assertIn("background:color-mix(in srgb,currentColor 24%,#15202f)", app.CSS)
         self.assertIn("color-mix(in srgb,currentColor 18%,#fff)", app.CSS)
@@ -1036,7 +1032,11 @@ class OperationalCalendarTests(unittest.TestCase):
             self.assertIn("Colore = stato del ritiro", page)
             self.assertIn("Colore fisso = altri tipi", page)
 
-    def test_day_view_pins_allday_and_multiday_carryover_events_above_hours(self):
+    def test_day_view_is_a_flat_chronological_list_ordered_by_created_start_time(self):
+        # No hourly timeline/grid: every event -- all-day flagged, an ongoing
+        # multi-day carryover, or a plain timed one -- is just one more card in a
+        # single list, ordered by the start time assigned when it was created,
+        # with that time shown inside the card itself.
         self.save(self.event_form("Appuntamento", title="EVENTO TUTTO IL GIORNO", all_day="1"))
         self.save(self.event_form("Riconsegna", title="RICONSEGNA IN CORSO",
                                    start_date="2026-07-13", start_time="09:00", end_date="2026-07-16", end_time="10:00"))
@@ -1046,39 +1046,27 @@ class OperationalCalendarTests(unittest.TestCase):
         self.handler.path = "/calendario?vista=giorno&data=2026-07-15"
         self.handler.calendar_page(self.admin)
         page = rendered[-1]
-        self.assertIn('<div class="calendar-day-allday">', page)
-        self.assertIn('<span class="calendar-day-allday-label">Tutto il giorno</span>', page)
-        allday_pos = page.index('<div class="calendar-day-allday">')
-        hours_pos = page.index('<div class="calendar-day-hours"')
+        self.assertNotIn('id="calendarDayHours"', page)
+        self.assertNotIn('data-hour="', page)
+        self.assertNotIn('class="calendar-day-allday"', page)
+        self.assertIn('<span class="calendar-day-time-single">Tutto il giorno</span>', page)
+        self.assertIn('<b>00:00</b><small>00:00</small>', page)  # carryover event, middle day
+        self.assertEqual(page.count('class="calendar-event calendar-day-event'), 3)
         tutto_pos = page.index("EVENTO TUTTO IL GIORNO")
         ricorso_pos = page.index("RICONSEGNA IN CORSO")
         orario_pos = page.index("EVENTO ORARIO")
-        # Both the flagged all-day event and the event that started on an earlier
-        # day (carried over into today) are pinned above the hour grid, not lost
-        # inside one of the hour rows.
-        self.assertLess(allday_pos, tutto_pos)
-        self.assertLess(tutto_pos, hours_pos)
-        self.assertLess(allday_pos, ricorso_pos)
-        self.assertLess(ricorso_pos, hours_pos)
-        self.assertLess(hours_pos, orario_pos)
+        self.assertLess(ricorso_pos, tutto_pos)
+        self.assertLess(tutto_pos, orario_pos)
 
-    def test_day_view_always_renders_full_timeline_and_scrolls_to_seven_by_default(self):
+    def test_day_view_shows_flat_list_even_when_empty(self):
         rendered = []
         self.handler.send_html = lambda html, status=200: rendered.append(html)
-        # Even a day with zero events must still show the full 00:00-24:00 timeline,
-        # not just an empty-state message replacing it.
         self.handler.path = "/calendario?vista=giorno&data=2026-07-15"
         self.handler.calendar_page(self.admin)
         page = rendered[-1]
         self.assertIn("Nessun evento", page)
-        self.assertIn('id="calendarDayHours"', page)
-        self.assertEqual(page.count('class="calendar-day-hour-row" data-hour="'), 24)
-        self.assertIn('data-hour="0"', page)
-        self.assertIn('data-hour="23"', page)
-        # Defaults to a 7:00-22:00 window by scrolling the container to hour 7 on load.
-        self.assertIn('document.getElementById("calendarDayHours")', page)
-        self.assertIn('querySelector(\'[data-hour="7"]\')', page)
-        self.assertIn("c.scrollTop=r.offsetTop", page)
+        self.assertIn('class="calendar-day-list"', page)
+        self.assertNotIn('id="calendarDayHours"', page)
 
     def test_week_and_month_empty_day_cells_still_link_to_day_view(self):
         rendered = []
