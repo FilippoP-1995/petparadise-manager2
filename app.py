@@ -7245,7 +7245,14 @@ class App(BaseHTTPRequestHandler):
         estimate_rows=[]
         for key,label in estimate_fields:
             raw_value=(p[key] or "").strip()
-            if raw_value:estimate_rows.append(f'<div class="kv"><small>{label}</small><b>{money_it(money_value(raw_value))}</b></div>')
+            if not raw_value:continue
+            delivery_extra=""
+            if key=="price_delivery":
+                delivery_locations=[]
+                if p["delivery_at_clinic"]=="Si":delivery_locations.append("IN AMBULATORIO")
+                if p["delivery_at_home"]=="Si":delivery_locations.append("A CASA")
+                if delivery_locations:delivery_extra=f'<br><small class="sub">{esc(" + ".join(delivery_locations))}</small>'
+            estimate_rows.append(f'<div class="kv"><small>{label}</small><b>{money_it(money_value(raw_value))}</b>{delivery_extra}</div>')
         urn_summary='<br>'.join(urn_parts) if urn_parts else '<span class="sub">Nessuna urna o prezzo inserito</span>'
         estimate_rows.insert(2,f'<div class="kv"><small>Urna</small>{urn_summary}{catalog_controls}</div>')
         economic_block=f'''<div class="section"><h2>Dati economici</h2><div class="economic-estimate"><h3>Voci del preventivo</h3><div class="kvs">{''.join(estimate_rows)}</div></div><div class="kvs"><div class="kv"><small>Totale pratica</small><b>{money_it(practice_total)}</b></div><div class="kv"><small>Totale W</small><b>{money_it(total_w)}</b></div><div class="kv"><small>Totale D</small><b>{money_it(total_d) if total_d_raw else "-"}</b></div><div class="kv"><small>Totale pagato {payment_channel(p)}</small><b>{money_it(paid_total)}</b></div><div class="kv"><small>Da pagare {payment_channel(p)}</small><b>{money_it(due_total)}</b></div><div class="kv"><small>Acconto {payment_channel(p)}</small><b>{money_it(deposit_total)}</b></div><div class="kv"><small>Rimanenza {payment_channel(p)}</small><b>{money_it(remaining_total)}</b></div><div class="kv"><small>Stato pagamento</small><b>{esc(payment_value)}</b></div><div class="kv"><small>Metodo</small>{method_control}</div>{invoice_box}</div></div>'''
