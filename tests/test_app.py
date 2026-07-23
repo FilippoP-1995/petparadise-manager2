@@ -841,7 +841,7 @@ class PetParadiseTests(unittest.TestCase):
                          owner_first_name,owner_last_name,animal_name,pickup_date,pickup_time,created_at,updated_at,created_by)
                          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                          ("PP-TEST", "Privato", "Livorno", "Ritirato", 1, "Mario", "Rossi", "Luna",
-                          stamp[:10], "23:59", stamp, stamp, admin))
+                          (datetime.now(app.ROME_TZ).date()+timedelta(days=1)).isoformat(), "23:59", stamp, stamp, admin))
             first = process_scheduled_notifications(conn, app.DB_PATH)
             second = process_scheduled_notifications(conn, app.DB_PATH)
             self.assertEqual(first, 0)
@@ -1495,7 +1495,7 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.dashboard(admin)
         page = rendered[-1]
         expected_order = [
-            "Dashboard", "Calendario", "Notifiche", "Archivio", "Catalogo Urne",
+            "Dashboard", "Calendario", "Bilanci", "Notifiche", "Archivio", "Catalogo Urne",
             "Conversazioni WhatsApp", "Veterinari", "Prodotti", "Ordini", "Gestionale", "Clienti",
         ]
         positions = [page.index(f">{label}</span>") for label in expected_order]
@@ -2544,7 +2544,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('data-dashboard-payment="Acconto" data-count="2" data-amount="200.00"',page)
         self.assertIn('data-dashboard-payment="Pagato" data-count="1" data-amount="200.00"',page)
         self.assertNotIn("Entrate anno in corso",page)
-        self.assertNotIn("/bilanci",page)
+        self.assertNotIn("data-balance-card",page)
         self.assertIn("Ultime 10 pratiche per data recupero",page);self.assertIn("Apri archivio",page)
         self.assertNotIn("Attività recenti",page);self.assertNotIn("Centro notifiche",page)
         self.assertEqual(page.count('class="period-selector"'),2);self.assertIn("/notifiche",page)
@@ -2580,26 +2580,49 @@ class PetParadiseTests(unittest.TestCase):
         dashboard_constants="".join(value for value in app.App.dashboard.__code__.co_consts if isinstance(value,str))
         self.assertIn("localStorage.getItem('ppm_'+key)",dashboard_constants)
 
-    def test_balances_section_is_removed_and_payment_pages_still_render(self):
+    def test_balances_interface_and_payment_pages_still_render(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
             tables={row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         self.assertNotIn("expenses",tables)
         self.assertNotIn("incomes",tables)
-        self.assertFalse(hasattr(app.App,"balances_v2"))
-        self.assertNotIn(("/bilanci","chart","Report"),app.SIDEBAR_LINKS)
+        self.assertIn("balance_movements",tables)
+        self.assertTrue(hasattr(app.App,"balances_page"))
+        self.assertIn(("/bilanci","chart","Bilanci"),app.SIDEBAR_LINKS)
         rendered=[]; self.handler.send_html=lambda content,*args: rendered.append(content)
         self.handler.dashboard(admin)
         self.assertNotIn("Entrate anno in corso",rendered[-1])
-        self.assertNotIn("/bilanci",rendered[-1])
+        self.assertIn('href="/bilanci"',rendered[-1])
+        self.assertNotIn("data-balance-card",rendered[-1])
         self.assertIn("Totale W",rendered[-1])
         self.assertNotIn("Totale calcolato",rendered[-1])
-        errors=[]
         self.handler.require_user=lambda:admin
-        self.handler.send_error=lambda code,*args:errors.append(code)
         self.handler.path="/bilanci"
         self.handler.do_GET()
-        self.assertEqual(errors,[404])
+        balances_page=rendered[-1]
+        self.assertIn("<h1>Bilanci</h1>",balances_page)
+        for label in (
+            "Data iniziale","Data finale","Categoria","Collaboratore","Metodo di pagamento","Operatore","Ricerca",
+            "Entrate W","Entrate D","Collaboratori Incassato","Da riscuotere W",
+            "Da riscuotere D","Collaboratori Da riscuotere","Uscite W","Uscite D","Saldo Netto",
+        ):
+            self.assertIn(label,balances_page)
+        self.assertEqual(balances_page.count('data-balance-card="'),9)
+        self.assertEqual(balances_page.count('data-balance-total-cents="0"'),9)
+        self.assertIn('aria-current="true"',balances_page)
+        self.assertIn("<h2>Entrate W</h2>",balances_page)
+        self.assertIn("Nessun dato da visualizzare.",balances_page)
+        self.assertIn('method="get" action="/bilanci"',balances_page)
+        self.assertIn('method="post" action="/bilanci/uscite?',balances_page)
+        self.assertIn("Registra uscita manuale",balances_page)
+        for responsive_rule in (
+            ".balance-grid{display:grid;grid-template-columns:repeat(3",
+            "@media(max-width:900px)",
+            ".balance-grid{grid-template-columns:repeat(2",
+            "@media(max-width:560px){.balance-filters .fields,.balance-grid{grid-template-columns:1fr}",
+            "calc(92px + var(--safe-bottom))",
+        ):
+            self.assertIn(responsive_rule,app.CSS)
         self.handler.payment_overview(admin,"da-saldare")
         self.assertIn("Da saldare D",rendered[-1])
         self.assertIn("Totale W e Totale D",rendered[-1])

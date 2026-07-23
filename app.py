@@ -22,6 +22,19 @@ from urllib.parse import parse_qs, quote, urlencode, urlparse
 from zoneinfo import ZoneInfo
 
 from email_service import EmailConfigurationError, EmailDeliveryError, send_email
+from balance_service import (
+    BalanceError,
+    classify_category as classify_balance_category,
+    create_manual_expense as create_balance_expense,
+    create_movement as create_balance_movement,
+    ensure_balance_schema,
+    euros_to_cents,
+    get_balance_collaborators,
+    get_balance_operators,
+    get_balance_snapshot,
+    get_movements as get_balance_movements,
+    normalize_filters as normalize_balance_filters,
+)
 from calendar_service import (
     EVENT_TYPES, PICKUP_STATUSES, DELIVERY_STATUSES, PAYMENT_STATUSES, CALENDAR_OPERATORS,
     add_history as calendar_add_history,
@@ -774,6 +787,7 @@ def init_db():
         # flipped by hand without updating the deposit). Idempotent, safe to rerun.
         c.execute("UPDATE practices SET remaining_balance='0.00' WHERE payment_status='Pagato' AND CAST(COALESCE(remaining_balance,'0') AS REAL)<>0")
         c.execute("UPDATE practices SET remaining_final='0.00' WHERE payment_status='Pagato' AND CAST(COALESCE(remaining_final,'0') AS REAL)<>0")
+        ensure_balance_schema(c)
         ensure_notification_schema(c)
         ensure_calendar_schema(c)
 
@@ -1166,6 +1180,42 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .light-theme .calendar-month-v2-num{color:#111827}
 .light-theme .calendar-month-v2-more{color:#526174}
 @media(max-width:620px){.calendar-month-v2-cell{min-height:64px;padding:3px}.calendar-month-v2-pill{font-size:8px;padding:1px 4px}.calendar-month-v2-dow{font-size:9px;padding:3px 2px}}
+/* Production balance interface backed by the unified ledger view. */
+.balance-wrap{width:min(100%,1320px);max-width:1320px}
+.balance-filters{margin-bottom:18px}
+.balance-filters .fields{grid-template-columns:repeat(3,minmax(0,1fr))}
+.balance-filter-note{display:flex;align-items:center;gap:7px;margin:14px 0 0;color:#94a3b8;font-size:12px}
+.balance-filter-note .icon{width:16px;height:16px}
+.balance-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.balance-card{position:relative;display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;gap:18px;min-width:0;min-height:132px;padding:18px;border:1px solid #354155;border-radius:15px;background:linear-gradient(145deg,#202c3d,#182334);color:#f8fafc;text-align:left;box-shadow:0 12px 32px #080d1626;cursor:pointer;overflow:hidden;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}
+.balance-card:before{content:"";position:absolute;inset:0;background:linear-gradient(125deg,var(--balance-glow),transparent 66%);pointer-events:none}
+.balance-card:hover{transform:translateY(-2px);border-color:#5b687a;box-shadow:0 18px 38px #03071255}
+.balance-card[aria-pressed="true"],.balance-card[aria-current="true"]{border-color:#fb7185;box-shadow:0 0 0 2px #fb718533,0 18px 38px #03071255}
+.balance-card-copy,.balance-card-value{position:relative;z-index:1}
+.balance-card-copy{display:flex;align-items:center;gap:9px;color:#cbd5e1;font-size:13px;font-weight:650}
+.balance-card-copy .icon{width:18px;height:18px;color:var(--balance-accent)}
+.balance-card-value{font-size:29px;font-weight:700;letter-spacing:-.035em}
+.balance-tone-w{--balance-accent:#60a5fa;--balance-glow:#1d4ed840}
+.balance-tone-d{--balance-accent:#fbbf24;--balance-glow:#a1620740}
+.balance-tone-collaborators{--balance-accent:#c084fc;--balance-glow:#7e22ce3d}
+.balance-tone-out{--balance-accent:#fb7185;--balance-glow:#be123c3d}
+.balance-tone-net{--balance-accent:#4ade80;--balance-glow:#15803d3d}
+.balance-details{margin-top:18px;min-height:190px}
+.balance-details-heading{display:flex;align-items:center;justify-content:space-between;gap:14px;padding-bottom:14px;border-bottom:1px solid #334155}
+.balance-details-heading h2{margin:0}
+.balance-details-meta{display:flex;align-items:center;gap:12px}
+.balance-details-empty{display:grid;place-items:center;min-height:116px;margin:0;color:#94a3b8;text-align:center}
+.balance-filter-actions{margin-top:14px}.balance-filter-actions .btn{width:auto}
+.balance-expense{margin:0 0 18px}.balance-expense summary{cursor:pointer;font-weight:650}.balance-expense[open] summary{margin-bottom:16px}
+.balance-detail-table{min-width:760px}.balance-detail-table td:last-child,.balance-detail-table th:last-child{text-align:right}
+.balance-pagination{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:16px}
+.balance-page-label{color:#94a3b8;font-size:13px;font-weight:650}
+.light-theme .balance-card{background:#fff;color:#111827;border-color:#cbd5e1;box-shadow:0 10px 26px #64748b18}
+.light-theme .balance-card-copy{color:#475569}
+.light-theme .balance-card[aria-pressed="true"],.light-theme .balance-card[aria-current="true"]{border-color:#e9475b}
+.light-theme .balance-filter-note,.light-theme .balance-details-empty{color:#64748b}
+@media(max-width:900px){.balance-wrap{padding-bottom:calc(92px + var(--safe-bottom))}.balance-filters .fields{grid-template-columns:repeat(2,minmax(0,1fr))}.balance-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.balance-filters .fields,.balance-grid{grid-template-columns:1fr}.balance-card{min-height:106px;padding:16px}.balance-card-value{font-size:26px}.balance-details-heading{align-items:flex-start;flex-direction:column}.balance-details-meta{width:100%;justify-content:space-between}.balance-pagination{justify-content:space-between}.balance-pagination .btn{padding:10px 12px}}
 """
 
 APP_JS = r"""
@@ -2313,13 +2363,24 @@ function ppmSyncPaymentDateField(popover){
   const status=popover.querySelector('select[name="payment_status"]');
   const field=popover.querySelector('[data-payment-date-field]');
   const input=popover.querySelector('[data-payment-date-input]');
+  const amount=popover.querySelector('input[name="payment_amount"]');
   if(!status||!field||!input)return;
   const trigger=popover._ppmTrigger;
   const savedStatus=trigger?(trigger.dataset.savedValue||''):'';
   const needsDate=(status.value==='Acconto'||status.value==='Pagato')&&status.value!==savedStatus;
   field.hidden=!needsDate;
   input.required=needsDate;
-  if(!needsDate)input.value='';
+  if(needsDate){
+    if(!input.value)input.value=popover.dataset.paymentDefaultDate||ppmLocalDateValue();
+    if(amount){
+      if(status.value==='Pagato')amount.value=savedStatus==='Acconto'?(popover.dataset.paymentRemainingAmount||''):(popover.dataset.paymentFullAmount||'');
+      else if(status.value==='Acconto'&&savedStatus==='Da saldare')amount.value=popover.dataset.paymentDepositAmount||amount.value||'';
+    }
+  }else input.value='';
+}
+function ppmLocalDateValue(){
+  const today=new Date(),offset=today.getTimezoneOffset()*60000;
+  return new Date(today.getTime()-offset).toISOString().slice(0,10);
 }
 function ppmPromptPaymentDate(onConfirm,onCancel){
   const overlay=document.createElement('div');
@@ -2328,6 +2389,7 @@ function ppmPromptPaymentDate(onConfirm,onCancel){
   document.body.appendChild(overlay);
   document.body.style.overflow='hidden';
   const input=overlay.querySelector('#ppmPaymentDateInput');
+  input.value=ppmLocalDateValue();
   input.focus();
   const cleanup=()=>{overlay.remove();document.body.style.overflow='';};
   overlay.querySelector('#ppmPaymentDateConfirm').addEventListener('click',()=>{
@@ -3042,6 +3104,14 @@ def money_it(value):
     return f"€ {value:,.2f}".replace(",","X").replace(".",",").replace("X",".")
 
 
+def money_cents_it(value):
+    cents=int(value or 0)
+    sign="-" if cents<0 else ""
+    euros,remainder=divmod(abs(cents),100)
+    formatted=f"{euros:,}".replace(",",".")
+    return f"{sign}€ {formatted},{remainder:02d}"
+
+
 def kg_it(value):
     if not value:return "0 kg"
     return f"{round(value,2):g}".replace(".",",")+" kg"
@@ -3150,7 +3220,7 @@ def collapse_advanced_search(body):
 
 
 SIDEBAR_LINKS=[
-    ("/","home","Dashboard"),("/calendario","calendar","Calendario"),("/programma-cremazioni","paw","Programma Cremazioni"),("/notifiche","bell","Notifiche"),("/pratiche","archive","Archivio"),
+    ("/","home","Dashboard"),("/calendario","calendar","Calendario"),("/bilanci","chart","Bilanci"),("/programma-cremazioni","paw","Programma Cremazioni"),("/notifiche","bell","Notifiche"),("/pratiche","archive","Archivio"),
     ("/catalogo-urne","archive","Catalogo Urne"),("/smaltimenti","archive","Smaltimenti"),("/conversazioni-whatsapp","message","Conversazioni WhatsApp"),("/veterinari","stethoscope","Veterinari"),
     ("/collaboratori","briefcase","Collaboratori"),
     ("/prodotti","clipboard","Prodotti"),("/ordini","receipt","Ordini"),
@@ -3309,6 +3379,7 @@ class App(BaseHTTPRequestHandler):
             return self.send_static(image,content_type)
         if path == "/": return self.dashboard(user)
         if path == "/calendario": return self.calendar_page(user)
+        if path == "/bilanci": return self.balances_page(user)
         if path == "/calendario/nuovo": return self.calendar_event_form(user)
         if path == "/calendario/impostazioni": return self.calendar_settings(user)
         if path == "/calendario/cestino": return self.calendar_trash(user)
@@ -3399,6 +3470,7 @@ class App(BaseHTTPRequestHandler):
             return self.redirect("/imposta-password")
         if path == "/imposta-password": return self.change_password_submit(user)
         if path == "/nuova": return self.create_practice(user)
+        if path == "/bilanci/uscite": return self.balance_expense_submit(user)
         if path == "/calendario/nuovo": return self.save_calendar_event(user)
         match = re.fullmatch(r"/calendario/(\d+)/modifica",path)
         if match: return self.save_calendar_event(user,int(match.group(1)))
@@ -3603,6 +3675,206 @@ class App(BaseHTTPRequestHandler):
         sections_html=''.join(dashboard_sections[sid] for sid in dashboard_order)
         body=f'''<main class="wrap dashboard-wrap"><section class="welcome"><div><h1>{greeting}, {esc(user['display_name'])} <span aria-hidden="true">👋</span></h1><p>Panoramica operativa del periodo selezionato</p></div></section>{f'<div class="flash warning">{incomplete} pratiche hanno dati ancora da completare.</div>' if incomplete else ''}{sections_html}{persistence_script}</main>'''
         self.send_html(layout("Dashboard",body,user))
+
+    def balances_page(self,user,error="",expense_draft=None):
+        query=parse_qs(urlparse(getattr(self,"path","/bilanci")).query)
+        value=lambda key,default="":(query.get(key) or [default])[-1].strip()
+        today=datetime.now(ROME_TZ).date()
+        date_from=value("data_iniziale",today.replace(day=1).isoformat())
+        date_to=value("data_finale",today.isoformat())
+        category=value("categoria")
+        payment_method=value("metodo")
+        collaborator_raw=value("collaboratore")
+        operator_raw=value("operatore")
+        search=value("ricerca")
+        collaborator_id=(
+            int(collaborator_raw)
+            if collaborator_raw.isdigit() and int(collaborator_raw)>0 else None
+        )
+        operator_id=int(operator_raw) if operator_raw.isdigit() and int(operator_raw)>0 else None
+        try:
+            filters=normalize_balance_filters(
+                date_from=date_from,date_to=date_to,category=category,
+                collaborator_id=collaborator_id,payment_method=payment_method,
+                operator_id=operator_id,search=search,
+            )
+        except BalanceError as exc:
+            error=error or f"Filtri non validi: {exc}"
+            date_from=today.replace(day=1).isoformat();date_to=today.isoformat()
+            category="";collaborator_id=None;payment_method=""
+            operator_id=None;search=""
+            filters=normalize_balance_filters(date_from=date_from,date_to=date_to)
+        try:
+            with db() as c:
+                snapshot=get_balance_snapshot(c,filters=filters)
+                operators=get_balance_operators(c)
+                collaborators=get_balance_collaborators(c)
+        except sqlite3.Error:
+            print("[BILANCI] Errore durante il caricamento\n"+traceback.format_exc(),flush=True)
+            return self.error_page(
+                "Bilanci temporaneamente non disponibili",
+                "Non è stato possibile caricare i dati. Riprova tra poco.",
+                "/",
+            )
+        section_order=(
+            ("entrate-w","balance-tone-w","wallet"),
+            ("entrate-d","balance-tone-d","wallet"),
+            ("collaboratori-incassato","balance-tone-collaborators","briefcase"),
+            ("da-riscuotere-w","balance-tone-w","receipt"),
+            ("da-riscuotere-d","balance-tone-d","receipt"),
+            ("collaboratori-da-riscuotere","balance-tone-collaborators","briefcase"),
+            ("uscite-w","balance-tone-out","clipboard"),
+            ("uscite-d","balance-tone-out","clipboard"),
+            ("saldo-netto","balance-tone-net","chart"),
+        )
+        selected=value("view","entrate-w")
+        if selected not in snapshot.sections:selected="entrate-w"
+        filter_params={
+            "data_iniziale":filters.date_from or "",
+            "data_finale":filters.date_to or "",
+            "categoria":filters.category or "",
+            "collaboratore":str(filters.collaborator_id or ""),
+            "metodo":filters.payment_method or "",
+            "operatore":str(filters.operator_id or ""),
+            "ricerca":filters.search,
+        }
+        cards=[]
+        for key,tone,icon in section_order:
+            section=snapshot.sections[key]
+            card_params={**filter_params,"view":key}
+            cards.append(
+                f'''<a class="balance-card {tone}" href="/bilanci?{urlencode(card_params)}" data-balance-card="{key}" data-balance-total-cents="{section.total_cents}" aria-current="{"true" if key==selected else "false"}"><span class="balance-card-copy">{lucide(icon)}<span>{esc(section.title)}</span></span><strong class="balance-card-value">{money_cents_it(section.total_cents)}</strong></a>'''
+            )
+        selected_section=snapshot.sections[selected]
+        is_outstanding=selected.startswith("da-riscuotere") or selected=="collaboratori-da-riscuotere"
+        page_raw=value("pagina","1")
+        page=int(page_raw) if page_raw.isdigit() and int(page_raw)>0 else 1
+        page_size=50
+        total_rows=len(selected_section.rows)
+        total_pages=max(1,(total_rows+page_size-1)//page_size)
+        page=min(page,total_pages)
+        page_start=(page-1)*page_size
+        page_pairs=list(zip(
+            selected_section.rows,selected_section.row_amounts_cents
+        ))[page_start:page_start+page_size]
+        detail_rows=[]
+        if is_outstanding:
+            for row,amount_cents in page_pairs:
+                url=f"/pratiche/{row.practice_id}?return_to={quote(getattr(self,'path','/bilanci'),safe='')}"
+                detail_rows.append(
+                    f'''<tr data-balance-detail-row data-amount-cents="{amount_cents}"><td><a href="{url}"><b>{esc(row.practice_number)}</b></a></td><td>{esc(row.reference or "-")}</td><td>{esc(row.category)}</td><td>{esc(row.payment_method or "-")}</td><td>{money_cents_it(row.total_due_cents)}</td><td>{money_cents_it(row.received_cents)}</td><td><b>{money_cents_it(row.remaining_cents)}</b></td></tr>'''
+                )
+            detail_header="<tr><th>Numero pratica</th><th>Cliente / riferimento</th><th>Categoria</th><th>Metodo</th><th>Totale dovuto</th><th>Già incassato</th><th>Rimanenza</th></tr>"
+        else:
+            for row,amount_cents in page_pairs:
+                practice_number=row.practice_number_snapshot or "-"
+                practice_cell=f'<a href="/pratiche/{row.practice_id}"><b>{esc(practice_number)}</b></a>' if row.practice_id else esc(practice_number)
+                detail_rows.append(
+                    f'''<tr data-balance-detail-row data-amount-cents="{amount_cents}"><td>{esc(date_it(row.movement_date))}</td><td>{practice_cell}</td><td>{esc(row.description or row.movement_type)}</td><td>{esc(row.category)}</td><td>{esc(row.payment_method or "-")}</td><td><b>{money_cents_it(amount_cents)}</b></td></tr>'''
+                )
+            detail_header="<tr><th>Data</th><th>Numero pratica</th><th>Descrizione / movimento</th><th>Categoria</th><th>Metodo</th><th>Importo</th></tr>"
+        details=(
+            f'''<div class="tablebox"><table class="balance-detail-table"><thead>{detail_header}</thead><tbody>{''.join(detail_rows)}</tbody></table></div>'''
+            if detail_rows else '<p class="balance-details-empty">Nessun dato da visualizzare.</p>'
+        )
+        pagination=""
+        if total_pages>1:
+            pagination_links=[]
+            if page>1:
+                pagination_links.append(
+                    f'<a class="btn ghost" href="/bilanci?{urlencode({**filter_params,"view":selected,"pagina":page-1})}">Precedente</a>'
+                )
+            pagination_links.append(
+                f'<span class="balance-page-label">Pagina {page} di {total_pages}</span>'
+            )
+            if page<total_pages:
+                pagination_links.append(
+                    f'<a class="btn ghost" href="/bilanci?{urlencode({**filter_params,"view":selected,"pagina":page+1})}">Successiva</a>'
+                )
+            pagination=f'<nav class="balance-pagination" aria-label="Paginazione movimenti">{"".join(pagination_links)}</nav>'
+        category_options="".join(
+            f'<option value="{val}" {"selected" if (filters.category or "")==val else ""}>{label}</option>'
+            for val,label in (("","Tutte"),("W","W"),("D","D"),("Collaboratori","Collaboratori"))
+        )
+        method_options="".join(
+            f'<option value="{esc(method)}" {"selected" if (filters.payment_method or "")==method else ""}>{esc(method or "Tutti")}</option>'
+            for method in PAYMENT_METHODS
+        )
+        operator_options='<option value="">Tutti</option>'+''.join(
+            f'<option value="{oid}" {"selected" if filters.operator_id==oid else ""}>{esc(name)}</option>'
+            for oid,name in operators
+        )
+        collaborator_options='<option value="">Tutti</option>'+''.join(
+            f'<option value="{cid}" {"selected" if filters.collaborator_id==cid else ""}>{esc(name)}</option>'
+            for cid,name in collaborators
+        )
+        expense=expense_draft or {}
+        return_to="/bilanci?"+urlencode({**filter_params,"view":selected})
+        expense_action="/bilanci/uscite?"+urlencode({**filter_params,"view":selected})
+        notice=""
+        if value("uscita_creata")=="1":notice='<div class="flash">Uscita registrata correttamente.</div>'
+        if error:notice+=f'<div class="flash warning">{esc(error)}</div>'
+        body=f'''<main class="wrap balance-wrap">
+          <div class="titlebar"><div><h1>Bilanci</h1><p class="sub">Movimenti reali e situazione delle somme ancora aperte.</p></div></div>
+          {notice}
+          <form class="section balance-filters no-advanced-collapse" method="get" action="/bilanci" aria-label="Filtri Bilanci" onsubmit="const b=this.querySelector('button');b.disabled=true;b.textContent='Caricamento…'">
+            <h2>Filtri</h2><input type="hidden" name="view" value="{esc(selected)}">
+            <div class="fields">
+              <div class="field"><label for="balanceDateFrom">Data iniziale</label><input id="balanceDateFrom" type="date" name="data_iniziale" value="{esc(filters.date_from or '')}"></div>
+              <div class="field"><label for="balanceDateTo">Data finale</label><input id="balanceDateTo" type="date" name="data_finale" value="{esc(filters.date_to or '')}" required></div>
+              <div class="field"><label for="balanceCategory">Categoria</label><select id="balanceCategory" name="categoria">{category_options}</select></div>
+              <div class="field"><label for="balanceCollaborator">Collaboratore</label><select id="balanceCollaborator" name="collaboratore">{collaborator_options}</select></div>
+              <div class="field"><label for="balanceMethod">Metodo di pagamento</label><select id="balanceMethod" name="metodo">{method_options}</select></div>
+              <div class="field"><label for="balanceOperator">Operatore</label><select id="balanceOperator" name="operatore">{operator_options}</select></div>
+              <div class="field"><label for="balanceSearch">Ricerca</label><input id="balanceSearch" type="search" name="ricerca" value="{esc(filters.search)}" placeholder="Pratica, cliente, descrizione…"></div>
+            </div>
+            <div class="actions balance-filter-actions"><button class="btn">Applica filtri</button><a class="btn ghost" href="/bilanci">Azzera</a></div>
+            <p class="balance-filter-note">{lucide("settings")}<span>Per “Da riscuotere” conta la situazione alla data finale; la data iniziale non nasconde debiti precedenti ancora aperti.</span></p>
+          </form>
+          <details class="section balance-expense">
+            <summary>Registra uscita manuale</summary>
+            <form method="post" action="{expense_action}" onsubmit="const b=this.querySelector('button');b.disabled=true;b.textContent='Registrazione…'">
+              <input type="hidden" name="return_to" value="{esc(return_to)}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(24)}">
+              <div class="fields">
+                <div class="field"><label>Data</label><input type="date" name="movement_date" value="{esc(expense.get('movement_date') or today.isoformat())}" required></div>
+                <div class="field"><label>Importo €</label><input name="amount" value="{esc(expense.get('amount') or '')}" inputmode="decimal" placeholder="0,00" required></div>
+                <div class="field"><label>Categoria</label><select name="category"><option value="W" {"selected" if expense.get("category")!="D" else ""}>W</option><option value="D" {"selected" if expense.get("category")=="D" else ""}>D</option></select></div>
+                <div class="field"><label>Descrizione</label><input name="description" value="{esc(expense.get('description') or '')}" maxlength="2000" required></div>
+              </div>
+              <button class="btn" style="margin-top:14px">Registra uscita</button>
+            </form>
+          </details>
+          <section class="balance-grid" aria-label="Riepilogo Bilanci">{''.join(cards)}</section>
+          <section class="section balance-details" data-selected-balance-section="{esc(selected)}">
+            <div class="balance-details-heading"><div><small class="sub">Dettaglio selezionato</small><h2>{esc(selected_section.title)}</h2></div><div class="balance-details-meta"><span class="badge">{total_rows} {"pratiche" if is_outstanding else "movimenti"}</span><strong>{money_cents_it(selected_section.total_cents)}</strong></div></div>
+            {details}
+            {pagination}
+          </section>
+        </main>'''
+        self.send_html(layout("Bilanci",body,user))
+
+    def balance_expense_submit(self,user):
+        form=self.form()
+        return_to=safe_return_path(form.get("return_to"),"/bilanci")
+        try:
+            amount_cents=euros_to_cents(form.get("amount",""))
+            if amount_cents<=0:raise BalanceError("L'importo deve essere maggiore di zero.")
+            token=(form.get("balance_idempotency_key") or "").strip()
+            if not token:raise BalanceError("Richiesta non valida: ricarica la pagina e riprova.")
+            with db() as c:
+                create_balance_expense(
+                    c,
+                    amount_cents=amount_cents,
+                    movement_date=form.get("movement_date",""),
+                    category=form.get("category",""),
+                    description=form.get("description",""),
+                    idempotency_key=f"manual-expense:{token}",
+                    created_by=user["id"],
+                )
+        except BalanceError as exc:
+            return self.balances_page(user,error=str(exc),expense_draft=form)
+        separator="&" if "?" in return_to else "?"
+        self.redirect(f"{return_to}{separator}uscita_creata=1")
 
     def calendar_operator_avatar(self,operator_name,size="md",color_hex=None):
         if not operator_name:return ''
@@ -4651,7 +4923,7 @@ class App(BaseHTTPRequestHandler):
         availability_options=''.join(f'<option value="{value}" {"selected" if display_availability==value else ""}>{label}</option>' for value,label in (("","Tutte le disponibilita"),("disponibile","Disponibili"),("bassa","Scorte basse"),("esaurita","Esaurite")))
         empty='<section id="urnLiveEmpty" class="section empty-state">Nessuna urna corrisponde ai filtri. Puoi aggiungerne una nuova.</section>'
         content=f'<section id="urnCatalogGrid" class="urn-grid">{"".join(cards)}</section><section id="urnLiveEmpty" class="section empty-state" style="display:none">Nessuna urna corrisponde alla ricerca.</section>' if cards else empty
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Catalogo Urne</h1><p class="sub">Catalogo e magazzino collegati alle pratiche.</p></div><a class="btn" href="/catalogo-urne/nuova?categoria={category_param}">{new_item_label}</a></div><nav class="calendar-tabs urn-tabs">{tabs_html}</nav><section class="urn-stats">{stat_html}</section><form class="section urn-filter no-advanced-collapse" method="get"><input type="hidden" name="categoria" value="{category_param}"><div class="fields"><div class="field full"><label>Cerca urna</label><input id="urnCatalogSearch" name="q" value="{esc(display_term)}" placeholder="Inizia a scrivere il nome dell urna" autocomplete="off"></div><div class="field"><label>Materiale</label><select name="materiale">{material_options}</select></div><div class="field"><label>Disponibilita</label><select name="disponibilita">{availability_options}</select></div></div><button class="btn" style="margin-top:12px">Filtra</button></form>{content}<script>(function(){{const input=document.getElementById("urnCatalogSearch"),grid=document.getElementById("urnCatalogGrid"),empty=document.getElementById("urnLiveEmpty");if(!input||!grid)return;const cards=[...grid.querySelectorAll(".urn-card")];input.addEventListener("input",()=>{{const words=normalizeUrnSearch(input.value).split(/\s+/).filter(Boolean);let visible=0;cards.forEach(card=>{{const hay=normalizeUrnSearch(card.dataset.urnSearch);const show=words.every(word=>hay.includes(word));card.style.display=show?"":"none";if(show)visible++;}});if(empty)empty.style.display=visible?"none":"block";}});}})();</script></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Catalogo Urne</h1><p class="sub">Catalogo e magazzino collegati alle pratiche.</p></div><a class="btn" href="/catalogo-urne/nuova?categoria={category_param}">{new_item_label}</a></div><nav class="calendar-tabs urn-tabs">{tabs_html}</nav><section class="urn-stats">{stat_html}</section><form class="section urn-filter no-advanced-collapse" method="get"><input type="hidden" name="categoria" value="{category_param}"><div class="fields"><div class="field full"><label>Cerca urna</label><input id="urnCatalogSearch" name="q" value="{esc(display_term)}" placeholder="Inizia a scrivere il nome dell urna" autocomplete="off"></div><div class="field"><label>Materiale</label><select name="materiale">{material_options}</select></div><div class="field"><label>Disponibilita</label><select name="disponibilita">{availability_options}</select></div></div><button class="btn" style="margin-top:12px">Filtra</button></form>{content}<script>(function(){{const input=document.getElementById("urnCatalogSearch"),grid=document.getElementById("urnCatalogGrid"),empty=document.getElementById("urnLiveEmpty");if(!input||!grid)return;const cards=[...grid.querySelectorAll(".urn-card")];input.addEventListener("input",()=>{{const words=normalizeUrnSearch(input.value).split(/\\s+/).filter(Boolean);let visible=0;cards.forEach(card=>{{const hay=normalizeUrnSearch(card.dataset.urnSearch);const show=words.every(word=>hay.includes(word));card.style.display=show?"":"none";if(show)visible++;}});if(empty)empty.style.display=visible?"none":"block";}});}})();</script></main>'''
         self.send_html(layout("Catalogo Urne",body,user))
 
     def urn_edit_page(self,user,urn_id=None,draft=None,error=""):
@@ -5064,10 +5336,16 @@ class App(BaseHTTPRequestHandler):
         invoice_date=r["invoice_date"] if "invoice_date" in r.keys() and r["invoice_date"] else ""
         modal_id=f'paymentPopover{r["id"]}'
         return_to=esc(getattr(self,"path",""))
+        payment_idempotency_key=secrets.token_urlsafe(24)
+        payment_today=datetime.now(ROME_TZ).date().isoformat()
+        payment_full_amount=f"{effective_total(r):.2f}"
+        payment_remaining_amount=f"{outstanding_amount(r):.2f}"
+        payment_deposit_field="deposit_final" if uses_total_d(r) else "deposit"
+        payment_deposit_amount=(r[payment_deposit_field] or r["payment_amount"] or "0.00") if payment_deposit_field in r.keys() else "0.00"
         return f'''<div class="inline-statuses" onclick="event.stopPropagation()">
         <form method="post" action="/pratiche/{r['id']}/stato-rapido" onsubmit="return savePracticeState(this,event)"><input type="hidden" name="return_to" value="{return_to}"><select class="inline-state-select practice-status {status_cls}" name="status" aria-label="Stato pratica" data-saved-value="{esc(r['status'])}" onchange="savePracticeState(this.form)">{state_options}</select><span class="inline-save-note" aria-live="polite"></span></form>
         <select class="inline-state-select {pay_cls}" aria-label="Stato pagamento" data-payment-popover="{modal_id}" data-saved-value="{esc(payment)}" onchange="openPaymentPopover(this)">{payment_options}</select>
-        <div class="payment-popover" id="{modal_id}" hidden onclick="if(event.target===this)closePaymentPopover(this)"><form class="payment-dialog" method="post" action="/pratiche/{r['id']}/pagamento-rapido"><div class="titlebar"><div><h2>Pagamento · {esc(r['practice_number'])}</h2><p class="sub">Registra i dettagli senza lasciare questa lista.</p></div><button class="btn ghost" type="button" onclick="closePaymentPopover(this)">Chiudi</button></div><input type="hidden" name="return_to" value="{return_to}"><div class="fields"><div class="field"><label>Stato pagamento</label><select name="payment_status" onchange="ppmSyncPaymentDateField(this.closest('.payment-popover'))">{payment_options}</select></div><div class="field"><label>Metodo di pagamento</label><select name="payment_method">{method_options}</select></div><div class="field"><label>Totale incassato €</label><input name="payment_amount" value="{esc(amount_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field" data-payment-date-field hidden><label>DATA DEL PAGAMENTO</label><input type="date" name="economic_at" data-payment-date-input><small class="sub">Indica quando il pagamento è stato ricevuto (non è per forza oggi).</small></div><div class="field"><label>Numero fattura</label><input name="invoice_number" value="{esc(invoice_number)}"></div><div class="field"><label>Totale fattura €</label><input name="invoice_total" value="{esc(invoice_total)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field"><label>Data fattura</label><input type="date" name="invoice_date" value="{esc(invoice_date)}"></div></div><button class="btn" style="margin-top:16px">Salva pagamento</button></form></div></div>'''
+        <div class="payment-popover" id="{modal_id}" data-payment-full-amount="{payment_full_amount}" data-payment-remaining-amount="{payment_remaining_amount}" data-payment-deposit-amount="{esc(payment_deposit_amount)}" data-payment-default-date="{payment_today}" hidden onclick="if(event.target===this)closePaymentPopover(this)"><form class="payment-dialog" method="post" action="/pratiche/{r['id']}/pagamento-rapido"><div class="titlebar"><div><h2>Pagamento · {esc(r['practice_number'])}</h2><p class="sub">Registra i dettagli senza lasciare questa lista.</p></div><button class="btn ghost" type="button" onclick="closePaymentPopover(this)">Chiudi</button></div><input type="hidden" name="return_to" value="{return_to}"><input type="hidden" name="balance_idempotency_key" value="{payment_idempotency_key}"><div class="fields"><div class="field"><label>Stato pagamento</label><select name="payment_status" onchange="ppmSyncPaymentDateField(this.closest('.payment-popover'))">{payment_options}</select></div><div class="field"><label>Metodo di pagamento</label><select name="payment_method">{method_options}</select></div><div class="field"><label>Totale incassato €</label><input name="payment_amount" value="{esc(amount_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field" data-payment-date-field hidden><label>DATA DEL PAGAMENTO</label><input type="date" name="economic_at" value="{payment_today}" data-payment-date-input><small class="sub">Indica quando il pagamento è stato ricevuto (non è per forza oggi).</small></div><div class="field"><label>Numero fattura</label><input name="invoice_number" value="{esc(invoice_number)}"></div><div class="field"><label>Totale fattura €</label><input name="invoice_total" value="{esc(invoice_total)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field"><label>Data fattura</label><input type="date" name="invoice_date" value="{esc(invoice_date)}"></div></div><button class="btn" style="margin-top:16px">Salva pagamento</button></form></div></div>'''
 
     def practice_rows(self,rows,show_financials=False):
         rows=list(rows)
@@ -5795,6 +6073,7 @@ class App(BaseHTTPRequestHandler):
                 prefill={"client_id":event["client_id"] or "","owner_first_name":(client["first_name"] if client else event["client_first_name"]) or "","owner_last_name":(client["last_name"] if client else event["client_last_name"]) or "","owner_company":(client["company_name"] if client else "") or "","owner_phone":(client["phone"] if client else event["client_phone"]) or "","owner_phone_2":(client["phone_2"] if client else "") or "","owner_email":(client["email"] if client else "") or "","owner_tax_code":(client["tax_code"] if client else "") or "","owner_vat":(client["vat_number"] if client else "") or "","owner_street":(client["street"] or client["address"] if client else "") or "","owner_city":(client["city"] if client else "") or "","owner_province":(client["province"] if client else "") or "","owner_zip":(client["zip"] if client else "") or "","owner_notes":(client["notes"] if client else "") or "","pickup_address":event["address"] or "","pickup_date":event["start_at"][:10],"destination_branch":event["destination_site"] or "Livorno","request_origin":"Veterinario" if event["veterinarian_id"] else "Privato","veterinarian_id":event["veterinarian_id"] or "","clinic_name":event["veterinarian_name"] or "","notes":event["notes"] or "","animal_name":(animal["name"] if animal else event["animal_name"]) or "","species":animal["species"] if animal else "","estimated_weight":animal["weight"] if animal else "","service_type":f'Cremazione {animal["cremation_type"].lower()}' if animal and animal["cremation_type"] else ""}
         if draft is not None:prefill=draft
         hidden=(f'<input type="hidden" name="calendar_event_id" value="{calendar_event_id}"><input type="hidden" name="pickup_time" value="{event["start_at"][11:16]}">' if calendar_event_id.isdigit() and event else '')
+        hidden+=f'<input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(24)}">'
         error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>Nuova pratica</h1><div class="sub">Inserisci subito i dati disponibili; potrai completarli in seguito.</div></div><div class="actions"><button class="btn" form="practiceForm">Crea pratica</button></div></div>{error_html}<form method="post" id="practiceForm">{hidden}<div class="grid form-grid">{self.fields_html(prefill,user)}</div><div class="actions" style="margin-top:18px"><button class="btn">Crea pratica</button><a class="btn ghost" href="{f'/calendario/{calendar_event_id}' if calendar_event_id.isdigit() else '/'}">Annulla</a></div></form></main>'''
         self.send_html(layout("Nuova pratica",body,user))
@@ -6485,7 +6764,7 @@ class App(BaseHTTPRequestHandler):
                      ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
                   (practice_id,payment_type,normalized_channel,method,category,amount,stamp,user_id,notes,now()))
 
-    def record_payment_transition(self,c,practice,old_status,new_status,amount,method,paid_at,user_id,reason):
+    def record_payment_transition(self,c,practice,old_status,new_status,amount,method,paid_at,user_id,reason,balance_idempotency_key="",balance_source="practice_payment_transition"):
         old_status=old_status or "Da saldare"; new_status=new_status or "Da saldare"
         if old_status==new_status:return None
         allowed={("Da saldare","Acconto"),("Da saldare","Pagato"),("Acconto","Pagato")}
@@ -6509,6 +6788,27 @@ class App(BaseHTTPRequestHandler):
             return "Un acconto deve essere inferiore alla rimanenza; per chiudere il pagamento seleziona Pagato."
         movement_type="acconto" if new_status=="Acconto" else "saldo"
         category=self.payment_movement_category(practice,method)
+        balance_type="Acconto" if new_status=="Acconto" else "Incasso completo" if old_status=="Da saldare" else "Saldo"
+        balance_category=classify_balance_category(
+            has_total_d=uses_total_d(practice),
+            is_collaborator=(practice["request_origin"] or "")=="Collaboratore" or bool(practice["collaborator_id"]),
+        )
+        idempotency_key=(balance_idempotency_key or f'payment-transition:{practice["id"]}:{old_status}:{new_status}:{paid_at}:{amount:.2f}:{method}').strip()
+        create_balance_movement(
+            c,
+            amount_cents=euros_to_cents(f"{amount:.2f}"),
+            movement_date=paid_at,
+            category=balance_category,
+            ledger_section="Entrata",
+            movement_type=balance_type,
+            idempotency_key=idempotency_key,
+            practice_id=practice["id"],
+            practice_number_snapshot=practice["practice_number"] or "",
+            payment_method=method,
+            description=reason,
+            source=balance_source,
+            created_by=user_id,
+        )
         self.add_payment_movement(
             c,practice["id"],movement_type,category,amount,user_id,reason,paid_at,
             payment_method=method,movement_category=category,
@@ -6548,12 +6848,18 @@ class App(BaseHTTPRequestHandler):
 
     def create_practice(self,user):
         f=self.form(); d=self.normalized_fields(f); stamp=now();calendar_event_id=int(f["calendar_event_id"]) if f.get("calendar_event_id","").isdigit() else None
+        creation_balance_token=f.get("balance_idempotency_key","").strip()
+        creation_balance_key=f"practice-create:{creation_balance_token}" if creation_balance_token else ""
         if user["role"]!="admin": d["operator_name"]=user["display_name"].upper()
         error=self.validation_error(d)
         if error: return self.new_page(user,draft=d,error=error)
         economic_at=f.get("economic_at","").strip()
         initial_payment_amount=normalize_money_text(f.get("payment_amount",""))
         initial_payment_status=d.get("payment_status") or "Da saldare"
+        if not initial_payment_amount and initial_payment_status=="Acconto":
+            initial_payment_amount=normalize_money_text(d.get("deposit_final") if uses_total_d(d) else d.get("deposit"))
+        if not initial_payment_amount and initial_payment_status=="Pagato":
+            initial_payment_amount=f"{effective_total(d):.2f}"
         if initial_payment_status in ("Acconto","Pagato") and d.get("use_voucher")!="Si":
             if not initial_payment_amount or not economic_at or not d.get("payment_method"):
                 return self.new_page(user,draft=d,error="Per registrare un incasso indica importo, data e metodo di pagamento.")
@@ -6567,6 +6873,10 @@ class App(BaseHTTPRequestHandler):
         initial=f.get("status","Ritirato")
         if initial not in STATES or (initial=="Smaltito" and d.get("service_type")!="Cremazione collettiva"): initial="Ritirato"
         with db() as c:
+            if creation_balance_key and initial_payment_status in ("Acconto","Pagato"):
+                existing_balance=next((movement for movement in get_balance_movements(c) if movement.idempotency_key==creation_balance_key),None)
+                if existing_balance and existing_balance.practice_id:
+                    return self.redirect(f"/pratiche/{existing_balance.practice_id}")
             calendar_event=None
             if calendar_event_id:
                 calendar_event=c.execute("SELECT * FROM calendar_events WHERE id=? AND deleted_at IS NULL AND event_type IN ('Ritiro','Ritiro in sede') AND event_status='Ritirato'",(calendar_event_id,)).fetchone()
@@ -6597,7 +6907,7 @@ class App(BaseHTTPRequestHandler):
             self.sync_practice_urn(c,pid,None,d.get("urn_id_2"),user["id"])
             created_practice=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
             if initial_payment_status in ("Acconto","Pagato") and d.get("use_voucher")!="Si":
-                payment_error=self.record_payment_transition(c,created_practice,"Da saldare",initial_payment_status,initial_payment_amount,d.get("payment_method"),economic_at,user["id"],"Incasso alla creazione della pratica")
+                payment_error=self.record_payment_transition(c,created_practice,"Da saldare",initial_payment_status,initial_payment_amount,d.get("payment_method"),economic_at,user["id"],"Incasso alla creazione della pratica",creation_balance_key or f"practice-create:{pid}","practice_creation")
                 if payment_error:raise ValueError(payment_error)
             self.sync_voucher(c,pid,d)
             self.apply_used_voucher(c,pid,d,user["id"])
@@ -6985,7 +7295,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
             old=row["payment_status"] or "Da saldare"; stamp=now()
             due=effective_total(row)
-            error=self.record_payment_transition(c,row,old,payment,amount,method,economic_at,user["id"],"Pagamento registrato")
+            error=self.record_payment_transition(c,row,old,payment,amount,method,economic_at,user["id"],"Pagamento registrato",f'practice-payment:{form.get("balance_idempotency_key","").strip() or f"{pid}:{old}:{payment}:{economic_at}:{amount}:{method}"}')
             if error:
                 return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
             received=money_value(c.execute("SELECT COALESCE(SUM(amount),0) amount FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["amount"])
