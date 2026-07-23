@@ -97,7 +97,7 @@ PAYMENT_STATES = [
 ]
 
 PAYMENT_METHODS = [
-    "", "Pos", "Contanti", "Bonifico",
+    "", "Pos", "Contanti", "Bonifico", "Altro",
 ]
 
 EXPENSE_CATEGORIES = ["Fornitori", "Manutenzione", "Carburante", "Materiali", "Altro"]
@@ -426,6 +426,8 @@ def init_db():
           practice_id INTEGER NOT NULL REFERENCES practices(id) ON DELETE CASCADE,
           payment_type TEXT NOT NULL,
           payment_channel TEXT NOT NULL,
+          payment_method TEXT NOT NULL DEFAULT '',
+          movement_category TEXT NOT NULL DEFAULT '',
           amount REAL NOT NULL,
           paid_at TEXT NOT NULL,
           user_id INTEGER REFERENCES users(id),
@@ -615,6 +617,24 @@ def init_db():
         collaborator_existing = {row["name"] for row in c.execute("PRAGMA table_info(collaborators)")}
         if "code" not in collaborator_existing:
             c.execute("ALTER TABLE collaborators ADD COLUMN code TEXT")
+        payment_movement_existing = {row["name"] for row in c.execute("PRAGMA table_info(payment_movements)")}
+        for name, definition in {
+            "payment_method": "TEXT NOT NULL DEFAULT ''",
+            "movement_category": "TEXT NOT NULL DEFAULT ''",
+        }.items():
+            if name not in payment_movement_existing:
+                c.execute(f"ALTER TABLE payment_movements ADD COLUMN {name} {definition}")
+        c.execute("""UPDATE payment_movements
+                     SET payment_method=COALESCE((SELECT p.payment_method FROM practices p WHERE p.id=payment_movements.practice_id),'')
+                     WHERE COALESCE(payment_method,'')=''""")
+        c.execute("""UPDATE payment_movements
+                     SET movement_category=CASE
+                       WHEN EXISTS(SELECT 1 FROM practices p WHERE p.id=payment_movements.practice_id
+                                   AND (p.request_origin='Collaboratore' OR p.collaborator_id IS NOT NULL)) THEN 'Collaboratori'
+                       WHEN payment_method='Contanti' OR payment_channel='D' THEN 'D'
+                       ELSE 'W'
+                     END
+                     WHERE COALESCE(movement_category,'')=''""")
         urn_existing = {row["name"] for row in c.execute("PRAGMA table_info(urns)")}
         for name, definition in {"category": "TEXT NOT NULL DEFAULT 'Urna'"}.items():
             if name not in urn_existing:
@@ -775,22 +795,6 @@ def init_db():
                     "INSERT INTO users(username,password_hash,display_name,role,must_change_password) VALUES(?,?,?,?,1)",
                     (op_username, password_hash("petparadise"), op_display_name, "operator"),
                 )
-        legacy_payments=c.execute("""SELECT * FROM practices p
-                                     WHERE NOT EXISTS(SELECT 1 FROM payment_movements m WHERE m.practice_id=p.id)""").fetchall()
-        for practice in legacy_payments:
-            due=effective_total(practice); deposit=min(due,max(0.0,money_value(practice["deposit"])))
-            channel="D" if uses_total_d(practice) else "ordinario"
-            economic_at=practice["updated_at"] or practice["created_at"] or now()
-            if deposit>0:
-                c.execute("""INSERT INTO payment_movements(practice_id,payment_type,payment_channel,amount,paid_at,user_id,notes,created_at)
-                             VALUES(?,?,?,?,?,?,?,?)""",(practice["id"],"acconto_d" if channel=="D" else "acconto_ordinario",channel,deposit,economic_at,practice["created_by"],"Migrazione dati esistenti: data ricavata dall'ultimo aggiornamento",now()))
-                c.execute("UPDATE practices SET deposit_paid_at=COALESCE(deposit_paid_at,?) WHERE id=?",(economic_at,practice["id"]))
-            if (practice["payment_status"] or "") == "Pagato" and due>deposit:
-                balance=due-deposit
-                c.execute("""INSERT INTO payment_movements(practice_id,payment_type,payment_channel,amount,paid_at,user_id,notes,created_at)
-                             VALUES(?,?,?,?,?,?,?,?)""",(practice["id"],"saldo_d" if channel=="D" else "saldo_ordinario",channel,balance,economic_at,practice["created_by"],"Migrazione dati esistenti: data ricavata dall'ultimo aggiornamento",now()))
-            if (practice["payment_status"] or "") == "Pagato":
-                c.execute("UPDATE practices SET paid_at=COALESCE(paid_at,?) WHERE id=?",(economic_at,practice["id"]))
         # A practice marked Pagato can never have anything left to collect: clear any
         # stale remaining balance left over on either circuit (e.g. from a status
         # flipped by hand without updating the deposit). Idempotent, safe to rerun.
@@ -4609,198 +4613,129 @@ class App(BaseHTTPRequestHandler):
         self.redirect(f"/bilanci{back_qs}")
 
     def balances_v2(self,user):
-        q=parse_qs(urlparse(self.path).query); today=datetime.now().date(); default_from=today-timedelta(days=6)
-        date_from=(q.get("dal") or [default_from.isoformat()])[0].strip(); date_to=(q.get("al") or [today.isoformat()])[0].strip()
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_from): date_from=default_from.isoformat()
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_to): date_to=today.isoformat()
-        categories=[
-            ("acconti_w","Acconti W",()),("saldi_w","Saldi W",()),("totale_calcolato","Entrate W",()),
-            ("acconti_d","Acconti D",()),("saldi_d","Saldi D",()),("totale_d","Entrate D",()),
-        ]
-        category_map={key:label for key,label,_ in categories}; category_fields={key:fields for key,_,fields in categories}
-        selected=(q.get("voce") or [""])[0].strip(); selected=selected if selected in category_map else ""
-        with db() as c:
-            movements=c.execute("""SELECT m.id movement_id,m.payment_type,m.payment_channel,m.amount,m.paid_at,p.*
-                                   FROM payment_movements m JOIN practices p ON p.id=m.practice_id
-                                   WHERE (p.deleted_at IS NULL OR p.deleted_at='') AND COALESCE(p.request_origin,'')!='Collaboratore'
-                                   AND date(m.paid_at) BETWEEN date(?) AND date(?)
-                                   ORDER BY datetime(m.paid_at) DESC,m.id DESC""",(date_from,date_to)).fetchall()
-            expenses=c.execute("""SELECT * FROM expenses WHERE date(expense_date) BETWEEN date(?) AND date(?)
-                                  ORDER BY date(expense_date) DESC,id DESC""",(date_from,date_to)).fetchall()
-            incomes=c.execute("""SELECT * FROM incomes WHERE date(income_date) BETWEEN date(?) AND date(?)
-                                 ORDER BY date(income_date) DESC,id DESC""",(date_from,date_to)).fetchall()
-            collab_rows=c.execute("""SELECT p.*, co.name AS collaborator_display_name FROM practices p
-                                     LEFT JOIN collaborators co ON co.id=p.collaborator_id
-                                     WHERE (p.deleted_at IS NULL OR p.deleted_at='') AND p.request_origin='Collaboratore'
-                                     AND date(COALESCE(NULLIF(p.pickup_date,''),p.created_at)) BETWEEN date(?) AND date(?)
-                                     ORDER BY date(COALESCE(NULLIF(p.pickup_date,''),p.created_at))""",(date_from,date_to)).fetchall()
-
-        def movement_amount(row,key):
-            amount=money_value(row["amount"]); is_d=row["payment_channel"]=="D"
-            is_deposit=(row["payment_type"] or "").startswith("acconto_")
-            is_balance=(row["payment_type"] or "").startswith("saldo_")
-            if key=="acconti_w": return amount if not is_d and is_deposit else 0.0
-            if key=="saldi_w": return amount if not is_d and is_balance else 0.0
-            if key=="totale_calcolato": return 0.0 if is_d else amount
-            if key=="acconti_d": return amount if is_d and is_deposit else 0.0
-            if key=="saldi_d": return amount if is_d and is_balance else 0.0
-            if key=="totale_d": return amount if is_d else 0.0
-            return amount
-
-        def component_amount(row,key):
-            return sum(money_value(row[field]) for field in category_fields.get(key,()))
-
-        practice_movements={}
-        for row in movements:
-            practice_id=row["id"]
-            if practice_id not in practice_movements:
-                practice_movements[practice_id]={"row":None,"net":0.0}
-            movement_value=money_value(row["amount"])
-            if movement_value>0 and practice_movements[practice_id]["row"] is None:
-                practice_movements[practice_id]["row"]=row
-            practice_movements[practice_id]["net"]+=movement_value
-        component_rows=[item["row"] for item in practice_movements.values() if item["row"] is not None and item["net"]>0.004]
-
-        filtered_movements=[row for row in movements if not selected or abs(movement_amount(row,selected))>=0.005]
-        breakdown={key:sum(movement_amount(row,key) for row in filtered_movements) for key,_,_ in categories}
-        gross_w=breakdown["totale_calcolato"]; gross_d=breakdown["totale_d"]
-        expense_w=sum(money_value(e["amount"]) for e in expenses if e["channel"]=="W") if not selected else 0.0
-        expense_d=sum(money_value(e["amount"]) for e in expenses if e["channel"]=="D") if not selected else 0.0
-        income_w=sum(money_value(i["amount"]) for i in incomes if i["channel"]=="W") if not selected else 0.0
-        income_d=sum(money_value(i["amount"]) for i in incomes if i["channel"]=="D") if not selected else 0.0
-        net_w=gross_w-expense_w+income_w; net_d=gross_d-expense_d+income_d
-        gross_all=sum(money_value(row["amount"]) for row in filtered_movements)
-        shown_total=gross_all
-        period_params=f'dal={quote(date_from)}&al={quote(date_to)}'
-        detail_params=period_params+(f'&voce={quote(selected)}' if selected else '')
-        filtered_expenses=expenses if not selected else []
-        filtered_incomes=incomes if not selected else []
-        filtered_collab_rows=collab_rows if not selected else []
-        def render_balance_card(key,label):
-            active="active" if selected==key else ""
-            href=f"/bilanci?{period_params}&voce={quote(key)}"
-            return f'<a class="balance-card {active}" href="{href}"><small>{label}</small><strong>{money_it(breakdown[key])}</strong></a>'
-        def linked_card(label,value,dettaglio_key):
-            return f'<a class="balance-card" href="/bilanci?{detail_params}&dettaglio={dettaglio_key}"><small>{label}</small><strong>{money_it(value)}</strong></a>'
-        card_parts=[]
-        for key,label,_ in categories:
-            card_parts.append(render_balance_card(key,label))
-            if key=="totale_calcolato":
-                card_parts.append(linked_card("Altre entrate W",income_w,"entrate_w"))
-                card_parts.append(linked_card("Uscite W",expense_w,"uscite_w"))
-                card_parts.append(linked_card("Totale W",net_w,"totale_w"))
-            elif key=="totale_d":
-                card_parts.append(linked_card("Altre entrate D",income_d,"entrate_d"))
-                card_parts.append(linked_card("Uscite D",expense_d,"uscite_d"))
-                card_parts.append(linked_card("Totale D",net_d,"totale_d"))
-        cards=''.join(card_parts)
-        type_labels={"acconto_ordinario":"Acconto W","saldo_ordinario":"Saldo W","acconto_d":"Acconto D","saldo_d":"Saldo D","rettifica":"Rettifica"}
-        table_rows=[]; chart_by_day={}
-        source=filtered_movements
-        collaborator_ids={int(row["collaborator_id"]) for row in source if "collaborator_id" in row.keys() and row["collaborator_id"]}
-        collaborator_codes={}
-        if collaborator_ids:
-            marks=','.join('?' for _ in collaborator_ids)
-            with db() as c:collaborator_codes={row["id"]:(row["code"] or "") for row in c.execute(f"SELECT id,code FROM collaborators WHERE id IN ({marks})",tuple(collaborator_ids))}
-        for row in source:
-            amount=money_value(row["amount"]); economic_date=(row["paid_at"] or "")[:10]
-            owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip(); url=f'/pratiche/{row["id"]}'
-            movement_label=type_labels.get(row["payment_type"],row["payment_type"] or "Incasso")
-            channel_label="D" if row["payment_channel"]=="D" else "W"
-            collaborator_code=collaborator_codes.get(int(row["collaborator_id"])) if "collaborator_id" in row.keys() and row["collaborator_id"] else ""
-            sigla_prefix=f"{esc(collaborator_code)} " if collaborator_code else ""
-            if (row["service_type"] or "")=="Cremazione collettiva":
-                animal_cell=esc(row["species"]) if row["species"] else '<span class="sub">-</span>'
-            else:
-                animal_meta=esc(row["species"]) + ((' - '+esc(row["estimated_weight"])+' kg') if row["estimated_weight"] else '')
-                animal_cell=f'{sigla_prefix}{esc(row["animal_name"] or "Da inserire")}<br><small>{animal_meta}</small>'
-            chart_by_day[economic_date]=chart_by_day.get(economic_date,0.0)+amount
-            table_rows.append(f'''<tr class="practice-row-link" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}><td>{animal_cell}</td><td>{esc(date_it(economic_date))}</td><td>{esc(movement_label)}</td><td><a href="{url}"><b>{esc(row["practice_number"])}</b></a></td><td>{esc(owner)}</td><td><b>{money_it(amount)}</b></td><td>{esc(channel_label)}</td><td><a class="btn ghost" href="{url}">Apri</a></td></tr>''')
-        start_date=datetime.strptime(date_from,"%Y-%m-%d").date(); end_date=datetime.strptime(date_to,"%Y-%m-%d").date(); chart_days=[]; cursor=start_date
-        while cursor<=end_date: chart_days.append(cursor); cursor+=timedelta(days=1)
-        chart=income_chart([chart_by_day.get(day.isoformat(),0.0) for day in chart_days],[day.strftime("%d/%m") for day in chart_days])
-        table_body=''.join(table_rows) or '<tr><td colspan="8" class="sub">Nessun importo nel periodo selezionato.</td></tr>'
-        options='<option value="">Tutti gli incassi</option>'+''.join(f'<option value="{key}" {"selected" if selected==key else ""}>{label}</option>' for key,label,_ in categories)
-        subtitle="Incassi effettivi filtrati per data del pagamento"
-        chart_description="Ogni acconto e saldo è conteggiato esclusivamente nella propria data di incasso."
-        amount_heading="Importo"
-        if not selected and (expense_w+expense_d+income_w+income_d)>0.004:
-            secondary_parts=[f"Entrate lorde: {money_it(gross_all)}"]
-            if (income_w+income_d)>0.004:secondary_parts.append(f"Altre entrate: {money_it(income_w+income_d)}")
-            if (expense_w+expense_d)>0.004:secondary_parts.append(f"Uscite: {money_it(expense_w+expense_d)}")
-            total_secondary=f'<small class="balance-total-secondary">{" · ".join(secondary_parts)}</small>'
-        else:
-            total_secondary=''
-        new_expense_url=f'/bilanci/uscite/nuova?dal={quote(date_from)}&al={quote(date_to)}'
-        def expense_rows_html(channel):
-            rows=[e for e in filtered_expenses if e["channel"]==channel]
-            if not rows:return '<tr><td colspan="5" class="sub">Nessuna uscita registrata nel periodo.</td></tr>'
-            out=[]
-            for e in rows:
-                edit_url=f'/bilanci/uscite/{e["id"]}/modifica?dal={quote(date_from)}&al={quote(date_to)}'
-                out.append(f'''<tr><td>{esc(date_it(e["expense_date"]))}</td><td>{esc(e["category"] or "-")}</td><td>{esc(e["description"])}</td><td><b>{money_it(money_value(e["amount"]))}</b></td><td class="actions"><a class="btn ghost" href="{edit_url}">Modifica</a><form method="post" action="/bilanci/uscite/{e["id"]}/elimina" onsubmit="return confirm('Eliminare questa uscita?')" style="display:inline"><input type="hidden" name="dal" value="{esc(date_from)}"><input type="hidden" name="al" value="{esc(date_to)}"><button class="btn danger-btn" type="submit">Elimina</button></form></td></tr>''')
-            return ''.join(out)
-        def expense_channel_block(channel):
-            return f'<h3 class="expenses-channel-title">Circuito {channel}</h3><table><thead><tr><th>Data</th><th>Categoria</th><th>Descrizione</th><th>Importo</th><th></th></tr></thead><tbody>{expense_rows_html(channel)}</tbody></table>'
-        expenses_section=f'''<section class="tablebox balance-table expenses-section"><h2>Uscite del periodo</h2>{expense_channel_block("W")}{expense_channel_block("D")}</section>'''
-        expenses_section_w=f'''<section class="tablebox balance-table expenses-section"><h2>Uscite del periodo — Circuito W</h2>{expense_channel_block("W")}</section>'''
-        expenses_section_d=f'''<section class="tablebox balance-table expenses-section"><h2>Uscite del periodo — Circuito D</h2>{expense_channel_block("D")}</section>'''
-        new_income_url=f'/bilanci/entrate/nuova?dal={quote(date_from)}&al={quote(date_to)}'
-        def income_rows_html(channel):
-            rows=[i for i in filtered_incomes if i["channel"]==channel]
-            if not rows:return '<tr><td colspan="5" class="sub">Nessuna entrata registrata nel periodo.</td></tr>'
-            out=[]
-            for i in rows:
-                edit_url=f'/bilanci/entrate/{i["id"]}/modifica?dal={quote(date_from)}&al={quote(date_to)}'
-                out.append(f'''<tr><td>{esc(date_it(i["income_date"]))}</td><td>{esc(i["category"] or "-")}</td><td>{esc(i["description"])}</td><td><b>{money_it(money_value(i["amount"]))}</b></td><td class="actions"><a class="btn ghost" href="{edit_url}">Modifica</a><form method="post" action="/bilanci/entrate/{i["id"]}/elimina" onsubmit="return confirm('Eliminare questa entrata?')" style="display:inline"><input type="hidden" name="dal" value="{esc(date_from)}"><input type="hidden" name="al" value="{esc(date_to)}"><button class="btn danger-btn" type="submit">Elimina</button></form></td></tr>''')
-            return ''.join(out)
-        def income_channel_block(channel):
-            return f'<h3 class="expenses-channel-title">Circuito {channel}</h3><table><thead><tr><th>Data</th><th>Categoria</th><th>Descrizione</th><th>Importo</th><th></th></tr></thead><tbody>{income_rows_html(channel)}</tbody></table>'
-        incomes_section_w=f'''<section class="tablebox balance-table expenses-section"><h2>Altre entrate del periodo — Circuito W</h2>{income_channel_block("W")}</section>'''
-        incomes_section_d=f'''<section class="tablebox balance-table expenses-section"><h2>Altre entrate del periodo — Circuito D</h2>{income_channel_block("D")}</section>'''
-        collab_totals={"Da fatturare":0.0,"Fatturato":0.0,"Incassato":0.0}
-        collab_by_id={}
-        for crow in filtered_collab_rows:
-            cstatus=crow["billing_status"] or "Da fatturare"
-            if cstatus not in collab_totals:cstatus="Da fatturare"
-            camount=effective_total(crow)
-            collab_totals[cstatus]+=camount
-            ckey=crow["collaborator_id"] or 0
-            cname=crow["collaborator_display_name"] or crow["collaborator_name"] or "Collaboratore non specificato"
-            centry=collab_by_id.setdefault(ckey,{"name":cname,"totals":{"Da fatturare":0.0,"Fatturato":0.0,"Incassato":0.0}})
-            centry["totals"][cstatus]+=camount
-        collab_rows_html=''.join(f'''<tr><td>{esc(centry["name"])}</td><td>{money_it(centry["totals"]["Da fatturare"])}</td><td>{money_it(centry["totals"]["Fatturato"])}</td><td>{money_it(centry["totals"]["Incassato"])}</td><td><b>{money_it(sum(centry["totals"].values()))}</b></td></tr>''' for ckey,centry in sorted(collab_by_id.items(),key=lambda item:item[1]["name"])) or '<tr><td colspan="5" class="sub">Nessuna pratica collaboratore nel periodo.</td></tr>'
-        collab_section=f'''<section class="tablebox balance-table balances-collab-section"><h2>Collaboratori</h2><p class="sub">Conto separato dai circuiti W e D, basato sul mese di competenza (data di recupero) delle pratiche origine Collaboratore.</p><div class="balance-grid"><div class="balance-card-static"><small>Da fatturare</small><strong>{money_it(collab_totals["Da fatturare"])}</strong></div><div class="balance-card-static"><small>Fatturato</small><strong>{money_it(collab_totals["Fatturato"])}</strong></div><div class="balance-card-static"><small>Incassato</small><strong>{money_it(collab_totals["Incassato"])}</strong></div></div><table><thead><tr><th>Collaboratore</th><th>Da fatturare</th><th>Fatturato</th><th>Incassato</th><th>Totale</th></tr></thead><tbody>{collab_rows_html}</tbody></table></section>'''
-        def totale_section(channel_label,gross,expense,income,net,entrate_key,dettaglio_prefix):
-            return f'''<section class="tablebox balance-table"><h2>Totale {channel_label}</h2><p class="sub">Entrate lorde − Uscite + Altre entrate, nel periodo selezionato.</p><div class="balance-grid">
-<a class="balance-card" href="/bilanci?{period_params}&voce={entrate_key}"><small>Entrate lorde {channel_label}</small><strong>{money_it(gross)}</strong></a>
-<a class="balance-card" href="/bilanci?{detail_params}&dettaglio=uscite_{dettaglio_prefix}"><small>Uscite {channel_label}</small><strong>{money_it(expense)}</strong></a>
-<a class="balance-card" href="/bilanci?{detail_params}&dettaglio=entrate_{dettaglio_prefix}"><small>Altre entrate {channel_label}</small><strong>{money_it(income)}</strong></a>
-<div class="balance-card-static"><small>Totale {channel_label}</small><strong>{money_it(net)}</strong></div>
-</div></section>'''
-        totale_w_section=totale_section("W",gross_w,expense_w,income_w,net_w,"totale_calcolato","w")
-        totale_d_section=totale_section("D",gross_d,expense_d,income_d,net_d,"totale_d","d")
-        extra_cards_html=(
-            f'<a class="balance-card" href="/bilanci?{detail_params}&dettaglio=uscite"><small>Uscite</small><strong>{money_it(expense_w+expense_d)}</strong></a>'
-            f'<a class="balance-card" href="/bilanci?{detail_params}&dettaglio=collaboratori"><small>Collaboratori</small><strong>{money_it(collab_totals["Da fatturare"])}</strong></a>'
-        )
-        detail=(q.get("dettaglio") or [""])[0].strip()
-        detail_map={
-            "uscite":("Uscite del periodo",expenses_section),
-            "uscite_w":("Uscite del periodo — Circuito W",expenses_section_w),
-            "uscite_d":("Uscite del periodo — Circuito D",expenses_section_d),
-            "entrate_w":("Altre entrate del periodo — Circuito W",incomes_section_w),
-            "entrate_d":("Altre entrate del periodo — Circuito D",incomes_section_d),
-            "totale_w":("Totale W",totale_w_section),
-            "totale_d":("Totale D",totale_d_section),
-            "collaboratori":("Collaboratori",collab_section),
+        q=parse_qs(urlparse(self.path).query)
+        today=datetime.now().date(); default_from=today-timedelta(days=6)
+        date_from=(q.get("dal") or [default_from.isoformat()])[0].strip()
+        date_to=(q.get("al") or [today.isoformat()])[0].strip()
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_from):date_from=default_from.isoformat()
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_to):date_to=today.isoformat()
+        category=(q.get("categoria") or [""])[0].strip()
+        movement_type=(q.get("tipo") or [""])[0].strip()
+        method=(q.get("metodo") or [""])[0].strip()
+        collaborator_filter=(q.get("collaboratore") or [""])[0].strip()
+        search=(q.get("q") or [""])[0].strip()
+        legacy_filter=(q.get("voce") or [""])[0].strip()
+        legacy_filters={
+            "acconti_w":("Entrate W","acconto"),"saldi_w":("Entrate W","saldo"),"totale_calcolato":("Entrate W",""),
+            "acconti_d":("Entrate D","acconto"),"saldi_d":("Entrate D","saldo"),"totale_d":("Entrate D",""),
         }
-        if detail in detail_map:
-            detail_title,detail_section=detail_map[detail]
-            detail_body=f'''<main class="wrap balances-wrap"><div class="titlebar"><div><h1>{detail_title}</h1><p class="sub">dal {esc(date_it(date_from))} al {esc(date_it(date_to))}</p></div><a class="btn ghost" href="/bilanci?{detail_params}">← Torna a Bilanci</a></div>{detail_section}</main>'''
-            self.send_html(layout(detail_title,detail_body,user))
-            return
-        body=f'''<main class="wrap balances-wrap"><div class="titlebar"><div><h1>Bilanci</h1><p class="sub">{subtitle} dal {esc(date_it(date_from))} al {esc(date_it(date_to))}</p></div><div class="actions"><a class="btn" href="{new_expense_url}">+ Registra uscita</a><a class="btn" href="{new_income_url}">+ Registra entrata</a></div><div class="balance-total"><small>{esc(category_map.get(selected,"Entrate totali"))}</small><strong>{money_it(shown_total)}</strong>{total_secondary}</div></div><section class="balance-grid">{cards}{extra_cards_html}</section><section class="dashboard-panel balance-chart"><header><div><h2>Andamento nel periodo filtrato</h2><p>{chart_description}</p></div></header>{chart}</section><section class="tablebox balance-table"><div class="section-collapse-head"><h2>Elenco incassi</h2><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><table class="balance-list-table"><thead><tr><th>Animale</th><th>Data incasso</th><th>Movimento</th><th>Pratica</th><th>Cliente</th><th>{amount_heading}</th><th>Circuito</th><th></th></tr></thead><tbody>{table_body}</tbody></table></div></section><section class="search-after-results"><h2>Filtra bilanci</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field full"><label>Voce</label><select name="voce">{options}</select></div></div><button class="btn" style="margin-top:12px">Applica filtri</button><a class="btn ghost" style="margin-top:12px" href="/bilanci">Ultimi 7 giorni</a></form></section></main>'''
+        if not category and not movement_type and legacy_filter in legacy_filters:
+            category,movement_type=legacy_filters[legacy_filter]
+        categories=("Entrate W","Entrate D","Collaboratori","Uscite W","Uscite D")
+        if category not in ("",*categories):category=""
+        if movement_type not in ("","acconto","saldo","entrata","uscita"):movement_type=""
+        if method not in PAYMENT_METHODS:method=""
+        if collaborator_filter and not collaborator_filter.isdigit():collaborator_filter=""
+        with db() as c:
+            payment_rows=c.execute("""SELECT m.*,p.practice_number,p.animal_name,p.owner_first_name,p.owner_last_name,
+                                             p.owner_company,p.request_origin,p.collaborator_id,p.collaborator_name,
+                                             co.name collaborator_display_name
+                                      FROM payment_movements m JOIN practices p ON p.id=m.practice_id
+                                      LEFT JOIN collaborators co ON co.id=p.collaborator_id
+                                      WHERE (p.deleted_at IS NULL OR p.deleted_at='')
+                                        AND m.amount>0 AND m.payment_type!='rettifica'
+                                        AND date(m.paid_at) BETWEEN date(?) AND date(?)
+                                      ORDER BY datetime(m.paid_at) DESC,m.id DESC""",(date_from,date_to)).fetchall()
+            income_rows=c.execute("""SELECT * FROM incomes
+                                     WHERE date(income_date) BETWEEN date(?) AND date(?)
+                                     ORDER BY date(income_date) DESC,id DESC""",(date_from,date_to)).fetchall()
+            expense_rows=c.execute("""SELECT * FROM expenses
+                                      WHERE date(expense_date) BETWEEN date(?) AND date(?)
+                                      ORDER BY date(expense_date) DESC,id DESC""",(date_from,date_to)).fetchall()
+            collaborators=c.execute("SELECT id,name FROM collaborators WHERE active=1 ORDER BY name").fetchall()
+        entries=[]
+        for row in payment_rows:
+            saved_category=(row["movement_category"] or "").strip()
+            if saved_category not in ("W","D","Collaboratori"):
+                saved_category="Collaboratori" if row["request_origin"]=="Collaboratore" or row["collaborator_id"] else "D" if (row["payment_method"] or "")=="Contanti" or row["payment_channel"]=="D" else "W"
+            display_category={"W":"Entrate W","D":"Entrate D","Collaboratori":"Collaboratori"}[saved_category]
+            owner=" ".join(value for value in (row["owner_first_name"],row["owner_last_name"]) if value).strip() or row["owner_company"] or "-"
+            payment_kind="acconto" if (row["payment_type"] or "").startswith("acconto") else "saldo"
+            entries.append({"id":f'p{row["id"]}',"date":(row["paid_at"] or "")[:10],"category":display_category,
+                            "type":payment_kind,"label":"Acconto" if payment_kind=="acconto" else "Saldo",
+                            "method":row["payment_method"] or "Non indicato","amount":money_value(row["amount"]),
+                            "signed":money_value(row["amount"]),"practice_id":row["practice_id"],
+                            "reference":row["practice_number"] or "-","subject":row["animal_name"] or owner,
+                            "collaborator_id":str(row["collaborator_id"] or ""),"collaborator":row["collaborator_display_name"] or row["collaborator_name"] or ""})
+        for row in income_rows:
+            display_category="Entrate D" if row["channel"]=="D" else "Entrate W"
+            entries.append({"id":f'i{row["id"]}',"date":row["income_date"],"category":display_category,
+                            "type":"entrata","label":"Entrata manuale","method":"Altro",
+                            "amount":money_value(row["amount"]),"signed":money_value(row["amount"]),
+                            "practice_id":None,"reference":row["description"],"subject":row["category"] or "-",
+                            "collaborator_id":"","collaborator":""})
+        for row in expense_rows:
+            display_category="Uscite D" if row["channel"]=="D" else "Uscite W"
+            entries.append({"id":f'e{row["id"]}',"date":row["expense_date"],"category":display_category,
+                            "type":"uscita","label":"Uscita","method":"Contanti" if row["channel"]=="D" else "Altro",
+                            "amount":money_value(row["amount"]),"signed":-money_value(row["amount"]),
+                            "practice_id":None,"reference":row["description"],"subject":row["category"] or "-",
+                            "collaborator_id":"","collaborator":""})
+        needle=search.casefold()
+        filtered=[]
+        for entry in entries:
+            if category and entry["category"]!=category:continue
+            if movement_type and entry["type"]!=movement_type:continue
+            if method and entry["method"]!=method:continue
+            if collaborator_filter and entry["collaborator_id"]!=collaborator_filter:continue
+            haystack=" ".join(str(entry[key]) for key in ("category","label","method","reference","subject","collaborator")).casefold()
+            if needle and needle not in haystack:continue
+            filtered.append(entry)
+        filtered.sort(key=lambda entry:(entry["date"],entry["id"]),reverse=True)
+        totals={name:sum(entry["amount"] for entry in filtered if entry["category"]==name) for name in categories}
+        balance_w=totals["Entrate W"]-totals["Uscite W"]
+        balance_d=totals["Entrate D"]-totals["Uscite D"]
+        net_total=balance_w+balance_d+totals["Collaboratori"]
+        shown_total=totals[category] if category else net_total
+        base_params={"dal":date_from,"al":date_to}
+        if movement_type:base_params["tipo"]=movement_type
+        if method:base_params["metodo"]=method
+        if collaborator_filter:base_params["collaboratore"]=collaborator_filter
+        if search:base_params["q"]=search
+        def query_url(extra=None):
+            params={**base_params,**(extra or {})}
+            return "/bilanci?"+urlencode(params)
+        cards=[]
+        for name in categories:
+            cards.append(f'<a class="balance-card {"active" if category==name else ""}" href="{esc(query_url({"categoria":name}))}"><small>{esc(name)}</small><strong>{money_it(totals[name])}</strong></a>')
+        cards.append(f'<div class="balance-card-static"><small>Saldo W</small><strong>{money_it(balance_w)}</strong></div>')
+        cards.append(f'<div class="balance-card-static"><small>Saldo D</small><strong>{money_it(balance_d)}</strong></div>')
+        cards.append(f'<div class="balance-card-static"><small>Totale netto</small><strong>{money_it(net_total)}</strong></div>')
+        rows=[]
+        chart_by_day={}
+        for entry in filtered:
+            chart_by_day[entry["date"]]=chart_by_day.get(entry["date"],0.0)+entry["signed"]
+            reference=esc(entry["reference"])
+            action=""
+            if entry["practice_id"]:
+                url=f'/pratiche/{entry["practice_id"]}'
+                reference=f'<a href="{url}"><b>{reference}</b></a>'
+                action=f'<a class="btn ghost" href="{url}">Apri</a>'
+            rows.append(f'''<tr><td>{esc(date_it(entry["date"]))}</td><td>{esc(entry["category"])}</td><td>{esc(entry["label"])}</td><td>{reference}</td><td>{esc(entry["subject"])}</td><td>{esc(entry["method"])}</td><td><b>{money_it(entry["amount"])}</b></td><td>{action}</td></tr>''')
+        table_body=''.join(rows) or '<tr><td colspan="8" class="sub">Nessun movimento corrisponde ai filtri selezionati.</td></tr>'
+        start_date=datetime.strptime(date_from,"%Y-%m-%d").date();end_date=datetime.strptime(date_to,"%Y-%m-%d").date()
+        chart_days=[];cursor=start_date
+        while cursor<=end_date:chart_days.append(cursor);cursor+=timedelta(days=1)
+        chart=income_chart([chart_by_day.get(day.isoformat(),0.0) for day in chart_days],[day.strftime("%d/%m") for day in chart_days])
+        category_options=''.join(f'<option value="{esc(value)}" {"selected" if category==value else ""}>{esc(value or "Tutte le categorie")}</option>' for value in ("",*categories))
+        type_options=''.join(f'<option value="{value}" {"selected" if movement_type==value else ""}>{label}</option>' for value,label in (("","Tutti i movimenti"),("acconto","Acconti"),("saldo","Saldi"),("entrata","Entrate manuali"),("uscita","Uscite")))
+        method_options=''.join(f'<option value="{esc(value)}" {"selected" if method==value else ""}>{esc(value or "Tutti i metodi")}</option>' for value in PAYMENT_METHODS)
+        collaborator_options='<option value="">Tutti i collaboratori</option>'+''.join(f'<option value="{row["id"]}" {"selected" if collaborator_filter==str(row["id"]) else ""}>{esc(row["name"])}</option>' for row in collaborators)
+        body=f'''<main class="wrap balances-wrap"><div class="titlebar"><div><h1>Bilanci</h1><p class="sub">Movimenti effettivi dal {esc(date_it(date_from))} al {esc(date_it(date_to))}</p></div><div class="actions"><a class="btn" href="/bilanci/uscite/nuova?dal={quote(date_from)}&al={quote(date_to)}">+ Registra uscita</a><a class="btn" href="/bilanci/entrate/nuova?dal={quote(date_from)}&al={quote(date_to)}">+ Registra entrata</a></div><div class="balance-total"><small>{"Totale "+esc(category) if category else "Totale netto filtrato"}</small><strong>{money_it(shown_total)}</strong></div></div>
+        <section class="balance-grid">{''.join(cards)}</section>
+        <section class="search-after-results"><h2>Ricerca</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Categoria</label><select name="categoria">{category_options}</select></div><div class="field"><label>Tipo movimento</label><select name="tipo">{type_options}</select></div><div class="field"><label>Metodo</label><select name="metodo">{method_options}</select></div><div class="field"><label>Collaboratore</label><select name="collaboratore">{collaborator_options}</select></div><div class="field full"><label>Cerca</label><input name="q" value="{esc(search)}" placeholder="Pratica, animale, collaboratore o descrizione"></div></div><div class="actions" style="margin-top:12px"><button class="btn">Applica filtri</button><a class="btn ghost" href="/bilanci">Azzera filtri</a></div></form></section>
+        <section class="dashboard-panel balance-chart"><header><div><h2>Andamento del flusso</h2><p>Entrate positive e uscite negative, calcolate sugli stessi movimenti dell'elenco.</p></div></header>{chart}</section>
+        <section class="tablebox balance-table"><div class="section-collapse-head"><h2>Movimenti filtrati</h2><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><table class="balance-list-table"><thead><tr><th>Data</th><th>Categoria</th><th>Tipo</th><th>Pratica / descrizione</th><th>Animale / categoria</th><th>Metodo</th><th>Importo</th><th></th></tr></thead><tbody>{table_body}</tbody></table></div></section></main>'''
         self.send_html(layout("Bilanci",body,user))
 
     def disposal_contact_for(self,row):
@@ -6542,8 +6477,6 @@ class App(BaseHTTPRequestHandler):
         data["total_service"]=(f"{calculated:.2f}" if calculated else "")
         if data["invoice_total_manual"]!="Si":data["invoice_total"]=data["total_service"]
         due=effective_total(data)
-        if due and money_value(data["deposit"]) >= due:
-            data["payment_status"]="Pagato"
         # A practice marked Pagato can never have anything left to collect, on either
         # circuit: force both remaining fields to zero regardless of the recorded
         # deposit (a status flipped by hand without updating the deposit must not
@@ -7042,43 +6975,63 @@ class App(BaseHTTPRequestHandler):
         c.execute("UPDATE urns SET quantity=?,updated_at=? WHERE id=?",(new_quantity,now(),urn_id))
         c.execute("INSERT INTO urn_movements(urn_id,practice_id,user_id,movement_type,quantity_delta,old_quantity,new_quantity,note,created_at) VALUES(?,?,?,?,?,?,?,?,?)",(urn_id,practice_id,user_id,movement_type,actual_delta,old_quantity,new_quantity,note,now()))
 
-    def add_payment_movement(self,c,practice_id,payment_type,channel,amount,user_id,notes,paid_at=None):
-        amount=round(float(amount),2)
-        if abs(amount)<0.005:return
-        stamp=paid_at or now()
-        c.execute("""INSERT INTO payment_movements(practice_id,payment_type,payment_channel,amount,paid_at,user_id,notes,created_at)
-                     VALUES(?,?,?,?,?,?,?,?)""",(practice_id,payment_type,channel,amount,stamp,user_id,notes,now()))
+    def payment_movement_category(self,practice,method):
+        if (practice["request_origin"] or "")=="Collaboratore" or practice["collaborator_id"]:
+            return "Collaboratori"
+        return "D" if method=="Contanti" else "W"
 
-    def reconcile_payment_movements(self,c,practice_id,previous,current,user_id,reason,economic_at=None):
-        channel="D" if uses_total_d(current) else "ordinario"
-        due=effective_total(current); target=received_amount(current)
-        rows=c.execute("SELECT payment_channel,COALESCE(sum(amount),0) amount FROM payment_movements WHERE practice_id=? GROUP BY payment_channel",(practice_id,)).fetchall()
-        totals={row["payment_channel"]:float(row["amount"] or 0) for row in rows}
-        existing_total=sum(totals.values())
-        for old_channel,old_amount in list(totals.items()):
-            if old_channel!=channel and abs(old_amount)>=0.005:
-                self.add_payment_movement(c,practice_id,"rettifica",old_channel,-old_amount,user_id,f"Riclassificazione verso circuito {channel}: {reason}")
-                self.add_payment_movement(c,practice_id,"rettifica",channel,old_amount,user_id,f"Riclassificazione dal circuito {old_channel}: {reason}")
-        old_status=(previous["payment_status"] or "Da saldare") if previous is not None else "Da saldare"
-        new_status=current["payment_status"] or "Da saldare"
-        old_deposit=money_value(previous["deposit"]) if previous is not None else 0.0
-        new_deposit=min(due,max(0.0,money_value(current["deposit"])))
-        delta=round(target-existing_total,2)
-        stamp=economic_at if economic_at and re.fullmatch(r"\d{4}-\d{2}-\d{2}",economic_at) else now()
-        if previous is None and new_status=="Pagato" and target>0:
-            deposit_part=min(new_deposit,target)
-            self.add_payment_movement(c,practice_id,"acconto_d" if channel=="D" else "acconto_ordinario",channel,deposit_part,user_id,reason,stamp)
-            self.add_payment_movement(c,practice_id,"saldo_d" if channel=="D" else "saldo_ordinario",channel,target-deposit_part,user_id,reason,stamp)
-        elif delta>0:
-            is_balance=new_status=="Pagato"
-            movement_type=("saldo_d" if channel=="D" else "saldo_ordinario") if is_balance else ("acconto_d" if channel=="D" else "acconto_ordinario")
-            self.add_payment_movement(c,practice_id,movement_type,channel,delta,user_id,reason,stamp)
-        elif delta<0:
-            self.add_payment_movement(c,practice_id,"rettifica",channel,delta,user_id,reason,stamp)
-        if new_deposit>old_deposit:
-            c.execute("UPDATE practices SET deposit_paid_at=? WHERE id=?",(stamp,practice_id))
-        if new_status=="Pagato" and old_status!="Pagato":
-            c.execute("UPDATE practices SET paid_at=? WHERE id=?",(stamp,practice_id))
+    def add_payment_movement(self,c,practice_id,payment_type,channel,amount,user_id,notes,paid_at=None,payment_method="",movement_category=""):
+        amount=round(float(amount),2)
+        if amount<=0:return
+        stamp=paid_at or now()
+        practice=c.execute("SELECT * FROM practices WHERE id=?",(practice_id,)).fetchone()
+        method=payment_method or (practice["payment_method"] if practice else "") or ""
+        if movement_category:
+            category=movement_category
+        elif practice and ((practice["request_origin"] or "")=="Collaboratore" or practice["collaborator_id"]):
+            category="Collaboratori"
+        else:
+            category="D" if method=="Contanti" or channel=="D" else "W"
+        normalized_channel=category
+        c.execute("""INSERT INTO payment_movements(
+                       practice_id,payment_type,payment_channel,payment_method,movement_category,
+                       amount,paid_at,user_id,notes,created_at
+                     ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                  (practice_id,payment_type,normalized_channel,method,category,amount,stamp,user_id,notes,now()))
+
+    def record_payment_transition(self,c,practice,old_status,new_status,amount,method,paid_at,user_id,reason):
+        old_status=old_status or "Da saldare"; new_status=new_status or "Da saldare"
+        if old_status==new_status:return None
+        allowed={("Da saldare","Acconto"),("Da saldare","Pagato"),("Acconto","Pagato")}
+        if (old_status,new_status) not in allowed:
+            return "Cambio di stato pagamento non valido."
+        if not paid_at or not re.fullmatch(r"\d{4}-\d{2}-\d{2}",paid_at):
+            return "Indica la data effettiva dell'incasso."
+        if method not in PAYMENT_METHODS or not method:
+            return "Seleziona il metodo di pagamento."
+        amount=round(money_value(amount),2)
+        if amount<=0:
+            return "Indica l'importo effettivamente incassato."
+        received=money_value(c.execute(
+            "SELECT COALESCE(SUM(amount),0) amount FROM payment_movements WHERE practice_id=?",
+            (practice["id"],),
+        ).fetchone()["amount"])
+        remaining=round(max(0.0,effective_total(practice)-received),2)
+        if new_status=="Pagato" and abs(amount-remaining)>=0.005:
+            return f"Per impostare Pagato, registra esattamente la rimanenza di {money_it(remaining)}."
+        if new_status=="Acconto" and amount>=remaining-0.004:
+            return "Un acconto deve essere inferiore alla rimanenza; per chiudere il pagamento seleziona Pagato."
+        movement_type="acconto" if new_status=="Acconto" else "saldo"
+        category=self.payment_movement_category(practice,method)
+        self.add_payment_movement(
+            c,practice["id"],movement_type,category,amount,user_id,reason,paid_at,
+            payment_method=method,movement_category=category,
+        )
+        if new_status=="Acconto":
+            c.execute("UPDATE practices SET deposit_paid_at=? WHERE id=?",(paid_at,practice["id"]))
+        else:
+            c.execute("UPDATE practices SET paid_at=? WHERE id=?",(paid_at,practice["id"]))
+        return None
 
     def sync_practice_urn(self,c,practice_id,old_urn_id,new_urn_id,user_id):
         old_id=int(old_urn_id) if old_urn_id else None; new_id=int(new_urn_id) if new_urn_id else None
@@ -7113,8 +7066,18 @@ class App(BaseHTTPRequestHandler):
         error=self.validation_error(d)
         if error: return self.new_page(user,draft=d,error=error)
         economic_at=f.get("economic_at","").strip()
-        if payment_status_needs_date("Da saldare",d.get("payment_status") or "Da saldare",economic_at):
-            return self.new_page(user,draft=d,error="Indica la data in cui il pagamento è stato ricevuto per impostare lo stato Acconto o Pagato.")
+        initial_payment_amount=normalize_money_text(f.get("payment_amount",""))
+        initial_payment_status=d.get("payment_status") or "Da saldare"
+        if initial_payment_status in ("Acconto","Pagato") and d.get("use_voucher")!="Si":
+            if not initial_payment_amount or not economic_at or not d.get("payment_method"):
+                return self.new_page(user,draft=d,error="Per registrare un incasso indica importo, data e metodo di pagamento.")
+            initial_amount_value=money_value(initial_payment_amount); initial_due=effective_total(d)
+            if initial_amount_value<=0:
+                return self.new_page(user,draft=d,error="Indica un importo incassato valido.")
+            if initial_payment_status=="Pagato" and abs(initial_amount_value-initial_due)>=0.005:
+                return self.new_page(user,draft=d,error=f"Per impostare Pagato, registra esattamente {money_it(initial_due)}.")
+            if initial_payment_status=="Acconto" and initial_amount_value>=initial_due-0.004:
+                return self.new_page(user,draft=d,error="Un acconto deve essere inferiore al totale della pratica.")
         initial=f.get("status","Ritirato")
         if initial not in STATES or (initial=="Smaltito" and d.get("service_type")!="Cremazione collettiva"): initial="Ritirato"
         with db() as c:
@@ -7147,7 +7110,9 @@ class App(BaseHTTPRequestHandler):
             self.sync_practice_urn(c,pid,None,d.get("urn_id"),user["id"])
             self.sync_practice_urn(c,pid,None,d.get("urn_id_2"),user["id"])
             created_practice=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
-            self.reconcile_payment_movements(c,pid,None,created_practice,user["id"],"Creazione pratica",economic_at)
+            if initial_payment_status in ("Acconto","Pagato") and d.get("use_voucher")!="Si":
+                payment_error=self.record_payment_transition(c,created_practice,"Da saldare",initial_payment_status,initial_payment_amount,d.get("payment_method"),economic_at,user["id"],"Incasso alla creazione della pratica")
+                if payment_error:raise ValueError(payment_error)
             self.sync_voucher(c,pid,d)
             self.apply_used_voucher(c,pid,d,user["id"])
             c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"Creazione pratica",initial,user["id"],stamp))
@@ -7327,16 +7292,13 @@ class App(BaseHTTPRequestHandler):
                 if not update_keys:return self.send_json({"ok":True,"updated_at":previous["updated_at"],"saved_at":datetime.now(ROME_TZ).strftime("%H:%M"),"saved_fields":[]})
                 conflict=self.invoice_conflict(c,normalized.get("invoice_number"),pid) if "invoice_number" in update_keys else None
                 if conflict:return self.send_json({"ok":False,"error":f'Numero fattura già usato nella pratica {conflict["practice_number"]}'},409)
-                economic_at=(request.get("economic_at") or "").strip()
-                if "payment_status" in update_keys and payment_status_needs_date(previous["payment_status"] or "Da saldare",normalized.get("payment_status") or "Da saldare",economic_at):
-                    return self.send_json({"ok":False,"error":"Indica la data in cui il pagamento è stato ricevuto per impostare lo stato Acconto o Pagato."},422)
+                if "payment_status" in update_keys:
+                    return self.send_json({"ok":False,"error":"Registra il cambio di pagamento dalla finestra dedicata."},422)
                 stamp=datetime.now().isoformat(timespec="microseconds");assignments=','.join(f"{key}=?" for key in update_keys)
                 cursor=c.execute(f"UPDATE practices SET {assignments},data_complete=?,updated_at=? WHERE id=? AND updated_at=?",[normalized[key] for key in update_keys]+[self.is_complete({**merged,**normalized}),stamp,pid,previous["updated_at"]])
                 if not cursor.rowcount:return self.send_json({"ok":False,"error":"La pratica è stata modificata altrove. Ricarica la pagina.","conflict":True},409)
                 if "urn_id" in update_keys:self.sync_practice_urn(c,pid,previous["urn_id"],normalized.get("urn_id"),user["id"])
                 if "urn_id_2" in update_keys:self.sync_practice_urn(c,pid,previous["urn_id_2"],normalized.get("urn_id_2"),user["id"])
-                current=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
-                if requested&economic:self.reconcile_payment_movements(c,pid,previous,current,user["id"],"Salvataggio automatico",economic_at)
                 summary=", ".join(key.replace("_"," ") for key in update_keys[:8])
                 c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"Salvataggio automatico",summary,user["id"],stamp))
             return self.send_json({"ok":True,"updated_at":stamp,"saved_at":datetime.now(ROME_TZ).strftime("%H:%M"),"saved_fields":update_keys})
@@ -7386,9 +7348,8 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             if user["role"]!="admin": d["operator_name"]=previous["operator_name"]
             conflict=self.invoice_conflict(c,d.get("invoice_number"),pid)
             if conflict:return self.edit_page(user,pid,draft=d,error=f'Numero fattura già usato nella pratica {conflict["practice_number"]}')
-            economic_at=form.get("economic_at","").strip()
-            if payment_status_needs_date(previous["payment_status"] or "Da saldare",d.get("payment_status") or "Da saldare",economic_at):
-                return self.edit_page(user,pid,draft=d,error="Indica la data in cui il pagamento è stato ricevuto per impostare lo stato Acconto o Pagato.")
+            if (previous["payment_status"] or "Da saldare")!=(d.get("payment_status") or "Da saldare"):
+                return self.edit_page(user,pid,draft=d,error="Registra il cambio di pagamento dalla finestra dedicata.")
             field_labels={"animal_name":"Nome animale","owner_first_name":"Nome proprietario","owner_last_name":"Cognome proprietario","owner_phone":"Telefono proprietario","owner_phone_2":"Secondo telefono","service_type":"Tipo cremazione","destination_branch":"Sede","notes":"Note","send_catalog":"Inviare catalogo","catalog_sent":"Catalogo inviato","send_estremi":"Inviare estremi","use_voucher":"Usa buono","payment_method":"Metodo di pagamento","invoice_number":"Numero fattura","invoice_date":"Data fattura","invoice_total":"Totale fattura","make_invoice":"Fare fattura",**MONEY_FIELDS}
             changes=[]
             for key,new_value in d.items():
@@ -7403,7 +7364,6 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             self.sync_practice_urn(c,pid,previous["urn_id"],d.get("urn_id"),user["id"])
             self.sync_practice_urn(c,pid,previous["urn_id_2"],d.get("urn_id_2"),user["id"])
             p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
-            self.reconcile_payment_movements(c,pid,previous,p,user["id"],"Modifica pratica",economic_at)
             wanted_prefix,_=practice_code_prefix(d["service_type"])
             current_number=p["practice_number"] or ""
             if not p["ddt_number"] and wanted_prefix in ("CR-","SM-") and not current_number.startswith(wanted_prefix):
@@ -7507,12 +7467,9 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             if conflict:return self.practice(user,pid,error=f'Numero fattura già usato nella pratica {conflict["practice_number"]}')
             if new=="Smaltito" and old["service_type"]!="Cremazione collettiva": return self.practice(user,pid,error="Smaltito è disponibile solo per la cremazione collettiva.")
             old_payment=old["payment_status"] or "Da saldare"
-            economic_at=f.get("economic_at","").strip()
-            if payment_status_needs_date(old_payment,payment,economic_at):
-                return self.practice(user,pid,error="Indica la data in cui il pagamento è stato ricevuto per impostare lo stato Acconto o Pagato.")
+            if payment!=old_payment:
+                return self.practice(user,pid,error="Registra il cambio di pagamento dalla finestra dedicata.")
             c.execute("UPDATE practices SET status=?,payment_status=?,invoice_number=?,no_whatsapp_message=?,updated_at=? WHERE id=?",(new,payment,invoice,no_whatsapp,now(),pid))
-            updated=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
-            self.reconcile_payment_movements(c,pid,old,updated,user["id"],"Aggiornamento stato pagamento",economic_at)
             new_value=f'{new} + {payment}' + (f' - Fattura {invoice}' if invoice else '') + (" - NO MESSAGGIO" if no_whatsapp else "")
             old_value=f'{old["status"]} + {old_payment}' + (f' - Fattura {old["invoice_number"]}' if old["invoice_number"] else '') + (" - NO MESSAGGIO" if old["no_whatsapp_message"]=="Si" else "")
             c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,"Cambio stati",old_value,new_value,user["id"],now()))
@@ -7541,33 +7498,22 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 error=f'Numero fattura già usato nella pratica {conflict["practice_number"]}'
                 return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
             old=row["payment_status"] or "Da saldare"; stamp=now()
-            deposit=amount if payment=="Acconto" and amount else row["deposit"]
             due=effective_total(row)
-            if payment!="Pagato" and due and money_value(deposit)>=due: payment="Pagato"
-            if payment in ("Acconto","Pagato") and payment!=old:
-                already_received=money_value(c.execute("SELECT COALESCE(SUM(amount),0) amount FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["amount"])
-                actual_now=money_value(amount)
-                remaining_due=max(0.0,due-already_received)
-                if actual_now<=0:
-                    error="Indica l'importo effettivamente versato in questo movimento."
-                    return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
-                if payment=="Pagato" and abs(actual_now-remaining_due)>=0.005:
-                    error=f"Per impostare Pagato, registra esclusivamente il saldo effettivo di {money_it(remaining_due)}."
-                    return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
-            if payment_status_needs_date(old,payment,economic_at):
-                error="Indica la data in cui il pagamento è stato ricevuto per impostare lo stato Acconto o Pagato."
+            error=self.record_payment_transition(c,row,old,payment,amount,method,economic_at,user["id"],"Pagamento registrato")
+            if error:
                 return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
-            remaining=0.0 if payment=="Pagato" else max(0.0,due-money_value(deposit))
+            received=money_value(c.execute("SELECT COALESCE(SUM(amount),0) amount FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["amount"])
+            remaining=max(0.0,due-received)
+            deposit=f"{received:.2f}" if payment=="Acconto" else row["deposit"]
             due_d=money_value(row["total_text"])
             if payment=="Pagato":remaining_final="0.00" if due_d else ""
             else:remaining_final=(f"{max(0.0,due_d-money_value(row['deposit_final'])):.2f}" if due_d else "")
             c.execute("UPDATE practices SET payment_status=?,payment_method=?,payment_amount=?,deposit=?,remaining_balance=?,remaining_final=?,invoice_number=?,invoice_total=?,invoice_date=?,updated_at=? WHERE id=?",(payment,method,amount,deposit,f"{remaining:.2f}",remaining_final,invoice,invoice_total or row["invoice_total"],invoice_date,stamp,pid))
-            updated=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
-            self.reconcile_payment_movements(c,pid,row,updated,user["id"],"Pagamento rapido",economic_at)
-            c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,"Pagamento rapido",old,f'{payment}' + (f' · {money_it(money_value(amount))}' if amount else ''),user["id"],stamp))
+            if old!=payment or method!=(row["payment_method"] or ""):
+                c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,"Pagamento rapido",old,f'{payment}' + (f' · {money_it(money_value(amount))}' if old!=payment and amount else ''),user["id"],stamp))
             if payment=="Pagato" and old!="Pagato":
                 owner=f'{row["owner_first_name"] or ""} {row["owner_last_name"] or ""}'.strip()
-                emit_notification(c,"payment_received","💰 Pagamento ricevuto",f'{owner}\n{money_it(money_value(amount) or effective_total(row))}',pid,user["id"],db_path=DB_PATH)
+                emit_notification(c,"payment_received","💰 Pagamento ricevuto",f'{owner}\n{money_it(money_value(amount))}',pid,user["id"],db_path=DB_PATH)
         if ajax:return self.send_json({"ok":True,"payment_method":method,"payment_status":payment})
         return self.redirect(safe_return_path(form.get("return_to") or self.headers.get("Referer"),"/"))
 
