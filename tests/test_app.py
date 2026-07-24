@@ -805,6 +805,47 @@ class PetParadiseTests(unittest.TestCase):
         rendered=[];self.handler.send_html=lambda content:rendered.append(content);self.handler.path="/fatture?q=FT-77"
         self.handler.invoices_page(user)
         self.assertIn("FT-77",rendered[-1])
+
+    def test_invoices_page_shows_legacy_practice_invoice_alongside_movement_invoice(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            legacy_pid=conn.execute("""INSERT INTO practices(practice_number,invoice_number,invoice_date,invoice_total,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,owner_first_name)
+                              VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-LEGACYINV","FT-OLD","2026-06-01","180.00","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Fufi","Elena")).lastrowid
+            new_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-NEWINV","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Marta","Cremazione singola","Da saldare","120","120")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"payment_status":"Pagato","payment_method":"Pos","payment_amount":"120,00","payment_channel":"W","economic_at":"2026-07-01","saldo_invoice_number":"FT-NEW","saldo_invoice_total":"120,00","ajax":"1"}
+        self.handler.quick_payment(admin,new_pid)
+        self.assertTrue(responses[-1][0]["ok"])
+        rendered=[];self.handler.send_html=lambda content:rendered.append(content);self.handler.path="/fatture"
+        self.handler.invoices_page(admin)
+        page=rendered[-1]
+        self.assertIn("FT-OLD",page)
+        self.assertIn("FT-NEW",page)
+        with app.db() as conn:
+            legacy=conn.execute("SELECT invoice_number FROM practices WHERE id=?",(legacy_pid,)).fetchone()
+            self.assertEqual(legacy["invoice_number"],"FT-OLD")
+
+    def test_practice_page_shows_movement_invoice_selection_form(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-PAGEFORM","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Gino","Cremazione singola","Da saldare","90","90")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"payment_status":"Pagato","payment_method":"Pos","payment_amount":"90,00","payment_channel":"W","economic_at":"2026-07-10","ajax":"1"}
+        self.handler.quick_payment(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"])
+        with app.db() as conn:
+            movement_id=conn.execute("SELECT id FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["id"]
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.practice(admin,pid)
+        page=rendered[-1]
+        self.assertIn("Fatture per movimento",page)
+        self.assertIn(f'name="movement_{movement_id}"',page)
+        self.assertIn(f'action="/pratiche/{pid}/fatture-movimenti"',page)
+        self.assertIn("Non fatturato",page)
         self.assertIn(f'/pratiche/{pid}',rendered[-1])
 
     def test_cr_codes_shift_on_delete_and_restore(self):
@@ -1634,6 +1675,17 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(".tablebox{background:white;border:1px solid var(--line);border-radius:15px}", app.CSS)
         self.assertNotIn(".tablebox{overflow:auto", app.CSS)
 
+    def test_wide_scrollable_tables_disable_broken_sticky_header_offset(self):
+        # position:sticky on <th> inside a table wrapped by an overflow-x
+        # scroll container renders with a permanent top offset in Chromium
+        # (the header cell overlaps the first data row instead of tracking
+        # scroll), so wide tables must opt back out of the vertical sticky
+        # behaviour and keep only their existing sticky-left first column.
+        self.assertIn(
+            ".practice-list-table thead th,.balance-detail-table thead th,.dashboard-table-scroll table thead th{position:static;top:auto}",
+            app.CSS,
+        )
+
     def test_archive_wide_table_keeps_horizontal_scroll_wrapper(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
@@ -2366,13 +2418,20 @@ class PetParadiseTests(unittest.TestCase):
             pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
                                 owner_first_name,service_type,payment_status,price_cremation,total_service)
                                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-PAY","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Mario","Cremazione singola","Da saldare","200","200")).lastrowid
-        self.handler.form=lambda:{"payment_status":"Pagato","payment_method":"Pos","payment_amount":"200,00","invoice_number":"FT-200","invoice_total":"200,00","invoice_date":"2026-07-14","economic_at":"2026-07-14","return_to":"/archivio/pratiche?stato=Ritirato"}
+        self.handler.form=lambda:{"payment_status":"Pagato","payment_method":"Pos","payment_amount":"200,00","saldo_invoice_number":"FT-200","saldo_invoice_total":"200,00","saldo_invoice_date":"2026-07-14","economic_at":"2026-07-14","return_to":"/archivio/pratiche?stato=Ritirato"}
         redirects=[];self.handler.redirect=lambda path:redirects.append(path);self.handler.headers={}
         self.handler.quick_payment(admin,pid)
         with app.db() as conn:
             row=conn.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
             self.assertEqual((row["payment_status"],row["payment_method"],row["payment_amount"]),("Pagato","Pos","200.00"))
-            self.assertEqual((row["invoice_number"],row["invoice_total"],row["invoice_date"]),("FT-200","200.00","2026-07-14"))
+            # Legacy whole-practice invoice fields are no longer written from the
+            # popover: invoicing now goes through movement_invoices instead.
+            self.assertIsNone(row["invoice_number"])
+            invoice=conn.execute("""SELECT mi.* FROM movement_invoices mi
+                                    JOIN movement_invoice_links mil ON mil.invoice_id=mi.id
+                                    JOIN payment_movements pm ON pm.id=mil.payment_movement_id
+                                    WHERE pm.practice_id=?""",(pid,)).fetchone()
+            self.assertEqual((invoice["invoice_number"],invoice["invoice_total"],invoice["invoice_date"]),("FT-200","200.00","2026-07-14"))
         self.assertEqual(redirects[-1],"/archivio/pratiche?stato=Ritirato")
 
     def test_payment_popover_shows_circuit_field_preselected_from_practice(self):
@@ -2421,6 +2480,117 @@ class PetParadiseTests(unittest.TestCase):
         with app.db() as conn:
             movement=conn.execute("SELECT category FROM balance_movements WHERE practice_id=?",(pid,)).fetchone()
             self.assertEqual(movement["category"],"W")
+
+    def test_movement_invoices_schema_created(self):
+        with app.db() as conn:
+            tables={row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        self.assertIn("movement_invoices",tables)
+        self.assertIn("movement_invoice_links",tables)
+
+    def test_full_per_movement_invoicing_scenario_acconto_w_saldo_d(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-MOVINV","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Mario","Cremazione singola","Da saldare","300","300")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"payment_status":"Acconto","payment_method":"Contanti","payment_amount":"100,00","payment_channel":"W","economic_at":"2026-07-19","acconto_invoice_number":"FT-ACC-1","acconto_invoice_total":"100,00","acconto_invoice_date":"2026-07-19","ajax":"1"}
+        self.handler.quick_payment(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"])
+        self.handler.form=lambda:{"payment_status":"Pagato","payment_method":"Bonifico","payment_amount":"200,00","payment_channel":"D","economic_at":"2026-07-24","saldo_invoice_number":"FT-SAL-1","saldo_invoice_total":"200,00","saldo_invoice_date":"2026-07-24","ajax":"1"}
+        self.handler.quick_payment(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"])
+        with app.db() as conn:
+            movements=conn.execute("SELECT payment_type,payment_channel,amount,paid_at FROM payment_movements WHERE practice_id=? ORDER BY id",(pid,)).fetchall()
+            self.assertEqual(len(movements),2)
+            self.assertEqual((movements[0]["payment_type"],movements[0]["payment_channel"],float(movements[0]["amount"]),movements[0]["paid_at"]),("acconto","W",100.0,"2026-07-19"))
+            self.assertEqual((movements[1]["payment_type"],movements[1]["payment_channel"],float(movements[1]["amount"]),movements[1]["paid_at"]),("saldo","D",200.0,"2026-07-24"))
+            invoices=conn.execute("""SELECT mi.invoice_number,mi.invoice_total,mi.payment_channel,mi.payment_method,pm.payment_type
+                                     FROM movement_invoices mi
+                                     JOIN movement_invoice_links mil ON mil.invoice_id=mi.id
+                                     JOIN payment_movements pm ON pm.id=mil.payment_movement_id
+                                     WHERE mi.practice_id=? ORDER BY mi.id""",(pid,)).fetchall()
+            self.assertEqual(len(invoices),2)
+            self.assertEqual((invoices[0]["invoice_number"],invoices[0]["invoice_total"],invoices[0]["payment_channel"],invoices[0]["payment_method"],invoices[0]["payment_type"]),("FT-ACC-1","100.00","W","Contanti","acconto"))
+            self.assertEqual((invoices[1]["invoice_number"],invoices[1]["invoice_total"],invoices[1]["payment_channel"],invoices[1]["payment_method"],invoices[1]["payment_type"]),("FT-SAL-1","200.00","D","Bonifico","saldo"))
+            practice=conn.execute("SELECT invoice_number FROM practices WHERE id=?",(pid,)).fetchone()
+            self.assertIsNone(practice["invoice_number"])
+            rows=conn.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchall()
+        self.handler.path="/archivio/pratiche"
+        list_page=self.handler.practice_rows(rows,True)
+        self.assertIn("Acconto già registrato",list_page)
+        self.assertIn("FT-ACC-1",list_page)
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/fatture?q=MOVINV"
+        self.handler.invoices_page(admin)
+        invoices_page=rendered[-1]
+        self.assertIn("FT-ACC-1",invoices_page)
+        self.assertIn("FT-SAL-1",invoices_page)
+        self.assertEqual(invoices_page.count(">CR-MOVINV<"),2)
+
+    def test_quick_payment_invoice_number_blank_leaves_movement_uninvoiced(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-NOINV","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Anna","Cremazione singola","Da saldare","150","150")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"payment_status":"Pagato","payment_method":"Pos","payment_amount":"150,00","economic_at":"2026-07-20","ajax":"1"}
+        self.handler.quick_payment(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"])
+        with app.db() as conn:
+            movements=conn.execute("SELECT count(*) n FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["n"]
+            self.assertEqual(movements,1)
+            invoices=conn.execute("SELECT count(*) n FROM movement_invoices WHERE practice_id=?",(pid,)).fetchone()["n"]
+            self.assertEqual(invoices,0)
+
+    def test_create_multi_movement_invoice_combines_selected_movements(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-COMBOINV","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Luca","Cremazione singola","Da saldare","300","300")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"payment_status":"Acconto","payment_method":"Contanti","payment_amount":"100,00","payment_channel":"W","economic_at":"2026-07-19","ajax":"1"}
+        self.handler.quick_payment(admin,pid)
+        self.handler.form=lambda:{"payment_status":"Pagato","payment_method":"Contanti","payment_amount":"200,00","payment_channel":"W","economic_at":"2026-07-24","ajax":"1"}
+        self.handler.quick_payment(admin,pid)
+        with app.db() as conn:
+            movement_ids=[row["id"] for row in conn.execute("SELECT id FROM payment_movements WHERE practice_id=? ORDER BY id",(pid,))]
+        self.assertEqual(len(movement_ids),2)
+        form_data={f"movement_{mid}":"1" for mid in movement_ids}
+        form_data.update({"invoice_number":"FT-COMBO","invoice_date":"2026-07-25","payment_method":"Bonifico","payment_channel":"W","practice_view":f"/pratiche/{pid}"})
+        self.handler.form=lambda:form_data
+        redirects=[];self.handler.redirect=lambda path:redirects.append(path)
+        self.handler.create_multi_movement_invoice(admin,pid)
+        self.assertEqual(redirects[-1],f"/pratiche/{pid}")
+        with app.db() as conn:
+            invoice=conn.execute("SELECT * FROM movement_invoices WHERE practice_id=?",(pid,)).fetchone()
+            self.assertEqual((invoice["invoice_number"],invoice["invoice_total"],invoice["payment_channel"]),("FT-COMBO","300.00","W"))
+            links=conn.execute("SELECT count(*) n FROM movement_invoice_links WHERE invoice_id=?",(invoice["id"],)).fetchone()["n"]
+            self.assertEqual(links,2)
+
+    def test_invoice_conflict_blocks_duplicate_movement_invoice_number(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid1=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-DUPINV1","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Sara","Cremazione singola","Da saldare","100","100")).lastrowid
+            pid2=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-DUPINV2","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Piero","Cremazione singola","Da saldare","100","100")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"payment_status":"Pagato","payment_method":"Pos","payment_amount":"100,00","payment_channel":"W","economic_at":"2026-07-19","saldo_invoice_number":"FT-DUP","saldo_invoice_total":"100,00","ajax":"1"}
+        self.handler.quick_payment(admin,pid1)
+        self.assertTrue(responses[-1][0]["ok"])
+        self.handler.form=lambda:{"payment_status":"Pagato","payment_method":"Pos","payment_amount":"100,00","payment_channel":"W","economic_at":"2026-07-20","saldo_invoice_number":"FT-DUP","saldo_invoice_total":"100,00","ajax":"1"}
+        self.handler.quick_payment(admin,pid2)
+        self.assertFalse(responses[-1][0]["ok"])
+        self.assertIn("già usato",responses[-1][0]["error"])
+        # Re-saving pid1's own saldo with the same number must still succeed (no false self-conflict)
+        self.handler.form=lambda:{"payment_status":"Pagato","payment_method":"Pos","payment_amount":"100,00","payment_channel":"W","economic_at":"2026-07-21","saldo_invoice_number":"FT-DUP","saldo_invoice_total":"100,00","ajax":"1"}
+        self.handler.quick_payment(admin,pid1)
+        self.assertTrue(responses[-1][0]["ok"])
 
     def test_practice_summary_shows_editable_metodo_dropdown_saved_via_ajax(self):
         with app.db() as conn:

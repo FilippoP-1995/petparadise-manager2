@@ -451,6 +451,22 @@ def init_db():
           notes TEXT,
           created_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS movement_invoices (
+          id INTEGER PRIMARY KEY,
+          practice_id INTEGER NOT NULL REFERENCES practices(id) ON DELETE CASCADE,
+          invoice_number TEXT NOT NULL DEFAULT '',
+          invoice_date TEXT NOT NULL DEFAULT '',
+          invoice_total TEXT NOT NULL DEFAULT '',
+          payment_method TEXT NOT NULL DEFAULT '',
+          payment_channel TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL,
+          created_by INTEGER REFERENCES users(id)
+        );
+        CREATE TABLE IF NOT EXISTS movement_invoice_links (
+          id INTEGER PRIMARY KEY,
+          invoice_id INTEGER NOT NULL REFERENCES movement_invoices(id) ON DELETE CASCADE,
+          payment_movement_id INTEGER NOT NULL REFERENCES payment_movements(id) ON DELETE CASCADE
+        );
         CREATE TABLE IF NOT EXISTS disposal_batches (
           id INTEGER PRIMARY KEY,
           period_from TEXT NOT NULL,
@@ -1019,7 +1035,7 @@ def format_sequence_code(prefix,value,width=6):
 CSS = r"""
 :root{--ink:#24312c;--muted:#6e7b75;--brand:#a74045;--brand2:#7f3035;--paper:#fff;--bg:#f4f1ed;--line:#ded8d1;--green:#39745b;--gold:#a87926;--safe-top:env(safe-area-inset-top,0px);--safe-bottom:env(safe-area-inset-bottom,0px);--safe-left:env(safe-area-inset-left,0px);--safe-right:env(safe-area-inset-right,0px)}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
-a{color:inherit;text-decoration:none}.top{height:68px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:18px;padding:0 28px;position:sticky;top:0;z-index:5}.brand{font-weight:800;font-size:19px;color:var(--brand)}.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:1.5px}.nav{display:flex;gap:8px;margin-left:auto}.nav a{padding:9px 12px;border-radius:9px}.nav a:hover{background:#f3eeea}.wrap{max-width:1280px;margin:0 auto;padding:28px}.titlebar{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:22px}h1{margin:0;font-size:28px}h2{font-size:18px;margin:0 0 15px}.sub{color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:10px;background:var(--brand);color:white;padding:11px 16px;font-weight:700;cursor:pointer}.btn:hover{background:var(--brand2)}.btn.ghost{background:white;color:var(--ink);border:1px solid var(--line)}.grid{display:grid;gap:16px}.stats{grid-template-columns:repeat(3,1fr)}.card{background:var(--paper);border:1px solid var(--line);border-radius:15px;padding:20px;box-shadow:0 3px 15px #4b39260a}.stat{display:flex;justify-content:space-between;align-items:center}.stat b{font-size:32px;color:var(--brand)}.badge{display:inline-flex;padding:5px 9px;border-radius:99px;background:#eee9e3;font-size:12px;font-weight:700}.tag-red{background:#e53935;color:white}.tag-orange{background:#fb8c00;color:white}.tag-outline-orange{background:white;color:#fb8c00;border:2px solid #fb8c00}.tag-purple{background:#7e57c2;color:white}.tag-yellow,.pay-yellow{background:#fdd835;color:#3b3100}.tag-pink{background:#f06292;color:white}.tag-blue,.pay-blue{background:#1e88e5;color:white}.tag-green,.pay-green{background:#43a047;color:white}.status-stack{display:flex;gap:5px;flex-wrap:wrap}.form-grid{grid-template-columns:repeat(2,1fr)}.wide{grid-column:1/-1}.section{background:#fff;border:1px solid var(--line);border-radius:15px;padding:20px}.fields{display:grid;grid-template-columns:repeat(2,1fr);gap:13px}.field{display:flex;flex-direction:column;gap:6px}.field.full{grid-column:1/-1}label{font-weight:650;font-size:13px}input,select,textarea{width:100%;border:1px solid #cfc8c0;border-radius:9px;padding:11px 12px;background:white;color:var(--ink);font:inherit}input[type=checkbox]{width:auto;min-height:auto}textarea{min-height:90px;resize:vertical}input:focus,select:focus,textarea:focus{outline:3px solid #a7404520;border-color:var(--brand)}table{width:100%;border-collapse:collapse;background:white}th,td{text-align:left;padding:13px;border-bottom:1px solid var(--line)}th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}thead th{position:sticky;top:68px;z-index:2;background:#101620}.light-theme thead th{background:#fff}.tablebox{background:white;border:1px solid var(--line);border-radius:15px}.tablebox-scroll-top{overflow-x:auto;overflow-y:hidden;height:16px;margin-bottom:6px;position:sticky;top:76px;z-index:10;background:var(--paper)}.tablebox-scroll-top-inner{height:1px}@media(max-width:900px){.tablebox-scroll-top{display:none}}.actions{display:flex;gap:10px;flex-wrap:wrap}.flash{padding:13px 16px;border-radius:10px;background:#e5f2eb;color:#285b45;margin-bottom:16px}.warning{background:#fff1d8;color:#765315}.login{max-width:410px;margin:10vh auto;background:white;padding:34px;border-radius:18px;border:1px solid var(--line)}.timeline{border-left:2px solid var(--line);margin-left:7px;padding-left:20px}.event{padding:0 0 18px;position:relative}.event:before{content:'';position:absolute;width:10px;height:10px;border-radius:50%;background:var(--brand);left:-26px;top:5px}.kvs{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.kv{background:#faf8f5;border-radius:10px;padding:12px}.kv small{display:block;color:var(--muted)}.signature-pad{width:100%;height:260px;border:2px dashed var(--line);border-radius:14px;background:white;touch-action:none}
+a{color:inherit;text-decoration:none}.top{height:68px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:18px;padding:0 28px;position:sticky;top:0;z-index:5}.brand{font-weight:800;font-size:19px;color:var(--brand)}.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:1.5px}.nav{display:flex;gap:8px;margin-left:auto}.nav a{padding:9px 12px;border-radius:9px}.nav a:hover{background:#f3eeea}.wrap{max-width:1280px;margin:0 auto;padding:28px}.titlebar{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:22px}h1{margin:0;font-size:28px}h2{font-size:18px;margin:0 0 15px}.sub{color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:10px;background:var(--brand);color:white;padding:11px 16px;font-weight:700;cursor:pointer}.btn:hover{background:var(--brand2)}.btn.ghost{background:white;color:var(--ink);border:1px solid var(--line)}.grid{display:grid;gap:16px}.stats{grid-template-columns:repeat(3,1fr)}.card{background:var(--paper);border:1px solid var(--line);border-radius:15px;padding:20px;box-shadow:0 3px 15px #4b39260a}.stat{display:flex;justify-content:space-between;align-items:center}.stat b{font-size:32px;color:var(--brand)}.badge{display:inline-flex;padding:5px 9px;border-radius:99px;background:#eee9e3;font-size:12px;font-weight:700}.tag-red{background:#e53935;color:white}.tag-orange{background:#fb8c00;color:white}.tag-outline-orange{background:white;color:#fb8c00;border:2px solid #fb8c00}.tag-purple{background:#7e57c2;color:white}.tag-yellow,.pay-yellow{background:#fdd835;color:#3b3100}.tag-pink{background:#f06292;color:white}.tag-blue,.pay-blue{background:#1e88e5;color:white}.tag-green,.pay-green{background:#43a047;color:white}.status-stack{display:flex;gap:5px;flex-wrap:wrap}.form-grid{grid-template-columns:repeat(2,1fr)}.wide{grid-column:1/-1}.section{background:#fff;border:1px solid var(--line);border-radius:15px;padding:20px}.fields{display:grid;grid-template-columns:repeat(2,1fr);gap:13px}.field{display:flex;flex-direction:column;gap:6px}.field.full{grid-column:1/-1}label{font-weight:650;font-size:13px}input,select,textarea{width:100%;border:1px solid #cfc8c0;border-radius:9px;padding:11px 12px;background:white;color:var(--ink);font:inherit}input[type=checkbox]{width:auto;min-height:auto}textarea{min-height:90px;resize:vertical}input:focus,select:focus,textarea:focus{outline:3px solid #a7404520;border-color:var(--brand)}table{width:100%;border-collapse:collapse;background:white}th,td{text-align:left;padding:13px;border-bottom:1px solid var(--line)}th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}thead th{position:sticky;top:68px;z-index:2;background:#101620}.light-theme thead th{background:#fff}.practice-list-table thead th,.balance-detail-table thead th,.dashboard-table-scroll table thead th{position:static;top:auto}.tablebox{background:white;border:1px solid var(--line);border-radius:15px}.tablebox-scroll-top{overflow-x:auto;overflow-y:hidden;height:16px;margin-bottom:6px;position:sticky;top:76px;z-index:10;background:var(--paper)}.tablebox-scroll-top-inner{height:1px}@media(max-width:900px){.tablebox-scroll-top{display:none}}.actions{display:flex;gap:10px;flex-wrap:wrap}.flash{padding:13px 16px;border-radius:10px;background:#e5f2eb;color:#285b45;margin-bottom:16px}.warning{background:#fff1d8;color:#765315}.login{max-width:410px;margin:10vh auto;background:white;padding:34px;border-radius:18px;border:1px solid var(--line)}.timeline{border-left:2px solid var(--line);margin-left:7px;padding-left:20px}.event{padding:0 0 18px;position:relative}.event:before{content:'';position:absolute;width:10px;height:10px;border-radius:50%;background:var(--brand);left:-26px;top:5px}.kvs{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.kv{background:#faf8f5;border-radius:10px;padding:12px}.kv small{display:block;color:var(--muted)}.signature-pad{width:100%;height:260px;border:2px dashed var(--line);border-radius:14px;background:white;touch-action:none}
 body{background:radial-gradient(circle at top left,#fff8f3 0,#f4f1ed 34%,#ece5dd 100%)}.top{backdrop-filter:saturate(1.2) blur(10px);box-shadow:0 8px 28px #4b392612}.brand{letter-spacing:.2px}.nav a{font-weight:650}.nav a.btn{box-shadow:0 8px 20px #a7404524}.wrap{animation:ppmFade .18s ease-out}.titlebar h1{letter-spacing:-.03em}.section,.card,.tablebox,.login{box-shadow:0 10px 30px #4b39260d}.section{transition:box-shadow .15s ease, transform .15s ease}.card{transition:transform .15s ease,box-shadow .15s ease}.card:hover{transform:translateY(-2px);box-shadow:0 14px 34px #4b392617}.btn{box-shadow:0 6px 16px #a740451f}.btn.ghost{box-shadow:none}.kv{border:1px solid #eee6df}.tablebox table tr:hover td{background:#fffaf6}input,select,textarea{transition:border-color .15s ease,box-shadow .15s ease}.danger{border-width:1px}.trash-note{background:#fff7e8;border:1px solid #f0cf9d;color:#765315;border-radius:12px;padding:12px 14px;margin-bottom:16px}.empty-state{text-align:center;padding:32px;color:var(--muted)}@keyframes ppmFade{from{opacity:.78;transform:translateY(3px)}to{opacity:1;transform:none}}
 .practice-layout{grid-template-columns:2fr 1fr}@media(max-width:800px){html,body{width:100%;max-width:100%;overflow-x:hidden}body{font-size:16px}.wrap{padding:14px}.top{height:auto;min-height:64px;padding:10px 12px;align-items:flex-start}.brand{font-size:17px}.nav{gap:4px;flex-wrap:wrap}.nav a{padding:8px 9px}.nav a span{display:none}.btn{width:100%;min-height:46px}.actions{width:100%}.actions .btn,.actions form{flex:1 1 100%}.stats,.form-grid,.fields,.kvs,.practice-layout{grid-template-columns:1fr}.section{padding:16px;border-radius:13px}.titlebar{align-items:flex-start;flex-direction:column}.wide{grid-column:auto}input,select,textarea{font-size:16px;min-height:46px}th:nth-child(4),td:nth-child(4){display:none}.badge{margin:2px 2px 2px 0}}
 .danger{border-color:#e2a5a5;background:#fff7f7}.btn.danger-btn{background:#b42323;color:white}.btn.danger-btn:hover{background:#8f1d1d}.danger-note{color:#8f1d1d;font-weight:700}
@@ -1066,7 +1082,7 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 .practice-status{background:transparent!important;border:2px solid currentColor}.practice-status-blue{color:#60a5fa!important;border-color:#3b82f6}.practice-status-red{color:#fb7185!important;border-color:#ef4444}.practice-status-yellow{color:#fde047!important;border-color:#eab308}.practice-status-green{color:#4ade80!important;border-color:#22c55e}.light-theme .practice-status-blue{color:#1d4ed8!important}.light-theme .practice-status-red{color:#b91c1c!important}.light-theme .practice-status-yellow{color:#854d0e!important}.light-theme .practice-status-green{color:#15803d!important}
 .modern-check{display:flex;align-items:center;gap:10px;min-height:46px;padding:10px 13px;border:1px solid #3b4658;border-radius:12px;background:linear-gradient(145deg,#182130,#111925);color:#e8edf5;cursor:pointer;transition:border-color .16s,transform .16s,box-shadow .16s}.modern-check:hover{transform:translateY(-1px);border-color:#fb7185;box-shadow:0 8px 22px #02061745}.modern-check input[type=checkbox]{width:20px;height:20px;margin:0;accent-color:#ef405f}.modern-check span{font-size:12px;font-weight:800;letter-spacing:.025em}.light-theme .modern-check{background:linear-gradient(145deg,#fff,#f1f5f9);color:#172033;border-color:#cbd5e1}.invoice-inline{display:grid;gap:8px}.invoice-inline input{min-width:0}.invoice-inline .btn{width:100%}
 .pay-green{border:2px solid #22c55e!important}.pay-yellow{border:2px solid #eab308!important}.pay-blue{border:2px solid #3b82f6!important}.notification-badge{position:absolute;display:grid;place-items:center;min-width:19px;height:19px;padding:0 5px;border-radius:99px;background:#dc2626;color:#fff;font:700 11px/1 system-ui;transform:translate(13px,-13px);box-shadow:0 0 0 2px #111827}.nav-notification{position:relative}.notification-center{display:grid;gap:10px}.notification-item{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:13px;align-items:center;padding:15px;border:1px solid #334155;border-radius:13px;background:#1f2937}.notification-item.unread{border-left:4px solid #ef405f}.notification-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:#172033;font-size:21px}.notification-copy b,.notification-copy small{display:block}.notification-copy p{margin:4px 0;color:#cbd5e1}.notification-copy small{color:#94a3b8}.notification-actions{display:flex;gap:8px;align-items:center}.toggle-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.toggle-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:1px solid #334155;border-radius:11px}.toggle-row input{width:22px;height:22px}.permission-prompt{position:fixed;right:20px;bottom:20px;z-index:150;max-width:390px;padding:18px;border:1px solid #475569;border-radius:16px;background:#172033;color:#fff;box-shadow:0 24px 70px #000a}.permission-prompt p{color:#cbd5e1}.sw-update-banner{position:fixed;left:14px;right:14px;bottom:calc(14px + var(--safe-bottom));z-index:160;display:flex;align-items:center;justify-content:space-between;gap:14px;max-width:420px;margin:0 auto;padding:12px 16px;border:1px solid #475569;border-radius:14px;background:#172033;color:#fff;box-shadow:0 20px 60px #000a;animation:ppmFade .2s ease-out}.sw-update-banner button{border:0;border-radius:9px;padding:8px 14px;font-weight:700;background:var(--brand);color:#fff;cursor:pointer}.light-theme .sw-update-banner{background:#fff;color:#111827;border-color:#cbd5e1}.quick-payment{display:flex;gap:7px;align-items:center}.quick-payment select,.quick-payment input{min-width:110px}.quick-payment .btn{width:auto}.light-theme .notification-item,.light-theme .toggle-row,.light-theme .permission-prompt{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .notification-copy p{color:#334155}
-.practice-list-table{min-width:1500px}.practice-list-table th:first-child,.practice-list-table td:first-child{position:sticky;left:0;z-index:3;min-width:215px;background:#101620;box-shadow:8px 0 14px #02061735}.practice-list-table th:first-child{z-index:4}.light-theme .practice-list-table th:first-child,.light-theme .practice-list-table td:first-child{background:#fff}.inline-statuses{display:grid;gap:8px;min-width:170px}.inline-state-select{min-height:38px;padding:7px 32px 7px 10px;border-width:2px;font-weight:800}.inline-tag-form{display:flex;flex-direction:column;gap:2px}.invoice-inline-cell{display:grid;gap:4px;min-width:130px}.invoice-inline-input{min-height:34px;padding:6px 9px;font-size:12px}.invoice-inline-input.input-error{border-color:#ef4444}.payment-popover{position:fixed;inset:0;z-index:180;display:grid;place-items:center;padding:18px;background:#020617b8}.payment-popover[hidden]{display:none}.payment-dialog{width:min(620px,100%);max-height:90dvh;overflow:auto;padding:20px;border:1px solid #475569;border-radius:16px;background:#172033;box-shadow:0 28px 90px #000c}.payment-dialog h2{margin-bottom:6px}.payment-dialog .fields{margin-top:16px}.light-theme .payment-dialog{background:#fff;color:#111827}.message-programmato{background:#4c1d95;color:#ede9fe}.message-in_invio{background:#78350f;color:#fef3c7}.message-annullato{background:#334155;color:#cbd5e1}.conversation-error{grid-column:1/-1}.conversation-error dd{white-space:normal;color:#fca5a5}.conversation-action.actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}.conversation-action form{margin:0}
+.practice-list-table{min-width:1500px}.practice-list-table th:first-child,.practice-list-table td:first-child{position:sticky;left:0;z-index:3;min-width:215px;background:#101620;box-shadow:8px 0 14px #02061735}.practice-list-table th:first-child{z-index:4}.light-theme .practice-list-table th:first-child,.light-theme .practice-list-table td:first-child{background:#fff}.inline-statuses{display:grid;gap:8px;min-width:170px}.inline-state-select{min-height:38px;padding:7px 32px 7px 10px;border-width:2px;font-weight:800}.inline-tag-form{display:flex;flex-direction:column;gap:2px}.invoice-inline-cell{display:grid;gap:4px;min-width:130px}.invoice-inline-input{min-height:34px;padding:6px 9px;font-size:12px}.invoice-inline-input.input-error{border-color:#ef4444}.payment-popover{position:fixed;inset:0;z-index:180;display:grid;place-items:center;padding:18px;background:#020617b8}.payment-popover[hidden]{display:none}.payment-dialog{width:min(620px,100%);max-height:90dvh;overflow:auto;padding:20px;border:1px solid #475569;border-radius:16px;background:#172033;box-shadow:0 28px 90px #000c}.payment-dialog h2{margin-bottom:6px}.payment-dialog .fields{margin-top:16px}.payment-invoice-section{margin-top:18px;padding-top:16px;border-top:1px solid #334155}.payment-invoice-section h3{margin:0 0 4px;font-size:14px}.payment-invoice-section .fields{margin-top:10px}.payment-acconto-summary{margin:10px 0 0}.light-theme .payment-dialog{background:#fff;color:#111827}.light-theme .payment-invoice-section{border-color:#e2e8f0}.message-programmato{background:#4c1d95;color:#ede9fe}.message-in_invio{background:#78350f;color:#fef3c7}.message-annullato{background:#334155;color:#cbd5e1}.conversation-error{grid-column:1/-1}.conversation-error dd{white-space:normal;color:#fca5a5}.conversation-action.actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}.conversation-action form{margin:0}
 @media(max-width:620px){.practice-list-table th:first-child,.practice-list-table td:first-child{box-sizing:border-box;width:132px;min-width:132px;max-width:132px;padding-left:12px;padding-right:10px;white-space:normal!important}}
 @media(max-width:1150px){.conversation-card{grid-template-columns:1fr 1fr}.conversation-action{grid-column:1/-1;text-align:left}}
 @media(max-width:700px){.conversation-card{grid-template-columns:1fr;gap:14px}.conversation-card dl{grid-template-columns:1fr 1fr}.conversation-action{grid-column:auto}.conversation-action.actions{justify-content:stretch}.conversation-action form,.conversation-action .btn{width:100%}.pagination{gap:8px;justify-content:space-between}.pagination span{font-size:11px;text-align:center}.conversation-message{white-space:normal}.conversations-wrap .titlebar h1{font-size:24px}}
@@ -2413,6 +2429,14 @@ function ppmSyncPaymentDateField(popover){
       else if(status.value==='Acconto'&&savedStatus==='Da saldare')amount.value=popover.dataset.paymentDepositAmount||amount.value||'';
     }
   }else input.value='';
+  ppmSyncInvoiceSections(popover);
+}
+function ppmSyncInvoiceSections(popover){
+  const status=popover.querySelector('select[name="payment_status"]');
+  if(!status)return;
+  popover.querySelectorAll('[data-invoice-section]').forEach(function(section){
+    section.hidden=section.dataset.invoiceSection!==status.value;
+  });
 }
 function ppmLocalDateValue(){
   const today=new Date(),offset=today.getTimezoneOffset()*60000;
@@ -3165,6 +3189,23 @@ def payment_channel(practice):
     return "D" if uses_total_d(practice) else "W"
 
 
+def latest_movement_and_invoice(c, practice_id, type_prefix):
+    """Latest payment_movements row of a given type ('acconto'/'saldo') for a
+    practice, plus its linked movement_invoices row if one was ever saved."""
+    movement=c.execute(
+        "SELECT * FROM payment_movements WHERE practice_id=? AND payment_type LIKE ? ORDER BY id DESC LIMIT 1",
+        (practice_id,f"{type_prefix}%"),
+    ).fetchone()
+    invoice=None
+    if movement:
+        invoice=c.execute(
+            """SELECT mi.* FROM movement_invoices mi JOIN movement_invoice_links mil ON mil.invoice_id=mi.id
+               WHERE mil.payment_movement_id=? ORDER BY mi.id DESC LIMIT 1""",
+            (movement["id"],),
+        ).fetchone()
+    return movement, invoice
+
+
 def payment_status_needs_date(old_status, new_status, economic_at):
     if new_status in ("Acconto","Pagato"):
         try:
@@ -3559,6 +3600,8 @@ class App(BaseHTTPRequestHandler):
         if match: return self.change_state(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/fattura", path)
         if match: return self.save_invoice(user, int(match.group(1)))
+        match = re.fullmatch(r"/pratiche/(\d+)/fatture-movimenti", path)
+        if match: return self.create_multi_movement_invoice(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/pagamento-rapido", path)
         if match: return self.quick_payment(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/stato-rapido", path)
@@ -5095,17 +5138,30 @@ class App(BaseHTTPRequestHandler):
             where.append("(UNACCENT(invoice_number) LIKE ? OR UNACCENT(practice_number) LIKE ? OR UNACCENT(owner_first_name) LIKE ? OR UNACCENT(owner_last_name) LIKE ? OR UNACCENT(animal_name) LIKE ?)");args.extend([like_term(term)]*5)
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_from): where.append("date(invoice_date)>=date(?)");args.append(date_from)
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_to): where.append("date(invoice_date)<=date(?)");args.append(date_to)
+        where_mi=["(p.deleted_at IS NULL OR p.deleted_at='')","COALESCE(mi.invoice_number,'')<>''"]; args_mi=[]
+        if term:
+            where_mi.append("(UNACCENT(mi.invoice_number) LIKE ? OR UNACCENT(p.practice_number) LIKE ? OR UNACCENT(p.owner_first_name) LIKE ? OR UNACCENT(p.owner_last_name) LIKE ? OR UNACCENT(p.animal_name) LIKE ?)");args_mi.extend([like_term(term)]*5)
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_from): where_mi.append("date(mi.invoice_date)>=date(?)");args_mi.append(date_from)
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_to): where_mi.append("date(mi.invoice_date)<=date(?)");args_mi.append(date_to)
         with db() as c:
             rows=c.execute(f"SELECT * FROM practices WHERE {' AND '.join(where)} ORDER BY COALESCE(NULLIF(invoice_date,''),created_at) DESC,id DESC",args).fetchall()
+            movement_rows=c.execute(f"""SELECT mi.*,p.practice_number,p.owner_first_name,p.owner_last_name,p.animal_name
+                                        FROM movement_invoices mi JOIN practices p ON p.id=mi.practice_id
+                                        WHERE {' AND '.join(where_mi)}""",args_mi).fetchall()
             reminders=c.execute("SELECT id,practice_number,owner_first_name,owner_last_name,animal_name FROM practices WHERE (deleted_at IS NULL OR deleted_at='') AND make_invoice='Si' AND COALESCE(invoice_number,'')='' ORDER BY updated_at DESC").fetchall()
-        table=[]
+        entries=[]
         for row in rows:
-            owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip();url=f'/pratiche/{row["id"]}'
+            owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip()
             invoice_total=money_value(row["invoice_total"]) if "invoice_total" in row.keys() and row["invoice_total"] else money_value(row["total_service"])
-            table.append(f'''<tr class="practice-row-link" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}><td><b>{esc(row["invoice_number"])}</b></td><td>{esc(date_it(row["invoice_date"]))}</td><td><a href="{url}">{esc(row["practice_number"])}</a></td><td>{esc(owner)}</td><td>{esc(row["animal_name"] or "")}</td><td>{money_it(invoice_total)}</td><td><a class="btn ghost" href="{url}">Apri</a></td></tr>''')
+            entries.append({"sort_key":row["invoice_date"] or row["created_at"] or "","number":row["invoice_number"],"date":row["invoice_date"],"practice_number":row["practice_number"],"owner":owner,"animal":row["animal_name"] or "","total":invoice_total,"channel":payment_channel(row),"url":f'/pratiche/{row["id"]}'})
+        for mrow in movement_rows:
+            owner=((mrow["owner_first_name"] or "")+" "+(mrow["owner_last_name"] or "")).strip()
+            entries.append({"sort_key":mrow["invoice_date"] or mrow["created_at"] or "","number":mrow["invoice_number"],"date":mrow["invoice_date"],"practice_number":mrow["practice_number"],"owner":owner,"animal":mrow["animal_name"] or "","total":money_value(mrow["invoice_total"]),"channel":mrow["payment_channel"] or "-","url":f'/pratiche/{mrow["practice_id"]}'})
+        entries.sort(key=lambda e:e["sort_key"],reverse=True)
+        table=[f'''<tr class="practice-row-link" {row_open_attrs(e["url"],f'Apri pratica {e["practice_number"]}')}><td><b>{esc(e["number"])}</b></td><td>{esc(date_it(e["date"]))}</td><td><a href="{e["url"]}">{esc(e["practice_number"])}</a></td><td>{esc(e["owner"])}</td><td>{esc(e["animal"])}</td><td>{esc(e["channel"])}</td><td>{money_it(e["total"])}</td><td><a class="btn ghost" href="{e["url"]}">Apri</a></td></tr>''' for e in entries]
         reminder_html=''.join(f'<a class="event" href="/pratiche/{row["id"]}"><b>{esc(row["practice_number"])}</b> · {esc(((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip())} · {esc(row["animal_name"] or "")}</a>' for row in reminders) or '<p class="sub">Nessuna fattura da ricordare.</p>'
-        empty='<tr><td colspan="7" class="sub">Nessuna fattura trovata.</td></tr>'
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Fatture</h1><p class="sub">Ogni numero fattura identifica e apre la pratica collegata.</p></div></div><form class="section" method="get"><div class="fields"><div class="field full"><label>Numero fattura o pratica</label><input name="q" value="{esc(term)}" placeholder="Cerca per fattura, pratica, cliente o animale"></div><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div></div><button class="btn" style="margin-top:12px">Cerca</button></form><section class="tablebox"><table><thead><tr><th>Fattura</th><th>Data</th><th>Pratica</th><th>Cliente</th><th>Animale</th><th>Totale</th><th></th></tr></thead><tbody>{''.join(table) or empty}</tbody></table></section><section class="section" style="margin-top:20px"><h2>Da fatturare</h2><div class="timeline">{reminder_html}</div></section></main>'''
+        empty='<tr><td colspan="8" class="sub">Nessuna fattura trovata.</td></tr>'
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Fatture</h1><p class="sub">Ogni fattura identifica e apre la pratica collegata. Una pratica con acconto e saldo fatturati separatamente compare come due righe distinte.</p></div></div><form class="section" method="get"><div class="fields"><div class="field full"><label>Numero fattura o pratica</label><input name="q" value="{esc(term)}" placeholder="Cerca per fattura, pratica, cliente o animale"></div><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div></div><button class="btn" style="margin-top:12px">Cerca</button></form><section class="tablebox"><table><thead><tr><th>Fattura</th><th>Data</th><th>Pratica</th><th>Cliente</th><th>Animale</th><th>Circuito</th><th>Totale</th><th></th></tr></thead><tbody>{''.join(table) or empty}</tbody></table></section><section class="section" style="margin-top:20px"><h2>Da fatturare</h2><div class="timeline">{reminder_html}</div></section></main>'''
         self.send_html(layout("Fatture",body,user))
 
     def urn_catalog_page(self,user):
@@ -5551,9 +5607,6 @@ class App(BaseHTTPRequestHandler):
         method_value=r["payment_method"] if "payment_method" in r.keys() and r["payment_method"] else ""
         method_options=''.join(f'<option value="{esc(method)}" {"selected" if method==method_value else ""}>{esc(method or "Metodo di pagamento")}</option>' for method in PAYMENT_METHODS)
         amount_value=r["payment_amount"] if "payment_amount" in r.keys() and r["payment_amount"] else (r["deposit"] if payment=="Acconto" else f'{effective_total(r):.2f}' if payment=="Pagato" else "")
-        invoice_number=r["invoice_number"] if "invoice_number" in r.keys() and r["invoice_number"] else ""
-        invoice_total=r["invoice_total"] if "invoice_total" in r.keys() and r["invoice_total"] else f'{money_value(r["total_service"]):.2f}'
-        invoice_date=r["invoice_date"] if "invoice_date" in r.keys() and r["invoice_date"] else ""
         modal_id=f'paymentPopover{r["id"]}'
         return_to=esc(getattr(self,"path",""))
         payment_idempotency_key=secrets.token_urlsafe(24)
@@ -5569,11 +5622,25 @@ class App(BaseHTTPRequestHandler):
         payment_deposit_amount=(r[payment_deposit_field] or r["payment_amount"] or "0.00") if payment_deposit_field in r.keys() else "0.00"
         payment_channel_value="D" if uses_total_d(r) else "W"
         channel_options=''.join(f'<option value="{value}" {"selected" if value==payment_channel_value else ""}>{value}</option>' for value in ("W","D"))
+        with db() as c:
+            acconto_movement,acconto_invoice=latest_movement_and_invoice(c,r["id"],"acconto")
+            saldo_movement,saldo_invoice=latest_movement_and_invoice(c,r["id"],"saldo")
+        acconto_invoice_number_value=acconto_invoice["invoice_number"] if acconto_invoice else ""
+        acconto_invoice_total_value=acconto_invoice["invoice_total"] if acconto_invoice else payment_deposit_amount
+        acconto_invoice_date_value=acconto_invoice["invoice_date"] if acconto_invoice else ""
+        saldo_invoice_number_value=saldo_invoice["invoice_number"] if saldo_invoice else ""
+        saldo_invoice_total_value=saldo_invoice["invoice_total"] if saldo_invoice else (payment_remaining_amount if acconto_movement else payment_full_amount)
+        saldo_invoice_date_value=saldo_invoice["invoice_date"] if saldo_invoice else ""
+        acconto_summary_html=""
+        if acconto_movement:
+            summary_parts=[esc(date_it(acconto_movement["paid_at"])),f'Circuito {esc(acconto_movement["payment_channel"])}',esc(money_it(money_value(acconto_movement["amount"])))]
+            if acconto_invoice and acconto_invoice["invoice_number"]:summary_parts.append(f'Fattura {esc(acconto_invoice["invoice_number"])}')
+            acconto_summary_html=f'<div class="kv payment-acconto-summary"><small>Acconto già registrato</small><b>{" · ".join(summary_parts)}</b></div>'
         return f'''<div class="inline-statuses" onclick="event.stopPropagation()">
         <form method="post" action="/pratiche/{r['id']}/stato-rapido" onsubmit="return savePracticeState(this,event)"><input type="hidden" name="return_to" value="{return_to}"><select class="inline-state-select practice-status {status_cls}" name="status" aria-label="Stato pratica" data-saved-value="{esc(r['status'])}" onchange="savePracticeState(this.form)">{state_options}</select><span class="inline-save-note" aria-live="polite"></span></form>
         <select class="inline-state-select {pay_cls}" aria-label="Stato pagamento" data-payment-popover="{modal_id}" data-saved-value="{esc(payment)}" onchange="openPaymentPopover(this)">{payment_options}</select>
-        <form class="inline-payment-date-form" method="post" action="/pratiche/{r['id']}/pagamento-rapido"><input type="hidden" name="return_to" value="{return_to}"><input type="hidden" name="payment_status" value="{esc(payment)}"><input type="hidden" name="payment_method" value="{esc(method_value)}"><input type="hidden" name="payment_amount" value="{esc(amount_value)}"><input type="hidden" name="payment_channel" value="{payment_channel_value}"><input type="hidden" name="invoice_number" value="{esc(invoice_number)}"><input type="hidden" name="invoice_total" value="{esc(invoice_total)}"><input type="hidden" name="invoice_date" value="{esc(invoice_date)}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(24)}"><input class="inline-payment-date" type="date" name="economic_at" value="{esc(payment_economic_date)}" aria-label="Data pagamento o acconto" {"required" if payment in ("Acconto","Pagato") else ""} onchange="this.form.submit()"></form>
-        <div class="payment-popover" id="{modal_id}" data-payment-full-amount="{payment_full_amount}" data-payment-remaining-amount="{payment_remaining_amount}" data-payment-deposit-amount="{esc(payment_deposit_amount)}" data-payment-default-date="{payment_today}" hidden onclick="if(event.target===this)closePaymentPopover(this)"><form class="payment-dialog" method="post" action="/pratiche/{r['id']}/pagamento-rapido"><div class="titlebar"><div><h2>Pagamento · {esc(r['practice_number'])}</h2><p class="sub">Registra i dettagli senza lasciare questa lista.</p></div><button class="btn ghost" type="button" onclick="closePaymentPopover(this)">Chiudi</button></div><input type="hidden" name="return_to" value="{return_to}"><input type="hidden" name="balance_idempotency_key" value="{payment_idempotency_key}"><div class="fields"><div class="field"><label>Stato pagamento</label><select name="payment_status" onchange="ppmSyncPaymentDateField(this.closest('.payment-popover'))">{payment_options}</select></div><div class="field"><label>Circuito</label><select name="payment_channel" required>{channel_options}</select></div><div class="field"><label>Data pagamento / acconto</label><input type="date" name="economic_at" value="{esc(payment_economic_date)}" data-payment-date-input></div><div class="field"><label>Metodo di pagamento</label><select name="payment_method">{method_options}</select></div><div class="field"><label>Totale incassato €</label><input name="payment_amount" value="{esc(amount_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field"><label>Numero fattura</label><input name="invoice_number" value="{esc(invoice_number)}"></div><div class="field"><label>Totale fattura €</label><input name="invoice_total" value="{esc(invoice_total)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field"><label>Data fattura</label><input type="date" name="invoice_date" value="{esc(invoice_date)}"></div></div><button class="btn" style="margin-top:16px">Salva pagamento</button></form></div></div>'''
+        <form class="inline-payment-date-form" method="post" action="/pratiche/{r['id']}/pagamento-rapido"><input type="hidden" name="return_to" value="{return_to}"><input type="hidden" name="payment_status" value="{esc(payment)}"><input type="hidden" name="payment_method" value="{esc(method_value)}"><input type="hidden" name="payment_amount" value="{esc(amount_value)}"><input type="hidden" name="payment_channel" value="{payment_channel_value}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(24)}"><input class="inline-payment-date" type="date" name="economic_at" value="{esc(payment_economic_date)}" aria-label="Data pagamento o acconto" {"required" if payment in ("Acconto","Pagato") else ""} onchange="this.form.submit()"></form>
+        <div class="payment-popover" id="{modal_id}" data-payment-full-amount="{payment_full_amount}" data-payment-remaining-amount="{payment_remaining_amount}" data-payment-deposit-amount="{esc(payment_deposit_amount)}" data-payment-default-date="{payment_today}" hidden onclick="if(event.target===this)closePaymentPopover(this)"><form class="payment-dialog" method="post" action="/pratiche/{r['id']}/pagamento-rapido"><div class="titlebar"><div><h2>Pagamento · {esc(r['practice_number'])}</h2><p class="sub">Registra i dettagli senza lasciare questa lista.</p></div><button class="btn ghost" type="button" onclick="closePaymentPopover(this)">Chiudi</button></div><input type="hidden" name="return_to" value="{return_to}"><input type="hidden" name="balance_idempotency_key" value="{payment_idempotency_key}"><div class="fields"><div class="field"><label>Stato pagamento</label><select name="payment_status" onchange="ppmSyncPaymentDateField(this.closest('.payment-popover'))">{payment_options}</select></div><div class="field"><label>Circuito</label><select name="payment_channel" required>{channel_options}</select></div><div class="field"><label>Data pagamento / acconto</label><input type="date" name="economic_at" value="{esc(payment_economic_date)}" data-payment-date-input></div><div class="field"><label>Metodo di pagamento</label><select name="payment_method">{method_options}</select></div><div class="field"><label>Totale incassato €</label><input name="payment_amount" value="{esc(amount_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div></div><div class="payment-invoice-section" data-invoice-section="Acconto" {"" if payment=="Acconto" else "hidden"}><h3>Dettagli acconto</h3><div class="fields"><div class="field"><label>Numero fattura</label><input name="acconto_invoice_number" value="{esc(acconto_invoice_number_value)}"></div><div class="field"><label>Totale fattura acconto €</label><input name="acconto_invoice_total" value="{esc(acconto_invoice_total_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field"><label>Data fattura acconto</label><input type="date" name="acconto_invoice_date" value="{esc(acconto_invoice_date_value)}"></div></div></div><div class="payment-invoice-section" data-invoice-section="Pagato" {"" if payment=="Pagato" else "hidden"}><h3>Dettagli saldo / pagamento</h3>{acconto_summary_html}<div class="fields"><div class="field"><label>Numero fattura</label><input name="saldo_invoice_number" value="{esc(saldo_invoice_number_value)}"></div><div class="field"><label>Totale fattura €</label><input name="saldo_invoice_total" value="{esc(saldo_invoice_total_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field"><label>Data fattura</label><input type="date" name="saldo_invoice_date" value="{esc(saldo_invoice_date_value)}"></div></div></div><button class="btn" style="margin-top:16px">Salva pagamento</button></form></div></div>'''
 
     def practice_rows(self,rows,show_financials=False):
         rows=list(rows)
@@ -7245,13 +7312,20 @@ class App(BaseHTTPRequestHandler):
                       (d.get("owner_first_name"),d.get("owner_last_name"),d.get("owner_company"),d.get("owner_phone"),d.get("owner_phone_2"),d.get("owner_email"),d.get("owner_tax_code"),d.get("owner_vat"),d.get("owner_street"),d.get("owner_city"),d.get("owner_province"),d.get("owner_zip"),d.get("owner_address"),d.get("owner_notes"),stamp,stamp))
         return cur.lastrowid
 
-    def invoice_conflict(self,c,invoice_number,exclude_id=None):
+    def invoice_conflict(self,c,invoice_number,exclude_id=None,exclude_movement_invoice_id=None):
         number=(invoice_number or "").strip()
         if not number:return None
         sql="SELECT id,practice_number FROM practices WHERE lower(trim(invoice_number))=lower(trim(?))"
         args=[number]
         if exclude_id is not None:sql+=" AND id<>?";args.append(exclude_id)
-        return c.execute(sql,args).fetchone()
+        row=c.execute(sql,args).fetchone()
+        if row:return row
+        sql2="""SELECT mi.id,p.practice_number FROM movement_invoices mi
+                JOIN practices p ON p.id=mi.practice_id
+                WHERE lower(trim(mi.invoice_number))=lower(trim(?))"""
+        args2=[number]
+        if exclude_movement_invoice_id is not None:sql2+=" AND mi.id<>?";args2.append(exclude_movement_invoice_id)
+        return c.execute(sql2,args2).fetchone()
 
     def duplicate_client_page(self,user,d,duplicates):
         rows=''.join(f'''<tr><td>{esc(((r["first_name"] or "")+" "+(r["last_name"] or "")).strip() or r["company_name"])}</td><td>{esc(r["phone"])}</td><td>{esc(r["email"])}</td><td>{esc(r["tax_code"] or r["vat_number"])}</td><td>{esc(r["city"] or r["address"])}</td><td>ID {r["id"]}</td></tr>''' for r in duplicates)
@@ -7420,6 +7494,20 @@ class App(BaseHTTPRequestHandler):
         urn_summary='<br>'.join(urn_parts) if urn_parts else '<span class="sub">Nessuna urna o prezzo inserito</span>'
         estimate_rows.insert(2,f'<div class="kv"><small>Urna</small>{urn_summary}{catalog_controls}</div>')
         economic_block=f'''<div class="section"><h2>Dati economici</h2><div class="economic-estimate"><h3>Voci del preventivo</h3><div class="kvs">{''.join(estimate_rows)}</div></div><div class="kvs"><div class="kv"><small>Totale pratica</small><b>{money_it(practice_total)}</b></div><div class="kv"><small>Totale W</small><b>{money_it(total_w)}</b></div><div class="kv"><small>Totale D</small><b>{money_it(total_d) if total_d_raw else "-"}</b></div><div class="kv"><small>Totale pagato {payment_channel(p)}</small><b>{money_it(paid_total)}</b></div><div class="kv"><small>Da pagare {payment_channel(p)}</small><b>{money_it(due_total)}</b></div><div class="kv"><small>Acconto {payment_channel(p)}</small><b>{money_it(deposit_total)}</b></div><div class="kv"><small>Rimanenza {payment_channel(p)}</small><b>{money_it(remaining_total)}</b></div><div class="kv"><small>Stato pagamento</small><b>{esc(payment_value)}</b></div><div class="kv"><small>Metodo</small>{method_control}</div>{invoice_box}</div></div>'''
+        with db() as c:
+            movements=c.execute(
+                """SELECT pm.*, (SELECT mi.invoice_number FROM movement_invoices mi
+                                  JOIN movement_invoice_links mil ON mil.invoice_id=mi.id
+                                  WHERE mil.payment_movement_id=pm.id ORDER BY mi.id DESC LIMIT 1) AS existing_invoice_number
+                   FROM payment_movements pm WHERE pm.practice_id=? ORDER BY pm.id""",
+                (pid,),
+            ).fetchall()
+        movement_checkboxes=[]
+        for m in movements:
+            invoiced_label=f'Fattura {esc(m["existing_invoice_number"])}' if m["existing_invoice_number"] else 'Non fatturato'
+            movement_checkboxes.append(f'<label class="modern-check"><input type="checkbox" name="movement_{m["id"]}" value="1"> {esc(date_it(m["paid_at"]))} · {esc(m["payment_type"])} · Circuito {esc(m["payment_channel"])} · {money_it(money_value(m["amount"]))} · {invoiced_label}</label>')
+        movements_html=''.join(movement_checkboxes) or '<p class="sub">Nessun movimento di pagamento registrato.</p>'
+        movement_invoice_section=f'''<div class="section"><h2>Fatture per movimento</h2><p class="sub">Seleziona uno o più movimenti per generare una fattura combinata. L'importo è calcolato automaticamente come somma dei movimenti selezionati.</p>{f'<form method="post" action="/pratiche/{pid}/fatture-movimenti"><input type="hidden" name="practice_view" value="{esc(practice_view)}"><div class="movement-invoice-list">{movements_html}</div><div class="fields" style="margin-top:14px"><div class="field"><label>Numero fattura</label><input name="invoice_number" required></div><div class="field"><label>Circuito</label><select name="payment_channel"><option value="W">W</option><option value="D">D</option></select></div><div class="field"><label>Metodo di pagamento</label><select name="payment_method">{method_select_options}</select></div><div class="field"><label>Data fattura</label><input type="date" name="invoice_date"></div></div><button class="btn" style="margin-top:14px">Genera fattura per i movimenti selezionati</button></form>' if movements else movements_html}</div>'''
         hist_items=[]
         for h in history:
             old_value=compact_text(h["old_value"]); new_value=compact_text(h["new_value"]); note=compact_text(h["note"])
@@ -7451,6 +7539,7 @@ class App(BaseHTTPRequestHandler):
               <div class="section"><h2>Riepilogo</h2><div class="kvs"><div class="kv"><small>Stato</small>{self.status_badges(p)}{tag_badges_html}</div><div class="kv"><small>{"Totale pagato" if payment_value=="Pagato" else "Totale da pagare"} {payment_channel(p)}</small><b>{money_it(paid_total if payment_value=="Pagato" else due_total)}</b></div><div class="kv"><small>Speditore</small>{esc((p['owner_first_name'] or '')+' '+(p['owner_last_name'] or ''))}<br>{self.phone_action_buttons(p['owner_phone'])}{('<br>'+self.phone_action_buttons(p['owner_phone_2'])) if 'owner_phone_2' in p.keys() and p['owner_phone_2'] else ''}{f'<br>{esc(owner_address_display)}' if owner_address_display else ''}{f'<br>CF: {esc(p["owner_tax_code"])}' if p['owner_tax_code'] else ''}</div><div class="kv"><small>Animale</small>{esc(p['species'])} - {esc(p['breed'])}<br>{esc(p['estimated_weight'])} kg{animal_age}</div>{animal2_block}<div class="kv"><small>Sede</small><b>{esc(p['destination_branch'])}</b></div><div class="kv"><small>Origine</small><b>{esc(p['request_origin'])}</b></div><div class="kv"><small>Veterinario</small>{esc(p['clinic_name'])}<br>{esc(p['veterinarian_name'])}</div><div class="kv"><small>Catalogo urna</small><b>{esc(catalog_value)}</b></div></div></div>
               <div class="section"><h2>Note</h2><p>{esc(p['notes']) or '<span class="sub">Nessuna nota.</span>'}</p></div>
               {economic_block}
+              {movement_invoice_section}
               <div class="section"><h2>Firma proprietario</h2><p class="sub">{'Firma salvata.' if p['signature_data'] else 'Firma non ancora salvata.'}</p><a class="btn ghost" href="/pratiche/{pid}/firma">Apri firma</a></div>
               {whatsapp_block}
               <div class="section"><h2>Documento DCS / DDT</h2><p>{ddt}</p>{pdf_block}</div>
@@ -7676,6 +7765,45 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,"Fattura",old,new,user["id"],now()))
         self.redirect(safe_return_path(f.get("practice_view"),f"/pratiche/{pid}"))
 
+    def create_multi_movement_invoice(self,user,pid):
+        form=self.form()
+        return_to=safe_return_path(form.get("practice_view"),f"/pratiche/{pid}")
+        movement_ids=[]
+        for key,value in form.items():
+            match=re.fullmatch(r"movement_(\d+)",key)
+            if match and value=="1":movement_ids.append(int(match.group(1)))
+        invoice_number=(form.get("invoice_number") or "").strip()
+        invoice_date=(form.get("invoice_date") or "").strip()
+        payment_method=(form.get("payment_method") or "").strip()
+        channel=(form.get("payment_channel") or "").strip().upper()
+        if not movement_ids:
+            return self.practice(user,pid,error="Seleziona almeno un movimento da fatturare.")
+        if not invoice_number:
+            return self.practice(user,pid,error="Indica il numero fattura.")
+        if channel not in ("W","D"):
+            return self.practice(user,pid,error="Seleziona il circuito della fattura.")
+        if invoice_date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}",invoice_date):
+            return self.practice(user,pid,error="Data fattura non valida: usa il formato AAAA-MM-GG.")
+        with db() as c:
+            marks=','.join('?' for _ in movement_ids)
+            movements=c.execute(f"SELECT * FROM payment_movements WHERE practice_id=? AND id IN ({marks})",(pid,*movement_ids)).fetchall()
+            if len(movements)!=len(movement_ids):
+                return self.practice(user,pid,error="Alcuni movimenti selezionati non sono più validi.")
+            conflict=self.invoice_conflict(c,invoice_number)
+            if conflict:
+                return self.practice(user,pid,error=f'Numero fattura già usato nella pratica {conflict["practice_number"]}')
+            total=sum(money_value(m["amount"]) for m in movements)
+            stamp=now()
+            cur=c.execute(
+                "INSERT INTO movement_invoices(practice_id,invoice_number,invoice_date,invoice_total,payment_method,payment_channel,created_at,created_by) VALUES(?,?,?,?,?,?,?,?)",
+                (pid,invoice_number,invoice_date,f"{total:.2f}",payment_method,channel,stamp,user["id"]),
+            )
+            invoice_id=cur.lastrowid
+            for m in movements:
+                c.execute("INSERT INTO movement_invoice_links(invoice_id,payment_movement_id) VALUES(?,?)",(invoice_id,m["id"]))
+            c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,"Fattura movimenti",f'{len(movements)} movimenti selezionati',f'{invoice_number} · {money_it(total)} · Circuito {channel}',user["id"],stamp))
+        self.redirect(return_to)
+
     def catalog_sent(self,user,pid):
         f=self.form();new_sent="Si" if f.get("catalog_sent")=="Si" else "";new_send="Si" if f.get("send_catalog")=="Si" and not new_sent else "";stamp=now();ajax=f.get("ajax")=="1"
         with db() as c:
@@ -7757,8 +7885,12 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         self.redirect(safe_return_path(f.get("practice_view"),f"/pratiche/{pid}"))
 
     def quick_payment(self,user,pid):
-        form=self.form(); payment=form.get("payment_status","Da saldare"); amount=normalize_money_text(form.get("payment_amount","")); method=form.get("payment_method","").strip(); invoice=form.get("invoice_number","").strip(); invoice_total=normalize_money_text(form.get("invoice_total","")); invoice_date=form.get("invoice_date","").strip(); economic_at=form.get("economic_at","").strip(); ajax=form.get("ajax")=="1"; channel=form.get("payment_channel","").strip().upper() or None
-        if payment not in PAYMENT_STATES or method not in PAYMENT_METHODS or (amount and not re.fullmatch(r"\d+(?:\.\d{1,2})?",amount)) or (invoice_total and not re.fullmatch(r"\d+(?:\.\d{1,2})?",invoice_total)) or (invoice_date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}",invoice_date)):
+        form=self.form(); payment=form.get("payment_status","Da saldare"); amount=normalize_money_text(form.get("payment_amount","")); method=form.get("payment_method","").strip(); economic_at=form.get("economic_at","").strip(); ajax=form.get("ajax")=="1"; channel=form.get("payment_channel","").strip().upper() or None
+        movement_type_prefix="acconto" if payment=="Acconto" else "saldo" if payment=="Pagato" else ""
+        active_invoice_number=(form.get(f"{movement_type_prefix}_invoice_number","") if movement_type_prefix else "").strip()
+        active_invoice_total=normalize_money_text(form.get(f"{movement_type_prefix}_invoice_total","")) if movement_type_prefix else ""
+        active_invoice_date=(form.get(f"{movement_type_prefix}_invoice_date","") if movement_type_prefix else "").strip()
+        if payment not in PAYMENT_STATES or method not in PAYMENT_METHODS or (amount and not re.fullmatch(r"\d+(?:\.\d{1,2})?",amount)) or (active_invoice_total and not re.fullmatch(r"\d+(?:\.\d{1,2})?",active_invoice_total)) or (active_invoice_date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}",active_invoice_date)):
             error="Dati del pagamento non validi: controlla importo, totale fattura e data (usa solo numeri e il formato data AAAA-MM-GG)."
             return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
         if payment in ("Acconto","Pagato"):
@@ -7770,11 +7902,17 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         with db() as c:
             row=c.execute("SELECT * FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(pid,)).fetchone()
             if not row:return self.send_json({"ok":False,"error":"Pratica non trovata"},404) if ajax else self.send_error(404)
-            conflict=self.invoice_conflict(c,invoice,pid)
-            if conflict:
-                error=f'Numero fattura già usato nella pratica {conflict["practice_number"]}'
-                return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
-            old=row["payment_status"] or "Da saldare"; stamp=now()
+            old=row["payment_status"] or "Da saldare"
+            existing_movement,existing_invoice=(
+                latest_movement_and_invoice(c,pid,movement_type_prefix)
+                if movement_type_prefix and old==payment else (None,None)
+            )
+            if active_invoice_number:
+                conflict=self.invoice_conflict(c,active_invoice_number,exclude_movement_invoice_id=existing_invoice["id"] if existing_invoice else None)
+                if conflict:
+                    error=f'Numero fattura già usato nella pratica {conflict["practice_number"]}'
+                    return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
+            stamp=now()
             due=effective_total(row)
             if old==payment:
                 error=self.correct_practice_payment_date(
@@ -7790,7 +7928,11 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             due_d=money_value(row["total_text"])
             if payment=="Pagato":remaining_final="0.00" if due_d else ""
             else:remaining_final=(f"{max(0.0,due_d-money_value(row['deposit_final'])):.2f}" if due_d else "")
-            c.execute("UPDATE practices SET payment_status=?,payment_method=?,payment_amount=?,deposit=?,remaining_balance=?,remaining_final=?,invoice_number=?,invoice_total=?,invoice_date=?,updated_at=? WHERE id=?",(payment,method,amount,deposit,f"{remaining:.2f}",remaining_final,invoice,invoice_total or row["invoice_total"],invoice_date,stamp,pid))
+            c.execute("UPDATE practices SET payment_status=?,payment_method=?,payment_amount=?,deposit=?,remaining_balance=?,remaining_final=?,updated_at=? WHERE id=?",(payment,method,amount,deposit,f"{remaining:.2f}",remaining_final,stamp,pid))
+            if movement_type_prefix:
+                movement=c.execute("SELECT id FROM payment_movements WHERE practice_id=? AND payment_type LIKE ? ORDER BY id DESC LIMIT 1",(pid,f"{movement_type_prefix}%")).fetchone()
+                if movement:
+                    self.save_movement_invoice(c,pid,movement["id"],active_invoice_number,active_invoice_date,active_invoice_total,method,channel or payment_channel(row),user["id"])
             if old!=payment or method!=(row["payment_method"] or ""):
                 c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,"Pagamento rapido",old,f'{payment}' + (f' · {money_it(money_value(amount))}' if old!=payment and amount else ''),user["id"],stamp))
             if payment=="Pagato" and old!="Pagato":
@@ -7798,6 +7940,32 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 emit_notification(c,"payment_received","💰 Pagamento ricevuto",f'{owner}\n{money_it(money_value(amount))}',pid,user["id"],db_path=DB_PATH)
         if ajax:return self.send_json({"ok":True,"payment_method":method,"payment_status":payment})
         return self.redirect(safe_return_path(form.get("return_to") or self.headers.get("Referer"),"/"))
+
+    def save_movement_invoice(self,c,practice_id,movement_id,invoice_number,invoice_date,invoice_total,payment_method,payment_channel_value,user_id):
+        """Create or update the single invoice linked to one payment movement.
+        Leaves an already-saved invoice untouched if invoice_number is submitted blank,
+        so clearing the field never silently deletes real invoice data."""
+        existing=c.execute(
+            """SELECT mi.* FROM movement_invoices mi JOIN movement_invoice_links mil ON mil.invoice_id=mi.id
+               WHERE mil.payment_movement_id=? ORDER BY mi.id DESC LIMIT 1""",
+            (movement_id,),
+        ).fetchone()
+        if not invoice_number:
+            return existing["id"] if existing else None
+        if existing:
+            c.execute(
+                "UPDATE movement_invoices SET invoice_number=?,invoice_date=?,invoice_total=?,payment_method=?,payment_channel=? WHERE id=?",
+                (invoice_number,invoice_date,invoice_total,payment_method,payment_channel_value,existing["id"]),
+            )
+            return existing["id"]
+        stamp=now()
+        cur=c.execute(
+            "INSERT INTO movement_invoices(practice_id,invoice_number,invoice_date,invoice_total,payment_method,payment_channel,created_at,created_by) VALUES(?,?,?,?,?,?,?,?)",
+            (practice_id,invoice_number,invoice_date,invoice_total,payment_method,payment_channel_value,stamp,user_id),
+        )
+        invoice_id=cur.lastrowid
+        c.execute("INSERT INTO movement_invoice_links(invoice_id,payment_movement_id) VALUES(?,?)",(invoice_id,movement_id))
+        return invoice_id
 
     def quick_state(self,user,pid):
         form=self.form(); new=form.get("status",""); ajax=form.get("ajax")=="1"
