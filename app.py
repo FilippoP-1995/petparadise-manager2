@@ -2458,7 +2458,21 @@ function ppmConfirmVoidMovement(form){
     dialog.addEventListener('click',(event)=>{if(event.target===dialog)dialog.close();});
     dialog.addEventListener('cancel',()=>{dialog._ppmForm=null;});
     dialog.querySelector('[data-ppm-void-cancel]').addEventListener('click',()=>dialog.close());
-    dialog.querySelector('[data-ppm-void-confirm]').addEventListener('click',()=>{const target=dialog._ppmForm;dialog.close();if(target)target.submit();});
+    dialog.querySelector('[data-ppm-void-confirm]').addEventListener('click',async()=>{
+      const target=dialog._ppmForm;
+      const confirmBtn=dialog.querySelector('[data-ppm-void-confirm]');
+      if(!target)return;
+      confirmBtn.disabled=true;confirmBtn.textContent='Eliminazione…';
+      try{
+        const response=await fetch(target.action,{method:'POST',body:new URLSearchParams(new FormData(target)),credentials:'same-origin'});
+        if(!response.ok)throw new Error('Il server ha risposto con errore '+response.status);
+        dialog.close();
+        location.href=response.url||location.href;
+      }catch(error){
+        confirmBtn.disabled=false;confirmBtn.textContent='Elimina';
+        alert('Eliminazione non riuscita: '+error.message+'. Controlla la connessione e riprova.');
+      }
+    });
   }
   dialog._ppmForm=form;
   if(typeof dialog.showModal==='function')dialog.showModal();
