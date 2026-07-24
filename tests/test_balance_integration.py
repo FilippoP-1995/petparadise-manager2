@@ -1,7 +1,6 @@
 import json
 import tempfile
 import unittest
-from datetime import datetime
 from pathlib import Path
 
 import app
@@ -332,17 +331,15 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
             ).fetchone()
         self.handler.path = f"/pratiche/{practice_id}"
         html = self.handler.status_badges(row)
-        today = datetime.now(app.ROME_TZ).date().isoformat()
         self.assertIn('name="balance_idempotency_key"', html)
-        self.assertIn('data-payment-full-amount="300.00"', html)
-        self.assertIn('data-payment-remaining-amount="200.00"', html)
-        self.assertIn(f'data-payment-default-date="{today}"', html)
-        self.assertIn('name="economic_at" value=""', html)
-        self.assertIn("ppmLocalDateValue", app.APP_JS)
-        self.assertIn(
-            "if(trigger)trigger.value=trigger.dataset.savedValue||trigger.value",
-            app.APP_JS,
-        )
+        # no movement saved yet: acconto pre-fills from the deposit set at
+        # creation, saldo pre-fills from the outstanding remainder
+        self.assertIn('name="acconto_totale" value="100"', html)
+        self.assertIn('name="saldo_totale" value="200.00"', html)
+        self.assertIn('name="acconto_data" value="" required', html)
+        self.assertIn('name="saldo_data" value="" required', html)
+        self.assertIn("function closePaymentPopover(button){", app.APP_JS)
+        self.assertIn("target.hidden=true;", app.APP_JS)
         with app.db() as connection:
             self.assertEqual(get_movements(connection), [])
 

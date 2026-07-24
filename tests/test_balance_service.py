@@ -225,6 +225,40 @@ class BalanceServiceTests(unittest.TestCase):
                 idempotency_key="reversal-2",
             )
 
+    def test_legacy_reversal_voids_a_synthetic_row_without_related_movement_id(self):
+        reversal = balance_service.create_legacy_reversal(
+            self.connection,
+            legacy_key="legacy-payment-movement:42",
+            amount_cents=12000,
+            category="W",
+            ledger_section="Entrata",
+            movement_date="2026-07-24",
+            practice_id=9,
+            practice_number_snapshot="CR-000009",
+            payment_method="Contanti",
+            description="Storno manuale: Acconto storico",
+            created_by=1,
+        )
+        self.assertEqual(reversal.movement_type, "Storno")
+        self.assertEqual(reversal.amount_cents, -12000)
+        self.assertIsNone(reversal.related_movement_id)
+        self.assertEqual(reversal.idempotency_key, "legacy-void:v1:legacy-payment-movement:42")
+        retry = balance_service.create_legacy_reversal(
+            self.connection,
+            legacy_key="legacy-payment-movement:42",
+            amount_cents=12000,
+            category="W",
+            ledger_section="Entrata",
+            movement_date="2026-07-24",
+            practice_id=9,
+        )
+        self.assertEqual(retry, reversal)
+        count = self.connection.execute(
+            "SELECT COUNT(*) FROM balance_movements WHERE idempotency_key=?",
+            ("legacy-void:v1:legacy-payment-movement:42",),
+        ).fetchone()[0]
+        self.assertEqual(count, 1)
+
     def test_database_rejects_direct_update_and_delete(self):
         movement = self.movement()
         with self.assertRaisesRegex(sqlite3.IntegrityError, "append-only"):

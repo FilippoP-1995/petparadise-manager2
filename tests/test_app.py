@@ -1669,22 +1669,19 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(".tablebox-scroll-top{overflow-x:auto;overflow-y:hidden;height:16px;margin-bottom:6px;position:sticky;top:76px;z-index:10;background:var(--paper)}", app.CSS)
 
     def test_table_header_row_is_sticky_app_wide(self):
-        self.assertIn("thead th{position:sticky;top:68px;z-index:2;background:#101620}", app.CSS)
+        self.assertIn("thead th{position:sticky;top:0;z-index:2;background:#101620}", app.CSS)
         self.assertIn(".light-theme thead th{background:#fff}", app.CSS)
-        self.assertIn("thead th{top:66px}", app.CSS)
-        self.assertIn(".tablebox{background:white;border:1px solid var(--line);border-radius:15px}", app.CSS)
-        self.assertNotIn(".tablebox{overflow:auto", app.CSS)
+        self.assertNotIn("position:static;top:auto", app.CSS)
 
-    def test_wide_scrollable_tables_disable_broken_sticky_header_offset(self):
+    def test_wide_scrollable_tables_use_bounded_internal_scroll_for_reliable_sticky(self):
         # position:sticky on <th> inside a table wrapped by an overflow-x
         # scroll container renders with a permanent top offset in Chromium
-        # (the header cell overlaps the first data row instead of tracking
-        # scroll), so wide tables must opt back out of the vertical sticky
-        # behaviour and keep only their existing sticky-left first column.
-        self.assertIn(
-            ".practice-list-table thead th,.balance-detail-table thead th,.dashboard-table-scroll table thead th{position:static;top:auto}",
-            app.CSS,
-        )
+        # when the sticky offset is relative to the page (the header cell
+        # overlaps the first data row instead of tracking scroll). The fix
+        # is to give every .tablebox a bounded height with its own real
+        # scroll container (overflow:auto), so thead sticky top:0 is always
+        # relative to that container and never breaks, on any table.
+        self.assertIn(".tablebox{background:white;border:1px solid var(--line);border-radius:15px;max-height:min(65vh,620px);overflow:auto}", app.CSS)
 
     def test_archive_wide_table_keeps_horizontal_scroll_wrapper(self):
         with app.db() as conn:
@@ -2132,8 +2129,8 @@ class PetParadiseTests(unittest.TestCase):
         rendered=app.layout("Test",'<table><thead><tr><th>Veterinario</th><th>Sede</th></tr></thead></table>')
         self.assertIn("<th>Veterinario</th><th>Provenienza</th><th>Sede</th>",rendered)
         self.assertIn("stato-rapido",page)
-        self.assertIn("pagamento-rapido",page)
-        self.assertIn("Totale incassato",page)
+        self.assertIn("pagamento-movimento",page)
+        self.assertIn("Totale acconto",page)
         self.assertIn("Numero fattura",page)
         self.assertIn("practice-list-table td:first-child",app.CSS)
         self.assertIn("width:132px;min-width:132px;max-width:132px",app.CSS)
@@ -2447,9 +2444,11 @@ class PetParadiseTests(unittest.TestCase):
             rows_d=conn.execute("SELECT * FROM practices WHERE id=?",(pid_d,)).fetchall()
         self.handler.path="/archivio/pratiche"
         page_w=self.handler.practice_rows(rows_w,True)
-        self.assertIn('<label>Circuito</label><select name="payment_channel" required><option value="W" selected>W</option><option value="D" >D</option></select>',page_w)
+        self.assertIn('<select name="acconto_circuito" onchange="ppmSyncMacroareaInvoiceSection(this)"><option value="W" selected>W</option><option value="D" >D</option></select>',page_w)
+        self.assertIn('<select name="saldo_circuito" onchange="ppmSyncMacroareaInvoiceSection(this)"><option value="W" selected>W</option><option value="D" >D</option></select>',page_w)
         page_d=self.handler.practice_rows(rows_d,True)
-        self.assertIn('<label>Circuito</label><select name="payment_channel" required><option value="W" >W</option><option value="D" selected>D</option></select>',page_d)
+        self.assertIn('<select name="acconto_circuito" onchange="ppmSyncMacroareaInvoiceSection(this)"><option value="W" >W</option><option value="D" selected>D</option></select>',page_d)
+        self.assertIn('<select name="saldo_circuito" onchange="ppmSyncMacroareaInvoiceSection(this)"><option value="W" >W</option><option value="D" selected>D</option></select>',page_d)
 
     def test_quick_payment_honors_explicit_circuit_override(self):
         with app.db() as conn:
@@ -2518,7 +2517,6 @@ class PetParadiseTests(unittest.TestCase):
             rows=conn.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchall()
         self.handler.path="/archivio/pratiche"
         list_page=self.handler.practice_rows(rows,True)
-        self.assertIn("Acconto già registrato",list_page)
         self.assertIn("FT-ACC-1",list_page)
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
         self.handler.path="/fatture?q=MOVINV"
@@ -2721,9 +2719,70 @@ class PetParadiseTests(unittest.TestCase):
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
         self.handler.path=f"/pratiche/{pid}";self.handler.practice(admin,pid)
         page=rendered[-1]
-        for token in ('action="/pratiche/{}/pagamento-rapido"'.format(pid),'name="payment_amount"','name="economic_at"','name="payment_method"'):
+        for token in ('action="/pratiche/{}/pagamento-movimento"'.format(pid),'name="acconto_totale"','name="acconto_data"','name="acconto_modalita"','name="saldo_totale"','name="saldo_data"','name="saldo_modalita"'):
             self.assertIn(token,dialog)
             self.assertIn(token,page)
+
+    def test_payment_macroareas_are_independent_always_visible_and_precompiled(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service,deposit)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-MACRO","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Elio","Cremazione singola","Da saldare","350","350","200")).lastrowid
+            row=conn.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+        # both macroareas are always rendered, with pre-filled totals from
+        # the deposit set at creation (200) and the remainder (150)
+        dialog=self.handler.status_badges(row)
+        self.assertIn('<section class="payment-macroarea" data-macroarea="acconto">',dialog)
+        self.assertIn('<section class="payment-macroarea" data-macroarea="saldo">',dialog)
+        self.assertIn('name="acconto_totale" value="200"',dialog)
+        self.assertIn('name="saldo_totale" value="150.00"',dialog)
+        # save ACCONTO alone, circuito W, with its own invoice
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"macroarea":"acconto","acconto_data":"2026-07-19","acconto_totale":"200,00","acconto_circuito":"W","acconto_modalita":"Contanti","acconto_fattura_numero":"FT-ACC-MACRO","acconto_fattura_totale":"200,00","acconto_fattura_data":"2026-07-19","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"])
+        self.assertEqual(responses[-1][0]["payment_status"],"Acconto")
+        with app.db() as conn:
+            practice=conn.execute("SELECT payment_status,deposit FROM practices WHERE id=?",(pid,)).fetchone()
+            self.assertEqual(practice["payment_status"],"Acconto")
+            movements=conn.execute("SELECT payment_type,payment_channel,amount,paid_at FROM payment_movements WHERE practice_id=?",(pid,)).fetchall()
+            self.assertEqual(len(movements),1)
+            self.assertEqual((movements[0]["payment_type"],movements[0]["payment_channel"],float(movements[0]["amount"]),movements[0]["paid_at"]),("acconto","W",200.0,"2026-07-19"))
+            balance=conn.execute("SELECT category,movement_type,amount_cents FROM balance_movements WHERE practice_id=?",(pid,)).fetchone()
+            self.assertEqual((balance["category"],balance["movement_type"],balance["amount_cents"]),("W","Acconto",20000))
+        # saving SALDO does not require touching acconto, and can use a
+        # different circuit; the invoice section only exists for circuito W
+        # (per spec), so a D saldo never gets its own movement invoice
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-24","saldo_totale":"150,00","saldo_circuito":"D","saldo_modalita":"Bonifico","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"])
+        self.assertEqual(responses[-1][0]["payment_status"],"Pagato")
+        with app.db() as conn:
+            practice=conn.execute("SELECT payment_status FROM practices WHERE id=?",(pid,)).fetchone()
+            self.assertEqual(practice["payment_status"],"Pagato")
+            movements=conn.execute("SELECT payment_type,payment_channel,amount,paid_at FROM payment_movements WHERE practice_id=? ORDER BY id",(pid,)).fetchall()
+            self.assertEqual(len(movements),2)
+            self.assertEqual((movements[0]["payment_type"],movements[0]["payment_channel"],float(movements[0]["amount"])),("acconto","W",200.0))
+            self.assertEqual((movements[1]["payment_type"],movements[1]["payment_channel"],float(movements[1]["amount"])),("saldo","D",150.0))
+            balances={row["category"]:row for row in conn.execute("SELECT category,movement_type,amount_cents FROM balance_movements WHERE practice_id=? AND amount_cents>0",(pid,))}
+            self.assertEqual(balances["W"]["movement_type"],"Acconto")
+            self.assertEqual(balances["D"]["movement_type"],"Saldo")
+            self.assertEqual(balances["D"]["amount_cents"],15000)
+            invoices=conn.execute("""SELECT mi.invoice_number,mi.payment_channel FROM movement_invoices mi
+                                     JOIN movement_invoice_links mil ON mil.invoice_id=mi.id
+                                     JOIN payment_movements pm ON pm.id=mil.payment_movement_id
+                                     WHERE pm.practice_id=? ORDER BY mi.id""",(pid,)).fetchall()
+            self.assertEqual([(r["invoice_number"],r["payment_channel"]) for r in invoices],[("FT-ACC-MACRO","W")])
+        # correcting the acconto afterwards must not touch the saldo movement
+        self.handler.form=lambda:{"macroarea":"acconto","acconto_data":"2026-07-20","acconto_totale":"210,00","acconto_circuito":"W","acconto_modalita":"Pos","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"])
+        with app.db() as conn:
+            acconto=conn.execute("SELECT amount,paid_at,payment_method FROM payment_movements WHERE practice_id=? AND payment_type='acconto'",(pid,)).fetchone()
+            self.assertEqual((float(acconto["amount"]),acconto["paid_at"],acconto["payment_method"]),(210.0,"2026-07-20","Pos"))
+            saldo=conn.execute("SELECT amount,paid_at,payment_method FROM payment_movements WHERE practice_id=? AND payment_type='saldo'",(pid,)).fetchone()
+            self.assertEqual((float(saldo["amount"]),saldo["paid_at"],saldo["payment_method"]),(150.0,"2026-07-24","Bonifico"))
 
     def test_acconto_and_saldo_keep_their_own_movement_dates(self):
         with app.db() as conn:
@@ -2899,6 +2958,102 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.payment_overview(admin,"da-saldare")
         self.assertIn("Da saldare D",rendered[-1])
         self.assertIn("Totale W e Totale D",rendered[-1])
+
+    def test_bilanci_elimina_button_works_on_legacy_synthesized_rows(self):
+        # Practices created before the balance_movements ledger existed only
+        # have their payment history in payment_movements, so Bilanci
+        # synthesizes a row on the fly with a negative synthetic id. Elimina
+        # must work on those rows too, not just real balance_movements ones.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-LEGACYVOID","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Bilbo","Cremazione singola","Pagato","150","150")).lastrowid
+            conn.execute("""INSERT INTO payment_movements(practice_id,payment_type,payment_channel,payment_method,movement_category,amount,paid_at,user_id,notes,created_at)
+                           VALUES(?,?,?,?,?,?,?,?,?,?)""",(pid,"saldo","W","Contanti","W",150.0,"2026-07-10",admin["id"],"","2026-07-10T10:00:00"))
+        with app.db() as conn:
+            movements=app.get_balance_movements(conn,filters=app.normalize_balance_filters(include_technical=True))
+        legacy=[m for m in movements if m.practice_id==pid and m.id<0]
+        self.assertEqual(len(legacy),1)
+        legacy_key=legacy[0].idempotency_key
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/bilanci?view=entrate-w&periodo=tutto"
+        self.handler.balances_page(admin)
+        page=rendered[-1]
+        self.assertIn('action="/bilanci/movimenti/storna-storico"',page)
+        self.assertIn(f'value="{legacy_key}"',page)
+        redirects=[];self.handler.redirect=lambda url:redirects.append(url)
+        self.handler.form=lambda:{"return_to":"/bilanci","legacy_key":legacy_key}
+        self.handler.balance_legacy_movement_void(admin)
+        self.assertTrue(redirects and "movimento_stornato=1" in redirects[-1])
+        with app.db() as conn:
+            movements_after=app.get_balance_movements(conn,filters=app.normalize_balance_filters(include_technical=True))
+        self.assertFalse(any(m.idempotency_key==legacy_key for m in movements_after))
+        with app.db() as conn:
+            default_movements=app.get_balance_movements(conn,filters=app.normalize_balance_filters())
+        self.assertFalse(any(m.practice_id==pid for m in default_movements))
+        # Retrying the void must stay idempotent, not create a second storno.
+        self.handler.balance_legacy_movement_void(admin)
+        with app.db() as conn:
+            void_count=conn.execute(
+                "SELECT COUNT(*) FROM balance_movements WHERE idempotency_key=?",
+                (f"legacy-void:v1:{legacy_key}",),
+            ).fetchone()[0]
+        self.assertEqual(void_count,1)
+
+    def test_dashboard_reminders_panel_replaces_old_flash_and_supports_full_lifecycle(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name)
+                                VALUES(?,?,?,?,?,?,?,?)""",("CR-REMIND","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Nuvola")).lastrowid
+            article_id=conn.execute("SELECT id,name FROM articles WHERE active=1 LIMIT 1").fetchone()
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        self.assertNotIn("hanno dati ancora da completare",page)
+        self.assertIn('<section class="section reminders-panel"><h2>Promemoria</h2>',page)
+        self.assertIn(f'href="/pratiche/{pid}"',page)
+        self.assertIn("Completa i dati della pratica CR-REMIND",page)
+        with app.db() as conn:
+            reminder_id=conn.execute(
+                "SELECT id FROM reminders WHERE dedupe_key=?",(f"practice_incomplete:{pid}",)
+            ).fetchone()["id"]
+        # calling dashboard again must not duplicate the same open reminder
+        self.handler.dashboard(admin)
+        with app.db() as conn:
+            count=conn.execute(
+                "SELECT COUNT(*) FROM reminders WHERE dedupe_key=?",(f"practice_incomplete:{pid}",)
+            ).fetchone()[0]
+        self.assertEqual(count,1)
+        # ordering a product creates its own reminder, independent type
+        self.handler.form=lambda:{}
+        redirects=[];self.handler.redirect=lambda url:redirects.append(url)
+        self.handler.order_article(admin,article_id["id"])
+        with app.db() as conn:
+            product_reminder=conn.execute(
+                "SELECT * FROM reminders WHERE reminder_type='product_reorder' ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        self.assertIn(article_id["name"],product_reminder["title"])
+        self.assertEqual(product_reminder["url"],"/prodotti")
+        self.handler.dashboard(admin)
+        self.assertIn(f"Riordinare: {article_id['name']}",rendered[-1])
+        # completing the practice reminder via AJAX marks it done, with an audit trail
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"ajax":"1"}
+        self.handler.complete_reminder(admin,reminder_id)
+        self.assertTrue(responses[-1][0]["ok"])
+        with app.db() as conn:
+            completed=conn.execute("SELECT completed_at,completed_by FROM reminders WHERE id=?",(reminder_id,)).fetchone()
+        self.assertIsNotNone(completed["completed_at"])
+        self.assertEqual(completed["completed_by"],admin["id"])
+        self.handler.dashboard(admin)
+        self.assertNotIn(f'href="/pratiche/{pid}"',rendered[-1])
+        # completing an already-completed reminder is a harmless no-op
+        first_completed_at=completed["completed_at"]
+        self.handler.complete_reminder(admin,reminder_id)
+        with app.db() as conn:
+            still=conn.execute("SELECT completed_at FROM reminders WHERE id=?",(reminder_id,)).fetchone()
+        self.assertEqual(still["completed_at"],first_completed_at)
 
     def test_must_change_password_gate_and_change_password_flow(self):
         with app.db() as conn:
