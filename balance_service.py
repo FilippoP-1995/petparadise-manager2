@@ -682,6 +682,52 @@ def create_reversal(
         raise
 
 
+def create_legacy_reversal(
+    connection: sqlite3.Connection,
+    *,
+    legacy_key: str,
+    amount_cents: int,
+    category: str,
+    ledger_section: str,
+    movement_date: str | date,
+    practice_id: int | None = None,
+    practice_number_snapshot: str = "",
+    payment_method: str = "",
+    description: str = "",
+    source: str = "legacy_void",
+    created_by: int | None = None,
+) -> BalanceMovement:
+    """Append a Storno-equivalent entry for a legacy row synthesized on the
+    fly from payment_movements/practices (practices created before the
+    balance_movements ledger existed). These rows have a negative synthetic
+    id and cannot be reversed via create_reversal/create_adjustment, which
+    both require a real balance_movements.id for related_movement_id (a
+    real foreign key). Identified purely by idempotency_key instead, same
+    pattern as create_manual_expense/create_manual_income. Idempotent:
+    retrying with the same legacy_key returns the existing entry."""
+    idempotency_key = f"legacy-void:v1:{legacy_key}"
+    retry = _find_by_idempotency(connection, idempotency_key)
+    if retry is not None:
+        return retry
+    return _create_movement(
+        connection,
+        amount_cents=-abs(amount_cents),
+        movement_date=movement_date,
+        category=category,
+        ledger_section=ledger_section,
+        movement_type=REVERSAL_TYPE,
+        idempotency_key=idempotency_key,
+        practice_id=practice_id,
+        practice_number_snapshot=practice_number_snapshot,
+        payment_method=payment_method,
+        description=description,
+        source=source,
+        related_movement_id=None,
+        created_by=created_by,
+        allow_reserved_type=True,
+    )
+
+
 def correct_movement_date(
     connection: sqlite3.Connection,
     *,
@@ -1054,6 +1100,10 @@ def get_movements(
                       )
                     )
                 )
+                AND NOT EXISTS(
+                  SELECT 1 FROM balance_movements voided
+                  WHERE voided.idempotency_key='legacy-void:v1:legacy-payment-movement:'||pm.id
+                )
 
               UNION ALL
 
@@ -1103,6 +1153,10 @@ def get_movements(
                     AND existing.ledger_section='Entrata'
                     AND existing.movement_type='Acconto'
                 )
+                AND NOT EXISTS(
+                  SELECT 1 FROM balance_movements voided
+                  WHERE voided.idempotency_key='legacy-void:v1:historical-practice:'||p.id||':deposit'
+                )
 
               UNION ALL
 
@@ -1151,6 +1205,10 @@ def get_movements(
                   WHERE existing.practice_id=p.id
                     AND existing.ledger_section='Entrata'
                     AND existing.movement_type IN ('Saldo','Incasso completo')
+                )
+                AND NOT EXISTS(
+                  SELECT 1 FROM balance_movements voided
+                  WHERE voided.idempotency_key='legacy-void:v1:historical-practice:'||p.id||':balance'
                 )
             )
             SELECT {qualified_columns}
