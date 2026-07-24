@@ -2446,6 +2446,18 @@ function ppmPromptPaymentDate(onConfirm,onCancel){
   overlay.querySelector('#ppmPaymentDateCancel').addEventListener('click',()=>{cleanup();onCancel();});
   overlay.addEventListener('click',(event)=>{if(event.target===overlay){cleanup();onCancel();}});
 }
+function ppmConfirmVoidMovement(form){
+  const overlay=document.createElement('div');
+  overlay.className='payment-popover';
+  overlay.innerHTML='<div class="payment-dialog" style="width:min(420px,100%)"><div class="titlebar"><div><h2>Eliminare il movimento?</h2><p class="sub">Verrà tolto dal bilancio insieme al suo importo.</p></div></div><div class="actions" style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end"><button type="button" class="btn ghost" id="ppmVoidCancel">Annulla</button><button type="button" class="btn danger-btn" id="ppmVoidConfirm">Elimina</button></div></div>';
+  document.body.appendChild(overlay);
+  document.body.style.overflow='hidden';
+  const cleanup=()=>{overlay.remove();document.body.style.overflow='';};
+  overlay.querySelector('#ppmVoidConfirm').addEventListener('click',()=>{cleanup();form.submit();});
+  overlay.querySelector('#ppmVoidCancel').addEventListener('click',cleanup);
+  overlay.addEventListener('click',(event)=>{if(event.target===overlay)cleanup();});
+  return false;
+}
 function setupPaymentStatusDatePrompt(){
   const form=document.getElementById('practiceForm');
   const select=form&&form.querySelector('select[name="payment_status"]');
@@ -3949,9 +3961,9 @@ class App(BaseHTTPRequestHandler):
                     if audit_mode else ""
                 )
                 void_action=(
-                    f'''<form method="post" action="/bilanci/movimenti/{row.id}/storna" onclick="event.stopPropagation()" onsubmit="event.stopPropagation();return confirm('Vuoi stornare questo movimento? Il registro originale resterà nell’audit.')"><input type="hidden" name="return_to" value="{esc(current_balance_path)}"><button class="btn ghost balance-void-btn" type="submit">Elimina</button></form>'''
+                    f'''<form method="post" action="/bilanci/movimenti/{row.id}/storna" onclick="event.stopPropagation()" onsubmit="event.stopPropagation();return ppmConfirmVoidMovement(this)"><input type="hidden" name="return_to" value="{esc(current_balance_path)}"><button class="btn ghost balance-void-btn" type="submit">Elimina</button></form>'''
                     if row.id>0 and row.movement_type!="Storno"
-                    else f'''<form method="post" action="/bilanci/movimenti/storna-storico" onclick="event.stopPropagation()" onsubmit="event.stopPropagation();return confirm('Vuoi stornare questo movimento? Il registro originale resterà nell’audit.')"><input type="hidden" name="return_to" value="{esc(current_balance_path)}"><input type="hidden" name="legacy_key" value="{esc(row.idempotency_key)}"><button class="btn ghost balance-void-btn" type="submit">Elimina</button></form>'''
+                    else f'''<form method="post" action="/bilanci/movimenti/storna-storico" onclick="event.stopPropagation()" onsubmit="event.stopPropagation();return ppmConfirmVoidMovement(this)"><input type="hidden" name="return_to" value="{esc(current_balance_path)}"><input type="hidden" name="legacy_key" value="{esc(row.idempotency_key)}"><button class="btn ghost balance-void-btn" type="submit">Elimina</button></form>'''
                     if row.id<0 and row.movement_type!="Storno"
                     else "-"
                 )
@@ -4025,7 +4037,7 @@ class App(BaseHTTPRequestHandler):
         notice=""
         if value("uscita_creata")=="1":notice='<div class="flash">Uscita registrata correttamente.</div>'
         if value("entrata_creata")=="1":notice='<div class="flash">Entrata registrata correttamente.</div>'
-        if value("movimento_stornato")=="1":notice='<div class="flash">Movimento stornato correttamente. La traccia resta disponibile in modalità audit.</div>'
+        if value("movimento_stornato")=="1":notice='<div class="flash">Movimento eliminato correttamente.</div>'
         if error:notice+=f'<div class="flash warning">{esc(error)}</div>'
         cards_html=f'<section class="balance-grid" aria-label="Riepilogo Bilanci">{"".join(cards)}</section>'
         details_html=f'''<section id="balanceDetails" class="section balance-details" data-selected-balance-section="{esc(selected)}">
