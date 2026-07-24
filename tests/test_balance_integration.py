@@ -425,6 +425,54 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
             count=connection.execute("SELECT COUNT(*) n FROM practices").fetchone()["n"]
         self.assertEqual(count,0)
 
+    def test_editing_paid_amount_creates_one_append_only_correction(self):
+        practice_id=self.insert_practice(
+            number="CR-AMOUNT-EDIT",payment_status="Da saldare",total_w="370"
+        )
+        response,status=self.submit_quick_payment(
+            practice_id,status="Pagato",amount="370",token="paid-370",
+            paid_at="2026-07-15",
+        )
+        self.assertEqual(status,200)
+        base_form={
+            "operator_name":"FILIPPO",
+            "service_type":"Cremazione collettiva",
+            "request_origin":"Privato",
+            "payment_status":"Pagato",
+            "payment_method":"Pos",
+            "price_cremation":"320",
+            "economic_at":"2026-07-15",
+            "notes":"Importo corretto",
+            "return_to":"/archivio/pratiche",
+        }
+        self.handler.form=lambda:dict(base_form)
+        self.handler.edit_submit(self.admin,practice_id)
+        with app.db() as connection:
+            standard=get_movements(connection)
+            audit=get_movements(connection,include_technical=True)
+            stored=connection.execute(
+                "SELECT total_service FROM practices WHERE id=?",(practice_id,)
+            ).fetchone()
+        self.assertEqual(
+            [(row.movement_type,row.amount_cents) for row in standard],
+            [("Incasso completo",32000)],
+        )
+        self.assertEqual(
+            sorted(row.amount_cents for row in audit),[-37000,32000,37000]
+        )
+        self.assertEqual(float(stored["total_service"]),320.0)
+
+        self.handler.form=lambda:{**base_form,"notes":"Solo nota aggiornata"}
+        self.handler.edit_submit(self.admin,practice_id)
+        with app.db() as connection:
+            self.assertEqual(
+                connection.execute(
+                    "SELECT COUNT(*) n FROM balance_movements WHERE practice_id=?",
+                    (practice_id,),
+                ).fetchone()["n"],
+                3,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -268,6 +268,13 @@ class ProductionBalanceModuleTests(unittest.TestCase):
         ):
             self.assertIn(heading,first_page)
         self.assertLess(
+            first_page.index("<th>Data creazione pratica</th>"),
+            first_page.index("<th>Data incasso / movimento</th>"),
+        )
+        self.assertIn("Registra entrata",first_page)
+        self.assertIn("Registra uscita",first_page)
+        self.assertIn("balance-manual-toolbar",first_page)
+        self.assertLess(
             first_page.index('id="balanceDetails"'),
             first_page.index('class="balance-grid"'),
         )
@@ -284,6 +291,59 @@ class ProductionBalanceModuleTests(unittest.TestCase):
         self.handler.balances_page(self.admin)
         self.assertEqual(rendered[-1].count("data-balance-detail-row"),5)
         self.assertIn("Pagina 2 di 2",rendered[-1])
+
+    def test_admin_void_is_append_only_and_audit_keeps_the_complete_trace(self):
+        with app.db() as connection:
+            movement=create_movement(
+                connection,amount_cents=12500,movement_date="2026-07-12",
+                category="W",ledger_section="Entrata",
+                movement_type="Entrata manuale",
+                idempotency_key="production-manual-income",
+                payment_method="Bonifico",description="Entrata da stornare",
+                source="manual_income",created_by=self.admin["id"],
+            )
+        self.handler.form=lambda:{"return_to":"/bilanci?view=entrate-w"}
+        redirects=[]
+        self.handler.redirect=redirects.append
+        self.handler.balance_movement_void(self.admin,movement.id)
+        self.assertEqual(
+            redirects,["/bilanci?view=entrate-w&movimento_stornato=1"]
+        )
+        with app.db() as connection:
+            standard=get_movements(
+                connection,filters=self.filters(search="Entrata da stornare")
+            )
+            audit=get_movements(
+                connection,
+                filters=normalize_filters(
+                    date_from="2026-07-01",date_to="2026-07-31",
+                    search="Entrata da stornare",include_technical=True,
+                ),
+            )
+            original=connection.execute(
+                "SELECT amount_cents FROM balance_movements WHERE id=?",
+                (movement.id,),
+            ).fetchone()
+        self.assertEqual(standard,[])
+        self.assertEqual(original["amount_cents"],12500)
+        self.assertEqual(
+            sorted(row.amount_cents for row in audit),[-12500,12500]
+        )
+        self.assertEqual(
+            {row.source for row in audit},{"manual_income","manual_void"}
+        )
+
+        rendered=[]
+        self.handler.send_html=lambda html,*args:rendered.append(html)
+        self.handler.path=(
+            "/bilanci?data_iniziale=2026-07-01&data_finale=2026-07-31&"
+            "view=entrate-w&audit=1&ricerca=Entrata%20da%20stornare"
+        )
+        self.handler.balances_page(self.admin)
+        page=rendered[-1]
+        self.assertIn("manual_income",page)
+        self.assertIn("manual_void",page)
+        self.assertIn("Mostra movimenti tecnici / rettifiche",page)
 
 
 if __name__=="__main__":

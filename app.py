@@ -25,6 +25,7 @@ from email_service import EmailConfigurationError, EmailDeliveryError, send_emai
 from balance_service import (
     BalanceError,
     classify_category as classify_balance_category,
+    correct_movement_amount as correct_balance_movement_amount,
     correct_movement_date as correct_balance_movement_date,
     create_manual_expense as create_balance_expense,
     create_manual_income as create_balance_income,
@@ -36,6 +37,8 @@ from balance_service import (
     get_balance_snapshot,
     get_movements as get_balance_movements,
     normalize_filters as normalize_balance_filters,
+    create_reversal as create_balance_reversal,
+    MovementAlreadyReversedError,
 )
 from calendar_service import (
     EVENT_TYPES, PICKUP_STATUSES, DELIVERY_STATUSES, PAYMENT_STATUSES, CALENDAR_OPERATORS,
@@ -1188,15 +1191,16 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .balance-filters .fields{grid-template-columns:repeat(3,minmax(0,1fr))}
 .balance-filter-note{display:flex;align-items:center;gap:7px;margin:14px 0 0;color:#94a3b8;font-size:12px}
 .balance-filter-note .icon{width:16px;height:16px}
-.balance-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-.balance-card{position:relative;display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;gap:10px;min-width:0;min-height:104px;padding:15px 17px;border:1px solid #354155;border-radius:15px;background:linear-gradient(145deg,#202c3d,#182334);color:#f8fafc;text-align:left;box-shadow:0 12px 32px #080d1626;cursor:pointer;overflow:hidden;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}
+.balance-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.balance-grid .balance-card:last-child:nth-child(odd){grid-column:1/-1}
+.balance-card{position:relative;display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:10px;min-width:0;min-height:76px;padding:12px 14px;border:1px solid #354155;border-radius:13px;background:linear-gradient(145deg,#202c3d,#182334);color:#f8fafc;text-align:left;box-shadow:0 9px 24px #080d1626;cursor:pointer;overflow:hidden;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}
 .balance-card:before{content:"";position:absolute;inset:0;background:linear-gradient(125deg,var(--balance-glow),transparent 66%);pointer-events:none}
 .balance-card:hover{transform:translateY(-2px);border-color:#5b687a;box-shadow:0 18px 38px #03071255}
 .balance-card[aria-pressed="true"],.balance-card[aria-current="true"]{border-color:#fb7185;box-shadow:0 0 0 2px #fb718533,0 18px 38px #03071255}
 .balance-card-copy,.balance-card-value{position:relative;z-index:1}
 .balance-card-copy{display:flex;align-items:center;gap:9px;color:#cbd5e1;font-size:13px;font-weight:650}
 .balance-card-copy .icon{width:18px;height:18px;color:var(--balance-accent)}
-.balance-card-value{font-size:29px;font-weight:700;letter-spacing:-.035em}
+.balance-card-value{font-size:23px;font-weight:700;letter-spacing:-.025em;white-space:nowrap}
 .inline-payment-date-form{display:inline-flex;margin:0}.inline-payment-date{width:142px;min-height:38px;padding:7px 9px;font-size:13px}
 .balance-tone-w{--balance-accent:#60a5fa;--balance-glow:#1d4ed840}
 .balance-tone-d{--balance-accent:#fbbf24;--balance-glow:#a1620740}
@@ -1210,7 +1214,8 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .balance-details-empty{display:grid;place-items:center;min-height:116px;margin:0;color:#94a3b8;text-align:center}
 .balance-filter-actions{margin-top:14px}.balance-filter-actions .btn{width:auto}
 .balance-expense{margin:0 0 18px}.balance-expense summary{cursor:pointer;font-weight:650}.balance-expense[open] summary{margin-bottom:16px}
-.balance-detail-table{min-width:760px}.balance-detail-table td:last-child,.balance-detail-table th:last-child{text-align:right}
+.balance-detail-table{min-width:1040px;table-layout:fixed}.balance-detail-table th,.balance-detail-table td{padding:8px 7px;font-size:12px;line-height:1.25;overflow-wrap:anywhere}.balance-detail-table th:nth-child(1),.balance-detail-table td:nth-child(1),.balance-detail-table th:nth-child(2),.balance-detail-table td:nth-child(2){width:94px}.balance-detail-table th:nth-child(3),.balance-detail-table td:nth-child(3){width:90px}.balance-detail-table th:nth-child(7),.balance-detail-table td:nth-child(7),.balance-detail-table th:nth-child(8),.balance-detail-table td:nth-child(8){width:74px}.balance-detail-table td:last-child,.balance-detail-table th:last-child{width:76px;text-align:right}.balance-clickable-row{cursor:pointer}.balance-clickable-row:hover{background:#ffffff0a}.balance-clickable-row:focus{outline:2px solid #fb7185;outline-offset:-2px}.balance-void-btn{min-height:30px;padding:5px 7px;font-size:11px}
+.balance-manual-toolbar{margin:0 0 14px}.balance-manual-toolbar .btn{min-width:150px;background:#e9475b;color:#fff;border-color:#e9475b}.balance-manual-panels{margin-bottom:4px}
 .balance-pagination{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:16px}
 .balance-page-label{color:#94a3b8;font-size:13px;font-weight:650}
 .light-theme .balance-card{background:#fff;color:#111827;border-color:#cbd5e1;box-shadow:0 10px 26px #64748b18}
@@ -1218,7 +1223,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .light-theme .balance-card[aria-pressed="true"],.light-theme .balance-card[aria-current="true"]{border-color:#e9475b}
 .light-theme .balance-filter-note,.light-theme .balance-details-empty{color:#64748b}
 @media(max-width:900px){.balance-wrap{padding-bottom:calc(92px + var(--safe-bottom))}.balance-filters .fields{grid-template-columns:repeat(2,minmax(0,1fr))}.balance-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:560px){.balance-filters .fields,.balance-grid{grid-template-columns:1fr}.balance-card{min-height:106px;padding:16px}.balance-card-value{font-size:26px}.balance-details-heading{align-items:flex-start;flex-direction:column}.balance-details-meta{width:100%;justify-content:space-between}.balance-pagination{justify-content:space-between}.balance-pagination .btn{padding:10px 12px}}
+@media(max-width:560px){.balance-filters .fields,.balance-grid{grid-template-columns:1fr}.balance-grid .balance-card:last-child:nth-child(odd){grid-column:auto}.balance-card{min-height:70px;padding:11px 13px}.balance-card-value{font-size:21px}.balance-details-heading{align-items:flex-start;flex-direction:column}.balance-details-meta{width:100%;justify-content:space-between}.balance-pagination{justify-content:space-between}.balance-pagination .btn{padding:10px 12px}.balance-manual-toolbar{display:grid;grid-template-columns:1fr 1fr}.balance-manual-toolbar .btn{min-width:0;padding:10px 8px}.balance-detail-table{min-width:960px}}
 """
 
 APP_JS = r"""
@@ -3475,6 +3480,8 @@ class App(BaseHTTPRequestHandler):
         if path == "/nuova": return self.create_practice(user)
         if path == "/bilanci/uscite": return self.balance_expense_submit(user)
         if path == "/bilanci/entrate": return self.balance_income_submit(user)
+        match = re.fullmatch(r"/bilanci/movimenti/(\d+)/storna",path)
+        if match: return self.balance_movement_void(user,int(match.group(1)))
         if path == "/calendario/nuovo": return self.save_calendar_event(user)
         match = re.fullmatch(r"/calendario/(\d+)/modifica",path)
         if match: return self.save_calendar_event(user,int(match.group(1)))
@@ -3700,6 +3707,7 @@ class App(BaseHTTPRequestHandler):
         category=value("categoria")
         payment_method=value("metodo")
         status_filter=value("stato")
+        audit_mode=(value("audit")=="1" and user["role"]=="admin")
         collaborator_raw=value("collaboratore")
         operator_raw=value("operatore")
         search=value("ricerca")
@@ -3713,6 +3721,7 @@ class App(BaseHTTPRequestHandler):
                 date_from=date_from,date_to=date_to,category=category,
                 collaborator_id=collaborator_id,payment_method=payment_method,
                 operator_id=operator_id,status=status_filter,search=search,
+                include_technical=audit_mode,
             )
         except BalanceError as exc:
             error=error or f"Filtri non validi: {exc}"
@@ -3735,12 +3744,12 @@ class App(BaseHTTPRequestHandler):
         section_order=(
             ("entrate-w","balance-tone-w","wallet"),
             ("entrate-d","balance-tone-d","wallet"),
-            ("collaboratori-incassato","balance-tone-collaborators","briefcase"),
             ("da-riscuotere-w","balance-tone-w","receipt"),
             ("da-riscuotere-d","balance-tone-d","receipt"),
-            ("collaboratori-da-riscuotere","balance-tone-collaborators","briefcase"),
             ("uscite-w","balance-tone-out","clipboard"),
             ("uscite-d","balance-tone-out","clipboard"),
+            ("collaboratori-incassato","balance-tone-collaborators","briefcase"),
+            ("collaboratori-da-riscuotere","balance-tone-collaborators","briefcase"),
             ("totale-w-attuale","balance-tone-w","chart"),
             ("totale-d-attuale","balance-tone-d","chart"),
             ("saldo-netto","balance-tone-net","chart"),
@@ -3758,6 +3767,7 @@ class App(BaseHTTPRequestHandler):
             "operatore":str(filters.operator_id or ""),
             "stato":filters.status or "",
             "ricerca":filters.search,
+            "audit":"1" if audit_mode else "",
         }
         cards=[]
         for key,tone,icon in section_order:
@@ -3799,19 +3809,24 @@ class App(BaseHTTPRequestHandler):
                     )
                 }
         detail_rows=[]
+        current_balance_path=getattr(self,"path","/bilanci")
         if is_outstanding:
             for row,amount_cents in page_pairs:
-                url=f"/pratiche/{row.practice_id}?return_to={quote(getattr(self,'path','/bilanci'),safe='')}"
+                url=f"/pratiche/{row.practice_id}?return_to={quote(current_balance_path,safe='')}"
                 animal=" - ".join(x for x in (row.species,row.animal_name) if x) or "-"
                 detail_rows.append(
-                    f'''<tr data-balance-detail-row data-amount-cents="{amount_cents}"><td>-</td><td>{esc(date_it(row.practice_created_at))}</td><td><a href="{url}"><b>{esc(row.practice_number)}</b></a></td><td>{esc(animal)}</td><td>{esc(row.owner_name or row.reference or "-")}</td><td>Da saldare</td><td>{esc(row.category)}</td><td><b>{money_cents_it(row.remaining_cents)}</b></td><td>{esc(row.payment_method or "-")}</td><td>{esc(row.collaborator_name or "-")}</td><td>{money_cents_it(row.total_due_cents)}</td><td>{money_cents_it(row.received_cents)}</td></tr>'''
+                    f'''<tr class="balance-clickable-row" tabindex="0" onclick="location.href='{url}'" onkeydown="if(event.key==='Enter')location.href='{url}'" data-balance-detail-row data-amount-cents="{amount_cents}"><td>{esc(date_it(row.practice_created_at))}</td><td>-</td><td><b>{esc(row.practice_number)}</b></td><td>{esc(animal)}</td><td>{esc(row.owner_name or row.reference or "-")}</td><td>Da saldare</td><td>{esc(row.category)}</td><td><b>{money_cents_it(row.remaining_cents)}</b></td><td>{esc(row.payment_method or "-")}</td><td>{esc(row.collaborator_name or "-")}</td><td>{money_cents_it(row.total_due_cents)}</td><td>{money_cents_it(row.received_cents)}</td><td>-</td></tr>'''
                 )
-            detail_header="<tr><th>Data movimento</th><th>Data creazione pratica</th><th>Numero pratica</th><th>Animale</th><th>Proprietario</th><th>Stato</th><th>Categoria</th><th>Importo</th><th>Metodo</th><th>Collaboratore</th><th>Totale dovuto</th><th>Già incassato</th></tr>"
+            detail_header="<tr><th>Data creazione pratica</th><th>Data incasso / movimento</th><th>Numero pratica</th><th>Animale</th><th>Proprietario</th><th>Stato</th><th>Categoria</th><th>Importo</th><th>Metodo</th><th>Collaboratore</th><th>Totale dovuto</th><th>Già incassato</th><th>Azioni</th></tr>"
         else:
             for row,amount_cents in page_pairs:
                 practice_number=row.practice_number_snapshot or "-"
-                practice_cell=f'<a href="/pratiche/{row.practice_id}"><b>{esc(practice_number)}</b></a>' if row.practice_id else esc(practice_number)
                 meta=practice_meta.get(int(row.practice_id)) if row.practice_id else None
+                practice_url=(
+                    f"/pratiche/{row.practice_id}?return_to="
+                    f"{quote(current_balance_path,safe='')}"
+                    if row.practice_id else ""
+                )
                 animal=(
                     " - ".join(x for x in (meta["species"],meta["animal_name"]) if x)
                     if meta else ""
@@ -3827,10 +3842,23 @@ class App(BaseHTTPRequestHandler):
                     (meta["collaborator_name"] or collaborator_names.get(meta["collaborator_id"],""))
                     if meta else collaborator_names.get(row.collaborator_id,"")
                 ) or "-"
-                detail_rows.append(
-                    f'''<tr data-balance-detail-row data-amount-cents="{amount_cents}"><td>{esc(date_it(row.movement_date))}</td><td>{esc(date_it(meta["created_at"])) if meta else "-"}</td><td>{practice_cell}</td><td>{esc(animal)}</td><td>{esc(owner)}</td><td>{esc(status_label)}<small class="sub">{esc(row.description or "")}</small></td><td>{esc(row.category)}</td><td><b>{money_cents_it(amount_cents)}</b></td><td>{esc(row.payment_method or "-")}</td><td>{esc(collaborator)}</td></tr>'''
+                audit_badge=(
+                    f'<small class="sub">{esc(row.source)} · #{row.id}</small>'
+                    if audit_mode else ""
                 )
-            detail_header="<tr><th>Data incasso / movimento</th><th>Data creazione pratica</th><th>Numero pratica</th><th>Animale</th><th>Proprietario</th><th>Stato</th><th>Categoria</th><th>Importo</th><th>Metodo</th><th>Collaboratore</th></tr>"
+                void_action=(
+                    f'''<form method="post" action="/bilanci/movimenti/{row.id}/storna" onclick="event.stopPropagation()" onsubmit="event.stopPropagation();return confirm('Vuoi stornare questo movimento? Il registro originale resterà nell’audit.')"><input type="hidden" name="return_to" value="{esc(current_balance_path)}"><button class="btn ghost balance-void-btn" type="submit">Elimina</button></form>'''
+                    if user["role"]=="admin" and row.id>0 and row.movement_type!="Storno"
+                    else "-"
+                )
+                row_attrs=(
+                    f'''class="balance-clickable-row" tabindex="0" onclick="location.href='{practice_url}'" onkeydown="if(event.key==='Enter')location.href='{practice_url}'"'''
+                    if practice_url else ""
+                )
+                detail_rows.append(
+                    f'''<tr {row_attrs} data-balance-detail-row data-amount-cents="{amount_cents}"><td>{esc(date_it(meta["created_at"])) if meta else "-"}</td><td>{esc(date_it(row.movement_date))}</td><td><b>{esc(practice_number)}</b></td><td>{esc(animal)}</td><td>{esc(owner)}</td><td>{esc(status_label)}<small class="sub">{esc(row.description or "")}</small>{audit_badge}</td><td>{esc(row.category)}</td><td><b>{money_cents_it(amount_cents)}</b></td><td>{esc(row.payment_method or "-")}</td><td>{esc(collaborator)}</td><td>{void_action}</td></tr>'''
+                )
+            detail_header="<tr><th>Data creazione pratica</th><th>Data incasso / movimento</th><th>Numero pratica</th><th>Animale</th><th>Proprietario</th><th>Stato</th><th>Categoria</th><th>Importo</th><th>Metodo</th><th>Collaboratore</th><th>Azioni</th></tr>"
         details=(
             f'''<div class="tablebox"><table class="balance-detail-table"><thead>{detail_header}</thead><tbody>{''.join(detail_rows)}</tbody></table></div>'''
             if detail_rows else '<p class="balance-details-empty">Nessun dato da visualizzare.</p>'
@@ -3893,6 +3921,7 @@ class App(BaseHTTPRequestHandler):
         notice=""
         if value("uscita_creata")=="1":notice='<div class="flash">Uscita registrata correttamente.</div>'
         if value("entrata_creata")=="1":notice='<div class="flash">Entrata registrata correttamente.</div>'
+        if value("movimento_stornato")=="1":notice='<div class="flash">Movimento stornato correttamente. La traccia resta disponibile in modalità audit.</div>'
         if error:notice+=f'<div class="flash warning">{esc(error)}</div>'
         cards_html=f'<section class="balance-grid" aria-label="Riepilogo Bilanci">{"".join(cards)}</section>'
         details_html=f'''<section id="balanceDetails" class="section balance-details" data-selected-balance-section="{esc(selected)}">
@@ -3911,12 +3940,13 @@ class App(BaseHTTPRequestHandler):
             <div class="field"><label for="balanceStatus">Stato</label><select id="balanceStatus" name="stato">{status_options}</select></div>
             <div class="field"><label for="balanceOperator">Operatore</label><select id="balanceOperator" name="operatore">{operator_options}</select></div>
             <div class="field"><label for="balanceSearch">Ricerca</label><input id="balanceSearch" type="search" name="ricerca" value="{esc(filters.search)}" placeholder="Pratica, cliente, descrizione…"></div>
+            {f'<label class="modern-check"><input type="checkbox" name="audit" value="1" {"checked" if audit_mode else ""}> Mostra movimenti tecnici / rettifiche</label>' if user["role"]=="admin" else ""}
           </div>
           <div class="actions balance-filter-actions"><button class="btn">Applica filtri</button><a class="btn ghost" href="/bilanci">Azzera</a></div>
           <p class="balance-filter-note">{lucide("settings")}<span>Per “Da riscuotere” conta la situazione alla data finale; la data iniziale non nasconde debiti precedenti ancora aperti.</span></p>
         </form>'''
-        manual_html=f'''<div class="grid cols-2">
-          <details class="section balance-expense"><summary>Registra entrata manuale</summary>
+        manual_html=f'''<div class="grid cols-2 balance-manual-panels">
+          <details id="balanceManualIncome" class="section balance-expense"><summary>Registra entrata manuale</summary>
             <form method="post" action="{income_action}" onsubmit="const b=this.querySelector('button');b.disabled=true;b.textContent='Registrazione…'">
               <input type="hidden" name="entry_type" value="income"><input type="hidden" name="return_to" value="{esc(return_to)}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(24)}">
               <div class="fields">
@@ -3930,7 +3960,7 @@ class App(BaseHTTPRequestHandler):
               </div><button class="btn" style="margin-top:14px">Registra entrata</button>
             </form>
           </details>
-          <details class="section balance-expense"><summary>Registra uscita manuale</summary>
+          <details id="balanceManualExpense" class="section balance-expense"><summary>Registra uscita manuale</summary>
             <form method="post" action="{expense_action}" onsubmit="const b=this.querySelector('button');b.disabled=true;b.textContent='Registrazione…'">
               <input type="hidden" name="entry_type" value="expense"><input type="hidden" name="return_to" value="{esc(return_to)}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(24)}">
               <div class="fields">
@@ -3942,10 +3972,11 @@ class App(BaseHTTPRequestHandler):
             </form>
           </details>
         </div>'''
+        manual_toolbar='''<div class="actions balance-manual-toolbar"><button class="btn" type="button" onclick="const p=document.getElementById('balanceManualIncome');p.open=true;p.scrollIntoView({behavior:'smooth',block:'start'})">Registra entrata</button><button class="btn" type="button" onclick="const p=document.getElementById('balanceManualExpense');p.open=true;p.scrollIntoView({behavior:'smooth',block:'start'})">Registra uscita</button></div>'''
         primary_content=(details_html+cards_html) if explicit_view else (cards_html+details_html)
         body=f'''<main class="wrap balance-wrap">
           <div class="titlebar"><div><h1>Bilanci</h1><p class="sub">Movimenti reali e situazione delle somme ancora aperte.</p></div></div>
-          {notice}{primary_content}{manual_html}{filters_html}
+          {notice}{manual_toolbar}{primary_content}{manual_html}{filters_html}
         </main>'''
         self.send_html(layout("Bilanci",body,user))
 
@@ -4007,6 +4038,49 @@ class App(BaseHTTPRequestHandler):
             return self.balances_page(user,error=str(exc),expense_draft=form)
         separator="&" if "?" in return_to else "?"
         self.redirect(f"{return_to}{separator}entrata_creata=1")
+
+    def balance_movement_void(self,user,movement_id):
+        return_to=safe_return_path(self.form().get("return_to"),"/bilanci")
+        if user["role"]!="admin":
+            return self.error_page(
+                "Operazione non autorizzata",
+                "Solo un amministratore può stornare un movimento.",
+                return_to,
+            )
+        try:
+            with db() as c:
+                movement=c.execute(
+                    "SELECT * FROM balance_movements WHERE id=?",(movement_id,)
+                ).fetchone()
+                if not movement:
+                    raise BalanceError("Movimento non trovato.")
+                if movement["movement_type"]=="Storno":
+                    raise BalanceError("Uno storno tecnico non può essere eliminato.")
+                try:
+                    create_balance_reversal(
+                        c,
+                        original_movement_id=movement_id,
+                        movement_date=movement["movement_date"],
+                        idempotency_key=f"manual-void:v1:{movement_id}",
+                        description=(
+                            f"Storno manuale: "
+                            f"{movement['description'] or movement['movement_type']}"
+                        ),
+                        source="manual_void",
+                        created_by=user["id"],
+                        metadata={
+                            "reason":"manual_void",
+                            "original_movement_id":movement_id,
+                            "void_date":datetime.now(ROME_TZ).date().isoformat(),
+                            "procedure_version":"1",
+                        },
+                    )
+                except MovementAlreadyReversedError:
+                    pass
+        except BalanceError as exc:
+            return self.balances_page(user,error=str(exc))
+        separator="&" if "?" in return_to else "?"
+        self.redirect(f"{return_to}{separator}movimento_stornato=1")
 
     def calendar_operator_avatar(self,operator_name,size="md",color_hex=None):
         if not operator_name:return ''
@@ -7069,6 +7143,81 @@ class App(BaseHTTPRequestHandler):
         )
         return None
 
+    def correct_practice_payment_amount(self,c,practice,data,user_id):
+        """Reconcile an already-recorded phase without mutating ledger rows."""
+        status=data.get("payment_status") or "Da saldare"
+        if status not in ("Acconto","Pagato"):
+            return None
+        rows=c.execute(
+            """
+            SELECT b.* FROM balance_movements b
+            WHERE b.practice_id=? AND b.ledger_section='Entrata'
+              AND b.movement_type IN ('Acconto','Saldo','Incasso completo')
+              AND b.amount_cents>0
+              AND NOT EXISTS(
+                SELECT 1 FROM balance_movements reversal
+                WHERE reversal.related_movement_id=b.id
+                  AND reversal.movement_type='Storno'
+              )
+            ORDER BY b.id
+            """,
+            (practice["id"],),
+        ).fetchall()
+        deposits=[row for row in rows if row["movement_type"]=="Acconto"]
+        settlements=[
+            row for row in rows
+            if row["movement_type"] in ("Saldo","Incasso completo")
+        ]
+        target=None
+        phase=""
+        if status=="Acconto":
+            if len(deposits)!=1:
+                return None if not deposits else (
+                    "Sono presenti più acconti distinti: usa la manutenzione Bilanci "
+                    "prima di correggere l'importo."
+                )
+            target=deposits[0];phase="deposit"
+            expected=euros_to_cents(
+                data.get("deposit_final") if uses_total_d(data)
+                else data.get("deposit")
+            )
+        else:
+            if len(settlements)!=1:
+                return None if not settlements else (
+                    "Sono presenti più saldi distinti: usa la manutenzione Bilanci "
+                    "prima di correggere l'importo."
+                )
+            target=settlements[0]
+            phase="settlement" if deposits else "full_payment"
+            expected=max(
+                0,
+                euros_to_cents(f"{effective_total(data):.2f}")
+                -sum(int(row["amount_cents"]) for row in deposits),
+            )
+        category=classify_balance_category(
+            has_total_d=uses_total_d(data),
+            is_collaborator=(
+                (data.get("request_origin") or "")=="Collaboratore"
+                or bool(data.get("collaborator_id"))
+            ),
+        )
+        if int(target["amount_cents"])==expected and target["category"]==category:
+            return None
+        key=(
+            f"practice-amount:v1:{practice['id']}:{target['id']}:"
+            f"{target['amount_cents']}:{expected}:{phase}"
+        )
+        correct_balance_movement_amount(
+            c,
+            original_movement_id=int(target["id"]),
+            new_amount_cents=expected,
+            idempotency_key=key,
+            category=category,
+            created_by=user_id,
+            reason="Correzione importo dalla pratica",
+        )
+        return None
+
     def sync_practice_urn(self,c,practice_id,old_urn_id,new_urn_id,user_id):
         old_id=int(old_urn_id) if old_urn_id else None; new_id=int(new_urn_id) if new_urn_id else None
         if old_id==new_id:return
@@ -7342,6 +7491,17 @@ class App(BaseHTTPRequestHandler):
                 if error:return self.send_json({"ok":False,"error":error},422)
                 allowed=set(normalized);requested=set(submitted)&allowed
                 economic=set(MONEY_FIELDS)|{"payment_status","payment_method","invoice_total","urn_id","urn_id_2","price_urn_2"}
+                if (
+                    (previous["payment_status"] or "Da saldare") in ("Acconto","Pagato")
+                    and requested&set(MONEY_FIELDS)
+                ):
+                    return self.send_json({
+                        "ok":False,
+                        "error":(
+                            "Per modificare importi già registrati usa Salva modifiche: "
+                            "il gestionale creerà la rettifica contabile necessaria."
+                        ),
+                    },422)
                 address={"owner_street","owner_city","owner_province","owner_zip","owner_address","origin_mode","origin_text","request_origin","origin_veterinarian_id","owner_veterinarian_id","veterinarian_id","transport_method","vehicle_plate"}
                 dependencies=set()
                 if requested&economic:dependencies|={"total_service","remaining_balance","invoice_total","payment_status","urn_notes","urn_notes_2","price_urn","price_urn_2","tag_calco_urna"}
@@ -7433,6 +7593,19 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 if payment_date_error:
                     return self.edit_page(
                         user,pid,draft=draft_with_date(),error=payment_date_error
+                    )
+            economic_amount_changed=any(
+                key in previous.keys()
+                and compact_text(previous[key])!=compact_text(d.get(key))
+                for key in MONEY_FIELDS
+            )
+            if economic_amount_changed:
+                payment_amount_error=self.correct_practice_payment_amount(
+                    c,previous,d,user["id"]
+                )
+                if payment_amount_error:
+                    return self.edit_page(
+                        user,pid,draft=draft_with_date(),error=payment_amount_error
                     )
             field_labels={"animal_name":"Nome animale","owner_first_name":"Nome proprietario","owner_last_name":"Cognome proprietario","owner_phone":"Telefono proprietario","owner_phone_2":"Secondo telefono","service_type":"Tipo cremazione","destination_branch":"Sede","notes":"Note","send_catalog":"Inviare catalogo","catalog_sent":"Catalogo inviato","send_estremi":"Inviare estremi","use_voucher":"Usa buono","payment_method":"Metodo di pagamento","invoice_number":"Numero fattura","invoice_date":"Data fattura","invoice_total":"Totale fattura","make_invoice":"Fare fattura",**MONEY_FIELDS}
             changes=[]
