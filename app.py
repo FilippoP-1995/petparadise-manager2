@@ -3635,6 +3635,8 @@ class App(BaseHTTPRequestHandler):
         if match: return self.quick_payment(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/pagamento-movimento", path)
         if match: return self.save_payment_macroarea(user, int(match.group(1)))
+        match = re.fullmatch(r"/pratiche/(\d+)/pagamento-movimento/rimuovi", path)
+        if match: return self.remove_payment_macroarea(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/stato-rapido", path)
         if match: return self.quick_state(user, int(match.group(1)))
         if path == "/programma-cremazioni/completa": return self.complete_cremation_session(user)
@@ -5716,7 +5718,11 @@ class App(BaseHTTPRequestHandler):
             channel_options=''.join(f'<option value="{v}" {"selected" if v==channel_value else ""}>{v}</option>' for v in ("W","D"))
             invoice_hidden="" if channel_value=="W" else "hidden"
             lower=label.lower()
-            return f'''<section class="payment-macroarea" data-macroarea="{kind}"><h3>{label}</h3><form method="post" action="/pratiche/{r['id']}/pagamento-movimento" onsubmit="event.stopPropagation()"><input type="hidden" name="return_to" value="{return_to}"><input type="hidden" name="macroarea" value="{kind}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(16)}"><div class="fields"><div class="field"><label>Data {lower}</label><input type="date" name="{kind}_data" value="{esc(date_value)}" required></div><div class="field"><label>Totale {lower} €</label><input name="{kind}_totale" value="{esc(amount_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00" required></div><div class="field"><label>Circuito {lower}</label><select name="{kind}_circuito" onchange="ppmSyncMacroareaInvoiceSection(this)">{channel_options}</select></div><div class="field"><label>Modalità {lower}</label><select name="{kind}_modalita" required>{method_options}</select></div></div><div class="payment-invoice-section" data-macroarea-invoice="{kind}" {invoice_hidden}><div class="fields"><div class="field"><label>Importo fattura €</label><input name="{kind}_fattura_totale" value="{esc(invoice_total_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field"><label>Data fattura</label><input type="date" name="{kind}_fattura_data" value="{esc(invoice_date_value)}"></div><div class="field full"><label>Numero fattura</label><input name="{kind}_fattura_numero" value="{esc(invoice_number_value)}"></div></div></div><button class="btn" style="margin-top:12px">Salva pagamento</button></form></section>'''
+            remove_form=(
+                f'''<form method="post" action="/pratiche/{r['id']}/pagamento-movimento/rimuovi" onsubmit="event.stopPropagation();return confirm('Rimuovere {label.lower()}? Verrà stornato anche nei Bilanci.')" style="display:inline"><input type="hidden" name="return_to" value="{return_to}"><input type="hidden" name="macroarea" value="{kind}"><button class="btn ghost" type="submit" style="margin-top:12px;margin-left:8px">Rimuovi {label.lower()}</button></form>'''
+                if movement else ""
+            )
+            return f'''<section class="payment-macroarea" data-macroarea="{kind}"><h3>{label}</h3><form method="post" action="/pratiche/{r['id']}/pagamento-movimento" onsubmit="event.stopPropagation()"><input type="hidden" name="return_to" value="{return_to}"><input type="hidden" name="macroarea" value="{kind}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(16)}"><div class="fields"><div class="field"><label>Data {lower}</label><input type="date" name="{kind}_data" value="{esc(date_value)}" required></div><div class="field"><label>Totale {lower} €</label><input name="{kind}_totale" value="{esc(amount_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00" required></div><div class="field"><label>Circuito {lower}</label><select name="{kind}_circuito" onchange="ppmSyncMacroareaInvoiceSection(this)">{channel_options}</select></div><div class="field"><label>Modalità {lower}</label><select name="{kind}_modalita" required>{method_options}</select></div></div><div class="payment-invoice-section" data-macroarea-invoice="{kind}" {invoice_hidden}><div class="fields"><div class="field"><label>Importo fattura €</label><input name="{kind}_fattura_totale" value="{esc(invoice_total_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field"><label>Data fattura</label><input type="date" name="{kind}_fattura_data" value="{esc(invoice_date_value)}"></div><div class="field full"><label>Numero fattura</label><input name="{kind}_fattura_numero" value="{esc(invoice_number_value)}"></div></div></div><button class="btn" style="margin-top:12px">Salva pagamento</button></form>{remove_form}</section>'''
         acconto_html=macroarea_section("acconto","Acconto",acconto_movement,acconto_invoice,payment_deposit_amount)
         saldo_html=macroarea_section("saldo","Saldo",saldo_movement,saldo_invoice,payment_remaining_amount)
         return f'''<div class="inline-statuses" onclick="event.stopPropagation()">
@@ -8093,6 +8099,79 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 owner=f'{practice["owner_first_name"] or ""} {practice["owner_last_name"] or ""}'.strip()
                 emit_notification(c,"payment_received","💰 Pagamento ricevuto",f'{owner}\n{money_it(money_value(amount))}',pid,user["id"],db_path=DB_PATH)
         if ajax:return self.send_json({"ok":True,"payment_status":new_status,"macroarea":macroarea})
+        return self.redirect(safe_return_path(form.get("return_to") or self.headers.get("Referer"),"/"))
+
+    def remove_payment_macroarea(self,user,pid):
+        """Undo a previously saved macroarea (acconto or saldo): deletes its
+        payment_movements row, stornos the matching real balance_movements
+        entry (subtracting it from Bilanci), drops its movement invoice if
+        it has no other links, and re-derives payment_status/deposit/
+        remaining_balance from whatever movements remain — lets the status
+        go backward (Pagato->Acconto->Da saldare) symmetrically to how
+        save_payment_macroarea moves it forward."""
+        form=self.form(); ajax=form.get("ajax")=="1"
+        macroarea=form.get("macroarea","").strip()
+        if macroarea not in ("acconto","saldo"):
+            error="Macroarea di pagamento non valida."
+            return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
+        with db() as c:
+            practice=c.execute("SELECT * FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(pid,)).fetchone()
+            if not practice:
+                return self.send_json({"ok":False,"error":"Pratica non trovata"},404) if ajax else self.send_error(404)
+            existing_movement,_=latest_movement_and_invoice(c,pid,macroarea)
+            old_status=practice["payment_status"] or "Da saldare"
+            if not existing_movement:
+                if ajax:return self.send_json({"ok":True,"payment_status":old_status})
+                return self.redirect(safe_return_path(form.get("return_to") or self.headers.get("Referer"),"/"))
+            has_acconto_row=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'acconto%' LIMIT 1",(pid,)).fetchone())
+            balance_type="Acconto" if macroarea=="acconto" else ("Saldo" if has_acconto_row else "Incasso completo")
+            stamp=now()
+            target=c.execute(
+                """SELECT b.* FROM balance_movements b
+                   WHERE b.practice_id=? AND b.ledger_section='Entrata' AND b.movement_type=? AND b.amount_cents>0
+                     AND NOT EXISTS(SELECT 1 FROM balance_movements r WHERE r.related_movement_id=b.id AND r.movement_type='Storno')
+                   ORDER BY b.id DESC LIMIT 1""",
+                (pid,balance_type),
+            ).fetchone()
+            if target:
+                try:
+                    create_balance_reversal(
+                        c,original_movement_id=target["id"],movement_date=stamp[:10],
+                        idempotency_key=f"payment-macroarea-remove:{pid}:{macroarea}:{target['id']}",
+                        description=f"Rimozione {macroarea} dalla finestra Pagamento",
+                        source="manual_void",created_by=user["id"],
+                    )
+                except MovementAlreadyReversedError:
+                    pass
+            invoice_link=c.execute("SELECT invoice_id FROM movement_invoice_links WHERE payment_movement_id=?",(existing_movement["id"],)).fetchone()
+            c.execute("DELETE FROM movement_invoice_links WHERE payment_movement_id=?",(existing_movement["id"],))
+            if invoice_link:
+                remaining_links=c.execute("SELECT COUNT(*) n FROM movement_invoice_links WHERE invoice_id=?",(invoice_link["invoice_id"],)).fetchone()["n"]
+                if remaining_links==0:
+                    c.execute("DELETE FROM movement_invoices WHERE id=?",(invoice_link["invoice_id"],))
+            c.execute("DELETE FROM payment_movements WHERE id=?",(existing_movement["id"],))
+            has_acconto=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'acconto%' LIMIT 1",(pid,)).fetchone())
+            has_saldo=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'saldo%' LIMIT 1",(pid,)).fetchone())
+            new_status="Pagato" if has_saldo else ("Acconto" if has_acconto else "Da saldare")
+            due=effective_total(practice)
+            received=money_value(c.execute("SELECT COALESCE(SUM(amount),0) amount FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["amount"])
+            remaining=max(0.0,due-received)
+            acconto_row=c.execute("SELECT amount FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'acconto%' ORDER BY id DESC LIMIT 1",(pid,)).fetchone()
+            deposit=f"{money_value(acconto_row['amount']):.2f}" if acconto_row else "0.00"
+            due_d=money_value(practice["total_text"])
+            if new_status=="Pagato":remaining_final="0.00" if due_d else ""
+            else:remaining_final=(f"{max(0.0,due_d-money_value(deposit)):.2f}" if due_d else "")
+            date_field="deposit_paid_at" if macroarea=="acconto" else "paid_at"
+            c.execute(
+                f"UPDATE practices SET payment_status=?,deposit=?,remaining_balance=?,remaining_final=?,{date_field}=?,updated_at=? WHERE id=?",
+                (new_status,deposit,f"{remaining:.2f}",remaining_final,"",stamp,pid),
+            )
+            if old_status!=new_status:
+                c.execute(
+                    "INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",
+                    (pid,"Pagamento",old_status,f"{new_status} · {macroarea} rimosso",user["id"],stamp),
+                )
+        if ajax:return self.send_json({"ok":True,"payment_status":new_status})
         return self.redirect(safe_return_path(form.get("return_to") or self.headers.get("Referer"),"/"))
 
     def quick_payment(self,user,pid):

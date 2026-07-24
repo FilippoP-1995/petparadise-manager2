@@ -2784,6 +2784,65 @@ class PetParadiseTests(unittest.TestCase):
             saldo=conn.execute("SELECT amount,paid_at,payment_method FROM payment_movements WHERE practice_id=? AND payment_type='saldo'",(pid,)).fetchone()
             self.assertEqual((float(saldo["amount"]),saldo["paid_at"],saldo["payment_method"]),(150.0,"2026-07-24","Bonifico"))
 
+    def test_removing_a_macroarea_moves_payment_status_backward_and_subtracts_from_bilanci(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,animal_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-000039-TEST","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Test","Rubio","Cremazione singola","Da saldare","300","300")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        # Da saldare -> Acconto (100 W POS, with its own invoice)
+        self.handler.form=lambda:{"macroarea":"acconto","acconto_data":"2026-07-17","acconto_totale":"100,00","acconto_circuito":"W","acconto_modalita":"Pos","acconto_fattura_numero":"FT-RUBIO-ACC","acconto_fattura_totale":"100,00","acconto_fattura_data":"2026-07-17","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertEqual(responses[-1][0]["payment_status"],"Acconto")
+        # Acconto -> Pagato (200 D Contanti)
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-24","saldo_totale":"200,00","saldo_circuito":"D","saldo_modalita":"Contanti","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertEqual(responses[-1][0]["payment_status"],"Pagato")
+        with app.db() as conn:
+            practice=conn.execute("SELECT payment_status,deposit,remaining_balance FROM practices WHERE id=?",(pid,)).fetchone()
+            self.assertEqual((practice["payment_status"],practice["deposit"],practice["remaining_balance"]),("Pagato","100.00","0.00"))
+            open_d=sum(row.amount_cents for row in app.get_balance_movements(conn,filters=app.normalize_balance_filters()) if row.practice_id==pid and row.category=="D")
+            self.assertEqual(open_d,20000)
+        # Pagato -> Acconto: removing the saldo must subtract exactly that
+        # movement from Bilanci (D circuit) without touching the acconto
+        self.handler.form=lambda:{"macroarea":"saldo","ajax":"1"}
+        self.handler.remove_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"])
+        self.assertEqual(responses[-1][0]["payment_status"],"Acconto")
+        with app.db() as conn:
+            practice=conn.execute("SELECT payment_status,deposit FROM practices WHERE id=?",(pid,)).fetchone()
+            self.assertEqual((practice["payment_status"],practice["deposit"]),("Acconto","100.00"))
+            saldo_row=conn.execute("SELECT * FROM payment_movements WHERE practice_id=? AND payment_type='saldo'",(pid,)).fetchone()
+            self.assertIsNone(saldo_row)
+            acconto_row=conn.execute("SELECT amount FROM payment_movements WHERE practice_id=? AND payment_type='acconto'",(pid,)).fetchone()
+            self.assertEqual(float(acconto_row["amount"]),100.0)
+            open_d_after=sum(row.amount_cents for row in app.get_balance_movements(conn,filters=app.normalize_balance_filters()) if row.practice_id==pid and row.category=="D")
+            self.assertEqual(open_d_after,0)
+            acconto_invoice=conn.execute("""SELECT mi.invoice_number FROM movement_invoices mi
+                                            JOIN movement_invoice_links mil ON mil.invoice_id=mi.id
+                                            JOIN payment_movements pm ON pm.id=mil.payment_movement_id
+                                            WHERE pm.practice_id=? AND pm.payment_type='acconto'""",(pid,)).fetchone()
+            self.assertEqual(acconto_invoice["invoice_number"],"FT-RUBIO-ACC")
+        # Acconto -> Da saldare: removing the acconto too must subtract it
+        # from Bilanci (W circuit) and also drop its now-orphaned invoice
+        self.handler.form=lambda:{"macroarea":"acconto","ajax":"1"}
+        self.handler.remove_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"])
+        self.assertEqual(responses[-1][0]["payment_status"],"Da saldare")
+        with app.db() as conn:
+            practice=conn.execute("SELECT payment_status,deposit,remaining_balance FROM practices WHERE id=?",(pid,)).fetchone()
+            self.assertEqual((practice["payment_status"],practice["deposit"]),("Da saldare","0.00"))
+            self.assertEqual(conn.execute("SELECT COUNT(*) n FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["n"],0)
+            self.assertEqual(conn.execute("SELECT COUNT(*) n FROM movement_invoices WHERE practice_id=?",(pid,)).fetchone()["n"],0)
+            open_w=sum(row.amount_cents for row in app.get_balance_movements(conn,filters=app.normalize_balance_filters()) if row.practice_id==pid and row.category=="W")
+            self.assertEqual(open_w,0)
+        # removing an already-absent macroarea is a harmless no-op
+        self.handler.form=lambda:{"macroarea":"acconto","ajax":"1"}
+        self.handler.remove_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"])
+        self.assertEqual(responses[-1][0]["payment_status"],"Da saldare")
+
     def test_acconto_and_saldo_keep_their_own_movement_dates(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
