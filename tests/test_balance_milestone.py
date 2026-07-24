@@ -5,6 +5,7 @@ from pathlib import Path
 import app
 from balance_service import (
     create_manual_expense,
+    create_manual_income,
     create_movement,
     get_balance_snapshot,
     get_movements,
@@ -132,6 +133,8 @@ class BalanceMilestoneOneTests(unittest.TestCase):
             "collaboratori-da-riscuotere":25000,
             "uscite-w":3000,
             "uscite-d":2000,
+            "totale-w-attuale":32000,
+            "totale-d-attuale":8000,
             "saldo-netto":60000,
         }
         self.assertEqual(set(snapshot.sections),set(expected))
@@ -149,6 +152,8 @@ class BalanceMilestoneOneTests(unittest.TestCase):
         self.assertEqual(self.snapshot(payment_method="Contanti").sections["entrate-d"].total_cents,10000)
         self.assertEqual(self.snapshot(payment_method="Contanti").sections["entrate-w"].total_cents,0)
         self.assertEqual(self.snapshot(operator_id=self.serena["id"]).sections["collaboratori-incassato"].total_cents,20000)
+        self.assertEqual(self.snapshot(status="Acconto").sections["entrate-w"].total_cents,35000)
+        self.assertEqual(self.snapshot(status="Da saldare").sections["entrate-w"].total_cents,0)
         self.assertEqual(self.snapshot(operator_id=self.serena["id"]).sections["uscite-d"].total_cents,2000)
         self.assertEqual(self.snapshot(search="Materiale ufficio").sections["uscite-w"].total_cents,3000)
         self.assertEqual(self.snapshot(search="CR-M1-D").sections["entrate-d"].total_cents,10000)
@@ -255,6 +260,52 @@ class BalanceMilestoneOneTests(unittest.TestCase):
             after=len(get_movements(connection))
         self.assertEqual(before,after)
         self.assertTrue(redirects[-1].startswith("/pratiche/"))
+
+    def test_manual_income_w_d_and_current_totals(self):
+        with app.db() as connection:
+            create_manual_income(
+                connection,amount_cents=7000,movement_date="2026-07-14",
+                category="W",payment_method="Pos",description="Entrata W extra",
+                idempotency_key="income-manual-w",created_by=self.admin["id"],
+            )
+            create_manual_income(
+                connection,amount_cents=9000,movement_date="2026-07-15",
+                category="D",payment_method="Contanti",description="Entrata D extra",
+                idempotency_key="income-manual-d",created_by=self.admin["id"],
+            )
+            snapshot=get_balance_snapshot(
+                connection,filters=normalize_filters(
+                    date_from="2026-07-01",date_to="2026-07-31"
+                )
+            )
+        self.assertEqual(snapshot.sections["entrate-w"].total_cents,42000)
+        self.assertEqual(snapshot.sections["entrate-d"].total_cents,19000)
+        self.assertEqual(snapshot.sections["totale-w-attuale"].total_cents,39000)
+        self.assertEqual(snapshot.sections["totale-d-attuale"].total_cents,17000)
+        for key in ("totale-w-attuale","totale-d-attuale"):
+            section=snapshot.sections[key]
+            self.assertEqual(section.total_cents,sum(section.row_amounts_cents))
+
+    def test_manual_income_post_is_idempotent(self):
+        form={
+            "entry_type":"income","return_to":"/bilanci",
+            "balance_idempotency_key":"manual-income-post",
+            "movement_date":"2026-07-19","amount":"12,50","category":"W",
+            "payment_method":"Pos","description":"Entrata sportello","notes":"nota",
+        }
+        self.handler.form=lambda:form
+        redirects=[]
+        self.handler.redirect=redirects.append
+        self.handler.balance_income_submit(self.admin)
+        self.handler.balance_income_submit(self.admin)
+        with app.db() as connection:
+            rows=connection.execute(
+                "SELECT * FROM balance_movements WHERE idempotency_key=?",
+                ("manual-income:manual-income-post",),
+            ).fetchall()
+        self.assertEqual(len(rows),1)
+        self.assertEqual(rows[0]["amount_cents"],1250)
+        self.assertIn("Entrata sportello",rows[0]["description"])
 
 
 if __name__=="__main__":

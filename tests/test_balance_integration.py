@@ -139,9 +139,14 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
         self.handler.create_practice(self.admin)
         with app.db() as connection:
             movements = get_movements(connection)
-        by_key = {movement.idempotency_key: movement for movement in movements}
-        deposit = by_key["practice-create:create-deposit"]
-        paid = by_key["practice-create:create-paid"]
+        deposit = next(
+            movement for movement in movements
+            if movement.idempotency_key.endswith(":practice-create:create-deposit")
+        )
+        paid = next(
+            movement for movement in movements
+            if movement.idempotency_key.endswith(":practice-create:create-paid")
+        )
         self.assertEqual(
             (deposit.movement_type, deposit.amount_cents, deposit.category),
             ("Acconto", 10000, "W"),
@@ -178,7 +183,7 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
             status="Acconto",
             amount="100",
             token="split-deposit",
-            paid_at="2026-07-20",
+            paid_at="2026-07-10",
         )
         self.assertEqual(response[1], 200)
         response = self.submit_quick_payment(
@@ -186,7 +191,7 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
             status="Pagato",
             amount="200",
             token="split-balance",
-            paid_at="2026-07-23",
+            paid_at="2026-07-20",
         )
         self.assertEqual(response[1], 200)
 
@@ -206,13 +211,29 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
         full = [movement for movement in movements if movement.practice_id == full_id]
         self.assertEqual(
             sorted(
-                (movement.movement_type, movement.amount_cents) for movement in split
+                (movement.movement_type, movement.amount_cents, movement.movement_date)
+                for movement in split
             ),
-            [("Acconto", 10000), ("Saldo", 20000)],
+            [("Acconto", 10000, "2026-07-10"), ("Saldo", 20000, "2026-07-20")],
         )
         self.assertEqual(
             [(movement.movement_type, movement.amount_cents) for movement in full],
             [("Incasso completo", 45000)],
+        )
+        with app.db() as connection:
+            deposit_period = get_movements(
+                connection, date_from="2026-07-10", date_to="2026-07-10"
+            )
+            balance_period = get_movements(
+                connection, date_from="2026-07-20", date_to="2026-07-20"
+            )
+        self.assertEqual(
+            [(row.movement_type, row.amount_cents) for row in deposit_period],
+            [("Acconto", 10000)],
+        )
+        self.assertEqual(
+            [(row.movement_type, row.amount_cents) for row in balance_period],
+            [("Saldo", 20000)],
         )
 
     def test_same_quick_payment_request_does_not_create_duplicate(self):
@@ -316,7 +337,7 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
         self.assertIn('data-payment-full-amount="300.00"', html)
         self.assertIn('data-payment-remaining-amount="200.00"', html)
         self.assertIn(f'data-payment-default-date="{today}"', html)
-        self.assertIn(f'name="economic_at" value="{today}"', html)
+        self.assertIn('name="economic_at" value=""', html)
         self.assertIn("ppmLocalDateValue", app.APP_JS)
         self.assertIn(
             "if(trigger)trigger.value=trigger.dataset.savedValue||trigger.value",
@@ -324,6 +345,85 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
         )
         with app.db() as connection:
             self.assertEqual(get_movements(connection), [])
+
+    def test_acconto_date_correction_keeps_one_visible_economic_row(self):
+        practice_id=self.insert_practice(number="CR-DATE-A")
+        response,status=self.submit_quick_payment(
+            practice_id,status="Acconto",amount="100",token="deposit-event",
+            paid_at="2026-07-10",
+        )
+        self.assertEqual(status,200)
+        response,status=self.submit_quick_payment(
+            practice_id,status="Acconto",amount="100",token="date-only",
+            paid_at="2026-07-12",
+        )
+        self.assertEqual(status,200)
+        with app.db() as connection:
+            visible=get_movements(connection)
+            raw=connection.execute(
+                "SELECT * FROM balance_movements WHERE practice_id=? ORDER BY id",
+                (practice_id,),
+            ).fetchall()
+            practice=connection.execute(
+                "SELECT deposit_paid_at FROM practices WHERE id=?",(practice_id,)
+            ).fetchone()
+        self.assertEqual(len(visible),1)
+        self.assertEqual((visible[0].movement_type,visible[0].movement_date),("Acconto","2026-07-12"))
+        self.assertEqual(sum(row["amount_cents"] for row in raw),10000)
+        self.assertEqual(len(raw),3)
+        self.assertEqual(practice["deposit_paid_at"],"2026-07-12")
+
+    def test_paid_date_correction_and_repeated_save_do_not_duplicate(self):
+        practice_id=self.insert_practice(number="CR-DATE-P")
+        self.submit_quick_payment(
+            practice_id,status="Pagato",amount="300",token="paid-event",
+            paid_at="2026-07-20",
+        )
+        self.submit_quick_payment(
+            practice_id,status="Pagato",amount="300",token="date-correction",
+            paid_at="2026-07-22",
+        )
+        self.submit_quick_payment(
+            practice_id,status="Pagato",amount="300",token="repeat-save",
+            paid_at="2026-07-22",
+        )
+        with app.db() as connection:
+            visible=get_movements(connection)
+            raw_count=connection.execute(
+                "SELECT COUNT(*) n FROM balance_movements WHERE practice_id=?",
+                (practice_id,),
+            ).fetchone()["n"]
+            old_period=get_movements(
+                connection,date_from="2026-07-20",date_to="2026-07-20"
+            )
+            new_period=get_movements(
+                connection,date_from="2026-07-22",date_to="2026-07-22"
+            )
+        self.assertEqual(len(visible),1)
+        self.assertEqual(visible[0].movement_date,"2026-07-22")
+        self.assertEqual(raw_count,3)
+        self.assertEqual(old_period,[])
+        self.assertEqual(len(new_period),1)
+
+    def test_payment_date_is_visible_and_required_on_create_and_edit(self):
+        rendered=[]
+        self.handler.send_html=lambda html,*args:rendered.append(html)
+        self.handler.path="/nuova"
+        self.handler.new_page(self.admin,draft={
+            "payment_status":"Acconto","economic_at":"2026-07-09",
+        })
+        self.assertIn("Data pagamento / acconto",rendered[-1])
+        self.assertIn('name="economic_at" value="2026-07-09"',rendered[-1])
+        errors=[]
+        self.handler.new_page=lambda user,draft=None,error="":errors.append((draft,error))
+        invalid=self.creation_form(payment_status="Pagato",token="missing-date")
+        invalid["economic_at"]=""
+        self.handler.form=lambda:invalid
+        self.handler.create_practice(self.admin)
+        self.assertIn("data",errors[-1][1].lower())
+        with app.db() as connection:
+            count=connection.execute("SELECT COUNT(*) n FROM practices").fetchone()["n"]
+        self.assertEqual(count,0)
 
 
 if __name__ == "__main__":

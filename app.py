@@ -25,7 +25,9 @@ from email_service import EmailConfigurationError, EmailDeliveryError, send_emai
 from balance_service import (
     BalanceError,
     classify_category as classify_balance_category,
+    correct_movement_date as correct_balance_movement_date,
     create_manual_expense as create_balance_expense,
+    create_manual_income as create_balance_income,
     create_movement as create_balance_movement,
     ensure_balance_schema,
     euros_to_cents,
@@ -1186,8 +1188,8 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .balance-filters .fields{grid-template-columns:repeat(3,minmax(0,1fr))}
 .balance-filter-note{display:flex;align-items:center;gap:7px;margin:14px 0 0;color:#94a3b8;font-size:12px}
 .balance-filter-note .icon{width:16px;height:16px}
-.balance-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
-.balance-card{position:relative;display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;gap:18px;min-width:0;min-height:132px;padding:18px;border:1px solid #354155;border-radius:15px;background:linear-gradient(145deg,#202c3d,#182334);color:#f8fafc;text-align:left;box-shadow:0 12px 32px #080d1626;cursor:pointer;overflow:hidden;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}
+.balance-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.balance-card{position:relative;display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;gap:10px;min-width:0;min-height:104px;padding:15px 17px;border:1px solid #354155;border-radius:15px;background:linear-gradient(145deg,#202c3d,#182334);color:#f8fafc;text-align:left;box-shadow:0 12px 32px #080d1626;cursor:pointer;overflow:hidden;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}
 .balance-card:before{content:"";position:absolute;inset:0;background:linear-gradient(125deg,var(--balance-glow),transparent 66%);pointer-events:none}
 .balance-card:hover{transform:translateY(-2px);border-color:#5b687a;box-shadow:0 18px 38px #03071255}
 .balance-card[aria-pressed="true"],.balance-card[aria-current="true"]{border-color:#fb7185;box-shadow:0 0 0 2px #fb718533,0 18px 38px #03071255}
@@ -1195,6 +1197,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .balance-card-copy{display:flex;align-items:center;gap:9px;color:#cbd5e1;font-size:13px;font-weight:650}
 .balance-card-copy .icon{width:18px;height:18px;color:var(--balance-accent)}
 .balance-card-value{font-size:29px;font-weight:700;letter-spacing:-.035em}
+.inline-payment-date-form{display:inline-flex;margin:0}.inline-payment-date{width:142px;min-height:38px;padding:7px 9px;font-size:13px}
 .balance-tone-w{--balance-accent:#60a5fa;--balance-glow:#1d4ed840}
 .balance-tone-d{--balance-accent:#fbbf24;--balance-glow:#a1620740}
 .balance-tone-collaborators{--balance-accent:#c084fc;--balance-glow:#7e22ce3d}
@@ -1627,7 +1630,17 @@ function setupBudgetExtras(){
   if(voucherField)fields.insertBefore(voucherField,fields.firstElementChild);
   insertControl(document.querySelector('select[name="payment_method"]'),'Metodo di pagamento',voucherField);
   const remainingFinalField=document.querySelector('input[name="remaining_final"]')?.closest('.field');
-  insertControl(document.querySelector('select[name="payment_status"]'),'Pagamento',remainingFinalField);
+  const paymentStatusField=insertControl(document.querySelector('select[name="payment_status"]'),'Pagamento',remainingFinalField);
+  const economicDate=document.querySelector('input[name="economic_at"]');
+  const economicDateField=insertControl(economicDate,'Data pagamento / acconto',paymentStatusField);
+  economicDate.type='date';
+  const syncEconomicDate=()=>{
+    const status=document.querySelector('select[name="payment_status"]')?.value||'Da saldare';
+    economicDate.required=status==='Acconto'||status==='Pagato';
+    economicDateField.classList.toggle('payment-date-optional',status==='Da saldare');
+  };
+  document.querySelector('select[name="payment_status"]')?.addEventListener('change',syncEconomicDate);
+  syncEconomicDate();
   const sendCatalogField=modernizeCheck(document.querySelector('input[name="send_catalog"]'));
   insertCheck(document.querySelector('input[name="catalog_sent"]'),'CATALOGO INVIATO',sendCatalogField);
   const sendEstremiField=modernizeCheck(document.querySelector('input[name="send_estremi"]'));
@@ -1809,7 +1822,7 @@ function arrangeBudgetLayout(){
   addRow([field('total_service'),field('deposit'),field('remaining_balance')],[field('send_estremi'),field('estremi_sent')]);
   addRow([field('invoice_number'),field('invoice_date'),field('invoice_total')],[field('make_invoice')]);
   addRow([field('total_text'),field('deposit_final'),field('remaining_final')]);
-  addRow([field('payment_status')],[field('payment_method')]);
+  addRow([field('payment_status'),field('economic_at')],[field('payment_method')]);
   original.filter(node=>!used.has(node)).forEach(node=>addRow([node]));
   fields.replaceChildren(workspace);fields.classList.add('budget-layout');
 }
@@ -2361,14 +2374,12 @@ function closePaymentPopover(button){
 }
 function ppmSyncPaymentDateField(popover){
   const status=popover.querySelector('select[name="payment_status"]');
-  const field=popover.querySelector('[data-payment-date-field]');
   const input=popover.querySelector('[data-payment-date-input]');
   const amount=popover.querySelector('input[name="payment_amount"]');
-  if(!status||!field||!input)return;
+  if(!status||!input)return;
   const trigger=popover._ppmTrigger;
   const savedStatus=trigger?(trigger.dataset.savedValue||''):'';
-  const needsDate=(status.value==='Acconto'||status.value==='Pagato')&&status.value!==savedStatus;
-  field.hidden=!needsDate;
+  const needsDate=status.value==='Acconto'||status.value==='Pagato';
   input.required=needsDate;
   if(needsDate){
     if(!input.value)input.value=popover.dataset.paymentDefaultDate||ppmLocalDateValue();
@@ -2404,21 +2415,10 @@ function setupPaymentStatusDatePrompt(){
   const select=form&&form.querySelector('select[name="payment_status"]');
   if(!select)return;
   if(!select.dataset.savedValue)select.dataset.savedValue=select.value;
-  let dateInput=form.querySelector('input[name="economic_at"]');
-  if(!dateInput){
-    dateInput=document.createElement('input');
-    dateInput.type='hidden';dateInput.name='economic_at';
-    form.appendChild(dateInput);
-  }
-  select.addEventListener('change',()=>{
-    const needsDate=(select.value==='Acconto'||select.value==='Pagato')&&select.value!==select.dataset.savedValue;
-    if(!needsDate){dateInput.value='';select.dataset.savedValue=select.value;return;}
-    const target=select.value;
-    ppmPromptPaymentDate(
-      (date)=>{dateInput.value=date;select.dataset.savedValue=target;},
-      ()=>{select.value=select.dataset.savedValue;dateInput.value='';}
-    );
-  });
+  const dateInput=form.querySelector('input[name="economic_at"]');
+  if(!dateInput)return;
+  const sync=()=>{dateInput.required=select.value==='Acconto'||select.value==='Pagato';};
+  select.addEventListener('change',sync);sync();
 }
 document.addEventListener('DOMContentLoaded', setupPaymentStatusDatePrompt);
 function practiceStatusCss(status){
@@ -3141,8 +3141,11 @@ def payment_channel(practice):
 
 
 def payment_status_needs_date(old_status, new_status, economic_at):
-    if new_status in ("Acconto","Pagato") and (old_status or "Da saldare")!=new_status:
-        return not (economic_at and re.fullmatch(r"\d{4}-\d{2}-\d{2}",economic_at))
+    if new_status in ("Acconto","Pagato"):
+        try:
+            date.fromisoformat(str(economic_at or ""))
+        except ValueError:
+            return True
     return False
 
 
@@ -3471,6 +3474,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/imposta-password": return self.change_password_submit(user)
         if path == "/nuova": return self.create_practice(user)
         if path == "/bilanci/uscite": return self.balance_expense_submit(user)
+        if path == "/bilanci/entrate": return self.balance_income_submit(user)
         if path == "/calendario/nuovo": return self.save_calendar_event(user)
         match = re.fullmatch(r"/calendario/(\d+)/modifica",path)
         if match: return self.save_calendar_event(user,int(match.group(1)))
@@ -3680,10 +3684,22 @@ class App(BaseHTTPRequestHandler):
         query=parse_qs(urlparse(getattr(self,"path","/bilanci")).query)
         value=lambda key,default="":(query.get(key) or [default])[-1].strip()
         today=datetime.now(ROME_TZ).date()
+        period=value("periodo","personalizzato")
         date_from=value("data_iniziale",today.replace(day=1).isoformat())
         date_to=value("data_finale",today.isoformat())
+        if period in ("oggi","settimana","mese"):
+            _,period_start,period_end=dashboard_period_bounds(period,today)
+            date_from=period_start.isoformat();date_to=period_end.isoformat()
+        elif period=="anno":
+            date_from=today.replace(month=1,day=1).isoformat()
+            date_to=today.replace(month=12,day=31).isoformat()
+        elif period=="tutto":
+            date_from="";date_to=today.isoformat()
+        elif period!="personalizzato":
+            period="personalizzato"
         category=value("categoria")
         payment_method=value("metodo")
+        status_filter=value("stato")
         collaborator_raw=value("collaboratore")
         operator_raw=value("operatore")
         search=value("ricerca")
@@ -3696,13 +3712,13 @@ class App(BaseHTTPRequestHandler):
             filters=normalize_balance_filters(
                 date_from=date_from,date_to=date_to,category=category,
                 collaborator_id=collaborator_id,payment_method=payment_method,
-                operator_id=operator_id,search=search,
+                operator_id=operator_id,status=status_filter,search=search,
             )
         except BalanceError as exc:
             error=error or f"Filtri non validi: {exc}"
             date_from=today.replace(day=1).isoformat();date_to=today.isoformat()
             category="";collaborator_id=None;payment_method=""
-            operator_id=None;search=""
+            operator_id=None;status_filter="";search="";period="personalizzato"
             filters=normalize_balance_filters(date_from=date_from,date_to=date_to)
         try:
             with db() as c:
@@ -3725,17 +3741,22 @@ class App(BaseHTTPRequestHandler):
             ("collaboratori-da-riscuotere","balance-tone-collaborators","briefcase"),
             ("uscite-w","balance-tone-out","clipboard"),
             ("uscite-d","balance-tone-out","clipboard"),
+            ("totale-w-attuale","balance-tone-w","chart"),
+            ("totale-d-attuale","balance-tone-d","chart"),
             ("saldo-netto","balance-tone-net","chart"),
         )
+        explicit_view=bool(value("view"))
         selected=value("view","entrate-w")
         if selected not in snapshot.sections:selected="entrate-w"
         filter_params={
+            "periodo":period,
             "data_iniziale":filters.date_from or "",
             "data_finale":filters.date_to or "",
             "categoria":filters.category or "",
             "collaboratore":str(filters.collaborator_id or ""),
             "metodo":filters.payment_method or "",
             "operatore":str(filters.operator_id or ""),
+            "stato":filters.status or "",
             "ricerca":filters.search,
         }
         cards=[]
@@ -3743,7 +3764,7 @@ class App(BaseHTTPRequestHandler):
             section=snapshot.sections[key]
             card_params={**filter_params,"view":key}
             cards.append(
-                f'''<a class="balance-card {tone}" href="/bilanci?{urlencode(card_params)}" data-balance-card="{key}" data-balance-total-cents="{section.total_cents}" aria-current="{"true" if key==selected else "false"}"><span class="balance-card-copy">{lucide(icon)}<span>{esc(section.title)}</span></span><strong class="balance-card-value">{money_cents_it(section.total_cents)}</strong></a>'''
+                f'''<a class="balance-card {tone}" href="/bilanci?{urlencode(card_params)}#balanceDetails" data-balance-card="{key}" data-balance-total-cents="{section.total_cents}" aria-current="{"true" if key==selected else "false"}"><span class="balance-card-copy">{lucide(icon)}<span>{esc(section.title)}</span></span><strong class="balance-card-value">{money_cents_it(section.total_cents)}</strong></a>'''
             )
         selected_section=snapshot.sections[selected]
         is_outstanding=selected.startswith("da-riscuotere") or selected=="collaboratori-da-riscuotere"
@@ -3757,22 +3778,59 @@ class App(BaseHTTPRequestHandler):
         page_pairs=list(zip(
             selected_section.rows,selected_section.row_amounts_cents
         ))[page_start:page_start+page_size]
+        movement_practice_ids={
+            int(row.practice_id) for row,_ in page_pairs
+            if not is_outstanding and row.practice_id
+        }
+        practice_meta={}
+        collaborator_names={cid:name for cid,name in collaborators}
+        if movement_practice_ids:
+            marks=",".join("?" for _ in movement_practice_ids)
+            with db() as c:
+                practice_meta={
+                    int(row["id"]):row for row in c.execute(
+                        f"""
+                        SELECT p.id,p.created_at,p.species,p.animal_name,
+                               p.owner_first_name,p.owner_last_name,p.owner_company,
+                               p.payment_status,p.collaborator_id,p.collaborator_name
+                        FROM practices p WHERE p.id IN ({marks})
+                        """,
+                        tuple(movement_practice_ids),
+                    )
+                }
         detail_rows=[]
         if is_outstanding:
             for row,amount_cents in page_pairs:
                 url=f"/pratiche/{row.practice_id}?return_to={quote(getattr(self,'path','/bilanci'),safe='')}"
+                animal=" - ".join(x for x in (row.species,row.animal_name) if x) or "-"
                 detail_rows.append(
-                    f'''<tr data-balance-detail-row data-amount-cents="{amount_cents}"><td><a href="{url}"><b>{esc(row.practice_number)}</b></a></td><td>{esc(row.reference or "-")}</td><td>{esc(row.category)}</td><td>{esc(row.payment_method or "-")}</td><td>{money_cents_it(row.total_due_cents)}</td><td>{money_cents_it(row.received_cents)}</td><td><b>{money_cents_it(row.remaining_cents)}</b></td></tr>'''
+                    f'''<tr data-balance-detail-row data-amount-cents="{amount_cents}"><td>-</td><td>{esc(date_it(row.practice_created_at))}</td><td><a href="{url}"><b>{esc(row.practice_number)}</b></a></td><td>{esc(animal)}</td><td>{esc(row.owner_name or row.reference or "-")}</td><td>Da saldare</td><td>{esc(row.category)}</td><td><b>{money_cents_it(row.remaining_cents)}</b></td><td>{esc(row.payment_method or "-")}</td><td>{esc(row.collaborator_name or "-")}</td><td>{money_cents_it(row.total_due_cents)}</td><td>{money_cents_it(row.received_cents)}</td></tr>'''
                 )
-            detail_header="<tr><th>Numero pratica</th><th>Cliente / riferimento</th><th>Categoria</th><th>Metodo</th><th>Totale dovuto</th><th>Già incassato</th><th>Rimanenza</th></tr>"
+            detail_header="<tr><th>Data movimento</th><th>Data creazione pratica</th><th>Numero pratica</th><th>Animale</th><th>Proprietario</th><th>Stato</th><th>Categoria</th><th>Importo</th><th>Metodo</th><th>Collaboratore</th><th>Totale dovuto</th><th>Già incassato</th></tr>"
         else:
             for row,amount_cents in page_pairs:
                 practice_number=row.practice_number_snapshot or "-"
                 practice_cell=f'<a href="/pratiche/{row.practice_id}"><b>{esc(practice_number)}</b></a>' if row.practice_id else esc(practice_number)
+                meta=practice_meta.get(int(row.practice_id)) if row.practice_id else None
+                animal=(
+                    " - ".join(x for x in (meta["species"],meta["animal_name"]) if x)
+                    if meta else ""
+                ) or "-"
+                owner=(
+                    (
+                        " ".join(x for x in (meta["owner_first_name"],meta["owner_last_name"]) if x).strip()
+                        or meta["owner_company"] or ""
+                    ) if meta else ""
+                ) or "-"
+                status_label="Pagato" if row.movement_type=="Incasso completo" else row.movement_type
+                collaborator=(
+                    (meta["collaborator_name"] or collaborator_names.get(meta["collaborator_id"],""))
+                    if meta else collaborator_names.get(row.collaborator_id,"")
+                ) or "-"
                 detail_rows.append(
-                    f'''<tr data-balance-detail-row data-amount-cents="{amount_cents}"><td>{esc(date_it(row.movement_date))}</td><td>{practice_cell}</td><td>{esc(row.description or row.movement_type)}</td><td>{esc(row.category)}</td><td>{esc(row.payment_method or "-")}</td><td><b>{money_cents_it(amount_cents)}</b></td></tr>'''
+                    f'''<tr data-balance-detail-row data-amount-cents="{amount_cents}"><td>{esc(date_it(row.movement_date))}</td><td>{esc(date_it(meta["created_at"])) if meta else "-"}</td><td>{practice_cell}</td><td>{esc(animal)}</td><td>{esc(owner)}</td><td>{esc(status_label)}<small class="sub">{esc(row.description or "")}</small></td><td>{esc(row.category)}</td><td><b>{money_cents_it(amount_cents)}</b></td><td>{esc(row.payment_method or "-")}</td><td>{esc(collaborator)}</td></tr>'''
                 )
-            detail_header="<tr><th>Data</th><th>Numero pratica</th><th>Descrizione / movimento</th><th>Categoria</th><th>Metodo</th><th>Importo</th></tr>"
+            detail_header="<tr><th>Data incasso / movimento</th><th>Data creazione pratica</th><th>Numero pratica</th><th>Animale</th><th>Proprietario</th><th>Stato</th><th>Categoria</th><th>Importo</th><th>Metodo</th><th>Collaboratore</th></tr>"
         details=(
             f'''<div class="tablebox"><table class="balance-detail-table"><thead>{detail_header}</thead><tbody>{''.join(detail_rows)}</tbody></table></div>'''
             if detail_rows else '<p class="balance-details-empty">Nessun dato da visualizzare.</p>'
@@ -3808,48 +3866,86 @@ class App(BaseHTTPRequestHandler):
             f'<option value="{cid}" {"selected" if filters.collaborator_id==cid else ""}>{esc(name)}</option>'
             for cid,name in collaborators
         )
-        expense=expense_draft or {}
+        status_options="".join(
+            f'<option value="{option}" {"selected" if (filters.status or "")==option else ""}>{label}</option>'
+            for option,label in (
+                ("","Tutti"),("Da saldare","Da saldare"),("Acconto","Acconto"),
+                ("Pagato","Pagato"),("Saldo","Saldo"),
+                ("Entrata manuale","Entrata manuale"),
+                ("Uscita manuale","Uscita manuale"),
+                ("Rettifica","Rettifica"),("Storno","Storno"),
+            )
+        )
+        period_options="".join(
+            f'<option value="{option}" {"selected" if period==option else ""}>{label}</option>'
+            for option,label in (
+                ("personalizzato","Personalizzato"),("oggi","Oggi"),
+                ("settimana","Settimana"),("mese","Mese"),
+                ("anno","Anno"),("tutto","Tutto"),
+            )
+        )
+        form_draft=expense_draft or {}
+        expense=form_draft if form_draft.get("entry_type")!="income" else {}
+        income=form_draft if form_draft.get("entry_type")=="income" else {}
         return_to="/bilanci?"+urlencode({**filter_params,"view":selected})
         expense_action="/bilanci/uscite?"+urlencode({**filter_params,"view":selected})
+        income_action="/bilanci/entrate?"+urlencode({**filter_params,"view":selected})
         notice=""
         if value("uscita_creata")=="1":notice='<div class="flash">Uscita registrata correttamente.</div>'
+        if value("entrata_creata")=="1":notice='<div class="flash">Entrata registrata correttamente.</div>'
         if error:notice+=f'<div class="flash warning">{esc(error)}</div>'
-        body=f'''<main class="wrap balance-wrap">
-          <div class="titlebar"><div><h1>Bilanci</h1><p class="sub">Movimenti reali e situazione delle somme ancora aperte.</p></div></div>
-          {notice}
-          <form class="section balance-filters no-advanced-collapse" method="get" action="/bilanci" aria-label="Filtri Bilanci" onsubmit="const b=this.querySelector('button');b.disabled=true;b.textContent='Caricamento…'">
-            <h2>Filtri</h2><input type="hidden" name="view" value="{esc(selected)}">
-            <div class="fields">
-              <div class="field"><label for="balanceDateFrom">Data iniziale</label><input id="balanceDateFrom" type="date" name="data_iniziale" value="{esc(filters.date_from or '')}"></div>
-              <div class="field"><label for="balanceDateTo">Data finale</label><input id="balanceDateTo" type="date" name="data_finale" value="{esc(filters.date_to or '')}" required></div>
-              <div class="field"><label for="balanceCategory">Categoria</label><select id="balanceCategory" name="categoria">{category_options}</select></div>
-              <div class="field"><label for="balanceCollaborator">Collaboratore</label><select id="balanceCollaborator" name="collaboratore">{collaborator_options}</select></div>
-              <div class="field"><label for="balanceMethod">Metodo di pagamento</label><select id="balanceMethod" name="metodo">{method_options}</select></div>
-              <div class="field"><label for="balanceOperator">Operatore</label><select id="balanceOperator" name="operatore">{operator_options}</select></div>
-              <div class="field"><label for="balanceSearch">Ricerca</label><input id="balanceSearch" type="search" name="ricerca" value="{esc(filters.search)}" placeholder="Pratica, cliente, descrizione…"></div>
-            </div>
-            <div class="actions balance-filter-actions"><button class="btn">Applica filtri</button><a class="btn ghost" href="/bilanci">Azzera</a></div>
-            <p class="balance-filter-note">{lucide("settings")}<span>Per “Da riscuotere” conta la situazione alla data finale; la data iniziale non nasconde debiti precedenti ancora aperti.</span></p>
-          </form>
-          <details class="section balance-expense">
-            <summary>Registra uscita manuale</summary>
-            <form method="post" action="{expense_action}" onsubmit="const b=this.querySelector('button');b.disabled=true;b.textContent='Registrazione…'">
-              <input type="hidden" name="return_to" value="{esc(return_to)}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(24)}">
+        cards_html=f'<section class="balance-grid" aria-label="Riepilogo Bilanci">{"".join(cards)}</section>'
+        details_html=f'''<section id="balanceDetails" class="section balance-details" data-selected-balance-section="{esc(selected)}">
+          <div class="balance-details-heading"><div><small class="sub">Dettaglio selezionato</small><h2>{esc(selected_section.title)}</h2></div><div class="balance-details-meta"><span class="badge">{total_rows} {"pratiche" if is_outstanding else "movimenti"}</span><strong>{money_cents_it(selected_section.total_cents)}</strong></div></div>
+          {details}{pagination}
+        </section>'''
+        filters_html=f'''<form class="section balance-filters no-advanced-collapse" method="get" action="/bilanci" aria-label="Filtri Bilanci" onsubmit="const b=this.querySelector('button');b.disabled=true;b.textContent='Caricamento…'">
+          <h2>Filtri</h2><input type="hidden" name="view" value="{esc(selected)}">
+          <div class="fields">
+            <div class="field"><label for="balancePeriod">Periodo</label><select id="balancePeriod" name="periodo">{period_options}</select></div>
+            <div class="field"><label for="balanceDateFrom">Data da</label><input id="balanceDateFrom" type="date" name="data_iniziale" value="{esc(filters.date_from or '')}"></div>
+            <div class="field"><label for="balanceDateTo">Data a</label><input id="balanceDateTo" type="date" name="data_finale" value="{esc(filters.date_to or '')}" required></div>
+            <div class="field"><label for="balanceCategory">Categoria</label><select id="balanceCategory" name="categoria">{category_options}</select></div>
+            <div class="field"><label for="balanceCollaborator">Collaboratore</label><select id="balanceCollaborator" name="collaboratore">{collaborator_options}</select></div>
+            <div class="field"><label for="balanceMethod">Metodo pagamento</label><select id="balanceMethod" name="metodo">{method_options}</select></div>
+            <div class="field"><label for="balanceStatus">Stato</label><select id="balanceStatus" name="stato">{status_options}</select></div>
+            <div class="field"><label for="balanceOperator">Operatore</label><select id="balanceOperator" name="operatore">{operator_options}</select></div>
+            <div class="field"><label for="balanceSearch">Ricerca</label><input id="balanceSearch" type="search" name="ricerca" value="{esc(filters.search)}" placeholder="Pratica, cliente, descrizione…"></div>
+          </div>
+          <div class="actions balance-filter-actions"><button class="btn">Applica filtri</button><a class="btn ghost" href="/bilanci">Azzera</a></div>
+          <p class="balance-filter-note">{lucide("settings")}<span>Per “Da riscuotere” conta la situazione alla data finale; la data iniziale non nasconde debiti precedenti ancora aperti.</span></p>
+        </form>'''
+        manual_html=f'''<div class="grid cols-2">
+          <details class="section balance-expense"><summary>Registra entrata manuale</summary>
+            <form method="post" action="{income_action}" onsubmit="const b=this.querySelector('button');b.disabled=true;b.textContent='Registrazione…'">
+              <input type="hidden" name="entry_type" value="income"><input type="hidden" name="return_to" value="{esc(return_to)}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(24)}">
               <div class="fields">
-                <div class="field"><label>Data</label><input type="date" name="movement_date" value="{esc(expense.get('movement_date') or today.isoformat())}" required></div>
-                <div class="field"><label>Importo €</label><input name="amount" value="{esc(expense.get('amount') or '')}" inputmode="decimal" placeholder="0,00" required></div>
-                <div class="field"><label>Categoria</label><select name="category"><option value="W" {"selected" if expense.get("category")!="D" else ""}>W</option><option value="D" {"selected" if expense.get("category")=="D" else ""}>D</option></select></div>
-                <div class="field"><label>Descrizione</label><input name="description" value="{esc(expense.get('description') or '')}" maxlength="2000" required></div>
-              </div>
-              <button class="btn" style="margin-top:14px">Registra uscita</button>
+                <div class="field"><label>Data</label><input type="date" name="movement_date" value="{esc(income.get('movement_date') or today.isoformat())}" required></div>
+                <div class="field"><label>Importo €</label><input name="amount" value="{esc(income.get('amount') or '')}" inputmode="decimal" required></div>
+                <div class="field"><label>Categoria</label><select name="category"><option>W</option><option {"selected" if income.get("category")=="D" else ""}>D</option><option {"selected" if income.get("category")=="Collaboratori" else ""}>Collaboratori</option></select></div>
+                <div class="field"><label>Metodo pagamento</label><select name="payment_method">{''.join(f'<option value="{esc(method)}">{esc(method or "Seleziona metodo")}</option>' for method in PAYMENT_METHODS)}</select></div>
+                <div class="field"><label>Collaboratore</label><select name="collaborator_id">{collaborator_options}</select></div>
+                <div class="field"><label>Descrizione</label><input name="description" value="{esc(income.get('description') or '')}" required></div>
+                <div class="field full"><label>Note facoltative</label><textarea name="notes">{esc(income.get('notes') or '')}</textarea></div>
+              </div><button class="btn" style="margin-top:14px">Registra entrata</button>
             </form>
           </details>
-          <section class="balance-grid" aria-label="Riepilogo Bilanci">{''.join(cards)}</section>
-          <section class="section balance-details" data-selected-balance-section="{esc(selected)}">
-            <div class="balance-details-heading"><div><small class="sub">Dettaglio selezionato</small><h2>{esc(selected_section.title)}</h2></div><div class="balance-details-meta"><span class="badge">{total_rows} {"pratiche" if is_outstanding else "movimenti"}</span><strong>{money_cents_it(selected_section.total_cents)}</strong></div></div>
-            {details}
-            {pagination}
-          </section>
+          <details class="section balance-expense"><summary>Registra uscita manuale</summary>
+            <form method="post" action="{expense_action}" onsubmit="const b=this.querySelector('button');b.disabled=true;b.textContent='Registrazione…'">
+              <input type="hidden" name="entry_type" value="expense"><input type="hidden" name="return_to" value="{esc(return_to)}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(24)}">
+              <div class="fields">
+                <div class="field"><label>Data</label><input type="date" name="movement_date" value="{esc(expense.get('movement_date') or today.isoformat())}" required></div>
+                <div class="field"><label>Importo €</label><input name="amount" value="{esc(expense.get('amount') or '')}" inputmode="decimal" required></div>
+                <div class="field"><label>Categoria</label><select name="category"><option>W</option><option {"selected" if expense.get("category")=="D" else ""}>D</option></select></div>
+                <div class="field"><label>Descrizione</label><input name="description" value="{esc(expense.get('description') or '')}" required></div>
+              </div><button class="btn" style="margin-top:14px">Registra uscita</button>
+            </form>
+          </details>
+        </div>'''
+        primary_content=(details_html+cards_html) if explicit_view else (cards_html+details_html)
+        body=f'''<main class="wrap balance-wrap">
+          <div class="titlebar"><div><h1>Bilanci</h1><p class="sub">Movimenti reali e situazione delle somme ancora aperte.</p></div></div>
+          {notice}{primary_content}{manual_html}{filters_html}
         </main>'''
         self.send_html(layout("Bilanci",body,user))
 
@@ -3875,6 +3971,42 @@ class App(BaseHTTPRequestHandler):
             return self.balances_page(user,error=str(exc),expense_draft=form)
         separator="&" if "?" in return_to else "?"
         self.redirect(f"{return_to}{separator}uscita_creata=1")
+
+    def balance_income_submit(self,user):
+        form=self.form()
+        return_to=safe_return_path(form.get("return_to"),"/bilanci")
+        try:
+            amount_cents=euros_to_cents(form.get("amount",""))
+            if amount_cents<=0:
+                raise BalanceError("L'importo deve essere maggiore di zero.")
+            token=(form.get("balance_idempotency_key") or "").strip()
+            if not token:
+                raise BalanceError("Richiesta non valida: ricarica la pagina e riprova.")
+            category=form.get("category","")
+            collaborator_raw=form.get("collaborator_id","").strip()
+            collaborator_id=(
+                int(collaborator_raw)
+                if collaborator_raw.isdigit() and int(collaborator_raw)>0 else None
+            )
+            description=form.get("description","").strip()
+            notes=form.get("notes","").strip()
+            full_description=description+(f" · {notes}" if notes else "")
+            with db() as c:
+                create_balance_income(
+                    c,
+                    amount_cents=amount_cents,
+                    movement_date=form.get("movement_date",""),
+                    category=category,
+                    payment_method=form.get("payment_method",""),
+                    description=full_description,
+                    idempotency_key=f"manual-income:{token}",
+                    collaborator_id=collaborator_id,
+                    created_by=user["id"],
+                )
+        except BalanceError as exc:
+            return self.balances_page(user,error=str(exc),expense_draft=form)
+        separator="&" if "?" in return_to else "?"
+        self.redirect(f"{return_to}{separator}entrata_creata=1")
 
     def calendar_operator_avatar(self,operator_name,size="md",color_hex=None):
         if not operator_name:return ''
@@ -5338,6 +5470,11 @@ class App(BaseHTTPRequestHandler):
         return_to=esc(getattr(self,"path",""))
         payment_idempotency_key=secrets.token_urlsafe(24)
         payment_today=datetime.now(ROME_TZ).date().isoformat()
+        payment_economic_date=(
+            str(r["deposit_paid_at"] or "")[:10] if payment=="Acconto"
+            else str(r["paid_at"] or "")[:10] if payment=="Pagato"
+            else ""
+        )
         payment_full_amount=f"{effective_total(r):.2f}"
         payment_remaining_amount=f"{outstanding_amount(r):.2f}"
         payment_deposit_field="deposit_final" if uses_total_d(r) else "deposit"
@@ -5345,7 +5482,8 @@ class App(BaseHTTPRequestHandler):
         return f'''<div class="inline-statuses" onclick="event.stopPropagation()">
         <form method="post" action="/pratiche/{r['id']}/stato-rapido" onsubmit="return savePracticeState(this,event)"><input type="hidden" name="return_to" value="{return_to}"><select class="inline-state-select practice-status {status_cls}" name="status" aria-label="Stato pratica" data-saved-value="{esc(r['status'])}" onchange="savePracticeState(this.form)">{state_options}</select><span class="inline-save-note" aria-live="polite"></span></form>
         <select class="inline-state-select {pay_cls}" aria-label="Stato pagamento" data-payment-popover="{modal_id}" data-saved-value="{esc(payment)}" onchange="openPaymentPopover(this)">{payment_options}</select>
-        <div class="payment-popover" id="{modal_id}" data-payment-full-amount="{payment_full_amount}" data-payment-remaining-amount="{payment_remaining_amount}" data-payment-deposit-amount="{esc(payment_deposit_amount)}" data-payment-default-date="{payment_today}" hidden onclick="if(event.target===this)closePaymentPopover(this)"><form class="payment-dialog" method="post" action="/pratiche/{r['id']}/pagamento-rapido"><div class="titlebar"><div><h2>Pagamento · {esc(r['practice_number'])}</h2><p class="sub">Registra i dettagli senza lasciare questa lista.</p></div><button class="btn ghost" type="button" onclick="closePaymentPopover(this)">Chiudi</button></div><input type="hidden" name="return_to" value="{return_to}"><input type="hidden" name="balance_idempotency_key" value="{payment_idempotency_key}"><div class="fields"><div class="field"><label>Stato pagamento</label><select name="payment_status" onchange="ppmSyncPaymentDateField(this.closest('.payment-popover'))">{payment_options}</select></div><div class="field"><label>Metodo di pagamento</label><select name="payment_method">{method_options}</select></div><div class="field"><label>Totale incassato €</label><input name="payment_amount" value="{esc(amount_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field" data-payment-date-field hidden><label>DATA DEL PAGAMENTO</label><input type="date" name="economic_at" value="{payment_today}" data-payment-date-input><small class="sub">Indica quando il pagamento è stato ricevuto (non è per forza oggi).</small></div><div class="field"><label>Numero fattura</label><input name="invoice_number" value="{esc(invoice_number)}"></div><div class="field"><label>Totale fattura €</label><input name="invoice_total" value="{esc(invoice_total)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field"><label>Data fattura</label><input type="date" name="invoice_date" value="{esc(invoice_date)}"></div></div><button class="btn" style="margin-top:16px">Salva pagamento</button></form></div></div>'''
+        <form class="inline-payment-date-form" method="post" action="/pratiche/{r['id']}/pagamento-rapido"><input type="hidden" name="return_to" value="{return_to}"><input type="hidden" name="payment_status" value="{esc(payment)}"><input type="hidden" name="payment_method" value="{esc(method_value)}"><input type="hidden" name="payment_amount" value="{esc(amount_value)}"><input type="hidden" name="invoice_number" value="{esc(invoice_number)}"><input type="hidden" name="invoice_total" value="{esc(invoice_total)}"><input type="hidden" name="invoice_date" value="{esc(invoice_date)}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(24)}"><input class="inline-payment-date" type="date" name="economic_at" value="{esc(payment_economic_date)}" aria-label="Data pagamento o acconto" {"required" if payment in ("Acconto","Pagato") else ""} onchange="this.form.submit()"></form>
+        <div class="payment-popover" id="{modal_id}" data-payment-full-amount="{payment_full_amount}" data-payment-remaining-amount="{payment_remaining_amount}" data-payment-deposit-amount="{esc(payment_deposit_amount)}" data-payment-default-date="{payment_today}" hidden onclick="if(event.target===this)closePaymentPopover(this)"><form class="payment-dialog" method="post" action="/pratiche/{r['id']}/pagamento-rapido"><div class="titlebar"><div><h2>Pagamento · {esc(r['practice_number'])}</h2><p class="sub">Registra i dettagli senza lasciare questa lista.</p></div><button class="btn ghost" type="button" onclick="closePaymentPopover(this)">Chiudi</button></div><input type="hidden" name="return_to" value="{return_to}"><input type="hidden" name="balance_idempotency_key" value="{payment_idempotency_key}"><div class="fields"><div class="field"><label>Stato pagamento</label><select name="payment_status" onchange="ppmSyncPaymentDateField(this.closest('.payment-popover'))">{payment_options}</select></div><div class="field"><label>Data pagamento / acconto</label><input type="date" name="economic_at" value="{esc(payment_economic_date)}" data-payment-date-input></div><div class="field"><label>Metodo di pagamento</label><select name="payment_method">{method_options}</select></div><div class="field"><label>Totale incassato €</label><input name="payment_amount" value="{esc(amount_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field"><label>Numero fattura</label><input name="invoice_number" value="{esc(invoice_number)}"></div><div class="field"><label>Totale fattura €</label><input name="invoice_total" value="{esc(invoice_total)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field"><label>Data fattura</label><input type="date" name="invoice_date" value="{esc(invoice_date)}"></div></div><button class="btn" style="margin-top:16px">Salva pagamento</button></form></div></div>'''
 
     def practice_rows(self,rows,show_financials=False):
         rows=list(rows)
@@ -6036,7 +6174,13 @@ class App(BaseHTTPRequestHandler):
         delivery_clinic_checked='checked' if raw('delivery_at_clinic')=="Si" else ''
         delivery_home_checked='checked' if raw('delivery_at_home')=="Si" else ''
         make_invoice_checked='checked' if raw('make_invoice')=="Si" else ''
-        payment_options=''.join(f'<option {"selected" if raw("payment_status","Da saldare")==state else ""}>{state}</option>' for state in PAYMENT_STATES)
+        selected_payment_status=raw("payment_status","Da saldare")
+        payment_options=''.join(f'<option {"selected" if selected_payment_status==state else ""}>{state}</option>' for state in PAYMENT_STATES)
+        economic_date_value=(
+            raw("economic_at")
+            or (raw("deposit_paid_at") if selected_payment_status=="Acconto" else "")
+            or (raw("paid_at") if selected_payment_status=="Pagato" else "")
+        )
         payment_method_options=''.join(f'<option value="{method}" {"selected" if raw("payment_method")==method else ""}>{method or "Seleziona metodo"}</option>' for method in PAYMENT_METHODS)
         if user is None or user["role"]=="admin":
             operator_field=f'''<div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option><option {selected('operator_name','GIANLUCA')}>GIANLUCA</option></select></div>'''
@@ -6045,7 +6189,7 @@ class App(BaseHTTPRequestHandler):
             operator_field=f'''<input type="hidden" name="operator_name" value="{esc(operator_display)}"><div class="field"><label>Operatore</label><p style="margin:0;padding:11px 0;font-weight:700">{esc(operator_display)}</p></div>'''
         return f'''<section class="section"><h2>Operatore e stati</h2><div class="fields">{operator_field}<div class="field"><label>Stato pratica</label><select name="status"><option {selected('status','Ritirato','Ritirato')}>Ritirato</option><option {selected('status','In programma','Ritirato')}>In programma</option><option {selected('status','Cremato','Ritirato')}>Cremato</option><option {selected('status','Da consegnare','Ritirato')}>Da consegnare</option><option {selected('status','Consegnato','Ritirato')}>Consegnato</option><option data-collective-only="1" {selected('status','Smaltito','Ritirato')}>Smaltito</option></select></div></div></section>
         <input type="hidden" name="urn_notes" value="{val('urn_notes')}"><select name="urn_id" class="hidden" aria-hidden="true" tabindex="-1">{urn_options(raw('urn_id'))}</select><small id="urnStockWarning" class="sub hidden"></small>
-        <input type="hidden" name="price_urn_2" value="{val('price_urn_2')}"><input type="hidden" name="urn_notes_2" value="{val('urn_notes_2')}"><select name="urn_id_2" class="hidden" aria-hidden="true" tabindex="-1">{urn_options(raw('urn_id_2'))}</select><small id="urnStockWarning2" class="sub hidden"></small><input type="hidden" name="price_cast_2" value="{val('price_cast_2')}"><input type="hidden" name="price_paw_cast_2" value="{val('price_paw_cast_2')}"><input type="hidden" name="price_paw_cast_3" value="{val('price_paw_cast_3')}"><input type="hidden" name="price_paw_cast_4" value="{val('price_paw_cast_4')}"><input type="hidden" name="price_nose_cast_2" value="{val('price_nose_cast_2')}"><input type="hidden" name="price_nose_cast_3" value="{val('price_nose_cast_3')}"><input type="hidden" name="price_nose_cast_4" value="{val('price_nose_cast_4')}"><input type="hidden" name="price_accessories_2" value="{val('price_accessories_2')}"><input type="hidden" name="accessory_type" value="{val('accessory_type')}"><input type="hidden" name="accessory_type_2" value="{val('accessory_type_2')}"><input type="hidden" name="accessory_detail" value="{val('accessory_detail')}"><input type="hidden" name="accessory_detail_2" value="{val('accessory_detail_2')}"><input type="hidden" name="nose_cast_type" value="{val('nose_cast_type')}"><input type="hidden" name="nose_cast_type_2" value="{val('nose_cast_type_2')}"><input type="hidden" name="nose_cast_type_3" value="{val('nose_cast_type_3')}"><input type="hidden" name="nose_cast_type_4" value="{val('nose_cast_type_4')}"><input type="hidden" name="paw_cast_type" value="{val('paw_cast_type')}"><input type="hidden" name="paw_cast_type_2" value="{val('paw_cast_type_2')}"><input type="hidden" name="paw_cast_type_3" value="{val('paw_cast_type_3')}"><input type="hidden" name="paw_cast_type_4" value="{val('paw_cast_type_4')}"><select name="payment_status" class="hidden">{payment_options}</select><select name="payment_method" class="hidden">{payment_method_options}</select><input type="hidden" name="catalog_sent" value="{'Si' if catalog_sent_checked else ''}"><input type="hidden" name="estremi_sent" value="{'Si' if estremi_sent_checked else ''}"><input type="hidden" name="invoice_number" value="{val('invoice_number')}"><input type="hidden" name="invoice_date" value="{val('invoice_date')}"><input type="hidden" name="invoice_total" value="{val('invoice_total')}"><input type="hidden" name="invoice_total_manual" value="{'Si' if raw('invoice_total_manual')=='Si' else ''}"><input type="hidden" name="make_invoice" value="{'Si' if make_invoice_checked else ''}">
+        <input type="hidden" name="price_urn_2" value="{val('price_urn_2')}"><input type="hidden" name="urn_notes_2" value="{val('urn_notes_2')}"><select name="urn_id_2" class="hidden" aria-hidden="true" tabindex="-1">{urn_options(raw('urn_id_2'))}</select><small id="urnStockWarning2" class="sub hidden"></small><input type="hidden" name="price_cast_2" value="{val('price_cast_2')}"><input type="hidden" name="price_paw_cast_2" value="{val('price_paw_cast_2')}"><input type="hidden" name="price_paw_cast_3" value="{val('price_paw_cast_3')}"><input type="hidden" name="price_paw_cast_4" value="{val('price_paw_cast_4')}"><input type="hidden" name="price_nose_cast_2" value="{val('price_nose_cast_2')}"><input type="hidden" name="price_nose_cast_3" value="{val('price_nose_cast_3')}"><input type="hidden" name="price_nose_cast_4" value="{val('price_nose_cast_4')}"><input type="hidden" name="price_accessories_2" value="{val('price_accessories_2')}"><input type="hidden" name="accessory_type" value="{val('accessory_type')}"><input type="hidden" name="accessory_type_2" value="{val('accessory_type_2')}"><input type="hidden" name="accessory_detail" value="{val('accessory_detail')}"><input type="hidden" name="accessory_detail_2" value="{val('accessory_detail_2')}"><input type="hidden" name="nose_cast_type" value="{val('nose_cast_type')}"><input type="hidden" name="nose_cast_type_2" value="{val('nose_cast_type_2')}"><input type="hidden" name="nose_cast_type_3" value="{val('nose_cast_type_3')}"><input type="hidden" name="nose_cast_type_4" value="{val('nose_cast_type_4')}"><input type="hidden" name="paw_cast_type" value="{val('paw_cast_type')}"><input type="hidden" name="paw_cast_type_2" value="{val('paw_cast_type_2')}"><input type="hidden" name="paw_cast_type_3" value="{val('paw_cast_type_3')}"><input type="hidden" name="paw_cast_type_4" value="{val('paw_cast_type_4')}"><select name="payment_status" class="hidden">{payment_options}</select><input type="hidden" name="economic_at" value="{esc(economic_date_value)}"><select name="payment_method" class="hidden">{payment_method_options}</select><input type="hidden" name="catalog_sent" value="{'Si' if catalog_sent_checked else ''}"><input type="hidden" name="estremi_sent" value="{'Si' if estremi_sent_checked else ''}"><input type="hidden" name="invoice_number" value="{val('invoice_number')}"><input type="hidden" name="invoice_date" value="{val('invoice_date')}"><input type="hidden" name="invoice_total" value="{val('invoice_total')}"><input type="hidden" name="invoice_total_manual" value="{'Si' if raw('invoice_total_manual')=='Si' else ''}"><input type="hidden" name="make_invoice" value="{'Si' if make_invoice_checked else ''}">
         <section class="section"><h2>Richiesta</h2><div class="fields"><div class="field"><label>Servizio *</label><select name="service_type" required><option value="" {"selected" if not raw("service_type") else ""}>SELEZIONA</option><option {selected('service_type','Da decidere')}>Da decidere</option><option {selected('service_type','Cremazione singola')}>Cremazione singola</option><option {selected('service_type','Cremazione collettiva')}>Cremazione collettiva</option></select></div><div class="field"><label>Origine richiesta *</label><select name="request_origin" required><option {selected('request_origin','Veterinario')}>Veterinario</option><option {selected('request_origin','Privato')}>Privato</option><option value="Consegna in sede" {selected('request_origin','Consegna in sede')}>Consegnato in sede</option><option {selected('request_origin','Collaboratore')}>Collaboratore</option></select></div><div class="field"><label>Sede di destinazione</label><select name="destination_branch"><option {selected('destination_branch','Livorno')}>Livorno</option><option {selected('destination_branch','Empoli')}>Empoli</option></select></div><div class="field"><label>Data recupero</label><input type="date" name="pickup_date" value="{val('pickup_date')}"></div></div></section>
         <section class="section"><h2>SPEDITORE</h2><div class="fields"><input type="hidden" name="client_id" value="{val('client_id')}"><div class="field full lookup"><label>Cerca cliente in anagrafica</label><input id="clientSearch" autocomplete="off" placeholder="Scrivi nome, telefono, email, codice fiscale, città..."><div id="clientResults" class="lookup-results hidden"></div><div id="clientSelected" class="selected-box hidden"><span id="clientSelectedText"></span><button class="btn ghost" type="button" id="clearClientSelection">Cancella selezione</button></div><small class="sub">Se scegli un cliente, i campi vengono compilati automaticamente. Se li modifichi, l'anagrafica non viene aggiornata senza conferma.</small></div><div class="field full lookup"><label>Usa veterinario come speditore</label><input id="ownerVetSearch" autocomplete="off" placeholder="Scrivi per cercare il veterinario"><div id="ownerVetResults" class="lookup-results hidden"></div><select name="owner_veterinarian_id" class="hidden" aria-hidden="true" tabindex="-1">{owner_vet_options}</select><small class="sub">Compila automaticamente i dati dello speditore. Sul DDT, nel Luogo di origine, verra scritto solo il nome breve del veterinario.</small></div><div class="field full lookup {'hidden' if raw('request_origin')!='Collaboratore' else ''}" id="collaboratorSearchBox"><label>Cerca collaboratore in anagrafica</label><input id="collaboratorSearch" autocomplete="off" placeholder="Scrivi per cercare il collaboratore"><div id="collaboratorResults" class="lookup-results hidden"></div><input type="hidden" name="collaborator_id" value="{val('collaborator_id')}"><input type="hidden" name="collaborator_name" value="{val('collaborator_name')}"><small class="sub">Compila automaticamente nome, indirizzo, P.IVA/codice fiscale e codice SDI dall'anagrafica collaboratori.</small></div><div class="field"><label>Nome *</label><input name="owner_first_name" value="{val('owner_first_name')}" required></div><div class="field"><label>Cognome *</label><input name="owner_last_name" value="{val('owner_last_name')}" required></div><div class="field"><label>Ragione sociale</label><input name="owner_company" value="{val('owner_company')}"></div><div class="field"><label>Telefono *</label><input type="tel" inputmode="numeric" name="owner_phone" value="{val('owner_phone')}" required></div><div class="field"><label>Secondo telefono</label><input type="tel" inputmode="numeric" name="owner_phone_2" value="{val('owner_phone_2')}"></div><div class="field"><label>Note telefono</label><input name="owner_phone_note" value="{val('owner_phone_note')}" placeholder="Testo libero"></div><div class="field"><label>Email</label><input type="email" name="owner_email" value="{val('owner_email')}"></div><div class="field"><label>Codice fiscale *</label><input name="owner_tax_code" value="{val('owner_tax_code')}" required></div><div class="field"><label>Partita IVA</label><input name="owner_vat" value="{val('owner_vat')}"></div><div class="field"><label>Codice SDI</label><input name="owner_sdi" value="{val('owner_sdi')}"></div><div class="field full"><label>Indirizzo *</label><input name="owner_street" value="{val('owner_street') or val('owner_address')}" required></div><div class="field"><label>Comune *</label><input name="owner_city" value="{val('owner_city')}" required></div><div class="field"><label>Provincia *</label><input name="owner_province" value="{val('owner_province')}" maxlength="2" placeholder="Si compila dal comune" required></div><div class="field"><label>CAP *</label><input name="owner_zip" value="{val('owner_zip')}" inputmode="numeric" required></div><div class="field full"><label>Note cliente</label><textarea name="owner_notes" placeholder="Note anagrafiche utili">{val('owner_notes')}</textarea></div></div></section>
         <section class="section"><h2>DESTINATARIO E LUOGO DI DESTINAZIONE</h2><p class="sub">Compilati automaticamente in base alla sede selezionata: Livorno oppure Empoli.</p></section>
@@ -6736,7 +6880,7 @@ class App(BaseHTTPRequestHandler):
     def payment_movement_category(self,practice,method):
         if (practice["request_origin"] or "")=="Collaboratore" or practice["collaborator_id"]:
             return "Collaboratori"
-        return "D" if method=="Contanti" else "W"
+        return "D" if uses_total_d(practice) else "W"
 
     def add_payment_movement(self,c,practice_id,payment_type,channel,amount,user_id,notes,paid_at=None,payment_method="",movement_category=""):
         amount=round(float(amount),2)
@@ -6749,7 +6893,7 @@ class App(BaseHTTPRequestHandler):
         elif practice and ((practice["request_origin"] or "")=="Collaboratore" or practice["collaborator_id"]):
             category="Collaboratori"
         else:
-            category="D" if method=="Contanti" or channel=="D" else "W"
+            category="D" if practice and uses_total_d(practice) else "W"
         normalized_channel=category
         duplicate=c.execute("""SELECT id FROM payment_movements
                                WHERE practice_id=? AND payment_type=? AND date(paid_at)=date(?)
@@ -6793,7 +6937,16 @@ class App(BaseHTTPRequestHandler):
             has_total_d=uses_total_d(practice),
             is_collaborator=(practice["request_origin"] or "")=="Collaboratore" or bool(practice["collaborator_id"]),
         )
-        idempotency_key=(balance_idempotency_key or f'payment-transition:{practice["id"]}:{old_status}:{new_status}:{paid_at}:{amount:.2f}:{method}').strip()
+        phase=(
+            "deposit" if balance_type=="Acconto"
+            else "settlement" if balance_type in ("Saldo","Incasso completo")
+            else balance_type.lower()
+        )
+        event_token=(balance_idempotency_key or f"{old_status}:{new_status}").strip()
+        idempotency_key=(
+            f'practice-economic:{practice["id"]}:{phase}:'
+            f'{euros_to_cents(f"{amount:.2f}")}:{event_token}'
+        )
         create_balance_movement(
             c,
             amount_cents=euros_to_cents(f"{amount:.2f}"),
@@ -6807,6 +6960,10 @@ class App(BaseHTTPRequestHandler):
             payment_method=method,
             description=reason,
             source=balance_source,
+            collaborator_id=(
+                int(practice["collaborator_id"])
+                if practice["collaborator_id"] else None
+            ),
             created_by=user_id,
         )
         self.add_payment_movement(
@@ -6817,6 +6974,99 @@ class App(BaseHTTPRequestHandler):
             c.execute("UPDATE practices SET deposit_paid_at=? WHERE id=?",(paid_at,practice["id"]))
         else:
             c.execute("UPDATE practices SET paid_at=? WHERE id=?",(paid_at,practice["id"]))
+        return None
+
+    def correct_practice_payment_date(self,c,practice,status,new_date,user_id):
+        """Correct the date of an existing receipt without duplicating its value."""
+        if status not in ("Acconto","Pagato"):
+            return None
+        if not new_date or not re.fullmatch(r"\d{4}-\d{2}-\d{2}",new_date):
+            return "Indica una data pagamento valida."
+        try:
+            date.fromisoformat(new_date)
+        except ValueError:
+            return "Indica una data pagamento valida."
+        date_field="deposit_paid_at" if status=="Acconto" else "paid_at"
+        old_date=str(practice[date_field] or "")[:10]
+        if old_date==new_date:
+            return None
+        has_acconto=bool(c.execute(
+            """
+            SELECT 1 FROM balance_movements b
+            WHERE b.practice_id=? AND b.movement_type='Acconto'
+              AND NOT EXISTS(
+                SELECT 1 FROM balance_movements r
+                WHERE r.related_movement_id=b.id AND r.movement_type='Storno'
+              )
+            UNION ALL
+            SELECT 1 FROM payment_movements pm
+            WHERE pm.practice_id=? AND lower(pm.payment_type) LIKE 'acconto%'
+            LIMIT 1
+            """,
+            (practice["id"],practice["id"]),
+        ).fetchone())
+        movement_type=(
+            "Acconto" if status=="Acconto"
+            else "Saldo" if has_acconto else "Incasso completo"
+        )
+        correction_key=(
+            f"payment-date:{practice['id']}:{movement_type}:"
+            f"{old_date or 'missing'}:{new_date}"
+        )
+        corrected=correct_balance_movement_date(
+            c,
+            practice_id=practice["id"],
+            movement_type=movement_type,
+            movement_date=new_date,
+            idempotency_key=correction_key,
+            created_by=user_id,
+        )
+        if corrected is None:
+            total=effective_total(practice)
+            if movement_type=="Acconto":
+                amount=money_value(
+                    practice["deposit_final"] if uses_total_d(practice)
+                    else practice["deposit"]
+                )
+            else:
+                deposit=money_value(
+                    practice["deposit_final"] if uses_total_d(practice)
+                    else practice["deposit"]
+                ) if has_acconto else 0.0
+                amount=max(0.0,total-deposit)
+            if amount<=0:
+                return "Impossibile determinare l'importo del movimento da correggere."
+            create_balance_movement(
+                c,
+                amount_cents=euros_to_cents(f"{amount:.2f}"),
+                movement_date=new_date,
+                category=classify_balance_category(
+                    has_total_d=uses_total_d(practice),
+                    is_collaborator=(
+                        (practice["request_origin"] or "")=="Collaboratore"
+                        or bool(practice["collaborator_id"])
+                    ),
+                ),
+                ledger_section="Entrata",
+                movement_type=movement_type,
+                idempotency_key=(
+                    f"payment-date-bootstrap:{practice['id']}:{movement_type}"
+                ),
+                practice_id=practice["id"],
+                practice_number_snapshot=practice["practice_number"] or "",
+                payment_method=practice["payment_method"] or "",
+                description="Movimento storico con data corretta",
+                source="payment_date_correction",
+                collaborator_id=(
+                    int(practice["collaborator_id"])
+                    if practice["collaborator_id"] else None
+                ),
+                created_by=user_id,
+            )
+        c.execute(
+            f"UPDATE practices SET {date_field}=? WHERE id=?",
+            (new_date,practice["id"]),
+        )
         return None
 
     def sync_practice_urn(self,c,practice_id,old_urn_id,new_urn_id,user_id):
@@ -6848,12 +7098,13 @@ class App(BaseHTTPRequestHandler):
 
     def create_practice(self,user):
         f=self.form(); d=self.normalized_fields(f); stamp=now();calendar_event_id=int(f["calendar_event_id"]) if f.get("calendar_event_id","").isdigit() else None
+        economic_at=f.get("economic_at","").strip()
+        payment_draft=lambda: {**d,"economic_at":economic_at}
         creation_balance_token=f.get("balance_idempotency_key","").strip()
         creation_balance_key=f"practice-create:{creation_balance_token}" if creation_balance_token else ""
         if user["role"]!="admin": d["operator_name"]=user["display_name"].upper()
         error=self.validation_error(d)
-        if error: return self.new_page(user,draft=d,error=error)
-        economic_at=f.get("economic_at","").strip()
+        if error: return self.new_page(user,draft=payment_draft(),error=error)
         initial_payment_amount=normalize_money_text(f.get("payment_amount",""))
         initial_payment_status=d.get("payment_status") or "Da saldare"
         if not initial_payment_amount and initial_payment_status=="Acconto":
@@ -6862,19 +7113,26 @@ class App(BaseHTTPRequestHandler):
             initial_payment_amount=f"{effective_total(d):.2f}"
         if initial_payment_status in ("Acconto","Pagato") and d.get("use_voucher")!="Si":
             if not initial_payment_amount or not economic_at or not d.get("payment_method"):
-                return self.new_page(user,draft=d,error="Per registrare un incasso indica importo, data e metodo di pagamento.")
+                return self.new_page(user,draft=payment_draft(),error="Per registrare un incasso indica importo, data e metodo di pagamento.")
+            try:
+                date.fromisoformat(economic_at)
+            except ValueError:
+                return self.new_page(user,draft=payment_draft(),error="Indica una data pagamento valida.")
             initial_amount_value=money_value(initial_payment_amount); initial_due=effective_total(d)
             if initial_amount_value<=0:
-                return self.new_page(user,draft=d,error="Indica un importo incassato valido.")
+                return self.new_page(user,draft=payment_draft(),error="Indica un importo incassato valido.")
             if initial_payment_status=="Pagato" and abs(initial_amount_value-initial_due)>=0.005:
-                return self.new_page(user,draft=d,error=f"Per impostare Pagato, registra esattamente {money_it(initial_due)}.")
+                return self.new_page(user,draft=payment_draft(),error=f"Per impostare Pagato, registra esattamente {money_it(initial_due)}.")
             if initial_payment_status=="Acconto" and initial_amount_value>=initial_due-0.004:
-                return self.new_page(user,draft=d,error="Un acconto deve essere inferiore al totale della pratica.")
+                return self.new_page(user,draft=payment_draft(),error="Un acconto deve essere inferiore al totale della pratica.")
         initial=f.get("status","Ritirato")
         if initial not in STATES or (initial=="Smaltito" and d.get("service_type")!="Cremazione collettiva"): initial="Ritirato"
         with db() as c:
             if creation_balance_key and initial_payment_status in ("Acconto","Pagato"):
-                existing_balance=next((movement for movement in get_balance_movements(c) if movement.idempotency_key==creation_balance_key),None)
+                existing_balance=next((
+                    movement for movement in get_balance_movements(c)
+                    if movement.idempotency_key.endswith(":"+creation_balance_key)
+                ),None)
                 if existing_balance and existing_balance.practice_id:
                     return self.redirect(f"/pratiche/{existing_balance.practice_id}")
             calendar_event=None
@@ -6893,7 +7151,7 @@ class App(BaseHTTPRequestHandler):
                 if has_client_data:
                     duplicates=self.find_client_duplicates(c,d)
                     if duplicates and f.get("confirm_new_client") != "SI":
-                        return self.duplicate_client_page(user,d,duplicates)
+                        return self.duplicate_client_page(user,payment_draft(),duplicates)
                     d["client_id"]=self.create_client_from_practice_data(c,d)
                 else:
                     d["client_id"]=None
@@ -7048,7 +7306,13 @@ class App(BaseHTTPRequestHandler):
         q=parse_qs(urlparse(getattr(self,"path","")).query);back_url=safe_return_path((q.get("return_to") or [""])[0],"/archivio/pratiche")
         with db() as c:p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
         if not p:return self.send_error(404)
-        display=draft if draft is not None else p
+        display=dict(draft) if draft is not None else dict(p)
+        if "economic_at" not in display:
+            display["economic_at"]=(
+                p["deposit_paid_at"] if (p["payment_status"] or "")=="Acconto"
+                else p["paid_at"] if (p["payment_status"] or "")=="Pagato"
+                else ""
+            )
         autosave=f'''<div id="practiceAutosaveStatus" class="autosave-status" data-state="saved" role="status"><span data-autosave-label>Salvato</span><small data-autosave-time>Ultimo salvataggio: —</small><button class="autosave-retry" data-autosave-retry type="button" hidden>Riprova</button></div>'''
         error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>Modifica {esc(p['practice_number'])}</h1><div class="sub">Completa o correggi i dati della pratica.</div>{autosave}</div><div class="actions"><button class="btn" form="practiceForm">Salva modifiche</button><button class="btn ghost" form="practiceForm" name="save_and_return" value="1">Salva e torna</button><a class="btn ghost" href="{esc(back_url)}">Annulla</a></div></div>{error_html}<form method="post" id="practiceForm" data-autosave-url="/api/pratiche/{pid}/autosave" data-updated-at="{esc(p['updated_at'])}"><input type="hidden" name="return_to" value="{esc(back_url)}"><div class="grid form-grid">{self.fields_html(display,user)}</div><div class="actions" style="margin-top:18px"><button class="btn">Salva modifiche</button><button class="btn ghost" name="save_and_return" value="1">Salva e torna</button><a class="btn ghost" href="{esc(back_url)}">Annulla</a></div></form></main>'''
@@ -7136,16 +7400,40 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
 
     def edit_submit(self,user,pid):
         form=self.form(); d=self.normalized_fields(form); stamp=now(); assignments=','.join(f'{k}=?' for k in d)
+        economic_at=form.get("economic_at","").strip()
+        draft_with_date=lambda: {**d,"economic_at":economic_at}
         error=self.validation_error(d)
-        if error: return self.edit_page(user,pid,draft=d,error=error)
+        if error: return self.edit_page(user,pid,draft=draft_with_date(),error=error)
+        if d["payment_status"] in ("Acconto","Pagato"):
+            try:
+                date.fromisoformat(economic_at)
+            except ValueError:
+                return self.edit_page(
+                    user,pid,draft=draft_with_date(),
+                    error="La data pagamento/acconto è obbligatoria e deve essere valida.",
+                )
         with db() as c:
             previous=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
             if not previous:return self.send_error(404)
             if user["role"]!="admin": d["operator_name"]=previous["operator_name"]
             conflict=self.invoice_conflict(c,d.get("invoice_number"),pid)
-            if conflict:return self.edit_page(user,pid,draft=d,error=f'Numero fattura già usato nella pratica {conflict["practice_number"]}')
+            if conflict:return self.edit_page(user,pid,draft=draft_with_date(),error=f'Numero fattura già usato nella pratica {conflict["practice_number"]}')
             if (previous["payment_status"] or "Da saldare")!=(d.get("payment_status") or "Da saldare"):
-                return self.edit_page(user,pid,draft=d,error="Registra il cambio di pagamento dalla finestra dedicata.")
+                return self.edit_page(user,pid,draft=draft_with_date(),error="Registra il cambio di pagamento dalla finestra dedicata.")
+            stored_economic_at=(
+                str(previous["deposit_paid_at"] or "")[:10]
+                if d["payment_status"]=="Acconto"
+                else str(previous["paid_at"] or "")[:10]
+                if d["payment_status"]=="Pagato" else ""
+            )
+            if economic_at!=stored_economic_at and d["payment_status"] in ("Acconto","Pagato"):
+                payment_date_error=self.correct_practice_payment_date(
+                    c,previous,d["payment_status"],economic_at,user["id"]
+                )
+                if payment_date_error:
+                    return self.edit_page(
+                        user,pid,draft=draft_with_date(),error=payment_date_error
+                    )
             field_labels={"animal_name":"Nome animale","owner_first_name":"Nome proprietario","owner_last_name":"Cognome proprietario","owner_phone":"Telefono proprietario","owner_phone_2":"Secondo telefono","service_type":"Tipo cremazione","destination_branch":"Sede","notes":"Note","send_catalog":"Inviare catalogo","catalog_sent":"Catalogo inviato","send_estremi":"Inviare estremi","use_voucher":"Usa buono","payment_method":"Metodo di pagamento","invoice_number":"Numero fattura","invoice_date":"Data fattura","invoice_total":"Totale fattura","make_invoice":"Fare fattura",**MONEY_FIELDS}
             changes=[]
             for key,new_value in d.items():
@@ -7286,6 +7574,12 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         if payment not in PAYMENT_STATES or method not in PAYMENT_METHODS or (amount and not re.fullmatch(r"\d+(?:\.\d{1,2})?",amount)) or (invoice_total and not re.fullmatch(r"\d+(?:\.\d{1,2})?",invoice_total)) or (invoice_date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}",invoice_date)):
             error="Dati del pagamento non validi: controlla importo, totale fattura e data (usa solo numeri e il formato data AAAA-MM-GG)."
             return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
+        if payment in ("Acconto","Pagato"):
+            try:
+                date.fromisoformat(economic_at)
+            except ValueError:
+                error="La data pagamento/acconto è obbligatoria e deve essere valida."
+                return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
         with db() as c:
             row=c.execute("SELECT * FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(pid,)).fetchone()
             if not row:return self.send_json({"ok":False,"error":"Pratica non trovata"},404) if ajax else self.send_error(404)
@@ -7295,7 +7589,12 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
             old=row["payment_status"] or "Da saldare"; stamp=now()
             due=effective_total(row)
-            error=self.record_payment_transition(c,row,old,payment,amount,method,economic_at,user["id"],"Pagamento registrato",f'practice-payment:{form.get("balance_idempotency_key","").strip() or f"{pid}:{old}:{payment}:{economic_at}:{amount}:{method}"}')
+            if old==payment:
+                error=self.correct_practice_payment_date(
+                    c,row,payment,economic_at,user["id"]
+                )
+            else:
+                error=self.record_payment_transition(c,row,old,payment,amount,method,economic_at,user["id"],"Pagamento registrato",f'practice-payment:{form.get("balance_idempotency_key","").strip() or f"{pid}:{old}:{payment}:{amount}"}')
             if error:
                 return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
             received=money_value(c.execute("SELECT COALESCE(SUM(amount),0) amount FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["amount"])

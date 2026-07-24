@@ -262,6 +262,23 @@ class ProductionBalanceModuleTests(unittest.TestCase):
         self.assertIn('name="collaboratore"',first_page)
         self.assertIn("Caricamento…",first_page)
         self.assertIn("Registrazione…",first_page)
+        for heading in (
+            "Data incasso / movimento","Data creazione pratica","Animale",
+            "Proprietario","Stato","Categoria","Importo","Metodo","Collaboratore",
+        ):
+            self.assertIn(heading,first_page)
+        self.assertLess(
+            first_page.index('id="balanceDetails"'),
+            first_page.index('class="balance-grid"'),
+        )
+        self.assertLess(
+            first_page.index('class="balance-grid"'),
+            first_page.index('aria-label="Filtri Bilanci"'),
+        )
+        self.assertIn(
+            ".balance-grid{display:grid;grid-template-columns:repeat(2",
+            app.CSS,
+        )
         rendered.clear()
         self.handler.path+=("&pagina=2")
         self.handler.balances_page(self.admin)

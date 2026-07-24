@@ -55,6 +55,7 @@ class BalanceMovement:
     source: str
     related_movement_id: int | None
     idempotency_key: str
+    collaborator_id: int | None
     created_by: int | None
     created_at: str
 
@@ -67,6 +68,7 @@ class BalanceFilters:
     collaborator_id: int | None = None
     payment_method: str | None = None
     operator_id: int | None = None
+    status: str | None = None
     search: str = ""
 
 
@@ -77,6 +79,12 @@ class OutstandingBalance:
     reference: str
     category: str
     payment_method: str
+    practice_created_at: str
+    species: str
+    animal_name: str
+    owner_name: str
+    payment_status: str
+    collaborator_name: str
     total_due_cents: int
     received_cents: int
     remaining_cents: int
@@ -103,7 +111,8 @@ class BalanceSnapshot:
 _MOVEMENT_COLUMNS: Final = (
     "id,movement_uuid,practice_id,practice_number_snapshot,movement_date,"
     "category,ledger_section,movement_type,amount_cents,payment_method,"
-    "description,source,related_movement_id,idempotency_key,created_by,created_at"
+    "description,source,related_movement_id,idempotency_key,collaborator_id,"
+    "created_by,created_at"
 )
 
 
@@ -128,6 +137,7 @@ def ensure_balance_schema(connection: sqlite3.Connection) -> None:
           source TEXT NOT NULL DEFAULT '',
           related_movement_id INTEGER REFERENCES balance_movements(id) ON DELETE RESTRICT,
           idempotency_key TEXT NOT NULL UNIQUE,
+          collaborator_id INTEGER,
           created_by INTEGER,
           created_at TEXT NOT NULL
         );
@@ -158,6 +168,18 @@ def ensure_balance_schema(connection: sqlite3.Connection) -> None:
           SELECT RAISE(ABORT, 'balance_movements is append-only');
         END;
         """
+    )
+    columns={
+        (row["name"] if isinstance(row,sqlite3.Row) else row[1])
+        for row in connection.execute("PRAGMA table_info(balance_movements)")
+    }
+    if "collaborator_id" not in columns:
+        connection.execute(
+            "ALTER TABLE balance_movements ADD COLUMN collaborator_id INTEGER"
+        )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_balance_movements_collaborator "
+        "ON balance_movements(collaborator_id,movement_date)"
     )
 
 
@@ -253,6 +275,7 @@ def normalize_filters(
     collaborator_id: int | None = None,
     payment_method: str | None = None,
     operator_id: int | None = None,
+    status: str | None = None,
     search: str = "",
 ) -> BalanceFilters:
     normalized_from = _normalize_date(date_from) if date_from else None
@@ -267,6 +290,12 @@ def normalize_filters(
     )
     normalized_method = _clean_optional(payment_method, 80) or None
     normalized_operator = _normalize_optional_id(operator_id, "operator_id")
+    normalized_status = _clean_optional(status, 80) or None
+    if normalized_status not in (
+        None,"Acconto","Pagato","Saldo","Da saldare",
+        "Entrata manuale","Uscita manuale","Rettifica","Storno",
+    ):
+        raise InvalidMovementError("status is not valid")
     normalized_search = _clean_optional(search, 200)
     return BalanceFilters(
         date_from=normalized_from,
@@ -275,6 +304,7 @@ def normalize_filters(
         collaborator_id=normalized_collaborator,
         payment_method=normalized_method,
         operator_id=normalized_operator,
+        status=normalized_status,
         search=normalized_search,
     )
 
@@ -328,6 +358,7 @@ def _same_payload(existing: BalanceMovement, payload: dict[str, object]) -> bool
         "description",
         "source",
         "related_movement_id",
+        "collaborator_id",
         "created_by",
     )
     return all(getattr(existing, field) == payload[field] for field in fields)
@@ -349,6 +380,7 @@ def _create_movement(
     description: str = "",
     source: str = "",
     related_movement_id: int | None = None,
+    collaborator_id: int | None = None,
     created_by: int | None = None,
     allow_reserved_type: bool = False,
 ) -> BalanceMovement:
@@ -375,6 +407,9 @@ def _create_movement(
         related_movement_id, "related_movement_id"
     )
     normalized_created_by = _normalize_optional_id(created_by, "created_by")
+    normalized_collaborator_id = _normalize_optional_id(
+        collaborator_id, "collaborator_id"
+    )
     normalized_uuid = _normalize_uuid(movement_uuid)
     payload: dict[str, object] = {
         "practice_id": normalized_practice_id,
@@ -390,6 +425,7 @@ def _create_movement(
         "description": _clean_optional(description, 2000),
         "source": _clean_optional(source, 100),
         "related_movement_id": normalized_related_id,
+        "collaborator_id": normalized_collaborator_id,
         "created_by": normalized_created_by,
     }
     existing = _find_by_idempotency(connection, normalized_key)
@@ -408,8 +444,9 @@ def _create_movement(
             INSERT INTO balance_movements(
               movement_uuid,practice_id,practice_number_snapshot,movement_date,
               category,ledger_section,movement_type,amount_cents,payment_method,
-              description,source,related_movement_id,idempotency_key,created_by,created_at
-            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+              description,source,related_movement_id,idempotency_key,
+              collaborator_id,created_by,created_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 normalized_uuid,
@@ -425,6 +462,7 @@ def _create_movement(
                 payload["source"],
                 payload["related_movement_id"],
                 normalized_key,
+                payload["collaborator_id"],
                 payload["created_by"],
                 created_at,
             ),
@@ -461,6 +499,7 @@ def create_movement(
     payment_method: str = "",
     description: str = "",
     source: str = "",
+    collaborator_id: int | None = None,
     created_by: int | None = None,
 ) -> BalanceMovement:
     """Append one movement, returning the existing row for an identical retry."""
@@ -478,6 +517,7 @@ def create_movement(
         payment_method=payment_method,
         description=description,
         source=source,
+        collaborator_id=collaborator_id,
         created_by=created_by,
     )
 
@@ -515,8 +555,9 @@ def create_adjustment(
         payment_method=original.payment_method,
         description=description,
         source=source,
-        related_movement_id=original.id,
-        created_by=created_by,
+            related_movement_id=original.id,
+            collaborator_id=original.collaborator_id,
+            created_by=created_by,
         allow_reserved_type=True,
     )
 
@@ -556,8 +597,9 @@ def create_reversal(
             payment_method=original.payment_method,
             description=description,
             source=source,
-            related_movement_id=original.id,
-            created_by=created_by,
+        related_movement_id=original.id,
+        collaborator_id=original.collaborator_id,
+        created_by=created_by,
             allow_reserved_type=True,
         )
     already_reversed = connection.execute(
@@ -585,6 +627,7 @@ def create_reversal(
             description=description,
             source=source,
             related_movement_id=original.id,
+            collaborator_id=original.collaborator_id,
             created_by=created_by,
             allow_reserved_type=True,
         )
@@ -602,6 +645,72 @@ def create_reversal(
         raise
 
 
+def correct_movement_date(
+    connection: sqlite3.Connection,
+    *,
+    practice_id: int,
+    movement_type: str,
+    movement_date: str | date,
+    idempotency_key: str,
+    created_by: int | None = None,
+) -> BalanceMovement | None:
+    """Move one economic event without mutating the append-only ledger.
+
+    The original is reversed on its original economic date and an equivalent
+    replacement is appended on the corrected date. Query functions collapse
+    this technical pair, so the user sees one effective economic row.
+    """
+    normalized_practice_id=_normalize_optional_id(practice_id,"practice_id")
+    normalized_type=_clean_required(movement_type,"movement_type",80)
+    normalized_date=_normalize_date(movement_date)
+    original_row=connection.execute(
+        f"""
+        SELECT {_MOVEMENT_COLUMNS}
+        FROM balance_movements b
+        WHERE b.practice_id=? AND b.movement_type=?
+          AND b.ledger_section='Entrata'
+          AND NOT EXISTS(
+            SELECT 1 FROM balance_movements reversal
+            WHERE reversal.related_movement_id=b.id
+              AND reversal.movement_type=?
+          )
+        ORDER BY b.id DESC LIMIT 1
+        """,
+        (normalized_practice_id,normalized_type,REVERSAL_TYPE),
+    ).fetchone()
+    original=_row_to_movement(original_row)
+    if original is None:
+        return None
+    if original.movement_date==normalized_date:
+        return original
+    base=_clean_required(idempotency_key,"idempotency_key",170)
+    create_reversal(
+        connection,
+        original_movement_id=original.id,
+        movement_date=original.movement_date,
+        idempotency_key=f"{base}:reverse",
+        description=f"Correzione data da {original.movement_date} a {normalized_date}",
+        source="payment_date_correction",
+        created_by=created_by,
+    )
+    return create_movement(
+        connection,
+        amount_cents=original.amount_cents,
+        movement_date=normalized_date,
+        category=original.category,
+        ledger_section=original.ledger_section,
+        movement_type=original.movement_type,
+        idempotency_key=f"{base}:replacement",
+        practice_id=original.practice_id,
+        practice_number_snapshot=original.practice_number_snapshot,
+        payment_method=original.payment_method,
+        description=original.description,
+        source="payment_date_correction",
+        collaborator_id=original.collaborator_id,
+        created_by=created_by,
+    )
+
+
 def get_movements(
     connection: sqlite3.Connection,
     *,
@@ -612,6 +721,7 @@ def get_movements(
     collaborator_id: int | None = None,
     payment_method: str | None = None,
     operator_id: int | None = None,
+    status: str | None = None,
     search: str = "",
 ) -> list[BalanceMovement]:
     """Return immutable ledger rows matching the supplied inclusive filters."""
@@ -622,6 +732,7 @@ def get_movements(
         collaborator_id=collaborator_id,
         payment_method=payment_method,
         operator_id=operator_id,
+        status=status,
         search=search,
     )
     has_legacy=(
@@ -648,6 +759,14 @@ def get_movements(
     if selected.operator_id:
         clauses.append("m.created_by=?")
         arguments.append(selected.operator_id)
+    if selected.status:
+        if selected.status=="Pagato":
+            clauses.append("m.movement_type='Incasso completo'")
+        elif selected.status=="Da saldare":
+            clauses.append("1=0")
+        else:
+            clauses.append("m.movement_type=?")
+            arguments.append(selected.status)
     if selected.search:
         pattern=f"%{selected.search.lower()}%"
         clauses.append(
@@ -727,8 +846,9 @@ def get_movements(
                 b.id,b.movement_uuid,b.practice_id,b.practice_number_snapshot,
                 b.movement_date,b.category,b.ledger_section,b.movement_type,
                 b.amount_cents,b.payment_method,b.description,b.source,
-                b.related_movement_id,b.idempotency_key,b.created_by,b.created_at,
-                p.collaborator_id AS _collaborator_id,
+                b.related_movement_id,b.idempotency_key,b.collaborator_id,
+                b.created_by,b.created_at,
+                COALESCE(b.collaborator_id,p.collaborator_id) AS _collaborator_id,
                 lower(
                   COALESCE(p.owner_first_name,'')||' '||
                   COALESCE(p.owner_last_name,'')||' '||
@@ -741,6 +861,16 @@ def get_movements(
                 lower({new_operator}) AS _operator_name
               FROM balance_movements b
               LEFT JOIN practices p ON p.id=b.practice_id
+              WHERE NOT (
+                b.movement_type='Storno'
+                AND b.source='payment_date_correction'
+              )
+              AND NOT EXISTS(
+                SELECT 1 FROM balance_movements correction
+                WHERE correction.related_movement_id=b.id
+                  AND correction.movement_type='Storno'
+                  AND correction.source='payment_date_correction'
+              )
 
               UNION ALL
 
@@ -759,6 +889,7 @@ def get_movements(
                 'legacy_payment_movements',
                 NULL,
                 'legacy-payment-movement:'||pm.id,
+                p.collaborator_id,
                 pm.user_id,
                 COALESCE(NULLIF(pm.created_at,''),pm.paid_at),
                 p.collaborator_id,
@@ -784,9 +915,6 @@ def get_movements(
                   SELECT 1 FROM balance_movements existing
                   WHERE existing.practice_id=pm.practice_id
                     AND existing.ledger_section='Entrata'
-                    AND existing.movement_date=date(pm.paid_at)
-                    AND existing.category={category_sql}
-                    AND existing.amount_cents=CAST(ROUND(pm.amount*100) AS INTEGER)
                     AND (
                       existing.movement_type={kind_sql}
                       OR (
@@ -813,6 +941,7 @@ def get_movements(
                 'legacy_practice_fields',
                 NULL,
                 'historical-practice:'||p.id||':deposit',
+                p.collaborator_id,
                 p.created_by,
                 COALESCE(NULLIF(p.deposit_paid_at,''),p.created_at),
                 p.collaborator_id,
@@ -840,9 +969,6 @@ def get_movements(
                   SELECT 1 FROM balance_movements existing
                   WHERE existing.practice_id=p.id
                     AND existing.ledger_section='Entrata'
-                    AND existing.movement_date=date(p.deposit_paid_at)
-                    AND existing.category={category_sql}
-                    AND existing.amount_cents={deposit_cents_sql}
                     AND existing.movement_type='Acconto'
                 )
 
@@ -863,6 +989,7 @@ def get_movements(
                 'legacy_practice_fields',
                 NULL,
                 'historical-practice:'||p.id||':balance',
+                p.collaborator_id,
                 p.created_by,
                 COALESCE(NULLIF(p.paid_at,''),p.created_at),
                 p.collaborator_id,
@@ -890,10 +1017,7 @@ def get_movements(
                   SELECT 1 FROM balance_movements existing
                   WHERE existing.practice_id=p.id
                     AND existing.ledger_section='Entrata'
-                    AND existing.movement_date=date(p.paid_at)
-                    AND existing.category={category_sql}
-                    AND existing.amount_cents={paid_amount_sql}
-                    AND existing.movement_type={paid_kind_sql}
+                    AND existing.movement_type IN ('Saldo','Incasso completo')
                 )
             )
             SELECT {qualified_columns}
@@ -910,9 +1034,19 @@ def get_movements(
             f"""
             SELECT {qualified_columns}
             FROM (
-              SELECT b.*,NULL AS _collaborator_id,
+              SELECT b.*,b.collaborator_id AS _collaborator_id,
                      '' AS _practice_search,'' AS _operator_name
               FROM balance_movements b
+              WHERE NOT (
+                b.movement_type='Storno'
+                AND b.source='payment_date_correction'
+              )
+              AND NOT EXISTS(
+                SELECT 1 FROM balance_movements correction
+                WHERE correction.related_movement_id=b.id
+                  AND correction.movement_type='Storno'
+                  AND correction.source='payment_date_correction'
+              )
             ) m
             {where}
             ORDER BY m.movement_date DESC, m.id DESC
@@ -951,6 +1085,52 @@ def create_manual_expense(
         idempotency_key=idempotency_key,
         description=normalized_description,
         source="manual_expense",
+        created_by=created_by,
+    )
+
+
+def create_manual_income(
+    connection: sqlite3.Connection,
+    *,
+    amount_cents: int,
+    movement_date: str | date,
+    category: str,
+    payment_method: str,
+    description: str,
+    idempotency_key: str,
+    collaborator_id: int | None = None,
+    created_by: int | None = None,
+) -> BalanceMovement:
+    """Append a manual receipt without requiring a linked practice."""
+    normalized_category=_clean_required(category,"category",30)
+    if normalized_category not in BALANCE_CATEGORIES:
+        raise InvalidMovementError(
+            "manual income category must be W, D or Collaboratori"
+        )
+    normalized_collaborator=_normalize_optional_id(
+        collaborator_id,"collaborator_id"
+    )
+    if normalized_category=="Collaboratori" and normalized_collaborator is None:
+        raise InvalidMovementError(
+            "collaborator_id is required for Collaboratori income"
+        )
+    normalized_description=_clean_required(description,"description",2000)
+    normalized_method=_clean_required(payment_method,"payment_method",80)
+    amount=_validate_amount(amount_cents)
+    if amount<0:
+        raise InvalidMovementError("manual income amount must be positive")
+    return create_movement(
+        connection,
+        amount_cents=amount,
+        movement_date=movement_date,
+        category=normalized_category,
+        ledger_section="Entrata",
+        movement_type="Entrata manuale",
+        idempotency_key=idempotency_key,
+        payment_method=normalized_method,
+        description=normalized_description,
+        source="manual_income",
+        collaborator_id=normalized_collaborator,
         created_by=created_by,
     )
 
@@ -1002,6 +1182,8 @@ def get_outstanding_balances(
     """Return open practice balances at date_to; date_from is intentionally ignored."""
     if not filters.date_to:
         raise InvalidMovementError("date_to is required for outstanding balances")
+    if filters.status and filters.status!="Da saldare":
+        return []
     clauses=[
         "date(p.created_at)<=date(?)",
         "(p.deleted_at IS NULL OR p.deleted_at='' OR date(p.deleted_at)>date(?))",
@@ -1037,7 +1219,7 @@ def get_outstanding_balances(
           p.owner_company,p.animal_name,p.clinic_name,p.veterinarian_name,
           p.collaborator_name,p.request_origin,p.collaborator_id,p.total_text,
           p.total_service,p.payment_method,p.payment_status,p.deposit,
-          p.deposit_final,p.deposit_paid_at,p.paid_at,
+          p.deposit_final,p.deposit_paid_at,p.paid_at,p.created_at,p.species,
           COUNT(m.id) AS balance_movement_count,
           COALESCE(SUM(CASE
             WHEN m.ledger_section='Entrata' AND m.movement_date<=?
@@ -1139,6 +1321,12 @@ def get_outstanding_balances(
                 reference=reference,
                 category=row_category,
                 payment_method=row["payment_method"] or "",
+                practice_created_at=row["created_at"] or "",
+                species=row["species"] or "",
+                animal_name=row["animal_name"] or "",
+                owner_name=owner or row["owner_company"] or "",
+                payment_status=payment_status,
+                collaborator_name=row["collaborator_name"] or "",
                 total_due_cents=total_due,
                 received_cents=received_to,
                 remaining_cents=remaining,
@@ -1207,6 +1395,16 @@ def get_balance_snapshot(
         "uscite-d","Uscite D",
         lambda row: row.ledger_section=="Uscita" and row.category=="D",
     )
+    sections["totale-w-attuale"]=movement_section(
+        "totale-w-attuale","Totale W attuale",
+        lambda row: row.category=="W",
+        signed=True,
+    )
+    sections["totale-d-attuale"]=movement_section(
+        "totale-d-attuale","Totale D attuale",
+        lambda row: row.category=="D",
+        signed=True,
+    )
     sections["saldo-netto"]=movement_section(
         "saldo-netto","Saldo Netto",
         lambda row: (
@@ -1240,9 +1438,10 @@ def get_balance_collaborators(
         """
         SELECT c.id,c.name
         FROM collaborators c
-        WHERE EXISTS(
-          SELECT 1 FROM practices p WHERE p.collaborator_id=c.id
-        )
+        WHERE EXISTS(SELECT 1 FROM practices p WHERE p.collaborator_id=c.id)
+           OR EXISTS(
+             SELECT 1 FROM balance_movements b WHERE b.collaborator_id=c.id
+           )
         ORDER BY c.name,c.id
         """
     ).fetchall()

@@ -2346,7 +2346,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertTrue(app.payment_status_needs_date("Da saldare","Acconto",""))
         self.assertTrue(app.payment_status_needs_date("Da saldare","Acconto","not-a-date"))
         self.assertFalse(app.payment_status_needs_date("Da saldare","Acconto","2026-07-14"))
-        self.assertFalse(app.payment_status_needs_date("Acconto","Acconto",""))
+        self.assertTrue(app.payment_status_needs_date("Acconto","Acconto",""))
         self.assertFalse(app.payment_status_needs_date("Da saldare","Da saldare",""))
         self.assertTrue(app.payment_status_needs_date("Acconto","Pagato",""))
         self.assertFalse(app.payment_status_needs_date("Acconto","Pagato","2026-07-15"))
@@ -2361,7 +2361,7 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.form=lambda:{"payment_status":"Pagato","payment_method":"Pos","payment_amount":"300,00","ajax":"1"}
         self.handler.quick_payment(admin,pid)
         self.assertEqual(responses[-1][1],400)
-        self.assertIn("Indica la data",responses[-1][0]["error"])
+        self.assertIn("data pagamento/acconto",responses[-1][0]["error"])
         with app.db() as conn:
             row=conn.execute("SELECT payment_status,payment_method FROM practices WHERE id=?",(pid,)).fetchone()
             self.assertEqual((row["payment_status"],row["payment_method"]),("Da saldare",None))
@@ -2497,7 +2497,7 @@ class PetParadiseTests(unittest.TestCase):
                                    "owner_province":"LI","owner_zip":"57100","payment_status":"Acconto"}
         edit_pages=[];self.handler.edit_page=lambda user,pid,draft=None,error="":edit_pages.append(error)
         self.handler.edit_submit(admin,pid)
-        self.assertIn("finestra dedicata",edit_pages[-1])
+        self.assertIn("data pagamento/acconto",edit_pages[-1])
         with app.db() as conn:
             row=conn.execute("SELECT payment_status FROM practices WHERE id=?",(pid,)).fetchone()
             self.assertEqual(row["payment_status"],"Da saldare")
@@ -2602,13 +2602,14 @@ class PetParadiseTests(unittest.TestCase):
         balances_page=rendered[-1]
         self.assertIn("<h1>Bilanci</h1>",balances_page)
         for label in (
-            "Data iniziale","Data finale","Categoria","Collaboratore","Metodo di pagamento","Operatore","Ricerca",
+            "Periodo","Data da","Data a","Categoria","Collaboratore","Metodo pagamento","Stato","Operatore","Ricerca",
             "Entrate W","Entrate D","Collaboratori Incassato","Da riscuotere W",
-            "Da riscuotere D","Collaboratori Da riscuotere","Uscite W","Uscite D","Saldo Netto",
+            "Da riscuotere D","Collaboratori Da riscuotere","Uscite W","Uscite D",
+            "Totale W attuale","Totale D attuale","Saldo Netto",
         ):
             self.assertIn(label,balances_page)
-        self.assertEqual(balances_page.count('data-balance-card="'),9)
-        self.assertEqual(balances_page.count('data-balance-total-cents="0"'),9)
+        self.assertEqual(balances_page.count('data-balance-card="'),11)
+        self.assertEqual(balances_page.count('data-balance-total-cents="0"'),11)
         self.assertIn('aria-current="true"',balances_page)
         self.assertIn("<h2>Entrate W</h2>",balances_page)
         self.assertIn("Nessun dato da visualizzare.",balances_page)
@@ -2616,7 +2617,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('method="post" action="/bilanci/uscite?',balances_page)
         self.assertIn("Registra uscita manuale",balances_page)
         for responsive_rule in (
-            ".balance-grid{display:grid;grid-template-columns:repeat(3",
+            ".balance-grid{display:grid;grid-template-columns:repeat(2",
             "@media(max-width:900px)",
             ".balance-grid{grid-template-columns:repeat(2",
             "@media(max-width:560px){.balance-filters .fields,.balance-grid{grid-template-columns:1fr}",
@@ -2689,7 +2690,7 @@ class PetParadiseTests(unittest.TestCase):
     def test_arrange_budget_layout_places_payment_status_after_remaining_final(self):
         js = app.APP_JS
         remaining_final_idx = js.index("addRow([field('total_text'),field('deposit_final'),field('remaining_final')]);")
-        payment_status_idx = js.index("addRow([field('payment_status')],[field('payment_method')]);")
+        payment_status_idx = js.index("addRow([field('payment_status'),field('economic_at')],[field('payment_method')]);")
         self.assertLess(remaining_final_idx, payment_status_idx)
         self.assertNotIn("addRow([field('price_cremation')],[field('payment_status')]);", js)
         self.assertNotIn("addRow([field('price_pickup')],[field('payment_method')]);", js)
