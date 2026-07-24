@@ -1627,6 +1627,23 @@ class PetParadiseTests(unittest.TestCase):
     def test_table_top_scrollbar_stays_sticky_while_scrolling(self):
         self.assertIn(".tablebox-scroll-top{overflow-x:auto;overflow-y:hidden;height:16px;margin-bottom:6px;position:sticky;top:76px;z-index:10;background:var(--paper)}", app.CSS)
 
+    def test_table_header_row_is_sticky_app_wide(self):
+        self.assertIn("thead th{position:sticky;top:68px;z-index:2;background:#101620}", app.CSS)
+        self.assertIn(".light-theme thead th{background:#fff}", app.CSS)
+        self.assertIn("thead th{top:66px}", app.CSS)
+        self.assertIn(".tablebox{background:white;border:1px solid var(--line);border-radius:15px}", app.CSS)
+        self.assertNotIn(".tablebox{overflow:auto", app.CSS)
+
+    def test_archive_wide_table_keeps_horizontal_scroll_wrapper(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,pickup_date)
+                            VALUES(?,?,?,?,?,?,?,?,?)""",("CR-ARCHIVESCROLL","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Luna","2026-07-20"))
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/archivio/pratiche"
+        self.handler.archive(admin)
+        page=rendered[-1]
+        self.assertIn('<div class="tablebox dashboard-table-scroll"><table class="practice-list-table">',page)
+
     def test_list_scroll_and_filter_state_restore_is_wired_for_all_target_pages(self):
         for path in ("/archivio/pratiche", "/calendario", "/clienti", "/veterinari", "/catalogo-urne", "/ordini/storico"):
             self.assertIn(f"'{path}':", app.APP_JS)
@@ -1929,6 +1946,44 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("if(row.classList.contains('row-selected')){practiceRowOpen(url);return;}", app.APP_JS)
         self.assertIn("function practiceRowOpen(url)", app.APP_JS)
         self.assertIn(".row-selected", app.CSS)
+
+    def test_archive_and_dashboard_show_elimina_button_on_every_practice_row(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            for number,date in (("CR-OLD001","2020-01-15"),("CR-NEW001","2026-07-20")):
+                stamp=f"{date}T10:00:00"
+                conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,
+                                created_by,animal_name,pickup_date)
+                                VALUES(?,?,?,?,?,?,?,?,?)""",
+                             (number,"Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Luna",date))
+            old_pid=conn.execute("SELECT id FROM practices WHERE practice_number='CR-OLD001'").fetchone()["id"]
+            new_pid=conn.execute("SELECT id FROM practices WHERE practice_number='CR-NEW001'").fetchone()["id"]
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/archivio/pratiche"
+        self.handler.archive(admin)
+        archive_page=rendered[-1]
+        self.assertIn("<th>Azione</th>",archive_page)
+        for pid in (old_pid,new_pid):
+            self.assertIn(
+                f'''<form onclick="event.stopPropagation()" method="post" action="/pratiche/{pid}/elimina" onsubmit="return confirm('Spostare questa pratica nel Cestino? Potrai ripristinarla in seguito.')"><button class="btn danger-btn" type="submit">Elimina</button></form>''',
+                archive_page,
+            )
+        self.handler.path="/"
+        self.handler.dashboard(admin)
+        dashboard_page=rendered[-1]
+        self.assertIn("<th>Azione</th>",dashboard_page)
+        self.assertIn(f'action="/pratiche/{new_pid}/elimina"',dashboard_page)
+
+    def test_elimina_button_reuses_existing_soft_delete_route(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name)
+                                VALUES(?,?,?,?,?,?,?,?)""",("CR-ROWDELETE","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Luna")).lastrowid
+        redirects=[];self.handler.redirect=lambda path:redirects.append(path)
+        self.handler.delete_practice(admin,pid)
+        self.assertEqual(redirects[-1],"/cestino")
+        with app.db() as conn:
+            row=conn.execute("SELECT deleted_at FROM practices WHERE id=?",(pid,)).fetchone()
+            self.assertTrue(row["deleted_at"])
 
     def test_origin_veterinarian_lookup_and_safe_return_link(self):
         html=self.handler.fields_html()
@@ -2319,6 +2374,53 @@ class PetParadiseTests(unittest.TestCase):
             self.assertEqual((row["payment_status"],row["payment_method"],row["payment_amount"]),("Pagato","Pos","200.00"))
             self.assertEqual((row["invoice_number"],row["invoice_total"],row["invoice_date"]),("FT-200","200.00","2026-07-14"))
         self.assertEqual(redirects[-1],"/archivio/pratiche?stato=Ritirato")
+
+    def test_payment_popover_shows_circuit_field_preselected_from_practice(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid_w=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-CIRCUITW","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Mario","Cremazione singola","Da saldare","200","200")).lastrowid
+            pid_d=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service,total_text)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-CIRCUITD","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Anna","Cremazione singola","Da saldare","200","200","220")).lastrowid
+            rows_w=conn.execute("SELECT * FROM practices WHERE id=?",(pid_w,)).fetchall()
+            rows_d=conn.execute("SELECT * FROM practices WHERE id=?",(pid_d,)).fetchall()
+        self.handler.path="/archivio/pratiche"
+        page_w=self.handler.practice_rows(rows_w,True)
+        self.assertIn('<label>Circuito</label><select name="payment_channel" required><option value="W" selected>W</option><option value="D" >D</option></select>',page_w)
+        page_d=self.handler.practice_rows(rows_d,True)
+        self.assertIn('<label>Circuito</label><select name="payment_channel" required><option value="W" >W</option><option value="D" selected>D</option></select>',page_d)
+
+    def test_quick_payment_honors_explicit_circuit_override(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-CIRCUITOVR","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Mario","Cremazione singola","Da saldare","200","200")).lastrowid
+        self.handler.form=lambda:{"payment_status":"Pagato","payment_method":"Pos","payment_amount":"200,00","economic_at":"2026-07-24","payment_channel":"D","ajax":"1"}
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.quick_payment(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"])
+        with app.db() as conn:
+            movement=conn.execute("SELECT category FROM balance_movements WHERE practice_id=?",(pid,)).fetchone()
+            self.assertEqual(movement["category"],"D")
+            legacy=conn.execute("SELECT movement_category FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()
+            self.assertEqual(legacy["movement_category"],"D")
+
+    def test_quick_payment_without_circuit_field_falls_back_to_practice_total_d(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-CIRCUITDEF","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Mario","Cremazione singola","Da saldare","200","200")).lastrowid
+        self.handler.form=lambda:{"payment_status":"Pagato","payment_method":"Pos","payment_amount":"200,00","economic_at":"2026-07-24","ajax":"1"}
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.quick_payment(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"])
+        with app.db() as conn:
+            movement=conn.execute("SELECT category FROM balance_movements WHERE practice_id=?",(pid,)).fetchone()
+            self.assertEqual(movement["category"],"W")
 
     def test_practice_summary_shows_editable_metodo_dropdown_saved_via_ajax(self):
         with app.db() as conn:
