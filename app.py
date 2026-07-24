@@ -2446,37 +2446,40 @@ function ppmPromptPaymentDate(onConfirm,onCancel){
   overlay.querySelector('#ppmPaymentDateCancel').addEventListener('click',()=>{cleanup();onCancel();});
   overlay.addEventListener('click',(event)=>{if(event.target===overlay){cleanup();onCancel();}});
 }
+function ppmReturnVoidForm(dialog){
+  const form=dialog._ppmActiveForm;
+  if(form){
+    form.dataset.ppmConfirmed='';
+    const btn=form.querySelector('button[type=submit]');
+    if(btn){btn.classList.remove('danger-btn');btn.classList.add('ghost');btn.textContent='Elimina';}
+    if(form._ppmOriginalParent)form._ppmOriginalParent.insertBefore(form,form._ppmOriginalNext);
+  }
+  dialog._ppmActiveForm=null;
+  if(dialog.open)dialog.close();
+}
 function ppmConfirmVoidMovement(form){
+  if(form.dataset.ppmConfirmed==='1')return true;
   let dialog=document.getElementById('ppmVoidDialog');
   if(!dialog){
     dialog=document.createElement('dialog');
     dialog.id='ppmVoidDialog';
     dialog.className='payment-dialog';
     dialog.style.width='min(420px,100%)';
-    dialog.innerHTML='<div class="titlebar"><div><h2>Eliminare il movimento?</h2><p class="sub">Verrà tolto dal bilancio insieme al suo importo.</p></div></div><div class="actions" style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end"><button type="button" class="btn ghost" data-ppm-void-cancel>Annulla</button><button type="button" class="btn danger-btn" data-ppm-void-confirm>Elimina</button></div>';
+    dialog.innerHTML='<div class="titlebar"><div><h2>Eliminare il movimento?</h2><p class="sub">Verrà tolto dal bilancio insieme al suo importo.</p></div></div><div class="actions" id="ppmVoidActions" style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end"><button type="button" class="btn ghost" data-ppm-void-cancel>Annulla</button></div>';
     document.body.appendChild(dialog);
-    dialog.addEventListener('click',(event)=>{if(event.target===dialog)dialog.close();});
-    dialog.addEventListener('cancel',()=>{dialog._ppmForm=null;});
-    dialog.querySelector('[data-ppm-void-cancel]').addEventListener('click',()=>dialog.close());
-    dialog.querySelector('[data-ppm-void-confirm]').addEventListener('click',async()=>{
-      const target=dialog._ppmForm;
-      const confirmBtn=dialog.querySelector('[data-ppm-void-confirm]');
-      if(!target)return;
-      confirmBtn.disabled=true;confirmBtn.textContent='Eliminazione…';
-      try{
-        const response=await fetch(target.action,{method:'POST',body:new URLSearchParams(new FormData(target)),credentials:'same-origin'});
-        if(!response.ok)throw new Error('Il server ha risposto con errore '+response.status);
-        dialog.close();
-        location.href=response.url||location.href;
-      }catch(error){
-        confirmBtn.disabled=false;confirmBtn.textContent='Elimina';
-        alert('Eliminazione non riuscita: '+error.message+'. Controlla la connessione e riprova.');
-      }
-    });
+    dialog.addEventListener('click',(event)=>{if(event.target===dialog)ppmReturnVoidForm(dialog);});
+    dialog.addEventListener('cancel',()=>ppmReturnVoidForm(dialog));
+    dialog.querySelector('[data-ppm-void-cancel]').addEventListener('click',()=>ppmReturnVoidForm(dialog));
   }
-  dialog._ppmForm=form;
-  if(typeof dialog.showModal==='function')dialog.showModal();
-  else return confirm('Eliminare questo movimento? Verrà tolto dal bilancio.');
+  if(typeof dialog.showModal!=='function')return confirm('Eliminare questo movimento? Verrà tolto dal bilancio.');
+  form._ppmOriginalParent=form.parentNode;
+  form._ppmOriginalNext=form.nextSibling;
+  form.dataset.ppmConfirmed='1';
+  const btn=form.querySelector('button[type=submit]');
+  if(btn){btn.classList.remove('ghost');btn.classList.add('danger-btn');btn.textContent='Elimina';}
+  dialog.querySelector('#ppmVoidActions').appendChild(form);
+  dialog._ppmActiveForm=form;
+  dialog.showModal();
   return false;
 }
 function setupPaymentStatusDatePrompt(){
