@@ -40,6 +40,7 @@ from balance_service import (
     create_reversal as create_balance_reversal,
     MovementAlreadyReversedError,
 )
+from balance_repair import repair_duplicate_balance_movements
 from calendar_service import (
     EVENT_TYPES, PICKUP_STATUSES, DELIVERY_STATUSES, PAYMENT_STATUSES, CALENDAR_OPERATORS,
     add_history as calendar_add_history,
@@ -793,6 +794,25 @@ def init_db():
         c.execute("UPDATE practices SET remaining_balance='0.00' WHERE payment_status='Pagato' AND CAST(COALESCE(remaining_balance,'0') AS REAL)<>0")
         c.execute("UPDATE practices SET remaining_final='0.00' WHERE payment_status='Pagato' AND CAST(COALESCE(remaining_final,'0') AS REAL)<>0")
         ensure_balance_schema(c)
+        balance_repair_report=repair_duplicate_balance_movements(
+            c,
+            apply=True,
+            created_by=(
+                c.execute(
+                    "SELECT id FROM users WHERE role='admin' ORDER BY id LIMIT 1"
+                ).fetchone() or {"id":None}
+            )["id"],
+        )
+        if (
+            balance_repair_report["created_reversal_ids"]
+            or balance_repair_report["created_replacement_ids"]
+        ):
+            print(
+                "[BILANCI_REPAIR] "
+                f"duplicati_stornati={len(balance_repair_report['created_reversal_ids'])} "
+                f"importi_sostituiti={len(balance_repair_report['created_replacement_ids'])}",
+                flush=True,
+            )
         ensure_notification_schema(c)
         ensure_calendar_schema(c)
 
@@ -1214,7 +1234,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .balance-details-empty{display:grid;place-items:center;min-height:116px;margin:0;color:#94a3b8;text-align:center}
 .balance-filter-actions{margin-top:14px}.balance-filter-actions .btn{width:auto}
 .balance-expense{margin:0 0 18px}.balance-expense summary{cursor:pointer;font-weight:650}.balance-expense[open] summary{margin-bottom:16px}
-.balance-detail-table{min-width:1040px;table-layout:fixed}.balance-detail-table th,.balance-detail-table td{padding:8px 7px;font-size:12px;line-height:1.25;overflow-wrap:anywhere}.balance-detail-table th:nth-child(1),.balance-detail-table td:nth-child(1),.balance-detail-table th:nth-child(2),.balance-detail-table td:nth-child(2){width:94px}.balance-detail-table th:nth-child(3),.balance-detail-table td:nth-child(3){width:90px}.balance-detail-table th:nth-child(7),.balance-detail-table td:nth-child(7),.balance-detail-table th:nth-child(8),.balance-detail-table td:nth-child(8){width:74px}.balance-detail-table td:last-child,.balance-detail-table th:last-child{width:76px;text-align:right}.balance-clickable-row{cursor:pointer}.balance-clickable-row:hover{background:#ffffff0a}.balance-clickable-row:focus{outline:2px solid #fb7185;outline-offset:-2px}.balance-void-btn{min-height:30px;padding:5px 7px;font-size:11px}
+.balance-details .tablebox{overflow-x:auto;-webkit-overflow-scrolling:touch}.balance-detail-table{width:100%;min-width:980px;table-layout:fixed}.balance-detail-table th,.balance-detail-table td{padding:8px 6px;font-size:11px;line-height:1.22;white-space:normal;word-break:normal;overflow-wrap:break-word;vertical-align:middle}.balance-detail-table .balance-col-action{width:70px;text-align:center}.balance-detail-table .balance-col-date{width:82px}.balance-detail-table .balance-col-practice{width:84px}.balance-detail-table .balance-col-animal{width:120px}.balance-detail-table .balance-col-amount{width:82px;text-align:right}.balance-clickable-row{cursor:pointer}.balance-clickable-row:hover{background:#ffffff0a}.balance-clickable-row:focus{outline:2px solid #fb7185;outline-offset:-2px}.balance-void-btn{display:inline-flex;min-height:28px;padding:5px 6px;font-size:10px}
 .balance-manual-toolbar{margin:0 0 14px}.balance-manual-toolbar .btn{min-width:150px;background:#e9475b;color:#fff;border-color:#e9475b}.balance-manual-panels{margin-bottom:4px}
 .balance-pagination{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:16px}
 .balance-page-label{color:#94a3b8;font-size:13px;font-weight:650}
@@ -1223,7 +1243,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .light-theme .balance-card[aria-pressed="true"],.light-theme .balance-card[aria-current="true"]{border-color:#e9475b}
 .light-theme .balance-filter-note,.light-theme .balance-details-empty{color:#64748b}
 @media(max-width:900px){.balance-wrap{padding-bottom:calc(92px + var(--safe-bottom))}.balance-filters .fields{grid-template-columns:repeat(2,minmax(0,1fr))}.balance-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:560px){.balance-filters .fields,.balance-grid{grid-template-columns:1fr}.balance-grid .balance-card:last-child:nth-child(odd){grid-column:auto}.balance-card{min-height:70px;padding:11px 13px}.balance-card-value{font-size:21px}.balance-details-heading{align-items:flex-start;flex-direction:column}.balance-details-meta{width:100%;justify-content:space-between}.balance-pagination{justify-content:space-between}.balance-pagination .btn{padding:10px 12px}.balance-manual-toolbar{display:grid;grid-template-columns:1fr 1fr}.balance-manual-toolbar .btn{min-width:0;padding:10px 8px}.balance-detail-table{min-width:960px}}
+@media(max-width:560px){.balance-filters .fields{grid-template-columns:1fr}.balance-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.balance-grid .balance-card:last-child:nth-child(odd){grid-column:1/-1}.balance-card{min-height:88px;padding:10px;align-items:flex-start;flex-direction:column;justify-content:center;gap:5px}.balance-card-copy{gap:6px;font-size:11px;line-height:1.15}.balance-card-copy .icon{width:15px;height:15px;flex:0 0 15px}.balance-card-value{font-size:17px;letter-spacing:-.02em}.balance-details{padding:12px}.balance-details-heading{align-items:flex-start;flex-direction:column}.balance-details-meta{width:100%;justify-content:space-between}.balance-pagination{justify-content:space-between}.balance-pagination .btn{padding:10px 12px}.balance-manual-toolbar{display:grid;grid-template-columns:1fr 1fr}.balance-manual-toolbar .btn{min-width:0;padding:10px 8px}.balance-detail-table{min-width:0;width:100%;table-layout:fixed}.balance-detail-table th,.balance-detail-table td{padding:7px 4px;font-size:10px}.balance-detail-table .balance-col-action{width:48px}.balance-detail-table .balance-col-date{width:66px}.balance-detail-table .balance-col-practice{width:73px}.balance-detail-table .balance-col-animal{width:auto}.balance-detail-table .balance-col-amount{width:67px}.balance-detail-table .balance-col-secondary{display:none}.balance-void-btn{min-height:26px;padding:4px;font-size:9px}}
 """
 
 APP_JS = r"""
@@ -3815,9 +3835,9 @@ class App(BaseHTTPRequestHandler):
                 url=f"/pratiche/{row.practice_id}?return_to={quote(current_balance_path,safe='')}"
                 animal=" - ".join(x for x in (row.species,row.animal_name) if x) or "-"
                 detail_rows.append(
-                    f'''<tr class="balance-clickable-row" tabindex="0" onclick="location.href='{url}'" onkeydown="if(event.key==='Enter')location.href='{url}'" data-balance-detail-row data-amount-cents="{amount_cents}"><td>{esc(date_it(row.practice_created_at))}</td><td>-</td><td><b>{esc(row.practice_number)}</b></td><td>{esc(animal)}</td><td>{esc(row.owner_name or row.reference or "-")}</td><td>Da saldare</td><td>{esc(row.category)}</td><td><b>{money_cents_it(row.remaining_cents)}</b></td><td>{esc(row.payment_method or "-")}</td><td>{esc(row.collaborator_name or "-")}</td><td>{money_cents_it(row.total_due_cents)}</td><td>{money_cents_it(row.received_cents)}</td><td>-</td></tr>'''
+                    f'''<tr class="balance-clickable-row" tabindex="0" onclick="location.href='{url}'" onkeydown="if(event.key==='Enter')location.href='{url}'" data-balance-detail-row data-amount-cents="{amount_cents}"><td class="balance-col-action">-</td><td class="balance-col-date">{esc(date_it(row.practice_created_at))}</td><td class="balance-col-date">-</td><td class="balance-col-practice"><b>{esc(row.practice_number)}</b></td><td class="balance-col-animal">{esc(animal)}</td><td class="balance-col-secondary">{esc(row.owner_name or row.reference or "-")}</td><td class="balance-col-secondary">Da saldare</td><td class="balance-col-secondary">{esc(row.category)}</td><td class="balance-col-amount"><b>{money_cents_it(row.remaining_cents)}</b></td><td class="balance-col-secondary">{esc(row.payment_method or "-")}</td><td class="balance-col-secondary">{esc(row.collaborator_name or "-")}</td><td class="balance-col-secondary">{money_cents_it(row.total_due_cents)}</td><td class="balance-col-secondary">{money_cents_it(row.received_cents)}</td></tr>'''
                 )
-            detail_header="<tr><th>Data creazione pratica</th><th>Data incasso / movimento</th><th>Numero pratica</th><th>Animale</th><th>Proprietario</th><th>Stato</th><th>Categoria</th><th>Importo</th><th>Metodo</th><th>Collaboratore</th><th>Totale dovuto</th><th>Già incassato</th><th>Azioni</th></tr>"
+            detail_header='''<tr><th class="balance-col-action">Azione</th><th class="balance-col-date">Creazione</th><th class="balance-col-date">Movimento</th><th class="balance-col-practice">Pratica</th><th class="balance-col-animal">Animale</th><th class="balance-col-secondary">Proprietario</th><th class="balance-col-secondary">Stato</th><th class="balance-col-secondary">Categoria</th><th class="balance-col-amount">Importo</th><th class="balance-col-secondary">Metodo</th><th class="balance-col-secondary">Collaboratore</th><th class="balance-col-secondary">Dovuto</th><th class="balance-col-secondary">Incassato</th></tr>'''
         else:
             for row,amount_cents in page_pairs:
                 practice_number=row.practice_number_snapshot or "-"
@@ -3848,7 +3868,7 @@ class App(BaseHTTPRequestHandler):
                 )
                 void_action=(
                     f'''<form method="post" action="/bilanci/movimenti/{row.id}/storna" onclick="event.stopPropagation()" onsubmit="event.stopPropagation();return confirm('Vuoi stornare questo movimento? Il registro originale resterà nell’audit.')"><input type="hidden" name="return_to" value="{esc(current_balance_path)}"><button class="btn ghost balance-void-btn" type="submit">Elimina</button></form>'''
-                    if user["role"]=="admin" and row.id>0 and row.movement_type!="Storno"
+                    if row.id>0 and row.movement_type!="Storno"
                     else "-"
                 )
                 row_attrs=(
@@ -3856,9 +3876,9 @@ class App(BaseHTTPRequestHandler):
                     if practice_url else ""
                 )
                 detail_rows.append(
-                    f'''<tr {row_attrs} data-balance-detail-row data-amount-cents="{amount_cents}"><td>{esc(date_it(meta["created_at"])) if meta else "-"}</td><td>{esc(date_it(row.movement_date))}</td><td><b>{esc(practice_number)}</b></td><td>{esc(animal)}</td><td>{esc(owner)}</td><td>{esc(status_label)}<small class="sub">{esc(row.description or "")}</small>{audit_badge}</td><td>{esc(row.category)}</td><td><b>{money_cents_it(amount_cents)}</b></td><td>{esc(row.payment_method or "-")}</td><td>{esc(collaborator)}</td><td>{void_action}</td></tr>'''
+                    f'''<tr {row_attrs} data-balance-detail-row data-amount-cents="{amount_cents}"><td class="balance-col-action">{void_action}</td><td class="balance-col-date">{esc(date_it(meta["created_at"])) if meta else "-"}</td><td class="balance-col-date">{esc(date_it(row.movement_date))}</td><td class="balance-col-practice"><b>{esc(practice_number)}</b></td><td class="balance-col-animal">{esc(animal)}</td><td class="balance-col-secondary">{esc(owner)}</td><td class="balance-col-secondary">{esc(status_label)}<small class="sub">{esc(row.description or "")}</small>{audit_badge}</td><td class="balance-col-secondary">{esc(row.category)}</td><td class="balance-col-amount"><b>{money_cents_it(amount_cents)}</b></td><td class="balance-col-secondary">{esc(row.payment_method or "-")}</td><td class="balance-col-secondary">{esc(collaborator)}</td></tr>'''
                 )
-            detail_header="<tr><th>Data creazione pratica</th><th>Data incasso / movimento</th><th>Numero pratica</th><th>Animale</th><th>Proprietario</th><th>Stato</th><th>Categoria</th><th>Importo</th><th>Metodo</th><th>Collaboratore</th><th>Azioni</th></tr>"
+            detail_header='''<tr><th class="balance-col-action">Azione</th><th class="balance-col-date">Creazione</th><th class="balance-col-date">Movimento</th><th class="balance-col-practice">Pratica</th><th class="balance-col-animal">Animale</th><th class="balance-col-secondary">Proprietario</th><th class="balance-col-secondary">Stato</th><th class="balance-col-secondary">Categoria</th><th class="balance-col-amount">Importo</th><th class="balance-col-secondary">Metodo</th><th class="balance-col-secondary">Collaboratore</th></tr>'''
         details=(
             f'''<div class="tablebox"><table class="balance-detail-table"><thead>{detail_header}</thead><tbody>{''.join(detail_rows)}</tbody></table></div>'''
             if detail_rows else '<p class="balance-details-empty">Nessun dato da visualizzare.</p>'
@@ -4041,12 +4061,6 @@ class App(BaseHTTPRequestHandler):
 
     def balance_movement_void(self,user,movement_id):
         return_to=safe_return_path(self.form().get("return_to"),"/bilanci")
-        if user["role"]!="admin":
-            return self.error_page(
-                "Operazione non autorizzata",
-                "Solo un amministratore può stornare un movimento.",
-                return_to,
-            )
         try:
             with db() as c:
                 movement=c.execute(

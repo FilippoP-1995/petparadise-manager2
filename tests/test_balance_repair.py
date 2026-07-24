@@ -119,6 +119,40 @@ class BalanceRepairTests(unittest.TestCase):
         self.assertEqual(second["created_reversal_ids"],[])
         self.assertEqual(count,5)
 
+    def test_application_startup_repairs_molly_duplicates_on_the_active_database(self):
+        practice_id=self.practice("CR-000017","Molly","Acconto",300,180)
+        for number in range(3):
+            self.movement(
+                practice_id,"Acconto",18000,"2026-07-12",
+                f"historical-molly-save-{number}",
+            )
+        app.init_db()
+        with app.db() as connection:
+            standard=[
+                row for row in get_movements(connection)
+                if row.practice_id==practice_id
+            ]
+            audit=[
+                row for row in get_movements(connection,include_technical=True)
+                if row.practice_id==practice_id
+            ]
+            count_before=connection.execute(
+                "SELECT COUNT(*) n FROM balance_movements WHERE practice_id=?",
+                (practice_id,),
+            ).fetchone()["n"]
+        self.assertEqual(
+            [(row.movement_type,row.amount_cents) for row in standard],
+            [("Acconto",18000)],
+        )
+        self.assertEqual(len(audit),5)
+        app.init_db()
+        with app.db() as connection:
+            count_after=connection.execute(
+                "SELECT COUNT(*) n FROM balance_movements WHERE practice_id=?",
+                (practice_id,),
+            ).fetchone()["n"]
+        self.assertEqual(count_after,count_before)
+
     def test_real_deposit_and_balance_or_different_dates_are_not_merged(self):
         practice_id=self.practice("CR-REAL","Reale","Pagato",300,100)
         self.movement(practice_id,"Acconto",10000,"2026-07-10","real-deposit")

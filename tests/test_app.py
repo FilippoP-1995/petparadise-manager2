@@ -2620,7 +2620,7 @@ class PetParadiseTests(unittest.TestCase):
             ".balance-grid{display:grid;grid-template-columns:repeat(2",
             "@media(max-width:900px)",
             ".balance-grid{grid-template-columns:repeat(2",
-            "@media(max-width:560px){.balance-filters .fields,.balance-grid{grid-template-columns:1fr}",
+            "@media(max-width:560px){.balance-filters .fields{grid-template-columns:1fr}.balance-grid{grid-template-columns:repeat(2",
             "calc(92px + var(--safe-bottom))",
         ):
             self.assertIn(responsive_rule,app.CSS)

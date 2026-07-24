@@ -263,14 +263,19 @@ class ProductionBalanceModuleTests(unittest.TestCase):
         self.assertIn("Caricamento…",first_page)
         self.assertIn("Registrazione…",first_page)
         for heading in (
-            "Data incasso / movimento","Data creazione pratica","Animale",
-            "Proprietario","Stato","Categoria","Importo","Metodo","Collaboratore",
+            "Creazione","Movimento","Animale","Proprietario","Stato",
+            "Categoria","Importo","Metodo","Collaboratore","Azione",
         ):
             self.assertIn(heading,first_page)
         self.assertLess(
-            first_page.index("<th>Data creazione pratica</th>"),
-            first_page.index("<th>Data incasso / movimento</th>"),
+            first_page.index('class="balance-col-date">Creazione</th>'),
+            first_page.index('class="balance-col-date">Movimento</th>'),
         )
+        self.assertLess(
+            first_page.index('class="balance-col-action">Azione</th>'),
+            first_page.index('class="balance-col-date">Creazione</th>'),
+        )
+        self.assertIn(">Elimina</button>",first_page)
         self.assertIn("Registra entrata",first_page)
         self.assertIn("Registra uscita",first_page)
         self.assertIn("balance-manual-toolbar",first_page)
@@ -284,6 +289,10 @@ class ProductionBalanceModuleTests(unittest.TestCase):
         )
         self.assertIn(
             ".balance-grid{display:grid;grid-template-columns:repeat(2",
+            app.CSS,
+        )
+        self.assertIn(
+            "@media(max-width:560px){.balance-filters .fields{grid-template-columns:1fr}.balance-grid{grid-template-columns:repeat(2",
             app.CSS,
         )
         rendered.clear()
