@@ -2025,17 +2025,52 @@ function setupTableTouchScroll(){
   // table's own internal scroll hits its start/end, exactly like scrolling a
   // normal page would feel once you get past a nested scrollable panel.
   const THRESHOLD=8;
+  // A fast flick must keep scrolling after the finger lifts and ease to a
+  // stop, like native momentum scrolling — lost entirely once touch-action
+  // is disabled and touchmove is handled manually above. MIN_VELOCITY is the
+  // px/ms speed below which momentum is imperceptible and stops; DECAY_PER_MS
+  // is the per-millisecond speed multiplier (time-based, not frame-based, so
+  // it feels the same regardless of screen refresh rate).
+  const MIN_VELOCITY=0.02,DECAY_PER_MS=0.998;
   document.querySelectorAll('.tablebox').forEach(function(box){
     if(box.dataset.touchScrollReady) return;
     box.dataset.touchScrollReady='1';
     let axis=null,phase='table';
     let startX=0,startY=0,startScrollLeft=0,startScrollTop=0;
     let pageAnchorY=0,pageStartScroll=0;
+    let lastY=0,lastT=0,velocityY=0,momentumFrame=null;
+    const stopMomentum=()=>{if(momentumFrame){cancelAnimationFrame(momentumFrame);momentumFrame=null;}};
+    const runMomentum=(momentumPhase)=>{
+      let v=velocityY,last=performance.now();
+      const step=(now)=>{
+        const dt=now-last;last=now;
+        v*=Math.pow(DECAY_PER_MS,dt);
+        if(Math.abs(v)<MIN_VELOCITY){momentumFrame=null;return;}
+        const delta=v*dt;
+        if(momentumPhase==='table'){
+          const maxScroll=box.scrollHeight-box.clientHeight;
+          const next=Math.max(0,Math.min(maxScroll,box.scrollTop-delta));
+          box.scrollTop=next;
+          if(next<=0||next>=maxScroll){momentumFrame=null;return;}
+        }else{
+          const doc=document.documentElement;
+          const maxPageScroll=Math.max(0,doc.scrollHeight-window.innerHeight);
+          const current=window.scrollY||doc.scrollTop||0;
+          const next=Math.max(0,Math.min(maxPageScroll,current-delta));
+          window.scrollTo(0,next);
+          if(next<=0||next>=maxPageScroll){momentumFrame=null;return;}
+        }
+        momentumFrame=requestAnimationFrame(step);
+      };
+      momentumFrame=requestAnimationFrame(step);
+    };
     box.addEventListener('touchstart',function(e){
       if(e.touches.length!==1)return;
+      stopMomentum();
       axis=null;phase='table';
       startX=e.touches[0].clientX;startY=e.touches[0].clientY;
       startScrollLeft=box.scrollLeft;startScrollTop=box.scrollTop;
+      lastY=startY;lastT=performance.now();velocityY=0;
     },{passive:true});
     box.addEventListener('touchmove',function(e){
       if(e.touches.length!==1)return;
@@ -2045,6 +2080,9 @@ function setupTableTouchScroll(){
         axis=Math.abs(dx)>Math.abs(dy)?'x':'y';
       }
       e.preventDefault();
+      const now=performance.now(),dt=now-lastT;
+      if(dt>0)velocityY=(t.clientY-lastY)/dt;
+      lastY=t.clientY;lastT=now;
       if(axis==='x'){box.scrollLeft=startScrollLeft-dx;return;}
       if(phase==='table'){
         const maxScroll=box.scrollHeight-box.clientHeight,wanted=startScrollTop-dy;
@@ -2054,9 +2092,12 @@ function setupTableTouchScroll(){
       }
       if(phase==='page'){window.scrollTo(0,pageStartScroll-(t.clientY-pageAnchorY));}
     },{passive:false});
-    const reset=()=>{axis=null;phase='table';};
-    box.addEventListener('touchend',reset,{passive:true});
-    box.addEventListener('touchcancel',reset,{passive:true});
+    const onEnd=()=>{
+      if(axis==='y'&&Math.abs(velocityY)>MIN_VELOCITY)runMomentum(phase);
+      axis=null;phase='table';
+    };
+    box.addEventListener('touchend',onEnd,{passive:true});
+    box.addEventListener('touchcancel',function(){stopMomentum();axis=null;phase='table';},{passive:true});
   });
 }
 document.addEventListener('DOMContentLoaded', setupTableTouchScroll);
