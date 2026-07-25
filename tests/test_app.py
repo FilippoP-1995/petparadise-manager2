@@ -9,6 +9,7 @@ from contextlib import redirect_stderr
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
+from urllib.parse import quote
 
 import app
 import email_service
@@ -3039,8 +3040,14 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path="/bilanci?view=entrate-w&periodo=tutto"
         self.handler.balances_page(admin)
         page=rendered[-1]
-        self.assertIn('action="/bilanci/movimenti/storna-storico"',page)
-        self.assertIn(f'value="{legacy_key}"',page)
+        self.assertIn('/bilanci/movimenti/elimina-storico?legacy_key=',page)
+        self.assertIn(quote(legacy_key,safe=''),page)
+        confirm_rendered=[];self.handler.send_html=lambda content,*args:confirm_rendered.append(content)
+        self.handler.path=f"/bilanci/movimenti/elimina-storico?legacy_key={quote(legacy_key,safe='')}&return_to=%2Fbilanci"
+        self.handler.confirm_balance_legacy_movement_void(admin)
+        confirm_page=confirm_rendered[-1]
+        self.assertIn('action="/bilanci/movimenti/storna-storico"',confirm_page)
+        self.assertIn(f'value="{legacy_key}"',confirm_page)
         redirects=[];self.handler.redirect=lambda url:redirects.append(url)
         self.handler.form=lambda:{"return_to":"/bilanci","legacy_key":legacy_key}
         self.handler.balance_legacy_movement_void(admin)

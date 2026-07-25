@@ -2446,42 +2446,6 @@ function ppmPromptPaymentDate(onConfirm,onCancel){
   overlay.querySelector('#ppmPaymentDateCancel').addEventListener('click',()=>{cleanup();onCancel();});
   overlay.addEventListener('click',(event)=>{if(event.target===overlay){cleanup();onCancel();}});
 }
-function ppmReturnVoidForm(overlay){
-  const form=overlay._ppmActiveForm;
-  if(form){
-    form.dataset.ppmConfirmed='';
-    const btn=form.querySelector('button[type=submit]');
-    if(btn){btn.classList.remove('danger-btn');btn.classList.add('ghost');btn.textContent='Elimina';}
-    if(form._ppmOriginalParent)form._ppmOriginalParent.insertBefore(form,form._ppmOriginalNext);
-  }
-  overlay._ppmActiveForm=null;
-  overlay.hidden=true;
-  document.body.style.overflow='';
-}
-function ppmConfirmVoidMovement(form){
-  if(form.dataset.ppmConfirmed==='1')return true;
-  let dialog=document.getElementById('ppmVoidOverlay');
-  if(!dialog){
-    dialog=document.createElement('div');
-    dialog.id='ppmVoidOverlay';
-    dialog.className='payment-popover';
-    dialog.hidden=true;
-    dialog.innerHTML='<div class="payment-dialog" style="width:min(420px,100%)"><div class="titlebar"><div><h2>Eliminare il movimento?</h2><p class="sub">Verrà tolto dal bilancio insieme al suo importo.</p></div></div><div class="actions" id="ppmVoidActions" style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end"><button type="button" class="btn ghost" data-ppm-void-cancel>Annulla</button></div></div>';
-    document.body.appendChild(dialog);
-    dialog.addEventListener('click',(event)=>{if(event.target===dialog)ppmReturnVoidForm(dialog);});
-    dialog.querySelector('[data-ppm-void-cancel]').addEventListener('click',()=>ppmReturnVoidForm(dialog));
-  }
-  form._ppmOriginalParent=form.parentNode;
-  form._ppmOriginalNext=form.nextSibling;
-  form.dataset.ppmConfirmed='1';
-  const btn=form.querySelector('button[type=submit]');
-  if(btn){btn.classList.remove('ghost');btn.classList.add('danger-btn');btn.textContent='Elimina';}
-  dialog.querySelector('#ppmVoidActions').appendChild(form);
-  dialog._ppmActiveForm=form;
-  dialog.hidden=false;
-  document.body.style.overflow='hidden';
-  return false;
-}
 function setupPaymentStatusDatePrompt(){
   const form=document.getElementById('practiceForm');
   const select=form&&form.querySelector('select[name="payment_status"]');
@@ -3511,6 +3475,9 @@ class App(BaseHTTPRequestHandler):
         if path == "/": return self.dashboard(user)
         if path == "/calendario": return self.calendar_page(user)
         if path == "/bilanci": return self.balances_page(user)
+        match = re.fullmatch(r"/bilanci/movimenti/(\d+)/elimina",path)
+        if match: return self.confirm_balance_movement_void(user,int(match.group(1)))
+        if path == "/bilanci/movimenti/elimina-storico": return self.confirm_balance_legacy_movement_void(user)
         if path == "/calendario/nuovo": return self.calendar_event_form(user)
         if path == "/calendario/impostazioni": return self.calendar_settings(user)
         if path == "/calendario/cestino": return self.calendar_trash(user)
@@ -3985,9 +3952,9 @@ class App(BaseHTTPRequestHandler):
                     if audit_mode else ""
                 )
                 void_action=(
-                    f'''<form method="post" action="/bilanci/movimenti/{row.id}/storna" onclick="event.stopPropagation()" onsubmit="event.stopPropagation();return ppmConfirmVoidMovement(this)"><input type="hidden" name="return_to" value="{esc(current_balance_path)}"><button class="btn ghost balance-void-btn" type="submit">Elimina</button></form>'''
+                    f'''<a class="btn ghost balance-void-btn" href="/bilanci/movimenti/{row.id}/elimina?return_to={quote(current_balance_path,safe='')}" onclick="event.stopPropagation()">Elimina</a>'''
                     if row.id>0 and row.movement_type!="Storno"
-                    else f'''<form method="post" action="/bilanci/movimenti/storna-storico" onclick="event.stopPropagation()" onsubmit="event.stopPropagation();return ppmConfirmVoidMovement(this)"><input type="hidden" name="return_to" value="{esc(current_balance_path)}"><input type="hidden" name="legacy_key" value="{esc(row.idempotency_key)}"><button class="btn ghost balance-void-btn" type="submit">Elimina</button></form>'''
+                    else f'''<a class="btn ghost balance-void-btn" href="/bilanci/movimenti/elimina-storico?legacy_key={quote(row.idempotency_key,safe='')}&return_to={quote(current_balance_path,safe='')}" onclick="event.stopPropagation()">Elimina</a>'''
                     if row.id<0 and row.movement_type!="Storno"
                     else "-"
                 )
@@ -4178,6 +4145,47 @@ class App(BaseHTTPRequestHandler):
             return self.balances_page(user,error=str(exc),expense_draft=form)
         separator="&" if "?" in return_to else "?"
         self.redirect(f"{return_to}{separator}entrata_creata=1")
+
+    def confirm_balance_movement_void(self,user,movement_id):
+        query=parse_qs(urlparse(getattr(self,"path","")).query)
+        value=lambda key,default="":(query.get(key) or [default])[-1].strip()
+        return_to=safe_return_path(value("return_to"),"/bilanci")
+        with db() as c:
+            movement=c.execute("SELECT * FROM balance_movements WHERE id=?",(movement_id,)).fetchone()
+        if not movement or movement["movement_type"]=="Storno":
+            return self.balances_page(user,error="Movimento non trovato.")
+        body=f'''<section class="section" style="max-width:520px;margin:0 auto">
+          <h1>Eliminare il movimento?</h1>
+          <p class="sub">Verrà tolto dal bilancio insieme al suo importo. Il {esc(date_it(movement["movement_date"]))} · {esc(movement["movement_type"])} · {esc(movement["category"])} · <b>{money_cents_it(movement["amount_cents"])}</b>{f' · {esc(movement["description"])}' if movement["description"] else ""}</p>
+          <div class="actions" style="display:flex;gap:10px;margin-top:20px">
+            <form method="post" action="/bilanci/movimenti/{movement_id}/storna"><input type="hidden" name="return_to" value="{esc(return_to)}"><button class="btn danger-btn" type="submit">Sì, elimina</button></form>
+            <a class="btn ghost" href="{esc(return_to)}">Annulla</a>
+          </div>
+        </section>'''
+        return self.send_html(layout("Eliminare movimento",body,user))
+
+    def confirm_balance_legacy_movement_void(self,user):
+        query=parse_qs(urlparse(getattr(self,"path","")).query)
+        value=lambda key,default="":(query.get(key) or [default])[-1].strip()
+        return_to=safe_return_path(value("return_to"),"/bilanci")
+        legacy_key=value("legacy_key")
+        with db() as c:
+            filters=normalize_balance_filters(include_technical=True)
+            movement=next(
+                (m for m in get_balance_movements(c,filters=filters) if m.id<0 and m.idempotency_key==legacy_key),
+                None,
+            )
+        if not movement:
+            return self.balances_page(user,error="Movimento non trovato.")
+        body=f'''<section class="section" style="max-width:520px;margin:0 auto">
+          <h1>Eliminare il movimento?</h1>
+          <p class="sub">Verrà tolto dal bilancio insieme al suo importo. Il {esc(date_it(movement.movement_date))} · {esc(movement.movement_type)} · {esc(movement.category)} · <b>{money_cents_it(movement.amount_cents)}</b>{f' · {esc(movement.description)}' if movement.description else ""}</p>
+          <div class="actions" style="display:flex;gap:10px;margin-top:20px">
+            <form method="post" action="/bilanci/movimenti/storna-storico"><input type="hidden" name="return_to" value="{esc(return_to)}"><input type="hidden" name="legacy_key" value="{esc(legacy_key)}"><button class="btn danger-btn" type="submit">Sì, elimina</button></form>
+            <a class="btn ghost" href="{esc(return_to)}">Annulla</a>
+          </div>
+        </section>'''
+        return self.send_html(layout("Eliminare movimento",body,user))
 
     def balance_movement_void(self,user,movement_id):
         return_to=safe_return_path(self.form().get("return_to"),"/bilanci")
