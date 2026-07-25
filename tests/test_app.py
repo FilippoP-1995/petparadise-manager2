@@ -3,6 +3,7 @@ import io
 import json
 import re
 import socket
+import sqlite3
 import tempfile
 import unittest
 from contextlib import redirect_stderr
@@ -2359,6 +2360,40 @@ class PetParadiseTests(unittest.TestCase):
             row=conn.execute("SELECT status,message_id,sent_at,last_attempt_at,attempts FROM whatsapp_messages WHERE id=?",(msg_id,)).fetchone()
         self.assertEqual((row["status"],row["message_id"],row["attempts"]),("accettato_da_meta","wamid.test",1));self.assertTrue(row["sent_at"] and row["last_attempt_at"])
 
+    def test_whatsapp_send_does_not_hold_a_database_lock_during_the_network_call(self):
+        # Regression test: the Meta API call used to happen while the database
+        # connection that had just marked the message "in_invio" was still open
+        # (SQLite has no WAL mode here), holding a write lock for the whole
+        # network round-trip (up to 18s) and blocking every other request in
+        # the app during that window — including, e.g., deleting a movimento
+        # in Bilanci. A concurrent write from a brand-new connection, issued
+        # from inside the mocked network call itself, must now succeed
+        # immediately instead of hitting "database is locked".
+        _,pid,msg_id=self._whatsapp_record("2026-07-15T14:00:00")
+        concurrent_write=None
+        class MetaResponse:
+            status=200
+            def __enter__(self):
+                nonlocal concurrent_write
+                try:
+                    conn=sqlite3.connect(app.DB_PATH,timeout=0.5)
+                    conn.execute("UPDATE practices SET notes='concurrent write during whatsapp call' WHERE id=?",(pid,))
+                    conn.commit()
+                    conn.close()
+                    concurrent_write=True
+                except sqlite3.OperationalError as exc:
+                    concurrent_write=str(exc)
+                return self
+            def __exit__(self,*args):pass
+            def read(self):return b'{"messages":[{"id":"wamid.test"}]}'
+        env={"WHATSAPP_ACCESS_TOKEN":"token-test","WHATSAPP_PHONE_NUMBER_ID":"phone-test"}
+        with patch.dict(os.environ,env),patch("app.urllib.request.urlopen",return_value=MetaResponse()):
+            result=self.handler.process_whatsapp_queue(current_time=datetime(2026,7,15,14,0))
+        self.assertTrue(result[0]["ok"])
+        self.assertIs(concurrent_write,True,f"concurrent write was blocked: {concurrent_write}")
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT notes FROM practices WHERE id=?",(pid,)).fetchone()["notes"],"concurrent write during whatsapp call")
+
     def test_whatsapp_due_failure_is_recorded_as_failed(self):
         _,_,msg_id=self._whatsapp_record("2026-07-15T14:00:00")
         env={"WHATSAPP_ACCESS_TOKEN":"token-test","WHATSAPP_PHONE_NUMBER_ID":"phone-test"}
@@ -2395,8 +2430,10 @@ class PetParadiseTests(unittest.TestCase):
         admin,_,failed_id=self._whatsapp_record("2026-07-15T13:00:00","fallito",1,"2026-07-15T13:01:00")
         _,_,scheduled_id=self._whatsapp_record("2026-07-15T15:00:00")
         self.handler.headers={"Referer":"/conversazioni-whatsapp"};self.handler.redirect=lambda path:None
-        def accepted(conn,msg_id,**kwargs):
-            conn.execute("UPDATE whatsapp_messages SET status='accettato_da_meta',message_id='wamid.retry',sent_at=?,last_error='' WHERE id=?",(app.whatsapp_now(),msg_id));return True,"ok"
+        def accepted(msg_id,**kwargs):
+            with app.db() as conn:
+                conn.execute("UPDATE whatsapp_messages SET status='accettato_da_meta',message_id='wamid.retry',sent_at=?,last_error='' WHERE id=?",(app.whatsapp_now(),msg_id))
+            return True,"ok"
         with patch.object(self.handler,"send_whatsapp_message",side_effect=accepted):self.handler.whatsapp_message_action(admin,failed_id,"riprova")
         self.handler.whatsapp_message_action(admin,scheduled_id,"annulla")
         with app.db() as conn:
