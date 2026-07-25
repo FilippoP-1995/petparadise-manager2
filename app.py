@@ -42,7 +42,10 @@ from balance_service import (
     delete_movement as delete_balance_movement,
     log_movement_deletion as log_balance_movement_deletion,
     get_recent_movement_deletions as get_recent_balance_movement_deletions,
+    restore_movement_deletion as restore_balance_movement_deletion,
     MovementAlreadyReversedError,
+    MovementNotFoundError,
+    InvalidMovementError,
 )
 from balance_repair import repair_duplicate_balance_movements
 from calendar_service import (
@@ -2435,7 +2438,12 @@ function ppmSyncMacroareaInvoiceSection(select){
   const form=select.closest('form');if(!form)return;
   const section=form.querySelector('[data-macroarea-invoice]');
   if(section)section.hidden=select.value!=='W';
+  const method=form.querySelector('select[name$="_modalita"]');
+  if(method)method.required=select.value!=='D';
 }
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('select[name$="_circuito"]').forEach(ppmSyncMacroareaInvoiceSection);
+});
 function ppmLocalDateValue(){
   const today=new Date(),offset=today.getTimezoneOffset()*60000;
   return new Date(today.getTime()-offset).toISOString().slice(0,10);
@@ -3605,6 +3613,8 @@ class App(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/bilanci/movimenti/(\d+)/elimina-conferma",path)
         if match: return self.balance_movement_delete(user,int(match.group(1)))
         if path == "/bilanci/movimenti/elimina-conferma-storico": return self.balance_legacy_movement_delete(user)
+        match = re.fullmatch(r"/bilanci/movimenti-eliminati/(\d+)/ripristina",path)
+        if match: return self.balance_movement_deletion_restore(user,int(match.group(1)))
         if path == "/calendario/nuovo": return self.save_calendar_event(user)
         match = re.fullmatch(r"/calendario/(\d+)/modifica",path)
         if match: return self.save_calendar_event(user,int(match.group(1)))
@@ -4063,6 +4073,7 @@ class App(BaseHTTPRequestHandler):
         if value("uscita_creata")=="1":notice='<div class="flash">Uscita registrata correttamente.</div>'
         if value("entrata_creata")=="1":notice='<div class="flash">Entrata registrata correttamente.</div>'
         if value("movimento_stornato")=="1":notice='<div class="flash">Movimento eliminato correttamente.</div>'
+        if value("movimento_ripristinato")=="1":notice='<div class="flash">Movimento ripristinato correttamente.</div>'
         if error:notice+=f'<div class="flash warning">{esc(error)}</div>'
         cards_html=f'<section class="balance-grid" aria-label="Riepilogo Bilanci">{"".join(cards)}</section>'
         details_html=f'''<section id="balanceDetails" class="section balance-details" data-selected-balance-section="{esc(selected)}">
@@ -4115,15 +4126,20 @@ class App(BaseHTTPRequestHandler):
         </div>'''
         manual_toolbar='''<div class="actions balance-manual-toolbar"><button class="btn" type="button" onclick="const p=document.getElementById('balanceManualIncome');p.open=true;p.scrollIntoView({behavior:'smooth',block:'start'})">Registra entrata</button><button class="btn" type="button" onclick="const p=document.getElementById('balanceManualExpense');p.open=true;p.scrollIntoView({behavior:'smooth',block:'start'})">Registra uscita</button></div>'''
         if recent_deletions:
+            deletion_action=lambda row:(
+                f'<span class="badge">Ripristinato {esc(date_it(row["restored_at"][:10]))}</span>'
+                if row["restored_at"] else
+                f'''<form method="post" action="/bilanci/movimenti-eliminati/{row["id"]}/ripristina" onsubmit="return confirm('Ripristinare questo movimento esattamente come era prima della eliminazione?')"><input type="hidden" name="return_to" value="{esc(return_to)}"><button class="btn ghost" type="submit">Ripristina</button></form>'''
+            )
             deletion_rows="".join(
                 f'''<tr><td>{esc(date_it(row["movement_date"]))}</td><td>{esc(row["movement_type"])}</td><td>{esc(row["category"])}</td>'''
                 f'''<td>{money_cents_it(row["amount_cents"])}</td><td>{esc(row["practice_number_snapshot"] or "-")}</td>'''
                 f'''<td>{esc(row["description"] or "-")}</td><td>{esc(deleters.get(row["deleted_by"],"-"))}</td>'''
-                f'''<td>{esc(date_it(row["deleted_at"][:10]))}</td></tr>'''
+                f'''<td>{esc(date_it(row["deleted_at"][:10]))}</td><td>{deletion_action(row)}</td></tr>'''
                 for row in recent_deletions
             )
             deletions_html=f'''<details class="section balance-expense balance-recent-deletions"><summary>Movimenti eliminati di recente ({len(recent_deletions)})</summary>
-              <div class="tablebox"><table><thead><tr><th>Data movimento</th><th>Tipo</th><th>Categoria</th><th>Importo</th><th>Pratica</th><th>Descrizione</th><th>Eliminato da</th><th>Eliminato il</th></tr></thead><tbody>{deletion_rows}</tbody></table></div>
+              <div class="tablebox"><table><thead><tr><th>Data movimento</th><th>Tipo</th><th>Categoria</th><th>Importo</th><th>Pratica</th><th>Descrizione</th><th>Eliminato da</th><th>Eliminato il</th><th>Azione</th></tr></thead><tbody>{deletion_rows}</tbody></table></div>
             </details>'''
         else:
             deletions_html=''
@@ -4242,18 +4258,33 @@ class App(BaseHTTPRequestHandler):
         the row for real, then recomputes payment_status/deposit/
         remaining_balance/remaining_final on its practice from whatever
         payment_movements remain — same recompute already used when a
-        macroarea payment is removed from the Pagamento popover."""
+        macroarea payment is removed from the Pagamento popover. Returns a
+        snapshot of everything removed/changed so the caller can log it for
+        Bilanci's undo-delete panel."""
         pid=pm["practice_id"]
         practice=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+        snapshot={
+            "payment_movement":{key:pm[key] for key in pm.keys() if key!="id"},
+            "invoice":None,"invoice_id":None,
+            "practice_before":(
+                {key:practice[key] for key in ("payment_status","deposit","deposit_final","remaining_balance","remaining_final")}
+                if practice else None
+            ),
+        }
         invoice_link=c.execute("SELECT invoice_id FROM movement_invoice_links WHERE payment_movement_id=?",(pm["id"],)).fetchone()
         c.execute("DELETE FROM movement_invoice_links WHERE payment_movement_id=?",(pm["id"],))
         if invoice_link:
             remaining_links=c.execute("SELECT COUNT(*) n FROM movement_invoice_links WHERE invoice_id=?",(invoice_link["invoice_id"],)).fetchone()["n"]
             if remaining_links==0:
+                invoice_row=c.execute("SELECT * FROM movement_invoices WHERE id=?",(invoice_link["invoice_id"],)).fetchone()
+                if invoice_row:
+                    snapshot["invoice"]={key:invoice_row[key] for key in invoice_row.keys() if key!="id"}
                 c.execute("DELETE FROM movement_invoices WHERE id=?",(invoice_link["invoice_id"],))
+            else:
+                snapshot["invoice_id"]=invoice_link["invoice_id"]
         c.execute("DELETE FROM payment_movements WHERE id=?",(pm["id"],))
         if not practice:
-            return
+            return snapshot
         old_status=practice["payment_status"] or "Da saldare"
         has_acconto=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'acconto%' LIMIT 1",(pid,)).fetchone())
         has_saldo=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'saldo%' LIMIT 1",(pid,)).fetchone())
@@ -4286,6 +4317,7 @@ class App(BaseHTTPRequestHandler):
                 "INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",
                 (pid,"Pagamento",old_status,f"{new_status} · movimento eliminato",user_id,stamp),
             )
+        return snapshot
 
     def balance_movement_delete(self,user,movement_id):
         """Permanently delete a real balance_movements row (a genuine SQL
@@ -4299,19 +4331,22 @@ class App(BaseHTTPRequestHandler):
                 if not movement:
                     raise BalanceError("Movimento non trovato.")
                 macroarea={"Acconto":"acconto","Saldo":"saldo","Incasso completo":"saldo"}.get(movement["movement_type"])
+                pm_snapshot={}
                 if movement["practice_id"] and macroarea:
                     pm=c.execute(
                         "SELECT * FROM payment_movements WHERE practice_id=? AND payment_type LIKE ? ORDER BY id DESC LIMIT 1",
                         (movement["practice_id"],f"{macroarea}%"),
                     ).fetchone()
                     if pm:
-                        self.delete_practice_payment_movement(c,pm,user["id"])
+                        pm_snapshot=self.delete_practice_payment_movement(c,pm,user["id"]) or {}
+                snapshot={"movement":{key:movement[key] for key in movement.keys() if key!="id"},**pm_snapshot}
                 log_balance_movement_deletion(
                     c,movement_date=movement["movement_date"],category=movement["category"],
                     ledger_section=movement["ledger_section"],movement_type=movement["movement_type"],
                     amount_cents=movement["amount_cents"],payment_method=movement["payment_method"],
                     description=movement["description"],practice_id=movement["practice_id"],
                     practice_number_snapshot=movement["practice_number_snapshot"],deleted_by=user["id"],
+                    deletion_kind="movement",snapshot=snapshot,
                 )
                 delete_balance_movement(c,movement_id=movement_id)
         except BalanceError as exc:
@@ -4336,19 +4371,13 @@ class App(BaseHTTPRequestHandler):
                 )
                 if not movement:
                     raise BalanceError("Movimento non trovato.")
-                log_balance_movement_deletion(
-                    c,movement_date=movement.movement_date,category=movement.category,
-                    ledger_section=movement.ledger_section,movement_type=movement.movement_type,
-                    amount_cents=movement.amount_cents,payment_method=movement.payment_method,
-                    description=movement.description,practice_id=movement.practice_id,
-                    practice_number_snapshot=movement.practice_number_snapshot,deleted_by=user["id"],
-                )
                 if movement.id>-1000000000:
                     # backed by a real payment_movements row: its id is -movement.id
                     pm=c.execute("SELECT * FROM payment_movements WHERE id=?",(-movement.id,)).fetchone()
                     if not pm:
                         raise BalanceError("Movimento non trovato.")
-                    self.delete_practice_payment_movement(c,pm,user["id"])
+                    snapshot=self.delete_practice_payment_movement(c,pm,user["id"]) or {}
+                    deletion_kind="payment_movement"
                 else:
                     # practice predates payment_movements entirely (its deposit/
                     # saldo is stored directly on the practices row, with no
@@ -4356,6 +4385,8 @@ class App(BaseHTTPRequestHandler):
                     # existing legacy-void mechanism, which correctly removes it
                     # from the ledger view and from the Bilanci totals without
                     # mutating decades-old practice columns directly.
+                    snapshot={"legacy_key":legacy_key}
+                    deletion_kind="legacy_void"
                     create_balance_legacy_reversal(
                         c,
                         legacy_key=legacy_key,
@@ -4370,10 +4401,32 @@ class App(BaseHTTPRequestHandler):
                         source="manual_void",
                         created_by=user["id"],
                     )
+                log_balance_movement_deletion(
+                    c,movement_date=movement.movement_date,category=movement.category,
+                    ledger_section=movement.ledger_section,movement_type=movement.movement_type,
+                    amount_cents=movement.amount_cents,payment_method=movement.payment_method,
+                    description=movement.description,practice_id=movement.practice_id,
+                    practice_number_snapshot=movement.practice_number_snapshot,deleted_by=user["id"],
+                    deletion_kind=deletion_kind,snapshot=snapshot,
+                )
         except BalanceError as exc:
             return self.balances_page(user,error=str(exc))
         separator="&" if "?" in return_to else "?"
         self.redirect(f"{return_to}{separator}movimento_stornato=1")
+
+    def balance_movement_deletion_restore(self,user,deletion_id):
+        """Undo one entry from Bilanci's 'movimenti eliminati di recente'
+        panel: puts the movement (and any linked payment_movements/invoice
+        rows and practice payment columns) back exactly as they were before,
+        via restore_movement_deletion's saved snapshot."""
+        return_to=safe_return_path(self.form().get("return_to"),"/bilanci")
+        separator="&" if "?" in return_to else "?"
+        try:
+            with db() as c:
+                restore_balance_movement_deletion(c,deletion_id=deletion_id,restored_by=user["id"])
+        except (MovementNotFoundError,InvalidMovementError) as exc:
+            return self.balances_page(user,error=str(exc))
+        self.redirect(f"{return_to}{separator}movimento_ripristinato=1")
 
     def calendar_operator_avatar(self,operator_name,size="md",color_hex=None):
         if not operator_name:return ''
@@ -7338,7 +7391,10 @@ class App(BaseHTTPRequestHandler):
             return "Cambio di stato pagamento non valido."
         if not paid_at or not re.fullmatch(r"\d{4}-\d{2}-\d{2}",paid_at):
             return "Indica la data effettiva dell'incasso."
-        if method not in PAYMENT_METHODS or not method:
+        has_total_d=(channel=="D") if channel in ("W","D") else uses_total_d(practice)
+        if method and method not in PAYMENT_METHODS:
+            return "Seleziona il metodo di pagamento."
+        if not has_total_d and not method:
             return "Seleziona il metodo di pagamento."
         amount=round(money_value(amount),2)
         if amount<=0:
@@ -7352,7 +7408,6 @@ class App(BaseHTTPRequestHandler):
             return f"Per impostare Pagato, registra esattamente la rimanenza di {money_it(remaining)}."
         if new_status=="Acconto" and amount>=remaining-0.004:
             return "Un acconto deve essere inferiore alla rimanenza; per chiudere il pagamento seleziona Pagato."
-        has_total_d=(channel=="D") if channel in ("W","D") else uses_total_d(practice)
         is_collaborator=(practice["request_origin"] or "")=="Collaboratore" or bool(practice["collaborator_id"])
         movement_type="acconto" if new_status=="Acconto" else "saldo"
         category="Collaboratori" if is_collaborator else ("D" if has_total_d else "W")
@@ -7618,7 +7673,7 @@ class App(BaseHTTPRequestHandler):
         if not initial_payment_amount and initial_payment_status=="Pagato":
             initial_payment_amount=f"{effective_total(d):.2f}"
         if initial_payment_status in ("Acconto","Pagato") and d.get("use_voucher")!="Si":
-            if not initial_payment_amount or not economic_at or not d.get("payment_method"):
+            if not initial_payment_amount or not economic_at or (not uses_total_d(d) and not d.get("payment_method")):
                 return self.new_page(user,draft=payment_draft(),error="Per registrare un incasso indica importo, data e metodo di pagamento.")
             try:
                 date.fromisoformat(economic_at)
@@ -8184,7 +8239,10 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         if channel not in ("W","D"):
             error="Seleziona il circuito (W o D)."
             return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
-        if method not in PAYMENT_METHODS or not method:
+        if method and method not in PAYMENT_METHODS:
+            error="Seleziona il metodo di pagamento."
+            return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
+        if channel!="D" and not method:
             error="Seleziona il metodo di pagamento."
             return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
         if channel!="W":

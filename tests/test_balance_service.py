@@ -259,6 +259,37 @@ class BalanceServiceTests(unittest.TestCase):
         ).fetchone()[0]
         self.assertEqual(count, 1)
 
+    def test_legacy_reversal_with_the_old_stale_source_is_still_recognized_as_technical(self):
+        # An earlier, buggy build of Bilanci's legacy-delete fallback wrote
+        # these reversals with source="manual_delete" instead of the
+        # recognized "manual_void". create_legacy_reversal is idempotent by
+        # key, so a retry after the fix can't relabel an already-stored row:
+        # TECHNICAL_REVERSAL_SOURCES must still recognize the old value so
+        # this pre-existing stale data disappears from the default view too,
+        # without any migration.
+        stale = balance_service.create_legacy_reversal(
+            self.connection,
+            legacy_key="historical-practice:9:deposit",
+            amount_cents=10000,
+            category="D",
+            ledger_section="Entrata",
+            movement_date="2026-07-10",
+            practice_id=9,
+            practice_number_snapshot="CR-000009",
+            description="Eliminazione manuale: Acconto",
+            source="manual_delete",
+            created_by=1,
+        )
+        default_view = balance_service.get_movements(
+            self.connection, filters=balance_service.normalize_filters()
+        )
+        self.assertNotIn(stale, default_view)
+        audit_view = balance_service.get_movements(
+            self.connection,
+            filters=balance_service.normalize_filters(include_technical=True),
+        )
+        self.assertIn(stale, audit_view)
+
     def test_database_rejects_direct_update_but_allows_delete(self):
         movement = self.movement()
         with self.assertRaisesRegex(sqlite3.IntegrityError, "append-only"):
