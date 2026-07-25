@@ -3480,7 +3480,33 @@ class App(BaseHTTPRequestHandler):
         if not user: self.redirect("/login")
         return user
 
+    def handle_uncaught_error(self,exc):
+        """A route handler raised something that isn't already turned into a
+        visible error page (BalanceError, sqlite3.Error, etc. are already
+        caught closer to where they happen). Without this, do_GET/do_POST had
+        no top-level exception handling at all: socketserver's default
+        handle_error just prints the traceback and drops the connection with
+        zero HTTP response — from the browser this looks exactly like
+        "clicked the button, nothing happened, no error", which is very
+        likely why some failures in this app have been so hard to pin down."""
+        print(f"[UNCAUGHT] {getattr(self,'command','')} {self.path}\n{traceback.format_exc()}",flush=True)
+        try:
+            self.error_page(
+                "Errore imprevisto",
+                f"Si è verificato un errore tecnico e l'operazione non è stata completata "
+                f"({type(exc).__name__}: {exc}). Riprova; se il problema persiste, segnala "
+                f"questo messaggio così possiamo trovare la causa esatta nei log.",
+            )
+        except Exception:
+            pass
+
     def do_GET(self):
+        try:
+            return self._route_get()
+        except Exception as exc:
+            return self.handle_uncaught_error(exc)
+
+    def _route_get(self):
         path = urlparse(self.path).path
         if path == "/health": return self.send_text("ok")
         if path == "/cron/whatsapp": return self.whatsapp_cron()
@@ -3598,6 +3624,12 @@ class App(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self):
+        try:
+            return self._route_post()
+        except Exception as exc:
+            return self.handle_uncaught_error(exc)
+
+    def _route_post(self):
         path = urlparse(self.path).path
         if path == "/cron/whatsapp": return self.whatsapp_cron()
         if path == "/webhook/whatsapp": return self.whatsapp_webhook_receive()
