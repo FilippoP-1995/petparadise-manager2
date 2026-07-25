@@ -1096,8 +1096,19 @@ def get_movements(
     status: str | None = None,
     search: str = "",
     include_technical: bool = False,
+    restrict_practice_id: int | None = None,
 ) -> list[BalanceMovement]:
-    """Return immutable ledger rows matching the supplied inclusive filters."""
+    """Return immutable ledger rows matching the supplied inclusive filters.
+
+    restrict_practice_id narrows the legacy synthesis (see has_legacy below)
+    to a single practice via indexed lookups, instead of scanning/synthesizing
+    every practice and payment_movements row in the database just to later
+    keep one of them. Looking up a single legacy movement by key (Bilanci's
+    Elimina confirm/delete flow) used to always pay the cost of the full
+    unrestricted scan — fine on a small dataset, but on a production
+    database that has grown over months of real use this full synthesis can
+    become slow enough to make the delete confirmation appear to hang
+    indefinitely. Purely additive: omitted, behaviour is unchanged."""
     selected = filters or normalize_filters(
         date_from=date_from,
         date_to=date_to,
@@ -1226,6 +1237,10 @@ def get_movements(
             "COALESCE((SELECT display_name FROM users WHERE id=p.created_by),'')"
             if users_available else "''"
         )
+        restrict_b=" AND b.practice_id=?" if restrict_practice_id else ""
+        restrict_pm=" AND pm.practice_id=?" if restrict_practice_id else ""
+        restrict_p=" AND p.id=?" if restrict_practice_id else ""
+        restrict_args=[restrict_practice_id] if restrict_practice_id else []
         rows=connection.execute(
             f"""
             WITH unified AS (
@@ -1248,7 +1263,7 @@ def get_movements(
                 lower({new_operator}) AS _operator_name
               FROM balance_movements b
               LEFT JOIN practices p ON p.id=b.practice_id
-              WHERE {ledger_visibility}
+              WHERE {ledger_visibility}{restrict_b}
 
               UNION ALL
 
@@ -1289,7 +1304,7 @@ def get_movements(
                 AND (
                   lower(pm.payment_type) LIKE 'acconto%'
                   OR lower(pm.payment_type) LIKE 'saldo%'
-                )
+                ){restrict_pm}
                 AND NOT EXISTS(
                   SELECT 1 FROM balance_movements existing
                   WHERE existing.practice_id=pm.practice_id
@@ -1342,7 +1357,7 @@ def get_movements(
               FROM practices p
               WHERE p.payment_status IN ('Acconto','Pagato')
                 AND date(p.deposit_paid_at) IS NOT NULL
-                AND {deposit_cents_sql}>0
+                AND {deposit_cents_sql}>0{restrict_p}
                 AND NOT EXISTS(
                   SELECT 1 FROM payment_movements pm
                   WHERE pm.practice_id=p.id AND pm.amount>0
@@ -1395,7 +1410,7 @@ def get_movements(
               FROM practices p
               WHERE p.payment_status='Pagato'
                 AND date(p.paid_at) IS NOT NULL
-                AND {paid_amount_sql}>0
+                AND {paid_amount_sql}>0{restrict_p}
                 AND NOT EXISTS(
                   SELECT 1 FROM payment_movements pm
                   WHERE pm.practice_id=p.id AND pm.amount>0
@@ -1418,7 +1433,7 @@ def get_movements(
             {where}
             ORDER BY m.movement_date DESC,m.id DESC
             """,
-            arguments,
+            restrict_args+restrict_args+restrict_args+restrict_args+arguments,
         ).fetchall()
     else:
         if selected.collaborator_id:
@@ -1439,6 +1454,31 @@ def get_movements(
         ).fetchall()
     movements = [_row_to_movement(row) for row in rows]
     return [movement for movement in movements if movement is not None]
+
+
+def practice_id_for_legacy_key(
+    connection: sqlite3.Connection, legacy_key: str
+) -> int | None:
+    """Resolve which practice a legacy synthesized movement's key belongs to,
+    via a single indexed lookup, so callers can pass restrict_practice_id to
+    get_movements instead of scanning/synthesizing the whole ledger just to
+    find one row. Returns None for a key that doesn't parse or doesn't match
+    an existing row — callers should treat that as 'movement not found'
+    rather than falling back to an unrestricted scan."""
+    if legacy_key.startswith("legacy-payment-movement:"):
+        pm_id_text = legacy_key.split(":", 1)[1]
+        if not pm_id_text.isdigit():
+            return None
+        row = connection.execute(
+            "SELECT practice_id FROM payment_movements WHERE id=?", (int(pm_id_text),)
+        ).fetchone()
+        return row["practice_id"] if row else None
+    if legacy_key.startswith("historical-practice:"):
+        parts = legacy_key.split(":")
+        if len(parts) != 3 or not parts[1].isdigit() or parts[2] not in ("deposit", "balance"):
+            return None
+        return int(parts[1])
+    return None
 
 
 def create_manual_expense(

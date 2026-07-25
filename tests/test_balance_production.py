@@ -10,6 +10,7 @@ from balance_service import (
     get_movements,
     get_recent_movement_deletions,
     normalize_filters,
+    practice_id_for_legacy_key,
 )
 
 
@@ -364,6 +365,53 @@ class ProductionBalanceModuleTests(unittest.TestCase):
         self.handler.balances_page=lambda user,error="",expense_draft=None:pages.append(error)
         self.handler.balance_movement_delete(self.admin,movement.id)
         self.assertIn("non trovato",pages[-1])
+
+    def test_restrict_practice_id_finds_the_same_single_row_without_scanning_others(self):
+        # Bilanci's Elimina confirm/delete flow used to always pay for a full,
+        # unbounded scan+synthesis of every practice and payment_movements
+        # row just to find the one the user clicked on. On a small test
+        # database that's invisible; on a production database that has grown
+        # over months of real use it can make the confirmation appear to
+        # hang indefinitely. restrict_practice_id must return exactly the
+        # same single row as the unrestricted scan, and nothing from any
+        # other practice.
+        legacy_key=f"historical-practice:{self.w_id}:deposit"
+        with app.db() as connection:
+            resolved_practice_id=practice_id_for_legacy_key(connection,legacy_key)
+            self.assertEqual(resolved_practice_id,self.w_id)
+            unrestricted=get_movements(connection,filters=normalize_filters(include_technical=True))
+            restricted=get_movements(
+                connection,filters=normalize_filters(include_technical=True),
+                restrict_practice_id=resolved_practice_id,
+            )
+        unrestricted_match=next((m for m in unrestricted if m.idempotency_key==legacy_key),None)
+        restricted_match=next((m for m in restricted if m.idempotency_key==legacy_key),None)
+        self.assertIsNotNone(unrestricted_match)
+        self.assertEqual(unrestricted_match,restricted_match)
+        self.assertTrue(all(m.practice_id==self.w_id for m in restricted))
+        self.assertGreater(len(unrestricted),len(restricted))
+
+    def test_practice_id_for_legacy_key_parses_both_formats_and_rejects_garbage(self):
+        with app.db() as connection:
+            pm_id=connection.execute(
+                "SELECT id FROM payment_movements WHERE practice_id=?",(self.collab_id,)
+            ).fetchone()["id"]
+            self.assertEqual(
+                practice_id_for_legacy_key(connection,f"legacy-payment-movement:{pm_id}"),
+                self.collab_id,
+            )
+            self.assertEqual(
+                practice_id_for_legacy_key(connection,f"historical-practice:{self.w_id}:deposit"),
+                self.w_id,
+            )
+            self.assertEqual(
+                practice_id_for_legacy_key(connection,f"historical-practice:{self.d_id}:balance"),
+                self.d_id,
+            )
+            self.assertIsNone(practice_id_for_legacy_key(connection,"legacy-payment-movement:999999"))
+            self.assertIsNone(practice_id_for_legacy_key(connection,"historical-practice:abc:deposit"))
+            self.assertIsNone(practice_id_for_legacy_key(connection,"historical-practice:1:qualcosa"))
+            self.assertIsNone(practice_id_for_legacy_key(connection,"qualcosa-di-diverso:1"))
 
 
 if __name__=="__main__":
