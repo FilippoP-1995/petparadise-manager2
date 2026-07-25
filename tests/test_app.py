@@ -681,6 +681,57 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual((row["deposit_final"], row["remaining_final"]), ("100.00", "250.00"))
         self.assertEqual((row["deposit"], row["remaining_balance"]), (None, None))
 
+    def test_payment_macroarea_d_circuito_does_not_require_payment_method(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   animal_name,service_type,payment_status,total_text)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-ACCD-NOMETODO", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Mulan",
+                 "Cremazione singola", "Da saldare", "350"),
+            ).lastrowid
+        self.handler.form = lambda: {"macroarea": "acconto", "acconto_data": "2026-07-20", "acconto_totale": "100,00", "acconto_circuito": "D", "acconto_modalita": ""}
+        self.handler.headers = {}
+        redirects = []; self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.save_payment_macroarea(admin, pid)
+        self.assertTrue(redirects, "il salvataggio non deve fallire per metodo di pagamento mancante quando il circuito e' D")
+        with app.db() as conn:
+            row = conn.execute("SELECT payment_status,deposit_final FROM practices WHERE id=?", (pid,)).fetchone()
+        self.assertEqual(row["payment_status"], "Acconto")
+        self.assertEqual(row["deposit_final"], "100.00")
+
+    def test_payment_macroarea_w_circuito_still_requires_payment_method(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   animal_name,service_type,payment_status,price_cremation,total_service)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-ACCW-NOMETODO", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Rex",
+                 "Cremazione singola", "Da saldare", "200", "200"),
+            ).lastrowid
+        self.handler.form = lambda: {"macroarea": "acconto", "acconto_data": "2026-07-20", "acconto_totale": "100,00", "acconto_circuito": "W", "acconto_modalita": ""}
+        self.handler.headers = {}
+        rendered_error = []
+        self.handler.practice = lambda user, pid, error="": rendered_error.append(error)
+        self.handler.save_payment_macroarea(admin, pid)
+        self.assertIn("Seleziona il metodo di pagamento.", rendered_error)
+
+    def test_create_practice_with_total_d_does_not_require_payment_method(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        redirects = []; self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.form = lambda: {
+            "operator_name": "SERENA", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
+            "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
+            "total_text": "350", "payment_status": "Acconto", "payment_amount": "100,00",
+            "economic_at": "2026-07-20", "payment_method": "",
+        }
+        self.handler.create_practice(admin)
+        self.assertTrue(redirects, "la creazione con incasso D non deve richiedere il metodo di pagamento")
+
     def test_fare_fattura_unchecked_when_invoice_number_filled(self):
         self.assertIn("if(makeInvoice&&invoiceNumber.value.trim())makeInvoice.checked=false;", app.APP_JS)
 
@@ -2590,6 +2641,17 @@ class PetParadiseTests(unittest.TestCase):
             legacy=conn.execute("SELECT movement_category FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()
             self.assertEqual(legacy["movement_category"],"D")
 
+    def test_quick_payment_does_not_require_payment_method_when_circuit_is_d(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-QPD-NOMETODO","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Mario","Cremazione singola","Da saldare","200","200")).lastrowid
+        self.handler.form=lambda:{"payment_status":"Pagato","payment_method":"","payment_amount":"200,00","economic_at":"2026-07-24","payment_channel":"D","ajax":"1"}
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.quick_payment(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+
     def test_quick_payment_without_circuit_field_falls_back_to_practice_total_d(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
@@ -3250,6 +3312,96 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.balances_page(admin)
         self.assertIn("Movimenti eliminati di recente",log_rendered[-1])
         self.assertIn("CR-OLDLEGACY",log_rendered[-1])
+
+    def test_restore_undoes_a_real_balance_movement_delete(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            movement = app.create_balance_movement(
+                conn, amount_cents=5000, movement_date="2026-07-10", category="W",
+                ledger_section="Entrata", movement_type="Entrata manuale",
+                idempotency_key="restore-test-1", payment_method="Contanti",
+                description="Entrata da ripristinare", source="manual_income", created_by=admin["id"],
+            )
+        redirects=[];self.handler.redirect=lambda url:redirects.append(url)
+        self.handler.form=lambda:{"return_to":"/bilanci"}
+        self.handler.balance_movement_delete(admin,movement.id)
+        self.assertTrue(redirects and "movimento_stornato=1" in redirects[-1])
+        with app.db() as conn:
+            self.assertIsNone(conn.execute("SELECT 1 FROM balance_movements WHERE id=?",(movement.id,)).fetchone())
+            deletion_id=conn.execute("SELECT id FROM balance_movement_deletions ORDER BY id DESC LIMIT 1").fetchone()["id"]
+        redirects.clear()
+        self.handler.form=lambda:{"return_to":"/bilanci"}
+        self.handler.balance_movement_deletion_restore(admin,deletion_id)
+        self.assertTrue(redirects and "movimento_ripristinato=1" in redirects[-1],f"redirects={redirects}")
+        with app.db() as conn:
+            restored=conn.execute("SELECT amount_cents,description,movement_type FROM balance_movements WHERE idempotency_key=?",("restore-test-1",)).fetchone()
+        self.assertIsNotNone(restored)
+        self.assertEqual((restored["amount_cents"],restored["description"],restored["movement_type"]),(5000,"Entrata da ripristinare","Entrata manuale"))
+        # restoring the same deletion twice must fail cleanly, not crash or double-insert.
+        pages=[];self.handler.balances_page=lambda user,error="",expense_draft=None:pages.append(error)
+        self.handler.balance_movement_deletion_restore(admin,deletion_id)
+        self.assertTrue(pages and pages[-1])
+        with app.db() as conn:
+            count=conn.execute("SELECT COUNT(*) FROM balance_movements WHERE idempotency_key=?",("restore-test-1",)).fetchone()[0]
+        self.assertEqual(count,1)
+
+    def test_restore_undoes_a_payment_movements_backed_legacy_delete(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-RESTOREPM","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Bilbo","Cremazione singola","Pagato","150","150")).lastrowid
+            pm_id=conn.execute("""INSERT INTO payment_movements(practice_id,payment_type,payment_channel,payment_method,movement_category,amount,paid_at,user_id,notes,created_at)
+                           VALUES(?,?,?,?,?,?,?,?,?,?)""",(pid,"saldo","W","Contanti","W",150.0,"2026-07-10",admin["id"],"","2026-07-10T10:00:00")).lastrowid
+        with app.db() as conn:
+            movements=app.get_balance_movements(conn,filters=app.normalize_balance_filters(include_technical=True))
+        legacy_key=[m for m in movements if m.practice_id==pid and m.id<0][0].idempotency_key
+        redirects=[];self.handler.redirect=lambda url:redirects.append(url)
+        self.handler.form=lambda:{"return_to":"/bilanci","legacy_key":legacy_key}
+        self.handler.balance_legacy_movement_delete(admin)
+        self.assertTrue(redirects and "movimento_stornato=1" in redirects[-1])
+        with app.db() as conn:
+            self.assertIsNone(conn.execute("SELECT id FROM payment_movements WHERE id=?",(pm_id,)).fetchone())
+            self.assertEqual(conn.execute("SELECT payment_status FROM practices WHERE id=?",(pid,)).fetchone()["payment_status"],"Da saldare")
+            deletion_id=conn.execute("SELECT id FROM balance_movement_deletions ORDER BY id DESC LIMIT 1").fetchone()["id"]
+        redirects.clear()
+        self.handler.form=lambda:{"return_to":"/bilanci"}
+        self.handler.balance_movement_deletion_restore(admin,deletion_id)
+        self.assertTrue(redirects and "movimento_ripristinato=1" in redirects[-1],f"redirects={redirects}")
+        with app.db() as conn:
+            restored_pm=conn.execute("SELECT payment_type,amount FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()
+            practice_after=conn.execute("SELECT payment_status FROM practices WHERE id=?",(pid,)).fetchone()
+        self.assertIsNotNone(restored_pm)
+        self.assertEqual((restored_pm["payment_type"],float(restored_pm["amount"])),("saldo",150.0))
+        self.assertEqual(practice_after["payment_status"],"Pagato")
+
+    def test_restore_undoes_a_pre_payment_movements_legacy_void_delete(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,total_text,deposit_final,deposit_paid_at)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-RESTOREVOID","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Bilbo","Cremazione singola","Acconto","350","100.00","2026-07-10")).lastrowid
+        with app.db() as conn:
+            movements=app.get_balance_movements(conn,filters=app.normalize_balance_filters(include_technical=True))
+        legacy_key=[m for m in movements if m.practice_id==pid][0].idempotency_key
+        redirects=[];self.handler.redirect=lambda url:redirects.append(url)
+        self.handler.form=lambda:{"return_to":"/bilanci","legacy_key":legacy_key}
+        self.handler.balance_legacy_movement_delete(admin)
+        self.assertTrue(redirects and "movimento_stornato=1" in redirects[-1])
+        with app.db() as conn:
+            default_movements=app.get_balance_movements(conn,filters=app.normalize_balance_filters())
+        self.assertFalse(any(m.practice_id==pid for m in default_movements))
+        with app.db() as conn:
+            deletion_id=conn.execute("SELECT id FROM balance_movement_deletions ORDER BY id DESC LIMIT 1").fetchone()["id"]
+        redirects.clear()
+        self.handler.form=lambda:{"return_to":"/bilanci"}
+        self.handler.balance_movement_deletion_restore(admin,deletion_id)
+        self.assertTrue(redirects and "movimento_ripristinato=1" in redirects[-1],f"redirects={redirects}")
+        with app.db() as conn:
+            default_movements_after=app.get_balance_movements(conn,filters=app.normalize_balance_filters())
+        restored=[m for m in default_movements_after if m.practice_id==pid]
+        self.assertEqual(len(restored),1)
+        self.assertEqual(restored[0].idempotency_key,legacy_key)
 
     def test_dashboard_reminders_panel_replaces_old_flash_and_supports_full_lifecycle(self):
         with app.db() as conn:

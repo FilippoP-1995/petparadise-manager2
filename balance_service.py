@@ -123,6 +123,12 @@ TECHNICAL_REVERSAL_SOURCES: Final = (
     "amount_correction",
     "duplicate_repair",
     "manual_void",
+    # "manual_delete" was the source string used by an earlier, buggy build of
+    # the Bilanci legacy-delete fallback: rows it already wrote before the fix
+    # still carry it (create_legacy_reversal is idempotent by key, so a retry
+    # can't relabel them). Recognizing the old value too hides that stale data
+    # without any migration.
+    "manual_delete",
 )
 
 
@@ -216,6 +222,26 @@ def ensure_balance_schema(connection: sqlite3.Connection) -> None:
           ON balance_movement_deletions(deleted_at DESC);
         """
     )
+    deletion_columns={
+        (row["name"] if isinstance(row,sqlite3.Row) else row[1])
+        for row in connection.execute("PRAGMA table_info(balance_movement_deletions)")
+    }
+    if "deletion_kind" not in deletion_columns:
+        connection.execute(
+            "ALTER TABLE balance_movement_deletions ADD COLUMN deletion_kind TEXT NOT NULL DEFAULT 'movement'"
+        )
+    if "snapshot_json" not in deletion_columns:
+        connection.execute(
+            "ALTER TABLE balance_movement_deletions ADD COLUMN snapshot_json TEXT NOT NULL DEFAULT '{}'"
+        )
+    if "restored_at" not in deletion_columns:
+        connection.execute(
+            "ALTER TABLE balance_movement_deletions ADD COLUMN restored_at TEXT"
+        )
+    if "restored_by" not in deletion_columns:
+        connection.execute(
+            "ALTER TABLE balance_movement_deletions ADD COLUMN restored_by INTEGER"
+        )
 
 
 def _clean_required(value: object, field: str, max_length: int = 200) -> str:
@@ -786,23 +812,112 @@ def log_movement_deletion(
     practice_id: int | None = None,
     practice_number_snapshot: str = "",
     deleted_by: int | None = None,
-) -> None:
-    """Record a permanent-deletion audit entry for Bilanci's 'movimenti
-    eliminati di recente' panel. Purely informational, with no restore path:
-    a genuine hard delete stays genuine, this is only a log of what happened."""
-    connection.execute(
+    deletion_kind: str = "movement",
+    snapshot: dict | None = None,
+) -> int:
+    """Record a deletion in Bilanci's 'movimenti eliminati di recente' panel,
+    together with a snapshot of whatever was removed/changed so the
+    deletion can later be undone via restore_movement_deletion. The
+    underlying delete itself is still a genuine, permanent hard delete (or a
+    technical Storno for the legacy-void case) — this table only lets the
+    user reverse their own action afterwards, it is not a soft-delete flag
+    on the ledger row itself."""
+    cursor = connection.execute(
         """
         INSERT INTO balance_movement_deletions(
           movement_date,category,ledger_section,movement_type,amount_cents,
           payment_method,description,practice_id,practice_number_snapshot,
-          deleted_by,deleted_at
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
+          deleted_by,deleted_at,deletion_kind,snapshot_json
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
             str(movement_date), category, ledger_section, movement_type, int(amount_cents),
             payment_method or "", description or "", practice_id, practice_number_snapshot or "",
             deleted_by, datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            deletion_kind, json.dumps(snapshot or {}),
         ),
+    )
+    return cursor.lastrowid
+
+
+def restore_movement_deletion(
+    connection: sqlite3.Connection, *, deletion_id: int, restored_by: int | None = None
+) -> None:
+    """Undo a previous Bilanci deletion: puts the movement (and, for the
+    payment popover cases, the linked payment_movements/invoice rows and the
+    practice's payment columns) back exactly as they were before, using the
+    snapshot captured at deletion time. Refuses to restore twice."""
+    row = connection.execute(
+        "SELECT * FROM balance_movement_deletions WHERE id=?", (deletion_id,)
+    ).fetchone()
+    if row is None:
+        raise MovementNotFoundError("deletion log entry does not exist")
+    if row["restored_at"]:
+        raise InvalidMovementError("this deletion has already been restored")
+    snapshot = json.loads(row["snapshot_json"] or "{}")
+    if row["deletion_kind"] == "legacy_void":
+        legacy_key = snapshot.get("legacy_key")
+        if legacy_key:
+            connection.execute(
+                "DELETE FROM balance_movements WHERE idempotency_key=? AND movement_type=?",
+                (f"legacy-void:v1:{legacy_key}", REVERSAL_TYPE),
+            )
+    else:
+        movement_snapshot = snapshot.get("movement")
+        if movement_snapshot:
+            columns = [key for key in movement_snapshot if key != "id"]
+            placeholders = ",".join("?" for _ in columns)
+            connection.execute(
+                f"INSERT INTO balance_movements({','.join(columns)}) VALUES({placeholders})",
+                [movement_snapshot[key] for key in columns],
+            )
+        pm_snapshot = snapshot.get("payment_movement")
+        new_pm_id = None
+        if pm_snapshot:
+            columns = [key for key in pm_snapshot if key != "id"]
+            placeholders = ",".join("?" for _ in columns)
+            cursor = connection.execute(
+                f"INSERT INTO payment_movements({','.join(columns)}) VALUES({placeholders})",
+                [pm_snapshot[key] for key in columns],
+            )
+            new_pm_id = cursor.lastrowid
+        if new_pm_id:
+            invoice_snapshot = snapshot.get("invoice")
+            existing_invoice_id = snapshot.get("invoice_id")
+            if invoice_snapshot:
+                columns = [key for key in invoice_snapshot if key != "id"]
+                placeholders = ",".join("?" for _ in columns)
+                cursor = connection.execute(
+                    f"INSERT INTO movement_invoices({','.join(columns)}) VALUES({placeholders})",
+                    [invoice_snapshot[key] for key in columns],
+                )
+                connection.execute(
+                    "INSERT INTO movement_invoice_links(invoice_id,payment_movement_id) VALUES(?,?)",
+                    (cursor.lastrowid, new_pm_id),
+                )
+            elif existing_invoice_id and connection.execute(
+                "SELECT 1 FROM movement_invoices WHERE id=?", (existing_invoice_id,)
+            ).fetchone():
+                connection.execute(
+                    "INSERT INTO movement_invoice_links(invoice_id,payment_movement_id) VALUES(?,?)",
+                    (existing_invoice_id, new_pm_id),
+                )
+        practice_before = snapshot.get("practice_before")
+        if practice_before and row["practice_id"]:
+            connection.execute(
+                """UPDATE practices SET payment_status=?,deposit=?,remaining_balance=?,
+                   deposit_final=?,remaining_final=?,updated_at=? WHERE id=?""",
+                (
+                    practice_before.get("payment_status"), practice_before.get("deposit"),
+                    practice_before.get("remaining_balance"), practice_before.get("deposit_final"),
+                    practice_before.get("remaining_final"),
+                    datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                    row["practice_id"],
+                ),
+            )
+    connection.execute(
+        "UPDATE balance_movement_deletions SET restored_at=?,restored_by=? WHERE id=?",
+        (datetime.now(timezone.utc).isoformat(timespec="seconds"), restored_by, deletion_id),
     )
 
 
