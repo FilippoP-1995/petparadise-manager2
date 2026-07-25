@@ -3497,6 +3497,18 @@ class App(BaseHTTPRequestHandler):
         if not user: self.redirect("/login")
         return user
 
+    def handle_client_disconnect(self):
+        """The client (browser) closed or lost the connection before the
+        response could be written — e.g. the phone backgrounded the tab, or
+        a slow mobile connection dropped mid-request. There is no client
+        left to send anything to, so unlike handle_uncaught_error this must
+        NOT attempt error_page/send_html: doing so just raises the exact
+        same BrokenPipeError a second time while writing the error page
+        itself, which used to escape uncaught and get logged as if it were
+        a real bug. Log it quietly at low severity and stop — nothing more
+        can or should be done for a connection that is already gone."""
+        print(f"[CLIENT_DISCONNESSO] {getattr(self,'command','')} {self.path}",flush=True)
+
     def handle_uncaught_error(self,exc):
         """A route handler raised something that isn't already turned into a
         visible error page (BalanceError, sqlite3.Error, etc. are already
@@ -3520,6 +3532,8 @@ class App(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
             return self._route_get()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            return self.handle_client_disconnect()
         except Exception as exc:
             return self.handle_uncaught_error(exc)
 
@@ -3643,6 +3657,8 @@ class App(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             return self._route_post()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            return self.handle_client_disconnect()
         except Exception as exc:
             return self.handle_uncaught_error(exc)
 
