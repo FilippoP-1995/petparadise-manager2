@@ -598,6 +598,89 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("e.target.name === 'deposit_final'", app.APP_JS)
         self.assertNotIn("definitive > 0 ? definitive : ppmNumber(totalField ? totalField.value : 0);\n  const remaining", app.APP_JS)
 
+    def test_d_circuito_acconto_shows_correctly_in_riepilogo_dashboard_and_archive(self):
+        # Regression test for a reported bug: a practice created with Totale
+        # D=350, Acconto D=100 (Rimanenza D=250 correctly computed at
+        # creation) later showed Acconto D=0,00 and Rimanenza D=350,00
+        # everywhere (Riepilogo, Dashboard, Archivio), because those pages
+        # always read the W columns (deposit/remaining_balance) instead of
+        # the D ones (deposit_final/remaining_final) whenever the practice
+        # actually uses circuito D. This is the exact scenario from the bug
+        # report (Mulan, CR-000075), reproduced with a fresh test practice.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   animal_name,service_type,payment_status,price_cremation,total_service,total_text,deposit,deposit_final,remaining_balance,remaining_final)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-ACCD", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Mulan",
+                 "Cremazione singola", "Acconto", "350", "350", "350", "0.00", "100", "0.00", "250.00"),
+            ).lastrowid
+        rendered = []; self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.practice(admin, pid)
+        page = rendered[-1]
+        self.assertIn('<small>Acconto D</small><b>€ 100,00</b>', page)
+        self.assertIn('<small>Rimanenza D</small><b>€ 250,00</b>', page)
+        self.handler.path = "/"
+        self.handler.dashboard(admin)
+        dashboard_page = rendered[-1]
+        self.assertIn('<small>Acconto D</small><br>€ 100,00', dashboard_page)
+        self.assertIn('<small>Rimanenza D</small><br>€ 250,00', dashboard_page)
+        self.handler.path = "/archivio/pratiche"
+        self.handler.archive(admin)
+        archive_page = rendered[-1]
+        self.assertIn('<small>Acconto D</small><br>€ 100,00', archive_page)
+        self.assertIn('<small>Rimanenza D</small><br>€ 250,00', archive_page)
+        self.assertIn('<th>Acconto</th><th>Rimanenza</th>', archive_page)
+
+    def test_w_circuito_acconto_still_shows_correctly_after_the_fix(self):
+        # Same scenario but on circuito W, to confirm the fix did not change
+        # already-correct W behaviour.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   animal_name,service_type,payment_status,price_cremation,total_service,deposit,remaining_balance)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-ACCW", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Rex",
+                 "Cremazione singola", "Acconto", "350", "350", "100", "250.00"),
+            ).lastrowid
+        rendered = []; self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.practice(admin, pid)
+        page = rendered[-1]
+        self.assertIn('<small>Acconto W</small><b>€ 100,00</b>', page)
+        self.assertIn('<small>Rimanenza W</small><b>€ 250,00</b>', page)
+        self.handler.path = "/archivio/pratiche"
+        self.handler.archive(admin)
+        archive_page = rendered[-1]
+        self.assertIn('<small>Acconto W</small><br>€ 100,00', archive_page)
+        self.assertIn('<small>Rimanenza W</small><br>€ 250,00', archive_page)
+
+    def test_payment_macroarea_d_circuito_updates_deposit_final_not_deposit(self):
+        # Regression test for a related write-side bug: registering an
+        # acconto with circuito D through the Pagamento popover always wrote
+        # the amount into the W columns (deposit/remaining_balance), never
+        # into deposit_final/remaining_final, silently corrupting a
+        # D-circuito practice's acconto every time the popover was used.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   animal_name,service_type,payment_status,total_text)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-ACCD-POP", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Mulan",
+                 "Cremazione singola", "Da saldare", "350"),
+            ).lastrowid
+        self.handler.form = lambda: {"macroarea": "acconto", "acconto_data": "2026-07-20", "acconto_totale": "100,00", "acconto_circuito": "D", "acconto_modalita": "Contanti"}
+        self.handler.headers = {}
+        redirects = []; self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.save_payment_macroarea(admin, pid)
+        with app.db() as conn:
+            row = conn.execute("SELECT payment_status,deposit,remaining_balance,deposit_final,remaining_final FROM practices WHERE id=?", (pid,)).fetchone()
+        self.assertEqual(row["payment_status"], "Acconto")
+        self.assertEqual((row["deposit_final"], row["remaining_final"]), ("100.00", "250.00"))
+        self.assertEqual((row["deposit"], row["remaining_balance"]), (None, None))
+
     def test_fare_fattura_unchecked_when_invoice_number_filled(self):
         self.assertIn("if(makeInvoice&&invoiceNumber.value.trim())makeInvoice.checked=false;", app.APP_JS)
 
@@ -967,7 +1050,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(app.received_amount(whisky), 330)
         self.assertEqual(app.outstanding_amount(whisky), 0)
 
-        partial = dict(whisky, deposit="100", payment_status="Acconto")
+        partial = dict(whisky, deposit_final="100", payment_status="Acconto")
         self.assertEqual(app.received_amount(partial), 100)
         self.assertEqual(app.outstanding_amount(partial), 230)
 
@@ -2210,8 +2293,11 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.archive(admin)
         body=rendered[-1]
         self.assertIn("<th>Totale W</th>",body)
-        self.assertIn("<th>Acconto W</th>",body)
-        self.assertIn("<th>Rimanenza W</th>",body)
+        # The header no longer hardcodes a circuito: each row already shows
+        # its own "Acconto W"/"Acconto D" label matching whichever circuito
+        # that practice actually uses.
+        self.assertIn("<th>Acconto</th>",body)
+        self.assertIn("<th>Rimanenza</th>",body)
 
     def test_catalog_sent_and_estremi_sent_ajax_and_invoice_quick_save(self):
         with app.db() as conn:
@@ -2947,10 +3033,14 @@ class PetParadiseTests(unittest.TestCase):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();uid=admin["id"]
             def practice(code,name,status,pickup,total,total_d="",deposit="0",remaining="0",payment="Da saldare",created=old_day):
+                # A practice's acconto/rimanenza live in deposit/remaining_balance
+                # for circuito W, or deposit_final/remaining_final for circuito D
+                # (whichever total_d being set implies) — never both.
+                deposit_w,remaining_w,deposit_d,remaining_d=("0","0",deposit,remaining) if total_d else (deposit,remaining,"0","0")
                 return conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,created_at,updated_at,created_by,
-                                      animal_name,service_type,payment_status,total_service,price_cremation,total_text,deposit,remaining_balance,data_complete)
-                                      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)""",
-                                    (code,"Privato","Livorno",status,pickup,created+"T08:00:00",stamp,uid,name,"Cremazione singola",payment,total,total,total_d,deposit,remaining)).lastrowid
+                                      animal_name,service_type,payment_status,total_service,price_cremation,total_text,deposit,remaining_balance,deposit_final,remaining_final,data_complete)
+                                      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)""",
+                                    (code,"Privato","Livorno",status,pickup,created+"T08:00:00",stamp,uid,name,"Cremazione singola",payment,total,total,total_d,deposit_w,remaining_w,deposit_d,remaining_d)).lastrowid
             w_open=practice("CR-DASH-W","Ritiro oggi W","Ritirato",today_text,"300","","100","200")
             d_open=practice("CR-DASH-D","Ritiro oggi D","Ritirato",today_text,"400","330","100","230")
             paid=practice("CR-DASH-PAID","Consegnata oggi","Consegnato",week_day,"300","","100","0","Pagato")
