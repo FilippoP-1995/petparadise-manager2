@@ -3610,26 +3610,42 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(redirects, [])
         self.assertEqual(dashboard_calls[0]["id"], serena["id"])
 
-    def test_payment_area_shows_w_before_d_and_w_only_invoice_sub_fields(self):
+    def test_payment_area_lists_all_w_fields_before_all_d_fields_with_qualified_labels(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
         form_html = app.App._fields_html(self.handler, None, admin)
-        acconto_w_pos = form_html.index('name="acconto_w_totale"')
-        acconto_d_pos = form_html.index('name="acconto_d_totale"')
-        saldo_w_pos = form_html.index('name="saldo_w_totale"')
-        saldo_d_pos = form_html.index('name="saldo_d_totale"')
-        self.assertLess(acconto_w_pos, acconto_d_pos, "Acconto W deve precedere Acconto D nella nuova area Pagamento")
-        self.assertLess(saldo_w_pos, saldo_d_pos, "Saldo W deve precedere Saldo D nella nuova area Pagamento")
-        self.assertIn('name="acconto_w_fattura_numero"', form_html)
-        self.assertIn('name="saldo_w_fattura_numero"', form_html)
+        ordered_markers = [
+            'id="paymentEstremiRow"',
+            'id="paymentTotaleWRow"',
+            'name="acconto_w_totale"', 'name="acconto_w_data"', 'name="acconto_w_modalita"',
+            'name="acconto_w_fattura_numero"', 'name="acconto_w_fattura_data"', 'name="acconto_w_fattura_totale"',
+            'name="saldo_w_totale"', 'name="saldo_w_data"', 'name="saldo_w_modalita"',
+            'name="saldo_w_fattura_numero"', 'name="saldo_w_fattura_data"', 'name="saldo_w_fattura_totale"',
+            'id="paymentTotaleDRow"',
+            'name="acconto_d_totale"', 'name="acconto_d_data"',
+            'name="saldo_d_totale"', 'name="saldo_d_data"',
+        ]
+        positions = [form_html.index(marker) for marker in ordered_markers]
+        self.assertEqual(positions, sorted(positions), "i campi della sezione Pagamento devono seguire l'ordine: estremi, Totale W, Acconto W, Rimanenza W, Totale D, Acconto D, Rimanenza D")
+        self.assertIn('<label>Acconto W €</label>', form_html)
+        self.assertIn('<label>Data Acconto W</label>', form_html)
+        self.assertIn('<label>Metodo di pagamento Acconto W</label>', form_html)
+        self.assertIn('<label>Numero fattura Acconto W</label>', form_html)
+        self.assertIn('<label>Data fattura Acconto W</label>', form_html)
+        self.assertIn('<label>Totale fattura Acconto W €</label>', form_html)
+        self.assertIn('<label>Rimanenza W €</label>', form_html)
+        self.assertIn('<label>Data Rimanenza W</label>', form_html)
+        self.assertIn('<label>Metodo di pagamento Rimanenza W</label>', form_html)
+        self.assertIn('<label>Numero fattura Rimanenza W</label>', form_html)
+        self.assertIn('<label>Acconto D €</label>', form_html)
+        self.assertIn('<label>Data Acconto D</label>', form_html)
+        self.assertIn('<label>Rimanenza D €</label>', form_html)
+        self.assertIn('<label>Data Rimanenza D</label>', form_html)
+        # The D circuito never shows/requires a payment method or an invoice.
+        self.assertNotIn('name="acconto_d_modalita"', form_html)
+        self.assertNotIn('name="saldo_d_modalita"', form_html)
         self.assertNotIn('name="acconto_d_fattura_numero"', form_html)
         self.assertNotIn('name="saldo_d_fattura_numero"', form_html)
-        self.assertIn('<h4>Rimanenza W</h4>', form_html)
-        self.assertIn('<h4>Rimanenza D</h4>', form_html)
-        self.assertNotIn('<h4>Saldo W</h4>', form_html)
-        self.assertNotIn('<h4>Saldo D</h4>', form_html)
-        self.assertIn('id="paymentEstremiRow"', form_html)
-        self.assertIn('id="paymentTotalsRow"', form_html)
         # Relocation JS only fires on the create page (not the shared edit form).
         self.assertIn("if(!isEditForm){", app.APP_JS)
         self.assertIn("paymentSection.append(wrap)", app.APP_JS)
