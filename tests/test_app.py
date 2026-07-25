@@ -3670,6 +3670,20 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("if(saldoD && saldoD.dataset.autoFilled!=='0') saldoD.value=ppmFormat(Math.max(0,totalD-accontoD));", app.APP_JS)
         self.assertIn("if(e.target && (e.target.name === 'saldo_w_totale' || e.target.name === 'saldo_d_totale')) e.target.dataset.autoFilled='0';", app.APP_JS)
 
+    def test_payment_area_main_fields_are_visually_more_prominent_than_their_sub_fields(self):
+        # TOTALE W/D, ACCONTO W/D and RIMANENZA W/D must read as the main
+        # voices; Data/Metodo/Numero fattura/etc. are their sub-voci and
+        # must look visually subordinate (smaller, muted), purely via CSS —
+        # no markup/order/logic change.
+        self.assertIn(
+            '#paymentTotaleWRow .field label,#paymentTotaleDRow .field label,.payment-macroarea-channel .fields .field:first-child label{font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.03em}',
+            app.CSS,
+        )
+        self.assertIn(
+            '.payment-macroarea-channel .fields .field:not(:first-child) label{font-size:11px;font-weight:600;color:var(--muted)}',
+            app.CSS,
+        )
+
     def test_service_type_is_required_and_not_preselected(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
