@@ -1531,6 +1531,7 @@ document.addEventListener('input', function(e){
   }
   if(e.target && e.target.matches('[data-preventivo-sum="1"]')) updatePreventivoTotal();
   if(e.target && (e.target.name === 'deposit' || e.target.name === 'total_service' || e.target.name === 'total_text' || e.target.name === 'deposit_final')) updateRemainingBalance();
+  if(e.target && (e.target.name === 'saldo_w_totale' || e.target.name === 'saldo_d_totale')) e.target.dataset.autoFilled='0';
   if(e.target && ['total_service','total_text','acconto_w_totale','acconto_d_totale'].includes(e.target.name)) updateMacroRimanenza();
 });
 function setupZipLookup(){
@@ -1900,12 +1901,18 @@ function setupBudgetExtras(){
   }
 }
 function updateMacroRimanenza(){
+  // SALDO W/D (relabeled "Rimanenza W/D") auto-fill with Totale-Acconto for
+  // their own circuito, same live-recompute-until-manually-edited pattern
+  // already used for the invoice total: once the user types their own
+  // saldo amount, dataset.autoFilled is set to '0' and this stops touching it.
   const totalW=ppmNumber(document.querySelector('input[name="total_service"]')?.value||0);
   const totalD=ppmNumber(document.querySelector('input[name="total_text"]')?.value||0);
   const accontoW=ppmNumber(document.querySelector('input[name="acconto_w_totale"]')?.value||0);
   const accontoD=ppmNumber(document.querySelector('input[name="acconto_d_totale"]')?.value||0);
-  const rimW=document.getElementById('rimanenzaWDisplay'); if(rimW) rimW.value=ppmFormat(Math.max(0,totalW-accontoW));
-  const rimD=document.getElementById('rimanenzaDDisplay'); if(rimD) rimD.value=ppmFormat(Math.max(0,totalD-accontoD));
+  const saldoW=document.querySelector('input[name="saldo_w_totale"]');
+  const saldoD=document.querySelector('input[name="saldo_d_totale"]');
+  if(saldoW && saldoW.dataset.autoFilled!=='0') saldoW.value=ppmFormat(Math.max(0,totalW-accontoW));
+  if(saldoD && saldoD.dataset.autoFilled!=='0') saldoD.value=ppmFormat(Math.max(0,totalD-accontoD));
 }
 function arrangeBudgetLayout(){
   const fields=document.querySelector('.section input[name="price_cremation"]')?.closest('.fields');
@@ -6814,7 +6821,7 @@ class App(BaseHTTPRequestHandler):
                 fn=f"{macroarea}_w_fattura_numero";fd=f"{macroarea}_w_fattura_data";ft=f"{macroarea}_w_fattura_totale"
                 fattura_html=f'''<div class="fields"><div class="field"><label>Numero fattura</label><input name="{fn}" value="{val(fn)}"></div><div class="field"><label>Data fattura</label><input type="date" name="{fd}" value="{val(fd)}"></div><div class="field"><label>Totale fattura €</label><input name="{ft}" value="{val(ft)}" inputmode="decimal" placeholder="Numero, es. 120,00"></div></div>'''
             return f'''<div class="payment-macroarea-channel"><h4>{esc(label)}</h4><div class="fields"><div class="field"><label>Importo €</label><input name="{totale_name}" value="{val(totale_name)}" inputmode="decimal" placeholder="Numero, es. 120,00"></div><div class="field"><label>Data</label><input type="date" name="{data_name}" value="{val(data_name)}"></div><div class="field"><label>Metodo di pagamento</label><select name="{modalita_name}">{macro_method_options(modalita_name)}</select></div></div>{fattura_html}</div>'''
-        creation_payment_fields=f'''<section class="section hidden" id="creationPaymentSection"><h2>Pagamento</h2><p class="sub">Ogni importo è indipendente: compila solo D, solo W, o entrambi. Se compili solo D il metodo di pagamento resta facoltativo. Se per lo stesso incasso compili sia D che W, viene registrato solo D.</p><div class="fields" id="paymentEstremiRow"></div><div class="fields" id="paymentTotalsRow"></div><div class="payment-macroarea"><h3>ACCONTO</h3><div class="grid cols-2">{macro_field_group("acconto","W","Acconto W")}{macro_field_group("acconto","D","Acconto D")}</div></div><div class="fields" id="paymentRimanenzaRow"><div class="field"><label>Rimanenza W €</label><input id="rimanenzaWDisplay" value="0,00" readonly></div><div class="field"><label>Rimanenza D €</label><input id="rimanenzaDDisplay" value="0,00" readonly></div></div><div class="payment-macroarea"><h3>SALDO</h3><div class="grid cols-2">{macro_field_group("saldo","W","Saldo W")}{macro_field_group("saldo","D","Saldo D")}</div></div></section>'''
+        creation_payment_fields=f'''<section class="section hidden" id="creationPaymentSection"><h2>Pagamento</h2><p class="sub">Ogni importo è indipendente: compila solo D, solo W, o entrambi. Se compili solo D il metodo di pagamento resta facoltativo. Se per lo stesso incasso compili sia D che W, viene registrato solo D.</p><div class="fields" id="paymentEstremiRow"></div><div class="fields" id="paymentTotalsRow"></div><div class="payment-macroarea"><h3>ACCONTO</h3><div class="grid cols-2">{macro_field_group("acconto","W","Acconto W")}{macro_field_group("acconto","D","Acconto D")}</div></div><div class="payment-macroarea"><h3>SALDO</h3><div class="grid cols-2">{macro_field_group("saldo","W","Rimanenza W")}{macro_field_group("saldo","D","Rimanenza D")}</div></div></section>'''
         if user is None or user["role"]=="admin":
             operator_field=f'''<div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option><option {selected('operator_name','GIANLUCA')}>GIANLUCA</option></select></div>'''
         else:

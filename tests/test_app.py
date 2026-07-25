@@ -3624,14 +3624,24 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('name="saldo_w_fattura_numero"', form_html)
         self.assertNotIn('name="acconto_d_fattura_numero"', form_html)
         self.assertNotIn('name="saldo_d_fattura_numero"', form_html)
-        self.assertIn('id="rimanenzaWDisplay"', form_html)
-        self.assertIn('id="rimanenzaDDisplay"', form_html)
+        self.assertIn('<h4>Rimanenza W</h4>', form_html)
+        self.assertIn('<h4>Rimanenza D</h4>', form_html)
+        self.assertNotIn('<h4>Saldo W</h4>', form_html)
+        self.assertNotIn('<h4>Saldo D</h4>', form_html)
         self.assertIn('id="paymentEstremiRow"', form_html)
         self.assertIn('id="paymentTotalsRow"', form_html)
         # Relocation JS only fires on the create page (not the shared edit form).
         self.assertIn("if(!isEditForm){", app.APP_JS)
         self.assertIn("paymentSection.append(wrap)", app.APP_JS)
         self.assertIn("function updateMacroRimanenza(){", app.APP_JS)
+
+    def test_saldo_totale_autofills_from_totale_minus_acconto_until_manually_edited(self):
+        # SALDO W/D (relabeled Rimanenza W/D) must auto-fill live from
+        # Totale-Acconto for its own circuito, and stop being overwritten
+        # the moment the user types their own value in that field.
+        self.assertIn("if(saldoW && saldoW.dataset.autoFilled!=='0') saldoW.value=ppmFormat(Math.max(0,totalW-accontoW));", app.APP_JS)
+        self.assertIn("if(saldoD && saldoD.dataset.autoFilled!=='0') saldoD.value=ppmFormat(Math.max(0,totalD-accontoD));", app.APP_JS)
+        self.assertIn("if(e.target && (e.target.name === 'saldo_w_totale' || e.target.name === 'saldo_d_totale')) e.target.dataset.autoFilled='0';", app.APP_JS)
 
     def test_service_type_is_required_and_not_preselected(self):
         with app.db() as conn:
