@@ -3190,6 +3190,26 @@ def payment_channel(practice):
     return "D" if uses_total_d(practice) else "W"
 
 
+def channel_deposit(practice):
+    """The acconto actually paid on whichever circuito (W or D) this practice
+    uses: deposit_final for D, deposit for W. Every display of "Acconto" must
+    read this instead of the raw deposit column directly, or a D-circuit
+    practice's acconto (stored in deposit_final) shows as 0."""
+    keys=practice.keys() if hasattr(practice,"keys") else practice
+    key="deposit_final" if uses_total_d(practice) else "deposit"
+    return money_value(practice[key] if key in keys else "")
+
+
+def channel_remaining(practice):
+    """The rimanenza actually open on whichever circuito (W or D) this
+    practice uses: remaining_final for D, remaining_balance for W, falling
+    back to outstanding_amount() when the stored value is blank."""
+    keys=practice.keys() if hasattr(practice,"keys") else practice
+    key="remaining_final" if uses_total_d(practice) else "remaining_balance"
+    stored=practice[key] if key in keys else ""
+    return money_value(stored) if (stored or "").strip() else outstanding_amount(practice)
+
+
 def latest_movement_and_invoice(c, practice_id, type_prefix):
     """Latest payment_movements row of a given type ('acconto'/'saldo') for a
     practice, plus its linked movement_invoices row if one was ever saved."""
@@ -3252,7 +3272,8 @@ def received_amount(practice):
     keys=practice.keys() if hasattr(practice,"keys") else practice
     if (practice["payment_status"] if "payment_status" in keys else "") == "Pagato":
         return due
-    return min(due, max(0.0, money_value(practice["deposit"] if "deposit" in keys else "")))
+    deposit_key="deposit_final" if uses_total_d(practice) else "deposit"
+    return min(due, max(0.0, money_value(practice[deposit_key] if deposit_key in keys else "")))
 
 
 def outstanding_amount(practice):
@@ -4217,14 +4238,24 @@ class App(BaseHTTPRequestHandler):
         received=money_value(c.execute("SELECT COALESCE(SUM(amount),0) amount FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["amount"])
         remaining=max(0.0,due-received)
         acconto_row=c.execute("SELECT amount FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'acconto%' ORDER BY id DESC LIMIT 1",(pid,)).fetchone()
-        deposit=f"{money_value(acconto_row['amount']):.2f}" if acconto_row else "0.00"
+        acconto_amount=f"{money_value(acconto_row['amount']):.2f}" if acconto_row else "0.00"
+        # same W/D column-pair split (and Pagato-zeroes-both special case) as
+        # save_payment_macroarea/remove_payment_macroarea
         due_d=money_value(practice["total_text"])
-        if new_status=="Pagato":remaining_final="0.00" if due_d else ""
-        else:remaining_final=(f"{max(0.0,due_d-money_value(deposit)):.2f}" if due_d else "")
+        if uses_total_d(practice):
+            deposit=practice["deposit"];deposit_final=acconto_amount
+        else:
+            deposit=acconto_amount;deposit_final=practice["deposit_final"]
+        if new_status=="Pagato":
+            remaining_balance="0.00";remaining_final="0.00" if due_d else ""
+        elif uses_total_d(practice):
+            remaining_balance=practice["remaining_balance"];remaining_final=f"{remaining:.2f}"
+        else:
+            remaining_balance=f"{remaining:.2f}";remaining_final=practice["remaining_final"]
         stamp=now()
         c.execute(
-            "UPDATE practices SET payment_status=?,deposit=?,remaining_balance=?,remaining_final=?,updated_at=? WHERE id=?",
-            (new_status,deposit,f"{remaining:.2f}",remaining_final,stamp,pid),
+            "UPDATE practices SET payment_status=?,deposit=?,remaining_balance=?,deposit_final=?,remaining_final=?,updated_at=? WHERE id=?",
+            (new_status,deposit,remaining_balance,deposit_final,remaining_final,stamp,pid),
         )
         if old_status!=new_status:
             c.execute(
@@ -5122,7 +5153,7 @@ class App(BaseHTTPRequestHandler):
                 url=f'/pratiche/{row["id"]}?return_to={quote(self.path,safe="")}'
                 economic_date=date_it(row["dashboard_paid_at"]) if kind!="da-saldare" else "Aperta"
                 animal_cell=esc(row["species"]) if (row["service_type"] or "")=="Cremazione collettiva" else f'{animal_prefix}{esc(row["animal_name"] or "")}'
-                table_rows.append(f'''<tr class="practice-row-link" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}><td>{esc(economic_date)}</td><td><a href="{url}"><b>{esc(row["practice_number"])}</b></a></td><td>{animal_cell}</td><td>{esc(owner)}</td><td>{money_it(effective_total(row))}</td><td>{money_it(money_value(row["deposit"]))}</td><td><b>{money_it(amount_for(row))}</b></td><td>{esc(row["payment_status"] or "Da saldare")}</td><td><a class="btn ghost" href="{url}">Apri</a></td></tr>''')
+                table_rows.append(f'''<tr class="practice-row-link" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}><td>{esc(economic_date)}</td><td><a href="{url}"><b>{esc(row["practice_number"])}</b></a></td><td>{animal_cell}</td><td>{esc(owner)}</td><td>{money_it(effective_total(row))}</td><td>{money_it(channel_deposit(row))}</td><td><b>{money_it(amount_for(row))}</b></td><td>{esc(row["payment_status"] or "Da saldare")}</td><td><a class="btn ghost" href="{url}">Apri</a></td></tr>''')
             table=''.join(table_rows) or '<tr><td colspan="9" class="sub">Nessuna pratica in questa categoria.</td></tr>'
             sections.append(f'''<section class="dashboard-panel" style="margin-bottom:20px;border-top:4px solid {color}"><header><div><h2>{esc(label)}</h2><p>{len(selected)} pratiche</p></div><strong>{money_it(total)}</strong></header><div class="tablebox"><table><thead><tr><th>Data economica</th><th>Pratica</th><th>Animale</th><th>Cliente</th><th>Totale</th><th>Acconto</th><th>{esc(title)}</th><th>Stato</th><th></th></tr></thead><tbody>{table}</tbody></table></div></section>''')
         period_note="Tutte le rimanenze attualmente aperte: non esiste una scadenza di saldo." if kind=="da-saldare" else f"Incassi registrati dal {date_it(date_from.isoformat())} al {date_it(date_to.isoformat())}."
@@ -5877,7 +5908,7 @@ class App(BaseHTTPRequestHandler):
                 total_d=(r["total_text"] or "").strip() if "total_text" in r.keys() else ""
                 deposit_label=f"Acconto {channel}"
                 remaining_label=f"Rimanenza {channel}"
-                financial_cells=f'<td>{money_it(calculated_service_total(r))}</td><td>{money_it(money_value(total_d)) if total_d else "-"}</td><td><small>{deposit_label}</small><br>{money_it(money_value(r["deposit"]))}</td><td><small>{remaining_label}</small><br>{money_it(money_value(r["remaining_balance"]))}</td>'
+                financial_cells=f'<td>{money_it(calculated_service_total(r))}</td><td>{money_it(money_value(total_d)) if total_d else "-"}</td><td><small>{deposit_label}</small><br>{money_it(channel_deposit(r))}</td><td><small>{remaining_label}</small><br>{money_it(channel_remaining(r))}</td>'
             practice_url=f'/pratiche/{r["id"]}?return_to={quote(self.path,safe="")}'
             provenance=esc(r["provenance"] if "provenance" in r.keys() and r["provenance"] else "-")
             delete_cell=f'''<form onclick="event.stopPropagation()" method="post" action="/pratiche/{r['id']}/elimina" onsubmit="return confirm('Spostare questa pratica nel Cestino? Potrai ripristinarla in seguito.')"><button class="btn danger-btn" type="submit">Elimina</button></form>'''
@@ -5992,7 +6023,7 @@ class App(BaseHTTPRequestHandler):
             results=[]
             for row in rows:
                 channel="D" if uses_total_d(row) else "W"
-                total=effective_total(row);deposit=money_value(row["deposit"]);remaining=outstanding_amount(row)
+                total=effective_total(row);deposit=channel_deposit(row);remaining=outstanding_amount(row)
                 base_status=(row["payment_status"] or "Da saldare")
                 if base_status=="Pagato":detail=f"Pagato {channel} · {money_it(total)}";calendar_status="Pagato";calendar_amount=total
                 elif deposit>0:detail=f"Acconto {channel} · {money_it(deposit)} · Rimanenza {channel} · {money_it(remaining)}";calendar_status="Da saldare";calendar_amount=remaining
@@ -6160,7 +6191,7 @@ class App(BaseHTTPRequestHandler):
             key=(grouping_date[:7]) or "Senza data"
             groups.setdefault(key,[]).append(r)
         blocks=[]
-        archive_financial_headers='<th>Totale W</th><th>Totale D</th><th>Acconto W</th><th>Rimanenza W</th>'
+        archive_financial_headers='<th>Totale W</th><th>Totale D</th><th>Acconto</th><th>Rimanenza</th>'
         for key,items in groups.items():
             title=key
             if key != "Senza data":
@@ -7674,8 +7705,8 @@ class App(BaseHTTPRequestHandler):
         animal_age='<br><span class="sub">Età: '+', '.join(age_parts)+'</span>' if age_parts else '<br><span class="sub">Età non indicata</span>'
         animal2_block = f'<div class="kv"><small>Secondo animale</small>{esc(p["animal2_name"])}<br>{esc(p["animal2_species"])} {esc(p["animal2_weight"])} kg</div>' if "animal2_name" in p.keys() and p["animal2_name"] else ""
         total_w=calculated_service_total(p);total_d_raw=(p["total_text"] or "").strip();total_d=money_value(total_d_raw)
-        practice_total=effective_total(p);paid_total=received_amount(p);due_total=outstanding_amount(p);deposit_total=money_value(p["deposit"])
-        remaining_total=money_value(p["remaining_balance"]) if (p["remaining_balance"] or "").strip() else due_total
+        practice_total=effective_total(p);paid_total=received_amount(p);due_total=outstanding_amount(p);deposit_total=channel_deposit(p)
+        remaining_total=channel_remaining(p)
         estimate_fields=(("price_cremation","Cremazione"),("price_pickup","Ritiro"),("price_delivery","Riconsegna"),("price_cast","Calco"),("price_cast_2","Secondo calco"),("price_paw_cast","Calco polpastrello"),("price_paw_cast_2","Secondo calco polpastrello"),("price_paw_cast_3","Altro calco polpastrello"),("price_paw_cast_4","Altro calco polpastrello"),("price_nose_cast","Calco naso"),("price_nose_cast_2","Secondo calco naso"),("price_nose_cast_3","Altro calco naso"),("price_nose_cast_4","Altro calco naso"),("price_evening","Serale"),("price_night","Notturno"),("price_holiday","Festivo"),("price_accessories","Accessori"),("price_accessories_2","Secondi accessori"))
         estimate_rows=[]
         for key,label in estimate_fields:
@@ -8190,14 +8221,30 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             due=effective_total(practice)
             received=money_value(c.execute("SELECT COALESCE(SUM(amount),0) amount FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["amount"])
             remaining=max(0.0,due-received)
-            deposit=f"{received:.2f}" if new_status=="Acconto" else practice["deposit"]
+            # Acconto/rimanenza are stored in a different column pair depending on
+            # which circuito this practice uses (W: deposit/remaining_balance,
+            # D: deposit_final/remaining_final) — updating the wrong pair used to
+            # leave a D-circuito acconto permanently showing as 0. A fully Pagato
+            # practice can never have anything left on either circuit though, so
+            # both remaining fields are forced to zero regardless of channel,
+            # same rule already enforced at creation/edit time.
             due_d=money_value(practice["total_text"])
-            if new_status=="Pagato":remaining_final="0.00" if due_d else ""
-            else:remaining_final=(f"{max(0.0,due_d-money_value(practice['deposit_final'])):.2f}" if due_d else "")
+            if uses_total_d(practice):
+                deposit=practice["deposit"]
+                deposit_final=f"{received:.2f}" if new_status=="Acconto" else practice["deposit_final"]
+            else:
+                deposit=f"{received:.2f}" if new_status=="Acconto" else practice["deposit"]
+                deposit_final=practice["deposit_final"]
+            if new_status=="Pagato":
+                remaining_balance="0.00";remaining_final="0.00" if due_d else ""
+            elif uses_total_d(practice):
+                remaining_balance=practice["remaining_balance"];remaining_final=f"{remaining:.2f}"
+            else:
+                remaining_balance=f"{remaining:.2f}";remaining_final=practice["remaining_final"]
             date_field="deposit_paid_at" if macroarea=="acconto" else "paid_at"
             c.execute(
-                f"UPDATE practices SET payment_status=?,payment_method=?,payment_amount=?,deposit=?,remaining_balance=?,remaining_final=?,{date_field}=?,updated_at=? WHERE id=?",
-                (new_status,method,f"{amount:.2f}",deposit,f"{remaining:.2f}",remaining_final,data_field,stamp,pid),
+                f"UPDATE practices SET payment_status=?,payment_method=?,payment_amount=?,deposit=?,remaining_balance=?,deposit_final=?,remaining_final=?,{date_field}=?,updated_at=? WHERE id=?",
+                (new_status,method,f"{amount:.2f}",deposit,remaining_balance,deposit_final,remaining_final,data_field,stamp,pid),
             )
             if old_status!=new_status:
                 c.execute(
@@ -8266,14 +8313,26 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             received=money_value(c.execute("SELECT COALESCE(SUM(amount),0) amount FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["amount"])
             remaining=max(0.0,due-received)
             acconto_row=c.execute("SELECT amount FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'acconto%' ORDER BY id DESC LIMIT 1",(pid,)).fetchone()
-            deposit=f"{money_value(acconto_row['amount']):.2f}" if acconto_row else "0.00"
+            acconto_amount=f"{money_value(acconto_row['amount']):.2f}" if acconto_row else "0.00"
+            # same W/D column-pair split (and Pagato-zeroes-both special case)
+            # as save_payment_macroarea above, so removing a D-circuito payment
+            # correctly updates deposit_final/remaining_final instead of
+            # silently touching the W columns.
             due_d=money_value(practice["total_text"])
-            if new_status=="Pagato":remaining_final="0.00" if due_d else ""
-            else:remaining_final=(f"{max(0.0,due_d-money_value(deposit)):.2f}" if due_d else "")
+            if uses_total_d(practice):
+                deposit=practice["deposit"];deposit_final=acconto_amount
+            else:
+                deposit=acconto_amount;deposit_final=practice["deposit_final"]
+            if new_status=="Pagato":
+                remaining_balance="0.00";remaining_final="0.00" if due_d else ""
+            elif uses_total_d(practice):
+                remaining_balance=practice["remaining_balance"];remaining_final=f"{remaining:.2f}"
+            else:
+                remaining_balance=f"{remaining:.2f}";remaining_final=practice["remaining_final"]
             date_field="deposit_paid_at" if macroarea=="acconto" else "paid_at"
             c.execute(
-                f"UPDATE practices SET payment_status=?,deposit=?,remaining_balance=?,remaining_final=?,{date_field}=?,updated_at=? WHERE id=?",
-                (new_status,deposit,f"{remaining:.2f}",remaining_final,"",stamp,pid),
+                f"UPDATE practices SET payment_status=?,deposit=?,remaining_balance=?,deposit_final=?,remaining_final=?,{date_field}=?,updated_at=? WHERE id=?",
+                (new_status,deposit,remaining_balance,deposit_final,remaining_final,"",stamp,pid),
             )
             if old_status!=new_status:
                 c.execute(
@@ -8323,11 +8382,22 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
             received=money_value(c.execute("SELECT COALESCE(SUM(amount),0) amount FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["amount"])
             remaining=max(0.0,due-received)
-            deposit=f"{received:.2f}" if payment=="Acconto" else row["deposit"]
+            # same W/D column-pair split (and Pagato-zeroes-both special case)
+            # as save_payment_macroarea/remove_payment_macroarea
             due_d=money_value(row["total_text"])
-            if payment=="Pagato":remaining_final="0.00" if due_d else ""
-            else:remaining_final=(f"{max(0.0,due_d-money_value(row['deposit_final'])):.2f}" if due_d else "")
-            c.execute("UPDATE practices SET payment_status=?,payment_method=?,payment_amount=?,deposit=?,remaining_balance=?,remaining_final=?,updated_at=? WHERE id=?",(payment,method,amount,deposit,f"{remaining:.2f}",remaining_final,stamp,pid))
+            if uses_total_d(row):
+                deposit=row["deposit"]
+                deposit_final=f"{received:.2f}" if payment=="Acconto" else row["deposit_final"]
+            else:
+                deposit=f"{received:.2f}" if payment=="Acconto" else row["deposit"]
+                deposit_final=row["deposit_final"]
+            if payment=="Pagato":
+                remaining_balance="0.00";remaining_final="0.00" if due_d else ""
+            elif uses_total_d(row):
+                remaining_balance=row["remaining_balance"];remaining_final=f"{remaining:.2f}"
+            else:
+                remaining_balance=f"{remaining:.2f}";remaining_final=row["remaining_final"]
+            c.execute("UPDATE practices SET payment_status=?,payment_method=?,payment_amount=?,deposit=?,remaining_balance=?,deposit_final=?,remaining_final=?,updated_at=? WHERE id=?",(payment,method,amount,deposit,remaining_balance,deposit_final,remaining_final,stamp,pid))
             if movement_type_prefix:
                 movement=c.execute("SELECT id FROM payment_movements WHERE practice_id=? AND payment_type LIKE ? ORDER BY id DESC LIMIT 1",(pid,f"{movement_type_prefix}%")).fetchone()
                 if movement:
