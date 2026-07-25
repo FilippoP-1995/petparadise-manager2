@@ -40,21 +40,32 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
         request_origin="Privato",
         collaborator_id="",
     ):
+        # payment_status/payment_amount/economic_at no longer drive practice
+        # creation (replaced by the acconto/saldo x D/W macroarea fields) —
+        # this helper keeps its old parameter shape but translates into the
+        # new fields, so every existing call site above stays meaningful.
+        channel = "d" if total_d else "w"
+        macro_fields = {}
+        if payment_status == "Acconto":
+            macro_fields[f"acconto_{channel}_totale"] = amount or deposit
+            macro_fields[f"acconto_{channel}_data"] = "2026-07-23"
+            macro_fields[f"acconto_{channel}_modalita"] = "Contanti"
+        elif payment_status == "Pagato":
+            macro_fields[f"saldo_{channel}_totale"] = amount or (total_d or total_w)
+            macro_fields[f"saldo_{channel}_data"] = "2026-07-23"
+            macro_fields[f"saldo_{channel}_modalita"] = "Contanti"
         return {
             "calendar_event_id": "",
             "operator_name": "FILIPPO",
             "service_type": "Cremazione collettiva",
             "request_origin": request_origin,
             "collaborator_id": collaborator_id,
-            "payment_status": payment_status,
-            "payment_method": "Contanti",
-            "payment_amount": amount,
-            "economic_at": "2026-07-23",
             "price_cremation": total_w,
             "total_text": total_d,
             "deposit": deposit,
             "deposit_final": deposit if total_d else "",
             "balance_idempotency_key": token,
+            **macro_fields,
         }
 
     def insert_practice(
@@ -174,6 +185,94 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
                 1,
             )
             self.assertEqual(len(get_movements(connection)), 1)
+
+    def test_create_practice_with_only_acconto_d_registers_d_movement_without_method(self):
+        self.handler.form = lambda: {
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
+            "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
+            "total_text": "350", "acconto_d_totale": "100", "acconto_d_data": "2026-07-23", "acconto_d_modalita": "",
+            "balance_idempotency_key": "acconto-d-only",
+        }
+        self.handler.create_practice(self.admin)
+        pid = int(self.redirects[-1].split("/pratiche/")[1])
+        with app.db() as connection:
+            practice = connection.execute("SELECT * FROM practices WHERE id=?", (pid,)).fetchone()
+            movements = [m for m in get_movements(connection) if m.practice_id == pid]
+        self.assertEqual(practice["payment_status"], "Acconto")
+        self.assertEqual(practice["deposit_final"], "100.00")
+        self.assertEqual(practice["deposit"], "")
+        self.assertEqual(len(movements), 1)
+        self.assertEqual((movements[0].movement_type, movements[0].amount_cents, movements[0].category), ("Acconto", 10000, "D"))
+
+    def test_create_practice_with_only_saldo_w_requires_payment_method(self):
+        self.handler.form = lambda: {
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
+            "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
+            "price_cremation": "300", "saldo_w_totale": "300", "saldo_w_data": "2026-07-23", "saldo_w_modalita": "",
+        }
+        errors = []
+        self.handler.new_page = lambda user, draft=None, error="": errors.append(error)
+        self.handler.create_practice(self.admin)
+        self.assertIn("Seleziona il metodo di pagamento", errors[-1])
+        with app.db() as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) n FROM practices").fetchone()["n"], 0)
+
+    def test_create_practice_with_both_acconto_d_and_w_only_registers_d(self):
+        self.handler.form = lambda: {
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
+            "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
+            "total_text": "350", "price_cremation": "300",
+            "acconto_d_totale": "100", "acconto_d_data": "2026-07-23", "acconto_d_modalita": "",
+            "acconto_w_totale": "80", "acconto_w_data": "2026-07-23", "acconto_w_modalita": "Contanti",
+            "balance_idempotency_key": "acconto-both",
+        }
+        self.handler.create_practice(self.admin)
+        pid = int(self.redirects[-1].split("/pratiche/")[1])
+        with app.db() as connection:
+            practice = connection.execute("SELECT * FROM practices WHERE id=?", (pid,)).fetchone()
+            movements = [m for m in get_movements(connection) if m.practice_id == pid]
+        # D wins over W when both are filled for the same macroarea: only one
+        # movement is ever registered, never both, to avoid double-counting
+        # the same receipt.
+        self.assertEqual(len(movements), 1)
+        self.assertEqual((movements[0].amount_cents, movements[0].category), (10000, "D"))
+        self.assertEqual(practice["deposit_final"], "100.00")
+
+    def test_create_practice_with_no_payment_fields_creates_no_movement(self):
+        self.handler.form = lambda: {
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
+            "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
+            "total_text": "350",
+        }
+        self.handler.create_practice(self.admin)
+        pid = int(self.redirects[-1].split("/pratiche/")[1])
+        with app.db() as connection:
+            practice = connection.execute("SELECT * FROM practices WHERE id=?", (pid,)).fetchone()
+            movements = [m for m in get_movements(connection) if m.practice_id == pid]
+        self.assertEqual(practice["payment_status"], "Da saldare")
+        self.assertEqual(movements, [])
+
+    def test_acconto_and_saldo_registered_at_creation_prefill_the_payment_popover(self):
+        self.handler.form = lambda: {
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
+            "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
+            "price_cremation": "300",
+            "acconto_w_totale": "100", "acconto_w_data": "2026-07-23", "acconto_w_modalita": "Contanti",
+        }
+        self.handler.create_practice(self.admin)
+        pid = int(self.redirects[-1].split("/pratiche/")[1])
+        with app.db() as connection:
+            row = connection.execute("SELECT * FROM practices WHERE id=?", (pid,)).fetchone()
+        self.handler.path = f"/pratiche/{pid}"
+        html = self.handler.status_badges(row)
+        self.assertIn('name="acconto_totale" value="100.00"', html)
+        self.assertIn('name="acconto_data" value="2026-07-23" required', html)
+        self.assertIn('<option value="W" selected>W</option>', html)
 
     def test_payment_transitions_create_acconto_full_payment_and_only_remaining(self):
         split_id = self.insert_practice(number="CR-SPLIT", total_w="300")
@@ -414,7 +513,7 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
         errors=[]
         self.handler.new_page=lambda user,draft=None,error="":errors.append((draft,error))
         invalid=self.creation_form(payment_status="Pagato",token="missing-date")
-        invalid["economic_at"]=""
+        invalid["saldo_w_data"]=""
         self.handler.form=lambda:invalid
         self.handler.create_practice(self.admin)
         self.assertIn("data",errors[-1][1].lower())

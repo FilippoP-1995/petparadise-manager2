@@ -726,11 +726,15 @@ class PetParadiseTests(unittest.TestCase):
             "operator_name": "SERENA", "service_type": "Cremazione singola", "request_origin": "Privato",
             "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
             "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
-            "total_text": "350", "payment_status": "Acconto", "payment_amount": "100,00",
-            "economic_at": "2026-07-20", "payment_method": "",
+            "total_text": "350", "acconto_d_totale": "100,00", "acconto_d_data": "2026-07-20", "acconto_d_modalita": "",
         }
         self.handler.create_practice(admin)
         self.assertTrue(redirects, "la creazione con incasso D non deve richiedere il metodo di pagamento")
+        pid = int(redirects[-1].split("/pratiche/")[1])
+        with app.db() as conn:
+            row = conn.execute("SELECT payment_status,deposit_final FROM practices WHERE id=?", (pid,)).fetchone()
+        self.assertEqual(row["payment_status"], "Acconto")
+        self.assertEqual(row["deposit_final"], "100.00")
 
     def test_fare_fattura_unchecked_when_invoice_number_filled(self):
         self.assertIn("if(makeInvoice&&invoiceNumber.value.trim())makeInvoice.checked=false;", app.APP_JS)
@@ -1831,6 +1835,25 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(".light-theme thead th{background:#fff}", app.CSS)
         self.assertNotIn("position:static;top:auto", app.CSS)
 
+    def test_table_touch_scroll_locks_axis_and_hands_off_to_page_at_the_boundary(self):
+        # A diagonal/circular touch drag inside a .tablebox used to scroll it
+        # both horizontally and vertically at once (confusing, imprecise).
+        # touch-action:none on .tablebox hands full control to this JS, which
+        # must: lock the gesture to whichever axis dominates its first few
+        # pixels of movement, and — for a vertical gesture — hand off
+        # seamlessly to scrolling the page once the table's own internal
+        # scroll hits its start/end, requiring a fresh touch inside the table
+        # to resume controlling it.
+        js=app.APP_JS
+        self.assertIn("touch-action:none", app.CSS)
+        self.assertIn("function setupTableTouchScroll()", js)
+        self.assertIn("axis=Math.abs(dx)>Math.abs(dy)?'x':'y'", js)
+        self.assertIn("if(axis==='x'){box.scrollLeft=startScrollLeft-dx;return;}", js)
+        self.assertIn("phase='page'", js)
+        self.assertIn("window.scrollTo(0,pageStartScroll-(t.clientY-pageAnchorY));", js)
+        self.assertIn("const reset=()=>{axis=null;phase='table';};", js)
+        self.assertIn("document.addEventListener('DOMContentLoaded', setupTableTouchScroll);", js)
+
     def test_wide_scrollable_tables_use_bounded_internal_scroll_for_reliable_sticky(self):
         # position:sticky on <th> inside a table wrapped by an overflow-x
         # scroll container renders with a permanent top offset in Chromium
@@ -1839,7 +1862,7 @@ class PetParadiseTests(unittest.TestCase):
         # is to give every .tablebox a bounded height with its own real
         # scroll container (overflow:auto), so thead sticky top:0 is always
         # relative to that container and never breaks, on any table.
-        self.assertIn(".tablebox{background:white;border:1px solid var(--line);border-radius:15px;max-height:min(65vh,620px);overflow:auto}", app.CSS)
+        self.assertIn(".tablebox{background:white;border:1px solid var(--line);border-radius:15px;max-height:min(65vh,620px);overflow:auto;-webkit-overflow-scrolling:touch;touch-action:none}", app.CSS)
 
     def test_archive_wide_table_keeps_horizontal_scroll_wrapper(self):
         with app.db() as conn:
@@ -3075,10 +3098,10 @@ class PetParadiseTests(unittest.TestCase):
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
         self.handler.form=lambda:{"operator_name":"FILIPPO","service_type":"Da decidere","request_origin":"Privato","owner_first_name":"Anna","owner_last_name":"Neri",
                                    "owner_phone":"3331112222","owner_tax_code":"NRIANN80A01H501U","owner_street":"Via Test","owner_city":"Livorno",
-                                   "owner_province":"LI","owner_zip":"57100","payment_status":"Pagato","calendar_event_id":""}
+                                   "owner_province":"LI","owner_zip":"57100","saldo_w_totale":"250","calendar_event_id":""}
         pages=[];self.handler.new_page=lambda user,draft=None,error="":pages.append(error)
         self.handler.create_practice(admin)
-        self.assertIn("importo, data e metodo",pages[-1])
+        self.assertIn("Indica una data valida",pages[-1])
         with app.db() as conn:
             count=conn.execute("SELECT count(*) n FROM practices WHERE practice_number='CR-EDITDATE' OR owner_first_name='Anna'").fetchone()["n"]
             self.assertEqual(count,0)

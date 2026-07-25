@@ -1071,7 +1071,7 @@ def format_sequence_code(prefix,value,width=6):
 CSS = r"""
 :root{--ink:#24312c;--muted:#6e7b75;--brand:#a74045;--brand2:#7f3035;--paper:#fff;--bg:#f4f1ed;--line:#ded8d1;--green:#39745b;--gold:#a87926;--safe-top:env(safe-area-inset-top,0px);--safe-bottom:env(safe-area-inset-bottom,0px);--safe-left:env(safe-area-inset-left,0px);--safe-right:env(safe-area-inset-right,0px)}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
-a{color:inherit;text-decoration:none}.top{height:68px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:18px;padding:0 28px;position:sticky;top:0;z-index:5}.brand{font-weight:800;font-size:19px;color:var(--brand)}.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:1.5px}.nav{display:flex;gap:8px;margin-left:auto}.nav a{padding:9px 12px;border-radius:9px}.nav a:hover{background:#f3eeea}.wrap{max-width:1280px;margin:0 auto;padding:28px}.titlebar{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:22px}h1{margin:0;font-size:28px}h2{font-size:18px;margin:0 0 15px}.sub{color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:10px;background:var(--brand);color:white;padding:11px 16px;font-weight:700;cursor:pointer}.btn:hover{background:var(--brand2)}.btn.ghost{background:white;color:var(--ink);border:1px solid var(--line)}.grid{display:grid;gap:16px}.stats{grid-template-columns:repeat(3,1fr)}.card{background:var(--paper);border:1px solid var(--line);border-radius:15px;padding:20px;box-shadow:0 3px 15px #4b39260a}.stat{display:flex;justify-content:space-between;align-items:center}.stat b{font-size:32px;color:var(--brand)}.badge{display:inline-flex;padding:5px 9px;border-radius:99px;background:#eee9e3;font-size:12px;font-weight:700}.tag-red{background:#e53935;color:white}.tag-orange{background:#fb8c00;color:white}.tag-outline-orange{background:white;color:#fb8c00;border:2px solid #fb8c00}.tag-purple{background:#7e57c2;color:white}.tag-yellow,.pay-yellow{background:#fdd835;color:#3b3100}.tag-pink{background:#f06292;color:white}.tag-blue,.pay-blue{background:#1e88e5;color:white}.tag-green,.pay-green{background:#43a047;color:white}.status-stack{display:flex;gap:5px;flex-wrap:wrap}.form-grid{grid-template-columns:repeat(2,1fr)}.wide{grid-column:1/-1}.section{background:#fff;border:1px solid var(--line);border-radius:15px;padding:20px}.fields{display:grid;grid-template-columns:repeat(2,1fr);gap:13px}.field{display:flex;flex-direction:column;gap:6px}.field.full{grid-column:1/-1}label{font-weight:650;font-size:13px}input,select,textarea{width:100%;border:1px solid #cfc8c0;border-radius:9px;padding:11px 12px;background:white;color:var(--ink);font:inherit}input[type=checkbox]{width:auto;min-height:auto}textarea{min-height:90px;resize:vertical}input:focus,select:focus,textarea:focus{outline:3px solid #a7404520;border-color:var(--brand)}table{width:100%;border-collapse:collapse;background:white}th,td{text-align:left;padding:13px;border-bottom:1px solid var(--line)}th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}thead th{position:sticky;top:0;z-index:2;background:#101620}.light-theme thead th{background:#fff}.tablebox{background:white;border:1px solid var(--line);border-radius:15px;max-height:min(65vh,620px);overflow:auto}.tablebox-scroll-top{overflow-x:auto;overflow-y:hidden;height:16px;margin-bottom:6px;position:sticky;top:76px;z-index:10;background:var(--paper)}.tablebox-scroll-top-inner{height:1px}@media(max-width:900px){.tablebox-scroll-top{display:none}}.actions{display:flex;gap:10px;flex-wrap:wrap}.flash{padding:13px 16px;border-radius:10px;background:#e5f2eb;color:#285b45;margin-bottom:16px}.warning{background:#fff1d8;color:#765315}.reminders-panel{margin-bottom:20px}.reminders-panel h2{margin-bottom:12px}.reminders-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}.reminder-item{display:flex;align-items:center;gap:14px;padding:11px 6px;border-bottom:1px solid var(--line)}.reminder-item:last-child{border-bottom:0}.reminder-check{display:flex;align-items:center;gap:7px;font-weight:600;font-size:13px;flex:0 0 auto;cursor:pointer}.reminder-check input{width:18px;height:18px;min-height:18px;flex:0 0 18px}.reminder-title{color:var(--ink);font-weight:600;text-decoration:underline;text-underline-offset:2px}.reminder-item.reminder-removing{opacity:.35;pointer-events:none}.login{max-width:410px;margin:10vh auto;background:white;padding:34px;border-radius:18px;border:1px solid var(--line)}.timeline{border-left:2px solid var(--line);margin-left:7px;padding-left:20px}.event{padding:0 0 18px;position:relative}.event:before{content:'';position:absolute;width:10px;height:10px;border-radius:50%;background:var(--brand);left:-26px;top:5px}.kvs{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.kv{background:#faf8f5;border-radius:10px;padding:12px}.kv small{display:block;color:var(--muted)}.signature-pad{width:100%;height:260px;border:2px dashed var(--line);border-radius:14px;background:white;touch-action:none}
+a{color:inherit;text-decoration:none}.top{height:68px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:18px;padding:0 28px;position:sticky;top:0;z-index:5}.brand{font-weight:800;font-size:19px;color:var(--brand)}.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:1.5px}.nav{display:flex;gap:8px;margin-left:auto}.nav a{padding:9px 12px;border-radius:9px}.nav a:hover{background:#f3eeea}.wrap{max-width:1280px;margin:0 auto;padding:28px}.titlebar{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:22px}h1{margin:0;font-size:28px}h2{font-size:18px;margin:0 0 15px}.sub{color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:10px;background:var(--brand);color:white;padding:11px 16px;font-weight:700;cursor:pointer}.btn:hover{background:var(--brand2)}.btn.ghost{background:white;color:var(--ink);border:1px solid var(--line)}.grid{display:grid;gap:16px}.stats{grid-template-columns:repeat(3,1fr)}.card{background:var(--paper);border:1px solid var(--line);border-radius:15px;padding:20px;box-shadow:0 3px 15px #4b39260a}.stat{display:flex;justify-content:space-between;align-items:center}.stat b{font-size:32px;color:var(--brand)}.badge{display:inline-flex;padding:5px 9px;border-radius:99px;background:#eee9e3;font-size:12px;font-weight:700}.tag-red{background:#e53935;color:white}.tag-orange{background:#fb8c00;color:white}.tag-outline-orange{background:white;color:#fb8c00;border:2px solid #fb8c00}.tag-purple{background:#7e57c2;color:white}.tag-yellow,.pay-yellow{background:#fdd835;color:#3b3100}.tag-pink{background:#f06292;color:white}.tag-blue,.pay-blue{background:#1e88e5;color:white}.tag-green,.pay-green{background:#43a047;color:white}.status-stack{display:flex;gap:5px;flex-wrap:wrap}.form-grid{grid-template-columns:repeat(2,1fr)}.wide{grid-column:1/-1}.section{background:#fff;border:1px solid var(--line);border-radius:15px;padding:20px}.fields{display:grid;grid-template-columns:repeat(2,1fr);gap:13px}.field{display:flex;flex-direction:column;gap:6px}.field.full{grid-column:1/-1}label{font-weight:650;font-size:13px}input,select,textarea{width:100%;border:1px solid #cfc8c0;border-radius:9px;padding:11px 12px;background:white;color:var(--ink);font:inherit}input[type=checkbox]{width:auto;min-height:auto}textarea{min-height:90px;resize:vertical}input:focus,select:focus,textarea:focus{outline:3px solid #a7404520;border-color:var(--brand)}table{width:100%;border-collapse:collapse;background:white}th,td{text-align:left;padding:16px 14px;border-bottom:1px solid var(--line)}th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}thead th{position:sticky;top:0;z-index:2;background:#101620}.light-theme thead th{background:#fff}.tablebox{background:white;border:1px solid var(--line);border-radius:15px;max-height:min(65vh,620px);overflow:auto;-webkit-overflow-scrolling:touch;touch-action:none}.tablebox-scroll-top{overflow-x:auto;overflow-y:hidden;height:16px;margin-bottom:6px;position:sticky;top:76px;z-index:10;background:var(--paper)}.tablebox-scroll-top-inner{height:1px}@media(max-width:900px){.tablebox-scroll-top{display:none}}.actions{display:flex;gap:10px;flex-wrap:wrap}.flash{padding:13px 16px;border-radius:10px;background:#e5f2eb;color:#285b45;margin-bottom:16px}.warning{background:#fff1d8;color:#765315}.reminders-panel{margin-bottom:20px}.reminders-panel h2{margin-bottom:12px}.reminders-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}.reminder-item{display:flex;align-items:center;gap:14px;padding:11px 6px;border-bottom:1px solid var(--line)}.reminder-item:last-child{border-bottom:0}.reminder-check{display:flex;align-items:center;gap:7px;font-weight:600;font-size:13px;flex:0 0 auto;cursor:pointer}.reminder-check input{width:18px;height:18px;min-height:18px;flex:0 0 18px}.reminder-title{color:var(--ink);font-weight:600;text-decoration:underline;text-underline-offset:2px}.reminder-item.reminder-removing{opacity:.35;pointer-events:none}.login{max-width:410px;margin:10vh auto;background:white;padding:34px;border-radius:18px;border:1px solid var(--line)}.timeline{border-left:2px solid var(--line);margin-left:7px;padding-left:20px}.event{padding:0 0 18px;position:relative}.event:before{content:'';position:absolute;width:10px;height:10px;border-radius:50%;background:var(--brand);left:-26px;top:5px}.kvs{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.kv{background:#faf8f5;border-radius:10px;padding:12px}.kv small{display:block;color:var(--muted)}.signature-pad{width:100%;height:260px;border:2px dashed var(--line);border-radius:14px;background:white;touch-action:none}
 body{background:radial-gradient(circle at top left,#fff8f3 0,#f4f1ed 34%,#ece5dd 100%)}.top{backdrop-filter:saturate(1.2) blur(10px);box-shadow:0 8px 28px #4b392612}.brand{letter-spacing:.2px}.nav a{font-weight:650}.nav a.btn{box-shadow:0 8px 20px #a7404524}.wrap{animation:ppmFade .18s ease-out}.titlebar h1{letter-spacing:-.03em}.section,.card,.tablebox,.login{box-shadow:0 10px 30px #4b39260d}.section{transition:box-shadow .15s ease, transform .15s ease}.card{transition:transform .15s ease,box-shadow .15s ease}.card:hover{transform:translateY(-2px);box-shadow:0 14px 34px #4b392617}.btn{box-shadow:0 6px 16px #a740451f}.btn.ghost{box-shadow:none}.kv{border:1px solid #eee6df}.tablebox table tr:hover td{background:#fffaf6}input,select,textarea{transition:border-color .15s ease,box-shadow .15s ease}.danger{border-width:1px}.trash-note{background:#fff7e8;border:1px solid #f0cf9d;color:#765315;border-radius:12px;padding:12px 14px;margin-bottom:16px}.empty-state{text-align:center;padding:32px;color:var(--muted)}@keyframes ppmFade{from{opacity:.78;transform:translateY(3px)}to{opacity:1;transform:none}}
 .practice-layout{grid-template-columns:2fr 1fr}@media(max-width:800px){html,body{width:100%;max-width:100%;overflow-x:hidden}body{font-size:16px}.wrap{padding:14px}.top{height:auto;min-height:64px;padding:10px 12px;align-items:flex-start}.brand{font-size:17px}.nav{gap:4px;flex-wrap:wrap}.nav a{padding:8px 9px}.nav a span{display:none}.btn{width:100%;min-height:46px}.actions{width:100%}.actions .btn,.actions form{flex:1 1 100%}.stats,.form-grid,.fields,.kvs,.practice-layout{grid-template-columns:1fr}.section{padding:16px;border-radius:13px}.titlebar{align-items:flex-start;flex-direction:column}.wide{grid-column:auto}input,select,textarea{font-size:16px;min-height:46px}th:nth-child(4),td:nth-child(4){display:none}.badge{margin:2px 2px 2px 0}}
 .danger{border-color:#e2a5a5;background:#fff7f7}.btn.danger-btn{background:#b42323;color:white}.btn.danger-btn:hover{background:#8f1d1d}.danger-note{color:#8f1d1d;font-weight:700}
@@ -1118,7 +1118,7 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 .practice-status{background:transparent!important;border:2px solid currentColor}.practice-status-blue{color:#60a5fa!important;border-color:#3b82f6}.practice-status-red{color:#fb7185!important;border-color:#ef4444}.practice-status-yellow{color:#fde047!important;border-color:#eab308}.practice-status-green{color:#4ade80!important;border-color:#22c55e}.light-theme .practice-status-blue{color:#1d4ed8!important}.light-theme .practice-status-red{color:#b91c1c!important}.light-theme .practice-status-yellow{color:#854d0e!important}.light-theme .practice-status-green{color:#15803d!important}
 .modern-check{display:flex;align-items:center;gap:10px;min-height:46px;padding:10px 13px;border:1px solid #3b4658;border-radius:12px;background:linear-gradient(145deg,#182130,#111925);color:#e8edf5;cursor:pointer;transition:border-color .16s,transform .16s,box-shadow .16s}.modern-check:hover{transform:translateY(-1px);border-color:#fb7185;box-shadow:0 8px 22px #02061745}.modern-check input[type=checkbox]{width:20px;height:20px;margin:0;accent-color:#ef405f}.modern-check span{font-size:12px;font-weight:800;letter-spacing:.025em}.light-theme .modern-check{background:linear-gradient(145deg,#fff,#f1f5f9);color:#172033;border-color:#cbd5e1}.invoice-inline{display:grid;gap:8px}.invoice-inline input{min-width:0}.invoice-inline .btn{width:100%}
 .pay-green{border:2px solid #22c55e!important}.pay-yellow{border:2px solid #eab308!important}.pay-blue{border:2px solid #3b82f6!important}.notification-badge{position:absolute;display:grid;place-items:center;min-width:19px;height:19px;padding:0 5px;border-radius:99px;background:#dc2626;color:#fff;font:700 11px/1 system-ui;transform:translate(13px,-13px);box-shadow:0 0 0 2px #111827}.nav-notification{position:relative}.notification-center{display:grid;gap:10px}.notification-item{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:13px;align-items:center;padding:15px;border:1px solid #334155;border-radius:13px;background:#1f2937}.notification-item.unread{border-left:4px solid #ef405f}.notification-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:#172033;font-size:21px}.notification-copy b,.notification-copy small{display:block}.notification-copy p{margin:4px 0;color:#cbd5e1}.notification-copy small{color:#94a3b8}.notification-actions{display:flex;gap:8px;align-items:center}.toggle-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.toggle-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:1px solid #334155;border-radius:11px}.toggle-row input{width:22px;height:22px}.permission-prompt{position:fixed;right:20px;bottom:20px;z-index:150;max-width:390px;padding:18px;border:1px solid #475569;border-radius:16px;background:#172033;color:#fff;box-shadow:0 24px 70px #000a}.permission-prompt p{color:#cbd5e1}.sw-update-banner{position:fixed;left:14px;right:14px;bottom:calc(14px + var(--safe-bottom));z-index:160;display:flex;align-items:center;justify-content:space-between;gap:14px;max-width:420px;margin:0 auto;padding:12px 16px;border:1px solid #475569;border-radius:14px;background:#172033;color:#fff;box-shadow:0 20px 60px #000a;animation:ppmFade .2s ease-out}.sw-update-banner button{border:0;border-radius:9px;padding:8px 14px;font-weight:700;background:var(--brand);color:#fff;cursor:pointer}.light-theme .sw-update-banner{background:#fff;color:#111827;border-color:#cbd5e1}.quick-payment{display:flex;gap:7px;align-items:center}.quick-payment select,.quick-payment input{min-width:110px}.quick-payment .btn{width:auto}.light-theme .notification-item,.light-theme .toggle-row,.light-theme .permission-prompt{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .notification-copy p{color:#334155}
-.practice-list-table{min-width:1500px}.practice-list-table th:first-child,.practice-list-table td:first-child{position:sticky;left:0;z-index:3;min-width:215px;background:#101620;box-shadow:8px 0 14px #02061735}.practice-list-table th:first-child{z-index:4}.light-theme .practice-list-table th:first-child,.light-theme .practice-list-table td:first-child{background:#fff}.inline-statuses{display:grid;gap:8px;min-width:170px}.inline-state-select{min-height:38px;padding:7px 32px 7px 10px;border-width:2px;font-weight:800}button.inline-state-select{border:0;border-radius:9px;font:inherit;cursor:pointer;text-align:center;padding:7px 14px}.inline-tag-form{display:flex;flex-direction:column;gap:2px}.invoice-inline-cell{display:grid;gap:4px;min-width:130px}.invoice-inline-input{min-height:34px;padding:6px 9px;font-size:12px}.invoice-inline-input.input-error{border-color:#ef4444}.payment-popover{position:fixed;inset:0;z-index:180;display:grid;place-items:center;padding:18px;background:#020617b8}.payment-popover[hidden]{display:none}.payment-dialog{width:min(620px,100%);max-height:90dvh;overflow:auto;padding:20px;border:1px solid #475569;border-radius:16px;background:#172033;box-shadow:0 28px 90px #000c}.payment-dialog h2{margin-bottom:6px}.payment-dialog .fields{margin-top:16px}.payment-macroarea{margin-top:20px;padding-top:18px;border-top:1px solid #334155}.payment-macroarea:first-of-type{margin-top:16px;padding-top:0;border-top:0}.payment-macroarea h3{margin:0 0 10px;font-size:16px}.payment-invoice-section{margin-top:18px;padding-top:16px;border-top:1px solid #334155}.payment-invoice-section h3{margin:0 0 4px;font-size:14px}.payment-invoice-section .fields{margin-top:10px}.payment-acconto-summary{margin:10px 0 0}.light-theme .payment-dialog{background:#fff;color:#111827}.light-theme .payment-macroarea{border-color:#e2e8f0}.light-theme .payment-invoice-section{border-color:#e2e8f0}.message-programmato{background:#4c1d95;color:#ede9fe}.message-in_invio{background:#78350f;color:#fef3c7}.message-annullato{background:#334155;color:#cbd5e1}.conversation-error{grid-column:1/-1}.conversation-error dd{white-space:normal;color:#fca5a5}.conversation-action.actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}.conversation-action form{margin:0}
+.practice-list-table{min-width:1500px}.practice-list-table th:first-child,.practice-list-table td:first-child{position:sticky;left:0;z-index:3;min-width:215px;background:#101620;box-shadow:8px 0 14px #02061735}.practice-list-table th:first-child{z-index:4}.light-theme .practice-list-table th:first-child,.light-theme .practice-list-table td:first-child{background:#fff}.inline-statuses{display:grid;gap:8px;min-width:170px}.inline-state-select{min-height:38px;padding:7px 32px 7px 10px;border-width:2px;font-weight:800}button.inline-state-select{border:0;border-radius:9px;font:inherit;cursor:pointer;text-align:center;padding:7px 14px}.inline-tag-form{display:flex;flex-direction:column;gap:2px}.invoice-inline-cell{display:grid;gap:4px;min-width:130px}.invoice-inline-input{min-height:34px;padding:6px 9px;font-size:12px}.invoice-inline-input.input-error{border-color:#ef4444}.payment-popover{position:fixed;inset:0;z-index:180;display:grid;place-items:center;padding:18px;background:#020617b8}.payment-popover[hidden]{display:none}.payment-dialog{width:min(620px,100%);max-height:90dvh;overflow:auto;padding:20px;border:1px solid #475569;border-radius:16px;background:#172033;box-shadow:0 28px 90px #000c}.payment-dialog h2{margin-bottom:6px}.payment-dialog .fields{margin-top:16px}.payment-macroarea{margin-top:20px;padding-top:18px;border-top:1px solid #334155}.payment-macroarea:first-of-type{margin-top:16px;padding-top:0;border-top:0}.payment-macroarea h3{margin:0 0 10px;font-size:16px}.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.payment-macroarea-channel{padding:14px;border:1px solid #334155;border-radius:12px;background:#182334}.payment-macroarea-channel h4{margin:0 0 10px;font-size:13px;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em}.light-theme .payment-macroarea-channel{background:#f8fafc;border-color:#cbd5e1}@media(max-width:700px){#creationPaymentSection .cols-2{grid-template-columns:1fr}}.payment-invoice-section{margin-top:18px;padding-top:16px;border-top:1px solid #334155}.payment-invoice-section h3{margin:0 0 4px;font-size:14px}.payment-invoice-section .fields{margin-top:10px}.payment-acconto-summary{margin:10px 0 0}.light-theme .payment-dialog{background:#fff;color:#111827}.light-theme .payment-macroarea{border-color:#e2e8f0}.light-theme .payment-invoice-section{border-color:#e2e8f0}.message-programmato{background:#4c1d95;color:#ede9fe}.message-in_invio{background:#78350f;color:#fef3c7}.message-annullato{background:#334155;color:#cbd5e1}.conversation-error{grid-column:1/-1}.conversation-error dd{white-space:normal;color:#fca5a5}.conversation-action.actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}.conversation-action form{margin:0}
 @media(max-width:620px){.practice-list-table th:first-child,.practice-list-table td:first-child{box-sizing:border-box;width:132px;min-width:132px;max-width:132px;padding-left:12px;padding-right:10px;white-space:normal!important}}
 @media(max-width:1150px){.conversation-card{grid-template-columns:1fr 1fr}.conversation-action{grid-column:1/-1;text-align:left}}
 @media(max-width:700px){.conversation-card{grid-template-columns:1fr;gap:14px}.conversation-card dl{grid-template-columns:1fr 1fr}.conversation-action{grid-column:auto}.conversation-action.actions{justify-content:stretch}.conversation-action form,.conversation-action .btn{width:100%}.pagination{gap:8px;justify-content:space-between}.pagination span{font-size:11px;text-align:center}.conversation-message{white-space:normal}.conversations-wrap .titlebar h1{font-size:24px}}
@@ -1286,7 +1286,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .balance-details-empty{display:grid;place-items:center;min-height:116px;margin:0;color:#94a3b8;text-align:center}
 .balance-filter-actions{margin-top:14px}.balance-filter-actions .btn{width:auto}
 .balance-expense{margin:0 0 18px}.balance-expense summary{cursor:pointer;font-weight:650}.balance-expense[open] summary{margin-bottom:16px}
-.balance-details .tablebox{overflow-x:auto;-webkit-overflow-scrolling:touch}.balance-detail-table{width:100%;min-width:1360px;border-collapse:collapse}.balance-detail-table th,.balance-detail-table td{padding:10px 12px;font-size:12px;line-height:1.35;white-space:nowrap;vertical-align:middle}.balance-detail-table td.balance-col-secondary{white-space:normal}.balance-detail-table td.balance-col-secondary small{display:block;margin-top:2px}.balance-detail-table .balance-col-action{text-align:center}.balance-detail-table .balance-col-animal{width:150px;max-width:190px;white-space:normal}.balance-detail-table .balance-col-amount{text-align:right}.balance-clickable-row:nth-child(even) td{background:#ffffff05}.balance-clickable-row{cursor:pointer}.balance-clickable-row:hover td{background:#ffffff0f}.balance-clickable-row:focus{outline:2px solid #fb7185;outline-offset:-2px}.balance-void-btn{display:inline-flex;min-height:28px;padding:5px 6px;font-size:10px}
+.balance-detail-table{width:100%;min-width:1360px;border-collapse:collapse}.balance-detail-table th,.balance-detail-table td{padding:14px 14px;font-size:13px;line-height:1.4;white-space:nowrap;vertical-align:middle}.balance-detail-table td.balance-col-secondary{white-space:normal}.balance-detail-table td.balance-col-secondary small{display:block;margin-top:2px}.balance-detail-table .balance-col-action{text-align:center}.balance-detail-table .balance-col-animal{width:150px;max-width:190px;white-space:normal}.balance-detail-table .balance-col-amount{text-align:right}.balance-clickable-row:nth-child(even) td{background:#ffffff05}.balance-clickable-row{cursor:pointer}.balance-clickable-row:hover td{background:#ffffff0f}.balance-clickable-row:focus{outline:2px solid #fb7185;outline-offset:-2px}.balance-void-btn{display:inline-flex;min-height:28px;padding:5px 6px;font-size:10px}
 .balance-manual-toolbar{margin:0 0 14px}.balance-manual-toolbar .btn{min-width:150px;background:#e9475b;color:#fff;border-color:#e9475b}.balance-manual-panels{margin-bottom:4px}
 .balance-pagination{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:16px}
 .balance-page-label{color:#94a3b8;font-size:13px;font-weight:650}
@@ -1295,7 +1295,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .light-theme .balance-card[aria-pressed="true"],.light-theme .balance-card[aria-current="true"]{border-color:#e9475b}
 .light-theme .balance-filter-note,.light-theme .balance-details-empty{color:#64748b}
 @media(max-width:900px){.balance-wrap{padding-bottom:calc(92px + var(--safe-bottom))}.balance-filters .fields{grid-template-columns:repeat(2,minmax(0,1fr))}.balance-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:560px){.balance-filters .fields{grid-template-columns:1fr}.balance-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.balance-grid .balance-card:last-child:nth-child(odd){grid-column:1/-1}.balance-card{min-height:88px;padding:10px;align-items:flex-start;flex-direction:column;justify-content:center;gap:5px}.balance-card-copy{gap:6px;font-size:11px;line-height:1.15}.balance-card-copy .icon{width:15px;height:15px;flex:0 0 15px}.balance-card-value{font-size:17px;letter-spacing:-.02em}.balance-details{padding:12px}.balance-details-heading{align-items:flex-start;flex-direction:column}.balance-details-meta{width:100%;justify-content:space-between}.balance-pagination{justify-content:space-between}.balance-pagination .btn{padding:10px 12px}.balance-manual-toolbar{display:grid;grid-template-columns:1fr 1fr}.balance-manual-toolbar .btn{min-width:0;padding:10px 8px}.balance-detail-table{min-width:1080px}.balance-detail-table th,.balance-detail-table td{padding:8px 9px;font-size:11px}.balance-void-btn{min-height:26px;padding:4px;font-size:9px}}
+@media(max-width:560px){.balance-filters .fields{grid-template-columns:1fr}.balance-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.balance-grid .balance-card:last-child:nth-child(odd){grid-column:1/-1}.balance-card{min-height:88px;padding:10px;align-items:flex-start;flex-direction:column;justify-content:center;gap:5px}.balance-card-copy{gap:6px;font-size:11px;line-height:1.15}.balance-card-copy .icon{width:15px;height:15px;flex:0 0 15px}.balance-card-value{font-size:17px;letter-spacing:-.02em}.balance-details{padding:12px}.balance-details-heading{align-items:flex-start;flex-direction:column}.balance-details-meta{width:100%;justify-content:space-between}.balance-pagination{justify-content:space-between}.balance-pagination .btn{padding:10px 12px}.balance-manual-toolbar{display:grid;grid-template-columns:1fr 1fr}.balance-manual-toolbar .btn{min-width:0;padding:10px 8px}.balance-detail-table{min-width:1080px}.balance-detail-table th,.balance-detail-table td{padding:12px 10px;font-size:12px}.balance-void-btn{min-height:32px;padding:6px 8px;font-size:10px}}
 """
 
 APP_JS = r"""
@@ -1706,19 +1706,30 @@ function setupBudgetExtras(){
   };
   const voucherField=modernizeCheck(document.querySelector('input[name="use_voucher"]'));
   if(voucherField)fields.insertBefore(voucherField,fields.firstElementChild);
-  insertControl(document.querySelector('select[name="payment_method"]'),'Metodo di pagamento',voucherField);
-  const remainingFinalField=document.querySelector('input[name="remaining_final"]')?.closest('.field');
-  const paymentStatusField=insertControl(document.querySelector('select[name="payment_status"]'),'Pagamento',remainingFinalField);
-  const economicDate=document.querySelector('input[name="economic_at"]');
-  const economicDateField=insertControl(economicDate,'Data pagamento / acconto',paymentStatusField);
-  economicDate.type='date';
-  const syncEconomicDate=()=>{
-    const status=document.querySelector('select[name="payment_status"]')?.value||'Da saldare';
-    economicDate.required=status==='Acconto'||status==='Pagato';
-    economicDateField.classList.toggle('payment-date-optional',status==='Da saldare');
-  };
-  document.querySelector('select[name="payment_status"]')?.addEventListener('change',syncEconomicDate);
-  syncEconomicDate();
+  // The practice creation form and the practice edit form share this exact
+  // same field template; only the edit form carries data-autosave-url. New
+  // practices get the ACCONTO/SALDO D/W section (reusing the Pagamento
+  // popover's own save logic server-side) instead of the single
+  // Pagamento/Metodo/Data status fields, which stay exactly as they were
+  // for editing an existing practice.
+  const isEditForm=!!document.getElementById('practiceForm')?.dataset.autosaveUrl;
+  if(isEditForm){
+    insertControl(document.querySelector('select[name="payment_method"]'),'Metodo di pagamento',voucherField);
+    const remainingFinalField=document.querySelector('input[name="remaining_final"]')?.closest('.field');
+    const paymentStatusField=insertControl(document.querySelector('select[name="payment_status"]'),'Pagamento',remainingFinalField);
+    const economicDate=document.querySelector('input[name="economic_at"]');
+    const economicDateField=insertControl(economicDate,'Data pagamento / acconto',paymentStatusField);
+    economicDate.type='date';
+    const syncEconomicDate=()=>{
+      const status=document.querySelector('select[name="payment_status"]')?.value||'Da saldare';
+      economicDate.required=status==='Acconto'||status==='Pagato';
+      economicDateField.classList.toggle('payment-date-optional',status==='Da saldare');
+    };
+    document.querySelector('select[name="payment_status"]')?.addEventListener('change',syncEconomicDate);
+    syncEconomicDate();
+  }else{
+    document.getElementById('creationPaymentSection')?.classList.remove('hidden');
+  }
   const sendCatalogField=modernizeCheck(document.querySelector('input[name="send_catalog"]'));
   insertCheck(document.querySelector('input[name="catalog_sent"]'),'CATALOGO INVIATO',sendCatalogField);
   const sendEstremiField=modernizeCheck(document.querySelector('input[name="send_estremi"]'));
@@ -1962,6 +1973,51 @@ function setupTableTopScrollbars(){
   });
 }
 document.addEventListener('DOMContentLoaded', setupTableTopScrollbars);
+function setupTableTouchScroll(){
+  // .tablebox has touch-action:none (see CSS) so the browser never starts
+  // its own native pan for it: without that, a diagonal/circular drag lets
+  // the browser scroll the box horizontally AND the page vertically at the
+  // same time, which is confusing and imprecise. This locks each gesture to
+  // whichever direction dominates its first few pixels of movement, and — for
+  // a vertical gesture — hands off seamlessly to scrolling the page once the
+  // table's own internal scroll hits its start/end, exactly like scrolling a
+  // normal page would feel once you get past a nested scrollable panel.
+  const THRESHOLD=8;
+  document.querySelectorAll('.tablebox').forEach(function(box){
+    if(box.dataset.touchScrollReady) return;
+    box.dataset.touchScrollReady='1';
+    let axis=null,phase='table';
+    let startX=0,startY=0,startScrollLeft=0,startScrollTop=0;
+    let pageAnchorY=0,pageStartScroll=0;
+    box.addEventListener('touchstart',function(e){
+      if(e.touches.length!==1)return;
+      axis=null;phase='table';
+      startX=e.touches[0].clientX;startY=e.touches[0].clientY;
+      startScrollLeft=box.scrollLeft;startScrollTop=box.scrollTop;
+    },{passive:true});
+    box.addEventListener('touchmove',function(e){
+      if(e.touches.length!==1)return;
+      const t=e.touches[0],dx=t.clientX-startX,dy=t.clientY-startY;
+      if(axis===null){
+        if(Math.hypot(dx,dy)<THRESHOLD)return;
+        axis=Math.abs(dx)>Math.abs(dy)?'x':'y';
+      }
+      e.preventDefault();
+      if(axis==='x'){box.scrollLeft=startScrollLeft-dx;return;}
+      if(phase==='table'){
+        const maxScroll=box.scrollHeight-box.clientHeight,wanted=startScrollTop-dy;
+        if(wanted<0&&dy>0){phase='page';pageAnchorY=t.clientY;pageStartScroll=window.scrollY||document.documentElement.scrollTop||0;box.scrollTop=0;}
+        else if(wanted>maxScroll&&dy<0){phase='page';pageAnchorY=t.clientY;pageStartScroll=window.scrollY||document.documentElement.scrollTop||0;box.scrollTop=maxScroll;}
+        else{box.scrollTop=Math.max(0,Math.min(maxScroll,wanted));}
+      }
+      if(phase==='page'){window.scrollTo(0,pageStartScroll-(t.clientY-pageAnchorY));}
+    },{passive:false});
+    const reset=()=>{axis=null;phase='table';};
+    box.addEventListener('touchend',reset,{passive:true});
+    box.addEventListener('touchcancel',reset,{passive:true});
+  });
+}
+document.addEventListener('DOMContentLoaded', setupTableTouchScroll);
 const PPM_LIST_PAGES={
   '/archivio/pratiche':{detail:/^\/pratiche\/\d+/},
   '/calendario':{detail:/^\/calendario\/\d+/,calendar:true},
@@ -6716,6 +6772,11 @@ class App(BaseHTTPRequestHandler):
             or (raw("paid_at") if selected_payment_status=="Pagato" else "")
         )
         payment_method_options=''.join(f'<option value="{method}" {"selected" if raw("payment_method")==method else ""}>{method or "Seleziona metodo"}</option>' for method in PAYMENT_METHODS)
+        macro_method_options=lambda name: ''.join(f'<option value="{method}" {"selected" if raw(name)==method else ""}>{method or "Seleziona metodo"}</option>' for method in PAYMENT_METHODS)
+        def macro_field_group(macroarea,channel,label):
+            totale_name=f"{macroarea}_{channel.lower()}_totale";data_name=f"{macroarea}_{channel.lower()}_data";modalita_name=f"{macroarea}_{channel.lower()}_modalita"
+            return f'''<div class="payment-macroarea-channel"><h4>{esc(label)}</h4><div class="fields"><div class="field"><label>Importo €</label><input name="{totale_name}" value="{val(totale_name)}" inputmode="decimal" placeholder="Numero, es. 120,00"></div><div class="field"><label>Data</label><input type="date" name="{data_name}" value="{val(data_name)}"></div><div class="field"><label>Metodo di pagamento</label><select name="{modalita_name}">{macro_method_options(modalita_name)}</select></div></div></div>'''
+        creation_payment_fields=f'''<section class="section hidden" id="creationPaymentSection"><h2>Pagamento</h2><p class="sub">Ogni importo è indipendente: compila solo D, solo W, o entrambi. Se compili solo D il metodo di pagamento resta facoltativo. Se per lo stesso incasso compili sia D che W, viene registrato solo D.</p><div class="payment-macroarea"><h3>ACCONTO</h3><div class="grid cols-2">{macro_field_group("acconto","D","Acconto D")}{macro_field_group("acconto","W","Acconto W")}</div></div><div class="payment-macroarea"><h3>SALDO</h3><div class="grid cols-2">{macro_field_group("saldo","D","Saldo D")}{macro_field_group("saldo","W","Saldo W")}</div></div></section>'''
         if user is None or user["role"]=="admin":
             operator_field=f'''<div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option><option {selected('operator_name','GIANLUCA')}>GIANLUCA</option></select></div>'''
         else:
@@ -6732,6 +6793,7 @@ class App(BaseHTTPRequestHandler):
         <section class="section"><h2>AMBULATORIO VETERINARIO</h2><div class="fields"><div class="field full lookup"><label>VETERINARIO</label><input id="vetSearch" autocomplete="off" placeholder="Scrivi per cercare il veterinario"><div id="vetResults" class="lookup-results hidden"></div><select name="veterinarian_id">{vet_options}</select><input type="hidden" name="clinic_name" value="{val('clinic_name')}"><button class="btn ghost" type="button" id="clearVetSelection" style="margin-top:8px">Cancella veterinario</button></div><div class="field"><label>MEDICO VETERINARIO</label><input name="veterinarian_name" value="{val('veterinarian_name')}"></div><div class="field"><label><input type="checkbox" name="voucher_requested" value="Si" {voucher_checked}> BUONO</label><small class="sub">Spunta per assegnare un buono al veterinario selezionato.</small></div></div></section>
         <section class="section"><h2>TRASPORTATORE</h2><div class="fields"><div class="field"><label>Dati trasportatore</label><select name="transporter_mode"><option {selected('transporter_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('transporter_mode','DATI PET PARADISE','IDEM SPED')}>DATI PET PARADISE</option></select></div><div class="field"><label>Mezzo di trasporto</label><select name="transport_method" id="transport_method_quick"><option value="">Seleziona mezzo</option><option {selected('transport_method','Fiat Fiorino')}>Fiat Fiorino</option><option {selected('transport_method','Renault Captur')}>Renault Captur</option><option {selected('transport_method','Dr PK8')}>Dr PK8</option><option {selected('transport_method','Mezzo proprio')}>Mezzo proprio</option></select></div><div class="field"><label>Targa automezzo</label><input name="vehicle_plate" value="{val('vehicle_plate')}" placeholder="Compilata automaticamente, modificabile"></div><div class="field"><label>Temperatura</label><select name="temperature_mode"><option {selected('temperature_mode','Ambiente','Ambiente')}>Ambiente</option><option {selected('temperature_mode','Refrigerato','Ambiente')}>Refrigerato</option><option {selected('temperature_mode','Congelato','Ambiente')}>Congelato</option></select></div><div class="field"><label>Numero colli</label><input name="package_count" value="{val('package_count') or '1'}"></div><div class="field"><label>ID contenitore</label><select name="container_id"><option value="">Seleziona ID contenitore</option><option {selected('container_id','03/2021')}>03/2021</option><option {selected('container_id','04/2021')}>04/2021</option></select></div><div class="field"><label>Numero lotto</label><input name="lot_number" value="{val('lot_number') or '/'}"></div><div class="field"><label>Metodo trattamento</label><input name="treatment_method" value="{val('treatment_method') or '/'}"></div></div></section>
         <section class="section"><h2>Preventivo</h2><div class="fields"><div class="field"><label>Cremazione €</label><input name="price_cremation" value="{val('price_cremation')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Ritiro €</label><input name="price_pickup" value="{val('price_pickup')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Urna €</label><input name="price_urn" value="{val('price_urn')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label><input type="checkbox" name="send_catalog" value="Si" {catalog_checked} style="width:auto"> INVIARE CATALOGO</label></div><div class="field"><label>Riconsegna €</label><input name="price_delivery" value="{val('price_delivery')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label><input type="checkbox" name="delivery_at_clinic" value="Si" {delivery_clinic_checked} style="width:auto"> IN AMBULATORIO</label></div><div class="field"><label><input type="checkbox" name="delivery_at_home" value="Si" {delivery_home_checked} style="width:auto"> A CASA</label></div><div class="field"><label>Calco €</label><input name="price_cast" value="{val('price_cast')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Calco polpastrello €</label><input name="price_paw_cast" value="{val('price_paw_cast')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Calco naso €</label><input name="price_nose_cast" value="{val('price_nose_cast')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Serale €</label><input name="price_evening" value="{val('price_evening')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Notturno €</label><input name="price_night" value="{val('price_night')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Festivo €</label><input name="price_holiday" value="{val('price_holiday')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Accessori €</label><input name="price_accessories" value="{val('price_accessories')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Totale servizio €</label><input name="total_service" value="{val('total_service')}" readonly></div><div class="field"><label>Acconto €</label><input name="deposit" value="{val('deposit')}" placeholder="Numero o testo libero"></div><div class="field"><label>Rimanenza €</label><input name="remaining_balance" value="{val('remaining_balance')}" readonly></div><div class="field full"><label>TOTALE D</label><textarea name="total_text" placeholder="Testo libero per note sul totale">{val('total_text')}</textarea></div><div class="field"><label>Acconto D €</label><input name="deposit_final" value="{val('deposit_final')}" placeholder="Numero o testo libero"></div><div class="field"><label>Rimanenza D €</label><input name="remaining_final" value="{val('remaining_final')}" readonly></div><div class="field"><label><input type="checkbox" name="send_estremi" value="Si" {estremi_checked} style="width:auto"> INVIARE ESTREMI</label></div><div class="field"><label><input type="checkbox" name="use_voucher" value="Si" {use_voucher_checked} style="width:auto"> USA BUONO</label><div id="useVoucherBox" class="selected-box hidden"><span id="useVoucherStatus">Seleziona il veterinario e spunta USA BUONO.</span><select name="used_voucher_id" data-current="{val('used_voucher_id')}" class="hidden"><option value="">Seleziona buono</option></select></div></div></div></section>
+        {creation_payment_fields}
         <section class="section"><h2>Note</h2><div class="fields"><div class="field full"><label>NOTE</label><textarea name="notes">{val('notes')}</textarea></div></div></section>
         <section class="section"><h2>Etichette operative</h2><div class="fields">{tag_select('tag_assistita','ASSISTITA','tag-red')}{tag_select('tag_possibile_assistita','POSSIBILE ASSISTITA','tag-red')}{tag_select('tag_assistita_streaming','ASSISTITA STREAMING','tag-orange')}{tag_select('tag_possibile_assistita_streaming','POSSIBILE ASSISTITA STREAMING','tag-orange')}{tag_select('tag_saluto','SALUTO','tag-purple')}{tag_select('tag_calco','CALCO','tag-yellow')}{tag_select('tag_possibile_calco','POSSIBILE CALCO','tag-yellow')}{tag_select('tag_calco_urna','CALCO PER URNA','tag-yellow')}{tag_select('tag_calco_paw','CALCO POLPASTRELLO','tag-yellow')}{tag_select('tag_possibile_calco_paw','POSSIBILE CALCO POLPASTRELLO','tag-yellow')}{tag_select('tag_calco_nose','CALCO NASO','tag-yellow')}{tag_select('tag_possibile_calco_nose','POSSIBILE CALCO NASO','tag-yellow')}{tag_select('tag_avvisare','AVVISARE','tag-pink')}{tag_select('tag_da_richiamare','DA RICHIAMARE','tag-blue')}</div></section>
         <section class="section"><h2>Documento e accettazione</h2><div class="fields"><div class="field"><label>Numero documento</label><input name="identity_document_number" value="{val('identity_document_number')}"></div><div class="field"><label>Data rilascio</label><input type="date" name="identity_document_date" value="{val('identity_document_date')}"></div><div class="field full"><label>Luogo firma</label><input name="signing_place" value="{val('signing_place') or val('destination_branch')}"></div></div></section>'''
@@ -7743,30 +7805,38 @@ class App(BaseHTTPRequestHandler):
         if user["role"]!="admin": d["operator_name"]=user["display_name"].upper()
         error=self.validation_error(d)
         if error: return self.new_page(user,draft=payment_draft(),error=error)
-        initial_payment_amount=normalize_money_text(f.get("payment_amount",""))
-        initial_payment_status=d.get("payment_status") or "Da saldare"
-        if not initial_payment_amount and initial_payment_status=="Acconto":
-            initial_payment_amount=normalize_money_text(d.get("deposit_final") if uses_total_d(d) else d.get("deposit"))
-        if not initial_payment_amount and initial_payment_status=="Pagato":
-            initial_payment_amount=f"{effective_total(d):.2f}"
-        if initial_payment_status in ("Acconto","Pagato") and d.get("use_voucher")!="Si":
-            if not initial_payment_amount or not economic_at or (not uses_total_d(d) and not d.get("payment_method")):
-                return self.new_page(user,draft=payment_draft(),error="Per registrare un incasso indica importo, data e metodo di pagamento.")
-            try:
-                date.fromisoformat(economic_at)
-            except ValueError:
-                return self.new_page(user,draft=payment_draft(),error="Indica una data pagamento valida.")
-            initial_amount_value=money_value(initial_payment_amount); initial_due=effective_total(d)
-            if initial_amount_value<=0:
-                return self.new_page(user,draft=payment_draft(),error="Indica un importo incassato valido.")
-            if initial_payment_status=="Pagato" and abs(initial_amount_value-initial_due)>=0.005:
-                return self.new_page(user,draft=payment_draft(),error=f"Per impostare Pagato, registra esattamente {money_it(initial_due)}.")
-            if initial_payment_status=="Acconto" and initial_amount_value>=initial_due-0.004:
-                return self.new_page(user,draft=payment_draft(),error="Un acconto deve essere inferiore al totale della pratica.")
+        # ACCONTO/SALDO each independently accept a D amount and/or a W
+        # amount; if both are filled for the same macroarea only D is ever
+        # registered as a real movement (never both, to avoid double-counting
+        # the same receipt). Resolved here, before the practice even exists,
+        # so a bad amount/date/method is reported the same way it always was
+        # — without leaving a half-created practice behind — then actually
+        # saved further down via apply_payment_macroarea, the exact same
+        # core logic the Pagamento popover itself uses.
+        macro_plan={}
+        if d.get("use_voucher")!="Si":
+            for macroarea in ("acconto","saldo"):
+                d_amount=normalize_money_text(f.get(f"{macroarea}_d_totale",""))
+                w_amount=normalize_money_text(f.get(f"{macroarea}_w_totale",""))
+                if money_value(d_amount)>0:
+                    channel="D";totale_field=d_amount
+                    data_field=f.get(f"{macroarea}_d_data","").strip();method=f.get(f"{macroarea}_d_modalita","").strip()
+                elif money_value(w_amount)>0:
+                    channel="W";totale_field=w_amount
+                    data_field=f.get(f"{macroarea}_w_data","").strip();method=f.get(f"{macroarea}_w_modalita","").strip()
+                else:
+                    continue
+                try:
+                    date.fromisoformat(data_field)
+                except ValueError:
+                    return self.new_page(user,draft=payment_draft(),error=f"Indica una data valida per {'Acconto' if macroarea=='acconto' else 'Saldo'} {channel}.")
+                if channel!="D" and not method:
+                    return self.new_page(user,draft=payment_draft(),error=f"Seleziona il metodo di pagamento per {'Acconto' if macroarea=='acconto' else 'Saldo'} {channel}.")
+                macro_plan[macroarea]={"channel":channel,"totale_field":totale_field,"data_field":data_field,"method":method}
         initial=f.get("status","Ritirato")
         if initial not in STATES or (initial=="Smaltito" and d.get("service_type")!="Cremazione collettiva"): initial="Ritirato"
         with db() as c:
-            if creation_balance_key and initial_payment_status in ("Acconto","Pagato"):
+            if creation_balance_key and macro_plan:
                 existing_balance=next((
                     movement for movement in get_balance_movements(c)
                     if movement.idempotency_key.endswith(":"+creation_balance_key)
@@ -7801,9 +7871,15 @@ class App(BaseHTTPRequestHandler):
             cur=c.execute(f"INSERT INTO practices({','.join(cols)}) VALUES({marks})",values); pid=cur.lastrowid
             self.sync_practice_urn(c,pid,None,d.get("urn_id"),user["id"])
             self.sync_practice_urn(c,pid,None,d.get("urn_id_2"),user["id"])
-            created_practice=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
-            if initial_payment_status in ("Acconto","Pagato") and d.get("use_voucher")!="Si":
-                payment_error=self.record_payment_transition(c,created_practice,"Da saldare",initial_payment_status,initial_payment_amount,d.get("payment_method"),economic_at,user["id"],"Incasso alla creazione della pratica",creation_balance_key or f"practice-create:{pid}","practice_creation")
+            for macroarea,plan in macro_plan.items():
+                fresh_practice=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+                payment_error=self.apply_payment_macroarea(
+                    c,user,pid,fresh_practice,macroarea,
+                    data_field=plan["data_field"],totale_field=plan["totale_field"],
+                    channel=plan["channel"],method=plan["method"],
+                    invoice_number="",invoice_total="",invoice_date="",
+                    balance_key=creation_balance_key,
+                )
                 if payment_error:raise ValueError(payment_error)
             self.sync_voucher(c,pid,d)
             self.apply_used_voucher(c,pid,d,user["id"])
@@ -8297,141 +8373,153 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             error="Macroarea di pagamento non valida."
             return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
         prefix=macroarea
-        data_field=form.get(f"{prefix}_data","").strip()
-        totale_field=normalize_money_text(form.get(f"{prefix}_totale",""))
-        channel=form.get(f"{prefix}_circuito","").strip().upper()
-        method=form.get(f"{prefix}_modalita","").strip()
-        invoice_number=form.get(f"{prefix}_fattura_numero","").strip()
-        invoice_total=normalize_money_text(form.get(f"{prefix}_fattura_totale",""))
-        invoice_date=form.get(f"{prefix}_fattura_data","").strip()
-        try:
-            date.fromisoformat(data_field)
-        except ValueError:
-            error="Indica una data valida."
-            return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
-        amount=round(money_value(totale_field),2)
-        if amount<=0:
-            error="Indica un importo valido."
-            return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
-        if channel not in ("W","D"):
-            error="Seleziona il circuito (W o D)."
-            return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
-        if method and method not in PAYMENT_METHODS:
-            error="Seleziona il metodo di pagamento."
-            return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
-        if channel!="D" and not method:
-            error="Seleziona il metodo di pagamento."
-            return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
-        if channel!="W":
-            invoice_number=invoice_total=invoice_date=""
-        if invoice_total and not re.fullmatch(r"\d+(?:\.\d{1,2})?",invoice_total):
-            error="Totale fattura non valido."
-            return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
-        if invoice_date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}",invoice_date):
-            error="Data fattura non valida."
-            return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
         with db() as c:
             practice=c.execute("SELECT * FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(pid,)).fetchone()
             if not practice:
                 return self.send_json({"ok":False,"error":"Pratica non trovata"},404) if ajax else self.send_error(404)
-            existing_movement,existing_invoice=latest_movement_and_invoice(c,pid,macroarea)
-            if invoice_number:
-                conflict=self.invoice_conflict(c,invoice_number,exclude_movement_invoice_id=existing_invoice["id"] if existing_invoice else None)
-                if conflict:
-                    error=f'Numero fattura già usato nella pratica {conflict["practice_number"]}'
-                    return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
-            is_collaborator=(practice["request_origin"] or "")=="Collaboratore" or bool(practice["collaborator_id"])
-            category=classify_balance_category(has_total_d=(channel=="D"),is_collaborator=is_collaborator)
-            has_acconto_row=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'acconto%' LIMIT 1",(pid,)).fetchone())
-            balance_type="Acconto" if macroarea=="acconto" else ("Saldo" if has_acconto_row else "Incasso completo")
-            stamp=now()
-            if existing_movement:
-                c.execute(
-                    "UPDATE payment_movements SET amount=?,paid_at=?,payment_channel=?,payment_method=?,movement_category=? WHERE id=?",
-                    (amount,data_field,channel,method,category,existing_movement["id"]),
-                )
-                movement_id=existing_movement["id"]
-                old_paid_at=str(existing_movement["paid_at"] or "")[:10]
-                corrected=correct_balance_movement_date(
-                    c,practice_id=pid,movement_type=balance_type,movement_date=data_field,
-                    idempotency_key=f"payment-macroarea-date:{pid}:{macroarea}:{old_paid_at or 'missing'}:{data_field}",
-                    created_by=user["id"],
-                )
-                if corrected is None:
-                    create_balance_movement(
-                        c,amount_cents=euros_to_cents(f"{amount:.2f}"),movement_date=data_field,category=category,
-                        ledger_section="Entrata",movement_type=balance_type,
-                        idempotency_key=f"payment-macroarea-bootstrap:{pid}:{macroarea}",
-                        practice_id=pid,practice_number_snapshot=practice["practice_number"] or "",
-                        payment_method=method,description="Pagamento registrato",source="practice_payment_macroarea",
-                        collaborator_id=int(practice["collaborator_id"]) if practice["collaborator_id"] else None,
-                        created_by=user["id"],
-                    )
-                else:
-                    target_cents=euros_to_cents(f"{amount:.2f}")
-                    if corrected.amount_cents!=target_cents or corrected.category!=category:
-                        correct_balance_movement_amount(
-                            c,original_movement_id=corrected.id,new_amount_cents=target_cents,
-                            idempotency_key=f"payment-macroarea-amount:{pid}:{macroarea}:{corrected.amount_cents}:{target_cents}",
-                            category=category,created_by=user["id"],reason="Correzione pagamento",
-                        )
-            else:
-                idempotency_key=f'practice-movement:{pid}:{macroarea}:{form.get("balance_idempotency_key","").strip() or secrets.token_urlsafe(8)}'
+            error=self.apply_payment_macroarea(
+                c,user,pid,practice,macroarea,
+                data_field=form.get(f"{prefix}_data","").strip(),
+                totale_field=normalize_money_text(form.get(f"{prefix}_totale","")),
+                channel=form.get(f"{prefix}_circuito","").strip().upper(),
+                method=form.get(f"{prefix}_modalita","").strip(),
+                invoice_number=form.get(f"{prefix}_fattura_numero","").strip(),
+                invoice_total=normalize_money_text(form.get(f"{prefix}_fattura_totale","")),
+                invoice_date=form.get(f"{prefix}_fattura_data","").strip(),
+                balance_key=form.get("balance_idempotency_key","").strip(),
+            )
+            if error:
+                return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
+            new_status=c.execute("SELECT payment_status FROM practices WHERE id=?",(pid,)).fetchone()["payment_status"]
+        if ajax:return self.send_json({"ok":True,"payment_status":new_status,"macroarea":macroarea})
+        return self.redirect(safe_return_path(form.get("return_to") or self.headers.get("Referer"),"/"))
+
+    def apply_payment_macroarea(self,c,user,pid,practice,macroarea,*,data_field,totale_field,channel,method,invoice_number,invoice_total,invoice_date,balance_key=""):
+        """Core logic shared by the Pagamento popover (save_payment_macroarea)
+        above and practice creation (create_practice): validates and
+        persists one acconto/saldo entry for one circuito — the
+        payment_movements row, the real balance_movements ledger entry, its
+        W-only invoice, and the recomputed payment_status/deposit/remaining
+        on the practice. Returns an error message, or None on success.
+        Callers must pass an already-open connection and an already-fetched
+        practice row (create_practice re-fetches it fresh between an acconto
+        call and a saldo call in the same request, since deposit/remaining
+        fallback values must reflect what the first call just wrote)."""
+        try:
+            date.fromisoformat(data_field)
+        except ValueError:
+            return "Indica una data valida."
+        amount=round(money_value(totale_field),2)
+        if amount<=0:
+            return "Indica un importo valido."
+        if channel not in ("W","D"):
+            return "Seleziona il circuito (W o D)."
+        if method and method not in PAYMENT_METHODS:
+            return "Seleziona il metodo di pagamento."
+        if channel!="D" and not method:
+            return "Seleziona il metodo di pagamento."
+        if channel!="W":
+            invoice_number=invoice_total=invoice_date=""
+        if invoice_total and not re.fullmatch(r"\d+(?:\.\d{1,2})?",invoice_total):
+            return "Totale fattura non valido."
+        if invoice_date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}",invoice_date):
+            return "Data fattura non valida."
+        existing_movement,existing_invoice=latest_movement_and_invoice(c,pid,macroarea)
+        if invoice_number:
+            conflict=self.invoice_conflict(c,invoice_number,exclude_movement_invoice_id=existing_invoice["id"] if existing_invoice else None)
+            if conflict:
+                return f'Numero fattura già usato nella pratica {conflict["practice_number"]}'
+        is_collaborator=(practice["request_origin"] or "")=="Collaboratore" or bool(practice["collaborator_id"])
+        category=classify_balance_category(has_total_d=(channel=="D"),is_collaborator=is_collaborator)
+        has_acconto_row=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'acconto%' LIMIT 1",(pid,)).fetchone())
+        balance_type="Acconto" if macroarea=="acconto" else ("Saldo" if has_acconto_row else "Incasso completo")
+        stamp=now()
+        if existing_movement:
+            c.execute(
+                "UPDATE payment_movements SET amount=?,paid_at=?,payment_channel=?,payment_method=?,movement_category=? WHERE id=?",
+                (amount,data_field,channel,method,category,existing_movement["id"]),
+            )
+            movement_id=existing_movement["id"]
+            old_paid_at=str(existing_movement["paid_at"] or "")[:10]
+            corrected=correct_balance_movement_date(
+                c,practice_id=pid,movement_type=balance_type,movement_date=data_field,
+                idempotency_key=f"payment-macroarea-date:{pid}:{macroarea}:{old_paid_at or 'missing'}:{data_field}",
+                created_by=user["id"],
+            )
+            if corrected is None:
                 create_balance_movement(
                     c,amount_cents=euros_to_cents(f"{amount:.2f}"),movement_date=data_field,category=category,
-                    ledger_section="Entrata",movement_type=balance_type,idempotency_key=idempotency_key,
+                    ledger_section="Entrata",movement_type=balance_type,
+                    idempotency_key=f"payment-macroarea-bootstrap:{pid}:{macroarea}",
                     practice_id=pid,practice_number_snapshot=practice["practice_number"] or "",
                     payment_method=method,description="Pagamento registrato",source="practice_payment_macroarea",
                     collaborator_id=int(practice["collaborator_id"]) if practice["collaborator_id"] else None,
                     created_by=user["id"],
                 )
-                self.add_payment_movement(c,pid,macroarea,category,amount,user["id"],"Pagamento registrato",data_field,payment_method=method,movement_category=category)
-                movement=c.execute("SELECT id FROM payment_movements WHERE practice_id=? AND payment_type LIKE ? ORDER BY id DESC LIMIT 1",(pid,f"{macroarea}%")).fetchone()
-                movement_id=movement["id"] if movement else None
-            if channel=="W" and movement_id:
-                self.save_movement_invoice(c,pid,movement_id,invoice_number,invoice_date,invoice_total or f"{amount:.2f}",method,channel,user["id"])
-            old_status=practice["payment_status"] or "Da saldare"
-            has_acconto=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'acconto%' LIMIT 1",(pid,)).fetchone())
-            has_saldo=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'saldo%' LIMIT 1",(pid,)).fetchone())
-            new_status="Pagato" if has_saldo else ("Acconto" if has_acconto else "Da saldare")
-            due=effective_total(practice)
-            received=money_value(c.execute("SELECT COALESCE(SUM(amount),0) amount FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["amount"])
-            remaining=max(0.0,due-received)
-            # Acconto/rimanenza are stored in a different column pair depending on
-            # which circuito this practice uses (W: deposit/remaining_balance,
-            # D: deposit_final/remaining_final) — updating the wrong pair used to
-            # leave a D-circuito acconto permanently showing as 0. A fully Pagato
-            # practice can never have anything left on either circuit though, so
-            # both remaining fields are forced to zero regardless of channel,
-            # same rule already enforced at creation/edit time.
-            due_d=money_value(practice["total_text"])
-            if uses_total_d(practice):
-                deposit=practice["deposit"]
-                deposit_final=f"{received:.2f}" if new_status=="Acconto" else practice["deposit_final"]
             else:
-                deposit=f"{received:.2f}" if new_status=="Acconto" else practice["deposit"]
-                deposit_final=practice["deposit_final"]
-            if new_status=="Pagato":
-                remaining_balance="0.00";remaining_final="0.00" if due_d else ""
-            elif uses_total_d(practice):
-                remaining_balance=practice["remaining_balance"];remaining_final=f"{remaining:.2f}"
-            else:
-                remaining_balance=f"{remaining:.2f}";remaining_final=practice["remaining_final"]
-            date_field="deposit_paid_at" if macroarea=="acconto" else "paid_at"
-            c.execute(
-                f"UPDATE practices SET payment_status=?,payment_method=?,payment_amount=?,deposit=?,remaining_balance=?,deposit_final=?,remaining_final=?,{date_field}=?,updated_at=? WHERE id=?",
-                (new_status,method,f"{amount:.2f}",deposit,remaining_balance,deposit_final,remaining_final,data_field,stamp,pid),
+                target_cents=euros_to_cents(f"{amount:.2f}")
+                if corrected.amount_cents!=target_cents or corrected.category!=category:
+                    correct_balance_movement_amount(
+                        c,original_movement_id=corrected.id,new_amount_cents=target_cents,
+                        idempotency_key=f"payment-macroarea-amount:{pid}:{macroarea}:{corrected.amount_cents}:{target_cents}",
+                        category=category,created_by=user["id"],reason="Correzione pagamento",
+                    )
+        else:
+            idempotency_key=f'practice-movement:{pid}:{macroarea}:{balance_key or secrets.token_urlsafe(8)}'
+            create_balance_movement(
+                c,amount_cents=euros_to_cents(f"{amount:.2f}"),movement_date=data_field,category=category,
+                ledger_section="Entrata",movement_type=balance_type,idempotency_key=idempotency_key,
+                practice_id=pid,practice_number_snapshot=practice["practice_number"] or "",
+                payment_method=method,description="Pagamento registrato",source="practice_payment_macroarea",
+                collaborator_id=int(practice["collaborator_id"]) if practice["collaborator_id"] else None,
+                created_by=user["id"],
             )
-            if old_status!=new_status:
-                c.execute(
-                    "INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",
-                    (pid,"Pagamento",old_status,f'{new_status} · {money_it(amount)}',user["id"],stamp),
-                )
-            if new_status=="Pagato" and old_status!="Pagato":
-                owner=f'{practice["owner_first_name"] or ""} {practice["owner_last_name"] or ""}'.strip()
-                emit_notification(c,"payment_received","💰 Pagamento ricevuto",f'{owner}\n{money_it(money_value(amount))}',pid,user["id"],db_path=DB_PATH)
-        if ajax:return self.send_json({"ok":True,"payment_status":new_status,"macroarea":macroarea})
-        return self.redirect(safe_return_path(form.get("return_to") or self.headers.get("Referer"),"/"))
+            self.add_payment_movement(c,pid,macroarea,category,amount,user["id"],"Pagamento registrato",data_field,payment_method=method,movement_category=category)
+            movement=c.execute("SELECT id FROM payment_movements WHERE practice_id=? AND payment_type LIKE ? ORDER BY id DESC LIMIT 1",(pid,f"{macroarea}%")).fetchone()
+            movement_id=movement["id"] if movement else None
+        if channel=="W" and movement_id:
+            self.save_movement_invoice(c,pid,movement_id,invoice_number,invoice_date,invoice_total or f"{amount:.2f}",method,channel,user["id"])
+        old_status=practice["payment_status"] or "Da saldare"
+        has_acconto=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'acconto%' LIMIT 1",(pid,)).fetchone())
+        has_saldo=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'saldo%' LIMIT 1",(pid,)).fetchone())
+        new_status="Pagato" if has_saldo else ("Acconto" if has_acconto else "Da saldare")
+        due=effective_total(practice)
+        received=money_value(c.execute("SELECT COALESCE(SUM(amount),0) amount FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["amount"])
+        remaining=max(0.0,due-received)
+        # Acconto/rimanenza are stored in a different column pair depending on
+        # which circuito this practice uses (W: deposit/remaining_balance,
+        # D: deposit_final/remaining_final) — updating the wrong pair used to
+        # leave a D-circuito acconto permanently showing as 0. A fully Pagato
+        # practice can never have anything left on either circuit though, so
+        # both remaining fields are forced to zero regardless of channel,
+        # same rule already enforced at creation/edit time.
+        due_d=money_value(practice["total_text"])
+        if uses_total_d(practice):
+            deposit=practice["deposit"]
+            deposit_final=f"{received:.2f}" if new_status=="Acconto" else practice["deposit_final"]
+        else:
+            deposit=f"{received:.2f}" if new_status=="Acconto" else practice["deposit"]
+            deposit_final=practice["deposit_final"]
+        if new_status=="Pagato":
+            remaining_balance="0.00";remaining_final="0.00" if due_d else ""
+        elif uses_total_d(practice):
+            remaining_balance=practice["remaining_balance"];remaining_final=f"{remaining:.2f}"
+        else:
+            remaining_balance=f"{remaining:.2f}";remaining_final=practice["remaining_final"]
+        date_field="deposit_paid_at" if macroarea=="acconto" else "paid_at"
+        c.execute(
+            f"UPDATE practices SET payment_status=?,payment_method=?,payment_amount=?,deposit=?,remaining_balance=?,deposit_final=?,remaining_final=?,{date_field}=?,updated_at=? WHERE id=?",
+            (new_status,method,f"{amount:.2f}",deposit,remaining_balance,deposit_final,remaining_final,data_field,stamp,pid),
+        )
+        if old_status!=new_status:
+            c.execute(
+                "INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",
+                (pid,"Pagamento",old_status,f'{new_status} · {money_it(amount)}',user["id"],stamp),
+            )
+        if new_status=="Pagato" and old_status!="Pagato":
+            owner=f'{practice["owner_first_name"] or ""} {practice["owner_last_name"] or ""}'.strip()
+            emit_notification(c,"payment_received","💰 Pagamento ricevuto",f'{owner}\n{money_it(money_value(amount))}',pid,user["id"],db_path=DB_PATH)
+        return None
 
     def remove_payment_macroarea(self,user,pid):
         """Undo a previously saved macroarea (acconto or saldo): deletes its
