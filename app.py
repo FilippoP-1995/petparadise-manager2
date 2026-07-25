@@ -1531,6 +1531,7 @@ document.addEventListener('input', function(e){
   }
   if(e.target && e.target.matches('[data-preventivo-sum="1"]')) updatePreventivoTotal();
   if(e.target && (e.target.name === 'deposit' || e.target.name === 'total_service' || e.target.name === 'total_text' || e.target.name === 'deposit_final')) updateRemainingBalance();
+  if(e.target && ['total_service','total_text','acconto_w_totale','acconto_d_totale'].includes(e.target.name)) updateMacroRimanenza();
 });
 function setupZipLookup(){
   const street=document.querySelector('input[name="owner_street"]');
@@ -1872,6 +1873,39 @@ function setupBudgetExtras(){
   if(sendEstremiField)fields.append(sendEstremiField);
   const estremiSentField=insertCheck(document.querySelector('input[name="estremi_sent"]'),'ESTREMI INVIATI',sendEstremiField||fields.lastElementChild);
   insertCheck(document.querySelector('input[name="make_invoice"]'),'FARE FATTURA',estremiSentField||sendEstremiField||fields.lastElementChild);
+  // Creation-only: Totale W/Totale D, INVIARE ESTREMI/ESTREMI INVIATI move
+  // (not copy) into the new Pagamento area, and the old free-standing
+  // Acconto/Rimanenza W/D fields are retired from view — the real acconto
+  // is now entered directly in the ACCONTO block below, and
+  // apply_payment_macroarea keeps deposit/deposit_final/remaining_balance/
+  // remaining_final correct server-side regardless of whether a human ever
+  // sees these inputs. The edit form is untouched (isEditForm branch above
+  // keeps its own layout).
+  if(!isEditForm){
+    const paymentSection=document.getElementById('creationPaymentSection');
+    const estremiRow=document.getElementById('paymentEstremiRow');
+    const totalsRow=document.getElementById('paymentTotalsRow');
+    if(paymentSection&&estremiRow&&totalsRow){
+      if(sendEstremiField)estremiRow.append(sendEstremiField);
+      if(estremiSentField)estremiRow.append(estremiSentField);
+      const totalServiceWrap=document.querySelector('input[name="total_service"]')?.closest('.field');
+      const totalTextWrap=document.querySelector('input[name="total_text"]')?.closest('.field');
+      if(totalServiceWrap)totalsRow.append(totalServiceWrap);
+      if(totalTextWrap)totalsRow.append(totalTextWrap);
+      ['deposit','remaining_balance','deposit_final','remaining_final'].forEach(function(name){
+        const wrap=document.querySelector(`[name="${name}"]`)?.closest('.field');
+        if(wrap){wrap.classList.add('hidden');paymentSection.append(wrap);}
+      });
+    }
+  }
+}
+function updateMacroRimanenza(){
+  const totalW=ppmNumber(document.querySelector('input[name="total_service"]')?.value||0);
+  const totalD=ppmNumber(document.querySelector('input[name="total_text"]')?.value||0);
+  const accontoW=ppmNumber(document.querySelector('input[name="acconto_w_totale"]')?.value||0);
+  const accontoD=ppmNumber(document.querySelector('input[name="acconto_d_totale"]')?.value||0);
+  const rimW=document.getElementById('rimanenzaWDisplay'); if(rimW) rimW.value=ppmFormat(Math.max(0,totalW-accontoW));
+  const rimD=document.getElementById('rimanenzaDDisplay'); if(rimD) rimD.value=ppmFormat(Math.max(0,totalD-accontoD));
 }
 function arrangeBudgetLayout(){
   const fields=document.querySelector('.section input[name="price_cremation"]')?.closest('.fields');
@@ -1916,7 +1950,7 @@ function arrangeBudgetLayout(){
   fields.replaceChildren(workspace);fields.classList.add('budget-layout');
 }
 document.addEventListener('DOMContentLoaded', function(){
-  reorderSenderFields(); placeCallBackFlag(); setupBudgetExtras(); decoratePracticeSections(); setupNumericBudgetFields(); updatePreventivoTotal(); updateRemainingBalance(); setupZipLookup(); setupUrnNotesField();arrangeBudgetLayout();
+  reorderSenderFields(); placeCallBackFlag(); setupBudgetExtras(); decoratePracticeSections(); setupNumericBudgetFields(); updatePreventivoTotal(); updateRemainingBalance(); updateMacroRimanenza(); setupZipLookup(); setupUrnNotesField();arrangeBudgetLayout();
   const plate=document.querySelector('input[name="vehicle_plate"]');
   if(plate) plate.readOnly=false;
 });
@@ -6775,8 +6809,12 @@ class App(BaseHTTPRequestHandler):
         macro_method_options=lambda name: ''.join(f'<option value="{method}" {"selected" if raw(name)==method else ""}>{method or "Seleziona metodo"}</option>' for method in PAYMENT_METHODS)
         def macro_field_group(macroarea,channel,label):
             totale_name=f"{macroarea}_{channel.lower()}_totale";data_name=f"{macroarea}_{channel.lower()}_data";modalita_name=f"{macroarea}_{channel.lower()}_modalita"
-            return f'''<div class="payment-macroarea-channel"><h4>{esc(label)}</h4><div class="fields"><div class="field"><label>Importo €</label><input name="{totale_name}" value="{val(totale_name)}" inputmode="decimal" placeholder="Numero, es. 120,00"></div><div class="field"><label>Data</label><input type="date" name="{data_name}" value="{val(data_name)}"></div><div class="field"><label>Metodo di pagamento</label><select name="{modalita_name}">{macro_method_options(modalita_name)}</select></div></div></div>'''
-        creation_payment_fields=f'''<section class="section hidden" id="creationPaymentSection"><h2>Pagamento</h2><p class="sub">Ogni importo è indipendente: compila solo D, solo W, o entrambi. Se compili solo D il metodo di pagamento resta facoltativo. Se per lo stesso incasso compili sia D che W, viene registrato solo D.</p><div class="payment-macroarea"><h3>ACCONTO</h3><div class="grid cols-2">{macro_field_group("acconto","D","Acconto D")}{macro_field_group("acconto","W","Acconto W")}</div></div><div class="payment-macroarea"><h3>SALDO</h3><div class="grid cols-2">{macro_field_group("saldo","D","Saldo D")}{macro_field_group("saldo","W","Saldo W")}</div></div></section>'''
+            fattura_html=""
+            if channel=="W":
+                fn=f"{macroarea}_w_fattura_numero";fd=f"{macroarea}_w_fattura_data";ft=f"{macroarea}_w_fattura_totale"
+                fattura_html=f'''<div class="fields"><div class="field"><label>Numero fattura</label><input name="{fn}" value="{val(fn)}"></div><div class="field"><label>Data fattura</label><input type="date" name="{fd}" value="{val(fd)}"></div><div class="field"><label>Totale fattura €</label><input name="{ft}" value="{val(ft)}" inputmode="decimal" placeholder="Numero, es. 120,00"></div></div>'''
+            return f'''<div class="payment-macroarea-channel"><h4>{esc(label)}</h4><div class="fields"><div class="field"><label>Importo €</label><input name="{totale_name}" value="{val(totale_name)}" inputmode="decimal" placeholder="Numero, es. 120,00"></div><div class="field"><label>Data</label><input type="date" name="{data_name}" value="{val(data_name)}"></div><div class="field"><label>Metodo di pagamento</label><select name="{modalita_name}">{macro_method_options(modalita_name)}</select></div></div>{fattura_html}</div>'''
+        creation_payment_fields=f'''<section class="section hidden" id="creationPaymentSection"><h2>Pagamento</h2><p class="sub">Ogni importo è indipendente: compila solo D, solo W, o entrambi. Se compili solo D il metodo di pagamento resta facoltativo. Se per lo stesso incasso compili sia D che W, viene registrato solo D.</p><div class="fields" id="paymentEstremiRow"></div><div class="fields" id="paymentTotalsRow"></div><div class="payment-macroarea"><h3>ACCONTO</h3><div class="grid cols-2">{macro_field_group("acconto","W","Acconto W")}{macro_field_group("acconto","D","Acconto D")}</div></div><div class="fields" id="paymentRimanenzaRow"><div class="field"><label>Rimanenza W €</label><input id="rimanenzaWDisplay" value="0,00" readonly></div><div class="field"><label>Rimanenza D €</label><input id="rimanenzaDDisplay" value="0,00" readonly></div></div><div class="payment-macroarea"><h3>SALDO</h3><div class="grid cols-2">{macro_field_group("saldo","W","Saldo W")}{macro_field_group("saldo","D","Saldo D")}</div></div></section>'''
         if user is None or user["role"]=="admin":
             operator_field=f'''<div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option><option {selected('operator_name','GIANLUCA')}>GIANLUCA</option></select></div>'''
         else:
@@ -7818,12 +7856,21 @@ class App(BaseHTTPRequestHandler):
             for macroarea in ("acconto","saldo"):
                 d_amount=normalize_money_text(f.get(f"{macroarea}_d_totale",""))
                 w_amount=normalize_money_text(f.get(f"{macroarea}_w_totale",""))
+                invoice_number=invoice_total=invoice_date=""
                 if money_value(d_amount)>0:
                     channel="D";totale_field=d_amount
                     data_field=f.get(f"{macroarea}_d_data","").strip();method=f.get(f"{macroarea}_d_modalita","").strip()
                 elif money_value(w_amount)>0:
                     channel="W";totale_field=w_amount
                     data_field=f.get(f"{macroarea}_w_data","").strip();method=f.get(f"{macroarea}_w_modalita","").strip()
+                    # Invoicing only ever applies to the W circuito (matches
+                    # the Pagamento popover's own rule); these are the same
+                    # per-macroarea invoice fields the popover writes to
+                    # movement_invoices, not the legacy single invoice_number
+                    # column shown in Preventivo (left untouched on purpose).
+                    invoice_number=f.get(f"{macroarea}_w_fattura_numero","").strip()
+                    invoice_total=normalize_money_text(f.get(f"{macroarea}_w_fattura_totale",""))
+                    invoice_date=f.get(f"{macroarea}_w_fattura_data","").strip()
                 else:
                     continue
                 try:
@@ -7832,7 +7879,11 @@ class App(BaseHTTPRequestHandler):
                     return self.new_page(user,draft=payment_draft(),error=f"Indica una data valida per {'Acconto' if macroarea=='acconto' else 'Saldo'} {channel}.")
                 if channel!="D" and not method:
                     return self.new_page(user,draft=payment_draft(),error=f"Seleziona il metodo di pagamento per {'Acconto' if macroarea=='acconto' else 'Saldo'} {channel}.")
-                macro_plan[macroarea]={"channel":channel,"totale_field":totale_field,"data_field":data_field,"method":method}
+                if invoice_total and not re.fullmatch(r"\d+(?:\.\d{1,2})?",invoice_total):
+                    return self.new_page(user,draft=payment_draft(),error="Totale fattura non valido.")
+                if invoice_date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}",invoice_date):
+                    return self.new_page(user,draft=payment_draft(),error="Data fattura non valida.")
+                macro_plan[macroarea]={"channel":channel,"totale_field":totale_field,"data_field":data_field,"method":method,"invoice_number":invoice_number,"invoice_total":invoice_total,"invoice_date":invoice_date}
         initial=f.get("status","Ritirato")
         if initial not in STATES or (initial=="Smaltito" and d.get("service_type")!="Cremazione collettiva"): initial="Ritirato"
         with db() as c:
@@ -7877,7 +7928,7 @@ class App(BaseHTTPRequestHandler):
                     c,user,pid,fresh_practice,macroarea,
                     data_field=plan["data_field"],totale_field=plan["totale_field"],
                     channel=plan["channel"],method=plan["method"],
-                    invoice_number="",invoice_total="",invoice_date="",
+                    invoice_number=plan["invoice_number"],invoice_total=plan["invoice_total"],invoice_date=plan["invoice_date"],
                     balance_key=creation_balance_key,
                 )
                 if payment_error:raise ValueError(payment_error)

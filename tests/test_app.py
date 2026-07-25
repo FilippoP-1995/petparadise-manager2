@@ -3610,6 +3610,29 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(redirects, [])
         self.assertEqual(dashboard_calls[0]["id"], serena["id"])
 
+    def test_payment_area_shows_w_before_d_and_w_only_invoice_sub_fields(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        form_html = app.App._fields_html(self.handler, None, admin)
+        acconto_w_pos = form_html.index('name="acconto_w_totale"')
+        acconto_d_pos = form_html.index('name="acconto_d_totale"')
+        saldo_w_pos = form_html.index('name="saldo_w_totale"')
+        saldo_d_pos = form_html.index('name="saldo_d_totale"')
+        self.assertLess(acconto_w_pos, acconto_d_pos, "Acconto W deve precedere Acconto D nella nuova area Pagamento")
+        self.assertLess(saldo_w_pos, saldo_d_pos, "Saldo W deve precedere Saldo D nella nuova area Pagamento")
+        self.assertIn('name="acconto_w_fattura_numero"', form_html)
+        self.assertIn('name="saldo_w_fattura_numero"', form_html)
+        self.assertNotIn('name="acconto_d_fattura_numero"', form_html)
+        self.assertNotIn('name="saldo_d_fattura_numero"', form_html)
+        self.assertIn('id="rimanenzaWDisplay"', form_html)
+        self.assertIn('id="rimanenzaDDisplay"', form_html)
+        self.assertIn('id="paymentEstremiRow"', form_html)
+        self.assertIn('id="paymentTotalsRow"', form_html)
+        # Relocation JS only fires on the create page (not the shared edit form).
+        self.assertIn("if(!isEditForm){", app.APP_JS)
+        self.assertIn("paymentSection.append(wrap)", app.APP_JS)
+        self.assertIn("function updateMacroRimanenza(){", app.APP_JS)
+
     def test_service_type_is_required_and_not_preselected(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
