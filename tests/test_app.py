@@ -3430,6 +3430,24 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(rendered[-1][1],500)
         self.assertIn("TypeError",rendered[-1][0])
 
+    def test_client_disconnect_mid_response_is_logged_quietly_without_a_second_failed_write(self):
+        # Real Render logs showed a request that failed with a BalanceError,
+        # got routed to balances_page to render a visible error message, but
+        # the phone had already dropped the connection (backgrounded tab /
+        # flaky mobile network) by the time the server tried to send it —
+        # so writing that error page raised BrokenPipeError too, escaping
+        # uncaught and getting logged exactly like a real bug. There is no
+        # client left to receive anything, so this must never attempt a
+        # second write: just log quietly and stop.
+        self.handler.headers={}
+        self.handler.path="/bilanci/movimenti/1/elimina-conferma"
+        self.handler._route_post=lambda:(_ for _ in ()).throw(BrokenPipeError(32,"Broken pipe"))
+        write_attempts=[]
+        self.handler.send_html=lambda content,status=200:write_attempts.append((content,status))
+        self.handler.error_page=lambda *a,**k:write_attempts.append(("error_page",a,k))
+        self.handler.do_POST()
+        self.assertEqual(write_attempts,[])
+
     def test_db_always_closes_the_connection_after_the_with_block(self):
         # sqlite3.Connection's own context-manager protocol only commits or
         # rolls back the transaction on `with conn:` — it does NOT close the
