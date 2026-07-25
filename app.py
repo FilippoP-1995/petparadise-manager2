@@ -44,6 +44,7 @@ from balance_service import (
     log_movement_deletion as log_balance_movement_deletion,
     get_recent_movement_deletions as get_recent_balance_movement_deletions,
     restore_movement_deletion as restore_balance_movement_deletion,
+    practice_id_for_legacy_key,
     MovementAlreadyReversedError,
     MovementNotFoundError,
     InvalidMovementError,
@@ -4299,11 +4300,12 @@ class App(BaseHTTPRequestHandler):
         return_to=safe_return_path(value("return_to"),"/bilanci")
         legacy_key=value("legacy_key")
         with db() as c:
+            practice_id=practice_id_for_legacy_key(c,legacy_key)
             filters=normalize_balance_filters(include_technical=True)
             movement=next(
-                (m for m in get_balance_movements(c,filters=filters) if m.id<0 and m.idempotency_key==legacy_key),
+                (m for m in get_balance_movements(c,filters=filters,restrict_practice_id=practice_id) if m.id<0 and m.idempotency_key==legacy_key),
                 None,
-            )
+            ) if practice_id else None
         if not movement:
             return self.balances_page(user,error="Movimento non trovato.")
         body=f'''<section class="section" style="max-width:520px;margin:0 auto">
@@ -4429,11 +4431,12 @@ class App(BaseHTTPRequestHandler):
         legacy_key=self.form().get("legacy_key","").strip()
         try:
             with db() as c:
+                practice_id=practice_id_for_legacy_key(c,legacy_key)
                 filters=normalize_balance_filters(include_technical=True)
                 movement=next(
-                    (m for m in get_balance_movements(c,filters=filters) if m.id<0 and m.idempotency_key==legacy_key),
+                    (m for m in get_balance_movements(c,filters=filters,restrict_practice_id=practice_id) if m.id<0 and m.idempotency_key==legacy_key),
                     None,
-                )
+                ) if practice_id else None
                 if not movement:
                     raise BalanceError("Movimento non trovato.")
                 if movement.id>-1000000000:
