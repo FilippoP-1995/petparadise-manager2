@@ -3201,6 +3201,56 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.balance_legacy_movement_delete(admin)
         self.assertIn("non trovato",pages[-1])
 
+    def test_bilanci_elimina_button_really_deletes_pre_payment_movements_legacy_rows(self):
+        # Practices old enough to predate the payment_movements table entirely
+        # store their acconto/saldo straight on the practices row (deposit_final/
+        # paid_at etc) with zero payment_movements rows at all. Bilanci still
+        # synthesizes a movement for them (the 'historical-practice:' id family),
+        # and Elimina on those must genuinely remove them too.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,total_text,deposit_final,deposit_paid_at)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-OLDLEGACY","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Bilbo","Cremazione singola","Acconto","350","100.00","2026-07-10")).lastrowid
+        with app.db() as conn:
+            has_pm=conn.execute("SELECT COUNT(*) FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()[0]
+        self.assertEqual(has_pm,0)
+        with app.db() as conn:
+            movements=app.get_balance_movements(conn,filters=app.normalize_balance_filters(include_technical=True))
+        legacy=[m for m in movements if m.practice_id==pid]
+        self.assertEqual(len(legacy),1)
+        legacy_key=legacy[0].idempotency_key
+        self.assertLessEqual(legacy[0].id,-1000000000)
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/bilanci?view=entrate-d&periodo=tutto"
+        self.handler.balances_page(admin)
+        page=rendered[-1]
+        self.assertIn(quote(legacy_key,safe=''),page)
+        confirm_rendered=[];self.handler.send_html=lambda content,*args:confirm_rendered.append(content)
+        self.handler.path=f"/bilanci/movimenti/elimina-storico?legacy_key={quote(legacy_key,safe='')}&return_to=%2Fbilanci"
+        self.handler.confirm_balance_legacy_movement_delete(admin)
+        confirm_page=confirm_rendered[-1]
+        self.assertIn('action="/bilanci/movimenti/elimina-conferma-storico"',confirm_page)
+        redirects=[];self.handler.redirect=lambda url:redirects.append(url)
+        self.handler.form=lambda:{"return_to":"/bilanci","legacy_key":legacy_key}
+        self.handler.balance_legacy_movement_delete(admin)
+        self.assertTrue(redirects and "movimento_stornato=1" in redirects[-1],f"redirects={redirects}")
+        with app.db() as conn:
+            movements_after=app.get_balance_movements(conn,filters=app.normalize_balance_filters(include_technical=True))
+        self.assertFalse(any(m.idempotency_key==legacy_key for m in movements_after),"il movimento dovrebbe sparire dalla lista dopo l'eliminazione")
+        with app.db() as conn:
+            default_movements=app.get_balance_movements(conn,filters=app.normalize_balance_filters())
+        self.assertFalse(any(m.practice_id==pid for m in default_movements),"il movimento (e la sua storno tecnica) non devono restare visibili nella vista di default")
+        with app.db() as conn:
+            deletions=app.get_recent_balance_movement_deletions(conn,limit=10)
+        self.assertEqual(deletions[0]["practice_number_snapshot"],"CR-OLDLEGACY")
+        self.assertEqual(deletions[0]["amount_cents"],10000)
+        log_rendered=[];self.handler.send_html=lambda content,*args:log_rendered.append(content)
+        self.handler.path="/bilanci"
+        self.handler.balances_page(admin)
+        self.assertIn("Movimenti eliminati di recente",log_rendered[-1])
+        self.assertIn("CR-OLDLEGACY",log_rendered[-1])
+
     def test_dashboard_reminders_panel_replaces_old_flash_and_supports_full_lifecycle(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
@@ -3313,6 +3363,42 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.create_practice(admin)
         self.assertIn("Campi obbligatori mancanti", rendered[-1])
         self.assertIn("Servizio", rendered[-1])
+
+    def test_owner_veterinarian_as_sender_does_not_require_personal_sender_fields(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            vet_id = conn.execute("""INSERT INTO veterinarians(clinic_name,phone,address,city,active,created_at,updated_at)
+                                      VALUES(?,?,?,?,1,?,?)""", ("Clinica Test", "0501234567", "Via Test 5", "Pisa", stamp, stamp)).lastrowid
+        redirects = []
+        self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.form = lambda: {
+            "operator_name": "SERENA", "service_type": "Cremazione singola", "request_origin": "Veterinario",
+            "owner_veterinarian_id": str(vet_id),
+        }
+        self.handler.create_practice(admin)
+        self.assertTrue(redirects, "la pratica con veterinario come speditore doveva essere creata senza errori di validazione")
+        pid = int(redirects[0].rsplit("/", 1)[-1])
+        with app.db() as conn:
+            created = conn.execute("SELECT * FROM practices WHERE id=?", (pid,)).fetchone()
+        self.assertEqual(created["owner_first_name"], "Clinica Test")
+        self.assertEqual(created["owner_last_name"], "")
+
+    def test_owner_veterinarian_as_sender_still_requires_operator_and_request_origin(self):
+        with app.db() as conn:
+            stamp = app.now()
+            vet_id = conn.execute("""INSERT INTO veterinarians(clinic_name,phone,address,city,active,created_at,updated_at)
+                                      VALUES(?,?,?,?,1,?,?)""", ("Clinica Test", "0501234567", "Via Test 5", "Pisa", stamp, stamp)).lastrowid
+        d = self.handler.normalized_fields({
+            "service_type": "Cremazione singola", "request_origin": "Veterinario",
+            "owner_veterinarian_id": str(vet_id),
+        })
+        error = self.handler.validation_error(d)
+        self.assertIn("Campi obbligatori mancanti", error)
+        self.assertIn("Operatore", error)
+        self.assertNotIn("Cognome", error)
+        self.assertNotIn("Codice fiscale", error)
+        self.assertNotIn("Telefono", error)
+        self.assertNotIn("Indirizzo", error)
 
     def test_arrange_budget_layout_places_payment_status_after_remaining_final(self):
         js = app.APP_JS

@@ -8,6 +8,7 @@ from balance_service import (
     create_movement,
     get_balance_snapshot,
     get_movements,
+    get_recent_movement_deletions,
     normalize_filters,
 )
 
@@ -344,6 +345,19 @@ class ProductionBalanceModuleTests(unittest.TestCase):
         self.assertEqual(audit,[])
         self.assertIsNone(row)
         self.assertEqual(before_total-after_total,12500)
+
+        with app.db() as connection:
+            deletions=get_recent_movement_deletions(connection,limit=10)
+        self.assertEqual(deletions[0]["description"],"Entrata da eliminare")
+        self.assertEqual(deletions[0]["amount_cents"],12500)
+        self.assertEqual(deletions[0]["deleted_by"],self.admin["id"])
+
+        rendered=[]
+        self.handler.send_html=lambda content,*a:rendered.append(content)
+        self.handler.path="/bilanci"
+        self.handler.balances_page(self.admin)
+        self.assertIn("Movimenti eliminati di recente",rendered[-1])
+        self.assertIn("Entrata da eliminare",rendered[-1])
 
         # deleting again must not crash: it's reported as "not found".
         pages=[]
