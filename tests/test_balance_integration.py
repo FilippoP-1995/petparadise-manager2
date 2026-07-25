@@ -274,6 +274,51 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
         self.assertIn('name="acconto_data" value="2026-07-23" required', html)
         self.assertIn('<option value="W" selected>W</option>', html)
 
+    def test_create_practice_with_acconto_w_fattura_fields_creates_a_real_invoice(self):
+        self.handler.form = lambda: {
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
+            "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
+            "price_cremation": "300",
+            "acconto_w_totale": "100", "acconto_w_data": "2026-07-23", "acconto_w_modalita": "Contanti",
+            "acconto_w_fattura_numero": "FT-001", "acconto_w_fattura_data": "2026-07-23", "acconto_w_fattura_totale": "100",
+        }
+        self.handler.create_practice(self.admin)
+        pid = int(self.redirects[-1].split("/pratiche/")[1])
+        with app.db() as connection:
+            movement = connection.execute(
+                "SELECT id FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'acconto%'", (pid,)
+            ).fetchone()
+            invoice = connection.execute(
+                "SELECT * FROM movement_invoices WHERE practice_id=?", (pid,)
+            ).fetchone()
+        self.assertIsNotNone(invoice)
+        self.assertEqual(invoice["invoice_number"], "FT-001")
+        with app.db() as connection:
+            link = connection.execute(
+                "SELECT 1 FROM movement_invoice_links WHERE payment_movement_id=?", (movement["id"],)
+            ).fetchone()
+        self.assertIsNotNone(link)
+
+    def test_create_practice_saldo_d_amount_does_not_leak_into_acconto_w_invoice(self):
+        # D circuito never gets an invoice (matches the popover's own rule);
+        # this locks that a D amount alone does not accidentally trigger
+        # invoice creation through the shared apply_payment_macroarea path.
+        self.handler.form = lambda: {
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
+            "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
+            "total_text": "350",
+            "saldo_d_totale": "350", "saldo_d_data": "2026-07-23", "saldo_d_modalita": "",
+        }
+        self.handler.create_practice(self.admin)
+        pid = int(self.redirects[-1].split("/pratiche/")[1])
+        with app.db() as connection:
+            invoice = connection.execute(
+                "SELECT * FROM movement_invoices WHERE practice_id=?", (pid,)
+            ).fetchone()
+        self.assertIsNone(invoice)
+
     def test_payment_transitions_create_acconto_full_payment_and_only_remaining(self):
         split_id = self.insert_practice(number="CR-SPLIT", total_w="300")
         response = self.submit_quick_payment(
