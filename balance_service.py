@@ -172,14 +172,13 @@ def ensure_balance_schema(connection: sqlite3.Connection) -> None:
         BEGIN
           SELECT RAISE(ABORT, 'balance_movements is append-only');
         END;
-
-        CREATE TRIGGER IF NOT EXISTS balance_movements_no_delete
-        BEFORE DELETE ON balance_movements
-        BEGIN
-          SELECT RAISE(ABORT, 'balance_movements is append-only');
-        END;
         """
     )
+    # Movements can be deleted for real (see delete_movement below), so any
+    # no-delete trigger created by an older version of this schema must be
+    # dropped for existing databases too; CREATE TRIGGER IF NOT EXISTS above
+    # would not remove one that already exists.
+    connection.execute("DROP TRIGGER IF EXISTS balance_movements_no_delete")
     columns={
         (row["name"] if isinstance(row,sqlite3.Row) else row[1])
         for row in connection.execute("PRAGMA table_info(balance_movements)")
@@ -726,6 +725,31 @@ def create_legacy_reversal(
         created_by=created_by,
         allow_reserved_type=True,
     )
+
+
+def delete_movement(connection: sqlite3.Connection, *, movement_id: int) -> None:
+    """Permanently remove a real balance_movements row (a genuine SQL DELETE,
+    not an offsetting Storno entry). Refuses to delete technical rows
+    (Storno/Rettifica) and refuses to delete a row that another row still
+    points to via related_movement_id, so a correction/reversal's target can
+    never be silently pulled out from under it."""
+    normalized_id = _normalize_optional_id(movement_id, "movement_id")
+    original = _find_by_id(connection, normalized_id)
+    if original is None:
+        raise MovementNotFoundError("movement does not exist")
+    if original.movement_type in _RESERVED_MOVEMENT_TYPES:
+        raise InvalidMovementError(
+            "a technical Storno/Rettifica movement cannot be deleted directly"
+        )
+    dependent = connection.execute(
+        "SELECT id FROM balance_movements WHERE related_movement_id=? LIMIT 1",
+        (original.id,),
+    ).fetchone()
+    if dependent:
+        raise InvalidMovementError(
+            "this movement has a correction/reversal linked to it and cannot be deleted directly"
+        )
+    connection.execute("DELETE FROM balance_movements WHERE id=?", (original.id,))
 
 
 def correct_movement_date(

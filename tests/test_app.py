@@ -3019,23 +3019,25 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Da saldare D",rendered[-1])
         self.assertIn("Totale W e Totale D",rendered[-1])
 
-    def test_bilanci_elimina_button_works_on_legacy_synthesized_rows(self):
+    def test_bilanci_elimina_button_really_deletes_legacy_synthesized_rows(self):
         # Practices created before the balance_movements ledger existed only
         # have their payment history in payment_movements, so Bilanci
         # synthesizes a row on the fly with a negative synthetic id. Elimina
-        # must work on those rows too, not just real balance_movements ones.
+        # must genuinely delete that payment_movements row, not append a
+        # storno, for those rows too, not just real balance_movements ones.
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
                                 owner_first_name,service_type,payment_status,price_cremation,total_service)
                                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-LEGACYVOID","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Bilbo","Cremazione singola","Pagato","150","150")).lastrowid
-            conn.execute("""INSERT INTO payment_movements(practice_id,payment_type,payment_channel,payment_method,movement_category,amount,paid_at,user_id,notes,created_at)
-                           VALUES(?,?,?,?,?,?,?,?,?,?)""",(pid,"saldo","W","Contanti","W",150.0,"2026-07-10",admin["id"],"","2026-07-10T10:00:00"))
+            pm_id=conn.execute("""INSERT INTO payment_movements(practice_id,payment_type,payment_channel,payment_method,movement_category,amount,paid_at,user_id,notes,created_at)
+                           VALUES(?,?,?,?,?,?,?,?,?,?)""",(pid,"saldo","W","Contanti","W",150.0,"2026-07-10",admin["id"],"","2026-07-10T10:00:00")).lastrowid
         with app.db() as conn:
             movements=app.get_balance_movements(conn,filters=app.normalize_balance_filters(include_technical=True))
         legacy=[m for m in movements if m.practice_id==pid and m.id<0]
         self.assertEqual(len(legacy),1)
         legacy_key=legacy[0].idempotency_key
+        self.assertEqual(legacy[0].id,-pm_id)
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
         self.handler.path="/bilanci?view=entrate-w&periodo=tutto"
         self.handler.balances_page(admin)
@@ -3044,28 +3046,33 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(quote(legacy_key,safe=''),page)
         confirm_rendered=[];self.handler.send_html=lambda content,*args:confirm_rendered.append(content)
         self.handler.path=f"/bilanci/movimenti/elimina-storico?legacy_key={quote(legacy_key,safe='')}&return_to=%2Fbilanci"
-        self.handler.confirm_balance_legacy_movement_void(admin)
+        self.handler.confirm_balance_legacy_movement_delete(admin)
         confirm_page=confirm_rendered[-1]
-        self.assertIn('action="/bilanci/movimenti/storna-storico"',confirm_page)
+        self.assertIn('action="/bilanci/movimenti/elimina-conferma-storico"',confirm_page)
         self.assertIn(f'value="{legacy_key}"',confirm_page)
+        self.assertIn("definitiva e non reversibile",confirm_page)
         redirects=[];self.handler.redirect=lambda url:redirects.append(url)
         self.handler.form=lambda:{"return_to":"/bilanci","legacy_key":legacy_key}
-        self.handler.balance_legacy_movement_void(admin)
+        self.handler.balance_legacy_movement_delete(admin)
         self.assertTrue(redirects and "movimento_stornato=1" in redirects[-1])
+        with app.db() as conn:
+            # the payment_movements row is genuinely gone from the table,
+            # not just excluded from the ledger view by a storno.
+            self.assertIsNone(conn.execute("SELECT id FROM payment_movements WHERE id=?",(pm_id,)).fetchone())
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM balance_movements WHERE idempotency_key LIKE ?",(f"%{legacy_key}%",)).fetchone()[0],0)
+            practice=conn.execute("SELECT payment_status FROM practices WHERE id=?",(pid,)).fetchone()
+            self.assertEqual(practice["payment_status"],"Da saldare")
         with app.db() as conn:
             movements_after=app.get_balance_movements(conn,filters=app.normalize_balance_filters(include_technical=True))
         self.assertFalse(any(m.idempotency_key==legacy_key for m in movements_after))
         with app.db() as conn:
             default_movements=app.get_balance_movements(conn,filters=app.normalize_balance_filters())
         self.assertFalse(any(m.practice_id==pid for m in default_movements))
-        # Retrying the void must stay idempotent, not create a second storno.
-        self.handler.balance_legacy_movement_void(admin)
-        with app.db() as conn:
-            void_count=conn.execute(
-                "SELECT COUNT(*) FROM balance_movements WHERE idempotency_key=?",
-                (f"legacy-void:v1:{legacy_key}",),
-            ).fetchone()[0]
-        self.assertEqual(void_count,1)
+        # Retrying must not crash: the row is already gone, so it's reported
+        # as "not found" rather than deleted a second time.
+        pages=[];self.handler.balances_page=lambda user,error="",expense_draft=None:pages.append(error)
+        self.handler.balance_legacy_movement_delete(admin)
+        self.assertIn("non trovato",pages[-1])
 
     def test_dashboard_reminders_panel_replaces_old_flash_and_supports_full_lifecycle(self):
         with app.db() as conn:

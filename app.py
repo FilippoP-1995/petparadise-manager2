@@ -39,6 +39,7 @@ from balance_service import (
     normalize_filters as normalize_balance_filters,
     create_reversal as create_balance_reversal,
     create_legacy_reversal as create_balance_legacy_reversal,
+    delete_movement as delete_balance_movement,
     MovementAlreadyReversedError,
 )
 from balance_repair import repair_duplicate_balance_movements
@@ -3476,8 +3477,8 @@ class App(BaseHTTPRequestHandler):
         if path == "/calendario": return self.calendar_page(user)
         if path == "/bilanci": return self.balances_page(user)
         match = re.fullmatch(r"/bilanci/movimenti/(\d+)/elimina",path)
-        if match: return self.confirm_balance_movement_void(user,int(match.group(1)))
-        if path == "/bilanci/movimenti/elimina-storico": return self.confirm_balance_legacy_movement_void(user)
+        if match: return self.confirm_balance_movement_delete(user,int(match.group(1)))
+        if path == "/bilanci/movimenti/elimina-storico": return self.confirm_balance_legacy_movement_delete(user)
         if path == "/calendario/nuovo": return self.calendar_event_form(user)
         if path == "/calendario/impostazioni": return self.calendar_settings(user)
         if path == "/calendario/cestino": return self.calendar_trash(user)
@@ -3570,9 +3571,9 @@ class App(BaseHTTPRequestHandler):
         if path == "/nuova": return self.create_practice(user)
         if path == "/bilanci/uscite": return self.balance_expense_submit(user)
         if path == "/bilanci/entrate": return self.balance_income_submit(user)
-        match = re.fullmatch(r"/bilanci/movimenti/(\d+)/storna",path)
-        if match: return self.balance_movement_void(user,int(match.group(1)))
-        if path == "/bilanci/movimenti/storna-storico": return self.balance_legacy_movement_void(user)
+        match = re.fullmatch(r"/bilanci/movimenti/(\d+)/elimina-conferma",path)
+        if match: return self.balance_movement_delete(user,int(match.group(1)))
+        if path == "/bilanci/movimenti/elimina-conferma-storico": return self.balance_legacy_movement_delete(user)
         if path == "/calendario/nuovo": return self.save_calendar_event(user)
         match = re.fullmatch(r"/calendario/(\d+)/modifica",path)
         if match: return self.save_calendar_event(user,int(match.group(1)))
@@ -3953,9 +3954,9 @@ class App(BaseHTTPRequestHandler):
                 )
                 void_action=(
                     f'''<a class="btn ghost balance-void-btn" href="/bilanci/movimenti/{row.id}/elimina?return_to={quote(current_balance_path,safe='')}" onclick="event.stopPropagation()">Elimina</a>'''
-                    if row.id>0 and row.movement_type!="Storno"
+                    if row.id>0 and row.movement_type not in ("Storno","Rettifica")
                     else f'''<a class="btn ghost balance-void-btn" href="/bilanci/movimenti/elimina-storico?legacy_key={quote(row.idempotency_key,safe='')}&return_to={quote(current_balance_path,safe='')}" onclick="event.stopPropagation()">Elimina</a>'''
-                    if row.id<0 and row.movement_type!="Storno"
+                    if row.id<0 and row.movement_type not in ("Storno","Rettifica")
                     else "-"
                 )
                 row_attrs=(
@@ -4146,25 +4147,26 @@ class App(BaseHTTPRequestHandler):
         separator="&" if "?" in return_to else "?"
         self.redirect(f"{return_to}{separator}entrata_creata=1")
 
-    def confirm_balance_movement_void(self,user,movement_id):
+    def confirm_balance_movement_delete(self,user,movement_id):
         query=parse_qs(urlparse(getattr(self,"path","")).query)
         value=lambda key,default="":(query.get(key) or [default])[-1].strip()
         return_to=safe_return_path(value("return_to"),"/bilanci")
         with db() as c:
             movement=c.execute("SELECT * FROM balance_movements WHERE id=?",(movement_id,)).fetchone()
-        if not movement or movement["movement_type"]=="Storno":
+        if not movement or movement["movement_type"] in ("Storno","Rettifica"):
             return self.balances_page(user,error="Movimento non trovato.")
         body=f'''<section class="section" style="max-width:520px;margin:0 auto">
           <h1>Eliminare il movimento?</h1>
-          <p class="sub">Verrà tolto dal bilancio insieme al suo importo. Il {esc(date_it(movement["movement_date"]))} · {esc(movement["movement_type"])} · {esc(movement["category"])} · <b>{money_cents_it(movement["amount_cents"])}</b>{f' · {esc(movement["description"])}' if movement["description"] else ""}</p>
+          <p class="sub">Sei sicuro di voler eliminare questo movimento? L'operazione è definitiva e non reversibile.</p>
+          <p class="sub">Il {esc(date_it(movement["movement_date"]))} · {esc(movement["movement_type"])} · {esc(movement["category"])} · <b>{money_cents_it(movement["amount_cents"])}</b>{f' · {esc(movement["description"])}' if movement["description"] else ""}</p>
           <div class="actions" style="display:flex;gap:10px;margin-top:20px">
-            <form method="post" action="/bilanci/movimenti/{movement_id}/storna"><input type="hidden" name="return_to" value="{esc(return_to)}"><button class="btn danger-btn" type="submit">Sì, elimina</button></form>
+            <form method="post" action="/bilanci/movimenti/{movement_id}/elimina-conferma"><input type="hidden" name="return_to" value="{esc(return_to)}"><button class="btn danger-btn" type="submit">Sì, elimina definitivamente</button></form>
             <a class="btn ghost" href="{esc(return_to)}">Annulla</a>
           </div>
         </section>'''
         return self.send_html(layout("Eliminare movimento",body,user))
 
-    def confirm_balance_legacy_movement_void(self,user):
+    def confirm_balance_legacy_movement_delete(self,user):
         query=parse_qs(urlparse(getattr(self,"path","")).query)
         value=lambda key,default="":(query.get(key) or [default])[-1].strip()
         return_to=safe_return_path(value("return_to"),"/bilanci")
@@ -4179,58 +4181,87 @@ class App(BaseHTTPRequestHandler):
             return self.balances_page(user,error="Movimento non trovato.")
         body=f'''<section class="section" style="max-width:520px;margin:0 auto">
           <h1>Eliminare il movimento?</h1>
-          <p class="sub">Verrà tolto dal bilancio insieme al suo importo. Il {esc(date_it(movement.movement_date))} · {esc(movement.movement_type)} · {esc(movement.category)} · <b>{money_cents_it(movement.amount_cents)}</b>{f' · {esc(movement.description)}' if movement.description else ""}</p>
+          <p class="sub">Sei sicuro di voler eliminare questo movimento? L'operazione è definitiva e non reversibile.</p>
+          <p class="sub">Il {esc(date_it(movement.movement_date))} · {esc(movement.movement_type)} · {esc(movement.category)} · <b>{money_cents_it(movement.amount_cents)}</b>{f' · {esc(movement.description)}' if movement.description else ""}</p>
           <div class="actions" style="display:flex;gap:10px;margin-top:20px">
-            <form method="post" action="/bilanci/movimenti/storna-storico"><input type="hidden" name="return_to" value="{esc(return_to)}"><input type="hidden" name="legacy_key" value="{esc(legacy_key)}"><button class="btn danger-btn" type="submit">Sì, elimina</button></form>
+            <form method="post" action="/bilanci/movimenti/elimina-conferma-storico"><input type="hidden" name="return_to" value="{esc(return_to)}"><input type="hidden" name="legacy_key" value="{esc(legacy_key)}"><button class="btn danger-btn" type="submit">Sì, elimina definitivamente</button></form>
             <a class="btn ghost" href="{esc(return_to)}">Annulla</a>
           </div>
         </section>'''
         return self.send_html(layout("Eliminare movimento",body,user))
 
-    def balance_movement_void(self,user,movement_id):
+    def delete_practice_payment_movement(self,c,pm,user_id):
+        """Permanently delete one payment_movements row: drops its invoice
+        link (and the invoice itself if nothing else references it), removes
+        the row for real, then recomputes payment_status/deposit/
+        remaining_balance/remaining_final on its practice from whatever
+        payment_movements remain — same recompute already used when a
+        macroarea payment is removed from the Pagamento popover."""
+        pid=pm["practice_id"]
+        practice=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+        invoice_link=c.execute("SELECT invoice_id FROM movement_invoice_links WHERE payment_movement_id=?",(pm["id"],)).fetchone()
+        c.execute("DELETE FROM movement_invoice_links WHERE payment_movement_id=?",(pm["id"],))
+        if invoice_link:
+            remaining_links=c.execute("SELECT COUNT(*) n FROM movement_invoice_links WHERE invoice_id=?",(invoice_link["invoice_id"],)).fetchone()["n"]
+            if remaining_links==0:
+                c.execute("DELETE FROM movement_invoices WHERE id=?",(invoice_link["invoice_id"],))
+        c.execute("DELETE FROM payment_movements WHERE id=?",(pm["id"],))
+        if not practice:
+            return
+        old_status=practice["payment_status"] or "Da saldare"
+        has_acconto=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'acconto%' LIMIT 1",(pid,)).fetchone())
+        has_saldo=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'saldo%' LIMIT 1",(pid,)).fetchone())
+        new_status="Pagato" if has_saldo else ("Acconto" if has_acconto else "Da saldare")
+        due=effective_total(practice)
+        received=money_value(c.execute("SELECT COALESCE(SUM(amount),0) amount FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["amount"])
+        remaining=max(0.0,due-received)
+        acconto_row=c.execute("SELECT amount FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'acconto%' ORDER BY id DESC LIMIT 1",(pid,)).fetchone()
+        deposit=f"{money_value(acconto_row['amount']):.2f}" if acconto_row else "0.00"
+        due_d=money_value(practice["total_text"])
+        if new_status=="Pagato":remaining_final="0.00" if due_d else ""
+        else:remaining_final=(f"{max(0.0,due_d-money_value(deposit)):.2f}" if due_d else "")
+        stamp=now()
+        c.execute(
+            "UPDATE practices SET payment_status=?,deposit=?,remaining_balance=?,remaining_final=?,updated_at=? WHERE id=?",
+            (new_status,deposit,f"{remaining:.2f}",remaining_final,stamp,pid),
+        )
+        if old_status!=new_status:
+            c.execute(
+                "INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",
+                (pid,"Pagamento",old_status,f"{new_status} · movimento eliminato",user_id,stamp),
+            )
+
+    def balance_movement_delete(self,user,movement_id):
+        """Permanently delete a real balance_movements row (a genuine SQL
+        DELETE): if it originated from a practice's Pagamento popover, also
+        hard-deletes the matching payment_movements row and its invoice, then
+        recomputes the practice's payment status/totals from what remains."""
         return_to=safe_return_path(self.form().get("return_to"),"/bilanci")
         try:
             with db() as c:
-                movement=c.execute(
-                    "SELECT * FROM balance_movements WHERE id=?",(movement_id,)
-                ).fetchone()
+                movement=c.execute("SELECT * FROM balance_movements WHERE id=?",(movement_id,)).fetchone()
                 if not movement:
                     raise BalanceError("Movimento non trovato.")
-                if movement["movement_type"]=="Storno":
-                    raise BalanceError("Uno storno tecnico non può essere eliminato.")
-                try:
-                    create_balance_reversal(
-                        c,
-                        original_movement_id=movement_id,
-                        movement_date=movement["movement_date"],
-                        idempotency_key=f"manual-void:v1:{movement_id}",
-                        description=(
-                            f"Storno manuale: "
-                            f"{movement['description'] or movement['movement_type']}"
-                        ),
-                        source="manual_void",
-                        created_by=user["id"],
-                        metadata={
-                            "reason":"manual_void",
-                            "original_movement_id":movement_id,
-                            "void_date":datetime.now(ROME_TZ).date().isoformat(),
-                            "procedure_version":"1",
-                        },
-                    )
-                except MovementAlreadyReversedError:
-                    pass
+                macroarea={"Acconto":"acconto","Saldo":"saldo","Incasso completo":"saldo"}.get(movement["movement_type"])
+                if movement["practice_id"] and macroarea:
+                    pm=c.execute(
+                        "SELECT * FROM payment_movements WHERE practice_id=? AND payment_type LIKE ? ORDER BY id DESC LIMIT 1",
+                        (movement["practice_id"],f"{macroarea}%"),
+                    ).fetchone()
+                    if pm:
+                        self.delete_practice_payment_movement(c,pm,user["id"])
+                delete_balance_movement(c,movement_id=movement_id)
         except BalanceError as exc:
             return self.balances_page(user,error=str(exc))
         separator="&" if "?" in return_to else "?"
         self.redirect(f"{return_to}{separator}movimento_stornato=1")
 
-    def balance_legacy_movement_void(self,user):
-        """Void a legacy row synthesized from payment_movements/practices
-        (no real balance_movements id to reverse via /storna). The row's
-        own idempotency_key already fully identifies it; re-derive its
-        amount/category/date/practice from get_movements() itself (never
-        from the submitted form) so the void can never be spoofed, and stays
-        correct even if the underlying legacy SQL formulas change later."""
+    def balance_legacy_movement_delete(self,user):
+        """Permanently delete a legacy row synthesized from payment_movements
+        (or, for practices that predate that table, straight from the
+        practices row). The row's own idempotency_key already fully
+        identifies it; re-derive everything from get_movements() itself
+        (never from the submitted form) so the delete can never be spoofed."""
         return_to=safe_return_path(self.form().get("return_to"),"/bilanci")
         legacy_key=self.form().get("legacy_key","").strip()
         try:
@@ -4242,20 +4273,33 @@ class App(BaseHTTPRequestHandler):
                 )
                 if not movement:
                     raise BalanceError("Movimento non trovato.")
-                create_balance_legacy_reversal(
-                    c,
-                    legacy_key=legacy_key,
-                    amount_cents=movement.amount_cents,
-                    category=movement.category,
-                    ledger_section=movement.ledger_section,
-                    movement_date=movement.movement_date,
-                    practice_id=movement.practice_id,
-                    practice_number_snapshot=movement.practice_number_snapshot,
-                    payment_method=movement.payment_method,
-                    description=f"Storno manuale: {movement.description or movement.movement_type}",
-                    source="manual_void",
-                    created_by=user["id"],
-                )
+                if movement.id>-1000000000:
+                    # backed by a real payment_movements row: its id is -movement.id
+                    pm=c.execute("SELECT * FROM payment_movements WHERE id=?",(-movement.id,)).fetchone()
+                    if not pm:
+                        raise BalanceError("Movimento non trovato.")
+                    self.delete_practice_payment_movement(c,pm,user["id"])
+                else:
+                    # practice predates payment_movements entirely (its deposit/
+                    # saldo is stored directly on the practices row, with no
+                    # separate movement record to delete): fall back to the
+                    # existing legacy-void mechanism, which correctly removes it
+                    # from the ledger view and from the Bilanci totals without
+                    # mutating decades-old practice columns directly.
+                    create_balance_legacy_reversal(
+                        c,
+                        legacy_key=legacy_key,
+                        amount_cents=movement.amount_cents,
+                        category=movement.category,
+                        ledger_section=movement.ledger_section,
+                        movement_date=movement.movement_date,
+                        practice_id=movement.practice_id,
+                        practice_number_snapshot=movement.practice_number_snapshot,
+                        payment_method=movement.payment_method,
+                        description=f"Eliminazione manuale: {movement.description or movement.movement_type}",
+                        source="manual_delete",
+                        created_by=user["id"],
+                    )
         except BalanceError as exc:
             return self.balances_page(user,error=str(exc))
         separator="&" if "?" in return_to else "?"
