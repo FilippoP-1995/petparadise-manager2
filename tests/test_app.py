@@ -1065,6 +1065,28 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(f"pet-paradise-shell-{app.APP_VERSION}", body)
         self.assertNotIn("__SW_VERSION__", body)
 
+    def test_login_sets_a_session_cookie_that_survives_backgrounding(self):
+        # A cookie with no Max-Age/Expires is a plain session cookie, and iOS
+        # Safari (especially the installed PWA) can purge those under memory
+        # pressure or after the app sits backgrounded — silently logging the
+        # user out mid-flow with no visible explanation (a tap on a confirm
+        # button lands on a 303 to /login instead of doing anything). The
+        # sessions table row itself never expires server-side, so the cookie
+        # must not either.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        sent={}
+        self.handler.send_response=lambda status:sent.update(status=status)
+        self.handler.send_header=lambda k,v:sent.setdefault("headers",[]).append((k,v))
+        self.handler.end_headers=lambda:None
+        self.handler.form=lambda:{"username":admin["username"],"password":"petparadise"}
+        self.handler.login_submit()
+        self.assertEqual(sent["status"],303)
+        cookie_header=next(v for k,v in sent["headers"] if k=="Set-Cookie")
+        self.assertIn("Max-Age=",cookie_header)
+        max_age=int(cookie_header.split("Max-Age=")[1].split(";")[0])
+        self.assertGreaterEqual(max_age,86400*30)
+
     def test_app_version_is_stable_and_derived_from_source_when_no_commit_env(self):
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("RENDER_GIT_COMMIT", None)
