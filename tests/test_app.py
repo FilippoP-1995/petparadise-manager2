@@ -1851,8 +1851,19 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("if(axis==='x'){box.scrollLeft=startScrollLeft-dx;return;}", js)
         self.assertIn("phase='page'", js)
         self.assertIn("window.scrollTo(0,pageStartScroll-(t.clientY-pageAnchorY));", js)
-        self.assertIn("const reset=()=>{axis=null;phase='table';};", js)
         self.assertIn("document.addEventListener('DOMContentLoaded', setupTableTouchScroll);", js)
+
+    def test_table_touch_scroll_keeps_moving_with_momentum_after_a_fast_flick(self):
+        # A strong flick must keep scrolling and ease out after the finger
+        # lifts instead of stopping dead, in both the table's own scroll and
+        # the handed-off page scroll (same MIN_VELOCITY/DECAY_PER_MS engine).
+        js=app.APP_JS
+        self.assertIn("const onEnd=()=>{", js)
+        self.assertIn("if(axis==='y'&&Math.abs(velocityY)>MIN_VELOCITY)runMomentum(phase);", js)
+        self.assertIn("box.addEventListener('touchend',onEnd,{passive:true});", js)
+        self.assertIn("v*=Math.pow(DECAY_PER_MS,dt);", js)
+        self.assertIn("const stopMomentum=()=>{if(momentumFrame){cancelAnimationFrame(momentumFrame);momentumFrame=null;}};", js)
+        self.assertIn("stopMomentum();", js)
 
     def test_wide_scrollable_tables_use_bounded_internal_scroll_for_reliable_sticky(self):
         # position:sticky on <th> inside a table wrapped by an overflow-x
