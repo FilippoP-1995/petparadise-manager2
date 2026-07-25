@@ -3791,7 +3791,16 @@ class App(BaseHTTPRequestHandler):
         if not user or not password_ok(f.get("password",""), user["password_hash"]): return self.login_page("Credenziali non valide.")
         token=secrets.token_urlsafe(32)
         with db() as c: c.execute("INSERT INTO sessions VALUES(?,?,?)",(token,user["id"],now()))
-        self.send_response(303); self.send_header("Set-Cookie",f"ppm_session={token}; HttpOnly; SameSite=Lax; Path=/"); self.send_header("Location","/"); self.end_headers()
+        # Max-Age is required: without it this is a plain session cookie, and
+        # iOS Safari (especially the installed PWA) can purge those under
+        # memory pressure or after the app sits backgrounded for a while —
+        # which silently logs the user out mid-flow (e.g. a tap on "Sì,
+        # elimina definitivamente" lands on a 303 to /login instead of
+        # actually deleting anything, with nothing on screen explaining why).
+        # The sessions table row itself never expires server-side, so a long
+        # cookie lifetime here doesn't change the security model, it just
+        # keeps the two in sync.
+        self.send_response(303); self.send_header("Set-Cookie",f"ppm_session={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=15552000"); self.send_header("Location","/"); self.end_headers()
 
     def logout(self):
         jar=cookies.SimpleCookie(self.headers.get("Cookie","")); m=jar.get("ppm_session")
