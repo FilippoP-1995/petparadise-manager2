@@ -3430,6 +3430,28 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(rendered[-1][1],500)
         self.assertIn("TypeError",rendered[-1][0])
 
+    def test_db_always_closes_the_connection_after_the_with_block(self):
+        # sqlite3.Connection's own context-manager protocol only commits or
+        # rolls back the transaction on `with conn:` — it does NOT close the
+        # connection. Every `with db() as c:` in this codebase (hundreds of
+        # call sites) was therefore leaking an open connection/file
+        # descriptor for the entire lifetime of the server process, growing
+        # without bound as the app kept running. db() must wrap the real
+        # connection so it is always closed too, regardless of whether the
+        # block raised or not.
+        with app.db() as c:
+            c.execute("SELECT 1")
+        with self.assertRaises(sqlite3.ProgrammingError):
+            c.execute("SELECT 1")
+        try:
+            with app.db() as c2:
+                c2.execute("SELECT 1")
+                raise ValueError("boom")
+        except ValueError:
+            pass
+        with self.assertRaises(sqlite3.ProgrammingError):
+            c2.execute("SELECT 1")
+
     def test_dashboard_reminders_panel_replaces_old_flash_and_supports_full_lifecycle(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()

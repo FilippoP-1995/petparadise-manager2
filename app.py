@@ -14,6 +14,7 @@ import traceback
 import unicodedata
 import urllib.error
 import urllib.request
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from http import cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -237,13 +238,29 @@ def like_term(term):
     return f"%{unaccent(term)}%"
 
 
+@contextmanager
 def db():
+    """`with db() as c:` is used at every call site in this file. Note that
+    sqlite3.Connection's own context-manager protocol (`with conn:`) only
+    commits/rolls back the transaction — it does NOT close the connection.
+    Every one of the hundreds of `with db() as c:` blocks in this codebase
+    was therefore leaking an open SQLite connection (and its underlying file
+    descriptor) for the entire lifetime of the server process, growing
+    without bound as the app kept running. That is a very plausible cause
+    of hangs that get worse over server uptime and are hard to reproduce
+    right after a fresh deploy/restart. Wrapping the real connection in this
+    generator preserves the exact same commit/rollback behaviour at the
+    call sites while guaranteeing the connection is always closed too."""
     conn = sqlite3.connect(DB_PATH, timeout=15)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA busy_timeout=15000")
     conn.create_function("UNACCENT", 1, unaccent, deterministic=True)
-    return conn
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def password_hash(password: str, salt: bytes | None = None) -> str:
@@ -6103,9 +6120,9 @@ class App(BaseHTTPRequestHandler):
                                     WHERE active=1 AND {' AND '.join(collab_where)}
                                     ORDER BY CASE WHEN UPPER(name)=UPPER(?) THEN 0 ELSE 9 END, name
                                     LIMIT 50""", collab_args+[q]).fetchall()
-            for r in collab_rows:
-                subtitle=" - ".join(x for x in [r["address"], r["city"], r["phone"]] if x)
-                results.append({"kind":"collaborator","id":r["id"],"name":r["name"] or "","address":r["address"] or "","city":r["city"] or "","province":r["province"] or "","zip":r["zip"] or "","tax_code":r["tax_code"] or "","vat_number":r["vat_number"] or "","sdi_code":r["sdi_code"] or "","phone":r["phone"] or "","email":r["email"] or "","notes":r["notes"] or "","display":r["name"] or "Collaboratore senza nome","subtitle":subtitle,"practice_count":r["practice_count"] or 0,"tiers":self.collaborator_tiers_payload(c,r["id"])})
+                for r in collab_rows:
+                    subtitle=" - ".join(x for x in [r["address"], r["city"], r["phone"]] if x)
+                    results.append({"kind":"collaborator","id":r["id"],"name":r["name"] or "","address":r["address"] or "","city":r["city"] or "","province":r["province"] or "","zip":r["zip"] or "","tax_code":r["tax_code"] or "","vat_number":r["vat_number"] or "","sdi_code":r["sdi_code"] or "","phone":r["phone"] or "","email":r["email"] or "","notes":r["notes"] or "","display":r["name"] or "Collaboratore senza nome","subtitle":subtitle,"practice_count":r["practice_count"] or 0,"tiers":self.collaborator_tiers_payload(c,r["id"])})
             return self.send_json({"ok":True,"query":q,"results":results[:50]})
         except Exception as exc:
             print(f"[CLIENT_SEARCH] errore tipo={type(exc).__name__} lunghezza_query={len(q)}", flush=True)
