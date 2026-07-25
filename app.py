@@ -233,9 +233,10 @@ def like_term(term):
 
 
 def db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=15)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA busy_timeout=15000")
     conn.create_function("UNACCENT", 1, unaccent, deterministic=True)
     return conn
 
@@ -6935,45 +6936,56 @@ class App(BaseHTTPRequestHandler):
             print(f"[WHATSAPP] pratica={pid} esito=ANNULLATO righe={rows} motivo={reason}", flush=True)
         return rows
 
-    def send_whatsapp_message(self,c,msg_id,manual=False,user_id=None,attempt_recorded=False):
-        msg=c.execute("SELECT * FROM whatsapp_messages WHERE id=?",(msg_id,)).fetchone()
-        if not msg:
-            return False, "Invio WhatsApp non trovato"
-        p=c.execute("SELECT * FROM practices WHERE id=?",(msg["practice_id"],)).fetchone()
-        if not p:
-            stamp=whatsapp_now();error="Pratica non trovata"
-            c.execute("UPDATE whatsapp_messages SET status='fallito',failed_at=?,last_attempt_at=COALESCE(last_attempt_at,?),last_error=?,updated_at=? WHERE id=?",(stamp,stamp,error,stamp,msg_id))
-            return False,error
-        if not manual and (p["status"] != "Consegnato" or ("deleted_at" in p.keys() and p["deleted_at"])):
-            reason="Pratica non più nello stato Consegnato: invio annullato"
-            self.cancel_whatsapp_scheduled(c,p["id"],user_id,reason)
-            return False,reason
-        block_reason=self.whatsapp_block_reason(p)
-        if block_reason:
-            self.cancel_whatsapp_scheduled(c,p["id"],user_id,block_reason)
-            return False,block_reason
-        if not manual and "no_whatsapp_message" in p.keys() and p["no_whatsapp_message"] == "Si":
-            self.cancel_whatsapp_scheduled(c,p["id"],user_id,"NO MESSAGGIO attivo prima dell'invio")
-            return False, "NO MESSAGGIO attivo"
-        token, phone_id, version, endpoint = self.whatsapp_meta_config()
-        payload_obj=self.whatsapp_payload_for_practice(p)
-        phone=payload_obj["to"]
-        template=payload_obj["template"]["name"]
-        language=payload_obj["template"]["language"]["code"]
-        if not phone:
-            error="Telefono speditore mancante"
-            stamp=whatsapp_now()
-            increment=0 if attempt_recorded else 1
-            c.execute("UPDATE whatsapp_messages SET status='fallito', failed_at=?, last_error=?, attempts=attempts+?, last_attempt_at=?, updated_at=? WHERE id=?",(stamp,error,increment,stamp,stamp,msg_id))
-            c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,p["id"]))
-            return False,error
-        if not token or not phone_id:
-            error="Config WhatsApp mancante: imposta WHATSAPP_ACCESS_TOKEN e WHATSAPP_PHONE_NUMBER_ID su Render"
-            stamp=whatsapp_now()
-            increment=0 if attempt_recorded else 1
-            c.execute("UPDATE whatsapp_messages SET status='fallito', failed_at=?, last_error=?, attempts=attempts+?, last_attempt_at=?, updated_at=? WHERE id=?",(stamp,error,increment,stamp,stamp,msg_id))
-            c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,p["id"]))
-            return False,error
+    def send_whatsapp_message(self,msg_id,manual=False,user_id=None,attempt_recorded=False):
+        """Send one WhatsApp message. Manages its own short-lived database
+        connections in stages (read/pre-checks, then the network call with
+        NO connection open, then write the result) instead of holding a
+        single connection for the whole call: the Meta API request can take
+        up to 18 seconds, and this app's SQLite database has no WAL mode, so
+        holding a write transaction open for that long would block every
+        other request (e.g. deleting a movimento in Bilanci) for the
+        duration — this is what previously made unrelated pages hang."""
+        with db() as c:
+            msg=c.execute("SELECT * FROM whatsapp_messages WHERE id=?",(msg_id,)).fetchone()
+            if not msg:
+                return False, "Invio WhatsApp non trovato"
+            p=c.execute("SELECT * FROM practices WHERE id=?",(msg["practice_id"],)).fetchone()
+            if not p:
+                stamp=whatsapp_now();error="Pratica non trovata"
+                c.execute("UPDATE whatsapp_messages SET status='fallito',failed_at=?,last_attempt_at=COALESCE(last_attempt_at,?),last_error=?,updated_at=? WHERE id=?",(stamp,stamp,error,stamp,msg_id))
+                return False,error
+            if not manual and (p["status"] != "Consegnato" or ("deleted_at" in p.keys() and p["deleted_at"])):
+                reason="Pratica non più nello stato Consegnato: invio annullato"
+                self.cancel_whatsapp_scheduled(c,p["id"],user_id,reason)
+                return False,reason
+            block_reason=self.whatsapp_block_reason(p)
+            if block_reason:
+                self.cancel_whatsapp_scheduled(c,p["id"],user_id,block_reason)
+                return False,block_reason
+            if not manual and "no_whatsapp_message" in p.keys() and p["no_whatsapp_message"] == "Si":
+                self.cancel_whatsapp_scheduled(c,p["id"],user_id,"NO MESSAGGIO attivo prima dell'invio")
+                return False, "NO MESSAGGIO attivo"
+            token, phone_id, version, endpoint = self.whatsapp_meta_config()
+            payload_obj=self.whatsapp_payload_for_practice(p)
+            phone=payload_obj["to"]
+            template=payload_obj["template"]["name"]
+            language=payload_obj["template"]["language"]["code"]
+            if not phone:
+                error="Telefono speditore mancante"
+                stamp=whatsapp_now()
+                increment=0 if attempt_recorded else 1
+                c.execute("UPDATE whatsapp_messages SET status='fallito', failed_at=?, last_error=?, attempts=attempts+?, last_attempt_at=?, updated_at=? WHERE id=?",(stamp,error,increment,stamp,stamp,msg_id))
+                c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,p["id"]))
+                return False,error
+            if not token or not phone_id:
+                error="Config WhatsApp mancante: imposta WHATSAPP_ACCESS_TOKEN e WHATSAPP_PHONE_NUMBER_ID su Render"
+                stamp=whatsapp_now()
+                increment=0 if attempt_recorded else 1
+                c.execute("UPDATE whatsapp_messages SET status='fallito', failed_at=?, last_error=?, attempts=attempts+?, last_attempt_at=?, updated_at=? WHERE id=?",(stamp,error,increment,stamp,stamp,msg_id))
+                c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,p["id"]))
+                return False,error
+        # connection above is committed and released here: nothing keeps a
+        # database lock open during the slow network call below.
         payload=json.dumps(payload_obj,ensure_ascii=False).encode("utf-8")
         print(f"[WHATSAPP] POST pratica_id={p['id']} message_row={msg_id} endpoint={endpoint} phone_number_id={phone_id} token={self.masked_whatsapp_token(token)} destinatario=+{phone} template={template} lingua={language} scheduled_at={msg['scheduled_at']} payload={json.dumps(payload_obj,ensure_ascii=False)}", flush=True)
         req=urllib.request.Request(endpoint,data=payload,headers={"Authorization":f"Bearer {token}","Content-Type":"application/json"},method="POST")
@@ -6988,37 +7000,40 @@ class App(BaseHTTPRequestHandler):
                 message_id=response_json["messages"][0].get("id","")
             sent_at=whatsapp_now()
             increment=0 if attempt_recorded else 1
-            c.execute("""UPDATE whatsapp_messages SET status='accettato_da_meta', attempts=attempts+?, last_error='', message_id=?, sent_at=?, last_attempt_at=?, template_name=?, language_code=?, recipient_phone=?, payload_json=?, response_json=?, updated_at=? WHERE id=?""",(increment,message_id,sent_at,attempt_stamp,template,language,phone,json.dumps(payload_obj,ensure_ascii=False),response_body,sent_at,msg_id))
-            c.execute("UPDATE practices SET whatsapp_thanks_sent_at=?, whatsapp_thanks_last_error='' WHERE id=?",(sent_at,p["id"]))
-            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(p["id"],"WhatsApp ringraziamento",f"Accettato da Meta {sent_at} a +{phone} - template {template} - message_id {message_id}",user_id,sent_at))
+            with db() as c:
+                c.execute("""UPDATE whatsapp_messages SET status='accettato_da_meta', attempts=attempts+?, last_error='', message_id=?, sent_at=?, last_attempt_at=?, template_name=?, language_code=?, recipient_phone=?, payload_json=?, response_json=?, updated_at=? WHERE id=?""",(increment,message_id,sent_at,attempt_stamp,template,language,phone,json.dumps(payload_obj,ensure_ascii=False),response_body,sent_at,msg_id))
+                c.execute("UPDATE practices SET whatsapp_thanks_sent_at=?, whatsapp_thanks_last_error='' WHERE id=?",(sent_at,p["id"]))
+                c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(p["id"],"WhatsApp ringraziamento",f"Accettato da Meta {sent_at} a +{phone} - template {template} - message_id {message_id}",user_id,sent_at))
+                if manual:
+                    self.cancel_whatsapp_scheduled(c,p["id"],user_id,"Annullato perché è stato inviato manualmente")
+                    c.execute("UPDATE whatsapp_messages SET status='accettato_da_meta', updated_at=? WHERE id=?",(sent_at,msg_id))
+                owner=f'{p["owner_first_name"] or ""} {p["owner_last_name"] or ""}'.strip() or p["owner_company"] or "Cliente non indicato"
+                emit_notification(c,"whatsapp_sent","📲 Messaggio WhatsApp inviato",owner,p["id"],user_id,{"url":"/conversazioni-whatsapp"},db_path=DB_PATH)
+                if not manual:
+                    emit_notification(c,"thank_you_sent","💚 Messaggio di ringraziamento inviato",owner,p["id"],user_id,{"url":f'/pratiche/{p["id"]}'},db_path=DB_PATH)
             print(f"[WHATSAPP] pratica_id={p['id']} message_row={msg_id} esito=ACCETTATO_DA_META http={http_status} message_id={message_id} risposta={response_body}", flush=True)
-            if manual:
-                self.cancel_whatsapp_scheduled(c,p["id"],user_id,"Annullato perché è stato inviato manualmente")
-                c.execute("UPDATE whatsapp_messages SET status='accettato_da_meta', updated_at=? WHERE id=?",(sent_at,msg_id))
-            owner=f'{p["owner_first_name"] or ""} {p["owner_last_name"] or ""}'.strip() or p["owner_company"] or "Cliente non indicato"
-            emit_notification(c,"whatsapp_sent","📲 Messaggio WhatsApp inviato",owner,p["id"],user_id,{"url":"/conversazioni-whatsapp"},db_path=DB_PATH)
-            if not manual:
-                emit_notification(c,"thank_you_sent","💚 Messaggio di ringraziamento inviato",owner,p["id"],user_id,{"url":f'/pratiche/{p["id"]}'},db_path=DB_PATH)
             return True, f"Accettato da Meta. Message ID: {message_id or 'non restituito'}"
         except urllib.error.HTTPError as exc:
             detail=exc.read().decode("utf-8","replace")
             error=f"Meta API HTTP {exc.code}: {detail}"
             attempts=int(msg["attempts"] or 0)+(0 if attempt_recorded else 1)
             failed_at=whatsapp_now()
-            c.execute("""UPDATE whatsapp_messages SET status='fallito', attempts=?, last_error=?, last_attempt_at=?, failed_at=?, template_name=?, language_code=?, recipient_phone=?, payload_json=?, response_json=?, updated_at=? WHERE id=?""",(attempts,error,attempt_stamp,failed_at,template,language,phone,json.dumps(payload_obj,ensure_ascii=False),detail,failed_at,msg_id))
-            c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,p["id"]))
-            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(p["id"],"WhatsApp ringraziamento",f"Errore: {error}",user_id,now()))
-            emit_notification(c,"whatsapp_error","❌ Errore invio WhatsApp",f'{p["owner_first_name"] or ""} {p["owner_last_name"] or ""}\nTocca per vedere il dettaglio.',p["id"],user_id,{"url":"/conversazioni-whatsapp"},db_path=DB_PATH)
+            with db() as c:
+                c.execute("""UPDATE whatsapp_messages SET status='fallito', attempts=?, last_error=?, last_attempt_at=?, failed_at=?, template_name=?, language_code=?, recipient_phone=?, payload_json=?, response_json=?, updated_at=? WHERE id=?""",(attempts,error,attempt_stamp,failed_at,template,language,phone,json.dumps(payload_obj,ensure_ascii=False),detail,failed_at,msg_id))
+                c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,p["id"]))
+                c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(p["id"],"WhatsApp ringraziamento",f"Errore: {error}",user_id,now()))
+                emit_notification(c,"whatsapp_error","❌ Errore invio WhatsApp",f'{p["owner_first_name"] or ""} {p["owner_last_name"] or ""}\nTocca per vedere il dettaglio.',p["id"],user_id,{"url":"/conversazioni-whatsapp"},db_path=DB_PATH)
             print(f"[WHATSAPP] pratica_id={p['id']} message_row={msg_id} esito=FALLITO http={exc.code} tentativi={attempts} endpoint={endpoint} destinatario=+{phone} template={template} lingua={language} risposta={detail}", flush=True)
             return False,error
         except Exception as exc:
             error=str(exc)
             attempts=int(msg["attempts"] or 0)+(0 if attempt_recorded else 1)
             failed_at=whatsapp_now()
-            c.execute("""UPDATE whatsapp_messages SET status='fallito', attempts=?, last_error=?, last_attempt_at=?, failed_at=?, template_name=?, language_code=?, recipient_phone=?, payload_json=?, updated_at=? WHERE id=?""",(attempts,error,attempt_stamp,failed_at,template,language,phone,json.dumps(payload_obj,ensure_ascii=False),failed_at,msg_id))
-            c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,p["id"]))
-            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(p["id"],"WhatsApp ringraziamento",f"Errore: {error}",user_id,now()))
-            emit_notification(c,"whatsapp_error","❌ Errore invio WhatsApp",f'{p["owner_first_name"] or ""} {p["owner_last_name"] or ""}\nTocca per vedere il dettaglio.',p["id"],user_id,{"url":"/conversazioni-whatsapp"},db_path=DB_PATH)
+            with db() as c:
+                c.execute("""UPDATE whatsapp_messages SET status='fallito', attempts=?, last_error=?, last_attempt_at=?, failed_at=?, template_name=?, language_code=?, recipient_phone=?, payload_json=?, updated_at=? WHERE id=?""",(attempts,error,attempt_stamp,failed_at,template,language,phone,json.dumps(payload_obj,ensure_ascii=False),failed_at,msg_id))
+                c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(error,p["id"]))
+                c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(p["id"],"WhatsApp ringraziamento",f"Errore: {error}",user_id,now()))
+                emit_notification(c,"whatsapp_error","❌ Errore invio WhatsApp",f'{p["owner_first_name"] or ""} {p["owner_last_name"] or ""}\nTocca per vedere il dettaglio.',p["id"],user_id,{"url":"/conversazioni-whatsapp"},db_path=DB_PATH)
             print(f"[WHATSAPP] pratica_id={p['id']} message_row={msg_id} esito=FALLITO tentativi={attempts} endpoint={endpoint} destinatario=+{phone} template={template} lingua={language} errore={error}", flush=True)
             return False,error
 
@@ -7039,6 +7054,7 @@ class App(BaseHTTPRequestHandler):
                     c.execute("UPDATE whatsapp_messages SET status='fallito',failed_at=?,last_attempt_at=COALESCE(last_attempt_at,?),last_error=?,updated_at=? WHERE id=?",(current,current,error,current,row["id"]))
                     results.append({"id":row["id"],"ok":False,"message":error})
             due=c.execute("SELECT id,message_id FROM whatsapp_messages WHERE status='programmato' AND scheduled_at<=? ORDER BY scheduled_at LIMIT ?",(current,limit)).fetchall()
+            due_ids=[]
             for row in due:
                 if row["message_id"]:
                     c.execute("UPDATE whatsapp_messages SET status='accettato_da_meta',sent_at=COALESCE(sent_at,?),last_error='',updated_at=? WHERE id=? AND status='programmato'",(current,current,row["id"]))
@@ -7049,8 +7065,13 @@ class App(BaseHTTPRequestHandler):
                                      WHERE id=? AND status='programmato' AND message_id IS NULL""",(current,current,row["id"])).rowcount
                 if not changed:
                     continue
-                ok,msg=self.send_whatsapp_message(c,row["id"],manual=False,user_id=None,attempt_recorded=True)
-                results.append({"id":row["id"],"ok":ok,"message":msg})
+                due_ids.append(row["id"])
+        # the connection above is committed and released before sending any
+        # message: send_whatsapp_message's own network calls must never run
+        # while this (or any) database transaction is still open.
+        for msg_id in due_ids:
+            ok,msg=self.send_whatsapp_message(msg_id,manual=False,user_id=None,attempt_recorded=True)
+            results.append({"id":msg_id,"ok":ok,"message":msg})
         return results
 
     def whatsapp_cron_authorized(self):
@@ -8380,7 +8401,10 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 cur=c.execute("""INSERT INTO whatsapp_messages(practice_id,scheduled_at,status,attempts,template_name,language_code,recipient_phone,payload_json,manual,created_at,updated_at)
                                  VALUES(?,?,?,?,?,?,?,?,?,?,?)""",(pid,stamp,"in_invio",0,payload["template"]["name"],payload["template"]["language"]["code"],payload["to"],json.dumps(payload,ensure_ascii=False),1,stamp,stamp))
                 msg_id=cur.lastrowid
-            ok,msg=self.send_whatsapp_message(c,msg_id,manual=True,user_id=user["id"])
+        # connection released before the network call, same reason as in
+        # process_whatsapp_queue: never hold a database lock during it.
+        ok,msg=self.send_whatsapp_message(msg_id,manual=True,user_id=user["id"])
+        with db() as c:
             c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"Invio WhatsApp manuale",msg,user["id"],now()))
         self.redirect(f"/pratiche/{pid}")
 
@@ -8393,6 +8417,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
 
     def whatsapp_message_action(self,user,msg_id,action):
         return_to=safe_return_path(self.headers.get("Referer"),"/conversazioni-whatsapp")
+        retry_msg_id=None
         with db() as c:
             msg=c.execute("SELECT * FROM whatsapp_messages WHERE id=?",(msg_id,)).fetchone()
             if not msg:
@@ -8415,7 +8440,11 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                     changed=c.execute("""UPDATE whatsapp_messages SET status='in_invio',attempts=attempts+1,
                                          last_attempt_at=?,failed_at=NULL,updated_at=? WHERE id=? AND status='fallito' AND message_id IS NULL""",(stamp,stamp,msg_id)).rowcount
                     if changed:
-                        self.send_whatsapp_message(c,msg_id,manual=False,user_id=user["id"],attempt_recorded=True)
+                        retry_msg_id=msg_id
+        # connection released before the network call, same reason as in
+        # process_whatsapp_queue: never hold a database lock during it.
+        if retry_msg_id:
+            self.send_whatsapp_message(retry_msg_id,manual=False,user_id=user["id"],attempt_recorded=True)
         self.redirect(return_to)
 
     def whatsapp_confirm_page(self,user,pid,error=""):
