@@ -3403,6 +3403,33 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(len(restored),1)
         self.assertEqual(restored[0].idempotency_key,legacy_key)
 
+    def test_any_uncaught_exception_in_a_route_shows_an_error_page_instead_of_hanging(self):
+        # do_GET/do_POST used to have no top-level exception handling at all:
+        # anything other than the specific errors each handler already
+        # catches (BalanceError, sqlite3.Error, ...) would propagate out of
+        # the method entirely. socketserver's default handle_error then just
+        # prints the traceback and drops the connection with zero HTTP
+        # response, which from the browser looks exactly like "clicked the
+        # button, nothing happened, no error" — a symptom reported repeatedly
+        # for Bilanci's Elimina button. This must never happen again: any
+        # route that blows up has to render a visible error page instead.
+        self.handler.headers={}
+        self.handler.path="/bilanci"
+        self.handler._route_get=lambda:(_ for _ in ()).throw(KeyError("colonna_inesistente"))
+        rendered=[];self.handler.send_html=lambda content,status=200:rendered.append((content,status))
+        self.handler.do_GET()
+        self.assertTrue(rendered)
+        self.assertEqual(rendered[-1][1],500)
+        self.assertIn("Errore imprevisto",rendered[-1][0])
+        self.assertIn("KeyError",rendered[-1][0])
+        self.handler.path="/bilanci/movimenti/1/elimina-conferma"
+        self.handler._route_post=lambda:(_ for _ in ()).throw(TypeError("dato non valido"))
+        rendered.clear()
+        self.handler.do_POST()
+        self.assertTrue(rendered)
+        self.assertEqual(rendered[-1][1],500)
+        self.assertIn("TypeError",rendered[-1][0])
+
     def test_dashboard_reminders_panel_replaces_old_flash_and_supports_full_lifecycle(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
