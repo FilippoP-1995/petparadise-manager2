@@ -275,7 +275,7 @@ class ProductionBalanceModuleTests(unittest.TestCase):
             first_page.index('class="balance-col-action">Azione</th>'),
             first_page.index('class="balance-col-date">Creazione</th>'),
         )
-        self.assertIn(">Elimina</button>",first_page)
+        self.assertIn(">Elimina</a>",first_page)
         self.assertIn("Registra entrata",first_page)
         self.assertIn("Registra uscita",first_page)
         self.assertIn("balance-manual-toolbar",first_page)
@@ -301,58 +301,55 @@ class ProductionBalanceModuleTests(unittest.TestCase):
         self.assertEqual(rendered[-1].count("data-balance-detail-row"),5)
         self.assertIn("Pagina 2 di 2",rendered[-1])
 
-    def test_admin_void_is_append_only_and_audit_keeps_the_complete_trace(self):
+    def test_admin_delete_permanently_removes_the_row_and_updates_totals(self):
         with app.db() as connection:
             movement=create_movement(
                 connection,amount_cents=12500,movement_date="2026-07-12",
                 category="W",ledger_section="Entrata",
                 movement_type="Entrata manuale",
                 idempotency_key="production-manual-income",
-                payment_method="Bonifico",description="Entrata da stornare",
+                payment_method="Bonifico",description="Entrata da eliminare",
                 source="manual_income",created_by=self.admin["id"],
             )
+            before_total=connection.execute(
+                "SELECT COALESCE(SUM(amount_cents),0) FROM balance_movements WHERE category='W' AND ledger_section='Entrata'"
+            ).fetchone()[0]
         self.handler.form=lambda:{"return_to":"/bilanci?view=entrate-w"}
         redirects=[]
         self.handler.redirect=redirects.append
-        self.handler.balance_movement_void(self.admin,movement.id)
+        self.handler.balance_movement_delete(self.admin,movement.id)
         self.assertEqual(
             redirects,["/bilanci?view=entrate-w&movimento_stornato=1"]
         )
         with app.db() as connection:
             standard=get_movements(
-                connection,filters=self.filters(search="Entrata da stornare")
+                connection,filters=self.filters(search="Entrata da eliminare")
             )
             audit=get_movements(
                 connection,
                 filters=normalize_filters(
                     date_from="2026-07-01",date_to="2026-07-31",
-                    search="Entrata da stornare",include_technical=True,
+                    search="Entrata da eliminare",include_technical=True,
                 ),
             )
-            original=connection.execute(
-                "SELECT amount_cents FROM balance_movements WHERE id=?",
-                (movement.id,),
+            # the row must be genuinely gone from the table, not just hidden
+            # or offset by a Storno row still sitting in the ledger.
+            row=connection.execute(
+                "SELECT * FROM balance_movements WHERE id=?",(movement.id,),
             ).fetchone()
+            after_total=connection.execute(
+                "SELECT COALESCE(SUM(amount_cents),0) FROM balance_movements WHERE category='W' AND ledger_section='Entrata'"
+            ).fetchone()[0]
         self.assertEqual(standard,[])
-        self.assertEqual(original["amount_cents"],12500)
-        self.assertEqual(
-            sorted(row.amount_cents for row in audit),[-12500,12500]
-        )
-        self.assertEqual(
-            {row.source for row in audit},{"manual_income","manual_void"}
-        )
+        self.assertEqual(audit,[])
+        self.assertIsNone(row)
+        self.assertEqual(before_total-after_total,12500)
 
-        rendered=[]
-        self.handler.send_html=lambda html,*args:rendered.append(html)
-        self.handler.path=(
-            "/bilanci?data_iniziale=2026-07-01&data_finale=2026-07-31&"
-            "view=entrate-w&audit=1&ricerca=Entrata%20da%20stornare"
-        )
-        self.handler.balances_page(self.admin)
-        page=rendered[-1]
-        self.assertIn("manual_income",page)
-        self.assertIn("manual_void",page)
-        self.assertIn("Mostra movimenti tecnici / rettifiche",page)
+        # deleting again must not crash: it's reported as "not found".
+        pages=[]
+        self.handler.balances_page=lambda user,error="",expense_draft=None:pages.append(error)
+        self.handler.balance_movement_delete(self.admin,movement.id)
+        self.assertIn("non trovato",pages[-1])
 
 
 if __name__=="__main__":

@@ -55,7 +55,7 @@ class BalanceServiceTests(unittest.TestCase):
         self.assertIn("balance_movements", tables)
         self.assertEqual(columns["amount_cents"], "INTEGER")
         self.assertIn("balance_movements_no_update", triggers)
-        self.assertIn("balance_movements_no_delete", triggers)
+        self.assertNotIn("balance_movements_no_delete", triggers)
         self.assertEqual(balance_service.get_movements(self.connection), [first])
 
     def test_create_movement_stores_integer_cents_and_unique_uuid(self):
@@ -259,19 +259,46 @@ class BalanceServiceTests(unittest.TestCase):
         ).fetchone()[0]
         self.assertEqual(count, 1)
 
-    def test_database_rejects_direct_update_and_delete(self):
+    def test_database_rejects_direct_update_but_allows_delete(self):
         movement = self.movement()
         with self.assertRaisesRegex(sqlite3.IntegrityError, "append-only"):
             self.connection.execute(
                 "UPDATE balance_movements SET amount_cents=1 WHERE id=?",
                 (movement.id,),
             )
-        with self.assertRaisesRegex(sqlite3.IntegrityError, "append-only"):
-            self.connection.execute(
-                "DELETE FROM balance_movements WHERE id=?", (movement.id,)
-            )
         stored = balance_service.get_movements(self.connection)
         self.assertEqual(stored, [movement])
+        # Movements are still update-immutable, but a real, permanent delete
+        # (via delete_movement, see below) must be possible: Bilanci's Elimina
+        # button genuinely removes the row instead of appending a Storno.
+        self.connection.execute(
+            "DELETE FROM balance_movements WHERE id=?", (movement.id,)
+        )
+        self.assertEqual(balance_service.get_movements(self.connection), [])
+
+    def test_delete_movement_removes_the_row_for_real(self):
+        movement = self.movement()
+        balance_service.delete_movement(self.connection, movement_id=movement.id)
+        self.assertEqual(balance_service.get_movements(self.connection), [])
+        row = self.connection.execute(
+            "SELECT 1 FROM balance_movements WHERE id=?", (movement.id,)
+        ).fetchone()
+        self.assertIsNone(row)
+
+    def test_delete_movement_rejects_missing_technical_and_referenced_rows(self):
+        with self.assertRaises(balance_service.MovementNotFoundError):
+            balance_service.delete_movement(self.connection, movement_id=999999)
+        movement = self.movement()
+        reversal = balance_service.create_reversal(
+            self.connection,
+            original_movement_id=movement.id,
+            movement_date=movement.movement_date,
+            idempotency_key="delete-guard-reversal",
+        )
+        with self.assertRaises(balance_service.InvalidMovementError):
+            balance_service.delete_movement(self.connection, movement_id=movement.id)
+        with self.assertRaises(balance_service.InvalidMovementError):
+            balance_service.delete_movement(self.connection, movement_id=reversal.id)
 
     def test_get_movements_returns_complete_ledger_without_phase_two_filters(self):
         oldest = self.movement(
