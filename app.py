@@ -40,6 +40,8 @@ from balance_service import (
     create_reversal as create_balance_reversal,
     create_legacy_reversal as create_balance_legacy_reversal,
     delete_movement as delete_balance_movement,
+    log_movement_deletion as log_balance_movement_deletion,
+    get_recent_movement_deletions as get_recent_balance_movement_deletions,
     MovementAlreadyReversedError,
 )
 from balance_repair import repair_duplicate_balance_movements
@@ -1357,6 +1359,7 @@ document.addEventListener('change', function(e){
       const originMode=document.querySelector('select[name="origin_mode"]');
       if(originMode) originMode.value='Testo libero';
     }
+    toggleCollectiveVetMode();
   }
   if(e.target && e.target.name === 'origin_veterinarian_id'){
     const opt=e.target.selectedOptions && e.target.selectedOptions[0];
@@ -2025,10 +2028,16 @@ function toggleCollectiveVetMode(){
   const vet = document.querySelector('select[name="veterinarian_id"]');
   const callBack = document.querySelector('input[name="tag_da_richiamare"]');
   const origin = document.querySelector('select[name="request_origin"]');
+  const ownerVet = document.querySelector('select[name="owner_veterinarian_id"]');
   const exempt = !!(callBack?.checked || (service && service.value === 'Cremazione collettiva') || (origin && origin.value === 'Collaboratore'));
-  ['operator_name','request_origin','owner_first_name','owner_last_name','owner_phone','owner_tax_code','owner_street','owner_city','owner_province','owner_zip'].forEach(function(name){
+  const senderIsVet = !!(ownerVet && ownerVet.value);
+  ['operator_name','request_origin','owner_first_name'].forEach(function(name){
     const field=document.querySelector(`[name="${name}"]`);
     if(field){ field.required = !exempt; }
+  });
+  ['owner_last_name','owner_phone','owner_tax_code','owner_street','owner_city','owner_province','owner_zip'].forEach(function(name){
+    const field=document.querySelector(`[name="${name}"]`);
+    if(field){ field.required = !exempt && !senderIsVet; }
   });
   const collective=!!(service && service.value==='Cremazione collettiva');
   const smaltito=document.querySelector('select[name="status"] option[data-collective-only="1"]');
@@ -3862,6 +3871,8 @@ class App(BaseHTTPRequestHandler):
                 snapshot=get_balance_snapshot(c,filters=filters)
                 operators=get_balance_operators(c)
                 collaborators=get_balance_collaborators(c)
+                recent_deletions=get_recent_balance_movement_deletions(c,limit=10)
+                deleters={row["id"]:row["display_name"] for row in c.execute("SELECT id,display_name FROM users")}
         except sqlite3.Error:
             print("[BILANCI] Errore durante il caricamento\n"+traceback.format_exc(),flush=True)
             return self.error_page(
@@ -4103,10 +4114,23 @@ class App(BaseHTTPRequestHandler):
           </details>
         </div>'''
         manual_toolbar='''<div class="actions balance-manual-toolbar"><button class="btn" type="button" onclick="const p=document.getElementById('balanceManualIncome');p.open=true;p.scrollIntoView({behavior:'smooth',block:'start'})">Registra entrata</button><button class="btn" type="button" onclick="const p=document.getElementById('balanceManualExpense');p.open=true;p.scrollIntoView({behavior:'smooth',block:'start'})">Registra uscita</button></div>'''
+        if recent_deletions:
+            deletion_rows="".join(
+                f'''<tr><td>{esc(date_it(row["movement_date"]))}</td><td>{esc(row["movement_type"])}</td><td>{esc(row["category"])}</td>'''
+                f'''<td>{money_cents_it(row["amount_cents"])}</td><td>{esc(row["practice_number_snapshot"] or "-")}</td>'''
+                f'''<td>{esc(row["description"] or "-")}</td><td>{esc(deleters.get(row["deleted_by"],"-"))}</td>'''
+                f'''<td>{esc(date_it(row["deleted_at"][:10]))}</td></tr>'''
+                for row in recent_deletions
+            )
+            deletions_html=f'''<details class="section balance-expense balance-recent-deletions"><summary>Movimenti eliminati di recente ({len(recent_deletions)})</summary>
+              <div class="tablebox"><table><thead><tr><th>Data movimento</th><th>Tipo</th><th>Categoria</th><th>Importo</th><th>Pratica</th><th>Descrizione</th><th>Eliminato da</th><th>Eliminato il</th></tr></thead><tbody>{deletion_rows}</tbody></table></div>
+            </details>'''
+        else:
+            deletions_html=''
         primary_content=(details_html+cards_html) if explicit_view else (cards_html+details_html)
         body=f'''<main class="wrap balance-wrap">
           <div class="titlebar"><div><h1>Bilanci</h1><p class="sub">Movimenti reali e situazione delle somme ancora aperte.</p></div></div>
-          {notice}{manual_toolbar}{primary_content}{manual_html}{filters_html}
+          {notice}{manual_toolbar}{primary_content}{manual_html}{deletions_html}{filters_html}
         </main>'''
         self.send_html(layout("Bilanci",body,user))
 
@@ -4282,6 +4306,13 @@ class App(BaseHTTPRequestHandler):
                     ).fetchone()
                     if pm:
                         self.delete_practice_payment_movement(c,pm,user["id"])
+                log_balance_movement_deletion(
+                    c,movement_date=movement["movement_date"],category=movement["category"],
+                    ledger_section=movement["ledger_section"],movement_type=movement["movement_type"],
+                    amount_cents=movement["amount_cents"],payment_method=movement["payment_method"],
+                    description=movement["description"],practice_id=movement["practice_id"],
+                    practice_number_snapshot=movement["practice_number_snapshot"],deleted_by=user["id"],
+                )
                 delete_balance_movement(c,movement_id=movement_id)
         except BalanceError as exc:
             return self.balances_page(user,error=str(exc))
@@ -4305,6 +4336,13 @@ class App(BaseHTTPRequestHandler):
                 )
                 if not movement:
                     raise BalanceError("Movimento non trovato.")
+                log_balance_movement_deletion(
+                    c,movement_date=movement.movement_date,category=movement.category,
+                    ledger_section=movement.ledger_section,movement_type=movement.movement_type,
+                    amount_cents=movement.amount_cents,payment_method=movement.payment_method,
+                    description=movement.description,practice_id=movement.practice_id,
+                    practice_number_snapshot=movement.practice_number_snapshot,deleted_by=user["id"],
+                )
                 if movement.id>-1000000000:
                     # backed by a real payment_movements row: its id is -movement.id
                     pm=c.execute("SELECT * FROM payment_movements WHERE id=?",(-movement.id,)).fetchone()
@@ -4329,7 +4367,7 @@ class App(BaseHTTPRequestHandler):
                         practice_number_snapshot=movement.practice_number_snapshot,
                         payment_method=movement.payment_method,
                         description=f"Eliminazione manuale: {movement.description or movement.movement_type}",
-                        source="manual_delete",
+                        source="manual_void",
                         created_by=user["id"],
                     )
         except BalanceError as exc:
@@ -6784,6 +6822,9 @@ class App(BaseHTTPRequestHandler):
             "owner_tax_code":"Codice fiscale","owner_street":"Indirizzo",
             "owner_city":"Comune","owner_province":"Provincia","owner_zip":"CAP",
         }
+        if d.get("owner_veterinarian_id"):
+            for key in ("owner_last_name","owner_phone","owner_tax_code","owner_street","owner_city","owner_province","owner_zip"):
+                labels.pop(key,None)
         missing=[label for key,label in labels.items() if not d.get(key)]
         return "Campi obbligatori mancanti: " + ", ".join(missing) if missing else ""
 

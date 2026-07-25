@@ -195,6 +195,27 @@ def ensure_balance_schema(connection: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_balance_movements_collaborator "
         "ON balance_movements(collaborator_id,movement_date)"
     )
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS balance_movement_deletions (
+          id INTEGER PRIMARY KEY,
+          movement_date TEXT NOT NULL,
+          category TEXT NOT NULL,
+          ledger_section TEXT NOT NULL,
+          movement_type TEXT NOT NULL,
+          amount_cents INTEGER NOT NULL,
+          payment_method TEXT NOT NULL DEFAULT '',
+          description TEXT NOT NULL DEFAULT '',
+          practice_id INTEGER,
+          practice_number_snapshot TEXT NOT NULL DEFAULT '',
+          deleted_by INTEGER,
+          deleted_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_balance_movement_deletions_deleted_at
+          ON balance_movement_deletions(deleted_at DESC);
+        """
+    )
 
 
 def _clean_required(value: object, field: str, max_length: int = 200) -> str:
@@ -750,6 +771,48 @@ def delete_movement(connection: sqlite3.Connection, *, movement_id: int) -> None
             "this movement has a correction/reversal linked to it and cannot be deleted directly"
         )
     connection.execute("DELETE FROM balance_movements WHERE id=?", (original.id,))
+
+
+def log_movement_deletion(
+    connection: sqlite3.Connection,
+    *,
+    movement_date: str,
+    category: str,
+    ledger_section: str,
+    movement_type: str,
+    amount_cents: int,
+    payment_method: str = "",
+    description: str = "",
+    practice_id: int | None = None,
+    practice_number_snapshot: str = "",
+    deleted_by: int | None = None,
+) -> None:
+    """Record a permanent-deletion audit entry for Bilanci's 'movimenti
+    eliminati di recente' panel. Purely informational, with no restore path:
+    a genuine hard delete stays genuine, this is only a log of what happened."""
+    connection.execute(
+        """
+        INSERT INTO balance_movement_deletions(
+          movement_date,category,ledger_section,movement_type,amount_cents,
+          payment_method,description,practice_id,practice_number_snapshot,
+          deleted_by,deleted_at
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            str(movement_date), category, ledger_section, movement_type, int(amount_cents),
+            payment_method or "", description or "", practice_id, practice_number_snapshot or "",
+            deleted_by, datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        ),
+    )
+
+
+def get_recent_movement_deletions(
+    connection: sqlite3.Connection, *, limit: int = 10
+) -> list[sqlite3.Row]:
+    return connection.execute(
+        "SELECT * FROM balance_movement_deletions ORDER BY id DESC LIMIT ?",
+        (max(1, int(limit)),),
+    ).fetchall()
 
 
 def correct_movement_date(
