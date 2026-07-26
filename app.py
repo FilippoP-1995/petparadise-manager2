@@ -1119,8 +1119,9 @@ def format_sequence_code(prefix,value,width=6):
 CSS = r"""
 :root{--ink:#24312c;--muted:#6e7b75;--brand:#a74045;--brand2:#7f3035;--paper:#fff;--bg:#f4f1ed;--line:#ded8d1;--green:#39745b;--gold:#a87926;--safe-top:env(safe-area-inset-top,0px);--safe-bottom:env(safe-area-inset-bottom,0px);--safe-left:env(safe-area-inset-left,0px);--safe-right:env(safe-area-inset-right,0px)}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
-a{color:inherit;text-decoration:none}.top{height:68px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:18px;padding:0 28px;position:sticky;top:0;z-index:5}.brand{font-weight:800;font-size:19px;color:var(--brand)}.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:1.5px}.nav{display:flex;gap:8px;margin-left:auto}.nav a{padding:9px 12px;border-radius:9px}.nav a:hover{background:#f3eeea}.wrap{max-width:1280px;margin:0 auto;padding:28px}.titlebar{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:22px}h1{margin:0;font-size:28px}h2{font-size:18px;margin:0 0 15px}.sub{color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:10px;background:var(--brand);color:white;padding:11px 16px;font-weight:700;cursor:pointer}.btn:hover{background:var(--brand2)}.btn.ghost{background:white;color:var(--ink);border:1px solid var(--line)}.grid{display:grid;gap:16px}.stats{grid-template-columns:repeat(3,1fr)}.card{background:var(--paper);border:1px solid var(--line);border-radius:15px;padding:20px;box-shadow:0 3px 15px #4b39260a}.stat{display:flex;justify-content:space-between;align-items:center}.stat b{font-size:32px;color:var(--brand)}.badge{display:inline-flex;padding:5px 9px;border-radius:99px;background:#eee9e3;font-size:12px;font-weight:700}.tag-red{background:#e53935;color:white}.tag-orange{background:#fb8c00;color:white}.tag-outline-orange{background:white;color:#fb8c00;border:2px solid #fb8c00}.tag-purple{background:#7e57c2;color:white}.tag-yellow,.pay-yellow{background:#fdd835;color:#3b3100}.tag-pink{background:#f06292;color:white}.tag-blue,.pay-blue{background:#1e88e5;color:white}.tag-green,.pay-green{background:#43a047;color:white}.status-stack{display:flex;gap:5px;flex-wrap:wrap}.form-grid{grid-template-columns:repeat(2,1fr)}.wide{grid-column:1/-1}.section{background:#fff;border:1px solid var(--line);border-radius:15px;padding:20px}.fields{display:grid;grid-template-columns:repeat(2,1fr);gap:13px}.field{display:flex;flex-direction:column;gap:6px}.field.full{grid-column:1/-1}label{font-weight:650;font-size:13px}input,select,textarea{width:100%;border:1px solid #cfc8c0;border-radius:9px;padding:11px 12px;background:white;color:var(--ink);font:inherit}input[type=checkbox]{width:auto;min-height:auto}textarea{min-height:90px;resize:vertical}input:focus,select:focus,textarea:focus{outline:3px solid #a7404520;border-color:var(--brand)}table{width:100%;border-collapse:collapse;background:white}th,td{text-align:left;padding:16px 14px;border-bottom:1px solid var(--line)}th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}thead th{position:sticky;top:0;z-index:2;background:#101620}.light-theme thead th{background:#fff}.tablebox{background:white;border:1px solid var(--line);border-radius:15px;max-height:min(65vh,620px);overflow:auto;-webkit-overflow-scrolling:touch;touch-action:none}.tablebox-scroll-top{overflow-x:auto;overflow-y:hidden;height:16px;margin-bottom:6px;position:sticky;top:76px;z-index:10;background:var(--paper)}.tablebox-scroll-top-inner{height:1px}@media(max-width:900px){.tablebox-scroll-top{display:none}}.actions{display:flex;gap:10px;flex-wrap:wrap}.flash{padding:13px 16px;border-radius:10px;background:#e5f2eb;color:#285b45;margin-bottom:16px}.warning{background:#fff1d8;color:#765315}.reminders-panel{margin-bottom:20px}.reminders-panel h2{margin-bottom:12px}.reminders-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}.reminder-item{display:flex;align-items:center;gap:14px;padding:11px 6px;border-bottom:1px solid var(--line)}.reminder-item:last-child{border-bottom:0}.reminder-check{display:flex;align-items:center;gap:7px;font-weight:600;font-size:13px;flex:0 0 auto;cursor:pointer}.reminder-check input{width:18px;height:18px;min-height:18px;flex:0 0 18px}.reminder-title{color:var(--ink);font-weight:600;text-decoration:underline;text-underline-offset:2px}.reminder-item.reminder-removing{opacity:.35;pointer-events:none}.weekly-report{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}.weekly-report h3{margin:0 0 4px;font-size:15px}.weekly-report-cards{grid-template-columns:repeat(3,1fr);margin-top:10px}.weekly-report-cards.kv,.weekly-report-cards .kv{transition:transform .15s ease,box-shadow .15s ease}.weekly-report-cards .kv:hover{transform:translateY(-2px);box-shadow:0 10px 26px #4b39261a}.reminders-trigger{display:flex;align-items:center;gap:14px;width:100%;padding:14px 18px;margin-bottom:20px;border:1px solid #334155;border-radius:14px;background:#1f2937;color:inherit;cursor:pointer;text-align:left;font:inherit;box-shadow:0 12px 30px #03071230;transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}.reminders-trigger:hover{transform:translateY(-2px);border-color:#56657a;box-shadow:0 16px 38px #03071250}.reminders-trigger-copy{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}.reminders-trigger-copy strong{font-size:15px}.reminders-trigger-copy small{color:#94a3b8}.reminders-trigger-badge{position:relative;flex:0 0 auto}.reminders-trigger-badge .notification-badge{position:static;transform:none;box-shadow:none}.light-theme .reminders-trigger{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .reminders-trigger-copy small{color:#64748b}#ppmRemindersOverlay .reminders-list{max-height:50vh;overflow:auto}.reminder-group-item{padding:0}.reminder-group-btn{display:flex;align-items:center;gap:12px;width:100%;padding:11px 6px;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}.reminder-group-btn:hover{background:#ffffff08}.light-theme .reminder-group-btn:hover{background:#00000008}.reminder-group-icon{width:34px;height:34px}.reminder-group-icon svg{width:16px;height:16px}.reminder-group-text{flex:1;font-weight:600}.reminder-group-chevron{font-size:20px;color:var(--muted)}.reminder-detail-overlay{z-index:190}
-.drag-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;max-height:420px;overflow:auto}.drag-item{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid #334155;border-radius:12px;background:#1f2937;touch-action:none;user-select:none;transition:box-shadow .15s ease,border-color .15s ease}.drag-item.dragging{opacity:.65;box-shadow:0 16px 38px #0008;border-color:#56657a;position:relative;z-index:5}.drag-handle{cursor:grab;color:#94a3b8;font-weight:800;letter-spacing:2px;padding:6px 8px;touch-action:none;flex:0 0 auto}.drag-handle:active{cursor:grabbing}.drag-item-icon{display:grid;place-items:center;width:30px;height:30px;flex:0 0 30px}.drag-item-icon svg{width:16px;height:16px}.drag-item-label{flex:1;font-weight:600}.drag-item-visible-wrap{display:flex;align-items:center;flex:0 0 auto}.drag-item-visible-wrap input[type=checkbox]{width:20px;height:20px}.light-theme .drag-item{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .drag-handle{color:#64748b}
+a{color:inherit;text-decoration:none}.top{height:68px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:18px;padding:0 28px;position:sticky;top:0;z-index:5}.brand{font-weight:800;font-size:19px;color:var(--brand)}.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:1.5px}.nav{display:flex;gap:8px;margin-left:auto}.nav a{padding:9px 12px;border-radius:9px}.nav a:hover{background:#f3eeea}.wrap{max-width:1280px;margin:0 auto;padding:28px}.titlebar{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:22px}h1{margin:0;font-size:28px}h2{font-size:18px;margin:0 0 15px}.sub{color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:10px;background:var(--brand);color:white;padding:11px 16px;font-weight:700;cursor:pointer}.btn:hover{background:var(--brand2)}.btn.ghost{background:white;color:var(--ink);border:1px solid var(--line)}.grid{display:grid;gap:16px}.stats{grid-template-columns:repeat(3,1fr)}.card{background:var(--paper);border:1px solid var(--line);border-radius:15px;padding:20px;box-shadow:0 3px 15px #4b39260a}.stat{display:flex;justify-content:space-between;align-items:center}.stat b{font-size:32px;color:var(--brand)}.badge{display:inline-flex;padding:5px 9px;border-radius:99px;background:#eee9e3;font-size:12px;font-weight:700}.tag-red{background:#e53935;color:white}.tag-orange{background:#fb8c00;color:white}.tag-outline-orange{background:white;color:#fb8c00;border:2px solid #fb8c00}.tag-purple{background:#7e57c2;color:white}.tag-yellow,.pay-yellow{background:#fdd835;color:#3b3100}.tag-pink{background:#f06292;color:white}.tag-blue,.pay-blue{background:#1e88e5;color:white}.tag-green,.pay-green{background:#43a047;color:white}.status-stack{display:flex;gap:5px;flex-wrap:wrap}.form-grid{grid-template-columns:repeat(2,1fr)}.wide{grid-column:1/-1}.section{background:#fff;border:1px solid var(--line);border-radius:15px;padding:20px}.fields{display:grid;grid-template-columns:repeat(2,1fr);gap:13px}.field{display:flex;flex-direction:column;gap:6px}.field.full{grid-column:1/-1}label{font-weight:650;font-size:13px}input,select,textarea{width:100%;border:1px solid #cfc8c0;border-radius:9px;padding:11px 12px;background:white;color:var(--ink);font:inherit}input[type=checkbox]{width:auto;min-height:auto}textarea{min-height:90px;resize:vertical}input:focus,select:focus,textarea:focus{outline:3px solid #a7404520;border-color:var(--brand)}table{width:100%;border-collapse:collapse;background:white}th,td{text-align:left;padding:16px 14px;border-bottom:1px solid var(--line)}th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}thead th{position:sticky;top:0;z-index:2;background:#101620}.light-theme thead th{background:#fff}.tablebox{background:white;border:1px solid var(--line);border-radius:15px;max-height:min(65vh,620px);overflow:auto;-webkit-overflow-scrolling:touch;touch-action:none}.tablebox-scroll-top{overflow-x:auto;overflow-y:hidden;height:16px;margin-bottom:6px;position:sticky;top:76px;z-index:10;background:var(--paper)}.tablebox-scroll-top-inner{height:1px}@media(max-width:900px){.tablebox-scroll-top{display:none}}.actions{display:flex;gap:10px;flex-wrap:wrap}.flash{padding:13px 16px;border-radius:10px;background:#e5f2eb;color:#285b45;margin-bottom:16px}.warning{background:#fff1d8;color:#765315}.reminders-card{background:#1f2937;border:1px solid #334155;border-radius:15px;margin-bottom:20px;box-shadow:0 14px 36px #03071235;overflow:hidden}.reminders-card-header{display:flex;align-items:center;gap:14px;width:100%;padding:16px 18px;background:transparent;border:0;cursor:pointer;color:inherit;text-align:left;font:inherit}.reminders-card-icon{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:#4c1d24;color:#fb7185;flex:0 0 40px}.reminders-card-icon svg{width:20px;height:20px}.reminders-card-copy{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}.reminders-card-copy strong{font-size:16px;font-weight:700}.reminders-card-copy small{color:#94a3b8}.reminders-count-badge{display:inline-grid;place-items:center;min-width:22px;height:22px;padding:0 6px;margin-left:8px;border-radius:99px;background:#ef4444;color:#fff;font-size:12px;font-weight:800;vertical-align:middle}.reminders-card-chevron{color:#94a3b8;font-size:18px;line-height:1;transition:transform .25s ease;flex:0 0 auto}.reminders-card.open .reminders-card-chevron{transform:rotate(180deg);color:#ef4444}.reminders-card-body{max-height:0;overflow:hidden;transition:max-height .35s ease}.reminders-card-section-title{margin:0;padding:14px 18px 4px;font-size:13px;font-weight:700;color:#94a3b8;border-top:1px solid #334155}.reminders-todo-list{list-style:none;margin:0;padding:4px 10px 6px}.reminders-todo-row{display:flex;align-items:center;gap:14px;padding:12px 8px;color:inherit;text-decoration:none;border-radius:10px}.reminders-todo-row:hover{background:#ffffff0c}.reminders-todo-icon{width:34px;height:34px;flex:0 0 34px}.reminders-todo-icon svg{width:16px;height:16px}.reminders-todo-text{flex:1;font-weight:600}.reminders-todo-chevron{color:#94a3b8;font-size:18px}.reminders-todo-empty{padding:12px 8px;color:#94a3b8}.reminders-week-row{display:flex;align-items:center;gap:14px;margin:6px 10px 14px;padding:16px 8px 4px;border-top:1px solid #334155;color:inherit;text-decoration:none}.reminders-week-row:hover .reminders-week-copy b{color:#fb7185}.reminders-week-icon{width:34px;height:34px;flex:0 0 34px}.reminders-week-icon svg{width:16px;height:16px}.reminders-week-copy{flex:1;min-width:0}.reminders-week-copy b{text-decoration:underline;text-underline-offset:3px;transition:color .15s ease}.reminders-week-copy small{display:block;margin-top:4px;color:#cbd5e1}.reminders-week-chevron{color:#94a3b8;font-size:18px}.figure-w{color:#60a5fa;font-weight:700}.figure-d{color:#fbbf24;font-weight:700}.light-theme .reminders-card{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .reminders-card-copy small{color:#64748b}.light-theme .reminders-card-section-title{color:#526174;border-color:#e2e8f0}.light-theme .reminders-todo-row:hover{background:#00000008}.light-theme .reminders-todo-chevron,.light-theme .reminders-week-chevron{color:#64748b}.light-theme .reminders-week-row{border-color:#e2e8f0}.light-theme .reminders-week-copy small{color:#334155}
+.drag-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;max-height:420px;overflow:auto;-webkit-overflow-scrolling:touch}.drag-list-scrollable{max-height:min(60vh,480px)}.drag-item{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid #334155;border-radius:12px;background:#1f2937;-webkit-touch-callout:none;transition:box-shadow .15s ease,border-color .15s ease}.drag-item.dragging{opacity:.65;box-shadow:0 16px 38px #0008;border-color:#56657a;position:relative;z-index:5}.drag-handle{cursor:grab;color:#94a3b8;font-weight:800;letter-spacing:2px;padding:6px 8px;touch-action:none;flex:0 0 auto}.drag-handle:active{cursor:grabbing}
+body.ppm-dragging-no-select,body.ppm-dragging-no-select *{-webkit-user-select:none!important;-moz-user-select:none!important;-ms-user-select:none!important;user-select:none!important}.drag-item-icon{display:grid;place-items:center;width:30px;height:30px;flex:0 0 30px}.drag-item-icon svg{width:16px;height:16px}.drag-item-label{flex:1;font-weight:600}.drag-item-visible-wrap{display:flex;align-items:center;flex:0 0 auto}.drag-item-visible-wrap input[type=checkbox]{width:20px;height:20px}.light-theme .drag-item{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .drag-handle{color:#64748b}
 .notif-type-list{display:flex;flex-direction:column;gap:8px}.notif-type-row{justify-content:flex-start;gap:12px}.notif-type-icon{font-size:19px;width:34px;height:34px;display:grid;place-items:center;flex:0 0 34px;border-radius:10px;background:#172033}.notif-type-copy{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}.notif-type-copy small{color:#94a3b8}.notif-type-row input[type=checkbox]{margin-left:auto;width:20px;height:20px}.light-theme .notif-type-icon{background:#f1f5f9}.light-theme .notif-type-copy small{color:#64748b}.login{max-width:410px;margin:10vh auto;background:white;padding:34px;border-radius:18px;border:1px solid var(--line)}.timeline{border-left:2px solid var(--line);margin-left:7px;padding-left:20px}.event{padding:0 0 18px;position:relative}.event:before{content:'';position:absolute;width:10px;height:10px;border-radius:50%;background:var(--brand);left:-26px;top:5px}.kvs{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.kv{background:#faf8f5;border-radius:10px;padding:12px}.kv small{display:block;color:var(--muted)}.signature-pad{width:100%;height:260px;border:2px dashed var(--line);border-radius:14px;background:white;touch-action:none}
 body{background:radial-gradient(circle at top left,#fff8f3 0,#f4f1ed 34%,#ece5dd 100%)}.top{backdrop-filter:saturate(1.2) blur(10px);box-shadow:0 8px 28px #4b392612}.brand{letter-spacing:.2px}.nav a{font-weight:650}.nav a.btn{box-shadow:0 8px 20px #a7404524}.wrap{animation:ppmFade .18s ease-out}.titlebar h1{letter-spacing:-.03em}.section,.card,.tablebox,.login{box-shadow:0 10px 30px #4b39260d}.section{transition:box-shadow .15s ease, transform .15s ease}.card{transition:transform .15s ease,box-shadow .15s ease}.card:hover{transform:translateY(-2px);box-shadow:0 14px 34px #4b392617}.btn{box-shadow:0 6px 16px #a740451f}.btn.ghost{box-shadow:none}.kv{border:1px solid #eee6df}.tablebox table tr:hover td{background:#fffaf6}input,select,textarea{transition:border-color .15s ease,box-shadow .15s ease}.danger{border-width:1px}.trash-note{background:#fff7e8;border:1px solid #f0cf9d;color:#765315;border-radius:12px;padding:12px 14px;margin-bottom:16px}.empty-state{text-align:center;padding:32px;color:var(--muted)}@keyframes ppmFade{from{opacity:.78;transform:translateY(3px)}to{opacity:1;transform:none}}
 .practice-layout{grid-template-columns:2fr 1fr}@media(max-width:800px){html,body{width:100%;max-width:100%;overflow-x:hidden}body{font-size:16px}.wrap{padding:14px}.top{height:auto;min-height:64px;padding:10px 12px;align-items:flex-start}.brand{font-size:17px}.nav{gap:4px;flex-wrap:wrap}.nav a{padding:8px 9px}.nav a span{display:none}.btn{width:100%;min-height:46px}.actions{width:100%}.actions .btn,.actions form{flex:1 1 100%}.stats,.form-grid,.fields,.kvs,.practice-layout{grid-template-columns:1fr}.section{padding:16px;border-radius:13px}.titlebar{align-items:flex-start;flex-direction:column}.wide{grid-column:auto}input,select,textarea{font-size:16px;min-height:46px}th:nth-child(4),td:nth-child(4){display:none}.badge{margin:2px 2px 2px 0}}
@@ -2859,44 +2860,22 @@ async function saveInvoiceNumber(input){
   }catch(error){input.value=previous;input.classList.add('input-error');alert(error.message);}
   finally{input.disabled=false;input.dataset.saving='';}
 }
-async function completeReminder(checkbox){
-  const item=checkbox.closest('.reminder-item');
-  if(!item)return;
-  const id=item.dataset.reminderId;
-  checkbox.disabled=true;item.classList.add('reminder-removing');
-  try{
-    const payload=new URLSearchParams();payload.set('ajax','1');
-    const response=await fetch(`/promemoria/${id}/completa`,{method:'POST',body:payload,headers:{'Accept':'application/json'},credentials:'same-origin'});
-    const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||'Operazione non riuscita');
-    item.remove();
-  }catch(error){checkbox.checked=false;checkbox.disabled=false;item.classList.remove('reminder-removing');alert(error.message);}
-}
-function setupRemindersPopup(){
-  const openBtn=document.getElementById('ppmOpenReminders');
-  if(!openBtn)return;
-  const overlay=document.getElementById('ppmRemindersOverlay');
-  const closeBtn=document.getElementById('ppmCloseReminders');
-  function open(){overlay.hidden=false;document.body.style.overflow='hidden';}
-  function close(){overlay.hidden=true;document.body.style.overflow='';}
-  openBtn.addEventListener('click',open);
-  if(closeBtn)closeBtn.addEventListener('click',close);
-  overlay.addEventListener('click',function(e){if(e.target===overlay)close();});
-  // second-level "drill down" popups: one per reminder type, pre-rendered
-  // hidden and stacked on top of the group list via z-index (see CSS), so
-  // closing a detail popup reveals the group list still open behind it.
-  document.querySelectorAll('[data-reminder-group-open]').forEach(function(btn){
-    btn.addEventListener('click',function(){
-      const detail=document.getElementById('ppmReminderDetail-'+btn.dataset.reminderGroupOpen);
-      if(detail)detail.hidden=false;
-    });
-  });
-  document.querySelectorAll('.reminder-detail-overlay').forEach(function(detail){
-    detail.addEventListener('click',function(e){if(e.target===detail)detail.hidden=true;});
-    const closeBtn2=detail.querySelector('[data-reminder-detail-close]');
-    if(closeBtn2)closeBtn2.addEventListener('click',function(){detail.hidden=true;});
+function setupRemindersCard(){
+  const card=document.getElementById('ppmRemindersCard');
+  if(!card)return;
+  const toggle=document.getElementById('ppmRemindersToggle');
+  const body=card.querySelector('.reminders-card-body');
+  function setOpen(open){
+    card.classList.toggle('open',open);
+    toggle.setAttribute('aria-expanded',open?'true':'false');
+    body.style.maxHeight=open?body.scrollHeight+'px':'0px';
+  }
+  toggle.addEventListener('click',function(){ setOpen(!card.classList.contains('open')); });
+  window.addEventListener('resize',function(){
+    if(card.classList.contains('open'))body.style.maxHeight=body.scrollHeight+'px';
   });
 }
-document.addEventListener('DOMContentLoaded', setupRemindersPopup);
+document.addEventListener('DOMContentLoaded', setupRemindersCard);
 function syncDragOrder(root){
   const group=root.closest('[data-drag-group]');
   if(!group)return;
@@ -2915,7 +2894,16 @@ function setupDragReorder(root){
       if(!item)return;
       e.preventDefault();
       item.classList.add('dragging');
+      // a held pointer moving over sibling text otherwise starts a native
+      // text selection mid-drag (reported as "si seleziona il testo come se
+      // stessi selezionando"): blocking user-select only on the dragged item
+      // isn't enough once the pointer travels over OTHER rows, so suppress
+      // selection on the whole page for the duration of the gesture.
+      document.body.classList.add('ppm-dragging-no-select');
+      const selection=window.getSelection();
+      if(selection)selection.removeAllRanges();
       function onMove(ev){
+        ev.preventDefault();
         const y=ev.clientY;
         const siblings=[...root.querySelectorAll('.drag-item')].filter(function(el){return el!==item;});
         let after=null;
@@ -2931,6 +2919,7 @@ function setupDragReorder(root){
       }
       function onUp(){
         item.classList.remove('dragging');
+        document.body.classList.remove('ppm-dragging-no-select');
         window.removeEventListener('pointermove',onMove);
         window.removeEventListener('pointerup',onUp);
         syncDragOrder(root);
@@ -2947,6 +2936,18 @@ function setupDragReorder(root){
 document.addEventListener('DOMContentLoaded',function(){
   document.querySelectorAll('[data-drag-root]').forEach(setupDragReorder);
 });
+function setupSidebarOrderPopup(){
+  const openBtn=document.getElementById('ppmOpenSidebarOrder');
+  if(!openBtn)return;
+  const overlay=document.getElementById('ppmSidebarOrderOverlay');
+  const closeBtn=document.getElementById('ppmCloseSidebarOrder');
+  function open(){overlay.hidden=false;document.body.style.overflow='hidden';}
+  function close(){overlay.hidden=true;document.body.style.overflow='';}
+  openBtn.addEventListener('click',open);
+  if(closeBtn)closeBtn.addEventListener('click',close);
+  overlay.addEventListener('click',function(e){if(e.target===overlay)close();});
+}
+document.addEventListener('DOMContentLoaded', setupSidebarOrderPopup);
 async function saveMethodSelect(select){
   const form=select.closest('form');
   if(!form||form.dataset.saving==='1')return;
@@ -3853,17 +3854,31 @@ DASHBOARD_SECTION_LABELS=[
     ("practices","Pratiche / Ritiri"),("payments","Pagamenti"),("recent_practices","Ultime 10 pratiche"),
 ]
 BOTTOM_NAV_DEFAULT_SLOTS=["Dashboard","Calendario","Archivio"]
-# (icona lucide, testo al singolare "{n}...", testo al plurale "{n}...") per tipo di
-# promemoria: usati per il riepilogo raggruppato nel primo livello del popup
-# Promemoria — un tipo non elencato qui ricade su un'etichetta generica.
+# (icona lucide, classe colore già usata dalle card di stato in Dashboard,
+# testo al singolare "{n}...", testo al plurale "{n}...") per tipo di
+# promemoria: righe della card "Cose da fare". La classe colore è la STESSA
+# già assegnata a quell'icona nelle card di stato della Dashboard (es.
+# archive+state-yellow per "Ritirati", calendar+state-red per "In
+# programma"), per restare visivamente identici al resto del gestionale
+# invece di introdurre una nuova palette. Un tipo non elencato qui ricade
+# su un'etichetta ed icona generiche.
 REMINDER_GROUP_LABELS={
-    "practice_incomplete": ("clipboard","C'è {n} pratica con dati da completare","Ci sono {n} pratiche con dati da completare"),
-    "product_reorder": ("receipt","C'è {n} prodotto da ordinare","Ci sono {n} prodotti da ordinare"),
-    "pickup_stalled": ("archive","C'è {n} animale ritirato ancora da mettere in programma","Ci sono {n} animali ritirati ancora da mettere in programma"),
-    "delivered_unpaid": ("wallet","C'è {n} pratica consegnata ma non pagata","Ci sono {n} pratiche consegnate ma non pagate"),
-    "cremation_pending": ("paw","C'è {n} cremazione singola in attesa","Ci sono {n} cremazioni singole in attesa"),
+    "practice_incomplete": ("clipboard","state-purple","{n} pratica con dati da completare","{n} pratiche con dati da completare"),
+    "product_reorder": ("receipt","state-blue","{n} prodotto da ordinare","{n} prodotti da ordinare"),
+    "pickup_stalled": ("archive","state-yellow","{n} animale ritirato ancora da mettere in programma","{n} animali ritirati ancora da mettere in programma"),
+    "delivered_unpaid": ("calendar","state-red","{n} pratica consegnata ma non pagata","{n} pratiche consegnate ma non pagate"),
+    "cremation_pending": ("paw","state-green","{n} cremazione singola in attesa","{n} cremazioni singole in attesa"),
 }
-REMINDER_GROUP_FALLBACK=("bell","C'è {n} promemoria attivo","Ci sono {n} promemoria attivi")
+REMINDER_GROUP_FALLBACK=("bell","state-blue","{n} promemoria attivo","{n} promemoria attivi")
+# destinazione quando un gruppo ha più di un elemento (con un solo elemento
+# si va invece dritti alla sua pratica/scheda specifica, più precisa)
+REMINDER_GROUP_URLS={
+    "practice_incomplete": "/archivio/pratiche",
+    "product_reorder": "/prodotti",
+    "pickup_stalled": "/archivio/pratiche?stato=Ritirato",
+    "delivered_unpaid": "/pagamenti/da-saldare",
+    "cremation_pending": "/programma-cremazioni",
+}
 
 
 def layout(title, body, user=None):
@@ -4392,39 +4407,40 @@ class App(BaseHTTPRequestHandler):
         for row in open_reminders:
             reminder_groups.setdefault(row["reminder_type"],[]).append(row)
         reminder_group_order=list(REMINDER_GROUP_LABELS)+[t for t in reminder_groups if t not in REMINDER_GROUP_LABELS]
-        reminder_group_rows=[]
-        reminder_detail_overlays=[]
+        reminder_todo_rows=[]
         for rtype in reminder_group_order:
             rows=reminder_groups.get(rtype)
             if not rows:continue
-            icon,singular,plural=REMINDER_GROUP_LABELS.get(rtype,REMINDER_GROUP_FALLBACK)
+            icon,color_cls,singular,plural=REMINDER_GROUP_LABELS.get(rtype,REMINDER_GROUP_FALLBACK)
             n=len(rows)
             group_label=(singular if n==1 else plural).format(n=n)
-            reminder_group_rows.append(
-                f'''<li class="reminder-group-item"><button type="button" class="reminder-group-btn" data-reminder-group-open="{rtype}"><span class="metric-icon reminder-group-icon">{lucide(icon)}</span><span class="reminder-group-text">{esc(group_label)}</span><span class="reminder-group-chevron" aria-hidden="true">›</span></button></li>'''
+            group_url=rows[0]["url"] if n==1 else REMINDER_GROUP_URLS.get(rtype,rows[0]["url"])
+            reminder_todo_rows.append(
+                f'''<li><a class="reminders-todo-row" href="{esc(group_url)}"><span class="metric-icon reminders-todo-icon {color_cls}">{lucide(icon)}</span><span class="reminders-todo-text">{esc(group_label)}</span><span class="reminders-todo-chevron" aria-hidden="true">›</span></a></li>'''
             )
-            detail_items=''.join(
-                f'''<li class="reminder-item" data-reminder-id="{row['id']}"><label class="modern-check reminder-check"><input type="checkbox" onchange="completeReminder(this)"><span>Fatto</span></label><a class="reminder-title" href="{esc(row['url'])}">{esc(row['title'])}</a></li>'''
-                for row in rows
-            )
-            reminder_detail_overlays.append(
-                f'''<div class="payment-popover reminder-detail-overlay" id="ppmReminderDetail-{rtype}" hidden><div class="payment-dialog" style="max-width:560px"><div class="titlebar"><div><h2>{esc(group_label)}</h2></div><button class="btn ghost" type="button" data-reminder-detail-close>Chiudi</button></div><ul class="reminders-list">{detail_items}</ul></div></div>'''
-            )
-        reminder_group_list=''.join(reminder_group_rows) or '<p class="sub">Nessun promemoria attivo al momento.</p>'
+        reminder_todo_list=''.join(reminder_todo_rows) or '<li class="reminders-todo-empty">Nessun promemoria attivo al momento.</li>'
         weekly_query=urlencode({"periodo":"personalizzato","data_iniziale":week_start.isoformat(),"data_finale":rome_today.isoformat()})
-        weekly_cards=''.join(
-            f'<a class="kv" href="/bilanci?{weekly_query}&view={key}#balanceDetails"><small>{label}</small><strong>{money_cents_it(weekly_snapshot.sections[key].total_cents)}</strong></a>'
-            for key,label in (("entrate-w","Entrate W"),("entrate-d","Entrate D"),("saldo-netto","Saldo netto"))
-        )
-        weekly_report_html=f'''<div class="weekly-report"><h3>Report della settimana</h3><p class="sub">Ultimi 7 giorni ({date_it(week_start.isoformat())} - {date_it(rome_today.isoformat())})</p><div class="kvs weekly-report-cards">{weekly_cards}</div></div>'''
+        weekly_url=f"/bilanci?{weekly_query}&view=entrate-w#balanceDetails"
+        weekly_w=money_cents_it(weekly_snapshot.sections["entrate-w"].total_cents)
+        weekly_d=money_cents_it(weekly_snapshot.sections["entrate-d"].total_cents)
         reminders_count=len(open_reminders)
-        reminders_badge=f'<span class="notification-badge">{reminders_count if reminders_count<100 else "99+"}</span>' if reminders_count else ''
-        reminders_html=f'''<button type="button" class="reminders-trigger" id="ppmOpenReminders" aria-haspopup="dialog">
-<span class="metric-icon">{lucide("bell")}</span>
-<span class="reminders-trigger-copy"><strong>Promemoria</strong><small>{f"{reminders_count} attivi" if reminders_count else "Nessuno attivo"} · Report della settimana</small></span>
-<span class="reminders-trigger-badge">{reminders_badge}</span>
+        reminders_badge=f'<span class="reminders-count-badge">{reminders_count if reminders_count<100 else "99+"}</span>' if reminders_count else ''
+        reminders_html=f'''<section class="reminders-card" id="ppmRemindersCard">
+<button type="button" class="reminders-card-header" id="ppmRemindersToggle" aria-expanded="false">
+<span class="reminders-card-icon">{lucide("bell")}</span>
+<span class="reminders-card-copy"><strong>Promemoria{reminders_badge}</strong><small>{f"{reminders_count} attivi" if reminders_count else "Nessuno attivo"} · Report della settimana</small></span>
+<span class="reminders-card-chevron" aria-hidden="true">⌄</span>
 </button>
-<div class="payment-popover" id="ppmRemindersOverlay" hidden><div class="payment-dialog" style="max-width:640px"><div class="titlebar"><div><h2>Promemoria</h2><p class="sub">Tocca una voce per vedere il dettaglio.</p></div><button class="btn ghost" type="button" id="ppmCloseReminders">Chiudi</button></div><ul class="reminders-list reminder-group-list">{reminder_group_list}</ul>{weekly_report_html}</div></div>{''.join(reminder_detail_overlays)}'''
+<div class="reminders-card-body"><div class="reminders-card-inner">
+<h3 class="reminders-card-section-title">Cose da fare</h3>
+<ul class="reminders-todo-list">{reminder_todo_list}</ul>
+<a class="reminders-week-row" href="{weekly_url}">
+<span class="metric-icon reminders-week-icon state-blue">{lucide("chart")}</span>
+<span class="reminders-week-copy"><b>Report della settimana</b><small>Entrate W <span class="figure-w">{weekly_w}</span> · Entrate D <span class="figure-d">{weekly_d}</span></small></span>
+<span class="reminders-week-chevron" aria-hidden="true">›</span>
+</a>
+</div></div>
+</section>'''
         body=f'''<main class="wrap dashboard-wrap"><section class="welcome"><div><h1>{greeting}, {esc(user['display_name'])} <span aria-hidden="true">👋</span></h1><p>Panoramica operativa del periodo selezionato</p></div></section>{reminders_html}{sections_html}{persistence_script}</main>'''
         self.send_html(layout("Dashboard",body,user))
 
@@ -6461,7 +6477,8 @@ class App(BaseHTTPRequestHandler):
         <section class="section"><h2>Password</h2><p class="sub">Cambia la tua password personale in qualsiasi momento.</p><a class="btn ghost" href="/imposta-password?return_to=/il-mio-profilo">Cambia password</a></section>
         <section class="section" style="margin-top:16px"><h2>Sessione</h2><p class="sub">Esci dall'account su questo dispositivo, inclusa l'app installata sulla schermata Home.</p><a class="btn danger-btn" href="/logout">Esci</a></section>
         <section class="section" style="margin-top:16px"><h2>Aspetto</h2><form method="post" action="/il-mio-profilo/salva"><input type="hidden" name="return_to" value="/il-mio-profilo"><div class="fields"><div class="field"><label>Tema colori</label><select name="theme">{theme_options}</select></div></div><button class="btn" style="margin-top:12px">Salva tema</button></form></section>
-        <section class="section" style="margin-top:16px"><h2>Ordine della sidebar</h2><p class="sub">Trascina per riordinare le voci del menu.</p><form method="post" action="/il-mio-profilo/salva" data-drag-group><input type="hidden" name="return_to" value="/il-mio-profilo"><input type="hidden" name="sidebar_order_json" data-drag-order value="{sidebar_order_json}"><ul class="drag-list" data-drag-root>{sidebar_items}</ul><button class="btn" style="margin-top:12px">Salva ordine sidebar</button></form></section>
+        <section class="section" style="margin-top:16px"><h2>Ordine della sidebar</h2><p class="sub">Apri l'editor per trascinare e riordinare le voci del menu.</p><button type="button" class="btn ghost" id="ppmOpenSidebarOrder">Apri editor ordine sidebar</button></section>
+        <div class="payment-popover" id="ppmSidebarOrderOverlay" hidden><div class="payment-dialog" style="max-width:520px"><div class="titlebar"><div><h2>Ordine della sidebar</h2><p class="sub">Trascina per riordinare le voci del menu.</p></div><button class="btn ghost" type="button" id="ppmCloseSidebarOrder">Chiudi</button></div><form method="post" action="/il-mio-profilo/salva" data-drag-group><input type="hidden" name="return_to" value="/il-mio-profilo"><input type="hidden" name="sidebar_order_json" data-drag-order value="{sidebar_order_json}"><ul class="drag-list drag-list-scrollable" data-drag-root>{sidebar_items}</ul><button class="btn" style="margin-top:12px">Salva ordine sidebar</button></form></div></div>
         <section class="section" style="margin-top:16px"><h2>Barra di navigazione mobile</h2><p class="sub">Scegli le tre voci accanto al pulsante centrale "+".</p><form method="post" action="/il-mio-profilo/salva"><input type="hidden" name="return_to" value="/il-mio-profilo"><div class="fields">{bottom_selects}</div><button class="btn" style="margin-top:12px">Salva barra mobile</button></form></section>
         <section class="section" style="margin-top:16px"><h2>Dashboard</h2><p class="sub">Trascina per riordinare i pannelli; la spunta decide quali mostrare.</p><form method="post" action="/il-mio-profilo/salva" data-drag-group><input type="hidden" name="return_to" value="/il-mio-profilo"><input type="hidden" name="dashboard_sections_json" data-drag-order value="{dashboard_sections_json}"><ul class="drag-list" data-drag-root>{dashboard_items}</ul><button class="btn" style="margin-top:12px">Salva dashboard</button></form></section>
         <section class="section" style="margin-top:16px"><h2>Riepilogo del giorno</h2><p class="sub">Una notifica push con i numeri chiave della giornata, all'orario che preferisci (utile perché i widget della schermata home non sono disponibili per le PWA).</p><form method="post" action="/il-mio-profilo/salva"><input type="hidden" name="return_to" value="/il-mio-profilo"><input type="hidden" name="daily_summary_section" value="1"><div class="fields"><div class="field"><label class="modern-check"><span>Attiva riepilogo del giorno</span><input type="checkbox" name="daily_summary_enabled" value="1" {'checked' if daily_summary_enabled else ''}></label></div><div class="field"><label>Orario</label><input type="time" name="daily_summary_time" value="{esc(daily_summary_time)}"></div></div><button class="btn" style="margin-top:12px">Salva riepilogo del giorno</button></form></section>

@@ -3857,10 +3857,10 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.dashboard(admin)
         page=rendered[-1]
         self.assertNotIn("hanno dati ancora da completare",page)
-        self.assertIn('id="ppmOpenReminders"',page)
-        self.assertIn('id="ppmRemindersOverlay"',page)
+        self.assertIn('id="ppmRemindersCard"',page)
+        self.assertIn('id="ppmRemindersToggle"',page)
         self.assertIn(f'href="/pratiche/{pid}"',page)
-        self.assertIn("Completa i dati della pratica CR-REMIND",page)
+        self.assertIn("1 pratica con dati da completare",page)
         with app.db() as conn:
             reminder_id=conn.execute(
                 "SELECT id FROM reminders WHERE entity_key=?",(f"practice:{pid}",)
@@ -3883,7 +3883,8 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(article_id["name"],product_reminder["title"])
         self.assertEqual(product_reminder["url"],f"/prodotti#article-{article_id['id']}")
         self.handler.dashboard(admin)
-        self.assertIn(f"Riordinare: {article_id['name']}",rendered[-1])
+        self.assertIn("1 prodotto da ordinare",rendered[-1])
+        self.assertIn(f'href="/prodotti#article-{article_id["id"]}"',rendered[-1])
         # completing the practice reminder via AJAX marks it done, with an audit trail
         responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
         self.handler.form=lambda:{"ajax":"1"}
@@ -3897,7 +3898,7 @@ class PetParadiseTests(unittest.TestCase):
         # hides this occurrence, it must NOT block the reminder forever — a
         # fresh open occurrence for the same practice reappears on next sync
         self.handler.dashboard(admin)
-        self.assertIn(f'href="/pratiche/{pid}"',rendered[-1])
+        self.assertIn("1 pratica con dati da completare",rendered[-1])
         with app.db() as conn:
             reopened=conn.execute(
                 "SELECT id FROM reminders WHERE entity_key=? AND completed_at IS NULL",(f"practice:{pid}",)
@@ -3916,7 +3917,7 @@ class PetParadiseTests(unittest.TestCase):
         with app.db() as conn:
             conn.execute("UPDATE practices SET data_complete=1 WHERE id=?",(pid,))
         self.handler.dashboard(admin)
-        self.assertNotIn(f'href="/pratiche/{pid}"',rendered[-1])
+        self.assertNotIn("pratica con dati da completare",rendered[-1])
         with app.db() as conn:
             still_open=conn.execute(
                 "SELECT id FROM reminders WHERE entity_key=? AND completed_at IS NULL",(f"practice:{pid}",)
@@ -3938,7 +3939,7 @@ class PetParadiseTests(unittest.TestCase):
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
         self.handler.dashboard(admin)
         page=rendered[-1]
-        self.assertIn("Birba (M. Conti) è Ritirato da 6 giorni, non ancora programmato",page)
+        self.assertIn("1 animale ritirato ancora da mettere in programma",page)
         self.assertIn(f'href="/pratiche/{stalled_pid}"',page)
         # a practice picked up only recently must not trigger this reminder yet
         self.assertNotIn(f'href="/pratiche/{fresh_pid}"',page)
@@ -3962,7 +3963,7 @@ class PetParadiseTests(unittest.TestCase):
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
         self.handler.dashboard(admin)
         page=rendered[-1]
-        self.assertIn("Leo (S. Bianchi) è stato consegnato ma risulta ancora da saldare (€ 150,00 rimanenti)",page)
+        self.assertIn("1 pratica consegnata ma non pagata",page)
         self.assertIn(f'href="/pratiche/{pid}"',page)
         # once fully paid, the reminder auto-resolves on the next sync
         with app.db() as conn:
@@ -3989,7 +3990,7 @@ class PetParadiseTests(unittest.TestCase):
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
         self.handler.dashboard(admin)
         page=rendered[-1]
-        self.assertIn("Nuvola (F. Rossi) è in attesa di cremazione da 9 giorni",page)
+        self.assertIn("1 cremazione singola in attesa",page)
         with app.db() as conn:
             collettiva_reminder=conn.execute(
                 "SELECT id FROM reminders WHERE reminder_type='cremation_pending' AND entity_key=?",(f"practice:{collettiva_pid}",)
@@ -4053,8 +4054,46 @@ class PetParadiseTests(unittest.TestCase):
         page=rendered[-1]
         self.assertIn("Report della settimana",page)
         self.assertIn(app.money_cents_it(expected.sections["entrate-w"].total_cents),page)
-        self.assertIn(app.money_cents_it(expected.sections["saldo-netto"].total_cents),page)
+        self.assertIn(app.money_cents_it(expected.sections["entrate-d"].total_cents),page)
+        self.assertNotIn("Saldo netto",page)
         self.assertIn('data_iniziale='+(today_rome-timedelta(days=6)).isoformat(),page)
+
+    def test_reminders_card_collapsed_by_default_matching_the_compact_mockup(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        self.assertIn('<section class="reminders-card" id="ppmRemindersCard">',page)
+        self.assertIn('aria-expanded="false"',page)
+        self.assertIn("Nessuno attivo · Report della settimana",page)
+        # no popup/overlay of any kind - a plain in-place expanding card
+        card_start=page.index('<section class="reminders-card"')
+        card_end=page.index('</section>',card_start)
+        self.assertNotIn("payment-popover",page[card_start:card_end])
+
+    def test_reminders_card_group_with_multiple_items_links_to_the_list_not_a_single_practice(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            today=date.today();pickup=(today-timedelta(days=6)).isoformat()
+            for suffix,animal in (("A","Uno"),("B","Due")):
+                conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                    animal_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                    (f"CR-MULTI{suffix}","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],animal,pickup,1))
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        self.assertIn("2 animali ritirati ancora da mettere in programma",page)
+        self.assertIn('href="/archivio/pratiche?stato=Ritirato"',page)
+
+    def test_reminders_card_js_and_css_use_a_smooth_expanding_card_not_a_popup(self):
+        self.assertIn("function setupRemindersCard()", app.APP_JS)
+        self.assertIn("ppmRemindersCard", app.APP_JS)
+        self.assertIn("ppmRemindersToggle", app.APP_JS)
+        self.assertNotIn("ppmRemindersOverlay", app.APP_JS)
+        self.assertNotIn("ppmOpenReminders", app.APP_JS)
+        self.assertIn(".reminders-card-body{max-height:0;overflow:hidden;transition:max-height .35s ease}", app.CSS)
+        self.assertIn("body.style.maxHeight=open?body.scrollHeight+'px':'0px';", app.APP_JS)
 
     def test_must_change_password_gate_and_change_password_flow(self):
         with app.db() as conn:
@@ -4665,10 +4704,29 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('name="sidebar_order_json"', page)
         self.assertIn('name="dashboard_sections_json"', page)
         self.assertIn('class="drag-item-visible"', page)
+        # the sidebar list (21 items) no longer sits inline on the page - it
+        # was unusable on a real phone (couldn't scroll past ~6 rows) because
+        # touch-action:none on the whole row blocked normal touch scrolling;
+        # it now lives behind a dedicated popup with a larger scroll area
+        self.assertIn('id="ppmOpenSidebarOrder"', page)
+        self.assertIn('id="ppmSidebarOrderOverlay"', page)
         # every dashboard section id from DASHBOARD_SECTION_LABELS is a draggable row
         for sid, label in app.DASHBOARD_SECTION_LABELS:
             self.assertIn(f'data-drag-key="{sid}"', page)
             self.assertIn(app.esc(label), page)
+
+    def test_drag_item_rows_allow_normal_touch_scrolling_outside_the_handle(self):
+        # regression: touch-action:none on the whole .drag-item (not just the
+        # handle) silently blocked normal swipe-to-scroll on touch devices,
+        # so a long list (e.g. 21 sidebar entries) couldn't be scrolled past
+        # the first few rows. Only the handle may claim the gesture.
+        self.assertIn(
+            '.drag-item{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid #334155;border-radius:12px;background:#1f2937;-webkit-touch-callout:none',
+            app.CSS,
+        )
+        self.assertIn("touch-action:none", app.CSS)  # still present, but only for .drag-handle
+        handle_rule = app.CSS.split(".drag-handle{", 1)[1].split("}", 1)[0]
+        self.assertIn("touch-action:none", handle_rule)
 
     def test_profile_page_renders_daily_summary_controls_and_priority_labelled_notif_types(self):
         with app.db() as conn:
@@ -4721,6 +4779,20 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("addEventListener('pointerdown'", app.APP_JS)
         self.assertIn("function syncDragOrder(root)", app.APP_JS)
         self.assertIn("root.scrollTop", app.APP_JS)
+
+    def test_drag_reorder_suppresses_text_selection_during_the_gesture(self):
+        # regression: dragging a row by its handle was instead selecting the
+        # text of whichever rows the pointer travelled over mid-drag.
+        self.assertIn("ppm-dragging-no-select", app.APP_JS)
+        self.assertIn("document.body.classList.add('ppm-dragging-no-select')", app.APP_JS)
+        self.assertIn("document.body.classList.remove('ppm-dragging-no-select')", app.APP_JS)
+        self.assertIn("body.ppm-dragging-no-select,body.ppm-dragging-no-select *", app.CSS)
+
+    def test_sidebar_order_popup_open_close_js_is_wired(self):
+        self.assertIn("function setupSidebarOrderPopup()", app.APP_JS)
+        self.assertIn("ppmOpenSidebarOrder", app.APP_JS)
+        self.assertIn("ppmSidebarOrderOverlay", app.APP_JS)
+        self.assertIn("ppmCloseSidebarOrder", app.APP_JS)
 
     def test_change_password_voluntary_requires_correct_current_password(self):
         with app.db() as conn:
