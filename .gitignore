@@ -2,3 +2,5 @@ __pycache__/
 *.pyc
 .claude/
 data/
+*.backup-*.db
+balance_legacy_repair-report-*.json
