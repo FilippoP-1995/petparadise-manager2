@@ -2841,6 +2841,36 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Messaggio senza pratica collegata",page)
         self.assertIn("Invio catalogo urne",page)
 
+    def test_conversations_page_splits_scheduled_and_sent_instead_of_sorting_by_raw_timestamp(self):
+        # Regression test: a thank-you is scheduled ~48h in the future while a
+        # catalog send is scheduled for "now" — sorting everything by one
+        # DESC timestamp let a not-yet-sent, far-future "programmato" row
+        # outrank a message that was actually sent minutes ago, making a real
+        # send look "missing" from the top of the list.
+        admin, future_scheduled_pid = self._catalog_practice(phone="3330000001")
+        with app.db() as conn:
+            stamp = app.now()
+            conn.execute("""INSERT INTO whatsapp_messages(practice_id,scheduled_at,status,template_name,recipient_phone,manual,message_type,created_at,updated_at)
+                            VALUES(?,?,?,?,?,?,?,?,?)""",
+                         (future_scheduled_pid, "2026-09-01T14:00:00", "programmato", "ringraziamento_livorno", "393330000001", 0, "ringraziamento", stamp, stamp))
+        _, just_sent_pid = self._catalog_practice(phone="3330000002")
+        with app.db() as conn:
+            stamp = app.now()
+            conn.execute("""INSERT INTO whatsapp_messages(practice_id,scheduled_at,status,sent_at,template_name,recipient_phone,manual,message_type,created_at,updated_at)
+                            VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                         (just_sent_pid, stamp, "accettato_da_meta", stamp, "catalogo_urne", "393330000002", 0, "catalogo", stamp, stamp))
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content); self.handler.path = "/conversazioni-whatsapp"
+        self.handler.whatsapp_conversations(admin)
+        page = rendered[-1]
+        self.assertIn("In programma", page)
+        self.assertIn("Inviati", page)
+        scheduled_section = page.split("In programma", 1)[1].split("Inviati", 1)[0]
+        sent_section = page.split("Inviati", 1)[1]
+        self.assertIn("393330000001", scheduled_section)
+        self.assertNotIn("393330000002", scheduled_section)
+        self.assertIn("393330000002", sent_section)
+        self.assertNotIn("393330000001", sent_section)
+
     def test_quick_payment_saves_details_and_returns_to_list(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
@@ -3310,8 +3340,8 @@ class PetParadiseTests(unittest.TestCase):
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
         self.handler.form=lambda:{"operator_name":"FILIPPO","service_type":"Da decidere","request_origin":"Privato","owner_first_name":"Anna","owner_last_name":"Neri",
                                    "owner_phone":"3331112222","owner_tax_code":"NRIANN80A01H501U","owner_street":"Via Test","owner_city":"Livorno",
-                                   "owner_province":"LI","owner_zip":"57100","saldo_w_totale":"250","calendar_event_id":""}
-        pages=[];self.handler.new_page=lambda user,draft=None,error="":pages.append(error)
+                                   "owner_province":"LI","owner_zip":"57100","saldo_w_totale":"250","saldo_w_totale_touched":"1","calendar_event_id":""}
+        pages=[];self.handler.new_page=lambda user,draft=None,error="",error_field="":pages.append(error)
         self.handler.create_practice(admin)
         self.assertIn("Indica una data valida",pages[-1])
         with app.db() as conn:
@@ -3869,7 +3899,8 @@ class PetParadiseTests(unittest.TestCase):
         # the moment the user types their own value in that field.
         self.assertIn("if(saldoW && saldoW.dataset.autoFilled!=='0') saldoW.value=ppmFormat(Math.max(0,totalW-accontoW));", app.APP_JS)
         self.assertIn("if(saldoD && saldoD.dataset.autoFilled!=='0') saldoD.value=ppmFormat(Math.max(0,totalD-accontoD));", app.APP_JS)
-        self.assertIn("if(e.target && (e.target.name === 'saldo_w_totale' || e.target.name === 'saldo_d_totale')) e.target.dataset.autoFilled='0';", app.APP_JS)
+        self.assertIn("e.target.dataset.autoFilled='0';", app.APP_JS)
+        self.assertIn("if(touchedField) touchedField.value='1';", app.APP_JS)
 
     def test_payment_area_main_fields_are_visually_more_prominent_than_their_sub_fields(self):
         # TOTALE W/D, ACCONTO W/D and RIMANENZA W/D must read as the main
@@ -3884,6 +3915,32 @@ class PetParadiseTests(unittest.TestCase):
             '.payment-macroarea-channel .fields .field:not(:first-child) label{font-size:11px;font-weight:600;color:var(--muted)}',
             app.CSS,
         )
+
+    def test_new_page_with_error_field_skips_top_banner_and_targets_the_field(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.new_page(admin, draft={"saldo_d_totale": "250"}, error="Indica una data valida per Rimanenza D.", error_field="saldo_d_data")
+        page = rendered[-1]
+        self.assertNotIn('<div class="flash warning">', page)
+        self.assertIn('id="formErrorField" value="saldo_d_data"', page)
+        self.assertIn('id="formErrorMessage" value="Indica una data valida per Rimanenza D."', page)
+
+    def test_new_page_without_error_field_still_shows_the_top_banner(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.new_page(admin, draft={}, error="Campi obbligatori mancanti: Cognome")
+        page = rendered[-1]
+        self.assertIn('<div class="flash warning">Campi obbligatori mancanti: Cognome</div>', page)
+        self.assertNotIn('id="formErrorField"', page)
+
+    def test_show_field_error_js_scrolls_and_highlights_the_target_field(self):
+        self.assertIn("function showFieldError(){", app.APP_JS)
+        self.assertIn("wrap.scrollIntoView({behavior:'smooth',block:'center'});", app.APP_JS)
+        self.assertIn(".field-error input,.field-error select,.field-error textarea{border-color:#ef4444}", app.CSS)
 
     def test_service_type_is_required_and_not_preselected(self):
         with app.db() as conn:
