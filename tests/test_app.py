@@ -3858,13 +3858,13 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Completa i dati della pratica CR-REMIND",page)
         with app.db() as conn:
             reminder_id=conn.execute(
-                "SELECT id FROM reminders WHERE dedupe_key=?",(f"practice_incomplete:{pid}",)
+                "SELECT id FROM reminders WHERE entity_key=?",(f"practice:{pid}",)
             ).fetchone()["id"]
         # calling dashboard again must not duplicate the same open reminder
         self.handler.dashboard(admin)
         with app.db() as conn:
             count=conn.execute(
-                "SELECT COUNT(*) FROM reminders WHERE dedupe_key=?",(f"practice_incomplete:{pid}",)
+                "SELECT COUNT(*) FROM reminders WHERE entity_key=?",(f"practice:{pid}",)
             ).fetchone()[0]
         self.assertEqual(count,1)
         # ordering a product creates its own reminder, independent type
@@ -3876,7 +3876,7 @@ class PetParadiseTests(unittest.TestCase):
                 "SELECT * FROM reminders WHERE reminder_type='product_reorder' ORDER BY id DESC LIMIT 1"
             ).fetchone()
         self.assertIn(article_id["name"],product_reminder["title"])
-        self.assertEqual(product_reminder["url"],"/prodotti")
+        self.assertEqual(product_reminder["url"],f"/prodotti#article-{article_id['id']}")
         self.handler.dashboard(admin)
         self.assertIn(f"Riordinare: {article_id['name']}",rendered[-1])
         # completing the practice reminder via AJAX marks it done, with an audit trail
@@ -3888,14 +3888,168 @@ class PetParadiseTests(unittest.TestCase):
             completed=conn.execute("SELECT completed_at,completed_by FROM reminders WHERE id=?",(reminder_id,)).fetchone()
         self.assertIsNotNone(completed["completed_at"])
         self.assertEqual(completed["completed_by"],admin["id"])
+        # the underlying practice is STILL incomplete: marking "Fatto" only
+        # hides this occurrence, it must NOT block the reminder forever — a
+        # fresh open occurrence for the same practice reappears on next sync
         self.handler.dashboard(admin)
-        self.assertNotIn(f'href="/pratiche/{pid}"',rendered[-1])
+        self.assertIn(f'href="/pratiche/{pid}"',rendered[-1])
+        with app.db() as conn:
+            reopened=conn.execute(
+                "SELECT id FROM reminders WHERE entity_key=? AND completed_at IS NULL",(f"practice:{pid}",)
+            ).fetchone()
+        self.assertIsNotNone(reopened)
+        self.assertNotEqual(reopened["id"],reminder_id)
         # completing an already-completed reminder is a harmless no-op
         first_completed_at=completed["completed_at"]
         self.handler.complete_reminder(admin,reminder_id)
         with app.db() as conn:
             still=conn.execute("SELECT completed_at FROM reminders WHERE id=?",(reminder_id,)).fetchone()
         self.assertEqual(still["completed_at"],first_completed_at)
+        # once the practice's data is actually completed, the reopened
+        # occurrence is auto-resolved by sync_reminders on the next dashboard
+        # load — no manual "Fatto" click needed once the condition is gone
+        with app.db() as conn:
+            conn.execute("UPDATE practices SET data_complete=1 WHERE id=?",(pid,))
+        self.handler.dashboard(admin)
+        self.assertNotIn(f'href="/pratiche/{pid}"',rendered[-1])
+        with app.db() as conn:
+            still_open=conn.execute(
+                "SELECT id FROM reminders WHERE entity_key=? AND completed_at IS NULL",(f"practice:{pid}",)
+            ).fetchone()
+        self.assertIsNone(still_open)
+
+    def test_pickup_stalled_reminder_appears_after_4_days_and_clears_on_progression(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            today=date.today()
+            stalled_pickup=(today-timedelta(days=6)).isoformat()
+            fresh_pickup=(today-timedelta(days=1)).isoformat()
+            stalled_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                animal_name,owner_first_name,owner_last_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-STALL1","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Birba","Mario","Conti",stalled_pickup,1)).lastrowid
+            fresh_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                animal_name,owner_first_name,owner_last_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-STALL2","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Leo","Sara","Bianchi",fresh_pickup,1)).lastrowid
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        self.assertIn("Birba (M. Conti) è Ritirato da 6 giorni, non ancora programmato",page)
+        self.assertIn(f'href="/pratiche/{stalled_pid}"',page)
+        # a practice picked up only recently must not trigger this reminder yet
+        self.assertNotIn(f'href="/pratiche/{fresh_pid}"',page)
+        # once the practice moves forward, the stalled reminder auto-resolves
+        with app.db() as conn:
+            conn.execute("UPDATE practices SET status='In programma' WHERE id=?",(stalled_pid,))
+        self.handler.dashboard(admin)
+        with app.db() as conn:
+            still_open=conn.execute(
+                "SELECT id FROM reminders WHERE entity_key=? AND reminder_type='pickup_stalled' AND completed_at IS NULL",(f"practice:{stalled_pid}",)
+            ).fetchone()
+        self.assertIsNone(still_open)
+
+    def test_delivered_unpaid_reminder_shows_remaining_amount_and_clears_when_paid(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                animal_name,owner_first_name,owner_last_name,price_cremation,total_service,deposit,payment_status,data_complete)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-UNPAID","Privato","Livorno","Consegnato",stamp,stamp,admin["id"],"Leo","Sara","Bianchi","150","150","0","Da saldare",1)).lastrowid
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        self.assertIn("Leo (S. Bianchi) è stato consegnato ma risulta ancora da saldare (€ 150,00 rimanenti)",page)
+        self.assertIn(f'href="/pratiche/{pid}"',page)
+        # once fully paid, the reminder auto-resolves on the next sync
+        with app.db() as conn:
+            conn.execute("UPDATE practices SET payment_status='Pagato',deposit='150' WHERE id=?",(pid,))
+        self.handler.dashboard(admin)
+        with app.db() as conn:
+            still_open=conn.execute(
+                "SELECT id FROM reminders WHERE entity_key=? AND reminder_type='delivered_unpaid' AND completed_at IS NULL",(f"practice:{pid}",)
+            ).fetchone()
+        self.assertIsNone(still_open)
+
+    def test_cremation_pending_reminder_only_fires_for_cremazione_singola_past_7_days(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            today=date.today()
+            waiting_pickup=(today-timedelta(days=9)).isoformat()
+            pending_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,created_at,updated_at,created_by,
+                animal_name,owner_first_name,owner_last_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-CREM1","Privato","Livorno","Ritirato","Cremazione singola",stamp,stamp,admin["id"],"Nuvola","Franco","Rossi",waiting_pickup,1)).lastrowid
+            # same wait, but a collective cremation must NOT trigger this specific reminder type
+            collettiva_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,created_at,updated_at,created_by,
+                animal_name,owner_first_name,owner_last_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-CREM2","Privato","Livorno","Ritirato","Cremazione collettiva",stamp,stamp,admin["id"],"Rex","Anna","Verdi",waiting_pickup,1)).lastrowid
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        self.assertIn("Nuvola (F. Rossi) è in attesa di cremazione da 9 giorni",page)
+        with app.db() as conn:
+            collettiva_reminder=conn.execute(
+                "SELECT id FROM reminders WHERE reminder_type='cremation_pending' AND entity_key=?",(f"practice:{collettiva_pid}",)
+            ).fetchone()
+        self.assertIsNone(collettiva_reminder)
+        # once queued into the cremation program (status moves to 'In programma'), it auto-resolves
+        with app.db() as conn:
+            conn.execute("UPDATE practices SET status='In programma' WHERE id=?",(pending_pid,))
+        self.handler.dashboard(admin)
+        with app.db() as conn:
+            still_open=conn.execute(
+                "SELECT id FROM reminders WHERE entity_key=? AND reminder_type='cremation_pending' AND completed_at IS NULL",(f"practice:{pending_pid}",)
+            ).fetchone()
+        self.assertIsNone(still_open)
+
+    def test_reminder_day_counts_refresh_on_every_sync_without_duplicating_the_open_row(self):
+        # An open occurrence's text must stay accurate (6 giorni -> 7 giorni...)
+        # even though ensure_reminder() only ever updates it in place instead
+        # of inserting a second row for the same still-open condition.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pickup=(date.today()-timedelta(days=6)).isoformat()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                animal_name,owner_first_name,owner_last_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-REFRESH","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Birba","Mario","Conti",pickup,1)).lastrowid
+        with app.db() as conn:
+            app.sync_reminders(conn)
+        with app.db() as conn:
+            conn.execute("UPDATE practices SET pickup_date=? WHERE id=?",((date.today()-timedelta(days=8)).isoformat(),pid))
+            app.sync_reminders(conn)
+            rows=conn.execute("SELECT title FROM reminders WHERE entity_key=? AND completed_at IS NULL",(f"practice:{pid}",)).fetchall()
+        self.assertEqual(len(rows),1)
+        self.assertIn("da 8 giorni",rows[0]["title"])
+
+    def test_reminder_badge_shows_total_open_count_on_dashboard_nav_icon(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,data_complete)
+                VALUES(?,?,?,?,?,?,?,?,?)""",("CR-BADGE","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Fido",0))
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        with app.db() as conn:
+            open_count=conn.execute("SELECT count(*) n FROM reminders WHERE completed_at IS NULL").fetchone()["n"]
+        self.assertGreaterEqual(open_count,1)
+        match=re.search(r'href="/" class="nav-notification">.*?<span class="notification-badge">(\d+)</span>',page)
+        self.assertIsNotNone(match)
+        self.assertEqual(int(match.group(1)),open_count)
+
+    def test_weekly_report_section_reuses_bilanci_totals_for_last_7_days(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            today_rome=datetime.now(app.ROME_TZ).date()
+            app.create_balance_income(conn,category="W",movement_date=today_rome.isoformat(),
+                                       amount_cents=12000,payment_method="Contanti",description="Entrata di prova",
+                                       idempotency_key="test-weekly-report-income",created_by=admin["id"])
+            filters=app.normalize_balance_filters(date_from=(today_rome-timedelta(days=6)).isoformat(),date_to=today_rome.isoformat())
+            expected=app.get_balance_snapshot(conn,filters=filters)
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        self.assertIn("Report della settimana",page)
+        self.assertIn(app.money_cents_it(expected.sections["entrate-w"].total_cents),page)
+        self.assertIn(app.money_cents_it(expected.sections["saldo-netto"].total_cents),page)
+        self.assertIn('data_iniziale='+(today_rome-timedelta(days=6)).isoformat(),page)
 
     def test_must_change_password_gate_and_change_password_flow(self):
         with app.db() as conn:
