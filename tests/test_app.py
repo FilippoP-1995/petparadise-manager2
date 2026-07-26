@@ -3559,7 +3559,7 @@ class PetParadiseTests(unittest.TestCase):
         balances_page=rendered[-1]
         self.assertIn("<h1>Bilanci</h1>",balances_page)
         for label in (
-            "Periodo","Data da","Data a","Categoria","Collaboratore","Metodo pagamento","Stato","Operatore","Ricerca",
+            "Periodo","Data","Tipo","Cerca","Categoria","Collaboratore","Metodo pagamento","Operatore","Filtri avanzati",
             "Entrate W","Entrate D","Collaboratori Incassato","Da riscuotere W",
             "Da riscuotere D","Collaboratori Da riscuotere","Uscite W","Uscite D",
             "Totale W attuale","Totale D attuale","Saldo Netto",
@@ -3568,7 +3568,8 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(balances_page.count('data-balance-card="'),11)
         self.assertEqual(balances_page.count('data-balance-total-cents="0"'),11)
         self.assertIn('aria-current="true"',balances_page)
-        self.assertIn("<h2>Entrate W</h2>",balances_page)
+        self.assertIn('<span class="balance-summary-title">Entrate W</span>',balances_page)
+        self.assertNotIn("<table",balances_page)
         self.assertIn("Nessun dato da visualizzare.",balances_page)
         self.assertIn('method="get" action="/bilanci"',balances_page)
         self.assertIn('method="post" action="/bilanci/uscite?',balances_page)
@@ -3584,6 +3585,114 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.payment_overview(admin,"da-saldare")
         self.assertIn("Da saldare D",rendered[-1])
         self.assertIn("Totale W e Totale D",rendered[-1])
+
+    def test_balances_movements_render_as_color_coded_cards_not_a_table(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            app.create_balance_income(conn,category="W",movement_date="2026-07-10",amount_cents=5000,
+                                       payment_method="Contanti",description="Entrata W di prova",
+                                       idempotency_key="test-card-w",created_by=admin["id"])
+            app.create_balance_income(conn,category="D",movement_date="2026-07-10",amount_cents=7000,
+                                       payment_method="Contanti",description="Entrata D di prova",
+                                       idempotency_key="test-card-d",created_by=admin["id"])
+            collab_id=conn.execute("SELECT id FROM collaborators LIMIT 1").fetchone()["id"]
+            app.create_balance_income(conn,category="Collaboratori",movement_date="2026-07-10",amount_cents=2000,
+                                       payment_method="Contanti",description="Entrata Collaboratore di prova",
+                                       idempotency_key="test-card-collab",collaborator_id=collab_id,created_by=admin["id"])
+            app.create_balance_expense(conn,category="W",movement_date="2026-07-10",amount_cents=1500,
+                                        description="Uscita W di prova",idempotency_key="test-card-out",created_by=admin["id"])
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        expectations=(
+            ("totale-w-attuale","balance-move-w","Entrata W"),
+            ("totale-d-attuale","balance-move-d","Entrata D"),
+            ("collaboratori-incassato","balance-move-collab","Entrata Collaboratore"),
+            ("uscite-w","balance-move-out","Uscita"),
+        )
+        for view,accent_cls,type_label in expectations:
+            self.handler.path=f"/bilanci?view={view}&periodo=tutto"
+            self.handler.balances_page(admin)
+            page=rendered[-1]
+            self.assertNotIn("<table",page)
+            self.assertNotIn("<tr",page)
+            self.assertIn("balance-move-list",page)
+            self.assertIn(f'class="balance-move-card {accent_cls}"',page)
+            self.assertIn(f'<div class="balance-move-type">{type_label}</div>',page)
+
+    def test_balances_summary_card_reflects_the_selected_section(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            app.create_balance_income(conn,category="D",movement_date="2026-07-10",amount_cents=732000,
+                                       payment_method="Contanti",description="Entrata D grossa",
+                                       idempotency_key="test-summary-card",created_by=admin["id"])
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/bilanci?view=entrate-d&periodo=tutto"
+        self.handler.balances_page(admin)
+        page=rendered[-1]
+        self.assertIn('<div class="balance-summary-card balance-tone-d">',page)
+        self.assertIn('<span class="balance-summary-title">Entrate D</span>',page)
+        self.assertIn(app.money_cents_it(732000),page)
+        self.assertIn("1 movimenti",page)
+
+    def test_balances_outstanding_view_uses_the_same_card_component(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                         owner_first_name,species,animal_name,service_type,payment_status,price_cremation,total_service)
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                         ("CR-DARISC","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Sara","Cane","Fido","Cremazione singola","Da saldare","200","200"))
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/bilanci?view=da-riscuotere-w&periodo=tutto"
+        self.handler.balances_page(admin)
+        page=rendered[-1]
+        self.assertNotIn("<table",page)
+        self.assertIn('<div class="balance-move-type">Da riscuotere W</div>',page)
+        self.assertIn('<span class="balance-move-status balance-status-yellow">Da saldare</span>',page)
+        self.assertIn("CR-DARISC",page)
+
+    def test_balances_quick_filters_row_and_advanced_details_keep_every_field(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/bilanci"
+        self.handler.balances_page(admin)
+        page=rendered[-1]
+        form_start=page.index('<form class="section balance-filters')
+        self.assertIn('<div class="balance-filters-quick">',page[form_start:])
+        quick_block=page[page.index('balance-filters-quick',form_start):page.index('balance-filters-advanced',form_start)]
+        self.assertIn(">Data<",quick_block)
+        self.assertIn(">Tipo<",quick_block)
+        self.assertIn(">Cerca<",quick_block)
+        self.assertIn('<details class="balance-filters-advanced">',page[form_start:])
+        self.assertIn("Filtri avanzati",page[form_start:])
+        advanced_block=page[page.index('balance-filters-advanced',form_start):page.index('balance-filter-actions',form_start)]
+        for label in ("Periodo","Categoria","Collaboratore","Metodo pagamento","Operatore"):
+            self.assertIn(f">{label}<",advanced_block)
+        # an advanced-only field (categoria) must still actually filter results
+        redirects=[]
+        self.handler.path="/bilanci?categoria=D&periodo=tutto"
+        self.handler.balances_page(admin)
+        self.assertIn('<option value="D" selected>D</option>',rendered[-1])
+
+    def test_balances_manual_toolbar_buttons_are_compact_and_color_coded(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/bilanci"
+        self.handler.balances_page(admin)
+        page=rendered[-1]
+        self.assertIn('class="btn balance-quick-btn balance-quick-income"',page)
+        self.assertIn('class="btn balance-quick-btn balance-quick-expense"',page)
+
+    def test_balance_move_card_menu_js_is_wired(self):
+        self.assertIn("function toggleBalanceMoveMenu(btn)", app.APP_JS)
+        self.assertIn("balance-move-menu-popover", app.APP_JS)
+
+    def test_balances_date_range_stacks_on_mobile_to_avoid_horizontal_overflow(self):
+        # regression: two native date inputs side-by-side never shrink below
+        # their own rendering floor (~169px each), so at phone widths they
+        # overflowed the filters card by ~12px even with min-width:0 and
+        # flex-wrap - only forcing them to stack vertically fixed it.
+        self.assertIn(".balance-date-range{flex-direction:column;align-items:stretch}.balance-date-range input{width:100%}",app.CSS)
 
     def test_bilanci_elimina_button_really_deletes_legacy_synthesized_rows(self):
         # Practices created before the balance_movements ledger existed only

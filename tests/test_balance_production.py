@@ -271,19 +271,16 @@ class ProductionBalanceModuleTests(unittest.TestCase):
         self.assertIn('name="collaboratore"',first_page)
         self.assertIn("Caricamento…",first_page)
         self.assertIn("Registrazione…",first_page)
-        for heading in (
-            "Creazione","Movimento","Animale","Proprietario","Stato",
-            "Categoria","Importo","Metodo","Collaboratore","Azione",
-        ):
-            self.assertIn(heading,first_page)
-        self.assertLess(
-            first_page.index('class="balance-col-date">Creazione</th>'),
-            first_page.index('class="balance-col-date">Movimento</th>'),
-        )
-        self.assertLess(
-            first_page.index('class="balance-col-action">Azione</th>'),
-            first_page.index('class="balance-col-date">Creazione</th>'),
-        )
+        # movements render as cards, not a table: no header row/columns to
+        # check order for, but the card component and its key fields must
+        # all be present (type, owner, status, amount) and no <table> at all.
+        self.assertNotIn("<table",first_page)
+        self.assertIn("balance-move-list",first_page)
+        self.assertIn("balance-move-card",first_page)
+        self.assertIn("balance-move-type",first_page)
+        self.assertIn("balance-move-owner",first_page)
+        self.assertIn("balance-move-status",first_page)
+        self.assertIn("balance-move-amount",first_page)
         self.assertIn(">Elimina</a>",first_page)
         self.assertIn("Registra entrata",first_page)
         self.assertIn("Registra uscita",first_page)

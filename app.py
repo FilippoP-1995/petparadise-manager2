@@ -1314,6 +1314,12 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .balance-wrap{width:min(100%,1320px);max-width:1320px}
 .balance-filters{margin-bottom:18px}
 .balance-filters .fields{grid-template-columns:repeat(3,minmax(0,1fr))}
+.balance-filters-quick{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px;margin-bottom:4px}
+.balance-date-range{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.balance-date-range input{min-width:0;flex:1 1 130px}
+.balance-date-range span{color:#94a3b8}
+.balance-filters-advanced{margin:14px 0 0;border-top:1px solid #334155;padding-top:14px}
+.balance-filters-advanced summary{cursor:pointer;font-weight:650;color:#cbd5e1}
 .balance-filter-note{display:flex;align-items:center;gap:7px;margin:14px 0 0;color:#94a3b8;font-size:12px}
 .balance-filter-note .icon{width:16px;height:16px}
 .balance-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
@@ -1333,22 +1339,75 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .balance-tone-out{--balance-accent:#fb7185;--balance-glow:#be123c3d}
 .balance-tone-net{--balance-accent:#4ade80;--balance-glow:#15803d3d}
 .balance-details{margin-top:18px;min-height:190px}
-.balance-details-heading{display:flex;align-items:center;justify-content:space-between;gap:14px;padding-bottom:14px;border-bottom:1px solid #334155}
-.balance-details-heading h2{margin:0}
-.balance-details-meta{display:flex;align-items:center;gap:12px}
 .balance-details-empty{display:grid;place-items:center;min-height:116px;margin:0;color:#94a3b8;text-align:center}
 .balance-filter-actions{margin-top:14px}.balance-filter-actions .btn{width:auto}
 .balance-expense{margin:0 0 18px}.balance-expense summary{cursor:pointer;font-weight:650}.balance-expense[open] summary{margin-bottom:16px}
-.balance-detail-table{width:100%;min-width:1360px;border-collapse:collapse}.balance-detail-table th,.balance-detail-table td{padding:14px 14px;font-size:13px;line-height:1.4;white-space:nowrap;vertical-align:middle}.balance-detail-table td.balance-col-secondary{white-space:normal}.balance-detail-table td.balance-col-secondary small{display:block;margin-top:2px}.balance-detail-table .balance-col-action{text-align:center}.balance-detail-table .balance-col-animal{width:150px;max-width:190px;white-space:normal}.balance-detail-table .balance-col-amount{text-align:right}.balance-clickable-row:nth-child(even) td{background:#ffffff05}.balance-clickable-row{cursor:pointer}.balance-clickable-row:hover td{background:#ffffff0f}.balance-clickable-row:focus{outline:2px solid #fb7185;outline-offset:-2px}.balance-void-btn{display:inline-flex;min-height:28px;padding:5px 6px;font-size:10px}
-.balance-manual-toolbar{margin:0 0 14px}.balance-manual-toolbar .btn{min-width:150px;background:#e9475b;color:#fff;border-color:#e9475b}.balance-manual-panels{margin-bottom:4px}
+.balance-void-btn{display:inline-flex;justify-content:center;min-height:32px;padding:6px 10px;font-size:12px}
+.balance-manual-toolbar{margin:0 0 14px;display:flex;gap:10px}
+.balance-quick-btn{display:inline-flex;align-items:center;gap:7px;min-width:0;width:auto;padding:9px 16px;font-size:13px;font-weight:700}
+.balance-quick-btn .icon{width:16px;height:16px}
+.balance-quick-income{background:#15361f;color:#86efac;border:1px solid #22c55e55}
+.balance-quick-income:hover{background:#1a4527}
+.balance-quick-expense{background:#3a141b;color:#fca5a5;border:1px solid #ef444455}
+.balance-quick-expense:hover{background:#481923}
+.balance-manual-panels{margin-bottom:4px}
 .balance-pagination{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:16px}
 .balance-page-label{color:#94a3b8;font-size:13px;font-weight:650}
+.balance-summary-card{position:relative;display:flex;align-items:center;gap:14px;margin-bottom:16px;padding:16px;border:1px solid #354155;border-left:4px solid var(--balance-accent);border-radius:14px;background:linear-gradient(145deg,#202c3d,#182334);box-shadow:0 9px 24px #080d1626;overflow:hidden}
+.balance-summary-card:before{content:"";position:absolute;inset:0;background:linear-gradient(125deg,var(--balance-glow),transparent 66%);pointer-events:none}
+.balance-summary-icon{position:relative;z-index:1;display:grid;place-items:center;width:46px;height:46px;flex:0 0 46px;border-radius:12px;background:color-mix(in srgb,var(--balance-accent) 22%,#111722);color:var(--balance-accent)}
+.balance-summary-icon .icon{width:20px;height:20px}
+.balance-summary-copy{position:relative;z-index:1;display:flex;flex-direction:column;gap:3px;flex:1;min-width:0}
+.balance-summary-title{color:#cbd5e1;font-weight:650;font-size:14px}
+.balance-summary-value{font-size:26px;font-weight:800;letter-spacing:-.02em;color:#f8fafc}
+.balance-summary-count{position:relative;z-index:1;flex:0 0 auto;padding:5px 11px;border-radius:99px;background:#ffffff10;color:#cbd5e1;font-size:12px;font-weight:650;white-space:nowrap}
+.balance-summary-chevron{position:relative;z-index:1;color:#94a3b8;font-size:20px}
+.balance-move-list{display:flex;flex-direction:column;gap:10px}
+.balance-move-card{position:relative;display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:12px;padding:14px 14px 14px 16px;border:1px solid #334155;border-left:4px solid var(--balance-accent);border-radius:14px;background:#1f2937;cursor:pointer;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}
+.balance-move-card.balance-move-static{cursor:default}
+.balance-move-card:hover{transform:translateY(-1px);box-shadow:0 12px 28px #03071235}
+.balance-move-card:focus{outline:2px solid var(--balance-accent);outline-offset:-2px}
+.balance-move-w{--balance-accent:#4ade80}
+.balance-move-d{--balance-accent:#60a5fa}
+.balance-move-collab{--balance-accent:#c084fc}
+.balance-move-out{--balance-accent:#fb7185}
+.balance-move-icon{display:grid;place-items:center;width:38px;height:38px;flex:0 0 38px;border-radius:11px;background:color-mix(in srgb,var(--balance-accent) 22%,#111722);color:var(--balance-accent)}
+.balance-move-icon .icon{width:17px;height:17px}
+.balance-move-main{min-width:0;display:flex;flex-direction:column;gap:3px}
+.balance-move-type{color:var(--balance-accent);font-weight:700;font-size:13px}
+.balance-move-practice{font-weight:650;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.balance-move-owner{display:flex;align-items:center;gap:5px;color:#94a3b8;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.balance-move-owner .icon{width:13px;height:13px;flex:0 0 13px}
+.balance-move-description{color:#94a3b8;font-size:11.5px;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.balance-move-meta{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:0 0 auto}
+.balance-move-date{display:flex;align-items:center;gap:5px;color:#94a3b8;font-size:12px;white-space:nowrap}
+.balance-move-date .icon{width:13px;height:13px}
+.balance-move-status{padding:3px 9px;border-radius:99px;font-size:11px;font-weight:700;white-space:nowrap}
+.balance-status-green{background:#052e2b;color:#86efac}
+.balance-status-blue{background:#172554;color:#93c5fd}
+.balance-status-yellow{background:#422006;color:#fde68a}
+.balance-status-muted{background:#1f2937;color:#94a3b8;border:1px solid #334155}
+.balance-move-amount-col{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:0 0 auto}
+.balance-move-amount{font-size:17px;font-weight:800;color:var(--balance-accent);white-space:nowrap}
+.balance-move-menu-wrap{position:relative}
+.balance-move-menu-btn{display:grid;place-items:center;width:28px;height:28px;padding:0;border:0;border-radius:8px;background:transparent;color:#94a3b8;cursor:pointer}
+.balance-move-menu-btn:hover{background:#ffffff10;color:#e2e8f0}
+.balance-move-menu-btn .icon{width:16px;height:16px}
+.balance-move-menu-popover{position:absolute;right:0;top:calc(100% + 4px);z-index:20;min-width:120px;padding:6px;border:1px solid #334155;border-radius:10px;background:#172033;box-shadow:0 14px 34px #000a}
 .light-theme .balance-card{background:#fff;color:#111827;border-color:#cbd5e1;box-shadow:0 10px 26px #64748b18}
 .light-theme .balance-card-copy{color:#475569}
 .light-theme .balance-card[aria-pressed="true"],.light-theme .balance-card[aria-current="true"]{border-color:#e9475b}
 .light-theme .balance-filter-note,.light-theme .balance-details-empty{color:#64748b}
-@media(max-width:900px){.balance-wrap{padding-bottom:calc(92px + var(--safe-bottom))}.balance-filters .fields{grid-template-columns:repeat(2,minmax(0,1fr))}.balance-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:560px){.balance-filters .fields{grid-template-columns:1fr}.balance-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.balance-grid .balance-card:last-child:nth-child(odd){grid-column:1/-1}.balance-card{min-height:88px;padding:10px;align-items:flex-start;flex-direction:column;justify-content:center;gap:5px}.balance-card-copy{gap:6px;font-size:11px;line-height:1.15}.balance-card-copy .icon{width:15px;height:15px;flex:0 0 15px}.balance-card-value{font-size:17px;letter-spacing:-.02em}.balance-details{padding:12px}.balance-details-heading{align-items:flex-start;flex-direction:column}.balance-details-meta{width:100%;justify-content:space-between}.balance-pagination{justify-content:space-between}.balance-pagination .btn{padding:10px 12px}.balance-manual-toolbar{display:grid;grid-template-columns:1fr 1fr}.balance-manual-toolbar .btn{min-width:0;padding:10px 8px}.balance-detail-table{min-width:1080px}.balance-detail-table th,.balance-detail-table td{padding:12px 10px;font-size:12px}.balance-void-btn{min-height:32px;padding:6px 8px;font-size:10px}}
+.light-theme .balance-summary-card,.light-theme .balance-move-card{background:#fff;color:#111827;border-color:#cbd5e1}
+.light-theme .balance-summary-title{color:#334155}
+.light-theme .balance-summary-value{color:#111827}
+.light-theme .balance-summary-count{background:#f1f5f9;color:#334155}
+.light-theme .balance-move-owner,.light-theme .balance-move-date,.light-theme .balance-move-description{color:#64748b}
+.light-theme .balance-move-menu-popover{background:#fff;border-color:#cbd5e1}
+.light-theme .balance-quick-income{background:#dcfce7;color:#166534;border-color:#86efac}
+.light-theme .balance-quick-expense{background:#fee2e2;color:#991b1b;border-color:#fca5a5}
+@media(max-width:900px){.balance-wrap{padding-bottom:calc(92px + var(--safe-bottom))}.balance-filters .fields{grid-template-columns:repeat(2,minmax(0,1fr))}.balance-filters-quick{grid-template-columns:1fr}.balance-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.balance-filters .fields{grid-template-columns:1fr}.balance-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.balance-grid .balance-card:last-child:nth-child(odd){grid-column:1/-1}.balance-card{min-height:88px;padding:10px;align-items:flex-start;flex-direction:column;justify-content:center;gap:5px}.balance-card-copy{gap:6px;font-size:11px;line-height:1.15}.balance-card-copy .icon{width:15px;height:15px;flex:0 0 15px}.balance-card-value{font-size:17px;letter-spacing:-.02em}.balance-details{padding:12px}.balance-pagination{justify-content:space-between}.balance-pagination .btn{padding:10px 12px}.balance-manual-toolbar{gap:8px}.balance-quick-btn{flex:1 1 0;padding:9px 6px;font-size:12px;justify-content:center}.balance-summary-card{padding:13px;gap:10px}.balance-summary-value{font-size:21px}.balance-summary-count{display:none}.balance-move-card{grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"icon main amount" "icon meta amount";padding:12px}.balance-move-icon{grid-area:icon}.balance-move-main{grid-area:main}.balance-move-meta{grid-area:meta;align-items:flex-start;flex-direction:row;flex-wrap:wrap;gap:8px}.balance-move-amount-col{grid-area:amount}.balance-move-amount{font-size:15px}.balance-date-range{flex-direction:column;align-items:stretch}.balance-date-range input{width:100%}}
 """
 
 APP_JS = r"""
@@ -2948,6 +3007,19 @@ function setupSidebarOrderPopup(){
   overlay.addEventListener('click',function(e){if(e.target===overlay)close();});
 }
 document.addEventListener('DOMContentLoaded', setupSidebarOrderPopup);
+function toggleBalanceMoveMenu(btn){
+  const wrap=btn.closest('.balance-move-menu-wrap');
+  if(!wrap)return;
+  const popover=wrap.querySelector('.balance-move-menu-popover');
+  const willOpen=popover.hidden;
+  document.querySelectorAll('.balance-move-menu-popover').forEach(function(p){p.hidden=true;});
+  popover.hidden=!willOpen;
+}
+document.addEventListener('click',function(e){
+  if(!e.target.closest('.balance-move-menu-wrap')){
+    document.querySelectorAll('.balance-move-menu-popover').forEach(function(p){p.hidden=true;});
+  }
+});
 async function saveMethodSelect(select){
   const form=select.closest('form');
   if(!form||form.dataset.saving==='1')return;
@@ -3536,6 +3608,9 @@ LUCIDE_PATHS = {
     "phone": '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>',
     "briefcase": '<rect width="20" height="14" x="2" y="7" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>',
     "user": '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+    "arrow-down": '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>',
+    "arrow-up": '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>',
+    "more-vertical": '<circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>',
 }
 
 
@@ -3573,6 +3648,66 @@ def money_cents_it(value):
     euros,remainder=divmod(abs(cents),100)
     formatted=f"{euros:,}".replace(",",".")
     return f"{sign}€ {formatted},{remainder:02d}"
+
+
+def movement_card_style(category,ledger_section):
+    """(classe colore, etichetta tipo, icona) per la card di un movimento del
+    registro Bilanci — derivata solo da category+ledger_section, cosi'
+    TUTTI gli 11 elenchi di Bilanci (Entrate W/D, Uscite W/D, Collaboratori,
+    Totale W/D, Saldo netto) usano la stessa regola sulla stessa card,
+    invece di avere una logica di colore diversa per vista."""
+    if category=="Collaboratori":
+        return ("balance-move-collab",f"{'Entrata' if ledger_section=='Entrata' else 'Uscita'} Collaboratore","briefcase")
+    if ledger_section=="Uscita":
+        return ("balance-move-out","Uscita","arrow-up")
+    if category=="D":
+        return ("balance-move-d","Entrata D","arrow-down")
+    return ("balance-move-w","Entrata W","arrow-down")
+
+
+def outstanding_card_style(category):
+    """Stessa logica di movement_card_style ma per le righe 'Da riscuotere'
+    (situazione ancora aperta su una pratica, non un movimento di registro)."""
+    if category=="Collaboratori":
+        return ("balance-move-collab","Da riscuotere Collaboratore","briefcase")
+    if category=="D":
+        return ("balance-move-d","Da riscuotere D","arrow-down")
+    return ("balance-move-w","Da riscuotere W","arrow-down")
+
+
+def balance_status_tone(label):
+    if label in ("Pagato","Incasso completo"):return "balance-status-green"
+    if label=="Acconto":return "balance-status-blue"
+    if label=="Da saldare":return "balance-status-yellow"
+    if label in ("Storno","Rettifica"):return "balance-status-muted"
+    return "balance-status-muted"
+
+
+def render_balance_move_card(*,accent_cls,icon,type_label,practice_number,animal,owner,date_text,status_label,amount_cents,row_attrs,menu_html="",extra_line=""):
+    status_cls=balance_status_tone(status_label)
+    return f'''<div class="balance-move-card {accent_cls}" {row_attrs} data-balance-detail-row data-amount-cents="{amount_cents}">
+      <span class="balance-move-icon">{lucide(icon)}</span>
+      <div class="balance-move-main">
+        <div class="balance-move-type">{esc(type_label)}</div>
+        <div class="balance-move-practice"><b>{esc(practice_number)}</b>{f" · {esc(animal)}" if animal and animal!="-" else ""}</div>
+        <div class="balance-move-owner">{lucide("user")}<span>{esc(owner)}</span></div>
+        {extra_line}
+      </div>
+      <div class="balance-move-meta">
+        <span class="balance-move-date">{lucide("calendar")}<span>{esc(date_text)}</span></span>
+        <span class="balance-move-status {status_cls}">{esc(status_label)}</span>
+      </div>
+      <div class="balance-move-amount-col">
+        <strong class="balance-move-amount">{money_cents_it(amount_cents)}</strong>
+        {menu_html}
+      </div>
+    </div>'''
+
+
+def render_balance_move_menu(action_html):
+    if not action_html or action_html=="-":
+        return ""
+    return f'''<div class="balance-move-menu-wrap"><button type="button" class="balance-move-menu-btn" aria-label="Azioni movimento" onclick="event.preventDefault();event.stopPropagation();toggleBalanceMoveMenu(this)">{lucide("more-vertical")}</button><div class="balance-move-menu-popover" hidden>{action_html}</div></div>'''
 
 
 def kg_it(value):
@@ -4573,10 +4708,16 @@ class App(BaseHTTPRequestHandler):
             for row,amount_cents in page_pairs:
                 url=f"/pratiche/{row.practice_id}?return_to={quote(current_balance_path,safe='')}"
                 animal=" - ".join(x for x in (row.species,row.animal_name) if x) or "-"
-                detail_rows.append(
-                    f'''<tr class="balance-clickable-row" tabindex="0" onclick="location.href='{url}'" onkeydown="if(event.key==='Enter')location.href='{url}'" data-balance-detail-row data-amount-cents="{amount_cents}"><td class="balance-col-action">-</td><td class="balance-col-date">{esc(date_it(row.practice_created_at))}</td><td class="balance-col-date">-</td><td class="balance-col-practice"><b>{esc(row.practice_number)}</b></td><td class="balance-col-animal">{esc(animal)}</td><td class="balance-col-secondary">{esc(row.owner_name or row.reference or "-")}</td><td class="balance-col-secondary">Da saldare</td><td class="balance-col-secondary">{esc(row.category)}</td><td class="balance-col-amount"><b>{money_cents_it(row.remaining_cents)}</b></td><td class="balance-col-secondary">{esc(row.payment_method or "-")}</td><td class="balance-col-secondary">{esc(row.collaborator_name or "-")}</td><td class="balance-col-secondary">{money_cents_it(row.total_due_cents)}</td><td class="balance-col-secondary">{money_cents_it(row.received_cents)}</td></tr>'''
-                )
-            detail_header='''<tr><th class="balance-col-action">Azione</th><th class="balance-col-date">Creazione</th><th class="balance-col-date">Movimento</th><th class="balance-col-practice">Pratica</th><th class="balance-col-animal">Animale</th><th class="balance-col-secondary">Proprietario</th><th class="balance-col-secondary">Stato</th><th class="balance-col-secondary">Categoria</th><th class="balance-col-amount">Importo</th><th class="balance-col-secondary">Metodo</th><th class="balance-col-secondary">Collaboratore</th><th class="balance-col-secondary">Dovuto</th><th class="balance-col-secondary">Incassato</th></tr>'''
+                accent_cls,type_label,icon=outstanding_card_style(row.category)
+                row_attrs=f'''class="balance-clickable-row" tabindex="0" onclick="location.href='{url}'" onkeydown="if(event.key==='Enter')location.href='{url}'"'''
+                detail_rows.append(render_balance_move_card(
+                    accent_cls=accent_cls,icon=icon,type_label=type_label,
+                    practice_number=row.practice_number,animal=animal,
+                    owner=row.owner_name or row.reference or "-",
+                    date_text=date_it(row.practice_created_at),
+                    status_label="Da saldare",amount_cents=row.remaining_cents,
+                    row_attrs=row_attrs,
+                ))
         else:
             for row,amount_cents in page_pairs:
                 practice_number=row.practice_number_snapshot or "-"
@@ -4601,6 +4742,10 @@ class App(BaseHTTPRequestHandler):
                     (meta["collaborator_name"] or collaborator_names.get(meta["collaborator_id"],""))
                     if meta else collaborator_names.get(row.collaborator_id,"")
                 ) or "-"
+                # owner is rarely meaningful on a collaborator-only movement
+                # (or a manual entry with no linked practice): fall back to
+                # the collaborator name so the card never shows a bare "-".
+                display_owner=owner if owner!="-" else collaborator
                 audit_badge=(
                     f'<small class="sub">{esc(row.source)} · #{row.id}</small>'
                     if audit_mode else ""
@@ -4614,14 +4759,22 @@ class App(BaseHTTPRequestHandler):
                 )
                 row_attrs=(
                     f'''class="balance-clickable-row" tabindex="0" onclick="location.href='{practice_url}'" onkeydown="if(event.key==='Enter')location.href='{practice_url}'"'''
-                    if practice_url else ""
+                    if practice_url else 'class="balance-clickable-row balance-move-static"'
                 )
-                detail_rows.append(
-                    f'''<tr {row_attrs} data-balance-detail-row data-amount-cents="{amount_cents}"><td class="balance-col-action">{void_action}</td><td class="balance-col-date">{esc(date_it(meta["created_at"])) if meta else "-"}</td><td class="balance-col-date">{esc(date_it(row.movement_date))}</td><td class="balance-col-practice"><b>{esc(practice_number)}</b></td><td class="balance-col-animal">{esc(animal)}</td><td class="balance-col-secondary">{esc(owner)}</td><td class="balance-col-secondary">{esc(status_label)}<small class="sub">{esc(row.description or "")}</small>{audit_badge}</td><td class="balance-col-secondary">{esc(row.category)}</td><td class="balance-col-amount"><b>{money_cents_it(amount_cents)}</b></td><td class="balance-col-secondary">{esc(row.payment_method or "-")}</td><td class="balance-col-secondary">{esc(collaborator)}</td></tr>'''
+                accent_cls,type_label,icon=movement_card_style(row.category,row.ledger_section)
+                extra_line=(
+                    f'<div class="balance-move-description">{esc(row.description)}{audit_badge}</div>'
+                    if row.description or audit_badge else ""
                 )
-            detail_header='''<tr><th class="balance-col-action">Azione</th><th class="balance-col-date">Creazione</th><th class="balance-col-date">Movimento</th><th class="balance-col-practice">Pratica</th><th class="balance-col-animal">Animale</th><th class="balance-col-secondary">Proprietario</th><th class="balance-col-secondary">Stato</th><th class="balance-col-secondary">Categoria</th><th class="balance-col-amount">Importo</th><th class="balance-col-secondary">Metodo</th><th class="balance-col-secondary">Collaboratore</th></tr>'''
+                detail_rows.append(render_balance_move_card(
+                    accent_cls=accent_cls,icon=icon,type_label=type_label,
+                    practice_number=practice_number,animal=animal,owner=display_owner,
+                    date_text=date_it(row.movement_date),status_label=status_label,
+                    amount_cents=amount_cents,row_attrs=row_attrs,
+                    menu_html=render_balance_move_menu(void_action),extra_line=extra_line,
+                ))
         details=(
-            f'''<div class="tablebox"><table class="balance-detail-table"><thead>{detail_header}</thead><tbody>{''.join(detail_rows)}</tbody></table></div>'''
+            f'''<div class="balance-move-list">{''.join(detail_rows)}</div>'''
             if detail_rows else '<p class="balance-details-empty">Nessun dato da visualizzare.</p>'
         )
         pagination=""
@@ -4686,24 +4839,35 @@ class App(BaseHTTPRequestHandler):
         if value("movimento_ripristinato")=="1":notice='<div class="flash">Movimento ripristinato correttamente.</div>'
         if error:notice+=f'<div class="flash warning">{esc(error)}</div>'
         cards_html=f'<section class="balance-grid" aria-label="Riepilogo Bilanci">{"".join(cards)}</section>'
+        section_lookup={key:(tone,icon) for key,tone,icon in section_order}
+        selected_tone,selected_icon=section_lookup[selected]
+        summary_html=f'''<div class="balance-summary-card {selected_tone}">
+          <span class="balance-summary-icon">{lucide(selected_icon)}</span>
+          <span class="balance-summary-copy"><span class="balance-summary-title">{esc(selected_section.title)}</span><strong class="balance-summary-value">{money_cents_it(selected_section.total_cents)}</strong></span>
+          <span class="balance-summary-count">{total_rows} {"pratiche" if is_outstanding else "movimenti"}</span>
+          <span class="balance-summary-chevron" aria-hidden="true">›</span>
+        </div>'''
         details_html=f'''<section id="balanceDetails" class="section balance-details" data-selected-balance-section="{esc(selected)}">
-          <div class="balance-details-heading"><div><small class="sub">Dettaglio selezionato</small><h2>{esc(selected_section.title)}</h2></div><div class="balance-details-meta"><span class="badge">{total_rows} {"pratiche" if is_outstanding else "movimenti"}</span><strong>{money_cents_it(selected_section.total_cents)}</strong></div></div>
+          {summary_html}
           {details}{pagination}
         </section>'''
         filters_html=f'''<form class="section balance-filters no-advanced-collapse" method="get" action="/bilanci" aria-label="Filtri Bilanci" onsubmit="const b=this.querySelector('button');b.disabled=true;b.textContent='Caricamento…'">
           <h2>Filtri</h2><input type="hidden" name="view" value="{esc(selected)}">
-          <div class="fields">
-            <div class="field"><label for="balancePeriod">Periodo</label><select id="balancePeriod" name="periodo">{period_options}</select></div>
-            <div class="field"><label for="balanceDateFrom">Data da</label><input id="balanceDateFrom" type="date" name="data_iniziale" value="{esc(filters.date_from or '')}"></div>
-            <div class="field"><label for="balanceDateTo">Data a</label><input id="balanceDateTo" type="date" name="data_finale" value="{esc(filters.date_to or '')}" required></div>
-            <div class="field"><label for="balanceCategory">Categoria</label><select id="balanceCategory" name="categoria">{category_options}</select></div>
-            <div class="field"><label for="balanceCollaborator">Collaboratore</label><select id="balanceCollaborator" name="collaboratore">{collaborator_options}</select></div>
-            <div class="field"><label for="balanceMethod">Metodo pagamento</label><select id="balanceMethod" name="metodo">{method_options}</select></div>
-            <div class="field"><label for="balanceStatus">Stato</label><select id="balanceStatus" name="stato">{status_options}</select></div>
-            <div class="field"><label for="balanceOperator">Operatore</label><select id="balanceOperator" name="operatore">{operator_options}</select></div>
-            <div class="field"><label for="balanceSearch">Ricerca</label><input id="balanceSearch" type="search" name="ricerca" value="{esc(filters.search)}" placeholder="Pratica, cliente, descrizione…"></div>
-            {f'<label class="modern-check"><input type="checkbox" name="audit" value="1" {"checked" if audit_mode else ""}> Mostra movimenti tecnici / rettifiche</label>' if user["role"]=="admin" else ""}
+          <div class="balance-filters-quick">
+            <div class="field"><label for="balanceDateFrom">Data</label><div class="balance-date-range"><input id="balanceDateFrom" type="date" name="data_iniziale" value="{esc(filters.date_from or '')}"><span>-</span><input type="date" name="data_finale" value="{esc(filters.date_to or '')}" required></div></div>
+            <div class="field"><label for="balanceStatus">Tipo</label><select id="balanceStatus" name="stato">{status_options}</select></div>
+            <div class="field"><label for="balanceSearch">Cerca</label><input id="balanceSearch" type="search" name="ricerca" value="{esc(filters.search)}" placeholder="Pratica, cliente, descrizione…"></div>
           </div>
+          <details class="balance-filters-advanced"><summary>Filtri avanzati</summary>
+            <div class="fields">
+              <div class="field"><label for="balancePeriod">Periodo</label><select id="balancePeriod" name="periodo">{period_options}</select></div>
+              <div class="field"><label for="balanceCategory">Categoria</label><select id="balanceCategory" name="categoria">{category_options}</select></div>
+              <div class="field"><label for="balanceCollaborator">Collaboratore</label><select id="balanceCollaborator" name="collaboratore">{collaborator_options}</select></div>
+              <div class="field"><label for="balanceMethod">Metodo pagamento</label><select id="balanceMethod" name="metodo">{method_options}</select></div>
+              <div class="field"><label for="balanceOperator">Operatore</label><select id="balanceOperator" name="operatore">{operator_options}</select></div>
+              {f'<label class="modern-check"><input type="checkbox" name="audit" value="1" {"checked" if audit_mode else ""}> Mostra movimenti tecnici / rettifiche</label>' if user["role"]=="admin" else ""}
+            </div>
+          </details>
           <div class="actions balance-filter-actions"><button class="btn">Applica filtri</button><a class="btn ghost" href="/bilanci">Azzera</a></div>
           <p class="balance-filter-note">{lucide("settings")}<span>Per “Da riscuotere” conta la situazione alla data finale; la data iniziale non nasconde debiti precedenti ancora aperti.</span></p>
         </form>'''
@@ -4734,7 +4898,10 @@ class App(BaseHTTPRequestHandler):
             </form>
           </details>
         </div>'''
-        manual_toolbar='''<div class="actions balance-manual-toolbar"><button class="btn" type="button" onclick="const p=document.getElementById('balanceManualIncome');p.open=true;p.scrollIntoView({behavior:'smooth',block:'start'})">Registra entrata</button><button class="btn" type="button" onclick="const p=document.getElementById('balanceManualExpense');p.open=true;p.scrollIntoView({behavior:'smooth',block:'start'})">Registra uscita</button></div>'''
+        manual_toolbar=f'''<div class="actions balance-manual-toolbar">
+          <button class="btn balance-quick-btn balance-quick-income" type="button" onclick="const p=document.getElementById('balanceManualIncome');p.open=true;p.scrollIntoView({{behavior:'smooth',block:'start'}})">{lucide("arrow-down")}<span>Registra entrata</span></button>
+          <button class="btn balance-quick-btn balance-quick-expense" type="button" onclick="const p=document.getElementById('balanceManualExpense');p.open=true;p.scrollIntoView({{behavior:'smooth',block:'start'}})">{lucide("arrow-up")}<span>Registra uscita</span></button>
+        </div>'''
         if recent_deletions:
             deletion_action=lambda row:(
                 f'<span class="badge">Ripristinato {esc(date_it(row["restored_at"][:10]))}</span>'
