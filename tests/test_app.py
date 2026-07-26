@@ -2670,6 +2670,17 @@ class PetParadiseTests(unittest.TestCase):
                                 (number,"Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Anna","Bianchi",phone,"Luna","Cremazione singola",send_catalog,catalog_sent)).lastrowid
         return admin,pid
 
+    def test_whatsapp_client_name_uses_only_the_first_name_not_the_surname(self):
+        # {{1}} in both the ringraziamento and catalogo templates must read
+        # like "Ciao Anna", not "Ciao Anna Bianchi" — more natural for a
+        # message signed off casually.
+        admin,pid=self._catalog_practice()
+        with app.db() as conn:
+            p=conn.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+        self.assertEqual(self.handler.whatsapp_client_name(p),"Anna")
+        self.assertEqual(self.handler.whatsapp_payload_for_practice(p)["template"]["components"][0]["parameters"][0]["text"],"Anna")
+        self.assertEqual(self.handler.whatsapp_catalog_payload_for_practice(p)["template"]["components"][0]["parameters"][0]["text"],"Anna")
+
     def test_checking_send_catalog_via_catalog_sent_handler_schedules_a_catalogo_urne_message(self):
         admin,pid=self._catalog_practice()
         self.handler.form=lambda:{"send_catalog":"Si"}
@@ -2793,6 +2804,34 @@ class PetParadiseTests(unittest.TestCase):
         with app.db() as conn:
             message_type=conn.execute("SELECT message_type FROM whatsapp_messages WHERE id=?",(sent_msg_id,)).fetchone()["message_type"]
         self.assertEqual(message_type,"ringraziamento")
+
+    def test_practice_page_shows_resend_catalog_button_only_once_catalog_sent(self):
+        admin,pid=self._catalog_practice(catalog_sent="Si")
+        rendered=[];self.handler.send_html=lambda content,*a:rendered.append(content)
+        self.handler.practice(admin,pid)
+        self.assertIn(f'href="/pratiche/{pid}/catalogo-whatsapp-conferma"',rendered[-1])
+        self.assertIn("Reinvia catalogo",rendered[-1])
+        admin2,pid2=self._catalog_practice(send_catalog="Si")
+        rendered2=[];self.handler.send_html=lambda content,*a:rendered2.append(content)
+        self.handler.practice(admin2,pid2)
+        self.assertNotIn("Reinvia catalogo",rendered2[-1])
+
+    def test_resend_whatsapp_catalog_uses_the_catalog_template_and_ignores_a_pending_thanks_message(self):
+        # Mirrors test_resend_whatsapp_thanks_ignores_a_pending_catalog_message_for_the_same_practice,
+        # but for the catalog resend button: a pending ringraziamento row for
+        # the same practice must not be picked up as "the" active/latest one.
+        admin,pid=self._catalog_practice(catalog_sent="Si")
+        with app.db() as conn:
+            conn.execute("UPDATE practices SET status='Consegnato' WHERE id=?",(pid,))
+            self.handler.schedule_whatsapp_thanks(conn,pid,admin["id"])
+        self.handler.form=lambda:{"confirm_send":"SI"}
+        self.handler.redirect=lambda path:None
+        with patch.object(self.handler,"send_whatsapp_message",return_value=(True,"ok")) as send:
+            self.handler.resend_whatsapp_catalog(admin,pid)
+        sent_msg_id=send.call_args[0][0]
+        with app.db() as conn:
+            row=conn.execute("SELECT message_type,template_name FROM whatsapp_messages WHERE id=?",(sent_msg_id,)).fetchone()
+        self.assertEqual((row["message_type"],row["template_name"]),("catalogo","catalogo_urne"))
 
     def test_webhook_inbound_text_message_links_to_the_practice_it_was_sent_to(self):
         admin,pid=self._catalog_practice()
@@ -3937,6 +3976,16 @@ class PetParadiseTests(unittest.TestCase):
             app.CSS,
         )
 
+    def test_payment_popover_is_compact_on_mobile_but_stays_scrollable(self):
+        # The popup opened from the practice's Riepilogo (and from any list
+        # row) must fit a mobile screen without scrolling in the common case;
+        # .payment-dialog keeps overflow:auto (see its base rule) so a very
+        # small screen can still scroll instead of clipping content.
+        self.assertIn("@media(max-width:520px){.payment-popover{padding:6px}", app.CSS)
+        self.assertIn(".payment-dialog{padding:12px 10px;max-height:97dvh}", app.CSS)
+        self.assertIn(".payment-dialog .sub{display:none}", app.CSS)
+        self.assertIn(".payment-dialog{width:min(620px,100%);max-height:90dvh;overflow:auto;", app.CSS)
+
     def test_new_page_with_error_field_skips_top_banner_and_targets_the_field(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
@@ -3962,6 +4011,15 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("function showFieldError(){", app.APP_JS)
         self.assertIn("wrap.scrollIntoView({behavior:'smooth',block:'center'});", app.APP_JS)
         self.assertIn(".field-error input,.field-error select,.field-error textarea{border-color:#ef4444}", app.CSS)
+
+    def test_open_payment_popover_moves_itself_to_body_to_escape_tablebox_scroll(self):
+        # A row's .payment-popover lives inside .tablebox, which sets
+        # -webkit-overflow-scrolling:touch for smooth mobile scroll — on iOS
+        # Safari that turns the table into the containing block for any
+        # position:fixed descendant, trapping the popover inside the table
+        # instead of covering the screen. Moving it to <body> on open avoids
+        # that everywhere the payment popover is used (Dashboard list, etc.).
+        self.assertIn("if(target.parentElement!==document.body)document.body.appendChild(target);", app.APP_JS)
 
     def test_create_practice_missing_required_field_also_jumps_to_it(self):
         # Not just the Acconto/Rimanenza macroarea errors: the common
