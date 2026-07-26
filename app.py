@@ -8263,15 +8263,15 @@ class App(BaseHTTPRequestHandler):
             whatsapp_msg=c.execute("SELECT * FROM whatsapp_messages WHERE practice_id=? AND message_type='ringraziamento' ORDER BY created_at DESC LIMIT 1",(pid,)).fetchone()
         if not p:return self.send_error(404)
         tag_badges_raw=self.tag_badges(p)
-        tag_badges_html='<br>'+tag_badges_raw if 'sub">-' not in tag_badges_raw else ''
+        resend_catalog_button = f'<a class="btn ghost" href="/pratiche/{pid}/catalogo-whatsapp-conferma" style="margin-left:8px">Reinvia catalogo</a>' if p["catalog_sent"]=="Si" else ''
+        tag_badges_html=('<br>'+tag_badges_raw+resend_catalog_button) if 'sub">-' not in tag_badges_raw else ''
         payment_value = p["payment_status"] if "payment_status" in p.keys() and p["payment_status"] else "Da saldare"
         method_select_options=''.join(f'<option value="{esc(m)}" {"selected" if m==(p["payment_method"] or "") else ""}>{esc(m or "Non indicato")}</option>' for m in PAYMENT_METHODS)
         payment_amount_value = p["payment_amount"] if "payment_amount" in p.keys() and p["payment_amount"] else ""
         catalog_value = "Si" if "send_catalog" in p.keys() and p["send_catalog"] else "No"
         send_catalog_checked="checked" if p["send_catalog"]=="Si" else ""
         catalog_sent_checked="checked" if p["catalog_sent"]=="Si" else ""
-        resend_catalog_button = f'<a class="btn ghost" href="/pratiche/{pid}/catalogo-whatsapp-conferma" style="margin-left:8px">Reinvia catalogo</a>' if p["catalog_sent"]=="Si" else ''
-        catalog_controls=f'''<form class="catalog-summary-form" method="post" action="/pratiche/{pid}/catalogo-inviato"><input type="hidden" name="practice_view" value="{esc(practice_view)}"><label class="modern-check"><input type="checkbox" name="send_catalog" value="Si" {send_catalog_checked} onchange="if(this.checked)this.form.catalog_sent.checked=false;this.form.submit()"> INVIARE CATALOGO</label><label class="modern-check"><input type="checkbox" name="catalog_sent" value="Si" {catalog_sent_checked} onchange="if(this.checked)this.form.send_catalog.checked=false;this.form.submit()"> CATALOGO INVIATO</label>{resend_catalog_button}</form>'''
+        catalog_controls=f'''<form class="catalog-summary-form" method="post" action="/pratiche/{pid}/catalogo-inviato"><input type="hidden" name="practice_view" value="{esc(practice_view)}"><label class="modern-check"><input type="checkbox" name="send_catalog" value="Si" {send_catalog_checked} onchange="if(this.checked)this.form.catalog_sent.checked=false;this.form.submit()"> INVIARE CATALOGO</label><label class="modern-check"><input type="checkbox" name="catalog_sent" value="Si" {catalog_sent_checked} onchange="if(this.checked)this.form.send_catalog.checked=false;this.form.submit()"> CATALOGO INVIATO</label></form>'''
         urn_parts=[]
         if p["urn_notes"]: urn_parts.append(esc(p["urn_notes"]))
         if p["price_urn"]: urn_parts.append(money_it(money_value(p["price_urn"])))
