@@ -5929,7 +5929,7 @@ class App(BaseHTTPRequestHandler):
             client_cell=esc(client) if client else '<span class="sub">-</span>'
             collab_code=collaborator_codes.get(int(row["collaborator_id"])) if "collaborator_id" in row.keys() and row["collaborator_id"] else ""
             animal_prefix=f"{esc(collab_code)} " if collab_code else ""
-            url=f'/pratiche/{row["id"]}'
+            url=f'/pratiche/{row["id"]}?return_to={quote(getattr(self,"path",""),safe="")}'
             queued=("cremation_queued" in row.keys() and row["cremation_queued"]=="Si")
             checkbox=f'''<label class="cremation-check" onclick="event.stopPropagation()"><input type="checkbox" data-cremation-id="{row['id']}" {"checked" if queued else ""} onchange="toggleCremationQueue(this)"> INSERITO</label>'''
             payment=row["payment_status"] if row["payment_status"] else "Da saldare"
@@ -6028,7 +6028,7 @@ class App(BaseHTTPRequestHandler):
         def disposal_row_html(r,status_label,status_class):
             weight=money_value(r["estimated_weight"]) if r["estimated_weight"] else 0.0
             weight_cell=kg_it(weight) if weight else '<span class="sub">-</span>'
-            url=f'/pratiche/{r["id"]}'
+            url=f'/pratiche/{r["id"]}?return_to={quote(getattr(self,"path",""),safe="")}'
             animal_cell=esc(r["species"]) if r["species"] else '<span class="sub">-</span>'
             return f'''<tr class="practice-row-link" {row_open_attrs(url,f'Apri pratica {r["practice_number"]}')}><td>{animal_cell}</td><td>{weight_cell}</td><td>{esc(self.disposal_contact_for(r))}</td><td>{esc(date_it(r["pickup_date"] or r["created_at"]))}</td><td><a href="{url}">{esc(r["practice_number"])}</a></td><td><span class="badge {status_class}">{status_label}</span></td></tr>'''
         group_sections=[]
@@ -6103,7 +6103,7 @@ class App(BaseHTTPRequestHandler):
                 weight=money_value(r["estimated_weight"]) if r["estimated_weight"] else 0.0
                 group_kg+=weight
                 weight_cell=kg_it(weight) if weight else '<span class="sub">-</span>'
-                url=f'/pratiche/{r["id"]}'
+                url=f'/pratiche/{r["id"]}?return_to={quote(getattr(self,"path",""),safe="")}'
                 animal_cell=esc(r["species"]) if r["species"] else '<span class="sub">-</span>'
                 row_parts.append(f'''<tr class="practice-row-link" {row_open_attrs(url,f'Apri pratica {r["practice_number"]}')}><td>{esc(r["destination_branch"] or "-")}</td><td>{animal_cell}</td><td>{weight_cell}</td><td>{esc(self.disposal_contact_for(r))}</td><td>{esc(date_it(r["pickup_date"] or r["created_at"]))}</td><td><a href="{url}">{esc(r["practice_number"])}</a></td></tr>''')
             grand_kg+=group_kg
@@ -6381,10 +6381,10 @@ class App(BaseHTTPRequestHandler):
         for row in rows:
             owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip()
             invoice_total=money_value(row["invoice_total"]) if "invoice_total" in row.keys() and row["invoice_total"] else money_value(row["total_service"])
-            entries.append({"sort_key":row["invoice_date"] or row["created_at"] or "","number":row["invoice_number"],"date":row["invoice_date"],"practice_number":row["practice_number"],"owner":owner,"animal":row["animal_name"] or "","total":invoice_total,"channel":payment_channel(row),"url":f'/pratiche/{row["id"]}'})
+            entries.append({"sort_key":row["invoice_date"] or row["created_at"] or "","number":row["invoice_number"],"date":row["invoice_date"],"practice_number":row["practice_number"],"owner":owner,"animal":row["animal_name"] or "","total":invoice_total,"channel":payment_channel(row),"url":f'/pratiche/{row["id"]}?return_to={quote(getattr(self,"path",""),safe="")}'})
         for mrow in movement_rows:
             owner=((mrow["owner_first_name"] or "")+" "+(mrow["owner_last_name"] or "")).strip()
-            entries.append({"sort_key":mrow["invoice_date"] or mrow["created_at"] or "","number":mrow["invoice_number"],"date":mrow["invoice_date"],"practice_number":mrow["practice_number"],"owner":owner,"animal":mrow["animal_name"] or "","total":money_value(mrow["invoice_total"]),"channel":mrow["payment_channel"] or "-","url":f'/pratiche/{mrow["practice_id"]}'})
+            entries.append({"sort_key":mrow["invoice_date"] or mrow["created_at"] or "","number":mrow["invoice_number"],"date":mrow["invoice_date"],"practice_number":mrow["practice_number"],"owner":owner,"animal":mrow["animal_name"] or "","total":money_value(mrow["invoice_total"]),"channel":mrow["payment_channel"] or "-","url":f'/pratiche/{mrow["practice_id"]}?return_to={quote(getattr(self,"path",""),safe="")}'})
         entries.sort(key=lambda e:e["sort_key"],reverse=True)
         table=[f'''<tr class="practice-row-link" {row_open_attrs(e["url"],f'Apri pratica {e["practice_number"]}')}><td><b>{esc(e["number"])}</b></td><td>{esc(date_it(e["date"]))}</td><td><a href="{e["url"]}">{esc(e["practice_number"])}</a></td><td>{esc(e["owner"])}</td><td>{esc(e["animal"])}</td><td>{esc(e["channel"])}</td><td>{money_it(e["total"])}</td><td><a class="btn ghost" href="{e["url"]}">Apri</a></td></tr>''' for e in entries]
         reminder_html=''.join(f'<a class="event" href="/pratiche/{row["id"]}"><b>{esc(row["practice_number"])}</b> · {esc(((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip())} · {esc(row["animal_name"] or "")}</a>' for row in reminders) or '<p class="sub">Nessuna fattura da ricordare.</p>'

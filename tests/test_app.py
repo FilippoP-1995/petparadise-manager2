@@ -1471,7 +1471,7 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path = "/smaltimenti?dal=2026-07-01&al=2026-07-31"
         self.handler.disposal_page(admin)
         page = rendered[-1]
-        url = f"/pratiche/{pid}"
+        url = f"/pratiche/{pid}?return_to={quote(self.handler.path,safe='')}"
         self.assertIn(f'''<tr class="practice-row-link" tabindex="0" role="link" aria-label="Apri pratica PP-ROWCLICK" onclick="practiceRowSelect(this,event,'{url}')"''', page)
         # The disposal group must be a scrollable .tablebox (like every other list in the app),
         # not a plain .section, so mobile users can swipe right to see the trailing columns.
