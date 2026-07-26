@@ -1997,34 +1997,39 @@ function showFieldError(){
   control.focus({preventScroll:true});
 }
 function setupSignaturePad(){
+  const openBtn=document.getElementById('ppmOpenSignaturePad');
+  if(!openBtn) return;
+  const overlay=document.getElementById('ppmSignatureOverlay');
   const canvas=document.getElementById('ppmSignaturePad');
-  if(!canvas) return;
   const dataInput=document.getElementById('ppmSignatureDataInput');
+  const statusEl=document.getElementById('ppmSignatureStatus');
+  const saveBtn=document.getElementById('ppmSaveSignaturePad');
   const clearBtn=document.getElementById('ppmClearSignaturePad');
+  const closeBtn=document.getElementById('ppmCloseSignaturePad');
+  const removeBtn=document.getElementById('ppmRemoveSignature');
   const ctx=canvas.getContext('2d');
-  const existingData=dataInput.value;
-  let drawing=false,last=null,touched=false,hasContent=!!existingData;
+  let drawing=false,last=null,hasContent=false;
+  // Tracks the drawn ink's own bounding box (CSS-pixel space) so Save can
+  // crop to just that area instead of exporting the whole pad: this canvas
+  // fills most of the screen, but a signature is usually drawn small in
+  // the middle of it — exporting the full (mostly blank) canvas and then
+  // letting the PDF box scale it down by preserveAspectRatio shrinks the
+  // actual ink to near-invisible. Cropping first means the exported image
+  // IS the signature, so it fills the PDF box based on its own proportions
+  // no matter how large the signing area was or where in it the user signed.
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  function trackPoint(p){ if(p.x<minX)minX=p.x; if(p.x>maxX)maxX=p.x; if(p.y<minY)minY=p.y; if(p.y>maxY)maxY=p.y; }
+  function resetBounds(){ minX=Infinity;minY=Infinity;maxX=-Infinity;maxY=-Infinity; }
   function resize(){
     const r=canvas.getBoundingClientRect(),d=window.devicePixelRatio||1;
     canvas.width=r.width*d;canvas.height=r.height*d;
     ctx.setTransform(d,0,0,d,0,0);
     ctx.lineWidth=3;ctx.lineCap='round';ctx.strokeStyle='#1f1f1f';
-    // Show the already-saved signature (edit mode) so the user can see it
-    // instead of a blank pad — but only until they actually touch the pad,
-    // so a later window resize (e.g. rotating the phone) never overwrites a
-    // fresh signature they just drew with the stale saved one.
-    if(existingData && !touched){
-      const img=new Image();
-      img.onload=()=>{ if(!touched) ctx.drawImage(img,0,0,r.width,r.height); };
-      img.src=existingData;
-    }
   }
   function pos(e){ const r=canvas.getBoundingClientRect(),t=e.touches?e.touches[0]:e; return {x:t.clientX-r.left,y:t.clientY-r.top}; }
-  function start(e){ drawing=true;touched=true;hasContent=true;last=pos(e);e.preventDefault(); }
-  function move(e){ if(!drawing)return; const p=pos(e); ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);ctx.stroke();last=p;e.preventDefault(); }
+  function start(e){ drawing=true;hasContent=true;last=pos(e);trackPoint(last);e.preventDefault(); }
+  function move(e){ if(!drawing)return; const p=pos(e); ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);ctx.stroke();last=p;trackPoint(p);e.preventDefault(); }
   function end(e){ drawing=false;e.preventDefault(); }
-  resize();
-  window.addEventListener('resize',resize);
   canvas.addEventListener('mousedown',start);
   canvas.addEventListener('mousemove',move);
   canvas.addEventListener('mouseup',end);
@@ -2032,12 +2037,45 @@ function setupSignaturePad(){
   canvas.addEventListener('touchstart',start,{passive:false});
   canvas.addEventListener('touchmove',move,{passive:false});
   canvas.addEventListener('touchend',end,{passive:false});
-  if(clearBtn) clearBtn.onclick=()=>{ ctx.clearRect(0,0,canvas.width,canvas.height); touched=true; hasContent=false; };
-  // Not obbligatoria: if the user never touches the pad, the hidden input
-  // keeps whatever it was rendered with (blank on create, the existing
-  // signature on edit) instead of being overwritten.
-  const form=canvas.closest('form');
-  if(form) form.addEventListener('submit',()=>{ if(touched) dataInput.value = hasContent ? canvas.toDataURL('image/png') : ''; });
+  // The signing surface only ever exists behind this fullscreen overlay:
+  // the practice form around it carries the owner's personal/medical data,
+  // so opening the pad in place (instead of a dedicated blank screen) would
+  // mean handing the client a phone/tablet that also shows everything else
+  // on the page while they sign it.
+  function open(){
+    overlay.hidden=false;document.body.style.overflow='hidden';
+    hasContent=false;resetBounds();
+    resize();
+    if(window.ppmMomentumStoppers)window.ppmMomentumStoppers.forEach(function(stop){stop();});
+  }
+  function close(){ overlay.hidden=true;document.body.style.overflow=''; }
+  openBtn.addEventListener('click',open);
+  if(closeBtn)closeBtn.addEventListener('click',close);
+  overlay.addEventListener('click',function(e){ if(e.target===overlay)close(); });
+  if(clearBtn)clearBtn.addEventListener('click',function(){ ctx.clearRect(0,0,canvas.width,canvas.height);hasContent=false;resetBounds(); });
+  if(saveBtn)saveBtn.addEventListener('click',function(){
+    if(hasContent){
+      const d=window.devicePixelRatio||1,pad=12;
+      const cssW=canvas.width/d,cssH=canvas.height/d;
+      const x0=Math.max(0,minX-pad),y0=Math.max(0,minY-pad);
+      const x1=Math.min(cssW,maxX+pad),y1=Math.min(cssH,maxY+pad);
+      const cropW=Math.max(1,x1-x0),cropH=Math.max(1,y1-y0);
+      const cropCanvas=document.createElement('canvas');
+      cropCanvas.width=cropW*d;cropCanvas.height=cropH*d;
+      cropCanvas.getContext('2d').drawImage(canvas,x0*d,y0*d,cropW*d,cropH*d,0,0,cropW*d,cropH*d);
+      dataInput.value=cropCanvas.toDataURL('image/png');
+      if(statusEl)statusEl.textContent='Firma salvata.';
+      if(removeBtn)removeBtn.hidden=false;
+    }
+    close();
+  });
+  if(removeBtn)removeBtn.addEventListener('click',function(){
+    dataInput.value='';
+    if(statusEl)statusEl.textContent='Nessuna firma.';
+    removeBtn.hidden=true;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+  });
+  window.addEventListener('resize',function(){ if(!overlay.hidden)resize(); });
 }
 document.addEventListener('DOMContentLoaded', function(){
   reorderSenderFields(); placeCallBackFlag(); setupBudgetExtras(); decoratePracticeSections(); setupNumericBudgetFields(); updatePreventivoTotal(); updateRemainingBalance(); updateMacroRimanenza(); setupZipLookup(); setupUrnNotesField();arrangeBudgetLayout();showFieldError();setupSignaturePad();
@@ -7107,7 +7145,9 @@ class App(BaseHTTPRequestHandler):
         {creation_payment_fields}
         <section class="section"><h2>Note</h2><div class="fields"><div class="field full"><label>NOTE</label><textarea name="notes">{val('notes')}</textarea></div></div></section>
         <section class="section"><h2>Etichette operative</h2><div class="fields">{tag_select('tag_assistita','ASSISTITA','tag-red')}{tag_select('tag_possibile_assistita','POSSIBILE ASSISTITA','tag-red')}{tag_select('tag_assistita_streaming','ASSISTITA STREAMING','tag-orange')}{tag_select('tag_possibile_assistita_streaming','POSSIBILE ASSISTITA STREAMING','tag-orange')}{tag_select('tag_saluto','SALUTO','tag-purple')}{tag_select('tag_calco','CALCO','tag-yellow')}{tag_select('tag_possibile_calco','POSSIBILE CALCO','tag-yellow')}{tag_select('tag_calco_urna','CALCO PER URNA','tag-yellow')}{tag_select('tag_calco_paw','CALCO POLPASTRELLO','tag-yellow')}{tag_select('tag_possibile_calco_paw','POSSIBILE CALCO POLPASTRELLO','tag-yellow')}{tag_select('tag_calco_nose','CALCO NASO','tag-yellow')}{tag_select('tag_possibile_calco_nose','POSSIBILE CALCO NASO','tag-yellow')}{tag_select('tag_avvisare','AVVISARE','tag-pink')}{tag_select('tag_da_richiamare','DA RICHIAMARE','tag-blue')}</div></section>
-        <section class="section"><h2>Firma proprietario</h2><p class="sub">Facoltativa: puoi farla firmare subito col dito, oppure più tardi dalla pratica salvata. Verrà inserita nel PDF DDT.</p><canvas class="signature-pad" id="ppmSignaturePad"></canvas><input type="hidden" name="signature_data" id="ppmSignatureDataInput" value="{val('signature_data')}"><div class="actions" style="margin-top:12px"><button class="btn ghost" type="button" id="ppmClearSignaturePad">Cancella firma</button></div></section>
+        <section class="section"><h2>Firma proprietario</h2><p class="sub">Facoltativa: verrà inserita nel PDF DDT. Usa "Apri area firma": mostra solo il riquadro per firmare a schermo intero, senza gli altri dati della pratica, prima di passare il telefono o il tablet al cliente.</p><p class="sub" id="ppmSignatureStatus">{'Firma salvata.' if val('signature_data') else 'Nessuna firma.'}</p><input type="hidden" name="signature_data" id="ppmSignatureDataInput" value="{val('signature_data')}"><div class="actions" style="margin-top:12px"><button class="btn" type="button" id="ppmOpenSignaturePad">Apri area firma</button><button class="btn ghost" type="button" id="ppmRemoveSignature" {'hidden' if not val('signature_data') else ''}>Rimuovi firma</button></div>
+        <div class="payment-popover" id="ppmSignatureOverlay" hidden><div class="payment-dialog" style="max-width:900px"><div class="titlebar"><div><h2>Firma proprietario</h2><p class="sub">Fai firmare qui con il dito.</p></div><button class="btn ghost" type="button" id="ppmCloseSignaturePad">Chiudi</button></div><canvas class="signature-pad" id="ppmSignaturePad" style="height:55vh"></canvas><div class="actions" style="margin-top:12px"><button class="btn" type="button" id="ppmSaveSignaturePad">Salva firma</button><button class="btn ghost" type="button" id="ppmClearSignaturePad">Cancella</button></div></div></div>
+        </section>
         <section class="section"><h2>Documento e accettazione</h2><div class="fields"><div class="field"><label>Numero documento</label><input name="identity_document_number" value="{val('identity_document_number')}"></div><div class="field"><label>Data rilascio</label><input type="date" name="identity_document_date" value="{val('identity_document_date')}"></div><div class="field full"><label>Luogo firma</label><input name="signing_place" value="{val('signing_place') or val('destination_branch')}"></div></div></section>'''
 
     def new_page(self,user,draft=None,error="",error_field=""):
