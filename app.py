@@ -1996,8 +1996,51 @@ function showFieldError(){
   wrap.scrollIntoView({behavior:'smooth',block:'center'});
   control.focus({preventScroll:true});
 }
+function setupSignaturePad(){
+  const canvas=document.getElementById('ppmSignaturePad');
+  if(!canvas) return;
+  const dataInput=document.getElementById('ppmSignatureDataInput');
+  const clearBtn=document.getElementById('ppmClearSignaturePad');
+  const ctx=canvas.getContext('2d');
+  const existingData=dataInput.value;
+  let drawing=false,last=null,touched=false,hasContent=!!existingData;
+  function resize(){
+    const r=canvas.getBoundingClientRect(),d=window.devicePixelRatio||1;
+    canvas.width=r.width*d;canvas.height=r.height*d;
+    ctx.setTransform(d,0,0,d,0,0);
+    ctx.lineWidth=3;ctx.lineCap='round';ctx.strokeStyle='#1f1f1f';
+    // Show the already-saved signature (edit mode) so the user can see it
+    // instead of a blank pad — but only until they actually touch the pad,
+    // so a later window resize (e.g. rotating the phone) never overwrites a
+    // fresh signature they just drew with the stale saved one.
+    if(existingData && !touched){
+      const img=new Image();
+      img.onload=()=>{ if(!touched) ctx.drawImage(img,0,0,r.width,r.height); };
+      img.src=existingData;
+    }
+  }
+  function pos(e){ const r=canvas.getBoundingClientRect(),t=e.touches?e.touches[0]:e; return {x:t.clientX-r.left,y:t.clientY-r.top}; }
+  function start(e){ drawing=true;touched=true;hasContent=true;last=pos(e);e.preventDefault(); }
+  function move(e){ if(!drawing)return; const p=pos(e); ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);ctx.stroke();last=p;e.preventDefault(); }
+  function end(e){ drawing=false;e.preventDefault(); }
+  resize();
+  window.addEventListener('resize',resize);
+  canvas.addEventListener('mousedown',start);
+  canvas.addEventListener('mousemove',move);
+  canvas.addEventListener('mouseup',end);
+  canvas.addEventListener('mouseleave',end);
+  canvas.addEventListener('touchstart',start,{passive:false});
+  canvas.addEventListener('touchmove',move,{passive:false});
+  canvas.addEventListener('touchend',end,{passive:false});
+  if(clearBtn) clearBtn.onclick=()=>{ ctx.clearRect(0,0,canvas.width,canvas.height); touched=true; hasContent=false; };
+  // Not obbligatoria: if the user never touches the pad, the hidden input
+  // keeps whatever it was rendered with (blank on create, the existing
+  // signature on edit) instead of being overwritten.
+  const form=canvas.closest('form');
+  if(form) form.addEventListener('submit',()=>{ if(touched) dataInput.value = hasContent ? canvas.toDataURL('image/png') : ''; });
+}
 document.addEventListener('DOMContentLoaded', function(){
-  reorderSenderFields(); placeCallBackFlag(); setupBudgetExtras(); decoratePracticeSections(); setupNumericBudgetFields(); updatePreventivoTotal(); updateRemainingBalance(); updateMacroRimanenza(); setupZipLookup(); setupUrnNotesField();arrangeBudgetLayout();showFieldError();
+  reorderSenderFields(); placeCallBackFlag(); setupBudgetExtras(); decoratePracticeSections(); setupNumericBudgetFields(); updatePreventivoTotal(); updateRemainingBalance(); updateMacroRimanenza(); setupZipLookup(); setupUrnNotesField();arrangeBudgetLayout();showFieldError();setupSignaturePad();
   const plate=document.querySelector('input[name="vehicle_plate"]');
   if(plate) plate.readOnly=false;
 });
@@ -7064,6 +7107,7 @@ class App(BaseHTTPRequestHandler):
         {creation_payment_fields}
         <section class="section"><h2>Note</h2><div class="fields"><div class="field full"><label>NOTE</label><textarea name="notes">{val('notes')}</textarea></div></div></section>
         <section class="section"><h2>Etichette operative</h2><div class="fields">{tag_select('tag_assistita','ASSISTITA','tag-red')}{tag_select('tag_possibile_assistita','POSSIBILE ASSISTITA','tag-red')}{tag_select('tag_assistita_streaming','ASSISTITA STREAMING','tag-orange')}{tag_select('tag_possibile_assistita_streaming','POSSIBILE ASSISTITA STREAMING','tag-orange')}{tag_select('tag_saluto','SALUTO','tag-purple')}{tag_select('tag_calco','CALCO','tag-yellow')}{tag_select('tag_possibile_calco','POSSIBILE CALCO','tag-yellow')}{tag_select('tag_calco_urna','CALCO PER URNA','tag-yellow')}{tag_select('tag_calco_paw','CALCO POLPASTRELLO','tag-yellow')}{tag_select('tag_possibile_calco_paw','POSSIBILE CALCO POLPASTRELLO','tag-yellow')}{tag_select('tag_calco_nose','CALCO NASO','tag-yellow')}{tag_select('tag_possibile_calco_nose','POSSIBILE CALCO NASO','tag-yellow')}{tag_select('tag_avvisare','AVVISARE','tag-pink')}{tag_select('tag_da_richiamare','DA RICHIAMARE','tag-blue')}</div></section>
+        <section class="section"><h2>Firma proprietario</h2><p class="sub">Facoltativa: puoi farla firmare subito col dito, oppure più tardi dalla pratica salvata. Verrà inserita nel PDF DDT.</p><canvas class="signature-pad" id="ppmSignaturePad"></canvas><input type="hidden" name="signature_data" id="ppmSignatureDataInput" value="{val('signature_data')}"><div class="actions" style="margin-top:12px"><button class="btn ghost" type="button" id="ppmClearSignaturePad">Cancella firma</button></div></section>
         <section class="section"><h2>Documento e accettazione</h2><div class="fields"><div class="field"><label>Numero documento</label><input name="identity_document_number" value="{val('identity_document_number')}"></div><div class="field"><label>Data rilascio</label><input type="date" name="identity_document_date" value="{val('identity_document_date')}"></div><div class="field full"><label>Luogo firma</label><input name="signing_place" value="{val('signing_place') or val('destination_branch')}"></div></div></section>'''
 
     def new_page(self,user,draft=None,error="",error_field=""):
@@ -7091,7 +7135,7 @@ class App(BaseHTTPRequestHandler):
         self.send_html(layout("Nuova pratica",body,user))
 
     def normalized_fields(self,f):
-        keys=["client_id","owner_veterinarian_id","origin_veterinarian_id","operator_name","request_origin","collaborator_name","collaborator_id","destination_branch","owner_first_name","owner_last_name","owner_company","owner_phone","owner_phone_2","owner_phone_note","owner_email","owner_tax_code","owner_vat","owner_sdi","owner_notes","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","origin_first_name","origin_last_name","provenance","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","use_voucher","used_voucher_id","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_possibile_assistita_streaming","tag_saluto","tag_calco","tag_possibile_calco","tag_calco_urna","tag_calco_paw","tag_possibile_calco_paw","tag_calco_nose","tag_possibile_calco_nose","tag_avvisare","tag_da_richiamare","payment_status","payment_method","price_cremation","price_pickup","price_evening","price_urn","send_catalog","catalog_sent","send_estremi","estremi_sent","price_delivery","delivery_at_clinic","delivery_at_home","price_night","price_cast","price_paw_cast","price_nose_cast","price_holiday","price_accessories","deposit","deposit_final","remaining_balance","remaining_final","total_service","total_text","invoice_number","invoice_date","invoice_total","invoice_total_manual","make_invoice","identity_document_number","identity_document_date","signing_place"]
+        keys=["client_id","owner_veterinarian_id","origin_veterinarian_id","operator_name","request_origin","collaborator_name","collaborator_id","destination_branch","owner_first_name","owner_last_name","owner_company","owner_phone","owner_phone_2","owner_phone_note","owner_email","owner_tax_code","owner_vat","owner_sdi","owner_notes","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","origin_first_name","origin_last_name","provenance","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","use_voucher","used_voucher_id","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_possibile_assistita_streaming","tag_saluto","tag_calco","tag_possibile_calco","tag_calco_urna","tag_calco_paw","tag_possibile_calco_paw","tag_calco_nose","tag_possibile_calco_nose","tag_avvisare","tag_da_richiamare","payment_status","payment_method","price_cremation","price_pickup","price_evening","price_urn","send_catalog","catalog_sent","send_estremi","estremi_sent","price_delivery","delivery_at_clinic","delivery_at_home","price_night","price_cast","price_paw_cast","price_nose_cast","price_holiday","price_accessories","deposit","deposit_final","remaining_balance","remaining_final","total_service","total_text","invoice_number","invoice_date","invoice_total","invoice_total_manual","make_invoice","identity_document_number","identity_document_date","signing_place","signature_data"]
         data = {k:f.get(k,"").strip() for k in keys}
         data["pickup_time"] = f.get("pickup_time","").strip()
         data["urn_id"] = f.get("urn_id","").strip() or None
@@ -8685,9 +8729,11 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             field_labels={"animal_name":"Nome animale","owner_first_name":"Nome proprietario","owner_last_name":"Cognome proprietario","owner_phone":"Telefono proprietario","owner_phone_2":"Secondo telefono","service_type":"Tipo cremazione","destination_branch":"Sede","notes":"Note","send_catalog":"Inviare catalogo","catalog_sent":"Catalogo inviato","send_estremi":"Inviare estremi","use_voucher":"Usa buono","payment_method":"Metodo di pagamento","invoice_number":"Numero fattura","invoice_date":"Data fattura","invoice_total":"Totale fattura","make_invoice":"Fare fattura",**MONEY_FIELDS}
             changes=[]
             for key,new_value in d.items():
+                if key=="signature_data":continue  # logged separately below: never dump the base64 blob into practice_history
                 old_value=str(previous[key] or "") if key in previous.keys() else ""
                 if compact_text(old_value)!=compact_text(new_value):
                     changes.append((field_labels.get(key,key.replace("_"," ").title()),old_value,new_value))
+            signature_changed=(previous["signature_data"] or "")!=(d.get("signature_data") or "")
             requested_status=form.get("status",previous["status"])
             if requested_status not in STATES or (requested_status=="Smaltito" and d.get("service_type")!="Cremazione collettiva"): requested_status=previous["status"]
             if requested_status!=previous["status"]:
@@ -8718,7 +8764,12 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             self.apply_used_voucher(c,pid,d,user["id"])
             for label,old_value,new_value in changes:
                 c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,f"Modifica {label}",old_value,new_value,user["id"],stamp))
-            if not changes:
+            if signature_changed:
+                c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"Firma proprietario","Firma salvata" if d.get("signature_data") else "Firma rimossa",user["id"],stamp))
+                p_for_ddt=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+                if p_for_ddt["ddt_pdf"]:
+                    generate_ddt(p_for_ddt, ASSETS / "DCS_NUOVO.pdf", DDT_DIR / p_for_ddt["ddt_pdf"])
+            if not changes and not signature_changed:
                 c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"Dati verificati","Nessuna variazione ai dati",user["id"],stamp))
             emit_notification(c,"practice_updated","✏️ Pratica modificata",f'{previous["practice_number"]} · {d.get("animal_name") or "Animale non indicato"}',pid,user["id"],db_path=DB_PATH)
             if previous["status"]!=requested_status:

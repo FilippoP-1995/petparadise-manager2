@@ -4081,6 +4081,154 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('<option value="" selected>SELEZIONA</option>', form_html)
         self.assertNotIn('<option selected>Da decidere</option>', form_html)
 
+    def test_signature_section_sits_right_before_documento_e_accettazione(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        form_html = app.App._fields_html(self.handler, None, admin)
+        self.assertIn('<h2>Firma proprietario</h2>', form_html)
+        self.assertIn('id="ppmSignaturePad"', form_html)
+        self.assertIn('id="ppmSignatureDataInput"', form_html)
+        self.assertIn('id="ppmClearSignaturePad"', form_html)
+        # not required to save: no `required` attribute anywhere near it.
+        signature_pos = form_html.index('<h2>Firma proprietario</h2>')
+        acceptance_pos = form_html.index('<h2>Documento e accettazione</h2>')
+        self.assertLess(signature_pos, acceptance_pos)
+        between = form_html[signature_pos:acceptance_pos]
+        self.assertNotIn('required', between)
+
+    def test_signature_pad_js_preserves_existing_signature_unless_touched(self):
+        js = app.APP_JS
+        self.assertIn("function setupSignaturePad(){", js)
+        self.assertIn("if(touched) dataInput.value = hasContent ? canvas.toDataURL('image/png') : '';", js)
+        self.assertIn("setupSignaturePad();", js)
+
+    def test_create_practice_stores_signature_data(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        signature = "data:image/png;base64,aGVsbG8="
+        self.handler.form = lambda: {
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
+            "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI",
+            "owner_zip": "57100", "signature_data": signature,
+        }
+        redirects = []; self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.create_practice(admin)
+        pid = int(redirects[-1].split("/pratiche/")[1])
+        with app.db() as conn:
+            stored = conn.execute("SELECT signature_data FROM practices WHERE id=?", (pid,)).fetchone()
+        self.assertEqual(stored["signature_data"], signature)
+
+    def test_create_practice_without_signature_is_not_blocked(self):
+        # Facoltativa: creating (and saving) a practice must work exactly
+        # the same with no signature at all.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.form = lambda: {
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
+            "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI",
+            "owner_zip": "57100",
+        }
+        redirects = []; self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.create_practice(admin)
+        self.assertTrue(redirects and "/pratiche/" in redirects[-1])
+        pid = int(redirects[-1].split("/pratiche/")[1])
+        with app.db() as conn:
+            stored = conn.execute("SELECT signature_data FROM practices WHERE id=?", (pid,)).fetchone()
+        self.assertEqual(stored["signature_data"], "")
+
+    def test_edit_submit_updates_signature_and_logs_a_clean_history_entry(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   owner_first_name,owner_last_name,owner_phone,owner_tax_code,owner_street,owner_city,owner_province,owner_zip,
+                   service_type,payment_status,total_service,signature_data)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-SIGN-EDIT", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Anna", "Neri",
+                 "3331112222", "NRIANN80A01H501U", "Via Test", "Livorno", "LI", "57100", "Da decidere",
+                 "Da saldare", "250", ""),
+            ).lastrowid
+        signature = "data:image/png;base64,aGVsbG8="
+        self.handler.form = lambda: {
+            "operator_name": "FILIPPO", "service_type": "Da decidere", "request_origin": "Privato",
+            "owner_first_name": "Anna", "owner_last_name": "Neri", "owner_phone": "3331112222",
+            "owner_tax_code": "NRIANN80A01H501U", "owner_street": "Via Test", "owner_city": "Livorno",
+            "owner_province": "LI", "owner_zip": "57100", "signature_data": signature,
+        }
+        self.handler.redirect = lambda url: None
+        self.handler.edit_submit(admin, pid)
+        with app.db() as conn:
+            stored = conn.execute("SELECT signature_data FROM practices WHERE id=?", (pid,)).fetchone()
+            history = conn.execute(
+                "SELECT event_type,new_value FROM practice_history WHERE practice_id=? ORDER BY id DESC LIMIT 1", (pid,)
+            ).fetchone()
+        self.assertEqual(stored["signature_data"], signature)
+        # the huge base64 blob must never be dumped into practice_history —
+        # only this clean, human-readable marker.
+        self.assertEqual((history["event_type"], history["new_value"]), ("Firma proprietario", "Firma salvata"))
+
+    def test_edit_submit_unchanged_signature_does_not_log_anything(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            signature = "data:image/png;base64,aGVsbG8="
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   owner_first_name,owner_last_name,owner_phone,owner_tax_code,owner_street,owner_city,owner_province,owner_zip,
+                   service_type,payment_status,total_service,signature_data)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-SIGN-NOCHANGE", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Anna", "Neri",
+                 "3331112222", "NRIANN80A01H501U", "Via Test", "Livorno", "LI", "57100", "Da decidere",
+                 "Da saldare", "250", signature),
+            ).lastrowid
+        self.handler.form = lambda: {
+            "operator_name": "FILIPPO", "service_type": "Da decidere", "request_origin": "Privato",
+            "owner_first_name": "Anna", "owner_last_name": "Neri", "owner_phone": "3331112222",
+            "owner_tax_code": "NRIANN80A01H501U", "owner_street": "Via Test", "owner_city": "Livorno",
+            "owner_province": "LI", "owner_zip": "57100", "signature_data": signature,
+        }
+        self.handler.redirect = lambda url: None
+        self.handler.edit_submit(admin, pid)
+        with app.db() as conn:
+            # Only asserting the signature-specific side effect stays quiet;
+            # other fields (e.g. invoice_total auto-filling from the now
+            # server-recomputed total_service) are free to log their own
+            # "Modifica ..." entries — unrelated to what this test covers.
+            signature_entries = conn.execute(
+                "SELECT COUNT(*) n FROM practice_history WHERE practice_id=? AND event_type='Firma proprietario'", (pid,)
+            ).fetchone()["n"]
+            stored = conn.execute("SELECT signature_data FROM practices WHERE id=?", (pid,)).fetchone()
+        self.assertEqual(signature_entries, 0)
+        self.assertEqual(stored["signature_data"], signature)
+
+    def test_edit_submit_regenerates_the_finalized_ddt_when_signature_changes(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   owner_first_name,owner_last_name,owner_phone,owner_tax_code,owner_street,owner_city,owner_province,owner_zip,
+                   service_type,payment_status,total_service,signature_data,ddt_number,ddt_date,ddt_pdf)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-SIGN-DDT", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Anna", "Neri",
+                 "3331112222", "NRIANN80A01H501U", "Via Test", "Livorno", "LI", "57100", "Da decidere",
+                 "Da saldare", "250", "", 1, "2026-07-01", "DDT-000001-CR-SIGN-DDT.pdf"),
+            ).lastrowid
+        signature = "data:image/png;base64,aGVsbG8="
+        self.handler.form = lambda: {
+            "operator_name": "FILIPPO", "service_type": "Da decidere", "request_origin": "Privato",
+            "owner_first_name": "Anna", "owner_last_name": "Neri", "owner_phone": "3331112222",
+            "owner_tax_code": "NRIANN80A01H501U", "owner_street": "Via Test", "owner_city": "Livorno",
+            "owner_province": "LI", "owner_zip": "57100", "signature_data": signature,
+        }
+        self.handler.redirect = lambda url: None
+        with patch("app.generate_ddt") as mocked:
+            self.handler.edit_submit(admin, pid)
+        self.assertEqual(mocked.call_count, 1)
+        called_practice, template_path, output_path = mocked.call_args[0]
+        self.assertEqual(called_practice["practice_number"], "CR-SIGN-DDT")
+        self.assertEqual(output_path.name, "DDT-000001-CR-SIGN-DDT.pdf")
+
         rendered = []
         self.handler.send_html = lambda content, *a: rendered.append(content)
         self.handler.form = lambda: {

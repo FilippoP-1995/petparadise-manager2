@@ -199,15 +199,41 @@ def _draw_total_w_label(c):
     c.restoreState()
 
 
-def _draw_signature(c, page):
+def _signature_reader(page):
     data = _get(page, "signature_data")
     if not data.startswith("data:image/png;base64,"):
-        return
+        return None
     try:
         raw = base64.b64decode(data.split(",", 1)[1])
-        c.drawImage(ImageReader(BytesIO(raw)), 88, 42, width=190, height=58, mask="auto", preserveAspectRatio=True)
+        return ImageReader(BytesIO(raw))
     except Exception:
+        return None
+
+
+def _draw_signature_page1(c, page, y_offset):
+    reader = _signature_reader(page)
+    if reader is None:
         return
+    # Calibrated against the real coordinates of "Firma dello speditore o del
+    # responsabile dell'impianto di origine" in assets/DCS_LIVORNO.pdf /
+    # DCS_EMPOLI.pdf (measured with pdfplumber, then verified by rendering a
+    # test signature and visually checking it sits on the printed line
+    # without touching the label above it). Empoli's page 1 is laid out 12pt
+    # lower than Livorno's (see y_offset in _overlay_page_1 below), and this
+    # signature line moves by the same amount.
+    c.drawImage(reader, 66, 188 + y_offset, width=204, height=19, mask="auto", preserveAspectRatio=True)
+
+
+def _draw_signature(c, page):
+    reader = _signature_reader(page)
+    if reader is None:
+        return
+    # Calibrated against the real coordinates of "Firma per accettazione" in
+    # assets/DCS_LIVORNO.pdf page 2 (measured with pdfplumber, then verified
+    # by rendering a test signature and visually checking it sits on the
+    # printed line without touching the label above it — the previous
+    # 88,42,190,58 box was tall enough to overlap the label text).
+    c.drawImage(reader, 75, 36, width=165, height=32, mask="auto", preserveAspectRatio=True)
 
 
 def _urn_display(value):
@@ -246,6 +272,7 @@ def _overlay_page_1(page, width, height):
         "microchip": _get(page, "microchip", "/"),
     }
     _draw_fields(c, fields, values)
+    _draw_signature_page1(c, page, y_offset)
 
     if _get(page, "transporter_mode", "IDEM SPED") == "DATI PET PARADISE":
         _draw_centered(c, {"cx": 420, "y": 620 + y_offset, "w": 170, "size": 8.8}, COMPANY["name"])
