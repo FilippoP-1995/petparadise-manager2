@@ -902,18 +902,25 @@ def restore_movement_deletion(
                     "INSERT INTO movement_invoice_links(invoice_id,payment_movement_id) VALUES(?,?)",
                     (existing_invoice_id, new_pm_id),
                 )
-        practice_before = snapshot.get("practice_before")
-        if practice_before and row["practice_id"]:
+    # practice_before applies to both deletion kinds: the payment_movement
+    # case snapshots it from delete_practice_payment_movement, and the
+    # legacy_void case (a practice old enough to predate payment_movements
+    # entirely) snapshots it from delete_legacy_practice_column_movement —
+    # only the latter's snapshot carries deposit_paid_at/paid_at, so restore
+    # only the columns actually present instead of assuming a fixed set.
+    practice_before = snapshot.get("practice_before")
+    if practice_before and row["practice_id"]:
+        restorable_columns = (
+            "payment_status", "deposit", "deposit_final", "deposit_paid_at",
+            "remaining_balance", "remaining_final", "paid_at",
+        )
+        columns = [key for key in restorable_columns if key in practice_before]
+        if columns:
+            assignments = ",".join(f"{key}=?" for key in columns)
             connection.execute(
-                """UPDATE practices SET payment_status=?,deposit=?,remaining_balance=?,
-                   deposit_final=?,remaining_final=?,updated_at=? WHERE id=?""",
-                (
-                    practice_before.get("payment_status"), practice_before.get("deposit"),
-                    practice_before.get("remaining_balance"), practice_before.get("deposit_final"),
-                    practice_before.get("remaining_final"),
-                    datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                    row["practice_id"],
-                ),
+                f"UPDATE practices SET {assignments},updated_at=? WHERE id=?",
+                [practice_before[key] for key in columns]
+                + [datetime.now(timezone.utc).isoformat(timespec="seconds"), row["practice_id"]],
             )
     connection.execute(
         "UPDATE balance_movement_deletions SET restored_at=?,restored_by=? WHERE id=?",
@@ -1636,6 +1643,31 @@ def get_outstanding_balances(
             )"""
         )
         arguments.extend((pattern,)*7)
+    # A technical Storno (a correction/reversal/manual-void/legacy-void row)
+    # must never contribute to "amount received" here, for the same reason
+    # get_movements' ledger_visibility hides it from the movements list: it
+    # exists purely to cancel out an earlier entry, not to represent a real
+    # receipt. Left unfiltered, a lone reversal with no replacement (removing
+    # an acconto/saldo via the Pagamento popover's "Rimuovi" button, or
+    # deleting a legacy Bilanci row) sums to a *negative* received amount,
+    # which then makes total_due-received_to *larger* than the true total —
+    # the double-negative silently inflates "Da riscuotere" instead of
+    # correctly showing the payment as no longer received. Excluding a
+    # Storno row (and, symmetrically, whatever it corrected/replaced) from
+    # the join collapses a corrected pair to its net effect, exactly like
+    # get_movements does for the movements list itself.
+    technical_sources=",".join(f"'{source}'" for source in TECHNICAL_REVERSAL_SOURCES)
+    movement_visibility=(
+        f"""
+        NOT (m.movement_type='Storno' AND m.source IN ({technical_sources}))
+        AND NOT EXISTS(
+          SELECT 1 FROM balance_movements technical
+          WHERE technical.related_movement_id=m.id
+            AND technical.movement_type='Storno'
+            AND technical.source IN ({technical_sources})
+        )
+        """
+    )
     rows=connection.execute(
         f"""
         SELECT
@@ -1652,7 +1684,7 @@ def get_outstanding_balances(
             WHEN m.ledger_section='Entrata'
             THEN m.amount_cents ELSE 0 END),0) AS received_all_cents
         FROM practices p
-        LEFT JOIN balance_movements m ON m.practice_id=p.id
+        LEFT JOIN balance_movements m ON m.practice_id=p.id AND {movement_visibility}
         WHERE {" AND ".join(clauses)}
         GROUP BY p.id
         ORDER BY p.practice_number,p.id

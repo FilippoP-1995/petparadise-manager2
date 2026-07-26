@@ -1,16 +1,23 @@
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import app
 from balance_service import (
+    InvalidMovementError,
+    MovementNotFoundError,
+    create_legacy_reversal,
     create_manual_expense,
     create_movement,
     get_balance_snapshot,
     get_movements,
+    get_outstanding_balances,
     get_recent_movement_deletions,
     normalize_filters,
     practice_id_for_legacy_key,
+    restore_movement_deletion,
 )
 
 
@@ -412,6 +419,489 @@ class ProductionBalanceModuleTests(unittest.TestCase):
             self.assertIsNone(practice_id_for_legacy_key(connection,"historical-practice:abc:deposit"))
             self.assertIsNone(practice_id_for_legacy_key(connection,"historical-practice:1:qualcosa"))
             self.assertIsNone(practice_id_for_legacy_key(connection,"qualcosa-di-diverso:1"))
+
+
+class LegacyMovementDeletionTests(unittest.TestCase):
+    """Covers the full click-to-query flow for deleting a Bilanci row that
+    predates the balance_movements ledger entirely (the 'historical-practice'
+    family, synthesized straight from practices columns with no
+    payment_movements row at all) — the specific gap left by earlier fixes
+    (6d57e23, 9626f26, 8a71a6f): those made the row disappear from the
+    ledger view, but never reset the practices columns it came from, so
+    get_outstanding_balances (which reads those columns directly whenever a
+    practice has zero counted balance_movements rows) kept computing the
+    'deleted' amount as still received — and, because it summed a lone
+    technical Storno with no replacement into a negative 'received' figure,
+    actually inflated the outstanding total instead of correcting it.
+    """
+
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.old=(app.DATA,app.DB_PATH,app.DDT_DIR)
+        app.DATA=Path(self.temp.name)
+        app.DB_PATH=app.DATA/"test.db"
+        app.DDT_DIR=app.DATA/"ddt"
+        app.init_db()
+        self.handler=object.__new__(app.App)
+        self.handler.headers={}
+        self.redirects=[]
+        self.handler.redirect=lambda url:self.redirects.append(url)
+        with app.db() as connection:
+            self.admin=connection.execute(
+                "SELECT * FROM users WHERE username='admin'"
+            ).fetchone()
+
+    def tearDown(self):
+        app.DATA,app.DB_PATH,app.DDT_DIR=self.old
+        self.temp.cleanup()
+
+    def deposit_practice(
+        self,number,*,circuit="W",amount="100.00",total=300,
+        deposit_paid_at="2026-07-10",status="Acconto",
+    ):
+        stamp=app.now()
+        with app.db() as connection:
+            if circuit=="W":
+                fields=("price_cremation","total_service","deposit","deposit_paid_at")
+                values=(str(total),str(total),amount,deposit_paid_at)
+            else:
+                fields=("total_text","deposit_final","deposit_paid_at")
+                values=(str(total),amount,deposit_paid_at)
+            columns=(
+                "practice_number,request_origin,destination_branch,status,created_at,"
+                "updated_at,created_by,owner_first_name,service_type,payment_status,"
+                +",".join(fields)
+            )
+            placeholders=",".join("?" for _ in range(10+len(fields)))
+            pid=connection.execute(
+                f"INSERT INTO practices({columns}) VALUES({placeholders})",
+                (
+                    number,"Privato","Livorno","Ritirato",stamp,stamp,self.admin["id"],
+                    "Bilbo","Cremazione singola",status,*values,
+                ),
+            ).lastrowid
+        return pid
+
+    def paid_practice(self,number,*,circuit="W",total=300,paid_at="2026-07-15"):
+        stamp=app.now()
+        with app.db() as connection:
+            if circuit=="W":
+                fields=("price_cremation","total_service","paid_at")
+                values=(str(total),str(total),paid_at)
+            else:
+                fields=("total_text","paid_at")
+                values=(str(total),paid_at)
+            columns=(
+                "practice_number,request_origin,destination_branch,status,created_at,"
+                "updated_at,created_by,owner_first_name,service_type,payment_status,"
+                +",".join(fields)
+            )
+            placeholders=",".join("?" for _ in range(10+len(fields)))
+            pid=connection.execute(
+                f"INSERT INTO practices({columns}) VALUES({placeholders})",
+                (
+                    number,"Privato","Livorno","Ritirato",stamp,stamp,self.admin["id"],
+                    "Bilbo","Cremazione singola","Pagato",*values,
+                ),
+            ).lastrowid
+        return pid
+
+    def legacy_key_for(self,pid,kind):
+        with app.db() as connection:
+            movements=get_movements(
+                connection,filters=normalize_filters(include_technical=True),
+                restrict_practice_id=pid,
+            )
+        matches=[m for m in movements if m.practice_id==pid and m.idempotency_key.endswith(f":{kind}")]
+        self.assertEqual(len(matches),1,f"expected exactly one :{kind} row for practice {pid}")
+        return matches[0]
+
+    def delete(self,legacy_key):
+        self.handler.form=lambda:{"return_to":"/bilanci","legacy_key":legacy_key}
+        self.handler.balance_legacy_movement_delete(self.admin)
+
+    def outstanding_for(self,pid,date_to="2026-12-31"):
+        with app.db() as connection:
+            rows=get_outstanding_balances(
+                connection,filters=normalize_filters(date_to=date_to)
+            )
+        return next((row for row in rows if row.practice_id==pid),None)
+
+    # 1. modern movement, delete via id -----------------------------------
+    def test_modern_movement_deletes_by_id_and_updates_totals(self):
+        with app.db() as connection:
+            movement=create_movement(
+                connection,amount_cents=15000,movement_date="2026-07-10",
+                category="W",ledger_section="Entrata",movement_type="Entrata manuale",
+                idempotency_key="modern-1",description="Entrata di prova",
+                source="manual_income",created_by=self.admin["id"],
+            )
+        self.handler.form=lambda:{"return_to":"/bilanci"}
+        self.handler.balance_movement_delete(self.admin,movement.id)
+        self.assertTrue(self.redirects and "movimento_stornato=1" in self.redirects[-1])
+        with app.db() as connection:
+            self.assertIsNone(
+                connection.execute(
+                    "SELECT 1 FROM balance_movements WHERE id=?",(movement.id,)
+                ).fetchone()
+            )
+
+    # 2/3/4/5. every legacy column family, both circuits -------------------
+    def test_legacy_deposit_w_circuit_clears_columns_and_fixes_outstanding(self):
+        pid=self.deposit_practice("CR-DEP-W",circuit="W",amount="100.00",total=300)
+        legacy=self.legacy_key_for(pid,"deposit")
+        self.delete(legacy.idempotency_key)
+        with app.db() as connection:
+            practice=connection.execute(
+                "SELECT payment_status,deposit,deposit_paid_at FROM practices WHERE id=?",(pid,)
+            ).fetchone()
+        self.assertEqual(practice["payment_status"],"Da saldare")
+        self.assertEqual(practice["deposit"],"")
+        self.assertEqual(practice["deposit_paid_at"],"")
+        outstanding=self.outstanding_for(pid)
+        self.assertIsNotNone(outstanding)
+        self.assertEqual(outstanding.remaining_cents,30000)
+
+    def test_legacy_deposit_d_circuit_clears_deposit_final_and_fixes_outstanding(self):
+        pid=self.deposit_practice("CR-DEP-D",circuit="D",amount="100.00",total=300)
+        legacy=self.legacy_key_for(pid,"deposit")
+        self.delete(legacy.idempotency_key)
+        with app.db() as connection:
+            practice=connection.execute(
+                "SELECT payment_status,deposit_final,deposit_paid_at FROM practices WHERE id=?",(pid,)
+            ).fetchone()
+        self.assertEqual(practice["payment_status"],"Da saldare")
+        self.assertEqual(practice["deposit_final"],"")
+        self.assertEqual(practice["deposit_paid_at"],"")
+        outstanding=self.outstanding_for(pid)
+        self.assertIsNotNone(outstanding)
+        self.assertEqual(outstanding.remaining_cents,30000)
+
+    def test_legacy_balance_w_circuit_reverts_to_da_saldare_and_fixes_outstanding(self):
+        pid=self.paid_practice("CR-BAL-W",circuit="W",total=300)
+        legacy=self.legacy_key_for(pid,"balance")
+        self.delete(legacy.idempotency_key)
+        with app.db() as connection:
+            practice=connection.execute(
+                "SELECT payment_status,paid_at,remaining_balance FROM practices WHERE id=?",(pid,)
+            ).fetchone()
+        self.assertEqual(practice["payment_status"],"Da saldare")
+        self.assertEqual(practice["paid_at"],"")
+        self.assertEqual(practice["remaining_balance"],"300.00")
+        outstanding=self.outstanding_for(pid)
+        self.assertIsNotNone(outstanding)
+        self.assertEqual(outstanding.remaining_cents,30000)
+
+    def test_legacy_balance_d_circuit_reverts_to_da_saldare_and_fixes_outstanding(self):
+        pid=self.paid_practice("CR-BAL-D",circuit="D",total=300)
+        legacy=self.legacy_key_for(pid,"balance")
+        self.delete(legacy.idempotency_key)
+        with app.db() as connection:
+            practice=connection.execute(
+                "SELECT payment_status,paid_at,remaining_final FROM practices WHERE id=?",(pid,)
+            ).fetchone()
+        self.assertEqual(practice["payment_status"],"Da saldare")
+        self.assertEqual(practice["paid_at"],"")
+        self.assertEqual(practice["remaining_final"],"300.00")
+        outstanding=self.outstanding_for(pid)
+        self.assertIsNotNone(outstanding)
+        self.assertEqual(outstanding.remaining_cents,30000)
+
+    def test_legacy_balance_survives_deleting_only_the_deposit_leg(self):
+        # A practice old enough to show BOTH a :deposit and a :balance row
+        # (paid via an historical deposit then a separate final settlement,
+        # no payment_movements row for either): deleting only the deposit
+        # must not touch the still-standing balance leg's own identity, and
+        # the practice must stay internally consistent (Pagato, remaining 0)
+        # since the balance leg alone is still recorded as received.
+        pid=self.deposit_practice("CR-BOTH",circuit="W",amount="100.00",total=300,status="Pagato")
+        with app.db() as connection:
+            connection.execute("UPDATE practices SET paid_at=? WHERE id=?",("2026-07-15",pid))
+        deposit_key=self.legacy_key_for(pid,"deposit").idempotency_key
+        self.legacy_key_for(pid,"balance")  # sanity: both rows exist before deleting either
+        self.delete(deposit_key)
+        with app.db() as connection:
+            practice=connection.execute(
+                "SELECT payment_status,deposit,remaining_balance FROM practices WHERE id=?",(pid,)
+            ).fetchone()
+            movements=get_movements(connection,filters=normalize_filters())
+        self.assertEqual(practice["payment_status"],"Pagato")
+        self.assertEqual(practice["deposit"],"")
+        self.assertEqual(practice["remaining_balance"],"0.00")
+        remaining_rows=[m for m in movements if m.practice_id==pid]
+        self.assertEqual(len(remaining_rows),1)
+        self.assertTrue(remaining_rows[0].idempotency_key.endswith(":balance"))
+        outstanding=self.outstanding_for(pid)
+        self.assertIsNone(outstanding,"a Pagato practice with remaining=0 must not show as outstanding")
+
+    # 6. two legacy rows on the same practice, same amount ------------------
+    def test_two_legacy_rows_same_practice_same_amount_are_never_confused(self):
+        pid=self.deposit_practice("CR-SAMEAMT",circuit="W",amount="150.00",total=300,status="Pagato")
+        with app.db() as connection:
+            connection.execute("UPDATE practices SET paid_at=? WHERE id=?",("2026-07-15",pid))
+        deposit=self.legacy_key_for(pid,"deposit")
+        balance=self.legacy_key_for(pid,"balance")
+        # total(300)-deposit(150)=150: both legs really do carry the same amount.
+        self.assertEqual(deposit.amount_cents,balance.amount_cents)
+        self.assertNotEqual(deposit.idempotency_key,balance.idempotency_key)
+        self.delete(deposit.idempotency_key)
+        with app.db() as connection:
+            movements=get_movements(connection,filters=normalize_filters(),restrict_practice_id=pid)
+        remaining=[m for m in movements if m.practice_id==pid]
+        self.assertEqual(len(remaining),1)
+        self.assertTrue(remaining[0].idempotency_key.endswith(":balance"))
+
+    # 7. two different practices, same amount and date ----------------------
+    def test_two_different_practices_same_amount_and_date_are_never_confused(self):
+        first=self.deposit_practice("CR-TWIN-1",amount="100.00",total=300,deposit_paid_at="2026-07-10")
+        second=self.deposit_practice("CR-TWIN-2",amount="100.00",total=300,deposit_paid_at="2026-07-10")
+        first_key=self.legacy_key_for(first,"deposit")
+        second_key=self.legacy_key_for(second,"deposit")
+        self.assertEqual(first_key.amount_cents,second_key.amount_cents)
+        self.assertEqual(first_key.movement_date,second_key.movement_date)
+        self.assertNotEqual(first_key.idempotency_key,second_key.idempotency_key)
+        self.delete(first_key.idempotency_key)
+        with app.db() as connection:
+            first_practice=connection.execute("SELECT deposit FROM practices WHERE id=?",(first,)).fetchone()
+            second_practice=connection.execute("SELECT deposit FROM practices WHERE id=?",(second,)).fetchone()
+        self.assertEqual(first_practice["deposit"],"")
+        self.assertEqual(second_practice["deposit"],"100.00")
+
+    # 8. second delete attempt on the same row -------------------------------
+    def test_second_delete_attempt_is_reported_not_found_and_changes_nothing_further(self):
+        pid=self.deposit_practice("CR-TWICE",amount="100.00",total=300)
+        legacy_key=self.legacy_key_for(pid,"deposit").idempotency_key
+        self.delete(legacy_key)
+        with app.db() as connection:
+            practice_once=dict(connection.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone())
+        pages=[]
+        self.handler.balances_page=lambda user,error="",expense_draft=None:pages.append(error)
+        self.delete(legacy_key)
+        self.assertTrue(pages and "non trovato" in pages[-1].lower())
+        with app.db() as connection:
+            practice_twice=dict(connection.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone())
+        self.assertEqual(practice_once,practice_twice)
+
+    # 9. pre-existing manual_delete storno is still recognized --------------
+    def test_pre_existing_manual_delete_storno_still_hides_the_row(self):
+        pid=self.deposit_practice("CR-OLDDEL",amount="100.00",total=300)
+        legacy_key=f"historical-practice:{pid}:deposit"
+        with app.db() as connection:
+            create_legacy_reversal(
+                connection,legacy_key=legacy_key,amount_cents=10000,category="W",
+                ledger_section="Entrata",movement_date="2026-07-10",practice_id=pid,
+                practice_number_snapshot="CR-OLDDEL",source="manual_delete",
+                created_by=self.admin["id"],
+            )
+            movements=get_movements(connection,filters=normalize_filters())
+        self.assertFalse(any(m.practice_id==pid for m in movements))
+
+    # 10. pre-existing manual_void storno is still recognized ---------------
+    def test_pre_existing_manual_void_storno_still_hides_the_row(self):
+        pid=self.deposit_practice("CR-OLDVOID",amount="100.00",total=300)
+        legacy_key=f"historical-practice:{pid}:deposit"
+        with app.db() as connection:
+            create_legacy_reversal(
+                connection,legacy_key=legacy_key,amount_cents=10000,category="W",
+                ledger_section="Entrata",movement_date="2026-07-10",practice_id=pid,
+                practice_number_snapshot="CR-OLDVOID",source="manual_void",
+                created_by=self.admin["id"],
+            )
+            movements=get_movements(connection,filters=normalize_filters())
+        self.assertFalse(any(m.practice_id==pid for m in movements))
+
+    # 11. a duplicate storno cannot be created -------------------------------
+    def test_a_duplicate_legacy_reversal_cannot_be_created_twice(self):
+        pid=self.deposit_practice("CR-DUPVOID",amount="100.00",total=300)
+        legacy_key=f"historical-practice:{pid}:deposit"
+        with app.db() as connection:
+            first=create_legacy_reversal(
+                connection,legacy_key=legacy_key,amount_cents=10000,category="W",
+                ledger_section="Entrata",movement_date="2026-07-10",practice_id=pid,
+                practice_number_snapshot="CR-DUPVOID",source="manual_void",
+                created_by=self.admin["id"],
+            )
+            second=create_legacy_reversal(
+                connection,legacy_key=legacy_key,amount_cents=10000,category="W",
+                ledger_section="Entrata",movement_date="2026-07-10",practice_id=pid,
+                practice_number_snapshot="CR-DUPVOID",source="manual_void",
+                created_by=self.admin["id"],
+            )
+            self.assertEqual(first.id,second.id)
+            count=connection.execute(
+                "SELECT COUNT(*) n FROM balance_movements WHERE idempotency_key=?",
+                (f"legacy-void:v1:{legacy_key}",),
+            ).fetchone()["n"]
+        self.assertEqual(count,1)
+
+    # 12. the storno must not appear in the Bilanci list ---------------------
+    def test_deleted_legacy_row_never_appears_in_the_default_movements_list(self):
+        pid=self.deposit_practice("CR-HIDDEN",amount="100.00",total=300)
+        legacy_key=self.legacy_key_for(pid,"deposit").idempotency_key
+        self.delete(legacy_key)
+        with app.db() as connection:
+            default_view=get_movements(connection,filters=normalize_filters())
+            audit_view=get_movements(connection,filters=normalize_filters(include_technical=True))
+        self.assertFalse(any(m.practice_id==pid for m in default_view))
+        # even the audit view (which shows technical rows) must not show the
+        # deleted row as a positive receipt still counted anywhere.
+        self.assertFalse(any(
+            m.practice_id==pid and m.idempotency_key==legacy_key for m in audit_view
+        ))
+
+    # 13. totals must not be corrupted by the deletion -----------------------
+    def test_deleting_a_legacy_row_does_not_corrupt_the_balance_snapshot_totals(self):
+        pid=self.deposit_practice("CR-TOTALS",amount="100.00",total=300)
+        with app.db() as connection:
+            before=get_balance_snapshot(connection,filters=normalize_filters(date_to="2026-12-31"))
+        self.assertEqual(before.sections["entrate-w"].total_cents,10000)
+        self.assertEqual(before.sections["da-riscuotere-w"].total_cents,20000)
+        legacy_key=self.legacy_key_for(pid,"deposit").idempotency_key
+        self.delete(legacy_key)
+        with app.db() as connection:
+            after=get_balance_snapshot(connection,filters=normalize_filters(date_to="2026-12-31"))
+        self.assertEqual(after.sections["entrate-w"].total_cents,0)
+        self.assertEqual(after.sections["da-riscuotere-w"].total_cents,30000)
+        for section in after.sections.values():
+            self.assertEqual(section.total_cents,sum(section.row_amounts_cents))
+
+    # 14. refresh: querying again must show the same (deleted) state --------
+    def test_refresh_after_delete_shows_the_same_deleted_state(self):
+        pid=self.deposit_practice("CR-REFRESH",amount="100.00",total=300)
+        legacy_key=self.legacy_key_for(pid,"deposit").idempotency_key
+        self.delete(legacy_key)
+        with app.db() as connection:
+            first_load=get_movements(connection,filters=normalize_filters())
+            second_load=get_movements(connection,filters=normalize_filters())
+        self.assertFalse(any(m.practice_id==pid for m in first_load))
+        self.assertFalse(any(m.practice_id==pid for m in second_load))
+
+    # 15. filters keep working after the deletion ----------------------------
+    def test_filters_apply_correctly_after_a_legacy_deletion(self):
+        pid=self.deposit_practice("CR-FILTERED",amount="100.00",total=300,deposit_paid_at="2026-07-10")
+        legacy_key=self.legacy_key_for(pid,"deposit").idempotency_key
+        self.delete(legacy_key)
+        with app.db() as connection:
+            by_category=get_movements(connection,filters=normalize_filters(category="W"))
+            by_date=get_movements(
+                connection,
+                filters=normalize_filters(date_from="2026-07-01",date_to="2026-07-31"),
+            )
+        self.assertFalse(any(m.practice_id==pid for m in by_category))
+        self.assertFalse(any(m.practice_id==pid for m in by_date))
+
+    # 16. performance on a large database ------------------------------------
+    def test_deleting_a_legacy_row_stays_fast_with_thousands_of_practices(self):
+        stamp=app.now()
+        with app.db() as connection:
+            rows=[
+                (
+                    f"CR-BULK-{i}","Privato","Livorno","Ritirato",stamp,stamp,
+                    self.admin["id"],"Fido","Cremazione singola","Acconto",
+                    "300","300","100.00","2026-07-01",
+                )
+                for i in range(4000)
+            ]
+            connection.executemany(
+                """INSERT INTO practices(
+                     practice_number,request_origin,destination_branch,status,
+                     created_at,updated_at,created_by,animal_name,service_type,
+                     payment_status,price_cremation,total_service,deposit,deposit_paid_at
+                   ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                rows,
+            )
+        target=self.deposit_practice("CR-BULK-TARGET",amount="150.00",total=300,deposit_paid_at="2026-07-20")
+        legacy_key=self.legacy_key_for(target,"deposit").idempotency_key
+        started=time.perf_counter()
+        self.delete(legacy_key)
+        elapsed=time.perf_counter()-started
+        self.assertTrue(self.redirects and "movimento_stornato=1" in self.redirects[-1])
+        # generous ceiling: this used to scan/resynthesize every practice and
+        # payment_movements row in the database on every single delete
+        # confirmation; restrict_practice_id turns it into an indexed lookup
+        # against one practice, so even a few thousand rows must stay well
+        # under a second, not scale with the database's total size.
+        self.assertLess(elapsed,2.0,f"legacy delete took {elapsed:.3f}s with 4000 practices in the db")
+
+    # 17. movement not found reports a clear, specific error ----------------
+    def test_movement_not_found_reports_a_clear_error_not_a_generic_success(self):
+        pages=[]
+        self.handler.balances_page=lambda user,error="",expense_draft=None:pages.append(error)
+        self.handler.form=lambda:{"return_to":"/bilanci","legacy_key":"historical-practice:999999:deposit"}
+        self.handler.balance_legacy_movement_delete(self.admin)
+        self.assertFalse(self.redirects)
+        self.assertTrue(pages and "non trovato" in pages[-1].lower())
+
+    def test_garbage_legacy_key_reports_a_clear_error_not_a_crash(self):
+        pages=[]
+        self.handler.balances_page=lambda user,error="",expense_draft=None:pages.append(error)
+        self.handler.form=lambda:{"return_to":"/bilanci","legacy_key":"totalmente-inventata"}
+        self.handler.balance_legacy_movement_delete(self.admin)
+        self.assertFalse(self.redirects)
+        self.assertTrue(pages and "non trovato" in pages[-1].lower())
+
+    # 18. a db error must not report a false success -------------------------
+    def test_a_db_error_never_reports_success_or_silently_swallows_the_failure(self):
+        pid=self.deposit_practice("CR-DBERROR",amount="100.00",total=300)
+        legacy_key=self.legacy_key_for(pid,"deposit").idempotency_key
+        self.handler.form=lambda:{"return_to":"/bilanci","legacy_key":legacy_key}
+        with patch(
+            "app.create_balance_legacy_reversal",
+            side_effect=app.sqlite3.OperationalError("database is locked"),
+        ):
+            with self.assertRaises(app.sqlite3.OperationalError):
+                self.handler.balance_legacy_movement_delete(self.admin)
+        self.assertFalse(self.redirects,"no redirect (=no success signal) may reach the browser on a db error")
+        with app.db() as connection:
+            practice=connection.execute("SELECT deposit FROM practices WHERE id=?",(pid,)).fetchone()
+        # the column-clearing update runs inside the same `with db() as c:`
+        # transaction as the reversal insert that then failed: sqlite's
+        # context manager must roll the whole block back together, not leave
+        # the columns half-updated with no matching ledger-visible deletion.
+        self.assertEqual(practice["deposit"],"100.00")
+
+    # concurrent / double-click submission ------------------------------------
+    def test_double_submit_of_the_same_delete_is_idempotent_not_duplicated(self):
+        pid=self.deposit_practice("CR-DBLCLICK",amount="100.00",total=300)
+        legacy_key=self.legacy_key_for(pid,"deposit").idempotency_key
+        self.delete(legacy_key)
+        with app.db() as connection:
+            reversal_count_once=connection.execute(
+                "SELECT COUNT(*) n FROM balance_movements WHERE idempotency_key=?",
+                (f"legacy-void:v1:{legacy_key}",),
+            ).fetchone()["n"]
+        pages=[]
+        self.handler.balances_page=lambda user,error="",expense_draft=None:pages.append(error)
+        self.delete(legacy_key)  # the second, near-simultaneous submission
+        with app.db() as connection:
+            reversal_count_twice=connection.execute(
+                "SELECT COUNT(*) n FROM balance_movements WHERE idempotency_key=?",
+                (f"legacy-void:v1:{legacy_key}",),
+            ).fetchone()["n"]
+        self.assertEqual(reversal_count_once,1)
+        self.assertEqual(reversal_count_twice,1)
+        self.assertTrue(pages and "non trovato" in pages[-1].lower())
+
+    # restore ------------------------------------------------------------------
+    def test_restore_puts_back_the_practice_columns_a_legacy_delete_cleared(self):
+        pid=self.deposit_practice("CR-RESTORE-DEP",amount="100.00",total=300,deposit_paid_at="2026-07-10")
+        legacy_key=self.legacy_key_for(pid,"deposit").idempotency_key
+        self.delete(legacy_key)
+        with app.db() as connection:
+            deletion_id=get_recent_movement_deletions(connection,limit=1)[0]["id"]
+            restore_movement_deletion(connection,deletion_id=deletion_id,restored_by=self.admin["id"])
+        with app.db() as connection:
+            practice=connection.execute(
+                "SELECT payment_status,deposit,deposit_paid_at FROM practices WHERE id=?",(pid,)
+            ).fetchone()
+            movements=get_movements(connection,filters=normalize_filters())
+        self.assertEqual(practice["payment_status"],"Acconto")
+        self.assertEqual(practice["deposit"],"100.00")
+        self.assertEqual(practice["deposit_paid_at"],"2026-07-10")
+        self.assertTrue(any(m.idempotency_key==legacy_key for m in movements))
+        with app.db() as connection:
+            with self.assertRaises(InvalidMovementError):
+                restore_movement_deletion(connection,deletion_id=deletion_id,restored_by=self.admin["id"])
 
 
 if __name__=="__main__":

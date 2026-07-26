@@ -3369,6 +3369,17 @@ class PetParadiseTests(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT COUNT(*) n FROM movement_invoices WHERE practice_id=?",(pid,)).fetchone()["n"],0)
             open_w=sum(row.amount_cents for row in app.get_balance_movements(conn,filters=app.normalize_balance_filters()) if row.practice_id==pid and row.category=="W")
             self.assertEqual(open_w,0)
+        # Both removals leave a lone technical Storno per movement in
+        # balance_movements with nothing left to offset (the movement it
+        # reversed is gone too) — get_outstanding_balances must not sum that
+        # orphaned Storno as a negative "received" amount, or the practice's
+        # own "Da riscuotere" total would come out *larger* than the full
+        # price instead of matching it exactly.
+        with app.db() as conn:
+            snapshot=app.get_balance_snapshot(conn,filters=app.normalize_balance_filters(date_to="2026-12-31"))
+        match=[row for row in snapshot.sections["da-riscuotere-w"].rows if row.practice_id==pid]
+        self.assertEqual(len(match),1)
+        self.assertEqual(match[0].remaining_cents,30000)
         # removing an already-absent macroarea is a harmless no-op
         self.handler.form=lambda:{"macroarea":"acconto","ajax":"1"}
         self.handler.remove_payment_macroarea(admin,pid)

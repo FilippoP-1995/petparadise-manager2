@@ -4523,6 +4523,70 @@ class App(BaseHTTPRequestHandler):
         </section>'''
         return self.send_html(layout("Eliminare movimento",body,user))
 
+    def delete_legacy_practice_column_movement(self,c,practice,kind,user_id):
+        """Clear the raw practices columns that a 'historical-practice:<id>:
+        deposit|balance' Bilanci row (a practice old enough to predate the
+        payment_movements table entirely — its acconto/saldo only ever lived
+        as plain columns on practices) was synthesized from.
+
+        create_legacy_reversal on its own only appends an offsetting Storno
+        to balance_movements, which hides the row from Bilanci's own ledger
+        view — it never touches the practices row. Left alone, that means:
+        the practice's own Riepilogo/Modifica dati keep showing the "deleted"
+        acconto/saldo as if still registered (they read deposit/deposit_final/
+        payment_status directly), and get_outstanding_balances (which falls
+        back to those exact columns whenever a practice has zero
+        balance_movements/payment_movements rows) keeps computing the
+        deleted amount as still received — so Bilanci's own totals drift
+        out of sync with what it just "deleted". This mirrors the same
+        has_acconto/has_saldo recompute delete_practice_payment_movement
+        already uses for the payment_movements-backed case, just reading
+        the surviving side from raw columns instead of a payment_movements
+        query, so both legacy vintages behave identically. Returns
+        {"practice_before": {...}} for Bilanci's restore-deletion snapshot.
+        """
+        pid=practice["id"]
+        valid_date=lambda value:bool(c.execute("SELECT date(?) AS d",(value,)).fetchone()["d"])
+        snapshot={key:practice[key] for key in ("payment_status","deposit","deposit_final","deposit_paid_at","remaining_balance","remaining_final","paid_at")}
+        has_acconto_before=channel_deposit(practice)>0 and valid_date(practice["deposit_paid_at"])
+        has_saldo_before=(practice["payment_status"] or "")=="Pagato" and valid_date(practice["paid_at"])
+        if kind=="deposit":
+            has_acconto_after=False;has_saldo_after=has_saldo_before
+        else:
+            has_acconto_after=has_acconto_before;has_saldo_after=False
+        new_status="Pagato" if has_saldo_after else ("Acconto" if has_acconto_after else "Da saldare")
+        due=effective_total(practice)
+        due_d=uses_total_d(practice)
+        if kind=="deposit":
+            deposit_paid_at=""
+            deposit_final="" if due_d else practice["deposit_final"]
+            deposit=practice["deposit"] if due_d else ""
+        else:
+            paid_at=""
+            deposit_paid_at=practice["deposit_paid_at"];deposit=practice["deposit"];deposit_final=practice["deposit_final"]
+        if kind=="deposit":
+            paid_at=practice["paid_at"]
+        deposit_amount=channel_deposit(practice) if has_acconto_after else 0.0
+        remaining=max(0.0,due-deposit_amount)
+        if new_status=="Pagato":
+            remaining_balance="0.00";remaining_final="0.00" if due_d else ""
+        elif due_d:
+            remaining_balance=practice["remaining_balance"];remaining_final=f"{remaining:.2f}"
+        else:
+            remaining_balance=f"{remaining:.2f}";remaining_final=practice["remaining_final"]
+        stamp=now()
+        c.execute(
+            "UPDATE practices SET payment_status=?,deposit=?,deposit_final=?,deposit_paid_at=?,remaining_balance=?,remaining_final=?,paid_at=?,updated_at=? WHERE id=?",
+            (new_status,deposit,deposit_final,deposit_paid_at,remaining_balance,remaining_final,paid_at,stamp,pid),
+        )
+        old_status=snapshot["payment_status"] or "Da saldare"
+        if old_status!=new_status:
+            c.execute(
+                "INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",
+                (pid,"Pagamento",old_status,f"{new_status} · movimento storico eliminato",user_id,stamp),
+            )
+        return {"practice_before":snapshot}
+
     def delete_practice_payment_movement(self,c,pm,user_id):
         """Permanently delete one payment_movements row: drops its invoice
         link (and the invoice itself if nothing else references it), removes
@@ -4653,11 +4717,21 @@ class App(BaseHTTPRequestHandler):
                 else:
                     # practice predates payment_movements entirely (its deposit/
                     # saldo is stored directly on the practices row, with no
-                    # separate movement record to delete): fall back to the
-                    # existing legacy-void mechanism, which correctly removes it
-                    # from the ledger view and from the Bilanci totals without
-                    # mutating decades-old practice columns directly.
-                    snapshot={"legacy_key":legacy_key}
+                    # separate movement record to delete): the legacy-void
+                    # reversal removes it from the ledger view and totals, but
+                    # the raw practices columns it was synthesized from must
+                    # also be cleared here — otherwise the practice's own
+                    # pages and get_outstanding_balances keep treating the
+                    # "deleted" amount as still received (it predates any
+                    # payment_movements row, so there is nothing else to
+                    # recompute the practice's state from).
+                    kind=legacy_key.rsplit(":",1)[1] if legacy_key.startswith("historical-practice:") else None
+                    practice_row=c.execute("SELECT * FROM practices WHERE id=?",(movement.practice_id,)).fetchone() if movement.practice_id else None
+                    column_snapshot=(
+                        self.delete_legacy_practice_column_movement(c,practice_row,kind,user["id"])
+                        if practice_row and kind in ("deposit","balance") else {}
+                    )
+                    snapshot={"legacy_key":legacy_key,**column_snapshot}
                     deletion_kind="legacy_void"
                     create_balance_legacy_reversal(
                         c,
