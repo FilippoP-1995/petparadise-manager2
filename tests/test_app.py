@@ -4086,9 +4086,17 @@ class PetParadiseTests(unittest.TestCase):
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
         form_html = app.App._fields_html(self.handler, None, admin)
         self.assertIn('<h2>Firma proprietario</h2>', form_html)
+        # The signing surface must live behind a button, inside a hidden
+        # fullscreen overlay — never directly on the practice form, which
+        # carries the owner's personal/medical data and could otherwise be
+        # read by whoever is handed the device to sign.
+        self.assertIn('id="ppmOpenSignaturePad"', form_html)
+        self.assertIn('id="ppmSignatureOverlay" hidden', form_html)
         self.assertIn('id="ppmSignaturePad"', form_html)
         self.assertIn('id="ppmSignatureDataInput"', form_html)
+        self.assertIn('id="ppmSaveSignaturePad"', form_html)
         self.assertIn('id="ppmClearSignaturePad"', form_html)
+        self.assertIn('id="ppmRemoveSignature"', form_html)
         # not required to save: no `required` attribute anywhere near it.
         signature_pos = form_html.index('<h2>Firma proprietario</h2>')
         acceptance_pos = form_html.index('<h2>Documento e accettazione</h2>')
@@ -4096,10 +4104,19 @@ class PetParadiseTests(unittest.TestCase):
         between = form_html[signature_pos:acceptance_pos]
         self.assertNotIn('required', between)
 
-    def test_signature_pad_js_preserves_existing_signature_unless_touched(self):
+    def test_signature_pad_js_opens_fullscreen_and_crops_to_the_drawn_ink(self):
         js = app.APP_JS
         self.assertIn("function setupSignaturePad(){", js)
-        self.assertIn("if(touched) dataInput.value = hasContent ? canvas.toDataURL('image/png') : '';", js)
+        # opens/closes the overlay via a button, not inline on the form.
+        self.assertIn("openBtn.addEventListener('click',open);", js)
+        self.assertIn("overlay.hidden=false;document.body.style.overflow='hidden';", js)
+        # exports only the drawn ink's bounding box (+padding), not the whole
+        # (mostly blank) fullscreen canvas — otherwise a small signature
+        # drawn in the middle of a big pad shrinks to near-invisible once
+        # preserveAspectRatio scales the full canvas down into the small PDF box.
+        self.assertIn("function trackPoint(p){", js)
+        self.assertIn("cropCanvas.getContext('2d').drawImage(canvas,x0*d,y0*d,cropW*d,cropH*d,0,0,cropW*d,cropH*d);", js)
+        self.assertIn("dataInput.value=cropCanvas.toDataURL('image/png');", js)
         self.assertIn("setupSignaturePad();", js)
 
     def test_create_practice_stores_signature_data(self):
