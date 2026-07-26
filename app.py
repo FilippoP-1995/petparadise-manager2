@@ -139,6 +139,20 @@ MONEY_FIELDS = {
     "deposit_final":"Acconto D", "remaining_final":"Rimanenza D",
 }
 
+# The Acconto/Saldo macroarea fields (Pagamento section, create and edit
+# forms) aren't practice columns — normalized_fields()/d never covers them —
+# so any draft rebuilt from d alone would silently drop them on an error
+# redisplay. Shared by create_practice and edit_submit.
+MACRO_PAYMENT_RAW_FIELD_NAMES = (
+    "acconto_w_totale","acconto_w_data","acconto_w_modalita",
+    "acconto_w_fattura_numero","acconto_w_fattura_data","acconto_w_fattura_totale",
+    "acconto_d_totale","acconto_d_data",
+    "saldo_w_totale","saldo_w_data","saldo_w_modalita",
+    "saldo_w_fattura_numero","saldo_w_fattura_data","saldo_w_fattura_totale",
+    "saldo_d_totale","saldo_d_data",
+    "saldo_w_totale_touched","saldo_d_totale_touched",
+)
+
 COLLABORATORS = {
     "HUMANITAS CROCE VERDE": {
         "street": "VIA ROMANA, 907",
@@ -1493,8 +1507,7 @@ function updateRemainingBalance(){
   }
   const invoiceTotal=document.querySelector('input[name="invoice_total"]');
   if(invoiceTotal?.dataset.autoFilled==='1'){
-    const seedTotal = definitive > 0 ? definitive : serviceTotal;
-    invoiceTotal.value=ppmFormatInvoiceTotal(seedTotal);
+    invoiceTotal.value=ppmFormatInvoiceTotal(serviceTotal);
   }
   const depositFinalField = document.querySelector('input[name="deposit_final"]');
   const remainingFinalField = document.querySelector('input[name="remaining_final"]');
@@ -1722,12 +1735,6 @@ function setupBudgetExtras(){
   const fields=document.querySelector('.section input[name="price_cremation"]')?.closest('.fields');
   if(!fields) return;
   const modernizeCheck=(input)=>{const label=input?.closest('label');if(label)label.classList.add('modern-check');return input?.closest('.field');};
-  const insertControl=(control,label,after)=>{
-    control.classList.remove('hidden');
-    const wrap=document.createElement('div');wrap.className='field';
-    const lab=document.createElement('label');lab.textContent=label;wrap.append(lab,control);
-    fields.insertBefore(wrap,after?.nextSibling||fields.firstElementChild);return wrap;
-  };
   const insertCheck=(control,label,after)=>{
     const wasChecked=control.value==='Si';control.type='checkbox';control.value='Si';control.checked=wasChecked;control.classList.remove('hidden');
     const wrap=document.createElement('div');wrap.className='field';
@@ -1737,29 +1744,12 @@ function setupBudgetExtras(){
   const voucherField=modernizeCheck(document.querySelector('input[name="use_voucher"]'));
   if(voucherField)fields.insertBefore(voucherField,fields.firstElementChild);
   // The practice creation form and the practice edit form share this exact
-  // same field template; only the edit form carries data-autosave-url. New
-  // practices get the ACCONTO/SALDO D/W section (reusing the Pagamento
-  // popover's own save logic server-side) instead of the single
-  // Pagamento/Metodo/Data status fields, which stay exactly as they were
-  // for editing an existing practice.
-  const isEditForm=!!document.getElementById('practiceForm')?.dataset.autosaveUrl;
-  if(isEditForm){
-    insertControl(document.querySelector('select[name="payment_method"]'),'Metodo di pagamento',voucherField);
-    const remainingFinalField=document.querySelector('input[name="remaining_final"]')?.closest('.field');
-    const paymentStatusField=insertControl(document.querySelector('select[name="payment_status"]'),'Pagamento',remainingFinalField);
-    const economicDate=document.querySelector('input[name="economic_at"]');
-    const economicDateField=insertControl(economicDate,'Data pagamento / acconto',paymentStatusField);
-    economicDate.type='date';
-    const syncEconomicDate=()=>{
-      const status=document.querySelector('select[name="payment_status"]')?.value||'Da saldare';
-      economicDate.required=status==='Acconto'||status==='Pagato';
-      economicDateField.classList.toggle('payment-date-optional',status==='Da saldare');
-    };
-    document.querySelector('select[name="payment_status"]')?.addEventListener('change',syncEconomicDate);
-    syncEconomicDate();
-  }else{
-    document.getElementById('creationPaymentSection')?.classList.remove('hidden');
-  }
+  // same field template, and both now show the same ACCONTO/SALDO D/W
+  // Pagamento section (reusing apply_payment_macroarea server-side,
+  // pre-filled from the real registered movements when editing) — the old
+  // single Pagamento/Metodo/Data status fields are retired from view
+  // entirely, on both forms, and managed only by that shared logic now.
+  document.getElementById('creationPaymentSection')?.classList.remove('hidden');
   const sendCatalogField=modernizeCheck(document.querySelector('input[name="send_catalog"]'));
   insertCheck(document.querySelector('input[name="catalog_sent"]'),'CATALOGO INVIATO',sendCatalogField);
   const sendEstremiField=modernizeCheck(document.querySelector('input[name="send_estremi"]'));
@@ -1895,22 +1885,21 @@ function setupBudgetExtras(){
   const invoiceTotal=document.querySelector('input[name="invoice_total"]');invoiceTotal.type='text';invoiceTotal.inputMode='decimal';invoiceTotal.placeholder='Totale fattura';
   const invoiceTotalManual=document.querySelector('input[name="invoice_total_manual"]');
   const invoiceTotalField=document.createElement('div');invoiceTotalField.className='field';invoiceTotalField.innerHTML='<label>Totale fattura €</label>';invoiceTotalField.append(invoiceTotal);fields.append(invoiceTotalField);
-  if(invoiceTotalManual?.value!=='Si'){invoiceTotal.dataset.autoFilled='1';const seed=(document.querySelector('[name="total_text"]')?.value||totalService?.value||'').trim();invoiceTotal.value=seed?ppmFormatInvoiceTotal(seed):'';}
+  if(invoiceTotalManual?.value!=='Si'){invoiceTotal.dataset.autoFilled='1';const seed=(totalService?.value||'').trim();invoiceTotal.value=seed?ppmFormatInvoiceTotal(seed):'';}
   else{invoiceTotal.value=ppmFormatInvoiceTotal(invoiceTotal.value);}
   invoiceTotal.addEventListener('input',()=>{invoiceTotal.dataset.autoFilled='0';if(invoiceTotalManual)invoiceTotalManual.value='Si';});
   invoiceTotal.addEventListener('blur',()=>{if(invoiceTotal.value.trim())invoiceTotal.value=ppmFormatInvoiceTotal(invoiceTotal.value);});
   if(sendEstremiField)fields.append(sendEstremiField);
   const estremiSentField=insertCheck(document.querySelector('input[name="estremi_sent"]'),'ESTREMI INVIATI',sendEstremiField||fields.lastElementChild);
   insertCheck(document.querySelector('input[name="make_invoice"]'),'FARE FATTURA',estremiSentField||sendEstremiField||fields.lastElementChild);
-  // Creation-only: Totale W/Totale D, INVIARE ESTREMI/ESTREMI INVIATI move
-  // (not copy) into the new Pagamento area, and the old free-standing
-  // Acconto/Rimanenza W/D fields are retired from view — the real acconto
-  // is now entered directly in the ACCONTO block below, and
-  // apply_payment_macroarea keeps deposit/deposit_final/remaining_balance/
-  // remaining_final correct server-side regardless of whether a human ever
-  // sees these inputs. The edit form is untouched (isEditForm branch above
-  // keeps its own layout).
-  if(!isEditForm){
+  // Totale W/Totale D, INVIARE ESTREMI/ESTREMI INVIATI move (not copy) into
+  // the new Pagamento area on both create and edit, and the old
+  // free-standing Acconto/Rimanenza W/D fields are retired from view on
+  // both — the real acconto/saldo is entered directly in the Pagamento
+  // section below, and apply_payment_macroarea keeps deposit/deposit_final/
+  // remaining_balance/remaining_final correct server-side regardless of
+  // whether a human ever sees these inputs.
+  {
     const paymentSection=document.getElementById('creationPaymentSection');
     const estremiRow=document.getElementById('paymentEstremiRow');
     const totaleWRow=document.getElementById('paymentTotaleWRow');
@@ -2086,16 +2075,21 @@ function setupTableTouchScroll(){
     let axis=null,phase='table';
     let startX=0,startY=0,startScrollLeft=0,startScrollTop=0;
     let pageAnchorY=0,pageStartScroll=0;
-    let lastY=0,lastT=0,velocityY=0,momentumFrame=null;
+    let lastX=0,lastY=0,lastT=0,velocityX=0,velocityY=0,momentumFrame=null;
     const stopMomentum=()=>{if(momentumFrame){cancelAnimationFrame(momentumFrame);momentumFrame=null;}};
-    const runMomentum=(momentumPhase)=>{
-      let v=velocityY,last=performance.now();
+    const runMomentum=(momentumAxis,momentumPhase)=>{
+      let v=momentumAxis==='x'?velocityX:velocityY,last=performance.now();
       const step=(now)=>{
         const dt=now-last;last=now;
         v*=Math.pow(DECAY_PER_MS,dt);
         if(Math.abs(v)<MIN_VELOCITY){momentumFrame=null;return;}
         const delta=v*dt;
-        if(momentumPhase==='table'){
+        if(momentumAxis==='x'){
+          const maxScroll=box.scrollWidth-box.clientWidth;
+          const next=Math.max(0,Math.min(maxScroll,box.scrollLeft-delta));
+          box.scrollLeft=next;
+          if(next<=0||next>=maxScroll){momentumFrame=null;return;}
+        }else if(momentumPhase==='table'){
           const maxScroll=box.scrollHeight-box.clientHeight;
           const next=Math.max(0,Math.min(maxScroll,box.scrollTop-delta));
           box.scrollTop=next;
@@ -2118,7 +2112,7 @@ function setupTableTouchScroll(){
       axis=null;phase='table';
       startX=e.touches[0].clientX;startY=e.touches[0].clientY;
       startScrollLeft=box.scrollLeft;startScrollTop=box.scrollTop;
-      lastY=startY;lastT=performance.now();velocityY=0;
+      lastX=startX;lastY=startY;lastT=performance.now();velocityX=0;velocityY=0;
     },{passive:true});
     box.addEventListener('touchmove',function(e){
       if(e.touches.length!==1)return;
@@ -2129,8 +2123,8 @@ function setupTableTouchScroll(){
       }
       e.preventDefault();
       const now=performance.now(),dt=now-lastT;
-      if(dt>0)velocityY=(t.clientY-lastY)/dt;
-      lastY=t.clientY;lastT=now;
+      if(dt>0){velocityX=(t.clientX-lastX)/dt;velocityY=(t.clientY-lastY)/dt;}
+      lastX=t.clientX;lastY=t.clientY;lastT=now;
       if(axis==='x'){box.scrollLeft=startScrollLeft-dx;return;}
       if(phase==='table'){
         const maxScroll=box.scrollHeight-box.clientHeight,wanted=startScrollTop-dy;
@@ -2141,7 +2135,8 @@ function setupTableTouchScroll(){
       if(phase==='page'){window.scrollTo(0,pageStartScroll-(t.clientY-pageAnchorY));}
     },{passive:false});
     const onEnd=()=>{
-      if(axis==='y'&&Math.abs(velocityY)>MIN_VELOCITY)runMomentum(phase);
+      if(axis==='y'&&Math.abs(velocityY)>MIN_VELOCITY)runMomentum('y',phase);
+      else if(axis==='x'&&Math.abs(velocityX)>MIN_VELOCITY)runMomentum('x','table');
       axis=null;phase='table';
     };
     box.addEventListener('touchend',onEnd,{passive:true});
@@ -7193,6 +7188,23 @@ class App(BaseHTTPRequestHandler):
         missing=[label for key,label in labels.items() if not d.get(key)]
         return "Campi obbligatori mancanti: " + ", ".join(missing) if missing else ""
 
+    def validation_error_field(self,d):
+        """Best-effort single field name for whatever validation_error(d)
+        would report, so create_practice/edit_submit can jump straight to
+        it (error_field on new_page/edit_page) instead of only showing a
+        banner. Mirrors validation_error's own field selection; returns ""
+        for the invalid-money case, which can span several fields at once."""
+        if d.get("tag_da_richiamare")=="Si" or d.get("service_type")=="Cremazione collettiva" or d.get("request_origin")=="Collaboratore":
+            return ""
+        keys=["operator_name","service_type","request_origin","owner_first_name","owner_last_name","owner_phone","owner_tax_code","owner_street","owner_city","owner_province","owner_zip"]
+        if d.get("owner_veterinarian_id"):
+            for key in ("owner_last_name","owner_phone","owner_tax_code","owner_street","owner_city","owner_province","owner_zip"):
+                keys.remove(key)
+        for key in keys:
+            if not d.get(key):
+                return key
+        return ""
+
     def masked_whatsapp_token(self, token):
         if not token:
             return "MANCANTE"
@@ -8091,83 +8103,82 @@ class App(BaseHTTPRequestHandler):
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>Possibile cliente già presente</h1><div class="sub">Prima di creare una nuova anagrafica, controlla questi possibili duplicati.</div></div></div><section class="section"><div class="flash warning">Abbiamo trovato clienti con nome, telefono, email, codice fiscale o partita IVA simili. Puoi tornare alla pratica e usare la ricerca cliente, oppure confermare esplicitamente la creazione di un nuovo cliente.</div><div class="tablebox"><table><thead><tr><th>Cliente</th><th>Telefono</th><th>Email</th><th>CF / P.IVA</th><th>Città / indirizzo</th><th>ID</th></tr></thead><tbody>{rows}</tbody></table></div><div class="actions" style="margin-top:18px"><a class="btn ghost" href="/nuova">Torna e usa cliente esistente</a><form method="post" action="/nuova">{hidden}<input type="hidden" name="confirm_new_client" value="SI"><button class="btn">Conferma nuovo cliente</button></form></div></section></main>'''
         self.send_html(layout("Possibile duplicato cliente",body,user),409)
 
+    def resolve_payment_macro_plan(self,f,d):
+        """Shared by create_practice and edit_submit. ACCONTO/SALDO each
+        independently accept a D amount and/or a W amount; if both are
+        filled for the same macroarea only D is ever registered as a real
+        movement (never both, to avoid double-counting the same receipt).
+        Resolved here, before any database write, so a bad amount/date/
+        method is reported the same way for both callers — without leaving
+        a half-saved practice behind — then actually saved by the caller via
+        apply_payment_macroarea, the exact same core logic the Pagamento
+        popover itself uses. Returns (macro_plan, error_message, error_field);
+        error_message is None on success."""
+        macro_plan={}
+        if d.get("use_voucher")=="Si":
+            return macro_plan,None,None
+        for macroarea in ("acconto","saldo"):
+            d_amount=normalize_money_text(f.get(f"{macroarea}_d_totale",""))
+            w_amount=normalize_money_text(f.get(f"{macroarea}_w_totale",""))
+            invoice_number=invoice_total=invoice_date=""
+            if money_value(d_amount)>0:
+                channel="D";totale_field=d_amount
+                data_field=f.get(f"{macroarea}_d_data","").strip();method=f.get(f"{macroarea}_d_modalita","").strip()
+                touched=macroarea!="saldo" or f.get(f"{macroarea}_d_totale_touched","")=="1"
+            elif money_value(w_amount)>0:
+                channel="W";totale_field=w_amount
+                data_field=f.get(f"{macroarea}_w_data","").strip();method=f.get(f"{macroarea}_w_modalita","").strip()
+                touched=macroarea!="saldo" or f.get(f"{macroarea}_w_totale_touched","")=="1"
+                # Invoicing only ever applies to the W circuito (matches the
+                # Pagamento popover's own rule); these are the same
+                # per-macroarea invoice fields the popover writes to
+                # movement_invoices, not the legacy single invoice_number
+                # column shown in Preventivo (left untouched on purpose).
+                invoice_number=f.get(f"{macroarea}_w_fattura_numero","").strip()
+                invoice_total=normalize_money_text(f.get(f"{macroarea}_w_fattura_totale",""))
+                invoice_date=f.get(f"{macroarea}_w_fattura_data","").strip()
+            else:
+                continue
+            # Rimanenza (saldo) auto-fills its amount from Totale-Acconto
+            # purely as a preview (see updateMacroRimanenza in APP_JS) — if
+            # the user never actually confirmed it (didn't edit the amount,
+            # didn't pick a date), it isn't a real incasso to register yet,
+            # just an unconfirmed number sitting in the field: skip it
+            # silently instead of forcing a date the user doesn't have (the
+            # balance is only owed, not paid yet).
+            if not touched and not data_field:
+                continue
+            try:
+                date.fromisoformat(data_field)
+            except ValueError:
+                field=f"{macroarea}_{channel.lower()}_data"
+                return {},f"Indica una data valida per {'Acconto' if macroarea=='acconto' else 'Rimanenza'} {channel}.",field
+            if channel!="D" and not method:
+                field=f"{macroarea}_{channel.lower()}_modalita"
+                return {},f"Seleziona il metodo di pagamento per {'Acconto' if macroarea=='acconto' else 'Rimanenza'} {channel}.",field
+            if invoice_total and not re.fullmatch(r"\d+(?:\.\d{1,2})?",invoice_total):
+                return {},"Totale fattura non valido.",f"{macroarea}_w_fattura_totale"
+            if invoice_date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}",invoice_date):
+                return {},"Data fattura non valida.",f"{macroarea}_w_fattura_data"
+            macro_plan[macroarea]={"channel":channel,"totale_field":totale_field,"data_field":data_field,"method":method,"invoice_number":invoice_number,"invoice_total":invoice_total,"invoice_date":invoice_date}
+        return macro_plan,None,None
+
     def create_practice(self,user):
         f=self.form(); d=self.normalized_fields(f); stamp=now();calendar_event_id=int(f["calendar_event_id"]) if f.get("calendar_event_id","").isdigit() else None
         economic_at=f.get("economic_at","").strip()
-        # normalized_fields()/d only cover the "classic" columns; the Acconto/
-        # Saldo macroarea fields (and their fattura/touched companions) live
-        # only in the raw form, so without this they'd silently vanish from
-        # the redisplayed form on any validation error — the user would see
-        # their just-typed Acconto/Saldo values wiped and have to retype them.
-        macro_raw_field_names=(
-            "acconto_w_totale","acconto_w_data","acconto_w_modalita",
-            "acconto_w_fattura_numero","acconto_w_fattura_data","acconto_w_fattura_totale",
-            "acconto_d_totale","acconto_d_data",
-            "saldo_w_totale","saldo_w_data","saldo_w_modalita",
-            "saldo_w_fattura_numero","saldo_w_fattura_data","saldo_w_fattura_totale",
-            "saldo_d_totale","saldo_d_data",
-            "saldo_w_totale_touched","saldo_d_totale_touched",
-        )
-        payment_draft=lambda: {**d,"economic_at":economic_at,**{name:f.get(name,"") for name in macro_raw_field_names}}
+        # normalized_fields()/d only cover the "classic" columns; the macro
+        # payment fields live only in the raw form, so without this they'd
+        # silently vanish from the redisplayed form on any validation error —
+        # the user would see their just-typed Acconto/Saldo values wiped and
+        # have to retype them.
+        payment_draft=lambda: {**d,"economic_at":economic_at,**{name:f.get(name,"") for name in MACRO_PAYMENT_RAW_FIELD_NAMES}}
         creation_balance_token=f.get("balance_idempotency_key","").strip()
         creation_balance_key=f"practice-create:{creation_balance_token}" if creation_balance_token else ""
         if user["role"]!="admin": d["operator_name"]=user["display_name"].upper()
         error=self.validation_error(d)
-        if error: return self.new_page(user,draft=payment_draft(),error=error)
-        # ACCONTO/SALDO each independently accept a D amount and/or a W
-        # amount; if both are filled for the same macroarea only D is ever
-        # registered as a real movement (never both, to avoid double-counting
-        # the same receipt). Resolved here, before the practice even exists,
-        # so a bad amount/date/method is reported the same way it always was
-        # — without leaving a half-created practice behind — then actually
-        # saved further down via apply_payment_macroarea, the exact same
-        # core logic the Pagamento popover itself uses.
-        macro_plan={}
-        if d.get("use_voucher")!="Si":
-            for macroarea in ("acconto","saldo"):
-                d_amount=normalize_money_text(f.get(f"{macroarea}_d_totale",""))
-                w_amount=normalize_money_text(f.get(f"{macroarea}_w_totale",""))
-                invoice_number=invoice_total=invoice_date=""
-                if money_value(d_amount)>0:
-                    channel="D";totale_field=d_amount
-                    data_field=f.get(f"{macroarea}_d_data","").strip();method=f.get(f"{macroarea}_d_modalita","").strip()
-                    touched=macroarea!="saldo" or f.get(f"{macroarea}_d_totale_touched","")=="1"
-                elif money_value(w_amount)>0:
-                    channel="W";totale_field=w_amount
-                    data_field=f.get(f"{macroarea}_w_data","").strip();method=f.get(f"{macroarea}_w_modalita","").strip()
-                    touched=macroarea!="saldo" or f.get(f"{macroarea}_w_totale_touched","")=="1"
-                    # Invoicing only ever applies to the W circuito (matches
-                    # the Pagamento popover's own rule); these are the same
-                    # per-macroarea invoice fields the popover writes to
-                    # movement_invoices, not the legacy single invoice_number
-                    # column shown in Preventivo (left untouched on purpose).
-                    invoice_number=f.get(f"{macroarea}_w_fattura_numero","").strip()
-                    invoice_total=normalize_money_text(f.get(f"{macroarea}_w_fattura_totale",""))
-                    invoice_date=f.get(f"{macroarea}_w_fattura_data","").strip()
-                else:
-                    continue
-                # Rimanenza (saldo) auto-fills its amount from Totale-Acconto
-                # purely as a preview (see updateMacroRimanenza in APP_JS) —
-                # if the user never actually confirmed it (didn't edit the
-                # amount, didn't pick a date), it isn't a real incasso to
-                # register yet, just an unconfirmed number sitting in the
-                # field: skip it silently instead of forcing a date the user
-                # doesn't have (the balance is only owed, not paid yet).
-                if not touched and not data_field:
-                    continue
-                try:
-                    date.fromisoformat(data_field)
-                except ValueError:
-                    field=f"{macroarea}_{channel.lower()}_data"
-                    return self.new_page(user,draft=payment_draft(),error=f"Indica una data valida per {'Acconto' if macroarea=='acconto' else 'Rimanenza'} {channel}.",error_field=field)
-                if channel!="D" and not method:
-                    field=f"{macroarea}_{channel.lower()}_modalita"
-                    return self.new_page(user,draft=payment_draft(),error=f"Seleziona il metodo di pagamento per {'Acconto' if macroarea=='acconto' else 'Rimanenza'} {channel}.",error_field=field)
-                if invoice_total and not re.fullmatch(r"\d+(?:\.\d{1,2})?",invoice_total):
-                    return self.new_page(user,draft=payment_draft(),error="Totale fattura non valido.",error_field=f"{macroarea}_w_fattura_totale")
-                if invoice_date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}",invoice_date):
-                    return self.new_page(user,draft=payment_draft(),error="Data fattura non valida.",error_field=f"{macroarea}_w_fattura_data")
-                macro_plan[macroarea]={"channel":channel,"totale_field":totale_field,"data_field":data_field,"method":method,"invoice_number":invoice_number,"invoice_total":invoice_total,"invoice_date":invoice_date}
+        if error: return self.new_page(user,draft=payment_draft(),error=error,error_field=self.validation_error_field(d))
+        macro_plan,macro_error,macro_error_field=self.resolve_payment_macro_plan(f,d)
+        if macro_error: return self.new_page(user,draft=payment_draft(),error=macro_error,error_field=macro_error_field)
         initial=f.get("status","Ritirato")
         if initial not in STATES or (initial=="Smaltito" and d.get("service_type")!="Cremazione collettiva"): initial="Ritirato"
         with db() as c:
@@ -8368,11 +8379,40 @@ class App(BaseHTTPRequestHandler):
             body=body.replace('<main class="wrap">','<main class="wrap"><div class="flash warning">'+esc(error)+'</div>',1)
         self.send_html(layout(p["practice_number"],body,user))
 
-    def edit_page(self,user,pid,draft=None,error=""):
+    def macro_payment_prefill(self,c,pid,practice):
+        """Fills the same raw macro payment fields the create form uses from
+        whatever real payment_movements/movement_invoices already exist for
+        this practice — the exact same source the Pagamento popover already
+        pre-fills from (latest_movement_and_invoice) — so reopening a
+        practice to edit it shows the real registered Acconto/Saldo instead
+        of a blank Pagamento section. The saldo *_touched flag is set
+        whenever a real amount is prefilled so updateMacroRimanenza's
+        Totale-Acconto auto-calc never overwrites it on page load."""
+        prefill={name:"" for name in MACRO_PAYMENT_RAW_FIELD_NAMES}
+        for macroarea in ("acconto","saldo"):
+            movement,invoice=latest_movement_and_invoice(c,pid,macroarea)
+            if not movement:
+                continue
+            channel=movement["payment_channel"] if movement["payment_channel"] in ("W","D") else ("D" if uses_total_d(practice) else "W")
+            prefill[f"{macroarea}_{channel.lower()}_totale"]=f'{money_value(movement["amount"]):.2f}'
+            prefill[f"{macroarea}_{channel.lower()}_data"]=str(movement["paid_at"] or "")[:10]
+            if channel=="W":
+                prefill[f"{macroarea}_w_modalita"]=movement["payment_method"] or ""
+                if invoice:
+                    prefill[f"{macroarea}_w_fattura_numero"]=invoice["invoice_number"] or ""
+                    prefill[f"{macroarea}_w_fattura_data"]=invoice["invoice_date"] or ""
+                    prefill[f"{macroarea}_w_fattura_totale"]=invoice["invoice_total"] or ""
+            if macroarea=="saldo":
+                prefill[f"saldo_{channel.lower()}_totale_touched"]="1"
+        return prefill
+
+    def edit_page(self,user,pid,draft=None,error="",error_field=""):
         q=parse_qs(urlparse(getattr(self,"path","")).query);back_url=safe_return_path((q.get("return_to") or [""])[0],"/archivio/pratiche")
-        with db() as c:p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
-        if not p:return self.send_error(404)
-        display=dict(draft) if draft is not None else dict(p)
+        with db() as c:
+            p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+            if not p:return self.send_error(404)
+            macro_prefill=self.macro_payment_prefill(c,pid,p) if draft is None else {}
+        display=dict(draft) if draft is not None else {**dict(p),**macro_prefill}
         if "economic_at" not in display:
             display["economic_at"]=(
                 p["deposit_paid_at"] if (p["payment_status"] or "")=="Acconto"
@@ -8380,8 +8420,9 @@ class App(BaseHTTPRequestHandler):
                 else ""
             )
         autosave=f'''<div id="practiceAutosaveStatus" class="autosave-status" data-state="saved" role="status"><span data-autosave-label>Salvato</span><small data-autosave-time>Ultimo salvataggio: —</small><button class="autosave-retry" data-autosave-retry type="button" hidden>Riprova</button></div>'''
-        error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Modifica {esc(p['practice_number'])}</h1><div class="sub">Completa o correggi i dati della pratica.</div>{autosave}</div><div class="actions"><button class="btn" form="practiceForm">Salva modifiche</button><button class="btn ghost" form="practiceForm" name="save_and_return" value="1">Salva e torna</button><a class="btn ghost" href="{esc(back_url)}">Annulla</a></div></div>{error_html}<form method="post" id="practiceForm" data-autosave-url="/api/pratiche/{pid}/autosave" data-updated-at="{esc(p['updated_at'])}"><input type="hidden" name="return_to" value="{esc(back_url)}"><div class="grid form-grid">{self.fields_html(display,user)}</div><div class="actions" style="margin-top:18px"><button class="btn">Salva modifiche</button><button class="btn ghost" name="save_and_return" value="1">Salva e torna</button><a class="btn ghost" href="{esc(back_url)}">Annulla</a></div></form></main>'''
+        error_html='' if (error and error_field) else (f'<div class="flash warning">{esc(error)}</div>' if error else '')
+        error_target=f'<input type="hidden" id="formErrorField" value="{esc(error_field)}"><input type="hidden" id="formErrorMessage" value="{esc(error)}">' if (error and error_field) else ''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Modifica {esc(p['practice_number'])}</h1><div class="sub">Completa o correggi i dati della pratica.</div>{autosave}</div><div class="actions"><button class="btn" form="practiceForm">Salva modifiche</button><button class="btn ghost" form="practiceForm" name="save_and_return" value="1">Salva e torna</button><a class="btn ghost" href="{esc(back_url)}">Annulla</a></div></div>{error_html}<form method="post" id="practiceForm" data-autosave-url="/api/pratiche/{pid}/autosave" data-updated-at="{esc(p['updated_at'])}"><input type="hidden" name="return_to" value="{esc(back_url)}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(24)}">{error_target}<div class="grid form-grid">{self.fields_html(display,user)}</div><div class="actions" style="margin-top:18px"><button class="btn">Salva modifiche</button><button class="btn ghost" name="save_and_return" value="1">Salva e torna</button><a class="btn ghost" href="{esc(back_url)}">Annulla</a></div></form></main>'''
         self.send_html(layout("Modifica pratica",body,user))
 
     def practice_autosave(self,user,pid):
@@ -8483,9 +8524,11 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
     def edit_submit(self,user,pid):
         form=self.form(); d=self.normalized_fields(form); stamp=now(); assignments=','.join(f'{k}=?' for k in d)
         economic_at=form.get("economic_at","").strip()
-        draft_with_date=lambda: {**d,"economic_at":economic_at}
+        draft_with_date=lambda: {**d,"economic_at":economic_at,**{name:form.get(name,"") for name in MACRO_PAYMENT_RAW_FIELD_NAMES}}
         error=self.validation_error(d)
-        if error: return self.edit_page(user,pid,draft=draft_with_date(),error=error)
+        if error: return self.edit_page(user,pid,draft=draft_with_date(),error=error,error_field=self.validation_error_field(d))
+        macro_plan,macro_error,macro_error_field=self.resolve_payment_macro_plan(form,d)
+        if macro_error: return self.edit_page(user,pid,draft=draft_with_date(),error=macro_error,error_field=macro_error_field)
         if d["payment_status"] in ("Acconto","Pagato"):
             try:
                 date.fromisoformat(economic_at)
@@ -8500,8 +8543,14 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             if user["role"]!="admin": d["operator_name"]=previous["operator_name"]
             conflict=self.invoice_conflict(c,d.get("invoice_number"),pid)
             if conflict:return self.edit_page(user,pid,draft=draft_with_date(),error=f'Numero fattura già usato nella pratica {conflict["practice_number"]}')
-            if (previous["payment_status"] or "Da saldare")!=(d.get("payment_status") or "Da saldare"):
-                return self.edit_page(user,pid,draft=draft_with_date(),error="Registra il cambio di pagamento dalla finestra dedicata.")
+            # payment_status is no longer settable through this form (the
+            # Pagamento macroarea section below is the only thing that ever
+            # changes it, via apply_payment_macroarea further down) — the
+            # hidden field just echoes back whatever was current at page
+            # load, so comparing it against "previous" here would only ever
+            # misfire: on a genuine payment change in this very request
+            # (the hidden value is now stale on purpose, about to be
+            # corrected below) or on a harmless resubmission of the same page.
             stored_economic_at=(
                 str(previous["deposit_paid_at"] or "")[:10]
                 if d["payment_status"]=="Acconto"
@@ -8542,6 +8591,18 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             c.execute(f"UPDATE practices SET {assignments},status=?,data_complete=?,updated_at=? WHERE id=?",list(d.values())+[requested_status,self.is_complete(d),stamp,pid])
             self.sync_practice_urn(c,pid,previous["urn_id"],d.get("urn_id"),user["id"])
             self.sync_practice_urn(c,pid,previous["urn_id_2"],d.get("urn_id_2"),user["id"])
+            edit_balance_token=form.get("balance_idempotency_key","").strip()
+            edit_balance_key=f"practice-edit:{edit_balance_token}" if edit_balance_token else ""
+            for macroarea,plan in macro_plan.items():
+                fresh_practice=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+                payment_error=self.apply_payment_macroarea(
+                    c,user,pid,fresh_practice,macroarea,
+                    data_field=plan["data_field"],totale_field=plan["totale_field"],
+                    channel=plan["channel"],method=plan["method"],
+                    invoice_number=plan["invoice_number"],invoice_total=plan["invoice_total"],invoice_date=plan["invoice_date"],
+                    balance_key=edit_balance_key,
+                )
+                if payment_error:raise ValueError(payment_error)
             p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
             wanted_prefix,_=practice_code_prefix(d["service_type"])
             current_number=p["practice_number"] or ""

@@ -517,6 +517,91 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
         with app.db() as connection:
             self.assertEqual(get_movements(connection), [])
 
+    def test_edit_page_prefills_macro_fields_from_existing_movement(self):
+        practice_id = self.insert_practice(number="CR-EDIT-PREFILL", total_w="300")
+        with app.db() as connection:
+            practice = connection.execute("SELECT * FROM practices WHERE id=?", (practice_id,)).fetchone()
+            self.handler.apply_payment_macroarea(
+                connection, self.admin, practice_id, practice, "acconto",
+                data_field="2026-07-20", totale_field="100", channel="W", method="Contanti",
+                invoice_number="", invoice_total="", invoice_date="",
+            )
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = f"/pratiche/{practice_id}/modifica"
+        self.handler.edit_page(self.admin, practice_id)
+        page = rendered[-1]
+        self.assertIn('name="acconto_w_totale" value="100.00"', page)
+        self.assertIn('name="acconto_w_data" value="2026-07-20"', page)
+        self.assertIn('name="acconto_w_modalita"', page)
+        self.assertIn('value="Contanti" selected', page)
+
+    def test_edit_submit_adds_a_new_saldo_via_macro_fields(self):
+        practice_id = self.insert_practice(number="CR-EDIT-NEWSALDO", total_w="300")
+        base_form = {
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
+            "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
+            "price_cremation": "300", "payment_status": "Da saldare",
+            "saldo_w_totale": "300", "saldo_w_data": "2026-07-21", "saldo_w_modalita": "Pos",
+        }
+        self.handler.form = lambda: base_form
+        self.handler.edit_submit(self.admin, practice_id)
+        with app.db() as connection:
+            movements = [m for m in get_movements(connection) if m.practice_id == practice_id]
+            practice = connection.execute("SELECT payment_status FROM practices WHERE id=?", (practice_id,)).fetchone()
+        self.assertEqual(len(movements), 1)
+        self.assertEqual((movements[0].movement_type, movements[0].amount_cents, movements[0].category), ("Incasso completo", 30000, "W"))
+        self.assertEqual(practice["payment_status"], "Pagato")
+
+    def test_edit_submit_resubmitting_unchanged_macro_fields_does_not_duplicate(self):
+        practice_id = self.insert_practice(number="CR-EDIT-NODUP", total_w="300")
+        base_form = {
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
+            "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
+            "price_cremation": "300", "payment_status": "Da saldare",
+            "acconto_w_totale": "100", "acconto_w_data": "2026-07-20", "acconto_w_modalita": "Contanti",
+        }
+        self.handler.form = lambda: base_form
+        self.handler.edit_submit(self.admin, practice_id)
+        self.handler.edit_submit(self.admin, practice_id)
+        with app.db() as connection:
+            count = connection.execute("SELECT COUNT(*) n FROM payment_movements WHERE practice_id=?", (practice_id,)).fetchone()["n"]
+            movements = [m for m in get_movements(connection) if m.practice_id == practice_id]
+        self.assertEqual(count, 1)
+        self.assertEqual(len(movements), 1)
+
+    def test_edit_submit_untouched_autofilled_rimanenza_is_silently_skipped(self):
+        practice_id = self.insert_practice(number="CR-EDIT-SKIP", total_w="300")
+        self.handler.form = lambda: {
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
+            "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
+            "price_cremation": "300", "payment_status": "Da saldare",
+            "acconto_w_totale": "100", "acconto_w_data": "2026-07-20", "acconto_w_modalita": "Contanti",
+            "saldo_w_totale": "200", "saldo_w_data": "", "saldo_w_totale_touched": "",
+        }
+        self.handler.edit_submit(self.admin, practice_id)
+        with app.db() as connection:
+            movements = [m for m in get_movements(connection) if m.practice_id == practice_id]
+        self.assertEqual(len(movements), 1)
+        self.assertEqual(movements[0].movement_type, "Acconto")
+
+    def test_edit_submit_acconto_via_macro_fields_updates_payment_status(self):
+        practice_id = self.insert_practice(number="CR-EDIT-STATUS", total_w="300")
+        self.handler.form = lambda: {
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
+            "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
+            "price_cremation": "300", "payment_status": "Da saldare",
+            "acconto_w_totale": "100", "acconto_w_data": "2026-07-20", "acconto_w_modalita": "Contanti",
+        }
+        self.handler.edit_submit(self.admin, practice_id)
+        with app.db() as connection:
+            practice = connection.execute("SELECT payment_status FROM practices WHERE id=?", (practice_id,)).fetchone()
+        self.assertEqual(practice["payment_status"], "Acconto")
+
     def test_existing_payment_popup_prefills_amount_date_and_has_cancel_path(self):
         practice_id = self.insert_practice(
             number="CR-POPUP",
@@ -608,7 +693,11 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
         self.handler.new_page(self.admin,draft={
             "payment_status":"Acconto","economic_at":"2026-07-09",
         })
-        self.assertIn("Data pagamento / acconto",rendered[-1])
+        # The payment date no longer has its own standalone visible field: it
+        # lives in the Pagamento macroarea's Data Acconto/Rimanenza W/D inputs,
+        # while economic_at itself stays a hidden echo (still derived from the
+        # registered movement, see resolve_payment_macro_plan/macro_payment_prefill).
+        self.assertIn('name="acconto_w_data"',rendered[-1])
         self.assertIn('name="economic_at" value="2026-07-09"',rendered[-1])
         errors=[]
         self.handler.new_page=lambda user,draft=None,error="",error_field="":errors.append((draft,error))
