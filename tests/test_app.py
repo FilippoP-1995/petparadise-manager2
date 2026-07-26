@@ -14,7 +14,11 @@ from urllib.parse import quote
 
 import app
 import email_service
-from notification_service import emit_notification, process_scheduled_notifications
+import notification_service
+from notification_service import (
+    emit_notification, process_scheduled_notifications,
+    process_daily_summaries, archive_old_notifications, notification_priority,
+)
 from pypdf import PdfReader
 
 
@@ -4600,10 +4604,7 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.form = lambda: {
             "theme": "light",
             "return_to": "/il-mio-profilo",
-            "dash_show__payments": "1",
-            "dash_pos__payments": "0",
-            "dash_show__recent_practices": "1",
-            "dash_pos__recent_practices": "1",
+            "dashboard_sections_json": json.dumps(["payments", "recent_practices"]),
             "bottom_slot_1": "Calendario",
             "bottom_slot_2": "Dashboard",
             "bottom_slot_3": "Archivio",
@@ -4646,6 +4647,80 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('action="/il-mio-profilo/salva"', page)
         self.assertIn('action="/impostazioni/notifiche"', page)
         self.assertIn("Barra di navigazione mobile", page)
+
+    def test_profile_page_renders_drag_and_drop_lists_instead_of_numeric_fields(self):
+        with app.db() as conn:
+            serena = conn.execute("SELECT * FROM users WHERE username='serena'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.profile_page(serena)
+        page = rendered[-1]
+        # the old numeric-input reordering must be gone entirely
+        self.assertNotIn('name="sidebar_pos__', page)
+        self.assertNotIn('name="dash_pos__', page)
+        self.assertNotIn('name="dash_show__', page)
+        self.assertIn('data-drag-group', page)
+        self.assertIn('data-drag-root', page)
+        self.assertIn('class="drag-handle"', page)
+        self.assertIn('name="sidebar_order_json"', page)
+        self.assertIn('name="dashboard_sections_json"', page)
+        self.assertIn('class="drag-item-visible"', page)
+        # every dashboard section id from DASHBOARD_SECTION_LABELS is a draggable row
+        for sid, label in app.DASHBOARD_SECTION_LABELS:
+            self.assertIn(f'data-drag-key="{sid}"', page)
+            self.assertIn(app.esc(label), page)
+
+    def test_profile_page_renders_daily_summary_controls_and_priority_labelled_notif_types(self):
+        with app.db() as conn:
+            serena = conn.execute("SELECT * FROM users WHERE username='serena'").fetchone()
+            conn.execute("INSERT INTO user_preferences(user_id,key,value) VALUES(?,?,?)", (serena["id"], "daily_summary_enabled", "1"))
+            conn.execute("INSERT INTO user_preferences(user_id,key,value) VALUES(?,?,?)", (serena["id"], "daily_summary_time", "09:30"))
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.profile_page(serena)
+        page = rendered[-1]
+        self.assertIn("Riepilogo del giorno", page)
+        self.assertIn('name="daily_summary_section" value="1"', page)
+        self.assertIn('name="daily_summary_enabled" value="1" checked', page)
+        self.assertIn('name="daily_summary_time" value="09:30"', page)
+        self.assertIn("Alta priorità", page)
+        self.assertIn("Priorità normale", page)
+        self.assertIn('class="notif-type-icon"', page)
+
+    def test_save_preferences_parses_drag_order_json_and_gates_daily_summary_by_marker(self):
+        with app.db() as conn:
+            serena = conn.execute("SELECT * FROM users WHERE username='serena'").fetchone()
+        redirects = []
+        self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.form = lambda: {
+            "return_to": "/il-mio-profilo",
+            "sidebar_order_json": json.dumps(["Calendario", "Dashboard", "Bilanci"]),
+        }
+        self.handler.save_preferences(serena)
+        with app.db() as conn:
+            saved = {row["key"]: row["value"] for row in conn.execute("SELECT key,value FROM user_preferences WHERE user_id=?", (serena["id"],))}
+        self.assertEqual(json.loads(saved["sidebar_order"]), ["Calendario", "Dashboard", "Bilanci"])
+        self.assertNotIn("daily_summary_enabled", saved)
+        # a later, unrelated form submit (no daily_summary_section marker) must not silently reset it
+        self.handler.form = lambda: {
+            "return_to": "/il-mio-profilo",
+            "daily_summary_section": "1",
+            "daily_summary_enabled": "1",
+            "daily_summary_time": "07:45",
+        }
+        self.handler.save_preferences(serena)
+        self.handler.form = lambda: {"return_to": "/il-mio-profilo", "theme": "light"}
+        self.handler.save_preferences(serena)
+        with app.db() as conn:
+            saved = {row["key"]: row["value"] for row in conn.execute("SELECT key,value FROM user_preferences WHERE user_id=?", (serena["id"],))}
+        self.assertEqual(saved["daily_summary_enabled"], "1")
+        self.assertEqual(saved["daily_summary_time"], "07:45")
+
+    def test_drag_reorder_js_uses_pointer_events_for_touch_and_mouse(self):
+        self.assertIn("function setupDragReorder(root)", app.APP_JS)
+        self.assertIn("addEventListener('pointerdown'", app.APP_JS)
+        self.assertIn("function syncDragOrder(root)", app.APP_JS)
+        self.assertIn("root.scrollTop", app.APP_JS)
 
     def test_change_password_voluntary_requires_correct_current_password(self):
         with app.db() as conn:
@@ -4929,6 +5004,213 @@ class PetParadiseTests(unittest.TestCase):
         html = self.handler.practice_rows(rows)
         self.assertIn("CV Fido", html)
         self.assertIn("HUMANITAS CROCE VERDE", html)
+
+    def test_daily_summary_notification_type_is_registered(self):
+        self.assertIn("daily_summary", app.NOTIFICATION_TYPES)
+        self.assertEqual(app.NOTIFICATION_TYPES["daily_summary"][0], "Riepilogo del giorno")
+
+    def test_notification_priority_classifies_high_and_normal_types(self):
+        self.assertEqual(notification_priority("payment_due"), "alta")
+        self.assertEqual(notification_priority("system_error"), "alta")
+        self.assertEqual(notification_priority("whatsapp_error"), "alta")
+        self.assertEqual(notification_priority("practice_created"), "normale")
+        self.assertEqual(notification_priority("payment_received"), "normale")
+
+    def test_emit_notification_groups_bursts_within_five_minutes_into_one_row(self):
+        # Simulates "più ritiri creati in pochi minuti": instead of 3 separate
+        # push notifications, the same row is updated in place with a summary,
+        # and each individual occurrence stays inspectable via group_items.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()["id"]
+            emit_notification(conn, "practice_created", "🐾 Nuova pratica", "Fido", target_user_ids=[admin])
+            emit_notification(conn, "practice_created", "🐾 Nuova pratica", "Luna", target_user_ids=[admin])
+            emit_notification(conn, "practice_created", "🐾 Nuova pratica", "Rex", target_user_ids=[admin])
+            rows = conn.execute("SELECT * FROM notifications WHERE user_id=? AND type='practice_created'", (admin,)).fetchall()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["group_count"], 3)
+            self.assertEqual(rows[0]["text"], "Oggi: 3 nuovi ritiri")
+            items = conn.execute("SELECT * FROM notification_group_items WHERE notification_id=? ORDER BY id", (rows[0]["id"],)).fetchall()
+            self.assertEqual([item["text"] for item in items], ["Fido", "Luna", "Rex"])
+
+    def test_emit_notification_does_not_group_across_types_or_once_read(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()["id"]
+            emit_notification(conn, "practice_created", "🐾 Nuova pratica", "Fido", target_user_ids=[admin])
+            emit_notification(conn, "payment_received", "💰 Pagamento ricevuto", "Fido", target_user_ids=[admin])
+            self.assertEqual(conn.execute("SELECT count(*) n FROM notifications WHERE user_id=?", (admin,)).fetchone()["n"], 2)
+            conn.execute("UPDATE notifications SET is_read=1,read_at=? WHERE type='practice_created' AND user_id=?", (app.now(), admin))
+            emit_notification(conn, "practice_created", "🐾 Nuova pratica", "Bella", target_user_ids=[admin])
+            practice_created_rows = conn.execute("SELECT * FROM notifications WHERE user_id=? AND type='practice_created'", (admin,)).fetchall()
+            # already-read notification stays closed as its own entry; a new
+            # event after it opens a fresh one instead of reopening the old
+            self.assertEqual(len(practice_created_rows), 2)
+            self.assertEqual(sum(row["group_count"] for row in practice_created_rows), 2)
+
+    def test_emit_notification_only_attaches_action_url_to_single_occurrences(self):
+        class ImmediateThread:
+            def __init__(self, target=None, args=(), daemon=None):
+                self._target, self._args = target, args
+            def start(self):
+                self._target(*self._args)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()["id"]
+            stamp = app.now()
+            conn.execute("""INSERT INTO push_subscriptions(user_id,endpoint,p256dh,auth,created_at,updated_at)
+                            VALUES(?,?,?,?,?,?)""", (admin, "https://push.example/ep1", "p256dh", "auth", stamp, stamp))
+        captured = []
+        with patch("notification_service.threading.Thread", ImmediateThread), \
+             patch("notification_service._deliver_batch", side_effect=lambda db_path, queued: captured.append(queued)):
+            with app.db() as conn:
+                emit_notification(conn, "whatsapp_error", "❌ Errore invio WhatsApp", "Prima occorrenza",
+                                   target_user_ids=[admin], payload={"action_url": "/whatsapp-messaggi/1/riprova", "action_label": "Riprova invio"},
+                                   db_path=str(app.DB_PATH))
+            self.assertEqual(captured[-1][0]["data"]["action_url"], "/whatsapp-messaggi/1/riprova")
+            self.assertEqual(captured[-1][0]["data"]["action_label"], "Riprova invio")
+            self.assertEqual(captured[-1][0]["data"]["priority"], "alta")
+            with app.db() as conn:
+                emit_notification(conn, "whatsapp_error", "❌ Errore invio WhatsApp", "Seconda occorrenza",
+                                   target_user_ids=[admin], payload={"action_url": "/whatsapp-messaggi/2/riprova", "action_label": "Riprova invio"},
+                                   db_path=str(app.DB_PATH))
+            # grouped (2nd occurrence within the window): no longer a single
+            # unambiguous target, so the quick action must not be offered
+            self.assertNotIn("action_url", captured[-1][0]["data"])
+
+    def test_whatsapp_error_notifications_carry_a_retry_quick_action(self):
+        import inspect
+        source = inspect.getsource(app.App.send_whatsapp_message)
+        self.assertEqual(source.count('"action_url":f"/whatsapp-messaggi/{msg_id}/riprova"'), 2)
+        self.assertEqual(source.count('"action_label":"Riprova invio"'), 2)
+
+    def test_article_ordered_notification_links_to_the_reminder_completion_action(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            article = conn.execute("SELECT id,name FROM articles WHERE active=1 LIMIT 1").fetchone()
+        captured = []
+        with patch("app.emit_notification", side_effect=lambda *a, **k: captured.append((a, k))):
+            self.handler.redirect = lambda url: None
+            self.handler.order_article(admin, article["id"])
+        with app.db() as conn:
+            reminder = conn.execute("SELECT id FROM reminders WHERE entity_key=?", (f"article:{article['id']}",)).fetchone()
+        payload = captured[-1][1]["payload"]
+        self.assertEqual(payload["action_url"], f"/promemoria/{reminder['id']}/completa")
+        self.assertEqual(payload["action_label"], "Segna come ordinato")
+
+    def test_process_daily_summaries_respects_opt_in_and_time_window_once_per_day(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()["id"]
+            today = "2026-07-20"
+            outside_window = datetime.fromisoformat(f"{today}T07:00:00")
+            in_window = datetime.fromisoformat(f"{today}T08:03:00")
+            # not opted in: nothing is sent even if the clock matches a plausible time
+            created = process_daily_summaries(conn, str(app.DB_PATH), current=in_window)
+            self.assertEqual(created, 0)
+            conn.execute("INSERT INTO user_preferences(user_id,key,value) VALUES(?,?,?)", (admin, "daily_summary_enabled", "1"))
+            conn.execute("INSERT INTO user_preferences(user_id,key,value) VALUES(?,?,?)", (admin, "daily_summary_time", "08:00"))
+            # opted in but outside the configured window: still nothing
+            created = process_daily_summaries(conn, str(app.DB_PATH), current=outside_window)
+            self.assertEqual(created, 0)
+            # inside the window: sent once
+            created = process_daily_summaries(conn, str(app.DB_PATH), current=in_window)
+            self.assertEqual(created, 1)
+            row = conn.execute("SELECT * FROM notifications WHERE user_id=? AND type='daily_summary'", (admin,)).fetchone()
+            self.assertTrue(row["text"].startswith("Oggi: "))
+            # a second check a few minutes later the same day must not duplicate it
+            created_again = process_daily_summaries(conn, str(app.DB_PATH), current=in_window + timedelta(minutes=4))
+            self.assertEqual(created_again, 0)
+            self.assertEqual(conn.execute("SELECT count(*) n FROM notifications WHERE user_id=? AND type='daily_summary'", (admin,)).fetchone()["n"], 1)
+
+    def test_archive_old_notifications_moves_only_notifications_read_over_30_days_ago(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()["id"]
+            now_dt = datetime(2026, 7, 26, 12, 0, 0)
+            old_read = (now_dt - timedelta(days=45)).isoformat(timespec="seconds")
+            recent_read = (now_dt - timedelta(days=2)).isoformat(timespec="seconds")
+            old_id = conn.execute("""INSERT INTO notifications(user_id,title,text,type,created_at,read_at,is_read)
+                                     VALUES(?,?,?,?,?,?,1)""", (admin, "Vecchia", "Vecchia", "system_error", old_read, old_read)).lastrowid
+            recent_id = conn.execute("""INSERT INTO notifications(user_id,title,text,type,created_at,read_at,is_read)
+                                        VALUES(?,?,?,?,?,?,1)""", (admin, "Recente", "Recente", "system_error", recent_read, recent_read)).lastrowid
+            unread_id = conn.execute("""INSERT INTO notifications(user_id,title,text,type,created_at,is_read)
+                                        VALUES(?,?,?,?,?,0)""", (admin, "Non letta", "Non letta", "system_error", old_read)).lastrowid
+            changed = archive_old_notifications(conn, current=now_dt)
+            self.assertEqual(changed, 1)
+            self.assertIsNotNone(conn.execute("SELECT archived_at FROM notifications WHERE id=?", (old_id,)).fetchone()["archived_at"])
+            self.assertIsNone(conn.execute("SELECT archived_at FROM notifications WHERE id=?", (recent_id,)).fetchone()["archived_at"])
+            self.assertIsNone(conn.execute("SELECT archived_at FROM notifications WHERE id=?", (unread_id,)).fetchone()["archived_at"])
+
+    def test_notifications_page_filters_by_date_range_and_searches_animal_and_owner(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            pid = conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                animal_name,owner_first_name,owner_last_name) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                                ("CR-NOTIFSEARCH", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Nuvola", "Franco", "Rossi")).lastrowid
+            emit_notification(conn, "practice_created", "🐾 Nuova pratica", "Nuvola", practice_id=pid, target_user_ids=[admin["id"]])
+            emit_notification(conn, "system_error", "🚨 Errori di sistema", "Non collegata a nessuna pratica", target_user_ids=[admin["id"]])
+        rendered = []
+        self.handler.send_html = lambda content: rendered.append(content)
+        self.handler.path = "/notifiche?q=Nuvola"
+        self.handler.notifications(admin)
+        page = rendered[-1]
+        self.assertIn("CR-NOTIFSEARCH", page)
+        self.assertNotIn("Non collegata a nessuna pratica", page)
+        rendered.clear()
+        self.handler.path = f"/notifiche?dal={date.today().isoformat()}&al={date.today().isoformat()}"
+        self.handler.notifications(admin)
+        self.assertIn("CR-NOTIFSEARCH", rendered[-1])
+        rendered.clear()
+        self.handler.path = f"/notifiche?dal=2099-01-01"
+        self.handler.notifications(admin)
+        self.assertIn("empty-state", rendered[-1])
+
+    def test_notifications_page_shows_priority_tag_and_group_expand(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            emit_notification(conn, "payment_due", "⚠️ Pratica ancora da saldare", "Fido", target_user_ids=[admin["id"]])
+            emit_notification(conn, "practice_created", "🐾 Nuova pratica", "Uno", target_user_ids=[admin["id"]])
+            emit_notification(conn, "practice_created", "🐾 Nuova pratica", "Due", target_user_ids=[admin["id"]])
+        rendered = []
+        self.handler.send_html = lambda content: rendered.append(content)
+        self.handler.path = "/notifiche"
+        self.handler.notifications(admin)
+        page = rendered[-1]
+        self.assertIn("Alta priorità", page)
+        self.assertIn("Vedi i 2 singoli elementi", page)
+        self.assertIn("Uno", page)
+        self.assertIn("Due", page)
+
+    def test_notifications_page_archived_toggle_hides_and_shows_archived_notifications(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            emit_notification(conn, "system_error", "🚨 Errori di sistema", "Attiva", target_user_ids=[admin["id"]])
+            emit_notification(conn, "backup_completed", "✅ Backup completato", "Archiviata", target_user_ids=[admin["id"]])
+            conn.execute("UPDATE notifications SET archived_at=? WHERE text='Archiviata'", (app.now(),))
+        rendered = []
+        self.handler.send_html = lambda content: rendered.append(content)
+        self.handler.path = "/notifiche"
+        self.handler.notifications(admin)
+        self.assertIn("<p>Attiva</p>", rendered[-1])
+        self.assertNotIn("<p>Archiviata</p>", rendered[-1])
+        rendered.clear()
+        self.handler.path = "/notifiche?mostra_archiviate=1"
+        self.handler.notifications(admin)
+        self.assertIn("<p>Archiviata</p>", rendered[-1])
+        self.assertNotIn("<p>Attiva</p>", rendered[-1])
+
+    def test_service_worker_reads_priority_and_quick_action_from_push_payload(self):
+        source = (app.ASSETS / "sw.js").read_text(encoding="utf-8")
+        self.assertIn("data.priority === 'alta'", source)
+        self.assertIn("silent: !isHighPriority", source)
+        self.assertIn("event.action === 'quick'", source)
+        self.assertIn("fetch(data.actionUrl", source)
+
+    def test_save_notification_preferences_redirects_back_to_profile(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        redirects = []
+        self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.form = lambda: {"return_to": "/il-mio-profilo"}
+        self.handler.save_notification_preferences(admin)
+        self.assertEqual(redirects, ["/il-mio-profilo"])
 
 
 if __name__ == "__main__":

@@ -45,14 +45,27 @@ self.addEventListener('push', event => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch (_) { data = {title: 'Pet Paradise Manager', body: event.data ? event.data.text() : ''}; }
   const title = data.title || 'Pet Paradise Manager';
+  // priorità "normale" resta silenziosa (visibile solo nel Centro notifiche
+  // e nel badge): solo "alta" (guasti, pagamenti da saldare...) suona/vibra.
+  const isHighPriority = data.priority === 'alta';
+  const actions = [{action: 'open', title: 'Apri'}];
+  if (data.action_url && data.action_label) {
+    actions.push({action: 'quick', title: data.action_label});
+  }
   const options = {
     body: data.body || '',
     icon: data.icon || '/assets/pwa-192.png',
     badge: data.badge || '/assets/favicon-32.png',
     tag: data.tag || `ppm-${Date.now()}`,
     renotify: true,
-    data: {url: data.url || '/notifiche', notificationId: data.notification_id || null},
-    actions: [{action: 'open', title: 'Apri'}]
+    silent: !isHighPriority,
+    vibrate: isHighPriority ? [200, 100, 200] : undefined,
+    data: {
+      url: data.url || '/notifiche',
+      notificationId: data.notification_id || null,
+      actionUrl: data.action_url || null,
+    },
+    actions,
   };
   event.waitUntil(Promise.all([
     self.registration.showNotification(title, options),
@@ -61,8 +74,15 @@ self.addEventListener('push', event => {
 });
 
 self.addEventListener('notificationclick', event => {
+  const data = event.notification.data || {};
   event.notification.close();
-  const target = new URL((event.notification.data && event.notification.data.url) || '/notifiche', self.location.origin).href;
+  // azione rapida: compie l'azione con una fetch diretta, senza aprire/
+  // portare in primo piano l'app per intero.
+  if (event.action === 'quick' && data.actionUrl) {
+    event.waitUntil(fetch(data.actionUrl, {method: 'POST', credentials: 'include'}).catch(() => {}));
+    return;
+  }
+  const target = new URL(data.url || '/notifiche', self.location.origin).href;
   event.waitUntil(clients.matchAll({type: 'window', includeUncontrolled: true}).then(windowClients => {
     for (const client of windowClients) {
       if ('navigate' in client) {

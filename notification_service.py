@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import threading
 from datetime import datetime, timedelta
@@ -35,7 +36,45 @@ NOTIFICATION_TYPES = {
     "calendar_reminder_30m": ("Evento tra 30 minuti", "30M"),
     "calendar_daily_summary": ("Riepilogo calendario giornaliero", "OGGI"),
     "calendar_comment": ("Nuovo commento calendario", "MSG"),
+    "daily_summary": ("Riepilogo del giorno", "☀️"),
 }
+
+# Tipi il cui invio push merita suono/vibrazione anche a telefono silenzioso
+# in tasca: guasti e cose che bloccano un incasso. Tutto il resto resta a
+# priorità normale (visibile solo nel Centro notifiche e nel badge).
+HIGH_PRIORITY_NOTIFICATION_TYPES = frozenset({
+    "payment_due",
+    "system_error",
+    "whatsapp_error",
+    "whatsapp_cron_error",
+})
+
+
+def notification_priority(notification_type: str) -> str:
+    return "alta" if notification_type in HIGH_PRIORITY_NOTIFICATION_TYPES else "normale"
+
+
+# Per tipo raggruppabile, l'etichetta (singolare, plurale) usata quando più
+# occorrenze dello stesso tipo per lo stesso utente arrivano entro
+# GROUP_WINDOW_MINUTES l'una dall'altra: invece di N notifiche push separate,
+# la riga viene aggiornata sul posto con un riassunto ("5 nuovi ritiri oggi").
+# Un tipo non elencato qui usa comunque il fallback generico "<etichetta> × N".
+GROUP_WINDOW_MINUTES = 5
+NOTIFICATION_GROUP_LABELS = {
+    "practice_created": ("nuovo ritiro", "nuovi ritiri"),
+    "practice_delivered": ("pratica consegnata", "pratiche consegnate"),
+    "payment_received": ("pagamento ricevuto", "pagamenti ricevuti"),
+    "payment_due": ("pratica ancora da saldare", "pratiche ancora da saldare"),
+    "article_ordered": ("prodotto da ordinare", "prodotti da ordinare"),
+}
+
+
+def _group_summary_text(notification_type: str, count: int) -> str:
+    if notification_type in NOTIFICATION_GROUP_LABELS:
+        singular, plural = NOTIFICATION_GROUP_LABELS[notification_type]
+        return f"Oggi: {count} {plural if count > 1 else singular}"
+    label = NOTIFICATION_TYPES.get(notification_type, ("Notifica", ""))[0]
+    return f"{label} × {count}"
 
 def ensure_notification_schema(conn: sqlite3.Connection) -> None:
     conn.executescript("""
@@ -50,8 +89,19 @@ def ensure_notification_schema(conn: sqlite3.Connection) -> None:
       created_at TEXT NOT NULL,
       read_at TEXT,
       is_read INTEGER NOT NULL DEFAULT 0,
-      payload TEXT NOT NULL DEFAULT '{}'
+      payload TEXT NOT NULL DEFAULT '{}',
+      group_count INTEGER NOT NULL DEFAULT 1,
+      archived_at TEXT
     );
+    CREATE TABLE IF NOT EXISTS notification_group_items (
+      id INTEGER PRIMARY KEY,
+      notification_id INTEGER NOT NULL REFERENCES notifications(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      text TEXT NOT NULL,
+      practice_id INTEGER REFERENCES practices(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_notification_group_items_notification ON notification_group_items(notification_id);
     CREATE TABLE IF NOT EXISTS notification_preferences (
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       type TEXT NOT NULL,
@@ -91,6 +141,11 @@ def ensure_notification_schema(conn: sqlite3.Connection) -> None:
     for name in ("device_name", "platform"):
         if name not in columns:
             conn.execute(f"ALTER TABLE push_subscriptions ADD COLUMN {name} TEXT")
+    notification_columns = {row[1] for row in conn.execute("PRAGMA table_info(notifications)")}
+    if "group_count" not in notification_columns:
+        conn.execute("ALTER TABLE notifications ADD COLUMN group_count INTEGER NOT NULL DEFAULT 1")
+    if "archived_at" not in notification_columns:
+        conn.execute("ALTER TABLE notifications ADD COLUMN archived_at TEXT")
 
 
 def preference_enabled(conn: sqlite3.Connection, user_id: int, notification_type: str) -> bool:
@@ -128,7 +183,16 @@ def emit_notification(
     target_user_ids=None,
     db_path: str | Path | None = None,
 ):
-    """Registra uno storico per destinatario e avvia l'invio push senza bloccare."""
+    """Registra uno storico per destinatario e avvia l'invio push senza bloccare.
+
+    Se più occorrenze dello stesso tipo per lo stesso destinatario arrivano
+    entro GROUP_WINDOW_MINUTES l'una dall'altra, non viene inserita una nuova
+    riga: quella già aperta viene aggiornata sul posto con un riassunto
+    ("5 nuovi ritiri oggi") e il push riusa lo stesso tag, cosicché l'OS
+    sostituisca visivamente la notifica precedente invece di accatastarne
+    una nuova. Ogni occorrenza individuale resta comunque consultabile in
+    notification_group_items (il "espandi" nel Centro notifiche).
+    """
     if notification_type not in NOTIFICATION_TYPES:
         raise ValueError(f"Tipo notifica non registrato: {notification_type}")
     payload = dict(payload or {})
@@ -137,30 +201,72 @@ def emit_notification(
         payload.setdefault("practice_id", practice_id)
     else:
         payload.setdefault("url", "/notifiche")
+    action_url = payload.pop("action_url", None)
+    action_label = payload.pop("action_label", None)
     created_at = datetime.now().isoformat(timespec="seconds")
+    window_start = (datetime.now() - timedelta(minutes=GROUP_WINDOW_MINUTES)).isoformat(timespec="seconds")
+    priority = notification_priority(notification_type)
     queued = []
     for user_id in _recipient_ids(conn, practice_id, actor_user_id, target_user_ids):
         if not preference_enabled(conn, user_id, notification_type):
             continue
-        cur = conn.execute(
-            """INSERT INTO notifications(user_id,actor_user_id,title,text,type,practice_id,created_at,payload)
-               VALUES(?,?,?,?,?,?,?,?)""",
-            (user_id, actor_user_id, title, text, notification_type, practice_id, created_at,
-             json.dumps(payload, ensure_ascii=False)),
-        )
+        existing = conn.execute(
+            """SELECT id,group_count FROM notifications
+               WHERE user_id=? AND type=? AND is_read=0 AND created_at>=?
+               ORDER BY id DESC LIMIT 1""",
+            (user_id, notification_type, window_start),
+        ).fetchone()
+        if existing:
+            notification_id = existing["id"]
+            group_count = existing["group_count"] + 1
+            grouped_text = _group_summary_text(notification_type, group_count)
+            conn.execute(
+                """UPDATE notifications SET title=?,text=?,created_at=?,group_count=?,payload=?
+                   WHERE id=?""",
+                (title, grouped_text, created_at, group_count,
+                 json.dumps(payload, ensure_ascii=False), notification_id),
+            )
+            conn.execute(
+                """INSERT INTO notification_group_items(notification_id,title,text,practice_id,created_at)
+                   VALUES(?,?,?,?,?)""",
+                (notification_id, title, text, practice_id, created_at),
+            )
+            push_text = grouped_text
+        else:
+            cur = conn.execute(
+                """INSERT INTO notifications(user_id,actor_user_id,title,text,type,practice_id,created_at,payload)
+                   VALUES(?,?,?,?,?,?,?,?)""",
+                (user_id, actor_user_id, title, text, notification_type, practice_id, created_at,
+                 json.dumps(payload, ensure_ascii=False)),
+            )
+            notification_id = cur.lastrowid
+            group_count = 1
+            conn.execute(
+                """INSERT INTO notification_group_items(notification_id,title,text,practice_id,created_at)
+                   VALUES(?,?,?,?,?)""",
+                (notification_id, title, text, practice_id, created_at),
+            )
+            push_text = text
         subscriptions = conn.execute(
             "SELECT id,endpoint,p256dh,auth FROM push_subscriptions WHERE user_id=?", (user_id,)
         ).fetchall()
+        # un'azione rapida ha senso solo su un'occorrenza singola: una volta
+        # raggruppata, non è più chiaro a quale elemento si applicherebbe.
+        push_data = {"title": title, "body": push_text, "icon": "/assets/pwa-192.png", **payload,
+                     "badge": "/assets/favicon-32.png", "tag": f"ppm-group-{notification_id}",
+                     "type": notification_type, "notification_id": notification_id,
+                     "priority": priority,
+                     "url": f"/notifiche/{notification_id}/apri"}
+        if group_count == 1 and action_url and action_label:
+            push_data["action_url"] = action_url
+            push_data["action_label"] = action_label
         for subscription in subscriptions:
             queued.append({
-                "notification_id": cur.lastrowid,
+                "notification_id": notification_id,
                 "subscription_id": subscription["id"],
                 "subscription": {"endpoint": subscription["endpoint"], "keys": {
                     "p256dh": subscription["p256dh"], "auth": subscription["auth"]}},
-                "data": {"title": title, "body": text, "icon": "/assets/pwa-192.png", **payload,
-                         "badge": "/assets/favicon-32.png", "tag": f"ppm-{notification_type}-{practice_id or cur.lastrowid}",
-                         "type": notification_type, "notification_id": cur.lastrowid,
-                         "url": f"/notifiche/{cur.lastrowid}/apri"},
+                "data": push_data,
             })
     if queued and db_path:
         threading.Thread(target=_deliver_batch, args=(str(db_path), queued), daemon=True).start()
@@ -282,3 +388,101 @@ def _scheduled_once(conn, db_path, key, kind, title, text, practice_id):
                  (key, datetime.now().isoformat(timespec="seconds")))
     emit_notification(conn, kind, title, text, practice_id=practice_id, db_path=db_path)
     return 1
+
+
+def _daily_summary_counts(conn, today: str) -> tuple[int, int, int, int]:
+    ritiri = conn.execute(
+        """SELECT count(*) n FROM practices WHERE (deleted_at IS NULL OR deleted_at='')
+           AND status='In programma' AND pickup_date=?""", (today,),
+    ).fetchone()["n"]
+    consegne = conn.execute(
+        """SELECT count(*) n FROM practices WHERE (deleted_at IS NULL OR deleted_at='')
+           AND status='Consegnato' AND date(updated_at)=?""", (today,),
+    ).fetchone()["n"]
+    incomplete = conn.execute(
+        """SELECT count(*) n FROM practices WHERE (deleted_at IS NULL OR deleted_at='')
+           AND data_complete=0 AND status!='Consegnato'""",
+    ).fetchone()["n"]
+    tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if "reminders" in tables:
+        other_reminders = conn.execute(
+            "SELECT count(*) n FROM reminders WHERE completed_at IS NULL AND reminder_type!='practice_incomplete'",
+        ).fetchone()["n"]
+    else:
+        other_reminders = 0
+    return ritiri, consegne, incomplete, other_reminders
+
+
+def _format_daily_summary(ritiri: int, consegne: int, incomplete: int, other_reminders: int) -> str:
+    def plural(n, singular, plural_form):
+        return f"{n} {singular if n == 1 else plural_form}"
+    parts = [
+        plural(ritiri, "ritiro", "ritiri"),
+        plural(consegne, "consegna", "consegne"),
+        plural(incomplete, "pratica da completare", "pratiche da completare"),
+        plural(other_reminders, "promemoria da leggere", "promemoria da leggere"),
+    ]
+    return "Oggi: " + ", ".join(parts) + "."
+
+
+TIME_HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+def process_daily_summaries(conn, db_path, current=None) -> int:
+    """Invia a ciascun operatore il proprio 'Riepilogo del giorno', una sola
+    volta al giorno, all'orario che ha impostato in Personalizza. Se non ha
+    attivato esplicitamente l'interruttore, non riceve nulla. Controllato
+    dallo stesso poll ogni 5 minuti del cron WhatsApp: una finestra di 10
+    minuti assorbe l'imprecisione di quel poll senza mai inviarne due."""
+    current = current or datetime.now()
+    today = current.date().isoformat()
+    rows = conn.execute(
+        """SELECT user_id,
+                  MAX(CASE WHEN key='daily_summary_enabled' THEN value END) enabled,
+                  MAX(CASE WHEN key='daily_summary_time' THEN value END) time_value
+           FROM user_preferences
+           WHERE key IN ('daily_summary_enabled','daily_summary_time')
+           GROUP BY user_id""",
+    ).fetchall()
+    created = 0
+    for row in rows:
+        if row["enabled"] != "1":
+            continue
+        time_value = (row["time_value"] or "").strip()
+        if not TIME_HHMM_RE.match(time_value):
+            continue
+        try:
+            configured = datetime.fromisoformat(f"{today}T{time_value}:00")
+        except ValueError:
+            continue
+        if not (configured <= current < configured + timedelta(minutes=10)):
+            continue
+        key = f"daily-summary-{row['user_id']}-{today}"
+        if conn.execute("SELECT 1 FROM scheduled_notification_events WHERE event_key=?", (key,)).fetchone():
+            continue
+        conn.execute(
+            "INSERT INTO scheduled_notification_events(event_key,created_at) VALUES(?,?)",
+            (key, current.isoformat(timespec="seconds")),
+        )
+        ritiri, consegne, incomplete, other_reminders = _daily_summary_counts(conn, today)
+        text = _format_daily_summary(ritiri, consegne, incomplete, other_reminders)
+        emit_notification(
+            conn, "daily_summary", "☀️ Riepilogo del giorno", text,
+            target_user_ids=[row["user_id"]], payload={"url": "/"}, db_path=db_path,
+        )
+        created += 1
+    return created
+
+
+def archive_old_notifications(conn, current=None) -> int:
+    """Sposta in archivio (non più nell'elenco principale di /notifiche, ma
+    recuperabile col filtro 'Mostra archiviate') le notifiche lette da più
+    di 30 giorni, per non far crescere all'infinito l'elenco principale."""
+    current = current or datetime.now()
+    cutoff = (current - timedelta(days=30)).isoformat(timespec="seconds")
+    changed = conn.execute(
+        """UPDATE notifications SET archived_at=?
+           WHERE archived_at IS NULL AND is_read=1 AND read_at IS NOT NULL AND read_at<=?""",
+        (current.isoformat(timespec="seconds"), cutoff),
+    ).rowcount
+    return changed
