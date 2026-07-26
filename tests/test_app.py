@@ -1488,7 +1488,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(f'''<tr class="practice-row-link" tabindex="0" role="link" aria-label="Apri pratica PP-ROWCLICK" onclick="practiceRowSelect(this,event,'{url}')"''', detail_page)
 
 
-    def test_cremation_schedule_lists_waiting_animals_with_urn_tags_provenance_and_duplicate_name_surname(self):
+    def test_cremation_schedule_lists_ritirato_single_cremations_sorted_with_counter_urn_and_filter(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
             stamp = app.now()
@@ -1498,26 +1498,24 @@ class PetParadiseTests(unittest.TestCase):
             ).lastrowid
 
             def practice(code, status, service_type, pickup, provenance="", weight="", urn=None,
-                         send_catalog="", tag_avvisare="", urn_notes="", owner_first="", owner_last="", animal_name=None):
+                         send_catalog="", tag_avvisare="", urn_notes="", owner_first="", owner_last=""):
                 return conn.execute(
                     """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
                        pickup_date,created_at,updated_at,created_by,animal_name,estimated_weight,provenance,
                        urn_id,send_catalog,tag_avvisare,urn_notes,owner_first_name,owner_last_name)
                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (code, "Privato", "Livorno", status, service_type, pickup, stamp, stamp, admin["id"],
-                     animal_name or code, weight, provenance, urn, send_catalog, tag_avvisare, urn_notes, owner_first, owner_last),
+                     code, weight, provenance, urn, send_catalog, tag_avvisare, urn_notes, owner_first, owner_last),
                 ).lastrowid
 
             newer_id = practice("CR-CREM-NEW", "Ritirato", "Cremazione singola", "2026-07-16", provenance="E",
-                                 owner_first="Anna", owner_last="Verdi", animal_name="Rex")
+                                 owner_first="Anna", owner_last="Verdi")
             older_id = practice("CR-CREM-OLD", "Ritirato", "Cremazione singola", "2026-07-14", provenance="L",
-                                 weight="8", urn=urn_id, animal_name="Nuvola")
+                                 weight="8", urn=urn_id)
             catalog_id = practice("CR-CREM-CAT", "Ritirato", "Cremazione singola", "2026-07-15",
-                                   send_catalog="Si", tag_avvisare="Si", animal_name="Birba")
+                                   send_catalog="Si", tag_avvisare="Si")
             freetext_id = practice("CR-CREM-FREETEXT", "Ritirato", "Cremazione singola", "2026-07-17",
-                                    urn_notes="Urna scelta a voce, non ancora in catalogo", animal_name="Luna")
-            # same animal name twice -> the owner's surname must be shown to disambiguate
-            dup_a = practice("CR-CREM-DUP1", "Ritirato", "Cremazione singola", "2026-07-13", owner_last="Rossi", animal_name="Rex")
+                                    urn_notes="Urna scelta a voce, non ancora in catalogo")
             practice("CR-CREM-COLLETTIVA", "Ritirato", "Cremazione collettiva", "2026-07-10")
             practice("CR-CREM-DONE", "Cremato", "Cremazione singola", "2026-07-10")
 
@@ -1528,154 +1526,152 @@ class PetParadiseTests(unittest.TestCase):
         page = rendered[-1]
         self.assertNotIn("CR-CREM-COLLETTIVA", page)
         self.assertNotIn("CR-CREM-DONE", page)
-        for pid in (newer_id, older_id, catalog_id, freetext_id, dup_a):
-            self.assertIn(f'/pratiche/{pid}', page)
-        # sorted by pickup date ascending
-        self.assertLess(page.index(f'/pratiche/{dup_a}'), page.index(f'/pratiche/{older_id}'))
-        self.assertLess(page.index(f'/pratiche/{older_id}'), page.index(f'/pratiche/{catalog_id}'))
-        self.assertLess(page.index(f'/pratiche/{catalog_id}'), page.index(f'/pratiche/{newer_id}'))
-        self.assertLess(page.index(f'/pratiche/{newer_id}'), page.index(f'/pratiche/{freetext_id}'))
+        self.assertIn("CR-CREM-NEW", page)
+        self.assertIn("CR-CREM-OLD", page)
+        self.assertIn("CR-CREM-CAT", page)
+        self.assertIn("CR-CREM-FREETEXT", page)
+        self.assertLess(page.index("CR-CREM-OLD"), page.index("CR-CREM-CAT"))
+        self.assertLess(page.index("CR-CREM-CAT"), page.index("CR-CREM-NEW"))
+        self.assertLess(page.index("CR-CREM-NEW"), page.index("CR-CREM-FREETEXT"))
+        self.assertIn("<strong>4</strong>", page)  # counter: 4 practices match both criteria
         self.assertIn("Cornice Bianca", page)
         self.assertIn("INVIARE CATALOGO", page)
         self.assertIn("AVVISARE", page)
         self.assertIn("L · Livorno", page)
         self.assertIn("E · Empoli", page)
+        self.assertIn("Anna Verdi", page)
         self.assertIn("Urna scelta a voce, non ancora in catalogo", page)  # unmatched free-typed urn text still shown
-        self.assertIn("(Rossi)", page)  # duplicate "Rex" disambiguated by owner surname
-        self.assertIn("(Verdi)", page)  # the other "Rex" too
-        self.assertIn('data-cycle-dropzone="new"', page)
-        self.assertIn('Trascina qui per creare un nuovo ciclo', page)
+        self.assertIn(f'/pratiche/{older_id}', page)
+        self.assertIn(f'/pratiche/{newer_id}', page)
+        self.assertIn(f'/pratiche/{catalog_id}', page)
+        self.assertIn(f'/pratiche/{freetext_id}', page)
+        # Data recupero -> Pagamento -> Inserito must be the trailing column order.
+        header = page[page.index("<thead>"):page.index("</thead>")]
+        self.assertLess(header.index(">Urna<"), header.index(">Cliente<"))
+        self.assertLess(header.index(">Cliente<"), header.index(">Data recupero<"))
+        self.assertLess(header.index(">Data recupero<"), header.index(">Pagamento<"))
+        self.assertLess(header.index(">Pagamento<"), header.index(">Inserito<"))
+        self.assertIn(f'data-cremation-id="{older_id}"', page)
+        self.assertIn("onchange=\"toggleCremationQueue(this)\"", page)
+        self.assertIn("async function toggleCremationQueue(input)", app.APP_JS)
+        self.assertIn("Nessun animale spuntato come INSERITO da completare.", page)
+        self.assertNotIn('practice-row-link cremation-row-done', page)  # nothing queued yet
+        self.assertIn("Da saldare", page)  # default payment badge for practices with no payment set
 
-    def test_cremation_create_and_assign_to_cycle_enforce_two_animal_limit_and_promote_status(self):
+        rendered.clear()
+        self.handler.path = "/programma-cremazioni?provenienza=L"
+        self.handler.cremation_schedule(admin)
+        filtered = rendered[-1]
+        self.assertIn("CR-CREM-OLD", filtered)
+        self.assertNotIn("CR-CREM-NEW", filtered)
+        self.assertNotIn("CR-CREM-CAT", filtered)
+
+    def test_cremation_toggle_queue_persists_checkbox_without_changing_status(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
             stamp = app.now()
-
-            def practice(code):
-                return conn.execute(
-                    """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
-                       pickup_date,created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                    (code, "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-15", stamp, stamp,
-                     admin["id"], code),
-                ).lastrowid
-
-            first_id = practice("CR-CYC-1")
-            second_id = practice("CR-CYC-2")
-            third_id = practice("CR-CYC-3")
-
-        responses = []
-        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
-        self.handler.form = lambda: {"data": "2026-07-20"}
-        self.handler.cremation_create_cycle(admin)
-        self.assertTrue(responses[-1][0]["ok"])
-        cycle_id = responses[-1][0]["cycle_id"]
-        with app.db() as conn:
-            cycle = conn.execute("SELECT * FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()
-        self.assertEqual(cycle["status"], "pianificato")
-        self.assertEqual(cycle["planned_start"], "08:00")
-        self.assertEqual(cycle["planned_end"], "09:30")
-
-        responses.clear()
-        self.handler.form = lambda: {"practice_id": str(first_id)}
-        self.handler.cremation_assign_to_cycle(admin, cycle_id)
-        self.assertEqual(responses[-1], ({"ok": True}, 200))
-        with app.db() as conn:
-            self.assertEqual(conn.execute("SELECT status FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()["status"], "in_attesa")
-            self.assertEqual(conn.execute("SELECT cremation_cycle_id FROM practices WHERE id=?", (first_id,)).fetchone()["cremation_cycle_id"], cycle_id)
-
-        responses.clear()
-        self.handler.form = lambda: {"practice_id": str(second_id)}
-        self.handler.cremation_assign_to_cycle(admin, cycle_id)
-        self.assertEqual(responses[-1], ({"ok": True}, 200))
-
-        # a third animal must be rejected: a cycle holds at most 2 independent animals
-        responses.clear()
-        self.handler.form = lambda: {"practice_id": str(third_id)}
-        self.handler.cremation_assign_to_cycle(admin, cycle_id)
-        payload, status = responses[-1]
-        self.assertFalse(payload["ok"])
-        self.assertEqual(status, 409)
-        with app.db() as conn:
-            self.assertIsNone(conn.execute("SELECT cremation_cycle_id FROM practices WHERE id=?", (third_id,)).fetchone()["cremation_cycle_id"])
-
-        # a second cycle the same day auto-schedules right after the first one's end (+ gap)
-        responses.clear()
-        self.handler.form = lambda: {"data": "2026-07-20"}
-        self.handler.cremation_create_cycle(admin)
-        second_cycle_id = responses[-1][0]["cycle_id"]
-        with app.db() as conn:
-            second_cycle = conn.execute("SELECT * FROM cremation_cycles WHERE id=?", (second_cycle_id,)).fetchone()
-        self.assertEqual(second_cycle["planned_start"], "09:40")
-        self.assertEqual(second_cycle["planned_end"], "11:10")
-
-    def test_cremation_start_and_complete_cycle_moves_animals_to_in_programma(self):
-        with app.db() as conn:
-            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
-            stamp = app.now()
-            cycle_id = conn.execute(
-                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
-                ("2026-07-20", "in_attesa", "08:00", "09:30", stamp, stamp),
-            ).lastrowid
-            assigned_id = conn.execute(
+            pid = conn.execute(
                 """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
-                   pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-                ("CR-INSERITO", "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-15", stamp, stamp,
-                 admin["id"], "CR-INSERITO", cycle_id),
+                   pickup_date,created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-QUEUE", "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-15", stamp, stamp,
+                 admin["id"], "CR-QUEUE"),
             ).lastrowid
 
         responses = []
         self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
-        # cannot terminate a cycle that hasn't started
-        self.handler.cremation_complete_cycle(admin, cycle_id)
-        self.assertFalse(responses[-1][0]["ok"])
-
-        responses.clear()
-        self.handler.cremation_start_cycle(admin, cycle_id)
-        self.assertEqual(responses[-1], ({"ok": True}, 200))
+        self.handler.form = lambda: {"queued": "1"}
+        self.handler.cremation_toggle_queue(admin, pid)
+        self.assertEqual(responses[-1], ({"ok": True, "queued": True}, 200))
         with app.db() as conn:
-            row = conn.execute("SELECT status,actual_start FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()
-        self.assertEqual(row["status"], "in_corso")
-        self.assertIsNotNone(row["actual_start"])
+            row = conn.execute("SELECT status,cremation_queued FROM practices WHERE id=?", (pid,)).fetchone()
+            self.assertEqual((row["status"], row["cremation_queued"]), ("Ritirato", "Si"))
 
-        responses.clear()
-        self.handler.cremation_complete_cycle(admin, cycle_id)
-        self.assertEqual(responses[-1], ({"ok": True}, 200))
-        with app.db() as conn:
-            cycle = conn.execute("SELECT status,actual_end FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()
-            practice = conn.execute("SELECT status,cremation_registered FROM practices WHERE id=?", (assigned_id,)).fetchone()
-            history = conn.execute(
-                "SELECT event_type,old_value,new_value FROM practice_history WHERE practice_id=?", (assigned_id,)
-            ).fetchone()
-        self.assertEqual(cycle["status"], "completato")
-        self.assertIsNotNone(cycle["actual_end"])
-        self.assertEqual((practice["status"], practice["cremation_registered"]), ("In programma", "Si"))
-        self.assertEqual((history["event_type"], history["old_value"], history["new_value"]), ("Cambio stato rapido", "Ritirato", "In programma"))
-
-        # the completed practice moved out of Ritirato, so the cycle's own row still shows it (completed cycles keep their history)
+        # Still checked and still in the list on a fresh page load (survives navigation without an explicit finalize).
         rendered = []
-        self.handler.path = "/programma-cremazioni?data=2026-07-20"
+        self.handler.path = "/programma-cremazioni"
         self.handler.send_html = lambda content, *args: rendered.append(content)
         self.handler.cremation_schedule(admin)
         page = rendered[-1]
-        self.assertIn("COMPLETATO", page)
+        self.assertIn("CR-QUEUE", page)
+        self.assertIn(f'data-cremation-id="{pid}" checked', page)
+        self.assertIn('practice-row-link cremation-row-done', page)
+        self.assertIn("1 animali spuntati INSERITO passeranno allo stato In programma", page)
 
-    def test_cremation_edit_cycle_updates_planned_times_for_a_planned_cycle(self):
+        # Unchecking clears the persisted flag.
+        responses.clear()
+        self.handler.form = lambda: {"queued": "0"}
+        self.handler.cremation_toggle_queue(admin, pid)
+        self.assertEqual(responses[-1], ({"ok": True, "queued": False}, 200))
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT cremation_queued FROM practices WHERE id=?", (pid,)).fetchone()["cremation_queued"], "")
+
+    def test_complete_cremation_session_moves_only_queued_animals_to_in_programma(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
             stamp = app.now()
-            cycle_id = conn.execute(
-                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
-                ("2026-07-20", "pianificato", "08:00", "09:30", stamp, stamp),
-            ).lastrowid
 
-        responses = []
-        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
-        self.handler.form = lambda: {"planned_start": "10:00", "planned_end": "11:15"}
-        self.handler.cremation_edit_cycle(admin, cycle_id)
-        self.assertEqual(responses[-1], ({"ok": True}, 200))
+            def practice(code, queued=""):
+                return conn.execute(
+                    """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                       pickup_date,created_at,updated_at,created_by,animal_name,cremation_queued) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                    (code, "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-15", stamp, stamp,
+                     admin["id"], code, queued),
+                ).lastrowid
+
+            queued_id = practice("CR-INSERITO", queued="Si")
+            unqueued_id = practice("CR-NON-INSERITO")
+
+        self.handler.path = "/programma-cremazioni"
+        self.handler.form = lambda: {"return_to": "/programma-cremazioni"}
+        redirected = []
+        self.handler.redirect = lambda url: redirected.append(url)
+        self.handler.complete_cremation_session(admin)
+        self.assertEqual(redirected[-1], "/programma-cremazioni")
         with app.db() as conn:
-            row = conn.execute("SELECT planned_start,planned_end FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()
-        self.assertEqual((row["planned_start"], row["planned_end"]), ("10:00", "11:15"))
+            queued_row = conn.execute("SELECT status,cremation_registered,cremation_queued FROM practices WHERE id=?", (queued_id,)).fetchone()
+            unqueued_row = conn.execute("SELECT status,cremation_registered,cremation_queued FROM practices WHERE id=?", (unqueued_id,)).fetchone()
+            self.assertEqual((queued_row["status"], queued_row["cremation_registered"], queued_row["cremation_queued"]), ("In programma", "Si", ""))
+            self.assertEqual((unqueued_row["status"], unqueued_row["cremation_registered"]), ("Ritirato", None))
+            history = conn.execute(
+                "SELECT event_type,old_value,new_value FROM practice_history WHERE practice_id=?", (queued_id,)
+            ).fetchone()
+            self.assertEqual((history["event_type"], history["old_value"], history["new_value"]), ("Cambio stato rapido", "Ritirato", "In programma"))
+
+        # The finalized practice moved out of Ritirato, so it must disappear from the list on reload.
+        rendered = []
+        self.handler.path = "/programma-cremazioni"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        self.assertNotIn("CR-INSERITO", rendered[-1])
+        self.assertIn("CR-NON-INSERITO", rendered[-1])
+
+    def test_cremation_schedule_shows_payment_status_amount_and_channel(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,payment_status,price_cremation)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-PAID-W", "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-15", stamp, stamp,
+                 admin["id"], "CR-PAID-W", "Pagato", "150"),
+            )
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,payment_status,total_text)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-DUE-D", "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-16", stamp, stamp,
+                 admin["id"], "CR-DUE-D", "Da saldare", "200"),
+            )
+        rendered = []
+        self.handler.path = "/programma-cremazioni"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn("€ 150,00", page)
+        self.assertIn("€ 200,00", page)
+        self.assertIn('badge pay-green">Pagato</span> € 150,00 · W', page)
+        self.assertIn('badge pay-yellow">Da saldare</span> € 200,00 · D', page)
 
     def test_normalization_keeps_custom_plate_and_calculates_remaining(self):
         data = self.handler.normalized_fields({
@@ -4127,19 +4123,14 @@ class PetParadiseTests(unittest.TestCase):
             ).fetchone()
         self.assertIsNone(still_open)
 
-    def test_cremation_pending_reminder_fires_immediately_for_every_cremazione_singola_ritirata(self):
+    def test_cremation_pending_reminder_only_fires_for_cremazione_singola_past_7_days(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             today=date.today()
             waiting_pickup=(today-timedelta(days=9)).isoformat()
-            fresh_pickup=today.isoformat()
             pending_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,created_at,updated_at,created_by,
                 animal_name,owner_first_name,owner_last_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 ("CR-CREM1","Privato","Livorno","Ritirato","Cremazione singola",stamp,stamp,admin["id"],"Nuvola","Franco","Rossi",waiting_pickup,1)).lastrowid
-            # fires the same day too: the count must match the full Programma Cremazioni list, not just stalled ones
-            fresh_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,created_at,updated_at,created_by,
-                animal_name,owner_first_name,owner_last_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                ("CR-CREM3","Privato","Livorno","Ritirato","Cremazione singola",stamp,stamp,admin["id"],"Luna","Paolo","Neri",fresh_pickup,1)).lastrowid
             # same wait, but a collective cremation must NOT trigger this specific reminder type
             collettiva_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,created_at,updated_at,created_by,
                 animal_name,owner_first_name,owner_last_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
@@ -4147,17 +4138,11 @@ class PetParadiseTests(unittest.TestCase):
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
         self.handler.dashboard(admin)
         page=rendered[-1]
-        self.assertIn("2 cremazioni singole in attesa",page)
-        self.assertIn('href="/programma-cremazioni"',page)
+        self.assertIn("1 cremazione singola in attesa",page)
         with app.db() as conn:
-            fresh_reminder=conn.execute(
-                "SELECT title FROM reminders WHERE reminder_type='cremation_pending' AND entity_key=?",(f"practice:{fresh_pid}",)
-            ).fetchone()
             collettiva_reminder=conn.execute(
                 "SELECT id FROM reminders WHERE reminder_type='cremation_pending' AND entity_key=?",(f"practice:{collettiva_pid}",)
             ).fetchone()
-        self.assertIsNotNone(fresh_reminder)
-        self.assertIn("da oggi",fresh_reminder["title"])
         self.assertIsNone(collettiva_reminder)
         # once queued into the cremation program (status moves to 'In programma'), it auto-resolves
         with app.db() as conn:
