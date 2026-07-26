@@ -1142,7 +1142,7 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 .practice-status{background:transparent!important;border:2px solid currentColor}.practice-status-blue{color:#60a5fa!important;border-color:#3b82f6}.practice-status-red{color:#fb7185!important;border-color:#ef4444}.practice-status-yellow{color:#fde047!important;border-color:#eab308}.practice-status-green{color:#4ade80!important;border-color:#22c55e}.light-theme .practice-status-blue{color:#1d4ed8!important}.light-theme .practice-status-red{color:#b91c1c!important}.light-theme .practice-status-yellow{color:#854d0e!important}.light-theme .practice-status-green{color:#15803d!important}
 .modern-check{display:flex;align-items:center;gap:10px;min-height:46px;padding:10px 13px;border:1px solid #3b4658;border-radius:12px;background:linear-gradient(145deg,#182130,#111925);color:#e8edf5;cursor:pointer;transition:border-color .16s,transform .16s,box-shadow .16s}.modern-check:hover{transform:translateY(-1px);border-color:#fb7185;box-shadow:0 8px 22px #02061745}.modern-check input[type=checkbox]{width:20px;height:20px;margin:0;accent-color:#ef405f}.modern-check span{font-size:12px;font-weight:800;letter-spacing:.025em}.light-theme .modern-check{background:linear-gradient(145deg,#fff,#f1f5f9);color:#172033;border-color:#cbd5e1}.invoice-inline{display:grid;gap:8px}.invoice-inline input{min-width:0}.invoice-inline .btn{width:100%}
 .pay-green{border:2px solid #22c55e!important}.pay-yellow{border:2px solid #eab308!important}.pay-blue{border:2px solid #3b82f6!important}.notification-badge{position:absolute;display:grid;place-items:center;min-width:19px;height:19px;padding:0 5px;border-radius:99px;background:#dc2626;color:#fff;font:700 11px/1 system-ui;transform:translate(13px,-13px);box-shadow:0 0 0 2px #111827}.nav-notification{position:relative}.notification-center{display:grid;gap:10px}.notification-item{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:13px;align-items:center;padding:15px;border:1px solid #334155;border-radius:13px;background:#1f2937}.notification-item.unread{border-left:4px solid #ef405f}.notification-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:#172033;font-size:21px}.notification-copy b,.notification-copy small{display:block}.notification-copy p{margin:4px 0;color:#cbd5e1}.notification-copy small{color:#94a3b8}.notification-actions{display:flex;gap:8px;align-items:center}.toggle-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.toggle-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:1px solid #334155;border-radius:11px}.toggle-row input{width:22px;height:22px}.permission-prompt{position:fixed;right:20px;bottom:20px;z-index:150;max-width:390px;padding:18px;border:1px solid #475569;border-radius:16px;background:#172033;color:#fff;box-shadow:0 24px 70px #000a}.permission-prompt p{color:#cbd5e1}.sw-update-banner{position:fixed;left:14px;right:14px;bottom:calc(14px + var(--safe-bottom));z-index:160;display:flex;align-items:center;justify-content:space-between;gap:14px;max-width:420px;margin:0 auto;padding:12px 16px;border:1px solid #475569;border-radius:14px;background:#172033;color:#fff;box-shadow:0 20px 60px #000a;animation:ppmFade .2s ease-out}.sw-update-banner button{border:0;border-radius:9px;padding:8px 14px;font-weight:700;background:var(--brand);color:#fff;cursor:pointer}.light-theme .sw-update-banner{background:#fff;color:#111827;border-color:#cbd5e1}.quick-payment{display:flex;gap:7px;align-items:center}.quick-payment select,.quick-payment input{min-width:110px}.quick-payment .btn{width:auto}.light-theme .notification-item,.light-theme .toggle-row,.light-theme .permission-prompt{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .notification-copy p{color:#334155}
-.practice-list-table{min-width:1500px}.practice-list-table th:first-child,.practice-list-table td:first-child{position:sticky;left:0;z-index:3;min-width:215px;background:#101620;box-shadow:8px 0 14px #02061735}.practice-list-table th:first-child{z-index:4}.light-theme .practice-list-table th:first-child,.light-theme .practice-list-table td:first-child{background:#fff}.inline-statuses{display:grid;gap:8px;min-width:170px}.inline-state-select{min-height:38px;padding:7px 32px 7px 10px;border-width:2px;font-weight:800}button.inline-state-select{border:0;border-radius:9px;font:inherit;cursor:pointer;text-align:center;padding:7px 14px}.inline-tag-form{display:flex;flex-direction:column;gap:2px}.invoice-inline-cell{display:grid;gap:4px;min-width:130px}.invoice-inline-input{min-height:34px;padding:6px 9px;font-size:12px}.invoice-inline-input.input-error{border-color:#ef4444}.payment-popover{position:fixed;inset:0;z-index:180;display:grid;place-items:center;padding:18px;background:#020617b8}.payment-popover[hidden]{display:none}.payment-dialog{width:min(620px,100%);max-height:90dvh;overflow:auto;padding:20px;border:1px solid #475569;border-radius:16px;background:#172033;box-shadow:0 28px 90px #000c}.payment-dialog h2{margin-bottom:6px}.payment-dialog .fields{margin-top:16px}.payment-macroarea{margin-top:20px;padding-top:18px;border-top:1px solid #334155}.payment-macroarea:first-of-type{margin-top:16px;padding-top:0;border-top:0}.payment-macroarea h3{margin:0 0 10px;font-size:16px}.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.payment-macroarea-channel{padding:14px;border:1px solid #334155;border-radius:12px;background:#182334;margin-bottom:16px}.light-theme .payment-macroarea-channel{background:#f8fafc;border-color:#cbd5e1}#paymentTotaleWRow .field label,#paymentTotaleDRow .field label,.payment-macroarea-channel .fields .field:first-child label{font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.03em}.payment-macroarea-channel .fields .field:not(:first-child) label{font-size:11px;font-weight:600;color:var(--muted)}.payment-invoice-section{margin-top:18px;padding-top:16px;border-top:1px solid #334155}.payment-invoice-section h3{margin:0 0 4px;font-size:14px}.payment-invoice-section .fields{margin-top:10px}.payment-acconto-summary{margin:10px 0 0}.light-theme .payment-dialog{background:#fff;color:#111827}.light-theme .payment-macroarea{border-color:#e2e8f0}.light-theme .payment-invoice-section{border-color:#e2e8f0}.message-programmato{background:#4c1d95;color:#ede9fe}.message-in_invio{background:#78350f;color:#fef3c7}.message-annullato{background:#334155;color:#cbd5e1}.conversation-error{grid-column:1/-1}.conversation-error dd{white-space:normal;color:#fca5a5}.conversation-replies{grid-column:1/-1}.conversation-replies dd{white-space:normal}.conversation-replies ul{margin:4px 0 0;padding-left:18px}.unmatched-whatsapp-list{margin:0;padding-left:18px;display:grid;gap:8px}.conversation-action.actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}.conversation-action form{margin:0}
+.practice-list-table{min-width:1500px}.practice-list-table th:first-child,.practice-list-table td:first-child{position:sticky;left:0;z-index:3;min-width:215px;background:#101620;box-shadow:8px 0 14px #02061735}.practice-list-table th:first-child{z-index:4}.light-theme .practice-list-table th:first-child,.light-theme .practice-list-table td:first-child{background:#fff}.inline-statuses{display:grid;gap:8px;min-width:170px}.inline-state-select{min-height:38px;padding:7px 32px 7px 10px;border-width:2px;font-weight:800}button.inline-state-select{border:0;border-radius:9px;font:inherit;cursor:pointer;text-align:center;padding:7px 14px}.inline-tag-form{display:flex;flex-direction:column;gap:2px}.invoice-inline-cell{display:grid;gap:4px;min-width:130px}.invoice-inline-input{min-height:34px;padding:6px 9px;font-size:12px}.invoice-inline-input.input-error{border-color:#ef4444}.payment-popover{position:fixed;inset:0;z-index:180;display:grid;place-items:center;padding:18px;background:#020617b8}.payment-popover[hidden]{display:none}.payment-dialog{width:min(620px,100%);max-height:90dvh;overflow:auto;padding:20px;border:1px solid #475569;border-radius:16px;background:#172033;box-shadow:0 28px 90px #000c}.payment-dialog h2{margin-bottom:6px}.payment-dialog .fields{margin-top:16px}.payment-macroarea{margin-top:20px;padding-top:18px;border-top:1px solid #334155}.payment-macroarea:first-of-type{margin-top:16px;padding-top:0;border-top:0}.payment-macroarea h3{margin:0 0 10px;font-size:16px}.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.payment-macroarea-channel{padding:14px;border:1px solid #334155;border-radius:12px;background:#182334;margin-bottom:16px}.light-theme .payment-macroarea-channel{background:#f8fafc;border-color:#cbd5e1}#paymentTotaleWRow .field label,#paymentTotaleDRow .field label,.payment-macroarea-channel .fields .field:first-child label{font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.03em}.payment-macroarea-channel .fields .field:not(:first-child) label{font-size:11px;font-weight:600;color:var(--muted)}.field-error input,.field-error select,.field-error textarea{border-color:#ef4444}.field-error-text{display:block;margin-top:4px;color:#ef4444;font-size:12px;font-weight:600}.payment-invoice-section{margin-top:18px;padding-top:16px;border-top:1px solid #334155}.payment-invoice-section h3{margin:0 0 4px;font-size:14px}.payment-invoice-section .fields{margin-top:10px}.payment-acconto-summary{margin:10px 0 0}.light-theme .payment-dialog{background:#fff;color:#111827}.light-theme .payment-macroarea{border-color:#e2e8f0}.light-theme .payment-invoice-section{border-color:#e2e8f0}.message-programmato{background:#4c1d95;color:#ede9fe}.message-in_invio{background:#78350f;color:#fef3c7}.message-annullato{background:#334155;color:#cbd5e1}.conversation-error{grid-column:1/-1}.conversation-error dd{white-space:normal;color:#fca5a5}.conversation-replies{grid-column:1/-1}.conversation-replies dd{white-space:normal}.conversation-replies ul{margin:4px 0 0;padding-left:18px}.unmatched-whatsapp-list{margin:0;padding-left:18px;display:grid;gap:8px}.conversation-action.actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}.conversation-action form{margin:0}
 @media(max-width:620px){.practice-list-table th:first-child,.practice-list-table td:first-child{box-sizing:border-box;width:132px;min-width:132px;max-width:132px;padding-left:12px;padding-right:10px;white-space:normal!important}}
 @media(max-width:1150px){.conversation-card{grid-template-columns:1fr 1fr}.conversation-action{grid-column:1/-1;text-align:left}}
 @media(max-width:700px){.conversation-card{grid-template-columns:1fr;gap:14px}.conversation-card dl{grid-template-columns:1fr 1fr}.conversation-action{grid-column:auto}.conversation-action.actions{justify-content:stretch}.conversation-action form,.conversation-action .btn{width:100%}.pagination{gap:8px;justify-content:space-between}.pagination span{font-size:11px;text-align:center}.conversation-message{white-space:normal}.conversations-wrap .titlebar h1{font-size:24px}}
@@ -1555,7 +1555,11 @@ document.addEventListener('input', function(e){
   }
   if(e.target && e.target.matches('[data-preventivo-sum="1"]')) updatePreventivoTotal();
   if(e.target && (e.target.name === 'deposit' || e.target.name === 'total_service' || e.target.name === 'total_text' || e.target.name === 'deposit_final')) updateRemainingBalance();
-  if(e.target && (e.target.name === 'saldo_w_totale' || e.target.name === 'saldo_d_totale')) e.target.dataset.autoFilled='0';
+  if(e.target && (e.target.name === 'saldo_w_totale' || e.target.name === 'saldo_d_totale')){
+    e.target.dataset.autoFilled='0';
+    const touchedField=document.querySelector(`input[name="${e.target.name}_touched"]`);
+    if(touchedField) touchedField.value='1';
+  }
   if(e.target && ['total_service','total_text','acconto_w_totale','acconto_d_totale'].includes(e.target.name)) updateMacroRimanenza();
 });
 function setupZipLookup(){
@@ -1936,6 +1940,12 @@ function updateMacroRimanenza(){
   const accontoD=ppmNumber(document.querySelector('input[name="acconto_d_totale"]')?.value||0);
   const saldoW=document.querySelector('input[name="saldo_w_totale"]');
   const saldoD=document.querySelector('input[name="saldo_d_totale"]');
+  // A redisplay after a validation error starts with a fresh dataset (JS
+  // state isn't persisted across a page load) — the hidden *_touched field
+  // is what actually survives, so re-derive autoFilled from it first, or a
+  // manually-typed Rimanenza would get silently overwritten again here.
+  if(saldoW?.dataset.autoFilled===undefined && document.querySelector('input[name="saldo_w_totale_touched"]')?.value==='1') saldoW.dataset.autoFilled='0';
+  if(saldoD?.dataset.autoFilled===undefined && document.querySelector('input[name="saldo_d_totale_touched"]')?.value==='1') saldoD.dataset.autoFilled='0';
   if(saldoW && saldoW.dataset.autoFilled!=='0') saldoW.value=ppmFormat(Math.max(0,totalW-accontoW));
   if(saldoD && saldoD.dataset.autoFilled!=='0') saldoD.value=ppmFormat(Math.max(0,totalD-accontoD));
 }
@@ -1981,8 +1991,22 @@ function arrangeBudgetLayout(){
   original.filter(node=>!used.has(node)).forEach(node=>addRow([node]));
   fields.replaceChildren(workspace);fields.classList.add('budget-layout');
 }
+function showFieldError(){
+  const fieldName=document.getElementById('formErrorField')?.value;
+  const message=document.getElementById('formErrorMessage')?.value;
+  if(!fieldName||!message) return;
+  const control=document.querySelector(`[name="${fieldName}"]`);
+  if(!control) return;
+  const wrap=control.closest('.field')||control.closest('.payment-macroarea-channel')||control;
+  wrap.classList.add('field-error');
+  const note=document.createElement('small');
+  note.className='field-error-text';note.textContent=message;
+  wrap.appendChild(note);
+  wrap.scrollIntoView({behavior:'smooth',block:'center'});
+  control.focus({preventScroll:true});
+}
 document.addEventListener('DOMContentLoaded', function(){
-  reorderSenderFields(); placeCallBackFlag(); setupBudgetExtras(); decoratePracticeSections(); setupNumericBudgetFields(); updatePreventivoTotal(); updateRemainingBalance(); updateMacroRimanenza(); setupZipLookup(); setupUrnNotesField();arrangeBudgetLayout();
+  reorderSenderFields(); placeCallBackFlag(); setupBudgetExtras(); decoratePracticeSections(); setupNumericBudgetFields(); updatePreventivoTotal(); updateRemainingBalance(); updateMacroRimanenza(); setupZipLookup(); setupUrnNotesField();arrangeBudgetLayout();showFieldError();
   const plate=document.querySelector('input[name="vehicle_plate"]');
   if(plate) plate.readOnly=false;
 });
@@ -2055,7 +2079,7 @@ function setupTableTouchScroll(){
   // px/ms speed below which momentum is imperceptible and stops; DECAY_PER_MS
   // is the per-millisecond speed multiplier (time-based, not frame-based, so
   // it feels the same regardless of screen refresh rate).
-  const MIN_VELOCITY=0.02,DECAY_PER_MS=0.998;
+  const MIN_VELOCITY=0.02,DECAY_PER_MS=0.9986;
   document.querySelectorAll('.tablebox').forEach(function(box){
     if(box.dataset.touchScrollReady) return;
     box.dataset.touchScrollReady='1';
@@ -5860,24 +5884,33 @@ class App(BaseHTTPRequestHandler):
         except ValueError: page=1
         per_page=20
         event_date="COALESCE(NULLIF(wm.sent_at,''),NULLIF(wm.last_attempt_at,''),NULLIF(wm.scheduled_at,''),wm.created_at)"
-        where=["wm.manual=0","(wm.sent_at IS NOT NULL OR wm.status IN ('programmato','in_invio','accettato_da_meta','consegnato','letto','fallito','annullato'))"]
+        select_cols=f"wm.*,p.practice_number,p.owner_first_name,p.owner_last_name,p.owner_company,p.owner_phone,p.animal_name,p.status practice_status,{event_date} event_at"
+        base_where=["wm.manual=0","(wm.sent_at IS NOT NULL OR wm.status IN ('programmato','in_invio','accettato_da_meta','consegnato','letto','fallito','annullato'))"]
         args=[]
         if term:
-            like=like_term(term); where.append("(UNACCENT(COALESCE(p.owner_first_name,'')||' '||COALESCE(p.owner_last_name,'')) LIKE ? OR UNACCENT(COALESCE(p.owner_company,'')) LIKE ? OR UNACCENT(COALESCE(p.animal_name,'')) LIKE ? OR UNACCENT(COALESCE(wm.recipient_phone,'')) LIKE ?)"); args.extend([like]*4)
-        if date_from and re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_from): where.append(f"date({event_date})>=date(?)"); args.append(date_from)
+            like=like_term(term); base_where.append("(UNACCENT(COALESCE(p.owner_first_name,'')||' '||COALESCE(p.owner_last_name,'')) LIKE ? OR UNACCENT(COALESCE(p.owner_company,'')) LIKE ? OR UNACCENT(COALESCE(p.animal_name,'')) LIKE ? OR UNACCENT(COALESCE(wm.recipient_phone,'')) LIKE ?)"); args.extend([like]*4)
+        if date_from and re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_from): base_where.append(f"date({event_date})>=date(?)"); args.append(date_from)
         else: date_from=""
-        if date_to and re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_to): where.append(f"date({event_date})<=date(?)"); args.append(date_to)
+        if date_to and re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_to): base_where.append(f"date({event_date})<=date(?)"); args.append(date_to)
         else: date_to=""
-        if message_status: where.append("wm.status=?"); args.append(message_status)
-        if practice_status: where.append("p.status=?"); args.append(practice_status)
-        where_sql=" AND ".join(where)
+        if message_status: base_where.append("wm.status=?"); args.append(message_status)
+        if practice_status: base_where.append("p.status=?"); args.append(practice_status)
+        # A thanks message is scheduled ~48h in the future while a catalog one
+        # is scheduled for "now" — sorting everything by one DESC timestamp
+        # made an unsent, far-future "programmato" outrank a message that was
+        # actually sent minutes ago. Splitting into two sections (what's still
+        # pending vs. what already happened, each in the order you'd actually
+        # want to read it) avoids that instead of trying to interleave them.
         with db() as c:
-            total=c.execute(f"SELECT count(*) n FROM whatsapp_messages wm JOIN practices p ON p.id=wm.practice_id WHERE {where_sql}",args).fetchone()["n"]
+            scheduled_where=" AND ".join(base_where+["wm.status IN ('programmato','in_invio')"])
+            scheduled_rows=c.execute(f"""SELECT {select_cols} FROM whatsapp_messages wm JOIN practices p ON p.id=wm.practice_id
+                               WHERE {scheduled_where} ORDER BY wm.scheduled_at ASC LIMIT 50""",args).fetchall()
+            sent_where=" AND ".join(base_where+["wm.status NOT IN ('programmato','in_invio')"])
+            total=c.execute(f"SELECT count(*) n FROM whatsapp_messages wm JOIN practices p ON p.id=wm.practice_id WHERE {sent_where}",args).fetchone()["n"]
             pages=max(1,(total+per_page-1)//per_page); page=min(page,pages); offset=(page-1)*per_page
-            rows=c.execute(f"""SELECT wm.*,p.practice_number,p.owner_first_name,p.owner_last_name,p.owner_company,p.owner_phone,p.animal_name,p.status practice_status,{event_date} event_at
-                               FROM whatsapp_messages wm JOIN practices p ON p.id=wm.practice_id
-                               WHERE {where_sql} ORDER BY event_at DESC,wm.id DESC LIMIT ? OFFSET ?""",args+[per_page,offset]).fetchall()
-            practice_ids=[row["practice_id"] for row in rows]
+            sent_rows=c.execute(f"""SELECT {select_cols} FROM whatsapp_messages wm JOIN practices p ON p.id=wm.practice_id
+                               WHERE {sent_where} ORDER BY event_at DESC,wm.id DESC LIMIT ? OFFSET ?""",args+[per_page,offset]).fetchall()
+            practice_ids=[row["practice_id"] for row in list(scheduled_rows)+list(sent_rows)]
             inbound_by_practice={}
             if practice_ids:
                 marks=','.join('?' for _ in practice_ids)
@@ -5885,8 +5918,7 @@ class App(BaseHTTPRequestHandler):
                     inbound_by_practice.setdefault(irow["practice_id"],[]).append(irow)
             unmatched_inbound=c.execute("SELECT * FROM whatsapp_inbound_messages WHERE practice_id IS NULL ORDER BY received_at DESC LIMIT 20").fetchall()
         status_labels={"programmato":"Programmato","in_invio":"Invio in corso","accettato_da_meta":"Inviato","consegnato":"Consegnato","letto":"Letto","fallito":"Fallito","annullato":"Annullato"}
-        cards=[]
-        for row in rows:
+        def render_card(row):
             client=" ".join(x for x in [row["owner_first_name"],row["owner_last_name"]] if x).strip() or row["owner_company"] or "Cliente non indicato"
             phone=only_digits(row["recipient_phone"] or row["owner_phone"]); status=status_labels.get(row["status"],self.whatsapp_status_label(row["status"]))
             is_catalog_row=row["message_type"]=="catalogo"
@@ -5901,8 +5933,9 @@ class App(BaseHTTPRequestHandler):
             if replies:
                 reply_items=''.join(f'<li><b>{esc((r["received_at"] or "").replace("T"," ")[:16])}</b> — {esc(r["body"])}</li>' for r in replies)
                 replies_detail=f'<div class="conversation-replies"><dt>Risposte del cliente</dt><dd><ul>{reply_items}</ul></dd></div>'
-            cards.append(f'''<article class="conversation-card"><div class="conversation-main"><div class="conversation-avatar">{lucide("message")}</div><div><h2>{esc(client)}</h2><p><b>{esc(row["animal_name"] or "Animale non indicato")}</b> · pratica <a href="/pratiche/{row["practice_id"]}?return_to={quote(self.path,safe='')}">{esc(row["practice_number"])}</a></p><p class="conversation-message">{esc(last_message[:180])}</p></div></div><dl><div><dt>WhatsApp</dt><dd>{('+'+esc(phone)) if phone else '-'}</dd></div><div><dt>Stato reale</dt><dd><span class="badge message-{esc(row["status"])}">{esc(status)}</span></dd></div><div><dt>Orario programmato</dt><dd>{esc((row["scheduled_at"] or "-").replace("T"," ")[:16])}</dd></div><div><dt>Ultimo tentativo</dt><dd>{esc((row["last_attempt_at"] or "-").replace("T"," ")[:16])}</dd></div><div><dt>Data invio</dt><dd>{esc((row["sent_at"] or "-").replace("T"," ")[:16])}</dd></div><div><dt>Pratica</dt><dd><span class="badge">{esc(row["practice_status"])}</span></dd></div>{error_detail}{replies_detail}</dl><div class="conversation-action actions">{retry_action}{cancel_action}{chat_action}</div></article>''')
-        results=''.join(cards) or '<section class="section empty-state">Nessuna conversazione trovata.</section>'
+            return f'''<article class="conversation-card"><div class="conversation-main"><div class="conversation-avatar">{lucide("message")}</div><div><h2>{esc(client)}</h2><p><b>{esc(row["animal_name"] or "Animale non indicato")}</b> · pratica <a href="/pratiche/{row["practice_id"]}?return_to={quote(self.path,safe='')}">{esc(row["practice_number"])}</a></p><p class="conversation-message">{esc(last_message[:180])}</p></div></div><dl><div><dt>WhatsApp</dt><dd>{('+'+esc(phone)) if phone else '-'}</dd></div><div><dt>Stato reale</dt><dd><span class="badge message-{esc(row["status"])}">{esc(status)}</span></dd></div><div><dt>Orario programmato</dt><dd>{esc((row["scheduled_at"] or "-").replace("T"," ")[:16])}</dd></div><div><dt>Ultimo tentativo</dt><dd>{esc((row["last_attempt_at"] or "-").replace("T"," ")[:16])}</dd></div><div><dt>Data invio</dt><dd>{esc((row["sent_at"] or "-").replace("T"," ")[:16])}</dd></div><div><dt>Pratica</dt><dd><span class="badge">{esc(row["practice_status"])}</span></dd></div>{error_detail}{replies_detail}</dl><div class="conversation-action actions">{retry_action}{cancel_action}{chat_action}</div></article>'''
+        scheduled_html=''.join(render_card(row) for row in scheduled_rows) or '<p class="sub">Nessun messaggio in programma.</p>'
+        sent_html=''.join(render_card(row) for row in sent_rows) or '<section class="section empty-state">Nessuna conversazione trovata.</section>'
         unmatched_html=""
         if unmatched_inbound:
             unmatched_items=''.join(f'<li><b>+{esc(r["from_phone"])}</b>{(" · "+esc(r["contact_name"])) if r["contact_name"] else ""} · {esc((r["received_at"] or "").replace("T"," ")[:16])}<br>{esc(r["body"])}</li>' for r in unmatched_inbound)
@@ -5911,11 +5944,11 @@ class App(BaseHTTPRequestHandler):
             if disabled: return f'<span class="page-disabled">{label}</span>'
             params={"q":term,"dal":date_from,"al":date_to,"stato_messaggio":message_status,"stato_pratica":practice_status,"pagina":number}
             return f'<a href="/conversazioni-whatsapp?{urlencode({k:v for k,v in params.items() if v not in (None,"")})}">{label}</a>'
-        pagination=f'<nav class="pagination" aria-label="Paginazione">{page_link(page-1,"← Precedente",page<=1)}<span>Pagina {page} di {pages} · {total} conversazioni</span>{page_link(page+1,"Successiva →",page>=pages)}</nav>'
+        pagination=f'<nav class="pagination" aria-label="Paginazione">{page_link(page-1,"← Precedente",page<=1)}<span>Pagina {page} di {pages} · {total} inviati</span>{page_link(page+1,"Successiva →",page>=pages)}</nav>'
         message_options='<option value="">Tutti gli stati messaggio</option>'+''.join(f'<option value="{key}" {"selected" if message_status==key else ""}>{label}</option>' for key,label in status_labels.items())
         practice_options='<option value="">Tutti gli stati pratica</option>'+''.join(f'<option {"selected" if practice_status==state else ""}>{esc(state)}</option>' for state in STATES)
         filters=f'''<section class="search-after-results"><h2>Ricerca e filtri</h2><form class="section" method="get"><div class="fields"><div class="field full"><label>Cliente, animale o numero WhatsApp</label><input name="q" value="{esc(term)}" placeholder="Cerca conversazione"></div><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Stato messaggio</label><select name="stato_messaggio">{message_options}</select></div><div class="field"><label>Stato pratica</label><select name="stato_pratica">{practice_options}</select></div></div><button class="btn" style="margin-top:12px">Applica filtri</button><a class="btn ghost" style="margin-top:12px" href="/conversazioni-whatsapp">Pulisci filtri</a></form></section>'''
-        body=f'''<main class="wrap conversations-wrap"><div class="titlebar"><div><h1>Conversazioni WhatsApp</h1><p class="sub">Storico dei messaggi automatici (ringraziamento e catalogo urne) e delle risposte ricevute, dal più recente.</p></div></div>{unmatched_html}<section class="conversation-list">{results}</section>{pagination}{filters}</main>'''
+        body=f'''<main class="wrap conversations-wrap"><div class="titlebar"><div><h1>Conversazioni WhatsApp</h1><p class="sub">Storico dei messaggi automatici (ringraziamento e catalogo urne) e delle risposte ricevute.</p></div></div>{unmatched_html}<h2>In programma</h2><section class="conversation-list">{scheduled_html}</section><h2 style="margin-top:22px">Inviati</h2><section class="conversation-list">{sent_html}</section>{pagination}{filters}</main>'''
         self.send_html(layout("Conversazioni WhatsApp",body,user))
 
     def notifications(self,user):
@@ -6905,7 +6938,13 @@ class App(BaseHTTPRequestHandler):
             if channel=="W":
                 fn=f"{macroarea}_w_fattura_numero";fd=f"{macroarea}_w_fattura_data";ft=f"{macroarea}_w_fattura_totale"
                 fattura_html=f'''<div class="field"><label>Numero fattura {esc(label)}</label><input name="{fn}" value="{val(fn)}"></div><div class="field"><label>Data fattura {esc(label)}</label><input type="date" name="{fd}" value="{val(fd)}"></div><div class="field"><label>Totale fattura {esc(label)} €</label><input name="{ft}" value="{val(ft)}" inputmode="decimal" placeholder="Numero, es. 120,00"></div>'''
-            return f'''<div class="payment-macroarea-channel"><div class="fields"><div class="field"><label>{esc(label)} €</label><input name="{totale_name}" value="{val(totale_name)}" inputmode="decimal" placeholder="Numero, es. 120,00"></div><div class="field"><label>Data {esc(label)}</label><input type="date" name="{data_name}" value="{val(data_name)}"></div>{method_html}{fattura_html}</div></div>'''
+            # Rimanenza (saldo) amount fields auto-fill live from Totale-Acconto
+            # (see updateMacroRimanenza) purely as a preview of what's left —
+            # this hidden flag tracks whether the user actually confirmed it
+            # by editing it themselves, so create_practice can tell "just a
+            # preview, no date yet" apart from "a real saldo the user typed in".
+            touched_html=f'<input type="hidden" name="{totale_name}_touched" value="{val(totale_name+"_touched")}">' if macroarea=="saldo" else ""
+            return f'''<div class="payment-macroarea-channel"><div class="fields"><div class="field"><label>{esc(label)} €</label><input name="{totale_name}" value="{val(totale_name)}" inputmode="decimal" placeholder="Numero, es. 120,00"></div><div class="field"><label>Data {esc(label)}</label><input type="date" name="{data_name}" value="{val(data_name)}"></div>{method_html}{fattura_html}</div>{touched_html}</div>'''
         creation_payment_fields=f'''<section class="section hidden" id="creationPaymentSection"><h2>Pagamento</h2><p class="sub">Ogni importo è indipendente: compila solo D, solo W, o entrambi. Il circuito D non richiede il metodo di pagamento. Se per lo stesso incasso compili sia D che W, viene registrato solo D.</p><div class="fields" id="paymentEstremiRow"></div><div class="fields" id="paymentTotaleWRow"></div>{macro_field_group("acconto","W","Acconto W")}{macro_field_group("saldo","W","Rimanenza W")}<div class="payment-macroarea"><div class="fields" id="paymentTotaleDRow"></div>{macro_field_group("acconto","D","Acconto D",show_method=False)}{macro_field_group("saldo","D","Rimanenza D",show_method=False)}</div></section>'''
         if user is None or user["role"]=="admin":
             operator_field=f'''<div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option><option {selected('operator_name','GIANLUCA')}>GIANLUCA</option></select></div>'''
@@ -6928,7 +6967,7 @@ class App(BaseHTTPRequestHandler):
         <section class="section"><h2>Etichette operative</h2><div class="fields">{tag_select('tag_assistita','ASSISTITA','tag-red')}{tag_select('tag_possibile_assistita','POSSIBILE ASSISTITA','tag-red')}{tag_select('tag_assistita_streaming','ASSISTITA STREAMING','tag-orange')}{tag_select('tag_possibile_assistita_streaming','POSSIBILE ASSISTITA STREAMING','tag-orange')}{tag_select('tag_saluto','SALUTO','tag-purple')}{tag_select('tag_calco','CALCO','tag-yellow')}{tag_select('tag_possibile_calco','POSSIBILE CALCO','tag-yellow')}{tag_select('tag_calco_urna','CALCO PER URNA','tag-yellow')}{tag_select('tag_calco_paw','CALCO POLPASTRELLO','tag-yellow')}{tag_select('tag_possibile_calco_paw','POSSIBILE CALCO POLPASTRELLO','tag-yellow')}{tag_select('tag_calco_nose','CALCO NASO','tag-yellow')}{tag_select('tag_possibile_calco_nose','POSSIBILE CALCO NASO','tag-yellow')}{tag_select('tag_avvisare','AVVISARE','tag-pink')}{tag_select('tag_da_richiamare','DA RICHIAMARE','tag-blue')}</div></section>
         <section class="section"><h2>Documento e accettazione</h2><div class="fields"><div class="field"><label>Numero documento</label><input name="identity_document_number" value="{val('identity_document_number')}"></div><div class="field"><label>Data rilascio</label><input type="date" name="identity_document_date" value="{val('identity_document_date')}"></div><div class="field full"><label>Luogo firma</label><input name="signing_place" value="{val('signing_place') or val('destination_branch')}"></div></div></section>'''
 
-    def new_page(self,user,draft=None,error=""):
+    def new_page(self,user,draft=None,error="",error_field=""):
         q=parse_qs(urlparse(getattr(self,"path","")).query);calendar_event_id=(q.get("calendar_event_id") or [""])[0];prefill={}
         if calendar_event_id.isdigit():
             with db() as c:
@@ -6944,8 +6983,12 @@ class App(BaseHTTPRequestHandler):
         if draft is not None:prefill=draft
         hidden=(f'<input type="hidden" name="calendar_event_id" value="{calendar_event_id}"><input type="hidden" name="pickup_time" value="{event["start_at"][11:16]}">' if calendar_event_id.isdigit() and event else '')
         hidden+=f'<input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(24)}">'
-        error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Nuova pratica</h1><div class="sub">Inserisci subito i dati disponibili; potrai completarli in seguito.</div></div><div class="actions"><button class="btn" form="practiceForm">Crea pratica</button></div></div>{error_html}<form method="post" id="practiceForm">{hidden}<div class="grid form-grid">{self.fields_html(prefill,user)}</div><div class="actions" style="margin-top:18px"><button class="btn">Crea pratica</button><a class="btn ghost" href="{f'/calendario/{calendar_event_id}' if calendar_event_id.isdigit() else '/'}">Annulla</a></div></form></main>'''
+        # When the error maps to one specific field, jump straight to it
+        # (scroll + focus + inline message) instead of a page-top banner
+        # that leaves the user hunting for which of ~100 fields is wrong.
+        error_html='' if (error and error_field) else (f'<div class="flash warning">{esc(error)}</div>' if error else '')
+        error_target=f'<input type="hidden" id="formErrorField" value="{esc(error_field)}"><input type="hidden" id="formErrorMessage" value="{esc(error)}">' if (error and error_field) else ''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Nuova pratica</h1><div class="sub">Inserisci subito i dati disponibili; potrai completarli in seguito.</div></div><div class="actions"><button class="btn" form="practiceForm">Crea pratica</button></div></div>{error_html}<form method="post" id="practiceForm">{hidden}{error_target}<div class="grid form-grid">{self.fields_html(prefill,user)}</div><div class="actions" style="margin-top:18px"><button class="btn">Crea pratica</button><a class="btn ghost" href="{f'/calendario/{calendar_event_id}' if calendar_event_id.isdigit() else '/'}">Annulla</a></div></form></main>'''
         self.send_html(layout("Nuova pratica",body,user))
 
     def normalized_fields(self,f):
@@ -8051,7 +8094,21 @@ class App(BaseHTTPRequestHandler):
     def create_practice(self,user):
         f=self.form(); d=self.normalized_fields(f); stamp=now();calendar_event_id=int(f["calendar_event_id"]) if f.get("calendar_event_id","").isdigit() else None
         economic_at=f.get("economic_at","").strip()
-        payment_draft=lambda: {**d,"economic_at":economic_at}
+        # normalized_fields()/d only cover the "classic" columns; the Acconto/
+        # Saldo macroarea fields (and their fattura/touched companions) live
+        # only in the raw form, so without this they'd silently vanish from
+        # the redisplayed form on any validation error — the user would see
+        # their just-typed Acconto/Saldo values wiped and have to retype them.
+        macro_raw_field_names=(
+            "acconto_w_totale","acconto_w_data","acconto_w_modalita",
+            "acconto_w_fattura_numero","acconto_w_fattura_data","acconto_w_fattura_totale",
+            "acconto_d_totale","acconto_d_data",
+            "saldo_w_totale","saldo_w_data","saldo_w_modalita",
+            "saldo_w_fattura_numero","saldo_w_fattura_data","saldo_w_fattura_totale",
+            "saldo_d_totale","saldo_d_data",
+            "saldo_w_totale_touched","saldo_d_totale_touched",
+        )
+        payment_draft=lambda: {**d,"economic_at":economic_at,**{name:f.get(name,"") for name in macro_raw_field_names}}
         creation_balance_token=f.get("balance_idempotency_key","").strip()
         creation_balance_key=f"practice-create:{creation_balance_token}" if creation_balance_token else ""
         if user["role"]!="admin": d["operator_name"]=user["display_name"].upper()
@@ -8074,9 +8131,11 @@ class App(BaseHTTPRequestHandler):
                 if money_value(d_amount)>0:
                     channel="D";totale_field=d_amount
                     data_field=f.get(f"{macroarea}_d_data","").strip();method=f.get(f"{macroarea}_d_modalita","").strip()
+                    touched=macroarea!="saldo" or f.get(f"{macroarea}_d_totale_touched","")=="1"
                 elif money_value(w_amount)>0:
                     channel="W";totale_field=w_amount
                     data_field=f.get(f"{macroarea}_w_data","").strip();method=f.get(f"{macroarea}_w_modalita","").strip()
+                    touched=macroarea!="saldo" or f.get(f"{macroarea}_w_totale_touched","")=="1"
                     # Invoicing only ever applies to the W circuito (matches
                     # the Pagamento popover's own rule); these are the same
                     # per-macroarea invoice fields the popover writes to
@@ -8087,16 +8146,27 @@ class App(BaseHTTPRequestHandler):
                     invoice_date=f.get(f"{macroarea}_w_fattura_data","").strip()
                 else:
                     continue
+                # Rimanenza (saldo) auto-fills its amount from Totale-Acconto
+                # purely as a preview (see updateMacroRimanenza in APP_JS) —
+                # if the user never actually confirmed it (didn't edit the
+                # amount, didn't pick a date), it isn't a real incasso to
+                # register yet, just an unconfirmed number sitting in the
+                # field: skip it silently instead of forcing a date the user
+                # doesn't have (the balance is only owed, not paid yet).
+                if not touched and not data_field:
+                    continue
                 try:
                     date.fromisoformat(data_field)
                 except ValueError:
-                    return self.new_page(user,draft=payment_draft(),error=f"Indica una data valida per {'Acconto' if macroarea=='acconto' else 'Rimanenza'} {channel}.")
+                    field=f"{macroarea}_{channel.lower()}_data"
+                    return self.new_page(user,draft=payment_draft(),error=f"Indica una data valida per {'Acconto' if macroarea=='acconto' else 'Rimanenza'} {channel}.",error_field=field)
                 if channel!="D" and not method:
-                    return self.new_page(user,draft=payment_draft(),error=f"Seleziona il metodo di pagamento per {'Acconto' if macroarea=='acconto' else 'Rimanenza'} {channel}.")
+                    field=f"{macroarea}_{channel.lower()}_modalita"
+                    return self.new_page(user,draft=payment_draft(),error=f"Seleziona il metodo di pagamento per {'Acconto' if macroarea=='acconto' else 'Rimanenza'} {channel}.",error_field=field)
                 if invoice_total and not re.fullmatch(r"\d+(?:\.\d{1,2})?",invoice_total):
-                    return self.new_page(user,draft=payment_draft(),error="Totale fattura non valido.")
+                    return self.new_page(user,draft=payment_draft(),error="Totale fattura non valido.",error_field=f"{macroarea}_w_fattura_totale")
                 if invoice_date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}",invoice_date):
-                    return self.new_page(user,draft=payment_draft(),error="Data fattura non valida.")
+                    return self.new_page(user,draft=payment_draft(),error="Data fattura non valida.",error_field=f"{macroarea}_w_fattura_data")
                 macro_plan[macroarea]={"channel":channel,"totale_field":totale_field,"data_field":data_field,"method":method,"invoice_number":invoice_number,"invoice_total":invoice_total,"invoice_date":invoice_date}
         initial=f.get("status","Ritirato")
         if initial not in STATES or (initial=="Smaltito" and d.get("service_type")!="Cremazione collettiva"): initial="Ritirato"

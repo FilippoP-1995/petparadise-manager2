@@ -205,6 +205,61 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
         self.assertEqual(len(movements), 1)
         self.assertEqual((movements[0].movement_type, movements[0].amount_cents, movements[0].category), ("Acconto", 10000, "D"))
 
+    def test_create_practice_with_untouched_autofilled_rimanenza_d_is_silently_skipped(self):
+        # Regression test: the browser auto-fills Rimanenza D's amount from
+        # Totale D - Acconto D as a live preview (updateMacroRimanenza in
+        # APP_JS) even when the user never intends to register a saldo yet
+        # (they don't know the payment date for money still owed). Without
+        # the *_touched flag this amount alone used to force a "data valida"
+        # error and — worse — silently wipe the just-typed Acconto D on
+        # redisplay (payment_draft() didn't preserve macro fields either).
+        self.handler.form = lambda: {
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
+            "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
+            "total_text": "350", "acconto_d_totale": "100", "acconto_d_data": "2026-07-23", "acconto_d_modalita": "",
+            "saldo_d_totale": "250", "saldo_d_data": "", "saldo_d_totale_touched": "",
+        }
+        self.handler.create_practice(self.admin)
+        pid = int(self.redirects[-1].split("/pratiche/")[1])
+        with app.db() as connection:
+            movements = [m for m in get_movements(connection) if m.practice_id == pid]
+        self.assertEqual(len(movements), 1)
+        self.assertEqual((movements[0].movement_type, movements[0].category), ("Acconto", "D"))
+
+    def test_create_practice_with_manually_touched_rimanenza_d_still_requires_a_date(self):
+        errors = []
+        self.handler.new_page = lambda user, draft=None, error="", error_field="": errors.append((error, error_field))
+        self.handler.form = lambda: {
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
+            "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
+            "total_text": "350", "saldo_d_totale": "250", "saldo_d_data": "", "saldo_d_totale_touched": "1",
+        }
+        self.handler.create_practice(self.admin)
+        self.assertIn("Indica una data valida per Rimanenza D", errors[-1][0])
+        self.assertEqual(errors[-1][1], "saldo_d_data")
+        with app.db() as connection:
+            count = connection.execute("SELECT COUNT(*) n FROM practices").fetchone()["n"]
+        self.assertEqual(count, 0)
+
+    def test_validation_error_redisplay_preserves_already_typed_macro_payment_fields(self):
+        # Regression test: any validation error used to redisplay the form
+        # via payment_draft(), which only carried the "classic" normalized
+        # fields — the Acconto/Saldo macroarea fields the user had just
+        # typed were silently dropped, forcing them to retype everything.
+        drafts = []
+        self.handler.new_page = lambda user, draft=None, error="", error_field="": drafts.append(draft)
+        self.handler.form = lambda: {
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
+            "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
+            "total_text": "350", "saldo_d_totale": "250", "saldo_d_data": "", "saldo_d_totale_touched": "1",
+        }
+        self.handler.create_practice(self.admin)
+        self.assertEqual(drafts[-1].get("saldo_d_totale"), "250")
+        self.assertEqual(drafts[-1].get("saldo_d_totale_touched"), "1")
+
     def test_create_practice_with_only_saldo_w_requires_payment_method(self):
         self.handler.form = lambda: {
             "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
@@ -213,7 +268,7 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
             "price_cremation": "300", "saldo_w_totale": "300", "saldo_w_data": "2026-07-23", "saldo_w_modalita": "",
         }
         errors = []
-        self.handler.new_page = lambda user, draft=None, error="": errors.append(error)
+        self.handler.new_page = lambda user, draft=None, error="", error_field="": errors.append(error)
         self.handler.create_practice(self.admin)
         self.assertIn("Seleziona il metodo di pagamento", errors[-1])
         with app.db() as connection:
@@ -556,9 +611,10 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
         self.assertIn("Data pagamento / acconto",rendered[-1])
         self.assertIn('name="economic_at" value="2026-07-09"',rendered[-1])
         errors=[]
-        self.handler.new_page=lambda user,draft=None,error="":errors.append((draft,error))
+        self.handler.new_page=lambda user,draft=None,error="",error_field="":errors.append((draft,error))
         invalid=self.creation_form(payment_status="Pagato",token="missing-date")
         invalid["saldo_w_data"]=""
+        invalid["saldo_w_totale_touched"]="1"
         self.handler.form=lambda:invalid
         self.handler.create_practice(self.admin)
         self.assertIn("data",errors[-1][1].lower())
