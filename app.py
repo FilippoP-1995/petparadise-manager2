@@ -2071,6 +2071,22 @@ function setupTableTouchScroll(){
   // is the per-millisecond speed multiplier (time-based, not frame-based, so
   // it feels the same regardless of screen refresh rate).
   const MIN_VELOCITY=0.02,DECAY_PER_MS=0.9986;
+  // A flick inside a table (especially one that hands off into page
+  // momentum) can still be decelerating a moment later when the user
+  // touches down again somewhere else entirely — a different table, or
+  // plain page content. Without this, that leftover requestAnimationFrame
+  // loop keeps calling scrollLeft/scrollTop/scrollTo on top of whatever the
+  // new gesture (native or ours) is doing, fighting it every frame: exactly
+  // the "macchinoso, soprattutto dopo lo scroll da una tabella" feel this
+  // fixes. One capture-phase touchstart listener stops every table's
+  // momentum the instant a new touch begins anywhere, before anything else
+  // reacts to it.
+  if(!window.ppmMomentumStoppers){
+    window.ppmMomentumStoppers=[];
+    document.addEventListener('touchstart',function(){
+      window.ppmMomentumStoppers.forEach(function(stop){stop();});
+    },{capture:true,passive:true});
+  }
   document.querySelectorAll('.tablebox').forEach(function(box){
     if(box.dataset.touchScrollReady) return;
     box.dataset.touchScrollReady='1';
@@ -2079,6 +2095,7 @@ function setupTableTouchScroll(){
     let pageAnchorY=0,pageStartScroll=0;
     let lastX=0,lastY=0,lastT=0,velocityX=0,velocityY=0,momentumFrame=null;
     const stopMomentum=()=>{if(momentumFrame){cancelAnimationFrame(momentumFrame);momentumFrame=null;}};
+    window.ppmMomentumStoppers.push(stopMomentum);
     const runMomentum=(momentumAxis,momentumPhase)=>{
       let v=momentumAxis==='x'?velocityX:velocityY,last=performance.now();
       const step=(now)=>{
