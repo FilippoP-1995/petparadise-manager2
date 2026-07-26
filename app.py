@@ -306,6 +306,18 @@ def init_db():
           token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
           created_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS cremation_cycles (
+          id INTEGER PRIMARY KEY,
+          cycle_date TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'in_attesa' CHECK(status IN ('pianificato','in_attesa','in_corso','completato')),
+          planned_start TEXT NOT NULL,
+          planned_end TEXT NOT NULL,
+          actual_start TEXT,
+          actual_end TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_cremation_cycles_date ON cremation_cycles(cycle_date, planned_start);
         CREATE TABLE IF NOT EXISTS practices (
           id INTEGER PRIMARY KEY, practice_number TEXT UNIQUE NOT NULL,
           request_origin TEXT NOT NULL, destination_branch TEXT NOT NULL,
@@ -662,6 +674,7 @@ def init_db():
             "cremation_queued": "TEXT",
             "billing_status": "TEXT",
             "billing_invoiced_at": "TEXT",
+            "cremation_cycle_id": "INTEGER REFERENCES cremation_cycles(id)",
         }
         existing = {row["name"] for row in c.execute("PRAGMA table_info(practices)")}
         for name, definition in extra_columns.items():
@@ -1178,7 +1191,7 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 .section-collapse-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:12px}.section-collapse-head h2{margin:0}.collapse-toggle{display:grid;place-items:center;width:32px;height:32px;padding:0;border:1px solid #334155;border-radius:9px;background:#172033;color:#e7ecf3;font-size:18px;font-weight:700;line-height:1;cursor:pointer}.collapse-toggle:hover{border-color:#ef405f;color:#fff}.collapsible-body[hidden]{display:none}.light-theme .collapse-toggle{background:#fff;border-color:#cbd5e1;color:#111827}
 
 .conversation-list{display:flex;flex-direction:column;gap:12px}.conversation-card{display:grid;grid-template-columns:minmax(280px,1.2fr) minmax(420px,1fr) auto;align-items:center;gap:20px;padding:18px;border:1px solid #334155;border-radius:15px;background:#1f2937;box-shadow:0 12px 34px #0307122e}.conversation-main{display:grid;grid-template-columns:46px minmax(0,1fr);align-items:center;gap:13px}.conversation-avatar{display:grid;place-items:center;width:46px;height:46px;border-radius:13px;background:#064e3b;color:#4ade80}.conversation-main h2{margin:0 0 5px;font-size:16px}.conversation-main p{margin:3px 0;color:#94a3b8;font-size:13px}.conversation-main p b,.conversation-main a{color:#e2e8f0}.conversation-message{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.conversation-card dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin:0}.conversation-card dl div{min-width:0}.conversation-card dt{color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:.05em}.conversation-card dd{margin:4px 0 0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.conversation-action{text-align:right}.whatsapp-open{background:linear-gradient(135deg,#22c55e,#15803d);white-space:nowrap}.message-accettato_da_meta{background:#1e3a8a;color:#bfdbfe}.message-consegnato{background:#14532d;color:#bbf7d0}.message-letto{background:#164e63;color:#a5f3fc}.message-fallito{background:#7f1d1d;color:#fecaca}.pagination{display:flex;align-items:center;justify-content:center;gap:18px;margin:20px 0;color:#94a3b8}.pagination a,.page-disabled{padding:9px 13px;border:1px solid #334155;border-radius:10px}.pagination a{color:#f8fafc;background:#1f2937}.page-disabled{opacity:.45}.light-theme .conversation-card{background:#fff;color:#111827}.light-theme .conversation-main p{color:#64748b}
-.practice-row-link{cursor:pointer;outline:0}.practice-row-link:focus{outline:2px solid #fb7185;outline-offset:-2px}.practice-row-link.row-selected{outline:2px solid #ef405f;outline-offset:-2px}.practice-row-link.row-selected td{background:#ef405f40!important}.practice-row-link.row-selected td:first-child{background:#502d40!important}.light-theme .practice-row-link.row-selected td{background:#ef405f26!important}.light-theme .practice-row-link.row-selected td:first-child{background:#fde3e7!important}.tag-select-orange{color:#fb923c!important}.tag-select-green{color:#4ade80!important}.light-theme .tag-select-orange{color:#c2410c!important}.light-theme .tag-select-green{color:#15803d!important}.cremation-row-done td{color:#22c55e}.cremation-row-done .badge,.cremation-row-done .sub{color:inherit}.cremation-check{display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-weight:700;font-size:12px;white-space:nowrap}.cremation-check input{width:auto}.tag-outline-green{background:#052e2b;color:#86efac;border:2px solid #22c55e}.light-theme{color-scheme:light;--ink:#111827;--muted:#526174;--paper:#fff;--bg:#eef2f7;--line:#cbd5e1}.light-theme h1,.light-theme h2,.light-theme label,.light-theme td,.light-theme .activity-item b,.light-theme .metric-card small,.light-theme .payment-card small,.light-theme .dashboard-panel header p strong,.light-theme .conversation-main p b,.light-theme .conversation-main a,.light-theme .pagination a{color:#111827}.light-theme input,.light-theme select,.light-theme textarea,.light-theme .lookup-results,.light-theme .lookup-item,.light-theme .kv,.light-theme table,.light-theme .login{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme input::placeholder,.light-theme textarea::placeholder{color:#64748b}.light-theme th,.light-theme .sub,.light-theme .kv small,.light-theme .conversation-card dt,.light-theme .pagination{color:#526174}.light-theme th,.light-theme td,.light-theme .activity-item{border-color:#d7dee8}.light-theme .tablebox table tr:hover td,.light-theme .practice-row-link:focus td,.light-theme .lookup-item:hover,.light-theme .lookup-item:focus{background:#f1f5f9}.light-theme .btn.ghost,.light-theme .pagination a{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .badge{background:#e2e8f0;color:#1e293b}.light-theme .tag-red{background:#fee2e2;color:#991b1b}.light-theme .tag-orange{background:#ffedd5;color:#9a3412}.light-theme .tag-purple{background:#f3e8ff;color:#6b21a8}.light-theme .tag-yellow,.light-theme .pay-yellow{background:#fef9c3;color:#713f12}.light-theme .tag-pink{background:#fce7f3;color:#9d174d}.light-theme .tag-blue,.light-theme .pay-blue{background:#dbeafe;color:#1e40af}.light-theme .tag-green,.light-theme .pay-green{background:#dcfce7;color:#166534}.light-theme .tag-outline-orange{background:#fff7ed;color:#c2410c}.light-theme .tag-outline-green{background:#f0fdf4;color:#166534;border-color:#22c55e}.light-theme .selected-box{background:#ecfdf5;color:#166534;border-color:#86efac}.light-theme .nav a{color:#334155}.light-theme .nav a:hover{background:#f1f5f9;color:#111827}.light-theme .nav a:first-child{background:#fff1f2;color:#be123c;border-color:#fecdd3}.light-theme .more-menu a{color:#334155}.light-theme .more-menu a:hover{background:#f1f5f9}.light-theme .install-hint{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .danger{background:#fff1f2}.light-theme .warning,.light-theme .trash-note{background:#fff7ed;color:#7c2d12}.light-theme .flash:not(.warning){background:#ecfdf5;color:#166534}.light-theme .conversation-main p b,.light-theme .conversation-main a{color:#111827}
+.practice-row-link{cursor:pointer;outline:0}.practice-row-link:focus{outline:2px solid #fb7185;outline-offset:-2px}.practice-row-link.row-selected{outline:2px solid #ef405f;outline-offset:-2px}.practice-row-link.row-selected td{background:#ef405f40!important}.practice-row-link.row-selected td:first-child{background:#502d40!important}.light-theme .practice-row-link.row-selected td{background:#ef405f26!important}.light-theme .practice-row-link.row-selected td:first-child{background:#fde3e7!important}.tag-select-orange{color:#fb923c!important}.tag-select-green{color:#4ade80!important}.light-theme .tag-select-orange{color:#c2410c!important}.light-theme .tag-select-green{color:#15803d!important}.tag-outline-green{background:#052e2b;color:#86efac;border:2px solid #22c55e}.light-theme{color-scheme:light;--ink:#111827;--muted:#526174;--paper:#fff;--bg:#eef2f7;--line:#cbd5e1}.light-theme h1,.light-theme h2,.light-theme label,.light-theme td,.light-theme .activity-item b,.light-theme .metric-card small,.light-theme .payment-card small,.light-theme .dashboard-panel header p strong,.light-theme .conversation-main p b,.light-theme .conversation-main a,.light-theme .pagination a{color:#111827}.light-theme input,.light-theme select,.light-theme textarea,.light-theme .lookup-results,.light-theme .lookup-item,.light-theme .kv,.light-theme table,.light-theme .login{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme input::placeholder,.light-theme textarea::placeholder{color:#64748b}.light-theme th,.light-theme .sub,.light-theme .kv small,.light-theme .conversation-card dt,.light-theme .pagination{color:#526174}.light-theme th,.light-theme td,.light-theme .activity-item{border-color:#d7dee8}.light-theme .tablebox table tr:hover td,.light-theme .practice-row-link:focus td,.light-theme .lookup-item:hover,.light-theme .lookup-item:focus{background:#f1f5f9}.light-theme .btn.ghost,.light-theme .pagination a{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .badge{background:#e2e8f0;color:#1e293b}.light-theme .tag-red{background:#fee2e2;color:#991b1b}.light-theme .tag-orange{background:#ffedd5;color:#9a3412}.light-theme .tag-purple{background:#f3e8ff;color:#6b21a8}.light-theme .tag-yellow,.light-theme .pay-yellow{background:#fef9c3;color:#713f12}.light-theme .tag-pink{background:#fce7f3;color:#9d174d}.light-theme .tag-blue,.light-theme .pay-blue{background:#dbeafe;color:#1e40af}.light-theme .tag-green,.light-theme .pay-green{background:#dcfce7;color:#166534}.light-theme .tag-outline-orange{background:#fff7ed;color:#c2410c}.light-theme .tag-outline-green{background:#f0fdf4;color:#166534;border-color:#22c55e}.light-theme .selected-box{background:#ecfdf5;color:#166534;border-color:#86efac}.light-theme .nav a{color:#334155}.light-theme .nav a:hover{background:#f1f5f9;color:#111827}.light-theme .nav a:first-child{background:#fff1f2;color:#be123c;border-color:#fecdd3}.light-theme .more-menu a{color:#334155}.light-theme .more-menu a:hover{background:#f1f5f9}.light-theme .install-hint{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .danger{background:#fff1f2}.light-theme .warning,.light-theme .trash-note{background:#fff7ed;color:#7c2d12}.light-theme .flash:not(.warning){background:#ecfdf5;color:#166534}.light-theme .conversation-main p b,.light-theme .conversation-main a{color:#111827}
 .practice-status{background:transparent!important;border:2px solid currentColor}.practice-status-blue{color:#60a5fa!important;border-color:#3b82f6}.practice-status-red{color:#fb7185!important;border-color:#ef4444}.practice-status-yellow{color:#fde047!important;border-color:#eab308}.practice-status-green{color:#4ade80!important;border-color:#22c55e}.light-theme .practice-status-blue{color:#1d4ed8!important}.light-theme .practice-status-red{color:#b91c1c!important}.light-theme .practice-status-yellow{color:#854d0e!important}.light-theme .practice-status-green{color:#15803d!important}
 .modern-check{display:flex;align-items:center;gap:10px;min-height:46px;padding:10px 13px;border:1px solid #3b4658;border-radius:12px;background:linear-gradient(145deg,#182130,#111925);color:#e8edf5;cursor:pointer;transition:border-color .16s,transform .16s,box-shadow .16s}.modern-check:hover{transform:translateY(-1px);border-color:#fb7185;box-shadow:0 8px 22px #02061745}.modern-check input[type=checkbox]{width:20px;height:20px;margin:0;accent-color:#ef405f}.modern-check span{font-size:12px;font-weight:800;letter-spacing:.025em}.light-theme .modern-check{background:linear-gradient(145deg,#fff,#f1f5f9);color:#172033;border-color:#cbd5e1}.invoice-inline{display:grid;gap:8px}.invoice-inline input{min-width:0}.invoice-inline .btn{width:100%}
 .pay-green{border:2px solid #22c55e!important}.pay-yellow{border:2px solid #eab308!important}.pay-blue{border:2px solid #3b82f6!important}.notification-badge{position:absolute;display:grid;place-items:center;min-width:19px;height:19px;padding:0 5px;border-radius:99px;background:#dc2626;color:#fff;font:700 11px/1 system-ui;transform:translate(13px,-13px);box-shadow:0 0 0 2px #111827}.nav-notification{position:relative}.notification-center{display:grid;gap:10px}.notification-item{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:13px;align-items:center;padding:15px;border:1px solid #334155;border-radius:13px;background:#1f2937}.notification-item.unread{border-left:4px solid #ef405f}.notification-item.priority-alta{border-left:4px solid #f59e0b}.notification-priority{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:99px;background:#78350f;color:#fde68a;font-size:11px;font-weight:700;vertical-align:middle}.notification-group-expand{margin-top:8px}.notification-group-expand summary{cursor:pointer;color:#94a3b8;font-size:12px}.notification-group-expand ul{margin:8px 0 0;padding-left:18px;font-size:12px;color:#94a3b8}.light-theme .notification-priority{background:#fef3c7;color:#92400e}.light-theme .notification-group-expand summary,.light-theme .notification-group-expand ul{color:#526174}.notification-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:#172033;font-size:21px}.notification-copy b,.notification-copy small{display:block}.notification-copy p{margin:4px 0;color:#cbd5e1}.notification-copy small{color:#94a3b8}.notification-actions{display:flex;gap:8px;align-items:center}.toggle-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.toggle-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:1px solid #334155;border-radius:11px}.toggle-row input{width:22px;height:22px}.permission-prompt{position:fixed;right:20px;bottom:20px;z-index:150;max-width:390px;padding:18px;border:1px solid #475569;border-radius:16px;background:#172033;color:#fff;box-shadow:0 24px 70px #000a}.permission-prompt p{color:#cbd5e1}.sw-update-banner{position:fixed;left:14px;right:14px;bottom:calc(14px + var(--safe-bottom));z-index:160;display:flex;align-items:center;justify-content:space-between;gap:14px;max-width:420px;margin:0 auto;padding:12px 16px;border:1px solid #475569;border-radius:14px;background:#172033;color:#fff;box-shadow:0 20px 60px #000a;animation:ppmFade .2s ease-out}.sw-update-banner button{border:0;border-radius:9px;padding:8px 14px;font-weight:700;background:var(--brand);color:#fff;cursor:pointer}.light-theme .sw-update-banner{background:#fff;color:#111827;border-color:#cbd5e1}.quick-payment{display:flex;gap:7px;align-items:center}.quick-payment select,.quick-payment input{min-width:110px}.quick-payment .btn{width:auto}.light-theme .notification-item,.light-theme .toggle-row,.light-theme .permission-prompt{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .notification-copy p{color:#334155}
@@ -1438,6 +1451,75 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .light-theme .balance-quick-expense{background:#fee2e2;color:#991b1b;border-color:#fca5a5}
 @media(max-width:900px){.balance-wrap{padding-bottom:calc(92px + var(--safe-bottom))}.balance-filters .fields{grid-template-columns:repeat(2,minmax(0,1fr))}.balance-filters-quick{grid-template-columns:1fr}.balance-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:560px){.balance-filters .fields{grid-template-columns:1fr}.balance-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.balance-grid .balance-card:last-child:nth-child(odd){grid-column:1/-1}.balance-card{min-height:88px;padding:10px;align-items:flex-start;flex-direction:column;justify-content:center;gap:5px}.balance-card-copy{gap:6px;font-size:11px;line-height:1.15}.balance-card-copy .icon{width:15px;height:15px;flex:0 0 15px}.balance-card-value{font-size:17px;letter-spacing:-.02em}.balance-details{padding:12px}.balance-pagination{justify-content:space-between}.balance-pagination .btn{padding:10px 12px}.balance-manual-toolbar{gap:8px}.balance-quick-btn{flex:1 1 0;padding:9px 6px;font-size:12px;justify-content:center}.balance-summary-card{padding:13px;gap:10px}.balance-summary-value{font-size:21px}.balance-summary-count{display:none}.balance-move-card{grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"icon main amount" "icon meta amount";padding:12px}.balance-move-icon{grid-area:icon}.balance-move-main{grid-area:main}.balance-move-meta{grid-area:meta;align-items:flex-start;flex-direction:row;flex-wrap:wrap;gap:8px}.balance-move-amount-col{grid-area:amount}.balance-move-amount{font-size:15px}.balance-date-range{flex-direction:column;align-items:stretch}.balance-date-range input{width:100%}}
+.cremation-date-nav{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:14px 0 18px}
+.cremation-nav-btn{padding:8px 14px}
+.cremation-date-label{font-weight:600;font-size:15px}
+.cremation-view-tabs{display:flex;gap:4px;margin-left:auto;background:#1f2937;border:1px solid #334155;border-radius:10px;padding:3px}
+.cremation-view-tabs button{border:none;background:transparent;color:#94a3b8;padding:7px 14px;border-radius:8px;font-size:13px;cursor:pointer}
+.cremation-view-tabs button.active{background:#334155;color:#f1f5f9}
+.cremation-view-tabs button[disabled]{cursor:not-allowed;opacity:.5}
+.cremation-summary-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-bottom:14px}
+.cremation-summary-card{background:#1f2937;border:1px solid #334155;border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:4px}
+.cremation-summary-card small{color:#94a3b8;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.cremation-summary-card strong{font-size:20px}
+.cremation-progress{margin-bottom:20px}
+.cremation-progress-label{font-size:13px;color:#94a3b8;margin-bottom:6px}
+.cremation-progress-bar{height:8px;border-radius:99px;background:#1f2937;border:1px solid #334155;overflow:hidden}
+.cremation-progress-fill{height:100%;background:linear-gradient(90deg,#22c55e,#4ade80);border-radius:99px;transition:width .3s ease}
+.cremation-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:18px;align-items:start}
+.cremation-column{background:#1f2937;border:1px solid #334155;border-radius:16px;padding:16px;min-width:0}
+.cremation-column-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.cremation-column-head h2{font-size:16px;margin:0}
+.cremation-column-count{background:#334155;color:#e2e8f0;border-radius:99px;padding:2px 10px;font-size:12px}
+.cremation-waiting-list{display:flex;flex-direction:column;gap:10px;max-height:70vh;overflow-y:auto}
+.cremation-waiting-card{position:relative;border:1px solid #334155;border-radius:12px;background:#161f2b;padding:10px 10px 10px 30px;touch-action:none}
+.cremation-drag-handle{position:absolute;left:6px;top:14px;color:#64748b;display:flex}
+.cremation-dragging-source{opacity:.35}
+.cremation-drag-ghost{position:fixed;z-index:9999;pointer-events:none;width:280px;opacity:.92;box-shadow:0 20px 45px #00000060;border-radius:12px}
+.cremation-new-cycle-dropzone{margin-top:12px;border:2px dashed #334155;border-radius:12px;padding:16px;text-align:center;color:#64748b;font-size:13px;transition:border-color .15s ease,background .15s ease,color .15s ease}
+.cremation-drop-armed{border-color:#475569}
+.cremation-drop-hover{border-color:#4ade80;background:#4ade8014;color:#4ade80}
+[data-cycle-dropzone].cremation-drop-hover{outline:2px solid #4ade80;outline-offset:2px}
+.cremation-animal-row{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
+.cremation-animal-avatar{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;flex:0 0 30px;background:#0f172a}
+.cremation-animal-main{min-width:0;display:flex;flex-direction:column;gap:4px}
+.cremation-animal-name{font-weight:600;font-size:14px}
+.cremation-owner-hint{color:#94a3b8;font-weight:400}
+.cremation-animal-meta{font-size:12px;color:#94a3b8}
+.cremation-animal-tags{display:flex;flex-wrap:wrap;gap:4px}
+.cremation-animal-urn{font-size:12px;color:#cbd5e1}
+.cremation-cycles-timeline{display:flex;flex-direction:column;gap:14px;position:relative;padding-left:18px}
+.cremation-cycles-timeline:before{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:2px;background:#334155}
+.cremation-cycle-card{position:relative;border:1px solid #334155;border-radius:14px;background:#161f2b;padding:14px}
+.cremation-cycle-card:before{content:"";position:absolute;left:-18px;top:18px;width:10px;height:10px;border-radius:50%;background:#475569;border:2px solid #0f172a}
+.cremation-cycle-in_corso:before{background:#facc15}
+.cremation-cycle-completato:before{background:#4ade80}
+.cremation-cycle-completato{opacity:.7}
+.cremation-cycle-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.cremation-cycle-number{font-weight:700}
+.cremation-cycle-time{color:#94a3b8;font-size:13px}
+.cremation-status-badge{margin-left:auto;font-size:11px;font-weight:700;letter-spacing:.03em;padding:3px 10px;border-radius:99px}
+.cremation-status-planned{background:#1e293b;color:#94a3b8}
+.cremation-status-waiting{background:#422006;color:#fbbf24}
+.cremation-status-active{background:#422006;color:#facc15}
+.cremation-status-done{background:#052e16;color:#4ade80}
+.cremation-cycle-animals{display:flex;flex-direction:column;gap:10px;margin-bottom:10px}
+.cremation-cycle-animal{padding:8px;border:1px solid #1f2937;border-radius:10px;background:#0f172a}
+.cremation-cycle-completed-note{font-size:12px;color:#4ade80;margin-bottom:8px}
+.cremation-cycle-actions{display:flex;justify-content:flex-end}
+.cremation-start-btn{background:#1e293b}
+.cremation-complete-btn{background:#16a34a;border-color:#16a34a;color:#fff;font-weight:700}
+.cremation-waiting-empty,.cremation-cycles-empty{color:#64748b;font-size:13px}
+.light-theme .cremation-summary-card,.light-theme .cremation-column,.light-theme .cremation-waiting-card,.light-theme .cremation-cycle-card,.light-theme .cremation-cycle-animal{background:#fff;border-color:#e2e8f0;color:#111827}
+.light-theme .cremation-view-tabs{background:#f1f5f9;border-color:#e2e8f0}
+.light-theme .cremation-view-tabs button{color:#475569}
+.light-theme .cremation-view-tabs button.active{background:#e2e8f0;color:#111827}
+.light-theme .cremation-progress-bar{background:#f1f5f9;border-color:#e2e8f0}
+.light-theme .cremation-animal-meta,.light-theme .cremation-date-label{color:#475569}
+.light-theme .cremation-animal-avatar{background:#f1f5f9}
+.light-theme .cremation-cycle-card:before{border-color:#fff}
+@media(max-width:900px){.cremation-columns{grid-template-columns:1fr}.cremation-summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:560px){.cremation-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.cremation-date-nav{gap:8px}.cremation-view-tabs{margin-left:0;order:99;width:100%;justify-content:center}}
 """
 
 APP_JS = r"""
@@ -3197,17 +3279,99 @@ document.addEventListener('click',(event)=>{
   if(event.target.closest('tr.practice-row-link.row-selected'))return;
   document.querySelectorAll('tr.practice-row-link.row-selected').forEach(row=>row.classList.remove('row-selected'));
 });
-async function toggleCremationQueue(input){
-  const id=input.dataset.cremationId;
-  const previous=!input.checked;
-  input.disabled=true;
-  try{
-    const payload=new URLSearchParams();payload.set('queued',input.checked?'1':'0');
-    const response=await fetch(`/programma-cremazioni/${id}/coda`,{method:'POST',body:payload,headers:{'Accept':'application/json'},credentials:'same-origin'});
-    const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||'Salvataggio non riuscito');
-    const row=input.closest('tr');if(row)row.classList.toggle('cremation-row-done',input.checked);
-  }catch(error){input.checked=previous;alert(error.message);}
-  finally{input.disabled=false;}
+function setupCremationDragDrop(){
+  const board=document.getElementById('cremationBoard');
+  if(!board)return;
+  const cremationDate=board.dataset.cremationDate;
+  function clearDropHints(){
+    document.querySelectorAll('[data-cycle-dropzone]').forEach(function(z){z.classList.remove('cremation-drop-armed','cremation-drop-hover');});
+  }
+  board.querySelectorAll('.cremation-waiting-card').forEach(function(card){
+    const handle=card.querySelector('.cremation-drag-handle')||card;
+    handle.addEventListener('pointerdown',function(e){
+      if(e.target.closest('a,button'))return;
+      e.preventDefault();
+      const startX=e.clientX,startY=e.clientY;
+      let dragging=false,ghost=null;
+      function onMove(ev){
+        if(!dragging){
+          if(Math.abs(ev.clientX-startX)<6&&Math.abs(ev.clientY-startY)<6)return;
+          dragging=true;
+          card.classList.add('cremation-dragging-source');
+          ghost=card.cloneNode(true);
+          ghost.classList.add('cremation-drag-ghost');
+          document.body.appendChild(ghost);
+          document.querySelectorAll('[data-cycle-dropzone]').forEach(function(z){z.classList.add('cremation-drop-armed');});
+        }
+        if(ghost){
+          ghost.style.left=(ev.clientX-ghost.offsetWidth/2)+'px';
+          ghost.style.top=(ev.clientY-24)+'px';
+        }
+        document.querySelectorAll('[data-cycle-dropzone]').forEach(function(z){z.classList.remove('cremation-drop-hover');});
+        const under=document.elementFromPoint(ev.clientX,ev.clientY);
+        const zone=under&&under.closest('[data-cycle-dropzone]');
+        if(zone)zone.classList.add('cremation-drop-hover');
+      }
+      function onUp(ev){
+        window.removeEventListener('pointermove',onMove);
+        window.removeEventListener('pointerup',onUp);
+        card.classList.remove('cremation-dragging-source');
+        if(ghost)ghost.remove();
+        const wasDragging=dragging;
+        clearDropHints();
+        if(!wasDragging)return;
+        const under=document.elementFromPoint(ev.clientX,ev.clientY);
+        const zone=under&&under.closest('[data-cycle-dropzone]');
+        if(!zone)return;
+        const practiceId=card.dataset.practiceId;
+        if(zone.dataset.cycleDropzone==='new'){
+          fetch('/programma-cremazioni/cicli',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',
+            body:'practice_id='+encodeURIComponent(practiceId)+'&data='+encodeURIComponent(cremationDate)})
+            .then(function(){location.reload();});
+        }else{
+          fetch('/programma-cremazioni/cicli/'+zone.dataset.cycleDropzone+'/assegna',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',
+            body:'practice_id='+encodeURIComponent(practiceId)})
+            .then(function(res){return res.json();})
+            .then(function(data){if(!data.ok)alert(data.error||'Operazione non riuscita');location.reload();})
+            .catch(function(){location.reload();});
+        }
+      }
+      window.addEventListener('pointermove',onMove);
+      window.addEventListener('pointerup',onUp);
+    });
+  });
+}
+document.addEventListener('DOMContentLoaded',setupCremationDragDrop);
+function cremationCreateEmptyCycle(){
+  const board=document.getElementById('cremationBoard');
+  const cremationDate=board?board.dataset.cremationDate:'';
+  fetch('/programma-cremazioni/cicli',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',
+    body:'data='+encodeURIComponent(cremationDate)})
+    .then(function(){location.reload();});
+}
+function cremationStartCycle(id){
+  fetch('/programma-cremazioni/cicli/'+id+'/avvia',{method:'POST',credentials:'same-origin'})
+    .then(function(res){return res.json();})
+    .then(function(data){if(!data.ok)alert(data.error||'Operazione non riuscita');location.reload();})
+    .catch(function(){location.reload();});
+}
+function cremationCompleteCycle(id){
+  if(!confirm('Confermi il completamento del ciclo? Gli animali passeranno allo stato In programma.'))return;
+  fetch('/programma-cremazioni/cicli/'+id+'/termina',{method:'POST',credentials:'same-origin'})
+    .then(function(res){return res.json();})
+    .then(function(data){if(!data.ok)alert(data.error||'Operazione non riuscita');location.reload();})
+    .catch(function(){location.reload();});
+}
+function cremationEditCycle(id,plannedStart,plannedEnd){
+  const start=prompt('Orario di inizio (HH:MM):',plannedStart);
+  if(start===null)return;
+  const end=prompt('Orario di fine previsto (HH:MM):',plannedEnd);
+  if(end===null)return;
+  fetch('/programma-cremazioni/cicli/'+id+'/modifica',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',
+    body:'planned_start='+encodeURIComponent(start)+'&planned_end='+encodeURIComponent(end)})
+    .then(function(res){return res.json();})
+    .then(function(data){if(!data.ok)alert(data.error||'Operazione non riuscita');location.reload();})
+    .catch(function(){location.reload();});
 }
 let pendingOrderForm=null;
 function normalizeOrderQuantity(input,value){
@@ -3749,6 +3913,35 @@ def species_avatar(species):
     return "🐾","avatar-other"
 
 
+CREMATION_CYCLE_DURATION_MIN = 90
+CREMATION_CYCLE_GAP_MIN = 10
+CREMATION_DAY_START = "08:00"
+CREMATION_STATUS_LABELS = {
+    "pianificato": ("PIANIFICATO", "cremation-status-planned"),
+    "in_attesa": ("IN ATTESA", "cremation-status-waiting"),
+    "in_corso": ("IN CORSO", "cremation-status-active"),
+    "completato": ("COMPLETATO", "cremation-status-done"),
+}
+
+
+def cremation_time_add(hhmm, minutes):
+    h, m = (int(x) for x in str(hhmm or "00:00").split(":")[:2])
+    total = (h * 60 + m + minutes) % (24 * 60)
+    return f"{total // 60:02d}:{total % 60:02d}"
+
+
+def cremation_cycle_next_slot(c, cycle_date):
+    """Prossimo slot libero per un nuovo ciclo: subito dopo l'ultimo ciclo
+    già pianificato per quel giorno (+ pausa), oppure l'orario di apertura
+    giornata se è il primo ciclo del giorno."""
+    last = c.execute(
+        "SELECT planned_end FROM cremation_cycles WHERE cycle_date=? ORDER BY planned_end DESC LIMIT 1", (cycle_date,)
+    ).fetchone()
+    start = cremation_time_add(last["planned_end"], CREMATION_CYCLE_GAP_MIN) if last else CREMATION_DAY_START
+    end = cremation_time_add(start, CREMATION_CYCLE_DURATION_MIN)
+    return start, end
+
+
 def kg_it(value):
     if not value:return "0 kg"
     return f"{round(value,2):g}".replace(".",",")+" kg"
@@ -3923,11 +4116,11 @@ def sync_reminders(c):
     cremation_keys=set()
     for row in cremation_rows:
         days=reminder_days_since(row["pickup_date"] or row["created_at"],today)
-        if days is not None and days>7:
-            key=f"practice:{row['id']}";cremation_keys.add(key)
-            ensure_reminder(c,reminder_type="cremation_pending",entity_key=key,
-                            title=f"{row['animal_name'] or 'Animale'} ({reminder_owner_label(row)}) è in attesa di cremazione da {days} giorni",
-                            url=f"/pratiche/{row['id']}",stamp=stamp)
+        key=f"practice:{row['id']}";cremation_keys.add(key)
+        when=f"da {days} giorni" if days is not None and days>0 else "da oggi"
+        ensure_reminder(c,reminder_type="cremation_pending",entity_key=key,
+                        title=f"{row['animal_name'] or 'Animale'} ({reminder_owner_label(row)}) è in attesa di cremazione {when}",
+                        url=f"/pratiche/{row['id']}",stamp=stamp)
     close_stale_reminders(c,"cremation_pending",cremation_keys,stamp)
 
 
@@ -4421,9 +4614,15 @@ class App(BaseHTTPRequestHandler):
         if match: return self.remove_payment_macroarea(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/stato-rapido", path)
         if match: return self.quick_state(user, int(match.group(1)))
-        if path == "/programma-cremazioni/completa": return self.complete_cremation_session(user)
-        match = re.fullmatch(r"/programma-cremazioni/(\d+)/coda", path)
-        if match: return self.cremation_toggle_queue(user, int(match.group(1)))
+        if path == "/programma-cremazioni/cicli": return self.cremation_create_cycle(user)
+        match = re.fullmatch(r"/programma-cremazioni/cicli/(\d+)/assegna", path)
+        if match: return self.cremation_assign_to_cycle(user, int(match.group(1)))
+        match = re.fullmatch(r"/programma-cremazioni/cicli/(\d+)/avvia", path)
+        if match: return self.cremation_start_cycle(user, int(match.group(1)))
+        match = re.fullmatch(r"/programma-cremazioni/cicli/(\d+)/termina", path)
+        if match: return self.cremation_complete_cycle(user, int(match.group(1)))
+        match = re.fullmatch(r"/programma-cremazioni/cicli/(\d+)/modifica", path)
+        if match: return self.cremation_edit_cycle(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/catalogo-inviato", path)
         if match: return self.catalog_sent(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/estremi-inviati", path)
@@ -5870,24 +6069,39 @@ class App(BaseHTTPRequestHandler):
 
     def cremation_schedule(self,user):
         q=parse_qs(urlparse(self.path).query)
-        provenance_filter=(q.get("provenienza") or [""])[0].strip().upper()
-        if provenance_filter not in PROVENANCE_LABELS:provenance_filter=""
+        cycle_date=(q.get("data") or [""])[0].strip()[:10]
+        try:
+            view_date=date.fromisoformat(cycle_date)
+        except ValueError:
+            view_date=date.today();cycle_date=view_date.isoformat()
+        today_date=date.today()
+        prev_date=(view_date-timedelta(days=1)).isoformat()
+        next_date=(view_date+timedelta(days=1)).isoformat()
         with db() as c:
-            where="(deleted_at IS NULL OR deleted_at='') AND status='Ritirato' AND service_type='Cremazione singola'"
-            args=[]
-            if provenance_filter:
-                where+=" AND provenance=?";args.append(provenance_filter)
-            rows=c.execute(f"SELECT * FROM practices WHERE {where} ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) ASC,id ASC",args).fetchall()
-            urn_ids={int(row[key]) for row in rows for key in ("urn_id","urn_id_2") if key in row.keys() and row[key]}
+            waiting=c.execute("""SELECT * FROM practices WHERE (deleted_at IS NULL OR deleted_at='') AND status='Ritirato'
+                AND service_type='Cremazione singola' AND cremation_cycle_id IS NULL
+                ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) ASC,id ASC""").fetchall()
+            cycles=c.execute("SELECT * FROM cremation_cycles WHERE cycle_date=? ORDER BY planned_start ASC,id ASC",(cycle_date,)).fetchall()
+            cycle_ids=[row["id"] for row in cycles]
+            cycle_practices={cid:[] for cid in cycle_ids}
+            assigned=[]
+            if cycle_ids:
+                marks=','.join('?' for _ in cycle_ids)
+                assigned=c.execute(f"SELECT * FROM practices WHERE cremation_cycle_id IN ({marks}) AND (deleted_at IS NULL OR deleted_at='') ORDER BY id ASC",tuple(cycle_ids)).fetchall()
+                for row in assigned:
+                    cycle_practices[row["cremation_cycle_id"]].append(row)
+            all_rows=list(waiting)+list(assigned)
+            urn_ids={int(row[key]) for row in all_rows for key in ("urn_id","urn_id_2") if key in row.keys() and row[key]}
             urn_names={}
             if urn_ids:
                 marks=','.join('?' for _ in urn_ids)
                 urn_names={r["id"]:r["name"] for r in c.execute(f"SELECT id,name FROM urns WHERE id IN ({marks})",tuple(urn_ids))}
-            collaborator_ids={int(row["collaborator_id"]) for row in rows if "collaborator_id" in row.keys() and row["collaborator_id"]}
+            collaborator_ids={int(row["collaborator_id"]) for row in all_rows if "collaborator_id" in row.keys() and row["collaborator_id"]}
             collaborator_codes={}
             if collaborator_ids:
                 marks=','.join('?' for _ in collaborator_ids)
                 collaborator_codes={r["id"]:(r["code"] or "") for r in c.execute(f"SELECT id,code FROM collaborators WHERE id IN ({marks})",tuple(collaborator_ids))}
+
         def urn_cell(row):
             labels=[]
             for id_key,note_key in (("urn_id","urn_notes"),("urn_id_2","urn_notes_2")):
@@ -5897,58 +6111,203 @@ class App(BaseHTTPRequestHandler):
             if labels:return esc(" / ".join(labels))
             if row["send_catalog"]=="Si":return '<span class="badge tag-outline-orange">INVIARE CATALOGO</span>'
             return '<span class="sub">-</span>'
-        table_rows=[]
-        for row in rows:
-            code=(row["provenance"] or "").strip().upper()
-            label=PROVENANCE_LABELS.get(code,"")
-            provenance_cell=f'{esc(code)} · {esc(label)}' if code and label else (esc(code) or '<span class="sub">-</span>')
-            weight=(row["estimated_weight"] or "").strip()
-            weight_cell=f'{esc(weight)} kg' if weight else '<span class="sub">-</span>'
-            client=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip() or row["owner_company"] or ""
-            if "collaborator_name" in row.keys() and row["collaborator_name"]:
-                client=row["collaborator_name"]
-            client_cell=esc(client) if client else '<span class="sub">-</span>'
+
+        name_counts={}
+        for row in all_rows:
+            key=(row["animal_name"] or "").strip().lower()
+            if key:name_counts[key]=name_counts.get(key,0)+1
+
+        def animal_name_html(row):
+            name=esc(row["animal_name"] or "Da inserire")
+            key=(row["animal_name"] or "").strip().lower()
+            surname=(row["owner_last_name"] or "").strip()
+            if key and name_counts.get(key,0)>1 and surname:
+                name+=f' <small class="cremation-owner-hint">({esc(surname)})</small>'
+            return name
+
+        def animal_row_html(row,extra_cls=""):
             collab_code=collaborator_codes.get(int(row["collaborator_id"])) if "collaborator_id" in row.keys() and row["collaborator_id"] else ""
-            animal_prefix=f"{esc(collab_code)} " if collab_code else ""
+            prefix=f'{esc(collab_code)} ' if collab_code else ""
+            avatar_emoji,avatar_cls=species_avatar(row["species"] if "species" in row.keys() else "")
+            weight=(row["estimated_weight"] or "").strip()
+            weight_html=f'{esc(weight)} kg' if weight else ""
+            code=(row["provenance"] or "").strip().upper()
+            provenance_label=PROVENANCE_LABELS.get(code,"")
+            provenance_html=f'{esc(code)} · {esc(provenance_label)}' if code and provenance_label else esc(code)
+            meta_html=' · '.join(bit for bit in (weight_html,provenance_html) if bit)
             url=f'/pratiche/{row["id"]}'
-            queued=("cremation_queued" in row.keys() and row["cremation_queued"]=="Si")
-            checkbox=f'''<label class="cremation-check" onclick="event.stopPropagation()"><input type="checkbox" data-cremation-id="{row['id']}" {"checked" if queued else ""} onchange="toggleCremationQueue(this)"> INSERITO</label>'''
-            payment=row["payment_status"] if row["payment_status"] else "Da saldare"
-            pay_cls={"Da saldare":"pay-yellow","Acconto":"pay-blue","Pagato":"pay-green"}.get(payment,"")
-            payment_amount=effective_total(row)
-            amount_cell=money_it(payment_amount) if payment_amount else '<span class="sub">-</span>'
-            payment_cell=f'<span class="badge {pay_cls}">{esc(payment)}</span> {amount_cell} · {payment_channel(row)}'
-            table_rows.append(f'''<tr class="practice-row-link {"cremation-row-done" if queued else ""}" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}><td>{animal_prefix}{esc(row["animal_name"] or "Da inserire")}</td><td>{weight_cell}</td><td>{provenance_cell}</td><td>{self.tag_badges(row)}</td><td>{urn_cell(row)}</td><td>{client_cell}</td><td>{esc(date_it(row["pickup_date"] or row["created_at"]))}</td><td>{payment_cell}</td><td>{checkbox}</td></tr>''')
-        table_body=''.join(table_rows) or '<tr><td colspan="9" class="sub">Nessuna cremazione singola in attesa.</td></tr>'
-        filter_options='<option value="">Tutte le provenienze</option>'+''.join(f'<option value="{code}" {"selected" if provenance_filter==code else ""}>{esc(code)} · {esc(label)}</option>' for code,label in PROVENANCE_LABELS.items())
-        queued_count=sum(1 for row in rows if "cremation_queued" in row.keys() and row["cremation_queued"]=="Si")
-        if queued_count:
-            complete_form=f'''<form id="cremationCompleteForm" method="post" action="/programma-cremazioni/completa" onsubmit="return confirm('Confermi il completamento della sessione? {queued_count} animali spuntati INSERITO passeranno allo stato In programma.')"><input type="hidden" name="return_to" value="{esc(self.path)}"><button class="btn" type="submit">SESSIONE COMPLETATA</button></form>'''
-        else:
-            complete_form='<p class="sub">Nessun animale spuntato come INSERITO da completare.</p>'
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Programma Cremazioni</h1><p class="sub">Spunta INSERITO gli animali entrati nel programma settimanale: la spunta si salva subito e resta visibile finché non premi SESSIONE COMPLETATA, che sposta gli animali spuntati allo stato In programma.</p></div><div class="actions">{complete_form}</div></div><section class="kvs" style="grid-template-columns:max-content;margin-bottom:20px"><div class="kv"><small>Animali in attesa di cremazione singola</small><strong>{len(rows)}</strong></div></section><form class="section" method="get" style="margin-bottom:16px"><div class="fields"><div class="field"><label>Provenienza</label><select name="provenienza" onchange="this.form.submit()">{filter_options}</select></div></div></form><div class="tablebox"><table><thead><tr><th>Animale</th><th>Peso</th><th>Provenienza</th><th>Etichette</th><th>Urna</th><th>Cliente</th><th>Data recupero</th><th>Pagamento</th><th>Inserito</th></tr></thead><tbody>{table_body}</tbody></table></div></main>'''
+            return f'''<div class="cremation-animal-row {extra_cls}" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}>
+              <span class="cremation-animal-avatar {avatar_cls}" aria-hidden="true">{avatar_emoji}</span>
+              <div class="cremation-animal-main">
+                <div class="cremation-animal-name">{prefix}{animal_name_html(row)}</div>
+                {f'<div class="cremation-animal-meta">{meta_html}</div>' if meta_html else ''}
+                <div class="cremation-animal-tags">{self.tag_badges(row)}</div>
+                <div class="cremation-animal-urn">{urn_cell(row)}</div>
+              </div>
+            </div>'''
+
+        waiting_cards=''.join(
+            f'''<div class="cremation-waiting-card" data-practice-id="{row['id']}">
+              <span class="cremation-drag-handle" onclick="event.stopPropagation()" aria-hidden="true">{lucide("more-vertical")}</span>
+              {animal_row_html(row)}
+            </div>''' for row in waiting
+        ) or '<p class="sub cremation-waiting-empty">Nessun animale in attesa di pianificazione.</p>'
+
+        total_cycles=len(cycles)
+        completed_count=sum(1 for row in cycles if row["status"]=="completato")
+        active_index=next((idx+1 for idx,row in enumerate(cycles) if row["status"]=="in_corso"),None)
+        current_index=active_index or (min(completed_count+1,total_cycles) if total_cycles else 0)
+        in_attesa_count=sum(1 for row in cycles if row["status"]=="in_attesa")
+        in_corso_count=sum(1 for row in cycles if row["status"]=="in_corso")
+        animali_count=len(assigned)
+        fine_prevista=max((row["planned_end"] for row in cycles),default="-")
+
+        cycle_cards=[]
+        for idx,cycle in enumerate(cycles):
+            animals=cycle_practices.get(cycle["id"],[])
+            animals_html=''.join(animal_row_html(row,"cremation-cycle-animal") for row in animals) or '<p class="sub">Nessun animale assegnato.</p>'
+            status=cycle["status"]
+            status_label,status_cls=CREMATION_STATUS_LABELS.get(status,(status.upper(),""))
+            actions=""
+            if status=="in_attesa":
+                actions=f'<button type="button" class="btn cremation-start-btn" onclick="cremationStartCycle({cycle["id"]})">Avvia ciclo</button>'
+            elif status=="in_corso":
+                actions=f'<button type="button" class="btn btn-primary cremation-complete-btn" onclick="cremationCompleteCycle({cycle["id"]})">✓ Termina ciclo</button>'
+            elif status=="pianificato":
+                actions=f"<button type=\"button\" class=\"btn cremation-edit-btn\" onclick=\"cremationEditCycle({cycle['id']},'{cycle['planned_start']}','{cycle['planned_end']}')\">Modifica</button>"
+            completed_note=f'<div class="cremation-cycle-completed-note">Completato alle {esc((cycle["actual_end"] or "")[11:16])}</div>' if status=="completato" and cycle["actual_end"] else ""
+            dropzone_attr=f'data-cycle-dropzone="{cycle["id"]}"' if status!="completato" and len(animals)<2 else ""
+            cycle_cards.append(f'''<div class="cremation-cycle-card cremation-cycle-{status}" {dropzone_attr}>
+              <div class="cremation-cycle-head">
+                <span class="cremation-cycle-number">Ciclo {idx+1}</span>
+                <span class="cremation-cycle-time">{esc(cycle["planned_start"])} - {esc(cycle["planned_end"])}</span>
+                <span class="cremation-status-badge {status_cls}">{esc(status_label)}</span>
+              </div>
+              <div class="cremation-cycle-animals">{animals_html}</div>
+              {completed_note}
+              <div class="cremation-cycle-actions">{actions}</div>
+            </div>''')
+        cycles_html=''.join(cycle_cards) or '<p class="sub cremation-cycles-empty">Nessun ciclo pianificato per questa giornata.</p>'
+
+        weekday=["Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica"][view_date.weekday()]
+        date_label=f"{weekday} {date_it(cycle_date)}"
+        progress_label=f"Siamo nel ciclo {current_index} di {total_cycles}" if total_cycles else "Nessun ciclo pianificato oggi"
+        progress_pct=round(100*current_index/total_cycles) if total_cycles else 0
+
+        summary_cards=f'''<div class="cremation-summary-grid">
+          <div class="cremation-summary-card"><small>Cicli oggi</small><strong>{total_cycles}</strong></div>
+          <div class="cremation-summary-card"><small>Animali</small><strong>{animali_count}</strong></div>
+          <div class="cremation-summary-card"><small>In corso</small><strong>{in_corso_count}</strong></div>
+          <div class="cremation-summary-card"><small>In attesa</small><strong>{in_attesa_count}</strong></div>
+          <div class="cremation-summary-card"><small>Completati</small><strong>{completed_count}</strong></div>
+          <div class="cremation-summary-card"><small>Fine prevista</small><strong>{esc(fine_prevista)}</strong></div>
+        </div>
+        <div class="cremation-progress"><div class="cremation-progress-label">{esc(progress_label)}</div><div class="cremation-progress-bar"><div class="cremation-progress-fill" style="width:{progress_pct}%"></div></div></div>'''
+
+        date_nav=f'''<div class="cremation-date-nav">
+          <a class="btn ghost cremation-nav-btn" href="/programma-cremazioni?data={prev_date}">‹</a>
+          <div class="cremation-date-label">{esc(date_label)}</div>
+          <a class="btn ghost cremation-nav-btn" href="/programma-cremazioni?data={next_date}">›</a>
+          <a class="btn ghost {"active" if cycle_date==today_date.isoformat() else ""}" href="/programma-cremazioni">Oggi</a>
+          <div class="cremation-view-tabs">
+            <button type="button" class="active">Giorno</button>
+            <button type="button" disabled title="Non ancora disponibile">Settimana</button>
+            <button type="button" disabled title="Non ancora disponibile">Calendario</button>
+          </div>
+        </div>'''
+
+        body=f'''<main class="wrap cremation-board" id="cremationBoard" data-cremation-date="{cycle_date}">
+        <div class="titlebar"><div><h1>Programma Cremazioni</h1><p class="sub">Planning operativo delle cremazioni singole: trascina gli animali in attesa in un ciclo per pianificarli.</p></div></div>
+        {date_nav}
+        {summary_cards}
+        <div class="cremation-columns">
+          <section class="cremation-column cremation-waiting-column">
+            <div class="cremation-column-head"><h2>Animali in attesa</h2><span class="cremation-column-count">{len(waiting)}</span></div>
+            <div class="cremation-waiting-list">{waiting_cards}</div>
+            <div class="cremation-new-cycle-dropzone" data-cycle-dropzone="new">Trascina qui per creare un nuovo ciclo</div>
+          </section>
+          <section class="cremation-column cremation-planning-column">
+            <div class="cremation-column-head"><h2>Planning della giornata</h2><button type="button" class="btn ghost" onclick="cremationCreateEmptyCycle()">+ Aggiungi nuovo ciclo</button></div>
+            <div class="cremation-cycles-timeline">{cycles_html}</div>
+          </section>
+        </div>
+        </main>'''
         self.send_html(layout("Programma Cremazioni",body,user))
 
-    def cremation_toggle_queue(self,user,pid):
+    def cremation_create_cycle(self,user):
         f=self.form()
-        queued="Si" if f.get("queued")=="1" else ""
+        cycle_date=(f.get("data") or date.today().isoformat()).strip()[:10]
+        practice_id=(f.get("practice_id") or "").strip()
+        stamp=now()
         with db() as c:
-            current=c.execute("SELECT id,status,service_type FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(pid,)).fetchone()
-            if not current:return self.send_json({"ok":False,"error":"Pratica non trovata"},404)
-            if current["status"]!="Ritirato" or current["service_type"]!="Cremazione singola":
-                return self.send_json({"ok":False,"error":"Pratica non più disponibile nel programma cremazioni. Ricarica la pagina."},409)
-            c.execute("UPDATE practices SET cremation_queued=?,updated_at=? WHERE id=?",(queued,now(),pid))
-        return self.send_json({"ok":True,"queued":queued=="Si"})
+            if practice_id:
+                practice=c.execute("SELECT id,status,service_type,cremation_cycle_id FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(practice_id,)).fetchone()
+                if not practice or practice["status"]!="Ritirato" or practice["service_type"]!="Cremazione singola" or practice["cremation_cycle_id"]:
+                    return self.send_json({"ok":False,"error":"Animale non più disponibile. Ricarica la pagina."},409)
+            start,end=cremation_cycle_next_slot(c,cycle_date)
+            status="in_attesa" if practice_id else "pianificato"
+            cycle_id=c.execute("INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                                (cycle_date,status,start,end,stamp,stamp)).lastrowid
+            if practice_id:
+                c.execute("UPDATE practices SET cremation_cycle_id=?,updated_at=? WHERE id=?",(cycle_id,stamp,practice_id))
+        return self.send_json({"ok":True,"cycle_id":cycle_id})
 
-    def complete_cremation_session(self,user):
-        form=self.form()
+    def cremation_assign_to_cycle(self,user,cycle_id):
+        f=self.form()
+        practice_id=(f.get("practice_id") or "").strip()
+        stamp=now()
         with db() as c:
-            candidates=c.execute("SELECT * FROM practices WHERE (deleted_at IS NULL OR deleted_at='') AND status='Ritirato' AND service_type='Cremazione singola' AND cremation_queued='Si'").fetchall()
-            stamp=now()
-            for row in candidates:
-                c.execute("UPDATE practices SET status='In programma',cremation_registered='Si',cremation_queued='',updated_at=? WHERE id=?",(stamp,row["id"]))
+            cycle=c.execute("SELECT id,status FROM cremation_cycles WHERE id=?",(cycle_id,)).fetchone()
+            if not cycle:return self.send_json({"ok":False,"error":"Ciclo non trovato"},404)
+            if cycle["status"]=="completato":
+                return self.send_json({"ok":False,"error":"Il ciclo è già completato."},409)
+            count=c.execute("SELECT COUNT(*) n FROM practices WHERE cremation_cycle_id=? AND (deleted_at IS NULL OR deleted_at='')",(cycle_id,)).fetchone()["n"]
+            if count>=2:
+                return self.send_json({"ok":False,"error":"Il ciclo contiene già 2 animali."},409)
+            practice=c.execute("SELECT id,status,service_type,cremation_cycle_id FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(practice_id,)).fetchone()
+            if not practice or practice["status"]!="Ritirato" or practice["service_type"]!="Cremazione singola" or practice["cremation_cycle_id"]:
+                return self.send_json({"ok":False,"error":"Animale non più disponibile. Ricarica la pagina."},409)
+            c.execute("UPDATE practices SET cremation_cycle_id=?,updated_at=? WHERE id=?",(cycle_id,stamp,practice_id))
+            if cycle["status"]=="pianificato":
+                c.execute("UPDATE cremation_cycles SET status='in_attesa',updated_at=? WHERE id=?",(stamp,cycle_id))
+        return self.send_json({"ok":True})
+
+    def cremation_start_cycle(self,user,cycle_id):
+        stamp=now()
+        with db() as c:
+            cycle=c.execute("SELECT id,status FROM cremation_cycles WHERE id=?",(cycle_id,)).fetchone()
+            if not cycle:return self.send_json({"ok":False,"error":"Ciclo non trovato"},404)
+            if cycle["status"]!="in_attesa":
+                return self.send_json({"ok":False,"error":"Il ciclo non è in attesa di avvio."},409)
+            c.execute("UPDATE cremation_cycles SET status='in_corso',actual_start=?,updated_at=? WHERE id=?",(stamp,stamp,cycle_id))
+        return self.send_json({"ok":True})
+
+    def cremation_complete_cycle(self,user,cycle_id):
+        stamp=now()
+        with db() as c:
+            cycle=c.execute("SELECT id,status FROM cremation_cycles WHERE id=?",(cycle_id,)).fetchone()
+            if not cycle:return self.send_json({"ok":False,"error":"Ciclo non trovato"},404)
+            if cycle["status"]!="in_corso":
+                return self.send_json({"ok":False,"error":"Il ciclo non è in corso."},409)
+            c.execute("UPDATE cremation_cycles SET status='completato',actual_end=?,updated_at=? WHERE id=?",(stamp,stamp,cycle_id))
+            practices=c.execute("SELECT * FROM practices WHERE cremation_cycle_id=? AND (deleted_at IS NULL OR deleted_at='') AND status='Ritirato'",(cycle_id,)).fetchall()
+            for row in practices:
+                c.execute("UPDATE practices SET status='In programma',cremation_registered='Si',updated_at=? WHERE id=?",(stamp,row["id"]))
                 c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(row["id"],"Cambio stato rapido","Ritirato","In programma",user["id"],stamp))
-        return self.redirect(safe_return_path(form.get("return_to"),"/programma-cremazioni"))
+        return self.send_json({"ok":True})
+
+    def cremation_edit_cycle(self,user,cycle_id):
+        f=self.form()
+        start=(f.get("planned_start") or "").strip()[:5]
+        end=(f.get("planned_end") or "").strip()[:5]
+        if not re.fullmatch(r"\d{2}:\d{2}",start) or not re.fullmatch(r"\d{2}:\d{2}",end):
+            return self.send_json({"ok":False,"error":"Orario non valido."},400)
+        stamp=now()
+        with db() as c:
+            cycle=c.execute("SELECT id FROM cremation_cycles WHERE id=?",(cycle_id,)).fetchone()
+            if not cycle:return self.send_json({"ok":False,"error":"Ciclo non trovato"},404)
+            c.execute("UPDATE cremation_cycles SET planned_start=?,planned_end=?,updated_at=? WHERE id=?",(start,end,stamp,cycle_id))
+        return self.send_json({"ok":True})
 
 
 
