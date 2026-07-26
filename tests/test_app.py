@@ -1791,8 +1791,18 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("function ppmFormatInvoiceTotal(value){", js)
         self.assertIn("return number.toFixed(2).replace('.', ',');", js)
         self.assertNotIn("`${number.toFixed(2).replace('.', ',')} €`", js)
-        self.assertIn("invoiceTotal.value=ppmFormatInvoiceTotal(seedTotal)", js)
+        self.assertIn("invoiceTotal.value=ppmFormatInvoiceTotal(serviceTotal);", js)
         self.assertIn("invoiceTotal.addEventListener('blur'", js)
+
+    def test_invoice_total_autofill_seeds_only_from_totale_w_never_totale_d(self):
+        js = app.APP_JS
+        # Totale fattura must always follow Totale W (total_service): never
+        # fall back to or prefer Totale D (total_text), which used to happen
+        # here and made the invoice total silently pick up the D circuito's
+        # total instead of the W one it actually belongs to.
+        self.assertIn("const seed=(totalService?.value||'').trim();", js)
+        self.assertNotIn('total_text"]\')?.value||totalService', js)
+        self.assertNotIn("definitive > 0 ? definitive : serviceTotal", js)
 
     def test_invoice_total_accepts_plain_number_with_euro_sign_or_comma(self):
         with app.db() as conn:
@@ -1859,11 +1869,21 @@ class PetParadiseTests(unittest.TestCase):
         # the handed-off page scroll (same MIN_VELOCITY/DECAY_PER_MS engine).
         js=app.APP_JS
         self.assertIn("const onEnd=()=>{", js)
-        self.assertIn("if(axis==='y'&&Math.abs(velocityY)>MIN_VELOCITY)runMomentum(phase);", js)
+        self.assertIn("if(axis==='y'&&Math.abs(velocityY)>MIN_VELOCITY)runMomentum('y',phase);", js)
+        self.assertIn("else if(axis==='x'&&Math.abs(velocityX)>MIN_VELOCITY)runMomentum('x','table');", js)
         self.assertIn("box.addEventListener('touchend',onEnd,{passive:true});", js)
         self.assertIn("v*=Math.pow(DECAY_PER_MS,dt);", js)
         self.assertIn("const stopMomentum=()=>{if(momentumFrame){cancelAnimationFrame(momentumFrame);momentumFrame=null;}};", js)
         self.assertIn("stopMomentum();", js)
+
+    def test_table_touch_scroll_horizontal_also_gets_momentum(self):
+        # Horizontal flicks must ease to a stop the same way vertical ones
+        # do — no page handoff for horizontal (that only makes sense for
+        # vertical, matching the axis-lock's own existing behavior).
+        js=app.APP_JS
+        self.assertIn("if(momentumAxis==='x'){", js)
+        self.assertIn("const maxScroll=box.scrollWidth-box.clientWidth;", js)
+        self.assertIn("if(dt>0){velocityX=(t.clientX-lastX)/dt;velocityY=(t.clientY-lastY)/dt;}", js)
 
     def test_wide_scrollable_tables_use_bounded_internal_scroll_for_reliable_sticky(self):
         # position:sticky on <th> inside a table wrapped by an overflow-x
@@ -3888,8 +3908,9 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn('name="saldo_d_modalita"', form_html)
         self.assertNotIn('name="acconto_d_fattura_numero"', form_html)
         self.assertNotIn('name="saldo_d_fattura_numero"', form_html)
-        # Relocation JS only fires on the create page (not the shared edit form).
-        self.assertIn("if(!isEditForm){", app.APP_JS)
+        # Relocation JS now fires unconditionally: create and edit share the
+        # very same Pagamento section, so there is no isEditForm branch left.
+        self.assertNotIn("isEditForm", app.APP_JS)
         self.assertIn("paymentSection.append(wrap)", app.APP_JS)
         self.assertIn("function updateMacroRimanenza(){", app.APP_JS)
 
@@ -3941,6 +3962,32 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("function showFieldError(){", app.APP_JS)
         self.assertIn("wrap.scrollIntoView({behavior:'smooth',block:'center'});", app.APP_JS)
         self.assertIn(".field-error input,.field-error select,.field-error textarea{border-color:#ef4444}", app.CSS)
+
+    def test_create_practice_missing_required_field_also_jumps_to_it(self):
+        # Not just the Acconto/Rimanenza macroarea errors: the common
+        # "Campi obbligatori mancanti" validation error must also target
+        # the first missing field instead of only banner-ing at the top.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.form = lambda: {
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "owner_first_name": "Anna", "owner_phone": "333", "owner_tax_code": "X",
+            "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
+        }
+        self.handler.create_practice(admin)
+        page = rendered[-1]
+        self.assertNotIn('<div class="flash warning">', page)
+        self.assertIn('id="formErrorField" value="owner_last_name"', page)
+
+    def test_validation_error_field_skips_exempt_cases_and_respects_vet_sender(self):
+        self.assertEqual(self.handler.validation_error_field({"tag_da_richiamare":"Si"}), "")
+        self.assertEqual(self.handler.validation_error_field({"service_type":"Cremazione collettiva"}), "")
+        self.assertEqual(self.handler.validation_error_field({"request_origin":"Collaboratore"}), "")
+        # A veterinarian sender doesn't need owner_last_name/phone/etc, so the
+        # first real gap should be operator_name, not one of those exempted.
+        self.assertEqual(self.handler.validation_error_field({"owner_veterinarian_id":"5"}), "operator_name")
 
     def test_service_type_is_required_and_not_preselected(self):
         with app.db() as conn:
