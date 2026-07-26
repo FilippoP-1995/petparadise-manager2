@@ -2376,7 +2376,8 @@ class PetParadiseTests(unittest.TestCase):
             rows=conn.execute("SELECT * FROM practices WHERE practice_number='CR-COLLETTIVA'").fetchall()
         self.handler.path="/archivio/pratiche"
         page=self.handler.practice_rows(rows)
-        self.assertIn("<td>Gatto</td>",page)
+        self.assertIn('<div class="practice-row-animal-copy">Gatto</div>',page)
+        self.assertIn('class="practice-row-avatar avatar-cat"',page)
         self.assertNotIn("<td>/</td>",page)
 
     def test_archive_list_shows_inline_catalog_estremi_and_invoice_controls(self):
@@ -2484,7 +2485,7 @@ class PetParadiseTests(unittest.TestCase):
             rows=conn.execute("SELECT * FROM practices WHERE practice_number='CR-CREMATO'").fetchall()
         self.handler.path="/archivio/pratiche"
         page=self.handler.practice_rows(rows)
-        self.assertIn('class="practice-row-link"',page)
+        self.assertIn('class="practice-row-link avatar-dog"',page)
         self.assertIn("practice-status-blue",page)
         self.assertNotIn("practice-row-cremated",page)
         self.assertNotIn("practice-row-cremated",app.CSS)
@@ -3512,8 +3513,46 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path=f"/?pratiche_periodo=mese&pagamenti_periodo=mese";self.handler.dashboard(admin);month_page=rendered[-1]
         self.assertIn('data-dashboard-card="Ritirato" data-count="3"',month_page)
         self.assertIn('data-dashboard-payment="Acconto" data-count="2" data-amount="200.00"',month_page)
+        # the redesigned cards keep the exact same test hooks (data-dashboard-*)
+        # used above, just wrapped in the new compact premium markup
+        self.assertIn('class="dash-stat-card state-yellow" data-dashboard-card="Ritirato"',page)
+        self.assertIn('class="dash-stat-card payment-due" data-dashboard-payment="Da saldare"',page)
+        self.assertNotIn('class="metric-card',page)
+        self.assertNotIn('class="payment-card',page)
+        # Totale incassato: a new 4th payment card, purely additive (acconto + pagato already computed above)
+        self.assertIn('class="dash-stat-card payment-total"',page)
+        self.assertIn("Totale incassato",page)
+        self.assertIn(app.money_it(200.0+200.0),page)
         with app.db() as conn:
             self.assertEqual(snapshot,(conn.execute("SELECT count(*) n FROM practices").fetchone()["n"],conn.execute("SELECT count(*) n FROM payment_movements").fetchone()["n"],conn.execute("SELECT count(*) n FROM practice_history").fetchone()["n"]))
+
+    def test_dashboard_recent_practices_use_species_avatars_and_premium_row_style(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                         animal_name,species,pickup_date) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                         ("CR-AVATAR-DOG","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Rex","Cane","2026-07-20"))
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                         animal_name,species,pickup_date) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                         ("CR-AVATAR-CAT","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Micio","Gatto","2026-07-21"))
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        self.assertIn('class="practice-row-avatar avatar-dog"',page)
+        self.assertIn('class="practice-row-avatar avatar-cat"',page)
+        self.assertIn("\U0001f436",page)  # 🐶
+        self.assertIn("\U0001f431",page)  # 🐱
+        # this must be the same shared component the Archivio pratiche page uses
+        self.assertIn('<table class="practice-list-table">',page)
+
+    def test_practice_list_table_css_uses_rounded_spaced_premium_rows(self):
+        for rule in (
+            ".practice-list-table{min-width:1500px;border-collapse:separate;border-spacing:0 10px}",
+            ".practice-list-table tbody tr:hover{transform:translateY(-1px);box-shadow:0 10px 26px #03071240}",
+            ".practice-list-table tbody td:first-child{border-left:1px solid #334155;border-top-left-radius:14px;border-bottom-left-radius:14px}",
+        ):
+            self.assertIn(rule,app.CSS)
 
     def test_dashboard_card_lists_and_payment_lists_keep_the_selected_period(self):
         today=datetime.now().date().isoformat();old=(datetime.now().date()-timedelta(days=40)).isoformat();stamp=app.now()
@@ -4175,7 +4214,7 @@ class PetParadiseTests(unittest.TestCase):
         page=rendered[-1]
         self.assertIn('<section class="reminders-card" id="ppmRemindersCard">',page)
         self.assertIn('aria-expanded="false"',page)
-        self.assertIn("Nessuno attivo · Report della settimana",page)
+        self.assertIn("Nessuna attività attiva · Report della settimana",page)
         # no popup/overlay of any kind - a plain in-place expanding card
         card_start=page.index('<section class="reminders-card"')
         card_end=page.index('</section>',card_start)
