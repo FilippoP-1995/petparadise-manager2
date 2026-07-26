@@ -1885,6 +1885,22 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("const maxScroll=box.scrollWidth-box.clientWidth;", js)
         self.assertIn("if(dt>0){velocityX=(t.clientX-lastX)/dt;velocityY=(t.clientY-lastY)/dt;}", js)
 
+    def test_a_new_touch_anywhere_stops_leftover_table_scroll_momentum(self):
+        # A flick inside a table (especially one handed off into page
+        # momentum) can still be decelerating when the user touches down
+        # again elsewhere — a different table, or plain page content.
+        # Without a global stop, that leftover requestAnimationFrame loop
+        # keeps calling scrollLeft/scrollTop/scrollTo on top of whatever the
+        # new gesture is doing, fighting it every frame ("macchinoso,
+        # soprattutto dopo lo scroll da una tabella"). One capture-phase
+        # touchstart listener must cancel every table's momentum the
+        # instant any new touch begins, anywhere on the page.
+        js = app.APP_JS
+        self.assertIn("window.ppmMomentumStoppers.forEach(function(stop){stop();});", js)
+        self.assertIn("document.addEventListener('touchstart',function(){\n      window.ppmMomentumStoppers.forEach", js)
+        self.assertIn("{capture:true,passive:true}", js)
+        self.assertIn("window.ppmMomentumStoppers.push(stopMomentum);", js)
+
     def test_wide_scrollable_tables_use_bounded_internal_scroll_for_reliable_sticky(self):
         # position:sticky on <th> inside a table wrapped by an overflow-x
         # scroll container renders with a permanent top offset in Chromium
