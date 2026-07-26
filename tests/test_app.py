@@ -2640,6 +2640,207 @@ class PetParadiseTests(unittest.TestCase):
         with app.db() as conn:status=conn.execute("SELECT status FROM whatsapp_messages WHERE id=?",(msg_id,)).fetchone()["status"]
         self.assertFalse(result[0]["ok"]);self.assertEqual(status,"annullato")
 
+    def _catalog_practice(self, send_catalog="", catalog_sent="", phone="3339990000"):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            number=f"CR-CAT-{conn.execute('SELECT count(*) n FROM practices').fetchone()['n']+1}"
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,owner_last_name,owner_phone,animal_name,service_type,send_catalog,catalog_sent)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                (number,"Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Anna","Bianchi",phone,"Luna","Cremazione singola",send_catalog,catalog_sent)).lastrowid
+        return admin,pid
+
+    def test_checking_send_catalog_via_catalog_sent_handler_schedules_a_catalogo_urne_message(self):
+        admin,pid=self._catalog_practice()
+        self.handler.form=lambda:{"send_catalog":"Si"}
+        self.handler.redirect=lambda path:None
+        self.handler.catalog_sent(admin,pid)
+        with app.db() as conn:
+            row=conn.execute("SELECT message_type,template_name,status,recipient_phone FROM whatsapp_messages WHERE practice_id=?",(pid,)).fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual((row["message_type"],row["template_name"],row["status"]),("catalogo","catalogo_urne","programmato"))
+        self.assertEqual(row["recipient_phone"],"393339990000")
+
+    def test_unchecking_send_catalog_cancels_the_pending_catalog_message(self):
+        admin,pid=self._catalog_practice()
+        self.handler.form=lambda:{"send_catalog":"Si"}
+        self.handler.redirect=lambda path:None
+        self.handler.catalog_sent(admin,pid)
+        self.handler.form=lambda:{"send_catalog":""}
+        self.handler.catalog_sent(admin,pid)
+        with app.db() as conn:
+            status=conn.execute("SELECT status FROM whatsapp_messages WHERE practice_id=?",(pid,)).fetchone()["status"]
+        self.assertEqual(status,"annullato")
+
+    def test_create_practice_with_send_catalog_checked_schedules_catalog_message(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        redirects=[];self.handler.redirect=lambda path:redirects.append(path)
+        self.handler.form=lambda:{
+            "operator_name":"FILIPPO","service_type":"Cremazione singola","request_origin":"Privato",
+            "owner_first_name":"Anna","owner_last_name":"Bianchi","owner_phone":"3339990001",
+            "owner_tax_code":"X","owner_street":"Via","owner_city":"Livorno","owner_province":"LI","owner_zip":"57100",
+            "send_catalog":"Si",
+        }
+        self.handler.create_practice(admin)
+        pid=int(redirects[-1].split("/pratiche/")[1])
+        with app.db() as conn:
+            row=conn.execute("SELECT message_type,template_name FROM whatsapp_messages WHERE practice_id=?",(pid,)).fetchone()
+        self.assertEqual((row["message_type"],row["template_name"]),("catalogo","catalogo_urne"))
+
+    def test_edit_submit_send_catalog_transition_schedules_and_uncheck_cancels(self):
+        admin,pid=self._catalog_practice()
+        base_form={
+            "operator_name":"FILIPPO","service_type":"Cremazione singola","request_origin":"Privato",
+            "owner_first_name":"Anna","owner_last_name":"Bianchi","owner_phone":"3339990000",
+            "owner_tax_code":"X","owner_street":"Via","owner_city":"Livorno","owner_province":"LI","owner_zip":"57100",
+            "payment_status":"Da saldare",
+        }
+        self.handler.redirect=lambda path:None
+        self.handler.form=lambda:{**base_form,"send_catalog":"Si"}
+        self.handler.edit_submit(admin,pid)
+        with app.db() as conn:
+            status=conn.execute("SELECT status FROM whatsapp_messages WHERE practice_id=? AND message_type='catalogo'",(pid,)).fetchone()["status"]
+        self.assertEqual(status,"programmato")
+        self.handler.form=lambda:{**base_form,"send_catalog":""}
+        self.handler.edit_submit(admin,pid)
+        with app.db() as conn:
+            status=conn.execute("SELECT status FROM whatsapp_messages WHERE practice_id=? AND message_type='catalogo'",(pid,)).fetchone()["status"]
+        self.assertEqual(status,"annullato")
+
+    def test_thanks_and_catalog_messages_coexist_independently_for_the_same_practice(self):
+        # Regression test for the message_type discriminator: before it
+        # existed, scheduling a second whatsapp_messages row of a different
+        # purpose for the same practice would either violate the old
+        # per-practice unique index or be mistaken for the other flow's
+        # "already active" check.
+        admin,pid=self._catalog_practice()
+        with app.db() as conn:
+            conn.execute("UPDATE practices SET status='Consegnato' WHERE id=?",(pid,))
+            ok_thanks,_=self.handler.schedule_whatsapp_thanks(conn,pid,admin["id"])
+            ok_catalog,_=self.handler.schedule_whatsapp_catalog(conn,pid,admin["id"])
+        self.assertTrue(ok_thanks);self.assertTrue(ok_catalog)
+        with app.db() as conn:
+            rows={row["message_type"]:row["status"] for row in conn.execute("SELECT message_type,status FROM whatsapp_messages WHERE practice_id=?",(pid,))}
+        self.assertEqual(rows,{"ringraziamento":"programmato","catalogo":"programmato"})
+
+    def test_catalog_message_success_marks_catalog_sent_and_clears_send_catalog(self):
+        admin,pid=self._catalog_practice(send_catalog="Si")
+        with app.db() as conn:
+            self.handler.schedule_whatsapp_catalog(conn,pid,admin["id"])
+            msg_id=conn.execute("SELECT id FROM whatsapp_messages WHERE practice_id=? AND message_type='catalogo'",(pid,)).fetchone()["id"]
+            conn.execute("UPDATE whatsapp_messages SET scheduled_at='2026-07-15T14:00:00' WHERE id=?",(msg_id,))
+        class MetaResponse:
+            status=200
+            def __enter__(self):return self
+            def __exit__(self,*args):pass
+            def read(self):return b'{"messages":[{"id":"wamid.catalog"}]}'
+        env={"WHATSAPP_ACCESS_TOKEN":"token-test","WHATSAPP_PHONE_NUMBER_ID":"phone-test"}
+        with patch.dict(os.environ,env),patch("app.urllib.request.urlopen",return_value=MetaResponse()):
+            result=self.handler.process_whatsapp_queue(current_time=datetime(2026,7,15,14,0))
+        self.assertTrue(result[0]["ok"])
+        with app.db() as conn:
+            practice=conn.execute("SELECT send_catalog,catalog_sent FROM practices WHERE id=?",(pid,)).fetchone()
+            payload=conn.execute("SELECT payload_json FROM whatsapp_messages WHERE id=?",(msg_id,)).fetchone()["payload_json"]
+        self.assertEqual((practice["send_catalog"],practice["catalog_sent"]),("","Si"))
+        self.assertIn('"catalogo_urne"',payload)
+
+    def test_catalog_send_is_cancelled_if_unchecked_before_the_scheduled_send_fires(self):
+        admin,pid=self._catalog_practice(send_catalog="Si")
+        with app.db() as conn:
+            self.handler.schedule_whatsapp_catalog(conn,pid,admin["id"])
+            msg_id=conn.execute("SELECT id FROM whatsapp_messages WHERE practice_id=? AND message_type='catalogo'",(pid,)).fetchone()["id"]
+            conn.execute("UPDATE practices SET send_catalog='' WHERE id=?",(pid,))
+        ok,_=self.handler.send_whatsapp_message(msg_id,manual=False)
+        self.assertFalse(ok)
+        with app.db() as conn:
+            status=conn.execute("SELECT status FROM whatsapp_messages WHERE id=?",(msg_id,)).fetchone()["status"]
+        self.assertEqual(status,"annullato")
+
+    def test_resend_whatsapp_thanks_ignores_a_pending_catalog_message_for_the_same_practice(self):
+        # resend_whatsapp/whatsapp_confirm_page are ringraziamento-only admin
+        # actions: a pending/sent catalog row for the same practice must not
+        # be picked up as "the" active/latest whatsapp_messages row.
+        admin,pid=self._catalog_practice(send_catalog="Si")
+        with app.db() as conn:
+            conn.execute("UPDATE practices SET status='Consegnato' WHERE id=?",(pid,))
+            self.handler.schedule_whatsapp_catalog(conn,pid,admin["id"])
+        self.handler.form=lambda:{"confirm_send":"SI"}
+        self.handler.redirect=lambda path:None
+        with patch.object(self.handler,"send_whatsapp_message",return_value=(True,"ok")) as send:
+            self.handler.resend_whatsapp(admin,pid)
+        sent_msg_id=send.call_args[0][0]
+        with app.db() as conn:
+            message_type=conn.execute("SELECT message_type FROM whatsapp_messages WHERE id=?",(sent_msg_id,)).fetchone()["message_type"]
+        self.assertEqual(message_type,"ringraziamento")
+
+    def test_webhook_inbound_text_message_links_to_the_practice_it_was_sent_to(self):
+        admin,pid=self._catalog_practice()
+        with app.db() as conn:
+            stamp=app.now()
+            conn.execute("""INSERT INTO whatsapp_messages(practice_id,scheduled_at,status,template_name,recipient_phone,manual,message_type,created_at,updated_at)
+                            VALUES(?,?,?,?,?,?,?,?,?)""",(pid,stamp,"accettato_da_meta","catalogo_urne","393339990000",0,"catalogo",stamp,stamp))
+        payload=json.dumps({"entry":[{"changes":[{"value":{
+            "contacts":[{"profile":{"name":"Anna B."},"wa_id":"393339990000"}],
+            "messages":[{"id":"wamid.inbound1","from":"393339990000","type":"text","text":{"body":"Grazie, quale urna scelgo?"}}],
+        }}]}]})
+        self.handler.headers={"Content-Length":str(len(payload.encode()))}
+        self.handler.rfile=io.BytesIO(payload.encode())
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.whatsapp_webhook_receive()
+        self.assertTrue(responses[-1][0]["ok"])
+        with app.db() as conn:
+            row=conn.execute("SELECT practice_id,from_phone,contact_name,body FROM whatsapp_inbound_messages WHERE wa_message_id='wamid.inbound1'").fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["practice_id"],pid)
+        self.assertEqual(row["contact_name"],"Anna B.")
+        self.assertIn("quale urna",row["body"])
+
+    def test_webhook_duplicate_inbound_message_id_is_stored_only_once(self):
+        admin,pid=self._catalog_practice()
+        payload=json.dumps({"entry":[{"changes":[{"value":{
+            "messages":[{"id":"wamid.dup","from":"3339990000","type":"text","text":{"body":"Ciao"}}],
+        }}]}]})
+        for _ in range(2):
+            self.handler.headers={"Content-Length":str(len(payload.encode()))}
+            self.handler.rfile=io.BytesIO(payload.encode())
+            responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+            self.handler.whatsapp_webhook_receive()
+        with app.db() as conn:
+            count=conn.execute("SELECT count(*) n FROM whatsapp_inbound_messages WHERE wa_message_id='wamid.dup'").fetchone()["n"]
+        self.assertEqual(count,1)
+
+    def test_webhook_inbound_message_from_unknown_number_is_stored_unlinked(self):
+        payload=json.dumps({"entry":[{"changes":[{"value":{
+            "messages":[{"id":"wamid.unknown","from":"390000000000","type":"text","text":{"body":"Chi sei?"}}],
+        }}]}]})
+        self.handler.headers={"Content-Length":str(len(payload.encode()))}
+        self.handler.rfile=io.BytesIO(payload.encode())
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.whatsapp_webhook_receive()
+        with app.db() as conn:
+            row=conn.execute("SELECT practice_id FROM whatsapp_inbound_messages WHERE wa_message_id='wamid.unknown'").fetchone()
+        self.assertIsNone(row["practice_id"])
+
+    def test_conversations_page_shows_inbound_reply_and_unmatched_messages(self):
+        admin,pid=self._catalog_practice()
+        with app.db() as conn:
+            stamp=app.now()
+            conn.execute("""INSERT INTO whatsapp_messages(practice_id,scheduled_at,status,template_name,recipient_phone,manual,message_type,created_at,updated_at)
+                            VALUES(?,?,?,?,?,?,?,?,?)""",(pid,stamp,"accettato_da_meta","catalogo_urne","393339990000",0,"catalogo",stamp,stamp))
+            conn.execute("""INSERT INTO whatsapp_inbound_messages(practice_id,wa_message_id,from_phone,contact_name,message_type,body,received_at,created_at)
+                            VALUES(?,?,?,?,?,?,?,?)""",(pid,"wamid.reply1","393339990000","Anna B.","text","Va bene, grazie!",stamp,stamp))
+            conn.execute("""INSERT INTO whatsapp_inbound_messages(practice_id,wa_message_id,from_phone,contact_name,message_type,body,received_at,created_at)
+                            VALUES(?,?,?,?,?,?,?,?)""",(None,"wamid.orphan","390001112222","","text","Messaggio senza pratica collegata",stamp,stamp))
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/conversazioni-whatsapp"
+        self.handler.whatsapp_conversations(admin)
+        page=rendered[-1]
+        self.assertIn("Risposte del cliente",page)
+        self.assertIn("Va bene, grazie!",page)
+        self.assertIn("Messaggi ricevuti non abbinati a nessuna pratica",page)
+        self.assertIn("Messaggio senza pratica collegata",page)
+        self.assertIn("Invio catalogo urne",page)
+
     def test_quick_payment_saves_details_and_returns_to_list(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
