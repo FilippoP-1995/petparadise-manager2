@@ -3853,7 +3853,8 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.dashboard(admin)
         page=rendered[-1]
         self.assertNotIn("hanno dati ancora da completare",page)
-        self.assertIn('<section class="section reminders-panel"><h2>Promemoria</h2>',page)
+        self.assertIn('id="ppmOpenReminders"',page)
+        self.assertIn('id="ppmRemindersOverlay"',page)
         self.assertIn(f'href="/pratiche/{pid}"',page)
         self.assertIn("Completa i dati della pratica CR-REMIND",page)
         with app.db() as conn:
