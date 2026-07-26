@@ -1156,7 +1156,9 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 .practice-status{background:transparent!important;border:2px solid currentColor}.practice-status-blue{color:#60a5fa!important;border-color:#3b82f6}.practice-status-red{color:#fb7185!important;border-color:#ef4444}.practice-status-yellow{color:#fde047!important;border-color:#eab308}.practice-status-green{color:#4ade80!important;border-color:#22c55e}.light-theme .practice-status-blue{color:#1d4ed8!important}.light-theme .practice-status-red{color:#b91c1c!important}.light-theme .practice-status-yellow{color:#854d0e!important}.light-theme .practice-status-green{color:#15803d!important}
 .modern-check{display:flex;align-items:center;gap:10px;min-height:46px;padding:10px 13px;border:1px solid #3b4658;border-radius:12px;background:linear-gradient(145deg,#182130,#111925);color:#e8edf5;cursor:pointer;transition:border-color .16s,transform .16s,box-shadow .16s}.modern-check:hover{transform:translateY(-1px);border-color:#fb7185;box-shadow:0 8px 22px #02061745}.modern-check input[type=checkbox]{width:20px;height:20px;margin:0;accent-color:#ef405f}.modern-check span{font-size:12px;font-weight:800;letter-spacing:.025em}.light-theme .modern-check{background:linear-gradient(145deg,#fff,#f1f5f9);color:#172033;border-color:#cbd5e1}.invoice-inline{display:grid;gap:8px}.invoice-inline input{min-width:0}.invoice-inline .btn{width:100%}
 .pay-green{border:2px solid #22c55e!important}.pay-yellow{border:2px solid #eab308!important}.pay-blue{border:2px solid #3b82f6!important}.notification-badge{position:absolute;display:grid;place-items:center;min-width:19px;height:19px;padding:0 5px;border-radius:99px;background:#dc2626;color:#fff;font:700 11px/1 system-ui;transform:translate(13px,-13px);box-shadow:0 0 0 2px #111827}.nav-notification{position:relative}.notification-center{display:grid;gap:10px}.notification-item{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:13px;align-items:center;padding:15px;border:1px solid #334155;border-radius:13px;background:#1f2937}.notification-item.unread{border-left:4px solid #ef405f}.notification-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:#172033;font-size:21px}.notification-copy b,.notification-copy small{display:block}.notification-copy p{margin:4px 0;color:#cbd5e1}.notification-copy small{color:#94a3b8}.notification-actions{display:flex;gap:8px;align-items:center}.toggle-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.toggle-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:1px solid #334155;border-radius:11px}.toggle-row input{width:22px;height:22px}.permission-prompt{position:fixed;right:20px;bottom:20px;z-index:150;max-width:390px;padding:18px;border:1px solid #475569;border-radius:16px;background:#172033;color:#fff;box-shadow:0 24px 70px #000a}.permission-prompt p{color:#cbd5e1}.sw-update-banner{position:fixed;left:14px;right:14px;bottom:calc(14px + var(--safe-bottom));z-index:160;display:flex;align-items:center;justify-content:space-between;gap:14px;max-width:420px;margin:0 auto;padding:12px 16px;border:1px solid #475569;border-radius:14px;background:#172033;color:#fff;box-shadow:0 20px 60px #000a;animation:ppmFade .2s ease-out}.sw-update-banner button{border:0;border-radius:9px;padding:8px 14px;font-weight:700;background:var(--brand);color:#fff;cursor:pointer}.light-theme .sw-update-banner{background:#fff;color:#111827;border-color:#cbd5e1}.quick-payment{display:flex;gap:7px;align-items:center}.quick-payment select,.quick-payment input{min-width:110px}.quick-payment .btn{width:auto}.light-theme .notification-item,.light-theme .toggle-row,.light-theme .permission-prompt{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .notification-copy p{color:#334155}
-.practice-list-table{min-width:1500px}.practice-list-table th:first-child,.practice-list-table td:first-child{position:sticky;left:0;z-index:3;min-width:215px;background:#101620;box-shadow:8px 0 14px #02061735}.practice-list-table th:first-child{z-index:4}.light-theme .practice-list-table th:first-child,.light-theme .practice-list-table td:first-child{background:#fff}.inline-statuses{display:grid;gap:8px;min-width:170px}.inline-state-select{min-height:38px;padding:7px 32px 7px 10px;border-width:2px;font-weight:800}button.inline-state-select{border:0;border-radius:9px;font:inherit;cursor:pointer;text-align:center;padding:7px 14px}.inline-tag-form{display:flex;flex-direction:column;gap:2px}.invoice-inline-cell{display:grid;gap:4px;min-width:130px}.invoice-inline-input{min-height:34px;padding:6px 9px;font-size:12px}.invoice-inline-input.input-error{border-color:#ef4444}.payment-popover{position:fixed;inset:0;z-index:180;display:grid;place-items:center;padding:18px;background:#020617b8}.payment-popover[hidden]{display:none}.payment-dialog{width:min(620px,100%);max-height:90dvh;overflow:auto;padding:20px;border:1px solid #475569;border-radius:16px;background:#172033;box-shadow:0 28px 90px #000c}.payment-dialog h2{margin-bottom:6px}.payment-dialog .fields{margin-top:16px}.payment-macroarea{margin-top:20px;padding-top:18px;border-top:1px solid #334155}.payment-macroarea:first-of-type{margin-top:16px;padding-top:0;border-top:0}.payment-macroarea h3{margin:0 0 10px;font-size:16px}.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.payment-macroarea-channel{padding:14px;border:1px solid #334155;border-radius:12px;background:#182334;margin-bottom:16px}.light-theme .payment-macroarea-channel{background:#f8fafc;border-color:#cbd5e1}#paymentTotaleWRow .field label,#paymentTotaleDRow .field label,.payment-macroarea-channel .fields .field:first-child label{font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.03em}.payment-macroarea-channel .fields .field:not(:first-child) label{font-size:11px;font-weight:600;color:var(--muted)}.field-error input,.field-error select,.field-error textarea{border-color:#ef4444}.field-error-text{display:block;margin-top:4px;color:#ef4444;font-size:12px;font-weight:600}.payment-invoice-section{margin-top:18px;padding-top:16px;border-top:1px solid #334155}.payment-invoice-section h3{margin:0 0 4px;font-size:14px}.payment-invoice-section .fields{margin-top:10px}.payment-acconto-summary{margin:10px 0 0}.light-theme .payment-dialog{background:#fff;color:#111827}.light-theme .payment-macroarea{border-color:#e2e8f0}.light-theme .payment-invoice-section{border-color:#e2e8f0}.message-programmato{background:#4c1d95;color:#ede9fe}.message-in_invio{background:#78350f;color:#fef3c7}.message-annullato{background:#334155;color:#cbd5e1}.conversation-error{grid-column:1/-1}.conversation-error dd{white-space:normal;color:#fca5a5}.conversation-replies{grid-column:1/-1}.conversation-replies dd{white-space:normal}.conversation-replies ul{margin:4px 0 0;padding-left:18px}.unmatched-whatsapp-list{margin:0;padding-left:18px;display:grid;gap:8px}.conversation-action.actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}.conversation-action form{margin:0}
+.practice-list-table{min-width:1500px}.practice-list-table th:first-child,.practice-list-table td:first-child{position:sticky;left:0;z-index:3;min-width:215px;background:#101620;box-shadow:8px 0 14px #02061735}.practice-list-table th:first-child{z-index:4}.light-theme .practice-list-table th:first-child,.light-theme .practice-list-table td:first-child{background:#fff}.inline-statuses{display:grid;gap:8px;min-width:170px}.inline-state-select{min-height:38px;padding:7px 32px 7px 10px;border-width:2px;font-weight:800}button.inline-state-select{border:0;border-radius:9px;font:inherit;cursor:pointer;text-align:center;padding:7px 14px}.inline-tag-form{display:flex;flex-direction:column;gap:2px}.invoice-inline-cell{display:grid;gap:4px;min-width:130px}.invoice-inline-input{min-height:34px;padding:6px 9px;font-size:12px}.invoice-inline-input.input-error{border-color:#ef4444}.payment-popover{position:fixed;inset:0;z-index:180;display:grid;place-items:center;padding:18px;background:#020617b8}.payment-popover[hidden]{display:none}.payment-dialog{width:min(620px,100%);max-height:90dvh;overflow:auto;padding:20px;border:1px solid #475569;border-radius:16px;background:#172033;box-shadow:0 28px 90px #000c}.payment-dialog h2{margin-bottom:6px}.payment-dialog .fields{margin-top:16px}.payment-macroarea{margin-top:20px;padding-top:18px;border-top:1px solid #334155}.payment-macroarea:first-of-type{margin-top:16px;padding-top:0;border-top:0}.payment-macroarea h3{margin:0 0 10px;font-size:16px}.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.payment-macroarea-channel{padding:14px;border:1px solid #334155;border-radius:12px;background:#182334;margin-bottom:16px}.light-theme .payment-macroarea-channel{background:#f8fafc;border-color:#cbd5e1}#paymentTotaleWRow .field label,#paymentTotaleDRow .field label,.payment-macroarea-channel .fields .field:first-child label{font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.03em}.payment-macroarea-channel .fields .field:not(:first-child) label{font-size:11px;font-weight:600;color:var(--muted)}
+@media(max-width:520px){.payment-popover{padding:6px}.payment-dialog{padding:12px 10px;max-height:97dvh}.payment-dialog .titlebar{position:sticky;top:-12px;margin:-12px -10px 6px;padding:12px 10px 6px;background:#172033;z-index:1;gap:8px}.payment-dialog h2{font-size:15px;margin-bottom:0}.payment-dialog .sub{display:none}.payment-dialog .fields{gap:6px;margin-top:6px}.payment-dialog .field{gap:2px}.payment-dialog label{font-size:10.5px}.payment-dialog input,.payment-dialog select{padding:7px 8px;font-size:14px}.payment-macroarea{margin-top:8px;padding-top:8px}.payment-macroarea:first-of-type{margin-top:6px}.payment-macroarea h3{margin:0 0 4px;font-size:13px}.payment-macroarea-channel{padding:7px;margin-bottom:7px}.payment-invoice-section{margin-top:7px;padding-top:7px}.payment-dialog .btn{padding:8px 12px;margin-top:6px!important}.payment-dialog .btn.ghost{margin-left:4px!important}}
+.field-error input,.field-error select,.field-error textarea{border-color:#ef4444}.field-error-text{display:block;margin-top:4px;color:#ef4444;font-size:12px;font-weight:600}.payment-invoice-section{margin-top:18px;padding-top:16px;border-top:1px solid #334155}.payment-invoice-section h3{margin:0 0 4px;font-size:14px}.payment-invoice-section .fields{margin-top:10px}.payment-acconto-summary{margin:10px 0 0}.light-theme .payment-dialog{background:#fff;color:#111827}.light-theme .payment-dialog .titlebar{background:#fff}.light-theme .payment-macroarea{border-color:#e2e8f0}.light-theme .payment-invoice-section{border-color:#e2e8f0}.message-programmato{background:#4c1d95;color:#ede9fe}.message-in_invio{background:#78350f;color:#fef3c7}.message-annullato{background:#334155;color:#cbd5e1}.conversation-error{grid-column:1/-1}.conversation-error dd{white-space:normal;color:#fca5a5}.conversation-replies{grid-column:1/-1}.conversation-replies dd{white-space:normal}.conversation-replies ul{margin:4px 0 0;padding-left:18px}.unmatched-whatsapp-list{margin:0;padding-left:18px;display:grid;gap:8px}.conversation-action.actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}.conversation-action form{margin:0}
 @media(max-width:620px){.practice-list-table th:first-child,.practice-list-table td:first-child{box-sizing:border-box;width:132px;min-width:132px;max-width:132px;padding-left:12px;padding-right:10px;white-space:normal!important}}
 @media(max-width:1150px){.conversation-card{grid-template-columns:1fr 1fr}.conversation-action{grid-column:1/-1;text-align:left}}
 @media(max-width:700px){.conversation-card{grid-template-columns:1fr;gap:14px}.conversation-card dl{grid-template-columns:1fr 1fr}.conversation-action{grid-column:auto}.conversation-action.actions{justify-content:stretch}.conversation-action form,.conversation-action .btn{width:100%}.pagination{gap:8px;justify-content:space-between}.pagination span{font-size:11px;text-align:center}.conversation-message{white-space:normal}.conversations-wrap .titlebar h1{font-size:24px}}
@@ -2627,6 +2629,13 @@ function setupOriginVetLookup(){
 function openPaymentPopover(trigger){
   const target=document.getElementById(trigger.dataset.paymentPopover);if(!target)return;
   target._ppmTrigger=trigger;
+  // Rows nested inside a scrollable .tablebox (e.g. the Dashboard's "ultime
+  // pratiche" list) use -webkit-overflow-scrolling:touch for smooth mobile
+  // scroll, which on iOS Safari makes that box the containing block for any
+  // position:fixed descendant instead of the viewport — the popover then
+  // renders trapped inside the table instead of covering the whole screen.
+  // Moving it to <body> first sidesteps that quirk everywhere it can occur.
+  if(target.parentElement!==document.body)document.body.appendChild(target);
   target.hidden=false;document.body.style.overflow='hidden';
 }
 function closePaymentPopover(button){
@@ -3835,6 +3844,8 @@ class App(BaseHTTPRequestHandler):
         if match: return self.signature_page(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/whatsapp-conferma", path)
         if match: return self.whatsapp_confirm_page(user, int(match.group(1)))
+        match = re.fullmatch(r"/pratiche/(\d+)/catalogo-whatsapp-conferma", path)
+        if match: return self.catalog_whatsapp_confirm_page(user, int(match.group(1)))
         self.send_error(404)
 
     def do_POST(self):
@@ -3943,6 +3954,8 @@ class App(BaseHTTPRequestHandler):
         if match: return self.quick_invoice(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/whatsapp", path)
         if match: return self.resend_whatsapp(user, int(match.group(1)))
+        match = re.fullmatch(r"/pratiche/(\d+)/catalogo-whatsapp", path)
+        if match: return self.resend_whatsapp_catalog(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/whatsapp-annulla", path)
         if match: return self.cancel_whatsapp_manual(user, int(match.group(1)))
         match = re.fullmatch(r"/api/pratiche/(\d+)/autosave", path)
@@ -7223,8 +7236,7 @@ class App(BaseHTTPRequestHandler):
         return "catalogo_urne"
 
     def whatsapp_client_name(self, p):
-        name=" ".join(x for x in [(p["owner_first_name"] or "").strip(), (p["owner_last_name"] or "").strip()] if x).strip()
-        return name or "cliente"
+        return (p["owner_first_name"] or "").strip() or "cliente"
 
     def whatsapp_animal_name(self, p):
         return (p["animal_name"] or "").strip() or "il vostro compagno"
@@ -8258,7 +8270,8 @@ class App(BaseHTTPRequestHandler):
         catalog_value = "Si" if "send_catalog" in p.keys() and p["send_catalog"] else "No"
         send_catalog_checked="checked" if p["send_catalog"]=="Si" else ""
         catalog_sent_checked="checked" if p["catalog_sent"]=="Si" else ""
-        catalog_controls=f'''<form class="catalog-summary-form" method="post" action="/pratiche/{pid}/catalogo-inviato"><input type="hidden" name="practice_view" value="{esc(practice_view)}"><label class="modern-check"><input type="checkbox" name="send_catalog" value="Si" {send_catalog_checked} onchange="if(this.checked)this.form.catalog_sent.checked=false;this.form.submit()"> INVIARE CATALOGO</label><label class="modern-check"><input type="checkbox" name="catalog_sent" value="Si" {catalog_sent_checked} onchange="if(this.checked)this.form.send_catalog.checked=false;this.form.submit()"> CATALOGO INVIATO</label></form>'''
+        resend_catalog_button = f'<a class="btn ghost" href="/pratiche/{pid}/catalogo-whatsapp-conferma" style="margin-left:8px">Reinvia catalogo</a>' if p["catalog_sent"]=="Si" else ''
+        catalog_controls=f'''<form class="catalog-summary-form" method="post" action="/pratiche/{pid}/catalogo-inviato"><input type="hidden" name="practice_view" value="{esc(practice_view)}"><label class="modern-check"><input type="checkbox" name="send_catalog" value="Si" {send_catalog_checked} onchange="if(this.checked)this.form.catalog_sent.checked=false;this.form.submit()"> INVIARE CATALOGO</label><label class="modern-check"><input type="checkbox" name="catalog_sent" value="Si" {catalog_sent_checked} onchange="if(this.checked)this.form.send_catalog.checked=false;this.form.submit()"> CATALOGO INVIATO</label>{resend_catalog_button}</form>'''
         urn_parts=[]
         if p["urn_notes"]: urn_parts.append(esc(p["urn_notes"]))
         if p["price_urn"]: urn_parts.append(money_it(money_value(p["price_urn"])))
@@ -9153,6 +9166,32 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"Invio WhatsApp manuale",msg,user["id"],now()))
         self.redirect(f"/pratiche/{pid}")
 
+    def resend_whatsapp_catalog(self,user,pid):
+        if user["role"] != "admin":
+            return self.send_error(403)
+        f=self.form()
+        if f.get("confirm_send") != "SI":
+            return self.catalog_whatsapp_confirm_page(user,pid,error="Devi confermare l'invio prima di procedere.")
+        with db() as c:
+            p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+            if not p: return self.send_error(404)
+            active=c.execute("SELECT * FROM whatsapp_messages WHERE practice_id=? AND message_type='catalogo' AND status IN ('programmato','in_invio') ORDER BY created_at DESC LIMIT 1",(pid,)).fetchone()
+            if active:
+                msg_id=active["id"]
+                c.execute("UPDATE whatsapp_messages SET status='in_invio', manual=1, updated_at=? WHERE id=?",(now(),msg_id))
+            else:
+                payload=self.whatsapp_catalog_payload_for_practice(p)
+                stamp=now()
+                cur=c.execute("""INSERT INTO whatsapp_messages(practice_id,scheduled_at,status,attempts,template_name,language_code,recipient_phone,payload_json,manual,message_type,created_at,updated_at)
+                                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",(pid,stamp,"in_invio",0,payload["template"]["name"],payload["template"]["language"]["code"],payload["to"],json.dumps(payload,ensure_ascii=False),1,"catalogo",stamp,stamp))
+                msg_id=cur.lastrowid
+        # connection released before the network call, same reason as in
+        # process_whatsapp_queue: never hold a database lock during it.
+        ok,msg=self.send_whatsapp_message(msg_id,manual=True,user_id=user["id"])
+        with db() as c:
+            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"Reinvio catalogo WhatsApp",msg,user["id"],now()))
+        self.redirect(f"/pratiche/{pid}")
+
     def cancel_whatsapp_manual(self,user,pid):
         with db() as c:
             if not c.execute("SELECT id FROM practices WHERE id=?",(pid,)).fetchone():
@@ -9210,6 +9249,22 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>{btn}</h1><div class="sub">Conferma invio template WhatsApp per la pratica {esc(p['practice_number'])}</div></div><a class="btn ghost" href="/pratiche/{pid}">Torna alla pratica</a></div>{error_html}{warning}<section class="section"><h2>Dati invio</h2><div class="kvs"><div class="kv"><small>Destinatario</small><b>+{esc(phone)}</b></div><div class="kv"><small>Template</small><b>{esc(template)}</b></div><div class="kv"><small>Lingua</small><b>{esc(payload['template']['language']['code'])}</b></div><div class="kv"><small>Nome cliente</small><b>{esc(nome_cliente)}</b></div><div class="kv"><small>Nome animale</small><b>{esc(nome_animale)}</b></div></div><form method="post" action="/pratiche/{pid}/whatsapp" onsubmit="return confirm('Confermi invio WhatsApp a +{esc(phone)} con template {esc(template)}?')"><input type="hidden" name="confirm_send" value="SI"><button class="btn" style="margin-top:18px">{btn}</button></form></section></main>'''
         self.send_html(layout("Conferma WhatsApp",body,user))
+
+    def catalog_whatsapp_confirm_page(self,user,pid,error=""):
+        if user["role"] != "admin":
+            return self.send_error(403)
+        with db() as c:
+            p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+        if not p: return self.send_error(404)
+        payload=self.whatsapp_catalog_payload_for_practice(p)
+        phone=payload["to"] or "Telefono mancante"
+        template=payload["template"]["name"]
+        nome_cliente=payload["template"]["components"][0]["parameters"][0]["text"]
+        nome_animale=payload["template"]["components"][0]["parameters"][1]["text"]
+        warning = '<div class="flash warning"><b>Attenzione:</b> il catalogo risulta già inviato a questo cliente. Conferma solo se vuoi reinviarlo.</div>' if p["catalog_sent"]=="Si" else ''
+        error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>REINVIA CATALOGO</h1><div class="sub">Conferma invio template WhatsApp del catalogo per la pratica {esc(p['practice_number'])}</div></div><a class="btn ghost" href="/pratiche/{pid}">Torna alla pratica</a></div>{error_html}{warning}<section class="section"><h2>Dati invio</h2><div class="kvs"><div class="kv"><small>Destinatario</small><b>+{esc(phone)}</b></div><div class="kv"><small>Template</small><b>{esc(template)}</b></div><div class="kv"><small>Lingua</small><b>{esc(payload['template']['language']['code'])}</b></div><div class="kv"><small>Nome cliente</small><b>{esc(nome_cliente)}</b></div><div class="kv"><small>Nome animale</small><b>{esc(nome_animale)}</b></div></div><form method="post" action="/pratiche/{pid}/catalogo-whatsapp" onsubmit="return confirm('Confermi invio del catalogo a +{esc(phone)}?')"><input type="hidden" name="confirm_send" value="SI"><button class="btn" style="margin-top:18px">REINVIA CATALOGO</button></form></section></main>'''
+        self.send_html(layout("Conferma invio catalogo",body,user))
 
     def public_ddt(self,token):
         with db() as c:
