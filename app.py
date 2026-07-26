@@ -713,6 +713,15 @@ def init_db():
         whatsapp_messages_existing = {row["name"] for row in c.execute("PRAGMA table_info(whatsapp_messages)")}
         if "message_type" not in whatsapp_messages_existing:
             c.execute("ALTER TABLE whatsapp_messages ADD COLUMN message_type TEXT NOT NULL DEFAULT 'ringraziamento'")
+        reminders_existing = {row["name"] for row in c.execute("PRAGMA table_info(reminders)")}
+        if "entity_key" not in reminders_existing:
+            # entity_key is the stable identifier for the underlying condition
+            # (e.g. "practice:123"), separate from dedupe_key which is unique
+            # per *occurrence* (see ensure_reminder). Older rows never had this
+            # split, so their dedupe_key already IS the stable key: backfill it
+            # as-is so existing open/completed reminders keep working unchanged.
+            c.execute("ALTER TABLE reminders ADD COLUMN entity_key TEXT NOT NULL DEFAULT ''")
+            c.execute("UPDATE reminders SET entity_key=dedupe_key WHERE entity_key=''")
         c.executescript("""
         CREATE TABLE IF NOT EXISTS whatsapp_inbound_messages (
           id INTEGER PRIMARY KEY,
@@ -1109,7 +1118,7 @@ def format_sequence_code(prefix,value,width=6):
 CSS = r"""
 :root{--ink:#24312c;--muted:#6e7b75;--brand:#a74045;--brand2:#7f3035;--paper:#fff;--bg:#f4f1ed;--line:#ded8d1;--green:#39745b;--gold:#a87926;--safe-top:env(safe-area-inset-top,0px);--safe-bottom:env(safe-area-inset-bottom,0px);--safe-left:env(safe-area-inset-left,0px);--safe-right:env(safe-area-inset-right,0px)}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
-a{color:inherit;text-decoration:none}.top{height:68px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:18px;padding:0 28px;position:sticky;top:0;z-index:5}.brand{font-weight:800;font-size:19px;color:var(--brand)}.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:1.5px}.nav{display:flex;gap:8px;margin-left:auto}.nav a{padding:9px 12px;border-radius:9px}.nav a:hover{background:#f3eeea}.wrap{max-width:1280px;margin:0 auto;padding:28px}.titlebar{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:22px}h1{margin:0;font-size:28px}h2{font-size:18px;margin:0 0 15px}.sub{color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:10px;background:var(--brand);color:white;padding:11px 16px;font-weight:700;cursor:pointer}.btn:hover{background:var(--brand2)}.btn.ghost{background:white;color:var(--ink);border:1px solid var(--line)}.grid{display:grid;gap:16px}.stats{grid-template-columns:repeat(3,1fr)}.card{background:var(--paper);border:1px solid var(--line);border-radius:15px;padding:20px;box-shadow:0 3px 15px #4b39260a}.stat{display:flex;justify-content:space-between;align-items:center}.stat b{font-size:32px;color:var(--brand)}.badge{display:inline-flex;padding:5px 9px;border-radius:99px;background:#eee9e3;font-size:12px;font-weight:700}.tag-red{background:#e53935;color:white}.tag-orange{background:#fb8c00;color:white}.tag-outline-orange{background:white;color:#fb8c00;border:2px solid #fb8c00}.tag-purple{background:#7e57c2;color:white}.tag-yellow,.pay-yellow{background:#fdd835;color:#3b3100}.tag-pink{background:#f06292;color:white}.tag-blue,.pay-blue{background:#1e88e5;color:white}.tag-green,.pay-green{background:#43a047;color:white}.status-stack{display:flex;gap:5px;flex-wrap:wrap}.form-grid{grid-template-columns:repeat(2,1fr)}.wide{grid-column:1/-1}.section{background:#fff;border:1px solid var(--line);border-radius:15px;padding:20px}.fields{display:grid;grid-template-columns:repeat(2,1fr);gap:13px}.field{display:flex;flex-direction:column;gap:6px}.field.full{grid-column:1/-1}label{font-weight:650;font-size:13px}input,select,textarea{width:100%;border:1px solid #cfc8c0;border-radius:9px;padding:11px 12px;background:white;color:var(--ink);font:inherit}input[type=checkbox]{width:auto;min-height:auto}textarea{min-height:90px;resize:vertical}input:focus,select:focus,textarea:focus{outline:3px solid #a7404520;border-color:var(--brand)}table{width:100%;border-collapse:collapse;background:white}th,td{text-align:left;padding:16px 14px;border-bottom:1px solid var(--line)}th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}thead th{position:sticky;top:0;z-index:2;background:#101620}.light-theme thead th{background:#fff}.tablebox{background:white;border:1px solid var(--line);border-radius:15px;max-height:min(65vh,620px);overflow:auto;-webkit-overflow-scrolling:touch;touch-action:none}.tablebox-scroll-top{overflow-x:auto;overflow-y:hidden;height:16px;margin-bottom:6px;position:sticky;top:76px;z-index:10;background:var(--paper)}.tablebox-scroll-top-inner{height:1px}@media(max-width:900px){.tablebox-scroll-top{display:none}}.actions{display:flex;gap:10px;flex-wrap:wrap}.flash{padding:13px 16px;border-radius:10px;background:#e5f2eb;color:#285b45;margin-bottom:16px}.warning{background:#fff1d8;color:#765315}.reminders-panel{margin-bottom:20px}.reminders-panel h2{margin-bottom:12px}.reminders-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}.reminder-item{display:flex;align-items:center;gap:14px;padding:11px 6px;border-bottom:1px solid var(--line)}.reminder-item:last-child{border-bottom:0}.reminder-check{display:flex;align-items:center;gap:7px;font-weight:600;font-size:13px;flex:0 0 auto;cursor:pointer}.reminder-check input{width:18px;height:18px;min-height:18px;flex:0 0 18px}.reminder-title{color:var(--ink);font-weight:600;text-decoration:underline;text-underline-offset:2px}.reminder-item.reminder-removing{opacity:.35;pointer-events:none}.login{max-width:410px;margin:10vh auto;background:white;padding:34px;border-radius:18px;border:1px solid var(--line)}.timeline{border-left:2px solid var(--line);margin-left:7px;padding-left:20px}.event{padding:0 0 18px;position:relative}.event:before{content:'';position:absolute;width:10px;height:10px;border-radius:50%;background:var(--brand);left:-26px;top:5px}.kvs{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.kv{background:#faf8f5;border-radius:10px;padding:12px}.kv small{display:block;color:var(--muted)}.signature-pad{width:100%;height:260px;border:2px dashed var(--line);border-radius:14px;background:white;touch-action:none}
+a{color:inherit;text-decoration:none}.top{height:68px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:18px;padding:0 28px;position:sticky;top:0;z-index:5}.brand{font-weight:800;font-size:19px;color:var(--brand)}.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:1.5px}.nav{display:flex;gap:8px;margin-left:auto}.nav a{padding:9px 12px;border-radius:9px}.nav a:hover{background:#f3eeea}.wrap{max-width:1280px;margin:0 auto;padding:28px}.titlebar{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:22px}h1{margin:0;font-size:28px}h2{font-size:18px;margin:0 0 15px}.sub{color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:10px;background:var(--brand);color:white;padding:11px 16px;font-weight:700;cursor:pointer}.btn:hover{background:var(--brand2)}.btn.ghost{background:white;color:var(--ink);border:1px solid var(--line)}.grid{display:grid;gap:16px}.stats{grid-template-columns:repeat(3,1fr)}.card{background:var(--paper);border:1px solid var(--line);border-radius:15px;padding:20px;box-shadow:0 3px 15px #4b39260a}.stat{display:flex;justify-content:space-between;align-items:center}.stat b{font-size:32px;color:var(--brand)}.badge{display:inline-flex;padding:5px 9px;border-radius:99px;background:#eee9e3;font-size:12px;font-weight:700}.tag-red{background:#e53935;color:white}.tag-orange{background:#fb8c00;color:white}.tag-outline-orange{background:white;color:#fb8c00;border:2px solid #fb8c00}.tag-purple{background:#7e57c2;color:white}.tag-yellow,.pay-yellow{background:#fdd835;color:#3b3100}.tag-pink{background:#f06292;color:white}.tag-blue,.pay-blue{background:#1e88e5;color:white}.tag-green,.pay-green{background:#43a047;color:white}.status-stack{display:flex;gap:5px;flex-wrap:wrap}.form-grid{grid-template-columns:repeat(2,1fr)}.wide{grid-column:1/-1}.section{background:#fff;border:1px solid var(--line);border-radius:15px;padding:20px}.fields{display:grid;grid-template-columns:repeat(2,1fr);gap:13px}.field{display:flex;flex-direction:column;gap:6px}.field.full{grid-column:1/-1}label{font-weight:650;font-size:13px}input,select,textarea{width:100%;border:1px solid #cfc8c0;border-radius:9px;padding:11px 12px;background:white;color:var(--ink);font:inherit}input[type=checkbox]{width:auto;min-height:auto}textarea{min-height:90px;resize:vertical}input:focus,select:focus,textarea:focus{outline:3px solid #a7404520;border-color:var(--brand)}table{width:100%;border-collapse:collapse;background:white}th,td{text-align:left;padding:16px 14px;border-bottom:1px solid var(--line)}th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}thead th{position:sticky;top:0;z-index:2;background:#101620}.light-theme thead th{background:#fff}.tablebox{background:white;border:1px solid var(--line);border-radius:15px;max-height:min(65vh,620px);overflow:auto;-webkit-overflow-scrolling:touch;touch-action:none}.tablebox-scroll-top{overflow-x:auto;overflow-y:hidden;height:16px;margin-bottom:6px;position:sticky;top:76px;z-index:10;background:var(--paper)}.tablebox-scroll-top-inner{height:1px}@media(max-width:900px){.tablebox-scroll-top{display:none}}.actions{display:flex;gap:10px;flex-wrap:wrap}.flash{padding:13px 16px;border-radius:10px;background:#e5f2eb;color:#285b45;margin-bottom:16px}.warning{background:#fff1d8;color:#765315}.reminders-panel{margin-bottom:20px}.reminders-panel h2{margin-bottom:12px}.reminders-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}.reminder-item{display:flex;align-items:center;gap:14px;padding:11px 6px;border-bottom:1px solid var(--line)}.reminder-item:last-child{border-bottom:0}.reminder-check{display:flex;align-items:center;gap:7px;font-weight:600;font-size:13px;flex:0 0 auto;cursor:pointer}.reminder-check input{width:18px;height:18px;min-height:18px;flex:0 0 18px}.reminder-title{color:var(--ink);font-weight:600;text-decoration:underline;text-underline-offset:2px}.reminder-item.reminder-removing{opacity:.35;pointer-events:none}.weekly-report{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}.weekly-report h3{margin:0 0 4px;font-size:15px}.weekly-report-cards{grid-template-columns:repeat(3,1fr);margin-top:10px}.weekly-report-cards.kv,.weekly-report-cards .kv{transition:transform .15s ease,box-shadow .15s ease}.weekly-report-cards .kv:hover{transform:translateY(-2px);box-shadow:0 10px 26px #4b39261a}.login{max-width:410px;margin:10vh auto;background:white;padding:34px;border-radius:18px;border:1px solid var(--line)}.timeline{border-left:2px solid var(--line);margin-left:7px;padding-left:20px}.event{padding:0 0 18px;position:relative}.event:before{content:'';position:absolute;width:10px;height:10px;border-radius:50%;background:var(--brand);left:-26px;top:5px}.kvs{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.kv{background:#faf8f5;border-radius:10px;padding:12px}.kv small{display:block;color:var(--muted)}.signature-pad{width:100%;height:260px;border:2px dashed var(--line);border-radius:14px;background:white;touch-action:none}
 body{background:radial-gradient(circle at top left,#fff8f3 0,#f4f1ed 34%,#ece5dd 100%)}.top{backdrop-filter:saturate(1.2) blur(10px);box-shadow:0 8px 28px #4b392612}.brand{letter-spacing:.2px}.nav a{font-weight:650}.nav a.btn{box-shadow:0 8px 20px #a7404524}.wrap{animation:ppmFade .18s ease-out}.titlebar h1{letter-spacing:-.03em}.section,.card,.tablebox,.login{box-shadow:0 10px 30px #4b39260d}.section{transition:box-shadow .15s ease, transform .15s ease}.card{transition:transform .15s ease,box-shadow .15s ease}.card:hover{transform:translateY(-2px);box-shadow:0 14px 34px #4b392617}.btn{box-shadow:0 6px 16px #a740451f}.btn.ghost{box-shadow:none}.kv{border:1px solid #eee6df}.tablebox table tr:hover td{background:#fffaf6}input,select,textarea{transition:border-color .15s ease,box-shadow .15s ease}.danger{border-width:1px}.trash-note{background:#fff7e8;border:1px solid #f0cf9d;color:#765315;border-radius:12px;padding:12px 14px;margin-bottom:16px}.empty-state{text-align:center;padding:32px;color:var(--muted)}@keyframes ppmFade{from{opacity:.78;transform:translateY(3px)}to{opacity:1;transform:none}}
 .practice-layout{grid-template-columns:2fr 1fr}@media(max-width:800px){html,body{width:100%;max-width:100%;overflow-x:hidden}body{font-size:16px}.wrap{padding:14px}.top{height:auto;min-height:64px;padding:10px 12px;align-items:flex-start}.brand{font-size:17px}.nav{gap:4px;flex-wrap:wrap}.nav a{padding:8px 9px}.nav a span{display:none}.btn{width:100%;min-height:46px}.actions{width:100%}.actions .btn,.actions form{flex:1 1 100%}.stats,.form-grid,.fields,.kvs,.practice-layout{grid-template-columns:1fr}.section{padding:16px;border-radius:13px}.titlebar{align-items:flex-start;flex-direction:column}.wide{grid-column:auto}input,select,textarea{font-size:16px;min-height:46px}th:nth-child(4),td:nth-child(4){display:none}.badge{margin:2px 2px 2px 0}}
 .danger{border-color:#e2a5a5;background:#fff7f7}.btn.danger-btn{background:#b42323;color:white}.btn.danger-btn:hover{background:#8f1d1d}.danger-note{color:#8f1d1d;font-weight:700}
@@ -3551,31 +3560,120 @@ def latest_movement_and_invoice(c, practice_id, type_prefix):
     return movement, invoice
 
 
-def sync_reminders(c):
-    """Keep 'practice_incomplete' reminders in sync with live data: open one
-    for every practice that still needs data completed, auto-resolve any
-    whose practice no longer qualifies (completed/delivered/deleted). Other
-    reminder types (e.g. product reorders) are inserted directly by their
-    own trigger point (see order_article) — this generator only owns the
-    practice_incomplete type, so adding a new reminder type later never
-    requires touching this function."""
-    stamp=now()
-    incomplete=c.execute(
-        "SELECT id,practice_number FROM practices WHERE (deleted_at IS NULL OR deleted_at='') AND data_complete=0 AND status!='Consegnato'"
+def ensure_reminder(c,*,reminder_type,entity_key,title,url,stamp):
+    """Open a new reminder occurrence for (reminder_type, entity_key) unless
+    one is already open. Keying recurrence off entity_key (stable per
+    underlying condition) rather than dedupe_key (unique per occurrence,
+    timestamp-suffixed) is what lets a reminder marked 'Fatto' reappear later
+    as a new occurrence if the condition still holds — a plain UNIQUE
+    dedupe_key on a fixed "type:id" string would block that forever once
+    completed once. Refreshes title/url on an already-open occurrence so
+    day-counts embedded in the text (e.g. "da 6 giorni") stay current."""
+    open_row=c.execute(
+        "SELECT id,title,url FROM reminders WHERE reminder_type=? AND entity_key=? AND completed_at IS NULL",
+        (reminder_type,entity_key),
+    ).fetchone()
+    if open_row:
+        if open_row["title"]!=title or open_row["url"]!=url:
+            c.execute("UPDATE reminders SET title=?,url=? WHERE id=?",(title,url,open_row["id"]))
+        return
+    # stamp alone (second precision) isn't enough to keep dedupe_key unique
+    # when the same entity closes and reopens within the same second (e.g.
+    # two syncs back-to-back in a test, or a busy minute in production) — a
+    # random suffix guarantees uniqueness regardless of timing.
+    c.execute(
+        "INSERT INTO reminders(reminder_type,entity_key,dedupe_key,title,url,created_at) VALUES(?,?,?,?,?,?)",
+        (reminder_type,entity_key,f"{entity_key}:{stamp}:{secrets.token_hex(4)}",title,url,stamp),
+    )
+
+
+def close_stale_reminders(c,reminder_type,valid_entity_keys,stamp):
+    """Auto-resolve open reminders of reminder_type whose entity no longer
+    qualifies (fixed, delivered, paid, deleted...) without touching ones the
+    user hasn't acted on yet."""
+    open_rows=c.execute(
+        "SELECT id,entity_key FROM reminders WHERE reminder_type=? AND completed_at IS NULL",(reminder_type,)
     ).fetchall()
-    incomplete_ids={row["id"] for row in incomplete}
-    for row in incomplete:
-        c.execute(
-            "INSERT OR IGNORE INTO reminders(reminder_type,dedupe_key,title,url,created_at) VALUES(?,?,?,?,?)",
-            ("practice_incomplete",f"practice_incomplete:{row['id']}",f"Completa i dati della pratica {row['practice_number'] or row['id']}",f"/pratiche/{row['id']}",stamp),
-        )
-    open_incomplete=c.execute(
-        "SELECT id,dedupe_key FROM reminders WHERE reminder_type='practice_incomplete' AND completed_at IS NULL"
-    ).fetchall()
-    for row in open_incomplete:
-        pid_text=row["dedupe_key"].rsplit(":",1)[-1]
-        if not pid_text.isdigit() or int(pid_text) not in incomplete_ids:
+    for row in open_rows:
+        if row["entity_key"] not in valid_entity_keys:
             c.execute("UPDATE reminders SET completed_at=? WHERE id=?",(stamp,row["id"]))
+
+
+def reminder_owner_label(row):
+    first=(row["owner_first_name"] or "").strip() if "owner_first_name" in row.keys() else ""
+    last=(row["owner_last_name"] or "").strip() if "owner_last_name" in row.keys() else ""
+    label=" ".join(part for part in (f"{first[0].upper()}." if first else "",last) if part)
+    return label or ((row["owner_company"] or "").strip() if "owner_company" in row.keys() else "")
+
+
+def reminder_days_since(date_text,today):
+    try:
+        return (today-date.fromisoformat(str(date_text)[:10])).days
+    except ValueError:
+        return None
+
+
+def sync_reminders(c):
+    """Recompute every automatically-generated reminder type against live
+    data: open one occurrence per entity that currently qualifies, refresh
+    its text if already open, and auto-resolve occurrences whose entity no
+    longer qualifies. Called on every Dashboard open, so it's always current
+    without a separate scheduled job. 'product_reorder' is NOT recomputed
+    here: it's a one-off event inserted directly at its trigger point (see
+    order_article) since "a product was requested" isn't a recurring query
+    condition like the other four."""
+    stamp=now();today=datetime.now().date()
+    active="(deleted_at IS NULL OR deleted_at='')"
+
+    incomplete=c.execute(
+        f"SELECT id,practice_number FROM practices WHERE {active} AND data_complete=0 AND status!='Consegnato'"
+    ).fetchall()
+    incomplete_keys=set()
+    for row in incomplete:
+        key=f"practice:{row['id']}";incomplete_keys.add(key)
+        ensure_reminder(c,reminder_type="practice_incomplete",entity_key=key,
+                        title=f"Completa i dati della pratica {row['practice_number'] or row['id']}",
+                        url=f"/pratiche/{row['id']}",stamp=stamp)
+    close_stale_reminders(c,"practice_incomplete",incomplete_keys,stamp)
+
+    pickup_rows=c.execute(
+        f"SELECT id,animal_name,owner_first_name,owner_last_name,owner_company,pickup_date,created_at FROM practices WHERE {active} AND status='Ritirato'"
+    ).fetchall()
+    stalled_keys=set()
+    for row in pickup_rows:
+        days=reminder_days_since(row["pickup_date"] or row["created_at"],today)
+        if days is not None and days>4:
+            key=f"practice:{row['id']}";stalled_keys.add(key)
+            ensure_reminder(c,reminder_type="pickup_stalled",entity_key=key,
+                            title=f"{row['animal_name'] or 'Animale'} ({reminder_owner_label(row)}) è Ritirato da {days} giorni, non ancora programmato",
+                            url=f"/pratiche/{row['id']}",stamp=stamp)
+    close_stale_reminders(c,"pickup_stalled",stalled_keys,stamp)
+
+    delivered_rows=c.execute(
+        f"SELECT * FROM practices WHERE {active} AND status='Consegnato' AND COALESCE(payment_status,'Da saldare')!='Pagato'"
+    ).fetchall()
+    unpaid_keys=set()
+    for row in delivered_rows:
+        remaining=outstanding_amount(row)
+        if remaining>0:
+            key=f"practice:{row['id']}";unpaid_keys.add(key)
+            ensure_reminder(c,reminder_type="delivered_unpaid",entity_key=key,
+                            title=f"{row['animal_name'] or 'Animale'} ({reminder_owner_label(row)}) è stato consegnato ma risulta ancora da saldare ({money_it(remaining)} rimanenti)",
+                            url=f"/pratiche/{row['id']}",stamp=stamp)
+    close_stale_reminders(c,"delivered_unpaid",unpaid_keys,stamp)
+
+    cremation_rows=c.execute(
+        f"SELECT id,animal_name,owner_first_name,owner_last_name,owner_company,pickup_date,created_at FROM practices WHERE {active} AND status='Ritirato' AND service_type='Cremazione singola'"
+    ).fetchall()
+    cremation_keys=set()
+    for row in cremation_rows:
+        days=reminder_days_since(row["pickup_date"] or row["created_at"],today)
+        if days is not None and days>7:
+            key=f"practice:{row['id']}";cremation_keys.add(key)
+            ensure_reminder(c,reminder_type="cremation_pending",entity_key=key,
+                            title=f"{row['animal_name'] or 'Animale'} ({reminder_owner_label(row)}) è in attesa di cremazione da {days} giorni",
+                            url=f"/pratiche/{row['id']}",stamp=stamp)
+    close_stale_reminders(c,"cremation_pending",cremation_keys,stamp)
 
 
 def payment_status_needs_date(old_status, new_status, economic_at):
@@ -3684,7 +3782,9 @@ def layout(title, body, user=None):
     if user:
         with db() as conn:
             unread=conn.execute("SELECT count(*) n FROM notifications WHERE user_id=? AND is_read=0",(user["id"],)).fetchone()["n"]
+            open_reminders_count=conn.execute("SELECT count(*) n FROM reminders WHERE completed_at IS NULL").fetchone()["n"]
         unread_badge=f'<span class="notification-badge">{unread if unread < 100 else "99+"}</span>' if unread else ''
+        reminder_badge=f'<span class="notification-badge">{open_reminders_count if open_reminders_count < 100 else "99+"}</span>' if open_reminders_count else ''
         prefs=load_preferences(user["id"])
         if prefs.get("theme")=="light": body_class=" light-theme"
         body_attrs=f' data-has-session="1"{" data-server-theme=\"1\"" if "theme" in prefs else ""}'
@@ -3692,11 +3792,11 @@ def layout(title, body, user=None):
         sidebar_order=parse_preference_list(prefs.get("sidebar_order",""))
         if sidebar_order:
             links=reorder_by_saved(links,sidebar_order,lambda item:item[2])
-        nav_links=''.join(f'<a href="{href}" class="{"nav-notification" if href=="/notifiche" else ""}">{lucide(icon)}<span>{label}</span>{unread_badge if href=="/notifiche" else ""}</a>' for href,icon,label in links)
+        nav_links=''.join(f'<a href="{href}" class="{"nav-notification" if href in ("/notifiche","/") else ""}">{lucide(icon)}<span>{label}</span>{unread_badge if href=="/notifiche" else (reminder_badge if href=="/" else "")}</a>' for href,icon,label in links)
         nav=f'''<nav class="nav" aria-label="Menu principale">{nav_links}<button class="btn ghost install-btn" type="button" onclick="installPetParadise()">{lucide("plus")}<span>Installa App</span></button><a class="logout" href="/logout">{lucide("menu")}<span>Esci</span></a></nav>'''
         today=datetime.now(); date_label=today.strftime("%d/%m/%Y"); weekday=["Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica"][today.weekday()]
         app_header=f'''<header class="app-header"><div class="header-actions"><form class="header-search lookup" action="/archivio/pratiche" method="get" role="search">{lucide("search")}<label class="sr-only" for="globalSearch">Ricerca rapida per animale o proprietario</label><input id="globalSearch" name="rapida" placeholder="Animale o proprietario..." autocomplete="off"><div id="globalSearchResults" class="lookup-results hidden"></div></form><a class="icon-btn nav-notification" href="/notifiche" aria-label="Notifiche, {unread} non lette">{lucide("bell")}{unread_badge}</a><button class="icon-btn" type="button" onclick="toggleTheme()" aria-label="Cambia tema">{lucide("sun")}</button><button class="btn header-new" type="button" onclick="toggleCreateMenu()" aria-label="Crea pratica o evento">{lucide("plus")}<span>Crea</span></button><time datetime="{today.date().isoformat()}">{date_label}<small>{weekday}</small></time></div></header>'''
-        drawer_links=''.join(f'<a href="{href}" class="{"nav-notification" if href=="/notifiche" else ""}">{lucide(icon)}<span>{label}</span>{unread_badge if href=="/notifiche" else ""}</a>' for href,icon,label in links)
+        drawer_links=''.join(f'<a href="{href}" class="{"nav-notification" if href in ("/notifiche","/") else ""}">{lucide(icon)}<span>{label}</span>{unread_badge if href=="/notifiche" else (reminder_badge if href=="/" else "")}</a>' for href,icon,label in links)
         bottom_default=BOTTOM_NAV_DEFAULT_SLOTS
         bottom_pool={label:(href,icon,label) for href,icon,label in links}
         bottom_slots=[label for label in parse_preference_list(prefs.get("bottom_nav_slots","")) if label in bottom_pool][:3]
@@ -4156,6 +4256,9 @@ class App(BaseHTTPRequestHandler):
             recent=c.execute("SELECT * FROM practices WHERE deleted_at IS NULL OR deleted_at='' ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) DESC,id DESC LIMIT 10").fetchall()
             sync_reminders(c)
             open_reminders=c.execute("SELECT * FROM reminders WHERE completed_at IS NULL ORDER BY created_at DESC").fetchall()
+            rome_today=datetime.now(ROME_TZ).date();week_start=rome_today-timedelta(days=6)
+            weekly_filters=normalize_balance_filters(date_from=week_start.isoformat(),date_to=rome_today.isoformat())
+            weekly_snapshot=get_balance_snapshot(c,filters=weekly_filters)
         def state_url(event,state="",include_dates=True):
             params={"dashboard_event":event,"periodo":practice_period}
             if state:params["stato"]=state
@@ -4197,8 +4300,14 @@ class App(BaseHTTPRequestHandler):
         reminder_items=''.join(
             f'''<li class="reminder-item" data-reminder-id="{row['id']}"><label class="modern-check reminder-check"><input type="checkbox" onchange="completeReminder(this)"><span>Fatto</span></label><a class="reminder-title" href="{esc(row['url'])}">{esc(row['title'])}</a></li>'''
             for row in open_reminders
+        ) or '<p class="sub">Nessun promemoria attivo al momento.</p>'
+        weekly_query=urlencode({"periodo":"personalizzato","data_iniziale":week_start.isoformat(),"data_finale":rome_today.isoformat()})
+        weekly_cards=''.join(
+            f'<a class="kv" href="/bilanci?{weekly_query}&view={key}#balanceDetails"><small>{label}</small><strong>{money_cents_it(weekly_snapshot.sections[key].total_cents)}</strong></a>'
+            for key,label in (("entrate-w","Entrate W"),("entrate-d","Entrate D"),("saldo-netto","Saldo netto"))
         )
-        reminders_html=f'<section class="section reminders-panel"><h2>Promemoria</h2><ul class="reminders-list">{reminder_items}</ul></section>' if open_reminders else ''
+        weekly_report_html=f'''<div class="weekly-report"><h3>Report della settimana</h3><p class="sub">Ultimi 7 giorni ({date_it(week_start.isoformat())} - {date_it(rome_today.isoformat())})</p><div class="kvs weekly-report-cards">{weekly_cards}</div></div>'''
+        reminders_html=f'<section class="section reminders-panel"><h2>Promemoria</h2><ul class="reminders-list">{reminder_items}</ul>{weekly_report_html}</section>'
         body=f'''<main class="wrap dashboard-wrap"><section class="welcome"><div><h1>{greeting}, {esc(user['display_name'])} <span aria-hidden="true">👋</span></h1><p>Panoramica operativa del periodo selezionato</p></div></section>{reminders_html}{sections_html}{persistence_script}</main>'''
         self.send_html(layout("Dashboard",body,user))
 
@@ -5858,7 +5967,7 @@ class App(BaseHTTPRequestHandler):
             recent=c.execute("""SELECT o.created_at,a.name,u.display_name FROM article_orders o
                                 JOIN articles a ON a.id=o.article_id JOIN users u ON u.id=o.ordered_by
                                 ORDER BY o.created_at DESC,o.id DESC LIMIT 10""").fetchall()
-        cards=''.join(f'''<article class="article-card"><div><span class="badge tag-outline-orange">Da ordinare</span><h2>{esc(item["name"])}</h2></div><p>Invia la richiesta di ordine al centro notifiche.</p><form method="post" action="/prodotti/{item["id"]}/ordina" onsubmit="return confirm('Inviare la richiesta per {esc(item["name"])}?')"><button class="btn">Ordina prodotto</button></form></article>''' for item in articles)
+        cards=''.join(f'''<article class="article-card" id="article-{item["id"]}"><div><span class="badge tag-outline-orange">Da ordinare</span><h2>{esc(item["name"])}</h2></div><p>Invia la richiesta di ordine al centro notifiche.</p><form method="post" action="/prodotti/{item["id"]}/ordina" onsubmit="return confirm('Inviare la richiesta per {esc(item["name"])}?')"><button class="btn">Ordina prodotto</button></form></article>''' for item in articles)
         history=''.join(f'<div class="event"><b>{esc(row["name"])}</b><br><small class="sub">Richiesto da {esc(row["display_name"])} · {esc((row["created_at"] or "").replace("T"," "))}</small></div>' for row in recent) or '<p class="sub">Nessuna richiesta inviata.</p>'
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>Articoli</h1><p class="sub">Seleziona un articolo sotto la voce “Da ordinare”.</p></div></div><section class="article-grid">{cards}</section><section class="section" style="margin-top:20px"><h2>Ultime richieste</h2><div class="timeline">{history}</div></section></main>'''
         body=body.replace("<h1>Articoli</h1>","<h1>Prodotti</h1>").replace("Seleziona un articolo","Seleziona un prodotto")
@@ -6035,10 +6144,8 @@ class App(BaseHTTPRequestHandler):
             if not article:return self.send_error(404)
             stamp=now()
             c.execute("INSERT INTO article_orders(article_id,ordered_by,created_at) VALUES(?,?,?)",(article_id,user["id"],stamp))
-            c.execute(
-                "INSERT INTO reminders(reminder_type,dedupe_key,title,url,created_at) VALUES(?,?,?,?,?)",
-                ("product_reorder",f"article_order:{article_id}:{stamp}",f"Riordinare: {article['name']}","/prodotti",stamp),
-            )
+            ensure_reminder(c,reminder_type="product_reorder",entity_key=f"article:{article_id}",
+                            title=f"Riordinare: {article['name']}",url=f"/prodotti#article-{article_id}",stamp=stamp)
             emit_notification(c,"article_ordered","📦 Prodotto da ordinare",f'{article["name"]}\nRichiesto da {user["display_name"]}',actor_user_id=user["id"],payload={"url":"/prodotti"},db_path=DB_PATH)
         self.redirect("/prodotti")
 
