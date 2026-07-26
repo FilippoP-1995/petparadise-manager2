@@ -4123,14 +4123,19 @@ class PetParadiseTests(unittest.TestCase):
             ).fetchone()
         self.assertIsNone(still_open)
 
-    def test_cremation_pending_reminder_only_fires_for_cremazione_singola_past_7_days(self):
+    def test_cremation_pending_reminder_fires_immediately_for_every_cremazione_singola_ritirata(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             today=date.today()
             waiting_pickup=(today-timedelta(days=9)).isoformat()
+            fresh_pickup=today.isoformat()
             pending_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,created_at,updated_at,created_by,
                 animal_name,owner_first_name,owner_last_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 ("CR-CREM1","Privato","Livorno","Ritirato","Cremazione singola",stamp,stamp,admin["id"],"Nuvola","Franco","Rossi",waiting_pickup,1)).lastrowid
+            # fires the same day too: the count must match the full Programma Cremazioni list, not just stalled ones
+            fresh_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,created_at,updated_at,created_by,
+                animal_name,owner_first_name,owner_last_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-CREM3","Privato","Livorno","Ritirato","Cremazione singola",stamp,stamp,admin["id"],"Luna","Paolo","Neri",fresh_pickup,1)).lastrowid
             # same wait, but a collective cremation must NOT trigger this specific reminder type
             collettiva_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,created_at,updated_at,created_by,
                 animal_name,owner_first_name,owner_last_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
@@ -4138,11 +4143,17 @@ class PetParadiseTests(unittest.TestCase):
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
         self.handler.dashboard(admin)
         page=rendered[-1]
-        self.assertIn("1 cremazione singola in attesa",page)
+        self.assertIn("2 cremazioni singole in attesa",page)
+        self.assertIn('href="/programma-cremazioni"',page)
         with app.db() as conn:
+            fresh_reminder=conn.execute(
+                "SELECT title FROM reminders WHERE reminder_type='cremation_pending' AND entity_key=?",(f"practice:{fresh_pid}",)
+            ).fetchone()
             collettiva_reminder=conn.execute(
                 "SELECT id FROM reminders WHERE reminder_type='cremation_pending' AND entity_key=?",(f"practice:{collettiva_pid}",)
             ).fetchone()
+        self.assertIsNotNone(fresh_reminder)
+        self.assertIn("da oggi",fresh_reminder["title"])
         self.assertIsNone(collettiva_reminder)
         # once queued into the cremation program (status moves to 'In programma'), it auto-resolves
         with app.db() as conn:
