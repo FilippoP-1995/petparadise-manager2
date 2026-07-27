@@ -1671,6 +1671,39 @@ class PetParadiseTests(unittest.TestCase):
         page = rendered[-1]
         self.assertIn("COMPLETATO", page)
 
+    def test_cremation_complete_cycle_also_promotes_animals_stuck_at_ritirato(self):
+        # regression: an animal attached to a cycle whose status was never bumped to
+        # "In programma" (e.g. legacy data) must still move to "Da consegnare" on completion
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-21", "in_attesa", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+            stuck_id = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-STUCK", "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-15", stamp, stamp,
+                 admin["id"], "CR-STUCK", cycle_id),
+            ).lastrowid
+
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.cremation_start_cycle(admin, cycle_id)
+        self.assertEqual(responses[-1], ({"ok": True}, 200))
+
+        responses.clear()
+        self.handler.cremation_complete_cycle(admin, cycle_id)
+        self.assertEqual(responses[-1], ({"ok": True}, 200))
+        with app.db() as conn:
+            practice = conn.execute("SELECT status,cremation_registered FROM practices WHERE id=?", (stuck_id,)).fetchone()
+            history = conn.execute(
+                "SELECT event_type,old_value,new_value FROM practice_history WHERE practice_id=? ORDER BY id DESC LIMIT 1", (stuck_id,)
+            ).fetchone()
+        self.assertEqual((practice["status"], practice["cremation_registered"]), ("Da consegnare", "Si"))
+        self.assertEqual((history["event_type"], history["old_value"], history["new_value"]), ("Cambio stato rapido", "Ritirato", "Da consegnare"))
+
     def test_cremation_remove_from_cycle_reverts_status_to_ritirato(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
@@ -1845,6 +1878,14 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('id="cremationWaitingPanel"', page)
         self.assertIn(f'data-practice-id="{waiting_a}"', page)
         self.assertIn(f'data-practice-id="{waiting_b}"', page)
+
+        # "Termina ciclo" and "Rimuovi animale" use the shared styled modal, not the native browser confirm()
+        self.assertEqual(page.count('id="cremationConfirmOverlay"'), 1)
+        self.assertIn('cremationConfirmOverlay" hidden', page)
+        self.assertIn('cremationOpenConfirmModal(', page)
+        self.assertNotIn("confirm('Confermi il completamento", page)
+        self.assertNotIn('confirm(\'Rimuovere questo animale', page)
+        self.assertIn('Da consegnare.', page)
 
     def test_cremation_remove_from_cycle_returns_animal_to_waiting_list_and_reverts_empty_cycle(self):
         with app.db() as conn:

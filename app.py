@@ -1539,6 +1539,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-cycle-card.expanded .cremation-cycle-chevron .icon{transform:rotate(270deg)}
 .cremation-cycle-body{max-height:0;overflow:hidden;transition:max-height .3s ease}
 .cremation-cycle-body-inner{padding-top:12px}
+.cremation-confirm-message{color:#cbd5e1;font-size:14px;line-height:1.5;margin:0 0 4px}
 .cremation-cycle-number{font-weight:800;font-size:14px}
 .cremation-cycle-time{color:#94a3b8;font-size:13px}
 .cremation-status-badge{font-size:11px;font-weight:700;letter-spacing:.03em;padding:4px 12px;border-radius:99px;white-space:nowrap}
@@ -1656,6 +1657,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .light-theme .cremation-quick-menu-popover button:hover{background:#f1f5f9}
 .light-theme .cremation-quick-menu-empty{color:#94a3b8}
 .light-theme .cremation-modal{background:#fff;border-color:#e2e8f0;color:#111827}
+.light-theme .cremation-confirm-message{color:#475569}
 .light-theme .cremation-modal-close{background:#f1f5f9;color:#111827}
 .light-theme .cremation-modal-search{background:#f8fafc;border-color:#e2e8f0;color:#111827}
 .light-theme .cremation-add-animal-card{background:#fff;border-color:#e2e8f0}
@@ -3509,12 +3511,28 @@ function cremationStartCycle(id){
     .then(function(data){if(!data.ok)alert(data.error||'Operazione non riuscita');location.reload();})
     .catch(function(){location.reload();});
 }
+function cremationOpenConfirmModal(message,onConfirm,options){
+  options=options||{};
+  const overlay=document.getElementById('cremationConfirmOverlay');
+  if(!overlay)return;
+  document.getElementById('cremationConfirmMessage').textContent=message;
+  document.getElementById('cremationConfirmTitle').textContent=options.title||'Conferma';
+  const btn=document.getElementById('cremationConfirmActionBtn');
+  btn.textContent=options.confirmLabel||'Conferma';
+  btn.onclick=function(){overlay.hidden=true;onConfirm();};
+  overlay.hidden=false;
+}
+function cremationCloseConfirmModal(){
+  const overlay=document.getElementById('cremationConfirmOverlay');
+  if(overlay)overlay.hidden=true;
+}
 function cremationCompleteCycle(id){
-  if(!confirm('Confermi il completamento del ciclo? Gli animali passeranno allo stato In programma.'))return;
-  fetch('/programma-cremazioni/cicli/'+id+'/termina',{method:'POST',credentials:'same-origin'})
-    .then(function(res){return res.json();})
-    .then(function(data){if(!data.ok)alert(data.error||'Operazione non riuscita');location.reload();})
-    .catch(function(){location.reload();});
+  cremationOpenConfirmModal('Confermi il completamento del ciclo? Gli animali passeranno allo stato Da consegnare.',function(){
+    fetch('/programma-cremazioni/cicli/'+id+'/termina',{method:'POST',credentials:'same-origin'})
+      .then(function(res){return res.json();})
+      .then(function(data){if(!data.ok)alert(data.error||'Operazione non riuscita');location.reload();})
+      .catch(function(){location.reload();});
+  },{title:'Termina ciclo',confirmLabel:'Termina ciclo'});
 }
 function cremationOpenEditModal(id,plannedStart,plannedEnd){
   const overlay=document.getElementById('cremationEditOverlay');
@@ -3575,11 +3593,24 @@ function cremationQuickCreateAndAssign(el,practiceId){
     .catch(function(){location.reload();});
 }
 function cremationRemoveFromCycle(el,practiceId){
-  if(!confirm('Rimuovere questo animale dal ciclo? Tornerà nella lista "Animali in attesa".'))return;
-  fetch('/programma-cremazioni/pratiche/'+practiceId+'/rimuovi',{method:'POST',credentials:'same-origin'})
-    .then(function(res){return res.json();})
-    .then(function(data){if(!data.ok){alert(data.error||'Operazione non riuscita');return;}location.reload();})
-    .catch(function(){location.reload();});
+  cremationOpenConfirmModal('Rimuovere questo animale dal ciclo? Tornerà nella lista "Animali in attesa".',function(){
+    fetch('/programma-cremazioni/pratiche/'+practiceId+'/rimuovi',{method:'POST',credentials:'same-origin'})
+      .then(function(res){return res.json();})
+      .then(function(data){if(!data.ok){alert(data.error||'Operazione non riuscita');return;}location.reload();})
+      .catch(function(){location.reload();});
+  },{title:'Rimuovi animale',confirmLabel:'Rimuovi'});
+}
+function cremationCollapseBody(body){
+  body.style.maxHeight=body.scrollHeight+'px';
+  requestAnimationFrame(function(){body.style.maxHeight='0px';});
+}
+function cremationExpandBody(body,parentEl){
+  body.style.maxHeight=body.scrollHeight+'px';
+  body.addEventListener('transitionend',function onEnd(e){
+    if(e.propertyName!=='max-height')return;
+    body.removeEventListener('transitionend',onEnd);
+    if(parentEl.classList.contains('expanded'))body.style.maxHeight='none';
+  });
 }
 function cremationToggleCycleCard(headerEl){
   const card=headerEl.closest('[data-cycle-card]');
@@ -3590,16 +3621,16 @@ function cremationToggleCycleCard(headerEl){
     if(other!==card){
       other.classList.remove('expanded');
       const otherBody=other.querySelector('[data-cycle-body]');
-      if(otherBody)otherBody.style.maxHeight='0px';
+      if(otherBody)cremationCollapseBody(otherBody);
       cremationSyncAncestorWeekDay(other);
     }
   });
   if(willExpand){
     card.classList.add('expanded');
-    body.style.maxHeight=body.scrollHeight+'px';
+    cremationExpandBody(body,card);
   }else{
     card.classList.remove('expanded');
-    body.style.maxHeight='0px';
+    cremationCollapseBody(body);
   }
   cremationSyncAncestorWeekDay(card);
 }
@@ -3607,7 +3638,7 @@ function cremationSyncAncestorWeekDay(el){
   const day=el.closest('[data-week-day]');
   if(!day||!day.classList.contains('expanded'))return;
   const dayBody=day.querySelector('[data-week-day-body]');
-  if(dayBody)dayBody.style.maxHeight=dayBody.scrollHeight+'px';
+  if(dayBody)dayBody.style.maxHeight='none';
 }
 function cremationToggleWeekDay(headerEl){
   const day=headerEl.closest('[data-week-day]');
@@ -3616,10 +3647,10 @@ function cremationToggleWeekDay(headerEl){
   const willExpand=!day.classList.contains('expanded');
   if(willExpand){
     day.classList.add('expanded');
-    body.style.maxHeight=body.scrollHeight+'px';
+    cremationExpandBody(body,day);
   }else{
     day.classList.remove('expanded');
-    body.style.maxHeight='0px';
+    cremationCollapseBody(body);
   }
 }
 function cremationOpenAddAnimalModal(cycleId){
@@ -6635,6 +6666,14 @@ class App(BaseHTTPRequestHandler):
           </div>
         </div>'''
 
+        confirm_modal_html='''<div class="cremation-modal-overlay" id="cremationConfirmOverlay" hidden onclick="if(event.target===this)cremationCloseConfirmModal()">
+          <div class="cremation-modal">
+            <div class="cremation-modal-head"><h3 id="cremationConfirmTitle">Conferma</h3><button type="button" class="cremation-modal-close" onclick="cremationCloseConfirmModal()" aria-label="Chiudi">×</button></div>
+            <p class="cremation-confirm-message" id="cremationConfirmMessage"></p>
+            <div class="cremation-modal-actions"><button type="button" class="btn ghost" onclick="cremationCloseConfirmModal()">Annulla</button><button type="button" class="btn" id="cremationConfirmActionBtn">Conferma</button></div>
+          </div>
+        </div>'''
+
         def owner_label(row):
             owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip() or row["owner_company"] or ""
             if "collaborator_name" in row.keys() and row["collaborator_name"]:
@@ -6689,6 +6728,7 @@ class App(BaseHTTPRequestHandler):
         </section>
         {edit_modal_html}
         {add_animal_modal_html}
+        {confirm_modal_html}
         </main>'''
         self.send_html(layout("Programma Cremazioni",body,user))
 
@@ -6942,6 +6982,14 @@ class App(BaseHTTPRequestHandler):
           </div>
         </div>'''
 
+        confirm_modal_html='''<div class="cremation-modal-overlay" id="cremationConfirmOverlay" hidden onclick="if(event.target===this)cremationCloseConfirmModal()">
+          <div class="cremation-modal">
+            <div class="cremation-modal-head"><h3 id="cremationConfirmTitle">Conferma</h3><button type="button" class="cremation-modal-close" onclick="cremationCloseConfirmModal()" aria-label="Chiudi">×</button></div>
+            <p class="cremation-confirm-message" id="cremationConfirmMessage"></p>
+            <div class="cremation-modal-actions"><button type="button" class="btn ghost" onclick="cremationCloseConfirmModal()">Annulla</button><button type="button" class="btn" id="cremationConfirmActionBtn">Conferma</button></div>
+          </div>
+        </div>'''
+
         def add_animal_card_html(row):
             avatar_emoji,avatar_cls=species_avatar(row["species"] if "species" in row.keys() else "")
             weight=(row["estimated_weight"] or "").strip()
@@ -6983,6 +7031,7 @@ class App(BaseHTTPRequestHandler):
         <button type="button" class="cremation-add-cycle-btn" onclick="cremationCreateEmptyCycle()">{lucide("plus")}<span>Aggiungi nuovo ciclo</span></button>
         {edit_modal_html}
         {add_animal_modal_html}
+        {confirm_modal_html}
         </main>'''
         self.send_html(layout("Programma Cremazioni",body,user))
 
@@ -7044,10 +7093,11 @@ class App(BaseHTTPRequestHandler):
             if cycle["status"]!="in_corso":
                 return self.send_json({"ok":False,"error":"Il ciclo non è in corso."},409)
             c.execute("UPDATE cremation_cycles SET status='completato',actual_end=?,updated_at=? WHERE id=?",(stamp,stamp,cycle_id))
-            practices=c.execute("SELECT * FROM practices WHERE cremation_cycle_id=? AND (deleted_at IS NULL OR deleted_at='') AND status='In programma'",(cycle_id,)).fetchall()
+            practices=c.execute("SELECT * FROM practices WHERE cremation_cycle_id=? AND (deleted_at IS NULL OR deleted_at='')",(cycle_id,)).fetchall()
             for row in practices:
+                if row["status"]=="Da consegnare":continue
                 c.execute("UPDATE practices SET cremation_registered='Si',updated_at=? WHERE id=?",(stamp,row["id"]))
-                cremation_log_status_change(c,row["id"],"In programma","Da consegnare",user["id"],stamp)
+                cremation_log_status_change(c,row["id"],row["status"] or "Ritirato","Da consegnare",user["id"],stamp)
         return self.send_json({"ok":True})
 
     def cremation_edit_cycle(self,user,cycle_id):
