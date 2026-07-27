@@ -1528,8 +1528,14 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.send_html = lambda content, *args: rendered.append(content)
         self.handler.cremation_schedule(admin)
         page = rendered[-1]
-        self.assertNotIn("CR-CREM-COLLETTIVA", page)
-        self.assertNotIn("CR-CREM-DONE", page)
+        # il pannello "Animali in attesa" resta mirato alle sole cremazioni
+        # singole non ancora pianificate: una collettiva o una già cremata
+        # non devono comparire lì (anche se ora possono comparire altrove,
+        # nel popup più ampio "Aggiungi animale al ciclo")
+        waiting_panel_start = page.index('id="cremationWaitingPanel"')
+        waiting_panel = page[waiting_panel_start:page.index('cremation-progress', waiting_panel_start)]
+        self.assertNotIn("CR-CREM-COLLETTIVA", waiting_panel)
+        self.assertNotIn("CR-CREM-DONE", waiting_panel)
         for pid in (newer_id, older_id, catalog_id, freetext_id, dup_a):
             self.assertIn(f'/pratiche/{pid}', page)
         # sorted by pickup date ascending
@@ -1784,7 +1790,7 @@ class PetParadiseTests(unittest.TestCase):
                 ).fetchone()
                 self.assertEqual((history["old_value"], history["new_value"]), ("In programma", "Ritirato"))
 
-    def test_cremation_delete_cycle_is_blocked_when_completato(self):
+    def test_cremation_delete_cycle_works_even_when_completato(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
             stamp = app.now()
@@ -1792,13 +1798,23 @@ class PetParadiseTests(unittest.TestCase):
                 "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,actual_end,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
                 ("2026-07-20", "completato", "08:00", "09:30", stamp, stamp, stamp),
             ).lastrowid
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-DONE", "Privato", "Livorno", "Da consegnare", "Cremazione singola", "2026-07-15", stamp, stamp,
+                 admin["id"], "CR-DONE", cycle_id),
+            ).lastrowid
         responses = []
         self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
         self.handler.cremation_delete_cycle(admin, cycle_id)
-        self.assertEqual(responses[-1][1], 409)
-        self.assertFalse(responses[-1][0]["ok"])
+        self.assertEqual(responses[-1], ({"ok": True}, 200))
         with app.db() as conn:
-            self.assertIsNotNone(conn.execute("SELECT id FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone())
+            self.assertIsNone(conn.execute("SELECT id FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone())
+            practice = conn.execute("SELECT status,cremation_cycle_id FROM practices WHERE id=?", (pid,)).fetchone()
+        self.assertIsNone(practice["cremation_cycle_id"])
+        # lo stato "Da consegnare" riflette un lavoro già completato: non viene
+        # riportato indietro a Ritirato solo perché il ciclo viene eliminato
+        self.assertEqual(practice["status"], "Da consegnare")
 
     def test_cremation_delete_cycle_confirm_is_custom_not_native(self):
         js = app.APP_JS
@@ -2000,7 +2016,7 @@ class PetParadiseTests(unittest.TestCase):
         page = rendered[-1]
         self.assertIn(f'data-practice-id="{pid}"', page)
 
-        # removing from a completed cycle is refused
+        # removing a single animal from a completed cycle must also work now
         with app.db() as conn:
             done_cycle_id = conn.execute(
                 "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,actual_end,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
@@ -2010,8 +2026,10 @@ class PetParadiseTests(unittest.TestCase):
         responses.clear()
         self.handler.cremation_remove_from_cycle(admin, pid)
         payload, status = responses[-1]
-        self.assertFalse(payload["ok"])
-        self.assertEqual(status, 409)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(status, 200)
+        with app.db() as conn:
+            self.assertIsNone(conn.execute("SELECT cremation_cycle_id FROM practices WHERE id=?", (pid,)).fetchone()["cremation_cycle_id"])
 
     def test_cremation_schedule_week_view_groups_cycles_by_day_in_compact_rows(self):
         monday = date(2026, 7, 20)  # a known Monday
@@ -2215,6 +2233,140 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Nessun ciclo pianificato.", empty_day_html)
         self.assertIn(f"cremationCreateCycleForDay('{wednesday.isoformat()}')", empty_day_html)
         self.assertIn('class="cremation-add-cycle-btn"', empty_day_html)
+
+        # un giorno che ha GIA' almeno un ciclo (Monday, seeded sopra) deve comunque
+        # offrire lo stesso pulsante per aggiungerne altri: nessun limite massimo.
+        monday_day_start = page.index(f'data-week-day="{monday.isoformat()}"')
+        monday_day_end = page.index(f'data-week-day="{tuesday.isoformat()}"')
+        monday_day_html = page[monday_day_start:monday_day_end]
+        self.assertIn(f"cremationCreateCycleForDay('{monday.isoformat()}')", monday_day_html)
+
+    def test_cremation_week_view_shows_provenance_on_the_collapsed_cycle_card(self):
+        monday = date(2026, 7, 20)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                (monday.isoformat(), "in_attesa", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,provenance,cremation_cycle_id)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-PROV", "Privato", "Livorno", "In programma", "Cremazione singola", "2026-07-15", stamp, stamp,
+                 admin["id"], "Nuvola", "l", cycle_id),
+            )
+        rendered = []
+        self.handler.path = f"/programma-cremazioni?vista=settimana&data={monday.isoformat()}"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        card_start = page.index(f'data-cycle-id="{cycle_id}"')
+        card_html = page[card_start:page.index('data-cycle-body', card_start)]
+        # la provenienza deve essere visibile nel riquadro CHIUSO (prima del corpo/dettaglio del ciclo)
+        self.assertIn('cremation-week-animal-provenance', card_html)
+        self.assertIn('>L<', card_html)
+
+    def test_cremation_assign_and_create_cycle_accept_any_status_except_consegnato(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            # non e' Ritirato ne' Cremazione singola: prima veniva rifiutata, ora deve essere accettata
+            other_id = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("CR-OTHERTYPE", "Privato", "Livorno", "Cremato", "Cremazione collettiva", stamp, stamp, admin["id"], "Milo"),
+            ).lastrowid
+            consegnato_id = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("CR-DELIVERED", "Privato", "Livorno", "Consegnato", "Cremazione singola", stamp, stamp, admin["id"], "Fufi"),
+            ).lastrowid
+
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.form = lambda: {"data": "2026-07-22", "practice_id": str(other_id)}
+        self.handler.cremation_create_cycle(admin)
+        self.assertEqual(responses[-1][1], 200)
+        self.assertTrue(responses[-1][0]["ok"])
+        with app.db() as conn:
+            practice = conn.execute("SELECT status,cremation_cycle_id FROM practices WHERE id=?", (other_id,)).fetchone()
+            history = conn.execute(
+                "SELECT old_value,new_value FROM practice_history WHERE practice_id=? ORDER BY id DESC LIMIT 1", (other_id,)
+            ).fetchone()
+        self.assertEqual(practice["status"], "In programma")
+        self.assertIsNotNone(practice["cremation_cycle_id"])
+        # il log riporta lo stato REALE di partenza (Cremato), non "Ritirato" fisso
+        self.assertEqual((history["old_value"], history["new_value"]), ("Cremato", "In programma"))
+
+        # una pratica Consegnato resta esclusa
+        responses.clear()
+        self.handler.form = lambda: {"data": "2026-07-22", "practice_id": str(consegnato_id)}
+        self.handler.cremation_create_cycle(admin)
+        self.assertEqual(responses[-1][1], 409)
+        self.assertFalse(responses[-1][0]["ok"])
+
+    def test_add_animal_modal_lists_any_non_consegnato_animal_not_already_in_a_cycle(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+
+            def practice(code, status, service_type, name, cycle_id=None):
+                return conn.execute(
+                    """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                       created_at,updated_at,created_by,animal_name,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                    (code, "Privato", "Livorno", status, service_type, stamp, stamp, admin["id"], name, cycle_id),
+                ).lastrowid
+
+            collettiva_id = practice("CR-ADDCOLL", "Ritirato", "Cremazione collettiva", "Kira")
+            other_status_id = practice("CR-ADDCREMATO", "Cremato", "Cremazione singola", "Argo")
+            consegnato_id = practice("CR-ADDDELIV", "Consegnato", "Cremazione singola", "Zeus")
+            already_in_cycle_id = practice("CR-ADDBUSY", "In programma", "Cremazione singola", "Tequila")
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-22", "in_attesa", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+            conn.execute("UPDATE practices SET cremation_cycle_id=? WHERE id=?", (cycle_id, already_in_cycle_id))
+
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-22"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        modal_start = page.index('id="cremationAddAnimalList"')
+        modal_end = page.index('id="cremationAddAnimalEmpty"')
+        modal_html = page[modal_start:modal_end]
+        self.assertIn("Kira", modal_html)
+        self.assertIn("Argo", modal_html)
+        self.assertNotIn("Zeus", modal_html)
+        self.assertNotIn("Tequila", modal_html)
+
+    def test_cremation_create_cycle_buttons_reopen_the_new_cycle_after_reload(self):
+        js = app.APP_JS
+        self.assertIn("function cremationOpenPendingCycle()", js)
+        self.assertIn("function cremationReloadWithOpenCycle(cycleId)", js)
+        self.assertIn("params.set('open_cycle',cycleId)", js)
+        create_empty = js[js.index("function cremationCreateEmptyCycle()"):]
+        self.assertIn("cremationReloadWithOpenCycle(data&&data.cycle_id)", create_empty[:create_empty.index("function ", 10)])
+        create_for_day = js[js.index("function cremationCreateCycleForDay(dateStr)"):]
+        self.assertIn("cremationReloadWithOpenCycle(data&&data.cycle_id)", create_for_day[:create_for_day.index("function ", 10)])
+        self.assertIn("document.addEventListener('DOMContentLoaded',cremationOpenPendingCycle)", js)
+
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-22", "pianificato", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-22"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        # ogni card ciclo espone data-cycle-id, cosi' cremationOpenPendingCycle puo' trovarla dopo il reload
+        self.assertIn(f'data-cycle-id="{cycle_id}"', page)
 
     def test_cremation_collapse_body_does_not_clobber_a_same_tick_reopen(self):
         # regression: cremationWeekStatClick always closes cremationAnimaliPanel/
@@ -5179,6 +5331,17 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("function reminderCloseAll()", app.APP_JS)
         self.assertIn("cremationExpandBody(panel,panel)", app.APP_JS)
         self.assertIn("cremationCollapseBody(panel)", app.APP_JS)
+
+    def test_reminder_toggle_resyncs_the_outer_reminders_card_height(self):
+        # bug reale segnalato dall'utente: aprendo un promemoria dopo che la card
+        # "Promemoria" esterna aveva già il suo max-height fissato, il contenuto
+        # veniva tagliato e non era possibile scrollare per vederlo tutto.
+        self.assertIn("function reminderSyncOuterCard()", app.APP_JS)
+        self.assertIn("body.style.maxHeight='none'", app.APP_JS)
+        toggle_body=app.APP_JS[app.APP_JS.index("function reminderToggle(btn)"):]
+        self.assertIn("reminderSyncOuterCard()", toggle_body[:toggle_body.index("function ",10)])
+        closeall_body=app.APP_JS[app.APP_JS.index("function reminderCloseAll()"):]
+        self.assertIn("reminderSyncOuterCard()", closeall_body[:closeall_body.index("function ",10)])
 
     def test_reminders_expand_panel_reuses_the_same_row_actions_as_the_practice_pages(self):
         with app.db() as conn:
