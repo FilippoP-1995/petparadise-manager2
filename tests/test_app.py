@@ -1582,7 +1582,14 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(responses[-1], ({"ok": True}, 200))
         with app.db() as conn:
             self.assertEqual(conn.execute("SELECT status FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()["status"], "in_attesa")
-            self.assertEqual(conn.execute("SELECT cremation_cycle_id FROM practices WHERE id=?", (first_id,)).fetchone()["cremation_cycle_id"], cycle_id)
+            first_practice = conn.execute("SELECT cremation_cycle_id,status FROM practices WHERE id=?", (first_id,)).fetchone()
+            self.assertEqual(first_practice["cremation_cycle_id"], cycle_id)
+            # assigning to a cycle immediately advances the practice: Ritirato -> In programma
+            self.assertEqual(first_practice["status"], "In programma")
+            history = conn.execute(
+                "SELECT old_value,new_value FROM practice_history WHERE practice_id=? ORDER BY id DESC LIMIT 1", (first_id,)
+            ).fetchone()
+            self.assertEqual((history["old_value"], history["new_value"]), ("Ritirato", "In programma"))
 
         responses.clear()
         self.handler.form = lambda: {"practice_id": str(second_id)}
@@ -1609,7 +1616,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(second_cycle["planned_start"], "09:40")
         self.assertEqual(second_cycle["planned_end"], "11:10")
 
-    def test_cremation_start_and_complete_cycle_moves_animals_to_in_programma(self):
+    def test_cremation_start_and_complete_cycle_moves_animals_to_da_consegnare(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
             stamp = app.now()
@@ -1617,10 +1624,11 @@ class PetParadiseTests(unittest.TestCase):
                 "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
                 ("2026-07-20", "in_attesa", "08:00", "09:30", stamp, stamp),
             ).lastrowid
+            # already assigned to the cycle (as cremation_assign_to_cycle would have left it): In programma
             assigned_id = conn.execute(
                 """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
                    pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-                ("CR-INSERITO", "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-15", stamp, stamp,
+                ("CR-INSERITO", "Privato", "Livorno", "In programma", "Cremazione singola", "2026-07-15", stamp, stamp,
                  admin["id"], "CR-INSERITO", cycle_id),
             ).lastrowid
 
@@ -1645,12 +1653,13 @@ class PetParadiseTests(unittest.TestCase):
             cycle = conn.execute("SELECT status,actual_end FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()
             practice = conn.execute("SELECT status,cremation_registered FROM practices WHERE id=?", (assigned_id,)).fetchone()
             history = conn.execute(
-                "SELECT event_type,old_value,new_value FROM practice_history WHERE practice_id=?", (assigned_id,)
+                "SELECT event_type,old_value,new_value FROM practice_history WHERE practice_id=? ORDER BY id DESC LIMIT 1", (assigned_id,)
             ).fetchone()
         self.assertEqual(cycle["status"], "completato")
         self.assertIsNotNone(cycle["actual_end"])
-        self.assertEqual((practice["status"], practice["cremation_registered"]), ("In programma", "Si"))
-        self.assertEqual((history["event_type"], history["old_value"], history["new_value"]), ("Cambio stato rapido", "Ritirato", "In programma"))
+        # correct flow: In programma -> Da consegnare (never back to "In programma")
+        self.assertEqual((practice["status"], practice["cremation_registered"]), ("Da consegnare", "Si"))
+        self.assertEqual((history["event_type"], history["old_value"], history["new_value"]), ("Cambio stato rapido", "In programma", "Da consegnare"))
 
         # the completed cycle keeps showing on the timeline for that day
         rendered = []
@@ -1659,6 +1668,68 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.cremation_schedule(admin)
         page = rendered[-1]
         self.assertIn("COMPLETATO", page)
+
+    def test_cremation_remove_from_cycle_reverts_status_to_ritirato(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-20", "in_attesa", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-BACK", "Privato", "Livorno", "In programma", "Cremazione singola", "2026-07-15", stamp, stamp,
+                 admin["id"], "CR-BACK", cycle_id),
+            ).lastrowid
+
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.cremation_remove_from_cycle(admin, pid)
+        self.assertEqual(responses[-1], ({"ok": True}, 200))
+        with app.db() as conn:
+            practice = conn.execute("SELECT status,cremation_cycle_id FROM practices WHERE id=?", (pid,)).fetchone()
+            history = conn.execute(
+                "SELECT old_value,new_value FROM practice_history WHERE practice_id=? ORDER BY id DESC LIMIT 1", (pid,)
+            ).fetchone()
+        self.assertIsNone(practice["cremation_cycle_id"])
+        self.assertEqual(practice["status"], "Ritirato")
+        self.assertEqual((history["old_value"], history["new_value"]), ("In programma", "Ritirato"))
+
+    def test_cremation_edit_cycle_cascades_to_subsequent_overlapping_cycles(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            first_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-21", "pianificato", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+            second_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-21", "pianificato", "09:40", "11:10", stamp, stamp),
+            ).lastrowid
+            # far enough away that it must NOT be touched by the cascade
+            third_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-21", "pianificato", "15:00", "16:30", stamp, stamp),
+            ).lastrowid
+
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        # stretching the first cycle's end to 10:30 now overlaps the second one (09:40-11:10)
+        self.handler.form = lambda: {"planned_start": "08:00", "planned_end": "10:30"}
+        self.handler.cremation_edit_cycle(admin, first_id)
+        self.assertEqual(responses[-1], ({"ok": True}, 200))
+        with app.db() as conn:
+            first = conn.execute("SELECT planned_start,planned_end FROM cremation_cycles WHERE id=?", (first_id,)).fetchone()
+            second = conn.execute("SELECT planned_start,planned_end FROM cremation_cycles WHERE id=?", (second_id,)).fetchone()
+            third = conn.execute("SELECT planned_start,planned_end FROM cremation_cycles WHERE id=?", (third_id,)).fetchone()
+        self.assertEqual((first["planned_start"], first["planned_end"]), ("08:00", "10:30"))
+        # pushed forward by the gap, keeping its own original 90-minute duration
+        self.assertEqual((second["planned_start"], second["planned_end"]), ("10:40", "12:10"))
+        # untouched: still well after the cascade
+        self.assertEqual((third["planned_start"], third["planned_end"]), ("15:00", "16:30"))
 
     def test_cremation_edit_cycle_updates_planned_times_for_a_planned_cycle(self):
         with app.db() as conn:
@@ -1723,8 +1794,9 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(f'cremationQuickAssign(this,{waiting_a},{pianificato_id})', page)
         self.assertNotIn(f'cremationQuickAssign(this,{waiting_a},{completato_id})', page)
 
-        # the in_attesa cycle (1/2 animals) offers "+ Aggiungi animale" listing the waiting animals
-        self.assertIn(f'cremationQuickAssign(this,{waiting_a},{in_attesa_id})', page)
+        # the in_attesa cycle (1/2 animals) offers a "+ Aggiungi animale" button opening the shared modal
+        self.assertIn(f'cremationOpenAddAnimalModal({in_attesa_id})', page)
+        self.assertIn(f'cremationOpenAddAnimalModal({pianificato_id})', page)
         self.assertIn('Aggiungi animale', page)
 
         # every non-completed cycle exposes Modifica (via the new time-picker modal, not the old prompt()) together with its other actions
@@ -1741,6 +1813,22 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('cremationEditOverlay" hidden', page)
         self.assertIn('calendar-time-entry', page)
         self.assertIn('calendar-wheel-option', page)
+
+        # the shared "add animal" modal is a real search + card picker (not a tiny dropdown), rendered once
+        self.assertEqual(page.count('id="cremationAddAnimalOverlay"'), 1)
+        self.assertIn('cremationAddAnimalOverlay" hidden', page)
+        self.assertIn('id="cremationAddAnimalSearch"', page)
+        self.assertIn('cremationFilterAddAnimalList(this)', page)
+        self.assertIn(f"cremationAddAnimalConfirm(this,{waiting_a})", page)
+        self.assertIn(f"cremationAddAnimalConfirm(this,{waiting_b})", page)
+        self.assertIn('cremation-add-animal-btn">Aggiungi al ciclo', page)
+
+        # every cycle card is collapsed by default and toggled by clicking its header
+        self.assertIn('data-cycle-card', page)
+        self.assertIn('cremationToggleCycleCard(this)', page)
+        self.assertIn('data-cycle-body', page)
+        # animal names stay visible even collapsed
+        self.assertIn('cremation-cycle-animal-names', page)
 
     def test_cremation_remove_from_cycle_returns_animal_to_waiting_list_and_reverts_empty_cycle(self):
         with app.db() as conn:

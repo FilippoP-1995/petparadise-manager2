@@ -1533,7 +1533,13 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-cycle-in_attesa{border-left-color:#fb923c}
 .cremation-cycle-completato{border-left-color:#334155;opacity:.75}
 .cremation-cycle-pianificato{border-left-color:#60a5fa}
-.cremation-cycle-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.cremation-cycle-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:0;cursor:pointer}
+.cremation-cycle-animal-names{color:#cbd5e1;font-size:12px;flex:1 1 160px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cremation-cycle-chevron{display:flex;align-items:center;color:#64748b;flex:0 0 auto}
+.cremation-cycle-chevron .icon{width:16px;height:16px;transition:transform .25s ease;transform:rotate(90deg)}
+.cremation-cycle-card.expanded .cremation-cycle-chevron .icon{transform:rotate(270deg)}
+.cremation-cycle-body{max-height:0;overflow:hidden;transition:max-height .3s ease}
+.cremation-cycle-body-inner{padding-top:12px}
 .cremation-cycle-number{font-weight:800;font-size:14px}
 .cremation-cycle-time{color:#94a3b8;font-size:13px}
 .cremation-status-badge{font-size:11px;font-weight:700;letter-spacing:.03em;padding:4px 12px;border-radius:99px;white-space:nowrap}
@@ -1601,6 +1607,15 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-modal-head h3{margin:0;font-size:16px}
 .cremation-modal-close{width:30px;height:30px;border:0;border-radius:9px;background:#172033;color:#e2e8f0;font-size:18px;cursor:pointer}
 .cremation-modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
+.cremation-modal-lg{width:min(100%,480px);max-height:80vh;display:flex;flex-direction:column}
+.cremation-modal-search{width:100%;margin:4px 0 12px;padding:10px 12px;border-radius:10px;border:1px solid #334155;background:#111a27;color:#e2e8f0;font-size:13px;flex:0 0 auto}
+.cremation-add-animal-list{display:flex;flex-direction:column;gap:8px;overflow-y:auto;flex:1 1 auto}
+.cremation-add-animal-card{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid #334155;border-radius:12px;background:#161f2b;text-align:left;cursor:pointer;width:100%}
+.cremation-add-animal-card:hover{border-color:#fb7185}
+.cremation-add-animal-info{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+.cremation-add-animal-meta{font-size:11px;color:#94a3b8;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.cremation-add-animal-tags{display:flex;flex-wrap:wrap;gap:4px}
+.cremation-add-animal-btn{flex:0 0 auto;padding:6px 12px;border-radius:8px;background:#fb718522;color:#fb7185;font-size:11px;font-weight:700;white-space:nowrap}
 .light-theme .cremation-waiting-column,.light-theme .cremation-cycle-card,.light-theme .cremation-waiting-card{background:#fff;border-color:#e2e8f0;color:#111827}
 .light-theme .cremation-date-label,.light-theme .cremation-nav-btn,.light-theme .cremation-view-tabs{background:#f8fafc;border-color:#e2e8f0}
 .light-theme .cremation-view-tabs button{color:#475569}
@@ -1615,6 +1630,9 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .light-theme .cremation-quick-menu-empty{color:#94a3b8}
 .light-theme .cremation-modal{background:#fff;border-color:#e2e8f0;color:#111827}
 .light-theme .cremation-modal-close{background:#f1f5f9;color:#111827}
+.light-theme .cremation-modal-search{background:#f8fafc;border-color:#e2e8f0;color:#111827}
+.light-theme .cremation-add-animal-card{background:#fff;border-color:#e2e8f0}
+.light-theme .cremation-cycle-animal-names{color:#475569}
 @media(max-width:1100px){.cremation-summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:900px){.cremation-columns{grid-template-columns:1fr}}
 @media(max-width:620px){.cremation-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.cremation-header{flex-direction:column}.cremation-header-nav{align-items:flex-start;width:100%}.cremation-date-nav{width:100%;justify-content:space-between}.cremation-view-tabs{width:100%;justify-content:center}.cremation-progress{flex-wrap:wrap}.cremation-animal-row{grid-template-columns:1fr;gap:6px}.cremation-animal-actions{margin-left:0;margin-top:4px}.cremation-timeline-item{grid-template-columns:36px minmax(0,1fr);gap:8px}.cremation-timeline-time{font-size:9px}}
@@ -3525,6 +3543,56 @@ function cremationRemoveFromCycle(el,practiceId){
     .then(function(data){if(!data.ok){alert(data.error||'Operazione non riuscita');return;}location.reload();})
     .catch(function(){location.reload();});
 }
+function cremationToggleCycleCard(headerEl){
+  const card=headerEl.closest('[data-cycle-card]');
+  if(!card)return;
+  const body=card.querySelector('[data-cycle-body]');
+  const willExpand=!card.classList.contains('expanded');
+  document.querySelectorAll('[data-cycle-card].expanded').forEach(function(other){
+    if(other!==card){
+      other.classList.remove('expanded');
+      const otherBody=other.querySelector('[data-cycle-body]');
+      if(otherBody)otherBody.style.maxHeight='0px';
+    }
+  });
+  if(willExpand){
+    card.classList.add('expanded');
+    body.style.maxHeight=body.scrollHeight+'px';
+  }else{
+    card.classList.remove('expanded');
+    body.style.maxHeight='0px';
+  }
+}
+function cremationOpenAddAnimalModal(cycleId){
+  const overlay=document.getElementById('cremationAddAnimalOverlay');
+  if(!overlay)return;
+  overlay.dataset.cycleId=cycleId;
+  const search=document.getElementById('cremationAddAnimalSearch');
+  if(search){search.value='';cremationFilterAddAnimalList(search);}
+  overlay.hidden=false;
+}
+function cremationCloseAddAnimalModal(){
+  const overlay=document.getElementById('cremationAddAnimalOverlay');
+  if(overlay)overlay.hidden=true;
+}
+function cremationFilterAddAnimalList(input){
+  const term=input.value.trim().toLowerCase();
+  const cards=document.querySelectorAll('#cremationAddAnimalList .cremation-add-animal-card');
+  let anyVisible=false;
+  cards.forEach(function(card){
+    const match=!term||card.dataset.search.includes(term);
+    card.hidden=!match;
+    if(match)anyVisible=true;
+  });
+  const empty=document.getElementById('cremationAddAnimalEmpty');
+  if(empty)empty.hidden=anyVisible;
+}
+function cremationAddAnimalConfirm(el,practiceId){
+  const overlay=document.getElementById('cremationAddAnimalOverlay');
+  const cycleId=overlay?overlay.dataset.cycleId:null;
+  if(!cycleId)return;
+  cremationQuickAssign(el,practiceId,cycleId);
+}
 let pendingOrderForm=null;
 function normalizeOrderQuantity(input,value){
   const quantity=Math.max(1,Math.min(999,Math.trunc(Number(value)||1)));
@@ -4093,6 +4161,17 @@ def cremation_time_add(hhmm, minutes):
     h, m = (int(x) for x in str(hhmm or "00:00").split(":")[:2])
     total = (h * 60 + m + minutes) % (24 * 60)
     return f"{total // 60:02d}:{total % 60:02d}"
+
+
+def cremation_minutes_between(start,end):
+    sh,sm=map(int,start.split(":"));eh,em=map(int,end.split(":"))
+    return (eh*60+em)-(sh*60+sm)
+
+
+def cremation_log_status_change(c,pid,old_status,new_status,user_id,stamp):
+    c.execute("UPDATE practices SET status=?,updated_at=? WHERE id=?",(new_status,stamp,pid))
+    c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",
+               (pid,"Cambio stato rapido",old_status,new_status,user_id,stamp))
 
 
 def cremation_cycle_next_slot(c, cycle_date):
@@ -6315,19 +6394,8 @@ class App(BaseHTTPRequestHandler):
               <div class="cremation-quick-menu-popover" hidden onclick="event.stopPropagation()">{''.join(items)}</div>
             </div>'''
 
-        def add_animal_menu_html(cycle_id):
-            if waiting:
-                opts=[]
-                for row in waiting:
-                    emoji,_=species_avatar(row["species"] if "species" in row.keys() else "")
-                    opts.append(f'<button type="button" onclick="cremationQuickAssign(this,{row["id"]},{cycle_id})">{emoji} {animal_name_html(row)}</button>')
-                options=''.join(opts)
-            else:
-                options='<p class="cremation-quick-menu-empty">Nessun animale in attesa.</p>'
-            return f'''<div class="cremation-quick-menu-wrap">
-              <button type="button" class="cremation-action-btn cremation-action-add" onclick="event.stopPropagation();cremationToggleQuickMenu(this)">{lucide("plus")}<span>Aggiungi animale</span></button>
-              <div class="cremation-quick-menu-popover" hidden onclick="event.stopPropagation()">{options}</div>
-            </div>'''
+        def add_animal_button_html(cycle_id):
+            return f'<button type="button" class="cremation-action-btn cremation-action-add" onclick="event.stopPropagation();cremationOpenAddAnimalModal({cycle_id})">{lucide("plus")}<span>Aggiungi animale</span></button>'
 
         def waiting_card_html(row):
             avatar_emoji,avatar_cls=species_avatar(row["species"] if "species" in row.keys() else "")
@@ -6393,33 +6461,42 @@ class App(BaseHTTPRequestHandler):
             status=cycle["status"]
             animals_html=''.join(animal_row_html(row,removable=status!="completato") for row in animals) or '<p class="cremation-dash" style="padding:10px 0">Nessun animale assegnato.</p>'
             status_label,status_cls=CREMATION_STATUS_LABELS.get(status,(status.upper(),""))
+            names_html=', '.join(f'{species_avatar(row["species"] if "species" in row.keys() else "")[0]} {animal_name_html(row)}' for row in animals) if animals else '<span class="cremation-dash">Nessun animale</span>'
+            remaining_html=""
             if status=="completato":
                 action_html=f'<span class="cremation-completed-note">Completato alle {esc(cycle["actual_end"][11:16])} {lucide("check-circle")}</span>' if cycle["actual_end"] else ""
             else:
                 actions=[f"<button type=\"button\" class=\"cremation-action-btn cremation-action-planned\" onclick=\"cremationOpenEditModal({cycle['id']},'{cycle['planned_start']}','{cycle['planned_end']}')\">{lucide('pencil')}<span>Modifica</span></button>"]
                 if len(animals)<2:
-                    actions.append(add_animal_menu_html(cycle["id"]))
+                    actions.append(add_animal_button_html(cycle["id"]))
                 if status=="in_attesa":
                     actions.append(f'<button type="button" class="cremation-action-btn cremation-action-waiting" onclick="cremationStartCycle({cycle["id"]})">{lucide("play")}<span>Avvia ciclo</span></button>')
                 elif status=="in_corso":
                     try:
                         end_dt=datetime.combine(view_date,datetime.strptime(cycle["planned_end"],"%H:%M").time())
                         remaining=max(0,round((end_dt-now_dt).total_seconds()/60))
-                        actions.append(f'<span class="cremation-remaining">{lucide("clock")}<span>Rimangono {remaining} min</span></span>')
+                        remaining_html=f'<div class="cremation-remaining">{lucide("clock")}<span>Rimangono {remaining} min</span></div>'
                     except ValueError:pass
                     actions.append(f'<button type="button" class="cremation-action-btn cremation-action-active" onclick="cremationCompleteCycle({cycle["id"]})">{lucide("check-circle")}<span>Termina ciclo</span></button>')
                 action_html=''.join(actions)
             dropzone_attr=f'data-cycle-dropzone="{cycle["id"]}"' if status!="completato" and len(animals)<2 else ""
             cycle_items.append(f'''<div class="cremation-timeline-item">
               <div class="cremation-timeline-rail"><span class="cremation-timeline-time">{esc(cycle["planned_start"])}</span><span class="cremation-timeline-dot {dot_cls_map.get(status,"")}"></span></div>
-              <div class="cremation-cycle-card cremation-cycle-{status}" {dropzone_attr}>
-                <div class="cremation-cycle-head">
+              <div class="cremation-cycle-card cremation-cycle-{status}" {dropzone_attr} data-cycle-card>
+                <div class="cremation-cycle-head" onclick="cremationToggleCycleCard(this)">
                   <span class="cremation-cycle-number">CICLO {idx+1}</span>
                   <span class="cremation-cycle-time">{esc(cycle["planned_start"])} → {esc(cycle["planned_end"])}</span>
                   <span class="cremation-status-badge {status_cls}">{esc(status_label)}</span>
-                  <div class="cremation-cycle-action">{action_html}</div>
+                  <span class="cremation-cycle-animal-names">{names_html}</span>
+                  <div class="cremation-cycle-action" onclick="event.stopPropagation()">{action_html}</div>
+                  <span class="cremation-cycle-chevron" aria-hidden="true">{lucide("chevron-right")}</span>
                 </div>
-                <div class="cremation-cycle-animals">{animals_html}</div>
+                <div class="cremation-cycle-body" data-cycle-body>
+                  <div class="cremation-cycle-body-inner">
+                    {remaining_html}
+                    <div class="cremation-cycle-animals">{animals_html}</div>
+                  </div>
+                </div>
               </div>
             </div>''')
         cycles_html=''.join(cycle_items) or '<p class="cremation-dash" style="padding:8px 0">Nessun ciclo pianificato per questa giornata.</p>'
@@ -6485,6 +6562,42 @@ class App(BaseHTTPRequestHandler):
           </div>
         </div>'''
 
+        def owner_label(row):
+            owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip() or row["owner_company"] or ""
+            if "collaborator_name" in row.keys() and row["collaborator_name"]:
+                owner=row["collaborator_name"]
+            return owner
+
+        def add_animal_card_html(row):
+            avatar_emoji,avatar_cls=species_avatar(row["species"] if "species" in row.keys() else "")
+            weight=(row["estimated_weight"] or "").strip()
+            code=(row["provenance"] or "").strip().upper()
+            owner=owner_label(row)
+            meta_bits=[bit for bit in (f'{esc(weight)} kg' if weight else '',esc(owner) if owner else '',
+                       f'<span class="cremation-provenance-chip {avatar_cls}">{esc(code)}</span>' if code else '') if bit]
+            tags=self.tag_badges(row)
+            tags_block=f'<div class="cremation-add-animal-tags">{tags}</div>' if '<span class="badge' in tags else ''
+            search_key=esc(f'{(row["animal_name"] or "").lower()} {owner.lower()}')
+            return f'''<button type="button" class="cremation-add-animal-card" data-search="{search_key}" onclick="cremationAddAnimalConfirm(this,{row['id']})">
+              <span class="cremation-animal-avatar {avatar_cls}" aria-hidden="true">{avatar_emoji}</span>
+              <div class="cremation-add-animal-info">
+                <div class="cremation-animal-name">{animal_name_html(row)}</div>
+                <div class="cremation-add-animal-meta">{' · '.join(meta_bits)}</div>
+                {tags_block}
+              </div>
+              <span class="cremation-add-animal-btn">Aggiungi al ciclo</span>
+            </button>'''
+
+        add_animal_cards_html=''.join(add_animal_card_html(row) for row in waiting)
+        add_animal_modal_html=f'''<div class="cremation-modal-overlay" id="cremationAddAnimalOverlay" hidden onclick="if(event.target===this)cremationCloseAddAnimalModal()">
+          <div class="cremation-modal cremation-modal-lg">
+            <div class="cremation-modal-head"><h3>Aggiungi animale al ciclo</h3><button type="button" class="cremation-modal-close" onclick="cremationCloseAddAnimalModal()" aria-label="Chiudi">×</button></div>
+            <input type="text" class="cremation-modal-search" id="cremationAddAnimalSearch" placeholder="Cerca animale o proprietario..." oninput="cremationFilterAddAnimalList(this)">
+            <div class="cremation-add-animal-list" id="cremationAddAnimalList">{add_animal_cards_html}</div>
+            <p class="cremation-quick-menu-empty" id="cremationAddAnimalEmpty" {"hidden" if waiting else ""}>Nessun animale in attesa di pianificazione.</p>
+          </div>
+        </div>'''
+
         body=f'''<main class="wrap cremation-board" id="cremationBoard" data-cremation-date="{cycle_date}">
         <div class="cremation-header">
           <div class="cremation-header-title"><h1>Programma cremazioni <span class="cremation-title-icon">{lucide("calendar")}</span></h1><p class="sub">Pianifica e monitora i cicli di cremazione della giornata</p></div>
@@ -6505,6 +6618,7 @@ class App(BaseHTTPRequestHandler):
           </section>
         </div>
         {edit_modal_html}
+        {add_animal_modal_html}
         </main>'''
         self.send_html(layout("Programma Cremazioni",body,user))
 
@@ -6524,6 +6638,7 @@ class App(BaseHTTPRequestHandler):
                                 (cycle_date,status,start,end,stamp,stamp)).lastrowid
             if practice_id:
                 c.execute("UPDATE practices SET cremation_cycle_id=?,updated_at=? WHERE id=?",(cycle_id,stamp,practice_id))
+                cremation_log_status_change(c,practice_id,"Ritirato","In programma",user["id"],stamp)
         return self.send_json({"ok":True,"cycle_id":cycle_id})
 
     def cremation_assign_to_cycle(self,user,cycle_id):
@@ -6542,6 +6657,7 @@ class App(BaseHTTPRequestHandler):
             if not practice or practice["status"]!="Ritirato" or practice["service_type"]!="Cremazione singola" or practice["cremation_cycle_id"]:
                 return self.send_json({"ok":False,"error":"Animale non più disponibile. Ricarica la pagina."},409)
             c.execute("UPDATE practices SET cremation_cycle_id=?,updated_at=? WHERE id=?",(cycle_id,stamp,practice_id))
+            cremation_log_status_change(c,practice_id,"Ritirato","In programma",user["id"],stamp)
             if cycle["status"]=="pianificato":
                 c.execute("UPDATE cremation_cycles SET status='in_attesa',updated_at=? WHERE id=?",(stamp,cycle_id))
         return self.send_json({"ok":True})
@@ -6564,10 +6680,10 @@ class App(BaseHTTPRequestHandler):
             if cycle["status"]!="in_corso":
                 return self.send_json({"ok":False,"error":"Il ciclo non è in corso."},409)
             c.execute("UPDATE cremation_cycles SET status='completato',actual_end=?,updated_at=? WHERE id=?",(stamp,stamp,cycle_id))
-            practices=c.execute("SELECT * FROM practices WHERE cremation_cycle_id=? AND (deleted_at IS NULL OR deleted_at='') AND status='Ritirato'",(cycle_id,)).fetchall()
+            practices=c.execute("SELECT * FROM practices WHERE cremation_cycle_id=? AND (deleted_at IS NULL OR deleted_at='') AND status='In programma'",(cycle_id,)).fetchall()
             for row in practices:
-                c.execute("UPDATE practices SET status='In programma',cremation_registered='Si',updated_at=? WHERE id=?",(stamp,row["id"]))
-                c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(row["id"],"Cambio stato rapido","Ritirato","In programma",user["id"],stamp))
+                c.execute("UPDATE practices SET cremation_registered='Si',updated_at=? WHERE id=?",(stamp,row["id"]))
+                cremation_log_status_change(c,row["id"],"In programma","Da consegnare",user["id"],stamp)
         return self.send_json({"ok":True})
 
     def cremation_edit_cycle(self,user,cycle_id):
@@ -6576,17 +6692,31 @@ class App(BaseHTTPRequestHandler):
         end=(f.get("planned_end") or "").strip()[:5]
         if not re.fullmatch(r"\d{2}:\d{2}",start) or not re.fullmatch(r"\d{2}:\d{2}",end):
             return self.send_json({"ok":False,"error":"Orario non valido."},400)
+        if cremation_minutes_between(start,end)<=0:
+            return self.send_json({"ok":False,"error":"L'orario di fine deve essere dopo l'orario di inizio."},400)
         stamp=now()
         with db() as c:
-            cycle=c.execute("SELECT id FROM cremation_cycles WHERE id=?",(cycle_id,)).fetchone()
+            cycle=c.execute("SELECT id,cycle_date FROM cremation_cycles WHERE id=?",(cycle_id,)).fetchone()
             if not cycle:return self.send_json({"ok":False,"error":"Ciclo non trovato"},404)
             c.execute("UPDATE cremation_cycles SET planned_start=?,planned_end=?,updated_at=? WHERE id=?",(start,end,stamp,cycle_id))
+            # se necessario, sposta in avanti i cicli successivi della stessa giornata che ora si sovrappongono
+            rows=c.execute("SELECT id,planned_start,planned_end FROM cremation_cycles WHERE cycle_date=? ORDER BY planned_start ASC,id ASC",(cycle["cycle_date"],)).fetchall()
+            prev_end=None
+            for row in rows:
+                row_start,row_end=(start,end) if row["id"]==cycle_id else (row["planned_start"],row["planned_end"])
+                if prev_end is not None:
+                    min_start=cremation_time_add(prev_end,CREMATION_CYCLE_GAP_MIN)
+                    if row_start<min_start and row["id"]!=cycle_id:
+                        duration=cremation_minutes_between(row["planned_start"],row["planned_end"])
+                        row_start=min_start;row_end=cremation_time_add(row_start,duration)
+                        c.execute("UPDATE cremation_cycles SET planned_start=?,planned_end=?,updated_at=? WHERE id=?",(row_start,row_end,stamp,row["id"]))
+                prev_end=row_end
         return self.send_json({"ok":True})
 
     def cremation_remove_from_cycle(self,user,pid):
         stamp=now()
         with db() as c:
-            practice=c.execute("SELECT id,cremation_cycle_id FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(pid,)).fetchone()
+            practice=c.execute("SELECT id,status,cremation_cycle_id FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(pid,)).fetchone()
             if not practice or not practice["cremation_cycle_id"]:
                 return self.send_json({"ok":False,"error":"Animale non assegnato a nessun ciclo."},404)
             cycle_id=practice["cremation_cycle_id"]
@@ -6594,6 +6724,8 @@ class App(BaseHTTPRequestHandler):
             if cycle and cycle["status"]=="completato":
                 return self.send_json({"ok":False,"error":"Non puoi rimuovere un animale da un ciclo già completato."},409)
             c.execute("UPDATE practices SET cremation_cycle_id=NULL,updated_at=? WHERE id=?",(stamp,pid))
+            if practice["status"]=="In programma":
+                cremation_log_status_change(c,pid,"In programma","Ritirato",user["id"],stamp)
             if cycle and cycle["status"]=="in_attesa":
                 remaining=c.execute("SELECT COUNT(*) n FROM practices WHERE cremation_cycle_id=? AND (deleted_at IS NULL OR deleted_at='')",(cycle_id,)).fetchone()["n"]
                 if remaining==0:
