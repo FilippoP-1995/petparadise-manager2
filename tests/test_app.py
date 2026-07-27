@@ -4616,8 +4616,11 @@ class PetParadiseTests(unittest.TestCase):
         # niente più tabella: solo l'elenco a card compatte
         self.assertNotIn('<table',recent_section)
         self.assertIn('class="recent-practice-list"',recent_section)
-        self.assertIn('class="recent-practice-card avatar-dog"',recent_section)
-        self.assertIn('class="recent-practice-card avatar-cat"',recent_section)
+        # il bordo colorato per specie usa data-species (non la classe avatar-*
+        # sulla card intera, che collideva con le regole di sfondo bare
+        # .avatar-dog/.avatar-cat/.avatar-other già usate per l'iconcina altrove)
+        self.assertIn('class="recent-practice-card" data-species="avatar-dog"',recent_section)
+        self.assertIn('class="recent-practice-card" data-species="avatar-cat"',recent_section)
         self.assertIn('class="recent-practice-avatar avatar-dog"',recent_section)
         self.assertIn("\U0001f436",recent_section)  # 🐶
         self.assertIn("\U0001f431",recent_section)  # 🐱
@@ -4630,6 +4633,33 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("3384272742",recent_section)
         # il gatto senza peso/eta'/proprietario mostra i trattini lunghi previsti dal mockup, non vuoto
         self.assertIn("Gatto • —",recent_section)
+
+    def test_recent_practice_card_missing_animal_name_shows_a_slash(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                         pickup_date) VALUES(?,?,?,?,?,?,?,?)""",
+                         ("CR-NONAME","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"2026-07-20"))
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        recent_start=page.index('<section class="dashboard-recent">')
+        recent_section=page[recent_start:page.index('</section>',recent_start)]
+        self.assertIn('<span class="recent-practice-name">/</span>',recent_section)
+        self.assertNotIn("Da inserire",recent_section)
+
+    def test_recent_practice_card_border_color_only_the_card_not_a_stray_background(self):
+        # bug reale segnalato dall'utente: l'intera card risultava colorata
+        # (non solo il bordo sinistro) perché la card portava la stessa classe
+        # bare "avatar-dog"/"avatar-cat"/"avatar-other" già usata altrove per
+        # dare uno sfondo colorato alla sola iconcina circolare.
+        self.assertIn('.recent-practice-card[data-species="avatar-dog"]{border-left-color:#60a5fa}',app.CSS)
+        self.assertIn('.recent-practice-card[data-species="avatar-cat"]{border-left-color:#4ade80}',app.CSS)
+        self.assertIn('.recent-practice-card[data-species="avatar-other"]{border-left-color:#c084fc}',app.CSS)
+        self.assertNotIn('.recent-practice-card.avatar-dog',app.CSS)
+        # la lista scorre insieme alla pagina, niente scroll interno separato
+        self.assertIn('.recent-practice-list{display:flex;flex-direction:column;gap:8px}',app.CSS)
 
     def test_recent_practice_card_opens_the_practice_and_uses_the_chevron(self):
         with app.db() as conn:
