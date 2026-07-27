@@ -3464,7 +3464,13 @@ function cremationRemoveFromCycle(el,practiceId){
 }
 function cremationCollapseBody(body){
   body.style.maxHeight=body.scrollHeight+'px';
-  requestAnimationFrame(function(){body.style.maxHeight='0px';});
+  requestAnimationFrame(function(){
+    // if something re-expanded this same element in the meantime (e.g. the
+    // week stat dispatcher closes every panel before reopening the one just
+    // clicked, in the same synchronous click handler), don't clobber it back
+    // to 0 on the next frame — only collapse if it's genuinely still closed.
+    if(!body.classList.contains('expanded'))body.style.maxHeight='0px';
+  });
 }
 function cremationExpandBody(body,parentEl){
   body.style.maxHeight=body.scrollHeight+'px';

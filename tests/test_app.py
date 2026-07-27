@@ -2123,6 +2123,25 @@ class PetParadiseTests(unittest.TestCase):
         dispatcher_body = page[reset_call_index:reset_call_index + 800]
         self.assertIn("cremationWeekResetView()", dispatcher_body)
 
+    def test_cremation_collapse_body_does_not_clobber_a_same_tick_reopen(self):
+        # regression: cremationWeekStatClick always closes cremationAnimaliPanel/
+        # cremationFinePrevistaPanel via cremationWeekResetView() BEFORE
+        # conditionally reopening whichever one was just clicked, all in one
+        # synchronous handler. cremationCollapseBody's close animation queues a
+        # requestAnimationFrame that unconditionally forced max-height back to
+        # '0px' on the next frame — including when cremationOpenPanel had just
+        # re-expanded that very same element a moment earlier in the same
+        # click. Net effect: the "Animali" panel's stat badge showed the right
+        # count but the list appeared empty (0 visible height) on first click,
+        # exactly as reported. The queued callback must check that the element
+        # is still not expanded before applying the reset.
+        js = app.APP_JS
+        idx = js.index("function cremationCollapseBody(")
+        body = js[idx:idx + 600]
+        self.assertIn("requestAnimationFrame(function(){", body)
+        self.assertIn("classList.contains('expanded')", body)
+        self.assertIn("body.style.maxHeight='0px'", body)
+
     def test_cremation_cycle_border_colors_match_status(self):
         # regression 1: in_corso used to render green (identical to "completed"
         # elsewhere) and completato used to render dim grey instead of green.
