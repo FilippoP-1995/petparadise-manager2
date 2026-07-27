@@ -1543,9 +1543,11 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Urna scelta a voce, non ancora in catalogo", page)  # unmatched free-typed urn text still shown
         self.assertIn("(Rossi)", page)  # duplicate "Rex" disambiguated by owner surname
         self.assertIn("(Verdi)", page)  # the other "Rex" too
-        self.assertIn('data-cycle-dropzone="new"', page)
-        self.assertIn('Trascina qui per creare un nuovo ciclo', page)
-        self.assertIn('Animali in attesa', page)
+        # the standalone "Animali in attesa" column is gone: the same waiting cards now
+        # live in a panel toggled by the "In attesa" stat card (no separate drop-to-create-cycle zone)
+        self.assertIn('id="cremationWaitingPanel"', page)
+        self.assertIn('cremationToggleWaitingPanel(this)', page)
+        self.assertNotIn('data-cycle-dropzone="new"', page)
 
     def test_cremation_create_and_assign_to_cycle_enforce_two_animal_limit_and_promote_status(self):
         with app.db() as conn:
@@ -1830,6 +1832,20 @@ class PetParadiseTests(unittest.TestCase):
         # animal names stay visible even collapsed
         self.assertIn('cremation-cycle-animal-names', page)
 
+        # a completed cycle can still have its time modified: only Avvia/Termina/Aggiungi animale go away
+        self.assertIn(f"cremationOpenEditModal({completato_id},'07:00','08:00')", page)
+
+        # the standalone "Animali in attesa" section is gone; the same waiting cards now live in a
+        # panel toggled by the "In attesa" stat card, which shows the count of unassigned animals (2), not cycles
+        self.assertNotIn('cremation-waiting-column', page)
+        stat_start = page.index('cremationToggleWaitingPanel(this)')
+        waiting_stat_card = page[stat_start:stat_start + 700]
+        self.assertIn('>In attesa</span>', waiting_stat_card)
+        self.assertIn('<strong class="dash-stat-value">2</strong>', waiting_stat_card)
+        self.assertIn('id="cremationWaitingPanel"', page)
+        self.assertIn(f'data-practice-id="{waiting_a}"', page)
+        self.assertIn(f'data-practice-id="{waiting_b}"', page)
+
     def test_cremation_remove_from_cycle_returns_animal_to_waiting_list_and_reverts_empty_cycle(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
@@ -1891,17 +1907,18 @@ class PetParadiseTests(unittest.TestCase):
                     (day.isoformat(), status, start, end, actual_end, stamp, stamp),
                 ).lastrowid
 
-            def practice(code, weight, cycle_id):
+            def practice(code, weight, cycle_id, tag_avvisare="", urn_notes=""):
                 return conn.execute(
                     """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
-                       pickup_date,created_at,updated_at,created_by,animal_name,estimated_weight,cremation_cycle_id)
-                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                       pickup_date,created_at,updated_at,created_by,animal_name,estimated_weight,cremation_cycle_id,
+                       tag_avvisare,urn_notes)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (code, "Privato", "Livorno", "In programma", "Cremazione singola", "2026-07-15", stamp, stamp,
-                     admin["id"], code, weight, cycle_id),
+                     admin["id"], code, weight, cycle_id, tag_avvisare, urn_notes),
                 ).lastrowid
 
             mon_cycle = cycle(monday, "completato", "08:00", "09:30", stamp)
-            practice("CR-WEEK-1", "40", mon_cycle)
+            practice("CR-WEEK-1", "40", mon_cycle, tag_avvisare="Si", urn_notes="Cuore Rosso")
             tue_cycle = cycle(tuesday, "in_attesa", "10:00", "11:20")
             practice("CR-WEEK-2", "12", tue_cycle)
             # a cycle on the last day of the week: drives "fine prevista" for the whole week
@@ -1918,15 +1935,25 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('class="active" href="/programma-cremazioni?vista=settimana', page)
         self.assertIn(f"{monday.day} – {sunday.day} Luglio {sunday.year}", page)
 
+        # the redundant Lun/Mar/.../Dom day-strip grid is gone: only the expandable day list remains
+        self.assertNotIn('cremation-week-day-chip', page)
+
         # all 7 days of the week are rendered, each as its own collapsible container
         for i in range(7):
             d = monday + timedelta(days=i)
             self.assertIn(f'data-week-day="{d.isoformat()}"', page)
 
-        # each cycle row is compact: icon + name + weight only (no tags/urn/provenance at this level)
+        # each compact cycle row shows icon + name + weight AND, when present, tag + urn (not just in the expanded view)
         self.assertIn("CICLO 1", page)
         self.assertIn("(40 kg)", page)
         self.assertIn("(12 kg)", page)
+        self.assertIn('class="cremation-week-animal-tag"', page)
+        self.assertIn('class="cremation-week-animal-urn"', page)
+        self.assertIn("AVVISARE", page)
+        self.assertIn("Cuore Rosso", page)
+
+        # a completed cycle can still be edited (time), it just no longer offers Avvia/Termina/Aggiungi animale
+        self.assertIn(f"cremationOpenEditModal({mon_cycle},'08:00','09:30')", page)
 
         # clicking a compact cycle row expands it (same mechanism as the day view)
         self.assertIn("cremationToggleCycleCard(this)", page)
