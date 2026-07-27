@@ -3324,6 +3324,29 @@ class PetParadiseTests(unittest.TestCase):
             row=conn.execute("SELECT message_type,template_name FROM whatsapp_messages WHERE id=?",(sent_msg_id,)).fetchone()
         self.assertEqual((row["message_type"],row["template_name"]),("catalogo","catalogo_urne"))
 
+    def test_non_admin_users_can_also_resend_the_whatsapp_catalog(self):
+        # the resend-catalog button on the practice page is shown to every
+        # logged-in user regardless of role; the confirm page and the actual
+        # send action must therefore also be reachable by a non-admin
+        # operator, not just by admins (this used to 403 for operators).
+        admin,pid=self._catalog_practice(catalog_sent="Si")
+        with app.db() as conn:
+            conn.execute("INSERT INTO users(username,password_hash,display_name,role) VALUES('operatore','x','Operatore','operator')")
+            operator=conn.execute("SELECT * FROM users WHERE username='operatore'").fetchone()
+
+        rendered=[];self.handler.send_html=lambda content,*a:rendered.append(content)
+        self.handler.catalog_whatsapp_confirm_page(operator,pid)
+        self.assertIn("REINVIA CATALOGO",rendered[-1])
+
+        self.handler.form=lambda:{"confirm_send":"SI"}
+        self.handler.redirect=lambda path:None
+        with patch.object(self.handler,"send_whatsapp_message",return_value=(True,"ok")) as send:
+            self.handler.resend_whatsapp_catalog(operator,pid)
+        sent_msg_id=send.call_args[0][0]
+        with app.db() as conn:
+            row=conn.execute("SELECT message_type FROM whatsapp_messages WHERE id=?",(sent_msg_id,)).fetchone()
+        self.assertEqual(row["message_type"],"catalogo")
+
     def test_webhook_inbound_text_message_links_to_the_practice_it_was_sent_to(self):
         admin,pid=self._catalog_practice()
         with app.db() as conn:

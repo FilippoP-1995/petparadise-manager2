@@ -11319,8 +11319,6 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         self.redirect(f"/pratiche/{pid}")
 
     def resend_whatsapp_catalog(self,user,pid):
-        if user["role"] != "admin":
-            return self.send_error(403)
         f=self.form()
         if f.get("confirm_send") != "SI":
             return self.catalog_whatsapp_confirm_page(user,pid,error="Devi confermare l'invio prima di procedere.")
@@ -11403,8 +11401,6 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         self.send_html(layout("Conferma WhatsApp",body,user))
 
     def catalog_whatsapp_confirm_page(self,user,pid,error=""):
-        if user["role"] != "admin":
-            return self.send_error(403)
         with db() as c:
             p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
         if not p: return self.send_error(404)
