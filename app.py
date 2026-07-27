@@ -1237,7 +1237,95 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 
 .section-collapse-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:12px}.section-collapse-head h2{margin:0}.collapse-toggle{display:grid;place-items:center;width:32px;height:32px;padding:0;border:1px solid #334155;border-radius:9px;background:#172033;color:#e7ecf3;font-size:18px;font-weight:700;line-height:1;cursor:pointer}.collapse-toggle:hover{border-color:#ef405f;color:#fff}.collapsible-body[hidden]{display:none}.light-theme .collapse-toggle{background:#fff;border-color:#cbd5e1;color:#111827}
 
-.conversation-list{display:flex;flex-direction:column;gap:12px}.conversation-card{display:grid;grid-template-columns:minmax(280px,1.2fr) minmax(420px,1fr) auto;align-items:center;gap:20px;padding:18px;border:1px solid #334155;border-radius:15px;background:#1f2937;box-shadow:0 12px 34px #0307122e}.conversation-main{display:grid;grid-template-columns:46px minmax(0,1fr);align-items:center;gap:13px}.conversation-avatar{display:grid;place-items:center;width:46px;height:46px;border-radius:13px;background:#064e3b;color:#4ade80}.conversation-main h2{margin:0 0 5px;font-size:16px}.conversation-main p{margin:3px 0;color:#94a3b8;font-size:13px}.conversation-main p b,.conversation-main a{color:#e2e8f0}.conversation-message{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.conversation-card dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin:0}.conversation-card dl div{min-width:0}.conversation-card dt{color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:.05em}.conversation-card dd{margin:4px 0 0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.conversation-action{text-align:right}.whatsapp-open{background:linear-gradient(135deg,#22c55e,#15803d);white-space:nowrap}.message-accettato_da_meta{background:#1e3a8a;color:#bfdbfe}.message-consegnato{background:#14532d;color:#bbf7d0}.message-letto{background:#164e63;color:#a5f3fc}.message-fallito{background:#7f1d1d;color:#fecaca}.pagination{display:flex;align-items:center;justify-content:center;gap:18px;margin:20px 0;color:#94a3b8}.pagination a,.page-disabled{padding:9px 13px;border:1px solid #334155;border-radius:10px}.pagination a{color:#f8fafc;background:#1f2937}.page-disabled{opacity:.45}.light-theme .conversation-card{background:#fff;color:#111827}.light-theme .conversation-main p{color:#64748b}
+.wa-list{display:flex;flex-direction:column;gap:12px;margin-bottom:22px}
+.wa-card{display:flex;align-items:flex-start;gap:14px;padding:16px 18px;border:1px solid #334155;border-radius:15px;background:linear-gradient(145deg,#131a26,#0f151f);box-shadow:0 12px 34px #0307122e;cursor:pointer}
+.wa-card:hover{border-color:#465065}
+.wa-card-icon{width:44px;height:44px;border-radius:50%;background:#0d3b2a;display:grid;place-items:center;flex:0 0 44px;color:#25d366;font-size:20px}
+.wa-card-main{flex:1;min-width:0}
+.wa-card-top{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.wa-card-name{font-weight:800;font-size:15px;color:#f5f7fb}
+.wa-card-name small{font-weight:500;color:#9ca7b8;font-size:12px}
+.wa-card-date{margin-left:auto;color:#9ca7b8;font-size:12px;white-space:nowrap}
+.wa-card-sub{display:flex;align-items:center;gap:8px;margin-top:4px;flex-wrap:wrap;font-size:12.5px;color:#9ca7b8}
+.wa-card-sub .badge{font-size:10.5px;padding:3px 8px}
+.wa-status{display:inline-flex;align-items:center;gap:6px;margin-top:6px;font-size:12.5px;font-weight:700}
+.wa-status-dot{width:9px;height:9px;border-radius:50%;flex:0 0 9px}
+.wa-status-green{color:#35c98a}.wa-status-green .wa-status-dot{background:#35c98a}
+.wa-status-blue{color:#4f8fdc}.wa-status-blue .wa-status-dot{background:#4f8fdc}
+.wa-status-grey{color:#9ca7b8}.wa-status-grey .wa-status-dot{background:#8a96a8}
+.wa-status-orange{color:#f5b83d}.wa-status-orange .wa-status-dot{background:#f5b83d}
+.wa-status-red{color:#f87171}.wa-status-red .wa-status-dot{background:#e9475b}
+.wa-card-preview{margin-top:7px;font-size:13.5px;color:#dfe4eb;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical}
+.wa-card-preview b{font-weight:700;color:#f5f7fb}
+.wa-preview-client{color:#7dd3fc}
+.wa-card-action{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:0 0 auto;margin-left:8px}
+.wa-card-chevron{color:#8a96a8;font-size:18px}
+.wa-unmatched{margin-top:8px}
+.wa-unmatched ul{margin:0;padding-left:18px;display:grid;gap:8px;color:#dfe4eb}
+.wa-empty{text-align:center;padding:34px;color:#9ca7b8}
+.wa-search{max-width:420px;margin-bottom:18px}
+.wa-modal-overlay{position:fixed;inset:0;z-index:220;display:flex;align-items:center;justify-content:center;background:#020617cc;padding:16px}
+.wa-modal-overlay[hidden]{display:none!important}
+.wa-modal{width:min(100%,680px);max-height:88vh;display:flex;flex-direction:column;background:#131a26;border:1px solid #334155;border-radius:18px;box-shadow:0 30px 90px #000c;overflow:hidden}
+.wa-modal-header{padding:18px 20px 14px;border-bottom:1px solid #263140}
+.wa-modal-header-top{display:flex;align-items:flex-start;gap:12px}
+.wa-modal-avatar{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;font-size:26px;flex:0 0 52px;background:#172033}
+.wa-modal-title{flex:1;min-width:0}
+.wa-modal-title h3{margin:0;font-size:18px}
+.wa-modal-title p{margin:2px 0 0;color:#9ca7b8;font-size:13px}
+.wa-modal-title .wa-modal-phone{display:flex;align-items:center;gap:6px;color:#dfe4eb}
+.wa-modal-right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:0 0 auto}
+.wa-modal-practice{color:#9ca7b8;font-size:12px}
+.wa-modal-close{width:32px;height:32px;border:0;border-radius:9px;background:#172033;color:#e2e8f0;font-size:18px;cursor:pointer;flex:0 0 auto}
+.wa-modal-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:16px}
+.wa-stat{text-align:center;padding:10px 6px;border-radius:12px;background:#0f151f}
+.wa-stat-icon{display:block;margin:0 auto 4px}
+.wa-stat small{display:block;color:#9ca7b8;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em}
+.wa-stat b{font-size:15px}
+.wa-chat{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:6px;background:#0d121b}
+.wa-chat-date{text-align:center;margin:10px 0}
+.wa-chat-date span{background:#1f2937;color:#9ca7b8;font-size:11px;padding:4px 12px;border-radius:99px}
+.wa-bubble-row{display:flex}
+.wa-bubble-row-sent{justify-content:flex-end}
+.wa-bubble-row-received{justify-content:flex-start}
+.wa-bubble{max-width:78%;padding:10px 14px;border-radius:14px;font-size:13.5px}
+.wa-bubble-sent{background:#1e3a5f;color:#f0f6ff;border-bottom-right-radius:4px}
+.wa-bubble-received{background:#232c3a;color:#f5f7fb;border-bottom-left-radius:4px}
+.wa-bubble-label{font-size:11px;font-weight:700;margin-bottom:2px;opacity:.85}
+.wa-bubble-sent .wa-bubble-label{color:#93c5fd}
+.wa-bubble-received .wa-bubble-label{color:#cbd5e1}
+.wa-bubble-text{white-space:pre-wrap;line-height:1.4}
+.wa-bubble-meta{display:flex;align-items:center;justify-content:flex-end;gap:4px;margin-top:4px;font-size:10.5px;color:#94a3b8}
+.wa-bubble-error{color:#fca5a5;font-size:11px;margin-top:4px}
+.wa-chat-pending{text-align:center;margin:8px 0;color:#f5b83d;font-size:12px;background:#241d0e;border:1px dashed #5a4610;border-radius:10px;padding:8px 12px}
+.wa-details{margin:14px 20px 0;border-top:1px solid #263140;padding-top:10px}
+.wa-details summary{cursor:pointer;color:#9ca7b8;font-size:12.5px;font-weight:700}
+.wa-details-body{margin-top:10px;display:grid;gap:10px}
+.wa-details-msg{background:#0f151f;border:1px solid #263140;border-radius:10px;padding:10px 12px}
+.wa-details-msg dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 14px;margin:6px 0 0}
+.wa-details-msg dt{color:#9ca7b8;font-size:10px;text-transform:uppercase;letter-spacing:.04em}
+.wa-details-msg dd{margin:2px 0 0;font-size:12.5px}
+.wa-details-msg .conversation-error{color:#fca5a5}
+.wa-modal-actions{display:flex;flex-wrap:wrap;gap:8px;padding:14px 20px;border-top:1px solid #263140}
+.wa-modal-actions .btn{white-space:nowrap}
+.wa-modal-actions .wa-close-btn{margin-left:auto}
+.whatsapp-open{background:linear-gradient(135deg,#22c55e,#15803d);white-space:nowrap}
+.light-theme .wa-card{background:#fff;color:#111827;border-color:#e2e8f0}
+.light-theme .wa-card-name{color:#111827}
+.light-theme .wa-card-preview b{color:#111827}
+.light-theme .wa-modal{background:#fff;color:#111827;border-color:#e2e8f0}
+.light-theme .wa-modal-header{border-color:#e2e8f0}
+.light-theme .wa-modal-avatar{background:#f1f5f9}
+.light-theme .wa-stat{background:#f8fafc}
+.light-theme .wa-chat{background:#f8fafc}
+.light-theme .wa-bubble-received{background:#e2e8f0;color:#111827}
+.light-theme .wa-bubble-sent{background:#dbeafe;color:#1e3a8a}
+.light-theme .wa-details{border-color:#e2e8f0}
+.light-theme .wa-details-msg{background:#f8fafc;border-color:#e2e8f0}
+.light-theme .wa-modal-actions{border-color:#e2e8f0}
+.light-theme .wa-modal-close{background:#f1f5f9;color:#111827}
+.light-theme .wa-chat-date span{background:#e2e8f0;color:#475569}
+@media(max-width:700px){.wa-modal{max-height:94vh}.wa-modal-stats{grid-template-columns:repeat(2,1fr)}.wa-card{flex-wrap:wrap}.wa-card-action{margin-left:0;flex-direction:row;width:100%;justify-content:space-between}}
 .practice-row-link{cursor:pointer;outline:0}.practice-row-link:focus{outline:2px solid #fb7185;outline-offset:-2px}.practice-row-link.row-selected{outline:2px solid #ef405f;outline-offset:-2px}.practice-row-link.row-selected td{background:#ef405f40!important}.practice-row-link.row-selected td:first-child{background:#502d40!important}.light-theme .practice-row-link.row-selected td{background:#ef405f26!important}.light-theme .practice-row-link.row-selected td:first-child{background:#fde3e7!important}.tag-select-orange{color:#fb923c!important}.tag-select-green{color:#4ade80!important}.light-theme .tag-select-orange{color:#c2410c!important}.light-theme .tag-select-green{color:#15803d!important}.tag-outline-green{background:#052e2b;color:#86efac;border:2px solid #22c55e}.light-theme{color-scheme:light;--ink:#111827;--muted:#526174;--paper:#fff;--bg:#eef2f7;--line:#cbd5e1}.light-theme h1,.light-theme h2,.light-theme label,.light-theme td,.light-theme .activity-item b,.light-theme .metric-card small,.light-theme .payment-card small,.light-theme .dashboard-panel header p strong,.light-theme .conversation-main p b,.light-theme .conversation-main a,.light-theme .pagination a{color:#111827}.light-theme input,.light-theme select,.light-theme textarea,.light-theme .lookup-results,.light-theme .lookup-item,.light-theme .kv,.light-theme table,.light-theme .login{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme input::placeholder,.light-theme textarea::placeholder{color:#64748b}.light-theme th,.light-theme .sub,.light-theme .kv small,.light-theme .conversation-card dt,.light-theme .pagination{color:#526174}.light-theme th,.light-theme td,.light-theme .activity-item{border-color:#d7dee8}.light-theme .tablebox table tr:hover td,.light-theme .practice-row-link:focus td,.light-theme .lookup-item:hover,.light-theme .lookup-item:focus{background:#f1f5f9}.light-theme .btn.ghost,.light-theme .pagination a{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .badge{background:#e2e8f0;color:#1e293b}.light-theme .tag-red{background:#fee2e2;color:#991b1b}.light-theme .tag-orange{background:#ffedd5;color:#9a3412}.light-theme .tag-purple{background:#f3e8ff;color:#6b21a8}.light-theme .tag-yellow,.light-theme .pay-yellow{background:#fef9c3;color:#713f12}.light-theme .tag-pink{background:#fce7f3;color:#9d174d}.light-theme .tag-blue,.light-theme .pay-blue{background:#dbeafe;color:#1e40af}.light-theme .tag-green,.light-theme .pay-green{background:#dcfce7;color:#166534}.light-theme .tag-outline-orange{background:#fff7ed;color:#c2410c}.light-theme .tag-outline-green{background:#f0fdf4;color:#166534;border-color:#22c55e}.light-theme .selected-box{background:#ecfdf5;color:#166534;border-color:#86efac}.light-theme .nav a{color:#334155}.light-theme .nav a:hover{background:#f1f5f9;color:#111827}.light-theme .nav a:first-child{background:#fff1f2;color:#be123c;border-color:#fecdd3}.light-theme .more-menu a{color:#334155}.light-theme .more-menu a:hover{background:#f1f5f9}.light-theme .install-hint{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .danger{background:#fff1f2}.light-theme .warning,.light-theme .trash-note{background:#fff7ed;color:#7c2d12}.light-theme .flash:not(.warning){background:#ecfdf5;color:#166534}.light-theme .conversation-main p b,.light-theme .conversation-main a{color:#111827}
 .practice-status{background:transparent!important;border:2px solid currentColor}.practice-status-blue{color:#60a5fa!important;border-color:#3b82f6}.practice-status-red{color:#fb7185!important;border-color:#ef4444}.practice-status-yellow{color:#fde047!important;border-color:#eab308}.practice-status-green{color:#4ade80!important;border-color:#22c55e}.light-theme .practice-status-blue{color:#1d4ed8!important}.light-theme .practice-status-red{color:#b91c1c!important}.light-theme .practice-status-yellow{color:#854d0e!important}.light-theme .practice-status-green{color:#15803d!important}
 .modern-check{display:flex;align-items:center;gap:10px;min-height:46px;padding:10px 13px;border:1px solid #3b4658;border-radius:12px;background:linear-gradient(145deg,#182130,#111925);color:#e8edf5;cursor:pointer;transition:border-color .16s,transform .16s,box-shadow .16s}.modern-check:hover{transform:translateY(-1px);border-color:#fb7185;box-shadow:0 8px 22px #02061745}.modern-check input[type=checkbox]{width:20px;height:20px;margin:0;accent-color:#ef405f}.modern-check span{font-size:12px;font-weight:800;letter-spacing:.025em}.light-theme .modern-check{background:linear-gradient(145deg,#fff,#f1f5f9);color:#172033;border-color:#cbd5e1}.invoice-inline{display:grid;gap:8px}.invoice-inline input{min-width:0}.invoice-inline .btn{width:100%}
@@ -1261,10 +1349,9 @@ tr.avatar-other td:first-child{border-left:3px solid #c084fc}
 .light-theme .practice-list-table tbody tr:hover td{background:#f8fafc}
 .light-theme .practice-list-table tbody td{border-color:#e2e8f0}.inline-statuses{display:grid;gap:8px;min-width:170px}.inline-state-select{min-height:38px;padding:7px 32px 7px 10px;border-width:2px;font-weight:800}button.inline-state-select{border:0;border-radius:9px;font:inherit;cursor:pointer;text-align:center;padding:7px 14px}.inline-tag-form{display:flex;flex-direction:column;gap:2px}.invoice-inline-cell{display:grid;gap:4px;min-width:130px}.invoice-inline-input{min-height:34px;padding:6px 9px;font-size:12px}.invoice-inline-input.input-error{border-color:#ef4444}.payment-popover{position:fixed;inset:0;z-index:180;display:grid;place-items:center;padding:18px;background:#020617b8}.payment-popover[hidden]{display:none}.payment-dialog{width:min(620px,100%);max-height:90dvh;overflow:auto;padding:20px;border:1px solid #475569;border-radius:16px;background:#172033;box-shadow:0 28px 90px #000c}.payment-dialog h2{margin-bottom:6px}.payment-dialog .fields{margin-top:16px}.payment-macroarea{margin-top:20px;padding-top:18px;border-top:1px solid #334155}.payment-macroarea:first-of-type{margin-top:16px;padding-top:0;border-top:0}.payment-macroarea h3{margin:0 0 10px;font-size:16px}.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.payment-macroarea-channel{padding:14px;border:1px solid #334155;border-radius:12px;background:#182334;margin-bottom:16px}.light-theme .payment-macroarea-channel{background:#f8fafc;border-color:#cbd5e1}#paymentTotaleWRow .field label,#paymentTotaleDRow .field label,.payment-macroarea-channel .fields .field:first-child label{font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.03em}.payment-macroarea-channel .fields .field:not(:first-child) label{font-size:11px;font-weight:600;color:var(--muted)}
 @media(max-width:520px){.payment-popover{padding:6px}.payment-dialog{padding:12px 10px;max-height:97dvh}.payment-dialog .titlebar{position:sticky;top:-12px;margin:-12px -10px 6px;padding:12px 10px 6px;background:#172033;z-index:1;gap:8px}.payment-dialog h2{font-size:15px;margin-bottom:0}.payment-dialog .sub{display:none}.payment-dialog .fields{gap:6px;margin-top:6px}.payment-dialog .field{gap:2px}.payment-dialog label{font-size:10.5px}.payment-dialog input,.payment-dialog select{padding:7px 8px;font-size:14px}.payment-macroarea{margin-top:8px;padding-top:8px}.payment-macroarea:first-of-type{margin-top:6px}.payment-macroarea h3{margin:0 0 4px;font-size:13px}.payment-macroarea-channel{padding:7px;margin-bottom:7px}.payment-invoice-section{margin-top:7px;padding-top:7px}.payment-dialog .btn{padding:8px 12px;margin-top:6px!important}.payment-dialog .btn.ghost{margin-left:4px!important}}
-.field-error input,.field-error select,.field-error textarea{border-color:#ef4444}.field-error-text{display:block;margin-top:4px;color:#ef4444;font-size:12px;font-weight:600}.payment-invoice-section{margin-top:18px;padding-top:16px;border-top:1px solid #334155}.payment-invoice-section h3{margin:0 0 4px;font-size:14px}.payment-invoice-section .fields{margin-top:10px}.payment-acconto-summary{margin:10px 0 0}.light-theme .payment-dialog{background:#fff;color:#111827}.light-theme .payment-dialog .titlebar{background:#fff}.light-theme .payment-macroarea{border-color:#e2e8f0}.light-theme .payment-invoice-section{border-color:#e2e8f0}.message-programmato{background:#4c1d95;color:#ede9fe}.message-in_invio{background:#78350f;color:#fef3c7}.message-annullato{background:#334155;color:#cbd5e1}.conversation-error{grid-column:1/-1}.conversation-error dd{white-space:normal;color:#fca5a5}.conversation-replies{grid-column:1/-1}.conversation-replies dd{white-space:normal}.conversation-replies ul{margin:4px 0 0;padding-left:18px}.unmatched-whatsapp-list{margin:0;padding-left:18px;display:grid;gap:8px}.conversation-action.actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}.conversation-action form{margin:0}
+.field-error input,.field-error select,.field-error textarea{border-color:#ef4444}.field-error-text{display:block;margin-top:4px;color:#ef4444;font-size:12px;font-weight:600}.payment-invoice-section{margin-top:18px;padding-top:16px;border-top:1px solid #334155}.payment-invoice-section h3{margin:0 0 4px;font-size:14px}.payment-invoice-section .fields{margin-top:10px}.payment-acconto-summary{margin:10px 0 0}.light-theme .payment-dialog{background:#fff;color:#111827}.light-theme .payment-dialog .titlebar{background:#fff}.light-theme .payment-macroarea{border-color:#e2e8f0}.light-theme .payment-invoice-section{border-color:#e2e8f0}
 @media(max-width:620px){.practice-list-table th:first-child,.practice-list-table td:first-child{box-sizing:border-box;width:132px;min-width:132px;max-width:132px;padding-left:12px;padding-right:10px;white-space:normal!important}}
-@media(max-width:1150px){.conversation-card{grid-template-columns:1fr 1fr}.conversation-action{grid-column:1/-1;text-align:left}}
-@media(max-width:700px){.conversation-card{grid-template-columns:1fr;gap:14px}.conversation-card dl{grid-template-columns:1fr 1fr}.conversation-action{grid-column:auto}.conversation-action.actions{justify-content:stretch}.conversation-action form,.conversation-action .btn{width:100%}.pagination{gap:8px;justify-content:space-between}.pagination span{font-size:11px;text-align:center}.conversation-message{white-space:normal}.conversations-wrap .titlebar h1{font-size:24px}}
+@media(max-width:700px){.conversations-wrap .titlebar h1{font-size:24px}}
 @media(max-width:700px){.practice-layout{display:block!important}.practice-layout>.grid,.practice-layout>aside{width:100%;min-width:0}.practice-layout>aside{margin-top:16px}.practice-layout .kvs{grid-template-columns:1fr}.practice-layout .section{max-width:100%;overflow-wrap:anywhere}.toggle-list{grid-template-columns:1fr}.notification-item{grid-template-columns:40px minmax(0,1fr)}.notification-actions{grid-column:1/-1}.notification-actions .btn{width:100%}.permission-prompt{left:14px;right:14px;bottom:calc(84px + var(--safe-bottom));max-width:none}.quick-payment{min-width:430px}}
 .article-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.article-card{display:flex;flex-direction:column;gap:16px;min-height:170px;padding:20px;border:1px solid #334155;border-radius:15px;background:#1f2937}.article-card h2{margin:0;font-size:18px}.article-card p{margin:0;color:#94a3b8}.article-card form{margin-top:auto}.article-card .btn{width:100%}.light-theme .article-card{background:#fff;color:#111827;border-color:#cbd5e1}
 .urn-stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:20px}.urn-stat,.urn-card{padding:17px;border:1px solid #334155;border-radius:14px;background:#1f2937}.urn-stat small,.urn-meta{color:#94a3b8}.urn-stat strong{display:block;margin-top:5px;font-size:24px}.urn-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}.urn-card{display:flex;flex-direction:column;gap:12px;min-width:0}.urn-card img,.urn-placeholder{width:100%;aspect-ratio:4/3;border-radius:10px;object-fit:cover;background:#111827}.urn-placeholder{display:grid;place-items:center;color:#64748b;font-weight:700}.urn-card h2{margin:0}.urn-card .actions{margin-top:auto}.stock-good{color:#86efac}.stock-low{color:#fdba74}.stock-out{color:#fca5a5}.light-theme .urn-stat,.light-theme .urn-card{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .urn-placeholder{background:#e2e8f0}.urn-filter{margin-bottom:20px}.urn-detail{grid-template-columns:minmax(280px,.7fr) minmax(0,1.3fr)}
@@ -2551,6 +2638,41 @@ document.addEventListener('DOMContentLoaded', function(){
 function ppmDebounce(fn, delay){
   let timer=null;
   return function(){ const args=arguments; clearTimeout(timer); timer=setTimeout(()=>fn.apply(this,args), delay); };
+}
+function waOpenConversation(pid){
+  const overlay=document.getElementById('waModal'+pid);
+  if(!overlay)return;
+  overlay.hidden=false;
+  document.body.classList.add('modal-open');
+}
+function waCloseModal(pid){
+  const overlay=document.getElementById('waModal'+pid);
+  if(overlay)overlay.hidden=true;
+  document.body.classList.remove('modal-open');
+}
+function waCopyPhone(phone){
+  if(!phone){alert('Numero non disponibile');return;}
+  const text='+'+phone;
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(function(){alert('Numero copiato: '+text);}).catch(function(){alert(text);});
+  }else{
+    alert(text);
+  }
+}
+function waRefreshConversation(){
+  location.reload();
+}
+function waFilterList(input){
+  const q=(input.value||'').toLowerCase().trim();
+  const cards=document.querySelectorAll('#waList [data-search]');
+  let anyVisible=false;
+  cards.forEach(function(card){
+    const match=!q||card.dataset.search.indexOf(q)!==-1;
+    card.style.display=match?'':'none';
+    if(match)anyVisible=true;
+  });
+  const empty=document.getElementById('waListEmpty');
+  if(empty)empty.hidden=anyVisible||cards.length===0;
 }
 const ppmLookupPanels=new Set();
 function ppmCloseLookupPanel(panel){
@@ -8085,82 +8207,262 @@ class App(BaseHTTPRequestHandler):
         if ajax:return self.send_json({"ok":True})
         return self.redirect(safe_return_path(self.form().get("return_to") or self.headers.get("Referer"),"/"))
 
+    def whatsapp_outbound_preview_text(self,message_type,owner_first_name,animal_name):
+        """Human-readable rendering of an automated template send, for display
+        only (chat bubble + card preview). The real approved template text
+        lives on Meta's side, not in this app — this mirrors it using the same
+        owner/animal data already used to build the real send payload
+        (see whatsapp_payload_for_practice), it does not change what is sent."""
+        owner=(owner_first_name or "").strip() or "Cliente"
+        animal=(animal_name or "").strip() or "il tuo animale"
+        if message_type=="catalogo":
+            return f"Catalogo urne inviato a {owner} per {animal}."
+        return f"Buongiorno {owner}, la cremazione di {animal} è terminata. Puoi scegliere il tipo di consegna rispondendo a questo messaggio. Grazie."
+
+    def whatsapp_ticks_html(self,status):
+        if status=="letto":return '<span class="wa-tick wa-tick-read">✓✓</span>'
+        if status=="consegnato":return '<span class="wa-tick">✓✓</span>'
+        if status=="accettato_da_meta":return '<span class="wa-tick">✓</span>'
+        if status=="fallito":return '<span class="wa-tick wa-tick-error">⚠</span>'
+        return ''
+
     def whatsapp_conversations(self,user):
         q=parse_qs(urlparse(self.path).query)
-        term=(q.get("q") or [""])[0].strip(); date_from=(q.get("dal") or [""])[0].strip(); date_to=(q.get("al") or [""])[0].strip()
-        message_status=(q.get("stato_messaggio") or [""])[0].strip(); practice_status=(q.get("stato_pratica") or [""])[0].strip()
-        allowed_message_statuses=["programmato","in_invio","accettato_da_meta","consegnato","letto","fallito","annullato"]
-        if message_status not in allowed_message_statuses: message_status=""
-        if practice_status not in STATES: practice_status=""
-        try: page=max(1,int((q.get("pagina") or ["1"])[0]))
-        except ValueError: page=1
-        per_page=20
-        event_date="COALESCE(NULLIF(wm.sent_at,''),NULLIF(wm.last_attempt_at,''),NULLIF(wm.scheduled_at,''),wm.created_at)"
-        select_cols=f"wm.*,p.practice_number,p.owner_first_name,p.owner_last_name,p.owner_company,p.owner_phone,p.animal_name,p.status practice_status,{event_date} event_at"
-        base_where=["wm.manual=0","(wm.sent_at IS NOT NULL OR wm.status IN ('programmato','in_invio','accettato_da_meta','consegnato','letto','fallito','annullato'))"]
-        args=[]
+        term=(q.get("q") or [""])[0].strip()
+        real_send_statuses=("accettato_da_meta","consegnato","letto","fallito")
+        where_extra=""; args=[]
         if term:
-            like=like_term(term); base_where.append("(UNACCENT(COALESCE(p.owner_first_name,'')||' '||COALESCE(p.owner_last_name,'')) LIKE ? OR UNACCENT(COALESCE(p.owner_company,'')) LIKE ? OR UNACCENT(COALESCE(p.animal_name,'')) LIKE ? OR UNACCENT(COALESCE(wm.recipient_phone,'')) LIKE ?)"); args.extend([like]*4)
-        if date_from and re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_from): base_where.append(f"date({event_date})>=date(?)"); args.append(date_from)
-        else: date_from=""
-        if date_to and re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_to): base_where.append(f"date({event_date})<=date(?)"); args.append(date_to)
-        else: date_to=""
-        if message_status: base_where.append("wm.status=?"); args.append(message_status)
-        if practice_status: base_where.append("p.status=?"); args.append(practice_status)
-        # A thanks message is scheduled ~48h in the future while a catalog one
-        # is scheduled for "now" — sorting everything by one DESC timestamp
-        # made an unsent, far-future "programmato" outrank a message that was
-        # actually sent minutes ago. Splitting into two sections (what's still
-        # pending vs. what already happened, each in the order you'd actually
-        # want to read it) avoids that instead of trying to interleave them.
+            like=like_term(term)
+            where_extra=" AND (UNACCENT(COALESCE(p.owner_first_name,'')||' '||COALESCE(p.owner_last_name,'')) LIKE ? OR UNACCENT(COALESCE(p.owner_company,'')) LIKE ? OR UNACCENT(COALESCE(p.animal_name,'')) LIKE ? OR UNACCENT(COALESCE(p.owner_phone,'')) LIKE ?)"
+            args=[like]*4
         with db() as c:
-            scheduled_where=" AND ".join(base_where+["wm.status IN ('programmato','in_invio')"])
-            scheduled_rows=c.execute(f"""SELECT {select_cols} FROM whatsapp_messages wm JOIN practices p ON p.id=wm.practice_id
-                               WHERE {scheduled_where} ORDER BY wm.scheduled_at ASC LIMIT 50""",args).fetchall()
-            sent_where=" AND ".join(base_where+["wm.status NOT IN ('programmato','in_invio')"])
-            total=c.execute(f"SELECT count(*) n FROM whatsapp_messages wm JOIN practices p ON p.id=wm.practice_id WHERE {sent_where}",args).fetchone()["n"]
-            pages=max(1,(total+per_page-1)//per_page); page=min(page,pages); offset=(page-1)*per_page
-            sent_rows=c.execute(f"""SELECT {select_cols} FROM whatsapp_messages wm JOIN practices p ON p.id=wm.practice_id
-                               WHERE {sent_where} ORDER BY event_at DESC,wm.id DESC LIMIT ? OFFSET ?""",args+[per_page,offset]).fetchall()
-            practice_ids=[row["practice_id"] for row in list(scheduled_rows)+list(sent_rows)]
+            out_summary=c.execute(f"""SELECT wm.practice_id,
+                    MAX(CASE WHEN wm.status IN ('accettato_da_meta','consegnato','letto','fallito') THEN COALESCE(NULLIF(wm.sent_at,''),NULLIF(wm.failed_at,''),NULLIF(wm.last_attempt_at,''),wm.created_at) END) last_real_out,
+                    MAX(CASE WHEN wm.status IN ('programmato','in_invio') THEN wm.scheduled_at END) next_pending
+                FROM whatsapp_messages wm JOIN practices p ON p.id=wm.practice_id
+                WHERE wm.manual=0{where_extra}
+                GROUP BY wm.practice_id""",args).fetchall()
+            in_summary=c.execute(f"""SELECT im.practice_id, MAX(im.received_at) last_in
+                FROM whatsapp_inbound_messages im JOIN practices p ON p.id=im.practice_id
+                WHERE im.practice_id IS NOT NULL{where_extra}
+                GROUP BY im.practice_id""",args).fetchall()
+            last_real_out={r["practice_id"]:r["last_real_out"] for r in out_summary if r["last_real_out"]}
+            next_pending={r["practice_id"]:r["next_pending"] for r in out_summary if r["next_pending"]}
+            last_in={r["practice_id"]:r["last_in"] for r in in_summary if r["last_in"]}
+            all_pids=set(last_real_out)|set(next_pending)|set(last_in)
+            active=[]; pending_only=[]
+            for pid in all_pids:
+                out_t=last_real_out.get(pid); in_t=last_in.get(pid)
+                if out_t or in_t:
+                    active.append((max(x for x in (out_t,in_t) if x),pid))
+                else:
+                    pending_only.append((next_pending[pid],pid))
+            active.sort(key=lambda x:x[0],reverse=True)
+            pending_only.sort(key=lambda x:x[0])
+            ordered_pids=[pid for _,pid in active[:150]]+[pid for _,pid in pending_only[:50]]
+            practices_by_id={}
+            if ordered_pids:
+                marks=','.join('?' for _ in ordered_pids)
+                for row in c.execute(f"SELECT * FROM practices WHERE id IN ({marks})",ordered_pids).fetchall():
+                    practices_by_id[row["id"]]=row
+            outbound_by_practice={}
             inbound_by_practice={}
-            if practice_ids:
-                marks=','.join('?' for _ in practice_ids)
-                for irow in c.execute(f"SELECT * FROM whatsapp_inbound_messages WHERE practice_id IN ({marks}) ORDER BY received_at",practice_ids).fetchall():
-                    inbound_by_practice.setdefault(irow["practice_id"],[]).append(irow)
+            if ordered_pids:
+                marks=','.join('?' for _ in ordered_pids)
+                for row in c.execute(f"""SELECT * FROM whatsapp_messages WHERE manual=0 AND practice_id IN ({marks})
+                        AND (status IN ('programmato','in_invio','accettato_da_meta','consegnato','letto','fallito'))
+                        ORDER BY practice_id,COALESCE(NULLIF(sent_at,''),NULLIF(failed_at,''),NULLIF(last_attempt_at,''),scheduled_at,created_at)""",ordered_pids).fetchall():
+                    outbound_by_practice.setdefault(row["practice_id"],[]).append(row)
+                for row in c.execute(f"SELECT * FROM whatsapp_inbound_messages WHERE practice_id IN ({marks}) ORDER BY practice_id,received_at",ordered_pids).fetchall():
+                    inbound_by_practice.setdefault(row["practice_id"],[]).append(row)
             unmatched_inbound=c.execute("SELECT * FROM whatsapp_inbound_messages WHERE practice_id IS NULL ORDER BY received_at DESC LIMIT 20").fetchall()
-        status_labels={"programmato":"Programmato","in_invio":"Invio in corso","accettato_da_meta":"Inviato","consegnato":"Consegnato","letto":"Letto","fallito":"Fallito","annullato":"Annullato"}
-        def render_card(row):
-            client=" ".join(x for x in [row["owner_first_name"],row["owner_last_name"]] if x).strip() or row["owner_company"] or "Cliente non indicato"
-            phone=only_digits(row["recipient_phone"] or row["owner_phone"]); status=status_labels.get(row["status"],self.whatsapp_status_label(row["status"]))
-            is_catalog_row=row["message_type"]=="catalogo"
-            flow_label="Invio catalogo urne" if is_catalog_row else "Ringraziamento automatico"
-            last_message=(f'Errore: {compact_text(row["last_error"])}' if row["status"]=="fallito" and row["last_error"] else f'{flow_label} · {row["template_name"]}' if row["template_name"] else flow_label)
-            chat_action=f'<a class="btn whatsapp-open" href="https://wa.me/{phone}" target="_blank" rel="noopener noreferrer">Apri chat WhatsApp</a>' if phone else '<span class="sub">Numero non disponibile</span>'
-            retry_action=f'''<form method="post" action="/whatsapp-messaggi/{row['id']}/riprova" onsubmit="return confirm('Riprovare ora questo invio WhatsApp?')"><button class="btn">Riprova</button></form>''' if row["status"]=="fallito" else ""
-            cancel_action=f'''<form method="post" action="/whatsapp-messaggi/{row['id']}/annulla" onsubmit="return confirm('Annullare questo messaggio programmato?')"><button class="btn ghost">Annulla</button></form>''' if row["status"]=="programmato" else ""
-            error_detail=f'<div class="conversation-error"><dt>Errore</dt><dd>{esc(row["last_error"])}</dd></div>' if row["last_error"] else ""
-            replies=inbound_by_practice.get(row["practice_id"],[])
-            replies_detail=""
-            if replies:
-                reply_items=''.join(f'<li><b>{esc((r["received_at"] or "").replace("T"," ")[:16])}</b> — {esc(r["body"])}</li>' for r in replies)
-                replies_detail=f'<div class="conversation-replies"><dt>Risposte del cliente</dt><dd><ul>{reply_items}</ul></dd></div>'
-            return f'''<article class="conversation-card"><div class="conversation-main"><div class="conversation-avatar">{lucide("message")}</div><div><h2>{esc(client)}</h2><p><b>{esc(row["animal_name"] or "Animale non indicato")}</b> · pratica <a href="/pratiche/{row["practice_id"]}?return_to={quote(self.path,safe='')}">{esc(row["practice_number"])}</a></p><p class="conversation-message">{esc(last_message[:180])}</p></div></div><dl><div><dt>WhatsApp</dt><dd>{('+'+esc(phone)) if phone else '-'}</dd></div><div><dt>Stato reale</dt><dd><span class="badge message-{esc(row["status"])}">{esc(status)}</span></dd></div><div><dt>Orario programmato</dt><dd>{esc((row["scheduled_at"] or "-").replace("T"," ")[:16])}</dd></div><div><dt>Ultimo tentativo</dt><dd>{esc((row["last_attempt_at"] or "-").replace("T"," ")[:16])}</dd></div><div><dt>Data invio</dt><dd>{esc((row["sent_at"] or "-").replace("T"," ")[:16])}</dd></div><div><dt>Pratica</dt><dd><span class="badge">{esc(row["practice_status"])}</span></dd></div>{error_detail}{replies_detail}</dl><div class="conversation-action actions">{retry_action}{cancel_action}{chat_action}</div></article>'''
-        scheduled_html=''.join(render_card(row) for row in scheduled_rows) or '<p class="sub">Nessun messaggio in programma.</p>'
-        sent_html=''.join(render_card(row) for row in sent_rows) or '<section class="section empty-state">Nessuna conversazione trovata.</section>'
+
+        def dt_label(value):
+            value=(value or "").replace("T"," ")[:16]
+            return value or "-"
+
+        def conversation_events(pid):
+            """Merged, chronologically sorted (kind,timestamp,row) tuples —
+            'sent'/'failed' outbound bubbles and 'in' inbound bubbles only;
+            still-pending (programmato/in_invio) rows are surfaced separately
+            as a pending notice, never as a bubble that was never delivered."""
+            events=[]
+            for row in outbound_by_practice.get(pid,[]):
+                if row["status"] in ("programmato","in_invio"):continue
+                ts=row["sent_at"] or row["failed_at"] or row["last_attempt_at"] or row["scheduled_at"] or row["created_at"]
+                events.append(("out",ts,row))
+            for row in inbound_by_practice.get(pid,[]):
+                events.append(("in",row["received_at"],row))
+            events.sort(key=lambda item:item[1] or "")
+            return events
+
+        def build_conversation(pid):
+            p=practices_by_id.get(pid)
+            if not p:return None
+            events=conversation_events(pid)
+            pending=[row for row in outbound_by_practice.get(pid,[]) if row["status"] in ("programmato","in_invio")]
+            client=" ".join(x for x in [p["owner_first_name"],p["owner_last_name"]] if x).strip() or p["owner_company"] or "Cliente non indicato"
+            phone=only_digits(p["owner_phone"])
+            avatar_emoji,avatar_cls=species_avatar(p["species"] if "species" in p.keys() else "")
+            last_kind,last_ts,last_row=events[-1] if events else (None,None,None)
+            if last_kind=="in":
+                dot,label="wa-status-green","Risposta ricevuta"
+                preview=compact_text(last_row["body"])[:140]; preview_is_client=True
+            elif last_kind=="out":
+                status=last_row["status"]
+                status_map={"accettato_da_meta":("wa-status-blue","Inviato"),"consegnato":("wa-status-blue","Consegnato"),
+                            "letto":("wa-status-orange","Letto"),"fallito":("wa-status-red","Fallito")}
+                dot,label=status_map.get(status,("wa-status-grey",self.whatsapp_status_label(status)))
+                preview=self.whatsapp_outbound_preview_text(last_row["message_type"],p["owner_first_name"],p["animal_name"])
+                if status=="fallito" and last_row["last_error"]:preview=f'Non recapitato: {compact_text(last_row["last_error"])}'
+                preview_is_client=False
+            else:
+                nxt=pending[0] if pending else None
+                dot,label="wa-status-grey","Programmato"
+                preview=f"Invio programmato per il {dt_label(nxt['scheduled_at'])}" if nxt else "Nessuna attività"
+                preview_is_client=False
+            return {
+                "pid":pid,"practice":p,"client":client,"phone":phone,"avatar_emoji":avatar_emoji,"avatar_cls":avatar_cls,
+                "dot":dot,"label":label,"preview":preview,"preview_is_client":preview_is_client,
+                "last_ts":last_ts or (pending[0]["scheduled_at"] if pending else p["created_at"]),
+                "events":events,"pending":pending,
+                "sent_count":sum(1 for k,_,_ in events if k=="out"),"reply_count":sum(1 for k,_,_ in events if k=="in"),
+                "last_out_ts":max([ts for k,ts,_ in events if k=="out"],default=""),
+                "last_in_ts":max([ts for k,ts,_ in events if k=="in"],default=""),
+            }
+
+        conversations=[build_conversation(pid) for pid in ordered_pids]
+        conversations=[conv for conv in conversations if conv]
+
+        def practice_url(pid):
+            return f'/pratiche/{pid}?return_to={quote(self.path,safe="")}'
+
+        def card_html(conv):
+            p=conv["practice"]
+            weight=(p["estimated_weight"] or "").strip()
+            search_key=esc(f'{conv["client"].lower()} {(p["animal_name"] or "").lower()} {conv["phone"]}')
+            preview_cls=" wa-preview-client" if conv["preview_is_client"] else ""
+            return f'''<article class="wa-card" data-search="{search_key}" onclick="waOpenConversation('{conv["pid"]}')">
+              <div class="wa-card-icon">{lucide("message")}</div>
+              <div class="wa-card-main">
+                <div class="wa-card-top">
+                  <span class="wa-card-name">{conv["avatar_emoji"]} {esc(p["animal_name"] or "Da inserire")}{f" ({esc(weight)} kg)" if weight else ""} <small>· {esc(conv["client"])}</small></span>
+                  <span class="wa-card-date">{esc(dt_label(conv["last_ts"]))}</span>
+                </div>
+                <div class="wa-card-sub"><span>{('+'+esc(conv["phone"])) if conv["phone"] else "Numero non disponibile"}</span><span class="badge {practice_status_class(p['status'])}">{esc(p["status"])}</span></div>
+                <div class="wa-status {conv['dot']}"><span class="wa-status-dot"></span><span>{esc(conv["label"])}</span></div>
+                <div class="wa-card-preview{preview_cls}"><b>Ultimo messaggio:</b> "{esc(conv["preview"])}"</div>
+              </div>
+              <div class="wa-card-action" onclick="event.stopPropagation()">
+                <button type="button" class="btn ghost" onclick="waOpenConversation('{conv["pid"]}')">Apri conversazione</button>
+                <span class="wa-card-chevron">›</span>
+              </div>
+            </article>'''
+
+        def bubble_html(kind,row):
+            if kind=="in":
+                return f'''<div class="wa-bubble-row wa-bubble-row-received"><div class="wa-bubble wa-bubble-received">
+                  <div class="wa-bubble-label">Cliente</div>
+                  <div class="wa-bubble-text">{esc(row["body"])}</div>
+                  <div class="wa-bubble-meta"><span>{esc((row["received_at"] or "")[11:16])}</span></div>
+                </div></div>'''
+            p=practices_by_id.get(row["practice_id"])
+            text=self.whatsapp_outbound_preview_text(row["message_type"],p["owner_first_name"] if p else "",p["animal_name"] if p else "")
+            error_html=f'<div class="wa-bubble-error">Non recapitato: {esc(compact_text(row["last_error"]))}</div>' if row["status"]=="fallito" and row["last_error"] else ""
+            ts=row["sent_at"] or row["failed_at"] or row["last_attempt_at"] or row["scheduled_at"] or row["created_at"]
+            return f'''<div class="wa-bubble-row wa-bubble-row-sent"><div class="wa-bubble wa-bubble-sent">
+              <div class="wa-bubble-label">Sistema</div>
+              <div class="wa-bubble-text">{esc(text)}</div>
+              {error_html}
+              <div class="wa-bubble-meta"><span>{esc((ts or "")[11:16])}</span>{self.whatsapp_ticks_html(row["status"])}</div>
+            </div></div>'''
+
+        def chat_html(conv):
+            parts=[]; current_date=None
+            for kind,ts,row in conv["events"]:
+                day=(ts or "")[:10]
+                if day and day!=current_date:
+                    try:
+                        d=date.fromisoformat(day)
+                        parts.append(f'<div class="wa-chat-date"><span>{d.day} {MONTH_NAMES_IT[d.month-1].lower()} {d.year}</span></div>')
+                    except ValueError:pass
+                    current_date=day
+                parts.append(bubble_html(kind,row))
+            if conv["pending"]:
+                nxt=conv["pending"][0]
+                parts.append(f'<div class="wa-chat-pending">{lucide("clock")} Prossimo invio programmato per il {esc(dt_label(nxt["scheduled_at"]))}</div>')
+            return ''.join(parts) or '<p class="wa-empty">Nessun messaggio ancora.</p>'
+
+        def details_html(conv):
+            items=[]
+            for row in conv["events"]:
+                kind,ts,r=row
+                if kind!="out":continue
+                error_row=f'<div class="conversation-error"><dt>Errore</dt><dd>{esc(r["last_error"])}</dd></div>' if r["last_error"] else ""
+                items.append(f'''<div class="wa-details-msg"><b>{esc(self.whatsapp_status_label(r["status"]))}</b> · {esc(r["template_name"] or "-")}
+                  <dl><div><dt>Orario programmato</dt><dd>{esc(dt_label(r["scheduled_at"]))}</dd></div>
+                  <div><dt>Ultimo tentativo</dt><dd>{esc(dt_label(r["last_attempt_at"]))}</dd></div>
+                  <div><dt>Data invio</dt><dd>{esc(dt_label(r["sent_at"]))}</dd></div>
+                  <div><dt>ID messaggio</dt><dd>{esc(r["message_id"] or "-")}</dd></div>
+                  <div><dt>Tentativi</dt><dd>{r["attempts"]}</dd></div>{error_row}</dl>
+                  <div class="actions" style="margin-top:8px">{f'<form method="post" action="/whatsapp-messaggi/{r["id"]}/riprova" onsubmit="return confirm(\'Riprovare ora questo invio WhatsApp?\')"><button class="btn">Riprova</button></form>' if r["status"]=="fallito" else ""}{f'<form method="post" action="/whatsapp-messaggi/{r["id"]}/annulla" onsubmit="return confirm(\'Annullare questo messaggio programmato?\')"><button class="btn ghost">Annulla</button></form>' if r["status"]=="programmato" else ""}</div>
+                </div>''')
+            for r in conv["pending"]:
+                items.append(f'''<div class="wa-details-msg"><b>Programmato</b> · {esc(r["template_name"] or "-")}
+                  <dl><div><dt>Orario programmato</dt><dd>{esc(dt_label(r["scheduled_at"]))}</dd></div></dl>
+                  <div class="actions" style="margin-top:8px"><form method="post" action="/whatsapp-messaggi/{r["id"]}/annulla" onsubmit="return confirm('Annullare questo messaggio programmato?')"><button class="btn ghost">Annulla</button></form></div>
+                </div>''')
+            return ''.join(items) or '<p class="sub">Nessun dettaglio tecnico disponibile.</p>'
+
+        def modal_html(conv):
+            p=conv["practice"]; pid=conv["pid"]
+            weight=(p["estimated_weight"] or "").strip()
+            url=practice_url(pid)
+            phone_html=f'<a href="https://wa.me/{conv["phone"]}" target="_blank" rel="noopener noreferrer">{lucide("message")}</a>' if conv["phone"] else ""
+            whatsapp_btn=f'<a class="btn ghost" href="https://wa.me/{conv["phone"]}" target="_blank" rel="noopener noreferrer">Apri WhatsApp</a>' if conv["phone"] else ""
+            return f'''<div class="wa-modal-overlay" id="waModal{pid}" hidden onclick="if(event.target===this)waCloseModal('{pid}')">
+              <div class="wa-modal">
+                <div class="wa-modal-header">
+                  <div class="wa-modal-header-top">
+                    <div class="wa-modal-avatar">{conv["avatar_emoji"]}</div>
+                    <div class="wa-modal-title">
+                      <h3>{esc(p["animal_name"] or "Da inserire")}{f" ({esc(weight)} kg)" if weight else ""}</h3>
+                      <p>{esc(conv["client"])}</p>
+                      <p class="wa-modal-phone">{('+'+esc(conv["phone"])) if conv["phone"] else "Numero non disponibile"} {phone_html}</p>
+                    </div>
+                    <div class="wa-modal-right">
+                      <span class="badge {practice_status_class(p['status'])}">{esc(p["status"])}</span>
+                      <span class="wa-modal-practice">Pratica {esc(p["practice_number"])}</span>
+                    </div>
+                    <button type="button" class="wa-modal-close" onclick="waCloseModal('{pid}')" aria-label="Chiudi">×</button>
+                  </div>
+                  <div class="wa-modal-stats">
+                    <div class="wa-stat"><span class="wa-stat-icon">{lucide("arrow-up")}</span><small>Messaggi inviati</small><b>{conv["sent_count"]}</b></div>
+                    <div class="wa-stat"><span class="wa-stat-icon">{lucide("arrow-down")}</span><small>Risposte ricevute</small><b>{conv["reply_count"]}</b></div>
+                    <div class="wa-stat"><small>Ultimo invio</small><b>{esc(dt_label(conv["last_out_ts"]))}</b></div>
+                    <div class="wa-stat"><small>Ultima risposta</small><b>{esc(dt_label(conv["last_in_ts"]))}</b></div>
+                  </div>
+                </div>
+                <div class="wa-chat">{chat_html(conv)}</div>
+                <details class="wa-details"><summary>Mostra dettagli tecnici</summary><div class="wa-details-body">{details_html(conv)}</div></details>
+                <div class="wa-modal-actions">
+                  <a class="btn ghost" href="{url}">Apri pratica</a>
+                  <button type="button" class="btn ghost" onclick="waCopyPhone('{conv["phone"]}')">Copia numero</button>
+                  {whatsapp_btn}
+                  <button type="button" class="btn ghost" onclick="waRefreshConversation()">Aggiorna conversazione</button>
+                  <button type="button" class="btn danger-btn wa-close-btn" onclick="waCloseModal('{pid}')">Chiudi</button>
+                </div>
+              </div>
+            </div>'''
+
+        cards_html=''.join(card_html(conv) for conv in conversations) or '<div class="wa-empty">Nessuna conversazione trovata.</div>'
+        modals_html=''.join(modal_html(conv) for conv in conversations)
         unmatched_html=""
         if unmatched_inbound:
             unmatched_items=''.join(f'<li><b>+{esc(r["from_phone"])}</b>{(" · "+esc(r["contact_name"])) if r["contact_name"] else ""} · {esc((r["received_at"] or "").replace("T"," ")[:16])}<br>{esc(r["body"])}</li>' for r in unmatched_inbound)
-            unmatched_html=f'<section class="section" style="margin-bottom:16px"><h2>Messaggi ricevuti non abbinati a nessuna pratica</h2><ul class="unmatched-whatsapp-list">{unmatched_items}</ul></section>'
-        def page_link(number,label,disabled=False):
-            if disabled: return f'<span class="page-disabled">{label}</span>'
-            params={"q":term,"dal":date_from,"al":date_to,"stato_messaggio":message_status,"stato_pratica":practice_status,"pagina":number}
-            return f'<a href="/conversazioni-whatsapp?{urlencode({k:v for k,v in params.items() if v not in (None,"")})}">{label}</a>'
-        pagination=f'<nav class="pagination" aria-label="Paginazione">{page_link(page-1,"← Precedente",page<=1)}<span>Pagina {page} di {pages} · {total} inviati</span>{page_link(page+1,"Successiva →",page>=pages)}</nav>'
-        message_options='<option value="">Tutti gli stati messaggio</option>'+''.join(f'<option value="{key}" {"selected" if message_status==key else ""}>{label}</option>' for key,label in status_labels.items())
-        practice_options='<option value="">Tutti gli stati pratica</option>'+''.join(f'<option {"selected" if practice_status==state else ""}>{esc(state)}</option>' for state in STATES)
-        filters=f'''<section class="search-after-results"><h2>Ricerca e filtri</h2><form class="section" method="get"><div class="fields"><div class="field full"><label>Cliente, animale o numero WhatsApp</label><input name="q" value="{esc(term)}" placeholder="Cerca conversazione"></div><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Stato messaggio</label><select name="stato_messaggio">{message_options}</select></div><div class="field"><label>Stato pratica</label><select name="stato_pratica">{practice_options}</select></div></div><button class="btn" style="margin-top:12px">Applica filtri</button><a class="btn ghost" style="margin-top:12px" href="/conversazioni-whatsapp">Pulisci filtri</a></form></section>'''
-        body=f'''<main class="wrap conversations-wrap"><div class="titlebar"><div><h1>Conversazioni WhatsApp</h1><p class="sub">Storico dei messaggi automatici (ringraziamento e catalogo urne) e delle risposte ricevute.</p></div></div>{unmatched_html}<h2>In programma</h2><section class="conversation-list">{scheduled_html}</section><h2 style="margin-top:22px">Inviati</h2><section class="conversation-list">{sent_html}</section>{pagination}{filters}</main>'''
+            unmatched_html=f'<section class="section wa-unmatched"><h2>Messaggi ricevuti non abbinati a nessuna pratica</h2><ul>{unmatched_items}</ul></section>'
+        search_html=f'''<input type="text" class="wa-search" id="waSearch" placeholder="Cerca per animale, proprietario o numero..." value="{esc(term)}" oninput="waFilterList(this)">'''
+        body=f'''<main class="wrap conversations-wrap"><div class="titlebar"><div><h1>{lucide("message")} Conversazioni WhatsApp</h1><p class="sub">Riepilogo delle comunicazioni con i proprietari.</p></div></div>{search_html}<div class="wa-list" id="waList">{cards_html}</div><p class="wa-empty" id="waListEmpty" hidden>Nessuna conversazione corrisponde alla ricerca.</p>{unmatched_html}{modals_html}</main>'''
         self.send_html(layout("Conversazioni WhatsApp",body,user))
 
     def notifications(self,user):

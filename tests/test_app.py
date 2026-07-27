@@ -3397,7 +3397,8 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.whatsapp_conversations(admin)
         self.assertIn("Orario programmato",rendered[-1])
         self.assertIn("CR-WA",rendered[-1])
-        self.assertIn("message-programmato",rendered[-1])
+        self.assertIn("wa-status-grey",rendered[-1])
+        self.assertIn("Programmato",rendered[-1])
 
     def _whatsapp_record(self, scheduled_at, status="programmato", attempts=0, last_attempt_at=None, message_id=None):
         with app.db() as conn:
@@ -3495,9 +3496,11 @@ class PetParadiseTests(unittest.TestCase):
         self._whatsapp_record("2026-07-15T15:00:00")
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/conversazioni-whatsapp"
         self.handler.whatsapp_conversations(admin);page=rendered[-1]
-        for text in ("Stato reale","Orario programmato","Ultimo tentativo","Data invio","Errore Meta","Riprova","Annulla"):
+        for text in ("Fallito","Orario programmato","Ultimo tentativo","Data invio","Errore Meta","Riprova","Annulla"):
             self.assertIn(text,page)
         self.assertIn(f'/whatsapp-messaggi/{failed_id}/riprova',page)
+        # technical fields stay tucked away in the collapsible details, not on the main card
+        self.assertIn('<details class="wa-details">',page)
 
     def test_whatsapp_failed_retry_and_scheduled_cancel(self):
         admin,_,failed_id=self._whatsapp_record("2026-07-15T13:00:00","fallito",1,"2026-07-15T13:01:00")
@@ -3777,11 +3780,12 @@ class PetParadiseTests(unittest.TestCase):
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/conversazioni-whatsapp"
         self.handler.whatsapp_conversations(admin)
         page=rendered[-1]
-        self.assertIn("Risposte del cliente",page)
+        # replies are now real chat bubbles labeled "Cliente", not a buried dt/dd list
+        self.assertIn('<div class="wa-bubble-label">Cliente</div>',page)
         self.assertIn("Va bene, grazie!",page)
         self.assertIn("Messaggi ricevuti non abbinati a nessuna pratica",page)
         self.assertIn("Messaggio senza pratica collegata",page)
-        self.assertIn("Invio catalogo urne",page)
+        self.assertIn("Catalogo urne inviato a Anna per Luna.",page)
 
     def test_conversations_page_splits_scheduled_and_sent_instead_of_sorting_by_raw_timestamp(self):
         # Regression test: a thank-you is scheduled ~48h in the future while a
@@ -3801,17 +3805,18 @@ class PetParadiseTests(unittest.TestCase):
             conn.execute("""INSERT INTO whatsapp_messages(practice_id,scheduled_at,status,sent_at,template_name,recipient_phone,manual,message_type,created_at,updated_at)
                             VALUES(?,?,?,?,?,?,?,?,?,?)""",
                          (just_sent_pid, stamp, "accettato_da_meta", stamp, "catalogo_urne", "393330000002", 0, "catalogo", stamp, stamp))
+        # the redesign merged the old two sections into one unified, chat-style
+        # list (per the new mockup) — the regression this test protects still
+        # matters: a conversation with real activity must outrank one that's
+        # only got a far-future scheduled send and nothing real yet, so check
+        # ordering within that single list instead of separate sections.
         rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content); self.handler.path = "/conversazioni-whatsapp"
         self.handler.whatsapp_conversations(admin)
         page = rendered[-1]
-        self.assertIn("In programma", page)
-        self.assertIn("Inviati", page)
-        scheduled_section = page.split("In programma", 1)[1].split("Inviati", 1)[0]
-        sent_section = page.split("Inviati", 1)[1]
-        self.assertIn("393330000001", scheduled_section)
-        self.assertNotIn("393330000002", scheduled_section)
-        self.assertIn("393330000002", sent_section)
-        self.assertNotIn("393330000001", sent_section)
+        list_html = page.split('id="waList"', 1)[1].split('id="waListEmpty"', 1)[0]
+        self.assertIn("3330000002", list_html)
+        self.assertIn("3330000001", list_html)
+        self.assertLess(list_html.index("3330000002"), list_html.index("3330000001"))
 
     def test_quick_payment_saves_details_and_returns_to_list(self):
         with app.db() as conn:
