@@ -2210,6 +2210,41 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(data["total_service"], "330.00")
         self.assertEqual(data["remaining_balance"], "150.00")
 
+    def test_total_service_manual_override_is_not_clobbered_by_recalculation(self):
+        # Totale W keeps being auto-computed from the preventivo by default...
+        auto = self.handler.normalized_fields({"price_cremation": "100"}, items_total=20.0)
+        self.assertEqual(auto["total_service_manual"], "")
+        self.assertEqual(auto["total_service"], "120.00")
+        # ...but once the user has typed their own figure (total_service_manual=Si,
+        # same pattern already used for invoice_total_manual/saldo_w_totale_touched),
+        # normalized_fields must keep the submitted value untouched even though the
+        # preventivo items still add up to something different.
+        manual = self.handler.normalized_fields({
+            "price_cremation": "100", "total_service": "999,00", "total_service_manual": "Si",
+        }, items_total=20.0)
+        self.assertEqual(manual["total_service"], "999.00")
+        self.assertEqual(manual["total_service_manual"], "Si")
+        # calculated_service_total (used everywhere: detail page, archive list,
+        # cremation program...) must also respect the override instead of
+        # silently recomputing from the fixed fields + practice_items — "id":0
+        # is falsy so this stays a pure dict check, no DB round trip needed.
+        self.assertEqual(app.calculated_service_total({"id": 0, "total_service_manual": "Si", "total_service": "555.00", "price_cremation": "100"}), 555.00)
+        self.assertEqual(app.calculated_service_total({"id": 0, "total_service_manual": "", "total_service": "555.00", "price_cremation": "100"}), 100.0)
+
+    def test_calco_zampa_subtype_is_selectable_and_labeled(self):
+        self.assertIn('["zampa","Zampa"]', app.APP_JS)
+        items = app.parse_practice_items(json.dumps([{"subtype": "zampa", "label": "Prova", "price": "30"}]), "calco")
+        self.assertEqual(items[0]["subtype"], "zampa")
+
+    def test_urn_row_has_live_text_search_instead_of_plain_dropdown(self):
+        # A plain <select> with 85+ urns is unusable — the row must offer the
+        # same type-to-filter search box used elsewhere in this form (client
+        # search, vet search), backed by the local PPM_URN_CATALOG array.
+        js = app.APP_JS
+        self.assertIn("function setupPracticeUrnRowSearch", js)
+        self.assertIn("normalizeUrnSearch(u.name).includes(q)", js)
+        self.assertNotIn('data-key="urn_catalog_id" onchange', js)
+
     def test_articles_and_new_notification_types_are_initialized(self):
         with app.db() as conn:
             names = {row["name"] for row in conn.execute("SELECT name FROM articles")}
@@ -2512,7 +2547,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn("<h2>Catalogo Urne</h2>", html)
         self.assertIn('data-practice-list="urna"', html)
         self.assertIn('name="invoice_total"', html)
-        # the urn catalog is embedded as JSON for the client-side "+ Aggiungi urna" dropdown
+        # the urn catalog is embedded as JSON for the client-side urn row search
         self.assertIn('"name": "Urna prova"', html)
         self.assertIn('"price": "85.00"', html)
 

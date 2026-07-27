@@ -633,6 +633,7 @@ def init_db():
             "invoice_date": "TEXT",
             "invoice_total": "TEXT",
             "invoice_total_manual": "TEXT",
+            "total_service_manual": "TEXT",
             "make_invoice": "TEXT",
             "payment_method": "TEXT",
             "original_practice_number": "TEXT",
@@ -1887,8 +1888,13 @@ function updatePreventivoTotal(){
   fields.forEach(function(field){ total += ppmNumber(field.value); });
   itemPrices.forEach(function(field){ total += ppmNumber(field.value); });
   const target = document.querySelector('input[name="total_service"]');
-  if(target){ target.value = ppmFormat(total); target.readOnly = true; }
+  const manualFlag = document.querySelector('input[name="total_service_manual"]');
+  // Totale W resta modificabile a mano: una volta che l'utente lo tocca (vedi
+  // il listener 'input' piu' sotto, stesso pattern di invoiceTotal/saldo W/D),
+  // non viene piu' sovrascritto dal ricalcolo delle voci del preventivo.
+  if(target && manualFlag?.value!=='Si'){ target.value = ppmFormat(total); }
   updateRemainingBalance();
+  updateMacroRimanenza();
 }
 function updateRemainingBalance(){
   const totalField = document.querySelector('input[name="total_service"]');
@@ -2053,7 +2059,12 @@ function setupBudgetExtras(){
     const input=document.createElement('input'); input.name='total_text'; input.value=totalArea.value; input.inputMode='decimal';
     totalArea.replaceWith(input); input.closest('.field').querySelector('label').textContent='TOTALE D €';
   }
-  const totalService=document.querySelector('input[name="total_service"]'); if(totalService){totalService.readOnly=true;totalService.closest('.field').querySelector('label').textContent='Totale W €';}
+  const totalService=document.querySelector('input[name="total_service"]');
+  const totalServiceManual=document.querySelector('input[name="total_service_manual"]');
+  if(totalService){
+    totalService.closest('.field').querySelector('label').textContent='Totale W €';
+    totalService.addEventListener('input',function(){ if(totalServiceManual) totalServiceManual.value='Si'; });
+  }
   const depositField_=document.querySelector('input[name="deposit"]'); if(depositField_){depositField_.closest('.field').querySelector('label').textContent='Acconto W €';}
   const remainingBalanceField_=document.querySelector('input[name="remaining_balance"]'); if(remainingBalanceField_){remainingBalanceField_.closest('.field').querySelector('label').textContent='Rimanenza W €';}
   const invoiceNumber=document.querySelector('input[name="invoice_number"]');invoiceNumber.type='text';invoiceNumber.placeholder='Numero fattura';
@@ -3720,14 +3731,13 @@ function calendarRenumberAnimals(){document.querySelectorAll('[data-calendar-lis
 function calendarAddRow(kind,data={}){const list=document.querySelector(`[data-calendar-list="${kind}"]`);if(!list)return;const row=document.createElement('div');row.className=`calendar-repeat-row ${kind==='estimate'?'calendar-estimate-row':''}`;if(kind==='animal')row.innerHTML=`<strong class="calendar-animal-title"></strong><select data-key="species" aria-label="Specie animale"><option value="">Specie</option><option ${data.species==='Cane'?'selected':''}>Cane</option><option ${data.species==='Gatto'?'selected':''}>Gatto</option><option ${data.species==='Altro'?'selected':''}>Altro</option></select><input inputmode="decimal" placeholder="Peso kg" data-key="weight" value="${data.weight||''}"><select data-key="cremation_type" aria-label="Tipo di cremazione"><option value="">Tipo di cremazione</option><option ${data.cremation_type==='Singola'?'selected':''}>Singola</option><option ${data.cremation_type==='Collettiva'?'selected':''}>Collettiva</option></select><input placeholder="Nome facoltativo" data-key="name" value="${data.name||''}"><input class="full-mobile" placeholder="Note" data-key="notes" value="${data.notes||''}"><button class="btn ghost" data-remove-animal type="button" onclick="this.parentElement.remove();calendarSerialize()">×</button>`;else if(data.preset==='Altro')row.innerHTML=`<span class="calendar-estimate-preset">Altro</span><input class="calendar-other-description" placeholder="Descrizione" data-key="description" value="${data.description||''}"><input inputmode="decimal" placeholder="Importo €" data-key="amount" value="${data.amount||''}">`;else if(data.preset==='Urna')row.innerHTML=`<span class="calendar-estimate-preset">Urna</span><input class="calendar-other-description" placeholder="Nome urna o descrizione" data-key="description" value="${data.description||'Urna'}"><input inputmode="decimal" placeholder="Importo €" data-key="amount" value="${data.amount||''}">`;else if(data.preset)row.innerHTML=`<span class="calendar-estimate-preset">${data.preset}</span><input type="hidden" data-key="description" value="${data.preset}"><input inputmode="decimal" placeholder="Importo €" data-key="amount" value="${data.amount||''}">`;else row.innerHTML=`<input class="full-mobile" placeholder="Descrizione" data-key="description" value="${data.description||''}"><input inputmode="decimal" placeholder="Importo €" data-key="amount" value="${data.amount||''}"><button class="btn ghost" type="button" onclick="this.parentElement.remove();calendarSerialize()">×</button>`;list.append(row);row.querySelectorAll('input,select').forEach(input=>input.addEventListener('input',()=>{input.form.dataset.dirty='1';calendarSerialize();}));calendarSerialize();}
 function calendarSerialize(){['animal','estimate'].forEach(kind=>{const hidden=document.querySelector(`input[name="${kind==='animal'?'animals_json':'estimate_json'}"]`);const list=document.querySelector(`[data-calendar-list="${kind}"]`);if(!hidden||!list)return;const values=[...list.children].map(row=>Object.fromEntries([...row.querySelectorAll('[data-key]')].map(input=>[input.dataset.key,input.value])));hidden.value=JSON.stringify(values);if(kind==='estimate'){const total=values.reduce((sum,item)=>sum+(Number(String(item.amount||0).replace(',','.'))||0),0);const output=document.querySelector('[data-estimate-total]');if(output)output.textContent=total.toLocaleString('it-IT',{style:'currency',currency:'EUR'});}});calendarRenumberAnimals();calendarAutoTitle();}
 const PRACTICE_ITEM_ROW_CONFIG={
-  calco:[["","Generico"],["polpastrello","Polpastrello"],["naso","Naso"]],
+  calco:[["","Generico"],["polpastrello","Polpastrello"],["naso","Naso"],["zampa","Zampa"]],
   accessorio:[["Altro","Altro"],["Collana","Collana"],["Braccialetto","Braccialetto"],["Calco inchiostro","Calco inchiostro"]],
 };
 function practiceItemRowHtml(category,data){
   data=data||{};
   if(category==='urna'){
-    const options=(window.PPM_URN_CATALOG||[]).map(u=>`<option value="${u.id}" data-name="${calendarHtml(u.name)}" data-price="${u.price}" ${String(data.urn_catalog_id||'')===String(u.id)?'selected':''}>${calendarHtml(u.name)} · € ${u.price}</option>`).join('');
-    return `<select data-key="urn_catalog_id" onchange="practiceUrnRowChanged(this)"><option value="">Testo libero (nessun catalogo)</option>${options}</select><input placeholder="Nome/descrizione urna" data-key="label" value="${calendarHtml(data.label||'')}"><input inputmode="decimal" placeholder="Prezzo €" data-key="price" value="${calendarHtml(data.price||'')}"><button type="button" class="btn ghost" onclick="this.parentElement.remove();practiceSerializeItems()">×</button>`;
+    return `<span class="lookup" style="position:relative;display:inline-block"><input type="text" autocomplete="off" data-key="label" placeholder="Cerca urna o scrivi liberamente" value="${calendarHtml(data.label||'')}"><div class="lookup-results hidden"></div></span><input type="hidden" data-key="urn_catalog_id" value="${data.urn_catalog_id||''}"><input inputmode="decimal" placeholder="Prezzo €" data-key="price" value="${calendarHtml(data.price||'')}"><button type="button" class="btn ghost" onclick="this.parentElement.remove();practiceSerializeItems()">×</button>`;
   }
   const subtypes=PRACTICE_ITEM_ROW_CONFIG[category]||[["",""]];
   const options=subtypes.map(([value,label])=>`<option value="${value}" ${data.subtype===value?'selected':''}>${label}</option>`).join('');
@@ -3741,17 +3751,37 @@ function practiceAddRow(category,data){
   row.className='practice-repeat-row';
   row.innerHTML=practiceItemRowHtml(category,data);
   list.append(row);
+  if(category==='urna')setupPracticeUrnRowSearch(row);
   row.querySelectorAll('input,select').forEach(input=>input.addEventListener('input',practiceSerializeItems));
   practiceSerializeItems();
 }
-function practiceUrnRowChanged(select){
-  const row=select.closest('.practice-repeat-row');
-  const opt=select.selectedOptions[0];
-  if(opt&&opt.value){
-    row.querySelector('[data-key="label"]').value=opt.dataset.name||'';
-    row.querySelector('[data-key="price"]').value=opt.dataset.price||'';
+function setupPracticeUrnRowSearch(row){
+  const input=row.querySelector('[data-key="label"]');
+  const panel=row.querySelector('.lookup-results');
+  const hiddenId=row.querySelector('[data-key="urn_catalog_id"]');
+  const priceField=row.querySelector('[data-key="price"]');
+  if(!input||!panel||!hiddenId)return;
+  ppmRegisterLookupPanel(input,panel);
+  function renderMatches(query){
+    const q=normalizeUrnSearch(query);
+    if(!q){ppmCloseLookupPanel(panel);return;}
+    const matches=(window.PPM_URN_CATALOG||[]).filter(u=>normalizeUrnSearch(u.name).includes(q));
+    if(!matches.length){panel.innerHTML=lookupHtmlState('Nessuna urna trovata');ppmOpenLookupPanel(panel);return;}
+    panel.innerHTML=matches.slice(0,30).map(u=>`<button type="button" class="lookup-item" data-urn-id="${u.id}"><b>${calendarHtml(u.name)}</b><small>€ ${u.price}</small></button>`).join('');
+    ppmOpenLookupPanel(panel);
   }
-  practiceSerializeItems();
+  input.addEventListener('input',function(){ hiddenId.value=''; renderMatches(input.value); });
+  panel.addEventListener('click',function(e){
+    const btn=e.target.closest('.lookup-item');
+    if(!btn||!btn.dataset.urnId)return;
+    const urn=(window.PPM_URN_CATALOG||[]).find(u=>String(u.id)===btn.dataset.urnId);
+    if(!urn)return;
+    input.value=urn.name;
+    if(priceField)priceField.value=urn.price;
+    hiddenId.value=String(urn.id);
+    ppmCloseLookupPanel(panel);
+    practiceSerializeItems();
+  });
 }
 function practiceSerializeItems(){
   ['urna','calco','accessorio'].forEach(function(category){
@@ -4376,6 +4406,8 @@ def practice_for_ddt(c, p):
 
 def calculated_service_total(practice):
     keys=practice.keys() if hasattr(practice,"keys") else practice
+    if "total_service_manual" in keys and practice["total_service_manual"]=="Si":
+        return money_value(practice["total_service"] if "total_service" in keys else "")
     component_keys=("price_cremation","price_pickup","price_delivery","price_evening","price_night","price_holiday")
     available=[key for key in component_keys if key in keys]
     total=sum(money_value(practice[key]) for key in available) if available else money_value(practice["total_service"] if "total_service" in keys else "")
@@ -9061,7 +9093,7 @@ class App(BaseHTTPRequestHandler):
         <section class="section"><h2>Animale</h2><div class="fields"><div class="field"><label>Specie *</label><input name="species" value="{val('species')}" required></div><div class="field"><label>Nome</label><input name="animal_name" value="{val('animal_name')}"></div><div class="field"><label>Peso</label><input name="estimated_weight" value="{val('estimated_weight')}"></div><div class="field"><label>Anni</label><input name="age_years" value="{val('age_years')}"></div><div class="field"><label>Mesi</label><input name="age_months" value="{val('age_months')}"></div><div class="field"><label>Microchip</label><input name="microchip" value="{val('microchip')}"></div><div class="field full"><label>Razza</label><input name="breed" value="{val('breed')}"></div></div><button class="btn ghost" type="button" id="showSecondAnimal" style="margin-top:12px;{'display:none' if raw('animal2_name') else ''}">+ Aggiungi altro animale</button><div id="secondAnimalBox" style="display:{'block' if raw('animal2_name') else 'none'};margin-top:14px"><h2>Secondo animale</h2><div class="fields"><div class="field"><label>Nome</label><input name="animal2_name" value="{val('animal2_name')}"></div><div class="field"><label>Specie</label><input name="animal2_species" value="{val('animal2_species')}"></div><div class="field"><label>Peso stimato (kg)</label><input name="animal2_weight" value="{val('animal2_weight')}"></div><div class="field"><label>Microchip</label><input name="animal2_microchip" value="{val('animal2_microchip')}"></div><div class="field full"><label>Razza</label><input name="animal2_breed" value="{val('animal2_breed')}"></div></div></div></section>
         <section class="section"><h2>AMBULATORIO VETERINARIO</h2><div class="fields"><div class="field full lookup"><label>VETERINARIO</label><input id="vetSearch" autocomplete="off" placeholder="Scrivi per cercare il veterinario"><div id="vetResults" class="lookup-results hidden"></div><select name="veterinarian_id">{vet_options}</select><input type="hidden" name="clinic_name" value="{val('clinic_name')}"><button class="btn ghost" type="button" id="clearVetSelection" style="margin-top:8px">Cancella veterinario</button></div><div class="field"><label>MEDICO VETERINARIO</label><input name="veterinarian_name" value="{val('veterinarian_name')}"></div><div class="field"><label><input type="checkbox" name="voucher_requested" value="Si" {voucher_checked}> BUONO</label><small class="sub">Spunta per assegnare un buono al veterinario selezionato.</small></div></div></section>
         <section class="section"><h2>TRASPORTATORE</h2><div class="fields"><div class="field"><label>Dati trasportatore</label><select name="transporter_mode"><option {selected('transporter_mode','IDEM SPED','IDEM SPED')}>IDEM SPED</option><option {selected('transporter_mode','DATI PET PARADISE','IDEM SPED')}>DATI PET PARADISE</option></select></div><div class="field"><label>Mezzo di trasporto</label><select name="transport_method" id="transport_method_quick"><option value="">Seleziona mezzo</option><option {selected('transport_method','Fiat Fiorino')}>Fiat Fiorino</option><option {selected('transport_method','Renault Captur')}>Renault Captur</option><option {selected('transport_method','Dr PK8')}>Dr PK8</option><option {selected('transport_method','Mezzo proprio')}>Mezzo proprio</option></select></div><div class="field"><label>Targa automezzo</label><input name="vehicle_plate" value="{val('vehicle_plate')}" placeholder="Compilata automaticamente, modificabile"></div><div class="field"><label>Temperatura</label><select name="temperature_mode"><option {selected('temperature_mode','Ambiente','Ambiente')}>Ambiente</option><option {selected('temperature_mode','Refrigerato','Ambiente')}>Refrigerato</option><option {selected('temperature_mode','Congelato','Ambiente')}>Congelato</option></select></div><div class="field"><label>Numero colli</label><input name="package_count" value="{val('package_count') or '1'}"></div><div class="field"><label>ID contenitore</label><select name="container_id"><option value="">Seleziona ID contenitore</option><option {selected('container_id','03/2021')}>03/2021</option><option {selected('container_id','04/2021')}>04/2021</option></select></div><div class="field"><label>Numero lotto</label><input name="lot_number" value="{val('lot_number') or '/'}"></div><div class="field"><label>Metodo trattamento</label><input name="treatment_method" value="{val('treatment_method') or '/'}"></div></div></section>
-        <section class="section"><h2>Preventivo</h2><div class="fields"><div class="field"><label>Cremazione €</label><input name="price_cremation" value="{val('price_cremation')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Ritiro €</label><input name="price_pickup" value="{val('price_pickup')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label><input type="checkbox" name="send_catalog" value="Si" {catalog_checked} style="width:auto"> INVIARE CATALOGO</label></div><div class="field"><label>Riconsegna €</label><input name="price_delivery" value="{val('price_delivery')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label><input type="checkbox" name="delivery_at_clinic" value="Si" {delivery_clinic_checked} style="width:auto"> IN AMBULATORIO</label></div><div class="field"><label><input type="checkbox" name="delivery_at_home" value="Si" {delivery_home_checked} style="width:auto"> A CASA</label></div><div class="field full"><label>Urne</label><div class="practice-repeat-list" data-practice-list="urna"></div><input type="hidden" name="urna_items_json"><button class="btn ghost" type="button" onclick="practiceAddRow('urna')">+ Aggiungi urna</button></div><div class="field full"><label>Calco</label><div class="practice-repeat-list" data-practice-list="calco"></div><input type="hidden" name="calco_items_json"><button class="btn ghost" type="button" onclick="practiceAddRow('calco')">+ Aggiungi calco</button></div><div class="field full"><label>Accessori</label><div class="practice-repeat-list" data-practice-list="accessorio"></div><input type="hidden" name="accessorio_items_json"><button class="btn ghost" type="button" onclick="practiceAddRow('accessorio')">+ Aggiungi accessorio</button></div><div class="field"><label>Serale €</label><input name="price_evening" value="{val('price_evening')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Notturno €</label><input name="price_night" value="{val('price_night')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Festivo €</label><input name="price_holiday" value="{val('price_holiday')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Totale servizio €</label><input name="total_service" value="{val('total_service')}" readonly></div><div class="field"><label>Acconto €</label><input name="deposit" value="{val('deposit')}" placeholder="Numero o testo libero"></div><div class="field"><label>Rimanenza €</label><input name="remaining_balance" value="{val('remaining_balance')}" readonly></div><div class="field full"><label>TOTALE D</label><textarea name="total_text" placeholder="Testo libero per note sul totale">{val('total_text')}</textarea></div><div class="field"><label>Acconto D €</label><input name="deposit_final" value="{val('deposit_final')}" placeholder="Numero o testo libero"></div><div class="field"><label>Rimanenza D €</label><input name="remaining_final" value="{val('remaining_final')}" readonly></div><div class="field"><label><input type="checkbox" name="send_estremi" value="Si" {estremi_checked} style="width:auto"> INVIARE ESTREMI</label></div><div class="field"><label><input type="checkbox" name="use_voucher" value="Si" {use_voucher_checked} style="width:auto"> USA BUONO</label><div id="useVoucherBox" class="selected-box hidden"><span id="useVoucherStatus">Seleziona il veterinario e spunta USA BUONO.</span><select name="used_voucher_id" data-current="{val('used_voucher_id')}" class="hidden"><option value="">Seleziona buono</option></select></div></div></div></section>
+        <section class="section"><h2>Preventivo</h2><div class="fields"><div class="field"><label>Cremazione €</label><input name="price_cremation" value="{val('price_cremation')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Ritiro €</label><input name="price_pickup" value="{val('price_pickup')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label><input type="checkbox" name="send_catalog" value="Si" {catalog_checked} style="width:auto"> INVIARE CATALOGO</label></div><div class="field"><label>Riconsegna €</label><input name="price_delivery" value="{val('price_delivery')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label><input type="checkbox" name="delivery_at_clinic" value="Si" {delivery_clinic_checked} style="width:auto"> IN AMBULATORIO</label></div><div class="field"><label><input type="checkbox" name="delivery_at_home" value="Si" {delivery_home_checked} style="width:auto"> A CASA</label></div><div class="field full"><label>Urne</label><div class="practice-repeat-list" data-practice-list="urna"></div><input type="hidden" name="urna_items_json"><button class="btn ghost" type="button" onclick="practiceAddRow('urna')">+ Aggiungi urna</button></div><div class="field full"><label>Calco</label><div class="practice-repeat-list" data-practice-list="calco"></div><input type="hidden" name="calco_items_json"><button class="btn ghost" type="button" onclick="practiceAddRow('calco')">+ Aggiungi calco</button></div><div class="field full"><label>Accessori</label><div class="practice-repeat-list" data-practice-list="accessorio"></div><input type="hidden" name="accessorio_items_json"><button class="btn ghost" type="button" onclick="practiceAddRow('accessorio')">+ Aggiungi accessorio</button></div><div class="field"><label>Serale €</label><input name="price_evening" value="{val('price_evening')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Notturno €</label><input name="price_night" value="{val('price_night')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Festivo €</label><input name="price_holiday" value="{val('price_holiday')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Totale servizio €</label><input name="total_service" value="{val('total_service')}"></div><input type="hidden" name="total_service_manual" value="{'Si' if raw('total_service_manual')=='Si' else ''}"><div class="field"><label>Acconto €</label><input name="deposit" value="{val('deposit')}" placeholder="Numero o testo libero"></div><div class="field"><label>Rimanenza €</label><input name="remaining_balance" value="{val('remaining_balance')}" readonly></div><div class="field full"><label>TOTALE D</label><textarea name="total_text" placeholder="Testo libero per note sul totale">{val('total_text')}</textarea></div><div class="field"><label>Acconto D €</label><input name="deposit_final" value="{val('deposit_final')}" placeholder="Numero o testo libero"></div><div class="field"><label>Rimanenza D €</label><input name="remaining_final" value="{val('remaining_final')}" readonly></div><div class="field"><label><input type="checkbox" name="send_estremi" value="Si" {estremi_checked} style="width:auto"> INVIARE ESTREMI</label></div><div class="field"><label><input type="checkbox" name="use_voucher" value="Si" {use_voucher_checked} style="width:auto"> USA BUONO</label><div id="useVoucherBox" class="selected-box hidden"><span id="useVoucherStatus">Seleziona il veterinario e spunta USA BUONO.</span><select name="used_voucher_id" data-current="{val('used_voucher_id')}" class="hidden"><option value="">Seleziona buono</option></select></div></div></div></section>
         {creation_payment_fields}
         <section class="section"><h2>Note</h2><div class="fields"><div class="field full"><label>NOTE</label><textarea name="notes">{val('notes')}</textarea></div></div></section>
         <section class="section"><h2>Etichette operative</h2><div class="fields">{tag_select('tag_assistita','ASSISTITA','tag-red')}{tag_select('tag_possibile_assistita','POSSIBILE ASSISTITA','tag-red')}{tag_select('tag_assistita_streaming','ASSISTITA STREAMING','tag-orange')}{tag_select('tag_possibile_assistita_streaming','POSSIBILE ASSISTITA STREAMING','tag-orange')}{tag_select('tag_saluto','SALUTO','tag-purple')}{tag_select('tag_calco','CALCO','tag-yellow')}{tag_select('tag_possibile_calco','POSSIBILE CALCO','tag-yellow')}{tag_select('tag_calco_urna','CALCO PER URNA','tag-yellow')}{tag_select('tag_calco_paw','CALCO POLPASTRELLO','tag-yellow')}{tag_select('tag_possibile_calco_paw','POSSIBILE CALCO POLPASTRELLO','tag-yellow')}{tag_select('tag_calco_nose','CALCO NASO','tag-yellow')}{tag_select('tag_possibile_calco_nose','POSSIBILE CALCO NASO','tag-yellow')}{tag_select('tag_avvisare','AVVISARE','tag-pink')}{tag_select('tag_da_richiamare','DA RICHIAMARE','tag-blue')}</div></section>
@@ -9096,13 +9128,14 @@ class App(BaseHTTPRequestHandler):
         self.send_html(layout("Nuova pratica",body,user))
 
     def normalized_fields(self,f,items_total=0.0,has_frame_urn=False,has_urn_item=False):
-        keys=["client_id","owner_veterinarian_id","origin_veterinarian_id","operator_name","request_origin","collaborator_name","collaborator_id","destination_branch","owner_first_name","owner_last_name","owner_company","owner_phone","owner_phone_2","owner_phone_note","owner_email","owner_tax_code","owner_vat","owner_sdi","owner_notes","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","origin_first_name","origin_last_name","provenance","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","use_voucher","used_voucher_id","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_possibile_assistita_streaming","tag_saluto","tag_calco","tag_possibile_calco","tag_calco_urna","tag_calco_paw","tag_possibile_calco_paw","tag_calco_nose","tag_possibile_calco_nose","tag_avvisare","tag_da_richiamare","payment_status","payment_method","price_cremation","price_pickup","price_evening","price_urn","send_catalog","catalog_sent","send_estremi","estremi_sent","price_delivery","delivery_at_clinic","delivery_at_home","price_night","price_cast","price_paw_cast","price_nose_cast","price_holiday","price_accessories","deposit","deposit_final","remaining_balance","remaining_final","total_service","total_text","invoice_number","invoice_date","invoice_total","invoice_total_manual","make_invoice","identity_document_number","identity_document_date","signing_place","signature_data"]
+        keys=["client_id","owner_veterinarian_id","origin_veterinarian_id","operator_name","request_origin","collaborator_name","collaborator_id","destination_branch","owner_first_name","owner_last_name","owner_company","owner_phone","owner_phone_2","owner_phone_note","owner_email","owner_tax_code","owner_vat","owner_sdi","owner_notes","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","origin_first_name","origin_last_name","provenance","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","use_voucher","used_voucher_id","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_possibile_assistita_streaming","tag_saluto","tag_calco","tag_possibile_calco","tag_calco_urna","tag_calco_paw","tag_possibile_calco_paw","tag_calco_nose","tag_possibile_calco_nose","tag_avvisare","tag_da_richiamare","payment_status","payment_method","price_cremation","price_pickup","price_evening","price_urn","send_catalog","catalog_sent","send_estremi","estremi_sent","price_delivery","delivery_at_clinic","delivery_at_home","price_night","price_cast","price_paw_cast","price_nose_cast","price_holiday","price_accessories","deposit","deposit_final","remaining_balance","remaining_final","total_service","total_service_manual","total_text","invoice_number","invoice_date","invoice_total","invoice_total_manual","make_invoice","identity_document_number","identity_document_date","signing_place","signature_data"]
         data = {k:f.get(k,"").strip() for k in keys}
         data["pickup_time"] = f.get("pickup_time","").strip()
         for key in MONEY_FIELDS:
             data[key]=normalize_money_text(data.get(key,""))
         data["invoice_total"]=normalize_money_text(data["invoice_total"])
         data["invoice_total_manual"]="Si" if data["invoice_total_manual"]=="Si" else ""
+        data["total_service_manual"]="Si" if data["total_service_manual"]=="Si" else ""
         if not data["payment_status"] or data["payment_status"] not in PAYMENT_STATES:
             data["payment_status"] = "Da saldare"
         if data["payment_method"] not in PAYMENT_METHODS:
@@ -9217,7 +9250,8 @@ class App(BaseHTTPRequestHandler):
             data["pickup_address"] = data["origin_text"]
             data["pickup_address_mode"] = "Altro indirizzo"
         calculated=calculated_service_total(data)+items_total
-        data["total_service"]=(f"{calculated:.2f}" if calculated else "")
+        if data["total_service_manual"]!="Si":
+            data["total_service"]=(f"{calculated:.2f}" if calculated else "")
         if data["invoice_total_manual"]!="Si":data["invoice_total"]=data["total_service"]
         due=effective_total(data)
         # A practice marked Pagato can never have anything left to collect, on either
@@ -10419,7 +10453,7 @@ class App(BaseHTTPRequestHandler):
             if row["category"]=="urna":
                 return row["label"] or "Urna"
             if row["category"]=="calco":
-                base={"naso":"Calco naso","polpastrello":"Calco polpastrello"}.get(row["subtype"] or "","Calco")
+                base={"naso":"Calco naso","polpastrello":"Calco polpastrello","zampa":"Calco zampa"}.get(row["subtype"] or "","Calco")
                 return f'{base} — {row["label"]}' if row["label"] else base
             base=row["subtype"] or "Accessorio"
             return f'{base} — {row["label"]}' if row["label"] and row["label"]!=base else base
