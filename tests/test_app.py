@@ -2200,6 +2200,17 @@ class PetParadiseTests(unittest.TestCase):
         dispatcher_body = page[reset_call_index:reset_call_index + 800]
         self.assertIn("cremationWeekResetView()", dispatcher_body)
 
+        # a day with no cycles at all (e.g. Wednesday in this fixture, which
+        # only seeded Monday/Tuesday) must offer its own "Aggiungi ciclo"
+        # button right there, bound to that exact date — not just the single
+        # generic "Aggiungi nuovo ciclo" button at the bottom of the whole week.
+        wednesday = monday + timedelta(days=2)
+        empty_day_start = page.index(f'data-week-day="{wednesday.isoformat()}"')
+        empty_day_html = page[empty_day_start:empty_day_start + 1100]
+        self.assertIn("Nessun ciclo pianificato.", empty_day_html)
+        self.assertIn(f"cremationCreateCycleForDay('{wednesday.isoformat()}')", empty_day_html)
+        self.assertIn('class="cremation-add-cycle-btn"', empty_day_html)
+
     def test_cremation_collapse_body_does_not_clobber_a_same_tick_reopen(self):
         # regression: cremationWeekStatClick always closes cremationAnimaliPanel/
         # cremationFinePrevistaPanel via cremationWeekResetView() BEFORE
@@ -2218,6 +2229,21 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("requestAnimationFrame(function(){", body)
         self.assertIn("classList.contains('expanded')", body)
         self.assertIn("body.style.maxHeight='0px'", body)
+
+    def test_cremation_toggle_headers_are_tappable_across_their_full_card_width(self):
+        # regression: the day/cycle header that toggles a card open/closed was
+        # only as wide as its own content, while the card around it (day card,
+        # cycle card) has its own 16px/10px padding — a tap anywhere in that
+        # padding strip (still visually "inside the card") did nothing. The
+        # header must span the full card via a negative margin matching the
+        # card's own padding exactly, so the whole card area is tappable.
+        css = app.CSS
+        self.assertIn(".cremation-week-day{background:#1f2937;border:1px solid #334155;border-radius:16px;padding:16px}", css)
+        self.assertIn(".cremation-week-day-head{display:flex;align-items:center;gap:12px;margin:-16px -16px 0;padding:16px 16px 0;cursor:pointer}", css)
+        self.assertIn(".cremation-cycle-card{background:#1f2937;border:1px solid #334155;border-left:4px solid #475569;border-radius:14px;padding:16px;min-width:0}", css)
+        self.assertIn("margin:-16px -16px 0;padding:16px 16px 0;cursor:pointer}", css)  # .cremation-cycle-head
+        self.assertIn(".cremation-week-cycle-card{background:#161f2b;border:1px solid #334155;border-left:4px solid #475569;border-radius:12px;padding:10px 12px;min-width:0}", css)
+        self.assertIn(".cremation-week-cycle-head{display:flex;align-items:center;gap:12px;margin:-10px -12px 0;padding:10px 12px 0;cursor:pointer}", css)
 
     def test_cremation_cycle_border_colors_match_status(self):
         # regression 1: in_corso used to render green (identical to "completed"

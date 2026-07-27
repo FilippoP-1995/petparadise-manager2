@@ -1677,7 +1677,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-cycle-in_attesa .cremation-cycle-body-inner{background:rgba(251,146,60,.04)}
 .cremation-cycle-completato .cremation-cycle-body-inner{background:rgba(74,222,128,.04)}
 .cremation-cycle-pianificato .cremation-cycle-body-inner{background:rgba(96,165,250,.03)}
-.cremation-cycle-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:0;cursor:pointer}
+.cremation-cycle-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:-16px -16px 0;padding:16px 16px 0;cursor:pointer}
 .cremation-cycle-animal-names{color:#f8fafc;font-size:13px;font-weight:700;flex:1 1 160px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cremation-cycle-chevron{display:flex;align-items:center;color:#64748b;flex:0 0 auto}
 .cremation-cycle-chevron .icon{width:16px;height:16px;transition:transform .25s ease;transform:rotate(90deg)}
@@ -1742,7 +1742,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-add-cycle-btn:hover{background:#fb71851a}
 .cremation-week-days{display:flex;flex-direction:column;gap:14px;margin-bottom:18px}
 .cremation-week-day{background:#1f2937;border:1px solid #334155;border-radius:16px;padding:16px}
-.cremation-week-day-head{display:flex;align-items:center;gap:12px;cursor:pointer}
+.cremation-week-day-head{display:flex;align-items:center;gap:12px;margin:-16px -16px 0;padding:16px 16px 0;cursor:pointer}
 .cremation-week-day-name{font-weight:800;font-size:14px;flex:1 1 auto}
 .cremation-week-day-name.weekend{color:#fb7185}
 .cremation-week-day-badge{padding:3px 12px;border-radius:99px;border:1px solid #4ade80;color:#4ade80;font-size:12px;font-weight:700;white-space:nowrap}
@@ -1751,7 +1751,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-week-day-body{max-height:0;overflow:hidden;transition:max-height .3s ease}
 .cremation-week-day-body-inner{padding-top:14px;display:flex;flex-direction:column;gap:12px}
 .cremation-week-cycle-card{background:#161f2b;border:1px solid #334155;border-left:4px solid #475569;border-radius:12px;padding:10px 12px;min-width:0}
-.cremation-week-cycle-head{display:flex;align-items:center;gap:12px;cursor:pointer}
+.cremation-week-cycle-head{display:flex;align-items:center;gap:12px;margin:-10px -12px 0;padding:10px 12px 0;cursor:pointer}
 .cremation-week-cycle-main{display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex:1 1 auto;min-width:0}
 .cremation-week-cycle-animals{display:flex;flex-direction:column;gap:2px;min-width:0}
 .cremation-week-animal-line{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:#e2e8f0}
@@ -3477,6 +3477,11 @@ function cremationCreateEmptyCycle(){
   const cremationDate=board?board.dataset.cremationDate:'';
   fetch('/programma-cremazioni/cicli',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',
     body:'data='+encodeURIComponent(cremationDate)})
+    .then(function(){location.reload();});
+}
+function cremationCreateCycleForDay(dateStr){
+  fetch('/programma-cremazioni/cicli',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',
+    body:'data='+encodeURIComponent(dateStr)})
     .then(function(){location.reload();});
 }
 function cremationToggleWaitingPanel(cardEl){
@@ -7324,7 +7329,7 @@ class App(BaseHTTPRequestHandler):
                     </div>
                   </div>
                 </div>''')
-            day_body=''.join(row_items) or '<p class="cremation-dash" style="padding:8px 0">Nessun ciclo pianificato.</p>'
+            day_body=''.join(row_items) or f'<p class="cremation-dash" style="padding:8px 0">Nessun ciclo pianificato.</p><button type="button" class="cremation-add-cycle-btn" style="margin-top:6px" onclick="cremationCreateCycleForDay(\'{d}\')">{lucide("plus")}<span>Aggiungi ciclo</span></button>'
             header_name=f'{weekday_full[i].upper()} {day_date.strftime("%d/%m")}'
             day_sections.append(f'''<div class="cremation-week-day {"expanded" if d==today_iso else ""}" data-week-day="{d}">
               <div class="cremation-week-day-head" onclick="cremationToggleWeekDay(this)">
