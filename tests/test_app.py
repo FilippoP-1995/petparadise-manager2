@@ -1877,6 +1877,71 @@ class PetParadiseTests(unittest.TestCase):
         self.assertFalse(payload["ok"])
         self.assertEqual(status, 409)
 
+    def test_cremation_schedule_week_view_groups_cycles_by_day_in_compact_rows(self):
+        monday = date(2026, 7, 20)  # a known Monday
+        tuesday = monday + timedelta(days=1)
+        sunday = monday + timedelta(days=6)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+
+            def cycle(day, status, start, end, actual_end=None):
+                return conn.execute(
+                    "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,actual_end,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                    (day.isoformat(), status, start, end, actual_end, stamp, stamp),
+                ).lastrowid
+
+            def practice(code, weight, cycle_id):
+                return conn.execute(
+                    """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                       pickup_date,created_at,updated_at,created_by,animal_name,estimated_weight,cremation_cycle_id)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (code, "Privato", "Livorno", "In programma", "Cremazione singola", "2026-07-15", stamp, stamp,
+                     admin["id"], code, weight, cycle_id),
+                ).lastrowid
+
+            mon_cycle = cycle(monday, "completato", "08:00", "09:30", stamp)
+            practice("CR-WEEK-1", "40", mon_cycle)
+            tue_cycle = cycle(tuesday, "in_attesa", "10:00", "11:20")
+            practice("CR-WEEK-2", "12", tue_cycle)
+            # a cycle on the last day of the week: drives "fine prevista" for the whole week
+            sun_cycle = cycle(sunday, "pianificato", "16:00", "17:30")
+
+        rendered = []
+        self.handler.path = f"/programma-cremazioni?vista=settimana&data={monday.isoformat()}"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+
+        # header/subtitle switch to the week wording; Settimana tab is the active one
+        self.assertIn("della settimana", page)
+        self.assertIn('class="active" href="/programma-cremazioni?vista=settimana', page)
+        self.assertIn(f"{monday.day} – {sunday.day} Luglio {sunday.year}", page)
+
+        # all 7 days of the week are rendered, each as its own collapsible container
+        for i in range(7):
+            d = monday + timedelta(days=i)
+            self.assertIn(f'data-week-day="{d.isoformat()}"', page)
+
+        # each cycle row is compact: icon + name + weight only (no tags/urn/provenance at this level)
+        self.assertIn("CICLO 1", page)
+        self.assertIn("(40 kg)", page)
+        self.assertIn("(12 kg)", page)
+
+        # clicking a compact cycle row expands it (same mechanism as the day view)
+        self.assertIn("cremationToggleCycleCard(this)", page)
+        self.assertIn("data-cycle-body", page)
+
+        # week-scoped summary cards
+        self.assertIn("Cicli questa settimana", page)
+        self.assertIn('<strong class="dash-stat-value">3</strong>', page)  # 3 cycles total this week
+        self.assertIn("Questa settimana", page)
+        # fine prevista = last cycle of the week (Sunday, 17:30)
+        self.assertIn(f"Dom {sunday.day} – 17:30", page)
+
+        # "Aggiungi nuovo ciclo" is present once, at the bottom, and still wired to the same JS
+        self.assertEqual(page.count('onclick="cremationCreateEmptyCycle()"'), 1)
+
     def test_normalization_keeps_custom_plate_and_calculates_remaining(self):
         data = self.handler.normalized_fields({
             "transport_method": "Fiat Fiorino", "vehicle_plate": "TARGA LIBERA",
