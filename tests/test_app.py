@@ -2034,7 +2034,8 @@ class PetParadiseTests(unittest.TestCase):
 
             done_cycle = cycle(monday, "completato", "08:00", "09:30", stamp)
             practice("CR-BUDDY", "Buddy", "In programma", done_cycle)
-            empty_cycle = cycle(monday, "pianificato", "13:00", "14:30")
+            waiting_cycle = cycle(monday, "in_attesa", "13:00", "14:30")
+            practice("CR-DAISY", "Daisy", "In programma", waiting_cycle)
             running_cycle = cycle(tuesday, "in_corso", "10:00", "11:30", None)
             practice("CR-ROCKY", "Rocky", "In programma", running_cycle)
             practice("CR-MILO", "Milo", "Ritirato")
@@ -2051,7 +2052,7 @@ class PetParadiseTests(unittest.TestCase):
             self.assertIn(f"cremationWeekStatClick(this,'{mode}')", page)
         self.assertEqual(page.count('data-stat="'), 6)
 
-        # "In attesa" now reflects unassigned animals (1: Milo), not cycles with status in_attesa (0)
+        # "In attesa" now reflects cycles with status IN ATTESA (1: waiting_cycle), not unassigned animals
         stat_start = page.index('data-stat="in_attesa"')
         in_attesa_card = page[stat_start:stat_start + 900]
         self.assertIn('<strong class="dash-stat-value">1</strong>', in_attesa_card)
@@ -2062,22 +2063,19 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('cremationFilterAnimaliList(this)', page)
         self.assertIn("Buddy", page)
         self.assertIn("Rocky", page)
+        self.assertIn("Daisy", page)
         animali_start = page.index('id="cremationAnimaliPanel"')
-        animali_panel = page[animali_start:animali_start + 4000]
+        animali_panel = page[animali_start:animali_start + 8000]
         self.assertIn(f"Lun {monday.day:02d}/{monday.month:02d}", animali_panel)
         self.assertIn(f"Mar {tuesday.day:02d}/{tuesday.month:02d}", animali_panel)
         self.assertIn("CICLO 1 · COMPLETATO", animali_panel)
         self.assertIn("CICLO 1 · IN CORSO", animali_panel)
-        # Milo (still waiting, not assigned) must not appear in the Animali panel
+        self.assertIn("CICLO 2 · IN ATTESA", animali_panel)
+        # Milo (still waiting, not assigned to any cycle) must not appear in the Animali panel
         self.assertNotIn("Milo", animali_panel)
 
-        # the "In attesa" week panel reuses the quick-insert mechanism, day-qualified since it spans the week
-        self.assertIn('id="cremationWeekWaitingPanel"', page)
-        waiting_start = page.index('id="cremationWeekWaitingPanel"')
-        waiting_panel = page[waiting_start:waiting_start + 3000]
-        self.assertIn("Milo", waiting_panel)
-        self.assertIn(f"Inserisci nel Ciclo 2 (Lun {monday.day:02d}/{monday.month:02d})", waiting_panel)
-        self.assertIn("Crea nuovo ciclo", waiting_panel)
+        # no separate waiting-animals panel exists any more for the week view's "In attesa" card
+        self.assertNotIn("cremationWeekWaitingPanel", page)
 
         # the "Fine prevista" panel gives a full operational recap of the week's tail end
         self.assertIn('id="cremationFinePrevistaPanel"', page)
@@ -2094,10 +2092,26 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('id="cremationToast"', page)
         self.assertIn('cremationToast" class="cremation-toast" hidden', page)
 
-        # the JS dispatcher and its per-mode handlers are all present exactly once
-        for fn in ("cremationWeekStatClick", "cremationApplyCompletatiFilter", "cremationGoToActiveCycle",
+        # the JS dispatcher always resets the full view before applying any new filter/panel
+        # (never stacks a filter on top of a previously active one)
+        for fn in ("cremationWeekStatClick", "cremationWeekResetView", "cremationFilterCyclesByStatus",
+                   "cremationGoToActiveCycle", "cremationSetTimelineHidden",
                    "cremationFilterAnimaliList", "cremationShowToast", "cremationSetActiveStat"):
             self.assertEqual(page.count(f"function {fn}("), 1)
+        reset_call_index = page.index("function cremationWeekStatClick(")
+        dispatcher_body = page[reset_call_index:reset_call_index + 800]
+        self.assertIn("cremationWeekResetView()", dispatcher_body)
+
+    def test_cremation_cycle_border_colors_match_status(self):
+        # regression 1: in_corso used to render green (identical to "completed"
+        # elsewhere) and completato used to render dim grey instead of green.
+        # regression 2: in the week view, the generic .cremation-week-cycle-card
+        # base rule (same specificity, later in the stylesheet) silently overrode
+        # these status colors, so the compound selector must win regardless of order.
+        self.assertIn(".cremation-cycle-card.cremation-cycle-in_corso,.cremation-week-cycle-card.cremation-cycle-in_corso{border-left-color:#3b82f6}", app.CSS)
+        self.assertIn(".cremation-cycle-card.cremation-cycle-completato,.cremation-week-cycle-card.cremation-cycle-completato{border-left-color:#4ade80", app.CSS)
+        self.assertIn(".cremation-cycle-card.cremation-cycle-in_attesa,.cremation-week-cycle-card.cremation-cycle-in_attesa{border-left-color:#fb923c}", app.CSS)
+        self.assertIn(".cremation-cycle-card.cremation-cycle-pianificato,.cremation-week-cycle-card.cremation-cycle-pianificato{border-left-color:#60a5fa}", app.CSS)
 
     def test_cremation_schedule_remembers_last_selected_view_across_visits(self):
         with app.db() as conn:
