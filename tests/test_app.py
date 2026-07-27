@@ -2010,6 +2010,50 @@ class PetParadiseTests(unittest.TestCase):
         # "Aggiungi nuovo ciclo" is present once, at the bottom, and still wired to the same JS
         self.assertEqual(page.count('onclick="cremationCreateEmptyCycle()"'), 1)
 
+    def test_cremation_schedule_remembers_last_selected_view_across_visits(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+
+        rendered = []
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+
+        # by default (no stored preference yet), a bare visit shows the day view
+        self.handler.path = "/programma-cremazioni"
+        self.handler.cremation_schedule(admin)
+        self.assertIn("della giornata", rendered[-1])
+
+        # explicitly switching to Settimana persists the choice
+        rendered.clear()
+        self.handler.path = "/programma-cremazioni?vista=settimana"
+        self.handler.cremation_schedule(admin)
+        self.assertIn("della settimana", rendered[-1])
+
+        # a later bare visit (e.g. reopening the app) now lands back on Settimana
+        rendered.clear()
+        self.handler.path = "/programma-cremazioni"
+        self.handler.cremation_schedule(admin)
+        self.assertIn("della settimana", rendered[-1])
+
+        # the "Oggi" shortcut inside the week view stays explicit and doesn't depend on the stored preference
+        self.assertIn('href="/programma-cremazioni?vista=settimana"', rendered[-1])
+
+        # explicitly switching back to Giorno persists that choice too
+        rendered.clear()
+        self.handler.path = "/programma-cremazioni?vista=giorno"
+        self.handler.cremation_schedule(admin)
+        self.assertIn("della giornata", rendered[-1])
+
+        rendered.clear()
+        self.handler.path = "/programma-cremazioni"
+        self.handler.cremation_schedule(admin)
+        self.assertIn("della giornata", rendered[-1])
+
+        with app.db() as conn:
+            stored = conn.execute(
+                "SELECT value FROM user_preferences WHERE user_id=? AND key='cremation_view'", (admin["id"],)
+            ).fetchone()
+        self.assertEqual(stored["value"], "giorno")
+
     def test_normalization_keeps_custom_plate_and_calculates_remaining(self):
         data = self.handler.normalized_fields({
             "transport_method": "Fiat Fiorino", "vehicle_plate": "TARGA LIBERA",

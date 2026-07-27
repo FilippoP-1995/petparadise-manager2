@@ -1533,7 +1533,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-cycle-completato{border-left-color:#334155;opacity:.75}
 .cremation-cycle-pianificato{border-left-color:#60a5fa}
 .cremation-cycle-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:0;cursor:pointer}
-.cremation-cycle-animal-names{color:#cbd5e1;font-size:12px;flex:1 1 160px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cremation-cycle-animal-names{color:#f8fafc;font-size:13px;font-weight:700;flex:1 1 160px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cremation-cycle-chevron{display:flex;align-items:center;color:#64748b;flex:0 0 auto}
 .cremation-cycle-chevron .icon{width:16px;height:16px;transition:transform .25s ease;transform:rotate(90deg)}
 .cremation-cycle-card.expanded .cremation-cycle-chevron .icon{transform:rotate(270deg)}
@@ -1569,7 +1569,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-animal-avatar.avatar-cat{background:#052e2b}
 .cremation-animal-avatar.avatar-other{background:#2e1065}
 .cremation-animal-name-wrap{display:flex;flex-direction:column;gap:2px;min-width:0}
-.cremation-animal-name{font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cremation-animal-name{font-weight:800;font-size:16px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cremation-owner-hint{color:#94a3b8;font-weight:400}
 .cremation-animal-weight{font-size:12px;color:#94a3b8}
 .cremation-animal-col{display:flex;flex-direction:column;gap:4px;align-items:flex-start;min-width:60px}
@@ -1601,7 +1601,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-week-cycle-main{display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex:1 1 auto;min-width:0}
 .cremation-week-cycle-animals{display:flex;flex-direction:column;gap:2px;min-width:0}
 .cremation-week-animal-line{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:#e2e8f0}
-.cremation-week-animal-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cremation-week-animal-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700;font-size:13px;color:#f8fafc}
 .cremation-week-animal-tag .badge{font-size:10px;padding:2px 8px;white-space:nowrap}
 .cremation-week-animal-urn{display:flex;align-items:center;gap:4px;color:#cbd5e1;font-size:11px;white-space:nowrap}
 .cremation-week-animal-urn .icon{width:12px;height:12px;flex:0 0 12px}
@@ -1661,7 +1661,9 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .light-theme .cremation-modal-close{background:#f1f5f9;color:#111827}
 .light-theme .cremation-modal-search{background:#f8fafc;border-color:#e2e8f0;color:#111827}
 .light-theme .cremation-add-animal-card{background:#fff;border-color:#e2e8f0}
-.light-theme .cremation-cycle-animal-names{color:#475569}
+.light-theme .cremation-cycle-animal-names{color:#0f172a}
+.light-theme .cremation-animal-name{color:#0f172a}
+.light-theme .cremation-week-animal-name{color:#0f172a}
 @media(max-width:1100px){.cremation-summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:620px){.cremation-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.cremation-header{flex-direction:column}.cremation-header-nav{align-items:flex-start;width:100%}.cremation-date-nav{width:100%;justify-content:space-between}.cremation-view-tabs{width:100%;justify-content:center}.cremation-progress{flex-wrap:wrap}.cremation-animal-row{grid-template-columns:1fr;gap:6px}.cremation-animal-actions{margin-left:0;margin-top:4px}.cremation-timeline-item{grid-template-columns:36px minmax(0,1fr);gap:8px}.cremation-timeline-time{font-size:9px}}
 """
@@ -6410,8 +6412,15 @@ class App(BaseHTTPRequestHandler):
             view_date=date.fromisoformat(cycle_date)
         except ValueError:
             view_date=date.today();cycle_date=view_date.isoformat()
-        vista=(q.get("vista") or ["giorno"])[0]
-        if vista not in ("giorno","settimana"):vista="giorno"
+        vista_param=(q.get("vista") or [""])[0]
+        if vista_param not in ("giorno","settimana"):vista_param=""
+        if vista_param:
+            vista=vista_param
+            with db() as c:
+                c.execute("INSERT INTO user_preferences(user_id,key,value) VALUES(?,?,?) ON CONFLICT(user_id,key) DO UPDATE SET value=excluded.value",(user["id"],"cremation_view",vista))
+        else:
+            vista=load_preferences(user["id"]).get("cremation_view","giorno")
+            if vista not in ("giorno","settimana"):vista="giorno"
         if vista=="settimana":
             return self.cremation_schedule_week(user,view_date)
         today_date=date.today()
@@ -6635,7 +6644,7 @@ class App(BaseHTTPRequestHandler):
           <a class="cremation-today-btn {"active" if cycle_date==today_date.isoformat() else ""}" href="/programma-cremazioni">Oggi</a>
         </div>
         <div class="cremation-view-tabs">
-          <a class="active" href="/programma-cremazioni?data={cycle_date}">Giorno</a>
+          <a class="active" href="/programma-cremazioni?vista=giorno&data={cycle_date}">Giorno</a>
           <a href="/programma-cremazioni?vista=settimana&data={cycle_date}">Settimana</a>
           <button type="button" disabled title="Non ancora disponibile">Calendario</button>
         </div>'''
@@ -6960,7 +6969,7 @@ class App(BaseHTTPRequestHandler):
           <a class="cremation-today-btn {"active" if today_iso in week_dates else ""}" href="/programma-cremazioni?vista=settimana">Oggi</a>
         </div>
         <div class="cremation-view-tabs">
-          <a href="/programma-cremazioni?data={view_date.isoformat()}">Giorno</a>
+          <a href="/programma-cremazioni?vista=giorno&data={view_date.isoformat()}">Giorno</a>
           <a class="active" href="/programma-cremazioni?vista=settimana&data={view_date.isoformat()}">Settimana</a>
           <button type="button" disabled title="Non ancora disponibile">Calendario</button>
         </div>'''
