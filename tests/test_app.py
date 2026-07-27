@@ -614,7 +614,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("e.target.name === 'deposit_final'", app.APP_JS)
         self.assertNotIn("definitive > 0 ? definitive : ppmNumber(totalField ? totalField.value : 0);\n  const remaining", app.APP_JS)
 
-    def test_d_circuito_acconto_shows_correctly_in_riepilogo_dashboard_and_archive(self):
+    def test_d_circuito_acconto_shows_correctly_in_riepilogo_and_archive(self):
         # Regression test for a reported bug: a practice created with Totale
         # D=350, Acconto D=100 (Rimanenza D=250 correctly computed at
         # creation) later showed Acconto D=0,00 and Rimanenza D=350,00
@@ -637,11 +637,10 @@ class PetParadiseTests(unittest.TestCase):
         page = rendered[-1]
         self.assertIn('<small>Acconto D</small><b>€ 100,00</b>', page)
         self.assertIn('<small>Rimanenza D</small><b>€ 250,00</b>', page)
-        self.handler.path = "/"
-        self.handler.dashboard(admin)
-        dashboard_page = rendered[-1]
-        self.assertIn('<small>Acconto D</small><br>€ 100,00', dashboard_page)
-        self.assertIn('<small>Rimanenza D</small><br>€ 250,00', dashboard_page)
+        # la Dashboard mostra ora le card compatte "Ultime 10 pratiche" (senza
+        # il dettaglio Acconto/Rimanenza, non previsto dal nuovo mockup): la
+        # verifica del fix D resta sul Riepilogo pratica sopra e sull'Archivio
+        # sotto, che sono le pagine dove quel dettaglio continua a comparire.
         self.handler.path = "/archivio/pratiche"
         self.handler.archive(admin)
         archive_page = rendered[-1]
@@ -3260,7 +3259,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("function practiceRowOpen(url)", app.APP_JS)
         self.assertIn(".row-selected", app.CSS)
 
-    def test_archive_and_dashboard_show_elimina_button_on_every_practice_row(self):
+    def test_archive_shows_elimina_button_on_every_practice_row(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
             for number,date in (("CR-OLD001","2020-01-15"),("CR-NEW001","2026-07-20")):
@@ -3280,11 +3279,17 @@ class PetParadiseTests(unittest.TestCase):
                 f'''<form onclick="event.stopPropagation()" method="post" action="/pratiche/{pid}/elimina" onsubmit="return confirm('Spostare questa pratica nel Cestino? Potrai ripristinarla in seguito.')"><button class="btn danger-btn" type="submit">Elimina</button></form>''',
                 archive_page,
             )
+        # la Dashboard usa ora le card compatte "Ultime 10 pratiche": niente
+        # tabella e niente pulsante Elimina lì (solo tap/chevron per aprire
+        # la pratica) — quell'azione resta specifica dell'Archivio.
         self.handler.path="/"
         self.handler.dashboard(admin)
         dashboard_page=rendered[-1]
-        self.assertIn("<th>Azione</th>",dashboard_page)
-        self.assertIn(f'action="/pratiche/{new_pid}/elimina"',dashboard_page)
+        recent_start=dashboard_page.index('<section class="dashboard-recent">')
+        recent_section=dashboard_page[recent_start:dashboard_page.index('</section>',recent_start)]
+        self.assertNotIn("<th>Azione</th>",recent_section)
+        self.assertNotIn("/elimina",recent_section)
+        self.assertIn(f'/pratiche/{new_pid}',recent_section)
 
     def test_elimina_button_reuses_existing_soft_delete_route(self):
         with app.db() as conn:
@@ -4591,12 +4596,14 @@ class PetParadiseTests(unittest.TestCase):
         with app.db() as conn:
             self.assertEqual(snapshot,(conn.execute("SELECT count(*) n FROM practices").fetchone()["n"],conn.execute("SELECT count(*) n FROM payment_movements").fetchone()["n"],conn.execute("SELECT count(*) n FROM practice_history").fetchone()["n"]))
 
-    def test_dashboard_recent_practices_use_species_avatars_and_premium_row_style(self):
+    def test_dashboard_recent_practices_use_a_compact_card_list_not_a_table(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
-                         animal_name,species,pickup_date) VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                         ("CR-AVATAR-DOG","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Rex","Cane","2026-07-20"))
+                         animal_name,species,estimated_weight,pickup_date,pickup_time,age_years,age_months,
+                         owner_first_name,owner_last_name,owner_phone) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                         ("CR-AVATAR-DOG","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Rex","Cane","15",
+                          "2026-07-20","14:30","8","6","Francesca","Craba","3384272742"))
             conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
                          animal_name,species,pickup_date) VALUES(?,?,?,?,?,?,?,?,?,?)""",
                          ("CR-AVATAR-CAT","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Micio","Gatto","2026-07-21"))
@@ -4604,12 +4611,40 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path="/"
         self.handler.dashboard(admin)
         page=rendered[-1]
-        self.assertIn('class="practice-row-avatar avatar-dog"',page)
-        self.assertIn('class="practice-row-avatar avatar-cat"',page)
-        self.assertIn("\U0001f436",page)  # 🐶
-        self.assertIn("\U0001f431",page)  # 🐱
-        # this must be the same shared component the Archivio pratiche page uses
-        self.assertIn('<table class="practice-list-table">',page)
+        recent_start=page.index('<section class="dashboard-recent">')
+        recent_section=page[recent_start:page.index('</section>',recent_start)]
+        # niente più tabella: solo l'elenco a card compatte
+        self.assertNotIn('<table',recent_section)
+        self.assertIn('class="recent-practice-list"',recent_section)
+        self.assertIn('class="recent-practice-card avatar-dog"',recent_section)
+        self.assertIn('class="recent-practice-card avatar-cat"',recent_section)
+        self.assertIn('class="recent-practice-avatar avatar-dog"',recent_section)
+        self.assertIn("\U0001f436",recent_section)  # 🐶
+        self.assertIn("\U0001f431",recent_section)  # 🐱
+        self.assertIn("Rex",recent_section)
+        self.assertIn("Cane • 15 kg",recent_section)
+        self.assertIn("20/07/2026",recent_section)
+        self.assertIn("ore 14:30",recent_section)
+        self.assertIn("8 anni e 6 mesi",recent_section)
+        self.assertIn("Francesca Craba",recent_section)
+        self.assertIn("3384272742",recent_section)
+        # il gatto senza peso/eta'/proprietario mostra i trattini lunghi previsti dal mockup, non vuoto
+        self.assertIn("Gatto • —",recent_section)
+
+    def test_recent_practice_card_opens_the_practice_and_uses_the_chevron(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                         animal_name,species,pickup_date) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                         ("CR-CARDCLICK","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Fido","Cane","2026-07-20")).lastrowid
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        recent_start=page.index('<section class="dashboard-recent">')
+        recent_section=page[recent_start:page.index('</section>',recent_start)]
+        self.assertIn(f"practiceRowSelect(this,event,'/pratiche/{pid}?return_to=%2F')",recent_section)
+        self.assertIn('class="recent-practice-chevron"',recent_section)
 
     def test_practice_list_table_css_uses_rounded_spaced_premium_rows(self):
         for rule in (
@@ -5137,33 +5172,29 @@ class PetParadiseTests(unittest.TestCase):
             ).fetchone()
         self.assertIsNone(still_open)
 
-    def test_pickup_stalled_reminder_appears_after_4_days_and_clears_on_progression(self):
+    def test_pickup_stalled_reminder_type_was_removed_and_stays_gone(self):
+        # su richiesta dell'utente il promemoria "animali ritirati ancora da
+        # mettere in programma" e' stato rimosso: non deve piu' comparire in
+        # Dashboard, anche per una pratica Ritirato da molti giorni, e ogni
+        # occorrenza rimasta aperta da prima della rimozione viene chiusa
+        # automaticamente al primo sync_reminders successivo.
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
-            today=date.today()
-            stalled_pickup=(today-timedelta(days=6)).isoformat()
-            fresh_pickup=(today-timedelta(days=1)).isoformat()
+            stalled_pickup=(date.today()-timedelta(days=6)).isoformat()
             stalled_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
                 animal_name,owner_first_name,owner_last_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
                 ("CR-STALL1","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Birba","Mario","Conti",stalled_pickup,1)).lastrowid
-            fresh_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
-                animal_name,owner_first_name,owner_last_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-                ("CR-STALL2","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Leo","Sara","Bianchi",fresh_pickup,1)).lastrowid
+            # simula un'occorrenza rimasta aperta da prima della rimozione del tipo
+            conn.execute("""INSERT INTO reminders(reminder_type,entity_key,dedupe_key,title,url,created_at)
+                VALUES(?,?,?,?,?,?)""",
+                ("pickup_stalled",f"practice:{stalled_pid}",f"pickup_stalled:{stalled_pid}:legacy","Vecchio promemoria",f"/pratiche/{stalled_pid}",stamp))
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
         self.handler.dashboard(admin)
         page=rendered[-1]
-        self.assertIn("1 animale ritirato ancora da mettere in programma",page)
-        panel=self.reminder_panel_html(page,"pickup_stalled")
-        self.assertIn(f'href="/pratiche/{stalled_pid}?return_to=%2F"',panel)
-        # a practice picked up only recently must not trigger this reminder yet
-        self.assertNotIn(f'href="/pratiche/{fresh_pid}?return_to=%2F"',panel)
-        # once the practice moves forward, the stalled reminder auto-resolves
-        with app.db() as conn:
-            conn.execute("UPDATE practices SET status='In programma' WHERE id=?",(stalled_pid,))
-        self.handler.dashboard(admin)
+        self.assertNotIn("ancora da mettere in programma",page)
         with app.db() as conn:
             still_open=conn.execute(
-                "SELECT id FROM reminders WHERE entity_key=? AND reminder_type='pickup_stalled' AND completed_at IS NULL",(f"practice:{stalled_pid}",)
+                "SELECT id FROM reminders WHERE reminder_type='pickup_stalled' AND completed_at IS NULL"
             ).fetchone()
         self.assertIsNone(still_open)
 
@@ -5240,9 +5271,9 @@ class PetParadiseTests(unittest.TestCase):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             pickup=(date.today()-timedelta(days=6)).isoformat()
-            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
-                animal_name,owner_first_name,owner_last_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-                ("CR-REFRESH","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Birba","Mario","Conti",pickup,1)).lastrowid
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,created_at,updated_at,created_by,
+                animal_name,owner_first_name,owner_last_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-REFRESH","Privato","Livorno","Ritirato","Cremazione singola",stamp,stamp,admin["id"],"Birba","Mario","Conti",pickup,1)).lastrowid
         with app.db() as conn:
             app.sync_reminders(conn)
         with app.db() as conn:
@@ -5302,18 +5333,17 @@ class PetParadiseTests(unittest.TestCase):
     def test_reminders_card_group_with_multiple_items_expands_every_animal_row_inline(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
-            today=date.today();pickup=(today-timedelta(days=6)).isoformat()
             pids=[]
             for suffix,animal in (("A","Uno"),("B","Due")):
                 pids.append(conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
-                    animal_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                    (f"CR-MULTI{suffix}","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],animal,pickup,1)).lastrowid)
+                    animal_name,data_complete) VALUES(?,?,?,?,?,?,?,?,?)""",
+                    (f"CR-MULTI{suffix}","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],animal,0)).lastrowid)
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
         self.handler.dashboard(admin)
         page=rendered[-1]
-        self.assertIn("2 animali ritirati ancora da mettere in programma",page)
+        self.assertIn("2 pratiche con dati da completare",page)
         # the accordion panel lists every individual animal, not a single link to the archive
-        panel=self.reminder_panel_html(page,"pickup_stalled")
+        panel=self.reminder_panel_html(page,"practice_incomplete")
         for pid in pids:
             self.assertIn(f'href="/pratiche/{pid}?return_to=%2F"',panel)
 
@@ -5325,6 +5355,26 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn("ppmOpenReminders", app.APP_JS)
         self.assertIn(".reminders-card-body{max-height:0;overflow:hidden;transition:max-height .35s ease}", app.CSS)
         self.assertIn("body.style.maxHeight=open?body.scrollHeight+'px':'0px';", app.APP_JS)
+
+    def test_reminders_animal_row_shows_name_and_weight_on_separate_lines(self):
+        # bug reale segnalato dall'utente: "Nilde · 15 kg" su una riga sola si
+        # spezzava in modo illeggibile su mobile e il tasto "Inserisci in
+        # programma" finiva sovrapposto al testo. Nome e peso vanno ora su
+        # due righe distinte, senza il punto separatore.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,created_at,updated_at,created_by,
+                animal_name,estimated_weight,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-WEIGHTROW","Privato","Livorno","Ritirato","Cremazione singola",stamp,stamp,admin["id"],"Nilde","15",1)).lastrowid
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        panel=self.reminder_panel_html(page,"cremation_pending")
+        self.assertIn('<span class="reminders-expand-title">Nilde</span>',panel)
+        self.assertIn('<span class="reminders-expand-weight">15 kg</span>',panel)
+        self.assertNotIn("Nilde · 15 kg",panel)
+        # su mobile il blocco azioni va a capo sotto il testo, non sovrapposto
+        self.assertIn("@media(max-width:620px){.reminders-expand-row{flex-wrap:wrap}.reminders-expand-actions{flex:1 1 100%",app.CSS)
 
     def test_reminders_are_accordion_buttons_not_navigation_links(self):
         with app.db() as conn:
@@ -5368,7 +5418,7 @@ class PetParadiseTests(unittest.TestCase):
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
         self.handler.dashboard(admin)
         page=rendered[-1]
-        panel=self.reminder_panel_html(page,"pickup_stalled")
+        panel=self.reminder_panel_html(page,"cremation_pending")
         self.assertIn('class="reminders-expand-row"',panel)
         self.assertIn(f"practiceRowSelect(this,event,'/pratiche/{pid}?return_to=%2F')",panel)
         self.assertIn('onclick="event.stopPropagation()"',panel)
