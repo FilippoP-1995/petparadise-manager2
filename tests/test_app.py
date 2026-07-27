@@ -1729,6 +1729,83 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(practice["status"], "Ritirato")
         self.assertEqual((history["old_value"], history["new_value"]), ("In programma", "Ritirato"))
 
+    def test_cremation_delete_cycle_removes_an_empty_cycle(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-20", "pianificato", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.cremation_delete_cycle(admin, cycle_id)
+        self.assertEqual(responses[-1], ({"ok": True}, 200))
+        with app.db() as conn:
+            self.assertIsNone(conn.execute("SELECT id FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone())
+
+    def test_cremation_delete_cycle_releases_assigned_animals_back_to_ritirato(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-20", "in_attesa", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+            pid1 = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-DEL1", "Privato", "Livorno", "In programma", "Cremazione singola", "2026-07-15", stamp, stamp,
+                 admin["id"], "Uno", cycle_id),
+            ).lastrowid
+            pid2 = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-DEL2", "Privato", "Livorno", "In programma", "Cremazione singola", "2026-07-15", stamp, stamp,
+                 admin["id"], "Due", cycle_id),
+            ).lastrowid
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.cremation_delete_cycle(admin, cycle_id)
+        self.assertEqual(responses[-1], ({"ok": True}, 200))
+        with app.db() as conn:
+            self.assertIsNone(conn.execute("SELECT id FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone())
+            for pid in (pid1, pid2):
+                practice = conn.execute("SELECT status,cremation_cycle_id FROM practices WHERE id=?", (pid,)).fetchone()
+                self.assertIsNone(practice["cremation_cycle_id"])
+                self.assertEqual(practice["status"], "Ritirato")
+                history = conn.execute(
+                    "SELECT old_value,new_value FROM practice_history WHERE practice_id=? ORDER BY id DESC LIMIT 1", (pid,)
+                ).fetchone()
+                self.assertEqual((history["old_value"], history["new_value"]), ("In programma", "Ritirato"))
+
+    def test_cremation_delete_cycle_is_blocked_when_completato(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,actual_end,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                ("2026-07-20", "completato", "08:00", "09:30", stamp, stamp, stamp),
+            ).lastrowid
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.cremation_delete_cycle(admin, cycle_id)
+        self.assertEqual(responses[-1][1], 409)
+        self.assertFalse(responses[-1][0]["ok"])
+        with app.db() as conn:
+            self.assertIsNotNone(conn.execute("SELECT id FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone())
+
+    def test_cremation_delete_cycle_confirm_is_custom_not_native(self):
+        js = app.APP_JS
+        self.assertIn("function cremationDeleteCycle(cycleId){", js)
+        idx = js.index("function cremationDeleteCycle(cycleId){")
+        body = js[idx:idx + 500]
+        # must use the gestionale's own custom confirm modal, never the native confirm()
+        self.assertIn("cremationOpenConfirmModal(", body)
+        self.assertNotIn("window.confirm(", body)
+        self.assertIn("/elimina", body)
+        self.assertIn(".cremation-action-delete{", app.CSS)
+
     def test_cremation_edit_cycle_cascades_to_subsequent_overlapping_cycles(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()

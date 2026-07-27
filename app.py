@@ -1688,6 +1688,8 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-quick-insert-btn:hover{background:#fb71851a}
 .cremation-quick-insert-btn .icon{width:13px;height:13px}
 .cremation-action-add{border-color:#c084fc;color:#c084fc}
+.cremation-action-delete{border-color:#fb7185;color:#fb7185}
+.cremation-action-delete:hover{background:#fb71851a}
 .cremation-action-add:hover{background:#c084fc1a}
 .cremation-quick-menu-popover{position:absolute;left:0;top:calc(100% + 6px);z-index:30;min-width:190px;max-width:250px;max-height:260px;overflow-y:auto;padding:6px;border:1px solid #334155;border-radius:10px;background:#172033;box-shadow:0 14px 34px #000a}
 .cremation-quick-menu-popover button{display:flex;align-items:center;gap:6px;width:100%;padding:8px 10px;border:0;background:transparent;border-radius:7px;color:#e2e8f0;font-size:12px;text-align:left;cursor:pointer}
@@ -3462,6 +3464,14 @@ function cremationRemoveFromCycle(el,practiceId){
       .catch(function(){location.reload();});
   },{title:'Rimuovi animale',confirmLabel:'Rimuovi'});
 }
+function cremationDeleteCycle(cycleId){
+  cremationOpenConfirmModal('Eliminare questo ciclo? Gli eventuali animali assegnati torneranno nella lista degli animali da pianificare.',function(){
+    fetch('/programma-cremazioni/cicli/'+cycleId+'/elimina',{method:'POST',credentials:'same-origin'})
+      .then(function(res){return res.json();})
+      .then(function(data){if(!data.ok){alert(data.error||'Operazione non riuscita');return;}location.reload();})
+      .catch(function(){location.reload();});
+  },{title:'Elimina ciclo',confirmLabel:'Elimina'});
+}
 function cremationCollapseBody(body){
   body.style.maxHeight=body.scrollHeight+'px';
   requestAnimationFrame(function(){
@@ -5162,6 +5172,8 @@ class App(BaseHTTPRequestHandler):
         if match: return self.cremation_complete_cycle(user, int(match.group(1)))
         match = re.fullmatch(r"/programma-cremazioni/cicli/(\d+)/modifica", path)
         if match: return self.cremation_edit_cycle(user, int(match.group(1)))
+        match = re.fullmatch(r"/programma-cremazioni/cicli/(\d+)/elimina", path)
+        if match: return self.cremation_delete_cycle(user, int(match.group(1)))
         match = re.fullmatch(r"/programma-cremazioni/pratiche/(\d+)/rimuovi", path)
         if match: return self.cremation_remove_from_cycle(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/catalogo-inviato", path)
@@ -6785,6 +6797,7 @@ class App(BaseHTTPRequestHandler):
                         remaining_html=f'<div class="cremation-remaining">{lucide("clock")}<span>Rimangono {remaining} min</span></div>'
                     except ValueError:pass
                     actions.append(f'<button type="button" class="cremation-action-btn cremation-action-active" onclick="cremationCompleteCycle({cycle["id"]})">{lucide("check-circle")}<span>Termina ciclo</span></button>')
+                actions.append(f'<button type="button" class="cremation-action-btn cremation-action-delete" onclick="cremationDeleteCycle({cycle["id"]})">{lucide("x")}<span>Elimina ciclo</span></button>')
             action_html=''.join(actions)
             dropzone_attr=f'data-cycle-dropzone="{cycle["id"]}"' if status!="completato" and len(animals)<2 else ""
             cycle_items.append(f'''<div class="cremation-timeline-item">
@@ -7165,6 +7178,7 @@ class App(BaseHTTPRequestHandler):
                             remaining_html=f'<div class="cremation-remaining">{lucide("clock")}<span>Rimangono {remaining} min</span></div>'
                         except ValueError:pass
                         actions.append(f'<button type="button" class="cremation-action-btn cremation-action-active" onclick="cremationCompleteCycle({cycle["id"]})">{lucide("check-circle")}<span>Termina ciclo</span></button>')
+                    actions.append(f'<button type="button" class="cremation-action-btn cremation-action-delete" onclick="cremationDeleteCycle({cycle["id"]})">{lucide("x")}<span>Elimina ciclo</span></button>')
                 action_html=''.join(actions)
                 dropzone_attr=f'data-cycle-dropzone="{cycle["id"]}"' if status!="completato" and len(animals)<2 else ""
                 row_items.append(f'''<div class="cremation-timeline-item cremation-week-cycle-item">
@@ -7458,6 +7472,21 @@ class App(BaseHTTPRequestHandler):
                         row_start=min_start;row_end=cremation_time_add(row_start,duration)
                         c.execute("UPDATE cremation_cycles SET planned_start=?,planned_end=?,updated_at=? WHERE id=?",(row_start,row_end,stamp,row["id"]))
                 prev_end=row_end
+        return self.send_json({"ok":True})
+
+    def cremation_delete_cycle(self,user,cycle_id):
+        stamp=now()
+        with db() as c:
+            cycle=c.execute("SELECT id,status FROM cremation_cycles WHERE id=?",(cycle_id,)).fetchone()
+            if not cycle:return self.send_json({"ok":False,"error":"Ciclo non trovato"},404)
+            if cycle["status"]=="completato":
+                return self.send_json({"ok":False,"error":"Non puoi eliminare un ciclo già completato."},409)
+            practices=c.execute("SELECT id,status FROM practices WHERE cremation_cycle_id=? AND (deleted_at IS NULL OR deleted_at='')",(cycle_id,)).fetchall()
+            for p in practices:
+                c.execute("UPDATE practices SET cremation_cycle_id=NULL,updated_at=? WHERE id=?",(stamp,p["id"]))
+                if p["status"]=="In programma":
+                    cremation_log_status_change(c,p["id"],"In programma","Ritirato",user["id"],stamp)
+            c.execute("DELETE FROM cremation_cycles WHERE id=?",(cycle_id,))
         return self.send_json({"ok":True})
 
     def cremation_remove_from_cycle(self,user,pid):
