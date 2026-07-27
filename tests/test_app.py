@@ -2108,10 +2108,47 @@ class PetParadiseTests(unittest.TestCase):
         # regression 2: in the week view, the generic .cremation-week-cycle-card
         # base rule (same specificity, later in the stylesheet) silently overrode
         # these status colors, so the compound selector must win regardless of order.
-        self.assertIn(".cremation-cycle-card.cremation-cycle-in_corso,.cremation-week-cycle-card.cremation-cycle-in_corso{border-left-color:#3b82f6}", app.CSS)
-        self.assertIn(".cremation-cycle-card.cremation-cycle-completato,.cremation-week-cycle-card.cremation-cycle-completato{border-left-color:#4ade80", app.CSS)
-        self.assertIn(".cremation-cycle-card.cremation-cycle-in_attesa,.cremation-week-cycle-card.cremation-cycle-in_attesa{border-left-color:#fb923c}", app.CSS)
-        self.assertIn(".cremation-cycle-card.cremation-cycle-pianificato,.cremation-week-cycle-card.cremation-cycle-pianificato{border-left-color:#60a5fa}", app.CSS)
+        for selector_prefix, hexcolor in (
+            (".cremation-cycle-card.cremation-cycle-in_corso,.cremation-week-cycle-card.cremation-cycle-in_corso", "#3b82f6"),
+            (".cremation-cycle-card.cremation-cycle-completato,.cremation-week-cycle-card.cremation-cycle-completato", "#4ade80"),
+            (".cremation-cycle-card.cremation-cycle-in_attesa,.cremation-week-cycle-card.cremation-cycle-in_attesa", "#fb923c"),
+            (".cremation-cycle-card.cremation-cycle-pianificato,.cremation-week-cycle-card.cremation-cycle-pianificato", "#60a5fa"),
+        ):
+            start = app.CSS.index(selector_prefix)
+            rule = app.CSS[start:app.CSS.index("}", start) + 1]
+            self.assertIn(f"border-left-color:{hexcolor}", rule)
+
+    def test_cremation_cycle_cards_get_a_subtle_status_tinted_background(self):
+        # a very light, low-opacity background + glow per status, on top of the
+        # existing dark card look — never a solid/loud fill, and never applied
+        # per animal row (a two-animal cycle must read as one uniform card).
+        for status, rgb in (("in_corso", "59,130,246"), ("in_attesa", "251,146,60"), ("completato", "74,222,128")):
+            selector_prefix = f".cremation-cycle-card.cremation-cycle-{status},.cremation-week-cycle-card.cremation-cycle-{status}"
+            start = app.CSS.index(selector_prefix)
+            rule = app.CSS[start:app.CSS.index("}", start) + 1]
+            self.assertIn(f"background:rgba({rgb},.08)", rule)
+            self.assertIn("box-shadow:0 0", rule)
+            self.assertIn(f"rgba({rgb},", rule.split("box-shadow:")[1])
+
+        # pianificato stays subtle with no strong glow, per spec
+        pianificato_start = app.CSS.index(".cremation-cycle-card.cremation-cycle-pianificato,.cremation-week-cycle-card.cremation-cycle-pianificato")
+        pianificato_rule = app.CSS[pianificato_start:app.CSS.index("}", pianificato_start) + 1]
+        self.assertIn("background:rgba(96,165,250,.05)", pianificato_rule)
+        self.assertNotIn("box-shadow", pianificato_rule)
+
+        # the expanded detail panel picks up a much more delicate tint of the same hue
+        self.assertIn(".cremation-cycle-in_corso .cremation-cycle-body-inner{background:rgba(59,130,246,.04)}", app.CSS)
+        self.assertIn(".cremation-cycle-completato .cremation-cycle-body-inner{background:rgba(74,222,128,.04)}", app.CSS)
+        self.assertIn(".cremation-cycle-in_attesa .cremation-cycle-body-inner{background:rgba(251,146,60,.04)}", app.CSS)
+
+        # no per-animal-row status coloring exists — a 2-animal cycle must stay one uniform card
+        self.assertNotIn("cremation-animal-row.cremation-cycle-", app.CSS)
+
+        # the light theme gets its own (higher-specificity) tint so the plain
+        # ".light-theme .cremation-cycle-card{background:#fff}" override can't
+        # silently win the cascade and erase the status color again
+        self.assertIn(".light-theme .cremation-cycle-card.cremation-cycle-completato,.light-theme .cremation-week-cycle-card.cremation-cycle-completato{background:rgba(74,222,128,.12)", app.CSS)
+        self.assertIn(".light-theme .cremation-cycle-card.cremation-cycle-in_corso,.light-theme .cremation-week-cycle-card.cremation-cycle-in_corso{background:rgba(59,130,246,.12)", app.CSS)
 
     def test_cremation_schedule_remembers_last_selected_view_across_visits(self):
         with app.db() as conn:

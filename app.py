@@ -1535,10 +1535,14 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-dot-done{background:#64748b}
 .cremation-dot-planned{background:#60a5fa}
 .cremation-cycle-card{background:#1f2937;border:1px solid #334155;border-left:4px solid #475569;border-radius:14px;padding:16px;min-width:0}
-.cremation-cycle-card.cremation-cycle-in_corso,.cremation-week-cycle-card.cremation-cycle-in_corso{border-left-color:#3b82f6}
-.cremation-cycle-card.cremation-cycle-in_attesa,.cremation-week-cycle-card.cremation-cycle-in_attesa{border-left-color:#fb923c}
-.cremation-cycle-card.cremation-cycle-completato,.cremation-week-cycle-card.cremation-cycle-completato{border-left-color:#4ade80;opacity:.75}
-.cremation-cycle-card.cremation-cycle-pianificato,.cremation-week-cycle-card.cremation-cycle-pianificato{border-left-color:#60a5fa}
+.cremation-cycle-card.cremation-cycle-in_corso,.cremation-week-cycle-card.cremation-cycle-in_corso{background:rgba(59,130,246,.08);border-color:rgba(59,130,246,.4);border-left-color:#3b82f6;box-shadow:0 0 16px rgba(59,130,246,.16)}
+.cremation-cycle-card.cremation-cycle-in_attesa,.cremation-week-cycle-card.cremation-cycle-in_attesa{background:rgba(251,146,60,.08);border-color:rgba(251,146,60,.35);border-left-color:#fb923c;box-shadow:0 0 14px rgba(251,146,60,.12)}
+.cremation-cycle-card.cremation-cycle-completato,.cremation-week-cycle-card.cremation-cycle-completato{background:rgba(74,222,128,.08);border-color:rgba(74,222,128,.35);border-left-color:#4ade80;box-shadow:0 0 14px rgba(74,222,128,.12)}
+.cremation-cycle-card.cremation-cycle-pianificato,.cremation-week-cycle-card.cremation-cycle-pianificato{background:rgba(96,165,250,.05);border-left-color:#60a5fa}
+.cremation-cycle-in_corso .cremation-cycle-body-inner{background:rgba(59,130,246,.04)}
+.cremation-cycle-in_attesa .cremation-cycle-body-inner{background:rgba(251,146,60,.04)}
+.cremation-cycle-completato .cremation-cycle-body-inner{background:rgba(74,222,128,.04)}
+.cremation-cycle-pianificato .cremation-cycle-body-inner{background:rgba(96,165,250,.03)}
 .cremation-cycle-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:0;cursor:pointer}
 .cremation-cycle-animal-names{color:#f8fafc;font-size:13px;font-weight:700;flex:1 1 160px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cremation-cycle-chevron{display:flex;align-items:center;color:#64748b;flex:0 0 auto}
@@ -1653,6 +1657,10 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-add-animal-tags{display:flex;flex-wrap:wrap;gap:4px}
 .cremation-add-animal-btn{flex:0 0 auto;padding:6px 12px;border-radius:8px;background:#fb718522;color:#fb7185;font-size:11px;font-weight:700;white-space:nowrap}
 .light-theme .cremation-cycle-card,.light-theme .cremation-waiting-card{background:#fff;border-color:#e2e8f0;color:#111827}
+.light-theme .cremation-cycle-card.cremation-cycle-in_corso,.light-theme .cremation-week-cycle-card.cremation-cycle-in_corso{background:rgba(59,130,246,.12);border-color:rgba(59,130,246,.45);border-left-color:#3b82f6}
+.light-theme .cremation-cycle-card.cremation-cycle-in_attesa,.light-theme .cremation-week-cycle-card.cremation-cycle-in_attesa{background:rgba(251,146,60,.12);border-color:rgba(251,146,60,.4);border-left-color:#fb923c}
+.light-theme .cremation-cycle-card.cremation-cycle-completato,.light-theme .cremation-week-cycle-card.cremation-cycle-completato{background:rgba(74,222,128,.12);border-color:rgba(74,222,128,.4);border-left-color:#4ade80}
+.light-theme .cremation-cycle-card.cremation-cycle-pianificato,.light-theme .cremation-week-cycle-card.cremation-cycle-pianificato{background:rgba(96,165,250,.08);border-left-color:#60a5fa}
 .light-theme .cremation-date-label,.light-theme .cremation-nav-btn,.light-theme .cremation-view-tabs{background:#f8fafc;border-color:#e2e8f0}
 .light-theme .cremation-view-tabs button,.light-theme .cremation-view-tabs a{color:#475569}
 .light-theme .cremation-progress-segments span{background:#f1f5f9;border-color:#e2e8f0}
