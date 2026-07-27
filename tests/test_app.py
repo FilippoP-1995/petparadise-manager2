@@ -124,15 +124,17 @@ class PetParadiseTests(unittest.TestCase):
             ).lastrowid
         captured = []
         self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
-        # Filling in urn_notes with a real choice must clear send_catalog too, in the
+        # Filling in an urn item with a real choice must clear send_catalog too, in the
         # same autosave write — not just in the in-memory normalization.
-        self.handler.form = lambda: {"updated_at": stamp, "changes_json": json.dumps({"urn_notes": "Urna in legno chiaro"})}
+        urna_items = json.dumps([{"label": "Urna in legno chiaro", "price": "50"}])
+        self.handler.form = lambda: {"updated_at": stamp, "changes_json": json.dumps({"urna_items_json": urna_items})}
         self.handler.practice_autosave(admin, pid)
         self.assertEqual(captured[-1][1], 200)
         self.assertIn("send_catalog", captured[-1][0]["saved_fields"])
         with app.db() as conn:
-            row = conn.execute("SELECT urn_notes,send_catalog,catalog_sent FROM practices WHERE id=?", (pid,)).fetchone()
-        self.assertEqual(row["urn_notes"], "Urna in legno chiaro")
+            row = conn.execute("SELECT send_catalog,catalog_sent FROM practices WHERE id=?", (pid,)).fetchone()
+            items = conn.execute("SELECT label,price FROM practice_items WHERE practice_id=? AND category='urna'", (pid,)).fetchall()
+        self.assertEqual([dict(i) for i in items], [{"label": "Urna in legno chiaro", "price": "50"}])
         self.assertEqual(row["send_catalog"], "")
         self.assertFalse(row["catalog_sent"])
 
@@ -339,7 +341,7 @@ class PetParadiseTests(unittest.TestCase):
 
     def test_form_extensions_and_normalization(self):
         html = self.handler.fields_html()
-        for expected in ("GIANLUCA", "CALCO PER URNA", "CALCO POLPASTRELLO", "CALCO NASO", "price_paw_cast", "price_nose_cast", "Fiat Fiorino", "Renault Captur", "Dr PK8", "Cremato", "Smaltito"):
+        for expected in ("GIANLUCA", "CALCO PER URNA", "CALCO POLPASTRELLO", "CALCO NASO", 'data-practice-list="calco"', "Fiat Fiorino", "Renault Captur", "Dr PK8", "Cremato", "Smaltito"):
             self.assertIn(expected, html)
         data = self.handler.normalized_fields({"owner_tax_code": "rssmra80a01h501u", "service_type": "Da decidere"})
         self.assertEqual(data["owner_tax_code"], "RSSMRA80A01H501U")
@@ -347,29 +349,25 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(extras["price_paw_cast"], "25.50")
         self.assertEqual(extras["tag_calco_nose"], "Si")
 
-    def test_second_calco_naso_polpastrello_fields_and_possibile_tags(self):
+    def test_calco_items_are_unlimited_and_possibile_tags_normalize(self):
         html = self.handler.fields_html()
         for expected in (
-            'name="price_paw_cast_2"', 'name="price_nose_cast_2"',
             "POSSIBILE ASSISTITA STREAMING", "POSSIBILE CALCO",
             "POSSIBILE CALCO POLPASTRELLO", "POSSIBILE CALCO NASO",
             'name="tag_possibile_assistita_streaming"', 'name="tag_possibile_calco"',
             'name="tag_possibile_calco_paw"', 'name="tag_possibile_calco_nose"',
+            '+ Aggiungi calco', 'data-practice-list="calco"',
         ):
             self.assertIn(expected, html)
-        self.assertIn("+ Aggiungi calco polpastrello", app.APP_JS)
-        self.assertIn("+ Aggiungi calco naso", app.APP_JS)
-        self.assertIn("Secondo calco polpastrello", app.APP_JS)
-        self.assertIn("Secondo calco naso", app.APP_JS)
-        self.assertIn('price_paw_cast_2', app.MONEY_FIELDS)
-        self.assertIn('price_nose_cast_2', app.MONEY_FIELDS)
+        # calco items are a dynamic, uncapped list (not fixed price_paw_cast_2/_3/_4
+        # slots any more) — the client-side row config carries the two named
+        # subtypes plus a generic option, with no limit on how many rows exist.
+        self.assertIn('["polpastrello","Polpastrello"]', app.APP_JS)
+        self.assertIn('["naso","Naso"]', app.APP_JS)
         data = self.handler.normalized_fields({
-            "price_paw_cast_2": "12,50", "price_nose_cast_2": "8",
             "tag_possibile_assistita_streaming": "Si", "tag_possibile_calco": "Si",
             "tag_possibile_calco_paw": "Si", "tag_possibile_calco_nose": "Si",
         })
-        self.assertEqual(data["price_paw_cast_2"], "12.50")
-        self.assertEqual(data["price_nose_cast_2"], "8")
         self.assertEqual(data["tag_possibile_assistita_streaming"], "Si")
         self.assertEqual(data["tag_possibile_calco"], "Si")
         self.assertEqual(data["tag_possibile_calco_paw"], "Si")
@@ -377,6 +375,15 @@ class PetParadiseTests(unittest.TestCase):
         empty = self.handler.normalized_fields({})
         for key in ("tag_possibile_assistita_streaming", "tag_possibile_calco", "tag_possibile_calco_paw", "tag_possibile_calco_nose"):
             self.assertEqual(empty[key], "")
+        # five calco items (well beyond the old 2-generic/4-naso/4-polpastrello caps)
+        items = app.parse_practice_items(json.dumps([
+            {"subtype": "polpastrello", "label": "Argento", "price": "20"},
+            {"subtype": "polpastrello", "label": "Oro", "price": "30"},
+            {"subtype": "naso", "label": "Bronzo", "price": "15"},
+            {"subtype": "naso", "label": "Altro naso", "price": "10"},
+            {"subtype": "", "label": "Calco generico estra", "price": "5"},
+        ]), "calco")
+        self.assertEqual(len(items), 5)
 
     def test_possibile_tags_render_as_badges(self):
         with app.db() as conn:
@@ -420,26 +427,24 @@ class PetParadiseTests(unittest.TestCase):
         error = self.handler.validation_error({"service_type": "Cremazione singola"})
         self.assertIn("Nome", error)
 
-    def test_calco_naso_polpastrello_type_dropdowns_autofill_price(self):
+    def test_accessorio_items_are_unlimited_with_fixed_subtype_choices(self):
         html = self.handler.fields_html()
-        for expected in ('name="nose_cast_type"', 'name="nose_cast_type_2"', 'name="paw_cast_type"'):
-            self.assertIn(expected, html)
-        self.assertIn("NOSE_CAST_OPTIONS=[['Bronzo S',220],['Bronzo M',260],['Bronzo G',300],['Argento S',300],['Argento M',380],['Argento G',500]]", app.APP_JS)
-        self.assertIn("PAW_CAST_OPTIONS=[['Argento',200]]", app.APP_JS)
-        data = self.handler.normalized_fields({"nose_cast_type": "Bronzo M", "nose_cast_type_2": "Argento G", "paw_cast_type": "Argento"})
-        self.assertEqual(data["nose_cast_type"], "Bronzo M")
-        self.assertEqual(data["nose_cast_type_2"], "Argento G")
-        self.assertEqual(data["paw_cast_type"], "Argento")
-
-    def test_accessori_dropdown_reduced_with_conditional_detail_field(self):
-        self.assertIn("const options=['','Braccialetto','Collana','Calco inchiostro']", app.APP_JS)
-        self.assertIn("['Collana','Braccialetto'].includes(select.value)", app.APP_JS)
-        html = self.handler.fields_html()
-        for expected in ('name="accessory_detail"', 'name="accessory_detail_2"'):
-            self.assertIn(expected, html)
-        data = self.handler.normalized_fields({"accessory_detail": "Nome inciso", "accessory_detail_2": "Altro testo"})
-        self.assertEqual(data["accessory_detail"], "Nome inciso")
-        self.assertEqual(data["accessory_detail_2"], "Altro testo")
+        self.assertIn('data-practice-list="accessorio"', html)
+        self.assertIn('+ Aggiungi accessorio', html)
+        # subtype choices are still the same fixed set as before, just applied
+        # per-row instead of to two hardcoded accessory_type/accessory_type_2 fields
+        self.assertIn('["Altro","Altro"],["Collana","Collana"],["Braccialetto","Braccialetto"],["Calco inchiostro","Calco inchiostro"]', app.APP_JS)
+        # an invalid/unknown subtype falls back to "Altro"; a valid one and a free
+        # label/price both pass through untouched, and the list has no item cap
+        items = app.parse_practice_items(json.dumps([
+            {"subtype": "Collana", "label": "Nome inciso", "price": "40"},
+            {"subtype": "Braccialetto", "label": "Altro testo", "price": "25"},
+            {"subtype": "Qualcosa di strano", "label": "Extra", "price": "5"},
+        ]), "accessorio")
+        self.assertEqual(len(items), 3)
+        self.assertEqual(items[0]["subtype"], "Collana")
+        self.assertEqual(items[0]["label"], "Nome inciso")
+        self.assertEqual(items[2]["subtype"], "Altro")
 
     def test_totale_w_and_totale_d_groups_are_independent(self):
         html = self.handler.fields_html()
@@ -460,18 +465,20 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(data_with_d["remaining_final"], "260.00")
 
     def test_catalog_checkboxes_auto_uncheck_when_urn_is_decided(self):
-        # Placeholder/undecided urn text must NOT clear the checkboxes.
+        # Placeholder/undecided urn text must NOT count as a real urn choice.
         for placeholder in ("", "/", "Da decidere", "da decidere", "  /  "):
-            data = self.handler.normalized_fields({"send_catalog": "Si", "urn_notes": placeholder})
+            items=[{"subtype":"","urn_catalog_id":None,"label":placeholder,"price":"0"}]
+            has_urn=app.practice_has_real_urn_item(items)
+            self.assertFalse(has_urn, f"placeholder {placeholder!r} should not count as a real urn item")
+            data = self.handler.normalized_fields({"send_catalog": "Si"}, has_urn_item=has_urn)
             self.assertEqual(data["send_catalog"], "Si", f"placeholder {placeholder!r} should not clear send_catalog")
         # A real free-text urn choice clears both checkboxes.
-        data = self.handler.normalized_fields({"send_catalog": "Si", "catalog_sent": "Si", "urn_notes": "Urna in legno chiaro"})
+        self.assertTrue(app.practice_has_real_urn_item([{"subtype":"","urn_catalog_id":None,"label":"Urna in legno chiaro","price":"0"}]))
+        data = self.handler.normalized_fields({"send_catalog": "Si", "catalog_sent": "Si"}, has_urn_item=True)
         self.assertEqual(data["send_catalog"], "")
         self.assertEqual(data["catalog_sent"], "")
-        # Selecting a catalog urn (urn_id set) also clears both, even with empty notes.
-        data = self.handler.normalized_fields({"send_catalog": "Si", "catalog_sent": "Si", "urn_id": "5"})
-        self.assertEqual(data["send_catalog"], "")
-        self.assertEqual(data["catalog_sent"], "")
+        # Selecting a catalog urn (urn_catalog_id set) also counts, even with empty label.
+        self.assertTrue(app.practice_has_real_urn_item([{"subtype":"","urn_catalog_id":5,"label":"","price":"0"}]))
 
     def test_invoice_total_always_sources_from_totale_w_never_totale_d(self):
         # Even when Totale D is present (and larger), the auto-computed invoice total
@@ -878,29 +885,6 @@ class PetParadiseTests(unittest.TestCase):
             "  addRow([field('total_text'),field('deposit_final'),field('remaining_final')]);",
             app.APP_JS,
         )
-
-    def test_calco_naso_polpastrello_type_before_price_and_expandable(self):
-        html = self.handler.fields_html()
-        for expected in (
-            'name="nose_cast_type_3"', 'name="nose_cast_type_4"',
-            'name="paw_cast_type_2"', 'name="paw_cast_type_3"', 'name="paw_cast_type_4"',
-            'name="price_nose_cast_3"', 'name="price_nose_cast_4"',
-            'name="price_paw_cast_3"', 'name="price_paw_cast_4"',
-        ):
-            self.assertIn(expected, html)
-        self.assertIn("const setupExpandableCast=(config)=>{", app.APP_JS)
-        self.assertIn("primaryTypeWrap=buildSelect(hiddenType,config.primaryTypeName,config.primaryTypeLabel,priceInput);\n    priceWrap.parentNode.insertBefore(primaryTypeWrap,priceWrap);", app.APP_JS)
-        self.assertIn("addFirstLabel:'+ Aggiungi calco naso', addMoreLabel:'+ Aggiungi altro calco naso',", app.APP_JS)
-        self.assertIn("addFirstLabel:'+ Aggiungi calco polpastrello', addMoreLabel:'+ Aggiungi altro calco polpastrello',", app.APP_JS)
-        self.assertIn("const buttons=(text)=>original.filter(node=>node.matches?.('button')&&node.textContent.includes(text));", app.APP_JS)
-        data = self.handler.normalized_fields({
-            "nose_cast_type_3": "Bronzo G", "price_nose_cast_3": "300",
-            "paw_cast_type_4": "Argento", "price_paw_cast_4": "200,00",
-        })
-        self.assertEqual(data["nose_cast_type_3"], "Bronzo G")
-        self.assertEqual(data["price_nose_cast_3"], "300")
-        self.assertEqual(data["paw_cast_type_4"], "Argento")
-        self.assertEqual(data["price_paw_cast_4"], "200.00")
 
     def test_new_budget_invoice_and_transport_fields(self):
         html=self.handler.fields_html()
@@ -1499,14 +1483,27 @@ class PetParadiseTests(unittest.TestCase):
 
             def practice(code, status, service_type, pickup, provenance="", weight="", urn=None,
                          send_catalog="", tag_avvisare="", urn_notes="", owner_first="", owner_last="", animal_name=None):
-                return conn.execute(
+                pid = conn.execute(
                     """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
                        pickup_date,created_at,updated_at,created_by,animal_name,estimated_weight,provenance,
-                       urn_id,send_catalog,tag_avvisare,urn_notes,owner_first_name,owner_last_name)
-                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                       send_catalog,tag_avvisare,owner_first_name,owner_last_name)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (code, "Privato", "Livorno", status, service_type, pickup, stamp, stamp, admin["id"],
-                     animal_name or code, weight, provenance, urn, send_catalog, tag_avvisare, urn_notes, owner_first, owner_last),
+                     animal_name or code, weight, provenance, send_catalog, tag_avvisare, owner_first, owner_last),
                 ).lastrowid
+                # urn/urn_notes are now practice_items rows (category='urna'), not columns;
+                # "Cornice Bianca" mirrors what resolve_practice_items would snapshot from the catalog.
+                if urn:
+                    conn.execute(
+                        "INSERT INTO practice_items(practice_id,category,subtype,urn_catalog_id,label,price,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                        (pid, "urna", "", urn, "Cornice Bianca", "80", 0, stamp, stamp),
+                    )
+                elif urn_notes:
+                    conn.execute(
+                        "INSERT INTO practice_items(practice_id,category,subtype,urn_catalog_id,label,price,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                        (pid, "urna", "", None, urn_notes, "0", 0, stamp, stamp),
+                    )
+                return pid
 
             newer_id = practice("CR-CREM-NEW", "Ritirato", "Cremazione singola", "2026-07-16", provenance="E",
                                  owner_first="Anna", owner_last="Verdi", animal_name="Rex")
@@ -1949,14 +1946,20 @@ class PetParadiseTests(unittest.TestCase):
                 ).lastrowid
 
             def practice(code, weight, cycle_id, tag_avvisare="", urn_notes=""):
-                return conn.execute(
+                pid = conn.execute(
                     """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
                        pickup_date,created_at,updated_at,created_by,animal_name,estimated_weight,cremation_cycle_id,
-                       tag_avvisare,urn_notes)
-                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                       tag_avvisare)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (code, "Privato", "Livorno", "In programma", "Cremazione singola", "2026-07-15", stamp, stamp,
-                     admin["id"], code, weight, cycle_id, tag_avvisare, urn_notes),
+                     admin["id"], code, weight, cycle_id, tag_avvisare),
                 ).lastrowid
+                if urn_notes:
+                    conn.execute(
+                        "INSERT INTO practice_items(practice_id,category,subtype,urn_catalog_id,label,price,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                        (pid, "urna", "", None, urn_notes, "0", 0, stamp, stamp),
+                    )
+                return pid
 
             mon_cycle = cycle(monday, "completato", "08:00", "09:30", stamp)
             practice("CR-WEEK-1", "40", mon_cycle, tag_avvisare="Si", urn_notes="Cuore Rosso")
@@ -2195,11 +2198,14 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(stored["value"], "giorno")
 
     def test_normalization_keeps_custom_plate_and_calculates_remaining(self):
+        # the calco/urna/accessorio total no longer comes from a fixed column
+        # (price_paw_cast etc.) — it's the caller-computed items_total from the
+        # parsed practice_items list, added on top of the remaining fixed fields.
         data = self.handler.normalized_fields({
             "transport_method": "Fiat Fiorino", "vehicle_plate": "TARGA LIBERA",
-            "price_cremation": "300", "price_paw_cast": "30", "total_text": "250",
+            "price_cremation": "300", "total_text": "250",
             "deposit": "100", "payment_status": "Acconto",
-        })
+        }, items_total=30.0)
         self.assertEqual(data["vehicle_plate"], "TARGA LIBERA")
         self.assertEqual(data["total_service"], "330.00")
         self.assertEqual(data["remaining_balance"], "150.00")
@@ -2486,30 +2492,33 @@ class PetParadiseTests(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT quantity FROM urns WHERE id=?", (urn_id,)).fetchone()["quantity"], 2)
             self.assertEqual(conn.execute("SELECT count(*) n FROM urn_movements WHERE urn_id=?", (urn_id,)).fetchone()["n"], 2)
 
-        data = self.handler.normalized_fields({
-            "urn_id": str(urn_id), "urn_id_2": str(urn_id), "price_cremation": "200", "deposit": "50",
-        })
-        self.assertEqual(data["urn_id"], urn_id)
-        self.assertEqual(data["urn_id_2"], urn_id)
-        self.assertEqual(data["urn_notes"], "Urna prova")
-        self.assertEqual(data["urn_notes_2"], "Urna prova")
-        self.assertEqual(data["price_urn"], "85.00")
-        self.assertEqual(data["price_urn_2"], "85.00")
+        # picking the same catalog urn twice (two urna items pointing at the same
+        # urn_catalog_id) snapshots its name/price onto each item independently
+        items_by_category = {
+            "urna": app.parse_practice_items(json.dumps([{"urn_catalog_id": urn_id}, {"urn_catalog_id": urn_id}]), "urna"),
+            "calco": [], "accessorio": [],
+        }
+        has_frame_urn = app.resolve_practice_items(items_by_category)
+        self.assertEqual(items_by_category["urna"][0]["label"], "Urna prova")
+        self.assertEqual(items_by_category["urna"][0]["price"], "85.00")
+        self.assertEqual(items_by_category["urna"][1]["label"], "Urna prova")
+        self.assertFalse(has_frame_urn)
+        items_total = sum(app.money_value(item["price"]) for items in items_by_category.values() for item in items)
+        data = self.handler.normalized_fields({"price_cremation": "200", "deposit": "50"}, items_total=items_total)
         self.assertEqual(data["total_service"], "370.00")
         self.assertEqual(data["invoice_total"], "370.00")
 
         html = self.handler.fields_html()
         self.assertNotIn("<h2>Catalogo Urne</h2>", html)
-        self.assertIn('name="urn_id" class="hidden"', html)
-        self.assertIn('name="urn_id_2" class="hidden"', html)
+        self.assertIn('data-practice-list="urna"', html)
         self.assertIn('name="invoice_total"', html)
-        self.assertIn("Urna prova", html)
-        # Autocomplete suggestions must carry the urn's image so it shows next to each match.
-        self.assertIn('data-image="/assets/urns/urna-prova.jpg"', html)
-        self.assertIn("lookup-item-thumb", app.APP_JS)
-        self.assertIn("option.dataset.image", app.APP_JS)
+        # the urn catalog is embedded as JSON for the client-side "+ Aggiungi urna" dropdown
+        self.assertIn('"name": "Urna prova"', html)
+        self.assertIn('"price": "85.00"', html)
 
     def test_trash_and_restore_release_both_urn_slots(self):
+        # "both slots" is now "however many urna items a practice has" — this
+        # practice has three, to also confirm the old 2-slot cap is really gone.
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
             stamp = app.now()
@@ -2523,22 +2532,165 @@ class PetParadiseTests(unittest.TestCase):
                    VALUES(?,?,?,?,?,?,?,?)""",
                 ("Urna seconda", "Legno", "URN-TRASH-2", "60.00", 2, 3, stamp, stamp),
             ).lastrowid
-            pid = conn.execute(
-                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,urn_id,urn_id_2)
-                   VALUES(?,?,?,?,?,?,?,?,?)""",
-                ("CR-TRASH1", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], u1, u2),
+            u3 = conn.execute(
+                """INSERT INTO urns(name,material,internal_code,price,quantity,low_stock_threshold,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?)""",
+                ("Urna terza", "Legno", "URN-TRASH-3", "70.00", 4, 3, stamp, stamp),
             ).lastrowid
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by)
+                   VALUES(?,?,?,?,?,?,?)""",
+                ("CR-TRASH1", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"]),
+            ).lastrowid
+            for idx, uid in enumerate((u1, u2, u3)):
+                conn.execute(
+                    "INSERT INTO practice_items(practice_id,category,subtype,urn_catalog_id,label,price,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                    (pid, "urna", "", uid, f"Urna {idx}", "0", idx, stamp, stamp),
+                )
             self.handler.adjust_urn_stock(conn, u1, -1, "Utilizzata nella pratica", pid, admin["id"])
             self.handler.adjust_urn_stock(conn, u2, -1, "Utilizzata nella pratica", pid, admin["id"])
+            self.handler.adjust_urn_stock(conn, u3, -1, "Utilizzata nella pratica", pid, admin["id"])
         self.handler.redirect = lambda path: None
         self.handler.delete_practice(admin, pid)
         with app.db() as conn:
             self.assertEqual(conn.execute("SELECT quantity FROM urns WHERE id=?", (u1,)).fetchone()["quantity"], 3)
             self.assertEqual(conn.execute("SELECT quantity FROM urns WHERE id=?", (u2,)).fetchone()["quantity"], 2)
+            self.assertEqual(conn.execute("SELECT quantity FROM urns WHERE id=?", (u3,)).fetchone()["quantity"], 4)
         self.handler.restore_practice(admin, pid)
         with app.db() as conn:
             self.assertEqual(conn.execute("SELECT quantity FROM urns WHERE id=?", (u1,)).fetchone()["quantity"], 2)
             self.assertEqual(conn.execute("SELECT quantity FROM urns WHERE id=?", (u2,)).fetchone()["quantity"], 1)
+            self.assertEqual(conn.execute("SELECT quantity FROM urns WHERE id=?", (u3,)).fetchone()["quantity"], 3)
+
+    def test_init_db_backfills_legacy_urn_calco_accessory_columns_into_practice_items(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   animal_name,service_type,urn_notes,price_urn,urn_notes_2,price_urn_2,
+                   price_cast,price_paw_cast,paw_cast_type,price_nose_cast,nose_cast_type,
+                   price_accessories,accessory_type,accessory_detail)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-LEGACY","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Fido","Cremazione singola",
+                 "Cuore Rosso","50","Doppia Cornice","30","20","15","Argento","25","Naso oro","40","Collana","Collana blu"),
+            ).lastrowid
+        # practice_items is still empty at this point (setUp's init_db ran before this
+        # legacy-style row existed) — re-running init_db must backfill it from the old columns.
+        app.init_db()
+        with app.db() as conn:
+            rows = conn.execute("SELECT category,subtype,label,price FROM practice_items WHERE practice_id=? ORDER BY category,sort_order",(pid,)).fetchall()
+        by_category = {}
+        for row in rows:
+            by_category.setdefault(row["category"], []).append(dict(row))
+        self.assertEqual(len(by_category.get("urna", [])), 2)
+        self.assertEqual(by_category["urna"][0]["label"], "Cuore Rosso")
+        self.assertEqual(by_category["urna"][0]["price"], "50")
+        self.assertEqual(by_category["urna"][1]["label"], "Doppia Cornice")
+        self.assertEqual(len(by_category.get("calco", [])), 3)  # generic + polpastrello + naso
+        self.assertEqual(len(by_category.get("accessorio", [])), 1)
+        self.assertEqual(by_category["accessorio"][0]["subtype"], "Collana")
+        self.assertEqual(by_category["accessorio"][0]["label"], "Collana blu")
+        # running init_db again must not duplicate the backfilled rows (guarded/idempotent)
+        app.init_db()
+        with app.db() as conn:
+            count_after = conn.execute("SELECT count(*) n FROM practice_items WHERE practice_id=?",(pid,)).fetchone()["n"]
+        self.assertEqual(count_after, 6)
+
+    def test_practice_for_ddt_sums_items_per_category_into_the_fixed_pdf_boxes(self):
+        # the DDT overlays a scanned paper form with one fixed price box per
+        # category — practice_for_ddt must collapse any number of items into
+        # a single sum per box (urna/calco/accessorio), not just the first one.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,service_type)
+                   VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("CR-PDF", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Fido", "Cremazione singola"),
+            ).lastrowid
+            for category, price in (("urna", "50"), ("urna", "30"), ("calco", "20"), ("accessorio", "10"), ("accessorio", "5")):
+                conn.execute(
+                    "INSERT INTO practice_items(practice_id,category,subtype,urn_catalog_id,label,price,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                    (pid, category, "", None, "x", price, 0, stamp, stamp),
+                )
+            p = conn.execute("SELECT * FROM practices WHERE id=?", (pid,)).fetchone()
+            result = app.practice_for_ddt(conn, p)
+        self.assertEqual(result["price_urn"], "80.00")
+        self.assertEqual(result["price_cast"], "20.00")
+        self.assertEqual(result["price_accessories"], "15.00")
+
+    def test_create_then_edit_practice_with_unlimited_items_end_to_end(self):
+        # full happy path through the real HTTP-style handlers (not direct SQL):
+        # create with several urns/calco/accessori across all 3 categories, then
+        # edit to add/remove/change some — persistence, total, and per-urn stock
+        # must all stay correct at every step, well beyond the old fixed caps.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            u1 = conn.execute("INSERT INTO urns(name,price,quantity,active,category,created_at,updated_at) VALUES(?,?,?,?,?,?,?)", ("Urna Alfa", "50", 5, 1, "Urna", stamp, stamp)).lastrowid
+            u2 = conn.execute("INSERT INTO urns(name,price,quantity,active,category,created_at,updated_at) VALUES(?,?,?,?,?,?,?)", ("Urna Beta", "40", 5, 1, "Urna", stamp, stamp)).lastrowid
+            u3 = conn.execute("INSERT INTO urns(name,price,quantity,active,category,created_at,updated_at) VALUES(?,?,?,?,?,?,?)", ("Urna Gamma", "60", 5, 1, "Urna", stamp, stamp)).lastrowid
+
+        base_form = {
+            "operator_name": "SERENA", "status": "Ritirato", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "destination_branch": "Livorno", "owner_first_name": "Mario", "owner_last_name": "Rossi", "owner_phone": "333123456",
+            "owner_tax_code": "RSSMRA80A01H501U", "owner_street": "Via Roma 1", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
+            "animal_name": "Fido", "species": "Cane",
+            "urna_items_json": json.dumps([{"urn_catalog_id": u1}, {"urn_catalog_id": u1}, {"urn_catalog_id": u2}]),
+            "calco_items_json": json.dumps([
+                {"subtype": "polpastrello", "label": "Argento", "price": "20"},
+                {"subtype": "naso", "label": "Oro", "price": "15"},
+                {"subtype": "", "label": "Generico", "price": "10"},
+            ]),
+            "accessorio_items_json": json.dumps([
+                {"subtype": "Collana", "label": "Collana blu", "price": "40"},
+                {"subtype": "Braccialetto", "label": "Braccialetto rosso", "price": "25"},
+                {"subtype": "Altro", "label": "Altro extra", "price": "5"},
+            ]),
+            "balance_idempotency_key": "e2e-create-1",
+        }
+        self.handler.form = lambda: base_form
+        redirected = []
+        self.handler.redirect = lambda path: redirected.append(path)
+        self.handler.create_practice(admin)
+        pid = int(redirected[0].split("/")[-1].split("?")[0])
+
+        with app.db() as conn:
+            practice = conn.execute("SELECT total_service FROM practices WHERE id=?", (pid,)).fetchone()
+            items = conn.execute("SELECT category FROM practice_items WHERE practice_id=?", (pid,)).fetchall()
+            self.assertEqual(conn.execute("SELECT quantity FROM urns WHERE id=?", (u1,)).fetchone()["quantity"], 3)  # 5-2
+            self.assertEqual(conn.execute("SELECT quantity FROM urns WHERE id=?", (u2,)).fetchone()["quantity"], 4)  # 5-1
+            self.assertEqual(conn.execute("SELECT quantity FROM urns WHERE id=?", (u3,)).fetchone()["quantity"], 5)  # untouched
+        self.assertEqual(len(items), 9)  # 3 urna + 3 calco + 3 accessorio
+        # 50+50+40 (urne) + 20+15+10 (calco) + 40+25+5 (accessori) = 255
+        self.assertEqual(practice["total_service"], "255.00")
+
+        # now edit: drop one urn A, swap the other urn A for urn C, keep urn B,
+        # and reduce calco/accessori down to a single item each
+        edit_form = dict(base_form)
+        edit_form["urna_items_json"] = json.dumps([{"urn_catalog_id": u2}, {"urn_catalog_id": u3}])
+        edit_form["calco_items_json"] = json.dumps([{"subtype": "polpastrello", "label": "Argento", "price": "20"}])
+        edit_form["accessorio_items_json"] = json.dumps([{"subtype": "Collana", "label": "Collana blu", "price": "40"}])
+        edit_form["balance_idempotency_key"] = "e2e-edit-1"
+        self.handler.form = lambda: edit_form
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.edit_submit(admin, pid)
+
+        with app.db() as conn:
+            practice = conn.execute("SELECT total_service FROM practices WHERE id=?", (pid,)).fetchone()
+            urna_items = conn.execute("SELECT urn_catalog_id FROM practice_items WHERE practice_id=? AND category='urna' ORDER BY sort_order", (pid,)).fetchall()
+            calco_items = conn.execute("SELECT label FROM practice_items WHERE practice_id=? AND category='calco'", (pid,)).fetchall()
+            accessorio_items = conn.execute("SELECT label FROM practice_items WHERE practice_id=? AND category='accessorio'", (pid,)).fetchall()
+            self.assertEqual(conn.execute("SELECT quantity FROM urns WHERE id=?", (u1,)).fetchone()["quantity"], 5)  # both usages returned
+            self.assertEqual(conn.execute("SELECT quantity FROM urns WHERE id=?", (u2,)).fetchone()["quantity"], 4)  # unchanged (still used once)
+            self.assertEqual(conn.execute("SELECT quantity FROM urns WHERE id=?", (u3,)).fetchone()["quantity"], 4)  # newly used
+        self.assertEqual([r["urn_catalog_id"] for r in urna_items], [u2, u3])
+        self.assertEqual(len(calco_items), 1)
+        self.assertEqual(len(accessorio_items), 1)
+        # 40+60 (urne) + 20 (calco) + 40 (accessori) = 160
+        self.assertEqual(practice["total_service"], "160.00")
 
     def test_urn_category_column_is_idempotent_and_seed_defaults_to_urna(self):
         with app.db() as conn:
@@ -2641,10 +2793,14 @@ class PetParadiseTests(unittest.TestCase):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp=app.now()
             pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,
-                                created_by,animal_name,species,breed,age_years,age_months,service_type,urn_notes,price_urn,price_pickup,
+                                created_by,animal_name,species,breed,age_years,age_months,service_type,price_pickup,
                                 price_night,send_catalog,payment_status)
-                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                             ("PP-APERTURA","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Luna","Cane","Meticcio","7","3","Cremazione singola","Urna doppia","85","40","","Si","Da saldare")).lastrowid
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                             ("PP-APERTURA","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Luna","Cane","Meticcio","7","3","Cremazione singola","40","","Si","Da saldare")).lastrowid
+            conn.execute(
+                "INSERT INTO practice_items(practice_id,category,subtype,urn_catalog_id,label,price,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                (pid,"urna","",None,"Urna doppia","85",0,stamp,stamp),
+            )
         rendered=[]; self.handler.send_html=lambda content,*args: rendered.append(content)
         self.handler.practice(admin,pid)
         self.assertIn("PP-APERTURA",rendered[-1])
@@ -2667,37 +2823,45 @@ class PetParadiseTests(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT count(*) n FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["n"],0)
 
     def test_practice_summary_shows_every_multiple_urn_cast_and_accessory_item(self):
+        # deliberately well beyond the old caps (2 urns / 2 generic calco / 4 naso / 4
+        # polpastrello / 2 accessori) to prove the new practice_items list has none.
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp=app.now()
             pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,
-                                created_by,animal_name,service_type,urn_notes,price_urn,urn_notes_2,price_urn_2,
-                                price_cast,price_cast_2,price_paw_cast,price_paw_cast_2,price_paw_cast_3,price_paw_cast_4,
-                                price_nose_cast,price_nose_cast_2,price_nose_cast_3,price_nose_cast_4,
-                                price_accessories,price_accessories_2,payment_status)
-                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                             ("PP-MULTI","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Rex","Cremazione singola",
-                              "Urna base","80","Urna scorta","90",
-                              "50","55","20","21","22","23",
-                              "30","31","32","33",
-                              "10","11","Da saldare")).lastrowid
+                                created_by,animal_name,service_type,payment_status)
+                                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                             ("PP-MULTI","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Rex","Cremazione singola","Da saldare")).lastrowid
+            rows=[
+                ("urna","","Urna base","80"),("urna","","Urna scorta","90"),("urna","","Urna terza","95"),
+                ("calco","","Calco generico","50"),
+                ("calco","polpastrello","Argento","20"),("calco","polpastrello","Oro","21"),
+                ("calco","polpastrello","Bronzo","22"),("calco","polpastrello","Platino","23"),
+                ("calco","naso","Bronzo S","30"),("calco","naso","Bronzo M","31"),
+                ("calco","naso","Bronzo G","32"),("calco","naso","Argento S","33"),
+                ("accessorio","Collana","Collana blu","10"),("accessorio","Braccialetto","Braccialetto rosso","11"),
+                ("accessorio","Altro","Altro accessorio","12"),
+            ]
+            for idx,(category,subtype,label,price) in enumerate(rows):
+                conn.execute(
+                    "INSERT INTO practice_items(practice_id,category,subtype,urn_catalog_id,label,price,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                    (pid,category,subtype,None,label,price,idx,stamp,stamp),
+                )
         rendered=[]; self.handler.send_html=lambda content,*args: rendered.append(content)
         self.handler.practice(admin,pid)
         page=rendered[-1]
         self.assertIn("Urna base",page)
         self.assertIn("Urna scorta",page)
-        for label,amount in (("Calco","€ 50,00"),("Secondo calco","€ 55,00"),
-                              ("Calco polpastrello","€ 20,00"),("Secondo calco polpastrello","€ 21,00"),
-                              ("Calco naso","€ 30,00"),("Secondo calco naso","€ 31,00"),
-                              ("Accessori","€ 10,00"),("Secondi accessori","€ 11,00")):
+        self.assertIn("Urna terza",page)
+        for label,amount in (
+            ("Calco — Calco generico","€ 50,00"),
+            ("Calco polpastrello — Argento","€ 20,00"),("Calco polpastrello — Oro","€ 21,00"),
+            ("Calco polpastrello — Bronzo","€ 22,00"),("Calco polpastrello — Platino","€ 23,00"),
+            ("Calco naso — Bronzo S","€ 30,00"),("Calco naso — Bronzo M","€ 31,00"),
+            ("Calco naso — Bronzo G","€ 32,00"),("Calco naso — Argento S","€ 33,00"),
+            ("Collana — Collana blu","€ 10,00"),("Braccialetto — Braccialetto rosso","€ 11,00"),
+            ("Altro — Altro accessorio","€ 12,00"),
+        ):
             self.assertIn(f'<small>{label}</small><b>{amount}</b>',page)
-        paw_alt_count=page.count('<small>Altro calco polpastrello</small>')
-        nose_alt_count=page.count('<small>Altro calco naso</small>')
-        self.assertEqual(paw_alt_count,2)
-        self.assertEqual(nose_alt_count,2)
-        self.assertIn("€ 22,00",page)
-        self.assertIn("€ 23,00",page)
-        self.assertIn("€ 32,00",page)
-        self.assertIn("€ 33,00",page)
 
     def test_practice_summary_shows_delivery_location_next_to_riconsegna(self):
         with app.db() as conn:
@@ -2867,10 +3031,14 @@ class PetParadiseTests(unittest.TestCase):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             urn_id=conn.execute("INSERT INTO urns(name,price,quantity,active,created_at,updated_at) VALUES(?,?,?,?,?,?)",("Doppia Quercia","95.00",2,1,stamp,stamp)).lastrowid
-            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
-                         animal_name,species,estimated_weight,age_years,owner_first_name,owner_last_name,service_type,urn_id,payment_status,total_service,provenance)
-                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                         ("CR-LISTA","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Luna","Cane","12","8","Mario","Rossi","Cremazione singola",urn_id,"Da saldare","230","V"))
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                         animal_name,species,estimated_weight,age_years,owner_first_name,owner_last_name,service_type,payment_status,total_service,provenance)
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                         ("CR-LISTA","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Luna","Cane","12","8","Mario","Rossi","Cremazione singola","Da saldare","230","V")).lastrowid
+            conn.execute(
+                "INSERT INTO practice_items(practice_id,category,subtype,urn_catalog_id,label,price,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                (pid,"urna","",urn_id,"Doppia Quercia","95.00",0,stamp,stamp),
+            )
             rows=conn.execute("SELECT * FROM practices WHERE practice_number='CR-LISTA'").fetchall()
         self.handler.path="/dashboard?stato=Ritirato"
         page=self.handler.practice_rows(rows)
@@ -3012,13 +3180,14 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn("practice-row-cremated",app.CSS)
 
     def test_urn_word_search_and_frame_urn_enable_cast_tag(self):
-        self.assertIn("urnMatchesWords",app.APP_JS)
-        self.assertIn("words.every",app.APP_JS)
-        self.assertIn("markCastForFrameUrn",app.APP_JS)
+        self.assertIn("normalizeUrnSearch",app.APP_JS)  # still used by the Catalogo Urne page's own search
         with app.db() as conn:
             stamp=app.now()
-            urn_id=conn.execute("INSERT INTO urns(name,price,quantity,active,created_at,updated_at) VALUES(?,?,?,?,?,?)",("Doppia Cornice Bianca L","120",3,1,stamp,stamp)).lastrowid
-        data=self.handler.normalized_fields({"urn_id":str(urn_id),"service_type":"Cremazione singola"})
+            urn_id=conn.execute("INSERT INTO urns(name,price,quantity,active,created_at,updated_at,category) VALUES(?,?,?,?,?,?,?)",("Doppia Cornice Bianca L","120",3,1,stamp,stamp,"Urna")).lastrowid
+        items_by_category={"urna":app.parse_practice_items(json.dumps([{"urn_catalog_id":urn_id}]),"urna"),"calco":[],"accessorio":[]}
+        has_frame_urn=app.resolve_practice_items(items_by_category)
+        self.assertTrue(has_frame_urn)
+        data=self.handler.normalized_fields({"service_type":"Cremazione singola"},has_frame_urn=has_frame_urn)
         self.assertEqual(data["tag_calco_urna"],"Si")
 
     def test_quick_state_ajax_saves_without_redirect(self):
@@ -5204,13 +5373,6 @@ class PetParadiseTests(unittest.TestCase):
         # notes moved out of the Preventivo section entirely, so it's no longer part
         # of the budget-layout row arrangement.
         self.assertNotIn("addRow([field('notes')]);", js)
-
-    def test_accessory_field_labels_are_renamed(self):
-        js = app.APP_JS
-        for label in ("Note accessorio", "Tipo secondo accessorio", "Altro accessorio €", "Note altro accessorio"):
-            self.assertIn(label, js)
-        self.assertNotIn("'Secondo accessorio'", js)
-        self.assertNotIn("'Secondi accessori €'", js)
 
     def test_practice_detail_page_uses_inline_status_dropdown_and_moves_no_whatsapp(self):
         with app.db() as conn:
