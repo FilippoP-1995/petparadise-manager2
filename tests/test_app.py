@@ -36,6 +36,11 @@ class PetParadiseTests(unittest.TestCase):
         app.DATA, app.DB_PATH, app.DDT_DIR = self.old
         self.temp.cleanup()
 
+    def reminder_panel_html(self,page,reminder_type):
+        start=page.index(f'id="reminderPanel_{reminder_type}"')
+        end=page.index('</div></li>',start)
+        return page[start:end]
+
     def test_practice_autosave_debounce_success_conflict_and_no_side_effects(self):
         stamp="2026-07-15T10:00:00"
         with app.db() as conn:
@@ -4900,7 +4905,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn("hanno dati ancora da completare",page)
         self.assertIn('id="ppmRemindersCard"',page)
         self.assertIn('id="ppmRemindersToggle"',page)
-        self.assertIn(f'href="/pratiche/{pid}"',page)
+        self.assertIn(f'href="/pratiche/{pid}?return_to=%2F"',self.reminder_panel_html(page,"practice_incomplete"))
         self.assertIn("1 pratica con dati da completare",page)
         with app.db() as conn:
             reminder_id=conn.execute(
@@ -4981,9 +4986,10 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.dashboard(admin)
         page=rendered[-1]
         self.assertIn("1 animale ritirato ancora da mettere in programma",page)
-        self.assertIn(f'href="/pratiche/{stalled_pid}"',page)
+        panel=self.reminder_panel_html(page,"pickup_stalled")
+        self.assertIn(f'href="/pratiche/{stalled_pid}?return_to=%2F"',panel)
         # a practice picked up only recently must not trigger this reminder yet
-        self.assertNotIn(f'href="/pratiche/{fresh_pid}"',page)
+        self.assertNotIn(f'href="/pratiche/{fresh_pid}?return_to=%2F"',panel)
         # once the practice moves forward, the stalled reminder auto-resolves
         with app.db() as conn:
             conn.execute("UPDATE practices SET status='In programma' WHERE id=?",(stalled_pid,))
@@ -5005,7 +5011,7 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.dashboard(admin)
         page=rendered[-1]
         self.assertIn("1 pratica consegnata ma non pagata",page)
-        self.assertIn(f'href="/pratiche/{pid}"',page)
+        self.assertIn(f'href="/pratiche/{pid}?return_to=%2F"',self.reminder_panel_html(page,"delivered_unpaid"))
         # once fully paid, the reminder auto-resolves on the next sync
         with app.db() as conn:
             conn.execute("UPDATE practices SET payment_status='Pagato',deposit='150' WHERE id=?",(pid,))
@@ -5037,7 +5043,9 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.dashboard(admin)
         page=rendered[-1]
         self.assertIn("2 cremazioni singole in attesa",page)
-        self.assertIn('href="/programma-cremazioni"',page)
+        panel=self.reminder_panel_html(page,"cremation_pending")
+        self.assertIn(f'href="/pratiche/{pending_pid}?return_to=%2F"',panel)
+        self.assertIn(f'href="/pratiche/{fresh_pid}?return_to=%2F"',panel)
         with app.db() as conn:
             fresh_reminder=conn.execute(
                 "SELECT title FROM reminders WHERE reminder_type='cremation_pending' AND entity_key=?",(f"practice:{fresh_pid}",)
@@ -5124,19 +5132,23 @@ class PetParadiseTests(unittest.TestCase):
         card_end=page.index('</section>',card_start)
         self.assertNotIn("payment-popover",page[card_start:card_end])
 
-    def test_reminders_card_group_with_multiple_items_links_to_the_list_not_a_single_practice(self):
+    def test_reminders_card_group_with_multiple_items_expands_every_animal_row_inline(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             today=date.today();pickup=(today-timedelta(days=6)).isoformat()
+            pids=[]
             for suffix,animal in (("A","Uno"),("B","Due")):
-                conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                pids.append(conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
                     animal_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                    (f"CR-MULTI{suffix}","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],animal,pickup,1))
+                    (f"CR-MULTI{suffix}","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],animal,pickup,1)).lastrowid)
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
         self.handler.dashboard(admin)
         page=rendered[-1]
         self.assertIn("2 animali ritirati ancora da mettere in programma",page)
-        self.assertIn('href="/archivio/pratiche?stato=Ritirato"',page)
+        # the accordion panel lists every individual animal, not a single link to the archive
+        panel=self.reminder_panel_html(page,"pickup_stalled")
+        for pid in pids:
+            self.assertIn(f'href="/pratiche/{pid}?return_to=%2F"',panel)
 
     def test_reminders_card_js_and_css_use_a_smooth_expanding_card_not_a_popup(self):
         self.assertIn("function setupRemindersCard()", app.APP_JS)
@@ -5146,6 +5158,61 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn("ppmOpenReminders", app.APP_JS)
         self.assertIn(".reminders-card-body{max-height:0;overflow:hidden;transition:max-height .35s ease}", app.CSS)
         self.assertIn("body.style.maxHeight=open?body.scrollHeight+'px':'0px';", app.APP_JS)
+
+    def test_reminders_are_accordion_buttons_not_navigation_links(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name)
+                VALUES(?,?,?,?,?,?,?,?)""",("CR-ACCORD","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Nuvola")).lastrowid
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        # the reminder row itself is a <button> with a JS toggle, never an <a href> that navigates away
+        row_start=page.index('data-reminder-toggle="reminderPanel_practice_incomplete"')
+        row_tag_start=page.rindex('<button',0,row_start)
+        self.assertEqual(page[row_tag_start:row_tag_start+7],'<button')
+        self.assertIn('onclick="reminderToggle(this)"',page[row_tag_start:row_start+200])
+        self.assertNotIn(f'<a href="/pratiche/{pid}"',page)
+        # the panel starts collapsed and reuses the cremation max-height helpers
+        self.assertIn('id="reminderPanel_practice_incomplete"',page)
+        self.assertIn("function reminderToggle(btn)", app.APP_JS)
+        self.assertIn("function reminderCloseAll()", app.APP_JS)
+        self.assertIn("cremationExpandBody(panel,panel)", app.APP_JS)
+        self.assertIn("cremationCollapseBody(panel)", app.APP_JS)
+
+    def test_reminders_expand_panel_reuses_the_same_row_actions_as_the_practice_pages(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pickup=(date.today()-timedelta(days=6)).isoformat()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,created_at,updated_at,created_by,
+                animal_name,owner_first_name,owner_last_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-ROWACT","Privato","Livorno","Ritirato","Cremazione singola",stamp,stamp,admin["id"],"Birba","Mario","Conti",pickup,1)).lastrowid
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        panel=self.reminder_panel_html(page,"pickup_stalled")
+        self.assertIn('class="reminders-expand-row"',panel)
+        self.assertIn(f"practiceRowSelect(this,event,'/pratiche/{pid}?return_to=%2F')",panel)
+        self.assertIn('onclick="event.stopPropagation()"',panel)
+        self.assertIn(f'href="/pratiche/{pid}?return_to=%2F"',panel)
+        self.assertIn("Inserisci in programma",panel)
+
+    def test_reminders_accordion_keeps_only_one_panel_open_and_resolved_reminders_vanish(self):
+        self.assertIn("reminders-row-active",app.CSS)
+        # empty-state copy is produced server-side by reminder_panel_html when a group has no rows
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,
+                data_complete) VALUES(?,?,?,?,?,?,?,?,?)""",("CR-EMPTY","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Fido",0)).lastrowid
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        with app.db() as conn:
+            conn.execute("UPDATE practices SET data_complete=1 WHERE id=?",(pid,))
+        self.handler.dashboard(admin)
+        page2=rendered[-1]
+        # once resolved, the reminder row disappears entirely rather than leaving an empty panel visible in the list
+        self.assertNotIn("pratica con dati da completare",page2)
 
     def test_must_change_password_gate_and_change_password_flow(self):
         with app.db() as conn:

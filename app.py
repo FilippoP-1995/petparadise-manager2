@@ -1179,7 +1179,7 @@ def format_sequence_code(prefix,value,width=6):
 CSS = r"""
 :root{--ink:#24312c;--muted:#6e7b75;--brand:#a74045;--brand2:#7f3035;--paper:#fff;--bg:#f4f1ed;--line:#ded8d1;--green:#39745b;--gold:#a87926;--safe-top:env(safe-area-inset-top,0px);--safe-bottom:env(safe-area-inset-bottom,0px);--safe-left:env(safe-area-inset-left,0px);--safe-right:env(safe-area-inset-right,0px)}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
-a{color:inherit;text-decoration:none}.top{height:68px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:18px;padding:0 28px;position:sticky;top:0;z-index:5}.brand{font-weight:800;font-size:19px;color:var(--brand)}.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:1.5px}.nav{display:flex;gap:8px;margin-left:auto}.nav a{padding:9px 12px;border-radius:9px}.nav a:hover{background:#f3eeea}.wrap{max-width:1280px;margin:0 auto;padding:28px}.titlebar{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:22px}h1{margin:0;font-size:28px}h2{font-size:18px;margin:0 0 15px}.sub{color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:10px;background:var(--brand);color:white;padding:11px 16px;font-weight:700;cursor:pointer}.btn:hover{background:var(--brand2)}.btn.ghost{background:white;color:var(--ink);border:1px solid var(--line)}.grid{display:grid;gap:16px}.stats{grid-template-columns:repeat(3,1fr)}.card{background:var(--paper);border:1px solid var(--line);border-radius:15px;padding:20px;box-shadow:0 3px 15px #4b39260a}.stat{display:flex;justify-content:space-between;align-items:center}.stat b{font-size:32px;color:var(--brand)}.badge{display:inline-flex;padding:5px 9px;border-radius:99px;background:#eee9e3;font-size:12px;font-weight:700}.tag-red{background:#e53935;color:white}.tag-orange{background:#fb8c00;color:white}.tag-outline-orange{background:white;color:#fb8c00;border:2px solid #fb8c00}.tag-purple{background:#7e57c2;color:white}.tag-yellow,.pay-yellow{background:#fdd835;color:#3b3100}.tag-pink{background:#f06292;color:white}.tag-blue,.pay-blue{background:#1e88e5;color:white}.tag-green,.pay-green{background:#43a047;color:white}.status-stack{display:flex;gap:5px;flex-wrap:wrap}.form-grid{grid-template-columns:repeat(2,1fr)}.wide{grid-column:1/-1}.section{background:#fff;border:1px solid var(--line);border-radius:15px;padding:20px}.fields{display:grid;grid-template-columns:repeat(2,1fr);gap:13px}.field{display:flex;flex-direction:column;gap:6px}.field.full{grid-column:1/-1}label{font-weight:650;font-size:13px}input,select,textarea{width:100%;border:1px solid #cfc8c0;border-radius:9px;padding:11px 12px;background:white;color:var(--ink);font:inherit}input[type=checkbox]{width:auto;min-height:auto}textarea{min-height:90px;resize:vertical}input:focus,select:focus,textarea:focus{outline:3px solid #a7404520;border-color:var(--brand)}table{width:100%;border-collapse:collapse;background:white}th,td{text-align:left;padding:16px 14px;border-bottom:1px solid var(--line)}th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}thead th{position:sticky;top:0;z-index:2;background:#101620}.light-theme thead th{background:#fff}.tablebox{background:white;border:1px solid var(--line);border-radius:15px;max-height:min(65vh,620px);overflow:auto;-webkit-overflow-scrolling:touch;touch-action:none}.tablebox-scroll-top{overflow-x:auto;overflow-y:hidden;height:16px;margin-bottom:6px;position:sticky;top:76px;z-index:10;background:var(--paper)}.tablebox-scroll-top-inner{height:1px}@media(max-width:900px){.tablebox-scroll-top{display:none}}.actions{display:flex;gap:10px;flex-wrap:wrap}.flash{padding:13px 16px;border-radius:10px;background:#e5f2eb;color:#285b45;margin-bottom:16px}.warning{background:#fff1d8;color:#765315}.reminders-card{background:#1f2937;border:1px solid #334155;border-radius:15px;margin-bottom:20px;box-shadow:0 14px 36px #03071235;overflow:hidden}.reminders-card-header{display:flex;align-items:center;gap:14px;width:100%;padding:16px 18px;background:transparent;border:0;cursor:pointer;color:inherit;text-align:left;font:inherit}.reminders-card-icon{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:#4c1d24;color:#fb7185;flex:0 0 40px}.reminders-card-icon svg{width:20px;height:20px}.reminders-card-copy{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}.reminders-card-copy strong{font-size:16px;font-weight:700}.reminders-card-copy small{color:#94a3b8}.reminders-count-badge{display:inline-grid;place-items:center;min-width:22px;height:22px;padding:0 6px;margin-left:8px;border-radius:99px;background:#ef4444;color:#fff;font-size:12px;font-weight:800;vertical-align:middle}.reminders-card-chevron{color:#94a3b8;font-size:18px;line-height:1;transition:transform .25s ease;flex:0 0 auto}.reminders-card.open .reminders-card-chevron{transform:rotate(180deg);color:#ef4444}.reminders-card-body{max-height:0;overflow:hidden;transition:max-height .35s ease}.reminders-card-section-title{margin:0;padding:14px 18px 4px;font-size:13px;font-weight:700;color:#94a3b8;border-top:1px solid #334155}.reminders-todo-list{list-style:none;margin:0;padding:4px 10px 6px}.reminders-todo-row{display:flex;align-items:center;gap:14px;padding:12px 8px;color:inherit;text-decoration:none;border-radius:10px}.reminders-todo-row:hover{background:#ffffff0c}.reminders-todo-icon{width:34px;height:34px;flex:0 0 34px}.reminders-todo-icon svg{width:16px;height:16px}.reminders-todo-text{flex:1;font-weight:600}.reminders-todo-chevron{color:#94a3b8;font-size:18px}.reminders-todo-empty{padding:12px 8px;color:#94a3b8}.reminders-week-row{display:flex;align-items:center;gap:14px;margin:6px 10px 14px;padding:16px 8px 4px;border-top:1px solid #334155;color:inherit;text-decoration:none}.reminders-week-row:hover .reminders-week-copy b{color:#fb7185}.reminders-week-icon{width:34px;height:34px;flex:0 0 34px}.reminders-week-icon svg{width:16px;height:16px}.reminders-week-copy{flex:1;min-width:0}.reminders-week-copy b{text-decoration:underline;text-underline-offset:3px;transition:color .15s ease}.reminders-week-copy small{display:block;margin-top:4px;color:#cbd5e1}.reminders-week-chevron{color:#94a3b8;font-size:18px}.figure-w{color:#60a5fa;font-weight:700}.figure-d{color:#fbbf24;font-weight:700}.light-theme .reminders-card{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .reminders-card-copy small{color:#64748b}.light-theme .reminders-card-section-title{color:#526174;border-color:#e2e8f0}.light-theme .reminders-todo-row:hover{background:#00000008}.light-theme .reminders-todo-chevron,.light-theme .reminders-week-chevron{color:#64748b}.light-theme .reminders-week-row{border-color:#e2e8f0}.light-theme .reminders-week-copy small{color:#334155}
+a{color:inherit;text-decoration:none}.top{height:68px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:18px;padding:0 28px;position:sticky;top:0;z-index:5}.brand{font-weight:800;font-size:19px;color:var(--brand)}.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:1.5px}.nav{display:flex;gap:8px;margin-left:auto}.nav a{padding:9px 12px;border-radius:9px}.nav a:hover{background:#f3eeea}.wrap{max-width:1280px;margin:0 auto;padding:28px}.titlebar{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:22px}h1{margin:0;font-size:28px}h2{font-size:18px;margin:0 0 15px}.sub{color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:10px;background:var(--brand);color:white;padding:11px 16px;font-weight:700;cursor:pointer}.btn:hover{background:var(--brand2)}.btn.ghost{background:white;color:var(--ink);border:1px solid var(--line)}.grid{display:grid;gap:16px}.stats{grid-template-columns:repeat(3,1fr)}.card{background:var(--paper);border:1px solid var(--line);border-radius:15px;padding:20px;box-shadow:0 3px 15px #4b39260a}.stat{display:flex;justify-content:space-between;align-items:center}.stat b{font-size:32px;color:var(--brand)}.badge{display:inline-flex;padding:5px 9px;border-radius:99px;background:#eee9e3;font-size:12px;font-weight:700}.tag-red{background:#e53935;color:white}.tag-orange{background:#fb8c00;color:white}.tag-outline-orange{background:white;color:#fb8c00;border:2px solid #fb8c00}.tag-purple{background:#7e57c2;color:white}.tag-yellow,.pay-yellow{background:#fdd835;color:#3b3100}.tag-pink{background:#f06292;color:white}.tag-blue,.pay-blue{background:#1e88e5;color:white}.tag-green,.pay-green{background:#43a047;color:white}.status-stack{display:flex;gap:5px;flex-wrap:wrap}.form-grid{grid-template-columns:repeat(2,1fr)}.wide{grid-column:1/-1}.section{background:#fff;border:1px solid var(--line);border-radius:15px;padding:20px}.fields{display:grid;grid-template-columns:repeat(2,1fr);gap:13px}.field{display:flex;flex-direction:column;gap:6px}.field.full{grid-column:1/-1}label{font-weight:650;font-size:13px}input,select,textarea{width:100%;border:1px solid #cfc8c0;border-radius:9px;padding:11px 12px;background:white;color:var(--ink);font:inherit}input[type=checkbox]{width:auto;min-height:auto}textarea{min-height:90px;resize:vertical}input:focus,select:focus,textarea:focus{outline:3px solid #a7404520;border-color:var(--brand)}table{width:100%;border-collapse:collapse;background:white}th,td{text-align:left;padding:16px 14px;border-bottom:1px solid var(--line)}th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}thead th{position:sticky;top:0;z-index:2;background:#101620}.light-theme thead th{background:#fff}.tablebox{background:white;border:1px solid var(--line);border-radius:15px;max-height:min(65vh,620px);overflow:auto;-webkit-overflow-scrolling:touch;touch-action:none}.tablebox-scroll-top{overflow-x:auto;overflow-y:hidden;height:16px;margin-bottom:6px;position:sticky;top:76px;z-index:10;background:var(--paper)}.tablebox-scroll-top-inner{height:1px}@media(max-width:900px){.tablebox-scroll-top{display:none}}.actions{display:flex;gap:10px;flex-wrap:wrap}.flash{padding:13px 16px;border-radius:10px;background:#e5f2eb;color:#285b45;margin-bottom:16px}.warning{background:#fff1d8;color:#765315}.reminders-card{background:#1f2937;border:1px solid #334155;border-radius:15px;margin-bottom:20px;box-shadow:0 14px 36px #03071235;overflow:hidden}.reminders-card-header{display:flex;align-items:center;gap:14px;width:100%;padding:16px 18px;background:transparent;border:0;cursor:pointer;color:inherit;text-align:left;font:inherit}.reminders-card-icon{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:#4c1d24;color:#fb7185;flex:0 0 40px}.reminders-card-icon svg{width:20px;height:20px}.reminders-card-copy{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}.reminders-card-copy strong{font-size:16px;font-weight:700}.reminders-card-copy small{color:#94a3b8}.reminders-count-badge{display:inline-grid;place-items:center;min-width:22px;height:22px;padding:0 6px;margin-left:8px;border-radius:99px;background:#ef4444;color:#fff;font-size:12px;font-weight:800;vertical-align:middle}.reminders-card-chevron{color:#94a3b8;font-size:18px;line-height:1;transition:transform .25s ease;flex:0 0 auto}.reminders-card.open .reminders-card-chevron{transform:rotate(180deg);color:#ef4444}.reminders-card-body{max-height:0;overflow:hidden;transition:max-height .35s ease}.reminders-card-section-title{margin:0;padding:14px 18px 4px;font-size:13px;font-weight:700;color:#94a3b8;border-top:1px solid #334155}.reminders-todo-list{list-style:none;margin:0;padding:4px 10px 6px}.reminders-todo-row{display:flex;align-items:center;gap:14px;padding:12px 8px;color:inherit;text-decoration:none;border-radius:10px;background:none;border:0;width:100%;font:inherit;text-align:left;cursor:pointer}.reminders-todo-row:hover{background:#ffffff0c}.reminders-todo-icon{width:34px;height:34px;flex:0 0 34px}.reminders-todo-icon svg{width:16px;height:16px}.reminders-todo-text{flex:1;font-weight:600}.reminders-todo-chevron{color:#94a3b8;font-size:18px;display:flex;align-items:center}.reminders-todo-empty{padding:12px 8px;color:#94a3b8}.reminders-week-row{display:flex;align-items:center;gap:14px;margin:6px 10px 14px;padding:16px 8px 4px;border-top:1px solid #334155;color:inherit;text-decoration:none;background:none;border-left:0;border-right:0;border-bottom:0;width:100%;font:inherit;text-align:left;cursor:pointer}.reminders-week-row:hover .reminders-week-copy b{color:#fb7185}.reminders-week-icon{width:34px;height:34px;flex:0 0 34px}.reminders-week-icon svg{width:16px;height:16px}.reminders-week-copy{flex:1;min-width:0}.reminders-week-copy b{text-decoration:underline;text-underline-offset:3px;transition:color .15s ease}.reminders-week-copy small{display:block;margin-top:4px;color:#cbd5e1}.reminders-week-chevron{color:#94a3b8;font-size:18px;display:flex;align-items:center}.figure-w{color:#60a5fa;font-weight:700}.figure-d{color:#fbbf24;font-weight:700}.reminders-todo-chevron .icon,.reminders-week-chevron .icon{width:16px;height:16px;transition:transform .25s ease;transform:rotate(90deg)}.reminders-todo-row[aria-expanded="true"] .reminders-todo-chevron .icon,.reminders-week-row[aria-expanded="true"] .reminders-week-chevron .icon{transform:rotate(270deg)}.reminders-todo-row.reminders-row-active,.reminders-week-row.reminders-row-active{background:#ffffff0c}.reminders-expand{max-height:0;overflow:hidden;transition:max-height .3s ease;margin:2px 8px 0;border-radius:10px;background:#161c27;border:1px solid #263140}.reminders-expand-row{display:flex;align-items:center;gap:10px;padding:10px 10px;border-top:1px solid #1f2937;cursor:pointer}.reminders-expand-row:first-child{border-top:0}.reminders-expand-avatar{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:15px;flex:0 0 30px;background:#0f172a}.reminders-expand-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}.reminders-expand-title{font-weight:700;font-size:13px;color:#f5f7fb}.reminders-expand-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:11.5px;color:#94a3b8}.reminders-expand-meta .badge{font-size:10px;padding:2px 7px}.reminders-expand-urn{display:flex;align-items:center;gap:4px}.reminders-expand-urn .icon{width:12px;height:12px}.reminders-expand-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:0 0 auto;padding:10px}.reminders-expand-actions .btn{padding:7px 12px;font-size:12px}.reminders-expand-empty{padding:12px 10px;color:#94a3b8;font-size:13px;margin:0}.reminders-expand-week{display:flex;gap:24px;padding:12px 10px 4px}.reminders-expand-week div{display:flex;flex-direction:column;gap:2px}.reminders-expand-week small{color:#94a3b8;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em}.reminders-expand-week span{font-size:18px;font-weight:700}.light-theme .reminders-card{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .reminders-card-copy small{color:#64748b}.light-theme .reminders-card-section-title{color:#526174;border-color:#e2e8f0}.light-theme .reminders-todo-row:hover{background:#00000008}.light-theme .reminders-todo-chevron,.light-theme .reminders-week-chevron{color:#64748b}.light-theme .reminders-week-row{border-color:#e2e8f0}.light-theme .reminders-week-copy small{color:#334155}.light-theme .reminders-todo-row.reminders-row-active,.light-theme .reminders-week-row.reminders-row-active{background:#00000008}.light-theme .reminders-expand{background:#f8fafc;border-color:#e2e8f0}.light-theme .reminders-expand-row{border-color:#e2e8f0}.light-theme .reminders-expand-avatar{background:#e2e8f0}.light-theme .reminders-expand-title{color:#111827}.light-theme .reminders-expand-meta{color:#64748b}.light-theme .reminders-expand-empty{color:#64748b}
 .drag-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;max-height:420px;overflow:auto;-webkit-overflow-scrolling:touch}.drag-list-scrollable{max-height:min(60vh,480px)}.drag-item{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid #334155;border-radius:12px;background:#1f2937;-webkit-touch-callout:none;transition:box-shadow .15s ease,border-color .15s ease}.drag-item.dragging{opacity:.65;box-shadow:0 16px 38px #0008;border-color:#56657a;position:relative;z-index:5}.drag-handle{cursor:grab;color:#94a3b8;font-weight:800;letter-spacing:2px;padding:6px 8px;touch-action:none;flex:0 0 auto}.drag-handle:active{cursor:grabbing}
 body.ppm-dragging-no-select,body.ppm-dragging-no-select *{-webkit-user-select:none!important;-moz-user-select:none!important;-ms-user-select:none!important;user-select:none!important}.drag-item-icon{display:grid;place-items:center;width:30px;height:30px;flex:0 0 30px}.drag-item-icon svg{width:16px;height:16px}.drag-item-label{flex:1;font-weight:600}.drag-item-visible-wrap{display:flex;align-items:center;flex:0 0 auto}.drag-item-visible-wrap input[type=checkbox]{width:20px;height:20px}.light-theme .drag-item{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .drag-handle{color:#64748b}
 .notif-type-list{display:flex;flex-direction:column;gap:8px}.notif-type-row{justify-content:flex-start;gap:12px}.notif-type-icon{font-size:19px;width:34px;height:34px;display:grid;place-items:center;flex:0 0 34px;border-radius:10px;background:#172033}.notif-type-copy{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}.notif-type-copy small{color:#94a3b8}.notif-type-row input[type=checkbox]{margin-left:auto;width:20px;height:20px}.light-theme .notif-type-icon{background:#f1f5f9}.light-theme .notif-type-copy small{color:#64748b}.login{max-width:410px;margin:10vh auto;background:white;padding:34px;border-radius:18px;border:1px solid var(--line)}.timeline{border-left:2px solid var(--line);margin-left:7px;padding-left:20px}.event{padding:0 0 18px;position:relative}.event:before{content:'';position:absolute;width:10px;height:10px;border-radius:50%;background:var(--brand);left:-26px;top:5px}.kvs{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.kv{background:#faf8f5;border-radius:10px;padding:12px}.kv small{display:block;color:var(--muted)}.signature-pad{width:100%;height:260px;border:2px dashed var(--line);border-radius:14px;background:white;touch-action:none}
@@ -3658,6 +3658,28 @@ function cremationToggleWeekDay(headerEl){
     cremationCollapseBody(body);
   }
 }
+function reminderCloseAll(){
+  document.querySelectorAll('.reminders-expand.expanded').forEach(function(panel){
+    panel.classList.remove('expanded');
+    cremationCollapseBody(panel);
+  });
+  document.querySelectorAll('[data-reminder-toggle]').forEach(function(btn){
+    btn.setAttribute('aria-expanded','false');
+    btn.classList.remove('reminders-row-active');
+  });
+}
+function reminderToggle(btn){
+  const panelId=btn.dataset.reminderToggle;
+  const panel=document.getElementById(panelId);
+  if(!panel)return;
+  const reactivating=panel.classList.contains('expanded');
+  reminderCloseAll();
+  if(reactivating)return;
+  panel.classList.add('expanded');
+  btn.setAttribute('aria-expanded','true');
+  btn.classList.add('reminders-row-active');
+  cremationExpandBody(panel,panel);
+}
 var cremationWeekMode=null;
 function cremationShowToast(message){
   const el=document.getElementById('cremationToast');
@@ -4913,15 +4935,6 @@ REMINDER_GROUP_LABELS={
     "cremation_pending": ("paw","state-green","{n} cremazione singola in attesa","{n} cremazioni singole in attesa"),
 }
 REMINDER_GROUP_FALLBACK=("bell","state-blue","{n} promemoria attivo","{n} promemoria attivi")
-# destinazione quando un gruppo ha più di un elemento (con un solo elemento
-# si va invece dritti alla sua pratica/scheda specifica, più precisa)
-REMINDER_GROUP_URLS={
-    "practice_incomplete": "/archivio/pratiche",
-    "product_reorder": "/prodotti",
-    "pickup_stalled": "/archivio/pratiche?stato=Ritirato",
-    "delivered_unpaid": "/pagamenti/da-saldare",
-    "cremation_pending": "/programma-cremazioni",
-}
 
 
 def layout(title, body, user=None):
@@ -5488,6 +5501,147 @@ class App(BaseHTTPRequestHandler):
         for row in open_reminders:
             reminder_groups.setdefault(row["reminder_type"],[]).append(row)
         reminder_group_order=list(REMINDER_GROUP_LABELS)+[t for t in reminder_groups if t not in REMINDER_GROUP_LABELS]
+
+        # every automatic reminder type but product_reorder keys off a practice
+        # (entity_key "practice:{id}") — batch-fetch them all once, plus their
+        # urn items, so each expanded panel below can render a rich row
+        # without a query per row.
+        reminder_practice_ids=set()
+        for rows in reminder_groups.values():
+            for row in rows:
+                key=row["entity_key"] or ""
+                if key.startswith("practice:"):
+                    try:reminder_practice_ids.add(int(key.split(":",1)[1]))
+                    except ValueError:pass
+        reminder_practices_by_id={}
+        reminder_urn_items_by_practice={}
+        if reminder_practice_ids:
+            with db() as c:
+                marks=','.join('?' for _ in reminder_practice_ids)
+                for row in c.execute(f"SELECT * FROM practices WHERE id IN ({marks})",tuple(reminder_practice_ids)).fetchall():
+                    reminder_practices_by_id[row["id"]]=row
+                for row in c.execute(f"SELECT practice_id,label FROM practice_items WHERE practice_id IN ({marks}) AND category='urna' ORDER BY practice_id,sort_order",tuple(reminder_practice_ids)).fetchall():
+                    reminder_urn_items_by_practice.setdefault(row["practice_id"],[]).append(row["label"])
+                reminder_delivery_dates={row["id"]:row["ddate"] for row in c.execute(f"SELECT id,{dashboard_practice_date_sql('consegnati','practices')} ddate FROM practices WHERE id IN ({marks})",tuple(reminder_practice_ids)).fetchall()}
+            # today's cycles with room, for the "Inserisci in programma" quick
+            # actions on pickup_stalled/cremation_pending rows — same shape as
+            # the day view's own insertable_cycles, just scoped to today since
+            # the Dashboard has no week/day context of its own.
+            with db() as c:
+                today_cycles=c.execute("SELECT * FROM cremation_cycles WHERE cycle_date=? AND status!='completato' ORDER BY planned_start ASC,id ASC",(today.isoformat(),)).fetchall()
+                today_cycle_ids=[row["id"] for row in today_cycles]
+                today_cycle_counts={cid:0 for cid in today_cycle_ids}
+                if today_cycle_ids:
+                    marks2=','.join('?' for _ in today_cycle_ids)
+                    for row in c.execute(f"SELECT cremation_cycle_id,COUNT(*) n FROM practices WHERE cremation_cycle_id IN ({marks2}) AND (deleted_at IS NULL OR deleted_at='') GROUP BY cremation_cycle_id",tuple(today_cycle_ids)).fetchall():
+                        today_cycle_counts[row["cremation_cycle_id"]]=row["n"]
+        else:
+            today_cycles=[];today_cycle_counts={};reminder_delivery_dates={}
+        reminder_insertable_cycles=[(idx+1,cyc["id"]) for idx,cyc in enumerate(today_cycles) if today_cycle_counts.get(cyc["id"],0)<2]
+
+        def reminder_owner_and_urn(p):
+            owner=" ".join(x for x in [p["owner_first_name"],p["owner_last_name"]] if x).strip() or (p["owner_company"] or "Cliente non indicato")
+            urn_labels=[]
+            for label in reminder_urn_items_by_practice.get(p["id"],[]):
+                label=compact_text(label)
+                if label and label not in urn_labels:urn_labels.append(label)
+            return owner," / ".join(urn_labels)
+
+        reminder_name_counts={}
+        for pid in reminder_practice_ids:
+            p=reminder_practices_by_id.get(pid)
+            if not p:continue
+            key=(p["animal_name"] or "").strip().lower()
+            if key:reminder_name_counts[key]=reminder_name_counts.get(key,0)+1
+
+        def reminder_animal_name_html(p):
+            name=esc(p["animal_name"] or "Da inserire")
+            key=(p["animal_name"] or "").strip().lower()
+            surname=(p["owner_last_name"] or "").strip()
+            if key and reminder_name_counts.get(key,0)>1 and surname:
+                name+=f' <small class="cremation-owner-hint">({esc(surname)})</small>'
+            return name
+
+        def reminder_practice_url(pid):
+            return f'/pratiche/{pid}?return_to={quote(getattr(self,"path","/"),safe="")}'
+
+        def reminder_cycle_quick_menu(p):
+            """Same 'Inserisci in ciclo esistente / crea nuovo ciclo' quick menu
+            already used in Programma Cremazioni, reusing the exact same
+            cremationQuickAssign/cremationQuickCreateAndAssign endpoints — only
+            offered when the practice is actually eligible (Ritirato, cremazione
+            singola, non ancora in un ciclo), otherwise just "Apri pratica"."""
+            if p["status"]!="Ritirato" or p["service_type"]!="Cremazione singola" or p["cremation_cycle_id"]:
+                return ""
+            items=[f'<button type="button" onclick="cremationQuickAssign(this,{p["id"]},{cid})">{lucide("chevron-right")}<span>Ciclo {n} di oggi</span></button>' for n,cid in reminder_insertable_cycles]
+            items.append(f'<button type="button" class="cremation-quick-menu-create" onclick="cremationQuickCreateAndAssign(this,{p["id"]})">{lucide("plus")}<span>Crea nuovo ciclo</span></button>')
+            return f'''<div class="cremation-quick-menu-wrap" onclick="event.stopPropagation()">
+              <button type="button" class="cremation-quick-insert-btn" onclick="cremationToggleQuickMenu(this)">{lucide("plus")}<span>Inserisci in programma</span></button>
+              <div class="cremation-quick-menu-popover" hidden>{''.join(items)}</div>
+            </div>'''
+
+        def reminder_animal_row_html(p,show_cycle_action):
+            avatar_emoji,avatar_cls=species_avatar(p["species"] if "species" in p.keys() else "")
+            weight=(p["estimated_weight"] or "").strip()
+            owner,urn=reminder_owner_and_urn(p)
+            code=(p["provenance"] or "").strip().upper()
+            provenance_html=f'<span class="cremation-provenance-chip {avatar_cls}">{esc(code)}</span>' if code else '<span class="cremation-dash">—</span>'
+            tags=self.tag_badges(p)
+            tags_html=tags if '<span class="badge' in tags else '<span class="cremation-dash">—</span>'
+            urn_html=f'{lucide("archive")}<span>{esc(urn)}</span>' if urn else '<span class="cremation-dash">—</span>'
+            url=reminder_practice_url(p["id"])
+            action=reminder_cycle_quick_menu(p) if show_cycle_action else ""
+            return f'''<div class="reminders-expand-row" {row_open_attrs(url,f'Apri pratica {p["practice_number"]}')}>
+              <span class="reminders-expand-avatar {avatar_cls}" aria-hidden="true">{avatar_emoji}</span>
+              <div class="reminders-expand-main">
+                <span class="reminders-expand-title">{reminder_animal_name_html(p)}{f" · {esc(weight)} kg" if weight else ""}</span>
+                <span class="reminders-expand-meta"><span>{esc(owner)}</span>{provenance_html}<span>{esc(date_it(p["pickup_date"] or p["created_at"]))}</span><span class="badge {practice_status_class(p['status'])}">{esc(p['status'])}</span></span>
+                <span class="reminders-expand-meta">{tags_html}<span class="reminders-expand-urn">{urn_html}</span></span>
+              </div>
+              <div class="reminders-expand-actions" onclick="event.stopPropagation()">{action}<a class="btn ghost" href="{url}">Apri pratica</a></div>
+            </div>'''
+
+        def reminder_unpaid_row_html(p):
+            total=effective_total(p);remaining=outstanding_amount(p);paid=total-remaining
+            payment=p["payment_status"] or "Da saldare";pay_cls={"Da saldare":"pay-yellow","Acconto":"pay-blue","Pagato":"pay-green"}.get(payment,"")
+            owner,_=reminder_owner_and_urn(p)
+            url=reminder_practice_url(p["id"])
+            return f'''<div class="reminders-expand-row" {row_open_attrs(url,f'Apri pratica {p["practice_number"]}')}>
+              <div class="reminders-expand-main">
+                <span class="reminders-expand-title">{esc(p["practice_number"])} · {reminder_animal_name_html(p)}</span>
+                <span class="reminders-expand-meta"><span>{esc(owner)}</span><span>Consegnato il {esc(date_it(reminder_delivery_dates.get(p['id']) or p['updated_at']))}</span></span>
+                <span class="reminders-expand-meta"><span>Totale {money_it(total)}</span><span>Versato {money_it(paid)}</span><span>Residuo {money_it(remaining)}</span><span class="badge {pay_cls}">{esc(payment)}</span></span>
+              </div>
+              <div class="reminders-expand-actions" onclick="event.stopPropagation()">{self.status_badges(p)}<a class="btn ghost" href="{url}">Apri pratica</a></div>
+            </div>'''
+
+        def reminder_generic_row_html(row):
+            return f'''<div class="reminders-expand-row" {row_open_attrs(row["url"],esc(row["title"]))}>
+              <div class="reminders-expand-main"><span class="reminders-expand-title">{esc(row["title"])}</span></div>
+              <div class="reminders-expand-actions" onclick="event.stopPropagation()"><a class="btn ghost" href="{esc(row['url'])}">Apri</a></div>
+            </div>'''
+
+        def reminder_panel_html(rtype,rows):
+            if rtype in ("pickup_stalled","cremation_pending"):
+                items=[]
+                for row in rows:
+                    p=reminder_practices_by_id.get(int(row["entity_key"].split(":",1)[1])) if row["entity_key"].startswith("practice:") else None
+                    if p:items.append(reminder_animal_row_html(p,show_cycle_action=True))
+                return ''.join(items) or '<p class="reminders-expand-empty">Nessun elemento da gestire.</p>'
+            if rtype=="delivered_unpaid":
+                items=[]
+                for row in rows:
+                    p=reminder_practices_by_id.get(int(row["entity_key"].split(":",1)[1])) if row["entity_key"].startswith("practice:") else None
+                    if p:items.append(reminder_unpaid_row_html(p))
+                return ''.join(items) or '<p class="reminders-expand-empty">Nessun elemento da gestire.</p>'
+            if rtype=="practice_incomplete":
+                items=[]
+                for row in rows:
+                    p=reminder_practices_by_id.get(int(row["entity_key"].split(":",1)[1])) if row["entity_key"].startswith("practice:") else None
+                    if p:items.append(reminder_animal_row_html(p,show_cycle_action=False))
+                return ''.join(items) or '<p class="reminders-expand-empty">Nessun elemento da gestire.</p>'
+            return ''.join(reminder_generic_row_html(row) for row in rows) or '<p class="reminders-expand-empty">Nessun elemento da gestire.</p>'
+
         reminder_todo_rows=[]
         for rtype in reminder_group_order:
             rows=reminder_groups.get(rtype)
@@ -5495,9 +5649,12 @@ class App(BaseHTTPRequestHandler):
             icon,color_cls,singular,plural=REMINDER_GROUP_LABELS.get(rtype,REMINDER_GROUP_FALLBACK)
             n=len(rows)
             group_label=(singular if n==1 else plural).format(n=n)
-            group_url=rows[0]["url"] if n==1 else REMINDER_GROUP_URLS.get(rtype,rows[0]["url"])
+            panel_id=f"reminderPanel_{rtype}"
             reminder_todo_rows.append(
-                f'''<li><a class="reminders-todo-row" href="{esc(group_url)}"><span class="metric-icon reminders-todo-icon {color_cls}">{lucide(icon)}</span><span class="reminders-todo-text">{esc(group_label)}</span><span class="reminders-todo-chevron" aria-hidden="true">›</span></a></li>'''
+                f'''<li><button type="button" class="reminders-todo-row" data-reminder-toggle="{esc(panel_id)}" aria-expanded="false" onclick="reminderToggle(this)">'''
+                f'''<span class="metric-icon reminders-todo-icon {color_cls}">{lucide(icon)}</span><span class="reminders-todo-text">{esc(group_label)}</span>'''
+                f'''<span class="reminders-todo-chevron" aria-hidden="true">{lucide("chevron-right")}</span></button>'''
+                f'''<div class="reminders-expand" id="{esc(panel_id)}">{reminder_panel_html(rtype,rows)}</div></li>'''
             )
         reminder_todo_list=''.join(reminder_todo_rows) or '<li class="reminders-todo-empty">Nessun promemoria attivo al momento.</li>'
         weekly_query=urlencode({"periodo":"personalizzato","data_iniziale":week_start.isoformat(),"data_finale":rome_today.isoformat()})
@@ -5506,6 +5663,7 @@ class App(BaseHTTPRequestHandler):
         weekly_d=money_cents_it(weekly_snapshot.sections["entrate-d"].total_cents)
         reminders_count=len(open_reminders)
         reminders_badge=f'<span class="reminders-count-badge">{reminders_count if reminders_count<100 else "99+"}</span>' if reminders_count else ''
+        weekly_panel_html=f'''<div class="reminders-expand-week"><div><small>Entrate W</small><span class="figure-w">{weekly_w}</span></div><div><small>Entrate D</small><span class="figure-d">{weekly_d}</span></div></div><div class="reminders-expand-actions"><a class="btn ghost" href="{weekly_url}">Apri Bilanci</a></div>'''
         reminders_html=f'''<section class="reminders-card" id="ppmRemindersCard">
 <button type="button" class="reminders-card-header" id="ppmRemindersToggle" aria-expanded="false">
 <span class="reminders-card-icon">{lucide("bell")}</span>
@@ -5515,11 +5673,12 @@ class App(BaseHTTPRequestHandler):
 <div class="reminders-card-body"><div class="reminders-card-inner">
 <h3 class="reminders-card-section-title">Cose da fare</h3>
 <ul class="reminders-todo-list">{reminder_todo_list}</ul>
-<a class="reminders-week-row" href="{weekly_url}">
+<button type="button" class="reminders-week-row" data-reminder-toggle="reminderPanel_weekly" aria-expanded="false" onclick="reminderToggle(this)">
 <span class="metric-icon reminders-week-icon state-blue">{lucide("chart")}</span>
 <span class="reminders-week-copy"><b>Report della settimana</b><small>Entrate W <span class="figure-w">{weekly_w}</span> · Entrate D <span class="figure-d">{weekly_d}</span></small></span>
-<span class="reminders-week-chevron" aria-hidden="true">›</span>
-</a>
+<span class="reminders-week-chevron" aria-hidden="true">{lucide("chevron-right")}</span>
+</button>
+<div class="reminders-expand" id="reminderPanel_weekly">{weekly_panel_html}</div>
 </div></div>
 </section>'''
         body=f'''<main class="wrap dashboard-wrap"><section class="welcome"><div><h1>{greeting}, {esc(user['display_name'])} <span aria-hidden="true">👋</span></h1><p>Panoramica operativa del periodo selezionato</p></div></section>{reminders_html}{sections_html}{persistence_script}</main>'''
