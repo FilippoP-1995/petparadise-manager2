@@ -1678,6 +1678,117 @@ class PetParadiseTests(unittest.TestCase):
             row = conn.execute("SELECT planned_start,planned_end FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()
         self.assertEqual((row["planned_start"], row["planned_end"]), ("10:00", "11:15"))
 
+    def test_cremation_schedule_offers_quick_insert_and_add_animal_menus_without_drag_and_drop(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+
+            def practice(code):
+                return conn.execute(
+                    """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                       pickup_date,created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                    (code, "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-20", stamp, stamp,
+                     admin["id"], code),
+                ).lastrowid
+
+            waiting_a = practice("CR-WAIT-A")
+            waiting_b = practice("CR-WAIT-B")
+
+            pianificato_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-20", "pianificato", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+            in_attesa_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-20", "in_attesa", "09:40", "11:10", stamp, stamp),
+            ).lastrowid
+            assigned_id = practice("CR-ASSIGNED")
+            conn.execute("UPDATE practices SET cremation_cycle_id=? WHERE id=?", (in_attesa_id, assigned_id))
+            completato_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,actual_end,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                ("2026-07-20", "completato", "07:00", "08:00", stamp, stamp, stamp),
+            ).lastrowid
+
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-20"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+
+        # each waiting card offers a no-drag "+ Inserisci" menu: existing eligible cycles + create-new
+        self.assertIn(f'cremationQuickAssign(this,{waiting_a},{in_attesa_id})', page)
+        self.assertIn(f'cremationQuickAssign(this,{waiting_b},{in_attesa_id})', page)
+        self.assertIn(f'cremationQuickCreateAndAssign(this,{waiting_a})', page)
+        # the pianificato cycle (0 animals) is offered too, the completed one never is
+        self.assertIn(f'cremationQuickAssign(this,{waiting_a},{pianificato_id})', page)
+        self.assertNotIn(f'cremationQuickAssign(this,{waiting_a},{completato_id})', page)
+
+        # the in_attesa cycle (1/2 animals) offers "+ Aggiungi animale" listing the waiting animals
+        self.assertIn(f'cremationQuickAssign(this,{waiting_a},{in_attesa_id})', page)
+        self.assertIn('Aggiungi animale', page)
+
+        # every non-completed cycle exposes Modifica (via the new time-picker modal, not the old prompt()) together with its other actions
+        self.assertIn(f"cremationOpenEditModal({pianificato_id},'08:00','09:30')", page)
+        self.assertIn(f"cremationOpenEditModal({in_attesa_id},'09:40','11:10')", page)
+        self.assertNotIn("cremationEditCycle(", page)
+        # pianificato (no animal yet) must not offer "Avvia ciclo"; in_attesa must
+        pianificato_card = page[page.index(f'cremationOpenEditModal({pianificato_id}'):page.index(f'cremationOpenEditModal({in_attesa_id}')]
+        self.assertNotIn('cremationStartCycle', pianificato_card)
+        self.assertIn(f'cremationStartCycle({in_attesa_id})', page)
+
+        # the shared edit modal (reusing the calendar event time-picker widget) is rendered once, hidden
+        self.assertEqual(page.count('id="cremationEditOverlay"'), 1)
+        self.assertIn('cremationEditOverlay" hidden', page)
+        self.assertIn('calendar-time-entry', page)
+        self.assertIn('calendar-wheel-option', page)
+
+    def test_cremation_remove_from_cycle_returns_animal_to_waiting_list_and_reverts_empty_cycle(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-20", "in_attesa", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-REMOVE", "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-15", stamp, stamp,
+                 admin["id"], "CR-REMOVE", cycle_id),
+            ).lastrowid
+
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.cremation_remove_from_cycle(admin, pid)
+        self.assertEqual(responses[-1], ({"ok": True}, 200))
+        with app.db() as conn:
+            practice_row = conn.execute("SELECT cremation_cycle_id FROM practices WHERE id=?", (pid,)).fetchone()
+            cycle_row = conn.execute("SELECT status FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()
+        self.assertIsNone(practice_row["cremation_cycle_id"])
+        # the cycle had no other animal left, so it reverts from in_attesa back to pianificato
+        self.assertEqual(cycle_row["status"], "pianificato")
+
+        # the animal is back in the "Animali in attesa" list on the board
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-20"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn(f'data-practice-id="{pid}"', page)
+
+        # removing from a completed cycle is refused
+        with app.db() as conn:
+            done_cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,actual_end,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                ("2026-07-20", "completato", "10:00", "11:30", stamp, stamp, stamp),
+            ).lastrowid
+            conn.execute("UPDATE practices SET cremation_cycle_id=? WHERE id=?", (done_cycle_id, pid))
+        responses.clear()
+        self.handler.cremation_remove_from_cycle(admin, pid)
+        payload, status = responses[-1]
+        self.assertFalse(payload["ok"])
+        self.assertEqual(status, 409)
+
     def test_normalization_keeps_custom_plate_and_calculates_remaining(self):
         data = self.handler.normalized_fields({
             "transport_method": "Fiat Fiorino", "vehicle_plate": "TARGA LIBERA",
