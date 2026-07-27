@@ -2060,22 +2060,40 @@ class PetParadiseTests(unittest.TestCase):
         in_attesa_card = page[stat_start:stat_start + 900]
         self.assertIn('<strong class="dash-stat-value">1</strong>', in_attesa_card)
 
-        # the "Animali" panel lists every animal assigned to a cycle this week, with day/cycle/status context
+        # the "Animali" panel now lists animals still waiting to be scheduled
+        # (status Ritirato, not yet assigned to any cycle) — the same waiting-list
+        # query already used by the day view's "In attesa" panel — with every
+        # column the operator needs: species icon, name, weight, species, owner,
+        # provenance, pickup date, practice number, payment status, tags, urn,
+        # plus a quick-insert menu spanning the whole week and a checkbox for
+        # the max-2 multi-select toolbar.
         self.assertIn('id="cremationAnimaliPanel"', page)
         self.assertIn('id="cremationAnimaliSearch"', page)
         self.assertIn('cremationFilterAnimaliList(this)', page)
-        self.assertIn("Buddy", page)
-        self.assertIn("Rocky", page)
-        self.assertIn("Daisy", page)
         animali_start = page.index('id="cremationAnimaliPanel"')
-        animali_panel = page[animali_start:animali_start + 8000]
-        self.assertIn(f"Lun {monday.day:02d}/{monday.month:02d}", animali_panel)
-        self.assertIn(f"Mar {tuesday.day:02d}/{tuesday.month:02d}", animali_panel)
-        self.assertIn("CICLO 1 · COMPLETATO", animali_panel)
-        self.assertIn("CICLO 1 · IN CORSO", animali_panel)
-        self.assertIn("CICLO 2 · IN ATTESA", animali_panel)
-        # Milo (still waiting, not assigned to any cycle) must not appear in the Animali panel
-        self.assertNotIn("Milo", animali_panel)
+        animali_end = page.index('id="cremationFinePrevistaPanel"')
+        animali_panel = page[animali_start:animali_end]
+        self.assertIn("Milo", animali_panel)
+        self.assertIn("CR-MILO", animali_panel)
+        self.assertIn('data-animali-select value="', animali_panel)
+        self.assertIn("cremationAnimaliSelectionChanged(this)", animali_panel)
+        # quick-insert targets span the whole week, not just the animal's own day
+        self.assertIn(f"Lun {monday.day:02d}/{monday.month:02d} · Ciclo 2", animali_panel)
+        self.assertIn(f"Mar {tuesday.day:02d}/{tuesday.month:02d} · Ciclo 1", animali_panel)
+        self.assertIn("Crea nuovo ciclo", animali_panel)
+        self.assertIn('id="cremationAnimaliToolbar"', animali_panel)
+        self.assertIn("cremationAnimaliCreateCycleWithSelection()", animali_panel)
+        self.assertIn("cremationAnimaliAssignSelectionToCycle(", animali_panel)
+        self.assertIn("Nessun animale da inserire in programma.", animali_panel)
+        # animals already assigned to a cycle this week must not appear here any more
+        self.assertNotIn("Buddy", animali_panel)
+        self.assertNotIn("Rocky", animali_panel)
+        self.assertNotIn("Daisy", animali_panel)
+        # the "Animali" counter now reflects how many are still to be planned
+        stat_start = page.index('data-stat="animali"')
+        animali_card = page[stat_start:stat_start + 700]
+        self.assertIn('<strong class="dash-stat-value">1</strong>', animali_card)
+        self.assertIn("Da pianificare", animali_card)
 
         # no separate waiting-animals panel exists any more for the week view's "In attesa" card
         self.assertNotIn("cremationWeekWaitingPanel", page)

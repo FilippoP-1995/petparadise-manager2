@@ -1636,6 +1636,15 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-animal-urn{display:flex;align-items:center;gap:5px;font-size:12px;color:#cbd5e1}
 .cremation-animal-urn .icon{width:13px;height:13px}
 .cremation-animal-actions{display:flex;align-items:center;gap:8px;margin-left:auto}
+.cremation-waiting-row-wide{display:flex;flex-wrap:wrap;align-items:center;gap:16px;padding:12px 0;border-top:1px solid #263246;cursor:pointer}
+.cremation-waiting-list .cremation-waiting-row-wide:first-child{border-top:none;padding-top:6px}
+.cremation-animal-select{display:flex;align-items:center;flex:0 0 auto}
+.cremation-animal-select input{width:16px;height:16px;cursor:pointer}
+.cremation-animali-toolbar{position:sticky;bottom:0;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px;margin-top:8px;background:#172033;border:1px solid #334155;border-radius:12px}
+.cremation-animali-toolbar select{padding:8px 10px;border-radius:8px;border:1px solid #334155;background:#111a27;color:#e2e8f0;font-size:12px}
+.light-theme .cremation-waiting-row-wide{border-color:#e2e8f0}
+.light-theme .cremation-animali-toolbar{background:#fff;border-color:#e2e8f0}
+.light-theme .cremation-animali-toolbar select{background:#fff;border-color:#e2e8f0;color:#111827}
 .cremation-animal-open{display:flex;align-items:center;gap:3px;color:#fb7185;font-size:12px;font-weight:700;white-space:nowrap}
 .cremation-animal-remove{width:24px;height:24px;flex:0 0 24px;display:flex;align-items:center;justify-content:center;border-radius:7px;border:1px solid #334155;background:transparent;color:#94a3b8;cursor:pointer}
 .cremation-animal-remove:hover{border-color:#fb7185;color:#fb7185}
@@ -3564,6 +3573,7 @@ function cremationWeekResetView(){
   cremationClosePanel('cremationAnimaliPanel');
   cremationClosePanel('cremationFinePrevistaPanel');
   cremationSetActiveStat(null);
+  cremationResetAnimaliSelection();
 }
 function cremationGoToActiveCycle(){
   const activeCard=document.querySelector('.cremation-week-cycle-card.cremation-cycle-in_corso');
@@ -3595,6 +3605,73 @@ function cremationFilterAnimaliList(input){
   });
   const empty=document.getElementById('cremationAnimaliEmpty');
   if(empty)empty.hidden=anyVisible||rows.length===0;
+}
+var cremationAnimaliSelection=new Set();
+function cremationResetAnimaliSelection(){
+  cremationAnimaliSelection.clear();
+  document.querySelectorAll('#cremationAnimaliList [data-animali-select]').forEach(function(cb){cb.checked=false;});
+  cremationUpdateAnimaliToolbar();
+}
+function cremationAnimaliSelectionChanged(checkbox){
+  const id=checkbox.value;
+  if(checkbox.checked){
+    if(cremationAnimaliSelection.size>=2){
+      checkbox.checked=false;
+      cremationShowToast('Puoi selezionare al massimo 2 animali');
+      return;
+    }
+    cremationAnimaliSelection.add(id);
+  }else{
+    cremationAnimaliSelection.delete(id);
+  }
+  cremationUpdateAnimaliToolbar();
+}
+function cremationUpdateAnimaliToolbar(){
+  const bar=document.getElementById('cremationAnimaliToolbar');
+  if(!bar)return;
+  const count=cremationAnimaliSelection.size;
+  bar.hidden=count===0;
+  const countEl=document.getElementById('cremationAnimaliSelectedCount');
+  if(countEl)countEl.textContent=count+(count===1?' animale selezionato':' animali selezionati');
+}
+function cremationAnimaliCreateCycleWithSelection(){
+  const ids=Array.from(cremationAnimaliSelection);
+  if(!ids.length)return;
+  const board=document.getElementById('cremationBoard');
+  const cremationDate=board?board.dataset.cremationDate:'';
+  fetch('/programma-cremazioni/cicli',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',
+    body:'practice_id='+encodeURIComponent(ids[0])+'&data='+encodeURIComponent(cremationDate)})
+    .then(function(res){return res.json();})
+    .then(function(data){
+      if(!data.ok){alert(data.error||'Operazione non riuscita');return;}
+      if(ids[1]){
+        fetch('/programma-cremazioni/cicli/'+data.cycle_id+'/assegna',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',
+          body:'practice_id='+encodeURIComponent(ids[1])})
+          .then(function(res2){return res2.json();})
+          .then(function(data2){if(!data2.ok)alert('Il primo animale è stato inserito, ma il secondo no: '+(data2.error||'errore'));location.reload();})
+          .catch(function(){location.reload();});
+        return;
+      }
+      location.reload();
+    })
+    .catch(function(){location.reload();});
+}
+function cremationAnimaliAssignSelectionToCycle(cycleId){
+  const ids=Array.from(cremationAnimaliSelection);
+  if(!ids.length)return;
+  if(!cycleId){alert("Nessun ciclo disponibile per l'inserimento diretto: crea un nuovo ciclo.");return;}
+  function assignNext(i){
+    if(i>=ids.length){location.reload();return;}
+    fetch('/programma-cremazioni/cicli/'+cycleId+'/assegna',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',
+      body:'practice_id='+encodeURIComponent(ids[i])})
+      .then(function(res){return res.json();})
+      .then(function(data){
+        if(!data.ok){alert(data.error||'Operazione non riuscita');location.reload();return;}
+        assignNext(i+1);
+      })
+      .catch(function(){location.reload();});
+  }
+  assignNext(0);
 }
 function cremationWeekStatClick(card,mode){
   const reactivating=cremationWeekMode===mode;
@@ -6902,6 +6979,16 @@ class App(BaseHTTPRequestHandler):
         for cyc in cycles:
             cycles_by_date[cyc["cycle_date"]].append(cyc)
 
+        today_iso=today_date.isoformat()
+        board_date=today_iso if today_iso in week_dates else monday.isoformat()
+        insertable_cycles_week=[]
+        for d in week_dates:
+            day_date_iter=date.fromisoformat(d)
+            day_short_iter=weekday_short[day_date_iter.weekday()]
+            for idx,cyc in enumerate(cycles_by_date[d]):
+                if cyc["status"]!="completato" and len(cycle_practices.get(cyc["id"],[]))<2:
+                    insertable_cycles_week.append((f'{day_short_iter} {day_date_iter.day:02d}/{day_date_iter.month:02d} · Ciclo {idx+1}',cyc["id"]))
+
         name_counts={}
         for row in all_rows:
             key=(row["animal_name"] or "").strip().lower()
@@ -6979,34 +7066,54 @@ class App(BaseHTTPRequestHandler):
               {urn_html}
             </div>'''
 
-        def animali_panel_row_html(row,cycle,day_date,cycle_num):
+        def animali_quick_insert_menu_html(row):
+            items=[f'<button type="button" onclick="cremationQuickAssign(this,{row["id"]},{cid})">{lucide("chevron-right")}<span>{esc(label)}</span></button>' for label,cid in insertable_cycles_week]
+            items.append(f'<button type="button" class="cremation-quick-menu-create" onclick="cremationQuickCreateAndAssign(this,{row["id"]})">{lucide("plus")}<span>Crea nuovo ciclo</span></button>')
+            return f'''<div class="cremation-quick-menu-wrap">
+              <button type="button" class="cremation-quick-insert-btn" onclick="event.stopPropagation();cremationToggleQuickMenu(this)">{lucide("plus")}<span>Inserisci</span></button>
+              <div class="cremation-quick-menu-popover" hidden onclick="event.stopPropagation()">{''.join(items)}</div>
+            </div>'''
+
+        def animali_waiting_row_html(row):
             collab_code=collaborator_codes.get(int(row["collaborator_id"])) if "collaborator_id" in row.keys() and row["collaborator_id"] else ""
             prefix=f'{esc(collab_code)} ' if collab_code else ""
             avatar_emoji,avatar_cls=species_avatar(row["species"] if "species" in row.keys() else "")
             weight=(row["estimated_weight"] or "").strip()
             weight_html=f'{esc(weight)} kg' if weight else '<span class="cremation-dash">—</span>'
+            species_html=esc(row["species"]) if row["species"] else '<span class="cremation-dash">—</span>'
             owner=owner_label(row)
+            owner_html=esc(owner) if owner else '<span class="cremation-dash">—</span>'
             code=(row["provenance"] or "").strip().upper()
             provenance_html=f'<span class="cremation-provenance-chip {avatar_cls}">{esc(code)}</span>' if code else '<span class="cremation-dash">—</span>'
-            status_label,status_cls=CREMATION_STATUS_LABELS.get(cycle["status"],(cycle["status"].upper(),""))
-            day_short=weekday_short[day_date.weekday()]
+            pickup_html=esc(date_it(row["pickup_date"] or row["created_at"]))
+            payment=row["payment_status"] or "Da saldare"
+            pay_cls={"Da saldare":"pay-yellow","Acconto":"pay-blue","Pagato":"pay-green"}.get(payment,"")
+            payment_amount=effective_total(row)
+            amount_cell=money_it(payment_amount) if payment_amount else '<span class="cremation-dash">-</span>'
+            payment_html=f'<span class="badge {pay_cls}">{esc(payment)}</span> {amount_cell} · {payment_channel(row)}'
             url=practice_url(row)
-            search_key=esc(f'{(row["animal_name"] or "").lower()} {owner.lower()}')
-            return f'''<div class="cremation-animal-row" data-search="{search_key}" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}>
+            search_key=esc(f'{(row["animal_name"] or "").lower()} {owner.lower()} {(row["practice_number"] or "").lower()} {code.lower()}')
+            return f'''<div class="cremation-waiting-row-wide" data-search="{search_key}" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}>
+              <label class="cremation-animal-select" onclick="event.stopPropagation()"><input type="checkbox" data-animali-select value="{row['id']}" onchange="cremationAnimaliSelectionChanged(this)"></label>
               <div class="cremation-animal-id">
                 <span class="cremation-animal-avatar {avatar_cls}" aria-hidden="true">{avatar_emoji}</span>
-                <div class="cremation-animal-name-wrap"><span class="cremation-animal-name">{prefix}{animal_name_html(row)}</span><span class="cremation-animal-weight">{weight_html}{f' · {esc(owner)}' if owner else ''}</span></div>
+                <div class="cremation-animal-name-wrap"><span class="cremation-animal-name">{prefix}{animal_name_html(row)}</span><span class="cremation-animal-weight">{weight_html}</span></div>
               </div>
-              <div class="cremation-animal-col"><small>Giorno</small><span>{day_short} {day_date.day:02d}/{day_date.month:02d} · {esc(cycle["planned_start"])}</span></div>
-              <div class="cremation-animal-col"><small>Ciclo</small><span class="cremation-status-badge {status_cls}">CICLO {cycle_num} · {esc(status_label)}</span></div>
+              <div class="cremation-animal-col"><small>Specie</small><span>{species_html}</span></div>
+              <div class="cremation-animal-col"><small>Proprietario</small><span>{owner_html}</span></div>
               <div class="cremation-animal-col"><small>Provenienza</small>{provenance_html}</div>
+              <div class="cremation-animal-col"><small>Ritiro</small><span>{pickup_html}</span></div>
+              <div class="cremation-animal-col"><small>Pratica</small><span>{esc(row["practice_number"] or "-")}</span></div>
+              <div class="cremation-animal-col"><small>Pagamento</small><span>{payment_html}</span></div>
               <div class="cremation-animal-col"><small>Etichette</small><div class="cremation-animal-tags">{tags_html(row)}</div></div>
               <div class="cremation-animal-col"><small>Urna</small><div class="cremation-animal-urn">{urn_html(row)}</div></div>
-              <div class="cremation-animal-actions"><a class="cremation-animal-open" href="{url}" onclick="event.stopPropagation()"><span>Apri pratica</span>{lucide("chevron-right")}</a></div>
+              <div class="cremation-animal-actions" onclick="event.stopPropagation()">{animali_quick_insert_menu_html(row)}<a class="cremation-animal-open" href="{url}"><span>Apri pratica</span>{lucide("chevron-right")}</a></div>
             </div>'''
 
+        animali_panel_rows=[animali_waiting_row_html(row) for row in waiting]
+
         total_cycles=len(cycles)
-        animali_count=len(assigned)
+        animali_count=len(waiting)
         in_corso_count=sum(1 for row in cycles if row["status"]=="in_corso")
         in_attesa_count=sum(1 for row in cycles if row["status"]=="in_attesa")
         completed_count=sum(1 for row in cycles if row["status"]=="completato")
@@ -7020,10 +7127,8 @@ class App(BaseHTTPRequestHandler):
         status_icon_map={"completato":"check-circle","in_corso":"play","in_attesa":"clock","pianificato":"clock"}
         dot_cls_map={"in_corso":"cremation-dot-active","in_attesa":"cremation-dot-waiting","completato":"cremation-dot-done","pianificato":"cremation-dot-planned"}
         now_dt=datetime.now()
-        today_iso=today_date.isoformat()
 
         cycle_position={}
-        animali_panel_rows=[]
         day_sections=[]
         for i,d in enumerate(week_dates):
             day_cycles=cycles_by_date[d]
@@ -7034,8 +7139,6 @@ class App(BaseHTTPRequestHandler):
                 animals=cycle_practices.get(cycle["id"],[])
                 status=cycle["status"]
                 cycle_position[cycle["id"]]=(idx+1,day_date)
-                for arow in animals:
-                    animali_panel_rows.append(animali_panel_row_html(arow,cycle,day_date,idx+1))
                 status_label,status_cls=CREMATION_STATUS_LABELS.get(status,(status.upper(),""))
                 lines_html=''.join(week_animal_line(row) for row in animals) or '<div class="cremation-week-animal-line cremation-dash">Nessun animale</div>'
                 animals_html=''.join(animal_row_html(row,removable=status!="completato") for row in animals) or '<p class="cremation-dash" style="padding:10px 0">Nessun animale assegnato.</p>'
@@ -7132,7 +7235,7 @@ class App(BaseHTTPRequestHandler):
 
         summary_specs=[
             ("flame","state-red","Cicli questa settimana",str(total_cycles),"Totali","tutti"),
-            ("paw","state-blue","Animali",str(animali_count),"Totali","animali"),
+            ("paw","state-blue","Animali",str(animali_count),"Da pianificare","animali"),
             ("play","state-green","In corso",str(in_corso_count),"Adesso","in_corso"),
             ("clock","payment-due","In attesa",str(in_attesa_count),"Prossimi","in_attesa"),
             ("check-circle","state-blue","Completati",str(completed_count),"Questa settimana","completati"),
@@ -7213,11 +7316,19 @@ class App(BaseHTTPRequestHandler):
           </div>
         </div>'''
 
+        animali_cycle_select_options=''.join(f'<option value="{cid}">{esc(label)}</option>' for label,cid in insertable_cycles_week)
+        animali_toolbar_html=f'''<div class="cremation-animali-toolbar" id="cremationAnimaliToolbar" hidden>
+          <span id="cremationAnimaliSelectedCount"></span>
+          <button type="button" class="btn ghost" onclick="cremationAnimaliCreateCycleWithSelection()">Crea nuovo ciclo con selezionati</button>
+          <select id="cremationAnimaliCycleSelect">{animali_cycle_select_options}</select>
+          <button type="button" class="btn ghost" onclick="cremationAnimaliAssignSelectionToCycle(document.getElementById('cremationAnimaliCycleSelect').value)">Aggiungi a ciclo esistente</button>
+        </div>'''
         animali_panel_html=f'''<div class="cremation-waiting-panel" id="cremationAnimaliPanel" data-animali-panel>
           <div class="cremation-waiting-panel-inner">
-            <input type="text" class="cremation-modal-search" id="cremationAnimaliSearch" placeholder="Cerca animale o proprietario..." oninput="cremationFilterAnimaliList(this)">
+            <input type="text" class="cremation-modal-search" id="cremationAnimaliSearch" placeholder="Cerca animale, proprietario, pratica o provenienza..." oninput="cremationFilterAnimaliList(this)">
             <div class="cremation-waiting-list" id="cremationAnimaliList">{''.join(animali_panel_rows)}</div>
-            <p class="cremation-quick-menu-empty" id="cremationAnimaliEmpty" {"hidden" if animali_panel_rows else ""}>Nessun animale pianificato questa settimana.</p>
+            <p class="cremation-quick-menu-empty" id="cremationAnimaliEmpty" {"hidden" if animali_panel_rows else ""}>Nessun animale da inserire in programma.</p>
+            {animali_toolbar_html}
           </div>
         </div>'''
 
@@ -7234,7 +7345,6 @@ class App(BaseHTTPRequestHandler):
           </div>
         </div>'''
 
-        board_date=today_iso if today_iso in week_dates else monday.isoformat()
         body=f'''<main class="wrap cremation-board" id="cremationBoard" data-cremation-date="{board_date}">
         <div class="cremation-header">
           <div class="cremation-header-title"><h1>Programma cremazioni <span class="cremation-title-icon">{lucide("calendar")}</span></h1><p class="sub">Pianifica e monitora i cicli di cremazione della settimana</p></div>
