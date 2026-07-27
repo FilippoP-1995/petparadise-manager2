@@ -6971,12 +6971,12 @@ class App(BaseHTTPRequestHandler):
             waiting=c.execute("""SELECT * FROM practices WHERE (deleted_at IS NULL OR deleted_at='') AND status='Ritirato'
                 AND service_type='Cremazione singola' AND cremation_cycle_id IS NULL
                 ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) ASC,id ASC""").fetchall()
-            # elenco più ampio per il popup "Aggiungi animale al ciclo": qualsiasi
-            # pratica non ancora consegnata e non già assegnata a un ciclo,
-            # indipendentemente da stato/tipo servizio (diverso dal pannello
-            # "in attesa" sopra, che resta mirato alle sole cremazioni singole)
+            # elenco più ampio per il popup "Aggiungi animale al ciclo": ogni
+            # cremazione singola non ancora consegnata (Ritirato/In programma/
+            # Cremato/Da consegnare) e non già assegnata a un ciclo — mai le
+            # cremazioni collettive, che non passano dai cicli di cremazione
             assignable=c.execute("""SELECT * FROM practices WHERE (deleted_at IS NULL OR deleted_at='') AND status!='Consegnato'
-                AND cremation_cycle_id IS NULL
+                AND service_type='Cremazione singola' AND cremation_cycle_id IS NULL
                 ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) ASC,id ASC""").fetchall()
             cycles=c.execute("SELECT * FROM cremation_cycles WHERE cycle_date=? ORDER BY planned_start ASC,id ASC",(cycle_date,)).fetchall()
             cycle_ids=[row["id"] for row in cycles]
@@ -7304,12 +7304,12 @@ class App(BaseHTTPRequestHandler):
             waiting=c.execute("""SELECT * FROM practices WHERE (deleted_at IS NULL OR deleted_at='') AND status='Ritirato'
                 AND service_type='Cremazione singola' AND cremation_cycle_id IS NULL
                 ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) ASC,id ASC""").fetchall()
-            # elenco più ampio per il popup "Aggiungi animale al ciclo": qualsiasi
-            # pratica non ancora consegnata e non già assegnata a un ciclo,
-            # indipendentemente da stato/tipo servizio (diverso dal pannello
-            # "in attesa" sopra, che resta mirato alle sole cremazioni singole)
+            # elenco più ampio per il popup "Aggiungi animale al ciclo": ogni
+            # cremazione singola non ancora consegnata (Ritirato/In programma/
+            # Cremato/Da consegnare) e non già assegnata a un ciclo — mai le
+            # cremazioni collettive, che non passano dai cicli di cremazione
             assignable=c.execute("""SELECT * FROM practices WHERE (deleted_at IS NULL OR deleted_at='') AND status!='Consegnato'
-                AND cremation_cycle_id IS NULL
+                AND service_type='Cremazione singola' AND cremation_cycle_id IS NULL
                 ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) ASC,id ASC""").fetchall()
             marks=','.join('?' for _ in week_dates)
             cycles=c.execute(f"SELECT * FROM cremation_cycles WHERE cycle_date IN ({marks}) ORDER BY cycle_date ASC,planned_start ASC,id ASC",tuple(week_dates)).fetchall()
@@ -7735,7 +7735,7 @@ class App(BaseHTTPRequestHandler):
         with db() as c:
             if practice_id:
                 practice=c.execute("SELECT id,status,service_type,cremation_cycle_id FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(practice_id,)).fetchone()
-                if not practice or practice["status"]=="Consegnato" or practice["cremation_cycle_id"]:
+                if not practice or practice["status"]=="Consegnato" or practice["service_type"]!="Cremazione singola" or practice["cremation_cycle_id"]:
                     return self.send_json({"ok":False,"error":"Animale non più disponibile. Ricarica la pagina."},409)
             start,end=cremation_cycle_next_slot(c,cycle_date)
             status="in_attesa" if practice_id else "pianificato"
@@ -7759,7 +7759,7 @@ class App(BaseHTTPRequestHandler):
             if count>=2:
                 return self.send_json({"ok":False,"error":"Il ciclo contiene già 2 animali."},409)
             practice=c.execute("SELECT id,status,service_type,cremation_cycle_id FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(practice_id,)).fetchone()
-            if not practice or practice["status"]=="Consegnato" or practice["cremation_cycle_id"]:
+            if not practice or practice["status"]=="Consegnato" or practice["service_type"]!="Cremazione singola" or practice["cremation_cycle_id"]:
                 return self.send_json({"ok":False,"error":"Animale non più disponibile. Ricarica la pagina."},409)
             c.execute("UPDATE practices SET cremation_cycle_id=?,updated_at=? WHERE id=?",(cycle_id,stamp,practice_id))
             cremation_log_status_change(c,practice_id,practice["status"],"In programma",user["id"],stamp)

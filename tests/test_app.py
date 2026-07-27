@@ -1529,12 +1529,13 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.cremation_schedule(admin)
         page = rendered[-1]
         # il pannello "Animali in attesa" resta mirato alle sole cremazioni
-        # singole non ancora pianificate: una collettiva o una già cremata
-        # non devono comparire lì (anche se ora possono comparire altrove,
-        # nel popup più ampio "Aggiungi animale al ciclo")
+        # singole non ancora pianificate: una già cremata non deve comparire
+        # lì (anche se ora può comparire altrove, nel popup più ampio
+        # "Aggiungi animale al ciclo") — una collettiva invece non deve
+        # comparire da nessuna parte nel Programma Cremazioni.
+        self.assertNotIn("CR-CREM-COLLETTIVA", page)
         waiting_panel_start = page.index('id="cremationWaitingPanel"')
         waiting_panel = page[waiting_panel_start:page.index('cremation-progress', waiting_panel_start)]
-        self.assertNotIn("CR-CREM-COLLETTIVA", waiting_panel)
         self.assertNotIn("CR-CREM-DONE", waiting_panel)
         for pid in (newer_id, older_id, catalog_id, freetext_id, dup_a):
             self.assertIn(f'/pratiche/{pid}', page)
@@ -2268,20 +2269,26 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('cremation-week-animal-provenance', card_html)
         self.assertIn('>L<', card_html)
 
-    def test_cremation_assign_and_create_cycle_accept_any_status_except_consegnato(self):
+    def test_cremation_assign_and_create_cycle_accept_any_status_except_consegnato_but_only_singola(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
             stamp = app.now()
-            # non e' Ritirato ne' Cremazione singola: prima veniva rifiutata, ora deve essere accettata
+            # cremazione singola, status diverso da Ritirato: prima veniva rifiutata, ora deve essere accettata
             other_id = conn.execute(
                 """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
                    created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?)""",
-                ("CR-OTHERTYPE", "Privato", "Livorno", "Cremato", "Cremazione collettiva", stamp, stamp, admin["id"], "Milo"),
+                ("CR-OTHERSTATUS", "Privato", "Livorno", "Cremato", "Cremazione singola", stamp, stamp, admin["id"], "Milo"),
             ).lastrowid
             consegnato_id = conn.execute(
                 """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
                    created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?)""",
                 ("CR-DELIVERED", "Privato", "Livorno", "Consegnato", "Cremazione singola", stamp, stamp, admin["id"], "Fufi"),
+            ).lastrowid
+            # cremazione collettiva: deve restare sempre esclusa, qualsiasi sia lo stato
+            collettiva_id = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("CR-COLLETTIVA", "Privato", "Livorno", "Ritirato", "Cremazione collettiva", stamp, stamp, admin["id"], "Kira"),
             ).lastrowid
 
         responses = []
@@ -2307,7 +2314,14 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(responses[-1][1], 409)
         self.assertFalse(responses[-1][0]["ok"])
 
-    def test_add_animal_modal_lists_any_non_consegnato_animal_not_already_in_a_cycle(self):
+        # una cremazione collettiva resta esclusa anche se lo stato andrebbe bene
+        responses.clear()
+        self.handler.form = lambda: {"data": "2026-07-22", "practice_id": str(collettiva_id)}
+        self.handler.cremation_create_cycle(admin)
+        self.assertEqual(responses[-1][1], 409)
+        self.assertFalse(responses[-1][0]["ok"])
+
+    def test_add_animal_modal_lists_any_non_consegnato_singola_not_already_in_a_cycle(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
             stamp = app.now()
@@ -2337,7 +2351,8 @@ class PetParadiseTests(unittest.TestCase):
         modal_start = page.index('id="cremationAddAnimalList"')
         modal_end = page.index('id="cremationAddAnimalEmpty"')
         modal_html = page[modal_start:modal_end]
-        self.assertIn("Kira", modal_html)
+        # solo cremazione singola, stato diverso da Consegnato, non gia' in un ciclo
+        self.assertNotIn("Kira", modal_html)
         self.assertIn("Argo", modal_html)
         self.assertNotIn("Zeus", modal_html)
         self.assertNotIn("Tequila", modal_html)
