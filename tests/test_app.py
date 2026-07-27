@@ -2010,6 +2010,95 @@ class PetParadiseTests(unittest.TestCase):
         # "Aggiungi nuovo ciclo" is present once, at the bottom, and still wired to the same JS
         self.assertEqual(page.count('onclick="cremationCreateEmptyCycle()"'), 1)
 
+    def test_cremation_schedule_week_stat_cards_are_interactive_tools(self):
+        monday = date(2026, 7, 20)  # a known Monday
+        tuesday = monday + timedelta(days=1)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+
+            def cycle(day, status, start, end, actual_end=None):
+                return conn.execute(
+                    "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,actual_end,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                    (day.isoformat(), status, start, end, actual_end, stamp, stamp),
+                ).lastrowid
+
+            def practice(code, name, status, cycle_id=None):
+                return conn.execute(
+                    """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                       pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                    (code, "Privato", "Livorno", status, "Cremazione singola", "2026-07-15", stamp, stamp,
+                     admin["id"], name, cycle_id),
+                ).lastrowid
+
+            done_cycle = cycle(monday, "completato", "08:00", "09:30", stamp)
+            practice("CR-BUDDY", "Buddy", "In programma", done_cycle)
+            empty_cycle = cycle(monday, "pianificato", "13:00", "14:30")
+            running_cycle = cycle(tuesday, "in_corso", "10:00", "11:30", None)
+            practice("CR-ROCKY", "Rocky", "In programma", running_cycle)
+            practice("CR-MILO", "Milo", "Ritirato")
+
+        rendered = []
+        self.handler.path = f"/programma-cremazioni?vista=settimana&data={monday.isoformat()}"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+
+        # all six stat cards are wired to the same click dispatcher with a distinct mode
+        for mode in ("tutti", "animali", "in_corso", "in_attesa", "completati", "fine_prevista"):
+            self.assertIn(f'data-stat="{mode}"', page)
+            self.assertIn(f"cremationWeekStatClick(this,'{mode}')", page)
+        self.assertEqual(page.count('data-stat="'), 6)
+
+        # "In attesa" now reflects unassigned animals (1: Milo), not cycles with status in_attesa (0)
+        stat_start = page.index('data-stat="in_attesa"')
+        in_attesa_card = page[stat_start:stat_start + 900]
+        self.assertIn('<strong class="dash-stat-value">1</strong>', in_attesa_card)
+
+        # the "Animali" panel lists every animal assigned to a cycle this week, with day/cycle/status context
+        self.assertIn('id="cremationAnimaliPanel"', page)
+        self.assertIn('id="cremationAnimaliSearch"', page)
+        self.assertIn('cremationFilterAnimaliList(this)', page)
+        self.assertIn("Buddy", page)
+        self.assertIn("Rocky", page)
+        animali_start = page.index('id="cremationAnimaliPanel"')
+        animali_panel = page[animali_start:animali_start + 4000]
+        self.assertIn(f"Lun {monday.day:02d}/{monday.month:02d}", animali_panel)
+        self.assertIn(f"Mar {tuesday.day:02d}/{tuesday.month:02d}", animali_panel)
+        self.assertIn("CICLO 1 · COMPLETATO", animali_panel)
+        self.assertIn("CICLO 1 · IN CORSO", animali_panel)
+        # Milo (still waiting, not assigned) must not appear in the Animali panel
+        self.assertNotIn("Milo", animali_panel)
+
+        # the "In attesa" week panel reuses the quick-insert mechanism, day-qualified since it spans the week
+        self.assertIn('id="cremationWeekWaitingPanel"', page)
+        waiting_start = page.index('id="cremationWeekWaitingPanel"')
+        waiting_panel = page[waiting_start:waiting_start + 3000]
+        self.assertIn("Milo", waiting_panel)
+        self.assertIn(f"Inserisci nel Ciclo 2 (Lun {monday.day:02d}/{monday.month:02d})", waiting_panel)
+        self.assertIn("Crea nuovo ciclo", waiting_panel)
+
+        # the "Fine prevista" panel gives a full operational recap of the week's tail end
+        self.assertIn('id="cremationFinePrevistaPanel"', page)
+        fine_start = page.index('id="cremationFinePrevistaPanel"')
+        fine_panel = page[fine_start:fine_start + 2000]
+        self.assertIn("Tempo residuo", fine_panel)
+        self.assertIn(f"Ciclo 1 — 10:00 → 11:30", fine_panel)
+        self.assertIn("Rocky", fine_panel)
+        self.assertIn("Ritardo accumulato", fine_panel)
+        self.assertIn("Cicli rimanenti", fine_panel)
+        self.assertIn("<span>2</span>", fine_panel)  # 3 cycles total, 1 completed => 2 remaining
+
+        # a non-intrusive toast placeholder exists for the "no running cycle" message, no new page/route
+        self.assertIn('id="cremationToast"', page)
+        self.assertIn('cremationToast" class="cremation-toast" hidden', page)
+
+        # the JS dispatcher and its per-mode handlers are all present exactly once
+        for fn in ("cremationWeekStatClick", "cremationApplyCompletatiFilter", "cremationGoToActiveCycle",
+                   "cremationFilterAnimaliList", "cremationShowToast", "cremationSetActiveStat"):
+            self.assertEqual(page.count(f"function {fn}("), 1)
+
     def test_cremation_schedule_remembers_last_selected_view_across_visits(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()

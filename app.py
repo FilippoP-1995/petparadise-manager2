@@ -1495,6 +1495,13 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-stat-chevron{position:absolute;right:14px;top:14px;color:#94a3b8;display:flex;z-index:1}
 .cremation-stat-chevron .icon{width:16px;height:16px;transition:transform .25s ease;transform:rotate(90deg)}
 .cremation-stat-clickable[aria-expanded="true"] .cremation-stat-chevron .icon{transform:rotate(270deg)}
+.cremation-week-stat-clickable{cursor:pointer}
+.cremation-week-stat-clickable:hover{border-color:#fbbf24}
+.cremation-week-stat-clickable.cremation-stat-active{box-shadow:0 0 0 2px var(--icon-color) inset,0 12px 30px #03071230}
+.cremation-stat-highlight{box-shadow:0 0 0 3px #4ade8090;transition:box-shadow .3s ease}
+.cremation-fine-prevista-grid{display:flex;flex-wrap:wrap;gap:16px 28px;padding:4px 2px}
+.cremation-toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#1f2937;border:1px solid #334155;color:#e2e8f0;padding:10px 18px;border-radius:10px;font-size:13px;box-shadow:0 12px 30px #03071255;z-index:60;opacity:0;transition:opacity .2s ease}
+.cremation-toast.show{opacity:1}
 .cremation-waiting-panel{max-height:0;overflow:hidden;transition:max-height .3s ease}
 .cremation-waiting-panel-inner{padding:4px 0 4px}
 .cremation-waiting-list{display:flex;flex-direction:column;gap:10px;max-height:65vh;overflow-y:auto;padding-right:2px}
@@ -1658,6 +1665,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .light-theme .cremation-quick-menu-empty{color:#94a3b8}
 .light-theme .cremation-modal{background:#fff;border-color:#e2e8f0;color:#111827}
 .light-theme .cremation-confirm-message{color:#475569}
+.light-theme .cremation-toast{background:#fff;border-color:#e2e8f0;color:#111827}
 .light-theme .cremation-modal-close{background:#f1f5f9;color:#111827}
 .light-theme .cremation-modal-search{background:#f8fafc;border-color:#e2e8f0;color:#111827}
 .light-theme .cremation-add-animal-card{background:#fff;border-color:#e2e8f0}
@@ -3654,6 +3662,107 @@ function cremationToggleWeekDay(headerEl){
     day.classList.remove('expanded');
     cremationCollapseBody(body);
   }
+}
+var cremationWeekMode=null;
+function cremationShowToast(message){
+  const el=document.getElementById('cremationToast');
+  if(!el)return;
+  el.textContent=message;
+  el.hidden=false;
+  clearTimeout(el._cremationToastTimer);
+  requestAnimationFrame(function(){el.classList.add('show');});
+  el._cremationToastTimer=setTimeout(function(){
+    el.classList.remove('show');
+    setTimeout(function(){el.hidden=true;},200);
+  },2200);
+}
+function cremationSetActiveStat(card){
+  document.querySelectorAll('[data-stat]').forEach(function(c){
+    c.classList.remove('cremation-stat-active');
+    c.setAttribute('aria-expanded','false');
+  });
+  if(card){
+    card.classList.add('cremation-stat-active');
+    card.setAttribute('aria-expanded','true');
+  }
+}
+function cremationOpenPanel(id){
+  const panel=document.getElementById(id);
+  if(!panel)return;
+  panel.classList.add('expanded');
+  cremationExpandBody(panel,panel);
+}
+function cremationClosePanel(id){
+  const panel=document.getElementById(id);
+  if(!panel)return;
+  panel.classList.remove('expanded');
+  cremationCollapseBody(panel);
+}
+function cremationApplyCompletatiFilter(active){
+  document.querySelectorAll('[data-week-day]').forEach(function(day){
+    const items=day.querySelectorAll('.cremation-week-cycle-item');
+    let anyVisible=false;
+    items.forEach(function(item){
+      const isCompletato=!!item.querySelector('.cremation-cycle-completato');
+      const show=!active||isCompletato;
+      item.style.display=show?'':'none';
+      if(show)anyVisible=true;
+    });
+    day.style.display=(active&&!anyVisible)?'none':'';
+  });
+}
+function cremationGoToActiveCycle(){
+  const activeCard=document.querySelector('.cremation-week-cycle-card.cremation-cycle-in_corso');
+  if(!activeCard){
+    cremationShowToast('Nessun ciclo in corso');
+    return;
+  }
+  const day=activeCard.closest('[data-week-day]');
+  if(day&&!day.classList.contains('expanded')){
+    cremationToggleWeekDay(day.querySelector('.cremation-week-day-head'));
+  }
+  if(!activeCard.classList.contains('expanded')){
+    cremationToggleCycleCard(activeCard.querySelector('.cremation-week-cycle-head'));
+  }
+  setTimeout(function(){
+    activeCard.scrollIntoView({behavior:'smooth',block:'center'});
+    activeCard.classList.add('cremation-stat-highlight');
+    setTimeout(function(){activeCard.classList.remove('cremation-stat-highlight');},2000);
+  },150);
+}
+function cremationFilterAnimaliList(input){
+  const q=(input.value||'').toLowerCase().trim();
+  const rows=document.querySelectorAll('#cremationAnimaliList [data-search]');
+  let anyVisible=false;
+  rows.forEach(function(row){
+    const match=!q||row.dataset.search.indexOf(q)!==-1;
+    row.style.display=match?'':'none';
+    if(match)anyVisible=true;
+  });
+  const empty=document.getElementById('cremationAnimaliEmpty');
+  if(empty)empty.hidden=anyVisible||rows.length===0;
+}
+function cremationWeekStatClick(card,mode){
+  if(mode==='in_corso'){
+    cremationGoToActiveCycle();
+    return;
+  }
+  const reactivating=cremationWeekMode===mode;
+  cremationApplyCompletatiFilter(false);
+  cremationClosePanel('cremationAnimaliPanel');
+  cremationClosePanel('cremationWeekWaitingPanel');
+  cremationClosePanel('cremationFinePrevistaPanel');
+  if(reactivating){
+    cremationWeekMode=null;
+    cremationSetActiveStat(null);
+    return;
+  }
+  cremationWeekMode=mode;
+  cremationSetActiveStat(card);
+  if(mode==='animali')cremationOpenPanel('cremationAnimaliPanel');
+  else if(mode==='in_attesa')cremationOpenPanel('cremationWeekWaitingPanel');
+  else if(mode==='fine_prevista')cremationOpenPanel('cremationFinePrevistaPanel');
+  else if(mode==='completati')cremationApplyCompletatiFilter(true);
 }
 function cremationOpenAddAnimalModal(cycleId){
   const overlay=document.getElementById('cremationAddAnimalOverlay');
@@ -6859,10 +6968,69 @@ class App(BaseHTTPRequestHandler):
               {urn_html}
             </div>'''
 
+        insertable_cycles_week=[]
+
+        def week_quick_insert_menu_html(row):
+            items=[f'<button type="button" onclick="cremationQuickAssign(this,{row["id"]},{cid})">Inserisci nel Ciclo {n} ({weekday_short[day_date.weekday()]} {day_date.day:02d}/{day_date.month:02d})</button>' for n,cid,day_date in insertable_cycles_week]
+            items.append(f'<button type="button" class="cremation-quick-menu-create" onclick="cremationQuickCreateAndAssign(this,{row["id"]})">{lucide("plus")}<span>Crea nuovo ciclo</span></button>')
+            return f'''<div class="cremation-quick-menu-wrap">
+              <button type="button" class="cremation-quick-insert-btn" onclick="event.stopPropagation();cremationToggleQuickMenu(this)">{lucide("plus")}<span>Inserisci</span></button>
+              <div class="cremation-quick-menu-popover" hidden onclick="event.stopPropagation()">{''.join(items)}</div>
+            </div>'''
+
+        def week_waiting_card_html(row):
+            avatar_emoji,avatar_cls=species_avatar(row["species"] if "species" in row.keys() else "")
+            weight=(row["estimated_weight"] or "").strip()
+            code=(row["provenance"] or "").strip().upper()
+            tags=self.tag_badges(row)
+            urn=urn_value(row)
+            extra=""
+            if '<span class="badge' in tags:
+                extra+=f'<div class="cremation-waiting-tags">{tags}</div>'
+            if urn:
+                extra+=f'<div class="cremation-waiting-urn">{lucide("archive")}<span>{esc(urn)}</span></div>'
+            url=practice_url(row)
+            return f'''<div class="cremation-waiting-card {avatar_cls}" data-practice-id="{row['id']}" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}>
+              <span class="cremation-drag-handle" onclick="event.stopPropagation()" aria-hidden="true">{lucide("more-vertical")}</span>
+              <span class="cremation-animal-avatar {avatar_cls}" aria-hidden="true">{avatar_emoji}</span>
+              <div class="cremation-waiting-main">
+                <div class="cremation-animal-name">{animal_name_html(row)}</div>
+                {f'<div class="cremation-waiting-weight">{esc(weight)} kg</div>' if weight else ''}
+                {f'<span class="cremation-provenance-chip {avatar_cls}">{esc(code)}</span>' if code else ''}
+                {extra}
+                {week_quick_insert_menu_html(row)}
+              </div>
+            </div>'''
+
+        def animali_panel_row_html(row,cycle,day_date,cycle_num):
+            collab_code=collaborator_codes.get(int(row["collaborator_id"])) if "collaborator_id" in row.keys() and row["collaborator_id"] else ""
+            prefix=f'{esc(collab_code)} ' if collab_code else ""
+            avatar_emoji,avatar_cls=species_avatar(row["species"] if "species" in row.keys() else "")
+            weight=(row["estimated_weight"] or "").strip()
+            weight_html=f'{esc(weight)} kg' if weight else '<span class="cremation-dash">—</span>'
+            owner=owner_label(row)
+            code=(row["provenance"] or "").strip().upper()
+            provenance_html=f'<span class="cremation-provenance-chip {avatar_cls}">{esc(code)}</span>' if code else '<span class="cremation-dash">—</span>'
+            status_label,status_cls=CREMATION_STATUS_LABELS.get(cycle["status"],(cycle["status"].upper(),""))
+            day_short=weekday_short[day_date.weekday()]
+            url=practice_url(row)
+            search_key=esc(f'{(row["animal_name"] or "").lower()} {owner.lower()}')
+            return f'''<div class="cremation-animal-row" data-search="{search_key}" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}>
+              <div class="cremation-animal-id">
+                <span class="cremation-animal-avatar {avatar_cls}" aria-hidden="true">{avatar_emoji}</span>
+                <div class="cremation-animal-name-wrap"><span class="cremation-animal-name">{prefix}{animal_name_html(row)}</span><span class="cremation-animal-weight">{weight_html}{f' · {esc(owner)}' if owner else ''}</span></div>
+              </div>
+              <div class="cremation-animal-col"><small>Giorno</small><span>{day_short} {day_date.day:02d}/{day_date.month:02d} · {esc(cycle["planned_start"])}</span></div>
+              <div class="cremation-animal-col"><small>Ciclo</small><span class="cremation-status-badge {status_cls}">CICLO {cycle_num} · {esc(status_label)}</span></div>
+              <div class="cremation-animal-col"><small>Provenienza</small>{provenance_html}</div>
+              <div class="cremation-animal-col"><small>Etichette</small><div class="cremation-animal-tags">{tags_html(row)}</div></div>
+              <div class="cremation-animal-col"><small>Urna</small><div class="cremation-animal-urn">{urn_html(row)}</div></div>
+              <div class="cremation-animal-actions"><a class="cremation-animal-open" href="{url}" onclick="event.stopPropagation()"><span>Apri pratica</span>{lucide("chevron-right")}</a></div>
+            </div>'''
+
         total_cycles=len(cycles)
         animali_count=len(assigned)
         in_corso_count=sum(1 for row in cycles if row["status"]=="in_corso")
-        in_attesa_count=sum(1 for row in cycles if row["status"]=="in_attesa")
         completed_count=sum(1 for row in cycles if row["status"]=="completato")
         last_cycle=max(cycles,key=lambda r:(r["cycle_date"],r["planned_end"]),default=None)
         if last_cycle:
@@ -6876,6 +7044,8 @@ class App(BaseHTTPRequestHandler):
         now_dt=datetime.now()
         today_iso=today_date.isoformat()
 
+        cycle_position={}
+        animali_panel_rows=[]
         day_sections=[]
         for i,d in enumerate(week_dates):
             day_cycles=cycles_by_date[d]
@@ -6885,6 +7055,11 @@ class App(BaseHTTPRequestHandler):
             for idx,cycle in enumerate(day_cycles):
                 animals=cycle_practices.get(cycle["id"],[])
                 status=cycle["status"]
+                cycle_position[cycle["id"]]=(idx+1,day_date)
+                if status!="completato" and len(animals)<2:
+                    insertable_cycles_week.append((idx+1,cycle["id"],day_date))
+                for arow in animals:
+                    animali_panel_rows.append(animali_panel_row_html(arow,cycle,day_date,idx+1))
                 status_label,status_cls=CREMATION_STATUS_LABELS.get(status,(status.upper(),""))
                 lines_html=''.join(week_animal_line(row) for row in animals) or '<div class="cremation-week-animal-line cremation-dash">Nessun animale</div>'
                 animals_html=''.join(animal_row_html(row,removable=status!="completato") for row in animals) or '<p class="cremation-dash" style="padding:10px 0">Nessun animale assegnato.</p>'
@@ -6909,7 +7084,7 @@ class App(BaseHTTPRequestHandler):
                 dropzone_attr=f'data-cycle-dropzone="{cycle["id"]}"' if status!="completato" and len(animals)<2 else ""
                 row_items.append(f'''<div class="cremation-timeline-item cremation-week-cycle-item">
                   <div class="cremation-timeline-rail"><span class="cremation-timeline-time">{esc(cycle["planned_start"])}</span><span class="cremation-timeline-dot {dot_cls_map.get(status,"")}"></span></div>
-                  <div class="cremation-week-cycle-card cremation-cycle-{status}" {dropzone_attr} data-cycle-card>
+                  <div class="cremation-week-cycle-card cremation-cycle-{status}" {dropzone_attr} data-cycle-card data-cycle-id="{cycle['id']}">
                     <div class="cremation-week-cycle-head" onclick="cremationToggleCycleCard(this)">
                       <div class="cremation-week-cycle-main">
                         <span class="cremation-cycle-number">CICLO {idx+1}</span>
@@ -6946,20 +7121,53 @@ class App(BaseHTTPRequestHandler):
         else:
             week_label=f"{monday.day} {MONTH_NAMES_IT[monday.month-1]} – {sunday.day} {MONTH_NAMES_IT[sunday.month-1]} {sunday.year}"
 
+        if last_cycle:
+            last_num,_=cycle_position.get(last_cycle["id"],(None,None))
+            last_animals=cycle_practices.get(last_cycle["id"],[])
+            last_animals_txt=', '.join(animal_name_html(r) for r in last_animals) or '<span class="cremation-dash">Nessun animale</span>'
+            try:
+                end_dt=datetime.combine(last_date,datetime.strptime(last_cycle["planned_end"],"%H:%M").time())
+                remaining_min=round((end_dt-now_dt).total_seconds()/60)
+                if remaining_min>0:
+                    rh,rm=divmod(remaining_min,60)
+                    remaining_txt=(f"{rh} h {rm} min" if rh else f"{rm} min")
+                else:
+                    remaining_txt="Scaduto"
+            except ValueError:
+                remaining_txt="-"
+            last_cycle_line=f"Ciclo {last_num} — {esc(last_cycle['planned_start'])} → {esc(last_cycle['planned_end'])}"
+        else:
+            last_animals_txt='<span class="cremation-dash">—</span>'
+            remaining_txt="-"
+            last_cycle_line='<span class="cremation-dash">—</span>'
+
+        delay_minutes=0
+        for cyc in cycles:
+            if cyc["status"]=="completato" and cyc["actual_end"]:
+                try:
+                    actual_dt=datetime.strptime(cyc["actual_end"][11:16],"%H:%M")
+                    planned_dt=datetime.strptime(cyc["planned_end"],"%H:%M")
+                    diff=(actual_dt-planned_dt).total_seconds()/60
+                    if diff>0:delay_minutes+=diff
+                except ValueError:pass
+        delay_minutes=round(delay_minutes)
+        delay_txt=f"{delay_minutes} min" if delay_minutes>0 else "Nessuno"
+        cicli_rimanenti=total_cycles-completed_count
+
         summary_specs=[
-            ("flame","state-red","Cicli questa settimana",str(total_cycles),"Totali"),
-            ("paw","state-blue","Animali",str(animali_count),"Totali"),
-            ("play","state-green","In corso",str(in_corso_count),"Adesso"),
-            ("clock","payment-due","In attesa",str(in_attesa_count),"Prossimi"),
-            ("check-circle","state-blue","Completati",str(completed_count),"Questa settimana"),
-            ("clock","state-purple","Fine prevista",fine_prevista_value,""),
+            ("flame","state-red","Cicli questa settimana",str(total_cycles),"Totali","tutti"),
+            ("paw","state-blue","Animali",str(animali_count),"Totali","animali"),
+            ("play","state-green","In corso",str(in_corso_count),"Adesso","in_corso"),
+            ("clock","payment-due","In attesa",str(len(waiting)),"Prossimi","in_attesa"),
+            ("check-circle","state-blue","Completati",str(completed_count),"Questa settimana","completati"),
+            ("clock","state-purple","Fine prevista",fine_prevista_value,"","fine_prevista"),
         ]
         summary_html=''.join(
-            f'''<div class="dash-stat-card cremation-summary-card {cls}">
+            f'''<div class="dash-stat-card cremation-summary-card {cls} cremation-week-stat-clickable" data-stat="{mode}" onclick="cremationWeekStatClick(this,'{mode}')" role="button" tabindex="0" aria-expanded="false">
               <span class="dash-stat-head"><span class="dash-stat-icon">{lucide(icon)}</span><span class="dash-stat-title">{label}</span></span>
               <strong class="dash-stat-value">{value}</strong>
               <span class="dash-stat-desc">{caption}</span>
-            </div>''' for icon,cls,label,value,caption in summary_specs
+            </div>''' for icon,cls,label,value,caption,mode in summary_specs
         )
 
         date_nav=f'''<div class="cremation-date-nav">
@@ -7029,6 +7237,34 @@ class App(BaseHTTPRequestHandler):
           </div>
         </div>'''
 
+        animali_panel_html=f'''<div class="cremation-waiting-panel" id="cremationAnimaliPanel" data-animali-panel>
+          <div class="cremation-waiting-panel-inner">
+            <input type="text" class="cremation-modal-search" id="cremationAnimaliSearch" placeholder="Cerca animale o proprietario..." oninput="cremationFilterAnimaliList(this)">
+            <div class="cremation-waiting-list" id="cremationAnimaliList">{''.join(animali_panel_rows)}</div>
+            <p class="cremation-quick-menu-empty" id="cremationAnimaliEmpty" {"hidden" if animali_panel_rows else ""}>Nessun animale pianificato questa settimana.</p>
+          </div>
+        </div>'''
+
+        week_waiting_cards_html=''.join(week_waiting_card_html(row) for row in waiting) or '<p class="cremation-dash" style="padding:8px 0">Nessun animale in attesa</p>'
+        week_waiting_panel_html=f'''<div class="cremation-waiting-panel" id="cremationWeekWaitingPanel" data-week-waiting-panel>
+          <div class="cremation-waiting-panel-inner">
+            <div class="cremation-waiting-list">{week_waiting_cards_html}</div>
+          </div>
+        </div>'''
+
+        fine_prevista_panel_html=f'''<div class="cremation-waiting-panel" id="cremationFinePrevistaPanel" data-fine-prevista-panel>
+          <div class="cremation-waiting-panel-inner">
+            <div class="cremation-fine-prevista-grid">
+              <div class="cremation-animal-col"><small>Fine prevista</small><span>{esc(fine_prevista_value)}</span></div>
+              <div class="cremation-animal-col"><small>Tempo residuo</small><span>{esc(remaining_txt)}</span></div>
+              <div class="cremation-animal-col"><small>Ultimo ciclo</small><span>{last_cycle_line}</span></div>
+              <div class="cremation-animal-col"><small>Animali</small><span>{last_animals_txt}</span></div>
+              <div class="cremation-animal-col"><small>Ritardo accumulato</small><span>{esc(delay_txt)}</span></div>
+              <div class="cremation-animal-col"><small>Cicli rimanenti</small><span>{cicli_rimanenti}</span></div>
+            </div>
+          </div>
+        </div>'''
+
         board_date=today_iso if today_iso in week_dates else monday.isoformat()
         body=f'''<main class="wrap cremation-board" id="cremationBoard" data-cremation-date="{board_date}">
         <div class="cremation-header">
@@ -7036,11 +7272,15 @@ class App(BaseHTTPRequestHandler):
           <div class="cremation-header-nav">{date_nav}</div>
         </div>
         <div class="cremation-summary-grid">{summary_html}</div>
+        {animali_panel_html}
+        {week_waiting_panel_html}
+        {fine_prevista_panel_html}
         <div class="cremation-week-days">{''.join(day_sections)}</div>
         <button type="button" class="cremation-add-cycle-btn" onclick="cremationCreateEmptyCycle()">{lucide("plus")}<span>Aggiungi nuovo ciclo</span></button>
         {edit_modal_html}
         {add_animal_modal_html}
         {confirm_modal_html}
+        <div id="cremationToast" class="cremation-toast" hidden></div>
         </main>'''
         self.send_html(layout("Programma Cremazioni",body,user))
 
