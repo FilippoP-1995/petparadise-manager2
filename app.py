@@ -1572,7 +1572,8 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .calendar-appt-type-pickup{background:#052e16;color:#4ade80}
 .calendar-appt-type-delivery{background:#172554;color:#60a5fa}
 .calendar-appt-type-reminder{background:#2e1065;color:#c084fc}
-.calendar-appt-name{font-size:15px;font-weight:800;color:#f5f7fb;text-transform:uppercase}
+.calendar-appt-title{font-size:15px;font-weight:800;color:#f5f7fb;text-transform:uppercase}
+.calendar-appt-name{font-size:12.5px;font-weight:600;color:#9ca7b8}
 .calendar-appt-owner{font-size:13px;color:#dfe4eb}
 .calendar-appt-location{font-size:12.5px;color:#9ca7b8}
 .calendar-appt-bottom{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:4px;flex-wrap:wrap}
@@ -1599,7 +1600,8 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .light-theme .calendar-filter-pill,.light-theme .calendar-filter-operator{background:#fff;color:#526174;border-color:#cbd5e1}
 .light-theme .calendar-filter-pill.active{background:#e9475b;border-color:#e9475b;color:#fff}
 .light-theme .calendar-appt-card{background:#fff;color:#111827;border-color:#e2e8f0}
-.light-theme .calendar-appt-name{color:#111827}
+.light-theme .calendar-appt-title{color:#111827}
+.light-theme .calendar-appt-name{color:#64748b}
 .light-theme .calendar-appt-owner{color:#334155}
 .light-theme .calendar-appt-action{background:#f8fafc;border-color:#e2e8f0;color:#526174}
 .light-theme .calendar-appt-menu-popover{background:#fff;border-color:#e2e8f0}
@@ -1976,30 +1978,36 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 @media(max-width:1100px){.cremation-summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:620px){.cremation-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.cremation-header{flex-direction:column}.cremation-header-nav{align-items:flex-start;width:100%}.cremation-date-nav{width:100%;justify-content:space-between}.cremation-view-tabs{width:100%;justify-content:center}.cremation-progress{flex-wrap:wrap}.cremation-animal-row{grid-template-columns:1fr;gap:6px}.cremation-animal-actions{margin-left:0;margin-top:4px}.cremation-timeline-item{grid-template-columns:36px minmax(0,1fr);gap:8px}.cremation-timeline-time{font-size:9px}}
 /* Wizard evento + dettaglio evento: redesign premium dark, coerente con Programma Cremazioni */
-.calendar-form-v2 .calendar-form-step{background:transparent;border:0;box-shadow:none;padding:18px 2px}
+.calendar-form-v2 .calendar-form-step{background:transparent;border:0;box-shadow:none;padding:18px 2px;animation:calendarStepIn .3s cubic-bezier(.22,1,.36,1)}
+.calendar-form-v2 .calendar-form-step.step-back{animation-name:calendarStepInBack}
+@keyframes calendarStepIn{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)}}
+@keyframes calendarStepInBack{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:translateX(0)}}
+@media(prefers-reduced-motion:reduce){.calendar-form-v2 .calendar-form-step{animation:none!important}}
 .calendar-form-v2 h2{font-size:19px;margin:0 0 4px}
 .calendar-form-v2 .sub{margin:0 0 18px;color:#9ca7b8}
-.calendar-type-grid{display:grid;grid-template-columns:1fr;gap:12px}
-.calendar-type-option{display:flex;align-items:center;gap:14px;min-height:76px;padding:16px 18px;border:1px solid #263140;border-radius:20px;background:linear-gradient(145deg,#1a2332,#151d29);box-shadow:0 10px 28px #0307122e;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+.calendar-type-grid{display:grid;grid-template-columns:1fr;gap:10px}
+.calendar-type-option{display:flex;align-items:center;gap:14px;min-height:68px;padding:13px 16px;border:1px solid #ffffff14;border-radius:24px;background:linear-gradient(160deg,#1c2635d9,#141b27d9);backdrop-filter:blur(16px);box-shadow:0 10px 26px #05070f3d;cursor:pointer;transition:border-color .18s ease,box-shadow .18s ease,transform .15s cubic-bezier(.34,1.4,.64,1)}
 .calendar-type-option:hover{border-color:#3a4a60}
-.calendar-type-option:has(input:checked){border-color:#ef405f;box-shadow:0 0 0 2px #ef405f40,0 10px 28px #0307122e}
-.calendar-event-type-icon{flex:0 0 46px;width:46px;height:46px;border-radius:14px;background:#202c3d;color:#9ca7b8;display:grid;place-items:center}
+.calendar-type-option:active{transform:scale(.985)}
+.calendar-type-option:has(input:checked){border-color:#ef405f60;box-shadow:0 0 0 1px #ef405f40,0 0 22px #ef405f22,0 10px 26px #05070f3d}
+.calendar-event-type-icon{flex:0 0 42px;width:42px;height:42px;border-radius:13px;background:#202c3d;color:#9ca7b8;display:grid;place-items:center}
 .calendar-event-type-icon .icon{width:22px;height:22px}
-.calendar-icon-pink{background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff}
-.calendar-icon-blue{background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff}
-.calendar-icon-green{background:linear-gradient(135deg,#22c55e,#15803d);color:#fff}
-.calendar-icon-orange{background:linear-gradient(135deg,#f59e0b,#b45309);color:#fff}
-.calendar-icon-purple{background:linear-gradient(135deg,#8b5cf6,#6d28d9);color:#fff}
+.calendar-icon-pink{background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;box-shadow:0 0 16px #ef405f38}
+.calendar-icon-blue{background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff;box-shadow:0 0 16px #3b82f638}
+.calendar-icon-green{background:linear-gradient(135deg,#22c55e,#15803d);color:#fff;box-shadow:0 0 16px #22c55e38}
+.calendar-icon-orange{background:linear-gradient(135deg,#f59e0b,#b45309);color:#fff;box-shadow:0 0 16px #f59e0b38}
+.calendar-icon-purple{background:linear-gradient(135deg,#8b5cf6,#6d28d9);color:#fff;box-shadow:0 0 16px #8b5cf638}
 .calendar-type-option b{display:block;font-size:15px;font-weight:800;letter-spacing:.01em}
 .calendar-type-option small{display:block;margin-top:2px}
 .calendar-type-check{display:none;flex:0 0 24px;width:24px;height:24px;color:#ef405f;margin-left:auto}
 .calendar-type-check .icon{width:24px;height:24px}
 .calendar-type-option:has(input:checked) .calendar-type-check{display:block}
-.calendar-card-list{display:grid;gap:12px}
-.calendar-tap-card{display:flex;align-items:flex-start;gap:14px;padding:16px 18px;border:1px solid #263140;border-radius:20px;background:linear-gradient(145deg,#1a2332,#151d29);box-shadow:0 8px 22px #0307122e;text-align:left;color:inherit;font:inherit;width:100%}
+.calendar-card-list{display:grid;gap:9px}
+.calendar-tap-card{display:flex;align-items:flex-start;gap:13px;padding:13px 16px;border:1px solid #ffffff12;border-radius:22px;background:linear-gradient(160deg,#1c2635d9,#141b27d9);backdrop-filter:blur(16px);box-shadow:0 8px 20px #05070f33;text-align:left;color:inherit;font:inherit;width:100%;transition:border-color .18s ease,transform .15s cubic-bezier(.34,1.4,.64,1)}
 button.calendar-tap-card{cursor:pointer}
-.calendar-tap-card:hover{border-color:#3a4a60}
-.calendar-tap-card-icon{flex:0 0 40px;width:40px;height:40px;border-radius:12px;background:#202c3d;color:#9ca7b8;display:grid;place-items:center}
+.calendar-tap-card:hover{border-color:#ffffff26}
+button.calendar-tap-card:active,a.calendar-tap-card:active{transform:scale(.985)}
+.calendar-tap-card-icon{flex:0 0 38px;width:38px;height:38px;border-radius:12px;background:#202c3d;color:#9ca7b8;display:grid;place-items:center}
 .calendar-tap-card-icon .icon{width:19px;height:19px}
 .calendar-tap-card-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
 .calendar-tap-card-body>small{color:#9ca7b8;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;font-weight:700}
@@ -2007,7 +2015,8 @@ button.calendar-tap-card{cursor:pointer}
 .calendar-tap-card-body input::placeholder{color:#8a96a8;font-weight:500}
 .calendar-tap-card.lookup>.calendar-tap-card-body>input{border:1px solid #263246;background:#0e1622;border-radius:12px;padding:10px 12px;font-weight:600;font-size:16px;margin-top:2px}
 .calendar-tap-card.lookup>.calendar-tap-card-body>input::placeholder{color:#69788f;font-weight:500}
-.calendar-tap-card.lookup>.calendar-tap-card-body>input:focus{outline:0;border-color:#ef405f70}
+.calendar-tap-card.lookup>.calendar-tap-card-body>input:focus{outline:0;border-color:#ef405f70;box-shadow:0 0 0 3px #ef405f22;transition:box-shadow .2s ease,border-color .2s ease}
+.calendar-tap-card:focus-within{border-color:#ffffff26;box-shadow:0 8px 20px #05070f33,0 0 0 1px #ef405f2e}
 .light-theme .calendar-tap-card.lookup>.calendar-tap-card-body>input{background:#f8fafc;border-color:#e2e8f0;color:#111827}
 .calendar-tap-card-body textarea{min-height:60px;font-weight:500;font-size:16px;resize:vertical}
 .calendar-tap-card-body label{font-weight:500;font-size:13px;color:#dfe4eb}
@@ -2015,7 +2024,6 @@ button.calendar-tap-card{cursor:pointer}
 .calendar-tap-card-chevron{align-self:center;color:#8a96a8;flex:0 0 auto}
 .calendar-tap-card-chevron .icon{width:18px;height:18px}
 .calendar-tap-card-link{cursor:pointer}
-.calendar-tap-card-summary{background:linear-gradient(145deg,#202c3d,#1a2332)}
 .calendar-tap-card .calendar-datetime-row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:0;border:0;position:relative}
 .calendar-tap-card .calendar-datetime-row>label{display:none}
 .calendar-tap-card .calendar-date-compact,.calendar-tap-card .calendar-time-entry{background:transparent;border:0;padding:0;font-size:15px;font-weight:700;color:#f5f7fb}
@@ -2055,7 +2063,30 @@ button.calendar-tap-card{cursor:pointer}
 .light-theme .calendar-tap-card-icon{background:#f1f5f9}
 .light-theme .calendar-estimate-row-v2{background:#f8fafc;border-color:#e2e8f0}
 .light-theme .calendar-estimate-row-v2 input{color:#111827}
-@media(max-width:520px){.calendar-tap-card{padding:14px}}
+@media(max-width:520px){.calendar-tap-card{padding:12px 14px}}
+.calendar-wizard-preview{display:flex;align-items:flex-start;gap:13px;padding:16px 18px;border-radius:26px;border:1px solid #ef405f38;background:linear-gradient(160deg,#2a1620f0,#171018f0);backdrop-filter:blur(16px);box-shadow:0 14px 32px #05070f40,0 0 26px #ef405f16;margin-bottom:14px}
+.calendar-wizard-preview-icon{flex:0 0 48px;width:48px;height:48px;border-radius:16px;display:grid;place-items:center;color:#fff}
+.calendar-wizard-preview-icon .icon{width:23px;height:23px}
+.calendar-wizard-preview-body{flex:1;min-width:0}
+.calendar-wizard-preview-eyebrow{font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#9ca7b8}
+.calendar-wizard-preview-title{margin:2px 0 6px;font-size:19px;font-weight:800;color:#f5f7fb}
+.calendar-wizard-preview-badge{display:inline-flex;padding:3px 10px;border-radius:99px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.02em;margin-bottom:8px;background:#4c1d2b;color:#fda4af}
+.calendar-wizard-preview-meta{display:flex;flex-wrap:wrap;gap:10px 16px;color:#9ca7b8;font-size:12.5px}
+.calendar-wizard-preview-meta span{display:inline-flex;align-items:center;gap:5px}
+.calendar-wizard-preview-meta .icon{width:14px;height:14px}
+.calendar-summary-list{padding:4px 18px;border-radius:22px;border:1px solid #ffffff12;background:linear-gradient(160deg,#1c2635d9,#141b27d9);backdrop-filter:blur(16px);box-shadow:0 8px 20px #05070f33;margin-bottom:14px}
+.calendar-summary-row{display:flex;align-items:center;gap:11px;padding:12px 0;border-bottom:1px solid #ffffff0d}
+.calendar-summary-row:last-child{border-bottom:0}
+.calendar-summary-row-icon{flex:0 0 30px;width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:#fff}
+.calendar-summary-row-icon .icon{width:15px;height:15px}
+.calendar-summary-row-label{flex:1;min-width:0;font-size:13px;color:#c3cbd8;font-weight:600}
+.calendar-summary-row-value{font-size:13px;font-weight:700;color:#f5f7fb;text-align:right;max-width:55%}
+.calendar-summary-row-value small{display:block;font-weight:500;color:#8a96a8;font-size:11.5px;margin-top:2px}
+.light-theme .calendar-wizard-preview{background:linear-gradient(160deg,#fff1f3,#ffffff)}
+.light-theme .calendar-wizard-preview-title{color:#111827}
+.light-theme .calendar-summary-list{background:#fff;border-color:#e2e8f0}
+.light-theme .calendar-summary-row-label{color:#526174}
+.light-theme .calendar-summary-row-value{color:#111827}
 .calendar-detail-v2 .calendar-tabs{flex-wrap:wrap}
 .calendar-detail-header{display:flex;align-items:flex-start;gap:14px;margin-bottom:14px}
 .calendar-detail-header-icon{flex:0 0 52px;width:52px;height:52px;border-radius:16px;background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;display:grid;place-items:center}
@@ -2070,9 +2101,14 @@ button.calendar-tap-card{cursor:pointer}
 .calendar-detail-header-meta .icon{width:15px;height:15px}
 .calendar-detail-status-badge{display:inline-flex;padding:4px 10px;border-radius:99px;background:#202c3d;font-weight:800;font-size:11.5px;text-transform:uppercase;letter-spacing:.03em}
 .calendar-detail-quickactions{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:16px}
-.calendar-detail-qa{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:72px;padding:10px 4px;border:1px solid #263140;border-radius:16px;background:linear-gradient(145deg,#1a2332,#151d29);color:#e2e8f0;font-size:11.5px;font-weight:700;text-align:center}
-.calendar-detail-qa-icon{width:22px;height:22px;color:#fb7185}
-.calendar-detail-qa-icon .icon{width:20px;height:20px}
+.calendar-detail-qa{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;min-height:68px;padding:10px 4px;border:1px solid #ffffff12;border-radius:18px;background:linear-gradient(160deg,#1c2635d9,#141b27d9);backdrop-filter:blur(16px);box-shadow:0 8px 18px #05070f30;color:#e2e8f0;font-size:11.5px;font-weight:700;text-align:center;transition:transform .15s cubic-bezier(.34,1.4,.64,1),border-color .18s ease}
+.calendar-detail-qa:active{transform:scale(.94)}
+.calendar-detail-qa-icon{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;background:#202c3d;color:#9ca7b8}
+.calendar-detail-qa-icon .icon{width:16px;height:16px}
+.calendar-detail-qa:nth-child(1) .calendar-detail-qa-icon{background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;box-shadow:0 0 12px #ef405f38}
+.calendar-detail-qa:nth-child(2) .calendar-detail-qa-icon{background:linear-gradient(135deg,#22c55e,#15803d);color:#fff;box-shadow:0 0 12px #22c55e38}
+.calendar-detail-qa:nth-child(3) .calendar-detail-qa-icon{background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff;box-shadow:0 0 12px #3b82f638}
+.calendar-detail-qa:nth-child(4) .calendar-detail-qa-icon{background:linear-gradient(135deg,#8b5cf6,#6d28d9);color:#fff;box-shadow:0 0 12px #8b5cf638}
 .calendar-detail-qa-disabled{opacity:.4;pointer-events:none}
 .calendar-detail-qa-menu-wrap{position:relative}
 .calendar-detail-qa-menu-wrap .calendar-appt-menu-popover{left:0;right:auto;bottom:calc(100% + 6px)}
@@ -4550,11 +4586,58 @@ document.addEventListener('DOMContentLoaded',function(){
   new MutationObserver(records=>{if(records.some(record=>record.addedNodes.length))formatVisibleDates();}).observe(document.body,{childList:true,subtree:true});
 });
 let calendarWizardHistoryReady=false,calendarWizardAllowExit=false;
-function calendarStep(step,direction='forward',historyMode='push'){const form=document.getElementById('calendarEventForm');if(!form)return;document.querySelectorAll('.calendar-form-step').forEach(el=>{const show=Number(el.dataset.step)===step;el.hidden=!show;if(show)el.classList.toggle('step-back',direction==='back');});document.querySelectorAll('.calendar-steps button').forEach((el,i)=>{el.classList.toggle('active',i+1===step);el.setAttribute('aria-current',i+1===step?'step':'false');});form.dataset.currentStep=step;if(step===2)calendarUpdateStep2Summary();if(step===3)calendarSubStep('menu');if(calendarWizardHistoryReady&&historyMode==='push'&&Number(history.state?.calendarWizardStep)!==step)history.pushState({calendarWizardStep:step},'',location.href);if(calendarWizardHistoryReady&&historyMode==='replace')history.replaceState({calendarWizardStep:step},'',location.href);scrollTo({top:0,behavior:'smooth'});}
-function calendarSubStep(name){const wrap=document.querySelector('.calendar-substep-wrap');if(!wrap)return;wrap.querySelectorAll('.calendar-substep').forEach(el=>{el.hidden=el.dataset.substep!==name;});if(name==='menu')calendarUpdateSubstepSummaries();}
-function calendarUpdateSubstepSummaries(){const form=document.getElementById('calendarEventForm');if(!form)return;const clientSummary=document.querySelector('[data-client-summary]');if(clientSummary){const name=[form.elements.namedItem('client_first_name')?.value,form.elements.namedItem('client_last_name')?.value].filter(Boolean).join(' ')||'Da completare';const phone=form.elements.namedItem('client_phone')?.value||'';clientSummary.textContent=phone?`${name} · ${phone}`:name;}const animalsSummary=document.querySelector('[data-animals-summary]');if(animalsSummary){const count=document.querySelectorAll('[data-calendar-list="animal"] .calendar-repeat-row').length;animalsSummary.textContent=count?`${count} animal${count===1?'e':'i'}`:'Nessun animale';}const estimateSummary=document.querySelector('[data-estimate-summary]');if(estimateSummary){const total=document.querySelector('[data-estimate-total]');estimateSummary.textContent=total?total.textContent:'€ 0,00';}}
-function calendarUpdateStep2Summary(){const form=document.getElementById('calendarEventForm');if(!form)return;const body=document.querySelector('[data-step2-summary-body]');if(!body)return;const startDate=form.elements.namedItem('start_date')?.value||'';const startTime=form.elements.namedItem('start_time')?.value||'';const endTime=form.elements.namedItem('end_time')?.value||'';const zone=form.elements.namedItem('zone')?.value||'';const site=form.elements.namedItem('destination_site')?.value||'';const operatorField=form.elements.namedItem('operator_name');const operator=operatorField?(operatorField.tagName==='SELECT'?operatorField.value:operatorField.value):'';const parts=[];if(startDate)parts.push(calendarDateIt(startDate));if(startTime)parts.push(endTime&&endTime!==startTime?`${startTime} → ${endTime}`:startTime);if(zone)parts.push(zone);if(site)parts.push(site);if(operator)parts.push(operator);body.innerHTML=parts.length?parts.map(p=>`<div>${calendarHtml(p)}</div>`).join(''):'—';}
-function calendarStepFromIndicator(step){const form=document.getElementById('calendarEventForm');if(!form)return;const current=Number(form.dataset.currentStep||1);if(step>1&&(!form.operator_name?.value||!form.event_type?.value)){const error=form.querySelector('[data-operator-error]');if(error)error.textContent='Seleziona operatore e tipo di evento prima di continuare.';calendarStep(1,'back');return;}calendarTypeChanged();calendarStep(step,step<current?'back':'forward');}
+function calendarStep(step,direction='forward',historyMode='push'){const form=document.getElementById('calendarEventForm');if(!form)return;document.querySelectorAll('.calendar-form-step').forEach(el=>{const show=Number(el.dataset.step)===step;el.hidden=!show;if(show)el.classList.toggle('step-back',direction==='back');});const stepper=document.querySelector('[data-calendar-stepper]');if(stepper)stepper.hidden=step===1;document.querySelectorAll('.calendar-steps button').forEach((el,i)=>{const active=i===step-2;el.classList.toggle('active',active);el.setAttribute('aria-current',active?'step':'false');});form.dataset.currentStep=step;if(step===4)calendarSubStep('menu');calendarRefreshWizardSummaries();if(calendarWizardHistoryReady&&historyMode==='push'&&Number(history.state?.calendarWizardStep)!==step)history.pushState({calendarWizardStep:step},'',location.href);if(calendarWizardHistoryReady&&historyMode==='replace')history.replaceState({calendarWizardStep:step},'',location.href);scrollTo({top:0,behavior:'smooth'});}
+function calendarSubStep(name){const wrap=document.querySelector('.calendar-substep-wrap');if(!wrap)return;wrap.querySelectorAll('.calendar-substep').forEach(el=>{el.hidden=el.dataset.substep!==name;});if(name==='menu')calendarRefreshWizardSummaries();}
+const CALENDAR_TYPE_META={'Ritiro':['paw','pink','Ritiro'],'Ritiro in sede':['home','blue','Ritiro in sede'],'Riconsegna':['archive','green','Riconsegna'],'Riconsegna in sede':['truck','orange','Riconsegna in sede'],'Appuntamento':['bell','purple','Promemoria']};
+function calendarRefreshWizardSummaries(){
+  const form=document.getElementById('calendarEventForm');if(!form)return;
+  const type=form.event_type?.value||'';
+  const [,,typeLabel]=CALENDAR_TYPE_META[type]||[,,'—'];
+  document.querySelectorAll('[data-type-summary]').forEach(el=>{el.textContent=typeLabel;});
+  const isDelivery=type==='Riconsegna'||type==='Riconsegna in sede';
+  // event_status compare sia come <select> (Ritiro/Ritiro in sede) sia come
+  // <input type="hidden"> statico (Riconsegna/Riconsegna in sede): con lo
+  // stesso name, form.elements.namedItem restituirebbe una RadioNodeList il
+  // cui .value non e' affidabile per un mix di tipi diversi di campo, quindi
+  // qui si seleziona esplicitamente il <select>.
+  const statusField=isDelivery?form.querySelector('select[name="payment_status"]'):form.querySelector('select[name="event_status"]');
+  const status=statusField?statusField.value:'';
+  document.querySelectorAll('[data-status-summary]').forEach(el=>{el.textContent=status||'—';});
+  const startDate=form.elements.namedItem('start_date')?.value||'';
+  const startTime=form.elements.namedItem('start_time')?.value||'';
+  const endTime=form.elements.namedItem('end_time')?.value||'';
+  let datetimeText='—';
+  if(startDate){datetimeText=calendarDateIt(startDate);if(startTime){datetimeText+=' · '+startTime;if(endTime&&endTime!==startTime)datetimeText+=' → '+endTime;}}
+  document.querySelectorAll('[data-datetime-summary]').forEach(el=>{el.textContent=datetimeText;});
+  const zone=form.elements.namedItem('zone')?.value||'';
+  const site=form.elements.namedItem('destination_site')?.value||'';
+  document.querySelectorAll('[data-place-summary]').forEach(el=>{el.textContent=zone||site||'—';});
+  const venueName=form.elements.namedItem('venue_name')?.value||'';
+  const venueAddress=form.elements.namedItem('address')?.value||'';
+  document.querySelectorAll('[data-venue-summary]').forEach(el=>{el.textContent=[venueName,venueAddress].filter(Boolean).join(' · ')||'—';});
+  const operatorField=form.elements.namedItem('operator_name');
+  const operator=operatorField?operatorField.value:'';
+  document.querySelectorAll('[data-operator-summary]').forEach(el=>{el.textContent=operator||'—';});
+  const firstName=form.elements.namedItem('client_first_name')?.value||'';
+  const lastName=form.elements.namedItem('client_last_name')?.value||'';
+  const phone=form.elements.namedItem('client_phone')?.value||'';
+  const animalName=form.elements.namedItem('animal_name')?.value||'';
+  const clientName=[firstName,lastName].filter(Boolean).join(' ')||(animalName?`Animale: ${animalName}`:'');
+  const clientText=clientName?(phone?`${clientName} · ${phone}`:clientName):'Da completare';
+  document.querySelectorAll('[data-client-summary]').forEach(el=>{el.textContent=clientText;});
+  const animalCount=document.querySelectorAll('[data-calendar-list="animal"] .calendar-repeat-row').length;
+  document.querySelectorAll('[data-animals-summary]').forEach(el=>{el.textContent=animalCount?`${animalCount} animal${animalCount===1?'e':'i'}`:'Nessun animale';});
+  const estimateTotalEl=document.querySelector('[data-estimate-total]');
+  const estimateText=estimateTotalEl?estimateTotalEl.textContent:'€ 0,00';
+  document.querySelectorAll('[data-estimate-summary]').forEach(el=>{el.textContent=estimateText;});
+  const notes=(form.elements.namedItem('notes')?.value||'').trim();
+  document.querySelectorAll('[data-note-summary]').forEach(el=>{el.textContent=notes||'Nessuna nota';});
+  const place=zone||site||'';
+  const previewMeta=[datetimeText!=='—'?datetimeText:'',place,operator].filter(Boolean).join(' · ');
+  document.querySelectorAll('[data-preview-meta]').forEach(el=>{el.textContent=previewMeta||'Completa i passaggi successivi';});
+  document.querySelectorAll('[data-preview-title]').forEach(el=>{el.textContent=form.title?.value||typeLabel;});
+}
+function calendarStepFromIndicator(step){const form=document.getElementById('calendarEventForm');if(!form)return;const current=Number(form.dataset.currentStep||1);if(!form.event_type?.value){calendarStep(1,'back');return;}if(step>3&&!form.operator_name?.value){const error=form.querySelector('[data-operator-error]');if(error)error.textContent='Seleziona operatore prima di continuare.';calendarStep(3,'back');return;}calendarTypeChanged();calendarStep(step,step<current?'back':'forward');}
 function calendarAutoTitle(force=false){const form=document.getElementById('calendarEventForm');if(!form)return;const type=form.event_type?.value||'';const zone=(form.zone?.value||'').trim().toUpperCase();const site=(form.destination_site?.value||'').trim().toUpperCase();const animal=(form.animal_name?.value||form.querySelector('[data-calendar-list="animal"] [data-key="name"]')?.value||'').trim().toUpperCase();const field=form.title;if(!field)return;if(type==='Appuntamento'){return;}let title='';if(type==='Ritiro')title=`RITIRO ${zone}`;if(type==='Ritiro in sede')title=`RITIRO IN SEDE ${site}`;if(type==='Riconsegna')title=`RICONSEGNA ${animal}`;if(type==='Riconsegna in sede')title=`RICONSEGNA ${animal} IN SEDE ${site}`;if(force||!field.dataset.manual)field.value=title.trim();}
 function calendarTypeChanged(){const form=document.getElementById('calendarEventForm');if(!form)return;const type=form.event_type.value;form.querySelectorAll('[data-calendar-types]').forEach(el=>{const hide=!el.dataset.calendarTypes.split('|').includes(type);el.hidden=hide;el.querySelectorAll('input,select,textarea').forEach(input=>input.disabled=hide);});if(form.zone)form.zone.required=type==='Ritiro';if(form.destination_site)form.destination_site.required=['Ritiro in sede','Riconsegna in sede'].includes(type);if(form.animal_name)form.animal_name.required=['Riconsegna','Riconsegna in sede'].includes(type);const title=form.title;if(title&&type==='Appuntamento'){title.dataset.manual='1';if(!title.value||/^PROMEMORIA/i.test(title.value))title.value='';}else if(title){delete title.dataset.manual;}calendarAutoTitle(true);}
 function calendarTypeSelected(input){const form=input.form,error=form.querySelector('[data-operator-error]');if(error)error.textContent='';calendarTypeChanged();setTimeout(()=>calendarStep(2),80);}
@@ -4578,7 +4661,7 @@ function calendarOpenTimePicker(button){const native=button.parentElement.queryS
 function calendarRenumberAnimals(){document.querySelectorAll('[data-calendar-list="animal"] .calendar-repeat-row').forEach((row,index)=>{const title=row.querySelector('.calendar-animal-title');const nameInput=row.querySelector('[data-key="name"]');if(title)title.textContent=(nameInput&&nameInput.value.trim())?nameInput.value.trim():`ANIMALE ${index+1}`;const remove=row.querySelector('[data-remove-animal]');if(remove)remove.hidden=index===0;});}
 function calendarAddRow(kind,data={}){const list=document.querySelector(`[data-calendar-list="${kind}"]`);if(!list)return;const row=document.createElement('div');if(kind==='animal'){row.className='calendar-repeat-row calendar-animal-card';row.innerHTML=`<div class="calendar-animal-card-summary" onclick="this.closest('.calendar-animal-card').classList.toggle('expanded')"><span class="calendar-animal-card-icon" data-animal-icon>🐾</span><div class="calendar-animal-card-main"><strong class="calendar-animal-title"></strong><small data-animal-summary-line>Tocca per completare i dati</small><span class="calendar-animal-tag" data-animal-tag hidden></span></div><button class="calendar-appt-action" data-remove-animal type="button" onclick="event.stopPropagation();this.closest('.calendar-animal-card').remove();calendarSerialize()">×</button><span class="calendar-animal-card-chevron">›</span></div><div class="calendar-animal-card-body"><select data-key="species" aria-label="Specie animale"><option value="">Specie</option><option ${data.species==='Cane'?'selected':''}>Cane</option><option ${data.species==='Gatto'?'selected':''}>Gatto</option><option ${data.species==='Altro'?'selected':''}>Altro</option></select><input inputmode="decimal" placeholder="Peso kg" data-key="weight" value="${data.weight||''}"><select data-key="cremation_type" aria-label="Tipo di cremazione"><option value="">Tipo di cremazione</option><option ${data.cremation_type==='Singola'?'selected':''}>Singola</option><option ${data.cremation_type==='Collettiva'?'selected':''}>Collettiva</option></select><input placeholder="Nome facoltativo" data-key="name" value="${data.name||''}"><input class="full-mobile" placeholder="Note" data-key="notes" value="${data.notes||''}"></div>`;}else{row.className=`calendar-repeat-row calendar-estimate-row-v2 ${kind==='estimate'?'calendar-estimate-row':''}`;if(data.preset==='Altro')row.innerHTML=`<span class="calendar-estimate-preset">Altro</span><input class="calendar-other-description" placeholder="Descrizione" data-key="description" value="${data.description||''}"><input inputmode="decimal" placeholder="Importo €" data-key="amount" value="${data.amount||''}">`;else if(data.preset==='Urna')row.innerHTML=`<span class="calendar-estimate-preset">Urna</span><input class="calendar-other-description" placeholder="Nome urna o descrizione" data-key="description" value="${data.description||'Urna'}"><input inputmode="decimal" placeholder="Importo €" data-key="amount" value="${data.amount||''}">`;else if(data.preset)row.innerHTML=`<span class="calendar-estimate-preset">${data.preset}</span><input type="hidden" data-key="description" value="${data.preset}"><input inputmode="decimal" placeholder="Importo €" data-key="amount" value="${data.amount||''}">`;else row.innerHTML=`<input class="full-mobile" placeholder="Descrizione" data-key="description" value="${data.description||''}"><input inputmode="decimal" placeholder="Importo €" data-key="amount" value="${data.amount||''}"><button class="btn ghost" type="button" onclick="this.parentElement.remove();calendarSerialize()">×</button>`;}list.append(row);row.querySelectorAll('input,select').forEach(input=>input.addEventListener('input',()=>{input.form.dataset.dirty='1';calendarSerialize();}));calendarSerialize();}
 function calendarUpdateAnimalCardSummary(row,item){const icon=row.querySelector('[data-animal-icon]');if(icon){icon.textContent=item.species==='Cane'?'🐶':(item.species==='Gatto'?'🐱':'🐾');icon.className='calendar-animal-card-icon '+(item.species==='Cane'?'avatar-dog':item.species==='Gatto'?'avatar-cat':'avatar-other');}const line=row.querySelector('[data-animal-summary-line]');if(!line)return;const bits=[];if(item.weight)bits.push(`${item.weight} kg`);if(item.species)bits.push(item.species);line.textContent=bits.length?bits.join(' · '):'Tocca per completare i dati';const tag=row.querySelector('[data-animal-tag]');if(tag){if(item.cremation_type){tag.hidden=false;tag.textContent=item.cremation_type;tag.className='calendar-animal-tag '+(item.cremation_type==='Singola'?'calendar-tag-purple':'calendar-tag-blue');}else{tag.hidden=true;}}const title=row.querySelector('.calendar-animal-title');if(title&&item.name)title.dataset.customName=item.name;}
-function calendarSerialize(){['animal','estimate'].forEach(kind=>{const hidden=document.querySelector(`input[name="${kind==='animal'?'animals_json':'estimate_json'}"]`);const list=document.querySelector(`[data-calendar-list="${kind}"]`);if(!hidden||!list)return;const values=[...list.children].map(row=>Object.fromEntries([...row.querySelectorAll('[data-key]')].map(input=>[input.dataset.key,input.value])));hidden.value=JSON.stringify(values);if(kind==='animal')[...list.children].forEach((row,index)=>calendarUpdateAnimalCardSummary(row,values[index]||{}));if(kind==='estimate'){const total=values.reduce((sum,item)=>sum+(Number(String(item.amount||0).replace(',','.'))||0),0);const output=document.querySelector('[data-estimate-total]');if(output)output.textContent=total.toLocaleString('it-IT',{style:'currency',currency:'EUR'});}});calendarRenumberAnimals();calendarAutoTitle();calendarUpdateSubstepSummaries();}
+function calendarSerialize(){['animal','estimate'].forEach(kind=>{const hidden=document.querySelector(`input[name="${kind==='animal'?'animals_json':'estimate_json'}"]`);const list=document.querySelector(`[data-calendar-list="${kind}"]`);if(!hidden||!list)return;const values=[...list.children].map(row=>Object.fromEntries([...row.querySelectorAll('[data-key]')].map(input=>[input.dataset.key,input.value])));hidden.value=JSON.stringify(values);if(kind==='animal')[...list.children].forEach((row,index)=>calendarUpdateAnimalCardSummary(row,values[index]||{}));if(kind==='estimate'){const total=values.reduce((sum,item)=>sum+(Number(String(item.amount||0).replace(',','.'))||0),0);const output=document.querySelector('[data-estimate-total]');if(output)output.textContent=total.toLocaleString('it-IT',{style:'currency',currency:'EUR'});}});calendarRenumberAnimals();calendarAutoTitle();calendarRefreshWizardSummaries();}
 const PRACTICE_ITEM_ROW_CONFIG={
   calco:[["","Generico"],["polpastrello","Polpastrello"],["naso","Naso"],["zampa","Zampa"]],
   accessorio:[["Altro","Altro"],["Collana","Collana"],["Braccialetto","Braccialetto"],["Calco inchiostro","Calco inchiostro"]],
@@ -4764,14 +4847,13 @@ function calendarInitLookups(){
     calendarUpdateClientEmptyHint(form);
     calendarUpdateClientAddressButton(form);
     ['client_first_name','client_last_name'].forEach(name=>form.elements.namedItem(name)?.addEventListener('input',()=>calendarUpdateClientEmptyHint(form)));
-    ['client_first_name','client_last_name','client_phone'].forEach(name=>form.elements.namedItem(name)?.addEventListener('input',calendarUpdateSubstepSummaries));
+    ['client_first_name','client_last_name','client_phone'].forEach(name=>form.elements.namedItem(name)?.addEventListener('input',calendarRefreshWizardSummaries));
   }
   const pickupLocation=document.querySelector('select[name="location_type"]');
   if(pickupLocation)calendarSyncPickupLocation(pickupLocation);
   const step2Form=document.getElementById('calendarEventForm');
-  if(step2Form){['start_date','start_time','end_time','zone','destination_site','operator_name'].forEach(name=>{const field=step2Form.elements.namedItem(name);if(field)field.addEventListener('input',calendarUpdateStep2Summary);if(field)field.addEventListener('change',calendarUpdateStep2Summary);});}
-  calendarUpdateStep2Summary();
-  calendarUpdateSubstepSummaries();
+  if(step2Form){['start_date','start_time','end_time','zone','destination_site','operator_name','event_status','payment_status'].forEach(name=>{const field=step2Form.querySelector(`[name="${name}"]`);if(field)field.addEventListener('input',calendarRefreshWizardSummaries);if(field)field.addEventListener('change',calendarRefreshWizardSummaries);});}
+  calendarRefreshWizardSummaries();
 }
 function calendarWizardDirty(form){return form.dataset.dirty==='1'||[...form.elements].some(input=>input.dataset.initialValue!==undefined&&input.value!==input.dataset.initialValue);}
 function calendarConfirmExit(event,href){const form=document.getElementById('calendarEventForm');if(form&&calendarWizardDirty(form)&&!confirm('Vuoi uscire? Le modifiche non salvate andranno perse.')){event?.preventDefault();return false;}calendarWizardAllowExit=true;if(href){event?.preventDefault();location.href=href;}return true;}
@@ -7167,10 +7249,15 @@ class App(BaseHTTPRequestHandler):
     def calendar_appointment_address(self,row):
         return row["address"] or row["veterinarian_address"] or row["delivery_clinic_address"] or row["venue_name"] or ""
 
-    def calendar_appointment_card(self,row,client_names=None,practice_owner_names=None,color_settings=None,animal_names_by_event=None):
+    def calendar_appointment_card(self,row,client_names=None,practice_owner_names=None,color_settings=None,animal_names_by_event=None,cremation_type_by_event=None):
         """Card ricca usata sia dalla vista Giorno sia dalla vista Settimana
         (stesso identico markup, per restare fedeli a quanto richiesto:
-        'Le card devono essere praticamente identiche alla vista Giorno')."""
+        'Le card devono essere praticamente identiche alla vista Giorno').
+        Gerarchia delle informazioni (richiesta esplicita dell'utente): il
+        titolo dell'evento e' l'informazione principale, l'animale (peso,
+        tipo di cremazione, eventuale nome) e' secondario, poi il cliente
+        (nome e telefono), poi il luogo — il nome del veterinario quando
+        presente, non il suo indirizzo (quello si vede aprendo la card)."""
         color_settings=color_settings or DEFAULT_CALENDAR_COLOR_SETTINGS
         hex_=event_color_hex(row,color_settings)
         is_pickup=row["event_type"] in ("Ritiro","Ritiro in sede")
@@ -7179,16 +7266,23 @@ class App(BaseHTTPRequestHandler):
         type_cls="calendar-appt-type-pickup" if is_pickup else ("calendar-appt-type-delivery" if is_delivery else "calendar-appt-type-reminder")
         start=row["start_at"] or ""
         time_text="Tutto il giorno" if row["all_day"] else start[11:16]
+        title_line=esc(self.calendar_event_display_title(row))
         names=(animal_names_by_event or {}).get(row["id"],"") or row["animal_name"] or ""
-        weight_txt=f' ({float(row["animal_weight_total"]):g} kg)' if row["animal_weight_total"] else ''
+        cremation_types=(cremation_type_by_event or {}).get(row["id"],"")
         avatar_emoji="🐾"
         if row.get("animal_species"):
             species_first=str(row["animal_species"]).split(",")[0].strip().lower()
             avatar_emoji="🐶" if species_first=="cane" else ("🐱" if species_first=="gatto" else "🐾")
-        name_line=f'{avatar_emoji} {esc(names)}{weight_txt}' if names else esc(self.calendar_event_display_title(row))
+        animal_bits=[]
+        if row["animal_weight_total"]:animal_bits.append(f'{float(row["animal_weight_total"]):g} kg')
+        if cremation_types:animal_bits.append(cremation_types)
+        if names:animal_bits.append(names)
+        name_line=f'{avatar_emoji} {esc(" · ".join(animal_bits))}' if animal_bits else ''
         client_display=self.calendar_event_client_name(row,client_names,practice_owner_names)
-        location_bits=[bit for bit in (row["zone"] if is_pickup else "",self.calendar_appointment_address(row)) if bit]
-        location_line=esc(' – '.join(location_bits))
+        client_phone=row["client_phone"] or row["phone"] or ""
+        client_line=f'{esc(client_display)}{" · "+esc(client_phone) if client_phone else ""}' if client_display else ''
+        vet_label=row["veterinarian_name"] or row["delivery_clinic_name"] or ""
+        location_line=esc(vet_label) if vet_label else esc(self.calendar_appointment_address(row))
         operator_name=row['operator_name'] or row['assigned_name'] or row['creator_name']
         avatar=self.calendar_operator_avatar(operator_name,"sm",color_settings["operators"].get(operator_name))
         status_text=row["event_status"] or ""
@@ -7218,8 +7312,9 @@ class App(BaseHTTPRequestHandler):
           <div class="calendar-appt-time-col"><span class="calendar-appt-time-dot" style="background:{hex_}"></span><span class="calendar-appt-time">{esc(time_text)}</span></div>
           <div class="calendar-appt-main">
             <div class="calendar-appt-top"><span class="calendar-appt-type {type_cls}">{type_label}</span>{avatar}</div>
-            <div class="calendar-appt-name">{name_line}</div>
-            {f'<div class="calendar-appt-owner">{esc(client_display)}</div>' if client_display else ''}
+            <div class="calendar-appt-title">{title_line}</div>
+            {f'<div class="calendar-appt-name">{name_line}</div>' if name_line else ''}
+            {f'<div class="calendar-appt-owner">{client_line}</div>' if client_line else ''}
             {f'<div class="calendar-appt-location">{location_line}</div>' if location_line else ''}
             <div class="calendar-appt-bottom">{status_html}<div class="calendar-appt-actions">{phone_btn}{wa_btn}{nav_btn}{menu_btn}</div></div>
           </div>
@@ -7252,13 +7347,15 @@ class App(BaseHTTPRequestHandler):
         with db() as c:
             rows=overlap_rows(c,start.isoformat(),end.isoformat(),filters)
             event_ids=[row["id"] for row in rows]
-            species_by_event={};animal_names_by_event={}
+            species_by_event={};animal_names_by_event={};cremation_type_by_event={}
             if event_ids:
                 placeholders=','.join('?' for _ in event_ids)
                 for species_row in c.execute(f"SELECT event_id,group_concat(DISTINCT species) species FROM calendar_event_animals WHERE event_id IN ({placeholders}) AND trim(COALESCE(species,''))<>'' GROUP BY event_id",event_ids):
                     species_by_event[species_row["event_id"]]=species_row["species"] or ""
                 for name_row in c.execute(f"SELECT event_id,group_concat(name,', ') names FROM calendar_event_animals WHERE event_id IN ({placeholders}) AND trim(COALESCE(name,''))<>'' GROUP BY event_id",event_ids):
                     animal_names_by_event[name_row["event_id"]]=name_row["names"] or ""
+                for ctype_row in c.execute(f"SELECT event_id,group_concat(DISTINCT cremation_type) ctypes FROM calendar_event_animals WHERE event_id IN ({placeholders}) AND trim(COALESCE(cremation_type,''))<>'' GROUP BY event_id",event_ids):
+                    cremation_type_by_event[ctype_row["event_id"]]=ctype_row["ctypes"] or ""
             linked_ids={int(row["linked_practice_id"]) for row in rows if row["linked_practice_id"]}
             payment_channels={};practice_owner_names={}
             if linked_ids:
@@ -7333,7 +7430,7 @@ class App(BaseHTTPRequestHandler):
               <div class="calendar-appt-stat calendar-appt-stat-unassigned"><span class="calendar-appt-stat-icon">{lucide("user")}</span><b>{unassigned}</b><small>Senza incaricato</small></div>
             </div>'''
             sorted_rows=sorted(day_rows,key=week_day_sort_key)
-            list_html=''.join(self.calendar_appointment_card(row,client_names=client_names,practice_owner_names=practice_owner_names,color_settings=color_settings,animal_names_by_event=animal_names_by_event) for row in sorted_rows) or '<p class="calendar-appt-empty">Nessun appuntamento in programma.</p>'
+            list_html=''.join(self.calendar_appointment_card(row,client_names=client_names,practice_owner_names=practice_owner_names,color_settings=color_settings,animal_names_by_event=animal_names_by_event,cremation_type_by_event=cremation_type_by_event) for row in sorted_rows) or '<p class="calendar-appt-empty">Nessun appuntamento in programma.</p>'
             day_pages.append(f'''<div class="calendar-day-page" data-day-index="{i}" data-date="{day.isoformat()}">
               {stats_html}
               <div class="calendar-appt-list">{list_html}</div>
@@ -7480,7 +7577,7 @@ class App(BaseHTTPRequestHandler):
         zones_json=json.dumps([row['name'] for row in zones],ensure_ascii=False).replace("</","<\\/")
         error_html=f'<div class="calendar-validation" role="alert">{esc(error)}</div><script>sessionStorage.removeItem("ppm_calendar_created")</script>' if error else ''
         close_url=f'/calendario/{event_id}' if event_id else '/calendario'
-        error_step=2 if any(word in error.lower() for word in ("zona","sede","titolo","data","ora")) else 3 if any(word in error.lower() for word in ("animal","luogo")) else 1
+        error_step=3 if any(word in error.lower() for word in ("zona","sede","titolo","data","ora","luogo")) else 4 if "animal" in error.lower() else 1
         wheel_hours=''.join(f'<button class="calendar-wheel-option" type="button" data-time-value="{hour}">{hour:02d}</button>' for hour in range(24))
         wheel_minutes=''.join(f'<button class="calendar-wheel-option" type="button" data-time-value="{minute}">{minute:02d}</button>' for minute in range(0,60,5))
         def datetime_row(label,date_name,date_value,time_name,time_value,required=False):
@@ -7499,29 +7596,55 @@ class App(BaseHTTPRequestHandler):
         operator_card=f'''<div class="calendar-tap-card"><span class="calendar-tap-card-icon calendar-icon-orange">{lucide("user")}</span><div class="calendar-tap-card-body">{operator_field}</div></div>'''
         title_card=f'''<div class="calendar-tap-card"><span class="calendar-tap-card-icon">{lucide("pencil")}</span><div class="calendar-tap-card-body"><small>Titolo *</small><input name="title" value="{title_value}" required oninput="this.dataset.manual='1'"></div></div>'''
         allday_card=f'''<label class="modern-check calendar-allday-check"><input type="checkbox" name="all_day" value="1" {"checked" if raw("all_day") else ""} onchange="calendarAllDayChanged(this)"> Tutto il giorno</label>'''
-        step2_summary=f'''<div class="calendar-tap-card calendar-tap-card-summary" data-calendar-step2-summary><span class="calendar-tap-card-icon">{lucide("clipboard")}</span><div class="calendar-tap-card-body"><small>Riepilogo</small><div data-step2-summary-body>—</div></div></div>'''
-        body=f'''<main class="wrap calendar-form calendar-form-v2"><div class="titlebar"><div><h1>{'Modifica evento' if event_id else 'Nuovo evento'}</h1><p class="sub">Crea o modifica un evento in pochi passaggi</p></div><a class="btn ghost" href="{close_url}" onclick="return calendarConfirmExit(event,this.href)" aria-label="Chiudi">×</a></div>{error_html}{draft_status}<div class="calendar-steps" aria-label="Fasi evento"><button class="active" type="button" onclick="calendarStepFromIndicator(1)" aria-label="Vai alla fase 1">1</button><button type="button" onclick="calendarStepFromIndicator(2)" aria-label="Vai alla fase 2">2</button><button type="button" onclick="calendarStepFromIndicator(3)" aria-label="Vai alla fase 3">3</button></div><form id="calendarEventForm" data-current-step="1" data-draft-key="{draft_key}" method="post" action="{action}" onsubmit="return calendarSubmit(this)">
+        preview_icon_variants=''.join(f'<span class="calendar-wizard-preview-icon calendar-icon-{color}" data-calendar-types="{kind}" {"" if event_type==kind else "hidden"}>{lucide(icon_name)}</span>' for kind,icon_name,color in (("Ritiro","paw","pink"),("Ritiro in sede","home","blue"),("Riconsegna","archive","green"),("Riconsegna in sede","truck","orange"),("Appuntamento","bell","purple")))
+        qa_phone=val('client_phone') or val('phone')
+        qa_tel=only_digits(qa_phone) if qa_phone else ''
+        qa_wa=self.wa_digits(qa_phone) if qa_phone else ''
+        qa_address=val('address') or val('delivery_address')
+        qa_practice_url=f"/pratiche/{val('linked_practice_id')}" if val('linked_practice_id') else ''
+        def wizard_qa(icon,label,href,extra=""):
+            if href:return f'<a class="calendar-detail-qa" href="{href}"{extra}><span class="calendar-detail-qa-icon">{lucide(icon)}</span><span>{label}</span></a>'
+            return f'<span class="calendar-detail-qa calendar-detail-qa-disabled"><span class="calendar-detail-qa-icon">{lucide(icon)}</span><span>{label}</span></span>'
+        quick_actions_wizard=f'''<div class="calendar-detail-quickactions">
+          {wizard_qa("phone","Chiama",f"tel:+{qa_tel}" if qa_tel else "")}
+          {wizard_qa("message","WhatsApp",f"https://wa.me/{qa_wa}" if qa_wa else "", ' target="_blank" rel="noopener noreferrer"' if qa_wa else "")}
+          {wizard_qa("navigation","Naviga",f"https://www.google.com/maps/dir/?api=1&destination={quote(qa_address)}" if qa_address else "", ' target="_blank" rel="noopener noreferrer"' if qa_address else "")}
+          {wizard_qa("receipt","Pratica",qa_practice_url)}
+        </div>'''
+        body=f'''<main class="wrap calendar-form calendar-form-v2"><div class="titlebar"><div><h1>{'Modifica evento' if event_id else 'Nuovo evento'}</h1><p class="sub">Crea o modifica un evento in pochi passaggi</p></div><a class="btn ghost" href="{close_url}" onclick="return calendarConfirmExit(event,this.href)" aria-label="Chiudi">×</a></div>{error_html}{draft_status}<div class="calendar-steps" aria-label="Fasi evento" data-calendar-stepper hidden><button type="button" onclick="calendarStepFromIndicator(2)" aria-label="Vai alla fase 1">1</button><button type="button" onclick="calendarStepFromIndicator(3)" aria-label="Vai alla fase 2">2</button><button type="button" onclick="calendarStepFromIndicator(4)" aria-label="Vai alla fase 3">3</button><button type="button" onclick="calendarStepFromIndicator(5)" aria-label="Vai alla fase 4">4</button></div><form id="calendarEventForm" data-current-step="1" data-draft-key="{draft_key}" method="post" action="{action}" onsubmit="return calendarSubmit(this)">
         <section class="section calendar-form-step" data-step="1"><h2>Che tipo di evento vuoi creare?</h2><p class="sub">Scegli l'operazione da registrare.</p><div class="calendar-type-grid">{types}</div></section>
-        <section class="section calendar-form-step" data-step="2" hidden><h2>Quando e dove</h2><p class="sub">Imposta data, orario, luogo e operatore.</p><div class="calendar-card-list">
+        <section class="section calendar-form-step" data-step="2" hidden><h2>Informazioni principali</h2><p class="sub">Controlla i dati principali dell'evento.</p>
+          <div class="calendar-wizard-preview">{preview_icon_variants}<div class="calendar-wizard-preview-body"><span class="calendar-wizard-preview-eyebrow" data-type-summary>—</span><p class="calendar-wizard-preview-title" data-preview-title>{'Modifica evento' if event_id else 'Nuovo evento'}</p><span class="calendar-wizard-preview-badge" data-status-summary>—</span><div class="calendar-wizard-preview-meta"><span>{lucide("calendar")}<span data-preview-meta>Completa i passaggi successivi</span></span></div></div></div>
+          <div class="calendar-card-list">
+            <button type="button" class="calendar-tap-card calendar-tap-card-link" onclick="calendarStep(1,'back')"><span class="calendar-tap-card-icon">{lucide("tag")}</span><div class="calendar-tap-card-body"><small>Tipo evento</small><div data-type-summary>—</div></div><span class="calendar-tap-card-chevron">{lucide("chevron-right")}</span></button>
+            <div class="calendar-tap-card" data-calendar-types="Ritiro|Ritiro in sede" {"" if event_type in ("Ritiro","Ritiro in sede") else "hidden"}><span class="calendar-tap-card-icon calendar-icon-orange">{lucide("clock")}</span><div class="calendar-tap-card-body"><small>Stato iniziale</small><select name="event_status">{pickup_status}</select></div></div>
+            <button type="button" class="calendar-tap-card calendar-tap-card-link" data-calendar-types="Ritiro|Ritiro in sede" {"" if event_type in ("Ritiro","Ritiro in sede") else "hidden"} onclick="calendarStep(4);calendarSubStep('cliente')"><span class="calendar-tap-card-icon calendar-icon-purple">{lucide("user")}</span><div class="calendar-tap-card-body"><small>Cliente / Proprietario</small><div data-client-summary>Da completare</div></div><span class="calendar-tap-card-chevron">{lucide("chevron-right")}</span></button>
+            <button type="button" class="calendar-tap-card calendar-tap-card-link" onclick="calendarStep(3)"><span class="calendar-tap-card-icon calendar-icon-purple">{lucide("calendar")}</span><div class="calendar-tap-card-body"><small>Data e ora</small><div data-datetime-summary>—</div></div><span class="calendar-tap-card-chevron">{lucide("chevron-right")}</span></button>
+            <button type="button" class="calendar-tap-card calendar-tap-card-link" data-calendar-types="Ritiro|Riconsegna" {"" if event_type in ("Ritiro","Riconsegna") else "hidden"} onclick="calendarStep(3)"><span class="calendar-tap-card-icon calendar-icon-green">{lucide("archive")}</span><div class="calendar-tap-card-body"><small>Zona</small><div data-place-summary>—</div></div><span class="calendar-tap-card-chevron">{lucide("chevron-right")}</span></button>
+            <button type="button" class="calendar-tap-card calendar-tap-card-link" data-calendar-types="Ritiro in sede|Riconsegna in sede" {"" if event_type in ("Ritiro in sede","Riconsegna in sede") else "hidden"} onclick="calendarStep(3)"><span class="calendar-tap-card-icon calendar-icon-blue">{lucide("home")}</span><div class="calendar-tap-card-body"><small>Sede</small><div data-place-summary>—</div></div><span class="calendar-tap-card-chevron">{lucide("chevron-right")}</span></button>
+          </div>
+          {quick_actions_wizard}
+          <div class="actions" style="margin-top:16px"><button class="btn ghost" type="button" onclick="calendarStep(1,'back')">Indietro</button><button class="btn" type="button" onclick="calendarStep(3)">Avanti</button></div></section>
+        <section class="section calendar-form-step" data-step="3" hidden><h2>Quando e dove</h2><p class="sub">Imposta data, orario, luogo e operatore.</p><div class="calendar-card-list">
           <div class="calendar-tap-card"><span class="calendar-tap-card-icon calendar-icon-purple">{lucide("calendar")}</span><div class="calendar-tap-card-body"><small>Inizio</small>{datetime_row("","start_date",start_date,"start_time",start_time,True)}</div></div>
           <div class="calendar-tap-card"><span class="calendar-tap-card-icon calendar-icon-blue">{lucide("clock")}</span><div class="calendar-tap-card-body"><small>Fine</small>{datetime_row("","end_date",end_date,"end_time",end_time)}</div></div>
-          {location_card}{delivery_animal_card}{operator_card}{title_card}
+          {location_card}{pickup_location_block}{delivery_animal_card}{operator_card}{title_card}
           <div class="calendar-tap-card">{allday_card}</div>
-          {step2_summary}
-        </div><div class="actions" style="margin-top:16px"><button class="btn ghost" type="button" onclick="calendarStep(1,'back')">Indietro</button><button class="btn" type="button" onclick="calendarStep(3)">Avanti</button></div></section>
-        <section class="section calendar-form-step" data-step="3" hidden>
+        </div>
+        {quick_actions_wizard}
+        <div class="actions" style="margin-top:16px"><button class="btn ghost" type="button" onclick="calendarStep(2,'back')">Indietro</button><button class="btn" type="button" onclick="calendarStep(4)">Avanti</button></div></section>
+        <section class="section calendar-form-step" data-step="4" hidden>
         <div class="calendar-substep-wrap" data-calendar-types="Ritiro|Ritiro in sede" {"" if event_type in ("Ritiro","Ritiro in sede") else "hidden"}>
           <div class="calendar-substep" data-substep="menu">
-            <h2>Informazioni principali</h2><p class="sub">Seleziona lo stato e inserisci le informazioni principali.</p>
+            <h2>Cliente, animali, note</h2><p class="sub">Completa i dati del cliente e degli animali.</p>
             <div class="calendar-card-list">
-              <div class="calendar-tap-card"><span class="calendar-tap-card-icon calendar-icon-orange">{lucide("clock")}</span><div class="calendar-tap-card-body"><small>Stato ritiro</small><select name="event_status">{pickup_status}</select></div></div>
-              {pickup_location_block}
               <button type="button" class="calendar-tap-card calendar-tap-card-link" onclick="calendarSubStep('cliente')"><span class="calendar-tap-card-icon calendar-icon-purple">{lucide("user")}</span><div class="calendar-tap-card-body"><small>Cliente / Proprietario</small><div data-client-summary>Da completare</div></div><span class="calendar-tap-card-chevron">{lucide("chevron-right")}</span></button>
               <button type="button" class="calendar-tap-card calendar-tap-card-link" onclick="calendarSubStep('animali')"><span class="calendar-tap-card-icon calendar-icon-green">{lucide("paw")}</span><div class="calendar-tap-card-body"><small>Animali associati</small><div data-animals-summary>Nessun animale</div></div><span class="calendar-tap-card-chevron">{lucide("chevron-right")}</span></button>
               <button type="button" class="calendar-tap-card calendar-tap-card-link" onclick="calendarSubStep('preventivo')"><span class="calendar-tap-card-icon calendar-icon-pink">{lucide("wallet")}</span><div class="calendar-tap-card-body"><small>Preventivo</small><div data-estimate-summary>€ 0,00</div></div><span class="calendar-tap-card-chevron">{lucide("chevron-right")}</span></button>
-              <div class="calendar-tap-card"><span class="calendar-tap-card-icon">{lucide("clipboard")}</span><div class="calendar-tap-card-body"><small>Note</small><textarea name="notes">{val('notes')}</textarea></div></div>
+              <div class="calendar-tap-card"><span class="calendar-tap-card-icon">{lucide("clipboard")}</span><div class="calendar-tap-card-body"><small>Note</small><textarea name="notes" oninput="calendarRefreshWizardSummaries()">{val('notes')}</textarea></div></div>
             </div>
-            <div class="actions" style="margin-top:16px"><button class="btn ghost" type="button" onclick="calendarStep(2,'back')">Indietro</button><button class="btn">{'Salva modifiche' if event_id else 'Crea evento'}</button></div>
+            {quick_actions_wizard}
+            <div class="actions" style="margin-top:16px"><button class="btn ghost" type="button" onclick="calendarStep(3,'back')">Indietro</button><button class="btn" type="button" onclick="calendarStep(5)">Avanti</button></div>
           </div>
           <div class="calendar-substep" data-substep="cliente" hidden>
             <button type="button" class="calendar-substep-back" onclick="calendarSubStep('menu')">‹ Indietro</button>
@@ -7544,10 +7667,31 @@ class App(BaseHTTPRequestHandler):
             <div class="actions" style="margin-top:16px"><button class="btn" type="button" onclick="calendarSubStep('menu')">Fatto</button></div>
           </div>
         </div>
-        <div data-calendar-types="Riconsegna|Riconsegna in sede" {"" if event_type in ("Riconsegna","Riconsegna in sede") else "hidden"}><h2>Informazioni</h2><input type="hidden" name="event_status" value="In programma"><div class="calendar-card-list"><div class="calendar-tap-card"><span class="calendar-tap-card-icon calendar-icon-pink">{lucide("wallet")}</span><div class="calendar-tap-card-body"><small>Stato pagamento</small><select name="payment_status">{payment_status}</select></div></div><div class="calendar-tap-card"><span class="calendar-tap-card-icon calendar-icon-pink">{lucide("receipt")}</span><div class="calendar-tap-card-body"><small>Importo</small><input inputmode="decimal" name="payment_amount" value="{val('payment_amount','0')}"></div></div><div class="calendar-tap-card"><span class="calendar-tap-card-icon">{lucide("clipboard")}</span><div class="calendar-tap-card-body"><small>Dettaglio pagamento dalla pratica</small><input data-delivery-payment-detail readonly value=""></div></div><div class="calendar-tap-card" data-calendar-types="Riconsegna" {"" if event_type=="Riconsegna" else "hidden"}><span class="calendar-tap-card-icon calendar-icon-green">{lucide("home")}</span><div class="calendar-tap-card-body"><small>Indirizzo</small><input name="delivery_address" value="{val('address')}" placeholder="Compilato automaticamente selezionando l'animale"></div></div><div class="calendar-tap-card lookup" data-calendar-types="Riconsegna" {"" if event_type=="Riconsegna" else "hidden"}><span class="calendar-tap-card-icon calendar-icon-blue">{lucide("stethoscope")}</span><div class="calendar-tap-card-body"><small>Ambulatorio riconsegna (facoltativo)</small><input id="calendarDeliveryClinicSearch" value="{val('delivery_clinic_name')}" autocomplete="off" placeholder="Cerca ambulatorio o veterinario"><div id="calendarDeliveryClinicResults" class="lookup-results hidden"></div><input type="hidden" name="delivery_clinic_id" value="{val('delivery_clinic_id')}"><input type="hidden" name="delivery_clinic_name" value="{val('delivery_clinic_name')}"><input type="hidden" name="delivery_clinic_address" value="{val('delivery_clinic_address')}"><input type="hidden" name="delivery_clinic_phone" value="{val('delivery_clinic_phone')}"></div></div><div class="calendar-tap-card"><span class="calendar-tap-card-icon">{lucide("clipboard")}</span><div class="calendar-tap-card-body"><small>Note</small><textarea name="notes">{val('notes')}</textarea></div></div></div>
-        <div class="actions" style="margin-top:18px"><button class="btn ghost" type="button" onclick="calendarStep(2,'back')">Indietro</button><button class="btn">{'Salva modifiche' if event_id else 'Crea evento'}</button><a class="btn ghost" href="{close_url}" onclick="return calendarConfirmExit(event,this.href)">Annulla</a></div></div>
-        <div data-calendar-types="Appuntamento" {"" if event_type=="Appuntamento" else "hidden"}><h2>Informazioni</h2><div class="calendar-card-list"><div class="calendar-tap-card"><span class="calendar-tap-card-icon">{lucide("clipboard")}</span><div class="calendar-tap-card-body"><small>Note</small><textarea name="notes">{val('notes')}</textarea></div></div></div>
-        <div class="actions" style="margin-top:18px"><button class="btn ghost" type="button" onclick="calendarStep(2,'back')">Indietro</button><button class="btn">{'Salva modifiche' if event_id else 'Crea evento'}</button><a class="btn ghost" href="{close_url}" onclick="return calendarConfirmExit(event,this.href)">Annulla</a></div></div>
+        <div data-calendar-types="Riconsegna|Riconsegna in sede" {"" if event_type in ("Riconsegna","Riconsegna in sede") else "hidden"}><h2>Informazioni</h2><input type="hidden" name="event_status" value="In programma"><div class="calendar-card-list"><div class="calendar-tap-card"><span class="calendar-tap-card-icon calendar-icon-pink">{lucide("wallet")}</span><div class="calendar-tap-card-body"><small>Stato pagamento</small><select name="payment_status">{payment_status}</select></div></div><div class="calendar-tap-card"><span class="calendar-tap-card-icon calendar-icon-pink">{lucide("receipt")}</span><div class="calendar-tap-card-body"><small>Importo</small><input inputmode="decimal" name="payment_amount" value="{val('payment_amount','0')}"></div></div><div class="calendar-tap-card"><span class="calendar-tap-card-icon">{lucide("clipboard")}</span><div class="calendar-tap-card-body"><small>Dettaglio pagamento dalla pratica</small><input data-delivery-payment-detail readonly value=""></div></div><div class="calendar-tap-card" data-calendar-types="Riconsegna" {"" if event_type=="Riconsegna" else "hidden"}><span class="calendar-tap-card-icon calendar-icon-green">{lucide("home")}</span><div class="calendar-tap-card-body"><small>Indirizzo</small><input name="delivery_address" value="{val('address')}" placeholder="Compilato automaticamente selezionando l'animale"></div></div><div class="calendar-tap-card lookup" data-calendar-types="Riconsegna" {"" if event_type=="Riconsegna" else "hidden"}><span class="calendar-tap-card-icon calendar-icon-blue">{lucide("stethoscope")}</span><div class="calendar-tap-card-body"><small>Ambulatorio riconsegna (facoltativo)</small><input id="calendarDeliveryClinicSearch" value="{val('delivery_clinic_name')}" autocomplete="off" placeholder="Cerca ambulatorio o veterinario"><div id="calendarDeliveryClinicResults" class="lookup-results hidden"></div><input type="hidden" name="delivery_clinic_id" value="{val('delivery_clinic_id')}"><input type="hidden" name="delivery_clinic_name" value="{val('delivery_clinic_name')}"><input type="hidden" name="delivery_clinic_address" value="{val('delivery_clinic_address')}"><input type="hidden" name="delivery_clinic_phone" value="{val('delivery_clinic_phone')}"></div></div><div class="calendar-tap-card"><span class="calendar-tap-card-icon">{lucide("clipboard")}</span><div class="calendar-tap-card-body"><small>Note</small><textarea name="notes" oninput="calendarRefreshWizardSummaries()">{val('notes')}</textarea></div></div></div>
+        {quick_actions_wizard}
+        <div class="actions" style="margin-top:18px"><button class="btn ghost" type="button" onclick="calendarStep(3,'back')">Indietro</button><button class="btn" type="button" onclick="calendarStep(5)">Avanti</button><a class="btn ghost" href="{close_url}" onclick="return calendarConfirmExit(event,this.href)">Annulla</a></div></div>
+        <div data-calendar-types="Appuntamento" {"" if event_type=="Appuntamento" else "hidden"}><h2>Informazioni</h2><div class="calendar-card-list"><div class="calendar-tap-card"><span class="calendar-tap-card-icon">{lucide("clipboard")}</span><div class="calendar-tap-card-body"><small>Note</small><textarea name="notes" oninput="calendarRefreshWizardSummaries()">{val('notes')}</textarea></div></div></div>
+        {quick_actions_wizard}
+        <div class="actions" style="margin-top:18px"><button class="btn ghost" type="button" onclick="calendarStep(3,'back')">Indietro</button><button class="btn" type="button" onclick="calendarStep(5)">Avanti</button><a class="btn ghost" href="{close_url}" onclick="return calendarConfirmExit(event,this.href)">Annulla</a></div></div>
+        </section>
+        <section class="section calendar-form-step" data-step="5" hidden><h2>Riepilogo</h2><p class="sub">Controlla i dati prima di salvare.</p>
+          <div class="calendar-wizard-preview">{preview_icon_variants}<div class="calendar-wizard-preview-body"><span class="calendar-wizard-preview-eyebrow" data-type-summary>—</span><p class="calendar-wizard-preview-title" data-preview-title>{'Modifica evento' if event_id else 'Nuovo evento'}</p><span class="calendar-wizard-preview-badge" data-status-summary>—</span></div></div>
+          <div class="calendar-summary-list">
+            <div class="calendar-summary-row"><span class="calendar-summary-row-icon calendar-icon-pink">{lucide("tag")}</span><span class="calendar-summary-row-label">Tipo evento</span><span class="calendar-summary-row-value" data-type-summary>—</span></div>
+            <div class="calendar-summary-row" data-calendar-types="Ritiro|Ritiro in sede" {"" if event_type in ("Ritiro","Ritiro in sede") else "hidden"}><span class="calendar-summary-row-icon calendar-icon-orange">{lucide("clock")}</span><span class="calendar-summary-row-label">Stato iniziale</span><span class="calendar-summary-row-value" data-status-summary>—</span></div>
+            <div class="calendar-summary-row" data-calendar-types="Riconsegna|Riconsegna in sede" {"" if event_type in ("Riconsegna","Riconsegna in sede") else "hidden"}><span class="calendar-summary-row-icon calendar-icon-pink">{lucide("wallet")}</span><span class="calendar-summary-row-label">Pagamento</span><span class="calendar-summary-row-value" data-status-summary>—</span></div>
+            <div class="calendar-summary-row"><span class="calendar-summary-row-icon calendar-icon-purple">{lucide("calendar")}</span><span class="calendar-summary-row-label">Data e ora</span><span class="calendar-summary-row-value" data-datetime-summary>—</span></div>
+            <div class="calendar-summary-row" data-calendar-types="Ritiro|Ritiro in sede" {"" if event_type in ("Ritiro","Ritiro in sede") else "hidden"}><span class="calendar-summary-row-icon calendar-icon-purple">{lucide("user")}</span><span class="calendar-summary-row-label">Cliente</span><span class="calendar-summary-row-value" data-client-summary>—</span></div>
+            <div class="calendar-summary-row" data-calendar-types="Ritiro|Ritiro in sede" {"" if event_type in ("Ritiro","Ritiro in sede") else "hidden"}><span class="calendar-summary-row-icon calendar-icon-green">{lucide("paw")}</span><span class="calendar-summary-row-label">Animali</span><span class="calendar-summary-row-value" data-animals-summary>—</span></div>
+            <div class="calendar-summary-row" data-calendar-types="Ritiro|Ritiro in sede" {"" if event_type in ("Ritiro","Ritiro in sede") else "hidden"}><span class="calendar-summary-row-icon calendar-icon-green">{lucide("home")}</span><span class="calendar-summary-row-label">Luogo del ritiro</span><span class="calendar-summary-row-value" data-venue-summary>—</span></div>
+            <div class="calendar-summary-row" data-calendar-types="Ritiro|Riconsegna" {"" if event_type in ("Ritiro","Riconsegna") else "hidden"}><span class="calendar-summary-row-icon calendar-icon-green">{lucide("archive")}</span><span class="calendar-summary-row-label">Zona</span><span class="calendar-summary-row-value" data-place-summary>—</span></div>
+            <div class="calendar-summary-row" data-calendar-types="Ritiro in sede|Riconsegna in sede" {"" if event_type in ("Ritiro in sede","Riconsegna in sede") else "hidden"}><span class="calendar-summary-row-icon calendar-icon-blue">{lucide("home")}</span><span class="calendar-summary-row-label">Sede</span><span class="calendar-summary-row-value" data-place-summary>—</span></div>
+            <div class="calendar-summary-row"><span class="calendar-summary-row-icon calendar-icon-orange">{lucide("user")}</span><span class="calendar-summary-row-label">Operatore</span><span class="calendar-summary-row-value" data-operator-summary>—</span></div>
+            <div class="calendar-summary-row" data-calendar-types="Ritiro|Ritiro in sede" {"" if event_type in ("Ritiro","Ritiro in sede") else "hidden"}><span class="calendar-summary-row-icon calendar-icon-pink">{lucide("wallet")}</span><span class="calendar-summary-row-label">Preventivo</span><span class="calendar-summary-row-value" data-estimate-summary>—</span></div>
+            <div class="calendar-summary-row"><span class="calendar-summary-row-icon">{lucide("clipboard")}</span><span class="calendar-summary-row-label">Note</span><span class="calendar-summary-row-value" data-note-summary>—</span></div>
+          </div>
+          {quick_actions_wizard}
+          <div class="actions" style="margin-top:16px"><button class="btn">{'Salva modifiche' if event_id else 'Salva evento'}</button><button class="btn ghost" type="button" onclick="calendarStep(4,'back')">Indietro</button></div>
         </section></form><script>window.CALENDAR_ZONES={zones_json};document.addEventListener('DOMContentLoaded',()=>{{{''.join(f"calendarAddRow('animal',{json.dumps(a,ensure_ascii=False)});" for a in animals) if event_type in ('Ritiro','Ritiro in sede','') else ''}{''.join(f"calendarAddRow('estimate',{json.dumps(i,ensure_ascii=False)});" for i in estimates) if event_type in ('Ritiro','Ritiro in sede','') else ''}calendarTypeChanged();calendarInitLookups();const allDay=document.querySelector('#calendarEventForm input[name="all_day"]');if(allDay)calendarAllDayChanged(allDay);document.querySelectorAll('[data-time-entry]').forEach(input=>{{calendarTimeInput(input);const wheel=input.closest('.calendar-datetime-row')?.querySelector('[data-time-wheel]');if(wheel)calendarInitTimeWheel(wheel);}});calendarStep({error_step if error else 1},'back','replace');}});</script></main>'''
         self.send_html(layout("Modifica evento" if event_id else "Nuovo evento",body,user))
 
