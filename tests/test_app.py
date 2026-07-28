@@ -17,6 +17,7 @@ import email_service
 import notification_service
 from notification_service import (
     emit_notification, process_scheduled_notifications,
+    process_calendar_notifications,
     process_daily_summaries, archive_old_notifications, notification_priority,
 )
 from pypdf import PdfReader
@@ -3407,6 +3408,26 @@ class PetParadiseTests(unittest.TestCase):
         blur_end = js.index("\n", blur_start)
         blur_body = js[blur_start:blur_end]
         self.assertIn("input.dispatchEvent(new Event('change',{bubbles:true}))", blur_body)
+
+    def test_calendar_date_sync_preserves_day_span_instead_of_freezing_end_date(self):
+        # Richiesta utente: modificando la data di inizio di un evento su piu'
+        # giorni gia' in modifica, la data di fine deve spostarsi mantenendo
+        # lo stesso scarto di giorni invece di restare congelata (comportamento
+        # precedente: manualEdit='1' impostato incondizionatamente in modifica
+        # bloccava del tutto il sync di end_date).
+        js = app.APP_JS
+        fn_start = js.index("function calendarInitDateTimeSync(){")
+        fn_end = js.index("function setupCalendarDraftAutosave")
+        fn = js[fn_start:fn_end]
+        self.assertIn("dayDiff", fn)
+        self.assertIn("form.dataset.dateSpanDays", fn)
+        # non deve piu' esserci l'azzeramento incondizionato che congelava
+        # end_date per qualunque evento aperto in modifica.
+        self.assertNotIn("if(form.end_date)form.end_date.dataset.manualEdit='1';", fn)
+        # ma la protezione dell'orario di fine gia' impostato resta invariata
+        self.assertIn("form.end_time&&form.end_time.value", fn)
+        # clamp di sicurezza: end_date non deve mai precedere start_date
+        self.assertIn("form.end_date.value<form.start_date.value)form.end_date.value=form.start_date.value", fn)
 
     def test_day_view_swipe_navigation_removed(self):
         rendered = []
@@ -6869,6 +6890,31 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('3339998877', card_html)
         self.assertIn('Clinica Veterinaria Lamarmora', card_html)
         self.assertNotIn('Via Roma 45', card_html)
+        # richiesta utente: la card deve mostrare sia l'orario di inizio che
+        # quello di fine, e la specie come testo (non solo l'emoji).
+        self.assertIn('09:30', card_html)
+        self.assertIn('→ 18:00', card_html)
+        species_pos = card_html.index('Cane')
+        weight_pos = card_html.index('24 kg')
+        self.assertLess(species_pos, weight_pos)
+
+    def test_calendar_appt_card_hides_time_range_when_start_equals_end(self):
+        # non deve mostrare un intervallo ridondante ("09:30 -> 09:30") quando
+        # l'evento non ha una vera durata.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO PISA","Pisa","Filippo","2026-07-28T09:30:00","2026-07-28T09:30:00","Da ritirare",admin["id"],stamp,stamp)).lastrowid
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/calendario?vista=giorno&data=2026-07-28"
+        self.handler.calendar_page(admin)
+        page = rendered[-1]
+        card_start = page.index(f'data-event-id="{event_id}"')
+        card_html = page[card_start:page.index('</article>', card_start)]
+        self.assertIn('09:30', card_html)
+        self.assertNotIn('calendar-appt-time-end', card_html)
 
     def test_calendar_settimana_view_uses_the_identical_daybar_and_cards_as_giorno(self):
         with app.db() as conn:
@@ -6939,6 +6985,12 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('2 appuntamenti', page)
         self.assertIn('Vai al dettaglio del giorno', page)
         self.assertIn('vista=giorno&data=2026-07-28', page.split('Vai al dettaglio del giorno')[0][-200:])
+        # richiesta utente: la vista Mese non aveva nessuna scorciatoia diretta
+        # per creare un evento sul giorno selezionato (serviva prima passare
+        # alla vista Giorno); ora un pulsante "Nuovo evento" porta direttamente
+        # al wizard con la data del giorno selezionato pre-impostata.
+        self.assertIn('calendar-month-new-btn', page)
+        self.assertIn('/calendario/nuovo?data=2026-07-28', page)
 
     def test_calendar_wizard_step1_shows_large_type_cards_with_checkmark(self):
         with app.db() as conn:
@@ -7066,6 +7118,29 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("calendarUpdateAnimalCardSummary", app.APP_JS)
         self.assertIn("classList.toggle('expanded')", app.APP_JS)
 
+    def test_calendar_animal_card_title_shows_species_and_weight_not_animale_n(self):
+        # richiesta utente: il titolo della card animale deve mostrare
+        # specie+peso (es. "GATTO · 3 KG") invece del generico "ANIMALE N";
+        # il nome diventa sottotitolo secondario, aggiornato live.
+        js = app.APP_JS
+        summary_fn = js[js.index("function calendarUpdateAnimalCardSummary"):]
+        self.assertIn("titleBits.push(item.species.toUpperCase())", summary_fn)
+        self.assertIn("titleBits.push(`${item.weight} KG`)", summary_fn)
+        self.assertIn("title.dataset.hasContent='1'", summary_fn)
+        self.assertIn("title.dataset.hasContent='0'", summary_fn)
+        renumber_fn = js[js.index("function calendarRenumberAnimals"):js.index("function calendarAddRow")]
+        self.assertIn("`ANIMALE ${index+1}`", renumber_fn)
+        self.assertIn("title.dataset.hasContent!=='1'", renumber_fn)
+
+    def test_calendar_wizard_riepilogo_animals_summary_shows_real_detail(self):
+        # richiesta utente: non piu' "1 animale" ma specie/peso/nome; per piu'
+        # animali una sintesi compatta con conteggio residuo (es. "+1").
+        js = app.APP_JS
+        refresh_fn = js[js.index("function calendarRefreshWizardSummaries"):js.index("function calendarStepFromIndicator")]
+        self.assertNotIn("animal${animalCount", refresh_fn)
+        self.assertIn("bits.join(' · ')", refresh_fn)
+        self.assertIn("shown} +${extra}", refresh_fn)
+
     def test_calendar_event_detail_shows_five_tabs_header_and_quickactions(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
@@ -7092,6 +7167,20 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('google.com/maps/dir', page)
         self.assertIn('calendar-detail-qa-disabled', page)  # Pratica non disponibile prima del ritiro
         self.assertIn('DA RITIRARE', page)
+        # richiesta utente (riepilogo evento): riga Animali con dettaglio
+        # reale, riga Preventivo con il totale, form di modifica rapida per
+        # zona/operatore/note con salvataggio immediato verso i nuovi
+        # endpoint, e schema colori per sezione.
+        self.assertIn('Cane · 18 kg · Argo', page)
+        self.assertIn('120,00', page)
+        self.assertIn(f'action="/calendario/{event_id}/zona"', page)
+        self.assertIn(f'action="/calendario/{event_id}/operatore"', page)
+        self.assertIn(f'action="/calendario/{event_id}/note"', page)
+        self.assertIn(f'/calendario/{event_id}?tab=preventivo', page)
+        self.assertIn('calendar-icon-pink', page)
+        self.assertIn('calendar-icon-teal', page)
+        self.assertIn('calendar-icon-amber', page)
+        self.assertIn('09:00 → 09:30', page)
 
     def test_calendar_event_detail_animali_and_preventivo_tabs_use_card_style(self):
         with app.db() as conn:
@@ -7117,6 +7206,52 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('calendar-estimate-row-v2', preventivo_page)
         self.assertIn('calendar-estimate-total-bar', preventivo_page)
         self.assertIn('120,00', preventivo_page)
+
+    def test_calendar_detail_quick_edit_zona_operatore_note_save_immediately(self):
+        # richiesta utente: dal riepilogo evento, zona/operatore/note devono
+        # potersi modificare e salvare subito, senza ripercorrere il wizard,
+        # tornando alla stessa pagina con un feedback di successo.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,operator_name,notes,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO QUICK EDIT","Pisa","Serena","Nota originale","2026-07-30T09:00:00","2026-07-30T09:30:00","Da ritirare",admin["id"],stamp,stamp)).lastrowid
+        redirects = []
+        self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.headers = {"Referer": f"/calendario/{event_id}?tab=dettagli"}
+        # zona
+        self.handler.form = lambda: {"zone": "Livorno"}
+        self.handler.calendar_event_action(admin, event_id, "zona")
+        with app.db() as conn:
+            row = conn.execute("SELECT zone FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+        self.assertEqual(row["zone"], "Livorno")
+        self.assertIn("saved=zona", redirects[-1])
+        # operatore
+        self.handler.form = lambda: {"operator_name": "Filippo"}
+        self.handler.calendar_event_action(admin, event_id, "operatore")
+        with app.db() as conn:
+            row = conn.execute("SELECT operator_name FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+        self.assertEqual(row["operator_name"], "Filippo")
+        self.assertIn("saved=operatore", redirects[-1])
+        # note
+        self.handler.form = lambda: {"notes": "Nota aggiornata"}
+        self.handler.calendar_event_action(admin, event_id, "note")
+        with app.db() as conn:
+            row = conn.execute("SELECT notes FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+        self.assertEqual(row["notes"], "Nota aggiornata")
+        self.assertIn("saved=note", redirects[-1])
+        # operatore non valido viene rifiutato
+        self.handler.form = lambda: {"operator_name": "Non Esiste"}
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_action(admin, event_id, "operatore")
+        self.assertIn("Operatore non valido", rendered[-1])
+        # il flash di successo appare nella pagina di dettaglio dopo il redirect
+        rendered = []
+        self.handler.path = f"/calendario/{event_id}?tab=dettagli&saved=zona"
+        self.handler.calendar_event_detail(admin, event_id)
+        self.assertIn("Zona aggiornata.", rendered[-1])
 
     def test_dashboard_greeting_uses_logged_in_user_name_and_drops_quick_action_buttons(self):
         with app.db() as conn:
@@ -7748,6 +7883,33 @@ class PetParadiseTests(unittest.TestCase):
             created_again = process_daily_summaries(conn, str(app.DB_PATH), current=in_window + timedelta(minutes=4))
             self.assertEqual(created_again, 0)
             self.assertEqual(conn.execute("SELECT count(*) n FROM notifications WHERE user_id=? AND type='daily_summary'", (admin,)).fetchone()["n"], 1)
+
+    def test_notification_scheduling_uses_rome_timezone_not_server_local_clock(self):
+        # bug segnalato dall'utente: il "Riepilogo del giorno" impostato per
+        # le 9:00 arrivava alle 11:00, perche' current=current or
+        # datetime.now() usava l'ora del sistema/container (che sul deploy
+        # puo' restare UTC anche con TZ=Europe/Rome impostata) invece
+        # dell'ora civile italiana calcolata esplicitamente con zoneinfo.
+        import inspect
+        source = inspect.getsource(notification_service)
+        self.assertNotIn("datetime.now()", source)
+        self.assertIn('ZoneInfo("Europe/Rome")', source)
+        self.assertIn("def _rome_now()", source)
+        for fn in (process_scheduled_notifications, process_calendar_notifications, process_daily_summaries):
+            fn_source = inspect.getsource(fn)
+            self.assertIn("_rome_now()", fn_source)
+
+    def test_cremation_and_calendar_today_use_rome_timezone_not_server_local_clock(self):
+        # bug segnalato dall'utente: Programma Cremazioni restava sul giorno
+        # sbagliato (mostrava ieri) perche' cremation_schedule/_week usavano
+        # date.today() (fuso del sistema) invece del giorno civile italiano.
+        import inspect
+        source = inspect.getsource(app)
+        self.assertNotIn("datetime.now()", source)
+        self.assertNotIn("date.today()", source)
+        self.assertIn("def rome_now():", source)
+        for fn in (app.App.cremation_schedule, app.App.cremation_schedule_week, app.App.cremation_create_cycle):
+            self.assertIn("rome_now()", inspect.getsource(fn))
 
     def test_archive_old_notifications_moves_only_notifications_read_over_30_days_ago(self):
         with app.db() as conn:

@@ -581,20 +581,24 @@ class OperationalCalendarTests(unittest.TestCase):
 
     def test_end_date_and_time_stay_manually_editable_after_first_change(self):
         self.assertIn("form.start_date.addEventListener('change',sync)", app.APP_JS)
-        self.assertIn("if(form.end_date&&!form.end_date.dataset.manualEdit)form.end_date.value=form.start_date.value;", app.APP_JS)
+        self.assertIn("form.end_date.value=form.start_date.value;", app.APP_JS)
+        self.assertIn("!form.end_date.dataset.manualEdit", app.APP_JS)
         # Server-side normalize_event already rejects an end before the start regardless of client sync bugs.
         with self.assertRaisesRegex(ValueError, "fine"):
             normalize_event(self.event_form("Ritiro", start_date="2026-07-16", end_date="2026-07-15"))
 
     def test_editing_existing_event_preserves_its_saved_end_date_and_time(self):
-        # Regression test: changing the start date of an ALREADY SAVED event used to
-        # silently reset its already-set end date/time to match the new start, because
-        # the auto-follow sync (meant only for brand-new events) didn't know the
-        # difference between "never touched yet" and "loaded from a saved event".
+        # Regression test aggiornato: la versione precedente congelava del
+        # tutto end_date impostando manualEdit='1' incondizionatamente in
+        # modifica, il che a sua volta impediva di spostare end_date quando
+        # l'utente cambiava start_date su un evento multi-giorno gia'
+        # esistente (bug segnalato dall'utente). Ora lo scarto di giorni
+        # viene preservato tramite dataset.dateSpanDays invece di congelare
+        # il campo; l'orario di fine resta invece protetto come prima.
         js = app.APP_JS
         self.assertIn("(form.dataset.draftKey||'').includes('_edit_')", js)
-        self.assertIn("if(form.end_date)form.end_date.dataset.manualEdit='1';", js)
-        self.assertIn("if(form.end_time&&form.end_time.value)form.end_time.dataset.manualEdit='1';", js)
+        self.assertIn("form.dataset.dateSpanDays", js)
+        self.assertIn("form.end_time&&form.end_time.value", js)
         event_id = self.save(self.event_form("Appuntamento", start_date="2026-07-19", start_time="14:45", end_date="2026-07-19", end_time="16:00"))
         rendered = []
         self.handler.path = f"/calendario/{event_id}/modifica"

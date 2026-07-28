@@ -984,8 +984,21 @@ def esc(value):
     return html.escape(str(value or ""), quote=True)
 
 
+def rome_now():
+    # Calcolato esplicitamente sul fuso orario di Roma (invece di affidarsi
+    # alla TZ di sistema/container, che su alcuni ambienti di deploy puo'
+    # restare UTC anche con la variabile d'ambiente TZ impostata) cosi' che
+    # timestamp, notifiche orarie e il "giorno corrente" mostrato nelle viste
+    # calendario corrispondano sempre all'ora italiana reale, indipendentemente
+    # dal fuso del sistema operativo sottostante. Restituisce un datetime
+    # naive (senza tzinfo) il cui valore rappresenta pero' l'ora di Roma, cosi'
+    # da restare compatibile con tutti i confronti/aritmetica gia' esistenti
+    # su timestamp naive nel resto del file.
+    return datetime.now(ROME_TZ).replace(tzinfo=None)
+
+
 def now():
-    return datetime.now().isoformat(timespec="seconds")
+    return rome_now().isoformat(timespec="seconds")
 
 
 def whatsapp_datetime(value=None):
@@ -1521,7 +1534,10 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .calendar-month-daycard{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:16px;background:#1a2332}
 .calendar-month-daycard header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
 .calendar-month-daycard header h2{margin:0;font-size:16px}
-.calendar-month-detail-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;margin-top:14px}
+.calendar-month-daycard-actions{display:flex;gap:8px;margin-top:14px}
+.calendar-month-daycard-actions .btn{flex:1;margin-top:0}
+.calendar-month-detail-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%}
+.calendar-month-new-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%}
 .light-theme .calendar-month-v2-cell{background:#fff}
 .light-theme .calendar-month-v2-cell.is-other-month{background:#f1f5f9}
 .light-theme .calendar-month-v2-num{color:#111827}
@@ -1563,9 +1579,10 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .calendar-appt-empty{text-align:center;padding:24px;color:#9ca7b8}
 .calendar-appt-card{display:flex;gap:12px;padding:14px 16px;border:1px solid #334155;border-left:4px solid #475569;border-radius:15px;background:linear-gradient(145deg,#1a2332,#151d29);box-shadow:0 10px 28px #0307122e;cursor:pointer}
 .calendar-appt-card:hover{border-color:#465065}
-.calendar-appt-time-col{display:flex;flex-direction:column;align-items:center;gap:6px;flex:0 0 52px;padding-top:2px}
-.calendar-appt-time-dot{width:9px;height:9px;border-radius:50%}
+.calendar-appt-time-col{display:flex;flex-direction:column;align-items:center;gap:4px;flex:0 0 58px;padding-top:2px}
+.calendar-appt-time-dot{width:9px;height:9px;border-radius:50%;margin-bottom:2px}
 .calendar-appt-time{font-size:12px;font-weight:700;color:#e2e8f0;white-space:nowrap}
+.calendar-appt-time-end{font-size:10px;font-weight:600;color:#94a3b8;white-space:nowrap}
 .calendar-appt-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
 .calendar-appt-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .calendar-appt-type{display:inline-block;padding:3px 10px;border-radius:99px;font-size:10.5px;font-weight:800;letter-spacing:.03em}
@@ -2039,6 +2056,8 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .calendar-icon-green{background:linear-gradient(135deg,#22c55e,#15803d);color:#fff;box-shadow:0 0 16px #22c55e38}
 .calendar-icon-orange{background:linear-gradient(135deg,#f59e0b,#b45309);color:#fff;box-shadow:0 0 16px #f59e0b38}
 .calendar-icon-purple{background:linear-gradient(135deg,#8b5cf6,#6d28d9);color:#fff;box-shadow:0 0 16px #8b5cf638}
+.calendar-icon-teal{background:linear-gradient(135deg,#2dd4bf,#0f766e);color:#fff;box-shadow:0 0 16px #2dd4bf38}
+.calendar-icon-amber{background:linear-gradient(135deg,#fbbf24,#b45309);color:#fff;box-shadow:0 0 16px #fbbf2438}
 .calendar-type-option b{display:block;font-size:15px;font-weight:800;letter-spacing:.01em}
 .calendar-type-option small{display:block;margin-top:2px}
 .calendar-type-check{display:none;flex:0 0 24px;width:24px;height:24px;color:#ef405f;margin-left:auto}
@@ -2062,7 +2081,8 @@ button.calendar-tap-card:active,a.calendar-tap-card:active{transform:scale(.985)
 .light-theme .calendar-tap-card.lookup>.calendar-tap-card-body>input{background:#f8fafc;border-color:#e2e8f0;color:#111827}
 .calendar-tap-card-body textarea{min-height:60px;font-weight:500;font-size:16px;resize:vertical}
 .calendar-tap-card-body label{font-weight:500;font-size:13px;color:#dfe4eb}
-.calendar-tap-card-body p{color:#f5f7fb;font-weight:700}
+.calendar-tap-card-body p{color:#f5f7fb;font-weight:700;margin:0}
+.calendar-tap-card-sub{color:#8a96a8!important;text-transform:none!important;font-weight:500!important;letter-spacing:0!important}
 .calendar-tap-card-chevron{align-self:center;color:#8a96a8;flex:0 0 auto}
 .calendar-tap-card-chevron .icon{width:18px;height:18px}
 .calendar-tap-card-link{cursor:pointer}
@@ -4684,8 +4704,11 @@ function calendarRefreshWizardSummaries(){
   const clientName=[firstName,lastName].filter(Boolean).join(' ')||(animalName?`Animale: ${animalName}`:'');
   const clientText=clientName?(phone?`${clientName} · ${phone}`:clientName):'Da completare';
   document.querySelectorAll('[data-client-summary]').forEach(el=>{el.textContent=clientText;});
-  const animalCount=document.querySelectorAll('[data-calendar-list="animal"] .calendar-repeat-row').length;
-  document.querySelectorAll('[data-animals-summary]').forEach(el=>{el.textContent=animalCount?`${animalCount} animal${animalCount===1?'e':'i'}`:'Nessun animale';});
+  const animalItems=[...document.querySelectorAll('[data-calendar-list="animal"] .calendar-repeat-row')].map(row=>({species:row.querySelector('[data-key="species"]')?.value||'',weight:row.querySelector('[data-key="weight"]')?.value||'',name:row.querySelector('[data-key="name"]')?.value||''}));
+  let animalsSummaryText='Nessun animale';
+  if(animalItems.length===1){const bits=[];if(animalItems[0].species)bits.push(animalItems[0].species);if(animalItems[0].weight)bits.push(`${animalItems[0].weight} kg`);if(animalItems[0].name)bits.push(animalItems[0].name);animalsSummaryText=bits.length?bits.join(' · '):'Da completare';}
+  else if(animalItems.length>1){const shortBit=item=>{const bits=[];if(item.species)bits.push(item.species);if(item.weight)bits.push(`${item.weight} kg`);return bits.join(' ')||'Animale';};const shown=animalItems.slice(0,2).map(shortBit).join(', ');const extra=animalItems.length-2;animalsSummaryText=extra>0?`${shown} +${extra}`:shown;}
+  document.querySelectorAll('[data-animals-summary]').forEach(el=>{el.textContent=animalsSummaryText;});
   const estimateTotalEl=document.querySelector('[data-estimate-total]');
   const estimateText=estimateTotalEl?estimateTotalEl.textContent:'€ 0,00';
   document.querySelectorAll('[data-estimate-summary]').forEach(el=>{el.textContent=estimateText;});
@@ -4717,9 +4740,9 @@ function calendarTimeInput(input){if(input.dataset.timeEditing==='1')return;let 
 function calendarTimeFocus(input){document.querySelectorAll('[data-time-wheel]').forEach(wheel=>{if(!input.closest('.calendar-datetime-row').contains(wheel))wheel.hidden=true;});input.dataset.timeEditing='0';input.dataset.timeDigits=input.value.replace(/\D/g,'').slice(0,4);const wheel=input.closest('.calendar-datetime-row')?.querySelector('[data-time-wheel]');if(wheel){calendarInitTimeWheel(wheel);wheel.hidden=false;calendarSyncTimeWheel(input,false);}}
 function calendarTimeBlur(input){let digits=(input.dataset.timeDigits||input.value.replace(/\D/g,'')).slice(0,4);input.dataset.timeEditing='0';if(!digits){input.value='';input.dispatchEvent(new Event('change',{bubbles:true}));return;}if(digits.length<=2){const hour=Number(digits);input.value=hour<24?`${String(hour).padStart(2,'0')}:00`:'';}else if(digits.length===3){const hour=Number(digits.slice(0,2)),minute=Number(digits.slice(2))*10;input.value=hour<24&&minute<60?`${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}`:'';}else{const hour=Number(digits.slice(0,2)),minute=Number(digits.slice(2));input.value=hour<24&&minute<60?`${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}`:'';}input.dataset.timeDigits=input.value.replace(/\D/g,'');input.dataset.timeComplete=input.value?'1':'0';if(input.value)calendarSyncTimeWheel(input,false);input.dispatchEvent(new Event('change',{bubbles:true}));}
 function calendarOpenTimePicker(button){const native=button.parentElement.querySelector('.calendar-native-time'),text=button.parentElement.querySelector('[data-time-entry]');native.value=/^\d{2}:\d{2}$/.test(text.value)?text.value:'';native.onchange=()=>{text.value=native.value;calendarTimeInput(text);};if(native.showPicker)native.showPicker();else native.click();}
-function calendarRenumberAnimals(){document.querySelectorAll('[data-calendar-list="animal"] .calendar-repeat-row').forEach((row,index)=>{const title=row.querySelector('.calendar-animal-title');const nameInput=row.querySelector('[data-key="name"]');if(title)title.textContent=(nameInput&&nameInput.value.trim())?nameInput.value.trim():`ANIMALE ${index+1}`;const remove=row.querySelector('[data-remove-animal]');if(remove)remove.hidden=index===0;});}
+function calendarRenumberAnimals(){document.querySelectorAll('[data-calendar-list="animal"] .calendar-repeat-row').forEach((row,index)=>{const title=row.querySelector('.calendar-animal-title');if(title){const fallback=`ANIMALE ${index+1}`;title.dataset.fallback=fallback;if(title.dataset.hasContent!=='1')title.textContent=fallback;}const remove=row.querySelector('[data-remove-animal]');if(remove)remove.hidden=index===0;});}
 function calendarAddRow(kind,data={}){const list=document.querySelector(`[data-calendar-list="${kind}"]`);if(!list)return;const row=document.createElement('div');if(kind==='animal'){row.className='calendar-repeat-row calendar-animal-card';row.innerHTML=`<div class="calendar-animal-card-summary" onclick="this.closest('.calendar-animal-card').classList.toggle('expanded')"><span class="calendar-animal-card-icon" data-animal-icon>🐾</span><div class="calendar-animal-card-main"><strong class="calendar-animal-title"></strong><small data-animal-summary-line>Tocca per completare i dati</small><span class="calendar-animal-tag" data-animal-tag hidden></span></div><button class="calendar-appt-action" data-remove-animal type="button" onclick="event.stopPropagation();this.closest('.calendar-animal-card').remove();calendarSerialize()">×</button><span class="calendar-animal-card-chevron">›</span></div><div class="calendar-animal-card-body"><select data-key="species" aria-label="Specie animale"><option value="">Specie</option><option ${data.species==='Cane'?'selected':''}>Cane</option><option ${data.species==='Gatto'?'selected':''}>Gatto</option><option ${data.species==='Altro'?'selected':''}>Altro</option></select><input inputmode="decimal" placeholder="Peso kg" data-key="weight" value="${data.weight||''}"><select data-key="cremation_type" aria-label="Tipo di cremazione"><option value="">Tipo di cremazione</option><option ${data.cremation_type==='Singola'?'selected':''}>Singola</option><option ${data.cremation_type==='Collettiva'?'selected':''}>Collettiva</option></select><input placeholder="Nome facoltativo" data-key="name" value="${data.name||''}"><input class="full-mobile" placeholder="Note" data-key="notes" value="${data.notes||''}"></div>`;}else{row.className=`calendar-repeat-row calendar-estimate-row-v2 ${kind==='estimate'?'calendar-estimate-row':''}`;if(data.preset==='Altro')row.innerHTML=`<span class="calendar-estimate-preset">Altro</span><input class="calendar-other-description" placeholder="Descrizione" data-key="description" value="${data.description||''}"><input inputmode="decimal" placeholder="Importo €" data-key="amount" value="${data.amount||''}">`;else if(data.preset==='Urna')row.innerHTML=`<span class="calendar-estimate-preset">Urna</span><input class="calendar-other-description" placeholder="Nome urna o descrizione" data-key="description" value="${data.description||'Urna'}"><input inputmode="decimal" placeholder="Importo €" data-key="amount" value="${data.amount||''}">`;else if(data.preset)row.innerHTML=`<span class="calendar-estimate-preset">${data.preset}</span><input type="hidden" data-key="description" value="${data.preset}"><input inputmode="decimal" placeholder="Importo €" data-key="amount" value="${data.amount||''}">`;else row.innerHTML=`<input class="full-mobile" placeholder="Descrizione" data-key="description" value="${data.description||''}"><input inputmode="decimal" placeholder="Importo €" data-key="amount" value="${data.amount||''}"><button class="btn ghost" type="button" onclick="this.parentElement.remove();calendarSerialize()">×</button>`;}list.append(row);row.querySelectorAll('input,select').forEach(input=>input.addEventListener('input',()=>{input.form.dataset.dirty='1';calendarSerialize();}));calendarSerialize();}
-function calendarUpdateAnimalCardSummary(row,item){const icon=row.querySelector('[data-animal-icon]');if(icon){icon.textContent=item.species==='Cane'?'🐶':(item.species==='Gatto'?'🐱':'🐾');icon.className='calendar-animal-card-icon '+(item.species==='Cane'?'avatar-dog':item.species==='Gatto'?'avatar-cat':'avatar-other');}const line=row.querySelector('[data-animal-summary-line]');if(!line)return;const bits=[];if(item.weight)bits.push(`${item.weight} kg`);if(item.species)bits.push(item.species);line.textContent=bits.length?bits.join(' · '):'Tocca per completare i dati';const tag=row.querySelector('[data-animal-tag]');if(tag){if(item.cremation_type){tag.hidden=false;tag.textContent=item.cremation_type;tag.className='calendar-animal-tag '+(item.cremation_type==='Singola'?'calendar-tag-purple':'calendar-tag-blue');}else{tag.hidden=true;}}const title=row.querySelector('.calendar-animal-title');if(title&&item.name)title.dataset.customName=item.name;}
+function calendarUpdateAnimalCardSummary(row,item){const icon=row.querySelector('[data-animal-icon]');if(icon){icon.textContent=item.species==='Cane'?'🐶':(item.species==='Gatto'?'🐱':'🐾');icon.className='calendar-animal-card-icon '+(item.species==='Cane'?'avatar-dog':item.species==='Gatto'?'avatar-cat':'avatar-other');}const title=row.querySelector('.calendar-animal-title');if(title){const titleBits=[];if(item.species)titleBits.push(item.species.toUpperCase());if(item.weight)titleBits.push(`${item.weight} KG`);if(titleBits.length){title.textContent=titleBits.join(' · ');title.dataset.hasContent='1';}else{title.dataset.hasContent='0';title.textContent=title.dataset.fallback||'ANIMALE';}}const line=row.querySelector('[data-animal-summary-line]');if(line)line.textContent=item.name?item.name:(item.species||item.weight||item.cremation_type?'':'Tocca per completare i dati');const tag=row.querySelector('[data-animal-tag]');if(tag){if(item.cremation_type){tag.hidden=false;tag.textContent=item.cremation_type;tag.className='calendar-animal-tag '+(item.cremation_type==='Singola'?'calendar-tag-purple':'calendar-tag-blue');}else{tag.hidden=true;}}}
 function calendarSerialize(){['animal','estimate'].forEach(kind=>{const hidden=document.querySelector(`input[name="${kind==='animal'?'animals_json':'estimate_json'}"]`);const list=document.querySelector(`[data-calendar-list="${kind}"]`);if(!hidden||!list)return;const values=[...list.children].map(row=>Object.fromEntries([...row.querySelectorAll('[data-key]')].map(input=>[input.dataset.key,input.value])));hidden.value=JSON.stringify(values);if(kind==='animal')[...list.children].forEach((row,index)=>calendarUpdateAnimalCardSummary(row,values[index]||{}));if(kind==='estimate'){const total=values.reduce((sum,item)=>sum+(Number(String(item.amount||0).replace(',','.'))||0),0);const output=document.querySelector('[data-estimate-total]');if(output)output.textContent=total.toLocaleString('it-IT',{style:'currency',currency:'EUR'});}});calendarRenumberAnimals();calendarAutoTitle();calendarRefreshWizardSummaries();}
 const PRACTICE_ITEM_ROW_CONFIG={
   calco:[["","Generico"],["polpastrello","Polpastrello"],["naso","Naso"],["zampa","Zampa"]],
@@ -4935,16 +4958,40 @@ function toggleCreateMenu(force){
 function calendarInitDateTimeSync(){
   const form=document.getElementById('calendarEventForm');
   if(!form||!form.start_date||!form.end_date)return;
+  const dayDiff=(startStr,endStr)=>{const start=new Date(startStr+'T00:00:00'),end=new Date(endStr+'T00:00:00');if(isNaN(start)||isNaN(end))return 0;return Math.max(0,Math.round((end-start)/86400000));};
   const markManual=input=>{if(!input)return;const mark=()=>{input.dataset.manualEdit='1';};input.addEventListener('input',mark);input.addEventListener('change',mark);};
-  markManual(form.end_date);markManual(form.end_time);
-  // Editing an existing event: its saved end date/time were chosen on purpose, so changing
-  // the start must never silently overwrite them (the fields stay fully editable by hand).
-  if((form.dataset.draftKey||'').includes('_edit_')){
-    if(form.end_date)form.end_date.dataset.manualEdit='1';
-    if(form.end_time&&form.end_time.value)form.end_time.dataset.manualEdit='1';
+  markManual(form.end_time);
+  // Editing an existing event: its saved end time was chosen on purpose, so changing
+  // the start must never silently overwrite it (the field stays fully editable by hand).
+  if((form.dataset.draftKey||'').includes('_edit_')&&form.end_time&&form.end_time.value){
+    form.end_time.dataset.manualEdit='1';
+  }
+  // end_date: quando l'utente lo tocca a mano creando un intervallo di giorni
+  // reale (anche gia' presente all'apertura, es. evento su piu' giorni in
+  // modifica), quell'intervallo va preservato ai successivi cambi di
+  // start_date invece di essere azzerato (mirror) o congelato del tutto.
+  form.end_date.addEventListener('change',()=>{
+    form.end_date.dataset.manualEdit='1';
+    form.dataset.dateSpanDays=String(dayDiff(form.start_date.value,form.end_date.value));
+  });
+  if(form.start_date.value&&form.end_date.value&&form.start_date.value!==form.end_date.value){
+    form.end_date.dataset.manualEdit='1';
+    form.dataset.dateSpanDays=String(dayDiff(form.start_date.value,form.end_date.value));
   }
   const sync=()=>{
-    if(form.end_date&&!form.end_date.dataset.manualEdit)form.end_date.value=form.start_date.value;
+    if(form.end_date){
+      if(!form.end_date.dataset.manualEdit){
+        form.end_date.value=form.start_date.value;
+      }else if(form.start_date.value){
+        const span=Number(form.dataset.dateSpanDays||0);
+        const start=new Date(form.start_date.value+'T00:00:00');
+        if(!isNaN(start)){
+          const next=new Date(start.getTime()+span*86400000);
+          form.end_date.value=`${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-${String(next.getDate()).padStart(2,'0')}`;
+        }
+      }
+      if(form.end_date.value&&form.start_date.value&&form.end_date.value<form.start_date.value)form.end_date.value=form.start_date.value;
+    }
     if(form.end_time&&form.start_time&&!form.end_time.dataset.manualEdit){
       form.end_time.value=form.start_time.value;
       form.end_time.dataset.timeDigits=form.start_time.dataset.timeDigits||'';
@@ -5326,6 +5373,23 @@ def species_avatar(species):
     return "🐾","avatar-other"
 
 
+def calendar_animals_summary_text(animals):
+    """Sintesi testuale reale (specie/peso/nome) per la riga Animali del
+    riepilogo evento, invece del generico 'N animale' — stessa logica e
+    stesso formato di calendarRefreshWizardSummaries() lato JS."""
+    if not animals:return "Nessun animale"
+    if len(animals)==1:
+        a=animals[0]
+        bits=[b for b in (a["species"] or "",f'{a["weight"]} kg' if a["weight"] else "",a["name"] or "") if b]
+        return " · ".join(bits) if bits else "Da completare"
+    def short_bit(a):
+        bits=[b for b in (a["species"] or "",f'{a["weight"]} kg' if a["weight"] else "") if b]
+        return " ".join(bits) or "Animale"
+    shown=", ".join(short_bit(a) for a in animals[:2])
+    extra=len(animals)-2
+    return f"{shown} +{extra}" if extra>0 else shown
+
+
 PROVENANCE_CHIP_COLORS = 8
 
 
@@ -5596,7 +5660,7 @@ def sync_reminders(c):
     here: it's a one-off event inserted directly at its trigger point (see
     order_article) since "a product was requested" isn't a recurring query
     condition like the other four."""
-    stamp=now();today=datetime.now().date()
+    stamp=now();today=rome_now().date()
     active="(deleted_at IS NULL OR deleted_at='')"
 
     incomplete=c.execute(
@@ -5681,7 +5745,7 @@ def outstanding_amount(practice):
 
 
 def dashboard_period_bounds(period, today=None):
-    today=today or datetime.now().date()
+    today=today or rome_now().date()
     period=period if period in ("oggi","settimana","mese") else "oggi"
     if period=="settimana":
         start=today-timedelta(days=(today.weekday()-5)%7);end=start+timedelta(days=6)
@@ -5806,7 +5870,7 @@ def layout(title, body, user=None):
             links=reorder_by_saved(links,sidebar_order,lambda item:item[2])
         nav_links=''.join(f'<a href="{href}" class="{"nav-notification" if href in ("/notifiche","/") else ""}">{lucide(icon)}<span>{label}</span>{unread_badge if href=="/notifiche" else (reminder_badge if href=="/" else "")}</a>' for href,icon,label in links)
         nav=f'''<nav class="nav" aria-label="Menu principale">{nav_links}<button class="btn ghost install-btn" type="button" onclick="installPetParadise()">{lucide("plus")}<span>Installa App</span></button><a class="logout" href="/logout">{lucide("menu")}<span>Esci</span></a></nav>'''
-        today=datetime.now(); date_label=today.strftime("%d/%m/%Y"); weekday=["Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica"][today.weekday()]
+        today=rome_now(); date_label=today.strftime("%d/%m/%Y"); weekday=["Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica"][today.weekday()]
         app_header=f'''<header class="app-header"><div class="header-actions"><form class="header-search lookup" action="/archivio/pratiche" method="get" role="search">{lucide("search")}<label class="sr-only" for="globalSearch">Ricerca rapida per animale o proprietario</label><input id="globalSearch" name="rapida" placeholder="Animale o proprietario..." autocomplete="off"><div id="globalSearchResults" class="lookup-results hidden"></div></form><a class="icon-btn nav-notification" href="/notifiche" aria-label="Notifiche, {unread} non lette">{lucide("bell")}{unread_badge}</a><button class="icon-btn" type="button" onclick="toggleTheme()" aria-label="Cambia tema">{lucide("sun")}</button><button class="btn header-new" type="button" onclick="toggleCreateMenu()" aria-label="Crea pratica o evento">{lucide("plus")}<span>Crea</span></button><time datetime="{today.date().isoformat()}">{date_label}<small>{weekday}</small></time></div></header>'''
         def more_card(href,icon,label):
             color,subtitle=MENU_CARD_META.get(label,("gray",""))
@@ -6095,7 +6159,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/calendario/nuovo": return self.save_calendar_event(user)
         match = re.fullmatch(r"/calendario/(\d+)/modifica",path)
         if match: return self.save_calendar_event(user,int(match.group(1)))
-        match = re.fullmatch(r"/calendario/(\d+)/(stato|commento|elimina|ripristina|elimina-definitiva|collega-pratica|scollega-pratica)",path)
+        match = re.fullmatch(r"/calendario/(\d+)/(stato|zona|operatore|note|commento|elimina|ripristina|elimina-definitiva|collega-pratica|scollega-pratica)",path)
         if match: return self.calendar_event_action(user,int(match.group(1)),match.group(2))
         match = re.fullmatch(r"/calendario/(\d+)/commenti/(\d+)/(modifica|elimina)",path)
         if match: return self.calendar_comment_action(user,int(match.group(1)),int(match.group(2)),match.group(3))
@@ -6266,7 +6330,7 @@ class App(BaseHTTPRequestHandler):
 
 
     def dashboard(self,user):
-        q=parse_qs(urlparse(getattr(self,"path","/")).query);today=datetime.now().date()
+        q=parse_qs(urlparse(getattr(self,"path","/")).query);today=rome_now().date()
         practice_period,practice_from,practice_to=dashboard_period_bounds((q.get("pratiche_periodo") or ["oggi"])[0],today)
         payment_period,payment_from,payment_to=dashboard_period_bounds((q.get("pagamenti_periodo") or ["oggi"])[0],today)
         active="p.deleted_at IS NULL OR p.deleted_at=''"
@@ -6347,7 +6411,7 @@ class App(BaseHTTPRequestHandler):
             return '<nav class="period-selector" aria-label="Seleziona periodo">'+''.join(links)+'</nav>'
         practice_selector=selector("pratiche_periodo",practice_period,"pagamenti_periodo",payment_period);payment_selector=selector("pagamenti_periodo",payment_period,"pratiche_periodo",practice_period)
         persistence_script='''<script>(function(){const allowed=['oggi','settimana','mese'];const url=new URL(location.href);let changed=false;['pratiche_periodo','pagamenti_periodo'].forEach(key=>{const saved=localStorage.getItem('ppm_'+key);if(!url.searchParams.has(key)&&allowed.includes(saved)&&saved!=='oggi'){url.searchParams.set(key,saved);changed=true;}});if(changed){location.replace(url);return;}document.querySelectorAll('[data-dashboard-period]').forEach(link=>link.addEventListener('click',()=>localStorage.setItem('ppm_'+link.dataset.dashboardPeriod,link.dataset.periodValue)));})();</script>'''
-        hour=datetime.now().hour;greeting="Buongiorno" if hour<13 else "Buon pomeriggio" if hour<18 else "Buonasera"
+        hour=rome_now().hour;greeting="Buongiorno" if hour<13 else "Buon pomeriggio" if hour<18 else "Buonasera"
         dashboard_sections={
             "practices": f'''<div class="dashboard-section-head"><h2 class="dashboard-heading">Pratiche / Ritiri</h2>{practice_selector}</div><section class="dashboard-states">{state_cards}</section>''',
             "payments": f'''<div class="dashboard-section-head"><h2 class="dashboard-heading">Pagamenti</h2>{payment_selector}</div><section class="dashboard-payments">{payment_cards}</section>''',
@@ -7327,15 +7391,23 @@ class App(BaseHTTPRequestHandler):
         type_label="RITIRO" if is_pickup else ("RICONSEGNA" if is_delivery else "PROMEMORIA")
         type_cls="calendar-appt-type-pickup" if is_pickup else ("calendar-appt-type-delivery" if is_delivery else "calendar-appt-type-reminder")
         start=row["start_at"] or ""
-        time_text="Tutto il giorno" if row["all_day"] else start[11:16]
+        end_at=row["end_at"] or ""
+        start_time_text=start[11:16] if start else ""
+        end_time_text=end_at[11:16] if end_at else ""
+        show_time_range=bool(not row["all_day"] and end_time_text and end_time_text!=start_time_text)
+        time_text="Tutto il giorno" if row["all_day"] else start_time_text
         title_line=esc(self.calendar_event_display_title(row))
         names=(animal_names_by_event or {}).get(row["id"],"") or row["animal_name"] or ""
         cremation_types=(cremation_type_by_event or {}).get(row["id"],"")
         avatar_emoji="🐾"
+        species_label=""
         if row.get("animal_species"):
-            species_first=str(row["animal_species"]).split(",")[0].strip().lower()
-            avatar_emoji="🐶" if species_first=="cane" else ("🐱" if species_first=="gatto" else "🐾")
+            species_first=str(row["animal_species"]).split(",")[0].strip()
+            species_lower=species_first.lower()
+            avatar_emoji="🐶" if species_lower=="cane" else ("🐱" if species_lower=="gatto" else "🐾")
+            species_label=species_first
         animal_bits=[]
+        if species_label:animal_bits.append(species_label)
         if row["animal_weight_total"]:animal_bits.append(f'{float(row["animal_weight_total"]):g} kg')
         if cremation_types:animal_bits.append(cremation_types)
         if names:animal_bits.append(names)
@@ -7371,7 +7443,7 @@ class App(BaseHTTPRequestHandler):
         if not row["assigned_user_id"]:filter_keys.append("unassigned")
         operator_attr=esc((operator_name or "").lower())
         return f'''<article class="calendar-appt-card" data-event-id="{row['id']}" data-filter="{esc(' '.join(filter_keys))}" data-operator="{operator_attr}" style="border-left-color:{hex_}" onclick="location.href='/calendario/{row['id']}'">
-          <div class="calendar-appt-time-col"><span class="calendar-appt-time-dot" style="background:{hex_}"></span><span class="calendar-appt-time">{esc(time_text)}</span></div>
+          <div class="calendar-appt-time-col"><span class="calendar-appt-time-dot" style="background:{hex_}"></span><span class="calendar-appt-time">{esc(time_text)}</span>{f'<span class="calendar-appt-time-end">→ {esc(end_time_text)}</span>' if show_time_range else ''}</div>
           <div class="calendar-appt-main">
             <div class="calendar-appt-top"><span class="calendar-appt-type {type_cls}">{type_label}</span>{avatar}</div>
             <div class="calendar-appt-title">{title_line}</div>
@@ -7390,9 +7462,9 @@ class App(BaseHTTPRequestHandler):
         return f'<section class="calendar-legend-section"><div class="calendar-operator-legend">{legend_operator_items}</div><div class="calendar-day-legend"><div class="calendar-day-legend-group"><span class="calendar-day-legend-title">Colore = stato del ritiro</span>{legend_status_items}</div><div class="calendar-day-legend-group"><span class="calendar-day-legend-title">Colore fisso = altri tipi</span>{legend_type_items}</div></div></section>'
 
     def calendar_page(self,user):
-        q=parse_qs(urlparse(self.path).query);selected=(q.get("data") or [datetime.now().date().isoformat()])[0]
+        q=parse_qs(urlparse(self.path).query);selected=(q.get("data") or [rome_now().date().isoformat()])[0]
         try:date.fromisoformat(selected)
-        except ValueError:selected=datetime.now().date().isoformat()
+        except ValueError:selected=rome_now().date().isoformat()
         view=(q.get("vista") or ["giorno"])[0]
         if view not in ("giorno","settimana","mese","mista_settimana","mista_mese","compatto"):view="giorno"
         back_view=(q.get("da") or [""])[0]
@@ -7440,7 +7512,7 @@ class App(BaseHTTPRequestHandler):
         for row in rows:
             cursor=max(start,date.fromisoformat(row["start_at"][:10]));last=min(end,date.fromisoformat(row["end_at"][:10]))
             while cursor<=last:by_day.setdefault(cursor.isoformat(),[]).append(row);cursor+=timedelta(days=1)
-        today_date=datetime.now().date()
+        today_date=rome_now().date()
         month_names=("Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno","Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre")
         day_names=("Lun","Mar","Mer","Gio","Ven","Sab","Dom")
         day_names_full=("Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica")
@@ -7544,7 +7616,10 @@ class App(BaseHTTPRequestHandler):
               <div class="calendar-appt-stat calendar-appt-stat-done"><b>{month_done}</b><small>Completati</small></div>
               <div class="calendar-appt-stat calendar-appt-stat-unassigned"><b>{month_unassigned}</b><small>Senza incaricato</small></div>
             </div>
-            <a class="btn calendar-month-detail-btn" href="{view_url(selected_date,'giorno')}&da=mese">Vai al dettaglio del giorno {lucide("chevron-right")}</a>
+            <div class="calendar-month-daycard-actions">
+              <a class="btn ghost calendar-month-new-btn" href="/calendario/nuovo?data={selected_date.isoformat()}">{lucide("plus")}<span>Nuovo evento</span></a>
+              <a class="btn calendar-month-detail-btn" href="{view_url(selected_date,'giorno')}&da=mese">Vai al dettaglio del giorno {lucide("chevron-right")}</a>
+            </div>
           </section>
         </div>'''
         if view=="giorno":content=day_view
@@ -7565,7 +7640,7 @@ class App(BaseHTTPRequestHandler):
         elif view in ("mese","mista_mese","compatto"):date_title=f"{month_names[selected_date.month-1]} {selected_date.year}"
         else:date_title=f"{selected_date.day} {month_names[selected_date.month-1]} {selected_date.year}"
         back_button=f'<a class="btn ghost calendar-back-btn" href="{view_url(selected_date,back_view)}">← Torna a {"Mese" if back_view=="mese" else "Settimana"}</a>' if view=="giorno" and back_view else ''
-        body=f'''<main class="wrap calendar-wrap"><div class="titlebar calendar-main-title"><div>{back_button}<h1>Calendario operativo</h1><p class="sub">Ritiri, riconsegne e promemoria</p></div><div class="calendar-quick-actions"><a class="icon-btn" href="/calendario/cestino" aria-label="Cestino" title="Cestino">{lucide("trash-2")}</a><a class="icon-btn calendar-settings-link" href="/calendario/impostazioni" aria-label="Impostazioni" title="Impostazioni">{lucide("settings")}</a></div></div><nav class="calendar-date-nav"><a class="btn ghost" data-calendar-prev href="{view_url(prev_target)}" aria-label="Periodo precedente">←</a><label class="calendar-date-title"><span>{date_title}</span><input type="date" value="{selected}" onchange="const u=new URL(location.href);u.searchParams.set('data',this.value);location.href=u"></label><a class="btn ghost" data-calendar-next href="{view_url(next_target)}" aria-label="Periodo successivo">→</a><a class="btn ghost calendar-today" href="{view_url(datetime.now().date())}">OGGI</a></nav><div class="calendar-toolbar"><nav class="calendar-view-switch">{switch}</nav></div>{content}{filters_html}{preference_script}</main>'''
+        body=f'''<main class="wrap calendar-wrap"><div class="titlebar calendar-main-title"><div>{back_button}<h1>Calendario operativo</h1><p class="sub">Ritiri, riconsegne e promemoria</p></div><div class="calendar-quick-actions"><a class="icon-btn" href="/calendario/cestino" aria-label="Cestino" title="Cestino">{lucide("trash-2")}</a><a class="icon-btn calendar-settings-link" href="/calendario/impostazioni" aria-label="Impostazioni" title="Impostazioni">{lucide("settings")}</a></div></div><nav class="calendar-date-nav"><a class="btn ghost" data-calendar-prev href="{view_url(prev_target)}" aria-label="Periodo precedente">←</a><label class="calendar-date-title"><span>{date_title}</span><input type="date" value="{selected}" onchange="const u=new URL(location.href);u.searchParams.set('data',this.value);location.href=u"></label><a class="btn ghost" data-calendar-next href="{view_url(next_target)}" aria-label="Periodo successivo">→</a><a class="btn ghost calendar-today" href="{view_url(rome_now().date())}">OGGI</a></nav><div class="calendar-toolbar"><nav class="calendar-view-switch">{switch}</nav></div>{content}{filters_html}{preference_script}</main>'''
         self.send_html(layout("Calendario operativo",body,user))
 
     def calendar_settings(self,user):
@@ -7828,8 +7903,10 @@ class App(BaseHTTPRequestHandler):
         self.redirect(f"/calendario/{event_id}")
 
     def calendar_event_detail(self,user,event_id,error=""):
-        tab=(parse_qs(urlparse(self.path).query).get("tab") or ["dettagli"])[0]
+        q=parse_qs(urlparse(self.path).query)
+        tab=(q.get("tab") or ["dettagli"])[0]
         if tab not in ("dettagli","animali","preventivo","commenti","storico"):tab="dettagli"
+        saved=(q.get("saved") or [""])[0]
         with db() as c:
             event=c.execute("""SELECT e.*,u.display_name creator_name,uu.display_name updater_name,au.display_name assigned_name,p.practice_number,
               p.owner_first_name practice_owner_first_name,p.owner_last_name practice_owner_last_name,p.owner_company practice_owner_company
@@ -7863,7 +7940,7 @@ class App(BaseHTTPRequestHandler):
         if event['all_day']:
             datetime_value=date_it(start_date_part)+(f" → {date_it(end_date_part)}" if end_date_part!=start_date_part else "")+" · Tutto il giorno"
         elif start_date_part==end_date_part:
-            datetime_value=f"{date_it(start_date_part)} {start_time_part}"+(f" → {end_time_part}" if end_time_part and end_time_part!=start_time_part else "")
+            datetime_value=f"{date_it(start_date_part)} • {start_time_part}"+(f" → {end_time_part}" if end_time_part and end_time_part!=start_time_part else "")
         else:
             datetime_value=f"{date_it(start_date_part)} {start_time_part} → {date_it(end_date_part)} {end_time_part}"
         create_practice_url='';create_practice_label=''
@@ -7904,19 +7981,28 @@ class App(BaseHTTPRequestHandler):
         if tab=="dettagli":
             status_card=''
             if event["event_type"] in ("Ritiro","Ritiro in sede"):
-                status_card=f'''<form class="calendar-tap-card" method="post" action="/calendario/{event_id}/stato" data-client-empty="{"1" if not client_display else "0"}" onsubmit="return calendarConfirmPickupStatus(this)"><span class="calendar-tap-card-icon calendar-icon-orange">{lucide("clock")}</span><div class="calendar-tap-card-body"><small>Stato ritiro</small><select id="calendarDetailStatus" name="status">{''.join(f'<option {"selected" if event["event_status"]==s else ""}>{s}</option>' for s in PICKUP_STATUSES)}</select><button class="btn" type="submit" style="margin-top:10px">Salva nuovo stato</button></div></form>'''
-            def info_card(icon,label,value,color=""):
+                status_card=f'''<form class="calendar-tap-card" method="post" action="/calendario/{event_id}/stato" data-client-empty="{"1" if not client_display else "0"}" onsubmit="return calendarConfirmPickupStatus(this)"><span class="calendar-tap-card-icon calendar-icon-pink">{lucide("clock")}</span><div class="calendar-tap-card-body"><small>Stato ritiro</small><select id="calendarDetailStatus" name="status">{''.join(f'<option {"selected" if event["event_status"]==s else ""}>{s}</option>' for s in PICKUP_STATUSES)}</select><button class="btn" type="submit" style="margin-top:10px">Salva nuovo stato</button></div></form>'''
+            def info_card(icon,label,value,color="",sub=""):
                 icon_cls=f"calendar-tap-card-icon calendar-icon-{color}" if color else "calendar-tap-card-icon"
-                return f'<div class="calendar-tap-card"><span class="{icon_cls}">{lucide(icon)}</span><div class="calendar-tap-card-body"><small>{label}</small><p>{value}</p></div></div>'
+                sub_html=f'<small class="calendar-tap-card-sub">{sub}</small>' if sub else ''
+                return f'<div class="calendar-tap-card"><span class="{icon_cls}">{lucide(icon)}</span><div class="calendar-tap-card-body"><small>{label}</small><p>{value}</p>{sub_html}</div></div>'
             cards=[status_card] if status_card else []
-            cards.append(info_card(type_icon,"Tipo",esc(display_event_type),type_color))
+            cards.append(info_card(type_icon,"Tipo",esc(display_event_type),"orange"))
             cards.append(info_card("calendar","Data e ora",esc(datetime_value),"purple"))
-            cards.append(info_card("user","Cliente",esc(client_display or '-'),"purple"))
-            if event["zone"] and event["event_type"]!="Appuntamento":cards.append(info_card("archive","Zona",esc(event["zone"]),"green"))
+            cards.append(info_card("user","Cliente",esc(client_display or '-'),"blue"))
+            animals_summary=calendar_animals_summary_text(animals)
+            cards.append(info_card("paw","Animali",esc(animals_summary),"green"))
             if event["delivery_clinic_name"]:cards.append(info_card("stethoscope","Ambulatorio riconsegna",esc(event["delivery_clinic_name"]),"blue"))
-            cards.append(info_card("home","Luogo",esc(event['venue_name'] or event['location_type'] or '-'),"green"))
-            cards.append(info_card("user","Operatore",esc(event['operator_name'] or event['assigned_name'] or '-'),"orange"))
+            venue_value=esc(event['venue_name'] or event['location_type'] or '-')
+            venue_sub=esc(address) if address and event['venue_name'] else ''
+            cards.append(info_card("home","Luogo",venue_value,"teal",venue_sub))
             if event['payment_status']:cards.append(info_card("wallet","Pagamento",f"{esc(event['payment_status'])} {money_it(event['payment_amount'])}","pink"))
+            estimate_total_all=sum(float(i["amount"] or 0) for i in estimates)
+            estimate_card=f'<a class="calendar-tap-card calendar-tap-card-link" href="/calendario/{event_id}?tab=preventivo"><span class="calendar-tap-card-icon calendar-icon-pink">{lucide("receipt")}</span><div class="calendar-tap-card-body"><small>Preventivo</small><p>{money_it(estimate_total_all)}</p></div><span class="calendar-tap-card-chevron">{lucide("chevron-right")}</span></a>'
+            zone_card=''
+            if event["event_type"]!="Appuntamento":
+                zone_card=f'''<form class="calendar-tap-card" method="post" action="/calendario/{event_id}/zona"><span class="calendar-tap-card-icon calendar-icon-green">{lucide("archive")}</span><div class="calendar-tap-card-body"><small>Zona</small><input name="zone" value="{esc(event['zone'] or '')}" placeholder="Es. Livorno"><button class="btn ghost" type="submit" style="margin-top:10px">Salva zona</button></div></form>'''
+            operator_card=f'''<form class="calendar-tap-card" method="post" action="/calendario/{event_id}/operatore"><span class="calendar-tap-card-icon calendar-icon-amber">{lucide("user")}</span><div class="calendar-tap-card-body"><small>Operatore</small><select name="operator_name"><option value="">Nessuno</option>{''.join(f'<option {"selected" if (event["operator_name"] or "")==name else ""}>{esc(name)}</option>' for name in CALENDAR_OPERATORS)}</select><button class="btn ghost" type="submit" style="margin-top:10px">Salva operatore</button></div></form>'''
             link_practice_card=''
             if event["event_type"] in ("Ritiro","Ritiro in sede") and event["event_status"]=="Ritirato":
                 if event["linked_practice_id"]:
@@ -7924,8 +8010,8 @@ class App(BaseHTTPRequestHandler):
                     link_practice_card=f'''<div class="calendar-tap-card"><span class="calendar-tap-card-icon">{lucide("receipt")}</span><div class="calendar-tap-card-body"><small>Pratica collegata</small><p>{esc(event["practice_number"])}</p><a class="btn ghost" style="margin-top:8px" href="/pratiche/{event['linked_practice_id']}">Apri pratica</a>{unlink}</div></div>'''
                 else:
                     link_practice_card=f'''<div class="calendar-tap-card lookup"><span class="calendar-tap-card-icon">{lucide("receipt")}</span><div class="calendar-tap-card-body"><small>Collega pratica esistente</small><input id="calendarLinkPracticeSearch" data-event-id="{event_id}" autocomplete="off" placeholder="Cerca per animale, proprietario, veterinario o numero pratica"><div id="calendarLinkPracticeResults" class="lookup-results hidden"></div></div></div>'''
-            note_card=f'<div class="calendar-tap-card"><span class="calendar-tap-card-icon">{lucide("clipboard")}</span><div class="calendar-tap-card-body"><small>Note</small><p style="white-space:pre-wrap">{esc(event["notes"] or "Nessuna nota")}</p></div></div>'
-            panel=f'<div class="calendar-card-list">{"".join(cards)}{link_practice_card}{note_card}</div>'
+            note_card=f'''<form class="calendar-tap-card" method="post" action="/calendario/{event_id}/note"><span class="calendar-tap-card-icon calendar-icon-purple">{lucide("clipboard")}</span><div class="calendar-tap-card-body"><small>Note</small><textarea name="notes" style="white-space:pre-wrap">{esc(event["notes"] or "")}</textarea><button class="btn ghost" type="submit" style="margin-top:10px">Salva note</button></div></form>'''
+            panel=f'<div class="calendar-card-list">{"".join(cards)}{estimate_card}{zone_card}{operator_card}{link_practice_card}{note_card}</div>'
         elif tab=="animali":
             def animal_card(a):
                 emoji,avatar_cls=species_avatar(a["species"])
@@ -7954,7 +8040,9 @@ class App(BaseHTTPRequestHandler):
         celebration=f'<div class="calendar-created-celebration" aria-hidden="true"><div class="calendar-created-confetti">{confetti}</div><div class="calendar-created-celebration-card"><span class="calendar-created-celebration-icon">{checkmark}</span><b>Evento creato!</b></div></div>'
         created_animation=f'''<template id="calendarCreatedCelebration">{celebration}</template><script>try{{if(sessionStorage.getItem('ppm_calendar_created')==='1'){{sessionStorage.removeItem('ppm_calendar_created');document.body.append(document.getElementById('calendarCreatedCelebration').content.cloneNode(true));}}}}catch(error){{}}</script>'''
         error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
-        body=f'''{created_animation}<main class="wrap calendar-wrap calendar-detail-v2">{error_html}<div class="titlebar" style="margin-bottom:10px"><a class="btn ghost" href="/calendario">Calendario</a></div>{header}{quick_actions}<nav class="calendar-tabs">{tabs}</nav><div>{panel}</div></main>'''
+        saved_labels={"stato":"Stato aggiornato.","zona":"Zona aggiornata.","operatore":"Operatore aggiornato.","note":"Note aggiornate."}
+        saved_html=f'<div class="flash">{esc(saved_labels[saved])}</div>' if saved in saved_labels else ''
+        body=f'''{created_animation}<main class="wrap calendar-wrap calendar-detail-v2">{error_html}{saved_html}<div class="titlebar" style="margin-bottom:10px"><a class="btn ghost" href="/calendario">Calendario</a></div>{header}{quick_actions}<nav class="calendar-tabs">{tabs}</nav><div>{panel}</div></main>'''
         self.send_html(layout(re.sub(r'^APPUNTAMENTO\b','PROMEMORIA',event["title"],flags=re.I) if event["event_type"]=='Appuntamento' else event["title"],body,user))
 
     def calendar_event_action(self,user,event_id,action):
@@ -7968,6 +8056,16 @@ class App(BaseHTTPRequestHandler):
                 if status not in allowed:return self.calendar_event_detail(user,event_id,error="Stato non valido.")
                 c.execute("UPDATE calendar_events SET event_status=?,updated_at=?,updated_by=? WHERE id=?",(status,stamp,user["id"],event_id));calendar_add_history(c,event_id,user["id"],"Cambio stato",event["event_status"],status,stamp)
                 kind="calendar_event_cancelled" if status=="Annullato" else "calendar_event_updated";emit_notification(c,kind,"Stato evento aggiornato",f'{event["title"]}: {status}',actor_user_id=user["id"],payload={"url":f"/calendario/{event_id}"},db_path=DB_PATH)
+            elif action=="zona":
+                zone=form.get("zone","").strip()[:120]
+                c.execute("UPDATE calendar_events SET zone=?,updated_at=?,updated_by=? WHERE id=?",(zone,stamp,user["id"],event_id));calendar_add_history(c,event_id,user["id"],"Modifica zona",event["zone"] or "",zone,stamp)
+            elif action=="operatore":
+                operator_name=form.get("operator_name","").strip()
+                if operator_name and operator_name not in CALENDAR_OPERATORS:return self.calendar_event_detail(user,event_id,error="Operatore non valido.")
+                c.execute("UPDATE calendar_events SET operator_name=?,updated_at=?,updated_by=? WHERE id=?",(operator_name,stamp,user["id"],event_id));calendar_add_history(c,event_id,user["id"],"Modifica operatore",event["operator_name"] or "",operator_name,stamp)
+            elif action=="note":
+                notes=form.get("notes","").strip()[:4000]
+                c.execute("UPDATE calendar_events SET notes=?,updated_at=?,updated_by=? WHERE id=?",(notes,stamp,user["id"],event_id));calendar_add_history(c,event_id,user["id"],"Modifica note",event["notes"] or "",notes,stamp)
             elif action=="commento":
                 message=form.get("message","").strip()[:2000]
                 if not message:return self.calendar_event_detail(user,event_id,error="Il commento non può essere vuoto.")
@@ -7992,7 +8090,10 @@ class App(BaseHTTPRequestHandler):
                 if form.get("confirm")!="SCOLLEGA":return self.send_error(400,"Conferma mancante")
                 c.execute("UPDATE calendar_events SET linked_practice_id=NULL,updated_at=?,updated_by=? WHERE id=?",(stamp,user["id"],event_id))
                 calendar_add_history(c,event_id,user["id"],"Scollegamento pratica",str(event["linked_practice_id"] or ""),"",stamp)
-        self.redirect(safe_return_path(form.get("return_to") or self.headers.get("Referer"),f"/calendario/{event_id}"))
+        target=safe_return_path(form.get("return_to") or self.headers.get("Referer"),f"/calendario/{event_id}")
+        if action in ("stato","zona","operatore","note"):
+            target=f"{target}{'&' if '?' in target else '?'}saved={action}"
+        self.redirect(target)
 
     def calendar_comment_action(self,user,event_id,comment_id,action):
         with db() as c:
@@ -8018,7 +8119,7 @@ class App(BaseHTTPRequestHandler):
         try:
             view_date=date.fromisoformat(cycle_date)
         except ValueError:
-            view_date=date.today();cycle_date=view_date.isoformat()
+            view_date=rome_now().date();cycle_date=view_date.isoformat()
         vista_param=(q.get("vista") or [""])[0]
         if vista_param not in ("giorno","settimana"):vista_param=""
         if vista_param:
@@ -8030,7 +8131,7 @@ class App(BaseHTTPRequestHandler):
             if vista not in ("giorno","settimana"):vista="giorno"
         if vista=="settimana":
             return self.cremation_schedule_week(user,view_date)
-        today_date=date.today()
+        today_date=rome_now().date()
         prev_date=(view_date-timedelta(days=1)).isoformat()
         next_date=(view_date+timedelta(days=1)).isoformat()
 
@@ -8199,7 +8300,7 @@ class App(BaseHTTPRequestHandler):
         animali_count=len(assigned)
         fine_prevista=max((row["planned_end"] for row in cycles),default="")
 
-        now_dt=datetime.now()
+        now_dt=rome_now()
         cycle_items=[]
         dot_cls_map={"in_corso":"cremation-dot-active","in_attesa":"cremation-dot-waiting","completato":"cremation-dot-done","pianificato":"cremation-dot-planned"}
         for idx,cycle in enumerate(cycles):
@@ -8406,7 +8507,7 @@ class App(BaseHTTPRequestHandler):
         self.send_html(layout("Programma Cremazioni",body,user))
 
     def cremation_schedule_week(self,user,view_date):
-        today_date=date.today()
+        today_date=rome_now().date()
         weekday_short=["Lun","Mar","Mer","Gio","Ven","Sab","Dom"]
         monday=view_date-timedelta(days=view_date.weekday())
         sunday=monday+timedelta(days=6)
@@ -8614,7 +8715,7 @@ class App(BaseHTTPRequestHandler):
 
         status_icon_map={"completato":"check-circle","in_corso":"play","in_attesa":"clock","pianificato":"clock"}
         dot_cls_map={"in_corso":"cremation-dot-active","in_attesa":"cremation-dot-waiting","completato":"cremation-dot-done","pianificato":"cremation-dot-planned"}
-        now_dt=datetime.now()
+        now_dt=rome_now()
 
         cycle_position={}
         board_index=week_dates.index(board_date)
@@ -8881,7 +8982,7 @@ class App(BaseHTTPRequestHandler):
 
     def cremation_create_cycle(self,user):
         f=self.form()
-        cycle_date=(f.get("data") or date.today().isoformat()).strip()[:10]
+        cycle_date=(f.get("data") or rome_now().date().isoformat()).strip()[:10]
         practice_id=(f.get("practice_id") or "").strip()
         stamp=now()
         with db() as c:
@@ -9053,7 +9154,7 @@ class App(BaseHTTPRequestHandler):
 
     def disposal_page(self,user,error=""):
         q=parse_qs(urlparse(self.path).query)
-        today=datetime.now().date(); default_from=today-timedelta(days=28)
+        today=rome_now().date(); default_from=today-timedelta(days=28)
         date_from=(q.get("dal") or [default_from.isoformat()])[0].strip()
         date_to=(q.get("al") or [today.isoformat()])[0].strip()
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_from): date_from=default_from.isoformat()
@@ -9202,7 +9303,7 @@ class App(BaseHTTPRequestHandler):
 
     def payment_overview(self,user,kind):
         titles={"da-saldare":"Da saldare","acconti":"Acconti","pagati":"Pagati"};title=titles[kind]
-        q=parse_qs(urlparse(self.path).query);today=datetime.now().date()
+        q=parse_qs(urlparse(self.path).query);today=rome_now().date()
         period,date_from,date_to=dashboard_period_bounds((q.get("periodo") or ["oggi"])[0],today)
         raw_from=(q.get("dal") or [date_from.isoformat()])[0];raw_to=(q.get("al") or [date_to.isoformat()])[0]
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}",raw_from):date_from=datetime.strptime(raw_from,"%Y-%m-%d").date()
@@ -10693,7 +10794,7 @@ class App(BaseHTTPRequestHandler):
             status_opts=''.join(f'<option {"selected" if b["status"]==x else ""}>{x}</option>' for x in ["Maturato","Usato"])
             rows.append(f'''<tr><form method="post" action="/buoni/{b['id']}/modifica"><td><input type="date" name="created_at" value="{esc((b['created_at'] or '')[:10])}"></td><td><input name="animal_name" value="{esc(animal)}" placeholder="Nome animale"></td><td><input name="species" value="{esc(species)}" placeholder="Specie"></td><td><select name="status">{status_opts}</select></td><td><button class="btn ghost">Salva</button></form><form method="post" action="/buoni/{b['id']}/elimina" onsubmit="return confirm('Eliminare questo buono?')"><button class="btn ghost">Elimina</button></form></td></tr>''')
         voucher_rows=''.join(rows) or '<tr><td colspan="5" class="sub">Nessun buono presente.</td></tr>'
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{esc(v['short_name'] or v['clinic_name'])}</h1><div class="sub">{esc(v['clinic_name'])}</div></div><a class="btn ghost" href="/veterinari">Torna alla lista</a></div><section class="section"><h2>Anagrafica</h2><form method="post" action="/veterinari"><input type="hidden" name="id" value="{v['id']}"><div class="fields"><div class="field"><label>Nome breve</label><input name="short_name" value="{esc(v['short_name'])}"></div><div class="field"><label>Nome completo</label><input name="clinic_name" value="{esc(v['clinic_name'])}"></div><div class="field full"><label>Indirizzo</label><input name="address" value="{esc(v['address'])}"></div><div class="field"><label>Comune</label><input name="city" value="{esc(v['city'])}"></div><div class="field"><label>Telefono</label><input name="phone" value="{esc(v['phone'])}"></div><div class="field"><label>Medico veterinario</label><input name="doctor_name" value="{esc(v['doctor_name'])}"></div><div class="field full"><label>Note</label><input name="notes" value="{esc(v['notes'])}"></div></div><button class="btn" style="margin-top:12px">Salva anagrafica</button></form><form method="post" action="/veterinari/{v['id']}/elimina" onsubmit="return confirm('Eliminare questo veterinario dalla lista?')"><button class="btn ghost" style="margin-top:12px">Elimina veterinario</button></form></section><div style="height:14px"></div><section class="section"><h2>Aggiungi buono manuale</h2><form method="post" action="/veterinari/{v['id']}/buoni"><div class="fields"><div class="field"><label>Data maturazione</label><input type="date" name="created_at" value="{datetime.now().strftime('%Y-%m-%d')}"></div><div class="field"><label>Nome animale</label><input name="animal_name"></div><div class="field"><label>Specie</label><input name="species"></div><div class="field"><label>Stato</label><select name="status"><option>Maturato</option><option>Usato</option></select></div></div><button class="btn" style="margin-top:12px">Aggiungi buono</button></form></section><div style="height:14px"></div><section class="section"><h2>Buoni</h2><div class="tablebox"><table><thead><tr><th>Data</th><th>Animale</th><th>Specie</th><th>Stato</th><th>Azione</th></tr></thead><tbody>{voucher_rows}</tbody></table></div></section></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{esc(v['short_name'] or v['clinic_name'])}</h1><div class="sub">{esc(v['clinic_name'])}</div></div><a class="btn ghost" href="/veterinari">Torna alla lista</a></div><section class="section"><h2>Anagrafica</h2><form method="post" action="/veterinari"><input type="hidden" name="id" value="{v['id']}"><div class="fields"><div class="field"><label>Nome breve</label><input name="short_name" value="{esc(v['short_name'])}"></div><div class="field"><label>Nome completo</label><input name="clinic_name" value="{esc(v['clinic_name'])}"></div><div class="field full"><label>Indirizzo</label><input name="address" value="{esc(v['address'])}"></div><div class="field"><label>Comune</label><input name="city" value="{esc(v['city'])}"></div><div class="field"><label>Telefono</label><input name="phone" value="{esc(v['phone'])}"></div><div class="field"><label>Medico veterinario</label><input name="doctor_name" value="{esc(v['doctor_name'])}"></div><div class="field full"><label>Note</label><input name="notes" value="{esc(v['notes'])}"></div></div><button class="btn" style="margin-top:12px">Salva anagrafica</button></form><form method="post" action="/veterinari/{v['id']}/elimina" onsubmit="return confirm('Eliminare questo veterinario dalla lista?')"><button class="btn ghost" style="margin-top:12px">Elimina veterinario</button></form></section><div style="height:14px"></div><section class="section"><h2>Aggiungi buono manuale</h2><form method="post" action="/veterinari/{v['id']}/buoni"><div class="fields"><div class="field"><label>Data maturazione</label><input type="date" name="created_at" value="{rome_now().strftime('%Y-%m-%d')}"></div><div class="field"><label>Nome animale</label><input name="animal_name"></div><div class="field"><label>Specie</label><input name="species"></div><div class="field"><label>Stato</label><select name="status"><option>Maturato</option><option>Usato</option></select></div></div><button class="btn" style="margin-top:12px">Aggiungi buono</button></form></section><div style="height:14px"></div><section class="section"><h2>Buoni</h2><div class="tablebox"><table><thead><tr><th>Data</th><th>Animale</th><th>Specie</th><th>Stato</th><th>Azione</th></tr></thead><tbody>{voucher_rows}</tbody></table></div></section></main>'''
         self.send_html(layout("Veterinario",body,user))
 
     def save_veterinarian(self,user):
@@ -12579,7 +12680,7 @@ class App(BaseHTTPRequestHandler):
                 if conflict:return self.send_json({"ok":False,"error":f'Numero fattura già usato nella pratica {conflict["practice_number"]}'},409)
                 if "payment_status" in update_keys:
                     return self.send_json({"ok":False,"error":"Registra il cambio di pagamento dalla finestra dedicata."},422)
-                stamp=datetime.now().isoformat(timespec="microseconds")
+                stamp=rome_now().isoformat(timespec="microseconds")
                 if update_keys:
                     assignments=','.join(f"{key}=?" for key in update_keys)
                     cursor=c.execute(f"UPDATE practices SET {assignments},data_complete=?,updated_at=? WHERE id=? AND updated_at=?",[normalized[key] for key in update_keys]+[self.is_complete({**merged,**normalized}),stamp,pid,previous["updated_at"]])
@@ -13533,7 +13634,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             return self.error_page("Errore cancellazione definitiva", f"La cancellazione definitiva non e stata completata. Il database e stato riportato allo stato precedente. Dettaglio: {type(exc).__name__}: {exc}", "/cestino")
 
     def assign_ddt(self,user,pid):
-        stamp=now(); date=datetime.now().date().isoformat()
+        stamp=now(); date=rome_now().date().isoformat()
         with db() as c:
             p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
             if not p:return self.send_error(404)
@@ -13566,7 +13667,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             if not p: return self.send_error(404)
             draft=practice_for_ddt(c,p)
         draft["ddt_number"]=""
-        draft["ddt_date"]=draft["ddt_date"] or datetime.now().date().isoformat()
+        draft["ddt_date"]=draft["ddt_date"] or rome_now().date().isoformat()
         path=DDT_DIR / f"DCS-BOZZA-{p['practice_number']}.pdf"
         try:
             generate_ddt(draft, ASSETS / "DCS_NUOVO.pdf", path)

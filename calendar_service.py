@@ -5,6 +5,16 @@ from __future__ import annotations
 import json
 import re
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
+
+ROME_TZ = ZoneInfo("Europe/Rome")
+
+
+def _rome_now() -> datetime:
+    """Ora attuale sul fuso di Roma (vedi notification_service._rome_now):
+    evita che gli stamp calcolati qui restino sfasati rispetto al fuso
+    orario reale se la TZ di sistema del deploy non e' quella attesa."""
+    return datetime.now(ROME_TZ).replace(tzinfo=None)
 
 
 EVENT_TYPES = ("Ritiro", "Ritiro in sede", "Riconsegna", "Riconsegna in sede", "Appuntamento")
@@ -115,7 +125,7 @@ def ensure_calendar_schema(conn):
     }
     for name,definition in delivery_clinic_columns.items():
         if name not in columns:conn.execute(f"ALTER TABLE calendar_events ADD COLUMN {name} {definition}")
-    stamp=datetime.now().isoformat(timespec="seconds")
+    stamp=_rome_now().isoformat(timespec="seconds")
     conn.executemany("INSERT OR IGNORE INTO calendar_zones(name,is_default,created_at) VALUES(?,1,?)",((zone,stamp) for zone in DEFAULT_ZONES))
 
 
@@ -274,7 +284,7 @@ def event_type_dot_class(row):
 
 
 def add_history(conn,event_id,user_id,action,old_value="",new_value="",stamp=None):
-    conn.execute("INSERT INTO calendar_event_history(event_id,user_id,action,old_value,new_value,created_at) VALUES(?,?,?,?,?,?)",(event_id,user_id,action,str(old_value or "")[:2000],str(new_value or "")[:2000],stamp or datetime.now().isoformat(timespec="seconds")))
+    conn.execute("INSERT INTO calendar_event_history(event_id,user_id,action,old_value,new_value,created_at) VALUES(?,?,?,?,?,?)",(event_id,user_id,action,str(old_value or "")[:2000],str(new_value or "")[:2000],stamp or _rome_now().isoformat(timespec="seconds")))
 
 
 def sync_children(conn,event_id,animals,estimates,stamp):

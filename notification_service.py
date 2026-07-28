@@ -9,6 +9,19 @@ import sqlite3
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
+ROME_TZ = ZoneInfo("Europe/Rome")
+
+
+def _rome_now() -> datetime:
+    """Ora attuale calcolata esplicitamente sul fuso di Roma, invece di
+    affidarsi alla TZ di sistema (che sull'ambiente di deploy puo' restare
+    UTC anche con la variabile d'ambiente TZ impostata): restituisce un
+    datetime naive il cui valore rappresenta pero' l'ora civile italiana,
+    cosi' che promemoria/riepiloghi orari (es. "Riepilogo del giorno" alle
+    9:00) scattino davvero all'ora configurata e non con 1-2 ore di ritardo."""
+    return datetime.now(ROME_TZ).replace(tzinfo=None)
 
 
 NOTIFICATION_TYPES = {
@@ -203,8 +216,8 @@ def emit_notification(
         payload.setdefault("url", "/notifiche")
     action_url = payload.pop("action_url", None)
     action_label = payload.pop("action_label", None)
-    created_at = datetime.now().isoformat(timespec="seconds")
-    window_start = (datetime.now() - timedelta(minutes=GROUP_WINDOW_MINUTES)).isoformat(timespec="seconds")
+    created_at = _rome_now().isoformat(timespec="seconds")
+    window_start = (_rome_now() - timedelta(minutes=GROUP_WINDOW_MINUTES)).isoformat(timespec="seconds")
     priority = notification_priority(notification_type)
     queued = []
     for user_id in _recipient_ids(conn, practice_id, actor_user_id, target_user_ids):
@@ -309,7 +322,7 @@ def _deliver_batch(db_path: str, queued: list[dict]) -> None:
                 conn.execute(
                     "INSERT INTO notification_delivery_log(notification_id,subscription_id,success,error,created_at) VALUES(?,?,?,?,?)",
                     (item["notification_id"], item["subscription_id"], success, error,
-                     datetime.now().isoformat(timespec="seconds")),
+                     _rome_now().isoformat(timespec="seconds")),
                 )
                 if remove_subscription:
                     conn.execute("DELETE FROM push_subscriptions WHERE id=?", (item["subscription_id"],))
@@ -323,7 +336,7 @@ def _deliver_batch(db_path: str, queued: list[dict]) -> None:
 
 def process_scheduled_notifications(conn, db_path) -> int:
     """Crea una sola volta i promemoria imminenti e i saldi attualmente dovuti."""
-    current = datetime.now()
+    current = _rome_now()
     today = current.date().isoformat()
     rows = conn.execute("""SELECT * FROM practices
                            WHERE (deleted_at IS NULL OR deleted_at='') AND pickup_date=?""", (today,)).fetchall()
@@ -351,7 +364,7 @@ def process_scheduled_notifications(conn, db_path) -> int:
 
 def process_calendar_notifications(conn, db_path, current=None) -> int:
     """Deliver due calendar reminders and the idempotent 09:00 daily summary."""
-    current=current or datetime.now();stamp=current.isoformat(timespec="seconds");created=0
+    current=current or _rome_now();stamp=current.isoformat(timespec="seconds");created=0
     tables={row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     if "calendar_events" not in tables:return 0
     conn.execute("""UPDATE calendar_event_notifications SET status='annullato',error='Evento non piu attivo'
@@ -385,7 +398,7 @@ def _scheduled_once(conn, db_path, key, kind, title, text, practice_id):
     if conn.execute("SELECT 1 FROM scheduled_notification_events WHERE event_key=?", (key,)).fetchone():
         return 0
     conn.execute("INSERT INTO scheduled_notification_events(event_key,created_at) VALUES(?,?)",
-                 (key, datetime.now().isoformat(timespec="seconds")))
+                 (key, _rome_now().isoformat(timespec="seconds")))
     emit_notification(conn, kind, title, text, practice_id=practice_id, db_path=db_path)
     return 1
 
@@ -434,7 +447,7 @@ def process_daily_summaries(conn, db_path, current=None) -> int:
     attivato esplicitamente l'interruttore, non riceve nulla. Controllato
     dallo stesso poll ogni 5 minuti del cron WhatsApp: una finestra di 10
     minuti assorbe l'imprecisione di quel poll senza mai inviarne due."""
-    current = current or datetime.now()
+    current = current or _rome_now()
     today = current.date().isoformat()
     rows = conn.execute(
         """SELECT user_id,
@@ -478,7 +491,7 @@ def archive_old_notifications(conn, current=None) -> int:
     """Sposta in archivio (non più nell'elenco principale di /notifiche, ma
     recuperabile col filtro 'Mostra archiviate') le notifiche lette da più
     di 30 giorni, per non far crescere all'infinito l'elenco principale."""
-    current = current or datetime.now()
+    current = current or _rome_now()
     cutoff = (current - timedelta(days=30)).isoformat(timespec="seconds")
     changed = conn.execute(
         """UPDATE notifications SET archived_at=?
