@@ -1906,6 +1906,21 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 
 APP_JS = r"""
 <script>
+function ppmReleaseAutoFocusedSkipLink(){
+  // Su iOS, quando la PWA e' installata in standalone (apple-mobile-web-app-capable),
+  // WebKit a volte assegna automaticamente il focus iniziale al primo elemento
+  // focusabile del documento all'avvio — che e' proprio lo skip-link "Vai al
+  // contenuto" (primo <a> nel body). Lo skip-link e' fuori schermo per design e
+  // torna visibile solo quando ha il focus (:focus{transform:none}), quindi quel
+  // focus automatico lo fa comparire come riquadro bianco in alto a sinistra.
+  // Android/Chrome non ha questa particolarita' di WebKit. Nessun listener di
+  // tastiera reale puo' aver gia' premuto Tab prima che il DOM sia pronto, quindi
+  // togliere qui il focus non puo' mai interferire con un utente da tastiera vero.
+  const skip=document.querySelector('.skip-link');
+  if(skip && document.activeElement===skip)skip.blur();
+}
+document.addEventListener('DOMContentLoaded', ppmReleaseAutoFocusedSkipLink);
+window.addEventListener('pageshow', ppmReleaseAutoFocusedSkipLink);
 function setProvenanceFromVeterinarian(option){
   const field=document.querySelector('select[name="provenance"]');
   if(field && option?.value && option.dataset.provenance)field.value=option.dataset.provenance;

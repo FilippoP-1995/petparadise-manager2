@@ -2724,6 +2724,43 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("html{overscroll-behavior-y:contain}", app.CSS)
         self.assertIn("overscroll-behavior-y:contain", app.CSS[app.CSS.index("body{margin:0"):app.CSS.index("body{margin:0")+200])
 
+    def test_skip_link_is_a_real_accessible_skip_link_hidden_off_screen_until_focused(self):
+        # lo skip-link "Vai al contenuto" e' presente per accessibilita' (best
+        # practice: primo elemento del body, punta a #main-content) e deve
+        # restare fuori schermo finche' non riceve il focus da tastiera.
+        css = app.CSS
+        self.assertIn(".skip-link{position:fixed;top:8px;left:8px;z-index:200;transform:translateY(-150%)", css)
+        self.assertIn(".skip-link:focus{transform:none}", css)
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.login_page()
+        page = rendered[-1]
+        self.assertIn('<a class="skip-link" href="#main-content">Vai al contenuto</a>', page)
+        self.assertIn('<div id="main-content">', page)
+
+    def test_skip_link_auto_focus_from_ios_standalone_pwa_is_released_on_load(self):
+        # bug reale segnalato dall'utente: sulla PWA installata su iPhone
+        # compare un riquadro bianco "Vai al contenuto" in alto a sinistra,
+        # assente su Android. Causa reale: WebKit, quando la PWA e' lanciata
+        # in standalone (apple-mobile-web-app-capable), a volte assegna
+        # automaticamente il focus iniziale al primo elemento focusabile del
+        # documento — lo skip-link, che per design (.skip-link:focus{transform:none})
+        # torna visibile solo quando ha il focus. Non e' uno skip-link mal
+        # implementato ne' un componente di terze parti (niente Next.js/React
+        # Aria/Radix/Chakra in questo progetto): e' puro HTML/CSS/JS lato
+        # server. La correzione toglie il focus non richiesto senza mai poter
+        # interferire con un vero utente da tastiera (che non puo' premere Tab
+        # prima che il DOM sia pronto).
+        js = app.APP_JS
+        self.assertIn("function ppmReleaseAutoFocusedSkipLink()", js)
+        body = js[js.index("function ppmReleaseAutoFocusedSkipLink()"):]
+        body = body[:body.index("document.addEventListener('DOMContentLoaded', ppmReleaseAutoFocusedSkipLink)")]
+        self.assertIn("document.querySelector('.skip-link')", body)
+        self.assertIn("document.activeElement===skip", body)
+        self.assertIn("skip.blur()", body)
+        self.assertIn("document.addEventListener('DOMContentLoaded', ppmReleaseAutoFocusedSkipLink)", js)
+        self.assertIn("window.addEventListener('pageshow', ppmReleaseAutoFocusedSkipLink)", js)
+
     def test_assisted_notify_reminder_shows_on_dashboard_and_clears_when_notified(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
