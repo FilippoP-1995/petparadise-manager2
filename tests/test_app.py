@@ -2253,8 +2253,10 @@ class PetParadiseTests(unittest.TestCase):
         # fine prevista = last cycle of the week (Sunday, 17:30)
         self.assertIn(f"Dom {sunday.day} – 17:30", page)
 
-        # "Aggiungi nuovo ciclo" is present once, at the bottom, and still wired to the same JS
-        self.assertEqual(page.count('onclick="cremationCreateEmptyCycle()"'), 1)
+        # il pulsante generico "Aggiungi nuovo ciclo" in fondo alla settimana e' stato
+        # rimosso perche' ridondante: ogni pagina giorno ha gia' il proprio pulsante
+        # "Aggiungi ciclo" legato a quella data esatta (cremationCreateCycleForDay).
+        self.assertEqual(page.count('onclick="cremationCreateEmptyCycle()"'), 0)
 
     def test_cremation_schedule_week_stat_cards_are_interactive_tools(self):
         monday = date(2026, 7, 20)  # a known Monday
@@ -2368,8 +2370,8 @@ class PetParadiseTests(unittest.TestCase):
 
         # a day with no cycles at all (e.g. Wednesday in this fixture, which
         # only seeded Monday/Tuesday) must offer its own "Aggiungi ciclo"
-        # button right there, bound to that exact date — not just the single
-        # generic "Aggiungi nuovo ciclo" button at the bottom of the whole week.
+        # button right there, bound to that exact date (the redundant generic
+        # "Aggiungi nuovo ciclo" button at the bottom of the week was removed).
         wednesday = monday + timedelta(days=2)
         empty_day_start = page.index(f'data-cremation-day="{wednesday.isoformat()}">')
         empty_day_html = page[empty_day_start:empty_day_start + 1100]
@@ -2383,6 +2385,36 @@ class PetParadiseTests(unittest.TestCase):
         monday_day_end = page.index(f'data-cremation-day="{tuesday.isoformat()}">')
         monday_day_html = page[monday_day_start:monday_day_end]
         self.assertIn(f"cremationCreateCycleForDay('{monday.isoformat()}')", monday_day_html)
+
+    def test_cremation_actions_reload_keeping_the_currently_viewed_day(self):
+        # bug reale segnalato dall'utente: nella vista Settimana il giorno
+        # mostrato e' scelto solo lato client (il day-bar non cambia l'URL);
+        # un location.reload() nudo dopo "Salva orario" o dopo aver segnato
+        # un proprietario come AVVISATO faceva perdere quella scelta e
+        # tornava sempre al giorno di default del server ("torna al giorno
+        # precedente"). La correzione riusa lo stesso meccanismo gia' in uso
+        # per l'apertura del ciclo appena creato (cremationReloadWithOpenCycle
+        # + cremationOpenPendingCycle), che dopo il reload ritrova il ciclo
+        # per id e riporta la vista esattamente sulla sua pagina/giorno.
+        js = app.APP_JS
+        submit_start = js.index("function cremationSubmitEditModal()")
+        submit_body = js[submit_start:submit_start + 1000]
+        self.assertIn("cremationReloadWithOpenCycle(id);", submit_body)
+
+        notify_start = js.index("function cremationToggleOwnerNotified(")
+        notify_body = js[notify_start:notify_start + 1100]
+        self.assertIn("btn.closest('[data-cycle-id]')", notify_body)
+        self.assertIn("cremationReloadWithOpenCycle(cycleId);", notify_body)
+
+        start_start = js.index("function cremationStartCycle(")
+        start_body = js[start_start:start_start + 400]
+        self.assertIn("cremationReloadWithOpenCycle(id);", start_body)
+        self.assertNotIn("location.reload()", start_body)
+
+        complete_start = js.index("function cremationCompleteCycle(")
+        complete_body = js[complete_start:complete_start + 500]
+        self.assertIn("cremationReloadWithOpenCycle(id);", complete_body)
+        self.assertNotIn("location.reload()", complete_body)
 
     def test_provenance_color_is_deterministic_per_code_not_per_species(self):
         # bug reale segnalato dall'utente: la stessa sigla (es. "L") aveva
@@ -2796,9 +2828,9 @@ class PetParadiseTests(unittest.TestCase):
         # devono leggersi come un unico componente flottante (stesso linguaggio
         # visivo della barra inferiore), non piu' tre elementi separati.
         css = app.CSS
-        self.assertIn(".app-header{position:fixed;left:calc(10px + var(--safe-left));right:calc(10px + var(--safe-right));top:calc(10px + var(--safe-top));width:auto;height:60px;z-index:40;display:flex;align-items:center;padding:0 8px 0 60px;border:1px solid #2b3849;border-radius:26px;box-shadow:0 16px 38px #05070f66;backdrop-filter:blur(20px)}", css)
+        self.assertIn(".app-header{position:fixed;left:calc(10px + var(--safe-left));right:calc(10px + var(--safe-right));top:var(--safe-top);width:auto;height:60px;z-index:40;display:flex;align-items:center;padding:0 8px 0 60px;border:1px solid #2b3849;border-radius:26px;box-shadow:0 16px 38px #05070f66;backdrop-filter:blur(20px)}", css)
         self.assertIn("body .app-header{background:linear-gradient(160deg,#1c2635f5,#121a27f5);border-color:#2b3849}", css)
-        self.assertIn(".top{position:fixed;left:calc(10px + var(--safe-left));top:calc(10px + var(--safe-top));width:60px;height:60px", css)
+        self.assertIn(".top{position:fixed;left:calc(10px + var(--safe-left));top:var(--safe-top);width:60px;height:60px", css)
         self.assertIn(".brand-logo{width:44px;height:44px;padding:7px;box-sizing:border-box;border-radius:50%", css)
         self.assertIn(".app-header .icon-btn,.app-header .header-new{flex:0 0 auto;width:42px;height:42px", css)
         self.assertIn(".app-header .header-new{background:linear-gradient(135deg,#fb4c67,#d9284c)", css)
@@ -2844,6 +2876,17 @@ class PetParadiseTests(unittest.TestCase):
         css = app.CSS
         self.assertIn(".calendar-tap-card.lookup>.calendar-tap-card-body>input{border:1px solid #263246;background:#0e1622", css)
 
+    def test_calendar_wizard_inputs_use_16px_font_to_prevent_ios_auto_zoom(self):
+        # bug reale segnalato dall'utente: su iPhone, Safari applica uno zoom
+        # automatico non richiesto quando si mette a fuoco un campo con
+        # font-size sotto i 16px. Tutti i campi digitabili del wizard di
+        # creazione evento (titolo, zona, note, data/ora, animali associati,
+        # righe di preventivo) devono restare a 16px o piu', in ogni caso.
+        css = app.CSS
+        self.assertIn(".calendar-tap-card-body input,.calendar-tap-card-body select,.calendar-tap-card-body textarea{border:0;background:transparent;padding:0;font-size:16px", css)
+        self.assertIn(".calendar-tap-card.lookup>.calendar-tap-card-body>input{border:1px solid #263246;background:#0e1622;border-radius:12px;padding:10px 12px;font-weight:600;font-size:16px", css)
+        self.assertIn(".calendar-tap-card-body textarea{min-height:60px;font-weight:500;font-size:16px", css)
+
     def test_calendar_wizard_type_cards_use_distinct_colors_matching_the_mockup(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
@@ -2864,15 +2907,16 @@ class PetParadiseTests(unittest.TestCase):
             self.assertIn(f".calendar-icon-{color}{{background:linear-gradient(", css)
 
     def test_scroll_hide_bars_behavior_is_present_and_gated_to_mobile(self):
-        # comportamento "auto-hide" in stile Safari iOS per headbar e barra
-        # inferiore: attivo solo sotto i 900px, mai su desktop; usa solo
-        # transform/opacity (mai display:none) cosi' le barre restano sempre
-        # raggiungibili da tastiera; non deve mai nascondere la headbar
-        # mentre la ricerca ha il focus o mentre e' aperto un modale/menu.
+        # comportamento "auto-hide" in stile Safari iOS SOLO per la barra di
+        # navigazione inferiore: attivo solo sotto i 900px, mai su desktop;
+        # usa solo transform (mai display:none) cosi' la barra resta sempre
+        # raggiungibile da tastiera. La headbar superiore, dopo il feedback
+        # dell'utente ("non mi piace, rimettila fissa"), NON si nasconde piu'
+        # durante lo scroll e resta sempre fissa in alto.
         css = app.CSS
-        self.assertIn("body.ppm-bars-hidden .top,body.ppm-bars-hidden .app-header{transform:translateY(-130%)}", css)
+        self.assertNotIn("body.ppm-bars-hidden .top,body.ppm-bars-hidden .app-header{transform:translateY(-130%)}", css)
         self.assertIn("body.ppm-bars-hidden .bottom-nav{transform:translateY(calc(100% + 24px))}", css)
-        self.assertIn("@media(prefers-reduced-motion:reduce){.top,.app-header,.bottom-nav{transition:none!important}}", css)
+        self.assertIn("@media(prefers-reduced-motion:reduce){.bottom-nav{transition:none!important}}", css)
         js = app.APP_JS
         self.assertIn("window.matchMedia('(max-width:900px)')", js)
         self.assertIn("function ppmBarsBusy()", js)
@@ -2883,6 +2927,20 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(".closest('.header-search')", busy)
         self.assertIn("requestAnimationFrame(ppmUpdateBarsOnScroll)", js)
         self.assertIn("{passive:true}", js)
+
+    def test_mobile_headbar_stays_fixed_and_sits_close_to_the_safe_area(self):
+        # richiesta dell'utente: l'headbar non deve piu' nascondersi durante lo
+        # scroll (vedi test sopra) e deve stare piu' in alto, appena sotto la
+        # safe-area del notch, senza il margine extra di 10px usato prima.
+        css = app.CSS
+        self.assertIn(".top{position:fixed;left:calc(10px + var(--safe-left));top:var(--safe-top);width:60px;height:60px", css)
+        self.assertIn(".app-header{position:fixed;left:calc(10px + var(--safe-left));right:calc(10px + var(--safe-right));top:var(--safe-top);width:auto;height:60px", css)
+        # un secondo blocco @media(max-width:900px) residuo di una versione
+        # precedente dell'header definiva ANCORA .app-header con il vecchio
+        # top:calc(10px + var(--safe-top)): venendo dopo nel CSS, vinceva lui
+        # sulla cascata e vanificava lo spostamento in alto. Deve restare
+        # allineato al valore del blocco principale.
+        self.assertNotIn("top:calc(10px + var(--safe-top))", css)
 
     def test_assisted_notify_reminder_shows_on_dashboard_and_clears_when_notified(self):
         with app.db() as conn:
