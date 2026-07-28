@@ -2769,24 +2769,44 @@ class PetParadiseTests(unittest.TestCase):
         # bug reale segnalato dall'utente: sulla PWA installata su iPhone
         # compare un riquadro bianco "Vai al contenuto" in alto a sinistra,
         # assente su Android. Causa reale: WebKit, quando la PWA e' lanciata
-        # in standalone (apple-mobile-web-app-capable), a volte assegna
-        # automaticamente il focus iniziale al primo elemento focusabile del
-        # documento — lo skip-link, che per design (.skip-link:focus{transform:none})
-        # torna visibile solo quando ha il focus. Non e' uno skip-link mal
-        # implementato ne' un componente di terze parti (niente Next.js/React
-        # Aria/Radix/Chakra in questo progetto): e' puro HTML/CSS/JS lato
-        # server. La correzione toglie il focus non richiesto senza mai poter
-        # interferire con un vero utente da tastiera (che non puo' premere Tab
-        # prima che il DOM sia pronto).
+        # in standalone (apple-mobile-web-app-capable), assegna talvolta il
+        # focus iniziale al primo elemento focusabile del documento — lo
+        # skip-link, che per design (.skip-link:focus{transform:none}) torna
+        # visibile solo quando ha il focus — non solo al primo caricamento ma
+        # anche al ritorno in primo piano dopo il background (per questo un
+        # fix legato al solo DOMContentLoaded/pageshow non bastava). La
+        # correzione osserva ogni focus in arrivo sullo skip-link (focusin in
+        # capture, quindi copre qualunque momento) e lo rilascia a meno che
+        # sia stato preceduto da un vero tasto Tab: un utente da tastiera
+        # reale genera sempre un keydown Tab prima del focus, un focus
+        # automatico del browser no.
         js = app.APP_JS
-        self.assertIn("function ppmReleaseAutoFocusedSkipLink()", js)
-        body = js[js.index("function ppmReleaseAutoFocusedSkipLink()"):]
-        body = body[:body.index("document.addEventListener('DOMContentLoaded', ppmReleaseAutoFocusedSkipLink)")]
-        self.assertIn("document.querySelector('.skip-link')", body)
+        self.assertIn("document.querySelector('.skip-link')", js)
+        self.assertIn("e.key==='Tab'", js)
+        self.assertIn("document.addEventListener('keydown'", js)
+        self.assertIn("document.addEventListener('pointerdown'", js)
+        self.assertIn("document.addEventListener('focusin',releaseIfNotGenuine,true)", js)
+        body = js[js.index("function releaseIfNotGenuine()"):js.index("document.addEventListener('focusin'")]
         self.assertIn("document.activeElement===skip", body)
+        self.assertIn("!tabPressed", body)
         self.assertIn("skip.blur()", body)
-        self.assertIn("document.addEventListener('DOMContentLoaded', ppmReleaseAutoFocusedSkipLink)", js)
-        self.assertIn("window.addEventListener('pageshow', ppmReleaseAutoFocusedSkipLink)", js)
+
+    def test_mobile_header_is_a_single_floating_card_with_circular_logo_badge(self):
+        # ridisegno header superiore mobile: logo + ricerca + notifiche/tema/+
+        # devono leggersi come un unico componente flottante (stesso linguaggio
+        # visivo della barra inferiore), non piu' tre elementi separati.
+        css = app.CSS
+        self.assertIn(".app-header{position:fixed;left:calc(10px + var(--safe-left));right:calc(10px + var(--safe-right));top:calc(10px + var(--safe-top));width:auto;height:60px;z-index:40;display:flex;align-items:center;padding:0 8px 0 60px;border:1px solid #2b3849;border-radius:26px;box-shadow:0 16px 38px #05070f66;backdrop-filter:blur(20px)}", css)
+        self.assertIn("body .app-header{background:linear-gradient(160deg,#1c2635f5,#121a27f5);border-color:#2b3849}", css)
+        self.assertIn(".top{position:fixed;left:calc(10px + var(--safe-left));top:calc(10px + var(--safe-top));width:60px;height:60px", css)
+        self.assertIn(".brand-logo{width:44px;height:44px;padding:7px;box-sizing:border-box;border-radius:50%", css)
+        self.assertIn(".app-header .icon-btn,.app-header .header-new{flex:0 0 auto;width:42px;height:42px", css)
+        self.assertIn(".app-header .header-new{background:linear-gradient(135deg,#fb4c67,#d9284c)", css)
+        self.assertIn(".app-header .icon-btn .notification-badge{", css)
+        # font-size 16px sull'input di ricerca resta l'unica difesa contro lo
+        # zoom automatico di iOS Safari sui campi con font <16px: non deve mai
+        # sparire durante un futuro restyling dell'header.
+        self.assertIn('.app-header .header-search input{min-width:0;height:40px;min-height:40px;font-size:16px}', css)
 
     def test_assisted_notify_reminder_shows_on_dashboard_and_clears_when_notified(self):
         with app.db() as conn:
@@ -3058,7 +3078,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(".wrap{max-width:1600px;margin-left:212px;margin-right:auto", app.CSS)
         # Mobile/tablet breakpoints stay untouched (sidebar collapses independently there).
         self.assertIn("@media(max-width:900px)", app.CSS)
-        self.assertIn(".wrap{margin-left:0;padding:calc(88px + var(--safe-top)) 14px 22px}", app.CSS)
+        self.assertIn(".wrap{margin-left:0;padding:calc(86px + var(--safe-top)) 14px 22px}", app.CSS)
 
     def test_shared_lookup_panel_controller_is_defined_and_used_everywhere(self):
         js = app.APP_JS
