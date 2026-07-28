@@ -677,6 +677,9 @@ def init_db():
             "billing_status": "TEXT",
             "billing_invoiced_at": "TEXT",
             "cremation_cycle_id": "INTEGER REFERENCES cremation_cycles(id)",
+            "owner_notified_status": "TEXT",
+            "owner_notified_at": "TEXT",
+            "owner_notified_by": "INTEGER REFERENCES users(id)",
         }
         existing = {row["name"] for row in c.execute("PRAGMA table_info(practices)")}
         for name, definition in extra_columns.items():
@@ -1722,7 +1725,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-animal-tags{display:flex;flex-wrap:wrap;gap:4px}
 .cremation-animal-urn{display:flex;align-items:center;gap:5px;font-size:12px;color:#cbd5e1}
 .cremation-animal-urn .icon{width:13px;height:13px}
-.cremation-animal-actions{display:flex;align-items:center;gap:8px;margin-left:auto}
+.cremation-animal-actions{display:flex;align-items:center;gap:8px;margin-left:auto}.cremation-notify{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin-top:8px;padding:10px 12px;border-radius:12px;background:#0f172a;border:1px solid #263246;cursor:default}.cremation-notify-head{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.03em}.cremation-notify-head .icon{width:14px;height:14px}.cremation-notify-body{display:flex;flex-wrap:wrap;align-items:center;gap:10px}.cremation-notify-badge{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:999px;font-size:13px;font-weight:800;letter-spacing:.02em}.cremation-notify-red{background:#450a0a;color:#fca5a5;box-shadow:0 0 0 1px #ef444450 inset}.cremation-notify-green{background:#052e16;color:#86efac;box-shadow:0 0 0 1px #22c55e50 inset}.cremation-notify-detail{display:flex;gap:8px;font-size:12px;color:#94a3b8}.cremation-notify-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-left:auto}.cremation-notify-toggle{padding:7px 14px;border-radius:9px;border:1px solid #ef444470;background:#7f1d1d;color:#fecaca;font-weight:700;font-size:12.5px;cursor:pointer;white-space:nowrap}.cremation-notify-toggle:hover{background:#991b1b}.cremation-notify-toggle-undo{background:transparent;border-color:#334155;color:#94a3b8}.cremation-notify-toggle-undo:hover{background:#1f2937}.cremation-notify-wa{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:9px;background:#052e16;color:#25d366;font-weight:700;font-size:12.5px;text-decoration:none;white-space:nowrap}.cremation-notify-wa:hover{background:#064e26}.cremation-notify-wa .icon{width:15px;height:15px}.cremation-notify-wa-disabled{opacity:.4;cursor:not-allowed;pointer-events:none}.light-theme .cremation-notify{background:#f8fafc;border-color:#e2e8f0}.light-theme .cremation-notify-head{color:#64748b}.light-theme .cremation-notify-detail{color:#64748b}.light-theme .cremation-notify-toggle-undo{border-color:#cbd5e1;color:#64748b}@media(max-width:620px){.cremation-notify-actions{margin-left:0;width:100%}.cremation-notify-toggle,.cremation-notify-wa{flex:1 1 auto;justify-content:center}}
 .cremation-waiting-row-wide{display:flex;flex-wrap:wrap;align-items:center;gap:16px;padding:12px 0;border-top:1px solid #263246;cursor:pointer}
 .cremation-waiting-list .cremation-waiting-row-wide:first-child{border-top:none;padding-top:6px}
 .cremation-animal-select{display:flex;align-items:center;flex:0 0 auto}
@@ -1757,7 +1760,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-week-animal-line{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:#e2e8f0}
 .cremation-week-animal-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700;font-size:13px;color:#f8fafc}
 .cremation-week-animal-tag .badge{font-size:10px;padding:2px 8px;white-space:nowrap}
-.cremation-week-animal-urn{display:flex;align-items:center;gap:4px;color:#cbd5e1;font-size:11px;white-space:nowrap}
+.cremation-week-animal-urn{display:flex;align-items:center;gap:4px;color:#cbd5e1;font-size:11px;white-space:nowrap}.cremation-week-notify-badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:800;white-space:nowrap}
 .cremation-week-animal-urn .icon{width:12px;height:12px;flex:0 0 12px}
 .cremation-week-status-icon{display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;flex:0 0 26px}
 .cremation-week-status-icon .icon{width:14px;height:14px}
@@ -3619,6 +3622,13 @@ function cremationRemoveFromCycle(el,practiceId){
       .catch(function(){location.reload();});
   },{title:'Rimuovi animale',confirmLabel:'Rimuovi'});
 }
+function cremationToggleOwnerNotified(btn,practiceId,newStatus){
+  fetch('/pratiche/'+practiceId+'/comunicazione-proprietario',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',
+    body:'status='+encodeURIComponent(newStatus)})
+    .then(function(res){return res.json();})
+    .then(function(data){if(!data.ok){alert(data.error||'Operazione non riuscita');return;}location.reload();})
+    .catch(function(){location.reload();});
+}
 function cremationDeleteCycle(cycleId){
   cremationOpenConfirmModal('Eliminare questo ciclo? Gli eventuali animali assegnati torneranno nella lista degli animali da pianificare.',function(){
     fetch('/programma-cremazioni/cicli/'+cycleId+'/elimina',{method:'POST',credentials:'same-origin'})
@@ -4620,6 +4630,61 @@ CREMATION_STATUS_LABELS = {
     "in_corso": ("IN CORSO", "cremation-status-active"),
     "completato": ("COMPLETATO", "cremation-status-done"),
 }
+# etichette operative che attivano la gestione "Comunicazione proprietario"
+# per le cremazioni assistite (ordine = priorità di visualizzazione quando
+# più di una fosse valorizzata sulla stessa pratica)
+CREMATION_ASSISTED_TAGS = (
+    ("tag_assistita_streaming", "Assistita Streaming"),
+    ("tag_assistita", "Assistita"),
+    ("tag_possibile_assistita_streaming", "Probabile Assistita Streaming"),
+    ("tag_possibile_assistita", "Probabile Assistita"),
+)
+
+
+def assisted_cremation_label(p):
+    """Etichetta assistita attiva sulla pratica, o '' se nessuna."""
+    keys=p.keys()
+    for key,label in CREMATION_ASSISTED_TAGS:
+        if key in keys and p[key]=="Si":
+            return label
+    return ""
+
+
+def owner_notify_html(p,notifier_name):
+    """Riga 'Comunicazione proprietario' per la card animale del Programma
+    Cremazioni: visibile solo per le cremazioni assistite (vedi
+    assisted_cremation_label). Stato DA AVVISARE/AVVISATO con data/ora/utente
+    salvati automaticamente, pulsante di cambio stato e pulsante WhatsApp
+    diretto verso il numero del proprietario."""
+    if not assisted_cremation_label(p):
+        return ""
+    status=p["owner_notified_status"] if "owner_notified_status" in p.keys() else ""
+    notified=status=="avvisato"
+    badge_cls="cremation-notify-green" if notified else "cremation-notify-red"
+    badge_text="🟢 AVVISATO" if notified else "🔴 DA AVVISARE"
+    detail_html=""
+    notified_at=p["owner_notified_at"] if "owner_notified_at" in p.keys() else ""
+    if notified and notified_at:
+        detail_html=f'<div class="cremation-notify-detail"><span>{esc(date_it(notified_at))}</span><span>{esc(notified_at[11:16])}</span><span>da {esc(notifier_name or "—")}</span></div>'
+    toggle_label="Segna come da avvisare" if notified else "✓ Segna come avvisato"
+    toggle_status="da_avvisare" if notified else "avvisato"
+    toggle_cls="cremation-notify-toggle cremation-notify-toggle-undo" if notified else "cremation-notify-toggle"
+    toggle_html=f'<button type="button" class="{toggle_cls}" onclick="event.stopPropagation();cremationToggleOwnerNotified(this,{p["id"]},\'{toggle_status}\')">{esc(toggle_label)}</button>'
+    wa=re.sub(r"\D+","",p["owner_phone"] or "")
+    if wa.startswith("00"):wa=wa[2:]
+    if wa and not wa.startswith("39"):wa="39"+wa
+    if wa:
+        wa_html=f'<a class="cremation-notify-wa" href="https://wa.me/{wa}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">{lucide("message")}<span>WhatsApp</span></a>'
+    else:
+        wa_html=f'<span class="cremation-notify-wa cremation-notify-wa-disabled" aria-disabled="true">{lucide("message")}<span>WhatsApp</span></span>'
+    return f'''<div class="cremation-notify" onclick="event.stopPropagation()">
+      <div class="cremation-notify-head">{lucide("phone")}<span>Comunicazione proprietario</span></div>
+      <div class="cremation-notify-body">
+        <span class="cremation-notify-badge {badge_cls}">{badge_text}</span>
+        {detail_html}
+      </div>
+      <div class="cremation-notify-actions">{toggle_html}{wa_html}</div>
+    </div>'''
 
 
 def cremation_time_add(hhmm, minutes):
@@ -4851,6 +4916,19 @@ def sync_reminders(c):
                         url=f"/pratiche/{row['id']}",stamp=stamp)
     close_stale_reminders(c,"cremation_pending",cremation_keys,stamp)
 
+    assisted_rows=c.execute(
+        f"SELECT * FROM practices WHERE {active} AND cremation_cycle_id IS NOT NULL AND owner_notified_status='da_avvisare'"
+    ).fetchall()
+    assisted_keys=set()
+    for row in assisted_rows:
+        label=assisted_cremation_label(row)
+        if not label:continue
+        key=f"practice:{row['id']}";assisted_keys.add(key)
+        ensure_reminder(c,reminder_type="assisted_notify_pending",entity_key=key,
+                        title=f"{row['animal_name'] or 'Animale'} ({reminder_owner_label(row)}) è {label.lower()}, il proprietario non è ancora stato avvisato",
+                        url=f"/pratiche/{row['id']}",stamp=stamp)
+    close_stale_reminders(c,"assisted_notify_pending",assisted_keys,stamp)
+
 
 def payment_status_needs_date(old_status, new_status, economic_at):
     if new_status in ("Acconto","Pagato"):
@@ -4962,6 +5040,7 @@ REMINDER_GROUP_LABELS={
     "product_reorder": ("receipt","state-blue","{n} prodotto da ordinare","{n} prodotti da ordinare"),
     "delivered_unpaid": ("calendar","state-red","{n} pratica consegnata ma non pagata","{n} pratiche consegnate ma non pagate"),
     "cremation_pending": ("paw","state-green","{n} cremazione singola in attesa","{n} cremazioni singole in attesa"),
+    "assisted_notify_pending": ("phone","state-red","{n} assistita da avvisare","{n} assistite da avvisare"),
 }
 REMINDER_GROUP_FALLBACK=("bell","state-blue","{n} promemoria attivo","{n} promemoria attivi")
 
@@ -5345,6 +5424,8 @@ class App(BaseHTTPRequestHandler):
         if match: return self.cremation_delete_cycle(user, int(match.group(1)))
         match = re.fullmatch(r"/programma-cremazioni/pratiche/(\d+)/rimuovi", path)
         if match: return self.cremation_remove_from_cycle(user, int(match.group(1)))
+        match = re.fullmatch(r"/pratiche/(\d+)/comunicazione-proprietario", path)
+        if match: return self.owner_notified_toggle(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/catalogo-inviato", path)
         if match: return self.catalog_sent(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/estremi-inviati", path)
@@ -5552,6 +5633,11 @@ class App(BaseHTTPRequestHandler):
                 for row in c.execute(f"SELECT practice_id,label FROM practice_items WHERE practice_id IN ({marks}) AND category='urna' ORDER BY practice_id,sort_order",tuple(reminder_practice_ids)).fetchall():
                     reminder_urn_items_by_practice.setdefault(row["practice_id"],[]).append(row["label"])
                 reminder_delivery_dates={row["id"]:row["ddate"] for row in c.execute(f"SELECT id,{dashboard_practice_date_sql('consegnati','practices')} ddate FROM practices WHERE id IN ({marks})",tuple(reminder_practice_ids)).fetchall()}
+                reminder_cycle_ids={p["cremation_cycle_id"] for p in reminder_practices_by_id.values() if p["cremation_cycle_id"]}
+                reminder_cycle_info={}
+                if reminder_cycle_ids:
+                    marks_cyc=','.join('?' for _ in reminder_cycle_ids)
+                    reminder_cycle_info={row["id"]:(row["cycle_date"],row["planned_start"]) for row in c.execute(f"SELECT id,cycle_date,planned_start FROM cremation_cycles WHERE id IN ({marks_cyc})",tuple(reminder_cycle_ids)).fetchall()}
             # today's cycles with room, for the "Inserisci in programma" quick
             # action on cremation_pending rows — same shape as the day view's
             # own insertable_cycles, just scoped to today since the Dashboard
@@ -5565,7 +5651,7 @@ class App(BaseHTTPRequestHandler):
                     for row in c.execute(f"SELECT cremation_cycle_id,COUNT(*) n FROM practices WHERE cremation_cycle_id IN ({marks2}) AND (deleted_at IS NULL OR deleted_at='') GROUP BY cremation_cycle_id",tuple(today_cycle_ids)).fetchall():
                         today_cycle_counts[row["cremation_cycle_id"]]=row["n"]
         else:
-            today_cycles=[];today_cycle_counts={};reminder_delivery_dates={}
+            today_cycles=[];today_cycle_counts={};reminder_delivery_dates={};reminder_cycle_info={}
         reminder_insertable_cycles=[(idx+1,cyc["id"]) for idx,cyc in enumerate(today_cycles) if today_cycle_counts.get(cyc["id"],0)<2]
 
         def reminder_owner_and_urn(p):
@@ -5645,6 +5731,22 @@ class App(BaseHTTPRequestHandler):
               <div class="reminders-expand-actions" onclick="event.stopPropagation()">{self.status_badges(p)}<a class="btn ghost" href="{url}">Apri pratica</a></div>
             </div>'''
 
+        def reminder_assisted_notify_row_html(p):
+            owner,_=reminder_owner_and_urn(p)
+            url=reminder_practice_url(p["id"])
+            label=assisted_cremation_label(p)
+            cycle_date,planned_start=reminder_cycle_info.get(p["cremation_cycle_id"],("",""))
+            when_bits=[]
+            if cycle_date:when_bits.append(f'<span>{esc(date_it(cycle_date))}</span>')
+            if planned_start:when_bits.append(f'<span>ore {esc(planned_start)}</span>')
+            return f'''<div class="reminders-expand-row" {row_open_attrs(url,f'Apri pratica {p["practice_number"]}')}>
+              <div class="reminders-expand-main">
+                <span class="reminders-expand-title">{reminder_animal_name_html(p)}</span>
+                <span class="reminders-expand-meta"><span>{esc(owner)}</span>{''.join(when_bits)}<span class="badge tag-red">{esc(label)}</span></span>
+              </div>
+              <div class="reminders-expand-actions" onclick="event.stopPropagation()"><a class="btn ghost" href="{url}">Apri pratica</a></div>
+            </div>'''
+
         def reminder_generic_row_html(row):
             return f'''<div class="reminders-expand-row" {row_open_attrs(row["url"],esc(row["title"]))}>
               <div class="reminders-expand-main"><span class="reminders-expand-title">{esc(row["title"])}</span></div>
@@ -5669,6 +5771,12 @@ class App(BaseHTTPRequestHandler):
                 for row in rows:
                     p=reminder_practices_by_id.get(int(row["entity_key"].split(":",1)[1])) if row["entity_key"].startswith("practice:") else None
                     if p:items.append(reminder_animal_row_html(p,show_cycle_action=False))
+                return ''.join(items) or '<p class="reminders-expand-empty">Nessun elemento da gestire.</p>'
+            if rtype=="assisted_notify_pending":
+                items=[]
+                for row in rows:
+                    p=reminder_practices_by_id.get(int(row["entity_key"].split(":",1)[1])) if row["entity_key"].startswith("practice:") else None
+                    if p:items.append(reminder_assisted_notify_row_html(p))
                 return ''.join(items) or '<p class="reminders-expand-empty">Nessun elemento da gestire.</p>'
             return ''.join(reminder_generic_row_html(row) for row in rows) or '<p class="reminders-expand-empty">Nessun elemento da gestire.</p>'
 
@@ -6990,6 +7098,11 @@ class App(BaseHTTPRequestHandler):
             if collaborator_ids:
                 marks=','.join('?' for _ in collaborator_ids)
                 collaborator_codes={r["id"]:(r["code"] or "") for r in c.execute(f"SELECT id,code FROM collaborators WHERE id IN ({marks})",tuple(collaborator_ids))}
+            notifier_ids={int(row["owner_notified_by"]) for row in all_rows if "owner_notified_by" in row.keys() and row["owner_notified_by"]}
+            notifier_names={}
+            if notifier_ids:
+                marks=','.join('?' for _ in notifier_ids)
+                notifier_names={r["id"]:(r["display_name"] or r["username"]) for r in c.execute(f"SELECT id,display_name,username FROM users WHERE id IN ({marks})",tuple(notifier_ids))}
 
         cycle_numbers={cycle["id"]:idx+1 for idx,cycle in enumerate(cycles)}
         insertable_cycles=[(cycle_numbers[c2["id"]],c2["id"]) for c2 in cycles if c2["status"]!="completato" and len(cycle_practices.get(c2["id"],[]))<2]
@@ -7072,6 +7185,8 @@ class App(BaseHTTPRequestHandler):
             provenance_html=f'<span class="cremation-provenance-chip {avatar_cls}">{esc(code)}</span>' if code else '<span class="cremation-dash">—</span>'
             url=practice_url(row)
             remove_html=f'<button type="button" class="cremation-animal-remove" onclick="event.stopPropagation();cremationRemoveFromCycle(this,{row["id"]})" aria-label="Rimuovi dal ciclo" title="Rimuovi dal ciclo">{lucide("x")}</button>' if removable else ""
+            notifier_id=row["owner_notified_by"] if "owner_notified_by" in row.keys() and row["owner_notified_by"] else None
+            notify_html=owner_notify_html(row,notifier_names.get(int(notifier_id)) if notifier_id else None)
             return f'''<div class="cremation-animal-row" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}>
               <div class="cremation-animal-id">
                 <span class="cremation-animal-avatar {avatar_cls}" aria-hidden="true">{avatar_emoji}</span>
@@ -7081,6 +7196,7 @@ class App(BaseHTTPRequestHandler):
               <div class="cremation-animal-col"><small>Etichette</small><div class="cremation-animal-tags">{tags_html(row)}</div></div>
               <div class="cremation-animal-col"><small>Urna</small><div class="cremation-animal-urn">{urn_html(row)}</div></div>
               <div class="cremation-animal-actions"><a class="cremation-animal-open" href="{url}" onclick="event.stopPropagation()"><span>Apri pratica</span>{lucide("chevron-right")}</a>{remove_html}</div>
+              {notify_html}
             </div>'''
 
         waiting_cards=''.join(waiting_card_html(row) for row in waiting) or '<p class="cremation-dash" style="padding:8px 0">Nessun animale in attesa di pianificazione.</p>'
@@ -7324,6 +7440,11 @@ class App(BaseHTTPRequestHandler):
             if collaborator_ids:
                 marks4=','.join('?' for _ in collaborator_ids)
                 collaborator_codes={r["id"]:(r["code"] or "") for r in c.execute(f"SELECT id,code FROM collaborators WHERE id IN ({marks4})",tuple(collaborator_ids))}
+            notifier_ids={int(row["owner_notified_by"]) for row in all_rows if "owner_notified_by" in row.keys() and row["owner_notified_by"]}
+            notifier_names={}
+            if notifier_ids:
+                marks5=','.join('?' for _ in notifier_ids)
+                notifier_names={r["id"]:(r["display_name"] or r["username"]) for r in c.execute(f"SELECT id,display_name,username FROM users WHERE id IN ({marks5})",tuple(notifier_ids))}
 
         cycles_by_date={d:[] for d in week_dates}
         for cyc in cycles:
@@ -7391,6 +7512,8 @@ class App(BaseHTTPRequestHandler):
             provenance_html=f'<span class="cremation-provenance-chip {avatar_cls}">{esc(code)}</span>' if code else '<span class="cremation-dash">—</span>'
             url=practice_url(row)
             remove_html=f'<button type="button" class="cremation-animal-remove" onclick="event.stopPropagation();cremationRemoveFromCycle(this,{row["id"]})" aria-label="Rimuovi dal ciclo" title="Rimuovi dal ciclo">{lucide("x")}</button>' if removable else ""
+            notifier_id=row["owner_notified_by"] if "owner_notified_by" in row.keys() and row["owner_notified_by"] else None
+            notify_html=owner_notify_html(row,notifier_names.get(int(notifier_id)) if notifier_id else None)
             return f'''<div class="cremation-animal-row" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}>
               <div class="cremation-animal-id">
                 <span class="cremation-animal-avatar {avatar_cls}" aria-hidden="true">{avatar_emoji}</span>
@@ -7400,6 +7523,7 @@ class App(BaseHTTPRequestHandler):
               <div class="cremation-animal-col"><small>Etichette</small><div class="cremation-animal-tags">{tags_html(row)}</div></div>
               <div class="cremation-animal-col"><small>Urna</small><div class="cremation-animal-urn">{urn_html(row)}</div></div>
               <div class="cremation-animal-actions"><a class="cremation-animal-open" href="{url}" onclick="event.stopPropagation()"><span>Apri pratica</span>{lucide("chevron-right")}</a>{remove_html}</div>
+              {notify_html}
             </div>'''
 
         def week_animal_line(row):
@@ -7412,8 +7536,13 @@ class App(BaseHTTPRequestHandler):
             tags_html=f'<span class="cremation-week-animal-tag">{tags}</span>' if '<span class="badge' in tags else ''
             urn=urn_value(row)
             urn_html=f'<span class="cremation-week-animal-urn">{lucide("archive")}<span>{esc(urn)}</span></span>' if urn else ''
+            notify_badge=""
+            if assisted_cremation_label(row):
+                notified=("owner_notified_status" in row.keys() and row["owner_notified_status"]=="avvisato")
+                notify_badge=f'<span class="cremation-week-notify-badge {"cremation-notify-green" if notified else "cremation-notify-red"}">{"🟢 AVVISATO" if notified else "🔴 DA AVVISARE"}</span>'
             return f'''<div class="cremation-week-animal-line">
               <span class="cremation-week-animal-name">{avatar_emoji} {animal_name_html(row)}{weight_txt}</span>
+              {notify_badge}
               {provenance_html}
               {tags_html}
               {urn_html}
@@ -7725,7 +7854,7 @@ class App(BaseHTTPRequestHandler):
         stamp=now()
         with db() as c:
             if practice_id:
-                practice=c.execute("SELECT id,status,service_type,cremation_cycle_id FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(practice_id,)).fetchone()
+                practice=c.execute("SELECT * FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(practice_id,)).fetchone()
                 if not practice or practice["status"]=="Consegnato" or practice["service_type"]!="Cremazione singola" or practice["cremation_cycle_id"]:
                     return self.send_json({"ok":False,"error":"Animale non più disponibile. Ricarica la pagina."},409)
             start,end=cremation_cycle_next_slot(c,cycle_date)
@@ -7735,6 +7864,8 @@ class App(BaseHTTPRequestHandler):
             if practice_id:
                 c.execute("UPDATE practices SET cremation_cycle_id=?,updated_at=? WHERE id=?",(cycle_id,stamp,practice_id))
                 cremation_log_status_change(c,practice_id,practice["status"],"In programma",user["id"],stamp)
+                if assisted_cremation_label(practice):
+                    c.execute("UPDATE practices SET owner_notified_status='da_avvisare',owner_notified_at=NULL,owner_notified_by=NULL WHERE id=?",(practice_id,))
         return self.send_json({"ok":True,"cycle_id":cycle_id})
 
     def cremation_assign_to_cycle(self,user,cycle_id):
@@ -7749,11 +7880,13 @@ class App(BaseHTTPRequestHandler):
             count=c.execute("SELECT COUNT(*) n FROM practices WHERE cremation_cycle_id=? AND (deleted_at IS NULL OR deleted_at='')",(cycle_id,)).fetchone()["n"]
             if count>=2:
                 return self.send_json({"ok":False,"error":"Il ciclo contiene già 2 animali."},409)
-            practice=c.execute("SELECT id,status,service_type,cremation_cycle_id FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(practice_id,)).fetchone()
+            practice=c.execute("SELECT * FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(practice_id,)).fetchone()
             if not practice or practice["status"]=="Consegnato" or practice["service_type"]!="Cremazione singola" or practice["cremation_cycle_id"]:
                 return self.send_json({"ok":False,"error":"Animale non più disponibile. Ricarica la pagina."},409)
             c.execute("UPDATE practices SET cremation_cycle_id=?,updated_at=? WHERE id=?",(cycle_id,stamp,practice_id))
             cremation_log_status_change(c,practice_id,practice["status"],"In programma",user["id"],stamp)
+            if assisted_cremation_label(practice):
+                c.execute("UPDATE practices SET owner_notified_status='da_avvisare',owner_notified_at=NULL,owner_notified_by=NULL WHERE id=?",(practice_id,))
             if cycle["status"]=="pianificato":
                 c.execute("UPDATE cremation_cycles SET status='in_attesa',updated_at=? WHERE id=?",(stamp,cycle_id))
         return self.send_json({"ok":True})
@@ -7839,6 +7972,25 @@ class App(BaseHTTPRequestHandler):
                 if remaining==0:
                     c.execute("UPDATE cremation_cycles SET status='pianificato',updated_at=? WHERE id=?",(stamp,cycle_id))
         return self.send_json({"ok":True})
+
+    def owner_notified_toggle(self,user,pid):
+        f=self.form()
+        new_status=(f.get("status") or "").strip()
+        if new_status not in ("da_avvisare","avvisato"):
+            return self.send_json({"ok":False,"error":"Stato non valido."},400)
+        stamp=now()
+        with db() as c:
+            practice=c.execute("SELECT * FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(pid,)).fetchone()
+            if not practice:return self.send_json({"ok":False,"error":"Pratica non trovata"},404)
+            if not assisted_cremation_label(practice):
+                return self.send_json({"ok":False,"error":"Questa pratica non è una cremazione assistita."},409)
+            if new_status=="avvisato":
+                c.execute("UPDATE practices SET owner_notified_status='avvisato',owner_notified_at=?,owner_notified_by=?,updated_at=? WHERE id=?",
+                          (stamp,user["id"],stamp,pid))
+            else:
+                c.execute("UPDATE practices SET owner_notified_status='da_avvisare',owner_notified_at=NULL,owner_notified_by=NULL,updated_at=? WHERE id=?",
+                          (stamp,pid))
+        return self.send_json({"ok":True,"status":new_status})
 
 
 

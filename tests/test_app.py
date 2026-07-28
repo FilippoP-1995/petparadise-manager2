@@ -2356,6 +2356,199 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn("Zeus", modal_html)
         self.assertNotIn("Tequila", modal_html)
 
+    def test_assigning_an_assisted_practice_to_a_cycle_sets_da_avvisare(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            assisted_id = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name,tag_assistita) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-ASSIST1", "Privato", "Livorno", "Ritirato", "Cremazione singola", stamp, stamp, admin["id"], "Nilde", "Si"),
+            ).lastrowid
+            normal_id = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("CR-NORMAL1", "Privato", "Livorno", "Ritirato", "Cremazione singola", stamp, stamp, admin["id"], "Rex"),
+            ).lastrowid
+
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.form = lambda: {"data": "2026-07-22", "practice_id": str(assisted_id)}
+        self.handler.cremation_create_cycle(admin)
+        self.assertTrue(responses[-1][0]["ok"])
+        cycle_id = responses[-1][0]["cycle_id"]
+        with app.db() as conn:
+            assisted = conn.execute("SELECT owner_notified_status FROM practices WHERE id=?", (assisted_id,)).fetchone()
+        self.assertEqual(assisted["owner_notified_status"], "da_avvisare")
+
+        # una pratica non assistita non riceve alcuno stato
+        responses.clear()
+        self.handler.form = lambda: {"practice_id": str(normal_id)}
+        self.handler.cremation_assign_to_cycle(admin, cycle_id)
+        self.assertTrue(responses[-1][0]["ok"])
+        with app.db() as conn:
+            normal = conn.execute("SELECT owner_notified_status FROM practices WHERE id=?", (normal_id,)).fetchone()
+        self.assertIn(normal["owner_notified_status"], (None, ""))
+
+    def test_owner_notified_toggle_saves_timestamp_and_user_and_rejects_non_assisted(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-22", "in_attesa", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+            assisted_id = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name,tag_assistita_streaming,cremation_cycle_id,owner_notified_status)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-ASSIST2", "Privato", "Livorno", "In programma", "Cremazione singola", stamp, stamp, admin["id"],
+                 "Luna", "Si", cycle_id, "da_avvisare"),
+            ).lastrowid
+            normal_id = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("CR-NORMAL2", "Privato", "Livorno", "Ritirato", "Cremazione singola", stamp, stamp, admin["id"], "Fufi"),
+            ).lastrowid
+
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.form = lambda: {"status": "xyz"}
+        self.handler.owner_notified_toggle(admin, assisted_id)
+        self.assertEqual(responses[-1][1], 400)
+
+        responses.clear()
+        self.handler.form = lambda: {"status": "avvisato"}
+        self.handler.owner_notified_toggle(admin, normal_id)
+        self.assertEqual(responses[-1][1], 409)
+
+        responses.clear()
+        self.handler.form = lambda: {"status": "avvisato"}
+        self.handler.owner_notified_toggle(admin, assisted_id)
+        self.assertEqual(responses[-1], ({"ok": True, "status": "avvisato"}, 200))
+        with app.db() as conn:
+            row = conn.execute("SELECT owner_notified_status,owner_notified_at,owner_notified_by FROM practices WHERE id=?", (assisted_id,)).fetchone()
+        self.assertEqual(row["owner_notified_status"], "avvisato")
+        self.assertIsNotNone(row["owner_notified_at"])
+        self.assertEqual(row["owner_notified_by"], admin["id"])
+
+        responses.clear()
+        self.handler.form = lambda: {"status": "da_avvisare"}
+        self.handler.owner_notified_toggle(admin, assisted_id)
+        self.assertEqual(responses[-1], ({"ok": True, "status": "da_avvisare"}, 200))
+        with app.db() as conn:
+            row = conn.execute("SELECT owner_notified_status,owner_notified_at,owner_notified_by FROM practices WHERE id=?", (assisted_id,)).fetchone()
+        self.assertEqual(row["owner_notified_status"], "da_avvisare")
+        self.assertIsNone(row["owner_notified_at"])
+        self.assertIsNone(row["owner_notified_by"])
+
+    def test_cremation_card_shows_owner_notify_section_only_for_assisted_practices(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-22", "in_attesa", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+            assisted_id = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name,owner_phone,tag_possibile_assistita,cremation_cycle_id,owner_notified_status)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-ASSIST3", "Privato", "Livorno", "In programma", "Cremazione singola", stamp, stamp, admin["id"],
+                 "Nilde", "3384272742", "Si", cycle_id, "da_avvisare"),
+            ).lastrowid
+            normal_id = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-NORMAL3", "Privato", "Livorno", "In programma", "Cremazione singola", stamp, stamp, admin["id"], "Rex", cycle_id),
+            ).lastrowid
+
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-22"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn('class="cremation-notify"', page)
+        self.assertIn("Comunicazione proprietario", page)
+        self.assertIn("🔴 DA AVVISARE", page)
+        self.assertIn(f"cremationToggleOwnerNotified(this,{assisted_id},'avvisato')", page)
+        self.assertIn("https://wa.me/393384272742", page)
+        # la pratica non assistita non deve avere la sezione: un solo blocco
+        # "Comunicazione proprietario" nell'intera pagina (2 animali nel ciclo, solo 1 assistito)
+        self.assertEqual(page.count('class="cremation-notify"'), 1)
+
+        # marcato come avvisato: badge verde + data/ora/utente
+        with app.db() as conn:
+            conn.execute("UPDATE practices SET owner_notified_status='avvisato',owner_notified_at=?,owner_notified_by=? WHERE id=?",
+                         ("2026-07-26T15:42:00", admin["id"], assisted_id))
+        self.handler.cremation_schedule(admin)
+        page2 = rendered[-1]
+        self.assertIn("🟢 AVVISATO", page2)
+        self.assertIn("26/07/2026", page2)
+        self.assertIn("15:42", page2)
+        self.assertIn("da Amministratore", page2)
+        self.assertIn(f"cremationToggleOwnerNotified(this,{assisted_id},'da_avvisare')", page2)
+
+    def test_cremation_week_view_shows_compact_notify_badge_without_expanding(self):
+        monday = date(2026, 7, 20)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                (monday.isoformat(), "in_attesa", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name,tag_assistita,cremation_cycle_id,owner_notified_status)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-WEEKASSIST", "Privato", "Livorno", "In programma", "Cremazione singola", stamp, stamp, admin["id"],
+                 "Checca", "Si", cycle_id, "da_avvisare"),
+            )
+        rendered = []
+        self.handler.path = f"/programma-cremazioni?vista=settimana&data={monday.isoformat()}"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        card_start = page.index(f'data-cycle-id="{cycle_id}"')
+        card_html = page[card_start:page.index('data-cycle-body', card_start)]
+        self.assertIn('class="cremation-week-notify-badge cremation-notify-red"', card_html)
+        self.assertIn("🔴 DA AVVISARE", card_html)
+
+    def test_assisted_notify_reminder_shows_on_dashboard_and_clears_when_notified(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-27", "in_attesa", "09:00", "10:30", stamp, stamp),
+            ).lastrowid
+            assisted_id = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name,owner_first_name,owner_last_name,tag_assistita,
+                   cremation_cycle_id,owner_notified_status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-DASHASSIST", "Privato", "Livorno", "In programma", "Cremazione singola", stamp, stamp, admin["id"],
+                 "Nilde", "Francesca", "Craba", "Si", cycle_id, "da_avvisare"),
+            ).lastrowid
+        rendered = []
+        self.handler.send_html = lambda content, *args: rendered.append(content); self.handler.path = "/"
+        self.handler.dashboard(admin)
+        page = rendered[-1]
+        self.assertIn("1 assistita da avvisare", page)
+        panel = self.reminder_panel_html(page, "assisted_notify_pending")
+        self.assertIn("Nilde", panel)
+        self.assertIn("Francesca Craba", panel)
+        self.assertIn("27/07/2026", panel)
+        self.assertIn("ore 09:00", panel)
+        self.assertIn("Assistita", panel)
+        self.assertIn(f'href="/pratiche/{assisted_id}?return_to=%2F"', panel)
+
+        # marcare come avvisato chiude il promemoria al sync successivo
+        with app.db() as conn:
+            conn.execute("UPDATE practices SET owner_notified_status='avvisato' WHERE id=?", (assisted_id,))
+        self.handler.dashboard(admin)
+        self.assertNotIn("assistita da avvisare", rendered[-1])
+        with app.db() as conn:
+            still_open = conn.execute(
+                "SELECT id FROM reminders WHERE reminder_type='assisted_notify_pending' AND completed_at IS NULL"
+            ).fetchone()
+        self.assertIsNone(still_open)
+
     def test_cremation_create_cycle_buttons_reopen_the_new_cycle_after_reload(self):
         js = app.APP_JS
         self.assertIn("function cremationOpenPendingCycle()", js)
