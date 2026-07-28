@@ -1241,14 +1241,20 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 .section-collapse-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:12px}.section-collapse-head h2{margin:0}.collapse-toggle{display:grid;place-items:center;width:32px;height:32px;padding:0;border:1px solid #334155;border-radius:9px;background:#172033;color:#e7ecf3;font-size:18px;font-weight:700;line-height:1;cursor:pointer}.collapse-toggle:hover{border-color:#ef405f;color:#fff}.collapsible-body[hidden]{display:none}.light-theme .collapse-toggle{background:#fff;border-color:#cbd5e1;color:#111827}
 
 .wa-list{display:flex;flex-direction:column;gap:12px;margin-bottom:22px}
-.wa-card{display:flex;align-items:flex-start;gap:14px;padding:16px 18px;border:1px solid #334155;border-radius:15px;background:linear-gradient(145deg,#131a26,#0f151f);box-shadow:0 12px 34px #0307122e;cursor:pointer}
-.wa-card:hover{border-color:#465065}
-.wa-card-icon{width:44px;height:44px;border-radius:50%;background:#0d3b2a;display:grid;place-items:center;flex:0 0 44px;color:#25d366;font-size:20px}
+.wa-card{display:flex;align-items:flex-start;gap:14px;padding:16px 18px;border:1px solid #334155;border-left:4px solid #465065;border-radius:15px;background:linear-gradient(145deg,#131a26,#0f151f);box-shadow:0 12px 34px #0307122e;cursor:pointer}
+.wa-card:hover{border-top-color:#465065;border-right-color:#465065;border-bottom-color:#465065}
+.wa-card[data-status-class="practice-status-yellow"]{border-left-color:#eab308}
+.wa-card[data-status-class="practice-status-red"]{border-left-color:#ef4444}
+.wa-card[data-status-class="practice-status-blue"]{border-left-color:#3b82f6}
+.wa-card[data-status-class="practice-status-green"]{border-left-color:#22c55e}
+.wa-card-icon{width:44px;height:44px;border-radius:50%;background:#0d3b2a;display:grid;place-items:center;flex:0 0 44px;color:#25d366;font-size:22px}
 .wa-card-main{flex:1;min-width:0}
 .wa-card-top{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
 .wa-card-name{font-weight:800;font-size:15px;color:#f5f7fb}
 .wa-card-name small{font-weight:500;color:#9ca7b8;font-size:12px}
 .wa-card-date{margin-left:auto;color:#9ca7b8;font-size:12px;white-space:nowrap}
+.wa-card-owner{display:flex;align-items:center;gap:8px;margin-top:3px;font-size:13px;color:#dfe4eb}
+.wa-card-unread{margin-left:auto;background:#1d8a53;color:#fff;font-size:11px;font-weight:800;border-radius:999px;min-width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;padding:0 6px}
 .wa-card-sub{display:flex;align-items:center;gap:8px;margin-top:4px;flex-wrap:wrap;font-size:12.5px;color:#9ca7b8}
 .wa-card-sub .badge{font-size:10.5px;padding:3px 8px}
 .wa-status{display:inline-flex;align-items:center;gap:6px;margin-top:6px;font-size:12.5px;font-weight:700}
@@ -1261,22 +1267,33 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 .wa-card-preview{margin-top:7px;font-size:13.5px;color:#dfe4eb;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical}
 .wa-card-preview b{font-weight:700;color:#f5f7fb}
 .wa-preview-client{color:#7dd3fc}
-.wa-card-action{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:0 0 auto;margin-left:8px}
-.wa-card-chevron{color:#8a96a8;font-size:18px}
+.wa-card-chevron{align-self:center;color:#8a96a8;font-size:20px;flex:0 0 auto}
 .wa-unmatched{margin-top:8px}
 .wa-unmatched ul{margin:0;padding-left:18px;display:grid;gap:8px;color:#dfe4eb}
 .wa-empty{text-align:center;padding:34px;color:#9ca7b8}
+.wa-filters{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}
+.wa-filter-pill{border:1px solid #334155;background:#131a26;color:#9ca7b8;border-radius:999px;padding:7px 16px;font-size:13px;font-weight:600;cursor:pointer}
+.wa-filter-pill:hover{border-color:#465065}
+.wa-filter-pill.active{background:#e9475b;border-color:#e9475b;color:#fff}
+.wa-search-row{display:flex;gap:8px;align-items:center;margin-bottom:6px}
+.wa-search-row .wa-search{margin-bottom:0;flex:1;max-width:none}
+.wa-search-filter-btn{width:42px;height:42px;flex:0 0 42px;border:1px solid #334155;background:#131a26;color:#9ca7b8;border-radius:12px;display:grid;place-items:center;cursor:pointer}
+.wa-search-filter-btn:hover{border-color:#465065;color:#e2e8f0}
+.wa-count{color:#9ca7b8;font-size:12.5px;margin:8px 2px 20px}
 .wa-search{max-width:420px;margin-bottom:18px}
 .wa-modal-overlay{position:fixed;inset:0;z-index:220;display:flex;align-items:center;justify-content:center;background:#020617cc;padding:16px}
 .wa-modal-overlay[hidden]{display:none!important}
 .wa-modal{width:min(100%,680px);max-height:88vh;display:flex;flex-direction:column;background:#131a26;border:1px solid #334155;border-radius:18px;box-shadow:0 30px 90px #000c;overflow:hidden}
 .wa-modal-header{padding:18px 20px 14px;border-bottom:1px solid #263140}
 .wa-modal-header-top{display:flex;align-items:flex-start;gap:12px}
+.wa-modal-back{width:32px;height:32px;border:0;border-radius:9px;background:#172033;color:#e2e8f0;font-size:20px;line-height:1;cursor:pointer;flex:0 0 auto}
 .wa-modal-avatar{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;font-size:26px;flex:0 0 52px;background:#172033}
 .wa-modal-title{flex:1;min-width:0}
 .wa-modal-title h3{margin:0;font-size:18px}
-.wa-modal-title p{margin:2px 0 0;color:#9ca7b8;font-size:13px}
+.wa-modal-title h3 small{font-weight:500;color:#9ca7b8;font-size:13px}
+.wa-modal-title p{margin:4px 0 0;color:#9ca7b8;font-size:13px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .wa-modal-title .wa-modal-phone{display:flex;align-items:center;gap:6px;color:#dfe4eb}
+.wa-modal-phone-btn{display:inline-flex;color:#25d366}
 .wa-modal-right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:0 0 auto}
 .wa-modal-practice{color:#9ca7b8;font-size:12px}
 .wa-modal-close{width:32px;height:32px;border:0;border-radius:9px;background:#172033;color:#e2e8f0;font-size:18px;cursor:pointer;flex:0 0 auto}
@@ -1285,7 +1302,11 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 .wa-stat-icon{display:block;margin:0 auto 4px}
 .wa-stat small{display:block;color:#9ca7b8;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em}
 .wa-stat b{font-size:15px}
-.wa-chat{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:6px;background:#0d121b}
+.wa-chat-section{display:flex;flex-direction:column;flex:1;min-height:0}
+.wa-chat-header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px 0;font-size:13.5px;font-weight:700;color:#9ca7b8}
+.wa-chat-header a{color:#4f8fdc;font-weight:600;font-size:12.5px;text-decoration:none}
+.wa-chat-header a:hover{text-decoration:underline}
+.wa-chat{flex:1;overflow-y:auto;padding:10px 20px 16px;display:flex;flex-direction:column;gap:6px;background:#0d121b}
 .wa-chat-date{text-align:center;margin:10px 0}
 .wa-chat-date span{background:#1f2937;color:#9ca7b8;font-size:11px;padding:4px 12px;border-radius:99px}
 .wa-bubble-row{display:flex}
@@ -1309,6 +1330,16 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 .wa-details-msg dt{color:#9ca7b8;font-size:10px;text-transform:uppercase;letter-spacing:.04em}
 .wa-details-msg dd{margin:2px 0 0;font-size:12.5px}
 .wa-details-msg .conversation-error{color:#fca5a5}
+.wa-quick-actions{display:grid;gap:8px;padding:14px 20px 0}
+.wa-quick-action{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid #263140;border-radius:13px;background:#0f151f;color:inherit;text-decoration:none;cursor:pointer;text-align:left;font-family:inherit}
+.wa-quick-action:hover{border-color:#334155}
+.wa-quick-icon{width:36px;height:36px;border-radius:10px;background:#172033;display:grid;place-items:center;flex:0 0 36px;color:#9ca7b8}
+.wa-quick-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.wa-quick-text b{font-size:13.5px}
+.wa-quick-text small{color:#9ca7b8;font-size:11.5px}
+.wa-quick-arrow{color:#8a96a8;flex:0 0 auto;display:flex}
+.wa-quick-whatsapp{border-color:#1d8a53}
+.wa-quick-whatsapp .wa-quick-icon{background:#0d3b2a;color:#25d366}
 .wa-modal-actions{display:flex;flex-wrap:wrap;gap:8px;padding:14px 20px;border-top:1px solid #263140}
 .wa-modal-actions .btn{white-space:nowrap}
 .wa-modal-actions .wa-close-btn{margin-left:auto}
@@ -1327,8 +1358,20 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 .light-theme .wa-details-msg{background:#f8fafc;border-color:#e2e8f0}
 .light-theme .wa-modal-actions{border-color:#e2e8f0}
 .light-theme .wa-modal-close{background:#f1f5f9;color:#111827}
+.light-theme .wa-modal-back{background:#f1f5f9;color:#111827}
 .light-theme .wa-chat-date span{background:#e2e8f0;color:#475569}
-@media(max-width:700px){.wa-modal{max-height:94vh}.wa-modal-stats{grid-template-columns:repeat(2,1fr)}.wa-card{flex-wrap:wrap}.wa-card-action{margin-left:0;flex-direction:row;width:100%;justify-content:space-between}}
+.light-theme .wa-card-owner{color:#334155}
+.light-theme .wa-filter-pill{background:#fff;color:#526174;border-color:#cbd5e1}
+.light-theme .wa-filter-pill.active{background:#e9475b;border-color:#e9475b;color:#fff}
+.light-theme .wa-search-filter-btn{background:#fff;color:#526174;border-color:#cbd5e1}
+.light-theme .wa-count{color:#526174}
+.light-theme .wa-chat-header{color:#526174}
+.light-theme .wa-quick-action{background:#f8fafc;border-color:#e2e8f0;color:#111827}
+.light-theme .wa-quick-icon{background:#eef2f7;color:#526174}
+.light-theme .wa-quick-text small{color:#64748b}
+.light-theme .wa-quick-whatsapp{border-color:#86efac}
+.light-theme .wa-quick-whatsapp .wa-quick-icon{background:#dcfce7;color:#15803d}
+@media(max-width:700px){.wa-modal{max-height:94vh}.wa-modal-stats{grid-template-columns:repeat(2,1fr)}}
 .practice-row-link{cursor:pointer;outline:0}.practice-row-link:focus{outline:2px solid #fb7185;outline-offset:-2px}.practice-row-link.row-selected{outline:2px solid #ef405f;outline-offset:-2px}.practice-row-link.row-selected td{background:#ef405f40!important}.practice-row-link.row-selected td:first-child{background:#502d40!important}.light-theme .practice-row-link.row-selected td{background:#ef405f26!important}.light-theme .practice-row-link.row-selected td:first-child{background:#fde3e7!important}.tag-select-orange{color:#fb923c!important}.tag-select-green{color:#4ade80!important}.light-theme .tag-select-orange{color:#c2410c!important}.light-theme .tag-select-green{color:#15803d!important}.tag-outline-green{background:#052e2b;color:#86efac;border:2px solid #22c55e}.light-theme{color-scheme:light;--ink:#111827;--muted:#526174;--paper:#fff;--bg:#eef2f7;--line:#cbd5e1}.light-theme h1,.light-theme h2,.light-theme label,.light-theme td,.light-theme .activity-item b,.light-theme .metric-card small,.light-theme .payment-card small,.light-theme .dashboard-panel header p strong,.light-theme .conversation-main p b,.light-theme .conversation-main a,.light-theme .pagination a{color:#111827}.light-theme input,.light-theme select,.light-theme textarea,.light-theme .lookup-results,.light-theme .lookup-item,.light-theme .kv,.light-theme table,.light-theme .login{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme input::placeholder,.light-theme textarea::placeholder{color:#64748b}.light-theme th,.light-theme .sub,.light-theme .kv small,.light-theme .conversation-card dt,.light-theme .pagination{color:#526174}.light-theme th,.light-theme td,.light-theme .activity-item{border-color:#d7dee8}.light-theme .tablebox table tr:hover td,.light-theme .practice-row-link:focus td,.light-theme .lookup-item:hover,.light-theme .lookup-item:focus{background:#f1f5f9}.light-theme .btn.ghost,.light-theme .pagination a{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .badge{background:#e2e8f0;color:#1e293b}.light-theme .tag-red{background:#fee2e2;color:#991b1b}.light-theme .tag-orange{background:#ffedd5;color:#9a3412}.light-theme .tag-purple{background:#f3e8ff;color:#6b21a8}.light-theme .tag-yellow,.light-theme .pay-yellow{background:#fef9c3;color:#713f12}.light-theme .tag-pink{background:#fce7f3;color:#9d174d}.light-theme .tag-blue,.light-theme .pay-blue{background:#dbeafe;color:#1e40af}.light-theme .tag-green,.light-theme .pay-green{background:#dcfce7;color:#166534}.light-theme .tag-outline-orange{background:#fff7ed;color:#c2410c}.light-theme .tag-outline-green{background:#f0fdf4;color:#166534;border-color:#22c55e}.light-theme .selected-box{background:#ecfdf5;color:#166534;border-color:#86efac}.light-theme .nav a{color:#334155}.light-theme .nav a:hover{background:#f1f5f9;color:#111827}.light-theme .nav a:first-child{background:#fff1f2;color:#be123c;border-color:#fecdd3}.light-theme .more-menu a{color:#334155}.light-theme .more-menu a:hover{background:#f1f5f9}.light-theme .install-hint{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .danger{background:#fff1f2}.light-theme .warning,.light-theme .trash-note{background:#fff7ed;color:#7c2d12}.light-theme .flash:not(.warning){background:#ecfdf5;color:#166534}.light-theme .conversation-main p b,.light-theme .conversation-main a{color:#111827}
 .practice-status{background:transparent!important;border:2px solid currentColor}.practice-status-blue{color:#60a5fa!important;border-color:#3b82f6}.practice-status-red{color:#fb7185!important;border-color:#ef4444}.practice-status-yellow{color:#fde047!important;border-color:#eab308}.practice-status-green{color:#4ade80!important;border-color:#22c55e}.light-theme .practice-status-blue{color:#1d4ed8!important}.light-theme .practice-status-red{color:#b91c1c!important}.light-theme .practice-status-yellow{color:#854d0e!important}.light-theme .practice-status-green{color:#15803d!important}
 .modern-check{display:flex;align-items:center;gap:10px;min-height:46px;padding:10px 13px;border:1px solid #3b4658;border-radius:12px;background:linear-gradient(145deg,#182130,#111925);color:#e8edf5;cursor:pointer;transition:border-color .16s,transform .16s,box-shadow .16s}.modern-check:hover{transform:translateY(-1px);border-color:#fb7185;box-shadow:0 8px 22px #02061745}.modern-check input[type=checkbox]{width:20px;height:20px;margin:0;accent-color:#ef405f}.modern-check span{font-size:12px;font-weight:800;letter-spacing:.025em}.light-theme .modern-check{background:linear-gradient(145deg,#fff,#f1f5f9);color:#172033;border-color:#cbd5e1}.invoice-inline{display:grid;gap:8px}.invoice-inline input{min-width:0}.invoice-inline .btn{width:100%}
@@ -2677,17 +2720,36 @@ function waCopyPhone(phone){
 function waRefreshConversation(){
   location.reload();
 }
-function waFilterList(input){
-  const q=(input.value||'').toLowerCase().trim();
+function waApplyFilters(){
+  const searchInput=document.getElementById('waSearch');
+  const q=(searchInput&&searchInput.value||'').toLowerCase().trim();
+  const activePill=document.querySelector('.wa-filter-pill.active');
+  const filterValue=activePill?activePill.dataset.filterValue:'tutte';
   const cards=document.querySelectorAll('#waList [data-search]');
-  let anyVisible=false;
+  let visibleCount=0;
   cards.forEach(function(card){
-    const match=!q||card.dataset.search.indexOf(q)!==-1;
+    const searchMatch=!q||card.dataset.search.indexOf(q)!==-1;
+    const filters=(card.dataset.filter||'').split(' ');
+    const filterMatch=filterValue==='tutte'||filters.indexOf(filterValue)!==-1;
+    const match=searchMatch&&filterMatch;
     card.style.display=match?'':'none';
-    if(match)anyVisible=true;
+    if(match)visibleCount++;
   });
   const empty=document.getElementById('waListEmpty');
-  if(empty)empty.hidden=anyVisible||cards.length===0;
+  if(empty)empty.hidden=visibleCount>0||cards.length===0;
+  const count=document.getElementById('waCount');
+  if(count)count.textContent=visibleCount+(visibleCount===1?' conversazione':' conversazioni');
+}
+function waSetFilter(btn){
+  document.querySelectorAll('.wa-filter-pill').forEach(function(p){p.classList.remove('active');});
+  btn.classList.add('active');
+  waApplyFilters();
+}
+function waResetFilters(){
+  const searchInput=document.getElementById('waSearch');
+  if(searchInput)searchInput.value='';
+  document.querySelectorAll('.wa-filter-pill').forEach(function(p,i){p.classList.toggle('active',i===0);});
+  waApplyFilters();
 }
 const ppmLookupPanels=new Set();
 function ppmCloseLookupPanel(panel){
@@ -3978,8 +4040,8 @@ function cremationFilterAddAnimalList(input){
   cremationRenderAddAnimalSuggestions(input,term);
 }
 function cremationRenderAddAnimalSuggestions(input,term){
-  // <datalist> non mostra alcun suggerimento su Safari/iOS: menu di
-  // suggerimenti proprio, costruito in JS, per funzionare anche lì.
+  // niente datalist HTML: su Safari/iOS non mostra alcun suggerimento, quindi
+  // serve un menu di suggerimenti proprio, costruito in JS, per funzionare anche lì.
   const box=document.getElementById('cremationAddAnimalSuggestions');
   if(!box)return;
   box.innerHTML='';
@@ -4519,6 +4581,7 @@ LUCIDE_PATHS = {
     "pencil": '<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/>',
     "chevron-right": '<path d="m9 18 6-6-6-6"/>',
     "x": '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+    "filter": '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>',
 }
 
 
@@ -8814,11 +8877,19 @@ class App(BaseHTTPRequestHandler):
                 dot,label="wa-status-grey","Programmato"
                 preview=f"Invio programmato per il {dt_label(nxt['scheduled_at'])}" if nxt else "Nessuna attività"
                 preview_is_client=False
+            unread_count=0
+            for k,_,_ in reversed(events):
+                if k!="in":break
+                unread_count+=1
+            filter_keys=["tutte"]
+            if last_kind=="in":filter_keys.append("rispondere")
+            status_filter_key={"Ritirato":"ritirato","Consegnato":"consegnato"}.get(p["status"])
+            if status_filter_key:filter_keys.append(status_filter_key)
             return {
                 "pid":pid,"practice":p,"client":client,"phone":phone,"avatar_emoji":avatar_emoji,"avatar_cls":avatar_cls,
                 "dot":dot,"label":label,"preview":preview,"preview_is_client":preview_is_client,
                 "last_ts":last_ts or (pending[0]["scheduled_at"] if pending else p["created_at"]),
-                "events":events,"pending":pending,
+                "events":events,"pending":pending,"unread_count":unread_count,"filter_keys":filter_keys,
                 "sent_count":sum(1 for k,_,_ in events if k=="out"),"reply_count":sum(1 for k,_,_ in events if k=="in"),
                 "last_out_ts":max([ts for k,ts,_ in events if k=="out"],default=""),
                 "last_in_ts":max([ts for k,ts,_ in events if k=="in"],default=""),
@@ -8835,21 +8906,22 @@ class App(BaseHTTPRequestHandler):
             weight=(p["estimated_weight"] or "").strip()
             search_key=esc(f'{conv["client"].lower()} {(p["animal_name"] or "").lower()} {conv["phone"]}')
             preview_cls=" wa-preview-client" if conv["preview_is_client"] else ""
-            return f'''<article class="wa-card" data-search="{search_key}" onclick="waOpenConversation('{conv["pid"]}')">
-              <div class="wa-card-icon">{lucide("message")}</div>
+            status_cls=practice_status_class(p["status"])
+            filter_attr=esc(' '.join(conv["filter_keys"]))
+            unread_html=f'<span class="wa-card-unread">{conv["unread_count"]}</span>' if conv["unread_count"]>0 else ""
+            return f'''<article class="wa-card" data-search="{search_key}" data-filter="{filter_attr}" data-status-class="{status_cls}" onclick="waOpenConversation('{conv["pid"]}')">
+              <div class="wa-card-icon">{conv["avatar_emoji"]}</div>
               <div class="wa-card-main">
                 <div class="wa-card-top">
-                  <span class="wa-card-name">{conv["avatar_emoji"]} {esc(p["animal_name"] or "Da inserire")}{f" ({esc(weight)} kg)" if weight else ""} <small>· {esc(conv["client"])}</small></span>
+                  <span class="wa-card-name">{esc(p["animal_name"] or "Da inserire")}{f" <small>({esc(weight)} kg)</small>" if weight else ""}</span>
                   <span class="wa-card-date">{esc(dt_label(conv["last_ts"]))}</span>
                 </div>
-                <div class="wa-card-sub"><span>{('+'+esc(conv["phone"])) if conv["phone"] else "Numero non disponibile"}</span><span class="badge {practice_status_class(p['status'])}">{esc(p["status"])}</span></div>
+                <div class="wa-card-owner"><span>{esc(conv["client"])}</span>{unread_html}</div>
+                <div class="wa-card-sub"><span>{('+'+esc(conv["phone"])) if conv["phone"] else "Numero non disponibile"}</span><span class="badge {status_cls}">{esc(p["status"])}</span></div>
                 <div class="wa-status {conv['dot']}"><span class="wa-status-dot"></span><span>{esc(conv["label"])}</span></div>
-                <div class="wa-card-preview{preview_cls}"><b>Ultimo messaggio:</b> "{esc(conv["preview"])}"</div>
+                <div class="wa-card-preview{preview_cls}">"{esc(conv["preview"])}"</div>
               </div>
-              <div class="wa-card-action" onclick="event.stopPropagation()">
-                <button type="button" class="btn ghost" onclick="waOpenConversation('{conv["pid"]}')">Apri conversazione</button>
-                <span class="wa-card-chevron">›</span>
-              </div>
+              <span class="wa-card-chevron">›</span>
             </article>'''
 
         def bubble_html(kind,row):
@@ -8907,24 +8979,55 @@ class App(BaseHTTPRequestHandler):
                 </div>''')
             return ''.join(items) or '<p class="sub">Nessun dettaglio tecnico disponibile.</p>'
 
+        def quick_action_row(icon_html,title,desc,onclick=None,href=None,extra_cls=""):
+            if href:
+                return f'''<a class="wa-quick-action {extra_cls}" href="{href}" target="_blank" rel="noopener noreferrer">
+                  <span class="wa-quick-icon">{icon_html}</span>
+                  <span class="wa-quick-text"><b>{esc(title)}</b><small>{esc(desc)}</small></span>
+                  <span class="wa-quick-arrow">{lucide("chevron-right")}</span>
+                </a>'''
+            return f'''<button type="button" class="wa-quick-action {extra_cls}" onclick="{onclick}">
+              <span class="wa-quick-icon">{icon_html}</span>
+              <span class="wa-quick-text"><b>{esc(title)}</b><small>{esc(desc)}</small></span>
+              <span class="wa-quick-arrow">{lucide("chevron-right")}</span>
+            </button>'''
+
+        def quick_actions_html(conv):
+            p=conv["practice"]
+            phone_text=('+'+esc(conv["phone"])) if conv["phone"] else "Numero non disponibile"
+            items=[]
+            if conv["phone"]:
+                items.append(quick_action_row(lucide("message"),"Apri WhatsApp","Apri la chat con il proprietario",href=f'https://wa.me/{conv["phone"]}',extra_cls="wa-quick-whatsapp"))
+            assisted=assisted_cremation_label(p)
+            if assisted:
+                notified=(p["owner_notified_status"] if "owner_notified_status" in p.keys() else "")=="avvisato"
+                toggle_status="da_avvisare" if notified else "avvisato"
+                title="Segna come da avvisare" if notified else "Segna come avvisato"
+                desc="Il proprietario risulta già avvisato" if notified else "Il proprietario non è stato ancora avvisato"
+                items.append(quick_action_row(lucide("check-circle"),title,desc,onclick=f"cremationToggleOwnerNotified(null,{p['id']},'{toggle_status}')"))
+            items.append(quick_action_row(lucide("phone"),"Copia numero",phone_text,onclick=f"waCopyPhone('{conv['phone']}')"))
+            items.append(quick_action_row(lucide("clock"),"Aggiorna conversazione","Sincronizza i nuovi messaggi",onclick="waRefreshConversation()"))
+            return ''.join(items)
+
         def modal_html(conv):
             p=conv["practice"]; pid=conv["pid"]
             weight=(p["estimated_weight"] or "").strip()
             url=practice_url(pid)
-            phone_html=f'<a href="https://wa.me/{conv["phone"]}" target="_blank" rel="noopener noreferrer">{lucide("message")}</a>' if conv["phone"] else ""
-            whatsapp_btn=f'<a class="btn ghost" href="https://wa.me/{conv["phone"]}" target="_blank" rel="noopener noreferrer">Apri WhatsApp</a>' if conv["phone"] else ""
+            phone_wa_html=f'<a class="wa-modal-phone-btn" href="https://wa.me/{conv["phone"]}" target="_blank" rel="noopener noreferrer">{lucide("message")}</a>' if conv["phone"] else ""
+            chat_link_html=f'<a href="https://wa.me/{conv["phone"]}" target="_blank" rel="noopener noreferrer">Vai alla chat WhatsApp ↗</a>' if conv["phone"] else ""
+            status_cls=practice_status_class(p["status"])
             return f'''<div class="wa-modal-overlay" id="waModal{pid}" hidden onclick="if(event.target===this)waCloseModal('{pid}')">
               <div class="wa-modal">
                 <div class="wa-modal-header">
                   <div class="wa-modal-header-top">
+                    <button type="button" class="wa-modal-back" onclick="waCloseModal('{pid}')" aria-label="Indietro">‹</button>
                     <div class="wa-modal-avatar">{conv["avatar_emoji"]}</div>
                     <div class="wa-modal-title">
-                      <h3>{esc(p["animal_name"] or "Da inserire")}{f" ({esc(weight)} kg)" if weight else ""}</h3>
-                      <p>{esc(conv["client"])}</p>
-                      <p class="wa-modal-phone">{('+'+esc(conv["phone"])) if conv["phone"] else "Numero non disponibile"} {phone_html}</p>
+                      <h3>{esc(p["animal_name"] or "Da inserire")}{f" <small>({esc(weight)} kg)</small>" if weight else ""}</h3>
+                      <p>{esc(conv["client"])} <span class="badge {status_cls}">{esc(p["status"])}</span></p>
+                      <p class="wa-modal-phone">{('+'+esc(conv["phone"])) if conv["phone"] else "Numero non disponibile"}{phone_wa_html}</p>
                     </div>
                     <div class="wa-modal-right">
-                      <span class="badge {practice_status_class(p['status'])}">{esc(p["status"])}</span>
                       <span class="wa-modal-practice">Pratica {esc(p["practice_number"])}</span>
                     </div>
                     <button type="button" class="wa-modal-close" onclick="waCloseModal('{pid}')" aria-label="Chiudi">×</button>
@@ -8932,17 +9035,18 @@ class App(BaseHTTPRequestHandler):
                   <div class="wa-modal-stats">
                     <div class="wa-stat"><span class="wa-stat-icon">{lucide("arrow-up")}</span><small>Messaggi inviati</small><b>{conv["sent_count"]}</b></div>
                     <div class="wa-stat"><span class="wa-stat-icon">{lucide("arrow-down")}</span><small>Risposte ricevute</small><b>{conv["reply_count"]}</b></div>
-                    <div class="wa-stat"><small>Ultimo invio</small><b>{esc(dt_label(conv["last_out_ts"]))}</b></div>
-                    <div class="wa-stat"><small>Ultima risposta</small><b>{esc(dt_label(conv["last_in_ts"]))}</b></div>
+                    <div class="wa-stat"><span class="wa-stat-icon">{lucide("clock")}</span><small>Ultimo invio</small><b>{esc(dt_label(conv["last_out_ts"]))}</b></div>
+                    <div class="wa-stat"><span class="wa-stat-icon">{lucide("check-circle")}</span><small>Ultima risposta</small><b>{esc(dt_label(conv["last_in_ts"]))}</b></div>
                   </div>
                 </div>
-                <div class="wa-chat">{chat_html(conv)}</div>
+                <div class="wa-chat-section">
+                  <div class="wa-chat-header"><span>Chat</span>{chat_link_html}</div>
+                  <div class="wa-chat">{chat_html(conv)}</div>
+                </div>
                 <details class="wa-details"><summary>Mostra dettagli tecnici</summary><div class="wa-details-body">{details_html(conv)}</div></details>
+                <div class="wa-quick-actions">{quick_actions_html(conv)}</div>
                 <div class="wa-modal-actions">
                   <a class="btn ghost" href="{url}">Apri pratica</a>
-                  <button type="button" class="btn ghost" onclick="waCopyPhone('{conv["phone"]}')">Copia numero</button>
-                  {whatsapp_btn}
-                  <button type="button" class="btn ghost" onclick="waRefreshConversation()">Aggiorna conversazione</button>
                   <button type="button" class="btn danger-btn wa-close-btn" onclick="waCloseModal('{pid}')">Chiudi</button>
                 </div>
               </div>
@@ -8954,8 +9058,18 @@ class App(BaseHTTPRequestHandler):
         if unmatched_inbound:
             unmatched_items=''.join(f'<li><b>+{esc(r["from_phone"])}</b>{(" · "+esc(r["contact_name"])) if r["contact_name"] else ""} · {esc((r["received_at"] or "").replace("T"," ")[:16])}<br>{esc(r["body"])}</li>' for r in unmatched_inbound)
             unmatched_html=f'<section class="section wa-unmatched"><h2>Messaggi ricevuti non abbinati a nessuna pratica</h2><ul>{unmatched_items}</ul></section>'
-        search_html=f'''<input type="text" class="wa-search" id="waSearch" placeholder="Cerca per animale, proprietario o numero..." value="{esc(term)}" oninput="waFilterList(this)">'''
-        body=f'''<main class="wrap conversations-wrap"><div class="titlebar"><div><h1>{lucide("message")} Conversazioni WhatsApp</h1><p class="sub">Riepilogo delle comunicazioni con i proprietari.</p></div></div>{search_html}<div class="wa-list" id="waList">{cards_html}</div><p class="wa-empty" id="waListEmpty" hidden>Nessuna conversazione corrisponde alla ricerca.</p>{unmatched_html}{modals_html}</main>'''
+        filters_html='''<div class="wa-filters">
+          <button type="button" class="wa-filter-pill active" data-filter-value="tutte" onclick="waSetFilter(this)">Tutte</button>
+          <button type="button" class="wa-filter-pill" data-filter-value="rispondere" onclick="waSetFilter(this)">Da rispondere</button>
+          <button type="button" class="wa-filter-pill" data-filter-value="ritirato" onclick="waSetFilter(this)">Ritirate</button>
+          <button type="button" class="wa-filter-pill" data-filter-value="consegnato" onclick="waSetFilter(this)">Consegnate</button>
+        </div>'''
+        search_html=f'''<div class="wa-search-row">
+          <input type="text" class="wa-search" id="waSearch" placeholder="Cerca per animale, proprietario o numero..." value="{esc(term)}" oninput="waApplyFilters()">
+          <button type="button" class="wa-search-filter-btn" onclick="waResetFilters()" aria-label="Reimposta filtri">{lucide("filter")}</button>
+        </div>'''
+        count_label=f'{len(conversations)} conversazion{"e" if len(conversations)==1 else "i"}'
+        body=f'''<main class="wrap conversations-wrap"><div class="titlebar"><div><h1>{lucide("message")} Conversazioni WhatsApp</h1><p class="sub">Tutte le comunicazioni con i proprietari.</p></div></div>{filters_html}{search_html}<div class="wa-list" id="waList">{cards_html}</div><p class="wa-empty" id="waListEmpty" hidden>Nessuna conversazione corrisponde alla ricerca.</p><p class="wa-count" id="waCount">{count_label}</p>{unmatched_html}{modals_html}</main>'''
         self.send_html(layout("Conversazioni WhatsApp",body,user))
 
     def notifications(self,user):

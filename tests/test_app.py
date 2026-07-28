@@ -4058,6 +4058,74 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn("è terminata", page)
         self.assertNotIn("tipo di consegna", page)
 
+    def test_conversations_list_has_filter_pills_and_search_reset_button(self):
+        admin,_,_=self._whatsapp_record("2026-07-15T15:00:00")
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/conversazioni-whatsapp"
+        self.handler.whatsapp_conversations(admin);page=rendered[-1]
+        for value,label in (("tutte","Tutte"),("rispondere","Da rispondere"),("ritirato","Ritirate"),("consegnato","Consegnate")):
+            self.assertIn(f'data-filter-value="{value}"',page)
+            self.assertIn(label,page)
+        self.assertIn('class="wa-filter-pill active"',page)
+        self.assertIn('class="wa-search-filter-btn"',page)
+        self.assertIn("waApplyFilters",page)
+        self.assertIn("function waSetFilter(",page)
+        self.assertIn("function waResetFilters(",page)
+        self.assertIn('id="waCount"',page)
+        self.assertNotIn("waFilterList",page)
+
+    def test_conversation_card_shows_unread_badge_for_trailing_client_messages(self):
+        admin,pid=self._catalog_practice()
+        with app.db() as conn:
+            stamp=app.now()
+            conn.execute("""INSERT INTO whatsapp_messages(practice_id,scheduled_at,status,sent_at,template_name,recipient_phone,manual,message_type,created_at,updated_at)
+                            VALUES(?,?,?,?,?,?,?,?,?,?)""",(pid,stamp,"accettato_da_meta",stamp,"catalogo_urne","393339990000",0,"catalogo",stamp,stamp))
+            for i,body in enumerate(("Primo messaggio","Secondo messaggio")):
+                conn.execute("""INSERT INTO whatsapp_inbound_messages(practice_id,wa_message_id,from_phone,contact_name,message_type,body,received_at,created_at)
+                                VALUES(?,?,?,?,?,?,?,?)""",(pid,f"wamid.reply{i}","393339990000","Anna",  "text",body,stamp,stamp))
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/conversazioni-whatsapp"
+        self.handler.whatsapp_conversations(admin);page=rendered[-1]
+        card=page.split('<article class="wa-card"',1)[1][:1500]
+        self.assertIn('<span class="wa-card-unread">2</span>',card)
+        self.assertIn("rispondere",card.split('data-filter="',1)[1].split('"',1)[0])
+
+    def test_conversation_card_border_color_follows_practice_status_not_species(self):
+        admin,pid=self._catalog_practice()  # default status "Ritirato"
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/conversazioni-whatsapp"
+        self.handler.whatsapp_conversations(admin);page=rendered[-1]
+        self.assertIn('data-status-class="practice-status-yellow"',page)
+
+    def test_quick_actions_render_as_cards_and_hide_owner_notify_for_non_assisted(self):
+        admin,pid=self._catalog_practice()
+        with app.db() as conn:
+            stamp=app.now()
+            conn.execute("""INSERT INTO whatsapp_messages(practice_id,scheduled_at,status,sent_at,template_name,recipient_phone,manual,message_type,created_at,updated_at)
+                            VALUES(?,?,?,?,?,?,?,?,?,?)""",(pid,stamp,"accettato_da_meta",stamp,"catalogo_urne","393339990000",0,"catalogo",stamp,stamp))
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/conversazioni-whatsapp"
+        self.handler.whatsapp_conversations(admin);page=rendered[-1]
+        self.assertIn('<div class="wa-quick-actions">',page)
+        modal=page.split('<div class="wa-quick-actions">',1)[1].split('<div class="wa-modal-actions">',1)[0]
+        self.assertIn("Apri WhatsApp",modal)
+        self.assertIn("Apri la chat con il proprietario",modal)
+        self.assertIn("Copia numero",modal)
+        self.assertIn("Aggiorna conversazione",modal)
+        self.assertIn("Sincronizza i nuovi messaggi",modal)
+        self.assertNotIn("Segna come avvisato",modal)
+
+    def test_quick_actions_show_segna_come_avvisato_only_for_assisted_cremation(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,owner_last_name,owner_phone,animal_name,service_type,tag_assistita,owner_notified_status)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                ("CR-WA-ASSIST","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Anna","Bianchi","3339990000","Luna","Cremazione singola","Si","da_avvisare")).lastrowid
+            conn.execute("""INSERT INTO whatsapp_messages(practice_id,scheduled_at,status,sent_at,template_name,recipient_phone,manual,message_type,created_at,updated_at)
+                            VALUES(?,?,?,?,?,?,?,?,?,?)""",(pid,stamp,"accettato_da_meta",stamp,"catalogo_urne","393339990000",0,"catalogo",stamp,stamp))
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/conversazioni-whatsapp"
+        self.handler.whatsapp_conversations(admin);page=rendered[-1]
+        modal=page.split('<div class="wa-quick-actions">',1)[1].split('<div class="wa-modal-actions">',1)[0]
+        self.assertIn("Segna come avvisato",modal)
+        self.assertIn(f"cremationToggleOwnerNotified(null,{pid},'avvisato')",modal)
+
     def test_whatsapp_failed_retry_and_scheduled_cancel(self):
         admin,_,failed_id=self._whatsapp_record("2026-07-15T13:00:00","fallito",1,"2026-07-15T13:01:00")
         _,_,scheduled_id=self._whatsapp_record("2026-07-15T15:00:00")
