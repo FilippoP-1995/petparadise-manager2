@@ -4107,6 +4107,19 @@ function calendarFlushWheelTime(input){
   if(!hourOpt||!minOpt)return;
   calendarSetWheelTime(wheel,Number(hourOpt.dataset.timeValue),Number(minOpt.dataset.timeValue),false);
 }
+function cremationFlushEditWheels(){
+  // il tap su "Salva orario" genera prima un pointerdown, e un listener
+  // globale (per chiudere le rotelle quando si tocca fuori da esse) nasconde
+  // subito la rotella aperta PRIMA che scatti il click che avvia il salvataggio.
+  // Se l'utente aveva appena finito di scorrere la rotella (debounce di 90ms
+  // non ancora scattato), calendarFlushWheelTime richiamato dentro il click
+  // trova la rotella gia' nascosta e rinuncia, salvando l'orario vecchio.
+  // Agganciando lo stesso flush anche qui, sul pointerdown del pulsante,
+  // lo eseguiamo mentre la rotella e' ancora visibile (il pointerdown sul
+  // bottone stesso precede sempre, in fase di bubbling, quello sul document).
+  calendarFlushWheelTime(document.getElementById('cremationEditStart'));
+  calendarFlushWheelTime(document.getElementById('cremationEditEnd'));
+}
 function cremationSubmitEditModal(){
   const overlay=document.getElementById('cremationEditOverlay');
   const id=overlay.dataset.cycleId;
@@ -8109,7 +8122,7 @@ class App(BaseHTTPRequestHandler):
             <div class="cremation-modal-head"><h3>Modifica orario ciclo</h3><button type="button" class="cremation-modal-close" onclick="cremationCloseModal()" aria-label="Chiudi">×</button></div>
             {time_field_html("Inizio","cremationEditStart")}
             {time_field_html("Fine","cremationEditEnd")}
-            <div class="cremation-modal-actions"><button type="button" class="btn ghost" onclick="cremationCloseModal()">Annulla</button><button type="button" class="btn" onclick="cremationSubmitEditModal()">Salva orario</button></div>
+            <div class="cremation-modal-actions"><button type="button" class="btn ghost" onclick="cremationCloseModal()">Annulla</button><button type="button" class="btn" onpointerdown="cremationFlushEditWheels()" onclick="cremationSubmitEditModal()">Salva orario</button></div>
           </div>
         </div>'''
 
@@ -8550,7 +8563,7 @@ class App(BaseHTTPRequestHandler):
             <div class="cremation-modal-head"><h3>Modifica orario ciclo</h3><button type="button" class="cremation-modal-close" onclick="cremationCloseModal()" aria-label="Chiudi">×</button></div>
             {time_field_html("Inizio","cremationEditStart")}
             {time_field_html("Fine","cremationEditEnd")}
-            <div class="cremation-modal-actions"><button type="button" class="btn ghost" onclick="cremationCloseModal()">Annulla</button><button type="button" class="btn" onclick="cremationSubmitEditModal()">Salva orario</button></div>
+            <div class="cremation-modal-actions"><button type="button" class="btn ghost" onclick="cremationCloseModal()">Annulla</button><button type="button" class="btn" onpointerdown="cremationFlushEditWheels()" onclick="cremationSubmitEditModal()">Salva orario</button></div>
           </div>
         </div>'''
 

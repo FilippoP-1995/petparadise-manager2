@@ -2416,6 +2416,47 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("cremationReloadWithOpenCycle(id);", complete_body)
         self.assertNotIn("location.reload()", complete_body)
 
+    def test_cremation_edit_time_wheel_is_flushed_before_the_global_hide_listener(self):
+        # bug reale segnalato dall'utente: "Cambio l'orario ma dopo Salva
+        # torna quello vecchio". Causa: un listener globale (usato per
+        # chiudere le rotelle orario quando si tocca fuori da esse) nasconde
+        # la rotella al pointerdown, che scatta SEMPRE prima del click. Il
+        # tap su "Salva orario" genera quindi: pointerdown (nasconde la
+        # rotella) poi click (chiama calendarFlushWheelTime, che pero'
+        # rinuncia perche' trova gia' wheel.hidden===true) -> se l'ultimo
+        # scroll non aveva ancora fatto in tempo ad aggiornare l'input (il suo
+        # debounce e' di 90ms), viene inviato il valore vecchio. La
+        # correzione esegue lo stesso flush anche sul pointerdown del
+        # pulsante stesso: essendo sull'elemento target, in fase di bubbling
+        # precede sempre il listener globale sul document.
+        js = app.APP_JS
+        self.assertIn("function cremationFlushEditWheels()", js)
+        flush_start = js.index("function cremationFlushEditWheels()")
+        flush_body = js[flush_start:flush_start + 1000]
+        self.assertIn("calendarFlushWheelTime(document.getElementById('cremationEditStart'))", flush_body)
+        self.assertIn("calendarFlushWheelTime(document.getElementById('cremationEditEnd'))", flush_body)
+        # il pulsante deve richiamare il flush su pointerdown, PRIMA del click
+        # che avvia il salvataggio vero e proprio (markup renderizzato da app.py).
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/programma-cremazioni"
+        self.handler.cremation_schedule(admin)
+        day_page = rendered[-1]
+        self.assertEqual(
+            day_page.count('onpointerdown="cremationFlushEditWheels()" onclick="cremationSubmitEditModal()">Salva orario'),
+            1,
+        )
+        rendered.clear()
+        self.handler.path = "/programma-cremazioni?vista=settimana"
+        self.handler.cremation_schedule(admin)
+        week_page = rendered[-1]
+        self.assertEqual(
+            week_page.count('onpointerdown="cremationFlushEditWheels()" onclick="cremationSubmitEditModal()">Salva orario'),
+            1,
+        )
+
     def test_provenance_color_is_deterministic_per_code_not_per_species(self):
         # bug reale segnalato dall'utente: la stessa sigla (es. "L") aveva
         # colori diversi a seconda che l'animale fosse un cane o un gatto,
