@@ -2808,6 +2808,79 @@ class PetParadiseTests(unittest.TestCase):
         # sparire durante un futuro restyling dell'header.
         self.assertIn('.app-header .header-search input{min-width:0;height:40px;min-height:40px;font-size:16px}', css)
 
+    def test_bottom_nav_is_a_single_silhouette_not_two_separate_pills(self):
+        # correzione richiesta dall'utente: la barra inferiore deve essere UN
+        # SOLO elemento continuo (stessa forma, stesso bordo, stessa ombra),
+        # con una rientranza morbida attorno al "+" ottenuta mascherando una
+        # piccola porzione del bordo superiore con il colore di sfondo della
+        # pagina — non due capsule separate con un vuoto in mezzo.
+        css = app.CSS
+        self.assertIn(".bottom-nav{position:fixed;display:grid;grid-template-columns:repeat(5,1fr);align-items:end;left:calc(10px + var(--safe-left));right:calc(10px + var(--safe-right));bottom:calc(10px + var(--safe-bottom));z-index:90;height:68px;padding:0;border-radius:30px;background:linear-gradient(160deg,#1c2635f5,#121a27f5);border:1px solid #2b3849;box-shadow:0 16px 38px #05070f66;backdrop-filter:blur(20px)}", css)
+        self.assertNotIn(".bottom-nav:before,.bottom-nav:after{", css)
+        self.assertIn(".bottom-nav:before{content:'';position:absolute;top:0;left:50%;width:78px;height:78px;border-radius:50%;background:#172131", css)
+        self.assertIn(".light-theme .bottom-nav:before{background:#eef2f7}", css)
+        self.assertIn(".light-theme .bottom-nav{background:linear-gradient(160deg,#ffffff,#f3f5f8)", css)
+
+    def test_calendar_wizard_zone_field_has_placeholder_and_visible_input_box(self):
+        # bug reale segnalato dall'utente: il campo Zona nello step 2 del
+        # wizard appariva come "solo una casella da spuntare" perche' il ramo
+        # di rendering usato al primo caricamento (nessun tipo evento ancora
+        # selezionato) non aveva il placeholder, e lo stile "senza bordo" dei
+        # tap-card (pensato per valori gia' compilati) rendeva il campo di
+        # ricerca libero invisibile finche' vuoto.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/calendario/nuovo"
+        self.handler.calendar_event_form(admin)
+        page = rendered[-1]
+        zone_start = page.index('class="calendar-tap-card calendar-zone-field lookup" data-calendar-types="Ritiro|Riconsegna" hidden')
+        zone_html = page[zone_start:zone_start + 900]
+        self.assertIn('placeholder="Scrivi per cercare una zona"', zone_html)
+        css = app.CSS
+        self.assertIn(".calendar-tap-card.lookup>.calendar-tap-card-body>input{border:1px solid #263246;background:#0e1622", css)
+
+    def test_calendar_wizard_type_cards_use_distinct_colors_matching_the_mockup(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/calendario/nuovo"
+        self.handler.calendar_event_form(admin)
+        page = rendered[-1]
+        for kind, color in (("Ritiro", "pink"), ("Ritiro in sede", "blue"), ("Riconsegna", "green"), ("Riconsegna in sede", "orange"), ("Appuntamento", "purple")):
+            self.assertIn(f'value="{kind}"', page)
+        self.assertIn('calendar-icon-pink', page)
+        self.assertIn('calendar-icon-blue', page)
+        self.assertIn('calendar-icon-green', page)
+        self.assertIn('calendar-icon-orange', page)
+        self.assertIn('calendar-icon-purple', page)
+        css = app.CSS
+        for color in ("pink", "blue", "green", "orange", "purple"):
+            self.assertIn(f".calendar-icon-{color}{{background:linear-gradient(", css)
+
+    def test_scroll_hide_bars_behavior_is_present_and_gated_to_mobile(self):
+        # comportamento "auto-hide" in stile Safari iOS per headbar e barra
+        # inferiore: attivo solo sotto i 900px, mai su desktop; usa solo
+        # transform/opacity (mai display:none) cosi' le barre restano sempre
+        # raggiungibili da tastiera; non deve mai nascondere la headbar
+        # mentre la ricerca ha il focus o mentre e' aperto un modale/menu.
+        css = app.CSS
+        self.assertIn("body.ppm-bars-hidden .top,body.ppm-bars-hidden .app-header{transform:translateY(-130%)}", css)
+        self.assertIn("body.ppm-bars-hidden .bottom-nav{transform:translateY(calc(100% + 24px))}", css)
+        self.assertIn("@media(prefers-reduced-motion:reduce){.top,.app-header,.bottom-nav{transition:none!important}}", css)
+        js = app.APP_JS
+        self.assertIn("window.matchMedia('(max-width:900px)')", js)
+        self.assertIn("function ppmBarsBusy()", js)
+        busy = js[js.index("function ppmBarsBusy()"):js.index("function ppmSetBarsHidden")]
+        self.assertIn("modal-open", busy)
+        self.assertIn("create-menu-open", busy)
+        self.assertIn("more-open", busy)
+        self.assertIn(".closest('.header-search')", busy)
+        self.assertIn("requestAnimationFrame(ppmUpdateBarsOnScroll)", js)
+        self.assertIn("{passive:true}", js)
+
     def test_assisted_notify_reminder_shows_on_dashboard_and_clears_when_notified(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
