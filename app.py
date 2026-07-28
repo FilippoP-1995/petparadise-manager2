@@ -1795,16 +1795,22 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-dash{color:#475569}
 .cremation-add-cycle-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin-top:18px;padding:14px;border:2px dashed #fb718550;border-radius:14px;background:transparent;color:#fb7185;font-weight:700;font-size:13px;cursor:pointer}
 .cremation-add-cycle-btn:hover{background:#fb71851a}
-.cremation-week-days{display:flex;flex-direction:column;gap:14px;margin-bottom:18px}
-.cremation-week-day{background:#1f2937;border:1px solid #334155;border-radius:16px;padding:16px}
-.cremation-week-day-head{display:flex;align-items:center;gap:12px;margin:-16px -16px 0;padding:16px 16px 0;cursor:pointer}
-.cremation-week-day-name{font-weight:800;font-size:14px;flex:1 1 auto}
-.cremation-week-day-name.weekend{color:#fb7185}
-.cremation-week-day-badge{padding:3px 12px;border-radius:99px;border:1px solid #4ade80;color:#4ade80;font-size:12px;font-weight:700;white-space:nowrap}
-.cremation-week-day .cremation-cycle-chevron .icon{transform:rotate(90deg)}
-.cremation-week-day.expanded .cremation-cycle-chevron .icon{transform:rotate(270deg)}
-.cremation-week-day-body{max-height:0;overflow:hidden;transition:max-height .3s ease}
-.cremation-week-day-body-inner{padding-top:14px;display:flex;flex-direction:column;gap:12px}
+.cremation-daybar-wrap{display:flex;align-items:center;gap:4px;margin-bottom:14px}
+.cremation-daybar-nav{flex:0 0 auto;width:26px;height:26px;border:0;border-radius:8px;background:transparent;color:#8a96a8;font-size:19px;line-height:1;cursor:pointer;display:grid;place-items:center}
+.cremation-daybar-nav:hover{color:#e2e8f0;background:#1a2332}
+.cremation-daybar{display:flex;gap:9px;flex:1 1 auto;min-width:0;overflow-x:auto;scroll-behavior:smooth;padding:4px 2px 10px;scrollbar-width:none}
+.cremation-daybar::-webkit-scrollbar{display:none}
+.cremation-daybar-card{flex:0 0 auto;min-width:62px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 8px;border:1px solid #334155;border-radius:16px;background:#1a2332;box-shadow:0 6px 16px #0307122e;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,background .18s ease,border-color .18s ease;font-family:inherit}
+.cremation-daybar-card:hover{border-color:#465065}
+.cremation-daybar-dow{font-size:11px;font-weight:700;color:#9ca7b8;letter-spacing:.04em}
+.cremation-daybar-num{font-size:20px;font-weight:800;color:#f5f7fb;line-height:1.1}
+.cremation-daybar-count{font-size:10px;color:#8a96a8;white-space:nowrap}
+.cremation-daybar-card.active{background:linear-gradient(135deg,#fb4c67,#d9284c);border-color:#fb4c67;box-shadow:0 10px 26px #ef405f4d;transform:translateY(-2px)}
+.cremation-daybar-card.active .cremation-daybar-dow,.cremation-daybar-card.active .cremation-daybar-num,.cremation-daybar-card.active .cremation-daybar-count{color:#fff}
+.cremation-day-pages{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-bottom:18px}
+.cremation-day-pages::-webkit-scrollbar{display:none}
+.cremation-day-page{flex:0 0 100%;scroll-snap-align:start;min-width:0}
+.cremation-day-page-inner{display:flex;flex-direction:column;gap:12px}
 .cremation-week-cycle-card{background:#161f2b;border:1px solid #334155;border-left:4px solid #475569;border-radius:12px;padding:10px 12px;min-width:0}
 .cremation-week-cycle-head{display:flex;align-items:center;gap:12px;margin:-10px -12px 0;padding:10px 12px 0;cursor:pointer}
 .cremation-week-cycle-main{display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex:1 1 auto;min-width:0}
@@ -1822,7 +1828,12 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-week-status-icon.cremation-status-waiting{background:#431407;color:#fb923c}
 .cremation-week-status-icon.cremation-status-active{background:#052e16;color:#4ade80}
 .cremation-week-status-icon.cremation-status-done{background:#1e293b;color:#94a3b8}
-.light-theme .cremation-week-day{background:#fff;border-color:#e2e8f0;color:#111827}
+.light-theme .cremation-daybar-card{background:#fff;border-color:#e2e8f0}
+.light-theme .cremation-daybar-dow{color:#526174}
+.light-theme .cremation-daybar-num{color:#111827}
+.light-theme .cremation-daybar-count{color:#64748b}
+.light-theme .cremation-daybar-nav{color:#526174}
+.light-theme .cremation-daybar-nav:hover{background:#f1f5f9;color:#111827}
 .light-theme .cremation-week-cycle-card{background:#fff;border-color:#e2e8f0}
 .light-theme .cremation-week-animal-line{color:#111827}
 @media(max-width:620px){.cremation-week-cycle-main{flex-basis:100%}.cremation-week-status-icon{margin-left:auto}}
@@ -3583,18 +3594,55 @@ function cremationOpenPendingCycle(){
   history.replaceState(null,'',location.pathname+(cleanQuery?'?'+cleanQuery:'')+location.hash);
   const card=document.querySelector('[data-cycle-id="'+cycleId+'"]');
   if(!card)return;
-  const day=card.closest('[data-week-day]');
-  if(day&&!day.classList.contains('expanded')){
-    const dayHead=day.querySelector('.cremation-week-day-head');
-    if(dayHead)cremationToggleWeekDay(dayHead);
-  }
+  const page=card.closest('.cremation-day-page');
+  if(page)cremationSelectDay(Number(page.dataset.dayIndex),{instant:true});
   if(!card.classList.contains('expanded')){
     const cardHead=card.querySelector('.cremation-cycle-head,.cremation-week-cycle-head');
     if(cardHead)cremationToggleCycleCard(cardHead);
   }
   requestAnimationFrame(function(){card.scrollIntoView({behavior:'smooth',block:'center'});});
 }
-document.addEventListener('DOMContentLoaded',cremationOpenPendingCycle);
+function cremationSelectDay(idx,opts){
+  opts=opts||{};
+  const pages=document.getElementById('cremationDayPages');
+  if(!pages)return;
+  const page=pages.querySelector('[data-day-index="'+idx+'"]');
+  if(page)page.scrollIntoView({behavior:opts.instant?'auto':'smooth',inline:'start',block:'nearest'});
+  cremationSetActiveDaybarCard(idx,opts.instant);
+}
+function cremationSetActiveDaybarCard(idx,instant){
+  document.querySelectorAll('.cremation-daybar-card').forEach(function(c){
+    c.classList.toggle('active',Number(c.dataset.dayIndex)===Number(idx));
+  });
+  const active=document.querySelector('.cremation-daybar-card[data-day-index="'+idx+'"]');
+  if(active)active.scrollIntoView({behavior:instant?'auto':'smooth',inline:'center',block:'nearest'});
+}
+function cremationDaybarNav(dir){
+  const bar=document.getElementById('cremationDaybar');
+  if(bar)bar.scrollBy({left:dir*90,behavior:'smooth'});
+}
+var cremationDayObserver=null;
+function cremationInitDayPages(){
+  const pages=document.getElementById('cremationDayPages');
+  if(!pages)return;
+  const items=[...pages.querySelectorAll('.cremation-day-page')];
+  if(!items.length)return;
+  if('IntersectionObserver' in window){
+    cremationDayObserver=new IntersectionObserver(function(entries){
+      entries.forEach(function(entry){
+        if(entry.isIntersecting&&entry.intersectionRatio>=0.6){
+          cremationSetActiveDaybarCard(Number(entry.target.dataset.dayIndex),false);
+        }
+      });
+    },{root:pages,threshold:[0.6]});
+    items.forEach(function(item){cremationDayObserver.observe(item);});
+  }
+  cremationSelectDay(Number(pages.dataset.initialDayIndex||0),{instant:true});
+}
+document.addEventListener('DOMContentLoaded',function(){
+  cremationInitDayPages();
+  cremationOpenPendingCycle();
+});
 function cremationToggleWaitingPanel(cardEl){
   const panel=document.getElementById('cremationWaitingPanel');
   if(!panel)return;
@@ -3774,7 +3822,6 @@ function cremationToggleCycleCard(headerEl){
       other.classList.remove('expanded');
       const otherBody=other.querySelector('[data-cycle-body]');
       if(otherBody)cremationCollapseBody(otherBody);
-      cremationSyncAncestorWeekDay(other);
     }
   });
   if(willExpand){
@@ -3782,26 +3829,6 @@ function cremationToggleCycleCard(headerEl){
     cremationExpandBody(body,card);
   }else{
     card.classList.remove('expanded');
-    cremationCollapseBody(body);
-  }
-  cremationSyncAncestorWeekDay(card);
-}
-function cremationSyncAncestorWeekDay(el){
-  const day=el.closest('[data-week-day]');
-  if(!day||!day.classList.contains('expanded'))return;
-  const dayBody=day.querySelector('[data-week-day-body]');
-  if(dayBody)dayBody.style.maxHeight='none';
-}
-function cremationToggleWeekDay(headerEl){
-  const day=headerEl.closest('[data-week-day]');
-  if(!day)return;
-  const body=day.querySelector('[data-week-day-body]');
-  const willExpand=!day.classList.contains('expanded');
-  if(willExpand){
-    day.classList.add('expanded');
-    cremationExpandBody(body,day);
-  }else{
-    day.classList.remove('expanded');
     cremationCollapseBody(body);
   }
 }
@@ -3874,23 +3901,19 @@ function cremationClosePanel(id){
   cremationCollapseBody(panel);
 }
 function cremationFilterCyclesByStatus(status){
-  document.querySelectorAll('[data-week-day]').forEach(function(day){
-    const items=day.querySelectorAll('.cremation-week-cycle-item');
-    let anyVisible=false;
+  document.querySelectorAll('.cremation-day-page').forEach(function(page){
+    const items=page.querySelectorAll('.cremation-week-cycle-item');
     items.forEach(function(item){
       const match=!!item.querySelector('.cremation-cycle-'+status);
       item.style.display=match?'':'none';
-      if(match)anyVisible=true;
     });
-    day.style.display=anyVisible?'':'none';
   });
 }
 function cremationSetTimelineHidden(hidden){
-  const timeline=document.querySelector('.cremation-week-days');
-  if(timeline)timeline.style.display=hidden?'none':'';
+  const board=document.getElementById('cremationDayboard');
+  if(board)board.style.display=hidden?'none':'';
 }
 function cremationWeekResetView(){
-  document.querySelectorAll('[data-week-day]').forEach(function(day){day.style.display='';});
   document.querySelectorAll('.cremation-week-cycle-item').forEach(function(item){item.style.display='';});
   cremationSetTimelineHidden(false);
   cremationClosePanel('cremationAnimaliPanel');
@@ -3904,10 +3927,8 @@ function cremationGoToActiveCycle(){
     cremationShowToast('Nessun ciclo in corso');
     return;
   }
-  const day=activeCard.closest('[data-week-day]');
-  if(day&&!day.classList.contains('expanded')){
-    cremationToggleWeekDay(day.querySelector('.cremation-week-day-head'));
-  }
+  const page=activeCard.closest('.cremation-day-page');
+  if(page)cremationSelectDay(Number(page.dataset.dayIndex));
   if(!activeCard.classList.contains('expanded')){
     cremationToggleCycleCard(activeCard.querySelector('.cremation-week-cycle-head'));
   }
@@ -7589,7 +7610,6 @@ class App(BaseHTTPRequestHandler):
     def cremation_schedule_week(self,user,view_date):
         today_date=date.today()
         weekday_short=["Lun","Mar","Mer","Gio","Ven","Sab","Dom"]
-        weekday_full=["Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica"]
         monday=view_date-timedelta(days=view_date.weekday())
         sunday=monday+timedelta(days=6)
         week_dates=[(monday+timedelta(days=i)).isoformat() for i in range(7)]
@@ -7799,11 +7819,12 @@ class App(BaseHTTPRequestHandler):
         now_dt=datetime.now()
 
         cycle_position={}
-        day_sections=[]
+        board_index=week_dates.index(board_date)
+        daybar_cards=[]
+        day_pages=[]
         for i,d in enumerate(week_dates):
             day_cycles=cycles_by_date[d]
             day_date=date.fromisoformat(d)
-            is_weekend=i>=5
             row_items=[]
             for idx,cycle in enumerate(day_cycles):
                 animals=cycle_practices.get(cycle["id"],[])
@@ -7856,16 +7877,16 @@ class App(BaseHTTPRequestHandler):
                 </div>''')
             day_body=''.join(row_items) if row_items else '<p class="cremation-dash" style="padding:8px 0">Nessun ciclo pianificato.</p>'
             day_body+=f'<button type="button" class="cremation-add-cycle-btn" style="margin-top:6px" onclick="cremationCreateCycleForDay(\'{d}\')">{lucide("plus")}<span>Aggiungi ciclo</span></button>'
-            header_name=f'{weekday_full[i].upper()} {day_date.strftime("%d/%m")}'
-            day_sections.append(f'''<div class="cremation-week-day" data-week-day="{d}">
-              <div class="cremation-week-day-head" onclick="cremationToggleWeekDay(this)">
-                <span class="cremation-week-day-name {"weekend" if is_weekend else ""}">{esc(header_name)}</span>
-                <span class="cremation-week-day-badge">{len(day_cycles)} cicli</span>
-                <span class="cremation-cycle-chevron" aria-hidden="true">{lucide("chevron-right")}</span>
-              </div>
-              <div class="cremation-week-day-body" data-week-day-body style="max-height:0px">
-                <div class="cremation-week-day-body-inner">{day_body}</div>
-              </div>
+            cycles_count=len(day_cycles)
+            count_label=f'{cycles_count} {"ciclo" if cycles_count==1 else "cicli"}'
+            active_cls=" active" if d==board_date else ""
+            daybar_cards.append(f'''<button type="button" class="cremation-daybar-card{active_cls}" data-day-index="{i}" data-cremation-day="{d}" onclick="cremationSelectDay({i})">
+              <span class="cremation-daybar-dow">{weekday_short[i].upper()}</span>
+              <span class="cremation-daybar-num">{day_date.day:02d}</span>
+              <span class="cremation-daybar-count">{count_label}</span>
+            </button>''')
+            day_pages.append(f'''<div class="cremation-day-page" data-day-index="{i}" data-cremation-day="{d}">
+              <div class="cremation-day-page-inner">{day_body}</div>
             </div>''')
 
         if monday.month==sunday.month:
@@ -8036,7 +8057,14 @@ class App(BaseHTTPRequestHandler):
         <div class="cremation-summary-grid">{summary_html}</div>
         {animali_panel_html}
         {fine_prevista_panel_html}
-        <div class="cremation-week-days">{''.join(day_sections)}</div>
+        <div id="cremationDayboard">
+          <div class="cremation-daybar-wrap">
+            <button type="button" class="cremation-daybar-nav" onclick="cremationDaybarNav(-1)" aria-label="Barra giorni precedente">‹</button>
+            <div class="cremation-daybar" id="cremationDaybar">{''.join(daybar_cards)}</div>
+            <button type="button" class="cremation-daybar-nav" onclick="cremationDaybarNav(1)" aria-label="Barra giorni successiva">›</button>
+          </div>
+          <div class="cremation-day-pages" id="cremationDayPages" data-initial-day-index="{board_index}">{''.join(day_pages)}</div>
+        </div>
         <button type="button" class="cremation-add-cycle-btn" onclick="cremationCreateEmptyCycle()">{lucide("plus")}<span>Aggiungi nuovo ciclo</span></button>
         {edit_modal_html}
         {add_animal_modal_html}

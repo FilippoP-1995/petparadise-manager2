@@ -2007,11 +2007,14 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("calendarFlushWheelTime(document.getElementById('cremationEditStart'))", submit_body)
         self.assertIn("calendarFlushWheelTime(document.getElementById('cremationEditEnd'))", submit_body)
 
-    def test_week_day_panels_are_always_collapsed_on_a_fresh_page_load(self):
-        # bug reale segnalato dall'utente: il pannello del giorno corrente
-        # (es. lunedi') restava sempre aperto ad ogni caricamento della
-        # pagina; ora nessun giorno deve partire espanso, nemmeno "oggi".
+    def test_week_view_shows_a_swipeable_day_bar_with_todays_page_active(self):
+        # redesign richiesto dall'utente: la vecchia lista di 7 giorni ad
+        # accordion e' sostituita da una barra di card (LUN/27/N cicli) e da
+        # un contenitore a scorrimento orizzontale con scroll-snap (swipe in
+        # stile iOS), con il giorno corrente attivo/selezionato al caricamento.
         today = date.today()
+        monday = today - timedelta(days=today.weekday())
+        today_index = (today - monday).days
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
         rendered = []
@@ -2019,12 +2022,16 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.send_html = lambda content, *args: rendered.append(content)
         self.handler.cremation_schedule(admin)
         page = rendered[-1]
-        self.assertNotIn('class="cremation-week-day expanded"', page)
-        self.assertEqual(page.count('data-week-day-body style="max-height:none"'), 0)
-        today_start = page.index(f'data-week-day="{today.isoformat()}"')
-        body_style_start = page.index('data-week-day-body style="', today_start)
-        today_section = page[today_start:body_style_start + 60]
-        self.assertIn('max-height:0px', today_section)
+        # la barra dei giorni: 7 card con giorno abbreviato, numero, conteggio cicli
+        self.assertEqual(page.count('class="cremation-daybar-card'), 7)
+        self.assertIn(f'data-initial-day-index="{today_index}"', page)
+        self.assertIn(f'class="cremation-daybar-card active" data-day-index="{today_index}" data-cremation-day="{today.isoformat()}"', page)
+        # 7 pagine swipeabili, una per giorno, con scroll-snap
+        self.assertEqual(page.count('class="cremation-day-page"'), 7)
+        self.assertIn('scroll-snap-type:x mandatory', app.CSS)
+        self.assertIn('scroll-snap-align:start', app.CSS)
+        self.assertIn('function cremationSelectDay(', page)
+        self.assertIn('function cremationInitDayPages(', page)
 
     def test_day_view_collapsed_cycle_shows_the_same_animal_details_as_week_view(self):
         with app.db() as conn:
@@ -2215,13 +2222,13 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('class="active" href="/programma-cremazioni?vista=settimana', page)
         self.assertIn(f"{monday.day} – {sunday.day} Luglio {sunday.year}", page)
 
-        # the redundant Lun/Mar/.../Dom day-strip grid is gone: only the expandable day list remains
+        # the redundant Lun/Mar/.../Dom day-strip grid is gone: the daybar+swipeable pages replace it
         self.assertNotIn('cremation-week-day-chip', page)
 
-        # all 7 days of the week are rendered, each as its own collapsible container
+        # all 7 days of the week are rendered as their own swipeable page
         for i in range(7):
             d = monday + timedelta(days=i)
-            self.assertIn(f'data-week-day="{d.isoformat()}"', page)
+            self.assertIn(f'data-cremation-day="{d.isoformat()}"', page)
 
         # each compact cycle row shows icon + name + weight AND, when present, tag + urn (not just in the expanded view)
         self.assertIn("CICLO 1", page)
@@ -2364,7 +2371,7 @@ class PetParadiseTests(unittest.TestCase):
         # button right there, bound to that exact date — not just the single
         # generic "Aggiungi nuovo ciclo" button at the bottom of the whole week.
         wednesday = monday + timedelta(days=2)
-        empty_day_start = page.index(f'data-week-day="{wednesday.isoformat()}"')
+        empty_day_start = page.index(f'data-cremation-day="{wednesday.isoformat()}">')
         empty_day_html = page[empty_day_start:empty_day_start + 1100]
         self.assertIn("Nessun ciclo pianificato.", empty_day_html)
         self.assertIn(f"cremationCreateCycleForDay('{wednesday.isoformat()}')", empty_day_html)
@@ -2372,8 +2379,8 @@ class PetParadiseTests(unittest.TestCase):
 
         # un giorno che ha GIA' almeno un ciclo (Monday, seeded sopra) deve comunque
         # offrire lo stesso pulsante per aggiungerne altri: nessun limite massimo.
-        monday_day_start = page.index(f'data-week-day="{monday.isoformat()}"')
-        monday_day_end = page.index(f'data-week-day="{tuesday.isoformat()}"')
+        monday_day_start = page.index(f'data-cremation-day="{monday.isoformat()}">')
+        monday_day_end = page.index(f'data-cremation-day="{tuesday.isoformat()}">')
         monday_day_html = page[monday_day_start:monday_day_end]
         self.assertIn(f"cremationCreateCycleForDay('{monday.isoformat()}')", monday_day_html)
 
@@ -2755,7 +2762,8 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("cremationReloadWithOpenCycle(data&&data.cycle_id)", create_empty[:create_empty.index("function ", 10)])
         create_for_day = js[js.index("function cremationCreateCycleForDay(dateStr)"):]
         self.assertIn("cremationReloadWithOpenCycle(data&&data.cycle_id)", create_for_day[:create_for_day.index("function ", 10)])
-        self.assertIn("document.addEventListener('DOMContentLoaded',cremationOpenPendingCycle)", js)
+        dom_ready = js[js.index("document.addEventListener('DOMContentLoaded',function(){\n  cremationInitDayPages();"):]
+        self.assertIn("cremationOpenPendingCycle();", dom_ready[:dom_ready.index("});")])
 
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
@@ -2792,15 +2800,13 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("body.style.maxHeight='0px'", body)
 
     def test_cremation_toggle_headers_are_tappable_across_their_full_card_width(self):
-        # regression: the day/cycle header that toggles a card open/closed was
-        # only as wide as its own content, while the card around it (day card,
-        # cycle card) has its own 16px/10px padding — a tap anywhere in that
-        # padding strip (still visually "inside the card") did nothing. The
-        # header must span the full card via a negative margin matching the
-        # card's own padding exactly, so the whole card area is tappable.
+        # regression: the cycle header that toggles a card open/closed was
+        # only as wide as its own content, while the card around it has its
+        # own 16px/10px padding — a tap anywhere in that padding strip (still
+        # visually "inside the card") did nothing. The header must span the
+        # full card via a negative margin matching the card's own padding
+        # exactly, so the whole card area is tappable.
         css = app.CSS
-        self.assertIn(".cremation-week-day{background:#1f2937;border:1px solid #334155;border-radius:16px;padding:16px}", css)
-        self.assertIn(".cremation-week-day-head{display:flex;align-items:center;gap:12px;margin:-16px -16px 0;padding:16px 16px 0;cursor:pointer}", css)
         self.assertIn(".cremation-cycle-card{background:#1f2937;border:1px solid #334155;border-left:4px solid #475569;border-radius:14px;padding:16px;min-width:0}", css)
         self.assertIn("margin:-16px -16px 0;padding:16px 16px 0;cursor:pointer}", css)  # .cremation-cycle-head
         self.assertIn(".cremation-week-cycle-card{background:#161f2b;border:1px solid #334155;border-left:4px solid #475569;border-radius:12px;padding:10px 12px;min-width:0}", css)
