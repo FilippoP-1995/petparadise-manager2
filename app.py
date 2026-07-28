@@ -2038,9 +2038,9 @@ button.calendar-tap-card{cursor:pointer}
 .calendar-animal-card.expanded .calendar-animal-card-chevron{transform:rotate(90deg)}
 .calendar-animal-card-body{display:grid;gap:8px;padding:0 16px;max-height:0;overflow:hidden;transition:max-height .25s ease}
 .calendar-animal-card.expanded .calendar-animal-card-body{max-height:420px;padding:0 16px 16px}
-.calendar-animal-card-body input,.calendar-animal-card-body select{background:#111a27;border:1px solid #334155;border-radius:10px;padding:9px 11px;color:#e2e8f0;font-size:13.5px}
+.calendar-animal-card-body input,.calendar-animal-card-body select{background:#111a27;border:1px solid #334155;border-radius:10px;padding:9px 11px;color:#e2e8f0;font-size:16px}
 .calendar-estimate-row-v2{display:flex;align-items:center;gap:10px;padding:12px 14px;border:1px solid #263140;border-radius:14px;background:#161f2b;margin-bottom:8px}
-.calendar-estimate-row-v2 input{background:transparent;border:0;padding:0;color:#e2e8f0;font-size:14px}
+.calendar-estimate-row-v2 input{background:transparent;border:0;padding:0;color:#e2e8f0;font-size:16px}
 .calendar-estimate-row-v2 .calendar-estimate-preset{font-weight:800;font-size:13px;color:#f5f7fb;flex:0 0 auto;min-width:90px}
 .calendar-estimate-row-v2 .calendar-other-description{flex:1;min-width:0}
 .calendar-estimate-row-v2 input[data-key="amount"]{flex:0 0 90px;text-align:right;font-weight:700}
@@ -4107,19 +4107,6 @@ function calendarFlushWheelTime(input){
   if(!hourOpt||!minOpt)return;
   calendarSetWheelTime(wheel,Number(hourOpt.dataset.timeValue),Number(minOpt.dataset.timeValue),false);
 }
-function cremationFlushEditWheels(){
-  // il tap su "Salva orario" genera prima un pointerdown, e un listener
-  // globale (per chiudere le rotelle quando si tocca fuori da esse) nasconde
-  // subito la rotella aperta PRIMA che scatti il click che avvia il salvataggio.
-  // Se l'utente aveva appena finito di scorrere la rotella (debounce di 90ms
-  // non ancora scattato), calendarFlushWheelTime richiamato dentro il click
-  // trova la rotella gia' nascosta e rinuncia, salvando l'orario vecchio.
-  // Agganciando lo stesso flush anche qui, sul pointerdown del pulsante,
-  // lo eseguiamo mentre la rotella e' ancora visibile (il pointerdown sul
-  // bottone stesso precede sempre, in fase di bubbling, quello sul document).
-  calendarFlushWheelTime(document.getElementById('cremationEditStart'));
-  calendarFlushWheelTime(document.getElementById('cremationEditEnd'));
-}
 function cremationSubmitEditModal(){
   const overlay=document.getElementById('cremationEditOverlay');
   const id=overlay.dataset.cycleId;
@@ -4864,7 +4851,7 @@ function setupCalendarDraftAutosave(form){
   form.addEventListener('submit',()=>{try{localStorage.removeItem(key);}catch(error){}});
   restore();
 }
-document.addEventListener('DOMContentLoaded',()=>{calendarInitLookups();calendarWizardSwipe();calendarSerialize();setupPracticeAutosave();calendarInitDateTimeSync();setupCalendarDraftAutosave(document.getElementById('calendarEventForm'));document.addEventListener('pointerdown',event=>{if(!event.target.closest('.calendar-datetime-row'))document.querySelectorAll('[data-time-wheel]').forEach(wheel=>wheel.hidden=true);});});
+document.addEventListener('DOMContentLoaded',()=>{calendarInitLookups();calendarWizardSwipe();calendarSerialize();setupPracticeAutosave();calendarInitDateTimeSync();setupCalendarDraftAutosave(document.getElementById('calendarEventForm'));document.addEventListener('pointerdown',event=>{if(!event.target.closest('.calendar-datetime-row')&&!event.target.closest('#cremationEditOverlay'))document.querySelectorAll('[data-time-wheel]').forEach(wheel=>wheel.hidden=true);});});
 function showSwUpdateBanner(onConfirm){
   if(document.querySelector('.sw-update-banner'))return;
   const bar=document.createElement('div');bar.className='sw-update-banner';
@@ -8122,7 +8109,7 @@ class App(BaseHTTPRequestHandler):
             <div class="cremation-modal-head"><h3>Modifica orario ciclo</h3><button type="button" class="cremation-modal-close" onclick="cremationCloseModal()" aria-label="Chiudi">×</button></div>
             {time_field_html("Inizio","cremationEditStart")}
             {time_field_html("Fine","cremationEditEnd")}
-            <div class="cremation-modal-actions"><button type="button" class="btn ghost" onclick="cremationCloseModal()">Annulla</button><button type="button" class="btn" onpointerdown="cremationFlushEditWheels()" onclick="cremationSubmitEditModal()">Salva orario</button></div>
+            <div class="cremation-modal-actions"><button type="button" class="btn ghost" onclick="cremationCloseModal()">Annulla</button><button type="button" class="btn" onclick="cremationSubmitEditModal()">Salva orario</button></div>
           </div>
         </div>'''
 
@@ -8563,7 +8550,7 @@ class App(BaseHTTPRequestHandler):
             <div class="cremation-modal-head"><h3>Modifica orario ciclo</h3><button type="button" class="cremation-modal-close" onclick="cremationCloseModal()" aria-label="Chiudi">×</button></div>
             {time_field_html("Inizio","cremationEditStart")}
             {time_field_html("Fine","cremationEditEnd")}
-            <div class="cremation-modal-actions"><button type="button" class="btn ghost" onclick="cremationCloseModal()">Annulla</button><button type="button" class="btn" onpointerdown="cremationFlushEditWheels()" onclick="cremationSubmitEditModal()">Salva orario</button></div>
+            <div class="cremation-modal-actions"><button type="button" class="btn ghost" onclick="cremationCloseModal()">Annulla</button><button type="button" class="btn" onclick="cremationSubmitEditModal()">Salva orario</button></div>
           </div>
         </div>'''
 

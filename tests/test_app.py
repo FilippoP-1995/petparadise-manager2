@@ -2416,46 +2416,38 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("cremationReloadWithOpenCycle(id);", complete_body)
         self.assertNotIn("location.reload()", complete_body)
 
-    def test_cremation_edit_time_wheel_is_flushed_before_the_global_hide_listener(self):
+    def test_cremation_edit_time_wheel_is_not_hidden_before_the_save_click_can_flush_it(self):
         # bug reale segnalato dall'utente: "Cambio l'orario ma dopo Salva
-        # torna quello vecchio". Causa: un listener globale (usato per
-        # chiudere le rotelle orario quando si tocca fuori da esse) nasconde
-        # la rotella al pointerdown, che scatta SEMPRE prima del click. Il
-        # tap su "Salva orario" genera quindi: pointerdown (nasconde la
-        # rotella) poi click (chiama calendarFlushWheelTime, che pero'
-        # rinuncia perche' trova gia' wheel.hidden===true) -> se l'ultimo
-        # scroll non aveva ancora fatto in tempo ad aggiornare l'input (il suo
-        # debounce e' di 90ms), viene inviato il valore vecchio. La
-        # correzione esegue lo stesso flush anche sul pointerdown del
-        # pulsante stesso: essendo sull'elemento target, in fase di bubbling
-        # precede sempre il listener globale sul document.
+        # torna quello vecchio", ancora presente anche dopo un primo tentativo
+        # di correzione (leggere la rotella al pointerdown del pulsante) che
+        # e' stato scartato perche' rischiava di leggere una posizione di
+        # scroll ancora in movimento per inerzia (mai verificabile in questo
+        # ambiente, che non simula un vero touchscreen).
+        #
+        # Causa reale: un listener globale (usato per chiudere le rotelle
+        # quando si tocca fuori da esse) nasconde QUALSIASI rotella al
+        # pointerdown sul pulsante "Salva orario" stesso — che sta fuori da
+        # '.calendar-datetime-row' — un istante prima che il click (che
+        # scatta sempre dopo il pointerdown) possa chiamare
+        # calendarFlushWheelTime, il quale rinuncia subito se trova
+        # wheel.hidden===true. Il risultato e' l'invio dell'orario precedente
+        # al debounce di 90ms dello scroll, non di quello appena scelto.
+        #
+        # Correzione: il listener globale non deve piu' considerare "fuori"
+        # i tap dentro il modale di modifica ciclo cremazione, cosi' la
+        # rotella resta visibile fino al click, che la legge esattamente
+        # come faceva prima che il bug si manifestasse (nessun cambiamento
+        # nel MOMENTO in cui la posizione di scroll viene letta).
         js = app.APP_JS
-        self.assertIn("function cremationFlushEditWheels()", js)
-        flush_start = js.index("function cremationFlushEditWheels()")
-        flush_body = js[flush_start:flush_start + 1000]
-        self.assertIn("calendarFlushWheelTime(document.getElementById('cremationEditStart'))", flush_body)
-        self.assertIn("calendarFlushWheelTime(document.getElementById('cremationEditEnd'))", flush_body)
-        # il pulsante deve richiamare il flush su pointerdown, PRIMA del click
-        # che avvia il salvataggio vero e proprio (markup renderizzato da app.py).
-        with app.db() as conn:
-            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
-        rendered = []
-        self.handler.send_html = lambda content, *a: rendered.append(content)
-        self.handler.path = "/programma-cremazioni"
-        self.handler.cremation_schedule(admin)
-        day_page = rendered[-1]
-        self.assertEqual(
-            day_page.count('onpointerdown="cremationFlushEditWheels()" onclick="cremationSubmitEditModal()">Salva orario'),
-            1,
+        self.assertIn(
+            "document.addEventListener('pointerdown',event=>{if(!event.target.closest('.calendar-datetime-row')&&!event.target.closest('#cremationEditOverlay'))document.querySelectorAll('[data-time-wheel]').forEach(wheel=>wheel.hidden=true);});",
+            js,
         )
-        rendered.clear()
-        self.handler.path = "/programma-cremazioni?vista=settimana"
-        self.handler.cremation_schedule(admin)
-        week_page = rendered[-1]
-        self.assertEqual(
-            week_page.count('onpointerdown="cremationFlushEditWheels()" onclick="cremationSubmitEditModal()">Salva orario'),
-            1,
-        )
+        self.assertNotIn("cremationFlushEditWheels", js)
+        submit_start = js.index("function cremationSubmitEditModal()")
+        submit_body = js[submit_start:submit_start + 400]
+        self.assertIn("calendarFlushWheelTime(document.getElementById('cremationEditStart'))", submit_body)
+        self.assertIn("calendarFlushWheelTime(document.getElementById('cremationEditEnd'))", submit_body)
 
     def test_provenance_color_is_deterministic_per_code_not_per_species(self):
         # bug reale segnalato dall'utente: la stessa sigla (es. "L") aveva
@@ -2927,6 +2919,11 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(".calendar-tap-card-body input,.calendar-tap-card-body select,.calendar-tap-card-body textarea{border:0;background:transparent;padding:0;font-size:16px", css)
         self.assertIn(".calendar-tap-card.lookup>.calendar-tap-card-body>input{border:1px solid #263246;background:#0e1622;border-radius:12px;padding:10px 12px;font-weight:600;font-size:16px", css)
         self.assertIn(".calendar-tap-card-body textarea{min-height:60px;font-weight:500;font-size:16px", css)
+        # dimenticati nel primo giro di correzioni: i campi della card animale
+        # (specie/peso/tipo cremazione/nome/note nello step "Animali associati")
+        # e i campi importo/descrizione delle righe di preventivo.
+        self.assertIn(".calendar-animal-card-body input,.calendar-animal-card-body select{background:#111a27;border:1px solid #334155;border-radius:10px;padding:9px 11px;color:#e2e8f0;font-size:16px", css)
+        self.assertIn(".calendar-estimate-row-v2 input{background:transparent;border:0;padding:0;color:#e2e8f0;font-size:16px", css)
 
     def test_calendar_wizard_type_cards_use_distinct_colors_matching_the_mockup(self):
         with app.db() as conn:
