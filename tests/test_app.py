@@ -2812,12 +2812,15 @@ class PetParadiseTests(unittest.TestCase):
         # correzione richiesta dall'utente: la barra inferiore deve essere UN
         # SOLO elemento continuo (stessa forma, stesso bordo, stessa ombra),
         # con una rientranza morbida attorno al "+" ottenuta mascherando una
-        # piccola porzione del bordo superiore con il colore di sfondo della
-        # pagina — non due capsule separate con un vuoto in mezzo.
+        # porzione del bordo superiore con il colore di sfondo della barra —
+        # non due capsule separate con un vuoto in mezzo, e non un semplice
+        # cerchio che "sbuca" con una giunzione ad angolo: la maschera usa un
+        # clip-path con raccordi tangenti (fillet) che fondono la curva
+        # centrale nel bordo piatto della barra, come nel mockup.
         css = app.CSS
         self.assertIn(".bottom-nav{position:fixed;display:grid;grid-template-columns:repeat(5,1fr);align-items:end;left:calc(10px + var(--safe-left));right:calc(10px + var(--safe-right));bottom:calc(10px + var(--safe-bottom));z-index:90;height:68px;padding:0;border-radius:30px;background:linear-gradient(160deg,#1c2635f5,#121a27f5);border:1px solid #2b3849;box-shadow:0 16px 38px #05070f66;backdrop-filter:blur(20px)}", css)
         self.assertNotIn(".bottom-nav:before,.bottom-nav:after{", css)
-        self.assertIn(".bottom-nav:before{content:'';position:absolute;top:0;left:50%;width:78px;height:78px;border-radius:50%;background:#172131", css)
+        self.assertIn(".bottom-nav:before{content:'';position:absolute;top:0;left:50%;width:200px;height:40px;transform:translateX(-50%);background:#172131;z-index:1;clip-path:path('M54.08,0 A14,14 0 0 1 67.47,9.92 A34,34 0 0 1 100,34 A34,34 0 0 1 132.53,9.92 A14,14 0 0 1 145.92,0 Z')}", css)
         self.assertIn(".light-theme .bottom-nav:before{background:#eef2f7}", css)
         self.assertIn(".light-theme .bottom-nav{background:linear-gradient(160deg,#ffffff,#f3f5f8)", css)
 
