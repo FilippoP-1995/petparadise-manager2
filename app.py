@@ -3604,18 +3604,25 @@ function cremationOpenPendingCycle(){
 }
 function cremationSelectDay(idx,opts){
   opts=opts||{};
+  // scrollTo scoped to #cremationDayPages only: mai scrollIntoView, che puo'
+  // trascinare con se' anche lo scroll verticale della pagina — l'utente deve
+  // restare esattamente dove si trovava, cambia solo il giorno mostrato.
   const pages=document.getElementById('cremationDayPages');
   if(!pages)return;
   const page=pages.querySelector('[data-day-index="'+idx+'"]');
-  if(page)page.scrollIntoView({behavior:opts.instant?'auto':'smooth',inline:'start',block:'nearest'});
+  if(page)pages.scrollTo({left:page.offsetLeft,behavior:opts.instant?'auto':'smooth'});
   cremationSetActiveDaybarCard(idx,opts.instant);
 }
 function cremationSetActiveDaybarCard(idx,instant){
   document.querySelectorAll('.cremation-daybar-card').forEach(function(c){
     c.classList.toggle('active',Number(c.dataset.dayIndex)===Number(idx));
   });
+  const bar=document.getElementById('cremationDaybar');
   const active=document.querySelector('.cremation-daybar-card[data-day-index="'+idx+'"]');
-  if(active)active.scrollIntoView({behavior:instant?'auto':'smooth',inline:'center',block:'nearest'});
+  if(bar&&active){
+    const target=active.offsetLeft-(bar.clientWidth-active.clientWidth)/2;
+    bar.scrollTo({left:Math.max(0,target),behavior:instant?'auto':'smooth'});
+  }
 }
 function cremationDaybarNav(dir){
   const bar=document.getElementById('cremationDaybar');
