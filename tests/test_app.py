@@ -4042,6 +4042,22 @@ class PetParadiseTests(unittest.TestCase):
         # technical fields stay tucked away in the collapsible details, not on the main card
         self.assertIn('<details class="wa-details">',page)
 
+    def test_ringraziamento_preview_text_does_not_invent_a_cremation_finished_message(self):
+        # bug reale segnalato dall'utente: il testo di anteprima per il
+        # messaggio "ringraziamento" inventava un contenuto mai richiesto
+        # ("la cremazione e' terminata, scegli il tipo di consegna"), che
+        # tra l'altro non ha senso una volta che la pratica e' gia'
+        # CONSEGNATA (momento in cui il ringraziamento viene davvero inviato).
+        text = self.handler.whatsapp_outbound_preview_text("ringraziamento", "Mario", "Luna")
+        self.assertNotIn("terminata", text)
+        self.assertNotIn("tipo di consegna", text)
+        self.assertIn("ringraziamento", text.lower())
+        admin,_,_=self._whatsapp_record("2026-07-15T15:00:00")
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/conversazioni-whatsapp"
+        self.handler.whatsapp_conversations(admin);page=rendered[-1]
+        self.assertNotIn("è terminata", page)
+        self.assertNotIn("tipo di consegna", page)
+
     def test_whatsapp_failed_retry_and_scheduled_cancel(self):
         admin,_,failed_id=self._whatsapp_record("2026-07-15T13:00:00","fallito",1,"2026-07-15T13:01:00")
         _,_,scheduled_id=self._whatsapp_record("2026-07-15T15:00:00")

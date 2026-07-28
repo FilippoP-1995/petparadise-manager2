@@ -8710,7 +8710,7 @@ class App(BaseHTTPRequestHandler):
         animal=(animal_name or "").strip() or "il tuo animale"
         if message_type=="catalogo":
             return f"Catalogo urne inviato a {owner} per {animal}."
-        return f"Buongiorno {owner}, la cremazione di {animal} è terminata. Puoi scegliere il tipo di consegna rispondendo a questo messaggio. Grazie."
+        return f"Messaggio di ringraziamento inviato a {owner} per {animal}."
 
     def whatsapp_ticks_html(self,status):
         if status=="letto":return '<span class="wa-tick wa-tick-read">✓✓</span>'
