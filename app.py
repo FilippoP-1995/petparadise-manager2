@@ -1284,6 +1284,7 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 .wa-modal-overlay{position:fixed;inset:0;z-index:220;display:flex;align-items:center;justify-content:center;background:#020617cc;padding:16px}
 .wa-modal-overlay[hidden]{display:none!important}
 .wa-modal{width:min(100%,680px);max-height:88vh;display:flex;flex-direction:column;background:#131a26;border:1px solid #334155;border-radius:18px;box-shadow:0 30px 90px #000c;overflow:hidden}
+.wa-modal-scroll{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column}
 .wa-modal-header{padding:18px 20px 14px;border-bottom:1px solid #263140}
 .wa-modal-header-top{display:flex;align-items:flex-start;gap:12px}
 .wa-modal-back{width:32px;height:32px;border:0;border-radius:9px;background:#172033;color:#e2e8f0;font-size:20px;line-height:1;cursor:pointer;flex:0 0 auto}
@@ -1302,11 +1303,11 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 .wa-stat-icon{display:block;margin:0 auto 4px}
 .wa-stat small{display:block;color:#9ca7b8;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em}
 .wa-stat b{font-size:15px}
-.wa-chat-section{display:flex;flex-direction:column;flex:1;min-height:0}
+.wa-chat-section{display:flex;flex-direction:column}
 .wa-chat-header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px 0;font-size:13.5px;font-weight:700;color:#9ca7b8}
 .wa-chat-header a{color:#4f8fdc;font-weight:600;font-size:12.5px;text-decoration:none}
 .wa-chat-header a:hover{text-decoration:underline}
-.wa-chat{flex:1;overflow-y:auto;padding:10px 20px 16px;display:flex;flex-direction:column;gap:6px;background:#0d121b}
+.wa-chat{min-height:min(50vh,420px);max-height:min(58vh,500px);overflow-y:auto;-webkit-overflow-scrolling:touch;padding:10px 20px 16px;display:flex;flex-direction:column;gap:6px;background:#0d121b}
 .wa-chat-date{text-align:center;margin:10px 0}
 .wa-chat-date span{background:#1f2937;color:#9ca7b8;font-size:11px;padding:4px 12px;border-radius:99px}
 .wa-bubble-row{display:flex}
@@ -9018,36 +9019,38 @@ class App(BaseHTTPRequestHandler):
             status_cls=practice_status_class(p["status"])
             return f'''<div class="wa-modal-overlay" id="waModal{pid}" hidden onclick="if(event.target===this)waCloseModal('{pid}')">
               <div class="wa-modal">
-                <div class="wa-modal-header">
-                  <div class="wa-modal-header-top">
-                    <button type="button" class="wa-modal-back" onclick="waCloseModal('{pid}')" aria-label="Indietro">‹</button>
-                    <div class="wa-modal-avatar">{conv["avatar_emoji"]}</div>
-                    <div class="wa-modal-title">
-                      <h3>{esc(p["animal_name"] or "Da inserire")}{f" <small>({esc(weight)} kg)</small>" if weight else ""}</h3>
-                      <p>{esc(conv["client"])} <span class="badge {status_cls}">{esc(p["status"])}</span></p>
-                      <p class="wa-modal-phone">{('+'+esc(conv["phone"])) if conv["phone"] else "Numero non disponibile"}{phone_wa_html}</p>
+                <div class="wa-modal-scroll">
+                  <div class="wa-modal-header">
+                    <div class="wa-modal-header-top">
+                      <button type="button" class="wa-modal-back" onclick="waCloseModal('{pid}')" aria-label="Indietro">‹</button>
+                      <div class="wa-modal-avatar">{conv["avatar_emoji"]}</div>
+                      <div class="wa-modal-title">
+                        <h3>{esc(p["animal_name"] or "Da inserire")}{f" <small>({esc(weight)} kg)</small>" if weight else ""}</h3>
+                        <p>{esc(conv["client"])} <span class="badge {status_cls}">{esc(p["status"])}</span></p>
+                        <p class="wa-modal-phone">{('+'+esc(conv["phone"])) if conv["phone"] else "Numero non disponibile"}{phone_wa_html}</p>
+                      </div>
+                      <div class="wa-modal-right">
+                        <span class="wa-modal-practice">Pratica {esc(p["practice_number"])}</span>
+                      </div>
+                      <button type="button" class="wa-modal-close" onclick="waCloseModal('{pid}')" aria-label="Chiudi">×</button>
                     </div>
-                    <div class="wa-modal-right">
-                      <span class="wa-modal-practice">Pratica {esc(p["practice_number"])}</span>
+                    <div class="wa-modal-stats">
+                      <div class="wa-stat"><span class="wa-stat-icon">{lucide("arrow-up")}</span><small>Messaggi inviati</small><b>{conv["sent_count"]}</b></div>
+                      <div class="wa-stat"><span class="wa-stat-icon">{lucide("arrow-down")}</span><small>Risposte ricevute</small><b>{conv["reply_count"]}</b></div>
+                      <div class="wa-stat"><span class="wa-stat-icon">{lucide("clock")}</span><small>Ultimo invio</small><b>{esc(dt_label(conv["last_out_ts"]))}</b></div>
+                      <div class="wa-stat"><span class="wa-stat-icon">{lucide("check-circle")}</span><small>Ultima risposta</small><b>{esc(dt_label(conv["last_in_ts"]))}</b></div>
                     </div>
-                    <button type="button" class="wa-modal-close" onclick="waCloseModal('{pid}')" aria-label="Chiudi">×</button>
                   </div>
-                  <div class="wa-modal-stats">
-                    <div class="wa-stat"><span class="wa-stat-icon">{lucide("arrow-up")}</span><small>Messaggi inviati</small><b>{conv["sent_count"]}</b></div>
-                    <div class="wa-stat"><span class="wa-stat-icon">{lucide("arrow-down")}</span><small>Risposte ricevute</small><b>{conv["reply_count"]}</b></div>
-                    <div class="wa-stat"><span class="wa-stat-icon">{lucide("clock")}</span><small>Ultimo invio</small><b>{esc(dt_label(conv["last_out_ts"]))}</b></div>
-                    <div class="wa-stat"><span class="wa-stat-icon">{lucide("check-circle")}</span><small>Ultima risposta</small><b>{esc(dt_label(conv["last_in_ts"]))}</b></div>
+                  <div class="wa-chat-section">
+                    <div class="wa-chat-header"><span>Chat</span>{chat_link_html}</div>
+                    <div class="wa-chat">{chat_html(conv)}</div>
                   </div>
-                </div>
-                <div class="wa-chat-section">
-                  <div class="wa-chat-header"><span>Chat</span>{chat_link_html}</div>
-                  <div class="wa-chat">{chat_html(conv)}</div>
-                </div>
-                <details class="wa-details"><summary>Mostra dettagli tecnici</summary><div class="wa-details-body">{details_html(conv)}</div></details>
-                <div class="wa-quick-actions">{quick_actions_html(conv)}</div>
-                <div class="wa-modal-actions">
-                  <a class="btn ghost" href="{url}">Apri pratica</a>
-                  <button type="button" class="btn danger-btn wa-close-btn" onclick="waCloseModal('{pid}')">Chiudi</button>
+                  <details class="wa-details"><summary>Mostra dettagli tecnici</summary><div class="wa-details-body">{details_html(conv)}</div></details>
+                  <div class="wa-quick-actions">{quick_actions_html(conv)}</div>
+                  <div class="wa-modal-actions">
+                    <a class="btn ghost" href="{url}">Apri pratica</a>
+                    <button type="button" class="btn danger-btn wa-close-btn" onclick="waCloseModal('{pid}')">Chiudi</button>
+                  </div>
                 </div>
               </div>
             </div>'''
