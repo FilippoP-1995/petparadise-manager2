@@ -2449,6 +2449,82 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("calendarFlushWheelTime(document.getElementById('cremationEditStart'))", submit_body)
         self.assertIn("calendarFlushWheelTime(document.getElementById('cremationEditEnd'))", submit_body)
 
+    def test_cremation_edit_modal_redesign_keeps_the_existing_save_logic_untouched(self):
+        # richiesta esplicita dell'utente (mockup): SOLO redesign grafico del
+        # modale "Modifica orario ciclo" — icona, sottotitolo (CICLO N +
+        # animale), card "Durata ciclo" (solo lettura, nessun nuovo calcolo
+        # di business), pulsanti ridisegnati. La logica di apertura/lettura
+        # orario/validazione/salvataggio NON deve cambiare di una riga.
+        js = app.APP_JS
+        # cremationOpenEditModal e cremationSubmitEditModal restano
+        # esattamente le funzioni di sempre, stessa firma, stesso corpo.
+        self.assertIn("function cremationOpenEditModal(id,plannedStart,plannedEnd){", js)
+        open_start = js.index("function cremationOpenEditModal(id,plannedStart,plannedEnd){")
+        open_body = js[open_start:open_start + 700]
+        self.assertIn("overlay.dataset.cycleId=id;", open_body)
+        self.assertIn("startInput.value=plannedStart;", open_body)
+        self.assertIn("endInput.value=plannedEnd;", open_body)
+        # la nuova anteprima durata e' una funzione a parte, di sola
+        # visualizzazione: legge gli input esistenti, non li scrive mai.
+        self.assertIn("function cremationUpdateDurationPreview()", js)
+        duration_start = js.index("function cremationUpdateDurationPreview()")
+        duration_body = js[duration_start:js.index("function cremationOpenEditModal(")]
+        self.assertNotIn(".value=", duration_body)
+
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-28", "in_attesa", "09:00", "10:30", stamp, stamp),
+            ).lastrowid
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name,estimated_weight,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-MODALREDESIGN", "Privato", "Livorno", "In programma", "Cremazione singola", stamp, stamp,
+                 admin["id"], "Zara", "40", cycle_id),
+            )
+        rendered = []
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.path = "/programma-cremazioni?data=2026-07-28"
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn('data-cycle-subtitle="CICLO 1 · Zara (40 kg)"', page)
+        self.assertIn(
+            "document.querySelector('[data-cremation-modal-subtitle]').textContent=this.dataset.cycleSubtitle;cremationUpdateDurationPreview()\">",
+            page,
+        )
+        # markup del redesign: icona header, sottotitolo, icone start/end,
+        # card durata, pulsante Salva con icona — tutto dentro lo stesso
+        # overlay/modale di sempre (id="cremationEditOverlay").
+        modal_start = page.index('id="cremationEditOverlay"')
+        modal_html = page[modal_start:page.index('cremation-modal-overlay', modal_start + 1)]
+        self.assertIn('cremation-modal-time-edit', modal_html)
+        self.assertIn('cremation-modal-icon-badge', modal_html)
+        self.assertIn('data-cremation-modal-subtitle', modal_html)
+        self.assertIn('cremation-modal-time-field-start', modal_html)
+        self.assertIn('cremation-modal-time-field-end', modal_html)
+        self.assertIn('data-cremation-duration-text', modal_html)
+        self.assertIn('data-cremation-duration-minutes', modal_html)
+        self.assertIn('cremation-modal-actions-v2', modal_html)
+        # gli input orario restano identici: stesso id, stessi handler
+        self.assertIn('id="cremationEditStart"', modal_html)
+        self.assertIn('id="cremationEditEnd"', modal_html)
+        self.assertIn('onfocus="calendarTimeFocus(this)"', modal_html)
+        self.assertIn('onbeforeinput="calendarTimeBeforeInput(this,event)"', modal_html)
+        self.assertIn('oninput="calendarTimeInput(this)"', modal_html)
+        self.assertIn('onblur="calendarTimeBlur(this)"', modal_html)
+        self.assertIn('onclick="cremationCloseModal()"', modal_html)
+        self.assertIn('onclick="cremationSubmitEditModal()"', modal_html)
+        # il collegamento dell'anteprima durata deve attendere DOMContentLoaded:
+        # cremationUpdateDurationPreview e' definita in APP_JS, che nel
+        # documento viene dopo questo modale — un IIFE eseguito subito (bug
+        # reale trovato durante la verifica dal vivo) non trova ancora la
+        # funzione e l'ascoltatore non si registra mai.
+        self.assertIn(
+            "document.addEventListener('DOMContentLoaded',function(){var s=document.getElementById('cremationEditStart'),e=document.getElementById('cremationEditEnd');if(s){s.addEventListener('input',cremationUpdateDurationPreview);",
+            page,
+        )
+
     def test_provenance_color_is_deterministic_per_code_not_per_species(self):
         # bug reale segnalato dall'utente: la stessa sigla (es. "L") aveva
         # colori diversi a seconda che l'animale fosse un cane o un gatto,

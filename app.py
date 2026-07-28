@@ -1935,6 +1935,48 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-modal-head h3{margin:0;font-size:16px}
 .cremation-modal-close{width:30px;height:30px;border:0;border-radius:9px;background:#172033;color:#e2e8f0;font-size:18px;cursor:pointer}
 .cremation-modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
+.cremation-modal-time-edit{width:min(100%,400px);border-radius:26px;border:1px solid #ffffff14;background:linear-gradient(165deg,#171f2ef5,#0e141ff8);backdrop-filter:blur(18px);box-shadow:0 30px 80px #000c,0 0 40px #05070f40}
+.cremation-modal-time-edit .cremation-modal-head{align-items:flex-start;gap:13px;margin-bottom:22px}
+.cremation-modal-icon-badge{flex:0 0 46px;width:46px;height:46px;border-radius:16px;display:grid;place-items:center;background:linear-gradient(135deg,#8b5cf62e,#6d28d91f);border:1px solid #8b5cf655;color:#c4b5fd;box-shadow:0 0 22px #8b5cf62e}
+.cremation-modal-icon-badge .icon{width:22px;height:22px}
+.cremation-modal-head-body{flex:1;min-width:0}
+.cremation-modal-head-body h3{margin:0;font-size:19px;font-weight:800}
+.cremation-modal-subtitle{display:block;margin-top:3px;font-size:12.5px;color:#9ca7b8}
+.cremation-modal-time-field{display:flex;align-items:flex-start;gap:13px;margin-bottom:16px}
+.cremation-modal-time-icon{flex:0 0 44px;width:44px;height:44px;margin-top:25px;border-radius:14px;display:grid;place-items:center;background:#141b27;border:1px solid #ffffff14;color:#8a96a8;transition:transform .15s cubic-bezier(.34,1.4,.64,1)}
+.cremation-modal-time-icon .icon{width:18px;height:18px}
+.cremation-modal-time-field-start .cremation-modal-time-icon{color:#4ade80;border-color:#22c55e40}
+.cremation-modal-time-field-end .cremation-modal-time-icon{color:#fb7185;border-color:#ef405f40}
+.cremation-modal-time-body{flex:1;min-width:0;position:relative}
+.cremation-modal-time-body .calendar-datetime-row{display:block;padding:0;border:0;background:transparent}
+.cremation-modal-time-body .calendar-datetime-row label{display:block;margin-bottom:8px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#8a96a8}
+.cremation-modal-time-body .calendar-time-slot{border-radius:18px;border:1px solid #22c55e40;background:linear-gradient(160deg,#12261bb3,#141b27cc);box-shadow:0 0 20px #22c55e1f;padding:14px 46px 14px 16px;transition:box-shadow .2s ease,border-color .2s ease}
+.cremation-modal-time-body .calendar-time-slot:focus-within{border-color:#22c55e80;box-shadow:0 0 0 3px #22c55e26,0 0 20px #22c55e1f}
+.cremation-modal-time-field-end .cremation-modal-time-body .calendar-time-slot{border-color:#ef405f40;background:linear-gradient(160deg,#2a1620b3,#141b27cc);box-shadow:0 0 20px #ef405f1f}
+.cremation-modal-time-field-end .cremation-modal-time-body .calendar-time-slot:focus-within{border-color:#ef405f80;box-shadow:0 0 0 3px #ef405f26,0 0 20px #ef405f1f}
+.cremation-modal-time-body .calendar-time-entry{font-size:22px;font-weight:800;color:#f5f7fb}
+.cremation-modal-time-clock{position:absolute;right:16px;bottom:14px;color:#7c8aa0;pointer-events:none;display:grid;place-items:center}
+.cremation-modal-time-clock .icon{width:17px;height:17px}
+.cremation-modal-duration{display:flex;align-items:center;gap:13px;margin:20px 0 18px;padding:14px 16px;border-radius:20px;border:1px solid #8b5cf655;background:linear-gradient(160deg,#1c1530b3,#141b27cc);box-shadow:0 0 20px #8b5cf61f}
+.cremation-modal-duration-icon{flex:0 0 40px;width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:#20163a;color:#c4b5fd}
+.cremation-modal-duration-icon .icon{width:19px;height:19px}
+.cremation-modal-duration-body{flex:1;min-width:0}
+.cremation-modal-duration-body small{display:block;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#8a96a8}
+.cremation-modal-duration-body p{margin:2px 0 0;font-size:18px;font-weight:800;color:#f5f7fb}
+.cremation-modal-duration-badge{flex:0 0 auto;padding:6px 14px;border-radius:99px;background:#3b1f6e;color:#d8b4fe;font-size:12.5px;font-weight:800}
+.cremation-modal-actions-v2{gap:10px}
+.cremation-modal-actions-v2 .btn.ghost{flex:0 0 auto;min-width:110px;justify-content:center;border-radius:16px}
+.cremation-modal-actions-v2 .btn:not(.ghost){flex:1;display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:16px;box-shadow:0 10px 26px #ef405f40;transition:transform .15s cubic-bezier(.34,1.4,.64,1)}
+.cremation-modal-actions-v2 .btn:not(.ghost):active{transform:scale(.97)}
+.cremation-modal-actions-v2 .btn:not(.ghost) .icon{width:17px;height:17px}
+.light-theme .cremation-modal-time-edit{background:linear-gradient(165deg,#ffffff,#f3f5f8)}
+.light-theme .cremation-modal-head-body h3{color:#111827}
+.light-theme .cremation-modal-time-icon{background:#f1f5f9}
+.light-theme .cremation-modal-time-body .calendar-time-slot{background:linear-gradient(160deg,#f0fdf4,#f8fafc)}
+.light-theme .cremation-modal-time-field-end .cremation-modal-time-body .calendar-time-slot{background:linear-gradient(160deg,#fff1f2,#f8fafc)}
+.light-theme .cremation-modal-time-body .calendar-time-entry{color:#111827}
+.light-theme .cremation-modal-duration{background:linear-gradient(160deg,#f5f3ff,#f8fafc)}
+@media(prefers-reduced-motion:reduce){.cremation-modal-time-icon,.cremation-modal-actions-v2 .btn{transition:none!important}}
 .cremation-modal-lg{width:min(100%,480px);max-height:80vh;display:flex;flex-direction:column}
 .cremation-modal-search{width:100%;margin:4px 0 12px;padding:10px 12px;border-radius:10px;border:1px solid #334155;background:#111a27;color:#e2e8f0;font-size:16px;flex:0 0 auto}
 .cremation-search-wrap{position:relative}
@@ -4102,6 +4144,23 @@ function cremationCompleteCycle(id){
       .catch(function(){cremationReloadWithOpenCycle(id);});
   },{title:'Termina ciclo',confirmLabel:'Termina ciclo'});
 }
+function cremationUpdateDurationPreview(){
+  // solo visualizzazione: legge gli stessi due campi orario gia' esistenti,
+  // non scrive nulla al loro interno e non interferisce in alcun modo con
+  // calendarTimeInput/calendarTimeFocus/la rotella o con il salvataggio.
+  const textEl=document.querySelector('[data-cremation-duration-text]');
+  const badgeEl=document.querySelector('[data-cremation-duration-minutes]');
+  if(!textEl||!badgeEl)return;
+  const startEl=document.getElementById('cremationEditStart');
+  const endEl=document.getElementById('cremationEditEnd');
+  const startMatch=startEl&&startEl.value.match(/^(\d{2}):(\d{2})$/);
+  const endMatch=endEl&&endEl.value.match(/^(\d{2}):(\d{2})$/);
+  if(!startMatch||!endMatch){textEl.textContent='—';badgeEl.textContent='—';return;}
+  const diff=(Number(endMatch[1])*60+Number(endMatch[2]))-(Number(startMatch[1])*60+Number(startMatch[2]));
+  if(diff<=0){textEl.textContent='—';badgeEl.textContent='—';return;}
+  textEl.textContent=Math.floor(diff/60)+'h '+String(diff%60).padStart(2,'0')+'m';
+  badgeEl.textContent=diff+' minuti';
+}
 function cremationOpenEditModal(id,plannedStart,plannedEnd){
   const overlay=document.getElementById('cremationEditOverlay');
   if(!overlay)return;
@@ -5075,6 +5134,9 @@ LUCIDE_PATHS = {
     "menu": '<path d="M4 6h16M4 12h16M4 18h16"/>',
     "bell": '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>',
     "truck": '<path d="M10 17h4V5H2v12h3"/><path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5v8h1"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
+    "hourglass": '<path d="M5 22h14M5 2h14M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>',
+    "square": '<rect width="18" height="18" x="3" y="3" rx="2"/>',
+    "save": '<path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V3.4"/>',
     "sun": '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"/>',
     "search": '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
     "phone": '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>',
@@ -8147,7 +8209,14 @@ class App(BaseHTTPRequestHandler):
             status_label,status_cls=CREMATION_STATUS_LABELS.get(status,(status.upper(),""))
             names_html=''.join(cycle_animal_preview_line(row) for row in animals) or '<div class="cremation-week-animal-line cremation-dash">Nessun animale</div>'
             remaining_html=""
-            actions=[f"<button type=\"button\" class=\"cremation-action-btn cremation-action-planned\" onclick=\"cremationOpenEditModal({cycle['id']},'{cycle['planned_start']}','{cycle['planned_end']}')\">{lucide('pencil')}<span>Modifica</span></button>"]
+            if len(animals)==1:
+                animal_w=(animals[0]["estimated_weight"] or "").strip()
+                cycle_subtitle=f"CICLO {idx+1} · {animals[0]['animal_name'] or 'Animale'}{f' ({animal_w} kg)' if animal_w else ''}"
+            elif len(animals)>1:
+                cycle_subtitle=f"CICLO {idx+1} · {len(animals)} animali"
+            else:
+                cycle_subtitle=f"CICLO {idx+1}"
+            actions=[f"<button type=\"button\" class=\"cremation-action-btn cremation-action-planned\" data-cycle-subtitle=\"{esc(cycle_subtitle)}\" onclick=\"cremationOpenEditModal({cycle['id']},'{cycle['planned_start']}','{cycle['planned_end']}');document.querySelector('[data-cremation-modal-subtitle]').textContent=this.dataset.cycleSubtitle;cremationUpdateDurationPreview()\">{lucide('pencil')}<span>Modifica</span></button>"]
             if status=="completato":
                 if cycle["actual_end"]:
                     actions.append(f'<span class="cremation-completed-note">Completato alle {esc(cycle["actual_end"][11:16])} {lucide("check-circle")}</span>')
@@ -8250,13 +8319,15 @@ class App(BaseHTTPRequestHandler):
               <div class="calendar-time-wheel" data-time-wheel hidden><div class="calendar-wheel-column" data-wheel-part="hour">{wheel_hours}</div><span class="calendar-wheel-separator">:</span><div class="calendar-wheel-column" data-wheel-part="minute">{wheel_minutes}</div></div>
             </div>'''
         edit_modal_html=f'''<div class="cremation-modal-overlay" id="cremationEditOverlay" hidden onclick="if(event.target===this)cremationCloseModal()">
-          <div class="cremation-modal">
-            <div class="cremation-modal-head"><h3>Modifica orario ciclo</h3><button type="button" class="cremation-modal-close" onclick="cremationCloseModal()" aria-label="Chiudi">×</button></div>
-            {time_field_html("Inizio","cremationEditStart")}
-            {time_field_html("Fine","cremationEditEnd")}
-            <div class="cremation-modal-actions"><button type="button" class="btn ghost" onclick="cremationCloseModal()">Annulla</button><button type="button" class="btn" onclick="cremationSubmitEditModal()">Salva orario</button></div>
+          <div class="cremation-modal cremation-modal-time-edit">
+            <div class="cremation-modal-head"><span class="cremation-modal-icon-badge">{lucide("clock")}</span><div class="cremation-modal-head-body"><h3>Modifica orario ciclo</h3><span class="cremation-modal-subtitle" data-cremation-modal-subtitle></span></div><button type="button" class="cremation-modal-close" onclick="cremationCloseModal()" aria-label="Chiudi">×</button></div>
+            <div class="cremation-modal-time-field cremation-modal-time-field-start"><span class="cremation-modal-time-icon">{lucide("play")}</span><div class="cremation-modal-time-body">{time_field_html("Orario inizio","cremationEditStart")}<span class="cremation-modal-time-clock">{lucide("clock")}</span></div></div>
+            <div class="cremation-modal-time-field cremation-modal-time-field-end"><span class="cremation-modal-time-icon">{lucide("square")}</span><div class="cremation-modal-time-body">{time_field_html("Orario fine","cremationEditEnd")}<span class="cremation-modal-time-clock">{lucide("clock")}</span></div></div>
+            <div class="cremation-modal-duration"><span class="cremation-modal-duration-icon">{lucide("hourglass")}</span><div class="cremation-modal-duration-body"><small>Durata ciclo</small><p data-cremation-duration-text>—</p></div><span class="cremation-modal-duration-badge" data-cremation-duration-minutes>—</span></div>
+            <div class="cremation-modal-actions cremation-modal-actions-v2"><button type="button" class="btn ghost" onclick="cremationCloseModal()">Annulla</button><button type="button" class="btn" onclick="cremationSubmitEditModal()">{lucide("save")}<span>Salva orario</span></button></div>
           </div>
-        </div>'''
+        </div>
+        <script>document.addEventListener('DOMContentLoaded',function(){{var s=document.getElementById('cremationEditStart'),e=document.getElementById('cremationEditEnd');if(s){{s.addEventListener('input',cremationUpdateDurationPreview);s.addEventListener('change',cremationUpdateDurationPreview);}}if(e){{e.addEventListener('input',cremationUpdateDurationPreview);e.addEventListener('change',cremationUpdateDurationPreview);}}}});</script>'''
 
         confirm_modal_html='''<div class="cremation-modal-overlay" id="cremationConfirmOverlay" hidden onclick="if(event.target===this)cremationCloseConfirmModal()">
           <div class="cremation-modal">
@@ -8561,7 +8632,14 @@ class App(BaseHTTPRequestHandler):
                 lines_html=''.join(week_animal_line(row) for row in animals) or '<div class="cremation-week-animal-line cremation-dash">Nessun animale</div>'
                 animals_html=''.join(animal_row_html(row,removable=True) for row in animals) or '<p class="cremation-dash" style="padding:10px 0">Nessun animale assegnato.</p>'
                 remaining_html=""
-                actions=[f"<button type=\"button\" class=\"cremation-action-btn cremation-action-planned\" onclick=\"cremationOpenEditModal({cycle['id']},'{cycle['planned_start']}','{cycle['planned_end']}')\">{lucide('pencil')}<span>Modifica</span></button>"]
+                if len(animals)==1:
+                    animal_w=(animals[0]["estimated_weight"] or "").strip()
+                    cycle_subtitle=f"CICLO {idx+1} · {animals[0]['animal_name'] or 'Animale'}{f' ({animal_w} kg)' if animal_w else ''}"
+                elif len(animals)>1:
+                    cycle_subtitle=f"CICLO {idx+1} · {len(animals)} animali"
+                else:
+                    cycle_subtitle=f"CICLO {idx+1}"
+                actions=[f"<button type=\"button\" class=\"cremation-action-btn cremation-action-planned\" data-cycle-subtitle=\"{esc(cycle_subtitle)}\" onclick=\"cremationOpenEditModal({cycle['id']},'{cycle['planned_start']}','{cycle['planned_end']}');document.querySelector('[data-cremation-modal-subtitle]').textContent=this.dataset.cycleSubtitle;cremationUpdateDurationPreview()\">{lucide('pencil')}<span>Modifica</span></button>"]
                 if status=="completato":
                     if cycle["actual_end"]:
                         actions.append(f'<span class="cremation-completed-note">Completato alle {esc(cycle["actual_end"][11:16])} {lucide("check-circle")}</span>')
@@ -8691,13 +8769,15 @@ class App(BaseHTTPRequestHandler):
               <div class="calendar-time-wheel" data-time-wheel hidden><div class="calendar-wheel-column" data-wheel-part="hour">{wheel_hours}</div><span class="calendar-wheel-separator">:</span><div class="calendar-wheel-column" data-wheel-part="minute">{wheel_minutes}</div></div>
             </div>'''
         edit_modal_html=f'''<div class="cremation-modal-overlay" id="cremationEditOverlay" hidden onclick="if(event.target===this)cremationCloseModal()">
-          <div class="cremation-modal">
-            <div class="cremation-modal-head"><h3>Modifica orario ciclo</h3><button type="button" class="cremation-modal-close" onclick="cremationCloseModal()" aria-label="Chiudi">×</button></div>
-            {time_field_html("Inizio","cremationEditStart")}
-            {time_field_html("Fine","cremationEditEnd")}
-            <div class="cremation-modal-actions"><button type="button" class="btn ghost" onclick="cremationCloseModal()">Annulla</button><button type="button" class="btn" onclick="cremationSubmitEditModal()">Salva orario</button></div>
+          <div class="cremation-modal cremation-modal-time-edit">
+            <div class="cremation-modal-head"><span class="cremation-modal-icon-badge">{lucide("clock")}</span><div class="cremation-modal-head-body"><h3>Modifica orario ciclo</h3><span class="cremation-modal-subtitle" data-cremation-modal-subtitle></span></div><button type="button" class="cremation-modal-close" onclick="cremationCloseModal()" aria-label="Chiudi">×</button></div>
+            <div class="cremation-modal-time-field cremation-modal-time-field-start"><span class="cremation-modal-time-icon">{lucide("play")}</span><div class="cremation-modal-time-body">{time_field_html("Orario inizio","cremationEditStart")}<span class="cremation-modal-time-clock">{lucide("clock")}</span></div></div>
+            <div class="cremation-modal-time-field cremation-modal-time-field-end"><span class="cremation-modal-time-icon">{lucide("square")}</span><div class="cremation-modal-time-body">{time_field_html("Orario fine","cremationEditEnd")}<span class="cremation-modal-time-clock">{lucide("clock")}</span></div></div>
+            <div class="cremation-modal-duration"><span class="cremation-modal-duration-icon">{lucide("hourglass")}</span><div class="cremation-modal-duration-body"><small>Durata ciclo</small><p data-cremation-duration-text>—</p></div><span class="cremation-modal-duration-badge" data-cremation-duration-minutes>—</span></div>
+            <div class="cremation-modal-actions cremation-modal-actions-v2"><button type="button" class="btn ghost" onclick="cremationCloseModal()">Annulla</button><button type="button" class="btn" onclick="cremationSubmitEditModal()">{lucide("save")}<span>Salva orario</span></button></div>
           </div>
-        </div>'''
+        </div>
+        <script>document.addEventListener('DOMContentLoaded',function(){{var s=document.getElementById('cremationEditStart'),e=document.getElementById('cremationEditEnd');if(s){{s.addEventListener('input',cremationUpdateDurationPreview);s.addEventListener('change',cremationUpdateDurationPreview);}}if(e){{e.addEventListener('input',cremationUpdateDurationPreview);e.addEventListener('change',cremationUpdateDurationPreview);}}}});</script>'''
 
         confirm_modal_html='''<div class="cremation-modal-overlay" id="cremationConfirmOverlay" hidden onclick="if(event.target===this)cremationCloseConfirmModal()">
           <div class="cremation-modal">
