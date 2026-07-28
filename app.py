@@ -1787,6 +1787,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-timeline-rail{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;padding-top:14px}
 .cremation-timeline-item:not(:last-child) .cremation-timeline-rail:before{content:"";position:absolute;top:32px;bottom:-16px;left:50%;width:2px;background:#334155;transform:translateX(-50%);z-index:0}
 .cremation-timeline-time{font-size:11px;color:#94a3b8;font-weight:600;white-space:nowrap;position:relative;z-index:1}
+.cremation-timeline-time-end{color:#64748b;font-weight:500}
 .cremation-timeline-dot{width:12px;height:12px;border-radius:50%;background:#475569;border:2px solid #0f172a;position:relative;z-index:1}
 .cremation-dot-active{background:#4ade80;box-shadow:0 0 0 4px #4ade8030}
 .cremation-dot-waiting{background:#fb923c}
@@ -8023,7 +8024,7 @@ class App(BaseHTTPRequestHandler):
             action_html=''.join(actions)
             dropzone_attr=f'data-cycle-dropzone="{cycle["id"]}"' if status!="completato" and len(animals)<2 else ""
             cycle_items.append(f'''<div class="cremation-timeline-item">
-              <div class="cremation-timeline-rail"><span class="cremation-timeline-time">{esc(cycle["planned_start"])}</span><span class="cremation-timeline-dot {dot_cls_map.get(status,"")}"></span></div>
+              <div class="cremation-timeline-rail"><span class="cremation-timeline-time">{esc(cycle["planned_start"])}</span><span class="cremation-timeline-dot {dot_cls_map.get(status,"")}"></span><span class="cremation-timeline-time cremation-timeline-time-end">{esc(cycle["planned_end"])}</span></div>
               <div class="cremation-cycle-card cremation-cycle-{status}" {dropzone_attr} data-cycle-card data-cycle-id="{cycle['id']}">
                 <div class="cremation-cycle-head" onclick="cremationToggleCycleCard(this)">
                   <span class="cremation-cycle-number {status_cls}">CICLO {idx+1}</span>
@@ -8437,7 +8438,7 @@ class App(BaseHTTPRequestHandler):
                 action_html=''.join(actions)
                 dropzone_attr=f'data-cycle-dropzone="{cycle["id"]}"' if status!="completato" and len(animals)<2 else ""
                 row_items.append(f'''<div class="cremation-timeline-item cremation-week-cycle-item">
-                  <div class="cremation-timeline-rail"><span class="cremation-timeline-time">{esc(cycle["planned_start"])}</span><span class="cremation-timeline-dot {dot_cls_map.get(status,"")}"></span></div>
+                  <div class="cremation-timeline-rail"><span class="cremation-timeline-time">{esc(cycle["planned_start"])}</span><span class="cremation-timeline-dot {dot_cls_map.get(status,"")}"></span><span class="cremation-timeline-time cremation-timeline-time-end">{esc(cycle["planned_end"])}</span></div>
                   <div class="cremation-week-cycle-card cremation-cycle-{status}" {dropzone_attr} data-cycle-card data-cycle-id="{cycle['id']}">
                     <div class="cremation-week-cycle-head" onclick="cremationToggleCycleCard(this)">
                       <div class="cremation-week-cycle-main">

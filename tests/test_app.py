@@ -2484,6 +2484,40 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('cremation-week-animal-provenance', card_html)
         self.assertIn('>L<', card_html)
 
+    def test_cremation_timeline_rail_shows_both_start_and_end_time_of_each_cycle(self):
+        # richiesta dell'utente: sulla timeline dei cicli si vedeva solo
+        # l'orario di inizio di ogni ciclo; deve comparire anche quello di
+        # fine, sia nella vista Giorno sia nella vista Settimana.
+        today = date.today()
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                (today.isoformat(), "in_attesa", "08:15", "09:45", stamp, stamp),
+            )
+        rendered = []
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.path = f"/programma-cremazioni?data={today.isoformat()}"
+        self.handler.cremation_schedule(admin)
+        day_page = rendered[-1]
+        self.assertIn(
+            '<div class="cremation-timeline-rail"><span class="cremation-timeline-time">08:15</span><span class="cremation-timeline-dot',
+            day_page,
+        )
+        self.assertIn('<span class="cremation-timeline-time cremation-timeline-time-end">09:45</span></div>', day_page)
+
+        rendered.clear()
+        monday = today - timedelta(days=today.weekday())
+        self.handler.path = f"/programma-cremazioni?vista=settimana&data={monday.isoformat()}"
+        self.handler.cremation_schedule(admin)
+        week_page = rendered[-1]
+        self.assertIn(
+            '<div class="cremation-timeline-rail"><span class="cremation-timeline-time">08:15</span><span class="cremation-timeline-dot',
+            week_page,
+        )
+        self.assertIn('<span class="cremation-timeline-time cremation-timeline-time-end">09:45</span></div>', week_page)
+
     def test_cremation_assign_and_create_cycle_accept_any_status_except_consegnato_but_only_singola(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
