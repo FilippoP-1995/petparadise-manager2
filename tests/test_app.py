@@ -6456,6 +6456,121 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('value="Via Cliente 9"', page)
         self.assertNotIn('value="Via Veterinario 1', page)
 
+    def test_calendar_day_view_shows_swipeable_daybar_and_rich_appointment_cards(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pickup_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,address,client_first_name,client_last_name,client_phone,
+                operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO FIRENZE","Firenze","Via dei Bardi 12","Alessandro","Rizzi","3331234567",
+                 "Filippo","2026-07-28T08:30:00","2026-07-28T10:30:00","Da ritirare",admin["id"],stamp,stamp)).lastrowid
+            conn.execute("INSERT INTO calendar_event_animals(event_id,name,species,weight,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                         (pickup_id,"Brando","Cane","24",stamp,stamp))
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/calendario?vista=giorno&data=2026-07-28"
+        self.handler.calendar_page(admin)
+        page = rendered[-1]
+        # barra dei 7 giorni della settimana, sempre presente, con conteggio appuntamenti
+        self.assertEqual(page.count('class="calendar-daybar-card'), 7)
+        self.assertIn('data-initial-day-index="', page)
+        self.assertIn('scroll-snap-type:x mandatory', app.CSS)
+        # filtri rapidi + card riepilogo
+        self.assertIn('class="calendar-appt-filters"', page)
+        self.assertIn('Ritiri</button>', page)
+        self.assertIn('Riconsegne</button>', page)
+        self.assertIn('Incaricato</option>', page)
+        self.assertIn('Da effettuare', page)
+        self.assertIn('Completati', page)
+        self.assertIn('Senza incaricato', page)
+        # card ricca: tipo, animale, peso, proprietario, localita/indirizzo, stato, incaricato
+        self.assertIn('RITIRO', page)
+        self.assertIn('Brando', page)
+        self.assertIn('(24 kg)', page)
+        self.assertIn('Alessandro Rizzi', page)
+        self.assertIn('Firenze', page)
+        self.assertIn('Via dei Bardi 12', page)
+        self.assertIn('DA RITIRARE', page)
+        self.assertIn('calendar-avatar-filippo', page)
+        # azioni rapide: telefono, whatsapp, naviga, menu
+        self.assertIn('tel:3331234567', page)
+        self.assertIn('https://wa.me/393331234567', page)
+        self.assertIn('google.com/maps/dir', page)
+        self.assertIn('calendarToggleApptMenu(this)', page)
+        self.assertIn(f'/calendario/{pickup_id}/modifica', page)
+        self.assertIn(f'action="/calendario/{pickup_id}/elimina"', page)
+        self.assertIn('Aggiungi ritiro / riconsegna', page)
+
+    def test_calendar_settimana_view_uses_the_identical_daybar_and_cards_as_giorno(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            conn.execute("""INSERT INTO calendar_events(event_type,title,animal_name,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("Riconsegna","RICONSEGNA STELLA","Stella","Serena","2026-07-28T11:00:00","2026-07-28T11:30:00","Completato",admin["id"],stamp,stamp))
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/calendario?vista=giorno&data=2026-07-28"
+        self.handler.calendar_page(admin)
+        day_page = rendered[-1]
+        self.handler.path = "/calendario?vista=settimana&data=2026-07-28"
+        self.handler.calendar_page(admin)
+        week_page = rendered[-1]
+        for marker in ('class="calendar-daybar-card', 'class="calendar-appt-card"', 'RICONSEGNA', 'Stella', 'COMPLETATO'):
+            self.assertIn(marker, day_page)
+            self.assertIn(marker, week_page)
+
+    def test_calendar_stat_cards_reflect_pending_done_and_unassigned_counts(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            serena = conn.execute("SELECT * FROM users WHERE username='serena'").fetchone()
+            conn.execute("""INSERT INTO calendar_events(event_type,title,operator_name,assigned_user_id,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO A","Filippo",serena["id"],"2026-07-29T08:00:00","2026-07-29T09:00:00","Da ritirare",admin["id"],stamp,stamp))
+            conn.execute("""INSERT INTO calendar_events(event_type,title,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO B","Filippo","2026-07-29T10:00:00","2026-07-29T11:00:00","Ritirato",admin["id"],stamp,stamp))
+            conn.execute("""INSERT INTO calendar_events(event_type,title,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("Riconsegna","RICONSEGNA C","Filippo","2026-07-29T12:00:00","2026-07-29T13:00:00","In programma",admin["id"],stamp,stamp))
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/calendario?vista=giorno&data=2026-07-29"
+        self.handler.calendar_page(admin)
+        page = rendered[-1]
+        page_start = page.index('class="calendar-day-page" data-day-index="2" data-date="2026-07-29"')
+        day_section = page[page_start:page_start + 4000]
+        self.assertIn('<b>2</b><small>Da effettuare</small>', day_section)
+        self.assertIn('<b>1</b><small>Completati</small>', day_section)
+        self.assertIn('<b>2</b><small>Senza incaricato</small>', day_section)
+
+    def test_calendar_month_view_shows_numeric_summary_not_event_titles(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            conn.execute("""INSERT INTO calendar_events(event_type,title,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO SEGRETO UNICO","Filippo","2026-07-28T08:00:00","2026-07-28T09:00:00","Da ritirare",admin["id"],stamp,stamp))
+            conn.execute("""INSERT INTO calendar_events(event_type,title,animal_name,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("Riconsegna","RICONSEGNA SEGRETA UNICA","Molly","Filippo","2026-07-28T14:00:00","2026-07-28T14:30:00","In programma",admin["id"],stamp,stamp))
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/calendario?vista=mese&data=2026-07-28"
+        self.handler.calendar_page(admin)
+        page = rendered[-1]
+        body_start = page.index('id="main-content"')
+        month_grid_end = page.index('calendar-month-v2-legend', body_start)
+        month_grid = page[body_start:month_grid_end]
+        # nessun nome/titolo evento dentro le celle del mese: solo il riepilogo numerico colorato
+        self.assertNotIn('RITIRO SEGRETO UNICO', month_grid)
+        self.assertNotIn('RICONSEGNA SEGRETA UNICA', month_grid)
+        self.assertIn('calendar-month-v2-count-pickup">1<', month_grid)
+        self.assertIn('calendar-month-v2-count-delivery">1<', month_grid)
+        # la card di dettaglio giorno sotto la griglia mostra il riepilogo e il pulsante
+        self.assertIn('28 Luglio', page)
+        self.assertIn('2 appuntamenti', page)
+        self.assertIn('Vai al dettaglio del giorno', page)
+        self.assertIn('vista=giorno&data=2026-07-28', page.split('Vai al dettaglio del giorno')[0][-200:])
+
     def test_dashboard_greeting_uses_logged_in_user_name_and_drops_quick_action_buttons(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
