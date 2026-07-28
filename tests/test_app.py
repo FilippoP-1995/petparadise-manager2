@@ -1957,8 +1957,8 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('data-cycle-card', page)
         self.assertIn('cremationToggleCycleCard(this)', page)
         self.assertIn('data-cycle-body', page)
-        # animal names stay visible even collapsed
-        self.assertIn('cremation-cycle-animal-names', page)
+        # animal names (and the same rich preview as the week view) stay visible even collapsed
+        self.assertIn('cremation-week-cycle-animals', page)
 
         # a completed cycle can still have its time modified: only Avvia/Termina/Aggiungi animale go away
         self.assertIn(f"cremationOpenEditModal({completato_id},'07:00','08:00')", page)
@@ -1981,6 +1981,96 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn("confirm('Confermi il completamento", page)
         self.assertNotIn('confirm(\'Rimuovere questo animale', page)
         self.assertIn('Da consegnare.', page)
+
+    def test_saluto_tag_also_triggers_owner_notify_section(self):
+        row = {"tag_assistita_streaming": "", "tag_assistita": "", "tag_possibile_assistita_streaming": "",
+               "tag_possibile_assistita": "", "tag_saluto": "Si"}
+        self.assertEqual(app.assisted_cremation_label(row), "Saluto")
+        self.assertEqual(app.assisted_cremation_label({**row, "tag_saluto": ""}), "")
+
+    def test_quick_assign_and_quick_create_js_keep_the_cycle_and_day_open_after_reload(self):
+        js = app.APP_JS
+        assign_body = js[js.index("function cremationQuickAssign(el,practiceId,cycleId)"):]
+        assign_body = assign_body[:assign_body.index("function ", 10)]
+        self.assertIn("cremationReloadWithOpenCycle(cycleId)", assign_body)
+        self.assertNotIn("location.reload()", assign_body)
+        create_body = js[js.index("function cremationQuickCreateAndAssign(el,practiceId)"):]
+        create_body = create_body[:create_body.index("function ", 10)]
+        self.assertIn("cremationReloadWithOpenCycle(data.cycle_id)", create_body)
+
+    def test_edit_modal_flushes_wheel_scroll_position_before_reading_the_value(self):
+        js = app.APP_JS
+        self.assertIn("function calendarFlushWheelTime(input)", js)
+        submit_body = js[js.index("function cremationSubmitEditModal()"):]
+        submit_body = submit_body[:submit_body.index("function ", 10)]
+        self.assertIn("calendarFlushWheelTime(document.getElementById('cremationEditStart'))", submit_body)
+        self.assertIn("calendarFlushWheelTime(document.getElementById('cremationEditEnd'))", submit_body)
+
+    def test_week_day_panels_are_always_collapsed_on_a_fresh_page_load(self):
+        # bug reale segnalato dall'utente: il pannello del giorno corrente
+        # (es. lunedi') restava sempre aperto ad ogni caricamento della
+        # pagina; ora nessun giorno deve partire espanso, nemmeno "oggi".
+        today = date.today()
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.path = "/programma-cremazioni?vista=settimana"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertNotIn('class="cremation-week-day expanded"', page)
+        self.assertEqual(page.count('data-week-day-body style="max-height:none"'), 0)
+        today_start = page.index(f'data-week-day="{today.isoformat()}"')
+        body_style_start = page.index('data-week-day-body style="', today_start)
+        today_section = page[today_start:body_style_start + 60]
+        self.assertIn('max-height:0px', today_section)
+
+    def test_day_view_collapsed_cycle_shows_the_same_animal_details_as_week_view(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-29", "in_attesa", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name,species,estimated_weight,provenance,
+                   cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-DAYDETAIL", "Privato", "Livorno", "In programma", "Cremazione singola", stamp, stamp, admin["id"],
+                 "Nilde", "Cane", "12", "L", cycle_id),
+            )
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-29&vista=giorno"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        head_start = page.index('class="cremation-cycle-head"')
+        head_end = page.index('cremation-cycle-body', head_start)
+        head_html = page[head_start:head_end]
+        self.assertIn('class="cremation-week-cycle-animals"', head_html)
+        self.assertIn('Nilde', head_html)
+        self.assertIn('12 kg', head_html)
+        self.assertIn('cremation-provenance-chip', head_html)
+        self.assertIn('>L<', head_html)
+
+    def test_add_animal_search_has_a_datalist_with_suggestions(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name,owner_first_name,owner_last_name) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-SUGGEST", "Privato", "Livorno", "Ritirato", "Cremazione singola", stamp, stamp, admin["id"],
+                 "Cipria", "Elisa", "Moretti"),
+            )
+        rendered = []
+        self.handler.path = "/programma-cremazioni"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn('list="cremationAddAnimalDatalist"', page)
+        self.assertIn('id="cremationAddAnimalDatalist"', page)
+        self.assertIn('<option value="Cipria">', page)
+        self.assertIn('<option value="Elisa Moretti">', page)
 
     def test_cremation_remove_from_cycle_returns_animal_to_waiting_list_and_reverts_empty_cycle(self):
         with app.db() as conn:
