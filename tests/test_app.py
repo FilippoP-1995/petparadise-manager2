@@ -1546,8 +1546,9 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Cornice Bianca", page)
         self.assertIn("INVIARE CATALOGO", page)
         self.assertIn("AVVISARE", page)
-        self.assertIn('<span class="cremation-provenance-chip avatar-other">L</span>', page)
-        self.assertIn('<span class="cremation-provenance-chip avatar-other">E</span>', page)
+        # il colore della sigla provenienza dipende ora dalla sigla stessa, non dalla specie
+        self.assertIn(f'<span class="cremation-provenance-chip {app.provenance_color_class("L")}">L</span>', page)
+        self.assertIn(f'<span class="cremation-provenance-chip {app.provenance_color_class("E")}">E</span>', page)
         self.assertIn("Urna scelta a voce, non ancora in catalogo", page)  # unmatched free-typed urn text still shown
         self.assertIn("(Rossi)", page)  # duplicate "Rex" disambiguated by owner surname
         self.assertIn("(Verdi)", page)  # the other "Rex" too
@@ -2053,7 +2054,45 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('cremation-provenance-chip', head_html)
         self.assertIn('>L<', head_html)
 
-    def test_add_animal_search_has_a_datalist_with_suggestions(self):
+    def test_day_view_hides_modifica_elimina_and_completed_note_until_expanded(self):
+        # richiesta utente: rendere la vista giorno piu' compatta nascondendo
+        # Modifica/Elimina ciclo/orario di completamento finche' non si
+        # espande il ciclo, invece di mostrarli sempre nel riquadro chiuso.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,actual_end,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                ("2026-07-29", "completato", "08:00", "09:30", stamp, stamp, stamp),
+            ).lastrowid
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-29&vista=giorno"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        head_start = page.index('class="cremation-cycle-head"')
+        body_start = page.index('data-cycle-body', head_start)
+        head_html = page[head_start:body_start]
+        body_html = page[body_start:body_start + 1500]
+        self.assertNotIn("Modifica", head_html)
+        self.assertNotIn("Elimina ciclo", head_html)
+        self.assertNotIn("Completato alle", head_html)
+        self.assertIn("Modifica", body_html)
+        self.assertIn("Elimina ciclo", body_html)
+        self.assertIn("Completato alle", body_html)
+
+    def test_day_view_animal_name_is_larger_than_the_week_view_default(self):
+        self.assertIn(".cremation-cycle-head .cremation-week-animal-name{font-size:16px;font-weight:800}", app.CSS)
+
+    def test_edit_modal_cancels_wheel_momentum_before_reading_the_scroll_position(self):
+        js = app.APP_JS
+        flush_body = js[js.index("function calendarFlushWheelTime(input)"):]
+        flush_body = flush_body[:flush_body.index("function ", 10)]
+        self.assertIn("hourCol.scrollTop=hourCol.scrollTop", flush_body)
+        self.assertIn("minCol.scrollTop=minCol.scrollTop", flush_body)
+
+    def test_add_animal_search_has_a_custom_suggestions_dropdown_not_a_datalist(self):
+        # <datalist> non mostra alcun suggerimento su Safari/iOS (limite noto
+        # del browser): serve un menu di suggerimenti costruito in JS.
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
             conn.execute(
@@ -2067,10 +2106,17 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.send_html = lambda content, *args: rendered.append(content)
         self.handler.cremation_schedule(admin)
         page = rendered[-1]
-        self.assertIn('list="cremationAddAnimalDatalist"', page)
-        self.assertIn('id="cremationAddAnimalDatalist"', page)
-        self.assertIn('<option value="Cipria">', page)
-        self.assertIn('<option value="Elisa Moretti">', page)
+        self.assertNotIn("<datalist", page)
+        self.assertIn('class="cremation-search-wrap"', page)
+        self.assertIn('id="cremationAddAnimalSuggestions"', page)
+        self.assertIn('data-suggestions="', page)
+        self.assertIn("Cipria", page.split('data-suggestions="', 1)[1][:400])
+        self.assertIn("Elisa Moretti", page.split('data-suggestions="', 1)[1][:400])
+        # niente zoom su iOS: il campo deve avere font-size >= 16px
+        self.assertIn(".cremation-modal-search{width:100%;margin:4px 0 12px;padding:10px 12px;border-radius:10px;border:1px solid #334155;background:#111a27;color:#e2e8f0;font-size:16px", app.CSS)
+        js = app.APP_JS
+        self.assertIn("function cremationRenderAddAnimalSuggestions(input,term)", js)
+        self.assertIn("function cremationPickAddAnimalSuggestion(value)", js)
 
     def test_cremation_remove_from_cycle_returns_animal_to_waiting_list_and_reverts_empty_cycle(self):
         with app.db() as conn:
@@ -2330,6 +2376,14 @@ class PetParadiseTests(unittest.TestCase):
         monday_day_end = page.index(f'data-week-day="{tuesday.isoformat()}"')
         monday_day_html = page[monday_day_start:monday_day_end]
         self.assertIn(f"cremationCreateCycleForDay('{monday.isoformat()}')", monday_day_html)
+
+    def test_provenance_color_is_deterministic_per_code_not_per_species(self):
+        # bug reale segnalato dall'utente: la stessa sigla (es. "L") aveva
+        # colori diversi a seconda che l'animale fosse un cane o un gatto,
+        # perche' il colore veniva preso dalla specie invece che dalla sigla.
+        self.assertEqual(app.provenance_color_class("L"), app.provenance_color_class("l"))
+        self.assertEqual(app.provenance_color_class(" L "), app.provenance_color_class("L"))
+        self.assertNotEqual(app.provenance_color_class("L"), app.provenance_color_class("E"))
 
     def test_cremation_week_view_shows_provenance_on_the_collapsed_cycle_card(self):
         monday = date(2026, 7, 20)
