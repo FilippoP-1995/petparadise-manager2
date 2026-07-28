@@ -6598,6 +6598,108 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('Vai al dettaglio del giorno', page)
         self.assertIn('vista=giorno&data=2026-07-28', page.split('Vai al dettaglio del giorno')[0][-200:])
 
+    def test_calendar_wizard_step1_shows_large_type_cards_with_checkmark(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/calendario/nuovo"
+        self.handler.calendar_event_form(admin)
+        page = rendered[-1]
+        self.assertIn('calendar-type-grid', page)
+        self.assertEqual(page.count('class="calendar-type-option"'), 5)
+        self.assertIn('calendar-type-check', page)
+        self.assertIn('onclick="calendarTypeSelected(this)"', page)
+
+    def test_calendar_wizard_step2_shows_tap_cards_and_operator_field(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/calendario/nuovo"
+        self.handler.calendar_event_form(admin)
+        page = rendered[-1]
+        step2_start = page.index('data-step="2"')
+        step2_end = page.index('data-step="3"')
+        step2 = page[step2_start:step2_end]
+        self.assertIn('calendar-card-list', step2)
+        self.assertIn('calendar-tap-card', step2)
+        self.assertIn('name="operator_name"', step2)
+        self.assertIn('data-step2-summary-body', step2)
+
+    def test_calendar_wizard_step3_has_substep_navigation_for_pickup(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/calendario/nuovo"
+        self.handler.calendar_event_form(admin)
+        page = rendered[-1]
+        step3_start = page.index('data-step="3"')
+        step3 = page[step3_start:]
+        for substep in ('menu', 'cliente', 'animali', 'preventivo'):
+            self.assertIn(f'data-substep="{substep}"', step3)
+        self.assertIn("calendarSubStep('cliente')", step3)
+        self.assertIn("calendarSubStep('animali')", step3)
+        self.assertIn("calendarSubStep('preventivo')", step3)
+
+    def test_calendar_wizard_add_row_uses_animal_card_style(self):
+        self.assertIn("calendar-animal-card", app.APP_JS)
+        self.assertIn("calendarUpdateAnimalCardSummary", app.APP_JS)
+        self.assertIn("classList.toggle('expanded')", app.APP_JS)
+
+    def test_calendar_event_detail_shows_five_tabs_header_and_quickactions(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,address,client_first_name,client_last_name,client_phone,
+                operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO DETTAGLIO TEST","Pisa","Via Verifica 9","Luca","Bianchi","3339990000",
+                 "Serena","2026-07-30T09:00:00","2026-07-30T09:30:00","Da ritirare",admin["id"],stamp,stamp)).lastrowid
+            conn.execute("INSERT INTO calendar_event_animals(event_id,name,species,weight,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                         (event_id,"Argo","Cane","18",stamp,stamp))
+            conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                         (event_id,"Cremazione","120",0,stamp,stamp))
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(admin, event_id)
+        page = rendered[-1]
+        for label in ("Dettagli", "Animali", "Preventivo", "Commenti", "Storico"):
+            self.assertIn(f'>{label}</a>', page)
+        self.assertIn('calendar-detail-header', page)
+        self.assertIn('calendar-detail-quickactions', page)
+        self.assertIn('tel:+3339990000', page)
+        self.assertIn('https://wa.me/393339990000', page)
+        self.assertIn('google.com/maps/dir', page)
+        self.assertIn('calendar-detail-qa-disabled', page)  # Pratica non disponibile prima del ritiro
+        self.assertIn('DA RITIRARE', page)
+
+    def test_calendar_event_detail_animali_and_preventivo_tabs_use_card_style(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO ANIMALI TEST","Serena","2026-07-30T09:00:00","2026-07-30T09:30:00","Da ritirare",admin["id"],stamp,stamp)).lastrowid
+            conn.execute("INSERT INTO calendar_event_animals(event_id,name,species,weight,cremation_type,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                         (event_id,"Argo","Cane","18","Singola",stamp,stamp))
+            conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                         (event_id,"Cremazione","120",0,stamp,stamp))
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}?tab=animali"
+        self.handler.calendar_event_detail(admin, event_id)
+        animali_page = rendered[-1]
+        self.assertIn('calendar-animal-card', animali_page)
+        self.assertIn('Argo', animali_page)
+        self.assertIn('Cane', animali_page)
+        self.handler.path = f"/calendario/{event_id}?tab=preventivo"
+        self.handler.calendar_event_detail(admin, event_id)
+        preventivo_page = rendered[-1]
+        self.assertIn('calendar-estimate-row-v2', preventivo_page)
+        self.assertIn('calendar-estimate-total-bar', preventivo_page)
+        self.assertIn('120,00', preventivo_page)
+
     def test_dashboard_greeting_uses_logged_in_user_name_and_drops_quick_action_buttons(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
