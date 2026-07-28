@@ -1210,6 +1210,10 @@ input,select,textarea{background:#0c121b;border-color:#323c4b;color:#f3f5f8}inpu
 @media(max-width:560px){.stats{grid-template-columns:1fr}.brand-logo{width:38px;height:38px}.nav a{font-size:0}.nav-icon{font-size:18px}.nav .btn{width:auto;min-height:42px}.wrap{padding-top:14px}h1{font-size:25px}}
 /* Premium dashboard layout */
 body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.skip-link{position:fixed;top:8px;left:8px;z-index:200;transform:translateY(-150%);padding:10px 14px;border-radius:9px;background:#fff;color:#111827}.skip-link:focus{transform:none}
+.ppm-pull-refresh{position:fixed;top:0;left:50%;z-index:300;width:40px;height:40px;margin-top:-40px;display:flex;align-items:center;justify-content:center;pointer-events:none;transform:translate(-50%,0)}
+.ppm-pull-refresh-spinner{width:26px;height:26px;border:3px solid #33415580;border-top-color:#ef405f;border-radius:50%}
+.ppm-pull-refresh.loading .ppm-pull-refresh-spinner{animation:ppmPullSpin .6s linear infinite}
+@keyframes ppmPullSpin{to{transform:rotate(360deg)}}
 .top{width:212px;padding:20px 14px;background:#0b1220;border-color:#263246}.brand{padding:0 8px 20px}.brand-logo{width:50px;height:50px}.brand-copy{font-size:17px}.nav{gap:3px;overflow-y:auto;padding-right:3px}.nav a,.nav button{min-height:42px;padding:9px 11px;border-radius:10px}.nav a:first-child{background:linear-gradient(90deg,#4a1826,#241523);border-color:#642239}.nav .install-btn{margin-top:8px}.nav .logout{margin-top:12px}
 .app-header{position:fixed;left:212px;right:0;top:0;height:76px;z-index:40;display:flex;align-items:center;justify-content:flex-end;gap:20px;padding:14px 30px;background:#111827e8;border-bottom:1px solid #263246;backdrop-filter:blur(16px)}.header-search{width:min(640px,48vw);display:flex;align-items:center;gap:9px;padding:0 13px;border:1px solid #334155;border-radius:11px;background:#172033}.header-search input{min-height:42px;padding:8px 0;background:transparent;border:0}.header-search input:focus{outline:0}.header-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;width:100%}.icon-btn{display:inline-grid;place-items:center;width:42px;height:42px;padding:0;border:1px solid #334155;border-radius:11px;background:#172033;color:#cbd5e1;cursor:pointer}.icon-btn:hover{color:#fff;border-color:#ef405f}.phone-action-btn{width:30px;height:30px;border-radius:9px;vertical-align:middle}.phone-action-btn .icon{width:15px;height:15px}.phone-action-btn.call-btn{background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;border-color:transparent}.phone-action-btn.call-btn:hover{color:#fff;border-color:transparent;filter:brightness(1.1)}.phone-action-btn.whatsapp-btn{background:linear-gradient(135deg,#22c55e,#15803d);color:#fff;border-color:transparent}.phone-action-btn.whatsapp-btn:hover{color:#fff;border-color:transparent;filter:brightness(1.1)}.header-new{gap:7px}.header-actions time{min-width:104px;padding:6px 10px;border:1px solid #334155;border-radius:10px;text-align:center;font-weight:700;background:#172033}.header-actions time small{display:block;color:#94a3b8;font-size:10px;text-transform:capitalize}.wrap{max-width:1600px;margin-left:212px;margin-right:auto;padding:106px 30px 42px}
 .dashboard-wrap{max-width:1500px}.welcome{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}.welcome h1{font-size:30px}.welcome p{margin:7px 0 0;color:#94a3b8}.dashboard-heading{margin:24px 0 12px;font-size:15px;color:#dce4ef}.dashboard-states{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
@@ -1960,6 +1964,46 @@ function ppmReleaseAutoFocusedSkipLink(){
 }
 document.addEventListener('DOMContentLoaded', ppmReleaseAutoFocusedSkipLink);
 window.addEventListener('pageshow', ppmReleaseAutoFocusedSkipLink);
+(function(){
+  // Pull-to-refresh personalizzato, identico su iPhone e Android: Chrome/Android
+  // ha un gesto nativo di pull-to-refresh, Safari/iOS no (nemmeno in standalone
+  // PWA). Per avere lo stesso comportamento su entrambi non ci si puo' affidare
+  // al gesto nativo del browser (disabilitato app-wide via overscroll-behavior),
+  // va ricostruito a mano con touch events, cosi' funziona identico ovunque.
+  const el=document.getElementById('ppmPullRefresh');
+  if(!el)return;
+  const THRESHOLD=70;
+  let startY=null,startX=null,pulling=false,ready=false;
+  document.addEventListener('touchstart',function(e){
+    if(window.scrollY>0||document.body.classList.contains('modal-open')||document.body.classList.contains('ppm-dragging-no-select'))return;
+    if(e.touches.length!==1)return;
+    startY=e.touches[0].clientY;startX=e.touches[0].clientX;pulling=true;ready=false;
+  },{passive:true});
+  document.addEventListener('touchmove',function(e){
+    if(!pulling||startY===null)return;
+    const dy=e.touches[0].clientY-startY;
+    const dx=e.touches[0].clientX-startX;
+    if(Math.abs(dx)>Math.abs(dy)){pulling=false;el.style.transform='';return;}
+    if(dy<=0){el.style.transform='';return;}
+    const dist=Math.min(dy*0.5,90);
+    ready=dist>=THRESHOLD;
+    el.style.transform='translate(-50%,'+dist+'px)';
+  },{passive:true});
+  function releasePull(){
+    if(!pulling)return;
+    pulling=false;
+    if(ready){
+      el.classList.add('loading');
+      el.style.transform='translate(-50%,50px)';
+      location.reload();
+    }else{
+      el.style.transform='';
+    }
+    startY=null;startX=null;
+  }
+  document.addEventListener('touchend',releasePull);
+  document.addEventListener('touchcancel',releasePull);
+})();
 function setProvenanceFromVeterinarian(option){
   const field=document.querySelector('select[name="provenance"]');
   if(field && option?.value && option.dataset.provenance)field.value=option.dataset.provenance;
@@ -5402,7 +5446,7 @@ def layout(title, body, user=None):
         slot1,slot2,slot3=(bottom_pool.get(label,("/","home",label)) for label in (bottom_slots+bottom_default)[:3])
         mobile_nav=f'''<nav class="bottom-nav" aria-label="Navigazione mobile"><a href="{slot1[0]}">{lucide(slot1[1])}<span>{slot1[2]}</span></a><a href="{slot2[0]}">{lucide(slot2[1])}<span>{slot2[2]}</span></a><button class="bottom-new" type="button" onclick="toggleCreateMenu()" aria-label="Crea">{lucide("plus")}</button><a href="{slot3[0]}">{lucide(slot3[1])}<span>{slot3[2]}</span></a><button type="button" onclick="toggleMoreMenu()">{lucide("menu")}<span>Altro</span></button></nav><div class="create-sheet-backdrop" onclick="toggleCreateMenu(false)"></div><aside class="create-sheet" aria-label="Crea"><a href="/nuova">{lucide("plus")}<span>Nuova pratica</span></a><a href="/calendario/nuovo" data-calendar-new-event>{lucide("calendar")}<span>Nuovo evento</span></a></aside><div class="more-backdrop" onclick="toggleMoreMenu(false)"></div><aside class="more-menu" aria-label="Altre funzioni"><div class="more-title"><b>Menu</b><button class="icon-btn" onclick="toggleMoreMenu(false)" aria-label="Chiudi">×</button></div>{drawer_links}<button class="btn ghost install-btn" type="button" onclick="installPetParadise()">Installa App</button></aside>'''
     vapid_public=esc(os.environ.get("VAPID_PUBLIC_KEY",""))
-    return f'''<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#e9475b"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="PP Manager"><meta name="application-name" content="Pet Paradise Manager"><meta name="format-detection" content="telephone=no"><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"><title>{esc(title)} - Pet Paradise Manager</title><style>{CSS}</style></head><body class="{body_class.strip()}"{body_attrs} data-vapid-public-key="{vapid_public}"><a class="skip-link" href="#main-content">Vai al contenuto</a><aside class="top"><a class="brand" href="/"><img class="brand-logo brand-logo-dark" src="/assets/company_logo.png" alt="Pet Paradise"><img class="brand-logo brand-logo-light" src="/assets/company_logo_light.png" alt="Pet Paradise"><span class="brand-copy">Pet Paradise <small>MANAGER</small></span></a>{nav}</aside>{app_header}<div id="main-content">{body}</div>{mobile_nav}{APP_JS}</body></html>'''
+    return f'''<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#e9475b"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="PP Manager"><meta name="application-name" content="Pet Paradise Manager"><meta name="format-detection" content="telephone=no"><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"><title>{esc(title)} - Pet Paradise Manager</title><style>{CSS}</style></head><body class="{body_class.strip()}"{body_attrs} data-vapid-public-key="{vapid_public}"><a class="skip-link" href="#main-content">Vai al contenuto</a><div class="ppm-pull-refresh" id="ppmPullRefresh" aria-hidden="true"><span class="ppm-pull-refresh-spinner"></span></div><aside class="top"><a class="brand" href="/"><img class="brand-logo brand-logo-dark" src="/assets/company_logo.png" alt="Pet Paradise"><img class="brand-logo brand-logo-light" src="/assets/company_logo_light.png" alt="Pet Paradise"><span class="brand-copy">Pet Paradise <small>MANAGER</small></span></a>{nav}</aside>{app_header}<div id="main-content">{body}</div>{mobile_nav}{APP_JS}</body></html>'''
 
 
 class App(BaseHTTPRequestHandler):

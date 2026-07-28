@@ -2715,14 +2715,41 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(".cremation-week-animal-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase;font-weight:700;font-size:14px", app.CSS)
         self.assertIn(".cremation-cycle-head .cremation-week-animal-name{font-size:18px;font-weight:800}", app.CSS)
 
-    def test_pull_to_refresh_gesture_is_disabled_app_wide(self):
-        # bug reale segnalato dall'utente: su Chrome/tablet Android, scorrere
-        # verso il basso partendo dalla cima della pagina fa comparire la
-        # rotellina nativa di "pull to refresh" del browser (assente su
-        # iPhone/Safari). overscroll-behavior-y:contain su html/body disabilita
-        # quel gesto nativo senza toccare lo scroll interno della pagina.
+    def test_native_pull_to_refresh_is_disabled_in_favor_of_the_custom_one(self):
+        # il gesto nativo di "pull to refresh" di Chrome/Android va disabilitato
+        # perche' sostituito da un gesto personalizzato uguale su tutte le
+        # piattaforme (vedi test successivo) - overscroll-behavior-y:contain
+        # su html/body serve solo a togliere di mezzo quello nativo, non tocca
+        # lo scroll interno della pagina.
         self.assertIn("html{overscroll-behavior-y:contain}", app.CSS)
         self.assertIn("overscroll-behavior-y:contain", app.CSS[app.CSS.index("body{margin:0"):app.CSS.index("body{margin:0")+200])
+
+    def test_custom_pull_to_refresh_works_identically_on_ios_and_android(self):
+        # bug reale segnalato dall'utente: prima il gesto di "pull to refresh"
+        # compariva solo su Chrome/Android (Safari/iOS, anche in PWA standalone,
+        # non ha mai avuto questo gesto nativo). L'utente vuole lo STESSO
+        # comportamento su entrambe le piattaforme: l'unico modo affidabile e'
+        # ricostruirlo a mano con i touch events invece di affidarsi al gesto
+        # nativo del browser, che su iOS semplicemente non esiste.
+        rendered = []
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/"
+        self.handler.dashboard(admin)
+        page = rendered[-1]
+        self.assertIn('<div class="ppm-pull-refresh" id="ppmPullRefresh" aria-hidden="true">', page)
+        self.assertIn('<span class="ppm-pull-refresh-spinner">', page)
+        js = app.APP_JS
+        self.assertIn("document.getElementById('ppmPullRefresh')", js)
+        self.assertIn("document.addEventListener('touchstart',function(e){", js)
+        self.assertIn("document.addEventListener('touchmove',function(e){", js)
+        self.assertIn("location.reload()", js)
+        # non deve mai interferire con lo swipe orizzontale di Programma Cremazioni/Calendario
+        self.assertIn("if(Math.abs(dx)>Math.abs(dy)){pulling=false;", js)
+        # non deve attivarsi mentre un popup e' aperto (usa la stessa classe
+        # 'modal-open' gia' condivisa da tutti i modali dell'app)
+        self.assertIn("document.body.classList.contains('modal-open')", js)
 
     def test_skip_link_is_a_real_accessible_skip_link_hidden_off_screen_until_focused(self):
         # lo skip-link "Vai al contenuto" e' presente per accessibilita' (best
