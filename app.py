@@ -1737,6 +1737,10 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-cycle-body-inner{padding-top:12px}
 .cremation-confirm-message{color:#cbd5e1;font-size:14px;line-height:1.5;margin:0 0 4px}
 .cremation-cycle-number{font-weight:800;font-size:14px}
+.cremation-cycle-number.cremation-status-planned{color:#93c5fd}
+.cremation-cycle-number.cremation-status-waiting{color:#fb923c}
+.cremation-cycle-number.cremation-status-active{color:#4ade80}
+.cremation-cycle-number.cremation-status-done{color:#94a3b8}
 .cremation-cycle-time{color:#94a3b8;font-size:13px}
 .cremation-status-badge{font-size:11px;font-weight:700;letter-spacing:.03em;padding:4px 12px;border-radius:99px;white-space:nowrap}
 .cremation-status-planned{background:#172554;color:#93c5fd}
@@ -1806,8 +1810,9 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-week-cycle-main{display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex:1 1 auto;min-width:0}
 .cremation-week-cycle-animals{display:flex;flex-direction:column;gap:2px;min-width:0}
 .cremation-week-animal-line{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:#e2e8f0}
-.cremation-week-animal-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700;font-size:13px;color:#f8fafc}
-.cremation-cycle-head .cremation-week-animal-name{font-size:16px;font-weight:800}
+.cremation-week-animal-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase;font-weight:700;font-size:14px;color:#f8fafc}
+.cremation-week-animal-name-group{display:inline-flex;align-items:center;gap:6px;min-width:0;flex:0 1 auto}
+.cremation-cycle-head .cremation-week-animal-name{font-size:18px;font-weight:800}
 .cremation-week-animal-tag .badge{font-size:10px;padding:2px 8px;white-space:nowrap}
 .cremation-week-animal-urn{display:flex;align-items:center;gap:4px;color:#cbd5e1;font-size:11px;white-space:nowrap}.cremation-week-notify-badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:800;white-space:nowrap}
 .cremation-week-animal-urn .icon{width:12px;height:12px;flex:0 0 12px}
@@ -7305,9 +7310,8 @@ class App(BaseHTTPRequestHandler):
                 notified=("owner_notified_status" in row.keys() and row["owner_notified_status"]=="avvisato")
                 notify_badge=f'<span class="cremation-week-notify-badge {"cremation-notify-green" if notified else "cremation-notify-red"}">{"🟢 AVVISATO" if notified else "🔴 DA AVVISARE"}</span>'
             return f'''<div class="cremation-week-animal-line">
-              <span class="cremation-week-animal-name">{avatar_emoji} {animal_name_html(row)}{weight_txt}</span>
+              <span class="cremation-week-animal-name-group"><span class="cremation-week-animal-name">{avatar_emoji} {animal_name_html(row)}{weight_txt}</span>{provenance_html}</span>
               {notify_badge}
-              {provenance_html}
               {tags_line_html}
               {urn_line_html}
             </div>'''
@@ -7419,7 +7423,7 @@ class App(BaseHTTPRequestHandler):
               <div class="cremation-timeline-rail"><span class="cremation-timeline-time">{esc(cycle["planned_start"])}</span><span class="cremation-timeline-dot {dot_cls_map.get(status,"")}"></span></div>
               <div class="cremation-cycle-card cremation-cycle-{status}" {dropzone_attr} data-cycle-card data-cycle-id="{cycle['id']}">
                 <div class="cremation-cycle-head" onclick="cremationToggleCycleCard(this)">
-                  <span class="cremation-cycle-number">CICLO {idx+1}</span>
+                  <span class="cremation-cycle-number {status_cls}">CICLO {idx+1}</span>
                   <span class="cremation-cycle-time">{esc(cycle["planned_start"])} → {esc(cycle["planned_end"])}</span>
                   <span class="cremation-status-badge {status_cls}">{esc(status_label)}</span>
                   <div class="cremation-week-cycle-animals">{names_html}</div>
@@ -7726,9 +7730,8 @@ class App(BaseHTTPRequestHandler):
                 notified=("owner_notified_status" in row.keys() and row["owner_notified_status"]=="avvisato")
                 notify_badge=f'<span class="cremation-week-notify-badge {"cremation-notify-green" if notified else "cremation-notify-red"}">{"🟢 AVVISATO" if notified else "🔴 DA AVVISARE"}</span>'
             return f'''<div class="cremation-week-animal-line">
-              <span class="cremation-week-animal-name">{avatar_emoji} {animal_name_html(row)}{weight_txt}</span>
+              <span class="cremation-week-animal-name-group"><span class="cremation-week-animal-name">{avatar_emoji} {animal_name_html(row)}{weight_txt}</span>{provenance_html}</span>
               {notify_badge}
-              {provenance_html}
               {tags_html}
               {urn_html}
             </div>'''
@@ -7835,7 +7838,7 @@ class App(BaseHTTPRequestHandler):
                   <div class="cremation-week-cycle-card cremation-cycle-{status}" {dropzone_attr} data-cycle-card data-cycle-id="{cycle['id']}">
                     <div class="cremation-week-cycle-head" onclick="cremationToggleCycleCard(this)">
                       <div class="cremation-week-cycle-main">
-                        <span class="cremation-cycle-number">CICLO {idx+1}</span>
+                        <span class="cremation-cycle-number {status_cls}">CICLO {idx+1}</span>
                         <span class="cremation-cycle-time">{esc(cycle["planned_start"])} → {esc(cycle["planned_end"])}</span>
                         <div class="cremation-week-cycle-animals">{lines_html}</div>
                       </div>

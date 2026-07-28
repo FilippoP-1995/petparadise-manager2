@@ -2081,7 +2081,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Completato alle", body_html)
 
     def test_day_view_animal_name_is_larger_than_the_week_view_default(self):
-        self.assertIn(".cremation-cycle-head .cremation-week-animal-name{font-size:16px;font-weight:800}", app.CSS)
+        self.assertIn(".cremation-cycle-head .cremation-week-animal-name{font-size:18px;font-weight:800}", app.CSS)
 
     def test_edit_modal_cancels_wheel_momentum_before_reading_the_scroll_position(self):
         js = app.APP_JS
@@ -2654,6 +2654,59 @@ class PetParadiseTests(unittest.TestCase):
         card_html = page[card_start:page.index('data-cycle-body', card_start)]
         self.assertIn('class="cremation-week-notify-badge cremation-notify-red"', card_html)
         self.assertIn("🔴 DA AVVISARE", card_html)
+
+    def test_cycle_number_is_colored_by_the_cycle_status_day_view(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-22", "in_attesa", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-CYCLECOLOR", "Privato", "Livorno", "In programma", "Cremazione singola", stamp, stamp, admin["id"], "Rex", cycle_id),
+            )
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-22"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn('class="cremation-cycle-number cremation-status-waiting">CICLO 1', page)
+
+    def test_animal_name_and_provenance_stay_together_next_to_the_owner_notify_badge(self):
+        # bug reale segnalato dall'utente: la sigla di provenienza finiva
+        # accanto al badge "AVVISATO"/"DA AVVISARE" invece che accanto al
+        # nome dell'animale, perche' erano elementi fratelli in una riga
+        # flex-wrap e quel badge si inseriva fra i due.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-22", "in_attesa", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name,provenance,tag_assistita,cremation_cycle_id,owner_notified_status)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-PROVGROUP", "Privato", "Livorno", "In programma", "Cremazione singola", stamp, stamp, admin["id"],
+                 "Brando", "L", "Si", cycle_id, "avvisato"),
+            )
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-22"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        card_start = page.index(f'data-cycle-id="{cycle_id}"')
+        group_start = page.index("cremation-week-animal-name-group", card_start)
+        group_segment = page[group_start:page.index("cremation-week-notify-badge", group_start)]
+        self.assertIn("Brando", group_segment)
+        self.assertIn("cremation-provenance-chip", group_segment)
+        self.assertIn(">L<", group_segment)
+
+    def test_animal_name_is_uppercase_and_slightly_larger(self):
+        self.assertIn(".cremation-week-animal-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase;font-weight:700;font-size:14px", app.CSS)
+        self.assertIn(".cremation-cycle-head .cremation-week-animal-name{font-size:18px;font-weight:800}", app.CSS)
 
     def test_assisted_notify_reminder_shows_on_dashboard_and_clears_when_notified(self):
         with app.db() as conn:
