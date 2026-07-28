@@ -2715,6 +2715,15 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(".cremation-week-animal-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase;font-weight:700;font-size:14px", app.CSS)
         self.assertIn(".cremation-cycle-head .cremation-week-animal-name{font-size:18px;font-weight:800}", app.CSS)
 
+    def test_pull_to_refresh_gesture_is_disabled_app_wide(self):
+        # bug reale segnalato dall'utente: su Chrome/tablet Android, scorrere
+        # verso il basso partendo dalla cima della pagina fa comparire la
+        # rotellina nativa di "pull to refresh" del browser (assente su
+        # iPhone/Safari). overscroll-behavior-y:contain su html/body disabilita
+        # quel gesto nativo senza toccare lo scroll interno della pagina.
+        self.assertIn("html{overscroll-behavior-y:contain}", app.CSS)
+        self.assertIn("overscroll-behavior-y:contain", app.CSS[app.CSS.index("body{margin:0"):app.CSS.index("body{margin:0")+200])
+
     def test_assisted_notify_reminder_shows_on_dashboard_and_clears_when_notified(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
