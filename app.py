@@ -4502,14 +4502,16 @@ function cremationUpdateDurationPreview(){
   textEl.textContent=Math.floor(diff/60)+'h '+String(diff%60).padStart(2,'0')+'m';
   badgeEl.textContent=diff+' minuti';
 }
-function cremationOpenEditModal(id,plannedStart,plannedEnd){
+function cremationOpenEditModal(id,plannedStart,plannedEnd,cycleDate){
   const overlay=document.getElementById('cremationEditOverlay');
   if(!overlay)return;
   overlay.dataset.cycleId=id;
   const startInput=document.getElementById('cremationEditStart');
   const endInput=document.getElementById('cremationEditEnd');
+  const dateInput=document.getElementById('cremationEditDate');
   startInput.value=plannedStart;startInput.dataset.timeDigits=plannedStart.replace(':','');startInput.dataset.timeComplete='1';
   endInput.value=plannedEnd;endInput.dataset.timeDigits=plannedEnd.replace(':','');endInput.dataset.timeComplete='1';
+  if(dateInput)dateInput.value=cycleDate||'';
   document.querySelectorAll('#cremationEditOverlay [data-time-wheel]').forEach(function(w){w.hidden=true;delete w.dataset.ready;});
   overlay.hidden=false;
 }
@@ -4551,9 +4553,12 @@ function cremationSubmitEditModal(){
   calendarFlushWheelTime(document.getElementById('cremationEditEnd'));
   const start=document.getElementById('cremationEditStart').value;
   const end=document.getElementById('cremationEditEnd').value;
+  const dateInput=document.getElementById('cremationEditDate');
+  const cycleDate=dateInput?dateInput.value:'';
   if(!/^\d{2}:\d{2}$/.test(start)||!/^\d{2}:\d{2}$/.test(end)){alert('Inserisci un orario valido (HH:MM) per inizio e fine.');return;}
+  if(cycleDate&&!/^\d{4}-\d{2}-\d{2}$/.test(cycleDate)){alert('Inserisci una data valida.');return;}
   fetch('/programma-cremazioni/cicli/'+id+'/modifica',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',
-    body:'planned_start='+encodeURIComponent(start)+'&planned_end='+encodeURIComponent(end)})
+    body:'planned_start='+encodeURIComponent(start)+'&planned_end='+encodeURIComponent(end)+'&cycle_date='+encodeURIComponent(cycleDate)})
     .then(function(res){return res.json();})
     .then(function(data){if(!data.ok){alert(data.error||'Operazione non riuscita');return;}cremationReloadWithOpenCycle(id);})
     .catch(function(){cremationReloadWithOpenCycle(id);});
@@ -9278,7 +9283,7 @@ class App(BaseHTTPRequestHandler):
                 cycle_subtitle=f"CICLO {idx+1} · {len(animals)} animali"
             else:
                 cycle_subtitle=f"CICLO {idx+1}"
-            actions=[f"<button type=\"button\" class=\"cremation-action-btn cremation-action-planned\" data-cycle-subtitle=\"{esc(cycle_subtitle)}\" onclick=\"cremationOpenEditModal({cycle['id']},'{cycle['planned_start']}','{cycle['planned_end']}');document.querySelector('[data-cremation-modal-subtitle]').textContent=this.dataset.cycleSubtitle;cremationUpdateDurationPreview()\">{lucide('pencil')}<span>Modifica</span></button>"]
+            actions=[f"<button type=\"button\" class=\"cremation-action-btn cremation-action-planned\" data-cycle-subtitle=\"{esc(cycle_subtitle)}\" onclick=\"cremationOpenEditModal({cycle['id']},'{cycle['planned_start']}','{cycle['planned_end']}','{cycle['cycle_date']}');document.querySelector('[data-cremation-modal-subtitle]').textContent=this.dataset.cycleSubtitle;cremationUpdateDurationPreview()\">{lucide('pencil')}<span>Modifica</span></button>"]
             if status=="completato":
                 if cycle["actual_end"]:
                     actions.append(f'<span class="cremation-completed-note">Completato alle {esc(cycle["actual_end"][11:16])} {lucide("check-circle")}</span>')
@@ -9383,6 +9388,7 @@ class App(BaseHTTPRequestHandler):
         edit_modal_html=f'''<div class="cremation-modal-overlay" id="cremationEditOverlay" hidden onclick="if(event.target===this)cremationCloseModal()">
           <div class="cremation-modal cremation-modal-time-edit">
             <div class="cremation-modal-head"><span class="cremation-modal-icon-badge">{lucide("clock")}</span><div class="cremation-modal-head-body"><h3>Modifica orario ciclo</h3><span class="cremation-modal-subtitle" data-cremation-modal-subtitle></span></div><button type="button" class="cremation-modal-close" onclick="cremationCloseModal()" aria-label="Chiudi">×</button></div>
+            <div class="cremation-modal-time-field cremation-modal-time-field-date"><span class="cremation-modal-time-icon">{lucide("calendar")}</span><div class="cremation-modal-time-body"><div class="calendar-datetime-row" style="grid-template-columns:64px 1fr"><label>Giorno</label><input type="date" id="cremationEditDate"></div></div></div>
             <div class="cremation-modal-time-field cremation-modal-time-field-start"><span class="cremation-modal-time-icon">{lucide("play")}</span><div class="cremation-modal-time-body">{time_field_html("Orario inizio","cremationEditStart")}<span class="cremation-modal-time-clock">{lucide("clock")}</span></div></div>
             <div class="cremation-modal-time-field cremation-modal-time-field-end"><span class="cremation-modal-time-icon">{lucide("square")}</span><div class="cremation-modal-time-body">{time_field_html("Orario fine","cremationEditEnd")}<span class="cremation-modal-time-clock">{lucide("clock")}</span></div></div>
             <div class="cremation-modal-duration"><span class="cremation-modal-duration-icon">{lucide("hourglass")}</span><div class="cremation-modal-duration-body"><small>Durata ciclo</small><p data-cremation-duration-text>—</p></div><span class="cremation-modal-duration-badge" data-cremation-duration-minutes>—</span></div>
@@ -9701,7 +9707,7 @@ class App(BaseHTTPRequestHandler):
                     cycle_subtitle=f"CICLO {idx+1} · {len(animals)} animali"
                 else:
                     cycle_subtitle=f"CICLO {idx+1}"
-                actions=[f"<button type=\"button\" class=\"cremation-action-btn cremation-action-planned\" data-cycle-subtitle=\"{esc(cycle_subtitle)}\" onclick=\"cremationOpenEditModal({cycle['id']},'{cycle['planned_start']}','{cycle['planned_end']}');document.querySelector('[data-cremation-modal-subtitle]').textContent=this.dataset.cycleSubtitle;cremationUpdateDurationPreview()\">{lucide('pencil')}<span>Modifica</span></button>"]
+                actions=[f"<button type=\"button\" class=\"cremation-action-btn cremation-action-planned\" data-cycle-subtitle=\"{esc(cycle_subtitle)}\" onclick=\"cremationOpenEditModal({cycle['id']},'{cycle['planned_start']}','{cycle['planned_end']}','{cycle['cycle_date']}');document.querySelector('[data-cremation-modal-subtitle]').textContent=this.dataset.cycleSubtitle;cremationUpdateDurationPreview()\">{lucide('pencil')}<span>Modifica</span></button>"]
                 if status=="completato":
                     if cycle["actual_end"]:
                         actions.append(f'<span class="cremation-completed-note">Completato alle {esc(cycle["actual_end"][11:16])} {lucide("check-circle")}</span>')
@@ -9834,6 +9840,7 @@ class App(BaseHTTPRequestHandler):
         edit_modal_html=f'''<div class="cremation-modal-overlay" id="cremationEditOverlay" hidden onclick="if(event.target===this)cremationCloseModal()">
           <div class="cremation-modal cremation-modal-time-edit">
             <div class="cremation-modal-head"><span class="cremation-modal-icon-badge">{lucide("clock")}</span><div class="cremation-modal-head-body"><h3>Modifica orario ciclo</h3><span class="cremation-modal-subtitle" data-cremation-modal-subtitle></span></div><button type="button" class="cremation-modal-close" onclick="cremationCloseModal()" aria-label="Chiudi">×</button></div>
+            <div class="cremation-modal-time-field cremation-modal-time-field-date"><span class="cremation-modal-time-icon">{lucide("calendar")}</span><div class="cremation-modal-time-body"><div class="calendar-datetime-row" style="grid-template-columns:64px 1fr"><label>Giorno</label><input type="date" id="cremationEditDate"></div></div></div>
             <div class="cremation-modal-time-field cremation-modal-time-field-start"><span class="cremation-modal-time-icon">{lucide("play")}</span><div class="cremation-modal-time-body">{time_field_html("Orario inizio","cremationEditStart")}<span class="cremation-modal-time-clock">{lucide("clock")}</span></div></div>
             <div class="cremation-modal-time-field cremation-modal-time-field-end"><span class="cremation-modal-time-icon">{lucide("square")}</span><div class="cremation-modal-time-body">{time_field_html("Orario fine","cremationEditEnd")}<span class="cremation-modal-time-clock">{lucide("clock")}</span></div></div>
             <div class="cremation-modal-duration"><span class="cremation-modal-duration-icon">{lucide("hourglass")}</span><div class="cremation-modal-duration-body"><small>Durata ciclo</small><p data-cremation-duration-text>—</p></div><span class="cremation-modal-duration-badge" data-cremation-duration-minutes>—</span></div>
@@ -10015,17 +10022,22 @@ class App(BaseHTTPRequestHandler):
         f=self.form()
         start=(f.get("planned_start") or "").strip()[:5]
         end=(f.get("planned_end") or "").strip()[:5]
+        cycle_date_raw=(f.get("cycle_date") or "").strip()[:10]
         if not re.fullmatch(r"\d{2}:\d{2}",start) or not re.fullmatch(r"\d{2}:\d{2}",end):
             return self.send_json({"ok":False,"error":"Orario non valido."},400)
         if cremation_minutes_between(start,end)<=0:
             return self.send_json({"ok":False,"error":"L'orario di fine deve essere dopo l'orario di inizio."},400)
+        if cycle_date_raw:
+            try:date.fromisoformat(cycle_date_raw)
+            except ValueError:return self.send_json({"ok":False,"error":"Data non valida."},400)
         stamp=now()
         with db() as c:
             cycle=c.execute("SELECT id,cycle_date FROM cremation_cycles WHERE id=?",(cycle_id,)).fetchone()
             if not cycle:return self.send_json({"ok":False,"error":"Ciclo non trovato"},404)
-            c.execute("UPDATE cremation_cycles SET planned_start=?,planned_end=?,updated_at=? WHERE id=?",(start,end,stamp,cycle_id))
-            # se necessario, sposta in avanti i cicli successivi della stessa giornata che ora si sovrappongono
-            rows=c.execute("SELECT id,planned_start,planned_end FROM cremation_cycles WHERE cycle_date=? ORDER BY planned_start ASC,id ASC",(cycle["cycle_date"],)).fetchall()
+            target_date=cycle_date_raw or cycle["cycle_date"]
+            c.execute("UPDATE cremation_cycles SET cycle_date=?,planned_start=?,planned_end=?,updated_at=? WHERE id=?",(target_date,start,end,stamp,cycle_id))
+            # se necessario, sposta in avanti i cicli successivi della stessa giornata (quella nuova, se il ciclo e' stato spostato) che ora si sovrappongono
+            rows=c.execute("SELECT id,planned_start,planned_end FROM cremation_cycles WHERE cycle_date=? ORDER BY planned_start ASC,id ASC",(target_date,)).fetchall()
             prev_end=None
             for row in rows:
                 row_start,row_end=(start,end) if row["id"]==cycle_id else (row["planned_start"],row["planned_end"])

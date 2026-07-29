@@ -1882,6 +1882,134 @@ class PetParadiseTests(unittest.TestCase):
             row = conn.execute("SELECT planned_start,planned_end FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()
         self.assertEqual((row["planned_start"], row["planned_end"]), ("10:00", "11:15"))
 
+    def test_cremation_edit_cycle_can_move_the_cycle_to_a_different_day(self):
+        # richiesta esplicita dell'utente: "Quando modifico un ciclo devo
+        # avere la possibilita' di modificare anche il giorno, quindi di
+        # spostare il ciclo in un altro giorno".
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-20", "pianificato", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+            # a cycle left behind on the old day: must stay completely untouched
+            other_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-20", "pianificato", "10:00", "11:00", stamp, stamp),
+            ).lastrowid
+
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.form = lambda: {"planned_start": "08:00", "planned_end": "09:30", "cycle_date": "2026-07-22"}
+        self.handler.cremation_edit_cycle(admin, cycle_id)
+        self.assertEqual(responses[-1], ({"ok": True}, 200))
+        with app.db() as conn:
+            moved = conn.execute("SELECT cycle_date,planned_start,planned_end FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()
+            other = conn.execute("SELECT cycle_date,planned_start,planned_end FROM cremation_cycles WHERE id=?", (other_id,)).fetchone()
+        self.assertEqual(moved["cycle_date"], "2026-07-22")
+        self.assertEqual((moved["planned_start"], moved["planned_end"]), ("08:00", "09:30"))
+        # left on the old day, unchanged: the cascade must be scoped to the NEW day, not the old one
+        self.assertEqual(other["cycle_date"], "2026-07-20")
+        self.assertEqual((other["planned_start"], other["planned_end"]), ("10:00", "11:00"))
+
+    def test_cremation_edit_cycle_moved_to_a_day_cascades_only_on_the_new_day(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-20", "pianificato", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+            # already on the destination day, and overlapping the incoming cycle once moved
+            existing_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-22", "pianificato", "08:30", "10:00", stamp, stamp),
+            ).lastrowid
+
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.form = lambda: {"planned_start": "08:00", "planned_end": "09:30", "cycle_date": "2026-07-22"}
+        self.handler.cremation_edit_cycle(admin, cycle_id)
+        self.assertEqual(responses[-1], ({"ok": True}, 200))
+        with app.db() as conn:
+            existing = conn.execute("SELECT planned_start,planned_end FROM cremation_cycles WHERE id=?", (existing_id,)).fetchone()
+        # pushed forward by the gap on the destination day, since the moved cycle now ends at 09:30
+        self.assertEqual((existing["planned_start"], existing["planned_end"]), (
+            app.cremation_time_add("09:30", app.CREMATION_CYCLE_GAP_MIN),
+            app.cremation_time_add(app.cremation_time_add("09:30", app.CREMATION_CYCLE_GAP_MIN), 90),
+        ))
+
+    def test_cremation_edit_cycle_rejects_invalid_cycle_date(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-20", "pianificato", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.form = lambda: {"planned_start": "08:00", "planned_end": "09:30", "cycle_date": "not-a-date"}
+        self.handler.cremation_edit_cycle(admin, cycle_id)
+        self.assertEqual(responses[-1][1], 400)
+        self.assertFalse(responses[-1][0]["ok"])
+        with app.db() as conn:
+            row = conn.execute("SELECT cycle_date FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()
+        self.assertEqual(row["cycle_date"], "2026-07-20")
+
+    def test_cremation_edit_cycle_keeps_same_day_when_cycle_date_field_is_omitted(self):
+        # backward-compat: le richieste che non inviano affatto cycle_date
+        # (nessuna, oggi) devono continuare a funzionare esattamente come prima.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-20", "pianificato", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.form = lambda: {"planned_start": "10:00", "planned_end": "11:15"}
+        self.handler.cremation_edit_cycle(admin, cycle_id)
+        self.assertEqual(responses[-1], ({"ok": True}, 200))
+        with app.db() as conn:
+            row = conn.execute("SELECT cycle_date,planned_start,planned_end FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()
+        self.assertEqual(row["cycle_date"], "2026-07-20")
+        self.assertEqual((row["planned_start"], row["planned_end"]), ("10:00", "11:15"))
+
+    def test_cremation_edit_modal_includes_a_date_field_to_move_the_cycle(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-20", "pianificato", "08:00", "09:30", stamp, stamp),
+            )
+
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-20"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        modal_start = page.index('id="cremationEditOverlay"')
+        modal_html = page[modal_start:page.index('cremation-modal-overlay', modal_start + 1)]
+        self.assertIn('id="cremationEditDate"', modal_html)
+        self.assertIn('type="date"', modal_html)
+        self.assertIn('>Giorno<', modal_html)
+
+        # same field must be present in the week view's own copy of the modal
+        rendered_week = []
+        self.handler.path = "/programma-cremazioni?vista=settimana&data=2026-07-20"
+        self.handler.send_html = lambda content, *args: rendered_week.append(content)
+        self.handler.cremation_schedule(admin)
+        week_page = rendered_week[-1]
+        week_modal_start = week_page.index('id="cremationEditOverlay"')
+        week_modal_html = week_page[week_modal_start:week_page.index('cremation-modal-overlay', week_modal_start + 1)]
+        self.assertIn('id="cremationEditDate"', week_modal_html)
+
     def test_cremation_schedule_offers_quick_insert_and_add_animal_menus_without_drag_and_drop(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
@@ -1933,8 +2061,8 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('Aggiungi animale', page)
 
         # every non-completed cycle exposes Modifica (via the new time-picker modal, not the old prompt()) together with its other actions
-        self.assertIn(f"cremationOpenEditModal({pianificato_id},'08:00','09:30')", page)
-        self.assertIn(f"cremationOpenEditModal({in_attesa_id},'09:40','11:10')", page)
+        self.assertIn(f"cremationOpenEditModal({pianificato_id},'08:00','09:30','2026-07-20')", page)
+        self.assertIn(f"cremationOpenEditModal({in_attesa_id},'09:40','11:10','2026-07-20')", page)
         self.assertNotIn("cremationEditCycle(", page)
         # pianificato (no animal yet) must not offer "Avvia ciclo"; in_attesa must
         pianificato_card = page[page.index(f'cremationOpenEditModal({pianificato_id}'):page.index(f'cremationOpenEditModal({in_attesa_id}')]
@@ -1964,7 +2092,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('cremation-week-cycle-animals', page)
 
         # a completed cycle can still have its time modified: only Avvia/Termina/Aggiungi animale go away
-        self.assertIn(f"cremationOpenEditModal({completato_id},'07:00','08:00')", page)
+        self.assertIn(f"cremationOpenEditModal({completato_id},'07:00','08:00','2026-07-20')", page)
 
         # the standalone "Animali in attesa" section is gone; the same waiting cards now live in a
         # panel toggled by the "In attesa" stat card, which shows the count of unassigned animals (2), not cycles
@@ -2264,7 +2392,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Cuore Rosso", page)
 
         # a completed cycle can still be edited (time), it just no longer offers Avvia/Termina/Aggiungi animale
-        self.assertIn(f"cremationOpenEditModal({mon_cycle},'08:00','09:30')", page)
+        self.assertIn(f"cremationOpenEditModal({mon_cycle},'08:00','09:30','{monday.isoformat()}')", page)
 
         # clicking a compact cycle row expands it (same mechanism as the day view)
         self.assertIn("cremationToggleCycleCard(this)", page)
@@ -2422,7 +2550,7 @@ class PetParadiseTests(unittest.TestCase):
         # per id e riporta la vista esattamente sulla sua pagina/giorno.
         js = app.APP_JS
         submit_start = js.index("function cremationSubmitEditModal()")
-        submit_body = js[submit_start:submit_start + 1000]
+        submit_body = js[submit_start:submit_start + 1400]
         self.assertIn("cremationReloadWithOpenCycle(id);", submit_body)
 
         notify_start = js.index("function cremationToggleOwnerNotified(")
@@ -2481,9 +2609,11 @@ class PetParadiseTests(unittest.TestCase):
         # orario/validazione/salvataggio NON deve cambiare di una riga.
         js = app.APP_JS
         # cremationOpenEditModal e cremationSubmitEditModal restano
-        # esattamente le funzioni di sempre, stessa firma, stesso corpo.
-        self.assertIn("function cremationOpenEditModal(id,plannedStart,plannedEnd){", js)
-        open_start = js.index("function cremationOpenEditModal(id,plannedStart,plannedEnd){")
+        # esattamente le funzioni di sempre, stessa firma, stesso corpo
+        # (a parte il nuovo parametro cycleDate, aggiunto per permettere di
+        # spostare il ciclo su un altro giorno).
+        self.assertIn("function cremationOpenEditModal(id,plannedStart,plannedEnd,cycleDate){", js)
+        open_start = js.index("function cremationOpenEditModal(id,plannedStart,plannedEnd,cycleDate){")
         open_body = js[open_start:open_start + 700]
         self.assertIn("overlay.dataset.cycleId=id;", open_body)
         self.assertIn("startInput.value=plannedStart;", open_body)
