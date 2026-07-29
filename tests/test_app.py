@@ -2854,6 +2854,21 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("const isMinute=!!button.closest('[data-wheel-part=\"minute\"]');", click_body)
         self.assertIn("if(isMinute)wheel.hidden=true;", click_body)
 
+    def test_calendar_time_wheel_also_closes_when_the_minute_column_is_scrolled(self):
+        # causa reale del bug che continuava a ripresentarsi: il fix sopra
+        # chiude la rotella solo quando si TOCCA (click) un valore dei minuti,
+        # ma l'interazione reale su schermi touch e' lo SCORRIMENTO della
+        # colonna (e' letteralmente una rotella). Scorrendo, il fermo-scroll
+        # dei minuti passa dal listener 'scroll' con debounce, non dal click
+        # handler: senza questa seconda chiusura la rotella restava aperta
+        # nonostante il valore fosse gia' stato confermato scorrendo.
+        js = app.APP_JS
+        start = js.index("wheel.querySelectorAll('.calendar-wheel-column').forEach(column=>column.addEventListener('scroll'")
+        end = js.index("function calendarTimeRenderDigits(")
+        scroll_body = js[start:end]
+        self.assertIn("calendarSetWheelTime(wheel,column.dataset.wheelPart==='hour'", scroll_body)
+        self.assertIn("if(column.dataset.wheelPart==='minute')wheel.hidden=true;", scroll_body)
+
     def test_calendar_flush_wheel_time_also_closes_the_wheel_on_confirm(self):
         # lo stesso bug segnalato di nuovo dall'utente: se l'orario viene
         # scelto SCORRENDO la rotella (non toccando un'opzione), il tap sul
