@@ -2027,13 +2027,35 @@ class PetParadiseTests(unittest.TestCase):
         # la barra dei giorni: 7 card con giorno abbreviato, numero, conteggio cicli
         self.assertEqual(page.count('class="cremation-daybar-card'), 7)
         self.assertIn(f'data-initial-day-index="{today_index}"', page)
-        self.assertIn(f'class="cremation-daybar-card active" data-day-index="{today_index}" data-cremation-day="{today.isoformat()}"', page)
+        self.assertIn(f'class="cremation-daybar-card active today" data-day-index="{today_index}" data-cremation-day="{today.isoformat()}"', page)
         # 7 pagine swipeabili, una per giorno, con scroll-snap
         self.assertEqual(page.count('class="cremation-day-page"'), 7)
         self.assertIn('scroll-snap-type:x mandatory', app.CSS)
         self.assertIn('scroll-snap-align:start', app.CSS)
         self.assertIn('function cremationSelectDay(', page)
         self.assertIn('function cremationInitDayPages(', page)
+
+    def test_week_view_marks_today_permanently_even_when_viewing_another_week(self):
+        # richiesta utente: il giorno corrente resta sempre rosso (classe
+        # "today"), indipendentemente da quale giorno si sta visualizzando;
+        # il giorno visualizzato (classe "active") e' invece blu quando non
+        # coincide con oggi. Su una settimana che non contiene affatto la
+        # data odierna, nessuna card deve avere la classe "today".
+        today = date.today()
+        other_monday = today - timedelta(days=today.weekday()) + timedelta(weeks=6)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.path = f"/programma-cremazioni?vista=settimana&data={other_monday.isoformat()}"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertNotIn(' today"', page)
+        self.assertIn(f'class="cremation-daybar-card active" data-day-index="0" data-cremation-day="{other_monday.isoformat()}"', page)
+        # il colore di "oggi" (rosso) e quello del giorno visualizzato (blu)
+        # devono restare due stati CSS distinti, non lo stesso colore riusato
+        self.assertIn('.cremation-daybar-card.active{background:linear-gradient(135deg,#3b82f6,#1d4ed8)', app.CSS)
+        self.assertIn('.cremation-daybar-card.today{background:linear-gradient(135deg,#fb4c67,#d9284c)', app.CSS)
 
     def test_day_view_collapsed_cycle_shows_the_same_animal_details_as_week_view(self):
         with app.db() as conn:
@@ -8529,6 +8551,170 @@ class PetParadiseTests(unittest.TestCase):
         page = app.layout("Test", "<main></main>", admin)
         self.assertIn('href="/percorso-giornaliero"', page)
         self.assertIn("Percorso giornaliero", page)
+
+    # ---- Percorso giornaliero Fase 2 (ottimizzazione reale, Google Places) --
+
+    def test_two_opt_improve_fixes_a_suboptimal_starting_order(self):
+        matrix = {
+            (0, 1): {"distance_meters": 1000}, (1, 0): {"distance_meters": 1000},
+            (0, 2): {"distance_meters": 5000}, (2, 0): {"distance_meters": 5000},
+            (1, 2): {"distance_meters": 1000}, (2, 1): {"distance_meters": 1000},
+            (1, 3): {"distance_meters": 5000}, (3, 1): {"distance_meters": 5000},
+            (2, 3): {"distance_meters": 1000}, (3, 2): {"distance_meters": 1000},
+        }
+        result = route_service.two_opt_improve(0, 3, [2, 1], matrix)
+        self.assertEqual(result, [1, 2])
+
+    def test_schedule_from_matrix_uses_real_durations_not_haversine_estimate(self):
+        matrix = {(0, 1): {"distance_meters": 12000, "duration_seconds": 900}}
+        contexts_by_index = {1: {"windows": None, "window_source": "nessuno", "service_minutes": 15}}
+        schedule = route_service.schedule_from_matrix(0, [1], matrix, contexts_by_index, start_time="08:00")
+        self.assertEqual(schedule[0]["arrival"], "08:15")
+        self.assertEqual(schedule[0]["departure"], "08:30")
+        self.assertEqual(schedule[0]["distance_meters"], 12000)
+        self.assertEqual(schedule[0]["status"], "grigio")
+
+    def test_repair_time_window_violations_reorders_to_fix_a_red_violation(self):
+        matrix = {
+            (0, 1): {"distance_meters": 1000, "duration_seconds": 600},
+            (0, 2): {"distance_meters": 1000, "duration_seconds": 600},
+            (1, 2): {"distance_meters": 1000, "duration_seconds": 600},
+            (2, 1): {"distance_meters": 1000, "duration_seconds": 600},
+        }
+        contexts_by_index = {
+            1: {"windows": [("08:00", "08:15")], "window_source": "veterinario", "service_minutes": 0},
+            2: {"windows": None, "window_source": "nessuno", "service_minutes": 0},
+        }
+        result = route_service.repair_time_window_violations(0, [2, 1], matrix, contexts_by_index, start_time="08:00")
+        self.assertEqual(result, [1, 2])
+
+    @patch("route_service.compute_route_matrix_google")
+    @patch("route_service.compute_route_google")
+    def test_optimize_route_with_schedule_veloce_and_breve_produce_different_orders(self, mock_google, mock_matrix):
+        start = {"lat": 43.50, "lng": 10.25}
+        destination = {"lat": 43.50, "lng": 10.25}
+        contexts = [
+            {"lat": 43.51, "lng": 10.31, "event_id": 1, "service_minutes": 10, "windows": None, "window_source": "nessuno"},
+            {"lat": 43.52, "lng": 10.32, "event_id": 2, "service_minutes": 10, "windows": None, "window_source": "nessuno"},
+            {"lat": 43.53, "lng": 10.33, "event_id": 3, "service_minutes": 10, "windows": None, "window_source": "nessuno"},
+        ]
+        matrix = {}
+        for a in range(5):
+            for b in range(5):
+                if a != b:
+                    matrix[(a, b)] = {"distance_meters": abs(a - b) * 1000, "duration_seconds": abs(a - b) * 100}
+        mock_matrix.return_value = matrix
+        mock_google.return_value = {"order": [2, 1, 0], "legs": [], "total_distance_meters": 0, "total_duration_seconds": 0}
+        ordered_veloce, _, source_veloce = route_service.optimize_route_with_schedule(
+            start, destination, contexts, mode="veloce", start_time="08:00", api_key="FAKEKEY")
+        ordered_breve, _, source_breve = route_service.optimize_route_with_schedule(
+            start, destination, contexts, mode="breve", start_time="08:00", api_key="FAKEKEY")
+        self.assertEqual((source_veloce, source_breve), ("google", "google"))
+        self.assertEqual([c["event_id"] for c in ordered_veloce], [3, 2, 1])
+        self.assertEqual([c["event_id"] for c in ordered_breve], [1, 2, 3])
+
+    @patch("route_service.urllib.request.urlopen")
+    def test_fetch_place_hours_google_parses_periods_into_days(self, mock_urlopen):
+        periods = [
+            {"open": {"day": 1, "hour": 8, "minute": 30}, "close": {"day": 1, "hour": 12, "minute": 30}},
+            {"open": {"day": 1, "hour": 15, "minute": 30}, "close": {"day": 1, "hour": 19, "minute": 30}},
+        ]
+        class FakeResponse:
+            def read(self_inner): return json.dumps({"regularOpeningHours": {"periods": periods}}).encode("utf-8")
+            def __enter__(self_inner): return self_inner
+            def __exit__(self_inner, *a): return False
+        mock_urlopen.return_value = FakeResponse()
+        hours = route_service.fetch_place_hours_google("FAKEKEY", "place123")
+        self.assertEqual(hours[0], {"closed": False, "morning_start": "08:30", "morning_end": "12:30",
+                                     "afternoon_start": "15:30", "afternoon_end": "19:30"})
+        self.assertTrue(hours[2]["closed"])
+
+    @patch("route_service.fetch_place_hours_google")
+    def test_ensure_vet_hours_from_google_writes_hours_and_sets_source(self, mock_fetch):
+        mock_fetch.return_value = {i: {"closed": i != 0, "morning_start": "08:00" if i == 0 else None,
+            "morning_end": "12:00" if i == 0 else None, "afternoon_start": None, "afternoon_end": None} for i in range(7)}
+        with app.db() as conn:
+            vet_id = conn.execute("INSERT INTO veterinarians(clinic_name,google_place_id,active,created_at,updated_at) VALUES(?,?,?,?,?)",
+                ("Vet Test", "place1", 1, app.now(), app.now())).lastrowid
+            vet_row = conn.execute("SELECT * FROM veterinarians WHERE id=?", (vet_id,)).fetchone()
+            result = route_service.ensure_vet_hours_from_google(conn, vet_row, api_key="FAKEKEY")
+            self.assertTrue(result)
+            vet_after = conn.execute("SELECT * FROM veterinarians WHERE id=?", (vet_id,)).fetchone()
+            monday = conn.execute("SELECT * FROM veterinarian_hours WHERE veterinarian_id=? AND day_of_week=0", (vet_id,)).fetchone()
+        self.assertEqual(vet_after["hours_source"], "google")
+        self.assertEqual(monday["morning_start"], "08:00")
+
+    @patch("route_service.fetch_place_hours_google")
+    def test_ensure_vet_hours_from_google_never_overwrites_manual_without_explicit_force(self, mock_fetch):
+        mock_fetch.return_value = {i: {"closed": True, "morning_start": None, "morning_end": None,
+            "afternoon_start": None, "afternoon_end": None} for i in range(7)}
+        with app.db() as conn:
+            vet_id = conn.execute("INSERT INTO veterinarians(clinic_name,google_place_id,hours_source,active,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("Vet Manuale", "place2", "manuale", 1, app.now(), app.now())).lastrowid
+            vet_row = conn.execute("SELECT * FROM veterinarians WHERE id=?", (vet_id,)).fetchone()
+            result = route_service.ensure_vet_hours_from_google(conn, vet_row, api_key="FAKEKEY")
+            self.assertFalse(result)
+            mock_fetch.assert_not_called()
+            result_forced = route_service.ensure_vet_hours_from_google(conn, vet_row, api_key="FAKEKEY", force=True)
+            self.assertTrue(result_forced)
+            mock_fetch.assert_called_once()
+
+    @patch("route_service.fetch_place_hours_google")
+    def test_ensure_vet_hours_from_google_respects_ttl_cache(self, mock_fetch):
+        recent_stamp = route_service.rome_now().isoformat(timespec="seconds")
+        with app.db() as conn:
+            vet_id = conn.execute("""INSERT INTO veterinarians(clinic_name,google_place_id,hours_source,hours_updated_at,active,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?)""", ("Vet Cache", "place3", "google", recent_stamp, 1, app.now(), app.now())).lastrowid
+            vet_row = conn.execute("SELECT * FROM veterinarians WHERE id=?", (vet_id,)).fetchone()
+            result = route_service.ensure_vet_hours_from_google(conn, vet_row, api_key="FAKEKEY")
+        self.assertFalse(result)
+        mock_fetch.assert_not_called()
+
+    @patch("app.route_service.fetch_place_hours_google")
+    def test_update_veterinarian_hours_from_google_endpoint_forces_overwrite_of_manual(self, mock_fetch):
+        mock_fetch.return_value = {i: {"closed": True, "morning_start": None, "morning_end": None,
+            "afternoon_start": None, "afternoon_end": None} for i in range(7)}
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            vet_id = conn.execute("INSERT INTO veterinarians(clinic_name,google_place_id,hours_source,active,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("Vet Force", "placeX", "manuale", 1, app.now(), app.now())).lastrowid
+        redirects = []
+        self.handler.redirect = lambda url: redirects.append(url)
+        with patch.dict(os.environ, {"GOOGLE_MAPS_API_KEY": "FAKEKEY"}):
+            self.handler.update_veterinarian_hours_from_google(admin, vet_id)
+        self.assertEqual(redirects, [f"/veterinari/{vet_id}"])
+        with app.db() as conn:
+            vet = conn.execute("SELECT * FROM veterinarians WHERE id=?", (vet_id,)).fetchone()
+        self.assertEqual(vet["hours_source"], "google")
+
+    @patch("app.route_service.geocode_address", return_value=(43.55, 10.30))
+    def test_route_plan_recalculate_from_here_leaves_completed_stops_untouched(self, _mock_geocode):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            done_event = conn.execute("""INSERT INTO calendar_events(event_type,title,address,location_type,start_at,end_at,event_status,
+                created_by,created_at,updated_at) VALUES('Ritiro','Fatto','Via Fatta 1','Privato','2026-08-10T08:00:00','2026-08-10T09:00:00',
+                'Ritirato',?,?,?)""", (admin["id"], stamp, stamp)).lastrowid
+            pending_event = conn.execute("""INSERT INTO calendar_events(event_type,title,address,location_type,start_at,end_at,event_status,
+                created_by,created_at,updated_at) VALUES('Ritiro','Da fare','Via Dafare 2','Privato','2026-08-10T08:00:00','2026-08-10T18:00:00',
+                'Da ritirare',?,?,?)""", (admin["id"], stamp, stamp)).lastrowid
+            plan_id = conn.execute("""INSERT INTO route_plans(route_date,start_location_type,start_lat,start_lng,end_location_type,end_lat,end_lng,
+                optimization_mode,status,version,created_by,created_at,updated_at) VALUES('2026-08-10','personalizzato',43.50,10.25,'stessa_partenza',
+                43.50,10.25,'veloce','attivo',1,?,?,?)""", (admin["id"], stamp, stamp)).lastrowid
+            done_stop_id = conn.execute("INSERT INTO route_plan_stops(route_plan_id,event_id,sequence,estimated_arrival,validation_status) VALUES(?,?,1,'08:30','verde')",
+                (plan_id, done_event)).lastrowid
+            conn.execute("INSERT INTO route_plan_stops(route_plan_id,event_id,sequence) VALUES(?,?,2)", (plan_id, pending_event))
+        redirects = []
+        self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.form = lambda: {"lat": "43.56", "lng": "10.31"}
+        self.handler.route_plan_recalculate_from_here(admin, plan_id)
+        self.assertEqual(redirects, [f"/percorso-giornaliero/{plan_id}"])
+        with app.db() as conn:
+            stops = conn.execute("SELECT * FROM route_plan_stops WHERE route_plan_id=? ORDER BY sequence", (plan_id,)).fetchall()
+        self.assertEqual(len(stops), 2)
+        self.assertEqual(stops[0]["id"], done_stop_id)
+        self.assertEqual(stops[0]["estimated_arrival"], "08:30")
+        self.assertEqual(stops[1]["event_id"], pending_event)
+        self.assertIsNotNone(stops[1]["estimated_arrival"])
 
 
 if __name__ == "__main__":

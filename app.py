@@ -1971,8 +1971,10 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-daybar-dow{font-size:11px;font-weight:700;color:#9ca7b8;letter-spacing:.04em}
 .cremation-daybar-num{font-size:20px;font-weight:800;color:#f5f7fb;line-height:1.1}
 .cremation-daybar-count{font-size:10px;color:#8a96a8;white-space:nowrap}
-.cremation-daybar-card.active{background:linear-gradient(135deg,#fb4c67,#d9284c);border-color:#fb4c67;box-shadow:0 10px 26px #ef405f4d;transform:translateY(-2px)}
+.cremation-daybar-card.active{background:linear-gradient(135deg,#3b82f6,#1d4ed8);border-color:#3b82f6;box-shadow:0 10px 26px #3b82f64d;transform:translateY(-2px)}
 .cremation-daybar-card.active .cremation-daybar-dow,.cremation-daybar-card.active .cremation-daybar-num,.cremation-daybar-card.active .cremation-daybar-count{color:#fff}
+.cremation-daybar-card.today{background:linear-gradient(135deg,#fb4c67,#d9284c);border-color:#fb4c67;box-shadow:0 10px 26px #ef405f4d;transform:translateY(-2px)}
+.cremation-daybar-card.today .cremation-daybar-dow,.cremation-daybar-card.today .cremation-daybar-num,.cremation-daybar-card.today .cremation-daybar-count{color:#fff}
 .cremation-day-pages{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-bottom:18px}
 .cremation-day-pages::-webkit-scrollbar{display:none}
 .cremation-day-page{flex:0 0 100%;scroll-snap-align:start;min-width:0}
@@ -3903,7 +3905,17 @@ function routeRequestGeolocation(kind){
     const lngField=form.querySelector(`[data-route-geoloc="${kind}_lng"]`);
     if(latField)latField.value=position.coords.latitude;
     if(lngField)lngField.value=position.coords.longitude;
-  },function(){alert('Posizione non autorizzata: seleziona un\\'altra opzione di partenza/arrivo.');},{timeout:10000});
+  },function(){alert("Posizione non autorizzata: seleziona un'altra opzione di partenza/arrivo.");},{timeout:10000});
+}
+function routeSubmitRecalculateFromHere(event,form){
+  event.preventDefault();
+  if(!navigator.geolocation){alert("Geolocalizzazione non disponibile su questo dispositivo.");return false;}
+  navigator.geolocation.getCurrentPosition(function(position){
+    form.querySelector('[name="lat"]').value=position.coords.latitude;
+    form.querySelector('[name="lng"]').value=position.coords.longitude;
+    form.submit();
+  },function(){alert("Posizione non autorizzata: impossibile ricalcolare da qui.");},{timeout:10000});
+  return false;
 }
 function setupSidebarOrderPopup(){
   const openBtn=document.getElementById('ppmOpenSidebarOrder');
@@ -6354,6 +6366,8 @@ class App(BaseHTTPRequestHandler):
         if match: return self.route_plan_reorder(user,int(match.group(1)))
         match = re.fullmatch(r"/percorso-giornaliero/(\d+)/ripristina",path)
         if match: return self.route_plan_restore(user,int(match.group(1)))
+        match = re.fullmatch(r"/percorso-giornaliero/(\d+)/ricalcola-da-qui",path)
+        if match: return self.route_plan_recalculate_from_here(user,int(match.group(1)))
         match = re.fullmatch(r"/percorso-giornaliero/(\d+)/tappa/(\d+)/(blocca|urgente)",path)
         if match: return self.route_plan_stop_toggle(user,int(match.group(1)),int(match.group(2)),match.group(3))
         match = re.fullmatch(r"/calendario/(\d+)/modifica",path)
@@ -6402,6 +6416,8 @@ class App(BaseHTTPRequestHandler):
         if match: return self.delete_collaborator_price_tier(user, int(match.group(1)))
         match = re.fullmatch(r"/veterinari/(\d+)/orari", path)
         if match: return self.save_veterinarian_hours(user, int(match.group(1)))
+        match = re.fullmatch(r"/veterinari/(\d+)/orari/aggiorna-google", path)
+        if match: return self.update_veterinarian_hours_from_google(user, int(match.group(1)))
         match = re.fullmatch(r"/veterinari/(\d+)/buoni", path)
         if match: return self.save_manual_voucher(user, int(match.group(1)))
         match = re.fullmatch(r"/buoni/(\d+)/modifica", path)
@@ -8453,6 +8469,8 @@ class App(BaseHTTPRequestHandler):
         vet_row=None
         if event_row["veterinarian_id"]:
             vet_row=c.execute("SELECT * FROM veterinarians WHERE id=?",(event_row["veterinarian_id"],)).fetchone()
+            if vet_row and route_service.ensure_vet_hours_from_google(c,vet_row):
+                vet_row=c.execute("SELECT * FROM veterinarians WHERE id=?",(event_row["veterinarian_id"],)).fetchone()
         lat,lng=route_service.resolve_coordinates(c,address,veterinarian_row=vet_row)
         location_type=event_row["location_type"] or ("Veterinario" if event_row["veterinarian_id"] else "Altro indirizzo")
         service_minutes=route_service.service_duration_minutes(c,location_type,veterinarian_row=vet_row)
@@ -8647,6 +8665,10 @@ class App(BaseHTTPRequestHandler):
               </form>
               <form method="post" action="/percorso-giornaliero/{plan['id']}/ripristina">
                 <button class="btn ghost" type="submit" style="width:100%;margin-top:8px">Ripristina percorso ottimizzato</button>
+              </form>
+              <form method="post" action="/percorso-giornaliero/{plan['id']}/ricalcola-da-qui" id="routeRecalculateFromHereForm" onsubmit="return routeSubmitRecalculateFromHere(event,this)">
+                <input type="hidden" name="lat"><input type="hidden" name="lng">
+                <button class="btn ghost" type="submit" style="width:100%;margin-top:8px">{lucide("navigation")} Ricalcola da qui (posizione attuale)</button>
               </form>'''
         start_maps=plan["start_address"] if plan else ""
         end_maps=(plan["end_address"] or plan["start_address"]) if plan else ""
@@ -8716,16 +8738,20 @@ class App(BaseHTTPRequestHandler):
             start_point={"lat":start_lat,"lng":start_lng}
             if end_type=="stessa_partenza":
                 end_point={"lat":start_lat,"lng":start_lng};end_address=start_address
+            elif end_type=="ultimo_ritiro":
+                # 'destination' qui serve solo da ancora per orientare l'ottimizzazione
+                # (la partenza stessa, cosi' l'algoritmo cerca un percorso che tende a
+                # chiudersi verso il punto di partenza): l'indirizzo di arrivo reale
+                # viene fissato DOPO, in base all'ultima tappa dell'ordine calcolato.
+                end_point={"lat":start_lat,"lng":start_lng}
             else:
                 end_point={"lat":end_lat,"lng":end_lng}
-            if end_type=="ultimo_ritiro" and contexts:
-                end_point={"lat":contexts[-1]["lat"],"lng":contexts[-1]["lng"]};end_address=contexts[-1]["address"]
-            stops_for_optimizer=[{"lat":ctx["lat"],"lng":ctx["lng"],"event_id":ctx["event_id"]} for ctx in contexts]
             api_key=os.environ.get("GOOGLE_MAPS_API_KEY","").strip()
-            ordered,google_result,source=route_service.optimize_route(start_point,end_point,stops_for_optimizer,mode=mode,api_key=api_key)
-            contexts_by_event={ctx["event_id"]:ctx for ctx in contexts}
-            ordered_contexts=[contexts_by_event[o["event_id"]] for o in ordered if o.get("event_id") in contexts_by_event]
-            schedule=self.route_plan_compute_schedule(start_point,ordered_contexts,start_time=start_time)
+            ordered_contexts,google_schedule,source=route_service.optimize_route_with_schedule(
+                start_point,end_point,contexts,mode=mode,start_time=start_time,api_key=api_key)
+            if end_type=="ultimo_ritiro" and ordered_contexts:
+                end_point={"lat":ordered_contexts[-1]["lat"],"lng":ordered_contexts[-1]["lng"]};end_address=ordered_contexts[-1]["address"]
+            schedule=google_schedule if google_schedule is not None else self.route_plan_compute_schedule(start_point,ordered_contexts,start_time=start_time)
             total_distance=sum(s["distance_meters"] or 0 for s in schedule)
             total_duration=sum((s["duration_seconds"] or 0)+ctx["service_minutes"]*60 for s,ctx in zip(schedule,ordered_contexts))
             existing=c.execute("SELECT * FROM route_plans WHERE route_date=? AND status='attivo' ORDER BY version DESC LIMIT 1",(selected,)).fetchone()
@@ -8789,6 +8815,63 @@ class App(BaseHTTPRequestHandler):
                   distance_from_previous_meters=?,duration_from_previous_seconds=?,validation_status=?,warning_message=? WHERE id=?""",
                   (index,sched["arrival"],sched["departure"],sched["distance_meters"],sched["duration_seconds"],sched["status"],sched["message"],stop["id"]))
             c.execute("UPDATE route_plans SET total_distance_meters=?,total_duration_seconds=?,updated_at=? WHERE id=?",(total_distance,total_duration,stamp,plan_id))
+        self.redirect(f"/percorso-giornaliero/{plan_id}")
+
+    def route_plan_recalculate_from_here(self,user,plan_id):
+        """'Ricalcola da qui': le tappe il cui evento e' nel frattempo stato
+        completato (Ritirato per i Ritiri, Completato per le Riconsegne) o
+        cancellato restano intoccate (cronologia gia' effettuata, mai
+        modificata); solo le tappe ancora da fare vengono ririordinate a
+        partire dalla posizione attuale fornita dal browser (previa
+        autorizzazione esplicita dell'operatore, vedi routeRequestGeolocation)."""
+        form=self.form()
+        try:
+            lat=float(form.get("lat"));lng=float(form.get("lng"))
+        except (TypeError,ValueError):
+            return self.route_plan_page(user,plan_id)
+        with db() as c:
+            plan=c.execute("SELECT * FROM route_plans WHERE id=?",(plan_id,)).fetchone()
+            if not plan:return self.send_error(404)
+            stops=c.execute("""SELECT s.*,e.* FROM route_plan_stops s LEFT JOIN calendar_events e ON e.id=s.event_id
+              WHERE s.route_plan_id=? ORDER BY s.sequence""",(plan_id,)).fetchall()
+            def is_done(row):
+                if row["deleted_at"]:return True
+                if row["event_type"]=="Ritiro":return row["event_status"]=="Ritirato"
+                if row["event_type"]=="Riconsegna":return row["event_status"]=="Completato"
+                return False
+            completed_stops=[s for s in stops if is_done(s)]
+            pending_stops=[s for s in stops if not is_done(s)]
+            max_completed_seq=max((s["sequence"] for s in completed_stops),default=0)
+            contexts=[]
+            for row in pending_stops:
+                ctx=self.route_plan_stop_context(c,row)
+                if ctx["address"]:
+                    ctx["event_id"]=row["event_id"]
+                    contexts.append(ctx)
+            start_point={"lat":lat,"lng":lng}
+            end_point={"lat":plan["end_lat"],"lng":plan["end_lng"]}
+            start_time=rome_now().strftime("%H:%M")
+            api_key=os.environ.get("GOOGLE_MAPS_API_KEY","").strip()
+            ordered_contexts,google_schedule,source=route_service.optimize_route_with_schedule(
+                start_point,end_point,contexts,mode=plan["optimization_mode"],start_time=start_time,api_key=api_key)
+            schedule=google_schedule if google_schedule is not None else self.route_plan_compute_schedule(start_point,ordered_contexts,start_time=start_time)
+            keep_ids=[s["id"] for s in completed_stops]
+            placeholders=",".join("?"*len(keep_ids)) if keep_ids else None
+            if placeholders:
+                c.execute(f"DELETE FROM route_plan_stops WHERE route_plan_id=? AND id NOT IN ({placeholders})",(plan_id,*keep_ids))
+            else:
+                c.execute("DELETE FROM route_plan_stops WHERE route_plan_id=?",(plan_id,))
+            for index,(ctx,sched) in enumerate(zip(ordered_contexts,schedule),start=max_completed_seq+1):
+                c.execute("""INSERT INTO route_plan_stops(route_plan_id,event_id,sequence,estimated_arrival,estimated_departure,
+                  service_duration_minutes,time_window_start,time_window_end,time_window_source,distance_from_previous_meters,
+                  duration_from_previous_seconds,validation_status,warning_message)
+                  VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                  (plan_id,ctx["event_id"],index,sched["arrival"],sched["departure"],ctx["service_minutes"],
+                   ctx["windows"][0][0] if ctx["windows"] else None,ctx["windows"][0][1] if ctx["windows"] else None,ctx["window_source"],
+                   sched["distance_meters"],sched["duration_seconds"],sched["status"],sched["message"]))
+            total_distance=sum((s["distance_from_previous_meters"] or 0) for s in completed_stops)+sum((s["distance_meters"] or 0) for s in schedule)
+            total_duration=sum((s["duration_from_previous_seconds"] or 0) for s in completed_stops)+sum((s["duration_seconds"] or 0)+ctx["service_minutes"]*60 for s,ctx in zip(schedule,ordered_contexts))
+            c.execute("UPDATE route_plans SET total_distance_meters=?,total_duration_seconds=?,updated_at=? WHERE id=?",(total_distance,total_duration,now(),plan_id))
         self.redirect(f"/percorso-giornaliero/{plan_id}")
 
     def route_plan_stop_toggle(self,user,plan_id,stop_id,field):
@@ -9490,7 +9573,8 @@ class App(BaseHTTPRequestHandler):
             cycles_count=len(day_cycles)
             count_label=f'{cycles_count} {"ciclo" if cycles_count==1 else "cicli"}'
             active_cls=" active" if d==board_date else ""
-            daybar_cards.append(f'''<button type="button" class="cremation-daybar-card{active_cls}" data-day-index="{i}" data-cremation-day="{d}" onclick="cremationSelectDay({i})">
+            today_cls=" today" if d==today_iso else ""
+            daybar_cards.append(f'''<button type="button" class="cremation-daybar-card{active_cls}{today_cls}" data-day-index="{i}" data-cremation-day="{d}" onclick="cremationSelectDay({i})">
               <span class="cremation-daybar-dow">{weekday_short[i].upper()}</span>
               <span class="cremation-daybar-num">{day_date.day:02d}</span>
               <span class="cremation-daybar-count">{count_label}</span>
@@ -11506,8 +11590,11 @@ class App(BaseHTTPRequestHandler):
             closed=bool(h["closed"]) if h else False
             def tval(field):return esc(h[field]) if h and h[field] else ""
             day_blocks.append(f'''<div class="tablebox" style="padding:10px 12px;margin-bottom:8px"><label class="modern-check"><input type="checkbox" name="closed_{i}" value="1" {"checked" if closed else ""}> <b>{day_name}</b> — chiuso</label><div class="fields" style="margin-top:8px"><div class="field"><label>Mattina dalle</label><input type="time" name="morning_start_{i}" value="{tval('morning_start')}"></div><div class="field"><label>alle</label><input type="time" name="morning_end_{i}" value="{tval('morning_end')}"></div><div class="field"><label>Pomeriggio dalle</label><input type="time" name="afternoon_start_{i}" value="{tval('afternoon_start')}"></div><div class="field"><label>alle</label><input type="time" name="afternoon_end_{i}" value="{tval('afternoon_end')}"></div><div class="field full"><label>Note</label><input name="notes_{i}" value="{tval('notes')}" placeholder="Es. chiuso per pausa pranzo, orario estivo..."></div></div></div>''')
-        hours_updated_label=f"Ultimo aggiornamento manuale: {esc(v['hours_updated_at'][:16].replace('T',' '))}" if v["hours_updated_at"] else "Orari non ancora configurati: il Percorso giornaliero non applicherà vincoli di orario per questa struttura."
-        hours_section=f'''<div style="height:14px"></div><section class="section"><h2>Orari di apertura</h2><p class="sub">Usati dal Percorso giornaliero per segnalare arrivi fuori orario. {hours_updated_label}</p><form method="post" action="/veterinari/{v['id']}/orari"><div class="fields"><div class="field"><label>Durata media ritiro (minuti)</label><input type="number" min="1" max="240" name="service_duration_minutes" value="{v['service_duration_minutes'] or ''}" placeholder="10"></div></div><div style="height:10px"></div>{''.join(day_blocks)}<button class="btn" style="margin-top:4px">Salva orari</button></form></section>'''
+        stamp_label=esc(v['hours_updated_at'][:16].replace('T',' ')) if v["hours_updated_at"] else ""
+        source_labels={"manuale":f"Fonte: Manuali (aggiornati il {stamp_label})","google":f"Fonte: Google Places (recuperati automaticamente il {stamp_label})","assente":"Fonte: Non disponibili (Google non ha orari pubblicati per questa struttura, oppure non è raggiungibile)"}
+        hours_updated_label=source_labels.get(v["hours_source"],"Orari non ancora configurati: il Percorso giornaliero non applicherà vincoli di orario per questa struttura.")
+        google_refresh_html=f'''<form method="post" action="/veterinari/{v['id']}/orari/aggiorna-google" style="margin-top:8px" {"onsubmit=\"return confirm('Gli orari attuali sono stati inseriti manualmente: sovrascriverli con quelli di Google?')\"" if v["hours_source"]=="manuale" else ""}><button class="btn ghost" type="submit">{lucide("navigation")} Aggiorna orari da Google adesso</button></form>''' if v["google_place_id"] else ''
+        hours_section=f'''<div style="height:14px"></div><section class="section"><h2>Orari di apertura</h2><p class="sub">Usati dal Percorso giornaliero per segnalare arrivi fuori orario. {hours_updated_label}</p><form method="post" action="/veterinari/{v['id']}/orari"><div class="fields"><div class="field"><label>Durata media ritiro (minuti)</label><input type="number" min="1" max="240" name="service_duration_minutes" value="{v['service_duration_minutes'] or ''}" placeholder="10"></div><div class="field full"><label>Google Place ID (facoltativo, per recupero orari automatico)</label><input name="google_place_id" value="{esc(v['google_place_id'])}" placeholder="Es. ChIJ..."></div></div><div style="height:10px"></div>{''.join(day_blocks)}<button class="btn" style="margin-top:4px">Salva orari</button></form>{google_refresh_html}</section>'''
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>{esc(v['short_name'] or v['clinic_name'])}</h1><div class="sub">{esc(v['clinic_name'])}</div></div><a class="btn ghost" href="/veterinari">Torna alla lista</a></div><section class="section"><h2>Anagrafica</h2><form method="post" action="/veterinari"><input type="hidden" name="id" value="{v['id']}"><div class="fields"><div class="field"><label>Nome breve</label><input name="short_name" value="{esc(v['short_name'])}"></div><div class="field"><label>Nome completo</label><input name="clinic_name" value="{esc(v['clinic_name'])}"></div><div class="field full"><label>Indirizzo</label><input name="address" value="{esc(v['address'])}"></div><div class="field"><label>Comune</label><input name="city" value="{esc(v['city'])}"></div><div class="field"><label>Telefono</label><input name="phone" value="{esc(v['phone'])}"></div><div class="field"><label>Medico veterinario</label><input name="doctor_name" value="{esc(v['doctor_name'])}"></div><div class="field full"><label>Note</label><input name="notes" value="{esc(v['notes'])}"></div></div><button class="btn" style="margin-top:12px">Salva anagrafica</button></form><form method="post" action="/veterinari/{v['id']}/elimina" onsubmit="return confirm('Eliminare questo veterinario dalla lista?')"><button class="btn ghost" style="margin-top:12px">Elimina veterinario</button></form></section>{hours_section}<div style="height:14px"></div><section class="section"><h2>Aggiungi buono manuale</h2><form method="post" action="/veterinari/{v['id']}/buoni"><div class="fields"><div class="field"><label>Data maturazione</label><input type="date" name="created_at" value="{rome_now().strftime('%Y-%m-%d')}"></div><div class="field"><label>Nome animale</label><input name="animal_name"></div><div class="field"><label>Specie</label><input name="species"></div><div class="field"><label>Stato</label><select name="status"><option>Maturato</option><option>Usato</option></select></div></div><button class="btn" style="margin-top:12px">Aggiungi buono</button></form></section><div style="height:14px"></div><section class="section"><h2>Buoni</h2><div class="tablebox"><table><thead><tr><th>Data</th><th>Animale</th><th>Specie</th><th>Stato</th><th>Azione</th></tr></thead><tbody>{voucher_rows}</tbody></table></div></section></main>'''
         self.send_html(layout("Veterinario",body,user))
 
@@ -11518,7 +11605,8 @@ class App(BaseHTTPRequestHandler):
             if not vet:return self.send_error(404)
             service_minutes=f.get("service_duration_minutes","").strip()
             service_minutes=int(service_minutes) if service_minutes.isdigit() else None
-            c.execute("UPDATE veterinarians SET service_duration_minutes=?,hours_source='manuale',hours_updated_at=?,updated_at=? WHERE id=?",(service_minutes,stamp,stamp,vet_id))
+            place_id=f.get("google_place_id","").strip() or None
+            c.execute("UPDATE veterinarians SET service_duration_minutes=?,google_place_id=?,hours_source='manuale',hours_updated_at=?,updated_at=? WHERE id=?",(service_minutes,place_id,stamp,stamp,vet_id))
             for i in range(7):
                 closed=1 if f.get(f"closed_{i}")=="1" else 0
                 morning_start=f.get(f"morning_start_{i}","").strip() or None
@@ -11531,6 +11619,18 @@ class App(BaseHTTPRequestHandler):
                   ON CONFLICT(veterinarian_id,day_of_week) DO UPDATE SET closed=excluded.closed,morning_start=excluded.morning_start,
                     morning_end=excluded.morning_end,afternoon_start=excluded.afternoon_start,afternoon_end=excluded.afternoon_end,notes=excluded.notes""",
                   (vet_id,i,closed,morning_start,morning_end,afternoon_start,afternoon_end,notes))
+        self.redirect(f"/veterinari/{vet_id}")
+
+    def update_veterinarian_hours_from_google(self,user,vet_id):
+        """Aggiornamento esplicito su richiesta dell'utente: a differenza del
+        recupero automatico lazy (route_plan_stop_context), questo puo'
+        sovrascrivere anche orari inseriti manualmente — e' una scelta
+        deliberata dell'utente confermata via il dialogo onsubmit lato UI,
+        non una sovrascrittura silenziosa/automatica."""
+        with db() as c:
+            vet=c.execute("SELECT * FROM veterinarians WHERE id=?",(vet_id,)).fetchone()
+            if not vet:return self.send_error(404)
+            route_service.ensure_vet_hours_from_google(c,vet,force=True)
         self.redirect(f"/veterinari/{vet_id}")
 
     def save_veterinarian(self,user):
