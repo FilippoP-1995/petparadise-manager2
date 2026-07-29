@@ -2558,15 +2558,46 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("btn.closest('[data-cycle-id]')", notify_body)
         self.assertIn("cremationReloadWithOpenCycle(cycleId);", notify_body)
 
+        # avvia/termina ciclo non usano piu' cremationReloadWithOpenCycle
+        # (navigazione completa): vedi cremationSoftRefreshCycle piu' sotto.
         start_start = js.index("function cremationStartCycle(")
         start_body = js[start_start:start_start + 400]
-        self.assertIn("cremationReloadWithOpenCycle(id);", start_body)
+        self.assertIn("cremationSoftRefreshCycle(id);", start_body)
         self.assertNotIn("location.reload()", start_body)
+        self.assertNotIn("cremationReloadWithOpenCycle(id);", start_body)
 
         complete_start = js.index("function cremationCompleteCycle(")
         complete_body = js[complete_start:complete_start + 500]
-        self.assertIn("cremationReloadWithOpenCycle(id);", complete_body)
+        self.assertIn("cremationSoftRefreshCycle(id);", complete_body)
         self.assertNotIn("location.reload()", complete_body)
+        self.assertNotIn("cremationReloadWithOpenCycle(id);", complete_body)
+
+    def test_cremation_soft_refresh_cycle_never_navigates_the_whole_page(self):
+        # richiesta esplicita dell'utente: "se avvio un ciclo, la pagina va
+        # su poi torna giu'" - causato da cremationReloadWithOpenCycle, che
+        # fa una vera navigazione (location.href), con relativo reset dello
+        # scroll all'inizio pagina seguito dal riposizionamento via JS.
+        # cremationSoftRefreshCycle risolve rifacendo la stessa GET via
+        # fetch e sostituendo solo #main-content, senza mai lasciare la
+        # pagina corrente (lo scroll non viene mai azzerato dal browser).
+        js = app.APP_JS
+        self.assertIn("function cremationSoftRefreshCycle(cycleId){", js)
+        start = js.index("function cremationSoftRefreshCycle(cycleId){")
+        end = js.index("function cremationStartCycle(")
+        body = js[start:end]
+        self.assertNotIn("location.href", body)
+        self.assertNotIn("location.reload()", body)
+        self.assertIn("fetch(location.pathname+location.search", body)
+        self.assertIn("document.getElementById('main-content')", body)
+        self.assertIn("newMain.innerHTML", body)
+        self.assertIn("main.innerHTML=newMain.innerHTML;", body)
+        # re-inizializza le pagine giorno/settimana (nuovi nodi DOM dopo lo swap)
+        self.assertIn("cremationInitDayPages();", body)
+        # riapre esattamente la card del ciclo appena avviato/terminato
+        self.assertIn("cremationToggleCycleCard(cardHead);", body)
+        self.assertIn("card.scrollIntoView(", body)
+        # se il fetch fallisce, ripiega sul vecchio meccanismo (mai un'azione muta)
+        self.assertIn("cremationReloadWithOpenCycle(cycleId);", body)
 
     def test_cremation_edit_time_wheel_is_not_hidden_before_the_save_click_can_flush_it(self):
         # bug reale segnalato dall'utente: "Cambio l'orario ma dopo Salva

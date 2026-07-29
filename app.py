@@ -4456,11 +4456,41 @@ function cremationToggleWaitingPanel(cardEl){
     cardEl.setAttribute('aria-expanded','false');
   }
 }
+function cremationSoftRefreshCycle(cycleId){
+  // richiesta esplicita dell'utente: avviare/terminare un ciclo non deve
+  // piu' ricaricare l'intera pagina (niente "va su poi torna giu'" dovuto
+  // alla navigazione completa). Si rifà solo la stessa GET gia' servita
+  // dal server, si sostituisce #main-content col markup aggiornato e si
+  // riapre la card del ciclo coinvolto, senza mai lasciare la pagina.
+  const main=document.getElementById('main-content');
+  if(!main){cremationReloadWithOpenCycle(cycleId);return;}
+  const activeDayCard=document.querySelector('.cremation-daybar-card.active');
+  const dayIndex=activeDayCard?Number(activeDayCard.dataset.dayIndex):null;
+  fetch(location.pathname+location.search,{credentials:'same-origin'})
+    .then(function(res){return res.text();})
+    .then(function(html){
+      const doc=new DOMParser().parseFromString(html,'text/html');
+      const newMain=doc.getElementById('main-content');
+      if(!newMain)throw new Error('main-content mancante nella risposta');
+      main.innerHTML=newMain.innerHTML;
+      cremationInitDayPages();
+      if(dayIndex!==null)cremationSelectDay(dayIndex,{instant:true});
+      const card=document.querySelector('[data-cycle-id="'+cycleId+'"]');
+      if(card){
+        if(!card.classList.contains('expanded')){
+          const cardHead=card.querySelector('.cremation-cycle-head,.cremation-week-cycle-head');
+          if(cardHead)cremationToggleCycleCard(cardHead);
+        }
+        requestAnimationFrame(function(){card.scrollIntoView({behavior:'smooth',block:'center'});});
+      }
+    })
+    .catch(function(){cremationReloadWithOpenCycle(cycleId);});
+}
 function cremationStartCycle(id){
   fetch('/programma-cremazioni/cicli/'+id+'/avvia',{method:'POST',credentials:'same-origin'})
     .then(function(res){return res.json();})
-    .then(function(data){if(!data.ok)alert(data.error||'Operazione non riuscita');cremationReloadWithOpenCycle(id);})
-    .catch(function(){cremationReloadWithOpenCycle(id);});
+    .then(function(data){if(!data.ok)alert(data.error||'Operazione non riuscita');cremationSoftRefreshCycle(id);})
+    .catch(function(){cremationSoftRefreshCycle(id);});
 }
 function cremationOpenConfirmModal(message,onConfirm,options){
   options=options||{};
@@ -4481,8 +4511,8 @@ function cremationCompleteCycle(id){
   cremationOpenConfirmModal('Confermi il completamento del ciclo? Gli animali passeranno allo stato Da consegnare.',function(){
     fetch('/programma-cremazioni/cicli/'+id+'/termina',{method:'POST',credentials:'same-origin'})
       .then(function(res){return res.json();})
-      .then(function(data){if(!data.ok)alert(data.error||'Operazione non riuscita');cremationReloadWithOpenCycle(id);})
-      .catch(function(){cremationReloadWithOpenCycle(id);});
+      .then(function(data){if(!data.ok)alert(data.error||'Operazione non riuscita');cremationSoftRefreshCycle(id);})
+      .catch(function(){cremationSoftRefreshCycle(id);});
   },{title:'Termina ciclo',confirmLabel:'Termina ciclo'});
 }
 function cremationUpdateDurationPreview(){
