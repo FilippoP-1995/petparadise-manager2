@@ -2854,6 +2854,20 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("const isMinute=!!button.closest('[data-wheel-part=\"minute\"]');", click_body)
         self.assertIn("if(isMinute)wheel.hidden=true;", click_body)
 
+    def test_calendar_flush_wheel_time_also_closes_the_wheel_on_confirm(self):
+        # lo stesso bug segnalato di nuovo dall'utente: se l'orario viene
+        # scelto SCORRENDO la rotella (non toccando un'opzione), il tap sul
+        # tasto "Salva orario"/"Crea ciclo" chiamava solo calendarFlushWheelTime
+        # per leggere il valore, senza mai nascondere la rotella — restava
+        # aperta finche' non si toccava un punto esterno. calendarFlushWheelTime
+        # e' l'unico punto chiamato da entrambi i modali (modifica/crea ciclo)
+        # al momento della conferma, quindi e' li' che va chiusa.
+        js = app.APP_JS
+        start = js.index("function calendarFlushWheelTime(input){")
+        end = js.index("function cremationSubmitEditModal()")
+        body = js[start:end]
+        self.assertIn("wheel.hidden=true;", body)
+
     def test_cremation_edit_modal_redesign_keeps_the_existing_save_logic_untouched(self):
         # richiesta esplicita dell'utente (mockup): SOLO redesign grafico del
         # modale "Modifica orario ciclo" — icona, sottotitolo (CICLO N +

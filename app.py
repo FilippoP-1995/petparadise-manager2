@@ -4623,6 +4623,11 @@ function calendarFlushWheelTime(input){
   if(minCol)minCol.scrollTop=minCol.scrollTop;
   const hourOpt=calendarWheelNearestOption(hourCol);
   const minOpt=calendarWheelNearestOption(minCol);
+  // richiesta esplicita dell'utente: la rotella deve chiudersi quando si
+  // conferma l'orario (tasto "Salva"/"Crea ciclo"), non solo quando si tocca
+  // il minuto al suo interno — altrimenti resta aperta finche' non si tocca
+  // un punto esterno anche dopo aver gia' confermato.
+  wheel.hidden=true;
   if(!hourOpt||!minOpt)return;
   calendarSetWheelTime(wheel,Number(hourOpt.dataset.timeValue),Number(minOpt.dataset.timeValue),false);
 }
