@@ -1269,7 +1269,7 @@ def format_sequence_code(prefix,value,width=6):
 CSS = r"""
 :root{--ink:#24312c;--muted:#6e7b75;--brand:#a74045;--brand2:#7f3035;--paper:#fff;--bg:#f4f1ed;--line:#ded8d1;--green:#39745b;--gold:#a87926;--safe-top:env(safe-area-inset-top,0px);--safe-bottom:env(safe-area-inset-bottom,0px);--safe-left:env(safe-area-inset-left,0px);--safe-right:env(safe-area-inset-right,0px)}
 *{box-sizing:border-box}html{overscroll-behavior-y:contain}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;overscroll-behavior-y:contain}
-a{color:inherit;text-decoration:none}.top{height:68px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:18px;padding:0 28px;position:sticky;top:0;z-index:5}.brand{font-weight:800;font-size:19px;color:var(--brand)}.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:1.5px}.nav{display:flex;gap:8px;margin-left:auto}.nav a{padding:9px 12px;border-radius:9px}.nav a:hover{background:#f3eeea}.wrap{max-width:1280px;margin:0 auto;padding:28px}.titlebar{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:22px}h1{margin:0;font-size:28px}h2{font-size:18px;margin:0 0 15px}.sub{color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:10px;background:var(--brand);color:white;padding:11px 16px;font-weight:700;cursor:pointer}.btn:hover{background:var(--brand2)}.btn.ghost{background:white;color:var(--ink);border:1px solid var(--line)}.grid{display:grid;gap:16px}.stats{grid-template-columns:repeat(3,1fr)}.card{background:var(--paper);border:1px solid var(--line);border-radius:15px;padding:20px;box-shadow:0 3px 15px #4b39260a}.stat{display:flex;justify-content:space-between;align-items:center}.stat b{font-size:32px;color:var(--brand)}.badge{display:inline-flex;padding:5px 9px;border-radius:99px;background:#eee9e3;font-size:12px;font-weight:700}.tag-red{background:#e53935;color:white}.tag-orange{background:#fb8c00;color:white}.tag-outline-orange{background:white;color:#fb8c00;border:2px solid #fb8c00}.tag-purple{background:#7e57c2;color:white}.tag-yellow,.pay-yellow{background:#fdd835;color:#3b3100}.tag-pink{background:#f06292;color:white}.tag-blue,.pay-blue{background:#1e88e5;color:white}.tag-green,.pay-green{background:#43a047;color:white}.status-stack{display:flex;gap:5px;flex-wrap:wrap}.form-grid{grid-template-columns:repeat(2,1fr)}.wide{grid-column:1/-1}.section{background:#fff;border:1px solid var(--line);border-radius:15px;padding:20px}.fields{display:grid;grid-template-columns:repeat(2,1fr);gap:13px}.field{display:flex;flex-direction:column;gap:6px}.field.full{grid-column:1/-1}label{font-weight:650;font-size:13px}input,select,textarea{width:100%;border:1px solid #cfc8c0;border-radius:9px;padding:11px 12px;background:white;color:var(--ink);font:inherit}input[type=checkbox]{width:auto;min-height:auto}textarea{min-height:90px;resize:vertical}input:focus,select:focus,textarea:focus{outline:3px solid #a7404520;border-color:var(--brand)}table{width:100%;border-collapse:collapse;background:white}th,td{text-align:left;padding:16px 14px;border-bottom:1px solid var(--line)}th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}thead th{position:sticky;top:0;z-index:2;background:#101620}.light-theme thead th{background:#fff}.tablebox{background:white;border:1px solid var(--line);border-radius:15px;max-height:min(65vh,620px);overflow:auto;-webkit-overflow-scrolling:touch;touch-action:none}.tablebox-scroll-top{overflow-x:auto;overflow-y:hidden;height:16px;margin-bottom:6px;position:sticky;top:76px;z-index:10;background:var(--paper)}.tablebox-scroll-top-inner{height:1px}@media(max-width:900px){.tablebox-scroll-top{display:none}}.actions{display:flex;gap:10px;flex-wrap:wrap}.flash{padding:13px 16px;border-radius:10px;background:#e5f2eb;color:#285b45;margin-bottom:16px}.warning{background:#fff1d8;color:#765315}.reminders-card{background:#1f2937;border:1px solid #334155;border-radius:15px;margin-bottom:20px;box-shadow:0 14px 36px #03071235;overflow:hidden}.reminders-card-header{display:flex;align-items:center;gap:14px;width:100%;padding:16px 18px;background:transparent;border:0;cursor:pointer;color:inherit;text-align:left;font:inherit}.reminders-card-icon{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:#4c1d24;color:#fb7185;flex:0 0 40px}.reminders-card-icon svg{width:20px;height:20px}.reminders-card-copy{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}.reminders-card-copy strong{font-size:16px;font-weight:700}.reminders-card-copy small{color:#94a3b8}.reminders-count-badge{display:inline-grid;place-items:center;min-width:22px;height:22px;padding:0 6px;margin-left:8px;border-radius:99px;background:#ef4444;color:#fff;font-size:12px;font-weight:800;vertical-align:middle}.reminders-card-chevron{color:#94a3b8;font-size:18px;line-height:1;transition:transform .25s ease;flex:0 0 auto}.reminders-card.open .reminders-card-chevron{transform:rotate(180deg);color:#ef4444}.reminders-card-body{max-height:0;overflow:hidden;transition:max-height .35s ease}.reminders-card-section-title{margin:0;padding:14px 18px 4px;font-size:13px;font-weight:700;color:#94a3b8;border-top:1px solid #334155}.reminders-todo-list{list-style:none;margin:0;padding:4px 10px 6px}.reminders-todo-row{display:flex;align-items:center;gap:14px;padding:12px 8px;color:inherit;text-decoration:none;border-radius:10px;background:none;border:0;width:100%;font:inherit;text-align:left;cursor:pointer}.reminders-todo-row:hover{background:#ffffff0c}.reminders-todo-icon{width:34px;height:34px;flex:0 0 34px}.reminders-todo-icon svg{width:16px;height:16px}.reminders-todo-text{flex:1;font-weight:600}.reminders-todo-chevron{color:#94a3b8;font-size:18px;display:flex;align-items:center}.reminders-todo-empty{padding:12px 8px;color:#94a3b8}.reminders-week-row{display:flex;align-items:center;gap:14px;margin:6px 10px 14px;padding:16px 8px 4px;border-top:1px solid #334155;color:inherit;text-decoration:none;background:none;border-left:0;border-right:0;border-bottom:0;width:100%;font:inherit;text-align:left;cursor:pointer}.reminders-week-row:hover .reminders-week-copy b{color:#fb7185}.reminders-week-icon{width:34px;height:34px;flex:0 0 34px}.reminders-week-icon svg{width:16px;height:16px}.reminders-week-copy{flex:1;min-width:0}.reminders-week-copy b{text-decoration:underline;text-underline-offset:3px;transition:color .15s ease}.reminders-week-copy small{display:block;margin-top:4px;color:#cbd5e1}.reminders-week-chevron{color:#94a3b8;font-size:18px;display:flex;align-items:center}.figure-w{color:#60a5fa;font-weight:700}.figure-d{color:#fbbf24;font-weight:700}.reminders-todo-chevron .icon,.reminders-week-chevron .icon{width:16px;height:16px;transition:transform .25s ease;transform:rotate(90deg)}.reminders-todo-row[aria-expanded="true"] .reminders-todo-chevron .icon,.reminders-week-row[aria-expanded="true"] .reminders-week-chevron .icon{transform:rotate(270deg)}.reminders-todo-row.reminders-row-active,.reminders-week-row.reminders-row-active{background:#ffffff0c}.reminders-expand{max-height:0;overflow:hidden;transition:max-height .3s ease;margin:2px 8px 0;border-radius:10px;background:#161c27;border:1px solid #263140}.reminders-expand-row{display:flex;align-items:center;gap:10px;padding:10px 10px;border-top:1px solid #1f2937;cursor:pointer}.reminders-expand-row:first-child{border-top:0}.reminders-expand-avatar{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:15px;flex:0 0 30px;background:#0f172a}.reminders-expand-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}.reminders-expand-title{font-weight:700;font-size:13px;color:#f5f7fb}.reminders-expand-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:11.5px;color:#94a3b8}.reminders-expand-meta .badge{font-size:10px;padding:2px 7px}.reminders-expand-urn{display:flex;align-items:center;gap:4px}.reminders-expand-urn .icon{width:12px;height:12px}.reminders-expand-weight{font-size:12px;font-weight:600;color:#94a3b8}.reminders-expand-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:0 0 auto;padding:10px}@media(max-width:620px){.reminders-expand-row{flex-wrap:wrap}.reminders-expand-actions{flex:1 1 100%;justify-content:flex-start;padding:6px 0 0 40px}}.reminders-expand-actions .btn{padding:7px 12px;font-size:12px}.reminders-expand-empty{padding:12px 10px;color:#94a3b8;font-size:13px;margin:0}.reminders-expand-week{display:flex;gap:24px;padding:12px 10px 4px}.reminders-expand-week div{display:flex;flex-direction:column;gap:2px}.reminders-expand-week small{color:#94a3b8;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em}.reminders-expand-week span{font-size:18px;font-weight:700}.light-theme .reminders-card{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .reminders-card-copy small{color:#64748b}.light-theme .reminders-card-section-title{color:#526174;border-color:#e2e8f0}.light-theme .reminders-todo-row:hover{background:#00000008}.light-theme .reminders-todo-chevron,.light-theme .reminders-week-chevron{color:#64748b}.light-theme .reminders-week-row{border-color:#e2e8f0}.light-theme .reminders-week-copy small{color:#334155}.light-theme .reminders-todo-row.reminders-row-active,.light-theme .reminders-week-row.reminders-row-active{background:#00000008}.light-theme .reminders-expand{background:#f8fafc;border-color:#e2e8f0}.light-theme .reminders-expand-row{border-color:#e2e8f0}.light-theme .reminders-expand-avatar{background:#e2e8f0}.light-theme .reminders-expand-title{color:#111827}.light-theme .reminders-expand-meta{color:#64748b}.light-theme .reminders-expand-weight{color:#64748b}.light-theme .reminders-expand-empty{color:#64748b}
+a{color:inherit;text-decoration:none}.top{height:68px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:18px;padding:0 28px;position:sticky;top:0;z-index:5}.brand{font-weight:800;font-size:19px;color:var(--brand)}.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:1.5px}.nav{display:flex;gap:8px;margin-left:auto}.nav a{padding:9px 12px;border-radius:9px}.nav a:hover{background:#f3eeea}.wrap{max-width:1280px;margin:0 auto;padding:28px}.titlebar{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:22px}h1{margin:0;font-size:28px}h2{font-size:18px;margin:0 0 15px}.sub{color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:10px;background:var(--brand);color:white;padding:11px 16px;font-weight:700;cursor:pointer}.btn:hover{background:var(--brand2)}.btn.ghost{background:white;color:var(--ink);border:1px solid var(--line)}.grid{display:grid;gap:16px}.stats{grid-template-columns:repeat(3,1fr)}.card{background:var(--paper);border:1px solid var(--line);border-radius:15px;padding:20px;box-shadow:0 3px 15px #4b39260a}.stat{display:flex;justify-content:space-between;align-items:center}.stat b{font-size:32px;color:var(--brand)}.badge{display:inline-flex;padding:5px 9px;border-radius:99px;background:#eee9e3;font-size:12px;font-weight:700}.tag-red{background:#e53935;color:white}.tag-orange{background:#fb8c00;color:white}.tag-outline-orange{background:white;color:#fb8c00;border:2px solid #fb8c00}.tag-purple{background:#7e57c2;color:white}.tag-yellow,.pay-yellow{background:#fdd835;color:#3b3100}.tag-pink{background:#f06292;color:white}.tag-blue,.pay-blue{background:#1e88e5;color:white}.tag-green,.pay-green{background:#43a047;color:white}.status-stack{display:flex;gap:5px;flex-wrap:wrap}.form-grid{grid-template-columns:repeat(2,1fr)}.wide{grid-column:1/-1}.section{background:#fff;border:1px solid var(--line);border-radius:15px;padding:20px}.fields{display:grid;grid-template-columns:repeat(2,1fr);gap:13px}.field{display:flex;flex-direction:column;gap:6px}.field.full{grid-column:1/-1}label{font-weight:650;font-size:13px}input,select,textarea{width:100%;border:1px solid #cfc8c0;border-radius:9px;padding:11px 12px;background:white;color:var(--ink);font:inherit}input[type=checkbox]{width:auto;min-height:auto}textarea{min-height:90px;resize:vertical}input:focus,select:focus,textarea:focus{outline:3px solid #a7404520;border-color:var(--brand)}table{width:100%;border-collapse:collapse;background:white}th,td{text-align:left;padding:16px 14px;border-bottom:1px solid var(--line)}th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}thead th{position:sticky;top:0;z-index:2;background:#101620}.light-theme thead th{background:#fff}.tablebox{background:white;border:1px solid var(--line);border-radius:15px;max-height:min(65vh,620px);overflow:auto;-webkit-overflow-scrolling:touch;touch-action:none}.tablebox-scroll-top{overflow-x:auto;overflow-y:hidden;height:16px;margin-bottom:6px;position:sticky;top:76px;z-index:10;background:var(--paper)}.tablebox-scroll-top-inner{height:1px}@media(max-width:900px){.tablebox-scroll-top{display:none}}.actions{display:flex;gap:10px;flex-wrap:wrap}.flash{padding:13px 16px;border-radius:10px;background:#e5f2eb;color:#285b45;margin-bottom:16px}.warning{background:#fff1d8;color:#765315}.reminders-card{background:#1f2937;border:1px solid #334155;border-radius:15px;margin-bottom:20px;box-shadow:0 14px 36px #03071235;overflow:hidden}.reminders-card-header{display:flex;align-items:center;gap:14px;width:100%;padding:16px 18px;background:transparent;border:0;cursor:pointer;color:inherit;text-align:left;font:inherit}.reminders-card-icon{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:#4c1d24;color:#fb7185;flex:0 0 40px}.reminders-card-icon svg{width:20px;height:20px}.reminders-card-copy{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}.reminders-card-copy strong{font-size:16px;font-weight:700}.reminders-card-copy small{color:#94a3b8}.reminders-count-badge{display:inline-grid;place-items:center;min-width:22px;height:22px;padding:0 6px;margin-left:8px;border-radius:99px;background:#ef4444;color:#fff;font-size:12px;font-weight:800;vertical-align:middle}.reminders-card-chevron{color:#94a3b8;font-size:18px;line-height:1;transition:transform .25s ease;flex:0 0 auto}.reminders-card.open .reminders-card-chevron{transform:rotate(180deg);color:#ef4444}.reminders-card-body{max-height:0;overflow:hidden;transition:max-height .35s ease}.reminders-card-section-title{margin:0;padding:14px 18px 4px;font-size:13px;font-weight:700;color:#94a3b8;border-top:1px solid #334155}.reminders-todo-list{list-style:none;margin:0;padding:4px 10px 6px}.reminders-todo-row{display:flex;align-items:center;gap:14px;padding:12px 8px;color:inherit;text-decoration:none;border-radius:10px;background:none;border:0;width:100%;font:inherit;text-align:left;cursor:pointer}.reminders-todo-row:hover{background:#ffffff0c}.reminders-todo-icon{width:34px;height:34px;flex:0 0 34px}.reminders-todo-icon svg{width:16px;height:16px}.reminders-todo-text{flex:1;font-weight:600}.reminders-todo-chevron{color:#94a3b8;font-size:18px;display:flex;align-items:center}.reminders-todo-empty{padding:12px 8px;color:#94a3b8}.reminders-week-row{display:flex;align-items:center;gap:14px;margin:6px 10px 14px;padding:16px 8px 4px;border-top:1px solid #334155;color:inherit;text-decoration:none;background:none;border-left:0;border-right:0;border-bottom:0;width:100%;font:inherit;text-align:left;cursor:pointer}.reminders-week-row:hover .reminders-week-copy b{color:#fb7185}.reminders-week-icon{width:34px;height:34px;flex:0 0 34px}.reminders-week-icon svg{width:16px;height:16px}.reminders-week-copy{flex:1;min-width:0}.reminders-week-copy b{text-decoration:underline;text-underline-offset:3px;transition:color .15s ease}.reminders-week-copy small{display:block;margin-top:4px;color:#cbd5e1}.reminders-week-chevron{color:#94a3b8;font-size:18px;display:flex;align-items:center}.figure-w{color:#60a5fa;font-weight:700}.figure-d{color:#fbbf24;font-weight:700}.reminders-todo-chevron .icon,.reminders-week-chevron .icon{width:16px;height:16px;transition:transform .25s ease;transform:rotate(90deg)}.reminders-todo-row[aria-expanded="true"] .reminders-todo-chevron .icon,.reminders-week-row[aria-expanded="true"] .reminders-week-chevron .icon{transform:rotate(270deg)}.reminders-todo-row.reminders-row-active,.reminders-week-row.reminders-row-active{background:#ffffff0c}.reminders-expand{max-height:0;overflow:hidden;transition:max-height .3s ease;margin:2px 8px 0;border-radius:10px;background:#161c27;border:1px solid #263140}.reminders-expand-row{display:flex;align-items:center;gap:10px;padding:10px 10px;border-top:1px solid #1f2937;cursor:pointer}.reminders-expand-row:first-child{border-top:0}.reminders-expand-avatar{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:15px;flex:0 0 30px;background:#0f172a}.reminders-expand-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}.reminders-expand-title{font-weight:700;font-size:13px;color:#f5f7fb}.reminders-expand-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:11.5px;color:#94a3b8}.reminders-expand-meta .badge{font-size:10px;padding:2px 7px}.reminders-expand-urn{display:flex;align-items:center;gap:4px}.reminders-expand-urn .icon{width:12px;height:12px}.reminders-expand-weight{font-size:12px;font-weight:600;color:#94a3b8}.reminders-expand-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:0 0 auto;padding:10px}@media(max-width:620px){.reminders-expand-row{flex-wrap:wrap}.reminders-expand-actions{flex:1 1 100%;justify-content:flex-start;padding:6px 0 0 40px}}.reminders-expand-actions .btn{padding:7px 12px;font-size:12px}.reminders-expand-empty{padding:12px 10px;color:#94a3b8;font-size:13px;margin:0}.reminders-dismiss-btn{display:grid;place-items:center;width:30px;height:30px;padding:0;border:0;border-radius:8px;background:transparent;color:#94a3b8;cursor:pointer;flex:0 0 auto}.reminders-dismiss-btn:hover{background:#ffffff14;color:#fb7185}.reminders-dismiss-btn .icon{width:15px;height:15px}.light-theme .reminders-dismiss-btn:hover{background:#00000010}.reminders-expand-week{display:flex;gap:24px;padding:12px 10px 4px}.reminders-expand-week div{display:flex;flex-direction:column;gap:2px}.reminders-expand-week small{color:#94a3b8;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em}.reminders-expand-week span{font-size:18px;font-weight:700}.light-theme .reminders-card{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .reminders-card-copy small{color:#64748b}.light-theme .reminders-card-section-title{color:#526174;border-color:#e2e8f0}.light-theme .reminders-todo-row:hover{background:#00000008}.light-theme .reminders-todo-chevron,.light-theme .reminders-week-chevron{color:#64748b}.light-theme .reminders-week-row{border-color:#e2e8f0}.light-theme .reminders-week-copy small{color:#334155}.light-theme .reminders-todo-row.reminders-row-active,.light-theme .reminders-week-row.reminders-row-active{background:#00000008}.light-theme .reminders-expand{background:#f8fafc;border-color:#e2e8f0}.light-theme .reminders-expand-row{border-color:#e2e8f0}.light-theme .reminders-expand-avatar{background:#e2e8f0}.light-theme .reminders-expand-title{color:#111827}.light-theme .reminders-expand-meta{color:#64748b}.light-theme .reminders-expand-weight{color:#64748b}.light-theme .reminders-expand-empty{color:#64748b}
 .drag-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;max-height:420px;overflow:auto;-webkit-overflow-scrolling:touch}.drag-list-scrollable{max-height:min(60vh,480px)}.drag-item{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid #334155;border-radius:12px;background:#1f2937;-webkit-touch-callout:none;transition:box-shadow .15s ease,border-color .15s ease}.drag-item.dragging{box-shadow:0 20px 46px #000a;border-color:#56657a;position:relative;z-index:5;cursor:grabbing}.drag-handle{cursor:grab;color:#94a3b8;font-weight:800;letter-spacing:2px;padding:6px 8px;touch-action:none;flex:0 0 auto}.drag-handle:active{cursor:grabbing}
 body.ppm-dragging-no-select,body.ppm-dragging-no-select *{-webkit-user-select:none!important;-moz-user-select:none!important;-ms-user-select:none!important;user-select:none!important}.drag-item-icon{display:grid;place-items:center;width:30px;height:30px;flex:0 0 30px}.drag-item-icon svg{width:16px;height:16px}.drag-item-label{flex:1;font-weight:600}.drag-item-visible-wrap{display:flex;align-items:center;flex:0 0 auto}.drag-item-visible-wrap input[type=checkbox]{width:20px;height:20px}.light-theme .drag-item{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .drag-handle{color:#64748b}
 .notif-type-list{display:flex;flex-direction:column;gap:8px}.notif-type-row{justify-content:flex-start;gap:12px}.notif-type-icon{font-size:19px;width:34px;height:34px;display:grid;place-items:center;flex:0 0 34px;border-radius:10px;background:#172033}.notif-type-copy{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}.notif-type-copy small{color:#94a3b8}.notif-type-row input[type=checkbox]{margin-left:auto;width:20px;height:20px}.light-theme .notif-type-icon{background:#f1f5f9}.light-theme .notif-type-copy small{color:#64748b}.login{max-width:410px;margin:10vh auto;background:white;padding:34px;border-radius:18px;border:1px solid var(--line)}.timeline{border-left:2px solid var(--line);margin-left:7px;padding-left:20px}.event{padding:0 0 18px;position:relative}.event:before{content:'';position:absolute;width:10px;height:10px;border-radius:50%;background:var(--brand);left:-26px;top:5px}.kvs{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.kv{background:#faf8f5;border-radius:10px;padding:12px}.kv small{display:block;color:var(--muted)}.signature-pad{width:100%;height:260px;border:2px dashed var(--line);border-radius:14px;background:white;touch-action:none}
@@ -1750,7 +1750,10 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .balance-summary-title{color:#cbd5e1;font-weight:650;font-size:14px}
 .balance-summary-value{font-size:26px;font-weight:800;letter-spacing:-.02em;color:#f8fafc}
 .balance-summary-count{position:relative;z-index:1;flex:0 0 auto;padding:5px 11px;border-radius:99px;background:#ffffff10;color:#cbd5e1;font-size:12px;font-weight:650;white-space:nowrap}
-.balance-summary-chevron{position:relative;z-index:1;color:#94a3b8;font-size:20px}
+.balance-summary-chevron{position:relative;z-index:1;color:#94a3b8;font-size:20px;transform:rotate(90deg);transition:transform .18s ease}
+.balance-summary-card{cursor:pointer}
+.balance-summary-card.collapsed .balance-summary-chevron{transform:rotate(0deg)}
+[data-balance-collapsible].collapsed{display:none}
 .balance-move-list{display:flex;flex-direction:column;gap:10px}
 .balance-move-card{position:relative;display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:12px;padding:14px 14px 14px 16px;border:1px solid #334155;border-left:4px solid var(--balance-accent);border-radius:14px;background:#1f2937;cursor:pointer;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}
 .balance-move-card.balance-move-static{cursor:default}
@@ -1886,7 +1889,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-dot-waiting{background:#fb923c}
 .cremation-dot-done{background:#64748b}
 .cremation-dot-planned{background:#60a5fa}
-.cremation-cycle-card{background:#1f2937;border:1px solid #334155;border-left:4px solid #475569;border-radius:14px;padding:16px;min-width:0}
+.cremation-cycle-card{background:#1f2937;border:1px solid #334155;border-left:4px solid #475569;border-radius:14px;padding:16px;min-width:0;cursor:pointer}
 .cremation-cycle-card.cremation-cycle-in_corso,.cremation-week-cycle-card.cremation-cycle-in_corso{background:rgba(59,130,246,.08);border-color:rgba(59,130,246,.4);border-left-color:#3b82f6;box-shadow:0 0 16px rgba(59,130,246,.16)}
 .cremation-cycle-card.cremation-cycle-in_attesa,.cremation-week-cycle-card.cremation-cycle-in_attesa{background:rgba(251,146,60,.08);border-color:rgba(251,146,60,.35);border-left-color:#fb923c;box-shadow:0 0 14px rgba(251,146,60,.12)}
 .cremation-cycle-card.cremation-cycle-completato,.cremation-week-cycle-card.cremation-cycle-completato{background:rgba(74,222,128,.08);border-color:rgba(74,222,128,.35);border-left-color:#4ade80;box-shadow:0 0 14px rgba(74,222,128,.12)}
@@ -1979,7 +1982,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-day-pages::-webkit-scrollbar{display:none}
 .cremation-day-page{flex:0 0 100%;scroll-snap-align:start;min-width:0}
 .cremation-day-page-inner{display:flex;flex-direction:column;gap:12px}
-.cremation-week-cycle-card{background:#161f2b;border:1px solid #334155;border-left:4px solid #475569;border-radius:12px;padding:10px 12px;min-width:0}
+.cremation-week-cycle-card{background:#161f2b;border:1px solid #334155;border-left:4px solid #475569;border-radius:12px;padding:10px 12px;min-width:0;cursor:pointer}
 .cremation-week-cycle-head{display:flex;align-items:center;gap:12px;margin:-10px -12px 0;padding:10px 12px 0;cursor:pointer}
 .cremation-week-cycle-main{display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex:1 1 auto;min-width:0}
 .cremation-week-cycle-animals{display:flex;flex-direction:column;gap:2px;min-width:0}
@@ -4075,6 +4078,17 @@ function toggleBalanceMoveMenu(btn){
   document.querySelectorAll('.balance-move-menu-popover').forEach(function(p){p.hidden=true;});
   popover.hidden=!willOpen;
 }
+function balanceToggleDetails(summaryEl){
+  // richiesta esplicita dell'utente: per arrivare ai filtri di ricerca
+  // doveva scrollare tutto l'elenco voci della sezione selezionata (es.
+  // tutte le Entrate W); ora la card di riepilogo apre/chiude l'elenco,
+  // di default aperto (nessun cambiamento del comportamento esistente).
+  const list=summaryEl.parentElement.querySelector('[data-balance-collapsible]');
+  if(!list)return;
+  const collapsed=list.classList.toggle('collapsed');
+  summaryEl.classList.toggle('collapsed',collapsed);
+  summaryEl.setAttribute('aria-expanded',collapsed?'false':'true');
+}
 document.addEventListener('click',function(e){
   if(!e.target.closest('.balance-move-menu-wrap')){
     document.querySelectorAll('.balance-move-menu-popover').forEach(function(p){p.hidden=true;});
@@ -4530,6 +4544,22 @@ function cremationCompleteCycle(id){
       .catch(function(){cremationSoftRefreshCycle(id);});
   },{title:'Termina ciclo',confirmLabel:'Termina ciclo'});
 }
+function cremationRevertStart(id){
+  cremationOpenConfirmModal('Confermi di annullare l\'avvio? Il ciclo tornera\' in attesa.',function(){
+    fetch('/programma-cremazioni/cicli/'+id+'/annulla-avvio',{method:'POST',credentials:'same-origin'})
+      .then(function(res){return res.json();})
+      .then(function(data){if(!data.ok)alert(data.error||'Operazione non riuscita');cremationSoftRefreshCycle(id);})
+      .catch(function(){cremationSoftRefreshCycle(id);});
+  },{title:'Annulla avvio',confirmLabel:'Annulla avvio'});
+}
+function cremationRevertComplete(id){
+  cremationOpenConfirmModal('Confermi di annullare il completamento? Il ciclo tornera\' in corso e gli animali torneranno allo stato precedente.',function(){
+    fetch('/programma-cremazioni/cicli/'+id+'/annulla-completamento',{method:'POST',credentials:'same-origin'})
+      .then(function(res){return res.json();})
+      .then(function(data){if(!data.ok)alert(data.error||'Operazione non riuscita');cremationSoftRefreshCycle(id);})
+      .catch(function(){cremationSoftRefreshCycle(id);});
+  },{title:'Annulla completamento',confirmLabel:'Annulla completamento'});
+}
 function cremationUpdateDurationPreview(){
   // solo visualizzazione: legge gli stessi due campi orario gia' esistenti,
   // non scrive nulla al loro interno e non interferisce in alcun modo con
@@ -4726,6 +4756,27 @@ function reminderCloseAll(){
     btn.classList.remove('reminders-row-active');
   });
   reminderSyncOuterCard();
+}
+function reminderDismiss(event,reminderId,btn){
+  event.stopPropagation();
+  const row=btn.closest('.reminders-expand-row');
+  fetch('/promemoria/'+reminderId+'/completa',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:'ajax=1'})
+    .then(function(res){return res.json();})
+    .then(function(data){
+      if(!data.ok){alert(data.error||'Operazione non riuscita');return;}
+      if(!row)return;
+      const panel=row.closest('.reminders-expand');
+      row.remove();
+      if(panel&&!panel.querySelector('.reminders-expand-row')){
+        panel.insertAdjacentHTML('beforeend','<p class="reminders-expand-empty">Nessun elemento da gestire.</p>');
+      }
+      const badge=document.querySelector('.reminders-count-badge');
+      if(badge){
+        const n=Math.max(0,parseInt(badge.textContent,10)-1||0);
+        if(n>0)badge.textContent=n;else badge.remove();
+      }
+    })
+    .catch(function(){alert('Operazione non riuscita');});
 }
 function reminderToggle(btn){
   const panelId=btn.dataset.reminderToggle;
@@ -5560,6 +5611,7 @@ LUCIDE_PATHS = {
     "hourglass": '<path d="M5 22h14M5 2h14M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>',
     "square": '<rect width="18" height="18" x="3" y="3" rx="2"/>',
     "save": '<path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V3.4"/>',
+    "undo-2": '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"/>',
     "sun": '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"/>',
     "search": '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
     "phone": '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>',
@@ -6627,6 +6679,10 @@ class App(BaseHTTPRequestHandler):
         if match: return self.cremation_start_cycle(user, int(match.group(1)))
         match = re.fullmatch(r"/programma-cremazioni/cicli/(\d+)/termina", path)
         if match: return self.cremation_complete_cycle(user, int(match.group(1)))
+        match = re.fullmatch(r"/programma-cremazioni/cicli/(\d+)/annulla-avvio", path)
+        if match: return self.cremation_revert_start(user, int(match.group(1)))
+        match = re.fullmatch(r"/programma-cremazioni/cicli/(\d+)/annulla-completamento", path)
+        if match: return self.cremation_revert_complete(user, int(match.group(1)))
         match = re.fullmatch(r"/programma-cremazioni/cicli/(\d+)/modifica", path)
         if match: return self.cremation_edit_cycle(user, int(match.group(1)))
         match = re.fullmatch(r"/programma-cremazioni/cicli/(\d+)/elimina", path)
@@ -6904,7 +6960,17 @@ class App(BaseHTTPRequestHandler):
               <div class="cremation-quick-menu-popover" hidden>{''.join(items)}</div>
             </div>'''
 
-        def reminder_animal_row_html(p,show_cycle_action):
+        def reminder_dismiss_button_html(reminder_id):
+            # richiesta esplicita dell'utente: le voci del Centro Promemoria
+            # devono potersi eliminare SOLO dalla vista promemoria (mai la
+            # pratica/notifica sottostante) — riusa esattamente lo stesso
+            # meccanismo gia' esistente di /promemoria/<id>/completa (che
+            # marca solo la riga della tabella reminders, invariato per
+            # tutto il resto), qui in modalita' ajax con rimozione morbida
+            # della riga invece di un redirect/reload di pagina.
+            return f'<button type="button" class="reminders-dismiss-btn" onclick="reminderDismiss(event,{reminder_id},this)" aria-label="Elimina dal promemoria" title="Elimina dal promemoria">{lucide("x")}</button>'
+
+        def reminder_animal_row_html(p,show_cycle_action,reminder_id=None):
             avatar_emoji,avatar_cls=species_avatar(p["species"] if "species" in p.keys() else "")
             weight=(p["estimated_weight"] or "").strip()
             owner,urn=reminder_owner_and_urn(p)
@@ -6915,6 +6981,7 @@ class App(BaseHTTPRequestHandler):
             urn_html=f'{lucide("archive")}<span>{esc(urn)}</span>' if urn else '<span class="cremation-dash">—</span>'
             url=reminder_practice_url(p["id"])
             action=reminder_cycle_quick_menu(p) if show_cycle_action else ""
+            dismiss=reminder_dismiss_button_html(reminder_id) if reminder_id else ""
             return f'''<div class="reminders-expand-row" {row_open_attrs(url,f'Apri pratica {p["practice_number"]}')}>
               <span class="reminders-expand-avatar {avatar_cls}" aria-hidden="true">{avatar_emoji}</span>
               <div class="reminders-expand-main">
@@ -6923,24 +6990,25 @@ class App(BaseHTTPRequestHandler):
                 <span class="reminders-expand-meta"><span>{esc(owner)}</span>{provenance_html}<span>{esc(date_it(p["pickup_date"] or p["created_at"]))}</span><span class="badge {practice_status_class(p['status'])}">{esc(p['status'])}</span></span>
                 <span class="reminders-expand-meta">{tags_html}<span class="reminders-expand-urn">{urn_html}</span></span>
               </div>
-              <div class="reminders-expand-actions" onclick="event.stopPropagation()">{action}<a class="btn ghost" href="{url}">Apri pratica</a></div>
+              <div class="reminders-expand-actions" onclick="event.stopPropagation()">{action}<a class="btn ghost" href="{url}">Apri pratica</a>{dismiss}</div>
             </div>'''
 
-        def reminder_unpaid_row_html(p):
+        def reminder_unpaid_row_html(p,reminder_id=None):
             total=effective_total(p);remaining=outstanding_amount(p);paid=total-remaining
             payment=p["payment_status"] or "Da saldare";pay_cls={"Da saldare":"pay-yellow","Acconto":"pay-blue","Pagato":"pay-green"}.get(payment,"")
             owner,_=reminder_owner_and_urn(p)
             url=reminder_practice_url(p["id"])
+            dismiss=reminder_dismiss_button_html(reminder_id) if reminder_id else ""
             return f'''<div class="reminders-expand-row" {row_open_attrs(url,f'Apri pratica {p["practice_number"]}')}>
               <div class="reminders-expand-main">
                 <span class="reminders-expand-title">{esc(p["practice_number"])} · {reminder_animal_name_html(p)}</span>
                 <span class="reminders-expand-meta"><span>{esc(owner)}</span><span>Consegnato il {esc(date_it(reminder_delivery_dates.get(p['id']) or p['updated_at']))}</span></span>
                 <span class="reminders-expand-meta"><span>Totale {money_it(total)}</span><span>Versato {money_it(paid)}</span><span>Residuo {money_it(remaining)}</span><span class="badge {pay_cls}">{esc(payment)}</span></span>
               </div>
-              <div class="reminders-expand-actions" onclick="event.stopPropagation()">{self.status_badges(p)}<a class="btn ghost" href="{url}">Apri pratica</a></div>
+              <div class="reminders-expand-actions" onclick="event.stopPropagation()">{self.status_badges(p)}<a class="btn ghost" href="{url}">Apri pratica</a>{dismiss}</div>
             </div>'''
 
-        def reminder_assisted_notify_row_html(p):
+        def reminder_assisted_notify_row_html(p,reminder_id=None):
             owner,_=reminder_owner_and_urn(p)
             url=reminder_practice_url(p["id"])
             label=assisted_cremation_label(p)
@@ -6948,18 +7016,20 @@ class App(BaseHTTPRequestHandler):
             when_bits=[]
             if cycle_date:when_bits.append(f'<span>{esc(date_it(cycle_date))}</span>')
             if planned_start:when_bits.append(f'<span>ore {esc(planned_start)}</span>')
+            dismiss=reminder_dismiss_button_html(reminder_id) if reminder_id else ""
             return f'''<div class="reminders-expand-row" {row_open_attrs(url,f'Apri pratica {p["practice_number"]}')}>
               <div class="reminders-expand-main">
                 <span class="reminders-expand-title">{reminder_animal_name_html(p)}</span>
                 <span class="reminders-expand-meta"><span>{esc(owner)}</span>{''.join(when_bits)}<span class="badge tag-red">{esc(label)}</span></span>
               </div>
-              <div class="reminders-expand-actions" onclick="event.stopPropagation()"><a class="btn ghost" href="{url}">Apri pratica</a></div>
+              <div class="reminders-expand-actions" onclick="event.stopPropagation()"><a class="btn ghost" href="{url}">Apri pratica</a>{dismiss}</div>
             </div>'''
 
         def reminder_generic_row_html(row):
+            dismiss=reminder_dismiss_button_html(row["id"]) if "id" in row.keys() and row["id"] else ""
             return f'''<div class="reminders-expand-row" {row_open_attrs(row["url"],esc(row["title"]))}>
               <div class="reminders-expand-main"><span class="reminders-expand-title">{esc(row["title"])}</span></div>
-              <div class="reminders-expand-actions" onclick="event.stopPropagation()"><a class="btn ghost" href="{esc(row['url'])}">Apri</a></div>
+              <div class="reminders-expand-actions" onclick="event.stopPropagation()"><a class="btn ghost" href="{esc(row['url'])}">Apri</a>{dismiss}</div>
             </div>'''
 
         def reminder_panel_html(rtype,rows):
@@ -6967,25 +7037,25 @@ class App(BaseHTTPRequestHandler):
                 items=[]
                 for row in rows:
                     p=reminder_practices_by_id.get(int(row["entity_key"].split(":",1)[1])) if row["entity_key"].startswith("practice:") else None
-                    if p:items.append(reminder_animal_row_html(p,show_cycle_action=True))
+                    if p:items.append(reminder_animal_row_html(p,show_cycle_action=True,reminder_id=row["id"]))
                 return ''.join(items) or '<p class="reminders-expand-empty">Nessun elemento da gestire.</p>'
             if rtype=="delivered_unpaid":
                 items=[]
                 for row in rows:
                     p=reminder_practices_by_id.get(int(row["entity_key"].split(":",1)[1])) if row["entity_key"].startswith("practice:") else None
-                    if p:items.append(reminder_unpaid_row_html(p))
+                    if p:items.append(reminder_unpaid_row_html(p,reminder_id=row["id"]))
                 return ''.join(items) or '<p class="reminders-expand-empty">Nessun elemento da gestire.</p>'
             if rtype=="practice_incomplete":
                 items=[]
                 for row in rows:
                     p=reminder_practices_by_id.get(int(row["entity_key"].split(":",1)[1])) if row["entity_key"].startswith("practice:") else None
-                    if p:items.append(reminder_animal_row_html(p,show_cycle_action=False))
+                    if p:items.append(reminder_animal_row_html(p,show_cycle_action=False,reminder_id=row["id"]))
                 return ''.join(items) or '<p class="reminders-expand-empty">Nessun elemento da gestire.</p>'
             if rtype=="assisted_notify_pending":
                 items=[]
                 for row in rows:
                     p=reminder_practices_by_id.get(int(row["entity_key"].split(":",1)[1])) if row["entity_key"].startswith("practice:") else None
-                    if p:items.append(reminder_assisted_notify_row_html(p))
+                    if p:items.append(reminder_assisted_notify_row_html(p,reminder_id=row["id"]))
                 return ''.join(items) or '<p class="reminders-expand-empty">Nessun elemento da gestire.</p>'
             return ''.join(reminder_generic_row_html(row) for row in rows) or '<p class="reminders-expand-empty">Nessun elemento da gestire.</p>'
 
@@ -7293,7 +7363,7 @@ class App(BaseHTTPRequestHandler):
         cards_html=f'<section class="balance-grid" aria-label="Riepilogo Bilanci">{"".join(cards)}</section>'
         section_lookup={key:(tone,icon) for key,tone,icon in section_order}
         selected_tone,selected_icon=section_lookup[selected]
-        summary_html=f'''<div class="balance-summary-card {selected_tone}">
+        summary_html=f'''<div class="balance-summary-card {selected_tone}" onclick="balanceToggleDetails(this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){{event.preventDefault();balanceToggleDetails(this);}}" aria-expanded="true" aria-controls="balanceDetailsList">
           <span class="balance-summary-icon">{lucide(selected_icon)}</span>
           <span class="balance-summary-copy"><span class="balance-summary-title">{esc(selected_section.title)}</span><strong class="balance-summary-value">{money_cents_it(selected_section.total_cents)}</strong></span>
           <span class="balance-summary-count">{total_rows} {"pratiche" if is_outstanding else "movimenti"}</span>
@@ -7301,7 +7371,7 @@ class App(BaseHTTPRequestHandler):
         </div>'''
         details_html=f'''<section id="balanceDetails" class="section balance-details" data-selected-balance-section="{esc(selected)}">
           {summary_html}
-          {details}{pagination}
+          <div id="balanceDetailsList" data-balance-collapsible>{details}{pagination}</div>
         </section>'''
         filters_html=f'''<form class="section balance-filters no-advanced-collapse" method="get" action="/bilanci" aria-label="Filtri Bilanci" onsubmit="const b=this.querySelector('button');b.disabled=true;b.textContent='Caricamento…'">
           <h2>Filtri</h2><input type="hidden" name="view" value="{esc(selected)}">
@@ -9362,6 +9432,7 @@ class App(BaseHTTPRequestHandler):
             if status=="completato":
                 if cycle["actual_end"]:
                     actions.append(f'<span class="cremation-completed-note">Completato alle {esc(cycle["actual_end"][11:16])} {lucide("check-circle")}</span>')
+                actions.append(f'<button type="button" class="cremation-action-btn cremation-action-planned" onclick="cremationRevertComplete({cycle["id"]})">{lucide("undo-2")}<span>Annulla completamento</span></button>')
                 actions.append(f'<button type="button" class="cremation-action-btn cremation-action-delete" onclick="cremationDeleteCycle({cycle["id"]})">{lucide("x")}<span>Elimina ciclo</span></button>')
             else:
                 if len(animals)<2:
@@ -9375,22 +9446,23 @@ class App(BaseHTTPRequestHandler):
                         remaining_html=f'<div class="cremation-remaining">{lucide("clock")}<span>Rimangono {remaining} min</span></div>'
                     except ValueError:pass
                     actions.append(f'<button type="button" class="cremation-action-btn cremation-action-active" onclick="cremationCompleteCycle({cycle["id"]})">{lucide("check-circle")}<span>Termina ciclo</span></button>')
+                    actions.append(f'<button type="button" class="cremation-action-btn cremation-action-planned" onclick="cremationRevertStart({cycle["id"]})">{lucide("undo-2")}<span>Annulla avvio</span></button>')
                 actions.append(f'<button type="button" class="cremation-action-btn cremation-action-delete" onclick="cremationDeleteCycle({cycle["id"]})">{lucide("x")}<span>Elimina ciclo</span></button>')
             action_html=''.join(actions)
             dropzone_attr=f'data-cycle-dropzone="{cycle["id"]}"' if status!="completato" and len(animals)<2 else ""
             cycle_items.append(f'''<div class="cremation-timeline-item">
               <div class="cremation-timeline-rail"><span class="cremation-timeline-time">{esc(cycle["planned_start"])}</span><span class="cremation-timeline-dot {dot_cls_map.get(status,"")}"></span><span class="cremation-timeline-time cremation-timeline-time-end">{esc(cycle["planned_end"])}</span></div>
-              <div class="cremation-cycle-card cremation-cycle-{status}" {dropzone_attr} data-cycle-card data-cycle-id="{cycle['id']}">
-                <div class="cremation-cycle-head" onclick="cremationToggleCycleCard(this)">
+              <div class="cremation-cycle-card cremation-cycle-{status}" {dropzone_attr} data-cycle-card data-cycle-id="{cycle['id']}" onclick="cremationToggleCycleCard(this)">
+                <div class="cremation-cycle-head">
                   <span class="cremation-cycle-number {status_cls}">CICLO {idx+1}</span>
                   <span class="cremation-cycle-time">{esc(cycle["planned_start"])} → {esc(cycle["planned_end"])}</span>
                   <span class="cremation-status-badge {status_cls}">{esc(status_label)}</span>
                   <div class="cremation-week-cycle-animals">{names_html}</div>
                   <span class="cremation-cycle-chevron" aria-hidden="true">{lucide("chevron-right")}</span>
                 </div>
-                <div class="cremation-cycle-body" data-cycle-body>
+                <div class="cremation-cycle-body" data-cycle-body onclick="event.stopPropagation()">
                   <div class="cremation-cycle-body-inner">
-                    <div class="cremation-cycle-action" onclick="event.stopPropagation()">{action_html}</div>
+                    <div class="cremation-cycle-action">{action_html}</div>
                     {remaining_html}
                     <div class="cremation-cycle-animals">{animals_html}</div>
                   </div>
@@ -9786,6 +9858,7 @@ class App(BaseHTTPRequestHandler):
                 if status=="completato":
                     if cycle["actual_end"]:
                         actions.append(f'<span class="cremation-completed-note">Completato alle {esc(cycle["actual_end"][11:16])} {lucide("check-circle")}</span>')
+                    actions.append(f'<button type="button" class="cremation-action-btn cremation-action-planned" onclick="cremationRevertComplete({cycle["id"]})">{lucide("undo-2")}<span>Annulla completamento</span></button>')
                     actions.append(f'<button type="button" class="cremation-action-btn cremation-action-delete" onclick="cremationDeleteCycle({cycle["id"]})">{lucide("x")}<span>Elimina ciclo</span></button>')
                 else:
                     if len(animals)<2:
@@ -9799,13 +9872,14 @@ class App(BaseHTTPRequestHandler):
                             remaining_html=f'<div class="cremation-remaining">{lucide("clock")}<span>Rimangono {remaining} min</span></div>'
                         except ValueError:pass
                         actions.append(f'<button type="button" class="cremation-action-btn cremation-action-active" onclick="cremationCompleteCycle({cycle["id"]})">{lucide("check-circle")}<span>Termina ciclo</span></button>')
+                        actions.append(f'<button type="button" class="cremation-action-btn cremation-action-planned" onclick="cremationRevertStart({cycle["id"]})">{lucide("undo-2")}<span>Annulla avvio</span></button>')
                     actions.append(f'<button type="button" class="cremation-action-btn cremation-action-delete" onclick="cremationDeleteCycle({cycle["id"]})">{lucide("x")}<span>Elimina ciclo</span></button>')
                 action_html=''.join(actions)
                 dropzone_attr=f'data-cycle-dropzone="{cycle["id"]}"' if status!="completato" and len(animals)<2 else ""
                 row_items.append(f'''<div class="cremation-timeline-item cremation-week-cycle-item">
                   <div class="cremation-timeline-rail"><span class="cremation-timeline-time">{esc(cycle["planned_start"])}</span><span class="cremation-timeline-dot {dot_cls_map.get(status,"")}"></span><span class="cremation-timeline-time cremation-timeline-time-end">{esc(cycle["planned_end"])}</span></div>
-                  <div class="cremation-week-cycle-card cremation-cycle-{status}" {dropzone_attr} data-cycle-card data-cycle-id="{cycle['id']}">
-                    <div class="cremation-week-cycle-head" onclick="cremationToggleCycleCard(this)">
+                  <div class="cremation-week-cycle-card cremation-cycle-{status}" {dropzone_attr} data-cycle-card data-cycle-id="{cycle['id']}" onclick="cremationToggleCycleCard(this)">
+                    <div class="cremation-week-cycle-head">
                       <div class="cremation-week-cycle-main">
                         <span class="cremation-cycle-number {status_cls}">CICLO {idx+1}</span>
                         <span class="cremation-cycle-time">{esc(cycle["planned_start"])} → {esc(cycle["planned_end"])}</span>
@@ -9814,9 +9888,9 @@ class App(BaseHTTPRequestHandler):
                       <span class="cremation-status-badge {status_cls}">{esc(status_label)}</span>
                       <span class="cremation-week-status-icon {status_cls}" aria-hidden="true">{lucide(status_icon_map.get(status,"clock"))}</span>
                     </div>
-                    <div class="cremation-cycle-body" data-cycle-body>
+                    <div class="cremation-cycle-body" data-cycle-body onclick="event.stopPropagation()">
                       <div class="cremation-cycle-body-inner">
-                        <div class="cremation-cycle-action" onclick="event.stopPropagation()">{action_html}</div>
+                        <div class="cremation-cycle-action">{action_html}</div>
                         {remaining_html}
                         <div class="cremation-cycle-animals">{animals_html}</div>
                       </div>
@@ -10091,6 +10165,44 @@ class App(BaseHTTPRequestHandler):
                 if row["status"]=="Da consegnare":continue
                 c.execute("UPDATE practices SET cremation_registered='Si',updated_at=? WHERE id=?",(stamp,row["id"]))
                 cremation_log_status_change(c,row["id"],row["status"] or "Ritirato","Da consegnare",user["id"],stamp)
+        return self.send_json({"ok":True})
+
+    def cremation_revert_start(self,user,cycle_id):
+        """Annulla un avvio per errore: torna in_attesa, nessun'altra
+        conseguenza da disfare (avviare un ciclo non tocca le pratiche)."""
+        stamp=now()
+        with db() as c:
+            cycle=c.execute("SELECT id,status FROM cremation_cycles WHERE id=?",(cycle_id,)).fetchone()
+            if not cycle:return self.send_json({"ok":False,"error":"Ciclo non trovato"},404)
+            if cycle["status"]!="in_corso":
+                return self.send_json({"ok":False,"error":"Il ciclo non è in corso."},409)
+            c.execute("UPDATE cremation_cycles SET status='in_attesa',actual_start=NULL,updated_at=? WHERE id=?",(stamp,cycle_id))
+        return self.send_json({"ok":True})
+
+    def cremation_revert_complete(self,user,cycle_id):
+        """Annulla un completamento per errore: torna in_corso e riporta ogni
+        pratica collegata allo stato che aveva PRIMA del completamento (letto
+        dalla stessa riga di practice_history scritta da cremation_complete_cycle),
+        mai un valore fisso indovinato — cosi' resta corretto anche per pratiche
+        che partivano da stati diversi da 'Ritirato'."""
+        stamp=now()
+        with db() as c:
+            cycle=c.execute("SELECT id,status FROM cremation_cycles WHERE id=?",(cycle_id,)).fetchone()
+            if not cycle:return self.send_json({"ok":False,"error":"Ciclo non trovato"},404)
+            if cycle["status"]!="completato":
+                return self.send_json({"ok":False,"error":"Il ciclo non è completato."},409)
+            c.execute("UPDATE cremation_cycles SET status='in_corso',actual_end=NULL,updated_at=? WHERE id=?",(stamp,cycle_id))
+            practices=c.execute("SELECT * FROM practices WHERE cremation_cycle_id=? AND (deleted_at IS NULL OR deleted_at='')",(cycle_id,)).fetchall()
+            for row in practices:
+                if row["status"]!="Da consegnare":continue
+                last_change=c.execute(
+                    "SELECT old_value FROM practice_history WHERE practice_id=? AND event_type='Cambio stato rapido' AND new_value='Da consegnare' ORDER BY id DESC LIMIT 1",
+                    (row["id"],),
+                ).fetchone()
+                if not last_change:continue
+                previous_status=last_change["old_value"] or "Ritirato"
+                c.execute("UPDATE practices SET cremation_registered='',updated_at=? WHERE id=?",(stamp,row["id"]))
+                cremation_log_status_change(c,row["id"],"Da consegnare",previous_status,user["id"],stamp)
         return self.send_json({"ok":True})
 
     def cremation_edit_cycle(self,user,cycle_id):

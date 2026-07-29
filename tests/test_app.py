@@ -1715,6 +1715,94 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual((practice["status"], practice["cremation_registered"]), ("Da consegnare", "Si"))
         self.assertEqual((history["event_type"], history["old_value"], history["new_value"]), ("Cambio stato rapido", "Ritirato", "Da consegnare"))
 
+    def test_cremation_revert_start_returns_cycle_to_in_attesa(self):
+        # richiesta esplicita dell'utente: possibilita' di tornare indietro se
+        # un operatore avvia un ciclo per sbaglio (oggi si poteva solo andare
+        # avanti: in_attesa -> in_corso -> completato, mai indietro).
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-21", "in_attesa", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.cremation_start_cycle(admin, cycle_id)
+        self.assertEqual(responses[-1], ({"ok": True}, 200))
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT status FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()["status"], "in_corso")
+
+        responses.clear()
+        self.handler.cremation_revert_start(admin, cycle_id)
+        self.assertEqual(responses[-1], ({"ok": True}, 200))
+        with app.db() as conn:
+            cycle = conn.execute("SELECT status,actual_start FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()
+        self.assertEqual(cycle["status"], "in_attesa")
+        self.assertIsNone(cycle["actual_start"])
+
+    def test_cremation_revert_start_rejects_when_not_in_corso(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-21", "in_attesa", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.cremation_revert_start(admin, cycle_id)
+        self.assertEqual(responses[-1][1], 409)
+        self.assertFalse(responses[-1][0]["ok"])
+
+    def test_cremation_revert_complete_restores_cycle_and_practice_status(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-21", "in_attesa", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-REVERT", "Privato", "Livorno", "In programma", "Cremazione singola", "2026-07-15", stamp, stamp,
+                 admin["id"], "CR-REVERT", cycle_id),
+            ).lastrowid
+
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.cremation_start_cycle(admin, cycle_id)
+        self.handler.cremation_complete_cycle(admin, cycle_id)
+        with app.db() as conn:
+            practice = conn.execute("SELECT status,cremation_registered FROM practices WHERE id=?", (pid,)).fetchone()
+        self.assertEqual((practice["status"], practice["cremation_registered"]), ("Da consegnare", "Si"))
+
+        responses.clear()
+        self.handler.cremation_revert_complete(admin, cycle_id)
+        self.assertEqual(responses[-1], ({"ok": True}, 200))
+        with app.db() as conn:
+            cycle = conn.execute("SELECT status,actual_end FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()
+            practice = conn.execute("SELECT status,cremation_registered FROM practices WHERE id=?", (pid,)).fetchone()
+            history = conn.execute(
+                "SELECT event_type,old_value,new_value FROM practice_history WHERE practice_id=? ORDER BY id DESC LIMIT 1", (pid,)
+            ).fetchone()
+        self.assertEqual(cycle["status"], "in_corso")
+        self.assertIsNone(cycle["actual_end"])
+        # torna esattamente allo stato che aveva PRIMA del completamento (In programma), non un valore fisso indovinato
+        self.assertEqual((practice["status"], practice["cremation_registered"]), ("In programma", ""))
+        self.assertEqual((history["event_type"], history["old_value"], history["new_value"]), ("Cambio stato rapido", "Da consegnare", "In programma"))
+
+    def test_cremation_revert_complete_rejects_when_not_completato(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-21", "in_corso", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.cremation_revert_complete(admin, cycle_id)
+        self.assertEqual(responses[-1][1], 409)
+        self.assertFalse(responses[-1][0]["ok"])
+
     def test_cremation_remove_from_cycle_reverts_status_to_ritirato(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
@@ -3379,14 +3467,45 @@ class PetParadiseTests(unittest.TestCase):
         # regression: the cycle header that toggles a card open/closed was
         # only as wide as its own content, while the card around it has its
         # own 16px/10px padding — a tap anywhere in that padding strip (still
-        # visually "inside the card") did nothing. The header must span the
-        # full card via a negative margin matching the card's own padding
-        # exactly, so the whole card area is tappable.
+        # visually "inside the card") did nothing.
+        #
+        # Fix (richiesta esplicita dell'utente): invece di allargare solo
+        # l'header con un margine negativo, il click-to-toggle vive ora
+        # sull'intera card (.cremation-cycle-card/.cremation-week-cycle-card),
+        # cosi' qualunque punto della card la apre/chiude — il corpo espanso
+        # (.cremation-cycle-body) ferma la propagazione perche' i suoi
+        # pulsanti/link interni (Avvia/Termina/Elimina, Apri pratica, ecc.)
+        # non devono mai ri-toggleare la card quando vengono usati.
         css = app.CSS
-        self.assertIn(".cremation-cycle-card{background:#1f2937;border:1px solid #334155;border-left:4px solid #475569;border-radius:14px;padding:16px;min-width:0}", css)
-        self.assertIn("margin:-16px -16px 0;padding:16px 16px 0;cursor:pointer}", css)  # .cremation-cycle-head
-        self.assertIn(".cremation-week-cycle-card{background:#161f2b;border:1px solid #334155;border-left:4px solid #475569;border-radius:12px;padding:10px 12px;min-width:0}", css)
-        self.assertIn(".cremation-week-cycle-head{display:flex;align-items:center;gap:12px;margin:-10px -12px 0;padding:10px 12px 0;cursor:pointer}", css)
+        self.assertIn(".cremation-cycle-card{background:#1f2937;border:1px solid #334155;border-left:4px solid #475569;border-radius:14px;padding:16px;min-width:0;cursor:pointer}", css)
+        self.assertIn(".cremation-week-cycle-card{background:#161f2b;border:1px solid #334155;border-left:4px solid #475569;border-radius:12px;padding:10px 12px;min-width:0;cursor:pointer}", css)
+
+        js = app.APP_JS
+        self.assertIn("function cremationToggleCycleCard(headerEl){", js)
+        self.assertIn('const card=headerEl.closest(\'[data-cycle-card]\');', js)
+
+    def test_cremation_cycle_card_click_toggles_anywhere_but_body_stops_propagation(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-20", "pianificato", "08:00", "09:30", stamp, stamp),
+            )
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/programma-cremazioni?data=2026-07-20"
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        card_start = page.index('data-cycle-card')
+        card_tag_start = page.rindex('<div', 0, card_start)
+        card_tag_end = page.index('>', card_tag_start)
+        card_tag = page[card_tag_start:card_tag_end]
+        self.assertIn('onclick="cremationToggleCycleCard(this)"', card_tag)
+        body_start = page.index('data-cycle-body', card_start)
+        body_tag_start = page.rindex('<div', 0, body_start)
+        body_tag_end = page.index('>', body_tag_start)
+        body_tag = page[body_tag_start:body_tag_end]
+        self.assertIn('onclick="event.stopPropagation()"', body_tag)
 
     def test_cremation_cycle_border_colors_match_status(self):
         # regression 1: in_corso used to render green (identical to "completed"
@@ -5873,10 +5992,28 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path="/bilanci?view=entrate-d&periodo=tutto"
         self.handler.balances_page(admin)
         page=rendered[-1]
-        self.assertIn('<div class="balance-summary-card balance-tone-d">',page)
+        self.assertIn('<div class="balance-summary-card balance-tone-d" onclick="balanceToggleDetails(this)"',page)
         self.assertIn('<span class="balance-summary-title">Entrate D</span>',page)
         self.assertIn(app.money_cents_it(732000),page)
         self.assertIn("1 movimenti",page)
+
+    def test_balances_move_list_can_be_collapsed_to_reach_filters_faster(self):
+        # richiesta esplicita dell'utente: per arrivare ai filtri di ricerca
+        # doveva scrollare tutto l'elenco voci della sezione selezionata (es.
+        # tutte le Entrate W). La card di riepilogo ora apre/chiude l'elenco
+        # (di default aperto, nessun cambiamento del comportamento esistente).
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/bilanci?view=entrate-w"
+        self.handler.balances_page(admin)
+        page=rendered[-1]
+        self.assertIn('id="balanceDetailsList" data-balance-collapsible', page)
+        self.assertIn('onclick="balanceToggleDetails(this)"', page)
+        self.assertIn('aria-controls="balanceDetailsList"', page)
+        js=app.APP_JS
+        self.assertIn("function balanceToggleDetails(summaryEl){", js)
+        self.assertIn("list.classList.toggle('collapsed')", js)
 
     def test_balances_outstanding_view_uses_the_same_card_component(self):
         with app.db() as conn:
@@ -6530,6 +6667,52 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('onclick="event.stopPropagation()"',panel)
         self.assertIn(f'href="/pratiche/{pid}?return_to=%2F"',panel)
         self.assertIn("Inserisci in programma",panel)
+
+    def test_reminders_row_can_be_dismissed_without_touching_the_underlying_practice(self):
+        # richiesta esplicita dell'utente: le voci del Centro Promemoria devono
+        # potersi eliminare SOLO dal promemoria (mai la pratica/notifica
+        # sottostante), per non accumulare le notifiche li'. Riusa lo stesso
+        # meccanismo gia' esistente /promemoria/<id>/completa (marca solo la
+        # riga della tabella reminders), qui in modalita' ajax con rimozione
+        # morbida della riga invece di un redirect di pagina.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pickup=(date.today()-timedelta(days=6)).isoformat()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,created_at,updated_at,created_by,
+                animal_name,owner_first_name,owner_last_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-DISMISS","Privato","Livorno","Ritirato","Cremazione singola",stamp,stamp,admin["id"],"Birba","Mario","Conti",pickup,1)).lastrowid
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        panel=self.reminder_panel_html(page,"cremation_pending")
+        self.assertIn('class="reminders-dismiss-btn"',panel)
+        self.assertIn("reminderDismiss(event,",panel)
+        # il pulsante dismiss e' dentro l'area che gia' ferma la propagazione
+        # (mai il click sulla riga che apre la pratica)
+        actions_start=panel.index('class="reminders-expand-actions"')
+        self.assertIn('reminders-dismiss-btn',panel[actions_start:])
+
+        js=app.APP_JS
+        self.assertIn("function reminderDismiss(event,reminderId,btn){", js)
+        self.assertIn("/promemoria/'+reminderId+'/completa", js)
+        self.assertIn("row.remove();", js)
+
+        import re as _re
+        m=_re.search(r"reminderDismiss\(event,(\d+),this\)",panel)
+        self.assertIsNotNone(m)
+        reminder_id=int(m.group(1))
+        responses=[]
+        self.handler.form=lambda:{"ajax":"1"}
+        self.handler.send_json=lambda payload,status=200:responses.append((payload,status))
+        self.handler.complete_reminder(admin,reminder_id)
+        self.assertEqual(responses[-1],({"ok":True},200))
+        with app.db() as conn:
+            reminder=conn.execute("SELECT completed_at FROM reminders WHERE id=?",(reminder_id,)).fetchone()
+            practice=conn.execute("SELECT status,deleted_at FROM practices WHERE id=?",(pid,)).fetchone()
+        self.assertIsNotNone(reminder["completed_at"])
+        # la pratica sottostante resta del tutto invariata
+        self.assertEqual(practice["status"],"Ritirato")
+        self.assertIsNone(practice["deleted_at"])
 
     def test_reminders_accordion_keeps_only_one_panel_open_and_resolved_reminders_vanish(self):
         self.assertIn("reminders-row-active",app.CSS)
