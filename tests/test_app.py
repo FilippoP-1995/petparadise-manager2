@@ -3059,9 +3059,37 @@ class PetParadiseTests(unittest.TestCase):
         # reale trovato durante la verifica dal vivo) non trova ancora la
         # funzione e l'ascoltatore non si registra mai.
         self.assertIn(
-            "document.addEventListener('DOMContentLoaded',function(){var s=document.getElementById('cremationEditStart'),e=document.getElementById('cremationEditEnd');if(s){s.addEventListener('input',cremationUpdateDurationPreview);",
+            "document.addEventListener('DOMContentLoaded',function(){var s=document.getElementById('cremationEditStart'),e=document.getElementById('cremationEditEnd');if(s){s.addEventListener('input',function(){cremationUpdateDurationPreview('cremationEdit');});",
             page,
         )
+
+    def test_cremation_duration_preview_survives_a_real_change_event_not_just_a_direct_call(self):
+        # bug reale segnalato dall'utente (screenshot): dopo aver digitato un
+        # nuovo orario, "Durata ciclo" restava su "—" invece di ricalcolarsi.
+        # Causa: s.addEventListener('input'|'change', cremationUpdateDurationPreview)
+        # passava l'oggetto Event come primo argomento della funzione, che da
+        # quando esiste il parametro "prefix" (per il popup "Nuovo ciclo")
+        # veniva scambiato per il prefisso al posto del default
+        # 'cremationEdit' — document.getElementById(event+'Start') e' sempre
+        # null, quindi il controllo orario falliva silenziosamente mostrando
+        # sempre "—". Il riferimento a cremationUpdateDurationPreview passato
+        # direttamente a addEventListener (senza un wrapper che fissi il
+        # prefisso) e' esattamente il bug: non deve piu' comparire.
+        js = app.APP_JS
+        self.assertNotIn("addEventListener('input',cremationUpdateDurationPreview)", js)
+        self.assertNotIn("addEventListener('change',cremationUpdateDurationPreview)", js)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.path = "/programma-cremazioni?data=2026-07-30"
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertNotIn("addEventListener('input',cremationUpdateDurationPreview)", page)
+        self.assertNotIn("addEventListener('change',cremationUpdateDurationPreview)", page)
+        self.assertIn("s.addEventListener('change',function(){cremationUpdateDurationPreview('cremationEdit');});", page)
+        self.assertIn("e.addEventListener('input',function(){cremationUpdateDurationPreview('cremationEdit');});", page)
+        self.assertIn("e.addEventListener('change',function(){cremationUpdateDurationPreview('cremationEdit');});", page)
 
     def test_provenance_color_is_deterministic_per_code_not_per_species(self):
         # bug reale segnalato dall'utente: la stessa sigla (es. "L") aveva

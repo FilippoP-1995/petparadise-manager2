@@ -9658,7 +9658,7 @@ class App(BaseHTTPRequestHandler):
             <div class="cremation-modal-actions cremation-modal-actions-v2"><button type="button" class="btn ghost" onclick="cremationCloseModal()">Annulla</button><button type="button" class="btn" onclick="cremationSubmitEditModal()">{lucide("save")}<span>Salva orario</span></button></div>
           </div>
         </div>
-        <script>document.addEventListener('DOMContentLoaded',function(){{var s=document.getElementById('cremationEditStart'),e=document.getElementById('cremationEditEnd');if(s){{s.addEventListener('input',cremationUpdateDurationPreview);s.addEventListener('change',function(){{cremationSyncEndWithStartDuration(s);}});s.addEventListener('change',cremationUpdateDurationPreview);}}if(e){{e.addEventListener('input',cremationUpdateDurationPreview);e.addEventListener('change',cremationUpdateDurationPreview);}}}});</script>'''
+        <script>document.addEventListener('DOMContentLoaded',function(){{var s=document.getElementById('cremationEditStart'),e=document.getElementById('cremationEditEnd');if(s){{s.addEventListener('input',function(){{cremationUpdateDurationPreview('cremationEdit');}});s.addEventListener('change',function(){{cremationSyncEndWithStartDuration(s);}});s.addEventListener('change',function(){{cremationUpdateDurationPreview('cremationEdit');}});}}if(e){{e.addEventListener('input',function(){{cremationUpdateDurationPreview('cremationEdit');}});e.addEventListener('change',function(){{cremationUpdateDurationPreview('cremationEdit');}});}}}});</script>'''
 
         create_modal_html=f'''<div class="cremation-modal-overlay" id="cremationCreateOverlay" hidden onclick="if(event.target===this)cremationCloseCreateModal()">
           <div class="cremation-modal cremation-modal-time-edit">
@@ -10125,7 +10125,7 @@ class App(BaseHTTPRequestHandler):
             <div class="cremation-modal-actions cremation-modal-actions-v2"><button type="button" class="btn ghost" onclick="cremationCloseModal()">Annulla</button><button type="button" class="btn" onclick="cremationSubmitEditModal()">{lucide("save")}<span>Salva orario</span></button></div>
           </div>
         </div>
-        <script>document.addEventListener('DOMContentLoaded',function(){{var s=document.getElementById('cremationEditStart'),e=document.getElementById('cremationEditEnd');if(s){{s.addEventListener('input',cremationUpdateDurationPreview);s.addEventListener('change',function(){{cremationSyncEndWithStartDuration(s);}});s.addEventListener('change',cremationUpdateDurationPreview);}}if(e){{e.addEventListener('input',cremationUpdateDurationPreview);e.addEventListener('change',cremationUpdateDurationPreview);}}}});</script>'''
+        <script>document.addEventListener('DOMContentLoaded',function(){{var s=document.getElementById('cremationEditStart'),e=document.getElementById('cremationEditEnd');if(s){{s.addEventListener('input',function(){{cremationUpdateDurationPreview('cremationEdit');}});s.addEventListener('change',function(){{cremationSyncEndWithStartDuration(s);}});s.addEventListener('change',function(){{cremationUpdateDurationPreview('cremationEdit');}});}}if(e){{e.addEventListener('input',function(){{cremationUpdateDurationPreview('cremationEdit');}});e.addEventListener('change',function(){{cremationUpdateDurationPreview('cremationEdit');}});}}}});</script>'''
 
         create_modal_html=f'''<div class="cremation-modal-overlay" id="cremationCreateOverlay" hidden onclick="if(event.target===this)cremationCloseCreateModal()">
           <div class="cremation-modal cremation-modal-time-edit">
