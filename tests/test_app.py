@@ -15,6 +15,7 @@ from urllib.parse import quote
 import app
 import email_service
 import notification_service
+import route_service
 from notification_service import (
     emit_notification, process_scheduled_notifications,
     process_calendar_notifications,
@@ -8234,6 +8235,300 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.form = lambda: {"return_to": "/il-mio-profilo"}
         self.handler.save_notification_preferences(admin)
         self.assertEqual(redirects, ["/il-mio-profilo"])
+
+    # ---- Percorso giornaliero ------------------------------------------------
+
+    def test_route_eligible_events_includes_only_pending_pickups_and_deliveries_out_of_office(self):
+        import calendar_service
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            def make(event_type, status, day="2026-08-03", deleted=False):
+                return conn.execute("""INSERT INTO calendar_events(event_type,title,address,start_at,end_at,event_status,
+                    created_by,created_at,updated_at,deleted_at) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                    (event_type, f"{event_type}-{status}", "Via Test 1", f"{day}T09:00:00", f"{day}T10:00:00",
+                     status, admin["id"], stamp, stamp, stamp if deleted else None)).lastrowid
+            pending_pickup = make("Ritiro", "Da ritirare")
+            confirm_pickup = make("Ritiro", "Da confermare")
+            done_pickup = make("Ritiro", "Ritirato")
+            cancelled_pickup = make("Ritiro", "Annullato")
+            pending_delivery = make("Riconsegna", "In programma")
+            done_delivery = make("Riconsegna", "Completato")
+            onsite_pickup = make("Ritiro in sede", "Da ritirare")
+            appointment = make("Appuntamento", "Da confermare")
+            deleted_pickup = make("Ritiro", "Da ritirare", deleted=True)
+            other_day = make("Ritiro", "Da ritirare", day="2026-08-04")
+            with conn:
+                ids = {row["id"] for row in calendar_service.route_eligible_events(conn, "2026-08-03")}
+        self.assertEqual(ids, {pending_pickup, confirm_pickup, pending_delivery})
+        for excluded in (done_pickup, cancelled_pickup, done_delivery, onsite_pickup, appointment, deleted_pickup, other_day):
+            self.assertNotIn(excluded, ids)
+
+    def test_route_service_time_window_priority_event_over_veterinarian_hours(self):
+        with app.db() as conn:
+            vet_id = conn.execute("INSERT INTO veterinarians(clinic_name,active,created_at,updated_at) VALUES('Vet Test',1,'x','x')").lastrowid
+            conn.execute("""INSERT INTO veterinarian_hours(veterinarian_id,day_of_week,closed,morning_start,morning_end)
+                VALUES(?,1,0,'09:00','12:00')""", (vet_id,))
+            # 2026-08-04 e' un martedi' (weekday()==1)
+            narrow_event = {"start_at": "2026-08-04T14:00:00", "end_at": "2026-08-04T14:20:00", "all_day": 0, "veterinarian_id": vet_id}
+            windows, source = route_service.time_windows_for_stop(conn, narrow_event)
+            self.assertEqual(source, "evento")
+            self.assertEqual(windows, [("14:00", "14:20")])
+            allday_event = {"start_at": "2026-08-04T00:00:00", "end_at": "2026-08-04T23:59:00", "all_day": 0, "veterinarian_id": vet_id}
+            windows, source = route_service.time_windows_for_stop(conn, allday_event)
+            self.assertEqual(source, "veterinario")
+            self.assertEqual(windows, [("09:00", "12:00")])
+            closed_vet = conn.execute("INSERT INTO veterinarians(clinic_name,active,created_at,updated_at) VALUES('Vet Chiuso',1,'x','x')").lastrowid
+            conn.execute("INSERT INTO veterinarian_hours(veterinarian_id,day_of_week,closed) VALUES(?,1,1)", (closed_vet,))
+            windows, source = route_service.time_windows_for_stop(conn, {**allday_event, "veterinarian_id": closed_vet})
+            self.assertEqual((windows, source), ([], "veterinario_chiuso"))
+            no_hours_event = {**allday_event, "veterinarian_id": None}
+            self.assertEqual(route_service.time_windows_for_stop(conn, no_hours_event), (None, "nessuno"))
+
+    def test_route_service_validate_arrival_covers_all_status_colors(self):
+        self.assertEqual(route_service.validate_arrival("10:00", None, "nessuno")[0], "grigio")
+        self.assertEqual(route_service.validate_arrival("10:00", [], "veterinario_chiuso")[0], "rosso")
+        self.assertEqual(route_service.validate_arrival("10:00", [("09:00", "12:00")], "veterinario")[0], "verde")
+        self.assertEqual(route_service.validate_arrival("10:00", [("10:00", "10:20")], "evento")[0], "blu")
+        self.assertEqual(route_service.validate_arrival("08:50", [("09:00", "12:00")], "veterinario")[0], "ambra")
+        self.assertEqual(route_service.validate_arrival("13:00", [("09:00", "12:00")], "veterinario")[0], "rosso")
+
+    def test_route_service_build_maps_urls_splits_when_over_waypoint_limit(self):
+        origin, destination = "Origine", "Destinazione"
+        few = [f"Tappa{i}" for i in range(5)]
+        self.assertEqual(len(route_service.build_maps_urls(origin, destination, few)), 1)
+        many = [f"Tappa{i}" for i in range(30)]
+        urls = route_service.build_maps_urls(origin, destination, many, limit=23)
+        self.assertGreater(len(urls), 1)
+        # nessuna tappa deve sparire silenziosamente: l'ultima tappa di una
+        # sezione ricompare come origine della sezione successiva, ma ogni
+        # indirizzo intermedio unico deve comparire in almeno un URL
+        joined = " ".join(urls)
+        for stop in many:
+            self.assertIn(stop, joined)
+
+    @patch("app.route_service.geocode_address", return_value=(43.55, 10.30))
+    def test_route_plan_page_shows_empty_state_without_eligible_pickups(self, _mock_geocode):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/percorso-giornaliero?data=2026-08-05"
+        self.handler.route_plan_page(admin)
+        page = rendered[-1]
+        self.assertIn("Percorso giornaliero", page)
+        self.assertNotIn("Da correggere", page)
+        self.assertNotIn("Tappe (", page)
+
+    @patch("app.route_service.geocode_address", return_value=(43.55, 10.30))
+    def test_route_plan_page_lists_incomplete_address_under_da_correggere(self, _mock_geocode):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            conn.execute("""INSERT INTO calendar_events(event_type,title,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES('Ritiro','Ritiro senza indirizzo','2026-08-05T09:00:00','2026-08-05T09:30:00','Da ritirare',?,?,?)""",
+                (admin["id"], stamp, stamp))
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/percorso-giornaliero?data=2026-08-05"
+        self.handler.route_plan_page(admin)
+        page = rendered[-1]
+        self.assertIn("Da correggere", page)
+        self.assertIn("Ritiro senza indirizzo", page)
+
+    @patch("app.route_service.geocode_address", return_value=(43.55, 10.30))
+    def test_route_plan_calculate_saves_plan_with_no_time_constraint_for_private_pickup(self, _mock_geocode):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,address,location_type,start_at,end_at,event_status,
+                created_by,created_at,updated_at) VALUES('Ritiro','Ritiro privato','Via Test 5','Privato',
+                '2026-08-06T08:00:00','2026-08-06T18:00:00','Da ritirare',?,?,?)""",(admin["id"], stamp, stamp)).lastrowid
+        redirects = []
+        self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.form = lambda: {"data": "2026-08-06", "optimization_mode": "veloce", "start_time": "08:00",
+            "start_location_type": "personalizzato", "start_address": "Via Deposito 1",
+            "end_location_type": "stessa_partenza"}
+        self.handler.route_plan_calculate(admin)
+        self.assertEqual(len(redirects), 1)
+        plan_id = int(redirects[0].rsplit("/", 1)[1])
+        with app.db() as conn:
+            plan = conn.execute("SELECT * FROM route_plans WHERE id=?", (plan_id,)).fetchone()
+            stops = conn.execute("SELECT * FROM route_plan_stops WHERE route_plan_id=?", (plan_id,)).fetchall()
+        self.assertEqual(plan["status"], "attivo")
+        self.assertEqual(plan["version"], 1)
+        self.assertEqual(len(stops), 1)
+        self.assertEqual(stops[0]["event_id"], event_id)
+        self.assertEqual(stops[0]["validation_status"], "grigio")
+        self.assertEqual(stops[0]["warning_message"], "Nessun vincolo orario")
+
+    @patch("app.route_service.geocode_address", return_value=(43.55, 10.30))
+    def test_route_plan_calculate_marks_stop_rosso_when_veterinarian_closed_that_day(self, _mock_geocode):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            vet_id = conn.execute("INSERT INTO veterinarians(clinic_name,address,active,created_at,updated_at) VALUES('Vet Chiuso','Via Vet 1',1,?,?)",(stamp,stamp)).lastrowid
+            # 2026-08-06 e' un giovedi' (weekday()==3)
+            conn.execute("INSERT INTO veterinarian_hours(veterinarian_id,day_of_week,closed) VALUES(?,3,1)", (vet_id,))
+            conn.execute("""INSERT INTO calendar_events(event_type,title,location_type,veterinarian_id,veterinarian_name,veterinarian_address,
+                start_at,end_at,event_status,created_by,created_at,updated_at) VALUES('Ritiro','Ritiro veterinario','Veterinario',?,?,?,
+                '2026-08-06T08:00:00','2026-08-06T18:00:00','Da ritirare',?,?,?)""",
+                (vet_id, "Vet Chiuso", "Via Vet 1", admin["id"], stamp, stamp))
+        redirects = []
+        self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.form = lambda: {"data": "2026-08-06", "optimization_mode": "veloce", "start_time": "08:00",
+            "start_location_type": "personalizzato", "start_address": "Via Deposito 1",
+            "end_location_type": "stessa_partenza"}
+        self.handler.route_plan_calculate(admin)
+        plan_id = int(redirects[0].rsplit("/", 1)[1])
+        with app.db() as conn:
+            stop = conn.execute("SELECT * FROM route_plan_stops WHERE route_plan_id=?", (plan_id,)).fetchone()
+        self.assertEqual(stop["validation_status"], "rosso")
+        self.assertIn("chiusa", stop["warning_message"])
+
+    @patch("app.route_service.geocode_address", return_value=(43.55, 10.30))
+    def test_route_plan_manual_reorder_and_restore_optimized_order(self, _mock_geocode):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            e1 = conn.execute("""INSERT INTO calendar_events(event_type,title,address,location_type,start_at,end_at,event_status,
+                created_by,created_at,updated_at) VALUES('Ritiro','Primo','Via A 1','Privato','2026-08-07T08:00:00','2026-08-07T18:00:00',
+                'Da ritirare',?,?,?)""",(admin["id"], stamp, stamp)).lastrowid
+            e2 = conn.execute("""INSERT INTO calendar_events(event_type,title,address,location_type,start_at,end_at,event_status,
+                created_by,created_at,updated_at) VALUES('Ritiro','Secondo','Via B 2','Privato','2026-08-07T08:00:00','2026-08-07T18:00:00',
+                'Da ritirare',?,?,?)""",(admin["id"], stamp, stamp)).lastrowid
+        redirects = []
+        self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.form = lambda: {"data": "2026-08-07", "optimization_mode": "veloce", "start_time": "08:00",
+            "start_location_type": "personalizzato", "start_address": "Via Deposito 1",
+            "end_location_type": "stessa_partenza"}
+        self.handler.route_plan_calculate(admin)
+        plan_id = int(redirects[0].rsplit("/", 1)[1])
+        with app.db() as conn:
+            stops = conn.execute("SELECT * FROM route_plan_stops WHERE route_plan_id=? ORDER BY sequence", (plan_id,)).fetchall()
+        original_order = [s["id"] for s in stops]
+        reversed_order = list(reversed(original_order))
+        redirects.clear()
+        self.handler.form = lambda: {"ordine_json": json.dumps(reversed_order)}
+        self.handler.route_plan_reorder(admin, plan_id)
+        with app.db() as conn:
+            stops_after = conn.execute("SELECT id FROM route_plan_stops WHERE route_plan_id=? ORDER BY sequence", (plan_id,)).fetchall()
+        self.assertEqual([s["id"] for s in stops_after], reversed_order)
+        redirects.clear()
+        self.handler.route_plan_restore(admin, plan_id)
+        with app.db() as conn:
+            stops_restored = conn.execute("SELECT id FROM route_plan_stops WHERE route_plan_id=? ORDER BY sequence", (plan_id,)).fetchall()
+        self.assertEqual([s["id"] for s in stops_restored], original_order)
+
+    @patch("app.route_service.geocode_address", return_value=(43.55, 10.30))
+    def test_route_plan_recalculate_archives_previous_active_plan(self, _mock_geocode):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            conn.execute("""INSERT INTO calendar_events(event_type,title,address,location_type,start_at,end_at,event_status,
+                created_by,created_at,updated_at) VALUES('Ritiro','Ritiro','Via A 1','Privato','2026-08-08T08:00:00','2026-08-08T18:00:00',
+                'Da ritirare',?,?,?)""",(admin["id"], stamp, stamp))
+        redirects = []
+        self.handler.redirect = lambda url: redirects.append(url)
+        form = {"data": "2026-08-08", "optimization_mode": "veloce", "start_time": "08:00",
+            "start_location_type": "personalizzato", "start_address": "Via Deposito 1",
+            "end_location_type": "stessa_partenza"}
+        self.handler.form = lambda: form
+        self.handler.route_plan_calculate(admin)
+        first_plan_id = int(redirects[0].rsplit("/", 1)[1])
+        redirects.clear()
+        self.handler.route_plan_calculate(admin)
+        second_plan_id = int(redirects[0].rsplit("/", 1)[1])
+        with app.db() as conn:
+            first = conn.execute("SELECT * FROM route_plans WHERE id=?", (first_plan_id,)).fetchone()
+            second = conn.execute("SELECT * FROM route_plans WHERE id=?", (second_plan_id,)).fetchone()
+        self.assertNotEqual(first_plan_id, second_plan_id)
+        self.assertEqual(first["status"], "archiviato")
+        self.assertEqual(second["status"], "attivo")
+        self.assertEqual(second["version"], 2)
+
+    def test_route_plan_stop_toggle_flips_locked_and_urgent(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            plan_id = conn.execute("""INSERT INTO route_plans(route_date,start_location_type,end_location_type,optimization_mode,
+                status,version,created_by,created_at,updated_at) VALUES('2026-08-09','sede','stessa_partenza','veloce','attivo',1,?,?,?)""",
+                (admin["id"], stamp, stamp)).lastrowid
+            stop_id = conn.execute("INSERT INTO route_plan_stops(route_plan_id,sequence) VALUES(?,1)", (plan_id,)).lastrowid
+        redirects = []
+        self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.route_plan_stop_toggle(admin, plan_id, stop_id, "blocca")
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT is_locked FROM route_plan_stops WHERE id=?", (stop_id,)).fetchone()["is_locked"], 1)
+        self.handler.route_plan_stop_toggle(admin, plan_id, stop_id, "urgente")
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT is_urgent FROM route_plan_stops WHERE id=?", (stop_id,)).fetchone()["is_urgent"], 1)
+        self.handler.route_plan_stop_toggle(admin, plan_id, stop_id, "blocca")
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT is_locked FROM route_plan_stops WHERE id=?", (stop_id,)).fetchone()["is_locked"], 0)
+
+    def test_route_locations_page_lists_seeded_sedi_and_gates_save_to_admin(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            conn.execute("INSERT INTO users(username,password_hash,display_name,role) VALUES('operatore','x','Operatore','operator')")
+            operator = conn.execute("SELECT * FROM users WHERE username='operatore'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/percorso-giornaliero/sedi"
+        self.handler.route_locations_page(admin)
+        page = rendered[-1]
+        self.assertIn("Livorno", page)
+        self.assertIn("Empoli", page)
+        self.assertIn("Aggiungi sede", page)
+        rendered.clear()
+        self.handler.route_locations_page(operator)
+        operator_page = rendered[-1]
+        self.assertIn("Livorno", operator_page)
+        self.assertNotIn("Aggiungi sede", operator_page)
+        forbidden = []
+        self.handler.send_error = lambda *args: forbidden.append(args)
+        self.handler.form = lambda: {"name": "Firenze", "address": "Via Firenze 1"}
+        self.handler.save_route_location(operator)
+        self.assertEqual(forbidden[0][0], 403)
+        redirects = []
+        self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.save_route_location(admin)
+        with app.db() as conn:
+            loc = conn.execute("SELECT * FROM company_locations WHERE name='Firenze'").fetchone()
+        self.assertIsNotNone(loc)
+        self.assertEqual(loc["address"], "Via Firenze 1")
+        self.assertEqual(redirects, ["/percorso-giornaliero/sedi"])
+
+    def test_save_veterinarian_hours_persists_weekly_schedule_and_service_minutes(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            vet_id = conn.execute("INSERT INTO veterinarians(clinic_name,active,created_at,updated_at) VALUES('Vet Orari',1,?,?)",(stamp,stamp)).lastrowid
+        form = {"service_duration_minutes": "20", "closed_2": "1", "morning_start_0": "08:30", "morning_end_0": "12:30",
+                "afternoon_start_0": "15:30", "afternoon_end_0": "19:30", "notes_0": "Chiuso a pranzo"}
+        redirects = []
+        self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.form = lambda: form
+        self.handler.save_veterinarian_hours(admin, vet_id)
+        self.assertEqual(redirects, [f"/veterinari/{vet_id}"])
+        with app.db() as conn:
+            vet = conn.execute("SELECT * FROM veterinarians WHERE id=?", (vet_id,)).fetchone()
+            monday = conn.execute("SELECT * FROM veterinarian_hours WHERE veterinarian_id=? AND day_of_week=0", (vet_id,)).fetchone()
+            wednesday = conn.execute("SELECT * FROM veterinarian_hours WHERE veterinarian_id=? AND day_of_week=2", (vet_id,)).fetchone()
+        self.assertEqual(vet["service_duration_minutes"], 20)
+        self.assertEqual(vet["hours_source"], "manuale")
+        self.assertIsNotNone(vet["hours_updated_at"])
+        self.assertEqual((monday["morning_start"], monday["morning_end"], monday["afternoon_start"], monday["afternoon_end"], monday["notes"]),
+                          ("08:30", "12:30", "15:30", "19:30", "Chiuso a pranzo"))
+        self.assertEqual(wednesday["closed"], 1)
+
+    def test_calendar_day_view_links_to_percorso_giornaliero_with_selected_date(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/calendario?vista=giorno&data=2026-08-10"
+        self.handler.calendar_page(admin)
+        self.assertIn('href="/percorso-giornaliero?data=2026-08-10"', rendered[-1])
+
+    def test_more_menu_and_sidebar_include_percorso_giornaliero_entry(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        page = app.layout("Test", "<main></main>", admin)
+        self.assertIn('href="/percorso-giornaliero"', page)
+        self.assertIn("Percorso giornaliero", page)
 
 
 if __name__ == "__main__":

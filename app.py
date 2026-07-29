@@ -57,7 +57,9 @@ from calendar_service import (
     ensure_calendar_schema, event_color_class, event_type_dot_class, normalize_event, overlap_rows,
     parse_items as calendar_parse_items, period_bounds as calendar_period_bounds,
     schedule_event_notifications, sync_children as calendar_sync_children,
+    route_eligible_events,
 )
+import route_service
 CALENDAR_OPERATOR_SLUGS={"Serena":"serena","Alessio":"alessio","Filippo":"filippo","Gianluca":"gianluca"}
 CALENDAR_COLOR_PALETTE=(
     "#fb7185","#fde047","#4ade80","#60a5fa","#c084fc","#94a3b8",
@@ -368,6 +370,65 @@ def init_db():
           notes TEXT,
           active INTEGER NOT NULL DEFAULT 1,
           created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS veterinarian_hours (
+          id INTEGER PRIMARY KEY,
+          veterinarian_id INTEGER NOT NULL REFERENCES veterinarians(id) ON DELETE CASCADE,
+          day_of_week INTEGER NOT NULL,
+          closed INTEGER NOT NULL DEFAULT 0,
+          morning_start TEXT, morning_end TEXT,
+          afternoon_start TEXT, afternoon_end TEXT,
+          notes TEXT,
+          UNIQUE(veterinarian_id, day_of_week)
+        );
+        CREATE TABLE IF NOT EXISTS company_locations (
+          id INTEGER PRIMARY KEY,
+          name TEXT UNIQUE NOT NULL,
+          address TEXT NOT NULL,
+          lat REAL, lng REAL,
+          active INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS route_plans (
+          id INTEGER PRIMARY KEY,
+          route_date TEXT NOT NULL,
+          operator_name TEXT,
+          start_location_type TEXT NOT NULL,
+          start_location_id INTEGER REFERENCES company_locations(id),
+          start_address TEXT, start_lat REAL, start_lng REAL,
+          end_location_type TEXT NOT NULL,
+          end_location_id INTEGER REFERENCES company_locations(id),
+          end_address TEXT, end_lat REAL, end_lng REAL,
+          optimization_mode TEXT NOT NULL DEFAULT 'veloce',
+          total_distance_meters INTEGER, total_duration_seconds INTEGER,
+          optimized_sequence_json TEXT,
+          route_source TEXT,
+          status TEXT NOT NULL DEFAULT 'attivo',
+          version INTEGER NOT NULL DEFAULT 1,
+          created_by INTEGER REFERENCES users(id),
+          created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS route_plan_stops (
+          id INTEGER PRIMARY KEY,
+          route_plan_id INTEGER NOT NULL REFERENCES route_plans(id) ON DELETE CASCADE,
+          event_id INTEGER REFERENCES calendar_events(id),
+          sequence INTEGER NOT NULL,
+          estimated_arrival TEXT, estimated_departure TEXT,
+          service_duration_minutes INTEGER,
+          time_window_start TEXT, time_window_end TEXT, time_window_source TEXT,
+          distance_from_previous_meters INTEGER, duration_from_previous_seconds INTEGER,
+          is_locked INTEGER NOT NULL DEFAULT 0,
+          is_urgent INTEGER NOT NULL DEFAULT 0,
+          validation_status TEXT,
+          warning_message TEXT,
+          excluded_reason TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_route_plan_stops_plan ON route_plan_stops(route_plan_id,sequence);
+        CREATE INDEX IF NOT EXISTS idx_route_plans_date ON route_plans(route_date,status);
+        CREATE TABLE IF NOT EXISTS geocode_cache (
+          address TEXT PRIMARY KEY,
+          lat REAL, lng REAL,
           updated_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS collaborators (
@@ -686,9 +747,22 @@ def init_db():
             if name not in existing:
                 c.execute(f"ALTER TABLE practices ADD COLUMN {name} {definition}")
         vet_existing = {row["name"] for row in c.execute("PRAGMA table_info(veterinarians)")}
-        for name, definition in {"short_name":"TEXT", "address":"TEXT", "city":"TEXT"}.items():
+        for name, definition in {
+            "short_name":"TEXT", "address":"TEXT", "city":"TEXT",
+            "google_place_id":"TEXT", "lat":"REAL", "lng":"REAL",
+            "service_duration_minutes":"INTEGER", "hours_source":"TEXT", "hours_updated_at":"TEXT",
+        }.items():
             if name not in vet_existing:
                 c.execute(f"ALTER TABLE veterinarians ADD COLUMN {name} {definition}")
+        if not c.execute("SELECT 1 FROM company_locations LIMIT 1").fetchone():
+            seed_stamp = rome_now().isoformat(timespec="seconds")
+            c.executemany(
+                "INSERT INTO company_locations(name,address,created_at,updated_at) VALUES(?,?,?,?)",
+                (
+                    ("Livorno", "", seed_stamp, seed_stamp),
+                    ("Empoli", "", seed_stamp, seed_stamp),
+                ),
+            )
         client_existing = {row["name"] for row in c.execute("PRAGMA table_info(clients)")}
         if "active" not in client_existing:
             c.execute("ALTER TABLE clients ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
@@ -2249,12 +2323,35 @@ button.calendar-tap-card:active,a.calendar-tap-card:active{transform:scale(.985)
 .calendar-quickedit-datetime-grid label{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:#9ca7b8;font-weight:600}
 .calendar-quickedit-datetime-grid input{border:1px solid #263246;background:#0e1622;border-radius:10px;padding:8px 10px;font-size:14px;color:#f5f7fb}
 .light-theme .calendar-quickedit-datetime-grid input{background:#f8fafc;border-color:#e2e8f0;color:#111827}
+.route-date-nav{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:14px 0}
+.route-date-nav-label{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:15px}
+.route-today-btn{font-size:11.5px;padding:4px 12px}
+.route-today-btn.active{border-color:#3b82f660;color:#60a5fa}
+.route-mode-switch{display:flex;gap:8px;margin-bottom:6px}
+.route-mode-switch label{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;border-radius:12px;border:1px solid #ffffff14;background:#ffffff08;font-size:13.5px;font-weight:700;cursor:pointer;transition:border-color .15s ease,background .15s ease}
+.route-mode-switch label.active{border-color:#3b82f660;background:#3b82f61a;color:#60a5fa}
+.route-mode-switch input{position:absolute;opacity:0;width:0;height:0}
+.route-stop-card{align-items:center}
+.route-stop-handle{flex:0 0 auto;color:#8a96a8;cursor:grab;touch-action:none}
+.route-stop-number{flex:0 0 30px;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:13px;color:#fff;background:#8a96a8}
+.route-status-verde{background:linear-gradient(135deg,#22c55e,#15803d)}
+.route-status-ambra{background:linear-gradient(135deg,#f59e0b,#b45309)}
+.route-status-rosso{background:linear-gradient(135deg,#ef4444,#b91c1c)}
+.route-status-blu{background:linear-gradient(135deg,#3b82f6,#1d4ed8)}
+.route-status-grigio{background:#64748b}
+.route-badge-urgent{display:inline-block;margin-left:6px;padding:2px 8px;border-radius:99px;background:#ef405f22;color:#fb7185;font-size:10px;font-weight:800;text-transform:uppercase;vertical-align:middle}
+.route-stop-actions{display:flex;flex-direction:column;gap:8px;flex:0 0 auto}
+.route-stop-toggle{border:none;cursor:pointer}
+.route-actions-row{display:flex;gap:8px;margin-top:10px}
+.route-actions-row .btn{flex:1}
+.route-stop-card.dragging{opacity:.6}
 /* Auto-hide della sola barra inferiore durante lo scroll (solo mobile, in stile Safari iOS); la headbar superiore resta sempre fissa */
 @media(max-width:900px){
   .bottom-nav{transition:transform .52s cubic-bezier(.16,1,.3,1);will-change:transform}
   body.ppm-bars-hidden .bottom-nav{transform:translateY(calc(100% + 24px))}
 }
 @media(prefers-reduced-motion:reduce){.bottom-nav{transition:none!important}}
+.calendar-date-nav .calendar-route-link{grid-column:1/-1;width:100%;min-width:0;height:auto;min-height:38px;padding:8px 14px;border-radius:11px;font-size:12.5px;font-weight:700}
 """
 
 APP_JS = r"""
@@ -3791,6 +3888,23 @@ function setupDragReorder(root){
 document.addEventListener('DOMContentLoaded',function(){
   document.querySelectorAll('[data-drag-root]').forEach(setupDragReorder);
 });
+function routeToggleLocationFields(select,kind){
+  const form=select.form;
+  form.querySelectorAll(`[data-route-field^="${kind}-"]`).forEach(function(el){
+    el.hidden=!el.dataset.routeField.endsWith('-'+select.value);
+  });
+}
+function routeRequestGeolocation(kind){
+  if(!navigator.geolocation){alert('Geolocalizzazione non disponibile su questo dispositivo.');return;}
+  navigator.geolocation.getCurrentPosition(function(position){
+    const form=document.getElementById('routeSetupForm');
+    if(!form)return;
+    const latField=form.querySelector(`[data-route-geoloc="${kind}_lat"]`);
+    const lngField=form.querySelector(`[data-route-geoloc="${kind}_lng"]`);
+    if(latField)latField.value=position.coords.latitude;
+    if(lngField)lngField.value=position.coords.longitude;
+  },function(){alert('Posizione non autorizzata: seleziona un\\'altra opzione di partenza/arrivo.');},{timeout:10000});
+}
 function setupSidebarOrderPopup(){
   const openBtn=document.getElementById('ppmOpenSidebarOrder');
   if(!openBtn)return;
@@ -5874,7 +5988,7 @@ def collapse_advanced_search(body):
 
 
 SIDEBAR_LINKS=[
-    ("/","home","Dashboard"),("/calendario","calendar","Calendario"),("/bilanci","chart","Bilanci"),("/programma-cremazioni","paw","Programma Cremazioni"),("/notifiche","bell","Notifiche"),("/pratiche","archive","Archivio"),
+    ("/","home","Dashboard"),("/calendario","calendar","Calendario"),("/percorso-giornaliero","truck","Percorso giornaliero"),("/bilanci","chart","Bilanci"),("/programma-cremazioni","paw","Programma Cremazioni"),("/notifiche","bell","Notifiche"),("/pratiche","archive","Archivio"),
     ("/catalogo-urne","archive","Catalogo Urne"),("/smaltimenti","archive","Smaltimenti"),("/conversazioni-whatsapp","message","Conversazioni WhatsApp"),("/veterinari","stethoscope","Veterinari"),
     ("/collaboratori","briefcase","Collaboratori"),
     ("/prodotti","clipboard","Prodotti"),("/ordini","receipt","Ordini"),
@@ -5889,6 +6003,7 @@ SIDEBAR_LINKS=[
 # apposta per non toccare la struttura dati condivisa con la sidebar desktop.
 MENU_CARD_META={
     "Dashboard":("red","Panoramica generale"),"Calendario":("purple","Eventi e appuntamenti"),
+    "Percorso giornaliero":("teal","Ottimizza ritiri e riconsegne del giorno"),
     "Bilanci":("green","Entrate, uscite e statistiche"),"Programma Cremazioni":("lilac","Gestisci i cicli di cremazione"),
     "Notifiche":("red","Avvisi e promemoria"),"Archivio":("blue","Pratiche e documenti storici"),
     "Catalogo Urne":("amber","Gestione urne e prodotti"),"Smaltimenti":("cyan","Gestione smaltimenti"),
@@ -5900,7 +6015,7 @@ MENU_CARD_META={
     "Impostazioni":("gray","Preferenze applicazione"),"Il mio profilo":("gray","Il tuo account"),
     "Assistenza":("gray","Contatta il supporto"),
 }
-MENU_ACCENT_COLORS={"red":"#fb4c67","purple":"#a855f7","green":"#22c55e","lilac":"#c084fc","amber":"#f59e0b","blue":"#3b82f6","cyan":"#22d3ee","yellow":"#eab308","gray":"#64748b"}
+MENU_ACCENT_COLORS={"red":"#fb4c67","purple":"#a855f7","green":"#22c55e","lilac":"#c084fc","amber":"#f59e0b","blue":"#3b82f6","cyan":"#22d3ee","yellow":"#eab308","gray":"#64748b","teal":"#2dd4bf"}
 DASHBOARD_SECTION_LABELS=[
     ("practices","Pratiche / Ritiri"),("payments","Pagamenti"),("recent_practices","Ultime 10 pratiche"),
 ]
@@ -6132,6 +6247,10 @@ class App(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/smaltimenti/storico/(\d+)",path)
         if match: return self.disposal_batch_detail(user,int(match.group(1)))
         if path == "/programma-cremazioni": return self.cremation_schedule(user)
+        if path == "/percorso-giornaliero": return self.route_plan_page(user)
+        if path == "/percorso-giornaliero/sedi": return self.route_locations_page(user)
+        match = re.fullmatch(r"/percorso-giornaliero/(\d+)",path)
+        if match: return self.route_plan_page(user,int(match.group(1)))
         match = re.fullmatch(r"/pagamenti/(da-saldare|acconti|pagati)", path)
         if match: return self.payment_overview(user,match.group(1))
         if path == "/conversazioni-whatsapp": return self.whatsapp_conversations(user)
@@ -6229,6 +6348,14 @@ class App(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/bilanci/movimenti-eliminati/(\d+)/ripristina",path)
         if match: return self.balance_movement_deletion_restore(user,int(match.group(1)))
         if path == "/calendario/nuovo": return self.save_calendar_event(user)
+        if path == "/percorso-giornaliero/calcola": return self.route_plan_calculate(user)
+        if path == "/percorso-giornaliero/sedi": return self.save_route_location(user)
+        match = re.fullmatch(r"/percorso-giornaliero/(\d+)/riordina",path)
+        if match: return self.route_plan_reorder(user,int(match.group(1)))
+        match = re.fullmatch(r"/percorso-giornaliero/(\d+)/ripristina",path)
+        if match: return self.route_plan_restore(user,int(match.group(1)))
+        match = re.fullmatch(r"/percorso-giornaliero/(\d+)/tappa/(\d+)/(blocca|urgente)",path)
+        if match: return self.route_plan_stop_toggle(user,int(match.group(1)),int(match.group(2)),match.group(3))
         match = re.fullmatch(r"/calendario/(\d+)/modifica",path)
         if match: return self.save_calendar_event(user,int(match.group(1)))
         match = re.fullmatch(r"/calendario/(\d+)/(stato|zona|operatore|note|data-ora|preventivo|tipo|luogo|cliente|animali|commento|elimina|ripristina|elimina-definitiva|collega-pratica|scollega-pratica)",path)
@@ -6273,6 +6400,8 @@ class App(BaseHTTPRequestHandler):
         if match: return self.edit_collaborator_price_tier(user, int(match.group(1)))
         match = re.fullmatch(r"/listino/(\d+)/elimina", path)
         if match: return self.delete_collaborator_price_tier(user, int(match.group(1)))
+        match = re.fullmatch(r"/veterinari/(\d+)/orari", path)
+        if match: return self.save_veterinarian_hours(user, int(match.group(1)))
         match = re.fullmatch(r"/veterinari/(\d+)/buoni", path)
         if match: return self.save_manual_voucher(user, int(match.group(1)))
         match = re.fullmatch(r"/buoni/(\d+)/modifica", path)
@@ -7738,7 +7867,7 @@ class App(BaseHTTPRequestHandler):
         elif view in ("mese","mista_mese","compatto"):date_title=f"{month_names[selected_date.month-1]} {selected_date.year}"
         else:date_title=f"{selected_date.day} {month_names[selected_date.month-1]} {selected_date.year}"
         back_button=f'<a class="btn ghost calendar-back-btn" href="{view_url(selected_date,back_view)}">← Torna a {"Mese" if back_view=="mese" else "Settimana"}</a>' if view=="giorno" and back_view else ''
-        body=f'''<main class="wrap calendar-wrap"><div class="titlebar calendar-main-title"><div>{back_button}<h1>Calendario operativo</h1><p class="sub">Ritiri, riconsegne e promemoria</p></div><div class="calendar-quick-actions"><a class="icon-btn" href="/calendario/cestino" aria-label="Cestino" title="Cestino">{lucide("trash-2")}</a><a class="icon-btn calendar-settings-link" href="/calendario/impostazioni" aria-label="Impostazioni" title="Impostazioni">{lucide("settings")}</a></div></div><nav class="calendar-date-nav"><a class="btn ghost" data-calendar-prev href="{view_url(prev_target)}" aria-label="Periodo precedente">←</a><label class="calendar-date-title"><span>{date_title}</span><input type="date" value="{selected}" onchange="const u=new URL(location.href);u.searchParams.set('data',this.value);location.href=u"></label><a class="btn ghost" data-calendar-next href="{view_url(next_target)}" aria-label="Periodo successivo">→</a><a class="btn ghost calendar-today" href="{view_url(rome_now().date())}">OGGI</a></nav><div class="calendar-toolbar"><nav class="calendar-view-switch">{switch}</nav></div>{content}{filters_html}{preference_script}</main>'''
+        body=f'''<main class="wrap calendar-wrap"><div class="titlebar calendar-main-title"><div>{back_button}<h1>Calendario operativo</h1><p class="sub">Ritiri, riconsegne e promemoria</p></div><div class="calendar-quick-actions"><a class="icon-btn" href="/calendario/cestino" aria-label="Cestino" title="Cestino">{lucide("trash-2")}</a><a class="icon-btn calendar-settings-link" href="/calendario/impostazioni" aria-label="Impostazioni" title="Impostazioni">{lucide("settings")}</a></div></div><nav class="calendar-date-nav"><a class="btn ghost" data-calendar-prev href="{view_url(prev_target)}" aria-label="Periodo precedente">←</a><label class="calendar-date-title"><span>{date_title}</span><input type="date" value="{selected}" onchange="const u=new URL(location.href);u.searchParams.set('data',this.value);location.href=u"></label><a class="btn ghost" data-calendar-next href="{view_url(next_target)}" aria-label="Periodo successivo">→</a><a class="btn ghost calendar-today" href="{view_url(rome_now().date())}">OGGI</a><a class="btn ghost calendar-route-link" href="/percorso-giornaliero?data={selected}" aria-label="Percorso giornaliero" title="Percorso giornaliero">{lucide("truck")} Percorso</a></nav><div class="calendar-toolbar"><nav class="calendar-view-switch">{switch}</nav></div>{content}{filters_html}{preference_script}</main>'''
         self.send_html(layout("Calendario operativo",body,user))
 
     def calendar_settings(self,user):
@@ -8314,6 +8443,361 @@ class App(BaseHTTPRequestHandler):
         if action in ("stato","zona","operatore","note","data-ora","preventivo","tipo","luogo","cliente","animali"):
             target=f"{target}{'&' if '?' in target else '?'}saved={action}"
         self.redirect(target)
+
+    def route_plan_stop_context(self,c,event_row):
+        """Indirizzo, coordinate (con cache), tipo luogo, durata di sosta e
+        finestra oraria per una tappa — riusa calendar_appointment_address
+        (stessa risoluzione gia' usata dal quick action "Naviga"), non
+        duplica alcuna logica di calendario."""
+        address=self.calendar_appointment_address(event_row).strip()
+        vet_row=None
+        if event_row["veterinarian_id"]:
+            vet_row=c.execute("SELECT * FROM veterinarians WHERE id=?",(event_row["veterinarian_id"],)).fetchone()
+        lat,lng=route_service.resolve_coordinates(c,address,veterinarian_row=vet_row)
+        location_type=event_row["location_type"] or ("Veterinario" if event_row["veterinarian_id"] else "Altro indirizzo")
+        service_minutes=route_service.service_duration_minutes(c,location_type,veterinarian_row=vet_row)
+        windows,window_source=route_service.time_windows_for_stop(c,event_row)
+        return {"address":address,"lat":lat,"lng":lng,"location_type":location_type,
+                "service_minutes":service_minutes,"windows":windows,"window_source":window_source}
+
+    def route_plan_compute_schedule(self,start_point,ordered_contexts,start_time="08:00"):
+        """Percorre le tappe nell'ordine dato calcolando arrivo/partenza
+        stimati. Usa una stima locale (linea d'aria + velocita' media),
+        sempre disponibile e gratuita: usata sia per il primo calcolo (se
+        Google non e' configurato) sia per ogni ricalcolo dopo un riordino
+        manuale, senza richiamare l'API ad ogni trascinamento."""
+        avg_speed_kmh=35.0
+        try:current_time=datetime.strptime(start_time,"%H:%M")
+        except ValueError:current_time=datetime.strptime("08:00","%H:%M")
+        current_lat,current_lng=start_point.get("lat"),start_point.get("lng")
+        schedule=[]
+        for ctx in ordered_contexts:
+            distance_meters=duration_seconds=None
+            if current_lat is not None and current_lng is not None and ctx["lat"] is not None and ctx["lng"] is not None:
+                km=route_service.haversine_km(current_lat,current_lng,ctx["lat"],ctx["lng"])
+                duration_seconds=int((km/avg_speed_kmh)*3600)
+                distance_meters=int(km*1000)
+            current_time=current_time+timedelta(seconds=duration_seconds or 0)
+            arrival=current_time.strftime("%H:%M")
+            status,message=route_service.validate_arrival(arrival,ctx["windows"],ctx["window_source"])
+            current_time=current_time+timedelta(minutes=ctx["service_minutes"])
+            schedule.append({"distance_meters":distance_meters,"duration_seconds":duration_seconds,
+                              "arrival":arrival,"departure":current_time.strftime("%H:%M"),
+                              "status":status,"message":message})
+            current_lat,current_lng=ctx["lat"],ctx["lng"]
+        return schedule
+
+    def route_plan_resolve_endpoint(self,c,kind,form,fallback_lat=None,fallback_lng=None):
+        """Risolve un punto di partenza/arrivo scelto dall'utente in
+        (tipo,location_id,indirizzo,lat,lng). kind e' 'start' o 'end'."""
+        loc_type=form.get(f"{kind}_location_type","sede").strip()
+        if kind=="end" and loc_type in ("stessa_partenza","ultimo_ritiro"):
+            return loc_type,None,"",None,None
+        if loc_type=="sede":
+            loc_id=int(form.get(f"{kind}_location_id") or 0)
+            loc=c.execute("SELECT * FROM company_locations WHERE id=? AND active=1",(loc_id,)).fetchone()
+            if not loc:return None
+            lat,lng=loc["lat"],loc["lng"]
+            if (lat is None or lng is None) and loc["address"]:
+                # geocodifica pigra: la prima volta che una sede viene usata
+                # per un percorso senza coordinate salvate, le calcola e le
+                # persiste sulla sede stessa (non richiesta piu' in seguito).
+                lat,lng=route_service.geocode_address(loc["address"])
+                if lat is not None and lng is not None:
+                    c.execute("UPDATE company_locations SET lat=?,lng=?,updated_at=? WHERE id=?",(lat,lng,now(),loc["id"]))
+            return loc_type,loc["id"],loc["address"],lat,lng
+        if loc_type=="attuale":
+            lat=form.get(f"{kind}_lat");lng=form.get(f"{kind}_lng")
+            try:lat=float(lat) if lat else fallback_lat;lng=float(lng) if lng else fallback_lng
+            except ValueError:lat=fallback_lat;lng=fallback_lng
+            return loc_type,None,"Posizione attuale",lat,lng
+        # personalizzato
+        address=form.get(f"{kind}_address","").strip()
+        if not address:return None
+        lat,lng=route_service.resolve_coordinates(c,address)
+        return loc_type,None,address,lat,lng
+
+    def route_plan_page(self,user,plan_id=None):
+        q=parse_qs(urlparse(self.path).query)
+        error=(q.get("errore") or [""])[0]
+        with db() as c:
+            if plan_id:
+                plan=c.execute("SELECT * FROM route_plans WHERE id=?",(plan_id,)).fetchone()
+                if not plan:return self.send_error(404)
+                selected=plan["route_date"]
+            else:
+                selected=(q.get("data") or [rome_now().date().isoformat()])[0]
+                try:date.fromisoformat(selected)
+                except ValueError:selected=rome_now().date().isoformat()
+                plan=c.execute("SELECT * FROM route_plans WHERE route_date=? AND status='attivo' ORDER BY version DESC LIMIT 1",(selected,)).fetchone()
+            eligible=route_eligible_events(c,selected)
+            locations=c.execute("SELECT * FROM company_locations WHERE active=1 ORDER BY name").fetchall()
+            stop_rows=[]
+            if plan:
+                stop_rows=c.execute("""SELECT s.*,e.title,e.event_type,e.client_first_name,e.client_last_name,
+                  e.veterinarian_name,e.venue_name,e.location_type,e.address,e.event_status,e.start_at,e.end_at,
+                  e.veterinarian_address,e.delivery_clinic_address
+                  FROM route_plan_stops s LEFT JOIN calendar_events e ON e.id=s.event_id
+                  WHERE s.route_plan_id=? ORDER BY s.sequence""",(plan["id"],)).fetchall()
+        resolved,da_correggere=[],[]
+        for row in eligible:
+            (resolved if self.calendar_appointment_address(row).strip() else da_correggere).append(row)
+        today_iso=rome_now().date().isoformat()
+        selected_date=date.fromisoformat(selected)
+        prev_date=(selected_date-timedelta(days=1)).isoformat()
+        next_date=(selected_date+timedelta(days=1)).isoformat()
+        google_configured=bool(os.environ.get("GOOGLE_MAPS_API_KEY","").strip())
+        error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
+        header=f'''<div class="calendar-detail-topbar">
+          <a class="calendar-detail-back" href="/calendario"><span class="calendar-detail-back-arrow">{lucide("chevron-right")}</span><span>Indietro</span></a>
+          <h2 class="calendar-detail-topbar-title">Percorso giornaliero</h2>
+          <a class="icon-btn" href="/percorso-giornaliero/sedi" aria-label="Configura sedi aziendali" title="Configura sedi aziendali">{lucide("settings")}</a>
+        </div>'''
+        date_nav=f'''<div class="route-date-nav">
+          <a class="btn ghost" href="/percorso-giornaliero?data={prev_date}" aria-label="Giorno precedente">←</a>
+          <div class="route-date-nav-label"><b>{esc(date_it(selected))}</b><a class="btn ghost route-today-btn {"active" if selected==today_iso else ""}" href="/percorso-giornaliero?data={today_iso}">Oggi</a></div>
+          <a class="btn ghost" href="/percorso-giornaliero?data={next_date}" aria-label="Giorno successivo">→</a>
+        </div>'''
+        summary_card=f'''<div class="calendar-detail-hero calendar-hero-blue">
+          <div class="calendar-detail-hero-meta" style="margin-top:0;padding-top:0;border-top:none">
+            <div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-blue">{lucide("paw")}</span><div><b>{len(resolved)}</b><small>Ritiri da effettuare</small></div></div>
+            <div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-teal">{lucide("navigation")}</span><div><b>{f"{(plan['total_distance_meters'] or 0)/1000:.1f} km" if plan else "—"}</b><small>Distanza stimata</small></div></div>
+            <div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-purple">{lucide("clock")}</span><div><b>{f"{(plan['total_duration_seconds'] or 0)//60} min" if plan else "—"}</b><small>Durata stimata</small></div></div>
+          </div>
+        </div>'''
+        if da_correggere:
+            rows_html=''.join(f'<a class="calendar-tap-card calendar-tap-card-link" href="/calendario/{row["id"]}?tab=dettagli"><span class="calendar-tap-card-icon calendar-icon-orange">{lucide("clock")}</span><div class="calendar-tap-card-body"><small>Indirizzo mancante</small><p>{esc(self.calendar_event_display_title(row))}</p></div><span class="calendar-tap-card-chevron">{lucide("chevron-right")}</span></a>' for row in da_correggere)
+            da_correggere_html=f'<h3 style="margin:18px 0 8px">Da correggere</h3><div class="calendar-card-list">{rows_html}</div>'
+        else:
+            da_correggere_html=''
+        location_options=''.join(f'<option value="{loc["id"]}" {"selected" if plan and plan["start_location_id"]==loc["id"] else ""}>{esc(loc["name"])}</option>' for loc in locations)
+        end_location_options=''.join(f'<option value="{loc["id"]}" {"selected" if plan and plan["end_location_id"]==loc["id"] else ""}>{esc(loc["name"])}</option>' for loc in locations)
+        start_type=plan["start_location_type"] if plan else "sede"
+        end_type=plan["end_location_type"] if plan else "stessa_partenza"
+        mode=plan["optimization_mode"] if plan else "veloce"
+        setup_form=f'''<form method="post" action="/percorso-giornaliero/calcola" class="section" id="routeSetupForm">
+          <input type="hidden" name="data" value="{selected}">
+          <input type="hidden" name="start_lat" data-route-geoloc="start_lat"><input type="hidden" name="start_lng" data-route-geoloc="start_lng">
+          <h3 style="margin-top:0">Punto di partenza</h3>
+          <select name="start_location_type" onchange="routeToggleLocationFields(this,'start')">
+            <option value="sede" {"selected" if start_type=="sede" else ""}>Sede aziendale</option>
+            <option value="attuale" {"selected" if start_type=="attuale" else ""}>Posizione attuale</option>
+            <option value="personalizzato" {"selected" if start_type=="personalizzato" else ""}>Indirizzo personalizzato</option>
+          </select>
+          <select name="start_location_id" data-route-field="start-sede" {"hidden" if start_type!="sede" else ""}>{location_options}</select>
+          <input name="start_address" placeholder="Indirizzo di partenza" data-route-field="start-personalizzato" value="{esc(plan['start_address'] or '') if plan and plan['start_location_type']=='personalizzato' else ''}" {"hidden" if start_type!="personalizzato" else ""}>
+          <button type="button" class="btn ghost" data-route-field="start-attuale" {"hidden" if start_type!="attuale" else ""} onclick="routeRequestGeolocation('start')">{lucide("navigation")} Usa posizione attuale</button>
+          <h3>Punto di arrivo</h3>
+          <select name="end_location_type" onchange="routeToggleLocationFields(this,'end')">
+            <option value="stessa_partenza" {"selected" if end_type=="stessa_partenza" else ""}>Stessa sede di partenza</option>
+            <option value="sede" {"selected" if end_type=="sede" else ""}>Sede aziendale</option>
+            <option value="ultimo_ritiro" {"selected" if end_type=="ultimo_ritiro" else ""}>Ultimo ritiro</option>
+            <option value="personalizzato" {"selected" if end_type=="personalizzato" else ""}>Indirizzo personalizzato</option>
+          </select>
+          <select name="end_location_id" data-route-field="end-sede" {"hidden" if end_type!="sede" else ""}>{end_location_options}</select>
+          <input name="end_address" placeholder="Indirizzo di arrivo" data-route-field="end-personalizzato" value="{esc(plan['end_address'] or '') if plan and plan['end_location_type']=='personalizzato' else ''}" {"hidden" if end_type!="personalizzato" else ""}>
+          <h3>Modalità di ottimizzazione</h3>
+          <div class="route-mode-switch">
+            <label class="{'active' if mode=='veloce' else ''}"><input type="radio" name="optimization_mode" value="veloce" {"checked" if mode=="veloce" else ""}> Più veloce</label>
+            <label class="{'active' if mode=='breve' else ''}"><input type="radio" name="optimization_mode" value="breve" {"checked" if mode=="breve" else ""}> Più breve</label>
+          </div>
+          {'<p class="sub">Google Maps non è configurato: le due modalità useranno lo stesso ordine per vicinanza finché non viene attivata una chiave API.</p>' if not google_configured else ''}
+          <h3>Orario di partenza</h3>
+          <input type="time" name="start_time" value="08:00">
+          <button class="btn" type="submit" style="margin-top:14px;width:100%">{"Ricalcola percorso" if plan else "Calcola percorso"}</button>
+        </form>'''
+        stops_html=''
+        maps_urls=[]
+        if plan and stop_rows:
+            stop_cards=[]
+            for stop in stop_rows:
+                status=stop["validation_status"] or "grigio"
+                warning=stop["warning_message"] or ""
+                title=self.calendar_event_display_title(stop) if stop["title"] else "Tappa"
+                client_name=" ".join(x for x in (stop["client_first_name"],stop["client_last_name"]) if x).strip()
+                place=stop["veterinarian_name"] or stop["venue_name"] or client_name or title
+                urgent_badge='<span class="route-badge-urgent">Urgente</span>' if stop["is_urgent"] else ''
+                lock_icon=lucide("check-circle") if stop["is_locked"] else lucide("square")
+                stop_cards.append(f'''<div class="calendar-tap-card route-stop-card drag-item" data-drag-key="{stop['id']}">
+                  <span class="drag-handle route-stop-handle">{lucide("more-vertical")}</span>
+                  <span class="route-stop-number route-status-{status}">{stop['sequence']}</span>
+                  <div class="calendar-tap-card-body">
+                    <small>{esc(place)} {urgent_badge}</small>
+                    <p>Arrivo previsto {esc(stop['estimated_arrival'] or '—')}</p>
+                    <small class="calendar-tap-card-sub">{esc(warning)}</small>
+                    <small class="calendar-tap-card-sub">{f"{stop['distance_from_previous_meters']/1000:.1f} km · {stop['duration_from_previous_seconds']//60} min dalla tappa precedente" if stop['distance_from_previous_meters'] is not None else ''} · Sosta {stop['service_duration_minutes']} min</small>
+                  </div>
+                  <div class="route-stop-actions">
+                    <form method="post" action="/percorso-giornaliero/{plan['id']}/tappa/{stop['id']}/blocca" style="display:contents"><button type="submit" class="calendar-tap-card-icon route-stop-toggle" title="{'Sblocca tappa' if stop['is_locked'] else 'Blocca tappa'}">{lock_icon}</button></form>
+                    <form method="post" action="/percorso-giornaliero/{plan['id']}/tappa/{stop['id']}/urgente" style="display:contents"><button type="submit" class="calendar-tap-card-icon route-stop-toggle {'calendar-icon-pink' if stop['is_urgent'] else ''}" title="{'Rimuovi urgenza' if stop['is_urgent'] else 'Segna urgente'}">{lucide("hourglass")}</button></form>
+                    <a class="calendar-tap-card-icon calendar-icon-blue" title="Naviga" href="https://www.google.com/maps/dir/?api=1&destination={quote(self.calendar_appointment_address(stop))}" target="_blank" rel="noopener noreferrer">{lucide("navigation")}</a>
+                  </div>
+                </div>''')
+                if stop["event_id"]:
+                    maps_urls.append(self.calendar_appointment_address(stop))
+            stops_html=f'''<h3 style="margin:18px 0 8px">Tappe ({len(stop_rows)})</h3>
+              <form method="post" action="/percorso-giornaliero/{plan['id']}/riordina" data-drag-group>
+                <div class="calendar-card-list" data-drag-root>
+                  {''.join(stop_cards)}
+                </div>
+                <input type="hidden" name="ordine_json" data-drag-order>
+                <div class="route-actions-row">
+                  <button class="btn ghost" type="submit">Salva nuovo ordine</button>
+                </div>
+              </form>
+              <form method="post" action="/percorso-giornaliero/{plan['id']}/ripristina">
+                <button class="btn ghost" type="submit" style="width:100%;margin-top:8px">Ripristina percorso ottimizzato</button>
+              </form>'''
+        start_maps=plan["start_address"] if plan else ""
+        end_maps=(plan["end_address"] or plan["start_address"]) if plan else ""
+        avvia_html=''
+        if plan and maps_urls:
+            urls=route_service.build_maps_urls(start_maps or "", end_maps or start_maps or "", maps_urls)
+            if len(urls)==1:
+                avvia_html=f'<a class="btn" style="width:100%" href="{esc(urls[0])}" target="_blank" rel="noopener noreferrer">{lucide("navigation")} Avvia percorso</a>'
+            else:
+                links=''.join(f'<a class="btn ghost" style="width:100%;margin-top:8px" href="{esc(u)}" target="_blank" rel="noopener noreferrer">Percorso {i+1} di {len(urls)}</a>' for i,u in enumerate(urls))
+                avvia_html=f'<p class="sub">Il percorso supera le tappe trasferibili in un solo link: diviso in {len(urls)} sezioni.</p>{links}'
+        body=f'''<main class="wrap calendar-wrap calendar-detail-v2">{error_html}{header}{date_nav}{summary_card}{avvia_html}{da_correggere_html}{setup_form}{stops_html}</main>'''
+        self.send_html(layout("Percorso giornaliero",body,user))
+
+    def route_locations_page(self,user):
+        with db() as c:
+            locations=c.execute("SELECT * FROM company_locations WHERE active=1 ORDER BY name").fetchall()
+        is_admin=user["role"]=="admin"
+        rows=[]
+        for loc in locations:
+            coords=f"{loc['lat']:.5f}, {loc['lng']:.5f}" if loc["lat"] is not None and loc["lng"] is not None else "Non ancora geocodificata"
+            if is_admin:
+                rows.append(f'''<form method="post" action="/percorso-giornaliero/sedi" class="tablebox" style="padding:10px 12px;margin-bottom:8px"><input type="hidden" name="id" value="{loc['id']}"><div class="fields"><div class="field"><label>Nome sede</label><input name="name" value="{esc(loc['name'])}" required></div><div class="field full"><label>Indirizzo</label><input name="address" value="{esc(loc['address'])}" placeholder="Via, civico, città" required></div></div><p class="sub" style="margin:6px 0">Coordinate: {esc(coords)}</p><button class="btn ghost" type="submit">Salva</button></form>''')
+            else:
+                rows.append(f'''<div class="tablebox" style="padding:10px 12px;margin-bottom:8px"><b>{esc(loc['name'])}</b><p class="sub" style="margin:4px 0">{esc(loc['address']) or 'Indirizzo non ancora configurato'}</p></div>''')
+        rows_html=''.join(rows) or '<p class="sub">Nessuna sede configurata.</p>'
+        add_form=f'''<div style="height:14px"></div><section class="section"><h2>Aggiungi sede</h2><form method="post" action="/percorso-giornaliero/sedi"><div class="fields"><div class="field"><label>Nome sede</label><input name="name" placeholder="Es. Firenze" required></div><div class="field full"><label>Indirizzo</label><input name="address" placeholder="Via, civico, città" required></div></div><button class="btn" style="margin-top:12px">Aggiungi sede</button></form></section>''' if is_admin else ''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Sedi aziendali</h1><p class="sub">Punti di partenza e arrivo disponibili nel Percorso giornaliero. {'' if is_admin else 'Solo gli amministratori possono modificarle.'}</p></div><a class="btn ghost" href="/percorso-giornaliero">Torna al percorso</a></div><section class="section"><h2>Sedi configurate</h2>{rows_html}</section>{add_form}</main>'''
+        self.send_html(layout("Sedi aziendali",body,user))
+
+    def save_route_location(self,user):
+        if user["role"]!="admin":return self.send_error(403,"Solo gli amministratori possono modificare le sedi aziendali.")
+        f=self.form(); stamp=now()
+        name=f.get("name","").strip()
+        address=f.get("address","").strip()
+        if not name or not address:return self.redirect("/percorso-giornaliero/sedi")
+        with db() as c:
+            if f.get("id"):
+                c.execute("UPDATE company_locations SET name=?,address=?,lat=NULL,lng=NULL,updated_at=? WHERE id=?",(name,address,stamp,int(f["id"])))
+            else:
+                c.execute("INSERT INTO company_locations(name,address,active,created_at,updated_at) VALUES(?,?,1,?,?)",(name,address,stamp,stamp))
+        self.redirect("/percorso-giornaliero/sedi")
+
+    def route_plan_calculate(self,user):
+        form=self.form()
+        selected=form.get("data","").strip()
+        try:date.fromisoformat(selected)
+        except ValueError:return self.send_error(400,"Data non valida")
+        mode=form.get("optimization_mode","veloce")
+        if mode not in ("veloce","breve"):mode="veloce"
+        start_time=form.get("start_time","08:00").strip() or "08:00"
+        stamp=now()
+        with db() as c:
+            start=self.route_plan_resolve_endpoint(c,"start",form)
+            if not start:return self.route_plan_page(user)  # dovrebbe essere gia' validato client-side
+            start_type,start_location_id,start_address,start_lat,start_lng=start
+            end=self.route_plan_resolve_endpoint(c,"end",form,fallback_lat=start_lat,fallback_lng=start_lng)
+            if not end:return self.route_plan_page(user)
+            end_type,end_location_id,end_address,end_lat,end_lng=end
+            eligible=route_eligible_events(c,selected)
+            contexts=[]
+            for row in eligible:
+                ctx=self.route_plan_stop_context(c,row)
+                if ctx["address"]:
+                    ctx["event_id"]=row["id"]
+                    contexts.append(ctx)
+            start_point={"lat":start_lat,"lng":start_lng}
+            if end_type=="stessa_partenza":
+                end_point={"lat":start_lat,"lng":start_lng};end_address=start_address
+            else:
+                end_point={"lat":end_lat,"lng":end_lng}
+            if end_type=="ultimo_ritiro" and contexts:
+                end_point={"lat":contexts[-1]["lat"],"lng":contexts[-1]["lng"]};end_address=contexts[-1]["address"]
+            stops_for_optimizer=[{"lat":ctx["lat"],"lng":ctx["lng"],"event_id":ctx["event_id"]} for ctx in contexts]
+            api_key=os.environ.get("GOOGLE_MAPS_API_KEY","").strip()
+            ordered,google_result,source=route_service.optimize_route(start_point,end_point,stops_for_optimizer,mode=mode,api_key=api_key)
+            contexts_by_event={ctx["event_id"]:ctx for ctx in contexts}
+            ordered_contexts=[contexts_by_event[o["event_id"]] for o in ordered if o.get("event_id") in contexts_by_event]
+            schedule=self.route_plan_compute_schedule(start_point,ordered_contexts,start_time=start_time)
+            total_distance=sum(s["distance_meters"] or 0 for s in schedule)
+            total_duration=sum((s["duration_seconds"] or 0)+ctx["service_minutes"]*60 for s,ctx in zip(schedule,ordered_contexts))
+            existing=c.execute("SELECT * FROM route_plans WHERE route_date=? AND status='attivo' ORDER BY version DESC LIMIT 1",(selected,)).fetchone()
+            version=(existing["version"]+1) if existing else 1
+            if existing:
+                c.execute("UPDATE route_plans SET status='archiviato' WHERE id=?",(existing["id"],))
+            sequence_snapshot=json.dumps([ctx["event_id"] for ctx in ordered_contexts])
+            cur=c.execute("""INSERT INTO route_plans(route_date,operator_name,start_location_type,start_location_id,start_address,start_lat,start_lng,
+              end_location_type,end_location_id,end_address,end_lat,end_lng,optimization_mode,total_distance_meters,total_duration_seconds,
+              optimized_sequence_json,route_source,status,version,created_by,created_at,updated_at)
+              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+              (selected,user["display_name"],start_type,start_location_id,start_address,start_lat,start_lng,
+               end_type,end_location_id,end_address,end_point["lat"],end_point["lng"],mode,total_distance,total_duration,
+               sequence_snapshot,source,"attivo",version,user["id"],stamp,stamp))
+            plan_id=cur.lastrowid
+            for index,(ctx,sched) in enumerate(zip(ordered_contexts,schedule),start=1):
+                c.execute("""INSERT INTO route_plan_stops(route_plan_id,event_id,sequence,estimated_arrival,estimated_departure,
+                  service_duration_minutes,time_window_start,time_window_end,time_window_source,distance_from_previous_meters,
+                  duration_from_previous_seconds,validation_status,warning_message)
+                  VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                  (plan_id,ctx["event_id"],index,sched["arrival"],sched["departure"],ctx["service_minutes"],
+                   ctx["windows"][0][0] if ctx["windows"] else None,ctx["windows"][0][1] if ctx["windows"] else None,ctx["window_source"],
+                   sched["distance_meters"],sched["duration_seconds"],sched["status"],sched["message"]))
+        self.redirect(f"/percorso-giornaliero/{plan_id}")
+
+    def route_plan_reorder(self,user,plan_id):
+        form=self.form()
+        try:order=json.loads(form.get("ordine_json") or "[]")
+        except (ValueError,TypeError):order=[]
+        try:order=[int(k) for k in order]
+        except (TypeError,ValueError):order=[]
+        return self._route_plan_reorder_with_order(user,plan_id,order)
+
+    def route_plan_restore(self,user,plan_id):
+        with db() as c:
+            plan=c.execute("SELECT * FROM route_plans WHERE id=?",(plan_id,)).fetchone()
+            if not plan:return self.send_error(404)
+            try:sequence=json.loads(plan["optimized_sequence_json"] or "[]")
+            except (ValueError,TypeError):sequence=[]
+            stops=c.execute("SELECT * FROM route_plan_stops WHERE route_plan_id=?",(plan_id,)).fetchall()
+            by_event={s["event_id"]:s["id"] for s in stops}
+            order=[by_event[event_id] for event_id in sequence if event_id in by_event]
+        return self._route_plan_reorder_with_order(user,plan_id,order)
+
+    def _route_plan_reorder_with_order(self,user,plan_id,order):
+        with db() as c:
+            plan=c.execute("SELECT * FROM route_plans WHERE id=?",(plan_id,)).fetchone()
+            if not plan:return self.send_error(404)
+            stops=c.execute("SELECT s.*,e.* FROM route_plan_stops s LEFT JOIN calendar_events e ON e.id=s.event_id WHERE s.route_plan_id=?",(plan_id,)).fetchall()
+            by_id={s["id"]:s for s in stops}
+            ordered_stops=[by_id[k] for k in order if k in by_id]
+            ordered_stops+=[s for s in stops if s["id"] not in order]
+            contexts=[self.route_plan_stop_context(c,s) for s in ordered_stops]
+            start_point={"lat":plan["start_lat"],"lng":plan["start_lng"]}
+            schedule=self.route_plan_compute_schedule(start_point,contexts,start_time="08:00")
+            total_distance=sum(s["distance_meters"] or 0 for s in schedule)
+            total_duration=sum((s["duration_seconds"] or 0)+ctx["service_minutes"]*60 for s,ctx in zip(schedule,contexts))
+            stamp=now()
+            for index,(stop,ctx,sched) in enumerate(zip(ordered_stops,contexts,schedule),start=1):
+                c.execute("""UPDATE route_plan_stops SET sequence=?,estimated_arrival=?,estimated_departure=?,
+                  distance_from_previous_meters=?,duration_from_previous_seconds=?,validation_status=?,warning_message=? WHERE id=?""",
+                  (index,sched["arrival"],sched["departure"],sched["distance_meters"],sched["duration_seconds"],sched["status"],sched["message"],stop["id"]))
+            c.execute("UPDATE route_plans SET total_distance_meters=?,total_duration_seconds=?,updated_at=? WHERE id=?",(total_distance,total_duration,stamp,plan_id))
+        self.redirect(f"/percorso-giornaliero/{plan_id}")
+
+    def route_plan_stop_toggle(self,user,plan_id,stop_id,field):
+        column="is_locked" if field=="blocca" else "is_urgent"
+        with db() as c:
+            stop=c.execute("SELECT * FROM route_plan_stops WHERE id=? AND route_plan_id=?",(stop_id,plan_id)).fetchone()
+            if not stop:return self.send_error(404)
+            c.execute(f"UPDATE route_plan_stops SET {column}=? WHERE id=?",(0 if stop[column] else 1,stop_id))
+        self.redirect(f"/percorso-giornaliero/{plan_id}")
 
     def calendar_comment_action(self,user,event_id,comment_id,action):
         with db() as c:
@@ -11006,6 +11490,7 @@ class App(BaseHTTPRequestHandler):
         with db() as c:
             v=c.execute("SELECT * FROM veterinarians WHERE id=? AND active=1",(vet_id,)).fetchone()
             vouchers=c.execute("SELECT vv.*, p.animal_name, p.species, p.practice_number FROM veterinarian_vouchers vv LEFT JOIN practices p ON p.id=vv.practice_id WHERE vv.veterinarian_id=? ORDER BY vv.created_at DESC",(vet_id,)).fetchall()
+            hours_by_day={h["day_of_week"]:h for h in c.execute("SELECT * FROM veterinarian_hours WHERE veterinarian_id=?",(vet_id,)).fetchall()}
         if not v: return self.send_error(404)
         rows=[]
         for b in vouchers:
@@ -11014,8 +11499,39 @@ class App(BaseHTTPRequestHandler):
             status_opts=''.join(f'<option {"selected" if b["status"]==x else ""}>{x}</option>' for x in ["Maturato","Usato"])
             rows.append(f'''<tr><form method="post" action="/buoni/{b['id']}/modifica"><td><input type="date" name="created_at" value="{esc((b['created_at'] or '')[:10])}"></td><td><input name="animal_name" value="{esc(animal)}" placeholder="Nome animale"></td><td><input name="species" value="{esc(species)}" placeholder="Specie"></td><td><select name="status">{status_opts}</select></td><td><button class="btn ghost">Salva</button></form><form method="post" action="/buoni/{b['id']}/elimina" onsubmit="return confirm('Eliminare questo buono?')"><button class="btn ghost">Elimina</button></form></td></tr>''')
         voucher_rows=''.join(rows) or '<tr><td colspan="5" class="sub">Nessun buono presente.</td></tr>'
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{esc(v['short_name'] or v['clinic_name'])}</h1><div class="sub">{esc(v['clinic_name'])}</div></div><a class="btn ghost" href="/veterinari">Torna alla lista</a></div><section class="section"><h2>Anagrafica</h2><form method="post" action="/veterinari"><input type="hidden" name="id" value="{v['id']}"><div class="fields"><div class="field"><label>Nome breve</label><input name="short_name" value="{esc(v['short_name'])}"></div><div class="field"><label>Nome completo</label><input name="clinic_name" value="{esc(v['clinic_name'])}"></div><div class="field full"><label>Indirizzo</label><input name="address" value="{esc(v['address'])}"></div><div class="field"><label>Comune</label><input name="city" value="{esc(v['city'])}"></div><div class="field"><label>Telefono</label><input name="phone" value="{esc(v['phone'])}"></div><div class="field"><label>Medico veterinario</label><input name="doctor_name" value="{esc(v['doctor_name'])}"></div><div class="field full"><label>Note</label><input name="notes" value="{esc(v['notes'])}"></div></div><button class="btn" style="margin-top:12px">Salva anagrafica</button></form><form method="post" action="/veterinari/{v['id']}/elimina" onsubmit="return confirm('Eliminare questo veterinario dalla lista?')"><button class="btn ghost" style="margin-top:12px">Elimina veterinario</button></form></section><div style="height:14px"></div><section class="section"><h2>Aggiungi buono manuale</h2><form method="post" action="/veterinari/{v['id']}/buoni"><div class="fields"><div class="field"><label>Data maturazione</label><input type="date" name="created_at" value="{rome_now().strftime('%Y-%m-%d')}"></div><div class="field"><label>Nome animale</label><input name="animal_name"></div><div class="field"><label>Specie</label><input name="species"></div><div class="field"><label>Stato</label><select name="status"><option>Maturato</option><option>Usato</option></select></div></div><button class="btn" style="margin-top:12px">Aggiungi buono</button></form></section><div style="height:14px"></div><section class="section"><h2>Buoni</h2><div class="tablebox"><table><thead><tr><th>Data</th><th>Animale</th><th>Specie</th><th>Stato</th><th>Azione</th></tr></thead><tbody>{voucher_rows}</tbody></table></div></section></main>'''
+        day_names=("Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica")
+        day_blocks=[]
+        for i,day_name in enumerate(day_names):
+            h=hours_by_day.get(i)
+            closed=bool(h["closed"]) if h else False
+            def tval(field):return esc(h[field]) if h and h[field] else ""
+            day_blocks.append(f'''<div class="tablebox" style="padding:10px 12px;margin-bottom:8px"><label class="modern-check"><input type="checkbox" name="closed_{i}" value="1" {"checked" if closed else ""}> <b>{day_name}</b> — chiuso</label><div class="fields" style="margin-top:8px"><div class="field"><label>Mattina dalle</label><input type="time" name="morning_start_{i}" value="{tval('morning_start')}"></div><div class="field"><label>alle</label><input type="time" name="morning_end_{i}" value="{tval('morning_end')}"></div><div class="field"><label>Pomeriggio dalle</label><input type="time" name="afternoon_start_{i}" value="{tval('afternoon_start')}"></div><div class="field"><label>alle</label><input type="time" name="afternoon_end_{i}" value="{tval('afternoon_end')}"></div><div class="field full"><label>Note</label><input name="notes_{i}" value="{tval('notes')}" placeholder="Es. chiuso per pausa pranzo, orario estivo..."></div></div></div>''')
+        hours_updated_label=f"Ultimo aggiornamento manuale: {esc(v['hours_updated_at'][:16].replace('T',' '))}" if v["hours_updated_at"] else "Orari non ancora configurati: il Percorso giornaliero non applicherà vincoli di orario per questa struttura."
+        hours_section=f'''<div style="height:14px"></div><section class="section"><h2>Orari di apertura</h2><p class="sub">Usati dal Percorso giornaliero per segnalare arrivi fuori orario. {hours_updated_label}</p><form method="post" action="/veterinari/{v['id']}/orari"><div class="fields"><div class="field"><label>Durata media ritiro (minuti)</label><input type="number" min="1" max="240" name="service_duration_minutes" value="{v['service_duration_minutes'] or ''}" placeholder="10"></div></div><div style="height:10px"></div>{''.join(day_blocks)}<button class="btn" style="margin-top:4px">Salva orari</button></form></section>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{esc(v['short_name'] or v['clinic_name'])}</h1><div class="sub">{esc(v['clinic_name'])}</div></div><a class="btn ghost" href="/veterinari">Torna alla lista</a></div><section class="section"><h2>Anagrafica</h2><form method="post" action="/veterinari"><input type="hidden" name="id" value="{v['id']}"><div class="fields"><div class="field"><label>Nome breve</label><input name="short_name" value="{esc(v['short_name'])}"></div><div class="field"><label>Nome completo</label><input name="clinic_name" value="{esc(v['clinic_name'])}"></div><div class="field full"><label>Indirizzo</label><input name="address" value="{esc(v['address'])}"></div><div class="field"><label>Comune</label><input name="city" value="{esc(v['city'])}"></div><div class="field"><label>Telefono</label><input name="phone" value="{esc(v['phone'])}"></div><div class="field"><label>Medico veterinario</label><input name="doctor_name" value="{esc(v['doctor_name'])}"></div><div class="field full"><label>Note</label><input name="notes" value="{esc(v['notes'])}"></div></div><button class="btn" style="margin-top:12px">Salva anagrafica</button></form><form method="post" action="/veterinari/{v['id']}/elimina" onsubmit="return confirm('Eliminare questo veterinario dalla lista?')"><button class="btn ghost" style="margin-top:12px">Elimina veterinario</button></form></section>{hours_section}<div style="height:14px"></div><section class="section"><h2>Aggiungi buono manuale</h2><form method="post" action="/veterinari/{v['id']}/buoni"><div class="fields"><div class="field"><label>Data maturazione</label><input type="date" name="created_at" value="{rome_now().strftime('%Y-%m-%d')}"></div><div class="field"><label>Nome animale</label><input name="animal_name"></div><div class="field"><label>Specie</label><input name="species"></div><div class="field"><label>Stato</label><select name="status"><option>Maturato</option><option>Usato</option></select></div></div><button class="btn" style="margin-top:12px">Aggiungi buono</button></form></section><div style="height:14px"></div><section class="section"><h2>Buoni</h2><div class="tablebox"><table><thead><tr><th>Data</th><th>Animale</th><th>Specie</th><th>Stato</th><th>Azione</th></tr></thead><tbody>{voucher_rows}</tbody></table></div></section></main>'''
         self.send_html(layout("Veterinario",body,user))
+
+    def save_veterinarian_hours(self,user,vet_id):
+        f=self.form(); stamp=now()
+        with db() as c:
+            vet=c.execute("SELECT id FROM veterinarians WHERE id=?",(vet_id,)).fetchone()
+            if not vet:return self.send_error(404)
+            service_minutes=f.get("service_duration_minutes","").strip()
+            service_minutes=int(service_minutes) if service_minutes.isdigit() else None
+            c.execute("UPDATE veterinarians SET service_duration_minutes=?,hours_source='manuale',hours_updated_at=?,updated_at=? WHERE id=?",(service_minutes,stamp,stamp,vet_id))
+            for i in range(7):
+                closed=1 if f.get(f"closed_{i}")=="1" else 0
+                morning_start=f.get(f"morning_start_{i}","").strip() or None
+                morning_end=f.get(f"morning_end_{i}","").strip() or None
+                afternoon_start=f.get(f"afternoon_start_{i}","").strip() or None
+                afternoon_end=f.get(f"afternoon_end_{i}","").strip() or None
+                notes=f.get(f"notes_{i}","").strip() or None
+                c.execute("""INSERT INTO veterinarian_hours(veterinarian_id,day_of_week,closed,morning_start,morning_end,afternoon_start,afternoon_end,notes)
+                  VALUES(?,?,?,?,?,?,?,?)
+                  ON CONFLICT(veterinarian_id,day_of_week) DO UPDATE SET closed=excluded.closed,morning_start=excluded.morning_start,
+                    morning_end=excluded.morning_end,afternoon_start=excluded.afternoon_start,afternoon_end=excluded.afternoon_end,notes=excluded.notes""",
+                  (vet_id,i,closed,morning_start,morning_end,afternoon_start,afternoon_end,notes))
+        self.redirect(f"/veterinari/{vet_id}")
 
     def save_veterinarian(self,user):
         f=self.form(); stamp=now()

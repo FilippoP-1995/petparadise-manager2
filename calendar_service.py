@@ -171,6 +171,25 @@ def overlap_rows(conn, start_date, end_date, filters=None, include_deleted=False
       WHERE {' AND '.join(where)} ORDER BY e.start_at,e.id""",args).fetchall()
 
 
+def route_eligible_events(conn, day):
+    """Ritiri e riconsegne ancora da effettuare, non in sede, per il giorno
+    indicato: sorgente delle tappe del Percorso giornaliero. Riusa gli stessi
+    tipi/stati gia' usati altrove (EVENT_TYPES/PICKUP_STATUSES/DELIVERY_STATUSES),
+    nessuno stato nuovo: un Ritiro e' "da fare" se non e' ancora Ritirato ne'
+    Annullato, una Riconsegna se non e' ancora Completato. "Ritiro in sede" e
+    "Riconsegna in sede" sono esclusi perche' non richiedono uno spostamento
+    fisico esterno."""
+    return conn.execute("""SELECT e.*,u.display_name creator_name
+      FROM calendar_events e JOIN users u ON u.id=e.created_by
+      WHERE (e.deleted_at IS NULL OR e.deleted_at='')
+        AND date(e.start_at)=?
+        AND (
+          (e.event_type='Ritiro' AND e.event_status IN ('Da confermare','Da ritirare'))
+          OR (e.event_type='Riconsegna' AND e.event_status='In programma')
+        )
+      ORDER BY e.start_at,e.id""",(day,)).fetchall()
+
+
 def _clean(value, limit=500):
     return re.sub(r"\s+", " ", str(value or "").strip())[:limit]
 
