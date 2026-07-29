@@ -2883,6 +2883,24 @@ class PetParadiseTests(unittest.TestCase):
         body = js[start:end]
         self.assertIn("wheel.hidden=true;", body)
 
+    def test_calendar_time_blur_closes_the_wheel_only_after_real_manual_typing(self):
+        # bug segnalato di nuovo dall'utente, riprodotto dal vivo: digitando
+        # l'orario a tastiera e confermando con la spunta "Fine"/Done della
+        # tastiera iOS (che si limita a togliere il focus dal campo, cioe' un
+        # blur), il valore veniva letto correttamente ma la rotella restava
+        # visibilmente aperta. calendarTimeRenderDigits e' l'unico punto che
+        # imposta dataset.timeEditing='1' (solo durante la digitazione reale
+        # a tastiera): usarlo come discriminante permette di chiudere la
+        # rotella qui SENZA toccare la logica della rotella stessa (che deve
+        # restare intoccata: un tap sulla sola ora, senza aver mai digitato,
+        # non deve chiudere finche' l'utente non sceglie anche il minuto).
+        js = app.APP_JS
+        start = js.index("function calendarTimeBlur(input){")
+        end = js.index("function calendarOpenTimePicker(")
+        body = js[start:end]
+        self.assertIn("const wasEditingManually=input.dataset.timeEditing==='1';", body)
+        self.assertIn("if(wasEditingManually){const wheel=input.closest('.calendar-datetime-row')?.querySelector('[data-time-wheel]');if(wheel)wheel.hidden=true;}", body)
+
     def test_cremation_edit_modal_redesign_keeps_the_existing_save_logic_untouched(self):
         # richiesta esplicita dell'utente (mockup): SOLO redesign grafico del
         # modale "Modifica orario ciclo" — icona, sottotitolo (CICLO N +
@@ -3871,7 +3889,7 @@ class PetParadiseTests(unittest.TestCase):
         js = app.APP_JS
         self.assertIn("function calendarTimeBlur(input){", js)
         blur_start = js.index("function calendarTimeBlur(input){")
-        blur_end = js.index("\n", blur_start)
+        blur_end = js.index("function calendarOpenTimePicker(")
         blur_body = js[blur_start:blur_end]
         self.assertIn("input.dispatchEvent(new Event('change',{bubbles:true}))", blur_body)
 
