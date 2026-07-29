@@ -4591,6 +4591,12 @@ function cremationOpenEditModal(id,plannedStart,plannedEnd,cycleDate){
   const dateInput=document.getElementById('cremationEditDate');
   startInput.value=plannedStart;startInput.dataset.timeDigits=plannedStart.replace(':','');startInput.dataset.timeComplete='1';
   endInput.value=plannedEnd;endInput.dataset.timeDigits=plannedEnd.replace(':','');endInput.dataset.timeComplete='1';
+  // richiesta esplicita dell'utente: spostando l'orario di inizio, la fine
+  // deve seguire mantenendo la stessa durata del ciclo (es. 15:00-16:00 ->
+  // 16:10 diventa 16:10-17:10). durationTrack memorizza l'ultimo valore noto
+  // di inizio per calcolare lo spostamento (delta), non la durata in se':
+  // cosi' funziona anche se l'utente ha gia' modificato manualmente la fine.
+  startInput.dataset.durationTrack=plannedStart;
   if(dateInput)dateInput.value=cycleDate||'';
   document.querySelectorAll('#cremationEditOverlay [data-time-wheel]').forEach(function(w){w.hidden=true;delete w.dataset.ready;});
   overlay.hidden=false;
@@ -4598,6 +4604,31 @@ function cremationOpenEditModal(id,plannedStart,plannedEnd,cycleDate){
 function cremationCloseModal(){
   const overlay=document.getElementById('cremationEditOverlay');
   if(overlay)overlay.hidden=true;
+}
+function cremationSyncEndWithStartDuration(startInput){
+  // mantiene invariata la durata del ciclo quando si sposta l'inizio: calcola
+  // il delta rispetto all'ultimo valore noto di inizio (non una durata fissa
+  // salvata una volta sola) e lo applica alla fine attuale, cosi' funziona
+  // anche se l'utente ha gia' cambiato manualmente la fine in precedenza.
+  // La fine resta comunque sempre modificabile a mano dopo lo spostamento.
+  const endInput=document.getElementById('cremationEditEnd');
+  if(!endInput)return;
+  const prev=startInput.dataset.durationTrack;
+  const now=startInput.value;
+  if(!/^\d{2}:\d{2}$/.test(now)){return;}
+  if(prev&&/^\d{2}:\d{2}$/.test(prev)&&prev!==now&&/^\d{2}:\d{2}$/.test(endInput.value)){
+    const toMinutes=t=>{const parts=t.split(':');return Number(parts[0])*60+Number(parts[1]);};
+    const delta=toMinutes(now)-toMinutes(prev);
+    if(delta!==0){
+      const shifted=(((toMinutes(endInput.value)+delta)%1440)+1440)%1440;
+      const newEnd=String(Math.floor(shifted/60)).padStart(2,'0')+':'+String(shifted%60).padStart(2,'0');
+      endInput.value=newEnd;
+      endInput.dataset.timeDigits=newEnd.replace(':','');
+      endInput.dataset.timeComplete='1';
+      calendarSyncTimeWheel(endInput,false);
+    }
+  }
+  startInput.dataset.durationTrack=now;
 }
 function calendarWheelNearestOption(column){
   if(!column)return null;
@@ -9627,7 +9658,7 @@ class App(BaseHTTPRequestHandler):
             <div class="cremation-modal-actions cremation-modal-actions-v2"><button type="button" class="btn ghost" onclick="cremationCloseModal()">Annulla</button><button type="button" class="btn" onclick="cremationSubmitEditModal()">{lucide("save")}<span>Salva orario</span></button></div>
           </div>
         </div>
-        <script>document.addEventListener('DOMContentLoaded',function(){{var s=document.getElementById('cremationEditStart'),e=document.getElementById('cremationEditEnd');if(s){{s.addEventListener('input',cremationUpdateDurationPreview);s.addEventListener('change',cremationUpdateDurationPreview);}}if(e){{e.addEventListener('input',cremationUpdateDurationPreview);e.addEventListener('change',cremationUpdateDurationPreview);}}}});</script>'''
+        <script>document.addEventListener('DOMContentLoaded',function(){{var s=document.getElementById('cremationEditStart'),e=document.getElementById('cremationEditEnd');if(s){{s.addEventListener('input',cremationUpdateDurationPreview);s.addEventListener('change',function(){{cremationSyncEndWithStartDuration(s);}});s.addEventListener('change',cremationUpdateDurationPreview);}}if(e){{e.addEventListener('input',cremationUpdateDurationPreview);e.addEventListener('change',cremationUpdateDurationPreview);}}}});</script>'''
 
         create_modal_html=f'''<div class="cremation-modal-overlay" id="cremationCreateOverlay" hidden onclick="if(event.target===this)cremationCloseCreateModal()">
           <div class="cremation-modal cremation-modal-time-edit">
@@ -10094,7 +10125,7 @@ class App(BaseHTTPRequestHandler):
             <div class="cremation-modal-actions cremation-modal-actions-v2"><button type="button" class="btn ghost" onclick="cremationCloseModal()">Annulla</button><button type="button" class="btn" onclick="cremationSubmitEditModal()">{lucide("save")}<span>Salva orario</span></button></div>
           </div>
         </div>
-        <script>document.addEventListener('DOMContentLoaded',function(){{var s=document.getElementById('cremationEditStart'),e=document.getElementById('cremationEditEnd');if(s){{s.addEventListener('input',cremationUpdateDurationPreview);s.addEventListener('change',cremationUpdateDurationPreview);}}if(e){{e.addEventListener('input',cremationUpdateDurationPreview);e.addEventListener('change',cremationUpdateDurationPreview);}}}});</script>'''
+        <script>document.addEventListener('DOMContentLoaded',function(){{var s=document.getElementById('cremationEditStart'),e=document.getElementById('cremationEditEnd');if(s){{s.addEventListener('input',cremationUpdateDurationPreview);s.addEventListener('change',function(){{cremationSyncEndWithStartDuration(s);}});s.addEventListener('change',cremationUpdateDurationPreview);}}if(e){{e.addEventListener('input',cremationUpdateDurationPreview);e.addEventListener('change',cremationUpdateDurationPreview);}}}});</script>'''
 
         create_modal_html=f'''<div class="cremation-modal-overlay" id="cremationCreateOverlay" hidden onclick="if(event.target===this)cremationCloseCreateModal()">
           <div class="cremation-modal cremation-modal-time-edit">
@@ -10229,8 +10260,8 @@ class App(BaseHTTPRequestHandler):
             if planned_start_raw or planned_end_raw:
                 if not re.fullmatch(r"\d{2}:\d{2}",planned_start_raw) or not re.fullmatch(r"\d{2}:\d{2}",planned_end_raw):
                     return self.send_json({"ok":False,"error":"Orario non valido."},400)
-                if cremation_minutes_between(planned_start_raw,planned_end_raw)<=0:
-                    return self.send_json({"ok":False,"error":"L'orario di fine deve essere dopo l'orario di inizio."},400)
+                if cremation_minutes_between(planned_start_raw,planned_end_raw)<0:
+                    return self.send_json({"ok":False,"error":"L'orario di fine non può essere prima dell'orario di inizio."},400)
                 start,end=planned_start_raw,planned_end_raw
             else:
                 start,end=cremation_cycle_next_slot(c,cycle_date)
@@ -10337,8 +10368,8 @@ class App(BaseHTTPRequestHandler):
         cycle_date_raw=(f.get("cycle_date") or "").strip()[:10]
         if not re.fullmatch(r"\d{2}:\d{2}",start) or not re.fullmatch(r"\d{2}:\d{2}",end):
             return self.send_json({"ok":False,"error":"Orario non valido."},400)
-        if cremation_minutes_between(start,end)<=0:
-            return self.send_json({"ok":False,"error":"L'orario di fine deve essere dopo l'orario di inizio."},400)
+        if cremation_minutes_between(start,end)<0:
+            return self.send_json({"ok":False,"error":"L'orario di fine non può essere prima dell'orario di inizio."},400)
         if cycle_date_raw:
             try:date.fromisoformat(cycle_date_raw)
             except ValueError:return self.send_json({"ok":False,"error":"Data non valida."},400)

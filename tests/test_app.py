@@ -2165,6 +2165,90 @@ class PetParadiseTests(unittest.TestCase):
             row = conn.execute("SELECT cycle_date FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()
         self.assertEqual(row["cycle_date"], "2026-07-20")
 
+    def test_cremation_edit_cycle_accepts_end_time_equal_to_start_time(self):
+        # richiesta esplicita dell'utente: "l'orario di fine deve essere
+        # accettato anche se è pari all'orario di inizio" — prima veniva
+        # rifiutato (durata <= 0), ora deve essere accettata la durata zero,
+        # rifiutando solo una fine effettivamente PRIMA dell'inizio.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-20", "pianificato", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.form = lambda: {"planned_start": "16:20", "planned_end": "16:20"}
+        self.handler.cremation_edit_cycle(admin, cycle_id)
+        self.assertEqual(responses[-1], ({"ok": True}, 200))
+        with app.db() as conn:
+            row = conn.execute("SELECT planned_start,planned_end FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()
+        self.assertEqual((row["planned_start"], row["planned_end"]), ("16:20", "16:20"))
+
+    def test_cremation_edit_cycle_still_rejects_end_time_before_start_time(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-20", "pianificato", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.form = lambda: {"planned_start": "16:20", "planned_end": "16:00"}
+        self.handler.cremation_edit_cycle(admin, cycle_id)
+        payload, status = responses[-1]
+        self.assertFalse(payload["ok"])
+        self.assertEqual(status, 400)
+        with app.db() as conn:
+            row = conn.execute("SELECT planned_start,planned_end FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()
+        self.assertEqual((row["planned_start"], row["planned_end"]), ("08:00", "09:30"))
+
+    def test_cremation_create_cycle_accepts_end_time_equal_to_start_time(self):
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.form = lambda: {"data": "2026-07-20", "planned_start": "09:00", "planned_end": "09:00"}
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.cremation_create_cycle(admin)
+        payload, status = responses[-1]
+        self.assertTrue(payload["ok"])
+        with app.db() as conn:
+            row = conn.execute("SELECT planned_start,planned_end FROM cremation_cycles WHERE id=?", (payload["cycle_id"],)).fetchone()
+        self.assertEqual((row["planned_start"], row["planned_end"]), ("09:00", "09:00"))
+
+    def test_cremation_edit_start_time_change_shifts_end_time_keeping_the_same_duration(self):
+        # richiesta esplicita dell'utente: spostando l'inizio, la fine deve
+        # seguire mantenendo invariata la durata del ciclo (esempio fornito:
+        # 15:00-16:00, un'ora di durata, spostato a 16:10 -> 17:10), restando
+        # comunque sempre modificabile manualmente in seguito.
+        js = app.APP_JS
+        self.assertIn("function cremationSyncEndWithStartDuration(startInput){", js)
+        start = js.index("function cremationSyncEndWithStartDuration(startInput){")
+        end = js.index("function calendarWheelNearestOption(")
+        body = js[start:end]
+        self.assertIn("const delta=toMinutes(now)-toMinutes(prev);", body)
+        self.assertIn("endInput.value=newEnd;", body)
+        # deve leggere/aggiornare l'ultimo valore noto di inizio (delta, non una
+        # durata fissa), cosi' funziona anche dopo una modifica manuale della fine
+        self.assertIn("startInput.dataset.durationTrack=now;", body)
+        # il tracciamento iniziale parte dal valore con cui si apre il modale
+        open_start = js.index("function cremationOpenEditModal(id,plannedStart,plannedEnd,cycleDate){")
+        open_body = js[open_start:open_start + 1100]
+        self.assertIn("startInput.dataset.durationTrack=plannedStart;", open_body)
+        # e deve essere agganciata al cambiamento reale dell'orario di inizio
+        # (evento 'change', condiviso da rotella, scroll e tastiera): questa
+        # parte e' nello script per-pagina del modale, non in APP_JS.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.path = "/programma-cremazioni?data=2026-07-30"
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn("s.addEventListener('change',function(){cremationSyncEndWithStartDuration(s);});", page)
+
     def test_cremation_edit_cycle_keeps_same_day_when_cycle_date_field_is_omitted(self):
         # backward-compat: le richieste che non inviano affatto cycle_date
         # (nessuna, oggi) devono continuare a funzionare esattamente come prima.
