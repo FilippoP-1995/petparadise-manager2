@@ -2244,6 +2244,7 @@ button.calendar-tap-card:active,a.calendar-tap-card:active{transform:scale(.985)
 .calendar-quickedit-card.expanded .calendar-tap-card-chevron{transform:rotate(90deg)}
 .calendar-tap-card-chevron{transition:transform .2s ease}
 .calendar-tap-card-avatar{flex:0 0 34px;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-size:17px;background:#202c3d}
+.calendar-quickedit-form input,.calendar-quickedit-form select,.calendar-quickedit-form textarea{width:100%;padding:9px 12px;border-radius:10px;font-size:14px;margin-bottom:8px}
 .calendar-quickedit-datetime-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .calendar-quickedit-datetime-grid label{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:#9ca7b8;font-weight:600}
 .calendar-quickedit-datetime-grid input{border:1px solid #263246;background:#0e1622;border-radius:10px;padding:8px 10px;font-size:14px;color:#f5f7fb}
@@ -6230,7 +6231,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/calendario/nuovo": return self.save_calendar_event(user)
         match = re.fullmatch(r"/calendario/(\d+)/modifica",path)
         if match: return self.save_calendar_event(user,int(match.group(1)))
-        match = re.fullmatch(r"/calendario/(\d+)/(stato|zona|operatore|note|data-ora|preventivo|commento|elimina|ripristina|elimina-definitiva|collega-pratica|scollega-pratica)",path)
+        match = re.fullmatch(r"/calendario/(\d+)/(stato|zona|operatore|note|data-ora|preventivo|tipo|luogo|cliente|animali|commento|elimina|ripristina|elimina-definitiva|collega-pratica|scollega-pratica)",path)
         if match: return self.calendar_event_action(user,int(match.group(1)),match.group(2))
         match = re.fullmatch(r"/calendario/(\d+)/commenti/(\d+)/(modifica|elimina)",path)
         if match: return self.calendar_comment_action(user,int(match.group(1)),int(match.group(2)),match.group(3))
@@ -7416,6 +7417,32 @@ class App(BaseHTTPRequestHandler):
         style=f' style="background:{esc(color_hex)}"' if color_hex else ''
         return f'<span class="calendar-avatar calendar-avatar-{size} calendar-avatar-{slug}"{style} title="{esc(operator_name)}">{initial}</span>'
 
+    def calendar_event_base_form(self,event):
+        """Dizionario equivalente ai campi del form del wizard, ricostruito
+        dai valori gia' salvati su un evento esistente: permette alle
+        modifiche rapide dal riepilogo di riusare integralmente
+        normalize_event (stessa validazione del wizard) cambiando solo i
+        campi che l'utente ha davvero toccato, senza duplicare la logica."""
+        return {
+            "event_type":event["event_type"],"title":event["title"] or "","zone":event["zone"] or "",
+            "location_type":event["location_type"] or "","venue_name":event["venue_name"] or "",
+            "address":event["address"] or "","phone":event["phone"] or "",
+            "veterinarian_id":str(event["veterinarian_id"] or ""),"veterinarian_name":event["veterinarian_name"] or "",
+            "veterinarian_phone":event["veterinarian_phone"] or "","veterinarian_address":event["veterinarian_address"] or "",
+            "veterinarian_hours":event["veterinarian_hours"] or "","veterinarian_contact":event["veterinarian_contact"] or "",
+            "client_id":str(event["client_id"] or ""),"client_first_name":event["client_first_name"] or "",
+            "client_last_name":event["client_last_name"] or "","client_phone":event["client_phone"] or "",
+            "destination_site":event["destination_site"] or "","animal_name":event["animal_name"] or "",
+            "category":event["category"] or "","operator_name":event["operator_name"] or "",
+            "event_status":event["event_status"] or "","payment_status":event["payment_status"] or "",
+            "payment_amount":str(event["payment_amount"] or 0),"notes":event["notes"] or "",
+            "delivery_clinic_id":str(event["delivery_clinic_id"] or ""),"delivery_clinic_name":event["delivery_clinic_name"] or "",
+            "delivery_clinic_address":event["delivery_clinic_address"] or "","delivery_clinic_phone":event["delivery_clinic_phone"] or "",
+            "all_day":"1" if event["all_day"] else "0",
+            "start_date":(event["start_at"] or "")[:10],"start_time":(event["start_at"] or "")[11:16],
+            "end_date":(event["end_at"] or "")[:10],"end_time":(event["end_at"] or "")[11:16],
+        }
+
     def calendar_event_client_name(self,row,client_names=None,practice_owner_names=None):
         client_names=client_names or {};practice_owner_names=practice_owner_names or {}
         if row["client_id"] and client_names.get(row["client_id"]):return client_names[row["client_id"]]
@@ -8068,30 +8095,27 @@ class App(BaseHTTPRequestHandler):
           <p class="sub calendar-detail-hero-footer">Creato da {esc(event['creator_name'])} · {esc(event['created_at'].replace('T',' ')[:16])}</p>
         </div>'''
         if tab=="dettagli":
-            def link_row(icon,label,value,color,href,sub=""):
-                icon_cls=f"calendar-tap-card-icon calendar-icon-{color}" if color else "calendar-tap-card-icon"
-                sub_html=f'<small class="calendar-tap-card-sub">{sub}</small>' if sub else ''
-                return f'<a class="calendar-tap-card calendar-tap-card-link" href="{href}"><span class="{icon_cls}">{lucide(icon)}</span><div class="calendar-tap-card-body"><small>{label}</small><p>{value}</p>{sub_html}</div><span class="calendar-tap-card-chevron">{lucide("chevron-right")}</span></a>'
             def info_card(icon,label,value,color="",sub=""):
                 icon_cls=f"calendar-tap-card-icon calendar-icon-{color}" if color else "calendar-tap-card-icon"
                 sub_html=f'<small class="calendar-tap-card-sub">{sub}</small>' if sub else ''
                 return f'<div class="calendar-tap-card"><span class="{icon_cls}">{lucide(icon)}</span><div class="calendar-tap-card-body"><small>{label}</small><p>{value}</p>{sub_html}</div></div>'
-            def quickedit_row(icon,label,value,color,form_inner,pill=False):
+            def quickedit_row(icon,label,value,color,form_inner,pill=False,sub="",extra=""):
                 icon_cls=f"calendar-tap-card-icon calendar-icon-{color}" if color else "calendar-tap-card-icon"
                 pill_html='<span class="calendar-quickedit-pill">Cambia</span>' if pill else ''
+                sub_html=f'<small class="calendar-tap-card-sub">{sub}</small>' if sub else ''
                 return f'''<div class="calendar-tap-card calendar-quickedit-card" onclick="if(!event.target.closest('.calendar-quickedit-form'))this.classList.toggle('expanded')">
                   <span class="{icon_cls}">{lucide(icon)}</span>
-                  <div class="calendar-tap-card-body"><small>{label}</small><p>{value}</p></div>
-                  {pill_html}
+                  <div class="calendar-tap-card-body"><small>{label}</small><p>{value}</p>{sub_html}</div>
+                  {pill_html}{extra}
                   <span class="calendar-tap-card-chevron">{lucide("chevron-right")}</span>
                   <div class="calendar-quickedit-form" onclick="event.stopPropagation()">{form_inner}</div>
                 </div>'''
-            edit_href=f"/calendario/{event_id}/modifica"
             cards=[]
             if event["event_type"] in ("Ritiro","Ritiro in sede"):
                 status_form=f'''<form method="post" action="/calendario/{event_id}/stato" data-client-empty="{"1" if not client_display else "0"}" onsubmit="return calendarConfirmPickupStatus(this)"><select id="calendarDetailStatus" name="status">{''.join(f'<option {"selected" if event["event_status"]==s else ""}>{s}</option>' for s in PICKUP_STATUSES)}</select><button class="btn" type="submit" style="margin-top:10px">Salva nuovo stato</button></form>'''
                 cards.append(quickedit_row("clock","Stato ritiro",esc(event["event_status"] or "Nessuno"),"pink",status_form,pill=True))
-            cards.append(link_row(type_icon,"Tipo evento",esc(display_event_type),"orange",edit_href))
+            tipo_form=f'''<form method="post" action="/calendario/{event_id}/tipo"><select name="event_type">{''.join(f'<option value="{esc(t)}" {"selected" if event["event_type"]==t else ""}>{esc("Promemoria" if t=="Appuntamento" else t)}</option>' for t in EVENT_TYPES)}</select><button class="btn ghost" type="submit" style="margin-top:10px">Salva tipo evento</button></form>'''
+            cards.append(quickedit_row(type_icon,"Tipo evento",esc(display_event_type),"orange",tipo_form))
             datetime_form=f'''<form method="post" action="/calendario/{event_id}/data-ora">
               <div class="calendar-quickedit-datetime-grid">
                 <label>Data inizio<input type="date" name="start_date" value="{esc(start_date_part)}"></label>
@@ -8102,14 +8126,30 @@ class App(BaseHTTPRequestHandler):
               <button class="btn ghost" type="submit" style="margin-top:10px">Salva data e ora</button>
             </form>'''
             cards.append(quickedit_row("calendar","Data e ora",esc(datetime_value),"purple",datetime_form))
-            cards.append(link_row("user","Cliente",esc(client_display or '-'),"blue",edit_href))
+            cliente_form=f'''<form method="post" action="/calendario/{event_id}/cliente"><input name="client_first_name" placeholder="Nome" value="{esc(event['client_first_name'] or '')}"><input name="client_last_name" placeholder="Cognome" value="{esc(event['client_last_name'] or '')}"><input name="client_phone" placeholder="Telefono" value="{esc(event['client_phone'] or '')}"><button class="btn ghost" type="submit" style="margin-top:10px">Salva cliente</button></form>'''
+            cards.append(quickedit_row("user","Cliente",esc(client_display or '-'),"blue",cliente_form))
             animals_summary=calendar_animals_summary_text(animals)
             first_emoji=species_avatar(animals[0]["species"])[0] if animals else '🐾'
-            cards.append(f'<a class="calendar-tap-card calendar-tap-card-link" href="{edit_href}"><span class="calendar-tap-card-icon calendar-icon-green">{lucide("paw")}</span><div class="calendar-tap-card-body"><small>Animali</small><p>{esc(animals_summary)}</p></div><span class="calendar-tap-card-avatar">{first_emoji}</span><span class="calendar-tap-card-chevron">{lucide("chevron-right")}</span></a>')
+            animals_bootstrap=''.join(f"calendarAddRow('animal',{json.dumps(dict(a),ensure_ascii=False)});" for a in animals)
+            animali_form=f'''<form method="post" action="/calendario/{event_id}/animali" id="calendarDetailAnimalsForm">
+              <div class="calendar-repeat-list" data-calendar-list="animal"></div>
+              <input type="hidden" name="animals_json">
+              <button class="calendar-add-appt-btn" type="button" onclick="calendarAddRow('animal')">{lucide("plus")}<span>Aggiungi animale</span></button>
+              <button class="btn ghost" type="submit" style="margin-top:10px">Salva animali</button>
+            </form>
+            <script>document.addEventListener('DOMContentLoaded',function(){{{animals_bootstrap}}});</script>'''
+            cards.append(quickedit_row("paw","Animali",esc(animals_summary),"green",animali_form,extra=f'<span class="calendar-tap-card-avatar">{first_emoji}</span>'))
             if event["delivery_clinic_name"]:cards.append(info_card("stethoscope","Ambulatorio riconsegna",esc(event["delivery_clinic_name"]),"blue"))
             venue_value=esc(event['venue_name'] or event['location_type'] or '-')
             venue_sub=esc(address) if address and event['venue_name'] else ''
-            cards.append(link_row("home","Luogo",venue_value,"teal",edit_href,venue_sub))
+            luogo_form=f'''<form method="post" action="/calendario/{event_id}/luogo">
+              <select name="location_type"><option value="">Tipo luogo</option><option value="Privato" {"selected" if event['location_type']=='Privato' else ''}>Privato</option><option value="Veterinario" {"selected" if event['location_type']=='Veterinario' else ''}>Veterinario</option></select>
+              <input name="venue_name" placeholder="Nome struttura" value="{esc(event['venue_name'] or '')}">
+              <input name="address" placeholder="Indirizzo" value="{esc(event['address'] or '')}">
+              <select name="destination_site"><option value="">Sede (per ritiro/riconsegna in sede)</option><option value="Livorno" {"selected" if event['destination_site']=='Livorno' else ''}>Livorno</option><option value="Empoli" {"selected" if event['destination_site']=='Empoli' else ''}>Empoli</option></select>
+              <button class="btn ghost" type="submit" style="margin-top:10px">Salva luogo</button>
+            </form>'''
+            cards.append(quickedit_row("home","Luogo",venue_value,"teal",luogo_form,sub=venue_sub))
             if event['payment_status']:cards.append(info_card("wallet","Pagamento",f"{esc(event['payment_status'])} {money_it(event['payment_amount'])}","pink"))
             estimate_total_all=sum(float(i["amount"] or 0) for i in estimates)
             estimate_form=f'''<form method="post" action="/calendario/{event_id}/preventivo"><input inputmode="decimal" name="amount" value="{f'{estimate_total_all:g}' if estimate_total_all else ''}" placeholder="Importo €"><button class="btn ghost" type="submit" style="margin-top:10px">Salva preventivo</button></form>'''
@@ -8157,7 +8197,7 @@ class App(BaseHTTPRequestHandler):
         celebration=f'<div class="calendar-created-celebration" aria-hidden="true"><div class="calendar-created-confetti">{confetti}</div><div class="calendar-created-celebration-card"><span class="calendar-created-celebration-icon">{checkmark}</span><b>Evento creato!</b></div></div>'
         created_animation=f'''<template id="calendarCreatedCelebration">{celebration}</template><script>try{{if(sessionStorage.getItem('ppm_calendar_created')==='1'){{sessionStorage.removeItem('ppm_calendar_created');document.body.append(document.getElementById('calendarCreatedCelebration').content.cloneNode(true));}}}}catch(error){{}}</script>'''
         error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
-        saved_labels={"stato":"Stato aggiornato.","zona":"Zona aggiornata.","operatore":"Operatore aggiornato.","note":"Note aggiornate.","data-ora":"Data e ora aggiornate.","preventivo":"Preventivo aggiornato."}
+        saved_labels={"stato":"Stato aggiornato.","zona":"Zona aggiornata.","operatore":"Operatore aggiornato.","note":"Note aggiornate.","data-ora":"Data e ora aggiornate.","preventivo":"Preventivo aggiornato.","tipo":"Tipo evento aggiornato.","luogo":"Luogo aggiornato.","cliente":"Cliente aggiornato.","animali":"Animali aggiornati."}
         saved_html=f'<div class="flash">{esc(saved_labels[saved])}</div>' if saved in saved_labels else ''
         body=f'''{created_animation}<main class="wrap calendar-wrap calendar-detail-v2">{error_html}{saved_html}{header}{quick_actions}<nav class="calendar-tabs">{tabs}</nav><div>{panel}</div></main>'''
         self.send_html(layout(re.sub(r'^APPUNTAMENTO\b','PROMEMORIA',event["title"],flags=re.I) if event["event_type"]=='Appuntamento' else event["title"],body,user))
@@ -8188,30 +8228,57 @@ class App(BaseHTTPRequestHandler):
                 # wizard) ricostruendo il form dai campi gia' salvati
                 # sull'evento e sostituendo solo data/ora inizio-fine: nessuna
                 # logica di data/ora viene riscritta, solo richiamata.
-                merged={
-                    "event_type":event["event_type"],"title":event["title"] or "","zone":event["zone"] or "",
-                    "location_type":event["location_type"] or "","venue_name":event["venue_name"] or "",
-                    "address":event["address"] or "","phone":event["phone"] or "",
-                    "veterinarian_id":str(event["veterinarian_id"] or ""),"veterinarian_name":event["veterinarian_name"] or "",
-                    "veterinarian_phone":event["veterinarian_phone"] or "","veterinarian_address":event["veterinarian_address"] or "",
-                    "veterinarian_hours":event["veterinarian_hours"] or "","veterinarian_contact":event["veterinarian_contact"] or "",
-                    "client_id":str(event["client_id"] or ""),"client_first_name":event["client_first_name"] or "",
-                    "client_last_name":event["client_last_name"] or "","client_phone":event["client_phone"] or "",
-                    "destination_site":event["destination_site"] or "","animal_name":event["animal_name"] or "",
-                    "category":event["category"] or "","operator_name":event["operator_name"] or "",
-                    "event_status":event["event_status"] or "","payment_status":event["payment_status"] or "",
-                    "payment_amount":str(event["payment_amount"] or 0),"notes":event["notes"] or "",
-                    "delivery_clinic_id":str(event["delivery_clinic_id"] or ""),"delivery_clinic_name":event["delivery_clinic_name"] or "",
-                    "delivery_clinic_address":event["delivery_clinic_address"] or "","delivery_clinic_phone":event["delivery_clinic_phone"] or "",
-                    "all_day":"1" if event["all_day"] else "0",
+                merged=self.calendar_event_base_form(event)
+                merged.update({
                     "start_date":form.get("start_date",""),"start_time":form.get("start_time",""),
                     "end_date":form.get("end_date",""),"end_time":form.get("end_time",""),
-                }
+                })
                 try:data=normalize_event(merged)
                 except ValueError as exc:return self.calendar_event_detail(user,event_id,error=str(exc))
                 c.execute("UPDATE calendar_events SET start_at=?,end_at=?,all_day=?,updated_at=?,updated_by=? WHERE id=?",
                           (data["start_at"],data["end_at"],data["all_day"],stamp,user["id"],event_id))
                 calendar_add_history(c,event_id,user["id"],"Modifica data e ora",f'{event["start_at"]} → {event["end_at"]}',f'{data["start_at"]} → {data["end_at"]}',stamp)
+            elif action=="tipo":
+                # Stessa idea di data-ora: si riusa normalize_event cambiando
+                # solo event_type, cosi' la validazione (zona/sede/animale
+                # obbligatori a seconda del tipo) resta identica a quella del
+                # wizard e non si puo' mai salvare un tipo incoerente con i
+                # dati gia' presenti sull'evento.
+                merged=self.calendar_event_base_form(event)
+                merged["event_type"]=form.get("event_type","")
+                merged["title"]=""  # ricalcola il titolo automatico per il nuovo tipo, come fa il wizard quando il titolo non e' stato personalizzato a mano
+                try:data=normalize_event(merged)
+                except ValueError as exc:return self.calendar_event_detail(user,event_id,error=str(exc))
+                c.execute("UPDATE calendar_events SET event_type=?,title=?,zone=?,destination_site=?,event_status=?,payment_status=?,updated_at=?,updated_by=? WHERE id=?",
+                          (data["event_type"],data["title"],data["zone"],data["destination_site"],data["event_status"],data["payment_status"],stamp,user["id"],event_id))
+                calendar_add_history(c,event_id,user["id"],"Modifica tipo evento",event["event_type"],data["event_type"],stamp)
+            elif action=="luogo":
+                merged=self.calendar_event_base_form(event)
+                merged.update({
+                    "location_type":form.get("location_type",""),"venue_name":form.get("venue_name",""),
+                    "address":form.get("address",""),"destination_site":form.get("destination_site",""),
+                })
+                try:data=normalize_event(merged)
+                except ValueError as exc:return self.calendar_event_detail(user,event_id,error=str(exc))
+                c.execute("UPDATE calendar_events SET location_type=?,venue_name=?,address=?,destination_site=?,updated_at=?,updated_by=? WHERE id=?",
+                          (data["location_type"],data["venue_name"],data["address"],data["destination_site"],stamp,user["id"],event_id))
+                calendar_add_history(c,event_id,user["id"],"Modifica luogo",event["address"] or event["venue_name"] or "",data["address"] or data["venue_name"] or "",stamp)
+            elif action=="cliente":
+                first=form.get("client_first_name","").strip()[:100]
+                last=form.get("client_last_name","").strip()[:100]
+                phone=form.get("client_phone","").strip()[:50]
+                old_name=self.calendar_event_client_name(event)
+                c.execute("UPDATE calendar_events SET client_id=NULL,client_first_name=?,client_last_name=?,client_phone=?,updated_at=?,updated_by=? WHERE id=?",
+                          (first,last,phone,stamp,user["id"],event_id))
+                calendar_add_history(c,event_id,user["id"],"Modifica cliente",old_name," ".join(x for x in (first,last) if x),stamp)
+            elif action=="animali":
+                try:animals=calendar_parse_items(form.get("animals_json"),"animal")
+                except ValueError as exc:return self.calendar_event_detail(user,event_id,error=str(exc))
+                estimates=[{"description":i["description"],"amount":i["amount"]} for i in c.execute("SELECT description,amount FROM calendar_event_estimate_items WHERE event_id=? ORDER BY sort_order,id",(event_id,)).fetchall()]
+                old_summary=calendar_animals_summary_text(c.execute("SELECT * FROM calendar_event_animals WHERE event_id=? ORDER BY id",(event_id,)).fetchall())
+                calendar_sync_children(c,event_id,animals,estimates,stamp)
+                c.execute("UPDATE calendar_events SET updated_at=?,updated_by=? WHERE id=?",(stamp,user["id"],event_id))
+                calendar_add_history(c,event_id,user["id"],"Modifica animali",old_summary,calendar_animals_summary_text(animals),stamp)
             elif action=="preventivo":
                 try:amount=max(0.0,float(str(form.get("amount") or "0").replace(",",".")))
                 except ValueError:return self.calendar_event_detail(user,event_id,error="Importo non valido.")
@@ -8244,7 +8311,7 @@ class App(BaseHTTPRequestHandler):
                 c.execute("UPDATE calendar_events SET linked_practice_id=NULL,updated_at=?,updated_by=? WHERE id=?",(stamp,user["id"],event_id))
                 calendar_add_history(c,event_id,user["id"],"Scollegamento pratica",str(event["linked_practice_id"] or ""),"",stamp)
         target=safe_return_path(form.get("return_to") or self.headers.get("Referer"),f"/calendario/{event_id}")
-        if action in ("stato","zona","operatore","note","data-ora","preventivo"):
+        if action in ("stato","zona","operatore","note","data-ora","preventivo","tipo","luogo","cliente","animali"):
             target=f"{target}{'&' if '?' in target else '?'}saved={action}"
         self.redirect(target)
 
