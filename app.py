@@ -1270,7 +1270,7 @@ CSS = r"""
 :root{--ink:#24312c;--muted:#6e7b75;--brand:#a74045;--brand2:#7f3035;--paper:#fff;--bg:#f4f1ed;--line:#ded8d1;--green:#39745b;--gold:#a87926;--safe-top:env(safe-area-inset-top,0px);--safe-bottom:env(safe-area-inset-bottom,0px);--safe-left:env(safe-area-inset-left,0px);--safe-right:env(safe-area-inset-right,0px)}
 *{box-sizing:border-box}html{overscroll-behavior-y:contain}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;overscroll-behavior-y:contain}
 a{color:inherit;text-decoration:none}.top{height:68px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:18px;padding:0 28px;position:sticky;top:0;z-index:5}.brand{font-weight:800;font-size:19px;color:var(--brand)}.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:1.5px}.nav{display:flex;gap:8px;margin-left:auto}.nav a{padding:9px 12px;border-radius:9px}.nav a:hover{background:#f3eeea}.wrap{max-width:1280px;margin:0 auto;padding:28px}.titlebar{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:22px}h1{margin:0;font-size:28px}h2{font-size:18px;margin:0 0 15px}.sub{color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:10px;background:var(--brand);color:white;padding:11px 16px;font-weight:700;cursor:pointer}.btn:hover{background:var(--brand2)}.btn.ghost{background:white;color:var(--ink);border:1px solid var(--line)}.grid{display:grid;gap:16px}.stats{grid-template-columns:repeat(3,1fr)}.card{background:var(--paper);border:1px solid var(--line);border-radius:15px;padding:20px;box-shadow:0 3px 15px #4b39260a}.stat{display:flex;justify-content:space-between;align-items:center}.stat b{font-size:32px;color:var(--brand)}.badge{display:inline-flex;padding:5px 9px;border-radius:99px;background:#eee9e3;font-size:12px;font-weight:700}.tag-red{background:#e53935;color:white}.tag-orange{background:#fb8c00;color:white}.tag-outline-orange{background:white;color:#fb8c00;border:2px solid #fb8c00}.tag-purple{background:#7e57c2;color:white}.tag-yellow,.pay-yellow{background:#fdd835;color:#3b3100}.tag-pink{background:#f06292;color:white}.tag-blue,.pay-blue{background:#1e88e5;color:white}.tag-green,.pay-green{background:#43a047;color:white}.status-stack{display:flex;gap:5px;flex-wrap:wrap}.form-grid{grid-template-columns:repeat(2,1fr)}.wide{grid-column:1/-1}.section{background:#fff;border:1px solid var(--line);border-radius:15px;padding:20px}.fields{display:grid;grid-template-columns:repeat(2,1fr);gap:13px}.field{display:flex;flex-direction:column;gap:6px}.field.full{grid-column:1/-1}label{font-weight:650;font-size:13px}input,select,textarea{width:100%;border:1px solid #cfc8c0;border-radius:9px;padding:11px 12px;background:white;color:var(--ink);font:inherit}input[type=checkbox]{width:auto;min-height:auto}textarea{min-height:90px;resize:vertical}input:focus,select:focus,textarea:focus{outline:3px solid #a7404520;border-color:var(--brand)}table{width:100%;border-collapse:collapse;background:white}th,td{text-align:left;padding:16px 14px;border-bottom:1px solid var(--line)}th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}thead th{position:sticky;top:0;z-index:2;background:#101620}.light-theme thead th{background:#fff}.tablebox{background:white;border:1px solid var(--line);border-radius:15px;max-height:min(65vh,620px);overflow:auto;-webkit-overflow-scrolling:touch;touch-action:none}.tablebox-scroll-top{overflow-x:auto;overflow-y:hidden;height:16px;margin-bottom:6px;position:sticky;top:76px;z-index:10;background:var(--paper)}.tablebox-scroll-top-inner{height:1px}@media(max-width:900px){.tablebox-scroll-top{display:none}}.actions{display:flex;gap:10px;flex-wrap:wrap}.flash{padding:13px 16px;border-radius:10px;background:#e5f2eb;color:#285b45;margin-bottom:16px}.warning{background:#fff1d8;color:#765315}.reminders-card{background:#1f2937;border:1px solid #334155;border-radius:15px;margin-bottom:20px;box-shadow:0 14px 36px #03071235;overflow:hidden}.reminders-card-header{display:flex;align-items:center;gap:14px;width:100%;padding:16px 18px;background:transparent;border:0;cursor:pointer;color:inherit;text-align:left;font:inherit}.reminders-card-icon{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:#4c1d24;color:#fb7185;flex:0 0 40px}.reminders-card-icon svg{width:20px;height:20px}.reminders-card-copy{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}.reminders-card-copy strong{font-size:16px;font-weight:700}.reminders-card-copy small{color:#94a3b8}.reminders-count-badge{display:inline-grid;place-items:center;min-width:22px;height:22px;padding:0 6px;margin-left:8px;border-radius:99px;background:#ef4444;color:#fff;font-size:12px;font-weight:800;vertical-align:middle}.reminders-card-chevron{color:#94a3b8;font-size:18px;line-height:1;transition:transform .25s ease;flex:0 0 auto}.reminders-card.open .reminders-card-chevron{transform:rotate(180deg);color:#ef4444}.reminders-card-body{max-height:0;overflow:hidden;transition:max-height .35s ease}.reminders-card-section-title{margin:0;padding:14px 18px 4px;font-size:13px;font-weight:700;color:#94a3b8;border-top:1px solid #334155}.reminders-todo-list{list-style:none;margin:0;padding:4px 10px 6px}.reminders-todo-row{display:flex;align-items:center;gap:14px;padding:12px 8px;color:inherit;text-decoration:none;border-radius:10px;background:none;border:0;width:100%;font:inherit;text-align:left;cursor:pointer}.reminders-todo-row:hover{background:#ffffff0c}.reminders-todo-icon{width:34px;height:34px;flex:0 0 34px}.reminders-todo-icon svg{width:16px;height:16px}.reminders-todo-text{flex:1;font-weight:600}.reminders-todo-chevron{color:#94a3b8;font-size:18px;display:flex;align-items:center}.reminders-todo-empty{padding:12px 8px;color:#94a3b8}.reminders-week-row{display:flex;align-items:center;gap:14px;margin:6px 10px 14px;padding:16px 8px 4px;border-top:1px solid #334155;color:inherit;text-decoration:none;background:none;border-left:0;border-right:0;border-bottom:0;width:100%;font:inherit;text-align:left;cursor:pointer}.reminders-week-row:hover .reminders-week-copy b{color:#fb7185}.reminders-week-icon{width:34px;height:34px;flex:0 0 34px}.reminders-week-icon svg{width:16px;height:16px}.reminders-week-copy{flex:1;min-width:0}.reminders-week-copy b{text-decoration:underline;text-underline-offset:3px;transition:color .15s ease}.reminders-week-copy small{display:block;margin-top:4px;color:#cbd5e1}.reminders-week-chevron{color:#94a3b8;font-size:18px;display:flex;align-items:center}.figure-w{color:#60a5fa;font-weight:700}.figure-d{color:#fbbf24;font-weight:700}.reminders-todo-chevron .icon,.reminders-week-chevron .icon{width:16px;height:16px;transition:transform .25s ease;transform:rotate(90deg)}.reminders-todo-row[aria-expanded="true"] .reminders-todo-chevron .icon,.reminders-week-row[aria-expanded="true"] .reminders-week-chevron .icon{transform:rotate(270deg)}.reminders-todo-row.reminders-row-active,.reminders-week-row.reminders-row-active{background:#ffffff0c}.reminders-expand{max-height:0;overflow:hidden;transition:max-height .3s ease;margin:2px 8px 0;border-radius:10px;background:#161c27;border:1px solid #263140}.reminders-expand-row{display:flex;align-items:center;gap:10px;padding:10px 10px;border-top:1px solid #1f2937;cursor:pointer}.reminders-expand-row:first-child{border-top:0}.reminders-expand-avatar{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:15px;flex:0 0 30px;background:#0f172a}.reminders-expand-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}.reminders-expand-title{font-weight:700;font-size:13px;color:#f5f7fb}.reminders-expand-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:11.5px;color:#94a3b8}.reminders-expand-meta .badge{font-size:10px;padding:2px 7px}.reminders-expand-urn{display:flex;align-items:center;gap:4px}.reminders-expand-urn .icon{width:12px;height:12px}.reminders-expand-weight{font-size:12px;font-weight:600;color:#94a3b8}.reminders-expand-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:0 0 auto;padding:10px}@media(max-width:620px){.reminders-expand-row{flex-wrap:wrap}.reminders-expand-actions{flex:1 1 100%;justify-content:flex-start;padding:6px 0 0 40px}}.reminders-expand-actions .btn{padding:7px 12px;font-size:12px}.reminders-expand-empty{padding:12px 10px;color:#94a3b8;font-size:13px;margin:0}.reminders-expand-week{display:flex;gap:24px;padding:12px 10px 4px}.reminders-expand-week div{display:flex;flex-direction:column;gap:2px}.reminders-expand-week small{color:#94a3b8;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em}.reminders-expand-week span{font-size:18px;font-weight:700}.light-theme .reminders-card{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .reminders-card-copy small{color:#64748b}.light-theme .reminders-card-section-title{color:#526174;border-color:#e2e8f0}.light-theme .reminders-todo-row:hover{background:#00000008}.light-theme .reminders-todo-chevron,.light-theme .reminders-week-chevron{color:#64748b}.light-theme .reminders-week-row{border-color:#e2e8f0}.light-theme .reminders-week-copy small{color:#334155}.light-theme .reminders-todo-row.reminders-row-active,.light-theme .reminders-week-row.reminders-row-active{background:#00000008}.light-theme .reminders-expand{background:#f8fafc;border-color:#e2e8f0}.light-theme .reminders-expand-row{border-color:#e2e8f0}.light-theme .reminders-expand-avatar{background:#e2e8f0}.light-theme .reminders-expand-title{color:#111827}.light-theme .reminders-expand-meta{color:#64748b}.light-theme .reminders-expand-weight{color:#64748b}.light-theme .reminders-expand-empty{color:#64748b}
-.drag-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;max-height:420px;overflow:auto;-webkit-overflow-scrolling:touch}.drag-list-scrollable{max-height:min(60vh,480px)}.drag-item{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid #334155;border-radius:12px;background:#1f2937;-webkit-touch-callout:none;transition:box-shadow .15s ease,border-color .15s ease}.drag-item.dragging{opacity:.65;box-shadow:0 16px 38px #0008;border-color:#56657a;position:relative;z-index:5}.drag-handle{cursor:grab;color:#94a3b8;font-weight:800;letter-spacing:2px;padding:6px 8px;touch-action:none;flex:0 0 auto}.drag-handle:active{cursor:grabbing}
+.drag-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;max-height:420px;overflow:auto;-webkit-overflow-scrolling:touch}.drag-list-scrollable{max-height:min(60vh,480px)}.drag-item{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid #334155;border-radius:12px;background:#1f2937;-webkit-touch-callout:none;transition:box-shadow .15s ease,border-color .15s ease}.drag-item.dragging{box-shadow:0 20px 46px #000a;border-color:#56657a;position:relative;z-index:5;cursor:grabbing}.drag-handle{cursor:grab;color:#94a3b8;font-weight:800;letter-spacing:2px;padding:6px 8px;touch-action:none;flex:0 0 auto}.drag-handle:active{cursor:grabbing}
 body.ppm-dragging-no-select,body.ppm-dragging-no-select *{-webkit-user-select:none!important;-moz-user-select:none!important;-ms-user-select:none!important;user-select:none!important}.drag-item-icon{display:grid;place-items:center;width:30px;height:30px;flex:0 0 30px}.drag-item-icon svg{width:16px;height:16px}.drag-item-label{flex:1;font-weight:600}.drag-item-visible-wrap{display:flex;align-items:center;flex:0 0 auto}.drag-item-visible-wrap input[type=checkbox]{width:20px;height:20px}.light-theme .drag-item{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .drag-handle{color:#64748b}
 .notif-type-list{display:flex;flex-direction:column;gap:8px}.notif-type-row{justify-content:flex-start;gap:12px}.notif-type-icon{font-size:19px;width:34px;height:34px;display:grid;place-items:center;flex:0 0 34px;border-radius:10px;background:#172033}.notif-type-copy{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}.notif-type-copy small{color:#94a3b8}.notif-type-row input[type=checkbox]{margin-left:auto;width:20px;height:20px}.light-theme .notif-type-icon{background:#f1f5f9}.light-theme .notif-type-copy small{color:#64748b}.login{max-width:410px;margin:10vh auto;background:white;padding:34px;border-radius:18px;border:1px solid var(--line)}.timeline{border-left:2px solid var(--line);margin-left:7px;padding-left:20px}.event{padding:0 0 18px;position:relative}.event:before{content:'';position:absolute;width:10px;height:10px;border-radius:50%;background:var(--brand);left:-26px;top:5px}.kvs{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.kv{background:#faf8f5;border-radius:10px;padding:12px}.kv small{display:block;color:var(--muted)}.signature-pad{width:100%;height:260px;border:2px dashed var(--line);border-radius:14px;background:white;touch-action:none}
 body{background:radial-gradient(circle at top left,#fff8f3 0,#f4f1ed 34%,#ece5dd 100%)}.top{backdrop-filter:saturate(1.2) blur(10px);box-shadow:0 8px 28px #4b392612}.brand{letter-spacing:.2px}.nav a{font-weight:650}.nav a.btn{box-shadow:0 8px 20px #a7404524}.wrap{animation:ppmFade .18s ease-out}.titlebar h1{letter-spacing:-.03em}.section,.card,.tablebox,.login{box-shadow:0 10px 30px #4b39260d}.section{transition:box-shadow .15s ease, transform .15s ease}.card{transition:transform .15s ease,box-shadow .15s ease}.card:hover{transform:translateY(-2px);box-shadow:0 14px 34px #4b392617}.btn{box-shadow:0 6px 16px #a740451f}.btn.ghost{box-shadow:none}.kv{border:1px solid #eee6df}.tablebox table tr:hover td{background:#fffaf6}input,select,textarea{transition:border-color .15s ease,box-shadow .15s ease}.danger{border-width:1px}.trash-note{background:#fff7e8;border:1px solid #f0cf9d;color:#765315;border-radius:12px;padding:12px 14px;margin-bottom:16px}.empty-state{text-align:center;padding:32px;color:var(--muted)}@keyframes ppmFade{from{opacity:.78;transform:translateY(3px)}to{opacity:1;transform:none}}
@@ -1620,7 +1620,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .calendar-daybar-wrap{display:flex;align-items:center;gap:4px;margin-bottom:14px}
 .calendar-daybar-nav{flex:0 0 auto;width:26px;height:26px;border:0;border-radius:8px;background:transparent;color:#8a96a8;font-size:19px;line-height:1;cursor:pointer;display:grid;place-items:center}
 .calendar-daybar-nav:hover{color:#e2e8f0;background:#1a2332}
-.calendar-daybar{display:flex;gap:9px;flex:1 1 auto;min-width:0;overflow-x:auto;scroll-behavior:smooth;padding:4px 2px 10px;scrollbar-width:none}
+.calendar-daybar{display:flex;justify-content:center;gap:9px;flex:1 1 auto;min-width:0;overflow-x:auto;scroll-behavior:smooth;padding:4px 2px 10px;scrollbar-width:none}
 .calendar-daybar::-webkit-scrollbar{display:none}
 .calendar-daybar-card{flex:0 0 auto;min-width:62px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 8px;border:1px solid #334155;border-radius:16px;background:#1a2332;box-shadow:0 6px 16px #0307122e;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,background .18s ease,border-color .18s ease;text-decoration:none}
 .calendar-daybar-card:hover{border-color:#465065}
@@ -1964,7 +1964,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-daybar-wrap{display:flex;align-items:center;gap:4px;margin-bottom:14px}
 .cremation-daybar-nav{flex:0 0 auto;width:26px;height:26px;border:0;border-radius:8px;background:transparent;color:#8a96a8;font-size:19px;line-height:1;cursor:pointer;display:grid;place-items:center}
 .cremation-daybar-nav:hover{color:#e2e8f0;background:#1a2332}
-.cremation-daybar{display:flex;gap:9px;flex:1 1 auto;min-width:0;overflow-x:auto;scroll-behavior:smooth;padding:4px 2px 10px;scrollbar-width:none}
+.cremation-daybar{display:flex;justify-content:center;gap:9px;flex:1 1 auto;min-width:0;overflow-x:auto;scroll-behavior:smooth;padding:4px 2px 10px;scrollbar-width:none}
 .cremation-daybar::-webkit-scrollbar{display:none}
 .cremation-daybar-card{flex:0 0 auto;min-width:62px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 8px;border:1px solid #334155;border-radius:16px;background:#1a2332;box-shadow:0 6px 16px #0307122e;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,background .18s ease,border-color .18s ease;font-family:inherit}
 .cremation-daybar-card:hover{border-color:#465065}
@@ -2331,7 +2331,7 @@ button.calendar-tap-card:active,a.calendar-tap-card:active{transform:scale(.985)
 .route-today-btn.active{border-color:#3b82f660;color:#60a5fa}
 .route-mode-switch{display:flex;gap:8px;margin-bottom:6px}
 .route-mode-switch label{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;border-radius:12px;border:1px solid #ffffff14;background:#ffffff08;font-size:13.5px;font-weight:700;cursor:pointer;transition:border-color .15s ease,background .15s ease}
-.route-mode-switch label.active{border-color:#3b82f660;background:#3b82f61a;color:#60a5fa}
+.route-mode-switch label.active{border-color:#fb4c6770;background:#fb4c671f;color:#fb7185}
 .route-mode-switch input{position:absolute;opacity:0;width:0;height:0}
 .route-stop-card{align-items:center}
 .route-stop-handle{flex:0 0 auto;color:#8a96a8;cursor:grab;touch-action:none}
@@ -2347,8 +2347,10 @@ button.calendar-tap-card:active,a.calendar-tap-card:active{transform:scale(.985)
 .route-actions-row{display:flex;gap:8px;margin-top:10px}
 .route-actions-row .btn{flex:1}
 .route-stop-card.dragging{box-shadow:0 18px 40px #0009}
-.route-fab{width:46px!important;height:46px!important;border-radius:50%!important;background:linear-gradient(135deg,#fb4c67,#d9284c);border-color:transparent;color:#fff;box-shadow:0 8px 22px #ef405f55}
-.route-fab:hover{border-color:transparent;color:#fff;box-shadow:0 10px 28px #ef405f70}
+.route-fab{width:46px!important;height:46px!important;border-radius:50%!important;background:linear-gradient(135deg,#fb4c67,#d9284c)!important;border:0!important;color:#fff!important;box-shadow:0 4px 14px #ef405f66,0 0 0 5px #ef405f1f}
+.route-fab:hover{color:#fff!important;box-shadow:0 6px 18px #ef405f80,0 0 0 6px #ef405f2b;transform:translateY(-1px)}
+.route-fab:active{transform:translateY(0) scale(.94)}
+.route-fab svg{width:20px;height:20px}
 .route-sheet-backdrop,.route-quick-backdrop{position:fixed;inset:0;z-index:96;background:#020617aa;opacity:0;pointer-events:none;transition:opacity .22s ease}
 .route-sheet{position:fixed;left:50%;bottom:0;z-index:97;width:min(430px,100%);padding:10px 18px calc(20px + var(--safe-bottom));border-radius:22px 22px 0 0;background:#141b28;box-shadow:0 -20px 60px #0009;transform:translate(-50%,100%);transition:transform .32s cubic-bezier(.16,1,.3,1)}
 .route-sheet-handle{width:36px;height:4px;margin:8px auto 12px;border-radius:99px;background:#334155}
@@ -2386,16 +2388,12 @@ body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY
 .route-stop-menu-popover button:hover{background:#232c3d}
 .route-tappe-header{display:flex;align-items:baseline;justify-content:space-between;margin:18px 0 2px}
 .route-tappe-header h3{margin:0}
-.route-restore-link{background:none;border:0;color:#fb7185;font-size:12.5px;font-weight:700;display:inline-flex;align-items:center;gap:4px;cursor:pointer;padding:4px}
+.route-restore-link{background:none;border:0;color:#60a5fa;font-size:12.5px;font-weight:700;display:inline-flex;align-items:center;gap:4px;cursor:pointer;padding:4px}
 .route-drag-hint{margin:0 0 10px;font-size:12px;color:#8592a6}
 .route-stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:18px 0 12px;padding:14px 8px;border-radius:14px;background:#141b28;border:1px solid #263246}
 .route-stats-row div{text-align:center}
 .route-stats-row b{display:block;font-size:16px}
 .route-stats-row small{color:#8592a6;font-size:11px}
-.drag-item{transition:box-shadow .15s ease,border-color .15s ease,transform .16s cubic-bezier(.2,.8,.2,1)}
-.drag-item.dragging{transform:scale(1.03) translateY(-3px)}
-@keyframes routeDragSettle{0%{transform:scale(1.025)}60%{transform:scale(.995)}100%{transform:scale(1)}}
-.drag-item.drag-settle{animation:routeDragSettle .28s cubic-bezier(.34,1.56,.64,1)}
 @keyframes routeStopEnter{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 [data-drag-root] .route-stop-card{animation:routeStopEnter .32s cubic-bezier(.2,.8,.2,1) both}
 [data-drag-root] .route-stop-card:nth-child(2){animation-delay:.03s}
@@ -3911,7 +3909,11 @@ function setupDragReorder(root){
       const item=handle.closest('.drag-item');
       if(!item)return;
       e.preventDefault();
+      const startY=e.clientY;
+      let dy=0;
       item.classList.add('dragging');
+      item.style.transition='none';
+      item.style.zIndex=5;
       // a held pointer moving over sibling text otherwise starts a native
       // text selection mid-drag (reported as "si seleziona il testo come se
       // stessi selezionando"): blocking user-select only on the dragged item
@@ -3923,13 +3925,21 @@ function setupDragReorder(root){
       function reorderWithSmoothReflow(after){
         const siblings=[...root.querySelectorAll('.drag-item')].filter(function(el){return el!==item;});
         const firstRects=new Map(siblings.map(function(el){return [el,el.getBoundingClientRect()];}));
+        // l'item segue il dito tramite transform: prima di spostarlo nel DOM
+        // si registra la sua posizione visiva attuale, cosi' dopo l'inserimento
+        // si puo' correggere l'offset e farlo restare esattamente dove si
+        // trova sullo schermo (mai un teletrasporto nella nuova cella).
+        const itemBefore=item.getBoundingClientRect();
         if(after)root.insertBefore(item,after);
         else root.appendChild(item);
+        const itemAfter=item.getBoundingClientRect();
+        dy+=itemBefore.top-itemAfter.top;
+        item.style.transform='translateY('+dy+'px) scale(1.03)';
         siblings.forEach(function(el){
-          const first=firstRects.get(el),last=el.getBoundingClientRect(),dy=first.top-last.top;
-          if(!dy)return;
+          const first=firstRects.get(el),last=el.getBoundingClientRect(),slideDy=first.top-last.top;
+          if(!slideDy)return;
           el.style.transition='none';
-          el.style.transform='translateY('+dy+'px)';
+          el.style.transform='translateY('+slideDy+'px)';
           requestAnimationFrame(function(){
             el.style.transition='transform .22s cubic-bezier(.2,.8,.2,1)';
             el.style.transform='';
@@ -3938,6 +3948,8 @@ function setupDragReorder(root){
       }
       function onMove(ev){
         ev.preventDefault();
+        dy=ev.clientY-startY;
+        item.style.transform='translateY('+dy+'px) scale(1.03)';
         const y=ev.clientY;
         const siblings=[...root.querySelectorAll('.drag-item')].filter(function(el){return el!==item;});
         let after=null;
@@ -3953,8 +3965,11 @@ function setupDragReorder(root){
       }
       function onUp(){
         item.classList.remove('dragging');
-        item.classList.add('drag-settle');
-        setTimeout(function(){item.classList.remove('drag-settle');},280);
+        // spring al rilascio: la curva overshoot fa "atterrare" la card con
+        // un piccolo rimbalzo mentre torna al proprio posto naturale (transform:'').
+        item.style.transition='transform .32s cubic-bezier(.34,1.56,.64,1)';
+        item.style.transform='';
+        setTimeout(function(){item.style.transition='';item.style.zIndex='';},320);
         document.body.classList.remove('ppm-dragging-no-select');
         window.removeEventListener('pointermove',onMove);
         window.removeEventListener('pointerup',onUp);
@@ -5089,7 +5104,12 @@ function calendarZoneOffer(input){setTimeout(()=>{const results=input.parentElem
 function calendarTimeParts(input){const digits=input.value.replace(/\D/g,'').slice(0,4);if(!digits)return {hour:0,minute:0,digits};if(digits.length<=2)return {hour:Math.min(23,Number(digits)||0),minute:0,digits};const hour=digits.length===3?Number(digits[0]):Number(digits.slice(0,2)),minute=Number(digits.slice(-2));return {hour:Math.min(23,hour||0),minute:Math.min(59,minute||0),digits};}
 function calendarSetWheelTime(wheel,hour,minute,notify=true){const input=wheel.closest('.calendar-datetime-row')?.querySelector('[data-time-entry]');if(!input)return;input.value=`${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}`;input.dataset.timeDigits=`${String(hour).padStart(2,'0')}${String(minute).padStart(2,'0')}`;calendarSyncTimeWheel(input,false);if(notify)input.dispatchEvent(new Event('change',{bubbles:true}));}
 function calendarSyncTimeWheel(input,smooth=true){const wheel=input.closest('.calendar-datetime-row')?.querySelector('[data-time-wheel]');if(!wheel)return;const {hour,minute}=calendarTimeParts(input),wheelMinute=Math.max(0,Math.min(55,Math.round(minute/5)*5));wheel.dataset.syncing='1';wheel.querySelectorAll('.calendar-wheel-option').forEach(button=>button.classList.toggle('active',Number(button.dataset.timeValue)===(button.closest('[data-wheel-part="hour"]')?hour:wheelMinute)));wheel.querySelectorAll('.calendar-wheel-column').forEach(column=>{const active=column.querySelector('.active');if(active)column.scrollTo({top:active.offsetTop-(column.clientHeight-active.offsetHeight)/2,behavior:smooth?'smooth':'auto'});});clearTimeout(wheel._syncTimer);wheel._syncTimer=setTimeout(()=>delete wheel.dataset.syncing,420);}
-function calendarInitTimeWheel(wheel){if(!wheel||wheel.dataset.ready)return;wheel.dataset.ready='1';wheel.querySelectorAll('.calendar-wheel-option').forEach(button=>button.addEventListener('click',()=>{const parts=calendarTimeParts(wheel.closest('.calendar-datetime-row').querySelector('[data-time-entry]')),roundedMinute=Math.min(55,Math.round(parts.minute/5)*5);calendarSetWheelTime(wheel,button.closest('[data-wheel-part="hour"]')?Number(button.dataset.timeValue):parts.hour,button.closest('[data-wheel-part="minute"]')?Number(button.dataset.timeValue):roundedMinute);}));wheel.querySelectorAll('.calendar-wheel-column').forEach(column=>column.addEventListener('scroll',()=>{if(wheel.dataset.syncing)return;clearTimeout(column._wheelTimer);column._wheelTimer=setTimeout(()=>{const center=column.scrollTop+column.clientHeight/2;const options=[...column.querySelectorAll('.calendar-wheel-option')];const nearest=options.reduce((best,item)=>Math.abs(item.offsetTop+item.offsetHeight/2-center)<Math.abs(best.offsetTop+best.offsetHeight/2-center)?item:best,options[0]);if(!nearest)return;const parts=calendarTimeParts(wheel.closest('.calendar-datetime-row').querySelector('[data-time-entry]')),roundedMinute=Math.min(55,Math.round(parts.minute/5)*5);calendarSetWheelTime(wheel,column.dataset.wheelPart==='hour'?Number(nearest.dataset.timeValue):parts.hour,column.dataset.wheelPart==='minute'?Number(nearest.dataset.timeValue):roundedMinute);},90);},{passive:true}));}
+function calendarInitTimeWheel(wheel){if(!wheel||wheel.dataset.ready)return;wheel.dataset.ready='1';wheel.querySelectorAll('.calendar-wheel-option').forEach(button=>button.addEventListener('click',()=>{const isMinute=!!button.closest('[data-wheel-part="minute"]');const parts=calendarTimeParts(wheel.closest('.calendar-datetime-row').querySelector('[data-time-entry]')),roundedMinute=Math.min(55,Math.round(parts.minute/5)*5);calendarSetWheelTime(wheel,button.closest('[data-wheel-part="hour"]')?Number(button.dataset.timeValue):parts.hour,isMinute?Number(button.dataset.timeValue):roundedMinute);
+    // toccare i minuti e' l'ultimo passo per confermare un orario completo
+    // (ore+minuti): la rotella deve chiudersi subito, non restare aperta
+    // finche' l'utente non tocca un punto esterno (bug segnalato dall'utente).
+    if(isMinute)wheel.hidden=true;
+  }));wheel.querySelectorAll('.calendar-wheel-column').forEach(column=>column.addEventListener('scroll',()=>{if(wheel.dataset.syncing)return;clearTimeout(column._wheelTimer);column._wheelTimer=setTimeout(()=>{const center=column.scrollTop+column.clientHeight/2;const options=[...column.querySelectorAll('.calendar-wheel-option')];const nearest=options.reduce((best,item)=>Math.abs(item.offsetTop+item.offsetHeight/2-center)<Math.abs(best.offsetTop+best.offsetHeight/2-center)?item:best,options[0]);if(!nearest)return;const parts=calendarTimeParts(wheel.closest('.calendar-datetime-row').querySelector('[data-time-entry]')),roundedMinute=Math.min(55,Math.round(parts.minute/5)*5);calendarSetWheelTime(wheel,column.dataset.wheelPart==='hour'?Number(nearest.dataset.timeValue):parts.hour,column.dataset.wheelPart==='minute'?Number(nearest.dataset.timeValue):roundedMinute);},90);},{passive:true}));}
 function calendarTimeRenderDigits(input,digits){digits=String(digits||'').replace(/\D/g,'').slice(0,4);input.dataset.timeDigits=digits;input.dataset.timeEditing='1';input.dataset.timeComplete=digits.length===4?'1':'0';input.value=digits.length<=2?digits:digits.slice(0,2)+':'+digits.slice(2);try{input.setSelectionRange(input.value.length,input.value.length);}catch(_error){}if(digits.length===4){const hour=Number(digits.slice(0,2)),minute=Number(digits.slice(2));if(hour<24&&minute<60)calendarSyncTimeWheel(input,true);}}
 function calendarTimeBeforeInput(input,event){if(!event)return;const type=event.inputType||'';if(type==='deleteContentBackward'){event.preventDefault();let digits=(input.dataset.timeEditing==='1'?input.dataset.timeDigits:input.value.replace(/\D/g,'')).slice(0,-1);calendarTimeRenderDigits(input,digits);return;}if(!type.startsWith('insert')||!event.data)return;const incoming=(event.data.match(/\d/g)||[]).join('');if(!incoming)return;event.preventDefault();const selected=input.selectionStart!==input.selectionEnd;let digits=(input.dataset.timeEditing==='1'&&!selected?input.dataset.timeDigits||'':'');for(const digit of incoming){if(digits.length>=4)digits='';digits+=digit;}calendarTimeRenderDigits(input,digits);}
 function calendarTimeInput(input){if(input.dataset.timeEditing==='1')return;let digits=input.value.replace(/\D/g,'').slice(0,4);input.dataset.timeDigits=digits;input.dataset.timeComplete='0';if(digits.length===4){const hour=Number(digits.slice(0,2)),minute=Number(digits.slice(2));if(hour<24&&minute<60){input.value=`${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}`;input.dataset.timeComplete='1';calendarSyncTimeWheel(input,true);}}}
@@ -7864,6 +7884,8 @@ class App(BaseHTTPRequestHandler):
 
     def calendar_page(self,user):
         q=parse_qs(urlparse(self.path).query);selected=(q.get("data") or [rome_now().date().isoformat()])[0]
+        route_error=(q.get("percorso_errore") or [""])[0]
+        route_error_html=f'<div class="flash warning">{esc(route_error)}</div>' if route_error else ''
         try:date.fromisoformat(selected)
         except ValueError:selected=rome_now().date().isoformat()
         view=(q.get("vista") or ["giorno"])[0]
@@ -8060,6 +8082,7 @@ class App(BaseHTTPRequestHandler):
             <aside class="route-quick-popup" aria-label="Parti subito" role="dialog" aria-modal="true">
               <div class="route-quick-head"><h2>Parti subito</h2><button type="button" class="icon-btn" onclick="routeCloseQuickPopup()" aria-label="Chiudi">{lucide("x")}</button></div>
               <form method="post" action="/percorso-giornaliero/calcola" id="routeQuickForm">
+                <input type="hidden" name="quick" value="1">
                 <input type="hidden" name="data" id="routeQuickDate" value="{selected}">
                 <input type="hidden" name="start_lat" data-route-geoloc="start_lat"><input type="hidden" name="start_lng" data-route-geoloc="start_lng">
                 <div class="route-quick-field">
@@ -8083,7 +8106,7 @@ class App(BaseHTTPRequestHandler):
               </form>
             </aside>
           </div>'''
-        body=f'''<main class="wrap calendar-wrap"><div class="titlebar calendar-main-title"><div>{back_button}<h1>Calendario operativo</h1><p class="sub">Ritiri, riconsegne e promemoria</p></div><div class="calendar-quick-actions"><a class="icon-btn" href="/calendario/cestino" aria-label="Cestino" title="Cestino">{lucide("trash-2")}</a><a class="icon-btn calendar-settings-link" href="/calendario/impostazioni" aria-label="Impostazioni" title="Impostazioni">{lucide("settings")}</a><button type="button" class="icon-btn route-fab" aria-label="Percorso giornaliero" title="Percorso giornaliero" onclick="routeOpenSheet('{selected}')">{lucide("truck")}</button></div></div><nav class="calendar-date-nav"><a class="btn ghost" data-calendar-prev href="{view_url(prev_target)}" aria-label="Periodo precedente">←</a><label class="calendar-date-title"><span>{date_title}</span><input type="date" value="{selected}" onchange="const u=new URL(location.href);u.searchParams.set('data',this.value);location.href=u"></label><a class="btn ghost" data-calendar-next href="{view_url(next_target)}" aria-label="Periodo successivo">→</a><a class="btn ghost calendar-today" href="{view_url(rome_now().date())}">OGGI</a></nav><div class="calendar-toolbar"><nav class="calendar-view-switch">{switch}</nav></div>{content}{filters_html}{preference_script}{route_sheet_html}</main>'''
+        body=f'''<main class="wrap calendar-wrap">{route_error_html}<div class="titlebar calendar-main-title"><div>{back_button}<h1>Calendario operativo</h1><p class="sub">Ritiri, riconsegne e promemoria</p></div><div class="calendar-quick-actions"><a class="icon-btn" href="/calendario/cestino" aria-label="Cestino" title="Cestino">{lucide("trash-2")}</a><a class="icon-btn calendar-settings-link" href="/calendario/impostazioni" aria-label="Impostazioni" title="Impostazioni">{lucide("settings")}</a><button type="button" class="icon-btn route-fab" aria-label="Percorso giornaliero" title="Percorso giornaliero" onclick="routeOpenSheet('{selected}')">{lucide("truck")}</button></div></div><nav class="calendar-date-nav"><a class="btn ghost" data-calendar-prev href="{view_url(prev_target)}" aria-label="Periodo precedente">←</a><label class="calendar-date-title"><span>{date_title}</span><input type="date" value="{selected}" onchange="const u=new URL(location.href);u.searchParams.set('data',this.value);location.href=u"></label><a class="btn ghost" data-calendar-next href="{view_url(next_target)}" aria-label="Periodo successivo">→</a><a class="btn ghost calendar-today" href="{view_url(rome_now().date())}">OGGI</a></nav><div class="calendar-toolbar"><nav class="calendar-view-switch">{switch}</nav></div>{content}{filters_html}{preference_script}{route_sheet_html}</main>'''
         self.send_html(layout("Calendario operativo",body,user))
 
     def calendar_settings(self,user):
@@ -8714,7 +8737,12 @@ class App(BaseHTTPRequestHandler):
         if loc_type=="sede":
             loc_id=int(form.get(f"{kind}_location_id") or 0)
             loc=c.execute("SELECT * FROM company_locations WHERE id=? AND active=1",(loc_id,)).fetchone()
-            if not loc:return None
+            # una sede senza indirizzo configurato deve far fallire la
+            # risoluzione in modo esplicito: mai proseguire con un indirizzo
+            # vuoto, che altrimenti verrebbe scambiato per "nessuna scelta"
+            # e sostituito in silenzio dall'altro capo del percorso (bug
+            # segnalato dall'utente: "la sede di arrivo viene ignorata").
+            if not loc or not loc["address"]:return None
             lat,lng=loc["lat"],loc["lng"]
             if (lat is None or lng is None) and loc["address"]:
                 # geocodifica pigra: la prima volta che una sede viene usata
@@ -8735,9 +8763,9 @@ class App(BaseHTTPRequestHandler):
         lat,lng=route_service.resolve_coordinates(c,address)
         return loc_type,None,address,lat,lng
 
-    def route_plan_page(self,user,plan_id=None):
+    def route_plan_page(self,user,plan_id=None,inline_error=None):
         q=parse_qs(urlparse(self.path).query)
-        error=(q.get("errore") or [""])[0]
+        error=inline_error or (q.get("errore") or [""])[0]
         with db() as c:
             if plan_id:
                 plan=c.execute("SELECT * FROM route_plans WHERE id=?",(plan_id,)).fetchone()
@@ -8920,6 +8948,7 @@ class App(BaseHTTPRequestHandler):
 
     def route_plan_calculate(self,user):
         form=self.form()
+        quick=form.get("quick","").strip()=="1"
         selected=form.get("data","").strip()
         try:date.fromisoformat(selected)
         except ValueError:return self.send_error(400,"Data non valida")
@@ -8930,12 +8959,18 @@ class App(BaseHTTPRequestHandler):
         # dell'ordine veloce/breve, quindi di default e' sempre "adesso".
         start_time=form.get("start_time","").strip() or rome_now().strftime("%H:%M")
         stamp=now()
+        def resolve_failure(message):
+            # "Parti subito" vive nel Calendario, mai nella schermata
+            # Impostazioni percorso: un errore di risoluzione deve tornare
+            # li' con un avviso chiaro, non aprire le impostazioni complete.
+            if quick:return self.redirect(f"/calendario?data={selected}&percorso_errore={quote(message)}")
+            return self.route_plan_page(user,inline_error=message)
         with db() as c:
             start=self.route_plan_resolve_endpoint(c,"start",form)
-            if not start:return self.route_plan_page(user)  # dovrebbe essere gia' validato client-side
+            if not start:return resolve_failure("Punto di partenza non valido: verifica che la sede scelta abbia un indirizzo configurato (Percorso giornaliero → Sedi aziendali).")
             start_type,start_location_id,start_address,start_lat,start_lng=start
             end=self.route_plan_resolve_endpoint(c,"end",form,fallback_lat=start_lat,fallback_lng=start_lng)
-            if not end:return self.route_plan_page(user)
+            if not end:return resolve_failure("Punto di arrivo non valido: verifica che la sede scelta abbia un indirizzo configurato (Percorso giornaliero → Sedi aziendali).")
             end_type,end_location_id,end_address,end_lat,end_lng=end
             eligible=route_eligible_events(c,selected)
             contexts=[]
@@ -8984,6 +9019,16 @@ class App(BaseHTTPRequestHandler):
                   (plan_id,ctx["event_id"],index,sched["arrival"],sched["departure"],ctx["service_minutes"],
                    ctx["windows"][0][0] if ctx["windows"] else None,ctx["windows"][0][1] if ctx["windows"] else None,ctx["window_source"],
                    sched["distance_meters"],sched["duration_seconds"],sched["status"],sched["message"]))
+        if quick:
+            # "Parti subito": il percorso resta salvato come sempre (storico,
+            # riordino, ecc.), ma si va DIRETTAMENTE su Google Maps, mai alla
+            # schermata Impostazioni percorso. Se le tappe superano il limite
+            # di un solo link (caso raro), si ripiega sulla pagina di
+            # dettaglio: mai una tappa esclusa in silenzio dal link diretto.
+            waypoint_addresses=[ctx["address"] for ctx in ordered_contexts]
+            urls=route_service.build_maps_urls(start_address or "",end_address or start_address or "",waypoint_addresses)
+            if len(urls)==1:
+                return self.redirect(urls[0])
         self.redirect(f"/percorso-giornaliero/{plan_id}")
 
     def route_plan_reorder(self,user,plan_id):

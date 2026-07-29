@@ -2632,6 +2632,22 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("calendarFlushWheelTime(document.getElementById('cremationEditStart'))", submit_body)
         self.assertIn("calendarFlushWheelTime(document.getElementById('cremationEditEnd'))", submit_body)
 
+    def test_calendar_time_wheel_closes_itself_after_confirming_the_minute(self):
+        # bug reale segnalato dall'utente: "quando imposto l'orario e si apre
+        # la rotella, quando poi clicco il tasto per confermare rimane
+        # aperta finche' non tocco un punto esterno, si deve chiudere quando
+        # confermo l'orario". Toccare un valore dei minuti e' l'ultimo passo
+        # per completare un orario (ore+minuti), quindi e' il momento giusto
+        # per chiudere subito la rotella, senza richiedere un tap esterno.
+        # La stessa funzione e' condivisa dal wizard calendario e dal modale
+        # "Modifica orario ciclo" delle cremazioni (stesso componente).
+        js = app.APP_JS
+        start = js.index("function calendarInitTimeWheel(wheel){")
+        end = js.index("wheel.querySelectorAll('.calendar-wheel-column').forEach(column=>column.addEventListener('scroll'")
+        click_body = js[start:end]
+        self.assertIn("const isMinute=!!button.closest('[data-wheel-part=\"minute\"]');", click_body)
+        self.assertIn("if(isMinute)wheel.hidden=true;", click_body)
+
     def test_cremation_edit_modal_redesign_keeps_the_existing_save_logic_untouched(self):
         # richiesta esplicita dell'utente (mockup): SOLO redesign grafico del
         # modale "Modifica orario ciclo" — icona, sottotitolo (CICLO N +
@@ -7894,6 +7910,29 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("ppm-dragging-no-select", app.APP_JS)
         self.assertIn("document.body.classList.add('ppm-dragging-no-select')", app.APP_JS)
         self.assertIn("document.body.classList.remove('ppm-dragging-no-select')", app.APP_JS)
+
+    def test_drag_reorder_item_follows_the_pointer_and_springs_into_place(self):
+        # bug reale segnalato dall'utente (due volte): "la card cambia
+        # posizione istantaneamente" durante il trascinamento delle tappe
+        # del percorso. Verificato dal vivo nel browser (harness isolato,
+        # PointerEvent sintetici) che l'item trascinato segue davvero il
+        # dito via transform (non solo le sorelle che si spostano), e che
+        # al rilascio torna al proprio posto con una curva a molla
+        # (overshoot), non un salto istantaneo.
+        js = app.APP_JS
+        fn_start = js.index("function setupDragReorder(root){")
+        fn_end = js.index("document.addEventListener('DOMContentLoaded',function(){\n  document.querySelectorAll('[data-drag-root]')")
+        body = js[fn_start:fn_end]
+        # l'item stesso (non solo i fratelli) viene traslato in base al
+        # movimento reale del puntatore
+        self.assertIn("dy=ev.clientY-startY;", body)
+        self.assertIn("item.style.transform='translateY('+dy+'px) scale(1.03)';", body)
+        # al rilascio: transizione a molla (overshoot) verso la posizione naturale
+        self.assertIn("item.style.transition='transform .32s cubic-bezier(.34,1.56,.64,1)';", body)
+        self.assertIn("item.style.transform='';", body)
+        # quando la card cambia cella nel DOM, l'offset visivo viene corretto
+        # subito dopo (mai un teletrasporto rispetto a dove si trova il dito)
+        self.assertIn("dy+=itemBefore.top-itemAfter.top;", body)
         self.assertIn("body.ppm-dragging-no-select,body.ppm-dragging-no-select *", app.CSS)
 
     def test_sidebar_order_popup_open_close_js_is_wired(self):
@@ -8541,6 +8580,83 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(stops[0]["event_id"], event_id)
         self.assertEqual(stops[0]["validation_status"], "grigio")
         self.assertEqual(stops[0]["warning_message"], "Nessun vincolo orario")
+
+    @patch("app.route_service.geocode_address", return_value=(43.55, 10.30))
+    def test_route_plan_calculate_fails_explicitly_when_chosen_sede_has_no_address(self, _mock_geocode):
+        # bug reale segnalato dall'utente: selezionando una sede di arrivo
+        # senza indirizzo configurato, il percorso veniva calcolato comunque
+        # e Google Maps riceveva silenziosamente la partenza come "arrivo"
+        # (route_plan_page faceva `end_address or start_address`). Ora la
+        # risoluzione deve fallire in modo esplicito, mai un fallback muto.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            conn.execute("""INSERT INTO calendar_events(event_type,title,address,location_type,start_at,end_at,event_status,
+                created_by,created_at,updated_at) VALUES('Ritiro','Ritiro privato','Via Test 5','Privato',
+                '2026-08-06T08:00:00','2026-08-06T18:00:00','Da ritirare',?,?,?)""",(admin["id"], stamp, stamp))
+            livorno = conn.execute("SELECT * FROM company_locations WHERE name='Livorno'").fetchone()
+            empoli = conn.execute("SELECT * FROM company_locations WHERE name='Empoli'").fetchone()
+            self.assertEqual(empoli["address"], "")  # sede seedata senza indirizzo: precondizione del bug
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/percorso-giornaliero"
+        self.handler.form = lambda: {"data": "2026-08-06", "optimization_mode": "veloce",
+            "start_location_type": "sede", "start_location_id": str(livorno["id"]),
+            "end_location_type": "sede", "end_location_id": str(empoli["id"])}
+        self.handler.route_plan_calculate(admin)
+        page = rendered[-1]
+        self.assertIn("indirizzo configurato", page)
+        with app.db() as conn:
+            # nessun percorso deve essere stato salvato con un arrivo fasullo
+            self.assertEqual(conn.execute("SELECT count(*) n FROM route_plans").fetchone()["n"], 0)
+
+    @patch("app.route_service.geocode_address", return_value=(43.55, 10.30))
+    def test_route_plan_calculate_quick_redirects_to_calendar_with_error_on_invalid_endpoint(self, _mock_geocode):
+        # "Parti subito" vive nel Calendario: un errore di risoluzione deve
+        # tornare li' con un avviso, mai aprire le impostazioni complete.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            conn.execute("""INSERT INTO calendar_events(event_type,title,address,location_type,start_at,end_at,event_status,
+                created_by,created_at,updated_at) VALUES('Ritiro','Ritiro privato','Via Test 5','Privato',
+                '2026-08-06T08:00:00','2026-08-06T18:00:00','Da ritirare',?,?,?)""",(admin["id"], stamp, stamp))
+            livorno = conn.execute("SELECT * FROM company_locations WHERE name='Livorno'").fetchone()
+            empoli = conn.execute("SELECT * FROM company_locations WHERE name='Empoli'").fetchone()
+        redirects = []
+        self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.form = lambda: {"data": "2026-08-06", "optimization_mode": "veloce", "quick": "1",
+            "start_location_type": "sede", "start_location_id": str(livorno["id"]),
+            "end_location_type": "sede", "end_location_id": str(empoli["id"])}
+        self.handler.route_plan_calculate(admin)
+        self.assertEqual(len(redirects), 1)
+        self.assertTrue(redirects[0].startswith("/calendario?data=2026-08-06&percorso_errore="))
+        self.assertNotIn("google.com", redirects[0])
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT count(*) n FROM route_plans").fetchone()["n"], 0)
+
+    @patch("app.route_service.geocode_address", return_value=(43.55, 10.30))
+    def test_route_plan_calculate_quick_redirects_straight_to_google_maps_with_correct_destination(self, _mock_geocode):
+        # richiesta esplicita dell'utente: "Parti subito" non deve MAI
+        # passare dalla schermata Impostazioni percorso; deve andare
+        # direttamente su Google Maps, con la destinazione scelta (non
+        # quella di partenza) come arrivo finale.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            conn.execute("""INSERT INTO calendar_events(event_type,title,address,location_type,start_at,end_at,event_status,
+                created_by,created_at,updated_at) VALUES('Ritiro','Ritiro privato','Via Test 5','Privato',
+                '2026-08-06T08:00:00','2026-08-06T18:00:00','Da ritirare',?,?,?)""",(admin["id"], stamp, stamp))
+        redirects = []
+        self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.form = lambda: {"data": "2026-08-06", "optimization_mode": "veloce", "quick": "1",
+            "start_location_type": "personalizzato", "start_address": "Via Partenza 1",
+            "end_location_type": "personalizzato", "end_address": "Via Arrivo Finale 99, Firenze"}
+        self.handler.route_plan_calculate(admin)
+        self.assertEqual(len(redirects), 1)
+        self.assertTrue(redirects[0].startswith("https://www.google.com/maps/dir/"))
+        self.assertIn("destination=Via+Arrivo+Finale+99", redirects[0])
+        # il percorso resta comunque salvato (storico, ricalcolo, riordino)
+        with app.db() as conn:
+            plan = conn.execute("SELECT * FROM route_plans WHERE route_date='2026-08-06'").fetchone()
+        self.assertIsNotNone(plan)
+        self.assertEqual(plan["end_address"], "Via Arrivo Finale 99, Firenze")
 
     @patch("app.route_service.geocode_address", return_value=(43.55, 10.30))
     def test_route_plan_calculate_marks_stop_rosso_when_veterinarian_closed_that_day(self, _mock_geocode):
