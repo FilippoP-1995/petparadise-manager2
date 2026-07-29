@@ -8716,6 +8716,111 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(stops[1]["event_id"], pending_event)
         self.assertIsNotNone(stops[1]["estimated_arrival"])
 
+    # ---- Percorso giornaliero: redesign UX/UI (FAB, bottom sheet, popup rapido) --
+
+    def test_calendar_page_shows_route_fab_instead_of_wide_button(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/calendario?vista=giorno&data=2026-08-12"
+        self.handler.calendar_page(admin)
+        page = rendered[-1]
+        self.assertIn('class="icon-btn route-fab"', page)
+        self.assertIn("onclick=\"routeOpenSheet('2026-08-12')\"", page)
+        self.assertNotIn('calendar-route-link', page)
+
+    def test_calendar_page_includes_route_bottom_sheet_and_quick_popup(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/calendario?vista=giorno&data=2026-08-12"
+        self.handler.calendar_page(admin)
+        page = rendered[-1]
+        self.assertIn('class="route-sheet"', page)
+        self.assertIn("Percorso giornaliero", page)
+        self.assertIn("Parti subito", page)
+        self.assertIn("Avvia rapidamente il percorso", page)
+        self.assertIn("Impostazioni percorso", page)
+        self.assertIn("Personalizza percorso e ordine delle tappe", page)
+        self.assertIn('id="routeSettingsLink" href="/percorso-giornaliero?data=2026-08-12"', page)
+        self.assertIn('class="route-quick-popup"', page)
+        self.assertIn('action="/percorso-giornaliero/calcola" id="routeQuickForm"', page)
+        # il popup rapido non deve mostrare modalita', orario, tappe o statistiche
+        quick_popup_start = page.index('class="route-quick-popup"')
+        quick_popup_end = page.index('</aside>', quick_popup_start)
+        quick_popup_html = page[quick_popup_start:quick_popup_end]
+        self.assertNotIn('optimization_mode', quick_popup_html)
+        self.assertNotIn('start_time', quick_popup_html)
+
+    @patch("app.route_service.geocode_address", return_value=(43.55, 10.30))
+    def test_route_plan_page_settings_screen_has_no_start_time_field_and_secondary_recalculate_button(self, _mock_geocode):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/percorso-giornaliero?data=2026-08-12"
+        self.handler.route_plan_page(admin)
+        page = rendered[-1]
+        self.assertIn("Impostazioni percorso", page)
+        self.assertIn("Impostazioni generali", page)
+        self.assertNotIn("Orario di partenza", page)
+        self.assertNotIn('name="start_time"', page)
+        self.assertIn('class="btn ghost" type="submit" style="margin-top:14px;width:100%">Calcola percorso', page)
+
+    @patch("app.route_service.geocode_address", return_value=(43.55, 10.30))
+    def test_route_plan_page_stop_card_shows_type_badge_and_no_manual_save_button(self, _mock_geocode):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            vet_id = conn.execute("INSERT INTO veterinarians(clinic_name,address,active,created_at,updated_at) VALUES('Vet Redesign','Via Vet 9',1,?,?)",
+                (stamp, stamp)).lastrowid
+            conn.execute("""INSERT INTO calendar_events(event_type,title,location_type,veterinarian_id,veterinarian_name,veterinarian_address,
+                start_at,end_at,event_status,created_by,created_at,updated_at) VALUES('Ritiro','Ritiro vet','Veterinario',?,?,?,
+                '2026-08-12T08:00:00','2026-08-12T18:00:00','Da ritirare',?,?,?)""",
+                (vet_id, "Vet Redesign", "Via Vet 9", admin["id"], stamp, stamp))
+        self.handler.form = lambda: {"data": "2026-08-12", "optimization_mode": "veloce",
+            "start_location_type": "personalizzato", "start_address": "Via Deposito 1",
+            "end_location_type": "stessa_partenza"}
+        redirects = []
+        self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.route_plan_calculate(admin)
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/percorso-giornaliero?data=2026-08-12"
+        self.handler.route_plan_page(admin)
+        page = rendered[-1]
+        self.assertIn('class="route-stop-type-badge veterinario">Veterinario</span>', page)
+        self.assertIn('class="route-tappe-header"', page)
+        self.assertIn('↻ Ripristina ordine', page)
+        self.assertNotIn('Salva nuovo ordine', page)
+        self.assertNotIn('Ripristina percorso ottimizzato', page)
+        self.assertIn('data-drag-group data-auto-submit', page)
+        self.assertIn('class="route-stats-row"', page)
+        self.assertIn('route-stop-menu-btn', page)
+
+    @patch("app.route_service.geocode_address", return_value=(43.55, 10.30))
+    @patch("app.rome_now")
+    def test_route_plan_calculate_defaults_start_time_to_now_when_field_omitted(self, mock_rome_now, _mock_geocode):
+        mock_rome_now.return_value = datetime(2026, 8, 12, 14, 30)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            conn.execute("""INSERT INTO calendar_events(event_type,title,address,location_type,start_at,end_at,event_status,
+                created_by,created_at,updated_at) VALUES('Ritiro','Ritiro','Via A 1','Privato','2026-08-12T08:00:00','2026-08-12T18:00:00',
+                'Da ritirare',?,?,?)""", (admin["id"], stamp, stamp))
+        redirects = []
+        self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.form = lambda: {"data": "2026-08-12", "optimization_mode": "veloce",
+            "start_location_type": "personalizzato", "start_address": "Via Deposito 1",
+            "end_location_type": "stessa_partenza"}
+        self.handler.route_plan_calculate(admin)
+        plan_id = int(redirects[0].rsplit("/", 1)[1])
+        with app.db() as conn:
+            stop = conn.execute("SELECT * FROM route_plan_stops WHERE route_plan_id=?", (plan_id,)).fetchone()
+        # stessa posizione (start e tappa geocodificati sullo stesso punto mockato):
+        # distanza zero, quindi l'arrivo previsto coincide esattamente con "adesso"
+        self.assertEqual(stop["estimated_arrival"], "14:30")
+
 
 if __name__ == "__main__":
     unittest.main()

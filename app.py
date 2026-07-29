@@ -2346,14 +2346,78 @@ button.calendar-tap-card:active,a.calendar-tap-card:active{transform:scale(.985)
 .route-stop-toggle{border:none;cursor:pointer}
 .route-actions-row{display:flex;gap:8px;margin-top:10px}
 .route-actions-row .btn{flex:1}
-.route-stop-card.dragging{opacity:.6}
+.route-stop-card.dragging{box-shadow:0 18px 40px #0009}
+.route-fab{width:46px!important;height:46px!important;border-radius:50%!important;background:linear-gradient(135deg,#fb4c67,#d9284c);border-color:transparent;color:#fff;box-shadow:0 8px 22px #ef405f55}
+.route-fab:hover{border-color:transparent;color:#fff;box-shadow:0 10px 28px #ef405f70}
+.route-sheet-backdrop,.route-quick-backdrop{position:fixed;inset:0;z-index:96;background:#020617aa;opacity:0;pointer-events:none;transition:opacity .22s ease}
+.route-sheet{position:fixed;left:50%;bottom:0;z-index:97;width:min(430px,100%);padding:10px 18px calc(20px + var(--safe-bottom));border-radius:22px 22px 0 0;background:#141b28;box-shadow:0 -20px 60px #0009;transform:translate(-50%,100%);transition:transform .32s cubic-bezier(.16,1,.3,1)}
+.route-sheet-handle{width:36px;height:4px;margin:8px auto 12px;border-radius:99px;background:#334155}
+.route-sheet-title{margin:0 0 8px;font-size:17px;font-weight:800;text-align:center}
+.route-sheet-item{display:flex;align-items:center;gap:12px;width:100%;padding:11px 8px;border:0;background:transparent;text-align:left;color:inherit;font:inherit;border-radius:14px;cursor:pointer;transition:background .15s ease;text-decoration:none}
+.route-sheet-item:hover,.route-sheet-item:active{background:#1d2636}
+.route-sheet-item-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:50%;flex:0 0 42px}
+.route-sheet-item-icon-red{background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;box-shadow:0 8px 18px #ef405f4d}
+.route-sheet-item-icon-gray{background:#232c3d;color:#9aa7b8}
+.route-sheet-item-copy{min-width:0}
+.route-sheet-item-copy b{display:block;font-size:15px}
+.route-sheet-item-copy small{color:#8592a6;font-size:12.5px}
+body.route-sheet-open .route-sheet-backdrop{opacity:1;pointer-events:auto}
+body.route-sheet-open .route-sheet{transform:translate(-50%,0)}
+.route-quick-backdrop{z-index:98;display:flex;align-items:center;justify-content:center;padding:16px}
+.route-quick-popup{width:min(380px,100%);background:#141b28;border:1px solid #263246;border-radius:20px;padding:20px;box-shadow:0 30px 80px #000c;opacity:0;transform:scale(.94) translateY(8px);transition:opacity .22s ease,transform .22s cubic-bezier(.2,.8,.2,1)}
+body.route-quick-open .route-quick-backdrop{opacity:1;pointer-events:auto}
+body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY(0)}
+.route-quick-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.route-quick-head h2{margin:0;font-size:18px}
+.route-quick-field{margin-bottom:14px}
+.route-quick-field label{display:block;margin-bottom:6px;font-size:12px;color:#8592a6;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
+.route-quick-field select{width:100%;padding:11px 12px;border-radius:11px;border:1px solid #263246;background:#0e1622;color:#f5f7fb;font-size:14.5px}
+.route-quick-field-select{display:block;width:100%;margin:-6px 0 14px;padding:11px 12px;border-radius:11px;border:1px solid #263246;background:#0e1622;color:#f5f7fb;font-size:14.5px}
+.route-stop-type-badge{display:inline-block;margin-left:6px;padding:2px 8px;border-radius:99px;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;vertical-align:middle}
+.route-stop-type-badge.veterinario{background:#4c1d9533;color:#c4b5fd}
+.route-stop-type-badge.privato{background:#1e3a8a33;color:#93c5fd}
+.route-stop-arrival{font-weight:800;font-size:14px}
+.route-stop-menu-wrap{position:relative}
+.route-stop-menu-btn{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;border:0;background:transparent;color:#8592a6;cursor:pointer}
+.route-stop-menu-btn:hover{background:#1d2636;color:#e7ecf3}
+.route-stop-menu-popover{position:absolute;right:0;top:calc(100% + 4px);z-index:8;min-width:172px;padding:6px;border:1px solid #263246;border-radius:12px;background:#1a2332;box-shadow:0 18px 45px #0008}
+.route-stop-menu-popover form{display:contents}
+.route-stop-menu-popover button{display:flex;align-items:center;gap:8px;width:100%;padding:9px 10px;border:0;border-radius:8px;background:transparent;color:#e7ecf3;font-size:13px;text-align:left;cursor:pointer}
+.route-stop-menu-popover button:hover{background:#232c3d}
+.route-tappe-header{display:flex;align-items:baseline;justify-content:space-between;margin:18px 0 2px}
+.route-tappe-header h3{margin:0}
+.route-restore-link{background:none;border:0;color:#fb7185;font-size:12.5px;font-weight:700;display:inline-flex;align-items:center;gap:4px;cursor:pointer;padding:4px}
+.route-drag-hint{margin:0 0 10px;font-size:12px;color:#8592a6}
+.route-stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:18px 0 12px;padding:14px 8px;border-radius:14px;background:#141b28;border:1px solid #263246}
+.route-stats-row div{text-align:center}
+.route-stats-row b{display:block;font-size:16px}
+.route-stats-row small{color:#8592a6;font-size:11px}
+.drag-item{transition:box-shadow .15s ease,border-color .15s ease,transform .16s cubic-bezier(.2,.8,.2,1)}
+.drag-item.dragging{transform:scale(1.03) translateY(-3px)}
+@keyframes routeDragSettle{0%{transform:scale(1.025)}60%{transform:scale(.995)}100%{transform:scale(1)}}
+.drag-item.drag-settle{animation:routeDragSettle .28s cubic-bezier(.34,1.56,.64,1)}
+@keyframes routeStopEnter{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+[data-drag-root] .route-stop-card{animation:routeStopEnter .32s cubic-bezier(.2,.8,.2,1) both}
+[data-drag-root] .route-stop-card:nth-child(2){animation-delay:.03s}
+[data-drag-root] .route-stop-card:nth-child(3){animation-delay:.06s}
+[data-drag-root] .route-stop-card:nth-child(4){animation-delay:.09s}
+[data-drag-root] .route-stop-card:nth-child(5){animation-delay:.12s}
+[data-drag-root] .route-stop-card:nth-child(n+6){animation-delay:.14s}
+[data-drag-root] .route-stop-card.dragging{animation:none}
+.light-theme .route-sheet,.light-theme .route-quick-popup{background:#fff;color:#111827}
+.light-theme .route-sheet-item:hover,.light-theme .route-sheet-item:active{background:#f1f5f9}
+.light-theme .route-sheet-item-icon-gray{background:#e2e8f0;color:#526174}
+.light-theme .route-quick-field select,.light-theme .route-quick-field-select{background:#f8fafc;border-color:#e2e8f0;color:#111827}
+.light-theme .route-stats-row{background:#f8fafc;border-color:#e2e8f0}
+.light-theme .route-stop-menu-popover{background:#fff;border-color:#e2e8f0}
+.light-theme .route-stop-menu-popover button{color:#111827}
+.light-theme .route-stop-menu-popover button:hover{background:#f1f5f9}
 /* Auto-hide della sola barra inferiore durante lo scroll (solo mobile, in stile Safari iOS); la headbar superiore resta sempre fissa */
 @media(max-width:900px){
   .bottom-nav{transition:transform .52s cubic-bezier(.16,1,.3,1);will-change:transform}
   body.ppm-bars-hidden .bottom-nav{transform:translateY(calc(100% + 24px))}
 }
 @media(prefers-reduced-motion:reduce){.bottom-nav{transition:none!important}}
-.calendar-date-nav .calendar-route-link{grid-column:1/-1;width:100%;min-width:0;height:auto;min-height:38px;padding:8px 14px;border-radius:11px;font-size:12.5px;font-weight:700}
 """
 
 APP_JS = r"""
@@ -3856,6 +3920,22 @@ function setupDragReorder(root){
       document.body.classList.add('ppm-dragging-no-select');
       const selection=window.getSelection();
       if(selection)selection.removeAllRanges();
+      function reorderWithSmoothReflow(after){
+        const siblings=[...root.querySelectorAll('.drag-item')].filter(function(el){return el!==item;});
+        const firstRects=new Map(siblings.map(function(el){return [el,el.getBoundingClientRect()];}));
+        if(after)root.insertBefore(item,after);
+        else root.appendChild(item);
+        siblings.forEach(function(el){
+          const first=firstRects.get(el),last=el.getBoundingClientRect(),dy=first.top-last.top;
+          if(!dy)return;
+          el.style.transition='none';
+          el.style.transform='translateY('+dy+'px)';
+          requestAnimationFrame(function(){
+            el.style.transition='transform .22s cubic-bezier(.2,.8,.2,1)';
+            el.style.transform='';
+          });
+        });
+      }
       function onMove(ev){
         ev.preventDefault();
         const y=ev.clientY;
@@ -3865,18 +3945,22 @@ function setupDragReorder(root){
           const rect=sib.getBoundingClientRect();
           if(y<rect.top+rect.height/2){after=sib;break;}
         }
-        if(after)root.insertBefore(item,after);
-        else root.appendChild(item);
+        const currentNext=item.nextElementSibling;
+        if(!((after&&currentNext===after)||(!after&&!currentNext)))reorderWithSmoothReflow(after);
         const rootRect=root.getBoundingClientRect(),margin=36;
         if(y<rootRect.top+margin)root.scrollTop-=14;
         else if(y>rootRect.bottom-margin)root.scrollTop+=14;
       }
       function onUp(){
         item.classList.remove('dragging');
+        item.classList.add('drag-settle');
+        setTimeout(function(){item.classList.remove('drag-settle');},280);
         document.body.classList.remove('ppm-dragging-no-select');
         window.removeEventListener('pointermove',onMove);
         window.removeEventListener('pointerup',onUp);
         syncDragOrder(root);
+        const group=root.closest('[data-drag-group][data-auto-submit]');
+        if(group){if(group.requestSubmit)group.requestSubmit();else group.submit();}
       }
       window.addEventListener('pointermove',onMove);
       window.addEventListener('pointerup',onUp);
@@ -3896,16 +3980,42 @@ function routeToggleLocationFields(select,kind){
     el.hidden=!el.dataset.routeField.endsWith('-'+select.value);
   });
 }
-function routeRequestGeolocation(kind){
+function routeRequestGeolocation(kind,form){
+  form=form||document.getElementById('routeSetupForm');
   if(!navigator.geolocation){alert('Geolocalizzazione non disponibile su questo dispositivo.');return;}
   navigator.geolocation.getCurrentPosition(function(position){
-    const form=document.getElementById('routeSetupForm');
     if(!form)return;
     const latField=form.querySelector(`[data-route-geoloc="${kind}_lat"]`);
     const lngField=form.querySelector(`[data-route-geoloc="${kind}_lng"]`);
     if(latField)latField.value=position.coords.latitude;
     if(lngField)lngField.value=position.coords.longitude;
   },function(){alert("Posizione non autorizzata: seleziona un'altra opzione di partenza/arrivo.");},{timeout:10000});
+}
+document.addEventListener('DOMContentLoaded',function(){
+  // #main-content ha un transform (pull-to-refresh): un discendente
+  // position:fixed verrebbe ancorato a quel contenitore invece che alla
+  // viewport. Spostiamo gli overlay a livello di <body>, come gia' fanno
+  // create-sheet/more-menu, cosi' restano davvero fissi sullo schermo.
+  document.querySelectorAll('.route-sheet-backdrop,.route-sheet,.route-quick-backdrop').forEach(function(el){
+    document.body.appendChild(el);
+  });
+});
+function routeOpenSheet(dateStr){
+  const dateInput=document.getElementById('routeQuickDate');
+  if(dateInput)dateInput.value=dateStr;
+  const settingsLink=document.getElementById('routeSettingsLink');
+  if(settingsLink)settingsLink.href='/percorso-giornaliero?data='+encodeURIComponent(dateStr);
+  document.body.classList.add('route-sheet-open');
+}
+function routeCloseSheet(){
+  document.body.classList.remove('route-sheet-open');
+}
+function routeOpenQuickPopup(){
+  document.body.classList.remove('route-sheet-open');
+  document.body.classList.add('route-quick-open');
+}
+function routeCloseQuickPopup(){
+  document.body.classList.remove('route-quick-open');
 }
 function routeSubmitRecalculateFromHere(event,form){
   event.preventDefault();
@@ -3917,6 +4027,19 @@ function routeSubmitRecalculateFromHere(event,form){
   },function(){alert("Posizione non autorizzata: impossibile ricalcolare da qui.");},{timeout:10000});
   return false;
 }
+function routeToggleStopMenu(btn){
+  const wrap=btn.closest('.route-stop-menu-wrap');
+  if(!wrap)return;
+  const popover=wrap.querySelector('.route-stop-menu-popover');
+  const willOpen=popover.hidden;
+  document.querySelectorAll('.route-stop-menu-popover').forEach(function(p){p.hidden=true;});
+  popover.hidden=!willOpen;
+}
+document.addEventListener('click',function(e){
+  if(!e.target.closest('.route-stop-menu-wrap')){
+    document.querySelectorAll('.route-stop-menu-popover').forEach(function(p){p.hidden=true;});
+  }
+});
 function setupSidebarOrderPopup(){
   const openBtn=document.getElementById('ppmOpenSidebarOrder');
   if(!openBtn)return;
@@ -7751,6 +7874,7 @@ class App(BaseHTTPRequestHandler):
             rows=[dict(row,animal_species=species_by_event.get(row["id"],""),payment_channel=payment_channels.get(row["linked_practice_id"],"")) for row in rows]
             vets=c.execute("SELECT id,COALESCE(short_name,clinic_name) name FROM veterinarians WHERE active=1 ORDER BY name").fetchall()
             color_settings=calendar_color_settings(c)
+            route_locations=c.execute("SELECT * FROM company_locations WHERE active=1 ORDER BY name").fetchall()
         by_day={}
         for row in rows:
             cursor=max(start,date.fromisoformat(row["start_at"][:10]));last=min(end,date.fromisoformat(row["end_at"][:10]))
@@ -7883,7 +8007,48 @@ class App(BaseHTTPRequestHandler):
         elif view in ("mese","mista_mese","compatto"):date_title=f"{month_names[selected_date.month-1]} {selected_date.year}"
         else:date_title=f"{selected_date.day} {month_names[selected_date.month-1]} {selected_date.year}"
         back_button=f'<a class="btn ghost calendar-back-btn" href="{view_url(selected_date,back_view)}">← Torna a {"Mese" if back_view=="mese" else "Settimana"}</a>' if view=="giorno" and back_view else ''
-        body=f'''<main class="wrap calendar-wrap"><div class="titlebar calendar-main-title"><div>{back_button}<h1>Calendario operativo</h1><p class="sub">Ritiri, riconsegne e promemoria</p></div><div class="calendar-quick-actions"><a class="icon-btn" href="/calendario/cestino" aria-label="Cestino" title="Cestino">{lucide("trash-2")}</a><a class="icon-btn calendar-settings-link" href="/calendario/impostazioni" aria-label="Impostazioni" title="Impostazioni">{lucide("settings")}</a></div></div><nav class="calendar-date-nav"><a class="btn ghost" data-calendar-prev href="{view_url(prev_target)}" aria-label="Periodo precedente">←</a><label class="calendar-date-title"><span>{date_title}</span><input type="date" value="{selected}" onchange="const u=new URL(location.href);u.searchParams.set('data',this.value);location.href=u"></label><a class="btn ghost" data-calendar-next href="{view_url(next_target)}" aria-label="Periodo successivo">→</a><a class="btn ghost calendar-today" href="{view_url(rome_now().date())}">OGGI</a><a class="btn ghost calendar-route-link" href="/percorso-giornaliero?data={selected}" aria-label="Percorso giornaliero" title="Percorso giornaliero">{lucide("truck")} Percorso</a></nav><div class="calendar-toolbar"><nav class="calendar-view-switch">{switch}</nav></div>{content}{filters_html}{preference_script}</main>'''
+        route_location_options=''.join(f'<option value="{loc["id"]}">{esc(loc["name"])}</option>' for loc in route_locations)
+        route_sheet_html=f'''<div class="route-sheet-backdrop" onclick="routeCloseSheet()"></div>
+          <aside class="route-sheet" aria-label="Percorso giornaliero" role="dialog" aria-modal="true">
+            <div class="route-sheet-handle"></div>
+            <h2 class="route-sheet-title">Percorso giornaliero</h2>
+            <button type="button" class="route-sheet-item" onclick="routeOpenQuickPopup()">
+              <span class="route-sheet-item-icon route-sheet-item-icon-red">{lucide("play")}</span>
+              <span class="route-sheet-item-copy"><b>Parti subito</b><small>Avvia rapidamente il percorso</small></span>
+            </button>
+            <a class="route-sheet-item" id="routeSettingsLink" href="/percorso-giornaliero?data={selected}">
+              <span class="route-sheet-item-icon route-sheet-item-icon-gray">{lucide("settings")}</span>
+              <span class="route-sheet-item-copy"><b>Impostazioni percorso</b><small>Personalizza percorso e ordine delle tappe</small></span>
+            </a>
+          </aside>
+          <div class="route-quick-backdrop" onclick="if(event.target===this)routeCloseQuickPopup()">
+            <aside class="route-quick-popup" aria-label="Parti subito" role="dialog" aria-modal="true">
+              <div class="route-quick-head"><h2>Parti subito</h2><button type="button" class="icon-btn" onclick="routeCloseQuickPopup()" aria-label="Chiudi">{lucide("x")}</button></div>
+              <form method="post" action="/percorso-giornaliero/calcola" id="routeQuickForm">
+                <input type="hidden" name="data" id="routeQuickDate" value="{selected}">
+                <input type="hidden" name="start_lat" data-route-geoloc="start_lat"><input type="hidden" name="start_lng" data-route-geoloc="start_lng">
+                <div class="route-quick-field">
+                  <label>Punto di partenza</label>
+                  <select name="start_location_type" onchange="routeToggleLocationFields(this,'start')">
+                    <option value="sede">Sede aziendale</option>
+                    <option value="attuale">Posizione attuale</option>
+                  </select>
+                </div>
+                <select name="start_location_id" class="route-quick-field-select" data-route-field="start-sede">{route_location_options}</select>
+                <button type="button" class="btn ghost route-quick-field-select" data-route-field="start-attuale" hidden onclick="routeRequestGeolocation('start',this.form)" style="width:100%">{lucide("navigation")} Usa posizione attuale</button>
+                <div class="route-quick-field">
+                  <label>Punto di arrivo</label>
+                  <select name="end_location_type" onchange="routeToggleLocationFields(this,'end')">
+                    <option value="stessa_partenza">Stessa sede di partenza</option>
+                    <option value="sede">Altra sede</option>
+                  </select>
+                </div>
+                <select name="end_location_id" class="route-quick-field-select" data-route-field="end-sede" hidden>{route_location_options}</select>
+                <button class="btn" type="submit" style="width:100%;margin-top:4px">{lucide("navigation")} Avvia percorso</button>
+              </form>
+            </aside>
+          </div>'''
+        body=f'''<main class="wrap calendar-wrap"><div class="titlebar calendar-main-title"><div>{back_button}<h1>Calendario operativo</h1><p class="sub">Ritiri, riconsegne e promemoria</p></div><div class="calendar-quick-actions"><a class="icon-btn" href="/calendario/cestino" aria-label="Cestino" title="Cestino">{lucide("trash-2")}</a><a class="icon-btn calendar-settings-link" href="/calendario/impostazioni" aria-label="Impostazioni" title="Impostazioni">{lucide("settings")}</a><button type="button" class="icon-btn route-fab" aria-label="Percorso giornaliero" title="Percorso giornaliero" onclick="routeOpenSheet('{selected}')">{lucide("truck")}</button></div></div><nav class="calendar-date-nav"><a class="btn ghost" data-calendar-prev href="{view_url(prev_target)}" aria-label="Periodo precedente">←</a><label class="calendar-date-title"><span>{date_title}</span><input type="date" value="{selected}" onchange="const u=new URL(location.href);u.searchParams.set('data',this.value);location.href=u"></label><a class="btn ghost" data-calendar-next href="{view_url(next_target)}" aria-label="Periodo successivo">→</a><a class="btn ghost calendar-today" href="{view_url(rome_now().date())}">OGGI</a></nav><div class="calendar-toolbar"><nav class="calendar-view-switch">{switch}</nav></div>{content}{filters_html}{preference_script}{route_sheet_html}</main>'''
         self.send_html(layout("Calendario operativo",body,user))
 
     def calendar_settings(self,user):
@@ -8568,20 +8733,13 @@ class App(BaseHTTPRequestHandler):
         error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
         header=f'''<div class="calendar-detail-topbar">
           <a class="calendar-detail-back" href="/calendario"><span class="calendar-detail-back-arrow">{lucide("chevron-right")}</span><span>Indietro</span></a>
-          <h2 class="calendar-detail-topbar-title">Percorso giornaliero</h2>
+          <h2 class="calendar-detail-topbar-title">Impostazioni percorso</h2>
           <a class="icon-btn" href="/percorso-giornaliero/sedi" aria-label="Configura sedi aziendali" title="Configura sedi aziendali">{lucide("settings")}</a>
         </div>'''
         date_nav=f'''<div class="route-date-nav">
           <a class="btn ghost" href="/percorso-giornaliero?data={prev_date}" aria-label="Giorno precedente">←</a>
           <div class="route-date-nav-label"><b>{esc(date_it(selected))}</b><a class="btn ghost route-today-btn {"active" if selected==today_iso else ""}" href="/percorso-giornaliero?data={today_iso}">Oggi</a></div>
           <a class="btn ghost" href="/percorso-giornaliero?data={next_date}" aria-label="Giorno successivo">→</a>
-        </div>'''
-        summary_card=f'''<div class="calendar-detail-hero calendar-hero-blue">
-          <div class="calendar-detail-hero-meta" style="margin-top:0;padding-top:0;border-top:none">
-            <div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-blue">{lucide("paw")}</span><div><b>{len(resolved)}</b><small>Ritiri da effettuare</small></div></div>
-            <div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-teal">{lucide("navigation")}</span><div><b>{f"{(plan['total_distance_meters'] or 0)/1000:.1f} km" if plan else "—"}</b><small>Distanza stimata</small></div></div>
-            <div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-purple">{lucide("clock")}</span><div><b>{f"{(plan['total_duration_seconds'] or 0)//60} min" if plan else "—"}</b><small>Durata stimata</small></div></div>
-          </div>
         </div>'''
         if da_correggere:
             rows_html=''.join(f'<a class="calendar-tap-card calendar-tap-card-link" href="/calendario/{row["id"]}?tab=dettagli"><span class="calendar-tap-card-icon calendar-icon-orange">{lucide("clock")}</span><div class="calendar-tap-card-body"><small>Indirizzo mancante</small><p>{esc(self.calendar_event_display_title(row))}</p></div><span class="calendar-tap-card-chevron">{lucide("chevron-right")}</span></a>' for row in da_correggere)
@@ -8593,10 +8751,12 @@ class App(BaseHTTPRequestHandler):
         start_type=plan["start_location_type"] if plan else "sede"
         end_type=plan["end_location_type"] if plan else "stessa_partenza"
         mode=plan["optimization_mode"] if plan else "veloce"
-        setup_form=f'''<form method="post" action="/percorso-giornaliero/calcola" class="section" id="routeSetupForm">
+        setup_form=f'''<section class="section route-settings-section">
+          <h3 style="margin-top:0">Impostazioni generali</h3>
+          <form method="post" action="/percorso-giornaliero/calcola" id="routeSetupForm">
           <input type="hidden" name="data" value="{selected}">
           <input type="hidden" name="start_lat" data-route-geoloc="start_lat"><input type="hidden" name="start_lng" data-route-geoloc="start_lng">
-          <h3 style="margin-top:0">Punto di partenza</h3>
+          <h3>Punto di partenza</h3>
           <select name="start_location_type" onchange="routeToggleLocationFields(this,'start')">
             <option value="sede" {"selected" if start_type=="sede" else ""}>Sede aziendale</option>
             <option value="attuale" {"selected" if start_type=="attuale" else ""}>Posizione attuale</option>
@@ -8604,7 +8764,7 @@ class App(BaseHTTPRequestHandler):
           </select>
           <select name="start_location_id" data-route-field="start-sede" {"hidden" if start_type!="sede" else ""}>{location_options}</select>
           <input name="start_address" placeholder="Indirizzo di partenza" data-route-field="start-personalizzato" value="{esc(plan['start_address'] or '') if plan and plan['start_location_type']=='personalizzato' else ''}" {"hidden" if start_type!="personalizzato" else ""}>
-          <button type="button" class="btn ghost" data-route-field="start-attuale" {"hidden" if start_type!="attuale" else ""} onclick="routeRequestGeolocation('start')">{lucide("navigation")} Usa posizione attuale</button>
+          <button type="button" class="btn ghost" data-route-field="start-attuale" {"hidden" if start_type!="attuale" else ""} onclick="routeRequestGeolocation('start',this.form)">{lucide("navigation")} Usa posizione attuale</button>
           <h3>Punto di arrivo</h3>
           <select name="end_location_type" onchange="routeToggleLocationFields(this,'end')">
             <option value="stessa_partenza" {"selected" if end_type=="stessa_partenza" else ""}>Stessa sede di partenza</option>
@@ -8620,10 +8780,9 @@ class App(BaseHTTPRequestHandler):
             <label class="{'active' if mode=='breve' else ''}"><input type="radio" name="optimization_mode" value="breve" {"checked" if mode=="breve" else ""}> Più breve</label>
           </div>
           {'<p class="sub">Google Maps non è configurato: le due modalità useranno lo stesso ordine per vicinanza finché non viene attivata una chiave API.</p>' if not google_configured else ''}
-          <h3>Orario di partenza</h3>
-          <input type="time" name="start_time" value="08:00">
-          <button class="btn" type="submit" style="margin-top:14px;width:100%">{"Ricalcola percorso" if plan else "Calcola percorso"}</button>
-        </form>'''
+          <button class="btn ghost" type="submit" style="margin-top:14px;width:100%">{"Ricalcola percorso" if plan else "Calcola percorso"}</button>
+          </form>
+        </section>'''
         stops_html=''
         maps_urls=[]
         if plan and stop_rows:
@@ -8634,42 +8793,54 @@ class App(BaseHTTPRequestHandler):
                 title=self.calendar_event_display_title(stop) if stop["title"] else "Tappa"
                 client_name=" ".join(x for x in (stop["client_first_name"],stop["client_last_name"]) if x).strip()
                 place=stop["veterinarian_name"] or stop["venue_name"] or client_name or title
+                is_vet=bool(stop["veterinarian_name"]) or stop["location_type"]=="Veterinario"
+                type_badge=f'<span class="route-stop-type-badge {"veterinario" if is_vet else "privato"}">{"Veterinario" if is_vet else "Privato"}</span>'
                 urgent_badge='<span class="route-badge-urgent">Urgente</span>' if stop["is_urgent"] else ''
+                sub_line=esc(warning) if warning else (f"{stop['distance_from_previous_meters']/1000:.1f} km · {stop['duration_from_previous_seconds']//60} min dalla tappa precedente" if stop['distance_from_previous_meters'] is not None else 'Prima tappa')
                 lock_icon=lucide("check-circle") if stop["is_locked"] else lucide("square")
                 stop_cards.append(f'''<div class="calendar-tap-card route-stop-card drag-item" data-drag-key="{stop['id']}">
                   <span class="drag-handle route-stop-handle">{lucide("more-vertical")}</span>
                   <span class="route-stop-number route-status-{status}">{stop['sequence']}</span>
                   <div class="calendar-tap-card-body">
-                    <small>{esc(place)} {urgent_badge}</small>
-                    <p>Arrivo previsto {esc(stop['estimated_arrival'] or '—')}</p>
-                    <small class="calendar-tap-card-sub">{esc(warning)}</small>
-                    <small class="calendar-tap-card-sub">{f"{stop['distance_from_previous_meters']/1000:.1f} km · {stop['duration_from_previous_seconds']//60} min dalla tappa precedente" if stop['distance_from_previous_meters'] is not None else ''} · Sosta {stop['service_duration_minutes']} min</small>
+                    <small class="route-stop-name">{esc(place)}{type_badge}{urgent_badge}</small>
+                    <p class="route-stop-arrival">Arrivo previsto {esc(stop['estimated_arrival'] or '—')}</p>
+                    <small class="calendar-tap-card-sub">{sub_line}</small>
+                    <small class="calendar-tap-card-sub">Sosta {stop['service_duration_minutes']} min</small>
                   </div>
                   <div class="route-stop-actions">
-                    <form method="post" action="/percorso-giornaliero/{plan['id']}/tappa/{stop['id']}/blocca" style="display:contents"><button type="submit" class="calendar-tap-card-icon route-stop-toggle" title="{'Sblocca tappa' if stop['is_locked'] else 'Blocca tappa'}">{lock_icon}</button></form>
-                    <form method="post" action="/percorso-giornaliero/{plan['id']}/tappa/{stop['id']}/urgente" style="display:contents"><button type="submit" class="calendar-tap-card-icon route-stop-toggle {'calendar-icon-pink' if stop['is_urgent'] else ''}" title="{'Rimuovi urgenza' if stop['is_urgent'] else 'Segna urgente'}">{lucide("hourglass")}</button></form>
                     <a class="calendar-tap-card-icon calendar-icon-blue" title="Naviga" href="https://www.google.com/maps/dir/?api=1&destination={quote(self.calendar_appointment_address(stop))}" target="_blank" rel="noopener noreferrer">{lucide("navigation")}</a>
+                    <div class="route-stop-menu-wrap">
+                      <button type="button" class="route-stop-menu-btn" onclick="routeToggleStopMenu(this)" aria-label="Altre azioni tappa">{lucide("more-vertical")}</button>
+                      <div class="route-stop-menu-popover" hidden>
+                        <form method="post" action="/percorso-giornaliero/{plan['id']}/tappa/{stop['id']}/blocca"><button type="submit">{lock_icon}<span>{'Sblocca tappa' if stop['is_locked'] else 'Blocca tappa'}</span></button></form>
+                        <form method="post" action="/percorso-giornaliero/{plan['id']}/tappa/{stop['id']}/urgente"><button type="submit">{lucide("hourglass")}<span>{'Rimuovi urgenza' if stop['is_urgent'] else 'Segna urgente'}</span></button></form>
+                      </div>
+                    </div>
                   </div>
                 </div>''')
                 if stop["event_id"]:
                     maps_urls.append(self.calendar_appointment_address(stop))
-            stops_html=f'''<h3 style="margin:18px 0 8px">Tappe ({len(stop_rows)})</h3>
-              <form method="post" action="/percorso-giornaliero/{plan['id']}/riordina" data-drag-group>
+            stops_html=f'''<div class="route-tappe-header"><h3>Tappe ({len(stop_rows)})</h3>
+                <form method="post" action="/percorso-giornaliero/{plan['id']}/ripristina" style="display:contents">
+                  <button type="submit" class="route-restore-link">↻ Ripristina ordine</button>
+                </form>
+              </div>
+              <p class="route-drag-hint">Tieni premuto e trascina per modificare l'ordine</p>
+              <form method="post" action="/percorso-giornaliero/{plan['id']}/riordina" data-drag-group data-auto-submit>
                 <div class="calendar-card-list" data-drag-root>
                   {''.join(stop_cards)}
                 </div>
                 <input type="hidden" name="ordine_json" data-drag-order>
-                <div class="route-actions-row">
-                  <button class="btn ghost" type="submit">Salva nuovo ordine</button>
-                </div>
-              </form>
-              <form method="post" action="/percorso-giornaliero/{plan['id']}/ripristina">
-                <button class="btn ghost" type="submit" style="width:100%;margin-top:8px">Ripristina percorso ottimizzato</button>
               </form>
               <form method="post" action="/percorso-giornaliero/{plan['id']}/ricalcola-da-qui" id="routeRecalculateFromHereForm" onsubmit="return routeSubmitRecalculateFromHere(event,this)">
                 <input type="hidden" name="lat"><input type="hidden" name="lng">
-                <button class="btn ghost" type="submit" style="width:100%;margin-top:8px">{lucide("navigation")} Ricalcola da qui (posizione attuale)</button>
-              </form>'''
+                <button class="btn ghost" type="submit" style="width:100%;margin-top:12px">{lucide("navigation")} Ricalcola da qui (posizione attuale)</button>
+              </form>
+              <div class="route-stats-row">
+                <div><b>{len(stop_rows)}</b><small>Tappe</small></div>
+                <div><b>{(plan['total_distance_meters'] or 0)/1000:.1f} km</b><small>Distanza stimata</small></div>
+                <div><b>{(plan['total_duration_seconds'] or 0)//60} min</b><small>Durata stimata</small></div>
+              </div>'''
         start_maps=plan["start_address"] if plan else ""
         end_maps=(plan["end_address"] or plan["start_address"]) if plan else ""
         avvia_html=''
@@ -8680,8 +8851,8 @@ class App(BaseHTTPRequestHandler):
             else:
                 links=''.join(f'<a class="btn ghost" style="width:100%;margin-top:8px" href="{esc(u)}" target="_blank" rel="noopener noreferrer">Percorso {i+1} di {len(urls)}</a>' for i,u in enumerate(urls))
                 avvia_html=f'<p class="sub">Il percorso supera le tappe trasferibili in un solo link: diviso in {len(urls)} sezioni.</p>{links}'
-        body=f'''<main class="wrap calendar-wrap calendar-detail-v2">{error_html}{header}{date_nav}{summary_card}{avvia_html}{da_correggere_html}{setup_form}{stops_html}</main>'''
-        self.send_html(layout("Percorso giornaliero",body,user))
+        body=f'''<main class="wrap calendar-wrap calendar-detail-v2">{error_html}{header}{date_nav}{da_correggere_html}{setup_form}{stops_html}{avvia_html}</main>'''
+        self.send_html(layout("Impostazioni percorso",body,user))
 
     def route_locations_page(self,user):
         with db() as c:
@@ -8719,7 +8890,10 @@ class App(BaseHTTPRequestHandler):
         except ValueError:return self.send_error(400,"Data non valida")
         mode=form.get("optimization_mode","veloce")
         if mode not in ("veloce","breve"):mode="veloce"
-        start_time=form.get("start_time","08:00").strip() or "08:00"
+        # Nessun campo "orario di partenza" nell'interfaccia (Fase 3 UX):
+        # incide solo sulla schedulazione/finestre orarie, non sulla scelta
+        # dell'ordine veloce/breve, quindi di default e' sempre "adesso".
+        start_time=form.get("start_time","").strip() or rome_now().strftime("%H:%M")
         stamp=now()
         with db() as c:
             start=self.route_plan_resolve_endpoint(c,"start",form)
