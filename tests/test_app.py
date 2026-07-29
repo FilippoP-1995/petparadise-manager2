@@ -7253,6 +7253,118 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.calendar_event_detail(admin, event_id)
         self.assertIn("Zona aggiornata.", rendered[-1])
 
+    def test_calendar_detail_hero_card_and_topbar_match_mockup(self):
+        # richiesta utente (mockup IMG_1773): Hero Card con icona, eyebrow tipo,
+        # badge stato, avatar operatore, riga meta a 3 colonne, e topbar
+        # "Indietro / Riepilogo evento / ..." che riusa il menu esistente.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,location_type,address,venue_name,operator_name,start_at,end_at,event_status,client_first_name,client_last_name,client_phone,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO HERO TEST","Livorno","Veterinario","Via Roma 45, Livorno (LI)","Clinica Veterinaria Lamarmora","Filippo",
+                 "2026-07-29T09:30:00","2026-07-29T18:00:00","Da ritirare","Tiziana","Giusti","3339998877",admin["id"],stamp,stamp)).lastrowid
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(admin, event_id)
+        page = rendered[-1]
+        self.assertIn('calendar-detail-topbar', page)
+        self.assertIn('Indietro', page)
+        self.assertIn('Riepilogo evento', page)
+        self.assertIn('calendar-detail-topbar-menu-btn', page)
+        self.assertIn('Modifica evento', page)
+        self.assertIn('calendar-detail-hero calendar-hero-pink', page)
+        self.assertIn('calendar-detail-hero-eyebrow', page)
+        self.assertIn('calendar-detail-hero-meta', page)
+        self.assertIn('calendar-avatar', page)  # avatar operatore in alto a destra
+        self.assertIn('Operatore</small>', page)
+        # regressione: le icone colorate devono davvero vincere sul fondo
+        # piatto di base (bug reale: stessa specificita', ordine nel foglio
+        # di stile sbagliato faceva vincere sempre il grigio #202c3d).
+        css_start = page.index('<style')
+        css = page[css_start:page.index('</style>', css_start)]
+        self.assertIn('.calendar-tap-card-icon.calendar-icon-pink{', css)
+        pink_pos = css.index('.calendar-tap-card-icon.calendar-icon-pink{')
+        base_pos = css.index('.calendar-tap-card-icon{')
+        self.assertLess(base_pos, pink_pos)
+
+    def test_calendar_detail_rows_are_compact_quickedit_or_link_through(self):
+        # richiesta utente: ogni riga deve poter essere modificata rapidamente
+        # (tap per rivelare il form, pillola "Cambia" solo su Stato) oppure
+        # aprire la schermata dedicata gia' esistente per i campi complessi.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,location_type,address,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO ROWS TEST","Livorno","Veterinario","Via Roma 45","Filippo","2026-07-29T09:30:00","2026-07-29T18:00:00","Da ritirare",admin["id"],stamp,stamp)).lastrowid
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(admin, event_id)
+        page = rendered[-1]
+        self.assertEqual(page.count('<span class="calendar-quickedit-pill">'), 1)  # solo Stato
+        self.assertIn('calendar-quickedit-card', page)
+        for action in ("stato", "data-ora", "preventivo", "zona", "operatore", "note"):
+            self.assertIn(f'action="/calendario/{event_id}/{action}"', page)
+        for label in ("Tipo evento", "Cliente", "Animali", "Luogo"):
+            self.assertIn(f'<small>{label}</small>', page)
+        self.assertEqual(page.count(f'href="/calendario/{event_id}/modifica"'), 4 + 1)  # 4 righe + menu ...
+
+    def test_calendar_detail_quick_edit_data_ora_reuses_normalize_event(self):
+        # richiesta utente: anche data e ora devono salvarsi immediatamente
+        # dal riepilogo, senza ripercorrere il wizard e senza duplicare la
+        # logica di validazione gia' usata per il salvataggio completo.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,location_type,address,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO DATAORA TEST","Livorno","Veterinario","Via Roma 45","Filippo","2026-07-29T09:30:00","2026-07-29T18:00:59","Da ritirare",admin["id"],stamp,stamp)).lastrowid
+        redirects = []
+        self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.headers = {"Referer": f"/calendario/{event_id}?tab=dettagli"}
+        self.handler.form = lambda: {"start_date": "2026-07-29", "start_time": "10:00", "end_date": "2026-07-29", "end_time": "19:00"}
+        self.handler.calendar_event_action(admin, event_id, "data-ora")
+        with app.db() as conn:
+            row = conn.execute("SELECT start_at,end_at,zone,operator_name FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+        self.assertEqual(row["start_at"], "2026-07-29T10:00:00")
+        self.assertEqual(row["end_at"], "2026-07-29T19:00:59")
+        # gli altri campi non vengono toccati dalla modifica rapida di data/ora
+        self.assertEqual(row["zone"], "Livorno")
+        self.assertEqual(row["operator_name"], "Filippo")
+        self.assertIn("saved=data-ora", redirects[-1])
+        # una data non valida viene rifiutata dalla stessa validazione del wizard
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.form = lambda: {"start_date": "2026-07-29", "start_time": "19:00", "end_date": "2026-07-29", "end_time": "10:00"}
+        self.handler.calendar_event_action(admin, event_id, "data-ora")
+        self.assertIn("non pu", rendered[-1])
+
+    def test_calendar_detail_quick_edit_preventivo_replaces_items_with_single_total(self):
+        # richiesta utente: anche il preventivo deve potersi salvare subito
+        # dal riepilogo con un unico importo, senza toccare la logica a voci
+        # multiple gia' usata dal wizard (parse_items/sync_children).
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,location_type,address,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO PREVENTIVO TEST","Livorno","Veterinario","Via Roma 45","Filippo","2026-07-29T09:30:00","2026-07-29T18:00:00","Da ritirare",admin["id"],stamp,stamp)).lastrowid
+            conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                         (event_id,"Cremazione","80",0,stamp,stamp))
+            conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                         (event_id,"Urna","40",1,stamp,stamp))
+        redirects = []
+        self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.headers = {"Referer": f"/calendario/{event_id}?tab=dettagli"}
+        self.handler.form = lambda: {"amount": "150"}
+        self.handler.calendar_event_action(admin, event_id, "preventivo")
+        with app.db() as conn:
+            rows = conn.execute("SELECT description,amount FROM calendar_event_estimate_items WHERE event_id=?", (event_id,)).fetchall()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["description"], "Preventivo")
+        self.assertEqual(float(rows[0]["amount"]), 150.0)
+        self.assertIn("saved=preventivo", redirects[-1])
+
     def test_dashboard_greeting_uses_logged_in_user_name_and_drops_quick_action_buttons(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()

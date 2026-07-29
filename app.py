@@ -2070,6 +2070,18 @@ button.calendar-tap-card{cursor:pointer}
 button.calendar-tap-card:active,a.calendar-tap-card:active{transform:scale(.985)}
 .calendar-tap-card-icon{flex:0 0 38px;width:38px;height:38px;border-radius:12px;background:#202c3d;color:#9ca7b8;display:grid;place-items:center}
 .calendar-tap-card-icon .icon{width:19px;height:19px}
+/* .calendar-icon-{colore} arriva prima nel foglio di stile e, a parita' di
+   specificita' (una sola classe), la regola successiva vince: qui sotto lo
+   stesso elemento porta sia .calendar-tap-card-icon sia .calendar-icon-X, e
+   senza un selettore composto piu' specifico il background piatto sopra
+   avrebbe sempre la meglio, lasciando tutte le icone del riepilogo grigie. */
+.calendar-tap-card-icon.calendar-icon-pink{background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;box-shadow:0 0 16px #ef405f38}
+.calendar-tap-card-icon.calendar-icon-blue{background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff;box-shadow:0 0 16px #3b82f638}
+.calendar-tap-card-icon.calendar-icon-green{background:linear-gradient(135deg,#22c55e,#15803d);color:#fff;box-shadow:0 0 16px #22c55e38}
+.calendar-tap-card-icon.calendar-icon-orange{background:linear-gradient(135deg,#f59e0b,#b45309);color:#fff;box-shadow:0 0 16px #f59e0b38}
+.calendar-tap-card-icon.calendar-icon-purple{background:linear-gradient(135deg,#8b5cf6,#6d28d9);color:#fff;box-shadow:0 0 16px #8b5cf638}
+.calendar-tap-card-icon.calendar-icon-teal{background:linear-gradient(135deg,#2dd4bf,#0f766e);color:#fff;box-shadow:0 0 16px #2dd4bf38}
+.calendar-tap-card-icon.calendar-icon-amber{background:linear-gradient(135deg,#fbbf24,#b45309);color:#fff;box-shadow:0 0 16px #fbbf2438}
 .calendar-tap-card-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
 .calendar-tap-card-body>small{color:#9ca7b8;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;font-weight:700}
 .calendar-tap-card-body input,.calendar-tap-card-body select,.calendar-tap-card-body textarea{border:0;background:transparent;padding:0;font-size:16px;font-weight:700;color:#f5f7fb;min-height:0;width:100%}
@@ -2177,6 +2189,65 @@ button.calendar-tap-card:active,a.calendar-tap-card:active{transform:scale(.985)
 .light-theme .calendar-detail-status-badge{background:#f1f5f9}
 .light-theme .calendar-detail-qa{background:#fff;border-color:#e2e8f0;color:#111827}
 @media(max-width:560px){.calendar-detail-quickactions{grid-template-columns:repeat(5,minmax(0,1fr))}.calendar-detail-qa{min-height:64px;font-size:10.5px}.calendar-detail-header-top{flex-wrap:wrap}}
+.calendar-detail-topbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.calendar-detail-back{display:inline-flex;align-items:center;gap:4px;color:#dfe4eb;font-weight:600;font-size:14.5px}
+.calendar-detail-back-arrow{display:inline-flex;transform:scaleX(-1)}
+.calendar-detail-back-arrow .icon{width:18px;height:18px}
+.calendar-detail-topbar-title{margin:0;font-size:15.5px;font-weight:800;color:#f5f7fb}
+.calendar-detail-topbar-menu{position:relative}
+.calendar-detail-topbar-menu-btn{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:#ffffff10;border:1px solid #ffffff14;color:#dfe4eb;transition:transform .15s cubic-bezier(.34,1.4,.64,1),background .18s ease}
+.calendar-detail-topbar-menu-btn:hover{background:#ffffff1a}
+.calendar-detail-topbar-menu-btn:active{transform:scale(.92)}
+.calendar-detail-topbar-menu .calendar-appt-menu-popover{left:auto;right:0}
+.light-theme .calendar-detail-back{color:#334155}
+.light-theme .calendar-detail-topbar-title{color:#0f172a}
+.light-theme .calendar-detail-topbar-menu-btn{background:#00000008;border-color:#e2e8f0;color:#334155}
+.calendar-detail-hero{position:relative;padding:18px;border-radius:26px;margin-bottom:16px;border:1px solid #ffffff14;background:linear-gradient(165deg,#1a2130f2,#12161fF2);box-shadow:0 14px 30px #05070f40;overflow:hidden}
+.calendar-detail-hero::before{content:'';position:absolute;inset:0;opacity:.16;pointer-events:none;background:radial-gradient(120% 90% at 8% 0%,var(--hero-glow,#ef405f),transparent 60%)}
+.calendar-hero-pink{--hero-glow:#ef405f;border-color:#ef405f38}
+.calendar-hero-blue{--hero-glow:#3b82f6;border-color:#3b82f638}
+.calendar-hero-green{--hero-glow:#22c55e;border-color:#22c55e38}
+.calendar-hero-orange{--hero-glow:#f59e0b;border-color:#f59e0b38}
+.calendar-hero-purple{--hero-glow:#8b5cf6;border-color:#8b5cf638}
+.calendar-detail-hero-top{position:relative;display:flex;align-items:flex-start;gap:14px}
+.calendar-detail-hero-titles{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.calendar-detail-hero-eyebrow{font-size:11.5px;font-weight:800;letter-spacing:.05em}
+.calendar-hero-text-pink{color:#fb7185}
+.calendar-hero-text-blue{color:#60a5fa}
+.calendar-hero-text-green{color:#4ade80}
+.calendar-hero-text-orange{color:#fbbf24}
+.calendar-hero-text-purple{color:#c084fc}
+.calendar-detail-hero-titles h1{margin:0;font-size:21px;line-height:1.2}
+.calendar-detail-hero-avatar{flex:0 0 auto}
+.calendar-detail-hero-meta{position:relative;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px;padding-top:14px;border-top:1px solid #ffffff14}
+.calendar-detail-hero-meta-item{display:flex;align-items:center;gap:8px;min-width:0}
+.calendar-detail-hero-meta-icon{flex:0 0 30px;width:30px;height:30px;border-radius:10px;display:grid;place-items:center}
+.calendar-detail-hero-meta-icon .icon{width:15px;height:15px}
+.calendar-detail-hero-meta-item div{min-width:0}
+.calendar-detail-hero-meta-item b{display:block;font-size:13px;font-weight:800;color:#f5f7fb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.calendar-detail-hero-meta-item small{display:block;font-size:11px;color:#8a96a8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.calendar-detail-hero-footer{position:relative;margin:14px 0 0}
+.light-theme .calendar-detail-hero{background:linear-gradient(165deg,#ffffff,#f8fafc);border-color:#e2e8f0}
+.light-theme .calendar-detail-hero-meta{border-color:#e2e8f0}
+.light-theme .calendar-detail-hero-meta-item b{color:#0f172a}
+@media(max-width:480px){.calendar-detail-hero-meta{grid-template-columns:1fr;gap:8px}}
+.calendar-quickedit-card{cursor:pointer;flex-wrap:wrap}
+.calendar-quickedit-card:active{transform:scale(.985)}
+.calendar-tap-card-link:hover .calendar-tap-card-icon,.calendar-quickedit-card:hover .calendar-tap-card-icon{filter:brightness(1.12);transition:filter .18s ease}
+.calendar-detail-hero:hover{box-shadow:0 16px 36px #05070f4d}
+.calendar-detail-hero{transition:box-shadow .25s ease}
+.calendar-quickedit-card .calendar-tap-card-body{cursor:pointer}
+.calendar-quickedit-pill{display:inline-flex;align-items:center;padding:4px 12px;border-radius:99px;border:1px solid #fb718560;color:#fb7185;font-size:11.5px;font-weight:700;flex:0 0 auto;align-self:center;transition:background .15s ease}
+.calendar-quickedit-card:hover .calendar-quickedit-pill{background:#ef405f14}
+.calendar-quickedit-form{display:none;flex:0 0 100%;width:100%;margin-top:12px;padding-top:12px;border-top:1px solid #ffffff12}
+.calendar-quickedit-card.expanded .calendar-quickedit-form{display:block}
+.calendar-quickedit-card.expanded .calendar-tap-card-chevron{transform:rotate(90deg)}
+.calendar-tap-card-chevron{transition:transform .2s ease}
+.calendar-tap-card-avatar{flex:0 0 34px;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-size:17px;background:#202c3d}
+.calendar-quickedit-datetime-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.calendar-quickedit-datetime-grid label{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:#9ca7b8;font-weight:600}
+.calendar-quickedit-datetime-grid input{border:1px solid #263246;background:#0e1622;border-radius:10px;padding:8px 10px;font-size:14px;color:#f5f7fb}
+.light-theme .calendar-quickedit-datetime-grid input{background:#f8fafc;border-color:#e2e8f0;color:#111827}
 /* Auto-hide della sola barra inferiore durante lo scroll (solo mobile, in stile Safari iOS); la headbar superiore resta sempre fissa */
 @media(max-width:900px){
   .bottom-nav{transition:transform .52s cubic-bezier(.16,1,.3,1);will-change:transform}
@@ -6159,7 +6230,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/calendario/nuovo": return self.save_calendar_event(user)
         match = re.fullmatch(r"/calendario/(\d+)/modifica",path)
         if match: return self.save_calendar_event(user,int(match.group(1)))
-        match = re.fullmatch(r"/calendario/(\d+)/(stato|zona|operatore|note|commento|elimina|ripristina|elimina-definitiva|collega-pratica|scollega-pratica)",path)
+        match = re.fullmatch(r"/calendario/(\d+)/(stato|zona|operatore|note|data-ora|preventivo|commento|elimina|ripristina|elimina-definitiva|collega-pratica|scollega-pratica)",path)
         if match: return self.calendar_event_action(user,int(match.group(1)),match.group(2))
         match = re.fullmatch(r"/calendario/(\d+)/commenti/(\d+)/(modifica|elimina)",path)
         if match: return self.calendar_comment_action(user,int(match.group(1)),int(match.group(2)),match.group(3))
@@ -7963,46 +8034,91 @@ class App(BaseHTTPRequestHandler):
           </div>
         </div>'''
         status_badge=f'<span class="calendar-detail-status-badge {event_color_class(event)}">{esc((event["event_status"] or "Nessuno").upper())}</span>' if event["event_type"] in ("Ritiro","Ritiro in sede") else (f'<span class="calendar-detail-status-badge {event_color_class(event)}">{esc(event["event_status"].upper())}</span>' if event["event_status"] and event["event_type"] in ("Riconsegna","Riconsegna in sede") else '')
-        header=f'''<div class="calendar-detail-header">
-          <span class="calendar-detail-header-icon calendar-icon-{type_color}">{lucide(type_icon)}</span>
-          <div class="calendar-detail-header-body">
-            <div class="calendar-detail-header-top">
-              <h1 class="{event_color_class(event)}">{esc(re.sub(r'^APPUNTAMENTO\b','PROMEMORIA',event['title'],flags=re.I) if event['event_type']=='Appuntamento' else event['title'])}</h1>
-              <a class="btn ghost calendar-detail-edit-btn" href="/calendario/{event_id}/modifica">{lucide("pencil")}<span>Modifica</span></a>
+        hero_operator_name=event['operator_name'] or event['assigned_name'] or ''
+        hero_avatar=self.calendar_operator_avatar(hero_operator_name,"md")
+        hero_time="Tutto il giorno" if event['all_day'] else (f"{start_time_part} → {end_time_part}" if end_time_part and end_time_part!=start_time_part else start_time_part)
+        hero_place_primary=event['zone'] or event['venue_name'] or event['location_type'] or '-'
+        hero_place_secondary=event['venue_name'] if event['zone'] and event['venue_name'] and event['venue_name']!=hero_place_primary else ''
+        header=f'''<div class="calendar-detail-topbar">
+          <a class="calendar-detail-back" href="/calendario"><span class="calendar-detail-back-arrow">{lucide("chevron-right")}</span><span>Indietro</span></a>
+          <h2 class="calendar-detail-topbar-title">Riepilogo evento</h2>
+          <div class="calendar-appt-menu-wrap calendar-detail-topbar-menu">
+            <button type="button" class="calendar-detail-topbar-menu-btn" aria-label="Altre azioni" onclick="calendarToggleApptMenu(this)">{lucide("more-vertical")}</button>
+            <div class="calendar-appt-menu-popover" hidden>
+              <a href="/calendario/{event_id}/modifica">Modifica evento</a>
+              <form method="post" action="/calendario/{event_id}/elimina" onsubmit="return confirm('Spostare questo evento nel cestino?')"><button type="submit">Sposta nel cestino</button></form>
             </div>
-            <div class="calendar-detail-header-meta">
-              {status_badge}
-              <span>{lucide("calendar")}{esc(datetime_value)}</span>
-              <span>{lucide("user")}{esc(event['operator_name'] or event['assigned_name'] or '-')}</span>
-            </div>
-            <p class="sub">Creato da {esc(event['creator_name'])} · {esc(event['created_at'].replace('T',' ')[:16])}</p>
           </div>
+        </div>
+        <div class="calendar-detail-hero calendar-hero-{type_color}">
+          <div class="calendar-detail-hero-top">
+            <span class="calendar-detail-header-icon calendar-icon-{type_color}">{lucide(type_icon)}</span>
+            <div class="calendar-detail-hero-titles">
+              <span class="calendar-detail-hero-eyebrow calendar-hero-text-{type_color}">{esc(display_event_type.upper())}</span>
+              <h1>{esc(re.sub(r'^APPUNTAMENTO\b','PROMEMORIA',event['title'],flags=re.I) if event['event_type']=='Appuntamento' else event['title'])}</h1>
+              {status_badge}
+            </div>
+            {f'<div class="calendar-detail-hero-avatar">{hero_avatar}</div>' if hero_avatar else ''}
+          </div>
+          <div class="calendar-detail-hero-meta">
+            <div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-purple">{lucide("calendar")}</span><div><b>{esc(date_it(start_date_part))}</b><small>{esc(hero_time)}</small></div></div>
+            <div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-teal">{lucide("home")}</span><div><b>{esc(hero_place_primary)}</b>{f'<small>{esc(hero_place_secondary)}</small>' if hero_place_secondary else ''}</div></div>
+            <div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-amber">{lucide("user")}</span><div><b>{esc(hero_operator_name or '-')}</b><small>Operatore</small></div></div>
+          </div>
+          <p class="sub calendar-detail-hero-footer">Creato da {esc(event['creator_name'])} · {esc(event['created_at'].replace('T',' ')[:16])}</p>
         </div>'''
         if tab=="dettagli":
-            status_card=''
-            if event["event_type"] in ("Ritiro","Ritiro in sede"):
-                status_card=f'''<form class="calendar-tap-card" method="post" action="/calendario/{event_id}/stato" data-client-empty="{"1" if not client_display else "0"}" onsubmit="return calendarConfirmPickupStatus(this)"><span class="calendar-tap-card-icon calendar-icon-pink">{lucide("clock")}</span><div class="calendar-tap-card-body"><small>Stato ritiro</small><select id="calendarDetailStatus" name="status">{''.join(f'<option {"selected" if event["event_status"]==s else ""}>{s}</option>' for s in PICKUP_STATUSES)}</select><button class="btn" type="submit" style="margin-top:10px">Salva nuovo stato</button></div></form>'''
+            def link_row(icon,label,value,color,href,sub=""):
+                icon_cls=f"calendar-tap-card-icon calendar-icon-{color}" if color else "calendar-tap-card-icon"
+                sub_html=f'<small class="calendar-tap-card-sub">{sub}</small>' if sub else ''
+                return f'<a class="calendar-tap-card calendar-tap-card-link" href="{href}"><span class="{icon_cls}">{lucide(icon)}</span><div class="calendar-tap-card-body"><small>{label}</small><p>{value}</p>{sub_html}</div><span class="calendar-tap-card-chevron">{lucide("chevron-right")}</span></a>'
             def info_card(icon,label,value,color="",sub=""):
                 icon_cls=f"calendar-tap-card-icon calendar-icon-{color}" if color else "calendar-tap-card-icon"
                 sub_html=f'<small class="calendar-tap-card-sub">{sub}</small>' if sub else ''
                 return f'<div class="calendar-tap-card"><span class="{icon_cls}">{lucide(icon)}</span><div class="calendar-tap-card-body"><small>{label}</small><p>{value}</p>{sub_html}</div></div>'
-            cards=[status_card] if status_card else []
-            cards.append(info_card(type_icon,"Tipo",esc(display_event_type),"orange"))
-            cards.append(info_card("calendar","Data e ora",esc(datetime_value),"purple"))
-            cards.append(info_card("user","Cliente",esc(client_display or '-'),"blue"))
+            def quickedit_row(icon,label,value,color,form_inner,pill=False):
+                icon_cls=f"calendar-tap-card-icon calendar-icon-{color}" if color else "calendar-tap-card-icon"
+                pill_html='<span class="calendar-quickedit-pill">Cambia</span>' if pill else ''
+                return f'''<div class="calendar-tap-card calendar-quickedit-card" onclick="if(!event.target.closest('.calendar-quickedit-form'))this.classList.toggle('expanded')">
+                  <span class="{icon_cls}">{lucide(icon)}</span>
+                  <div class="calendar-tap-card-body"><small>{label}</small><p>{value}</p></div>
+                  {pill_html}
+                  <span class="calendar-tap-card-chevron">{lucide("chevron-right")}</span>
+                  <div class="calendar-quickedit-form" onclick="event.stopPropagation()">{form_inner}</div>
+                </div>'''
+            edit_href=f"/calendario/{event_id}/modifica"
+            cards=[]
+            if event["event_type"] in ("Ritiro","Ritiro in sede"):
+                status_form=f'''<form method="post" action="/calendario/{event_id}/stato" data-client-empty="{"1" if not client_display else "0"}" onsubmit="return calendarConfirmPickupStatus(this)"><select id="calendarDetailStatus" name="status">{''.join(f'<option {"selected" if event["event_status"]==s else ""}>{s}</option>' for s in PICKUP_STATUSES)}</select><button class="btn" type="submit" style="margin-top:10px">Salva nuovo stato</button></form>'''
+                cards.append(quickedit_row("clock","Stato ritiro",esc(event["event_status"] or "Nessuno"),"pink",status_form,pill=True))
+            cards.append(link_row(type_icon,"Tipo evento",esc(display_event_type),"orange",edit_href))
+            datetime_form=f'''<form method="post" action="/calendario/{event_id}/data-ora">
+              <div class="calendar-quickedit-datetime-grid">
+                <label>Data inizio<input type="date" name="start_date" value="{esc(start_date_part)}"></label>
+                <label>Ora inizio<input type="time" name="start_time" value="{esc(start_time_part)}"></label>
+                <label>Data fine<input type="date" name="end_date" value="{esc(end_date_part)}"></label>
+                <label>Ora fine<input type="time" name="end_time" value="{esc(end_time_part)}"></label>
+              </div>
+              <button class="btn ghost" type="submit" style="margin-top:10px">Salva data e ora</button>
+            </form>'''
+            cards.append(quickedit_row("calendar","Data e ora",esc(datetime_value),"purple",datetime_form))
+            cards.append(link_row("user","Cliente",esc(client_display or '-'),"blue",edit_href))
             animals_summary=calendar_animals_summary_text(animals)
-            cards.append(info_card("paw","Animali",esc(animals_summary),"green"))
+            first_emoji=species_avatar(animals[0]["species"])[0] if animals else '🐾'
+            cards.append(f'<a class="calendar-tap-card calendar-tap-card-link" href="{edit_href}"><span class="calendar-tap-card-icon calendar-icon-green">{lucide("paw")}</span><div class="calendar-tap-card-body"><small>Animali</small><p>{esc(animals_summary)}</p></div><span class="calendar-tap-card-avatar">{first_emoji}</span><span class="calendar-tap-card-chevron">{lucide("chevron-right")}</span></a>')
             if event["delivery_clinic_name"]:cards.append(info_card("stethoscope","Ambulatorio riconsegna",esc(event["delivery_clinic_name"]),"blue"))
             venue_value=esc(event['venue_name'] or event['location_type'] or '-')
             venue_sub=esc(address) if address and event['venue_name'] else ''
-            cards.append(info_card("home","Luogo",venue_value,"teal",venue_sub))
+            cards.append(link_row("home","Luogo",venue_value,"teal",edit_href,venue_sub))
             if event['payment_status']:cards.append(info_card("wallet","Pagamento",f"{esc(event['payment_status'])} {money_it(event['payment_amount'])}","pink"))
             estimate_total_all=sum(float(i["amount"] or 0) for i in estimates)
-            estimate_card=f'<a class="calendar-tap-card calendar-tap-card-link" href="/calendario/{event_id}?tab=preventivo"><span class="calendar-tap-card-icon calendar-icon-pink">{lucide("receipt")}</span><div class="calendar-tap-card-body"><small>Preventivo</small><p>{money_it(estimate_total_all)}</p></div><span class="calendar-tap-card-chevron">{lucide("chevron-right")}</span></a>'
-            zone_card=''
+            estimate_form=f'''<form method="post" action="/calendario/{event_id}/preventivo"><input inputmode="decimal" name="amount" value="{f'{estimate_total_all:g}' if estimate_total_all else ''}" placeholder="Importo €"><button class="btn ghost" type="submit" style="margin-top:10px">Salva preventivo</button></form>'''
+            cards.append(quickedit_row("receipt","Preventivo",money_it(estimate_total_all),"pink",estimate_form))
             if event["event_type"]!="Appuntamento":
-                zone_card=f'''<form class="calendar-tap-card" method="post" action="/calendario/{event_id}/zona"><span class="calendar-tap-card-icon calendar-icon-green">{lucide("archive")}</span><div class="calendar-tap-card-body"><small>Zona</small><input name="zone" value="{esc(event['zone'] or '')}" placeholder="Es. Livorno"><button class="btn ghost" type="submit" style="margin-top:10px">Salva zona</button></div></form>'''
-            operator_card=f'''<form class="calendar-tap-card" method="post" action="/calendario/{event_id}/operatore"><span class="calendar-tap-card-icon calendar-icon-amber">{lucide("user")}</span><div class="calendar-tap-card-body"><small>Operatore</small><select name="operator_name"><option value="">Nessuno</option>{''.join(f'<option {"selected" if (event["operator_name"] or "")==name else ""}>{esc(name)}</option>' for name in CALENDAR_OPERATORS)}</select><button class="btn ghost" type="submit" style="margin-top:10px">Salva operatore</button></div></form>'''
+                zone_form=f'''<form method="post" action="/calendario/{event_id}/zona"><input name="zone" value="{esc(event['zone'] or '')}" placeholder="Es. Livorno"><button class="btn ghost" type="submit" style="margin-top:10px">Salva zona</button></form>'''
+                cards.append(quickedit_row("archive","Zona",esc(event['zone'] or 'Non impostata'),"green",zone_form))
+            operator_form=f'''<form method="post" action="/calendario/{event_id}/operatore"><select name="operator_name"><option value="">Nessuno</option>{''.join(f'<option {"selected" if (event["operator_name"] or "")==name else ""}>{esc(name)}</option>' for name in CALENDAR_OPERATORS)}</select><button class="btn ghost" type="submit" style="margin-top:10px">Salva operatore</button></form>'''
+            cards.append(quickedit_row("user","Operatore",esc(event['operator_name'] or event['assigned_name'] or 'Nessuno'),"amber",operator_form))
             link_practice_card=''
             if event["event_type"] in ("Ritiro","Ritiro in sede") and event["event_status"]=="Ritirato":
                 if event["linked_practice_id"]:
@@ -8010,8 +8126,9 @@ class App(BaseHTTPRequestHandler):
                     link_practice_card=f'''<div class="calendar-tap-card"><span class="calendar-tap-card-icon">{lucide("receipt")}</span><div class="calendar-tap-card-body"><small>Pratica collegata</small><p>{esc(event["practice_number"])}</p><a class="btn ghost" style="margin-top:8px" href="/pratiche/{event['linked_practice_id']}">Apri pratica</a>{unlink}</div></div>'''
                 else:
                     link_practice_card=f'''<div class="calendar-tap-card lookup"><span class="calendar-tap-card-icon">{lucide("receipt")}</span><div class="calendar-tap-card-body"><small>Collega pratica esistente</small><input id="calendarLinkPracticeSearch" data-event-id="{event_id}" autocomplete="off" placeholder="Cerca per animale, proprietario, veterinario o numero pratica"><div id="calendarLinkPracticeResults" class="lookup-results hidden"></div></div></div>'''
-            note_card=f'''<form class="calendar-tap-card" method="post" action="/calendario/{event_id}/note"><span class="calendar-tap-card-icon calendar-icon-purple">{lucide("clipboard")}</span><div class="calendar-tap-card-body"><small>Note</small><textarea name="notes" style="white-space:pre-wrap">{esc(event["notes"] or "")}</textarea><button class="btn ghost" type="submit" style="margin-top:10px">Salva note</button></div></form>'''
-            panel=f'<div class="calendar-card-list">{"".join(cards)}{estimate_card}{zone_card}{operator_card}{link_practice_card}{note_card}</div>'
+            note_form=f'''<form method="post" action="/calendario/{event_id}/note"><textarea name="notes" style="white-space:pre-wrap">{esc(event["notes"] or "")}</textarea><button class="btn ghost" type="submit" style="margin-top:10px">Salva note</button></form>'''
+            cards.append(quickedit_row("clipboard","Note",esc((event["notes"] or "Nessuna nota").splitlines()[0][:80]),"purple",note_form))
+            panel=f'<div class="calendar-card-list">{"".join(cards)}{link_practice_card}</div>'
         elif tab=="animali":
             def animal_card(a):
                 emoji,avatar_cls=species_avatar(a["species"])
@@ -8040,9 +8157,9 @@ class App(BaseHTTPRequestHandler):
         celebration=f'<div class="calendar-created-celebration" aria-hidden="true"><div class="calendar-created-confetti">{confetti}</div><div class="calendar-created-celebration-card"><span class="calendar-created-celebration-icon">{checkmark}</span><b>Evento creato!</b></div></div>'
         created_animation=f'''<template id="calendarCreatedCelebration">{celebration}</template><script>try{{if(sessionStorage.getItem('ppm_calendar_created')==='1'){{sessionStorage.removeItem('ppm_calendar_created');document.body.append(document.getElementById('calendarCreatedCelebration').content.cloneNode(true));}}}}catch(error){{}}</script>'''
         error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
-        saved_labels={"stato":"Stato aggiornato.","zona":"Zona aggiornata.","operatore":"Operatore aggiornato.","note":"Note aggiornate."}
+        saved_labels={"stato":"Stato aggiornato.","zona":"Zona aggiornata.","operatore":"Operatore aggiornato.","note":"Note aggiornate.","data-ora":"Data e ora aggiornate.","preventivo":"Preventivo aggiornato."}
         saved_html=f'<div class="flash">{esc(saved_labels[saved])}</div>' if saved in saved_labels else ''
-        body=f'''{created_animation}<main class="wrap calendar-wrap calendar-detail-v2">{error_html}{saved_html}<div class="titlebar" style="margin-bottom:10px"><a class="btn ghost" href="/calendario">Calendario</a></div>{header}{quick_actions}<nav class="calendar-tabs">{tabs}</nav><div>{panel}</div></main>'''
+        body=f'''{created_animation}<main class="wrap calendar-wrap calendar-detail-v2">{error_html}{saved_html}{header}{quick_actions}<nav class="calendar-tabs">{tabs}</nav><div>{panel}</div></main>'''
         self.send_html(layout(re.sub(r'^APPUNTAMENTO\b','PROMEMORIA',event["title"],flags=re.I) if event["event_type"]=='Appuntamento' else event["title"],body,user))
 
     def calendar_event_action(self,user,event_id,action):
@@ -8066,6 +8183,42 @@ class App(BaseHTTPRequestHandler):
             elif action=="note":
                 notes=form.get("notes","").strip()[:4000]
                 c.execute("UPDATE calendar_events SET notes=?,updated_at=?,updated_by=? WHERE id=?",(notes,stamp,user["id"],event_id));calendar_add_history(c,event_id,user["id"],"Modifica note",event["notes"] or "",notes,stamp)
+            elif action=="data-ora":
+                # Riusa integralmente normalize_event (la stessa validazione del
+                # wizard) ricostruendo il form dai campi gia' salvati
+                # sull'evento e sostituendo solo data/ora inizio-fine: nessuna
+                # logica di data/ora viene riscritta, solo richiamata.
+                merged={
+                    "event_type":event["event_type"],"title":event["title"] or "","zone":event["zone"] or "",
+                    "location_type":event["location_type"] or "","venue_name":event["venue_name"] or "",
+                    "address":event["address"] or "","phone":event["phone"] or "",
+                    "veterinarian_id":str(event["veterinarian_id"] or ""),"veterinarian_name":event["veterinarian_name"] or "",
+                    "veterinarian_phone":event["veterinarian_phone"] or "","veterinarian_address":event["veterinarian_address"] or "",
+                    "veterinarian_hours":event["veterinarian_hours"] or "","veterinarian_contact":event["veterinarian_contact"] or "",
+                    "client_id":str(event["client_id"] or ""),"client_first_name":event["client_first_name"] or "",
+                    "client_last_name":event["client_last_name"] or "","client_phone":event["client_phone"] or "",
+                    "destination_site":event["destination_site"] or "","animal_name":event["animal_name"] or "",
+                    "category":event["category"] or "","operator_name":event["operator_name"] or "",
+                    "event_status":event["event_status"] or "","payment_status":event["payment_status"] or "",
+                    "payment_amount":str(event["payment_amount"] or 0),"notes":event["notes"] or "",
+                    "delivery_clinic_id":str(event["delivery_clinic_id"] or ""),"delivery_clinic_name":event["delivery_clinic_name"] or "",
+                    "delivery_clinic_address":event["delivery_clinic_address"] or "","delivery_clinic_phone":event["delivery_clinic_phone"] or "",
+                    "all_day":"1" if event["all_day"] else "0",
+                    "start_date":form.get("start_date",""),"start_time":form.get("start_time",""),
+                    "end_date":form.get("end_date",""),"end_time":form.get("end_time",""),
+                }
+                try:data=normalize_event(merged)
+                except ValueError as exc:return self.calendar_event_detail(user,event_id,error=str(exc))
+                c.execute("UPDATE calendar_events SET start_at=?,end_at=?,all_day=?,updated_at=?,updated_by=? WHERE id=?",
+                          (data["start_at"],data["end_at"],data["all_day"],stamp,user["id"],event_id))
+                calendar_add_history(c,event_id,user["id"],"Modifica data e ora",f'{event["start_at"]} → {event["end_at"]}',f'{data["start_at"]} → {data["end_at"]}',stamp)
+            elif action=="preventivo":
+                try:amount=max(0.0,float(str(form.get("amount") or "0").replace(",",".")))
+                except ValueError:return self.calendar_event_detail(user,event_id,error="Importo non valido.")
+                old_total=sum(float(i["amount"] or 0) for i in c.execute("SELECT amount FROM calendar_event_estimate_items WHERE event_id=?",(event_id,)).fetchall())
+                c.execute("DELETE FROM calendar_event_estimate_items WHERE event_id=?",(event_id,))
+                if amount>0:c.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,0,?,?)",(event_id,"Preventivo",amount,stamp,stamp))
+                calendar_add_history(c,event_id,user["id"],"Modifica preventivo",money_it(old_total),money_it(amount),stamp)
             elif action=="commento":
                 message=form.get("message","").strip()[:2000]
                 if not message:return self.calendar_event_detail(user,event_id,error="Il commento non può essere vuoto.")
@@ -8091,7 +8244,7 @@ class App(BaseHTTPRequestHandler):
                 c.execute("UPDATE calendar_events SET linked_practice_id=NULL,updated_at=?,updated_by=? WHERE id=?",(stamp,user["id"],event_id))
                 calendar_add_history(c,event_id,user["id"],"Scollegamento pratica",str(event["linked_practice_id"] or ""),"",stamp)
         target=safe_return_path(form.get("return_to") or self.headers.get("Referer"),f"/calendario/{event_id}")
-        if action in ("stato","zona","operatore","note"):
+        if action in ("stato","zona","operatore","note","data-ora","preventivo"):
             target=f"{target}{'&' if '?' in target else '?'}saved={action}"
         self.redirect(target)
 
