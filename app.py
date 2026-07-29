@@ -4560,15 +4560,20 @@ function cremationRevertComplete(id){
       .catch(function(){cremationSoftRefreshCycle(id);});
   },{title:'Annulla completamento',confirmLabel:'Annulla completamento'});
 }
-function cremationUpdateDurationPreview(){
+function cremationUpdateDurationPreview(prefix){
   // solo visualizzazione: legge gli stessi due campi orario gia' esistenti,
   // non scrive nulla al loro interno e non interferisce in alcun modo con
   // calendarTimeInput/calendarTimeFocus/la rotella o con il salvataggio.
-  const textEl=document.querySelector('[data-cremation-duration-text]');
-  const badgeEl=document.querySelector('[data-cremation-duration-minutes]');
+  // prefix distingue il modale (cremationEdit / cremationCreate) cosi' la
+  // ricerca di badge/testo resta nello stesso modale e non in un altro
+  // presente ma nascosto nella stessa pagina.
+  prefix=prefix||'cremationEdit';
+  const startEl=document.getElementById(prefix+'Start');
+  const endEl=document.getElementById(prefix+'End');
+  const scope=(startEl&&startEl.closest('.cremation-modal'))||document;
+  const textEl=scope.querySelector('[data-cremation-duration-text]');
+  const badgeEl=scope.querySelector('[data-cremation-duration-minutes]');
   if(!textEl||!badgeEl)return;
-  const startEl=document.getElementById('cremationEditStart');
-  const endEl=document.getElementById('cremationEditEnd');
   const startMatch=startEl&&startEl.value.match(/^(\d{2}):(\d{2})$/);
   const endMatch=endEl&&endEl.value.match(/^(\d{2}):(\d{2})$/);
   if(!startMatch||!endMatch){textEl.textContent='—';badgeEl.textContent='—';return;}
@@ -4659,10 +4664,54 @@ function cremationQuickAssign(el,practiceId,cycleId){
     .then(function(data){if(!data.ok){alert(data.error||'Operazione non riuscita');return;}cremationReloadWithOpenCycle(cycleId);})
     .catch(function(){cremationReloadWithOpenCycle(cycleId);});
 }
+function cremationOpenCreateModal(practiceId,cycleDate){
+  const overlay=document.getElementById('cremationCreateOverlay');
+  if(!overlay)return false;
+  overlay.dataset.practiceId=practiceId||'';
+  const dateInput=document.getElementById('cremationCreateDate');
+  const startInput=document.getElementById('cremationCreateStart');
+  const endInput=document.getElementById('cremationCreateEnd');
+  if(dateInput)dateInput.value=cycleDate||'';
+  if(startInput){startInput.value='';startInput.dataset.timeDigits='';startInput.dataset.timeComplete='';}
+  if(endInput){endInput.value='';endInput.dataset.timeDigits='';endInput.dataset.timeComplete='';}
+  document.querySelectorAll('#cremationCreateOverlay [data-time-wheel]').forEach(function(w){w.hidden=true;delete w.dataset.ready;});
+  cremationUpdateDurationPreview('cremationCreate');
+  overlay.hidden=false;
+  return true;
+}
+function cremationCloseCreateModal(){
+  const overlay=document.getElementById('cremationCreateOverlay');
+  if(overlay)overlay.hidden=true;
+}
+function cremationSubmitCreateModal(){
+  const overlay=document.getElementById('cremationCreateOverlay');
+  const practiceId=overlay.dataset.practiceId||'';
+  calendarFlushWheelTime(document.getElementById('cremationCreateStart'));
+  calendarFlushWheelTime(document.getElementById('cremationCreateEnd'));
+  const dateInput=document.getElementById('cremationCreateDate');
+  const cycleDate=dateInput?dateInput.value:'';
+  const start=document.getElementById('cremationCreateStart').value;
+  const end=document.getElementById('cremationCreateEnd').value;
+  if(!cycleDate){alert('Seleziona il giorno del ciclo.');return;}
+  if(!/^\d{2}:\d{2}$/.test(start)||!/^\d{2}:\d{2}$/.test(end)){alert('Inserisci un orario valido (HH:MM) per inizio e fine.');return;}
+  const submitBtn=overlay.querySelector('.cremation-modal-actions-v2 .btn:not(.ghost)');
+  if(submitBtn)submitBtn.disabled=true;
+  fetch('/programma-cremazioni/cicli',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',
+    body:'practice_id='+encodeURIComponent(practiceId)+'&data='+encodeURIComponent(cycleDate)+'&planned_start='+encodeURIComponent(start)+'&planned_end='+encodeURIComponent(end)})
+    .then(function(res){return res.json();})
+    .then(function(data){
+      if(submitBtn)submitBtn.disabled=false;
+      if(!data.ok){alert(data.error||'Operazione non riuscita');return;}
+      cremationCloseCreateModal();
+      cremationReloadWithOpenCycle(data.cycle_id);
+    })
+    .catch(function(){if(submitBtn)submitBtn.disabled=false;location.reload();});
+}
 function cremationQuickCreateAndAssign(el,practiceId){
   document.querySelectorAll('.cremation-quick-menu-popover').forEach(function(p){p.hidden=true;});
   const board=document.getElementById('cremationBoard');
   const cremationDate=board?board.dataset.cremationDate:'';
+  if(cremationOpenCreateModal(practiceId,cremationDate))return;
   fetch('/programma-cremazioni/cicli',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',
     body:'practice_id='+encodeURIComponent(practiceId)+'&data='+encodeURIComponent(cremationDate)})
     .then(function(res){return res.json();})
@@ -4670,11 +4719,17 @@ function cremationQuickCreateAndAssign(el,practiceId){
     .catch(function(){location.reload();});
 }
 function cremationRemoveFromCycle(el,practiceId){
+  // vedi cremationToggleOwnerNotified: un reload nudo della pagina perdeva
+  // il giorno mostrato in vista Settimana (torna sempre al giorno di oggi). Il
+  // ciclo resta comunque presente dopo aver rimosso solo l'animale, quindi
+  // cremationSoftRefreshCycle puo' riaprirlo esattamente come prima.
+  const cycleCard=el.closest('[data-cycle-id]');
+  const cycleId=cycleCard?cycleCard.dataset.cycleId:null;
   cremationOpenConfirmModal('Rimuovere questo animale dal ciclo? Tornerà nella lista "Animali in attesa".',function(){
     fetch('/programma-cremazioni/pratiche/'+practiceId+'/rimuovi',{method:'POST',credentials:'same-origin'})
       .then(function(res){return res.json();})
-      .then(function(data){if(!data.ok){alert(data.error||'Operazione non riuscita');return;}location.reload();})
-      .catch(function(){location.reload();});
+      .then(function(data){if(!data.ok){alert(data.error||'Operazione non riuscita');return;}cremationSoftRefreshCycle(cycleId);})
+      .catch(function(){cremationSoftRefreshCycle(cycleId);});
   },{title:'Rimuovi animale',confirmLabel:'Rimuovi'});
 }
 function cremationToggleOwnerNotified(btn,practiceId,newStatus){
@@ -4692,11 +4747,15 @@ function cremationToggleOwnerNotified(btn,practiceId,newStatus){
     .catch(function(){cremationReloadWithOpenCycle(cycleId);});
 }
 function cremationDeleteCycle(cycleId){
+  // stesso motivo di cremationRemoveFromCycle: preserva il giorno mostrato in
+  // vista Settimana. Qui il ciclo non c'e' piu' dopo l'eliminazione, ma
+  // cremationSoftRefreshCycle cattura il giorno attivo PRIMA della richiesta
+  // e non dipende dal fatto che il ciclo esista ancora per riapplicarlo.
   cremationOpenConfirmModal('Eliminare questo ciclo? Gli eventuali animali assegnati torneranno nella lista degli animali da pianificare.',function(){
     fetch('/programma-cremazioni/cicli/'+cycleId+'/elimina',{method:'POST',credentials:'same-origin'})
       .then(function(res){return res.json();})
-      .then(function(data){if(!data.ok){alert(data.error||'Operazione non riuscita');return;}location.reload();})
-      .catch(function(){location.reload();});
+      .then(function(data){if(!data.ok){alert(data.error||'Operazione non riuscita');return;}cremationSoftRefreshCycle(cycleId);})
+      .catch(function(){cremationSoftRefreshCycle(cycleId);});
   },{title:'Elimina ciclo',confirmLabel:'Elimina'});
 }
 function cremationCollapseBody(body){
@@ -9544,6 +9603,18 @@ class App(BaseHTTPRequestHandler):
         </div>
         <script>document.addEventListener('DOMContentLoaded',function(){{var s=document.getElementById('cremationEditStart'),e=document.getElementById('cremationEditEnd');if(s){{s.addEventListener('input',cremationUpdateDurationPreview);s.addEventListener('change',cremationUpdateDurationPreview);}}if(e){{e.addEventListener('input',cremationUpdateDurationPreview);e.addEventListener('change',cremationUpdateDurationPreview);}}}});</script>'''
 
+        create_modal_html=f'''<div class="cremation-modal-overlay" id="cremationCreateOverlay" hidden onclick="if(event.target===this)cremationCloseCreateModal()">
+          <div class="cremation-modal cremation-modal-time-edit">
+            <div class="cremation-modal-head"><span class="cremation-modal-icon-badge">{lucide("plus")}</span><div class="cremation-modal-head-body"><h3>Nuovo ciclo</h3><span class="cremation-modal-subtitle">Scegli giorno e orario del ciclo</span></div><button type="button" class="cremation-modal-close" onclick="cremationCloseCreateModal()" aria-label="Chiudi">×</button></div>
+            <div class="cremation-modal-time-field cremation-modal-time-field-date"><span class="cremation-modal-time-icon">{lucide("calendar")}</span><div class="cremation-modal-time-body"><div class="calendar-datetime-row" style="grid-template-columns:64px 1fr"><label>Giorno</label><input type="date" id="cremationCreateDate"></div></div></div>
+            <div class="cremation-modal-time-field cremation-modal-time-field-start"><span class="cremation-modal-time-icon">{lucide("play")}</span><div class="cremation-modal-time-body">{time_field_html("Orario inizio","cremationCreateStart")}<span class="cremation-modal-time-clock">{lucide("clock")}</span></div></div>
+            <div class="cremation-modal-time-field cremation-modal-time-field-end"><span class="cremation-modal-time-icon">{lucide("square")}</span><div class="cremation-modal-time-body">{time_field_html("Orario fine","cremationCreateEnd")}<span class="cremation-modal-time-clock">{lucide("clock")}</span></div></div>
+            <div class="cremation-modal-duration"><span class="cremation-modal-duration-icon">{lucide("hourglass")}</span><div class="cremation-modal-duration-body"><small>Durata ciclo</small><p data-cremation-duration-text>—</p></div><span class="cremation-modal-duration-badge" data-cremation-duration-minutes>—</span></div>
+            <div class="cremation-modal-actions cremation-modal-actions-v2"><button type="button" class="btn ghost" onclick="cremationCloseCreateModal()">Annulla</button><button type="button" class="btn" onclick="cremationSubmitCreateModal()">{lucide("plus")}<span>Crea ciclo</span></button></div>
+          </div>
+        </div>
+        <script>document.addEventListener('DOMContentLoaded',function(){{var s=document.getElementById('cremationCreateStart'),e=document.getElementById('cremationCreateEnd');if(s){{s.addEventListener('input',function(){{cremationUpdateDurationPreview('cremationCreate');}});s.addEventListener('change',function(){{cremationUpdateDurationPreview('cremationCreate');}});}}if(e){{e.addEventListener('input',function(){{cremationUpdateDurationPreview('cremationCreate');}});e.addEventListener('change',function(){{cremationUpdateDurationPreview('cremationCreate');}});}}}});</script>'''
+
         confirm_modal_html='''<div class="cremation-modal-overlay" id="cremationConfirmOverlay" hidden onclick="if(event.target===this)cremationCloseConfirmModal()">
           <div class="cremation-modal">
             <div class="cremation-modal-head"><h3 id="cremationConfirmTitle">Conferma</h3><button type="button" class="cremation-modal-close" onclick="cremationCloseConfirmModal()" aria-label="Chiudi">×</button></div>
@@ -9615,6 +9686,7 @@ class App(BaseHTTPRequestHandler):
           <button type="button" class="cremation-add-cycle-btn" onclick="cremationCreateEmptyCycle()">{lucide("plus")}<span>Aggiungi nuovo ciclo</span></button>
         </section>
         {edit_modal_html}
+        {create_modal_html}
         {add_animal_modal_html}
         {confirm_modal_html}
         </main>'''
@@ -9998,6 +10070,18 @@ class App(BaseHTTPRequestHandler):
         </div>
         <script>document.addEventListener('DOMContentLoaded',function(){{var s=document.getElementById('cremationEditStart'),e=document.getElementById('cremationEditEnd');if(s){{s.addEventListener('input',cremationUpdateDurationPreview);s.addEventListener('change',cremationUpdateDurationPreview);}}if(e){{e.addEventListener('input',cremationUpdateDurationPreview);e.addEventListener('change',cremationUpdateDurationPreview);}}}});</script>'''
 
+        create_modal_html=f'''<div class="cremation-modal-overlay" id="cremationCreateOverlay" hidden onclick="if(event.target===this)cremationCloseCreateModal()">
+          <div class="cremation-modal cremation-modal-time-edit">
+            <div class="cremation-modal-head"><span class="cremation-modal-icon-badge">{lucide("plus")}</span><div class="cremation-modal-head-body"><h3>Nuovo ciclo</h3><span class="cremation-modal-subtitle">Scegli giorno e orario del ciclo</span></div><button type="button" class="cremation-modal-close" onclick="cremationCloseCreateModal()" aria-label="Chiudi">×</button></div>
+            <div class="cremation-modal-time-field cremation-modal-time-field-date"><span class="cremation-modal-time-icon">{lucide("calendar")}</span><div class="cremation-modal-time-body"><div class="calendar-datetime-row" style="grid-template-columns:64px 1fr"><label>Giorno</label><input type="date" id="cremationCreateDate"></div></div></div>
+            <div class="cremation-modal-time-field cremation-modal-time-field-start"><span class="cremation-modal-time-icon">{lucide("play")}</span><div class="cremation-modal-time-body">{time_field_html("Orario inizio","cremationCreateStart")}<span class="cremation-modal-time-clock">{lucide("clock")}</span></div></div>
+            <div class="cremation-modal-time-field cremation-modal-time-field-end"><span class="cremation-modal-time-icon">{lucide("square")}</span><div class="cremation-modal-time-body">{time_field_html("Orario fine","cremationCreateEnd")}<span class="cremation-modal-time-clock">{lucide("clock")}</span></div></div>
+            <div class="cremation-modal-duration"><span class="cremation-modal-duration-icon">{lucide("hourglass")}</span><div class="cremation-modal-duration-body"><small>Durata ciclo</small><p data-cremation-duration-text>—</p></div><span class="cremation-modal-duration-badge" data-cremation-duration-minutes>—</span></div>
+            <div class="cremation-modal-actions cremation-modal-actions-v2"><button type="button" class="btn ghost" onclick="cremationCloseCreateModal()">Annulla</button><button type="button" class="btn" onclick="cremationSubmitCreateModal()">{lucide("plus")}<span>Crea ciclo</span></button></div>
+          </div>
+        </div>
+        <script>document.addEventListener('DOMContentLoaded',function(){{var s=document.getElementById('cremationCreateStart'),e=document.getElementById('cremationCreateEnd');if(s){{s.addEventListener('input',function(){{cremationUpdateDurationPreview('cremationCreate');}});s.addEventListener('change',function(){{cremationUpdateDurationPreview('cremationCreate');}});}}if(e){{e.addEventListener('input',function(){{cremationUpdateDurationPreview('cremationCreate');}});e.addEventListener('change',function(){{cremationUpdateDurationPreview('cremationCreate');}});}}}});</script>'''
+
         confirm_modal_html='''<div class="cremation-modal-overlay" id="cremationConfirmOverlay" hidden onclick="if(event.target===this)cremationCloseConfirmModal()">
           <div class="cremation-modal">
             <div class="cremation-modal-head"><h3 id="cremationConfirmTitle">Conferma</h3><button type="button" class="cremation-modal-close" onclick="cremationCloseConfirmModal()" aria-label="Chiudi">×</button></div>
@@ -10100,15 +10184,30 @@ class App(BaseHTTPRequestHandler):
 
     def cremation_create_cycle(self,user):
         f=self.form()
-        cycle_date=(f.get("data") or rome_now().date().isoformat()).strip()[:10]
+        cycle_date_raw=(f.get("data") or "").strip()[:10]
+        if cycle_date_raw:
+            try:date.fromisoformat(cycle_date_raw)
+            except ValueError:return self.send_json({"ok":False,"error":"Data non valida."},400)
+            cycle_date=cycle_date_raw
+        else:
+            cycle_date=rome_now().date().isoformat()
         practice_id=(f.get("practice_id") or "").strip()
+        planned_start_raw=(f.get("planned_start") or "").strip()[:5]
+        planned_end_raw=(f.get("planned_end") or "").strip()[:5]
         stamp=now()
         with db() as c:
             if practice_id:
                 practice=c.execute("SELECT * FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(practice_id,)).fetchone()
                 if not practice or practice["status"]=="Consegnato" or practice["service_type"]!="Cremazione singola" or practice["cremation_cycle_id"]:
                     return self.send_json({"ok":False,"error":"Animale non più disponibile. Ricarica la pagina."},409)
-            start,end=cremation_cycle_next_slot(c,cycle_date)
+            if planned_start_raw or planned_end_raw:
+                if not re.fullmatch(r"\d{2}:\d{2}",planned_start_raw) or not re.fullmatch(r"\d{2}:\d{2}",planned_end_raw):
+                    return self.send_json({"ok":False,"error":"Orario non valido."},400)
+                if cremation_minutes_between(planned_start_raw,planned_end_raw)<=0:
+                    return self.send_json({"ok":False,"error":"L'orario di fine deve essere dopo l'orario di inizio."},400)
+                start,end=planned_start_raw,planned_end_raw
+            else:
+                start,end=cremation_cycle_next_slot(c,cycle_date)
             status="in_attesa" if practice_id else "pianificato"
             cycle_id=c.execute("INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
                                 (cycle_date,status,start,end,stamp,stamp)).lastrowid

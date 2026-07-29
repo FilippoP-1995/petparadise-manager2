@@ -1629,6 +1629,124 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(second_cycle["planned_start"], "09:40")
         self.assertEqual(second_cycle["planned_end"], "11:10")
 
+    def test_cremation_create_cycle_accepts_explicit_day_and_time_from_the_new_popup(self):
+        # richiesta esplicita dell'utente: quando si crea un nuovo ciclo dal
+        # popup "Aggiungi animale", deve poter scegliere giorno e orario
+        # invece di ricevere sempre lo slot libero calcolato automaticamente.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            practice_id = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-POPUP-1", "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-15", stamp, stamp,
+                 admin["id"], "CR-POPUP-1"),
+            ).lastrowid
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.form = lambda: {
+            "practice_id": str(practice_id), "data": "2026-07-25", "planned_start": "14:00", "planned_end": "15:15",
+        }
+        self.handler.cremation_create_cycle(admin)
+        self.assertTrue(responses[-1][0]["ok"])
+        cycle_id = responses[-1][0]["cycle_id"]
+        with app.db() as conn:
+            cycle = conn.execute("SELECT * FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()
+        self.assertEqual(cycle["cycle_date"], "2026-07-25")
+        self.assertEqual(cycle["planned_start"], "14:00")
+        self.assertEqual(cycle["planned_end"], "15:15")
+
+    def test_cremation_create_cycle_rejects_invalid_time_or_date_from_the_popup(self):
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+
+        self.handler.form = lambda: {"data": "2026-07-25", "planned_start": "15:00", "planned_end": "14:00"}
+        self.handler.cremation_create_cycle(admin)
+        payload, status = responses[-1]
+        self.assertFalse(payload["ok"])
+        self.assertEqual(status, 400)
+
+        responses.clear()
+        self.handler.form = lambda: {"data": "2026-07-25", "planned_start": "bad", "planned_end": "15:00"}
+        self.handler.cremation_create_cycle(admin)
+        payload, status = responses[-1]
+        self.assertFalse(payload["ok"])
+        self.assertEqual(status, 400)
+
+        responses.clear()
+        self.handler.form = lambda: {"data": "non-una-data"}
+        self.handler.cremation_create_cycle(admin)
+        payload, status = responses[-1]
+        self.assertFalse(payload["ok"])
+        self.assertEqual(status, 400)
+
+        # senza orario esplicito il comportamento automatico di sempre resta invariato
+        responses.clear()
+        self.handler.form = lambda: {"data": "2026-07-25"}
+        self.handler.cremation_create_cycle(admin)
+        payload, status = responses[-1]
+        self.assertTrue(payload["ok"])
+
+    def test_cremation_quick_create_opens_gestionale_style_popup_instead_of_creating_immediately(self):
+        # richiesta esplicita dell'utente: se dal popup "Aggiungi animale" si
+        # crea un nuovo ciclo, deve apparire un popup in stile gestionale
+        # (stessi colori/forme/tasti del modale "Modifica orario ciclo") per
+        # stabilire giorno e orario PRIMA di creare il ciclo — non piu' una
+        # creazione immediata e silenziosa con slot automatico.
+        js = app.APP_JS
+        self.assertIn("function cremationOpenCreateModal(practiceId,cycleDate){", js)
+        self.assertIn("function cremationCloseCreateModal(){", js)
+        self.assertIn("function cremationSubmitCreateModal(){", js)
+        quick_create_body = js[js.index("function cremationQuickCreateAndAssign(el,practiceId)"):]
+        quick_create_body = quick_create_body[:quick_create_body.index("function ", 10)]
+        self.assertIn("if(cremationOpenCreateModal(practiceId,cremationDate))return;", quick_create_body)
+        # se il popup non e' presente nella pagina (es. Dashboard), il vecchio
+        # comportamento resta come rete di sicurezza, invariato
+        self.assertIn("cremationReloadWithOpenCycle(data.cycle_id)", quick_create_body)
+
+        submit_body = js[js.index("function cremationSubmitCreateModal(){"):]
+        submit_body = submit_body[:submit_body.index("function ", 10)]
+        self.assertIn("planned_start='+encodeURIComponent(start)", submit_body)
+        self.assertIn("planned_end='+encodeURIComponent(end)", submit_body)
+        self.assertIn("cremationCloseCreateModal()", submit_body)
+        self.assertIn("cremationReloadWithOpenCycle(data.cycle_id)", submit_body)
+
+    def test_cremation_create_modal_markup_matches_gestionale_style(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-20"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn('id="cremationCreateOverlay" hidden', page)
+        self.assertIn('class="cremation-modal cremation-modal-time-edit"', page[page.index('id="cremationCreateOverlay"'):])
+        self.assertIn('id="cremationCreateDate"', page)
+        self.assertIn('id="cremationCreateStart"', page)
+        self.assertIn('id="cremationCreateEnd"', page)
+        self.assertIn('onclick="cremationSubmitCreateModal()"', page)
+        self.assertIn('>Crea ciclo</span>', page)
+
+    def test_cremation_remove_from_cycle_and_delete_cycle_do_not_jump_back_to_todays_day(self):
+        # bug segnalato dall'utente: modificando un ciclo di un giorno diverso
+        # da quello corrente (es. rimuovendo un animale), subito dopo la
+        # conferma la vista Settimana tornava sul giorno di oggi invece di
+        # restare sul giorno che si stava guardando. cremationSoftRefreshCycle
+        # cattura il giorno attivo PRIMA della richiesta e lo ripristina dopo
+        # aver aggiornato solo #main-content, senza mai navigare la pagina.
+        js = app.APP_JS
+        remove_body = js[js.index("function cremationRemoveFromCycle(el,practiceId){"):]
+        remove_body = remove_body[:remove_body.index("function ", 10)]
+        self.assertIn("cremationSoftRefreshCycle(cycleId)", remove_body)
+        self.assertNotIn("location.reload()", remove_body)
+
+        delete_body = js[js.index("function cremationDeleteCycle(cycleId){"):]
+        delete_body = delete_body[:delete_body.index("function ", 10)]
+        self.assertIn("cremationSoftRefreshCycle(cycleId)", delete_body)
+        self.assertNotIn("location.reload()", delete_body)
+
     def test_cremation_start_and_complete_cycle_moves_animals_to_da_consegnare(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
@@ -1911,7 +2029,7 @@ class PetParadiseTests(unittest.TestCase):
         js = app.APP_JS
         self.assertIn("function cremationDeleteCycle(cycleId){", js)
         idx = js.index("function cremationDeleteCycle(cycleId){")
-        body = js[idx:idx + 500]
+        body = js[idx:idx + 800]
         # must use the gestionale's own custom confirm modal, never the native confirm()
         self.assertIn("cremationOpenConfirmModal(", body)
         self.assertNotIn("window.confirm(", body)
@@ -2319,7 +2437,7 @@ class PetParadiseTests(unittest.TestCase):
         head_start = page.index('class="cremation-cycle-head"')
         body_start = page.index('data-cycle-body', head_start)
         head_html = page[head_start:body_start]
-        body_html = page[body_start:body_start + 1500]
+        body_html = page[body_start:body_start + 2200]
         self.assertNotIn("Modifica", head_html)
         self.assertNotIn("Elimina ciclo", head_html)
         self.assertNotIn("Completato alle", head_html)
@@ -2755,8 +2873,8 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("endInput.value=plannedEnd;", open_body)
         # la nuova anteprima durata e' una funzione a parte, di sola
         # visualizzazione: legge gli input esistenti, non li scrive mai.
-        self.assertIn("function cremationUpdateDurationPreview()", js)
-        duration_start = js.index("function cremationUpdateDurationPreview()")
+        self.assertIn("function cremationUpdateDurationPreview(prefix){", js)
+        duration_start = js.index("function cremationUpdateDurationPreview(prefix){")
         duration_body = js[duration_start:js.index("function cremationOpenEditModal(")]
         self.assertNotIn(".value=", duration_body)
 
