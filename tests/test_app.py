@@ -6460,14 +6460,22 @@ class PetParadiseTests(unittest.TestCase):
             paid=practice("CR-DASH-PAID","Consegnata oggi","Consegnato",week_day,"300","","100","0","Pagato")
             outside=practice("CR-DASH-OLD","Fuori periodo","Ritirato",old_day,"50","","0","50")
             conn.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(paid,"Cambio stato rapido","Consegnato",uid,today_text+"T12:00:00"))
-            for pid,ptype,channel,amount,paid_at in (
-                (w_open,"acconto_ordinario","ordinario",100,today_text+"T09:00:00"),
-                (d_open,"acconto_d","D",100,today_text+"T10:00:00"),
-                (paid,"acconto_ordinario","ordinario",100,old_day+"T10:00:00"),
-                (paid,"saldo_ordinario","ordinario",200,today_text+"T11:00:00"),
-            ):
-                conn.execute("INSERT INTO payment_movements(practice_id,payment_type,payment_channel,amount,paid_at,user_id,notes,created_at) VALUES(?,?,?,?,?,?,?,?)",(pid,ptype,channel,amount,paid_at,uid,"test",stamp))
-            snapshot=(conn.execute("SELECT count(*) n FROM practices").fetchone()["n"],conn.execute("SELECT count(*) n FROM payment_movements").fetchone()["n"],conn.execute("SELECT count(*) n FROM practice_history").fetchone()["n"])
+            # Dashboard Pagamenti card counts/amounts source from
+            # balance_movements (the real Bilanci ledger), not
+            # payment_movements — a raw payment_movements insert with no
+            # ledger counterpart now correctly counts as nothing, so each of
+            # these needs a matching real ledger entry.
+            for idx,(pid,movement_type,amount_cents,movement_date) in enumerate((
+                (w_open,"Acconto",10000,today_text),
+                (d_open,"Acconto",10000,today_text),
+                (paid,"Acconto",10000,old_day),
+                (paid,"Saldo",20000,today_text),
+            )):
+                app.create_balance_movement(conn,amount_cents=amount_cents,movement_date=movement_date,category="W",
+                                             ledger_section="Entrata",movement_type=movement_type,
+                                             idempotency_key=f"dash-op-econ-test-{idx}",practice_id=pid,
+                                             practice_number_snapshot="",created_by=uid)
+            snapshot=(conn.execute("SELECT count(*) n FROM practices").fetchone()["n"],conn.execute("SELECT count(*) n FROM balance_movements").fetchone()["n"],conn.execute("SELECT count(*) n FROM practice_history").fetchone()["n"])
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
         self.handler.path="/?pratiche_periodo=oggi&pagamenti_periodo=oggi";self.handler.dashboard(admin);page=rendered[-1]
         self.assertIn('data-dashboard-card="Ritirato" data-count="2"',page)
@@ -6498,7 +6506,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Totale incassato",page)
         self.assertIn(app.money_it(200.0+200.0),page)
         with app.db() as conn:
-            self.assertEqual(snapshot,(conn.execute("SELECT count(*) n FROM practices").fetchone()["n"],conn.execute("SELECT count(*) n FROM payment_movements").fetchone()["n"],conn.execute("SELECT count(*) n FROM practice_history").fetchone()["n"]))
+            self.assertEqual(snapshot,(conn.execute("SELECT count(*) n FROM practices").fetchone()["n"],conn.execute("SELECT count(*) n FROM balance_movements").fetchone()["n"],conn.execute("SELECT count(*) n FROM practice_history").fetchone()["n"]))
 
     def test_dashboard_payment_cards_reflect_movements_from_the_current_macroarea_flow(self):
         # Bug reale segnalato dall'utente: apply_payment_macroarea scrive
@@ -6631,6 +6639,293 @@ class PetParadiseTests(unittest.TestCase):
             ).fetchone()["n"]
         self.assertEqual(ledger_cents,13000)
 
+    # --- Riscrittura card Pagamenti Dashboard su movimenti economici reali ---
+    # dashboard_payment_movements (balance_movements, stessa fonte di
+    # Bilanci) e' l'unica sorgente sia per le card sia per le pagine di
+    # dettaglio /pagamenti/acconti,/pagati,/totale-incassato: i 20 scenari
+    # richiesti sono coperti qui.
+
+    def test_dashboard_acconto_w_and_d_movements_today_split_correctly(self):
+        # scenari 1,2: un Acconto W e un Acconto D oggi, su pratiche distinte
+        today=app.rome_now().date().isoformat()
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid_w=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                  animal_name,service_type,payment_status,total_service) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                               ("CR-ACC-W","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Otto","Cremazione singola","Da saldare","300")).lastrowid
+            pid_d=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                  animal_name,service_type,payment_status,total_text) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                               ("CR-ACC-D","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Ida","Cremazione singola","Da saldare","300")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"macroarea":"acconto","acconto_data":today,"acconto_totale":"120,00","acconto_circuito":"W","acconto_modalita":"Pos","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid_w)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        self.handler.form=lambda:{"macroarea":"acconto","acconto_data":today,"acconto_totale":"90,00","acconto_circuito":"D","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid_d)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/?pagamenti_periodo=oggi";self.handler.dashboard(admin)
+        self.assertIn('data-dashboard-payment="Acconto" data-count="2" data-amount="210.00"',rendered[-1])
+        self.handler.path=f"/pagamenti/acconti?periodo=oggi&dal={today}&al={today}"
+        self.handler.payment_overview(admin,"acconti")
+        page=rendered[-1]
+        # scenario 15/16/17: dettaglio coerente con la card, sottototali W e D
+        self.assertIn("CR-ACC-W",page);self.assertIn("CR-ACC-D",page)
+        w_start=page.index("<h2>Acconti</h2>");d_start=page.index("<h2>Acconti D</h2>")
+        self.assertIn("120,00",page[w_start:d_start]);self.assertIn("1 movimenti",page[w_start:d_start])
+        self.assertIn("90,00",page[d_start:]);self.assertIn("1 movimenti",page[d_start:])
+
+    def test_dashboard_saldo_w_and_d_movements_today_split_correctly(self):
+        # scenari 3,4: un Saldo W e un Saldo D oggi (incasso completo, senza acconto precedente)
+        today=app.rome_now().date().isoformat()
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid_w=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                  animal_name,service_type,payment_status,total_service) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                               ("CR-SAL-W","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Remo","Cremazione singola","Da saldare","200")).lastrowid
+            pid_d=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                  animal_name,service_type,payment_status,total_text) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                               ("CR-SAL-D","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Rea","Cremazione singola","Da saldare","150")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":today,"saldo_totale":"200,00","saldo_circuito":"W","saldo_modalita":"Contanti","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid_w)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":today,"saldo_totale":"150,00","saldo_circuito":"D","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid_d)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/?pagamenti_periodo=oggi";self.handler.dashboard(admin)
+        self.assertIn('data-dashboard-payment="Pagato" data-count="2" data-amount="350.00"',rendered[-1])
+        self.handler.path=f"/pagamenti/pagati?periodo=oggi&dal={today}&al={today}"
+        self.handler.payment_overview(admin,"pagati")
+        page=rendered[-1]
+        self.assertIn("CR-SAL-W",page);self.assertIn("CR-SAL-D",page)
+        self.assertIn("Incasso completo",page)
+
+    def test_dashboard_cr_style_practice_shows_only_todays_saldo_not_full_history(self):
+        # scenario 5 e 20: caso di controllo esplicito (stile CR-000063).
+        # Acconto D 320 il 21/07, Saldo D 30 il 30/07 sulla stessa pratica.
+        # Con filtro Oggi=30/07 deve comparire SOLO il movimento Saldo D da
+        # 30 euro: mai il totale storico (350), mai l'acconto del 21/07.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                animal_name,service_type,payment_status,total_text) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                             ("CR-000063-SIM","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Lexy","Cremazione singola","Da saldare","350")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"macroarea":"acconto","acconto_data":"2026-07-21","acconto_totale":"320,00","acconto_circuito":"D","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-30","saldo_totale":"30,00","saldo_circuito":"D","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/pagamenti/pagati?periodo=oggi&dal=2026-07-30&al=2026-07-30"
+        self.handler.payment_overview(admin,"pagati")
+        page=rendered[-1]
+        self.assertIn("CR-000063-SIM",page)
+        self.assertIn("30,00",page)
+        self.assertNotIn("320,00",page)
+        self.assertNotIn("350,00",page)
+        self.handler.path="/pagamenti/acconti?periodo=oggi&dal=2026-07-30&al=2026-07-30"
+        self.handler.payment_overview(admin,"acconti")
+        self.assertNotIn("CR-000063-SIM",rendered[-1])
+        # intervallo che copre entrambe le date: 21/07 e 30/07
+        self.handler.path="/pagamenti/totale-incassato?periodo=oggi&dal=2026-07-21&al=2026-07-30"
+        self.handler.payment_overview(admin,"totale-incassato")
+        full_page=rendered[-1]
+        self.assertIn("320,00",full_page)
+        self.assertIn("30,00",full_page)
+        self.assertEqual(full_page.count("<b>CR-000063-SIM</b>"),2)
+
+    def test_dashboard_counts_multiple_movements_same_practice_same_day(self):
+        # scenario 6: due movimenti di acconto sulla stessa pratica nello
+        # stesso giorno (il secondo registrato come pagamento nuovo,
+        # distinto, tramite il pulsante "Registra nuovo pagamento")
+        today=app.rome_now().date().isoformat()
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                animal_name,service_type,payment_status,total_service) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                             ("CR-SAMEDAY","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Duo","Cremazione singola","Da saldare","500")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"macroarea":"acconto","acconto_data":today,"acconto_totale":"100,00","acconto_circuito":"W","acconto_modalita":"Pos","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        self.handler.form=lambda:{"macroarea":"acconto","acconto_data":today,"acconto_totale":"50,00","acconto_circuito":"W","acconto_modalita":"Contanti","acconto_extra":"1","balance_idempotency_key":"sameday-extra","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/?pagamenti_periodo=oggi";self.handler.dashboard(admin)
+        self.assertIn('data-dashboard-payment="Acconto" data-count="2" data-amount="150.00"',rendered[-1])
+        self.handler.path=f"/pagamenti/acconti?periodo=oggi&dal={today}&al={today}"
+        self.handler.payment_overview(admin,"acconti")
+        self.assertEqual(rendered[-1].count("<b>CR-SAMEDAY</b>"),2)
+
+    def test_dashboard_counts_movements_same_practice_different_days_only_today(self):
+        # scenario 7: due movimenti sulla stessa pratica in giorni diversi —
+        # col filtro Oggi deve comparire solo quello di oggi
+        today=app.rome_now().date().isoformat()
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                animal_name,service_type,payment_status,total_service) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                             ("CR-DIFFDAY","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Bis","Cremazione singola","Da saldare","500")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"macroarea":"acconto","acconto_data":"2026-07-15","acconto_totale":"100,00","acconto_circuito":"W","acconto_modalita":"Pos","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        self.handler.form=lambda:{"macroarea":"acconto","acconto_data":today,"acconto_totale":"50,00","acconto_circuito":"W","acconto_modalita":"Contanti","acconto_extra":"1","balance_idempotency_key":"diffday-extra","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/?pagamenti_periodo=oggi";self.handler.dashboard(admin)
+        self.assertIn('data-dashboard-payment="Acconto" data-count="1" data-amount="50.00"',rendered[-1])
+
+    def test_dashboard_excludes_stornoed_movement_from_card_and_detail(self):
+        # scenari 8/10: un movimento rimosso (stornato) non deve comparire
+        # ne' nella card ne' nel dettaglio
+        today=app.rome_now().date().isoformat()
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                animal_name,service_type,payment_status,total_service) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                             ("CR-STORNO","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Nix","Cremazione singola","Da saldare","200")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"macroarea":"acconto","acconto_data":today,"acconto_totale":"80,00","acconto_circuito":"W","acconto_modalita":"Pos","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        self.handler.headers={};self.handler.redirect=lambda url:None
+        self.handler.form=lambda:{"macroarea":"acconto"}
+        self.handler.remove_payment_macroarea(admin,pid)
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/?pagamenti_periodo=oggi";self.handler.dashboard(admin)
+        self.assertIn('data-dashboard-payment="Acconto" data-count="0" data-amount="0.00"',rendered[-1])
+        self.handler.path=f"/pagamenti/acconti?periodo=oggi&dal={today}&al={today}"
+        self.handler.payment_overview(admin,"acconti")
+        self.assertNotIn("CR-STORNO",rendered[-1])
+        with app.db() as conn:
+            stornos=conn.execute("SELECT COUNT(*) n FROM balance_movements WHERE practice_id=? AND movement_type='Storno'",(pid,)).fetchone()["n"]
+        self.assertEqual(stornos,1)
+
+    def test_dashboard_excludes_ghost_legacy_rows_and_negative_rettifiche(self):
+        # scenari 9/19: valore "fantasma". payment_movements puo' contenere
+        # righe legacy (es. "rettifica") senza contropartita nel ledger
+        # reale — non devono mai comparire; una rettifica negativa nel
+        # ledger stesso deve essere esclusa allo stesso modo (non e' un
+        # incasso).
+        today=app.rome_now().date().isoformat()
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                animal_name,service_type,payment_status,total_text) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                             ("CR-GHOST","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Fantasma","Cremazione singola","Da saldare","500")).lastrowid
+            # riga legacy orfana in payment_movements: nessuna riga corrispondente nel ledger
+            conn.execute("INSERT INTO payment_movements(practice_id,payment_type,payment_channel,payment_method,movement_category,amount,paid_at,created_at) VALUES(?,?,?,?,?,?,?,?)",
+                         (pid,"rettifica","D","","D",370.0,today,stamp))
+            # rettifica negativa nel ledger reale: non e' mai un incasso
+            conn.execute("""INSERT INTO balance_movements(movement_uuid,practice_id,practice_number_snapshot,movement_date,category,ledger_section,movement_type,amount_cents,idempotency_key,created_at)
+                            VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                         ("ghost-negative-uuid",pid,"CR-GHOST",today,"D","Entrata","Saldo",-5000,"ghost-negative-test",stamp))
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/?pagamenti_periodo=oggi";self.handler.dashboard(admin)
+        page=rendered[-1]
+        self.assertIn('data-dashboard-payment="Acconto" data-count="0" data-amount="0.00"',page)
+        self.assertIn('data-dashboard-payment="Pagato" data-count="0" data-amount="0.00"',page)
+        self.handler.path=f"/pagamenti/pagati?periodo=oggi&dal={today}&al={today}"
+        self.handler.payment_overview(admin,"pagati")
+        self.assertNotIn("CR-GHOST",rendered[-1])
+        self.handler.path=f"/pagamenti/totale-incassato?periodo=oggi&dal={today}&al={today}"
+        self.handler.payment_overview(admin,"totale-incassato")
+        self.assertNotIn("CR-GHOST",rendered[-1])
+
+    def test_dashboard_payment_period_filters_oggi_settimana_mese(self):
+        # scenari 11,12,13: filtro Oggi/Settimana/Mese
+        today=app.rome_now().date()
+        _,week_start,week_end=app.dashboard_period_bounds("settimana",today)
+        week_other_day=week_end if week_start==today else week_start
+        outside_month=(today-timedelta(days=40)).isoformat()
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            def practice(code):
+                return conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                      animal_name,service_type,payment_status,total_service) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                                    (code,"Privato","Livorno","Ritirato",stamp,stamp,admin["id"],code,"Cremazione singola","Da saldare","500")).lastrowid
+            pid_today=practice("CR-PERIOD-TODAY")
+            pid_week=practice("CR-PERIOD-WEEK")
+            pid_month=practice("CR-PERIOD-OUT")
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        for pid,date_value,amount in ((pid_today,today.isoformat(),"10,00"),(pid_week,week_other_day.isoformat(),"20,00"),(pid_month,outside_month,"30,00")):
+            self.handler.form=lambda date_value=date_value,amount=amount:{"macroarea":"acconto","acconto_data":date_value,"acconto_totale":amount,"acconto_circuito":"W","acconto_modalita":"Pos","ajax":"1"}
+            self.handler.save_payment_macroarea(admin,pid)
+            self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/?pagamenti_periodo=oggi";self.handler.dashboard(admin)
+        self.assertIn('data-dashboard-payment="Acconto" data-count="1" data-amount="10.00"',rendered[-1])
+        self.handler.path="/?pagamenti_periodo=settimana";self.handler.dashboard(admin)
+        week_page=rendered[-1]
+        # la settimana include sempre oggi + l'altro giorno della settimana
+        expected_week_count=1 if week_other_day==today else 2
+        self.assertIn(f'data-dashboard-payment="Acconto" data-count="{expected_week_count}"',week_page)
+        if week_other_day!=today:
+            self.assertIn('data-amount="30.00"',week_page)
+        self.handler.path="/?pagamenti_periodo=mese";self.handler.dashboard(admin)
+        month_page=rendered[-1]
+        self.assertNotIn('data-dashboard-payment="Acconto" data-count="3"',month_page)
+
+    @patch("app.rome_now")
+    def test_dashboard_payment_cards_use_rome_timezone_for_today_boundary(self,mock_rome_now):
+        # scenario 14: "oggi" deve seguire l'orologio locale italiano, non
+        # UTC/il clock del server — un movimento datato sul giorno Roma
+        # deve comparire anche se il server fosse su un fuso diverso.
+        mock_rome_now.return_value=datetime(2026,7,30,23,45)
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                animal_name,service_type,payment_status,total_service) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                             ("CR-TZ","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Tz","Cremazione singola","Da saldare","200")).lastrowid
+            app.create_balance_movement(conn,amount_cents=9000,movement_date="2026-07-30",category="W",ledger_section="Entrata",
+                                         movement_type="Acconto",idempotency_key="tz-test",practice_id=pid,
+                                         practice_number_snapshot="CR-TZ",created_by=admin["id"])
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/?pagamenti_periodo=oggi";self.handler.dashboard(admin)
+        self.assertIn('data-dashboard-payment="Acconto" data-count="1" data-amount="90.00"',rendered[-1])
+
+    def test_dashboard_totale_incassato_equals_w_plus_d_subtotals(self):
+        # scenari 16,17,18: sottototali W/D e la loro somma = Totale incassato
+        today=app.rome_now().date().isoformat()
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            def practice(code,total_w="",total_d=""):
+                return conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                      animal_name,service_type,payment_status,total_service,total_text) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                    (code,"Privato","Livorno","Ritirato",stamp,stamp,admin["id"],code,"Cremazione singola","Da saldare",total_w,total_d)).lastrowid
+            pid_w1=practice("CR-SUB-W1",total_w="300")
+            pid_w2=practice("CR-SUB-W2",total_w="300")
+            pid_d1=practice("CR-SUB-D1",total_d="200")
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"macroarea":"acconto","acconto_data":today,"acconto_totale":"70,00","acconto_circuito":"W","acconto_modalita":"Pos","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid_w1)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":today,"saldo_totale":"300,00","saldo_circuito":"W","saldo_modalita":"Pos","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid_w2)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":today,"saldo_totale":"200,00","saldo_circuito":"D","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid_d1)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/?pagamenti_periodo=oggi";self.handler.dashboard(admin)
+        card_page=rendered[-1]
+        self.assertIn(app.money_it(70.0+300.0+200.0),card_page)  # 570,00
+        self.handler.path=f"/pagamenti/totale-incassato?periodo=oggi&dal={today}&al={today}"
+        self.handler.payment_overview(admin,"totale-incassato")
+        detail_page=rendered[-1]
+        w_start=detail_page.index("<h2>Totale incassato</h2>");d_start=detail_page.index("<h2>Totale incassato D</h2>")
+        w_section=detail_page[w_start:d_start];d_section=detail_page[d_start:]
+        self.assertIn(app.money_it(370.0),w_section)  # 70 + 300 sul circuito W
+        self.assertIn(app.money_it(200.0),d_section)
+        self.assertEqual(370.0+200.0,570.0)
+
     def test_dashboard_recent_practices_use_a_compact_card_list_not_a_table(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
@@ -6725,7 +7020,9 @@ class PetParadiseTests(unittest.TestCase):
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();uid=admin["id"]
             current=conn.execute("INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,created_at,updated_at,created_by,animal_name,total_service,price_cremation,payment_status,remaining_balance,deposit) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",("CR-CURRENT","Privato","Livorno","Ritirato",today,old+"T08:00:00",stamp,uid,"Visibile",200,200,"Acconto",150,50)).lastrowid
             conn.execute("INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,created_at,updated_at,created_by,animal_name,total_service,price_cremation,payment_status,remaining_balance) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",("CR-OLD","Privato","Livorno","Ritirato",old,old+"T08:00:00",stamp,uid,"Nascosta",100,100,"Da saldare",100))
-            conn.execute("INSERT INTO payment_movements(practice_id,payment_type,payment_channel,amount,paid_at,user_id,created_at) VALUES(?,?,?,?,?,?,?)",(current,"acconto_ordinario","ordinario",50,today+"T10:00:00",uid,stamp))
+            app.create_balance_movement(conn,amount_cents=5000,movement_date=today,category="W",ledger_section="Entrata",
+                                         movement_type="Acconto",idempotency_key="dash-period-test",practice_id=current,
+                                         practice_number_snapshot="CR-CURRENT",created_by=uid)
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
         self.handler.path=f"/archivio/pratiche?dashboard_event=ritirati&periodo=oggi&dal={today}&al={today}";self.handler.archive(admin);archive_page=rendered[-1]
         self.assertIn("Visibile",archive_page);self.assertNotIn("Nascosta",archive_page);self.assertIn("Oggi",archive_page)

@@ -6516,6 +6516,49 @@ def dashboard_practice_date_sql(kind, alias="practices"):
     return "NULL"
 
 
+def dashboard_payment_movements(c, date_from, date_to):
+    """Movimenti di incasso REALI (Acconto/Saldo/Incasso completo, circuiti
+    W e D) nel periodo, uno per riga — stessa fonte, stesso filtro data e
+    stessa esclusione storni gia' usati dal ledger Bilanci
+    (balance_movements). Unica fonte per le card Pagamenti della Dashboard
+    e per le pagine di dettaglio aperte dalle card: MAI payment_movements
+    (puo' contenere righe legacy/orfane non piu' rappresentative di un
+    incasso reale — vedi channel_paid_amount), MAI i campi denormalizzati
+    Acconto/Rimanenza/Totale della pratica, MAI lo stato attuale
+    payment_status. La data usata e' sempre quella economica del singolo
+    movimento (balance_movements.movement_date), mai paid_at/created_at/
+    updated_at della pratica. Esclude la categoria Collaboratori: ha un
+    proprio tracciamento separato in Bilanci (Collaboratori Incassato/Da
+    riscuotere), cosi' la somma dei sottototali W e D coincide sempre col
+    totale della card, senza una terza categoria nascosta."""
+    date_from_s=date_from.isoformat() if hasattr(date_from,"isoformat") else date_from
+    date_to_s=date_to.isoformat() if hasattr(date_to,"isoformat") else date_to
+    return c.execute("""
+        SELECT b.id,b.practice_id,b.category,b.movement_type,b.amount_cents,b.movement_date,
+               p.practice_number,p.animal_name,p.species,p.service_type,
+               p.owner_first_name,p.owner_last_name,p.owner_company,p.collaborator_name
+        FROM balance_movements b
+        JOIN practices p ON p.id=b.practice_id
+        WHERE b.practice_id IS NOT NULL AND (p.deleted_at IS NULL OR p.deleted_at='')
+          AND b.ledger_section='Entrata' AND b.amount_cents>0
+          AND b.category IN ('W','D')
+          AND b.movement_type IN ('Acconto','Saldo','Incasso completo')
+          AND date(b.movement_date) BETWEEN date(?) AND date(?)
+          AND NOT EXISTS(SELECT 1 FROM balance_movements r WHERE r.related_movement_id=b.id AND r.movement_type='Storno')
+        ORDER BY date(b.movement_date) DESC,b.id DESC
+    """,(date_from_s,date_to_s)).fetchall()
+
+
+def dashboard_payment_row_amount(row):
+    return row["amount_cents"]/100.0
+
+
+def dashboard_payment_row_owner(row):
+    if row["collaborator_name"]:
+        return row["collaborator_name"]
+    return " ".join(x for x in (row["owner_first_name"],row["owner_last_name"]) if x).strip() or (row["owner_company"] or "")
+
+
 def practice_status_class(status):
     return {"Ritirato":"practice-status-yellow","In programma":"practice-status-red","Cremato":"practice-status-blue","Da consegnare":"practice-status-yellow","Consegnato":"practice-status-green"}.get(status,"")
 
@@ -6802,7 +6845,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/percorso-giornaliero/sedi": return self.route_locations_page(user)
         match = re.fullmatch(r"/percorso-giornaliero/(\d+)",path)
         if match: return self.route_plan_page(user,int(match.group(1)))
-        match = re.fullmatch(r"/pagamenti/(da-saldare|acconti|pagati)", path)
+        match = re.fullmatch(r"/pagamenti/(da-saldare|acconti|pagati|totale-incassato)", path)
         if match: return self.payment_overview(user,match.group(1))
         if path == "/conversazioni-whatsapp": return self.whatsapp_conversations(user)
         if path == "/notifiche": return self.notifications(user)
@@ -7106,21 +7149,17 @@ class App(BaseHTTPRequestHandler):
                 "Consegnato":c.execute(f"SELECT count(*) n FROM practices p WHERE ({active}) AND p.status='Consegnato' AND {consegna_date} BETWEEN date(?) AND date(?)",(practice_from.isoformat(),practice_to.isoformat())).fetchone()["n"],
             }
             open_rows=c.execute(f"SELECT p.* FROM practices p WHERE ({active}) AND COALESCE(p.payment_status,'Da saldare')!='Pagato'").fetchall()
-            # payment_type e' scritto letteralmente come 'acconto'/'saldo' da
-            # add_payment_movement (nessun suffisso): il vecchio IN(...) qui
-            # sotto elencava varianti legacy ('acconto_ordinario' ecc.) mai
-            # piu' scritte da anni, quindi ogni pagamento registrato con il
-            # flusso attuale veniva silenziosamente escluso e le card
-            # Pagamenti mostravano sempre 0 anche con movimenti reali visibili
-            # nei Bilanci (che leggono da balance_movements, non da qui).
-            # LIKE 'acconto%'/'saldo%' (senza underscore) copre sia il valore
-            # esatto attuale sia eventuali varianti storiche con suffisso.
-            movement_stats={row["category"]:row for row in c.execute(f"""SELECT CASE WHEN m.payment_type LIKE 'acconto%' THEN 'Acconto' ELSE 'Pagato' END category,
-                                         count(DISTINCT m.practice_id) practice_count,COALESCE(sum(m.amount),0) amount
-                                         FROM payment_movements m JOIN practices p ON p.id=m.practice_id
-                                         WHERE ({active}) AND m.amount>0 AND date(m.paid_at) BETWEEN date(?) AND date(?)
-                                         AND (m.payment_type LIKE 'acconto%' OR m.payment_type LIKE 'saldo%')
-                                         GROUP BY category""",(payment_from.isoformat(),payment_to.isoformat())).fetchall()}
+            # Le card Pagamenti (Acconti/Pagati/Totale incassato) e le pagine
+            # di dettaglio aperte dalle card leggono tutte dalla STESSA
+            # query — dashboard_payment_movements, il ledger Bilanci
+            # (balance_movements) — cosi' il conteggio e l'importo mostrati
+            # in ogni card coincidono sempre con le righe elencate nel
+            # dettaglio. In precedenza si leggeva da payment_movements, che
+            # puo' contenere righe legacy/orfane non piu' rappresentative di
+            # un incasso reale (causa sia di importi "fantasma" sulle card
+            # sia di dettagli vuoti o incoerenti, a seconda che il singolo
+            # LIKE usato in quel punto includesse o meno quelle righe).
+            payment_movements=dashboard_payment_movements(c,payment_from,payment_to)
             recent=c.execute("SELECT * FROM practices WHERE deleted_at IS NULL OR deleted_at='' ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) DESC,id DESC LIMIT 10").fetchall()
             sync_reminders(c)
             open_reminders=c.execute("SELECT * FROM reminders WHERE completed_at IS NULL ORDER BY created_at DESC").fetchall()
@@ -7148,11 +7187,14 @@ class App(BaseHTTPRequestHandler):
             for state,label,icon,cls,href in state_specs
         )
         open_due=[row for row in open_rows if outstanding_amount(row)>0]
-        def movement_value(category,key):
-            row=movement_stats.get(category)
-            return row[key] if row else 0
-        payment_counts={"Da saldare":len(open_due),"Acconto":movement_value("Acconto","practice_count"),"Pagato":movement_value("Pagato","practice_count")}
-        payment_totals={"Da saldare":sum(outstanding_amount(row) for row in open_due),"Acconto":money_value(movement_value("Acconto","amount")),"Pagato":money_value(movement_value("Pagato","amount"))}
+        acconto_movements=[row for row in payment_movements if row["movement_type"]=="Acconto"]
+        saldo_movements=[row for row in payment_movements if row["movement_type"] in ("Saldo","Incasso completo")]
+        payment_counts={"Da saldare":len(open_due),"Acconto":len(acconto_movements),"Pagato":len(saldo_movements)}
+        payment_totals={
+            "Da saldare":sum(outstanding_amount(row) for row in open_due),
+            "Acconto":sum(dashboard_payment_row_amount(row) for row in acconto_movements),
+            "Pagato":sum(dashboard_payment_row_amount(row) for row in saldo_movements),
+        }
         total_incassato=payment_totals["Acconto"]+payment_totals["Pagato"]
         payment_query=urlencode({"dal":payment_from.isoformat(),"al":payment_to.isoformat(),"periodo":payment_period})
         payment_specs=[
@@ -7161,16 +7203,21 @@ class App(BaseHTTPRequestHandler):
             ("Pagato","Pagati","chart","payment-paid",f"/pagamenti/pagati?{payment_query}"),
         ]
         payment_period_label={"oggi":"Oggi","settimana":"Settimana","mese":"Mese"}.get(payment_period,"Oggi")
+        # il numero grande conta MOVIMENTI (incassi effettivamente avvenuti
+        # nel periodo), non pratiche uniche: una stessa pratica con piu'
+        # movimenti nello stesso periodo viene contata una volta per
+        # movimento, cosi' il numero coincide sempre col numero di righe
+        # mostrate nella pagina di dettaglio aperta dalla card.
         payment_cards=''.join(
             f'''<a class="dash-stat-card {cls}" data-dashboard-payment="{state}" data-count="{payment_counts[state]}" data-amount="{payment_totals[state]:.2f}" href="{href}">
               <span class="dash-stat-head"><span class="dash-stat-icon">{lucide(icon)}</span><span class="dash-stat-title">{label}</span></span>
               <strong class="dash-stat-value">{payment_counts[state]}</strong>
-              <span class="dash-stat-desc">{money_it(payment_totals[state])}{"<small>Tutte le rimanenze aperte</small>" if state=="Da saldare" else ""}</span>
+              <span class="dash-stat-desc">{money_it(payment_totals[state])}{"<small>Tutte le rimanenze aperte</small>" if state=="Da saldare" else "<small>movimenti nel periodo</small>"}</span>
               <span class="dash-stat-chevron" aria-hidden="true">›</span>
             </a>'''
             for state,label,icon,cls,href in payment_specs
         )
-        payment_cards+=f'''<a class="dash-stat-card payment-total" href="/pagamenti/pagati?{payment_query}">
+        payment_cards+=f'''<a class="dash-stat-card payment-total" href="/pagamenti/totale-incassato?{payment_query}">
           <span class="dash-stat-head"><span class="dash-stat-icon">{lucide("chart")}</span><span class="dash-stat-title">Totale incassato</span></span>
           <strong class="dash-stat-value">{money_it(total_incassato)}</strong>
           <span class="dash-stat-desc">{payment_period_label}</span>
@@ -10834,47 +10881,67 @@ class App(BaseHTTPRequestHandler):
         self.send_html(layout(f"Pagamenti · {title}",body,user))
 
     def payment_overview(self,user,kind):
-        titles={"da-saldare":"Da saldare","acconti":"Acconti","pagati":"Pagati"};title=titles[kind]
+        titles={"da-saldare":"Da saldare","acconti":"Acconti","pagati":"Pagati","totale-incassato":"Totale incassato"};title=titles[kind]
         q=parse_qs(urlparse(self.path).query);today=rome_now().date()
         period,date_from,date_to=dashboard_period_bounds((q.get("periodo") or ["oggi"])[0],today)
         raw_from=(q.get("dal") or [date_from.isoformat()])[0];raw_to=(q.get("al") or [date_to.isoformat()])[0]
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}",raw_from):date_from=datetime.strptime(raw_from,"%Y-%m-%d").date()
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}",raw_to):date_to=datetime.strptime(raw_to,"%Y-%m-%d").date()
+        if kind=="da-saldare":
+            with db() as c:
+                rows=c.execute("SELECT * FROM practices WHERE (deleted_at IS NULL OR deleted_at='') AND COALESCE(payment_status,'Da saldare')!='Pagato' ORDER BY updated_at DESC,id DESC").fetchall()
+            rows=[row for row in rows if outstanding_amount(row)>0]
+            collaborator_ids={int(row["collaborator_id"]) for row in rows if "collaborator_id" in row.keys() and row["collaborator_id"]}
+            collaborator_codes={}
+            if collaborator_ids:
+                marks=','.join('?' for _ in collaborator_ids)
+                with db() as c:collaborator_codes={r["id"]:(r["code"] or "") for r in c.execute(f"SELECT id,code FROM collaborators WHERE id IN ({marks})",tuple(collaborator_ids))}
+            groups=[(False,title,"#3b82f6"),(True,f"{title} D","#f59e0b")];sections=[]
+            for is_d,label,color in groups:
+                selected=[row for row in rows if uses_total_d(row)==is_d];total=sum(outstanding_amount(row) for row in selected);table_rows=[]
+                for row in selected:
+                    owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip()
+                    if "collaborator_name" in row.keys() and row["collaborator_name"]:
+                        owner=row["collaborator_name"]
+                    collab_code=collaborator_codes.get(int(row["collaborator_id"])) if "collaborator_id" in row.keys() and row["collaborator_id"] else ""
+                    animal_prefix=f"{esc(collab_code)} " if collab_code else ""
+                    url=f'/pratiche/{row["id"]}?return_to={quote(self.path,safe="")}'
+                    animal_cell=esc(row["species"]) if (row["service_type"] or "")=="Cremazione collettiva" else f'{animal_prefix}{esc(row["animal_name"] or "")}'
+                    table_rows.append(f'''<tr class="practice-row-link" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}><td>Aperta</td><td><a href="{url}"><b>{esc(row["practice_number"])}</b></a></td><td>{animal_cell}</td><td>{esc(owner)}</td><td>{money_it(effective_total(row))}</td><td>{money_it(channel_deposit(row))}</td><td><b>{money_it(outstanding_amount(row))}</b></td><td>{esc(row["payment_status"] or "Da saldare")}</td><td><a class="btn ghost" href="{url}">Apri</a></td></tr>''')
+                table=''.join(table_rows) or '<tr><td colspan="9" class="sub">Nessuna pratica in questa categoria.</td></tr>'
+                sections.append(f'''<section class="dashboard-panel" style="margin-bottom:20px;border-top:4px solid {color}"><header><div><h2>{esc(label)}</h2><p>{len(selected)} pratiche</p></div><strong>{money_it(total)}</strong></header><div class="tablebox"><table><thead><tr><th>Data economica</th><th>Pratica</th><th>Animale</th><th>Cliente</th><th>Totale</th><th>Acconto</th><th>{esc(title)}</th><th>Stato</th><th></th></tr></thead><tbody>{table}</tbody></table></div></section>''')
+            period_note="Tutte le rimanenze attualmente aperte: non esiste una scadenza di saldo."
+            body=f'''<main class="wrap"><div class="titlebar"><div><h1>Pagamenti · {esc(title)}</h1><p class="sub">Separazione tra Totale W e Totale D (contanti). {esc(period_note)}</p></div><a class="btn ghost" href="/?pratiche_periodo=oggi&amp;pagamenti_periodo={period}">Dashboard</a></div>{''.join(sections)}</main>'''
+            self.send_html(layout(f"Pagamenti · {title}",body,user))
+            return
+        # Acconti / Pagati / Totale incassato: stessa fonte, stesso filtro
+        # data e stessa esclusione storni della card corrispondente in
+        # dashboard() (dashboard_payment_movements) — un movimento per
+        # riga, mai il totale/acconto/rimanenza denormalizzato della
+        # pratica, cosi' il conteggio e l'importo del dettaglio coincidono
+        # sempre esattamente con quelli mostrati sulla card che apre questa
+        # pagina.
         with db() as c:
-            if kind=="da-saldare":
-                rows=c.execute("SELECT *,NULL dashboard_amount,NULL dashboard_channel,NULL dashboard_paid_at FROM practices WHERE (deleted_at IS NULL OR deleted_at='') AND COALESCE(payment_status,'Da saldare')!='Pagato' ORDER BY updated_at DESC,id DESC").fetchall()
-                rows=[row for row in rows if outstanding_amount(row)>0]
-            else:
-                prefix="acconto_%" if kind=="acconti" else "saldo_%"
-                rows=c.execute("""SELECT p.*,SUM(m.amount) dashboard_amount,m.payment_channel dashboard_channel,MAX(m.paid_at) dashboard_paid_at
-                                  FROM payment_movements m JOIN practices p ON p.id=m.practice_id
-                                  WHERE (p.deleted_at IS NULL OR p.deleted_at='') AND m.amount>0 AND m.payment_type LIKE ?
-                                  AND date(m.paid_at) BETWEEN date(?) AND date(?)
-                                  GROUP BY p.id,m.payment_channel ORDER BY dashboard_paid_at DESC,p.id DESC""",
-                               (prefix,date_from.isoformat(),date_to.isoformat())).fetchall()
-        def amount_for(row):return outstanding_amount(row) if kind=="da-saldare" else money_value(row["dashboard_amount"])
-        def row_is_d(row):return uses_total_d(row) if kind=="da-saldare" else row["dashboard_channel"]=="D"
-        collaborator_ids={int(row["collaborator_id"]) for row in rows if "collaborator_id" in row.keys() and row["collaborator_id"]}
-        collaborator_codes={}
-        if collaborator_ids:
-            marks=','.join('?' for _ in collaborator_ids)
-            with db() as c:collaborator_codes={r["id"]:(r["code"] or "") for r in c.execute(f"SELECT id,code FROM collaborators WHERE id IN ({marks})",tuple(collaborator_ids))}
+            movements=dashboard_payment_movements(c,date_from,date_to)
+        if kind=="acconti":
+            movements=[m for m in movements if m["movement_type"]=="Acconto"]
+        elif kind=="pagati":
+            movements=[m for m in movements if m["movement_type"] in ("Saldo","Incasso completo")]
+        # kind=="totale-incassato": nessun filtro aggiuntivo, tutti i movimenti del periodo
         groups=[(False,title,"#3b82f6"),(True,f"{title} D","#f59e0b")];sections=[]
         for is_d,label,color in groups:
-            selected=[row for row in rows if row_is_d(row)==is_d];total=sum(amount_for(row) for row in selected);table_rows=[]
-            for row in selected:
-                owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip()
-                if "collaborator_name" in row.keys() and row["collaborator_name"]:
-                    owner=row["collaborator_name"]
-                collab_code=collaborator_codes.get(int(row["collaborator_id"])) if "collaborator_id" in row.keys() and row["collaborator_id"] else ""
-                animal_prefix=f"{esc(collab_code)} " if collab_code else ""
-                url=f'/pratiche/{row["id"]}?return_to={quote(self.path,safe="")}'
-                economic_date=date_it(row["dashboard_paid_at"]) if kind!="da-saldare" else "Aperta"
-                animal_cell=esc(row["species"]) if (row["service_type"] or "")=="Cremazione collettiva" else f'{animal_prefix}{esc(row["animal_name"] or "")}'
-                table_rows.append(f'''<tr class="practice-row-link" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}><td>{esc(economic_date)}</td><td><a href="{url}"><b>{esc(row["practice_number"])}</b></a></td><td>{animal_cell}</td><td>{esc(owner)}</td><td>{money_it(effective_total(row))}</td><td>{money_it(channel_deposit(row))}</td><td><b>{money_it(amount_for(row))}</b></td><td>{esc(row["payment_status"] or "Da saldare")}</td><td><a class="btn ghost" href="{url}">Apri</a></td></tr>''')
-            table=''.join(table_rows) or '<tr><td colspan="9" class="sub">Nessuna pratica in questa categoria.</td></tr>'
-            sections.append(f'''<section class="dashboard-panel" style="margin-bottom:20px;border-top:4px solid {color}"><header><div><h2>{esc(label)}</h2><p>{len(selected)} pratiche</p></div><strong>{money_it(total)}</strong></header><div class="tablebox"><table><thead><tr><th>Data economica</th><th>Pratica</th><th>Animale</th><th>Cliente</th><th>Totale</th><th>Acconto</th><th>{esc(title)}</th><th>Stato</th><th></th></tr></thead><tbody>{table}</tbody></table></div></section>''')
-        period_note="Tutte le rimanenze attualmente aperte: non esiste una scadenza di saldo." if kind=="da-saldare" else f"Incassi registrati dal {date_it(date_from.isoformat())} al {date_it(date_to.isoformat())}."
+            channel="D" if is_d else "W"
+            selected=[m for m in movements if m["category"]==channel]
+            total=sum(dashboard_payment_row_amount(m) for m in selected)
+            table_rows=[]
+            for m in selected:
+                url=f'/pratiche/{m["practice_id"]}?return_to={quote(self.path,safe="")}'
+                animal_cell=esc(m["species"]) if (m["service_type"] or "")=="Cremazione collettiva" else esc(m["animal_name"] or "")
+                movement_type_label=m["movement_type"]
+                table_rows.append(f'''<tr class="practice-row-link" {row_open_attrs(url,f'Apri pratica {m["practice_number"]}')}><td>{esc(date_it(m["movement_date"]))}</td><td><a href="{url}"><b>{esc(m["practice_number"])}</b></a></td><td>{animal_cell}</td><td>{esc(dashboard_payment_row_owner(m))}</td><td>{esc(movement_type_label)}</td><td>{esc(channel)}</td><td><b>{money_it(dashboard_payment_row_amount(m))}</b></td><td><a class="btn ghost" href="{url}">Apri</a></td></tr>''')
+            table=''.join(table_rows) or '<tr><td colspan="8" class="sub">Nessun movimento in questa categoria.</td></tr>'
+            sections.append(f'''<section class="dashboard-panel" style="margin-bottom:20px;border-top:4px solid {color}"><header><div><h2>{esc(label)}</h2><p>{len(selected)} movimenti</p></div><strong>{money_it(total)}</strong></header><div class="tablebox"><table><thead><tr><th>Data economica</th><th>Pratica</th><th>Animale</th><th>Cliente</th><th>Tipo movimento</th><th>Circuito</th><th>Importo</th><th></th></tr></thead><tbody>{table}</tbody></table></div></section>''')
+        period_note=f"Incassi registrati dal {date_it(date_from.isoformat())} al {date_it(date_to.isoformat())}."
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>Pagamenti · {esc(title)}</h1><p class="sub">Separazione tra Totale W e Totale D (contanti). {esc(period_note)}</p></div><a class="btn ghost" href="/?pratiche_periodo=oggi&amp;pagamenti_periodo={period}">Dashboard</a></div>{''.join(sections)}</main>'''
         self.send_html(layout(f"Pagamenti · {title}",body,user))
 
@@ -11867,7 +11934,7 @@ class App(BaseHTTPRequestHandler):
                 if movement else ""
             )
             new_payment_btn=(
-                f'''<button class="btn ghost" type="submit" name="{kind}_extra" value="1" style="margin-top:12px;margin-left:8px" onclick="event.stopPropagation();return confirm('Registrare un nuovo pagamento {lower} distinto? Quello già salvato resta invariato.')">Registra nuovo pagamento {lower}</button>'''
+                f'''<button class="btn danger-btn" type="submit" name="{kind}_extra" value="1" style="margin-top:12px;margin-left:8px" onclick="event.stopPropagation();return confirm('Registrare un nuovo pagamento {lower} distinto? Quello già salvato resta invariato.')">Registra nuovo pagamento {lower}</button>'''
                 if movement else ""
             )
             return f'''<section class="payment-macroarea" data-macroarea="{kind}"><h3>{label}</h3><form method="post" action="/pratiche/{r['id']}/pagamento-movimento" onsubmit="event.stopPropagation()"><input type="hidden" name="return_to" value="{return_to}"><input type="hidden" name="macroarea" value="{kind}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(16)}"><div class="fields"><div class="field"><label>Data {lower}</label><input type="date" name="{kind}_data" value="{esc(date_value)}" required></div><div class="field"><label>Totale {lower} €</label><input name="{kind}_totale" value="{esc(amount_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00" required></div><div class="field"><label>Circuito {lower}</label><select name="{kind}_circuito" onchange="ppmSyncMacroareaInvoiceSection(this)">{channel_options}</select></div><div class="field"><label>Modalità {lower}</label><select name="{kind}_modalita" required>{method_options}</select></div></div><div class="payment-invoice-section" data-macroarea-invoice="{kind}" {invoice_hidden}><div class="fields"><div class="field"><label>Importo fattura €</label><input name="{kind}_fattura_totale" value="{esc(invoice_total_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field"><label>Data fattura</label><input type="date" name="{kind}_fattura_data" value="{esc(invoice_date_value)}"></div><div class="field full"><label>Numero fattura</label><input name="{kind}_fattura_numero" value="{esc(invoice_number_value)}"></div></div></div><button class="btn" style="margin-top:12px">Salva pagamento</button>{new_payment_btn}</form>{remove_form}</section>'''
