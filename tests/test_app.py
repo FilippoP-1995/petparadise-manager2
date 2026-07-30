@@ -666,12 +666,12 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.practice(admin, pid)
         page = rendered[-1]
         self.assertIn('<small>Acconto W</small><b>€ 100,00</b>', page)
-        self.assertIn('<small>Rimanenza W</small><b>€ 250,00</b>', page)
+        self.assertIn('<small>Saldo/Rimanenza W</small><b>€ 250,00</b>', page)
         self.handler.path = "/archivio/pratiche"
         self.handler.archive(admin)
         archive_page = rendered[-1]
         self.assertIn('<small>Acconto W</small><br>€ 100,00', archive_page)
-        self.assertIn('<small>Rimanenza W</small><br>€ 250,00', archive_page)
+        self.assertIn('<small>Saldo/Rimanenza W</small><br>€ 250,00', archive_page)
 
     def test_payment_macroarea_d_circuito_updates_deposit_final_not_deposit(self):
         # Regression test for a related write-side bug: registering an
@@ -4564,7 +4564,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Dati economici",rendered[-1])
         self.assertIn("Totale pagato",rendered[-1])
         self.assertIn("Da pagare",rendered[-1])
-        self.assertIn("Rimanenza W",rendered[-1])
+        self.assertIn("Saldo/Rimanenza W",rendered[-1])
         self.assertIn("Voci del preventivo",rendered[-1])
         self.assertIn("Ritiro",rendered[-1])
         self.assertIn("INVIARE CATALOGO",rendered[-1])
@@ -4845,7 +4845,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(f'/pratiche/{pid}/fattura-rapida',page)
         self.assertIn('class="invoice-inline-input"',page)
         self.assertIn("Acconto W",page)
-        self.assertIn("Rimanenza W",page)
+        self.assertIn("Saldo/Rimanenza W",page)
         self.assertIn("saveTagState",app.APP_JS)
         self.assertIn("saveInvoiceNumber",app.APP_JS)
 
@@ -7090,10 +7090,10 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('<label>Numero fattura Acconto W</label>', form_html)
         self.assertIn('<label>Data fattura Acconto W</label>', form_html)
         self.assertIn('<label>Totale fattura Acconto W €</label>', form_html)
-        self.assertIn('<label>Rimanenza W €</label>', form_html)
-        self.assertIn('<label>Data Rimanenza W</label>', form_html)
-        self.assertIn('<label>Metodo di pagamento Rimanenza W</label>', form_html)
-        self.assertIn('<label>Numero fattura Rimanenza W</label>', form_html)
+        self.assertIn('<label>Saldo/Rimanenza W €</label>', form_html)
+        self.assertIn('<label>Data Saldo/Rimanenza W</label>', form_html)
+        self.assertIn('<label>Metodo di pagamento Saldo/Rimanenza W</label>', form_html)
+        self.assertIn('<label>Numero fattura Saldo/Rimanenza W</label>', form_html)
         self.assertIn('<label>Acconto D €</label>', form_html)
         self.assertIn('<label>Data Acconto D</label>', form_html)
         self.assertIn('<label>Rimanenza D €</label>', form_html)

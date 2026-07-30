@@ -783,6 +783,23 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertEqual(result["owner_address"], "Via dei Fiori 5, Livorno")
         self.assertIn("form.delivery_address.value=item.owner_address", app.APP_JS)
 
+    def test_animal_search_payment_summary_uses_saldo_rimanenza_label_for_w_circuit(self):
+        stamp = datetime.now().isoformat(timespec="seconds")
+        with app.db() as conn:
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   animal_name,total_service,deposit,payment_status,pickup_date)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("PP-SALDO-01", "Privato", "Livorno", "Ritirato", stamp, stamp, self.admin["id"],
+                 "Fufi", "300", "100", "Acconto", "2026-07-10"),
+            )
+        response = {}
+        self.handler.path = "/api/calendario/animali/search?q=fufi"
+        self.handler.send_json = lambda obj, status=200: response.update(obj=obj, status=status)
+        self.handler.api_calendar_animals_search(self.admin)
+        result = response["obj"]["results"][0]
+        self.assertIn("Saldo/Rimanenza W", result["payment_summary"])
+
     def test_form_is_guided_supports_contacts_maps_autocomplete_and_touch_layout(self):
         captured = []
         self.handler.path = "/calendario/nuovo?data=2026-07-15"

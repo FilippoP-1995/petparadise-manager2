@@ -2874,7 +2874,7 @@ function setupBudgetExtras(){
     totalService.addEventListener('input',function(){ if(totalServiceManual) totalServiceManual.value='Si'; });
   }
   const depositField_=document.querySelector('input[name="deposit"]'); if(depositField_){depositField_.closest('.field').querySelector('label').textContent='Acconto W €';}
-  const remainingBalanceField_=document.querySelector('input[name="remaining_balance"]'); if(remainingBalanceField_){remainingBalanceField_.closest('.field').querySelector('label').textContent='Rimanenza W €';}
+  const remainingBalanceField_=document.querySelector('input[name="remaining_balance"]'); if(remainingBalanceField_){remainingBalanceField_.closest('.field').querySelector('label').textContent='Saldo/Rimanenza W €';}
   const invoiceNumber=document.querySelector('input[name="invoice_number"]');invoiceNumber.type='text';invoiceNumber.placeholder='Numero fattura';
   invoiceNumber.addEventListener('input',()=>{const makeInvoice=document.querySelector('input[name="make_invoice"]');if(makeInvoice&&invoiceNumber.value.trim())makeInvoice.checked=false;});
   const invoiceField=document.createElement('div');invoiceField.className='field';invoiceField.innerHTML='<label>Numero fattura</label>';invoiceField.append(invoiceNumber);fields.append(invoiceField);
@@ -11743,7 +11743,7 @@ class App(BaseHTTPRequestHandler):
             if show_financials:
                 total_d=(r["total_text"] or "").strip() if "total_text" in r.keys() else ""
                 deposit_label=f"Acconto {channel}"
-                remaining_label=f"Rimanenza {channel}"
+                remaining_label="Saldo/Rimanenza W" if channel=="W" else f"Rimanenza {channel}"
                 financial_cells=f'<td>{money_it(calculated_service_total(r))}</td><td>{money_it(money_value(total_d)) if total_d else "-"}</td><td><small>{deposit_label}</small><br>{money_it(channel_deposit(r))}</td><td><small>{remaining_label}</small><br>{money_it(channel_remaining(r))}</td>'
             practice_url=f'/pratiche/{r["id"]}?return_to={quote(self.path,safe="")}'
             provenance=esc(r["provenance"] if "provenance" in r.keys() and r["provenance"] else "-")
@@ -11912,7 +11912,9 @@ class App(BaseHTTPRequestHandler):
                 total=effective_total(row);deposit=channel_deposit(row);remaining=outstanding_amount(row)
                 base_status=(row["payment_status"] or "Da saldare")
                 if base_status=="Pagato":detail=f"Pagato {channel} · {money_it(total)}";calendar_status="Pagato";calendar_amount=total
-                elif deposit>0:detail=f"Acconto {channel} · {money_it(deposit)} · Rimanenza {channel} · {money_it(remaining)}";calendar_status="Da saldare";calendar_amount=remaining
+                elif deposit>0:
+                    remaining_channel_label="Saldo/Rimanenza W" if channel=="W" else f"Rimanenza {channel}"
+                    detail=f"Acconto {channel} · {money_it(deposit)} · {remaining_channel_label} · {money_it(remaining)}";calendar_status="Da saldare";calendar_amount=remaining
                 else:detail=f"Da pagare {channel} · {money_it(total)}";calendar_status="Da pagare";calendar_amount=total
                 owner=" ".join(part for part in (row["owner_first_name"],row["owner_last_name"]) if part).strip()
                 owner_address=", ".join(part for part in (row["owner_street"],row["owner_city"],row["owner_province"]) if part).strip()
@@ -12512,7 +12514,7 @@ class App(BaseHTTPRequestHandler):
             # preview, no date yet" apart from "a real saldo the user typed in".
             touched_html=f'<input type="hidden" name="{totale_name}_touched" value="{val(totale_name+"_touched")}">' if macroarea=="saldo" else ""
             return f'''<div class="payment-macroarea-channel"><div class="fields"><div class="field"><label>{esc(label)} €</label><input name="{totale_name}" value="{val(totale_name)}" inputmode="decimal" placeholder="Numero, es. 120,00"></div><div class="field"><label>Data {esc(label)}</label><input type="date" name="{data_name}" value="{val(data_name)}"></div>{method_html}{fattura_html}</div>{touched_html}</div>'''
-        creation_payment_fields=f'''<section class="section hidden" id="creationPaymentSection"><h2>Pagamento</h2><p class="sub">Ogni importo è indipendente: compila solo D, solo W, o entrambi. Il circuito D non richiede il metodo di pagamento. Se per lo stesso incasso compili sia D che W, viene registrato solo D.</p><div class="fields" id="paymentEstremiRow"></div><div class="fields" id="paymentTotaleWRow"></div>{macro_field_group("acconto","W","Acconto W")}{macro_field_group("saldo","W","Rimanenza W")}<div class="payment-macroarea"><div class="fields" id="paymentTotaleDRow"></div>{macro_field_group("acconto","D","Acconto D",show_method=False)}{macro_field_group("saldo","D","Rimanenza D",show_method=False)}</div></section>'''
+        creation_payment_fields=f'''<section class="section hidden" id="creationPaymentSection"><h2>Pagamento</h2><p class="sub">Ogni importo è indipendente: compila solo D, solo W, o entrambi. Il circuito D non richiede il metodo di pagamento. Se per lo stesso incasso compili sia D che W, viene registrato solo D.</p><div class="fields" id="paymentEstremiRow"></div><div class="fields" id="paymentTotaleWRow"></div>{macro_field_group("acconto","W","Acconto W")}{macro_field_group("saldo","W","Saldo/Rimanenza W")}<div class="payment-macroarea"><div class="fields" id="paymentTotaleDRow"></div>{macro_field_group("acconto","D","Acconto D",show_method=False)}{macro_field_group("saldo","D","Rimanenza D",show_method=False)}</div></section>'''
         if user is None or user["role"]=="admin":
             operator_field=f'''<div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option><option {selected('operator_name','GIANLUCA')}>GIANLUCA</option></select></div>'''
         else:
@@ -13896,7 +13898,7 @@ class App(BaseHTTPRequestHandler):
         else:
             item_estimate_rows=[f'<div class="kv"><small>Urna</small><span class="sub">Nessuna urna o voce inserita</span>{catalog_controls}</div>']
         estimate_rows[2:2]=item_estimate_rows
-        economic_block=f'''<div class="section"><h2>Dati economici</h2><div class="economic-estimate"><h3>Voci del preventivo</h3><div class="kvs">{''.join(estimate_rows)}</div></div><div class="kvs"><div class="kv"><small>Totale pratica</small><b>{money_it(practice_total)}</b></div><div class="kv"><small>Totale W</small><b>{money_it(total_w)}</b></div><div class="kv"><small>Totale D</small><b>{money_it(total_d) if total_d_raw else "-"}</b></div><div class="kv"><small>Totale pagato {payment_channel(p)}</small><b>{money_it(paid_total)}</b></div><div class="kv"><small>Da pagare {payment_channel(p)}</small><b>{money_it(due_total)}</b></div><div class="kv"><small>Acconto {payment_channel(p)}</small><b>{money_it(deposit_total)}</b></div><div class="kv"><small>Rimanenza {payment_channel(p)}</small><b>{money_it(remaining_total)}</b></div><div class="kv"><small>Stato pagamento</small><b>{esc(payment_value)}</b></div><div class="kv"><small>Metodo</small>{method_control}</div>{invoice_box}</div></div>'''
+        economic_block=f'''<div class="section"><h2>Dati economici</h2><div class="economic-estimate"><h3>Voci del preventivo</h3><div class="kvs">{''.join(estimate_rows)}</div></div><div class="kvs"><div class="kv"><small>Totale pratica</small><b>{money_it(practice_total)}</b></div><div class="kv"><small>Totale W</small><b>{money_it(total_w)}</b></div><div class="kv"><small>Totale D</small><b>{money_it(total_d) if total_d_raw else "-"}</b></div><div class="kv"><small>Totale pagato {payment_channel(p)}</small><b>{money_it(paid_total)}</b></div><div class="kv"><small>Da pagare {payment_channel(p)}</small><b>{money_it(due_total)}</b></div><div class="kv"><small>Acconto {payment_channel(p)}</small><b>{money_it(deposit_total)}</b></div><div class="kv"><small>{"Saldo/Rimanenza W" if payment_channel(p)=="W" else f"Rimanenza {payment_channel(p)}"}</small><b>{money_it(remaining_total)}</b></div><div class="kv"><small>Stato pagamento</small><b>{esc(payment_value)}</b></div><div class="kv"><small>Metodo</small>{method_control}</div>{invoice_box}</div></div>'''
         with db() as c:
             movements=c.execute(
                 """SELECT pm.*, (SELECT mi.invoice_number FROM movement_invoices mi
