@@ -519,6 +519,10 @@ class PetParadiseTests(unittest.TestCase):
                 ("CR-PAY-WD", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Mario",
                  "Cremazione singola", "Acconto", "450", "360", "50", "10", "400.00", "350.00"),
             ).lastrowid
+            # a raw payment_movements row with no matching balance_movements
+            # entry — exactly the kind of orphaned/legacy detail row real
+            # production data can contain (see CR-000063's "rettifica"/
+            # "saldo_ordinario" rows): it must NOT count toward "gia' pagato"
             self.handler.add_payment_movement(conn, pid, "acconto_d", "D", 10, admin["id"], "Acconto precedente", "2026-07-13")
         self.handler.form = lambda: {"payment_status": "Pagato", "payment_method": "Pos", "payment_amount": "350,00",
                                       "invoice_number": "", "invoice_total": "", "invoice_date": "2026-07-14",
@@ -532,8 +536,11 @@ class PetParadiseTests(unittest.TestCase):
         # total_service="450" was never actually made the effective W total
         # (no total_service_manual="Si", no price_cremation), so
         # calculated_service_total resolves W's due to 0 and remaining_balance
-        # is correctly empty — remaining_final (D) is genuinely settled (350+10=360)
-        self.assertEqual((row["remaining_balance"], row["remaining_final"]), ("", "0.00"))
+        # is correctly empty. remaining_final (D) is derived from the real
+        # ledger only: the quick_payment transition registers 350 for real
+        # (via balance_movements), but the earlier raw add_payment_movement
+        # 10 never touched the ledger, so due_d(360) - paid_d(350) = 10, not 0
+        self.assertEqual((row["remaining_balance"], row["remaining_final"]), ("", "10.00"))
 
     def test_startup_backfill_zeroes_stale_remaining_on_existing_pagato_practices(self):
         with app.db() as conn:
@@ -6305,6 +6312,74 @@ class PetParadiseTests(unittest.TestCase):
             errors=[];self.handler.send_error=lambda code,msg=None:errors.append(code)
             self.handler.practice_payment_diagnostics(operator,pid)
             self.assertEqual(errors,[403])
+
+    def test_settlement_label_drift_bootstrap_key_varies_by_amount_and_date(self):
+        # Root cause of the persistent production IdempotencyConflictError
+        # on CR-000063: a settlement's ledger movement_type is derived live
+        # from has_acconto_row ("Incasso completo" with no acconto on file,
+        # "Saldo" once one exists). Registering the acconto *after* the
+        # settlement already exists flips that label, so the next
+        # correction pass can no longer find the existing ledger row by its
+        # (now different) expected movement_type and falls into the
+        # "bootstrap" branch — which used a completely fixed idempotency_key
+        # with no amount/date component, guaranteed to collide the moment a
+        # second such bootstrap ever fired with a different amount.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,total_text)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?)""",("CR-DRIFT","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Vera","Cremazione singola","Da saldare","320")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        # settlement registered first, with no acconto on file yet -> ledger
+        # row is labeled "Incasso completo"
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-21","saldo_totale":"320,00","saldo_circuito":"D","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        # an acconto gets added afterwards -> has_acconto_row flips True
+        self.handler.form=lambda:{"macroarea":"acconto","acconto_data":"2026-07-21","acconto_totale":"100,00","acconto_circuito":"D","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        # resubmitting the unchanged saldo now expects a "Saldo"-labeled
+        # ledger row, finds none (only "Incasso completo" exists) and must
+        # bootstrap one instead of raising
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-21","saldo_totale":"320,00","saldo_circuito":"D","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        with app.db() as conn:
+            bootstrapped=conn.execute("SELECT idempotency_key FROM balance_movements WHERE practice_id=? AND movement_type='Saldo' AND amount_cents>0",(pid,)).fetchone()
+        self.assertIsNotNone(bootstrapped)
+        # the key must vary with amount and date, not be a fixed string —
+        # otherwise a second bootstrap with a different amount collides
+        self.assertIn("32000",bootstrapped["idempotency_key"])
+        self.assertIn("2026-07-21",bootstrapped["idempotency_key"])
+
+    def test_channel_paid_amount_ignores_legacy_payment_movements_uses_real_ledger(self):
+        # CR-000063 production reality: payment_movements had accumulated
+        # legacy rows (payment_type "rettifica"/"saldo_ordinario" — strings
+        # this app never writes anywhere, clearly pre-existing/imported
+        # data) summing to far more than was ever actually received, while
+        # the real Bilanci ledger (balance_movements) stayed correct
+        # throughout. "Gia' pagato" must reflect the ledger, never a raw
+        # sum over payment_movements, or stale/legacy detail rows silently
+        # inflate it.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,total_text)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?)""",("CR-LEGACY-D","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Traiano","Cremazione singola","Da saldare","320")).lastrowid
+            conn.execute("INSERT INTO payment_movements(practice_id,payment_type,payment_channel,payment_method,movement_category,amount,paid_at,created_at) VALUES(?,?,?,?,?,?,?,?)",
+                         (pid,"saldo_ordinario","D","","D",350.0,"2026-07-30",stamp))
+            conn.execute("INSERT INTO payment_movements(practice_id,payment_type,payment_channel,payment_method,movement_category,amount,paid_at,created_at) VALUES(?,?,?,?,?,?,?,?)",
+                         (pid,"rettifica","D","","D",370.0,"2026-07-21",stamp))
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-21","saldo_totale":"320,00","saldo_circuito":"D","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        with app.db() as conn:
+            practice=conn.execute("SELECT deposit_final,remaining_final FROM practices WHERE id=?",(pid,)).fetchone()
+        # 320 (the one real ledger entry), not 320+350+370=1040 from summing
+        # every payment_movements row including the legacy ones
+        self.assertEqual((practice["deposit_final"],practice["remaining_final"]),("320.00","0.00"))
 
     def test_acconto_and_saldo_keep_their_own_movement_dates(self):
         with app.db() as conn:

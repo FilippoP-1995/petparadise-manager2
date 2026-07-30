@@ -6272,15 +6272,26 @@ def channel_remaining(practice):
 
 def channel_paid_amount(c, practice_id, channel):
     """Somma REALE dei movimenti registrati su un circuito (W o D) per una
-    pratica — la sola fonte di verita' per 'Gia' pagato {circuito}'. MAI
-    l'ultimo movimento registrato, MAI la somma di entrambi i circuiti
-    insieme: un totale puo' crescere dopo che un circuito e' gia' stato
-    saldato (extra aggiunto a pratica consegnata), e ogni circuito resta
-    indipendente dall'altro anche sulla stessa pratica."""
-    return money_value(c.execute(
-        "SELECT COALESCE(SUM(amount),0) amount FROM payment_movements WHERE practice_id=? AND payment_channel=?",
+    pratica — la sola fonte di verita' per 'Gia' pagato {circuito}'. Letta
+    dal ledger Bilanci (balance_movements), MAI da payment_movements: la
+    tabella di dettaglio puo' contenere righe legacy o residue (creata da
+    versioni precedenti dell'app, o da correct_practice_payment_amount, che
+    sostituisce un movimento nel ledger via storno+sostituzione senza mai
+    toccare payment_movements) che non riflettono piu' un incasso reale —
+    il ledger invece traccia sempre gli storni tramite related_movement_id,
+    quindi e' l'unica fonte davvero affidabile (stesso pattern di esclusione
+    gia' usato da remove_payment_macroarea). MAI l'ultimo movimento
+    registrato, MAI la somma di entrambi i circuiti insieme: un totale puo'
+    crescere dopo che un circuito e' gia' stato saldato (extra aggiunto a
+    pratica consegnata), e ogni circuito resta indipendente dall'altro anche
+    sulla stessa pratica."""
+    cents = c.execute(
+        """SELECT COALESCE(SUM(b.amount_cents),0) cents FROM balance_movements b
+           WHERE b.practice_id=? AND b.category=? AND b.ledger_section='Entrata' AND b.amount_cents>0
+             AND NOT EXISTS(SELECT 1 FROM balance_movements r WHERE r.related_movement_id=b.id AND r.movement_type='Storno')""",
         (practice_id, channel),
-    ).fetchone()["amount"])
+    ).fetchone()["cents"]
+    return cents / 100.0
 
 
 def recompute_practice_channel_balances(c, pid, practice):
@@ -14779,10 +14790,22 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 created_by=user["id"],
             )
             if corrected is None:
+                # correct_balance_movement_date looks up the existing ledger
+                # row by movement_type ("Acconto"/"Saldo"/"Incasso completo")
+                # — a label derived from has_acconto_row, which can change
+                # over the life of a practice (e.g. an acconto gets added
+                # later, flipping a settlement's expected label from
+                # "Incasso completo" to "Saldo"). When that happens this
+                # lookup finds nothing even though a real ledger row exists
+                # under the old label, landing here. The key must still vary
+                # with amount/date — a fixed key reused across every such
+                # mismatch (regardless of amount) previously caused a real
+                # IdempotencyConflictError in production once amounts
+                # differed between attempts.
                 create_balance_movement(
                     c,amount_cents=euros_to_cents(f"{amount:.2f}"),movement_date=data_field,category=category,
                     ledger_section="Entrata",movement_type=balance_type,
-                    idempotency_key=f"payment-macroarea-bootstrap:{pid}:{macroarea}",
+                    idempotency_key=f"payment-macroarea-bootstrap:{pid}:{macroarea}:{euros_to_cents(f'{amount:.2f}')}:{data_field}",
                     practice_id=pid,practice_number_snapshot=practice["practice_number"] or "",
                     payment_method=method,description="Pagamento registrato",source="practice_payment_macroarea",
                     collaborator_id=int(practice["collaborator_id"]) if practice["collaborator_id"] else None,
