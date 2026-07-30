@@ -6243,6 +6243,47 @@ class PetParadiseTests(unittest.TestCase):
             practice=conn.execute("SELECT deposit_final,remaining_final FROM practices WHERE id=?",(pid,)).fetchone()
             self.assertEqual((practice["deposit_final"],practice["remaining_final"]),("280.00","0.00"))
 
+    def test_edit_submit_accepts_negative_remaining_instead_of_failing_validation(self):
+        # validation_error() checks every MONEY_FIELDS value against a
+        # digits-only regex — but remaining_balance/remaining_final are
+        # explicitly allowed to go negative (pagamento eccedente is shown,
+        # not clamped to zero). Without a carve-out, a legitimate overpaid
+        # circuit ("-50.00") used to be rejected by that same regex with a
+        # confusing "solo numeri, con al massimo due decimali" error,
+        # blocking every edit save on that practice — this is what CR-000063
+        # hit on a second/third extra: this ("Rimanenza D" invalid) is a
+        # DIFFERENT bug from the earlier IdempotencyConflictError/double-count.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,owner_last_name,owner_phone,owner_tax_code,owner_street,owner_city,owner_province,owner_zip,
+                                service_type,payment_status,total_text)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                             ("CR-EDIT-OVERPAID-D","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Anna","Neri","3331112222","NRIANN80A01H501U","Via Test","Livorno","LI","57100","Da decidere","Da saldare","250")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-21","saldo_totale":"250,00","saldo_circuito":"D","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        # reduce Totale D to 200; deposit_final (the plain Preventivo field,
+        # a real input on the page — the browser resubmits its page-load
+        # value, "250.00", even though the user never touched it) now
+        # exceeds the fresh due -> remaining_final must come out "-50.00"
+        self.handler.form=lambda:{
+            "operator_name":"FILIPPO","service_type":"Da decidere","request_origin":"Privato",
+            "owner_first_name":"Anna","owner_last_name":"Neri","owner_phone":"3331112222",
+            "owner_tax_code":"NRIANN80A01H501U","owner_street":"Via Test","owner_city":"Livorno",
+            "owner_province":"LI","owner_zip":"57100","payment_status":"Pagato","economic_at":"2026-07-21",
+            "total_text":"200","deposit_final":"250",
+        }
+        redirects=[];self.handler.redirect=lambda url:redirects.append(url)
+        edit_pages=[];self.handler.edit_page=lambda user,pid,draft=None,error="",error_field="":edit_pages.append(error)
+        self.handler.edit_submit(admin,pid)
+        self.assertFalse(edit_pages,f"edit_submit incorrectly rejected the save: {edit_pages}")
+        self.assertTrue(redirects)
+        with app.db() as conn:
+            practice=conn.execute("SELECT remaining_final FROM practices WHERE id=?",(pid,)).fetchone()
+            self.assertEqual(practice["remaining_final"],"-50.00")
+
     def test_acconto_and_saldo_keep_their_own_movement_dates(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()

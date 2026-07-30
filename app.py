@@ -12926,7 +12926,18 @@ class App(BaseHTTPRequestHandler):
         return int(all(d.get(k) for k in required))
 
     def validation_error(self,d):
-        invalid_money=[label for key,label in MONEY_FIELDS.items() if d.get(key) and not re.fullmatch(r"\d+(?:\.\d{1,2})?",d[key])]
+        # remaining_balance/remaining_final are the only MONEY_FIELDS
+        # normalized_fields() may legitimately compute as negative (a
+        # circuito paid more than what's currently due — "pagamento
+        # eccedente" — is shown, not clamped to zero); every other money
+        # field is a plain price and must stay non-negative.
+        invalid_money=[
+            label for key,label in MONEY_FIELDS.items()
+            if d.get(key) and not re.fullmatch(
+                r"-?\d+(?:\.\d{1,2})?" if key in ("remaining_balance","remaining_final") else r"\d+(?:\.\d{1,2})?",
+                d[key],
+            )
+        ]
         if invalid_money:
             return "Nel Preventivo sono ammessi solo numeri, con al massimo due decimali: " + ", ".join(invalid_money)
         if d.get("tag_da_richiamare") == "Si":
