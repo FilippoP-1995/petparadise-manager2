@@ -14391,7 +14391,24 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 and compact_text(previous[key])!=compact_text(d.get(key))
                 for key in MONEY_FIELDS
             )
-            if economic_amount_changed:
+            # correct_practice_payment_amount blindly reconciles the single
+            # existing deposit/settlement movement to "fresh total minus
+            # deposits" — correct for a pure Preventivo typo-fix (e.g. price
+            # component corrected, no new money involved), but wrong for an
+            # extra item raising the total: it would silently inflate the
+            # *original* movement's amount (with the original's old date)
+            # while apply_payment_macroarea below registers the genuinely
+            # new payment separately, double-counting the difference. Skip
+            # it whenever the macroarea that governs the current status
+            # (acconto while "Acconto", saldo/settlement while "Pagato") is
+            # itself present in macro_plan — apply_payment_macroarea already
+            # reconciles that phase correctly, new-payment-vs-correction aware.
+            relevant_macroarea=(
+                "acconto" if d["payment_status"]=="Acconto"
+                else "saldo" if d["payment_status"]=="Pagato"
+                else None
+            )
+            if economic_amount_changed and relevant_macroarea not in macro_plan:
                 payment_amount_error=self.correct_practice_payment_amount(
                     c,previous,d,user["id"]
                 )
@@ -14417,12 +14434,30 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             edit_balance_key=f"practice-edit:{edit_balance_token}" if edit_balance_token else ""
             for macroarea,plan in macro_plan.items():
                 fresh_practice=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+                existing_movement,_=latest_movement_and_invoice(c,pid,macroarea)
+                force_new=False
+                if existing_movement:
+                    target_amount=round(money_value(plan["totale_field"]),2)
+                    existing_amount=round(money_value(existing_movement["amount"]),2)
+                    existing_channel=existing_movement["payment_channel"] if existing_movement["payment_channel"] in ("W","D") else plan["channel"]
+                    # Unlike the Pagamento popover, the Preventivo section's
+                    # Acconto/Rimanenza fields have no explicit "correct
+                    # this" vs "register a new payment" toggle — if the
+                    # submitted amount (or circuito) genuinely differs from
+                    # the movement already on file (e.g. an extra item just
+                    # raised the total, so "Rimanenza D" now shows a real
+                    # new amount collected), treat it as an additional real
+                    # payment instead of silently rewriting the amount of a
+                    # payment already collected. An unchanged amount (only
+                    # date/method touched up) is still corrected in place.
+                    force_new=(target_amount!=existing_amount or plan["channel"]!=existing_channel)
                 payment_error=self.apply_payment_macroarea(
                     c,user,pid,fresh_practice,macroarea,
                     data_field=plan["data_field"],totale_field=plan["totale_field"],
                     channel=plan["channel"],method=plan["method"],
                     invoice_number=plan["invoice_number"],invoice_total=plan["invoice_total"],invoice_date=plan["invoice_date"],
                     balance_key=edit_balance_key,
+                    force_new=force_new,
                 )
                 if payment_error:raise ValueError(payment_error)
             p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()

@@ -6196,6 +6196,53 @@ class PetParadiseTests(unittest.TestCase):
             practice=conn.execute("SELECT deposit,remaining_balance FROM practices WHERE id=?",(pid,)).fetchone()
             self.assertEqual((practice["deposit"],practice["remaining_balance"]),("200.00","60.00"))
 
+    def test_edit_form_extra_on_settled_d_practice_registers_new_movement_no_double_count(self):
+        # Reproduces the real production report: from the practice's
+        # "Modifica dati" -> Preventivo section (not the Pagamento popover),
+        # raising Totale D and confirming a new Rimanenza D on an
+        # already-fully-paid D practice used to either raise
+        # IdempotencyConflictError or — worse — silently rewrite the
+        # *original* settlement's amount via correct_practice_payment_amount
+        # (with the original's old date) while ALSO registering a brand new
+        # movement for the same extra, double-counting it in Bilanci.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,owner_last_name,owner_phone,owner_tax_code,owner_street,owner_city,owner_province,owner_zip,
+                                service_type,payment_status,total_text)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                             ("CR-EDIT-EXTRA-D","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Anna","Neri","3331112222","NRIANN80A01H501U","Via Test","Livorno","LI","57100","Da decidere","Da saldare","250")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-21","saldo_totale":"250,00","saldo_circuito":"D","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        with app.db() as conn:
+            original=conn.execute("SELECT id,amount,paid_at FROM payment_movements WHERE practice_id=? AND payment_type='saldo'",(pid,)).fetchone()
+        # from the practice edit form: Totale D 250->280, Rimanenza D typed as 30
+        self.handler.form=lambda:{
+            "operator_name":"FILIPPO","service_type":"Da decidere","request_origin":"Privato",
+            "owner_first_name":"Anna","owner_last_name":"Neri","owner_phone":"3331112222",
+            "owner_tax_code":"NRIANN80A01H501U","owner_street":"Via Test","owner_city":"Livorno",
+            "owner_province":"LI","owner_zip":"57100","payment_status":"Pagato","economic_at":"2026-07-21",
+            "total_text":"280","saldo_d_totale":"30","saldo_d_totale_touched":"1","saldo_d_data":"2026-07-30",
+        }
+        redirects=[];self.handler.redirect=lambda url:redirects.append(url)
+        self.handler.edit_submit(admin,pid)
+        self.assertTrue(redirects,"edit_submit must redirect on success, not raise IdempotencyConflictError")
+        with app.db() as conn:
+            movements=conn.execute("SELECT id,amount,paid_at FROM payment_movements WHERE practice_id=? AND payment_type='saldo' ORDER BY id",(pid,)).fetchall()
+            self.assertEqual(len(movements),2)
+            self.assertEqual((movements[0]["id"],float(movements[0]["amount"]),movements[0]["paid_at"]),
+                              (original["id"],float(original["amount"]),original["paid_at"]))
+            self.assertEqual((float(movements[1]["amount"]),movements[1]["paid_at"]),(30.0,"2026-07-30"))
+            # no Storno on the original — never retroactively rewritten
+            stornos=conn.execute("SELECT COUNT(*) n FROM balance_movements WHERE practice_id=? AND movement_type='Storno'",(pid,)).fetchone()["n"]
+            self.assertEqual(stornos,0)
+            received=sum(row["amount_cents"] for row in conn.execute("SELECT amount_cents FROM balance_movements WHERE practice_id=? AND amount_cents>0",(pid,)))
+            self.assertEqual(received,28000)  # 250+30, not 310 (no double count)
+            practice=conn.execute("SELECT deposit_final,remaining_final FROM practices WHERE id=?",(pid,)).fetchone()
+            self.assertEqual((practice["deposit_final"],practice["remaining_final"]),("280.00","0.00"))
+
     def test_acconto_and_saldo_keep_their_own_movement_dates(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
