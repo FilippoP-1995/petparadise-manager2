@@ -507,6 +507,37 @@ def geocode_address(address, api_key=None):
     return None, None
 
 
+def search_address_suggestions(query, limit=5):
+    """Suggerimenti di indirizzo mentre l'utente digita (equivalente
+    "gratuito" di Google Places Autocomplete, stesso servizio Nominatim gia'
+    usato da geocode_address e dal recupero CAP in app.py): ogni risultato
+    include gia' lat/lng, cosi' selezionandolo si evita del tutto la
+    geocodifica pigra al primo utilizzo per un percorso. Non solleva mai
+    eccezioni: in caso di errore/timeout ritorna una lista vuota."""
+    query = (query or "").strip()
+    if len(query) < 3:
+        return []
+    try:
+        params = urllib.parse.urlencode({
+            "q": query, "format": "jsonv2", "limit": str(max(1, min(10, limit))),
+            "addressdetails": "0", "countrycodes": "it",
+        })
+        req = urllib.request.Request(
+            f"https://nominatim.openstreetmap.org/search?{params}",
+            headers={"Accept": "application/json", "User-Agent": "PetParadiseManager/1.0 (address suggestions)"},
+            method="GET",
+        )
+        with urllib.request.urlopen(req, timeout=8) as response:
+            payload = json.loads(response.read().decode("utf-8", "replace"))
+        return [
+            {"display_name": row.get("display_name", ""), "lat": float(row["lat"]), "lng": float(row["lon"])}
+            for row in payload if row.get("lat") and row.get("lon")
+        ]
+    except Exception as exc:
+        print(f"[ROUTE] Suggerimenti indirizzo non disponibili: {type(exc).__name__}: {exc}", flush=True)
+        return []
+
+
 def resolve_coordinates(conn, address, veterinarian_row=None, api_key=None):
     """Coordinate per un indirizzo, con cache. Priorita' alle coordinate gia'
     salvate sul veterinario (colonne lat/lng aggiunte a veterinarians),

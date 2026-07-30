@@ -6382,7 +6382,7 @@ class PetParadiseTests(unittest.TestCase):
         balances_page=rendered[-1]
         self.assertIn("<h1>Bilanci</h1>",balances_page)
         for label in (
-            "Periodo","Data","Tipo","Cerca","Categoria","Collaboratore","Metodo pagamento","Operatore","Filtri avanzati",
+            "Periodo","Data","Tipo","Circuito","Cerca","Collaboratore","Metodo pagamento","Operatore","Filtri avanzati",
             "Entrate W","Entrate D","Collaboratori Incassato","Da riscuotere W",
             "Da riscuotere D","Collaboratori Da riscuotere","Uscite W","Uscite D",
             "Totale W attuale","Totale D attuale","Saldo Netto",
@@ -6502,17 +6502,88 @@ class PetParadiseTests(unittest.TestCase):
         quick_block=page[page.index('balance-filters-quick',form_start):page.index('balance-filters-advanced',form_start)]
         self.assertIn(">Data<",quick_block)
         self.assertIn(">Tipo<",quick_block)
+        # Circuito (W/D/Collaboratori) e' un filtro usato di continuo, non da
+        # nascondere in "Filtri avanzati": vive nella riga rapida accanto a
+        # Tipo, sempre visibile anche su mobile (grid a 1 colonna sotto i 900px).
+        self.assertIn(">Circuito<",quick_block)
+        self.assertIn('id="balanceCircuit"',quick_block)
+        self.assertIn('name="categoria"',quick_block)
         self.assertIn(">Cerca<",quick_block)
         self.assertIn('<details class="balance-filters-advanced">',page[form_start:])
         self.assertIn("Filtri avanzati",page[form_start:])
         advanced_block=page[page.index('balance-filters-advanced',form_start):page.index('balance-filter-actions',form_start)]
-        for label in ("Periodo","Categoria","Collaboratore","Metodo pagamento","Operatore"):
+        self.assertNotIn(">Circuito<",advanced_block)
+        for label in ("Periodo","Collaboratore","Metodo pagamento","Operatore"):
             self.assertIn(f">{label}<",advanced_block)
-        # an advanced-only field (categoria) must still actually filter results
+        # Tipo e Circuito devono restare combinabili: il campo strutturato
+        # gia' usato per distinguere W/D e' balance_movements.category (mai
+        # dedotto dal testo della descrizione), letto tramite lo stesso
+        # parametro querystring 'categoria' di sempre.
         redirects=[]
         self.handler.path="/bilanci?categoria=D&periodo=tutto"
         self.handler.balances_page(admin)
         self.assertIn('<option value="D" selected>D</option>',rendered[-1])
+
+    def test_bilanci_circuito_filter_combines_with_tipo_using_the_structured_category_field(self):
+        # Il campo strutturato gia' esistente per distinguere W/D e'
+        # balance_movements.category (mai dedotto dal testo): questo test
+        # semina movimenti reali su entrambi i circuiti e verifica che Tipo
+        # (stato) e Circuito (categoria) filtrino in AND, senza duplicati e
+        # senza toccare movimenti/ledger/circuiti gia' esistenti.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            today="2026-07-20"
+            def seed(key,category,ledger_section,movement_type,amount,desc):
+                return app.create_balance_movement(
+                    conn,amount_cents=amount,movement_date=today,category=category,
+                    ledger_section=ledger_section,movement_type=movement_type,
+                    idempotency_key=f"circuito-filter-test-{key}",
+                    description=desc,
+                    source="manual_income" if ledger_section=="Entrata" else "manual_expense",
+                    created_by=admin["id"],
+                )
+            seed("acconto-w","W","Entrata","Acconto",10000,"MARK-ACCONTO-W")
+            seed("acconto-d","D","Entrata","Acconto",15000,"MARK-ACCONTO-D")
+            seed("saldo-w","W","Entrata","Saldo",20000,"MARK-SALDO-W")
+            seed("uscita-w","W","Uscita","Uscita manuale",3000,"MARK-USCITA-W")
+            uscita_d=seed("uscita-d","D","Uscita","Uscita manuale",4000,"MARK-USCITA-D")
+            app.create_balance_reversal(conn,original_movement_id=uscita_d.id,movement_date=today,
+                                         idempotency_key="circuito-filter-test-storno-d",description="MARK-STORNO-D",
+                                         created_by=admin["id"])
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        date_qs=f"data_iniziale={today}&data_finale={today}&periodo=personalizzato"
+        # Esempio dell'utente: Tipo=Acconto, Circuito=W -> solo l'acconto W
+        self.handler.path=f"/bilanci?view=entrate-w&stato=Acconto&categoria=W&{date_qs}"
+        self.handler.balances_page(admin)
+        page=rendered[-1]
+        self.assertIn("MARK-ACCONTO-W",page)
+        self.assertNotIn("MARK-ACCONTO-D",page)
+        self.assertNotIn("MARK-SALDO-W",page)
+        self.assertEqual(page.count("MARK-ACCONTO-W"),1)  # nessun duplicato
+        # Esempio dell'utente: Tipo=Uscita manuale, Circuito=D -> solo le uscite D
+        self.handler.path=f"/bilanci?view=uscite-d&stato=Uscita manuale&categoria=D&{date_qs}"
+        self.handler.balances_page(admin)
+        page=rendered[-1]
+        self.assertIn("MARK-USCITA-D",page)
+        self.assertNotIn("MARK-USCITA-W",page)
+        # Tipo=Tutti, Circuito=W -> tutti i movimenti W (entrate+rettifica), non D
+        self.handler.path=f"/bilanci?view=entrate-w&categoria=W&{date_qs}"
+        self.handler.balances_page(admin)
+        page=rendered[-1]
+        self.assertIn("MARK-ACCONTO-W",page)
+        self.assertIn("MARK-SALDO-W",page)
+        self.assertNotIn("MARK-ACCONTO-D",page)
+        # Tipo=Storno, Circuito=D -> lo storno generato sull'uscita D (i
+        # movimenti tecnici compaiono solo con "Mostra movimenti tecnici",
+        # qui verifichiamo solo che il filtro combinato non dia errori e non
+        # includa mai lo storno W (che non esiste)
+        self.handler.path=f"/bilanci?view=uscite-d&stato=Storno&categoria=D&audit=1&{date_qs}"
+        self.handler.balances_page(admin)
+        self.assertIn("MARK-STORNO-D",rendered[-1])
+        # Azzera: nessun parametro -> il filtro Circuito torna a "Tutti" (nessuna selezione)
+        self.handler.path="/bilanci"
+        self.handler.balances_page(admin)
+        self.assertIn('<option value="" selected>Tutti</option>',rendered[-1])
 
     def test_balances_manual_toolbar_buttons_are_compact_and_color_coded(self):
         with app.db() as conn:
@@ -7676,7 +7747,11 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('Incaricato</option>', page)
         self.assertIn('Da effettuare', page)
         self.assertIn('Completati', page)
-        self.assertIn('Senza incaricato', page)
+        # "Senza incaricato" e' stata rimossa dalla vista Settimana/Giorno
+        # (richiesta dell'utente): resta solo nella vista Mese, verificato
+        # separatamente in test_calendar_week_stats_drop_unassigned_card_but_month_view_keeps_it
+        body = page.split('</style>', 1)[1]
+        self.assertNotIn('Senza incaricato', body)
         # card ricca: titolo (informazione principale), animale (secondaria:
         # peso/tipo cremazione/nome), cliente (nome+telefono), indirizzo, stato, incaricato
         self.assertIn('RITIRO FIRENZE', page)
@@ -7800,7 +7875,8 @@ class PetParadiseTests(unittest.TestCase):
         day_section = page[page_start:page_start + 4000]
         self.assertIn('<b>2</b><small>Da effettuare</small>', day_section)
         self.assertIn('<b>1</b><small>Completati</small>', day_section)
-        self.assertIn('<b>2</b><small>Senza incaricato</small>', day_section)
+        # card "Senza incaricato" rimossa dalla vista Settimana/Giorno
+        self.assertNotIn('Senza incaricato', day_section)
 
     def test_calendar_month_view_shows_numeric_summary_not_event_titles(self):
         with app.db() as conn:
@@ -9375,8 +9451,13 @@ class PetParadiseTests(unittest.TestCase):
                 created_by,created_at,updated_at) VALUES('Ritiro','Ritiro privato','Via Test 5','Privato',
                 '2026-08-06T08:00:00','2026-08-06T18:00:00','Da ritirare',?,?,?)""",(admin["id"], stamp, stamp))
             livorno = conn.execute("SELECT * FROM company_locations WHERE name='Livorno'").fetchone()
+            # Livorno/Empoli sono seedate con l'indirizzo reale (fix del bug
+            # "Indirizzo non ancora configurato"): per testare la sede SENZA
+            # indirizzo lo svuotiamo esplicitamente, come farebbe un admin
+            # che ha appena aggiunto una sede senza compilarlo.
+            conn.execute("UPDATE company_locations SET address='' WHERE name='Empoli'")
             empoli = conn.execute("SELECT * FROM company_locations WHERE name='Empoli'").fetchone()
-            self.assertEqual(empoli["address"], "")  # sede seedata senza indirizzo: precondizione del bug
+            self.assertEqual(empoli["address"], "")  # precondizione esplicita del test, non piu' del seed
         rendered = []
         self.handler.send_html = lambda html, *a: rendered.append(html)
         self.handler.path = "/percorso-giornaliero"
@@ -9400,6 +9481,7 @@ class PetParadiseTests(unittest.TestCase):
                 created_by,created_at,updated_at) VALUES('Ritiro','Ritiro privato','Via Test 5','Privato',
                 '2026-08-06T08:00:00','2026-08-06T18:00:00','Da ritirare',?,?,?)""",(admin["id"], stamp, stamp))
             livorno = conn.execute("SELECT * FROM company_locations WHERE name='Livorno'").fetchone()
+            conn.execute("UPDATE company_locations SET address='' WHERE name='Empoli'")
             empoli = conn.execute("SELECT * FROM company_locations WHERE name='Empoli'").fetchone()
         redirects = []
         self.handler.redirect = lambda url: redirects.append(url)
@@ -9571,6 +9653,103 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIsNotNone(loc)
         self.assertEqual(loc["address"], "Via Firenze 1")
         self.assertEqual(redirects, ["/percorso-giornaliero/sedi"])
+
+    def test_livorno_and_empoli_are_seeded_with_a_real_address(self):
+        # causa del bug segnalato dall'utente: il seed creava le due sedi di
+        # default con address='', quindi "Indirizzo non ancora configurato"
+        # per chiunque non fosse admin (nessun modo di accorgersene, dato
+        # che l'admin le vedeva comunque modificabili). Gli indirizzi veri
+        # esistevano gia' altrove nel codice (BRANCHES, usato dal DDT).
+        with app.db() as conn:
+            livorno = conn.execute("SELECT * FROM company_locations WHERE name='Livorno'").fetchone()
+            empoli = conn.execute("SELECT * FROM company_locations WHERE name='Empoli'").fetchone()
+        self.assertEqual(livorno["address"], app.BRANCHES["Livorno"]["address"])
+        self.assertEqual(empoli["address"], app.BRANCHES["Empoli"]["address"])
+        self.assertNotEqual(livorno["address"], "")
+        self.assertNotEqual(empoli["address"], "")
+
+    def test_init_db_backfills_livorno_and_empoli_address_on_pre_existing_empty_rows(self):
+        # un database creato PRIMA di questa modifica ha gia' le due righe
+        # con address='': il backfill in init_db() deve sistemarle al
+        # prossimo avvio, senza toccare una sede che un admin ha gia'
+        # configurato a mano (anche con un indirizzo diverso da BRANCHES).
+        with app.db() as conn:
+            conn.execute("UPDATE company_locations SET address='' WHERE name='Livorno'")
+            conn.execute("UPDATE company_locations SET address='Indirizzo scelto a mano' WHERE name='Empoli'")
+        app.init_db()
+        with app.db() as conn:
+            livorno = conn.execute("SELECT * FROM company_locations WHERE name='Livorno'").fetchone()
+            empoli = conn.execute("SELECT * FROM company_locations WHERE name='Empoli'").fetchone()
+        self.assertEqual(livorno["address"], app.BRANCHES["Livorno"]["address"])
+        self.assertEqual(empoli["address"], "Indirizzo scelto a mano")  # mai sovrascritta
+
+    def test_api_address_suggestions_is_admin_only_and_wraps_route_service(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            conn.execute("INSERT INTO users(username,password_hash,display_name,role) VALUES('operatore2','x','Operatore2','operator')")
+            operator = conn.execute("SELECT * FROM users WHERE username='operatore2'").fetchone()
+        forbidden = []
+        self.handler.send_json = lambda obj, status=200: forbidden.append((obj, status))
+        self.handler.path = "/api/geocode/indirizzo?q=Via+Roma"
+        self.handler.api_address_suggestions(operator)
+        self.assertEqual(forbidden[-1][1], 403)
+        captured = []
+        self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+        with patch("app.route_service.search_address_suggestions", return_value=[{"display_name": "Via Roma 1, Livorno", "lat": 43.55, "lng": 10.3}]) as mocked:
+            self.handler.api_address_suggestions(admin)
+        mocked.assert_called_once_with("Via Roma", limit=5)
+        self.assertTrue(captured[-1][0]["ok"])
+        self.assertEqual(captured[-1][0]["results"][0]["display_name"], "Via Roma 1, Livorno")
+
+    def test_save_route_location_uses_picked_coordinates_when_present(self):
+        # se l'admin ha scelto un suggerimento dalla ricerca indirizzo, i
+        # campi nascosti lat/lng arrivano gia' valorizzati: vanno salvati
+        # subito, senza aspettare la geocodifica pigra al primo percorso.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            loc_id = conn.execute("SELECT id FROM company_locations WHERE name='Livorno'").fetchone()["id"]
+        self.handler.redirect = lambda url: None
+        self.handler.form = lambda: {"id": str(loc_id), "name": "Livorno", "address": "Via Nuova 9, Livorno", "lat": "43.5501", "lng": "10.3021"}
+        self.handler.save_route_location(admin)
+        with app.db() as conn:
+            loc = conn.execute("SELECT * FROM company_locations WHERE id=?", (loc_id,)).fetchone()
+        self.assertEqual(loc["address"], "Via Nuova 9, Livorno")
+        self.assertAlmostEqual(loc["lat"], 43.5501)
+        self.assertAlmostEqual(loc["lng"], 10.3021)
+        # senza lat/lng nel form (indirizzo digitato a mano, non da un
+        # suggerimento) il comportamento resta quello di sempre: NULL,
+        # geocodifica pigra al prossimo calcolo percorso
+        self.handler.form = lambda: {"id": str(loc_id), "name": "Livorno", "address": "Altro indirizzo", "lat": "", "lng": ""}
+        self.handler.save_route_location(admin)
+        with app.db() as conn:
+            loc = conn.execute("SELECT * FROM company_locations WHERE id=?", (loc_id,)).fetchone()
+        self.assertIsNone(loc["lat"])
+        self.assertIsNone(loc["lng"])
+
+    def test_route_locations_page_wires_address_autocomplete_for_admin_only(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            conn.execute("INSERT INTO users(username,password_hash,display_name,role) VALUES('operatore3','x','Operatore3','operator')")
+            operator = conn.execute("SELECT * FROM users WHERE username='operatore3'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/percorso-giornaliero/sedi"
+        self.handler.route_locations_page(admin)
+        admin_page = rendered[-1]
+        self.assertIn('class="route-location-address"', admin_page)
+        self.assertIn('class="route-location-lat"', admin_page)
+        self.assertIn('class="route-location-lng"', admin_page)
+        self.assertIn('document.addEventListener("DOMContentLoaded",routeLocationsInitAddressLookups)', admin_page)
+        self.assertIn("function routeLocationsInitAddressLookups()", app.APP_JS)
+        self.assertIn("/api/geocode/indirizzo?q=", app.APP_JS)
+        rendered.clear()
+        self.handler.route_locations_page(operator)
+        operator_page = rendered[-1]
+        self.assertNotIn('class="route-location-address"', operator_page)
+        # la funzione condivisa resta definita in APP_JS per tutti (come ogni
+        # altra funzione JS dell'app), ma per un non-admin non viene mai
+        # invocata: nessuno <script> di attivazione nella pagina.
+        self.assertNotIn('document.addEventListener("DOMContentLoaded",routeLocationsInitAddressLookups)', operator_page)
 
     def test_save_veterinarian_hours_persists_weekly_schedule_and_service_minutes(self):
         with app.db() as conn:
@@ -9776,7 +9955,11 @@ class PetParadiseTests(unittest.TestCase):
 
     # ---- Percorso giornaliero: redesign UX/UI (FAB, bottom sheet, popup rapido) --
 
-    def test_calendar_page_shows_route_fab_instead_of_wide_button(self):
+    def test_calendar_page_shows_route_edge_button_below_day_cards(self):
+        # richiesta dell'utente: il tasto Percorso non e' piu' una piccola
+        # icona rotonda nella toolbar in alto, ma un pulsante ovale che
+        # "sbuca" dal bordo destro, subito sotto le card dei giorni e sopra
+        # i filtri/le card di stato (calendar-appt-stats).
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
         rendered = []
@@ -9784,9 +9967,15 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path = "/calendario?vista=giorno&data=2026-08-12"
         self.handler.calendar_page(admin)
         page = rendered[-1]
-        self.assertIn('class="icon-btn route-fab"', page)
+        self.assertNotIn('class="icon-btn route-fab"', page)
+        self.assertIn('class="route-fab-edge"', page)
         self.assertIn("onclick=\"routeOpenSheet('2026-08-12')\"", page)
         self.assertNotIn('calendar-route-link', page)
+        daybar_end = page.index('calendarDaybarNav(1)')
+        edge_button_pos = page.index('route-fab-edge', daybar_end)
+        filters_pos = page.index('calendar-appt-filters', edge_button_pos)
+        stats_pos = page.index('class="calendar-appt-stats', filters_pos)
+        self.assertTrue(daybar_end < edge_button_pos < filters_pos < stats_pos)
 
     def test_calendar_page_includes_route_bottom_sheet_and_quick_popup(self):
         with app.db() as conn:

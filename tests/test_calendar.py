@@ -783,6 +783,77 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertEqual(result["owner_address"], "Via dei Fiori 5, Livorno")
         self.assertIn("form.delivery_address.value=item.owner_address", app.APP_JS)
 
+    def test_calendar_daybar_uses_same_today_active_colors_as_cremation(self):
+        # richiesta dell'utente: stessa colorazione di Programma Cremazioni,
+        # oggi in rosso e gli altri giorni (selezionato) in blu — prima il
+        # Calendario Operativo non aveva alcuna regola CSS per "oggi" (la
+        # classe is-today veniva emessa ma non stilizzata) e "selezionato"
+        # era rosso invece che blu.
+        today = datetime.now().date()
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario?vista=settimana&data={today.isoformat()}"
+        self.handler.calendar_page(admin)
+        page = rendered[-1]
+        self.assertIn(' is-today"', page)
+        self.assertIn('.calendar-daybar-card.active{background:linear-gradient(135deg,#3b82f6,#1d4ed8)', app.CSS)
+        self.assertIn('.calendar-daybar-card.is-today{background:linear-gradient(135deg,#fb4c67,#d9284c)', app.CSS)
+        # la regola "oggi" deve essere dichiarata dopo "selezionato" nel CSS,
+        # cosi' quando una card e' sia oggi che selezionata vince il rosso
+        # (stessa precedenza gia' usata in Programma Cremazioni)
+        self.assertLess(app.CSS.index('.calendar-daybar-card.active{'), app.CSS.index('.calendar-daybar-card.is-today{'))
+
+    def test_calendar_week_stats_drop_unassigned_card_but_month_view_keeps_it(self):
+        # richiesta dell'utente: eliminare la card "Senza incaricato" dalle
+        # statistiche della vista Settimana/Giorno (resta solo Da effettuare
+        # + Completati, griglia a 2 colonne); la vista Mese usa la stessa
+        # classe .calendar-appt-stats per un widget diverso (Ritiri/
+        # Riconsegne/Completati) e non va toccata.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/calendario?vista=settimana&data=2026-08-12"
+        self.handler.calendar_page(admin)
+        body = rendered[-1].split('</style>', 1)[1]  # CSS still styles month view's own card, only check the body
+        self.assertIn('calendar-appt-stats-2col', body)
+        self.assertNotIn('calendar-appt-stat-unassigned', body)
+        self.assertNotIn('Senza incaricato', body)
+        self.assertIn('.calendar-appt-stats.calendar-appt-stats-2col{grid-template-columns:repeat(2,1fr)}', app.CSS)
+        self.handler.path = "/calendario?vista=mese&data=2026-08-12"
+        self.handler.calendar_page(admin)
+        month_page = rendered[-1]
+        self.assertIn('calendar-appt-stat-unassigned', month_page)
+        self.assertIn('Senza incaricato', month_page)
+
+    def test_calendar_operator_filter_is_auto_selected_for_non_admin_and_a_select_for_admin(self):
+        # richiesta dell'utente: niente tendina "Incaricato" da compilare a
+        # mano per un operatore non-admin, il filtro deve gia' essere sul
+        # proprio nome (preso dal login); l'admin mantiene la tendina per
+        # poter controllare la giornata di ciascun operatore.
+        with app.db() as conn:
+            serena = conn.execute("SELECT * FROM users WHERE username='serena'").fetchone()
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/calendario?vista=settimana&data=2026-08-12"
+        self.handler.calendar_page(serena)
+        operator_page = rendered[-1]
+        self.assertIn(f'<input type="hidden" class="calendar-filter-operator" value="{serena["display_name"].lower()}">', operator_page)
+        self.assertNotIn('<select class="calendar-filter-operator"', operator_page)
+        self.handler.calendar_page(admin)
+        admin_page = rendered[-1]
+        self.assertIn('<select class="calendar-filter-operator"', admin_page)
+        self.assertIn('<option value="">Incaricato</option>', admin_page)
+        # il filtro va applicato anche al primo caricamento (non solo al
+        # cambio manuale), altrimenti l'operatore vedrebbe comunque tutti
+        # gli appuntamenti finche' non tocca qualcosa
+        self.assertIn("calendarSelectDay(Number(pages.dataset.initialDayIndex||0),{instant:true});", app.APP_JS)
+        init_fn = app.APP_JS[app.APP_JS.index("function calendarInitDayPages()"):app.APP_JS.index("function calendarSetFilter")]
+        self.assertIn("calendarApplyFilters();", init_fn)
+
     def test_animal_search_payment_summary_uses_saldo_rimanenza_label_for_w_circuit(self):
         stamp = datetime.now().isoformat(timespec="seconds")
         with app.db() as conn:

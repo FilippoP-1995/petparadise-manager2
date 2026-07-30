@@ -760,9 +760,21 @@ def init_db():
             c.executemany(
                 "INSERT INTO company_locations(name,address,created_at,updated_at) VALUES(?,?,?,?)",
                 (
-                    ("Livorno", "", seed_stamp, seed_stamp),
-                    ("Empoli", "", seed_stamp, seed_stamp),
+                    ("Livorno", BRANCHES["Livorno"]["address"], seed_stamp, seed_stamp),
+                    ("Empoli", BRANCHES["Empoli"]["address"], seed_stamp, seed_stamp),
                 ),
+            )
+        # Backfill una tantum: le installazioni create prima di questa
+        # modifica hanno Livorno/Empoli con address='' (il seed originale le
+        # creava vuote), e senza un indirizzo il calcolo del percorso le
+        # rifiuta esplicitamente ("verifica che la sede scelta abbia un
+        # indirizzo configurato") — nessun'altra colonna toccata, e una sede
+        # gia' configurata a mano (anche con un indirizzo diverso) non viene
+        # mai sovrascritta.
+        for branch_name, branch_info in BRANCHES.items():
+            c.execute(
+                "UPDATE company_locations SET address=?,updated_at=? WHERE name=? AND TRIM(COALESCE(address,''))=''",
+                (branch_info["address"], rome_now().isoformat(timespec="seconds"), branch_name),
             )
         client_existing = {row["name"] for row in c.execute("PRAGMA table_info(clients)")}
         if "active" not in client_existing:
@@ -1629,12 +1641,15 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .calendar-daybar-dow{font-size:11px;font-weight:700;color:#9ca7b8;letter-spacing:.04em}
 .calendar-daybar-num{font-size:20px;font-weight:800;color:#f5f7fb;line-height:1.1}
 .calendar-daybar-count{font-size:10px;color:#8a96a8;white-space:nowrap}
-.calendar-daybar-card.active{background:linear-gradient(135deg,#fb4c67,#d9284c);border-color:#fb4c67;box-shadow:0 10px 26px #ef405f4d;transform:translateY(-2px)}
+.calendar-daybar-card.active{background:linear-gradient(135deg,#3b82f6,#1d4ed8);border-color:#3b82f6;box-shadow:0 10px 26px #3b82f64d;transform:translateY(-2px)}
 .calendar-daybar-card.active .calendar-daybar-dow,.calendar-daybar-card.active .calendar-daybar-num,.calendar-daybar-card.active .calendar-daybar-count{color:#fff}
+.calendar-daybar-card.is-today{background:linear-gradient(135deg,#fb4c67,#d9284c);border-color:#fb4c67;box-shadow:0 10px 26px #ef405f4d;transform:translateY(-2px)}
+.calendar-daybar-card.is-today .calendar-daybar-dow,.calendar-daybar-card.is-today .calendar-daybar-num,.calendar-daybar-card.is-today .calendar-daybar-count{color:#fff}
 .calendar-day-pages{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none}
 .calendar-day-pages::-webkit-scrollbar{display:none}
 .calendar-day-page{flex:0 0 100%;scroll-snap-align:start;min-width:0;display:flex;flex-direction:column;gap:14px}
 .calendar-appt-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.calendar-appt-stats.calendar-appt-stats-2col{grid-template-columns:repeat(2,1fr)}
 .calendar-appt-stat{display:flex;flex-direction:column;align-items:center;gap:2px;padding:12px 6px;border-radius:14px;background:#1a2332;border:1px solid #334155}
 .calendar-appt-stat-icon{color:#8a96a8;margin-bottom:2px}
 .calendar-appt-stat b{font-size:19px;font-weight:800;color:#f5f7fb}
@@ -1705,7 +1720,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .balance-wrap{width:min(100%,1320px);max-width:1320px}
 .balance-filters{margin-bottom:18px}
 .balance-filters .fields{grid-template-columns:repeat(3,minmax(0,1fr))}
-.balance-filters-quick{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px;margin-bottom:4px}
+.balance-filters-quick{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin-bottom:4px}
 .balance-date-range{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .balance-date-range input{min-width:0;flex:1 1 130px}
 .balance-date-range span{color:#94a3b8}
@@ -2352,10 +2367,12 @@ button.calendar-tap-card:active,a.calendar-tap-card:active{transform:scale(.985)
 .route-actions-row{display:flex;gap:8px;margin-top:10px}
 .route-actions-row .btn{flex:1}
 .route-stop-card.dragging{box-shadow:0 18px 40px #0009}
-.route-fab{width:46px!important;height:46px!important;border-radius:50%!important;background:linear-gradient(135deg,#fb4c67,#d9284c)!important;border:0!important;color:#fff!important;box-shadow:0 4px 14px #ef405f66,0 0 0 5px #ef405f1f}
-.route-fab:hover{color:#fff!important;box-shadow:0 6px 18px #ef405f80,0 0 0 6px #ef405f2b;transform:translateY(-1px)}
-.route-fab:active{transform:translateY(0) scale(.94)}
-.route-fab svg{width:20px;height:20px}
+.calendar-route-edge-row{display:flex;justify-content:flex-end;margin:10px 0 4px}
+.route-fab-edge{display:inline-flex;align-items:center;gap:7px;height:40px;padding:0 16px 0 14px;border-radius:24px 6px 6px 24px;background:linear-gradient(135deg,#fb4c67,#d9284c);border:0;color:#fff;box-shadow:0 6px 18px #ef405f66,0 0 0 4px #ef405f1f;font-size:12.5px;font-weight:700;cursor:pointer;margin-right:-16px;transition:transform .15s cubic-bezier(.34,1.4,.64,1),box-shadow .2s ease}
+.route-fab-edge:hover{box-shadow:0 8px 22px #ef405f80,0 0 0 5px #ef405f2b}
+.route-fab-edge:active{transform:scale(.96)}
+.route-fab-edge svg{width:18px;height:18px;flex:0 0 auto}
+.route-fab-edge span{white-space:nowrap}
 .route-sheet-backdrop,.route-quick-backdrop{position:fixed;inset:0;z-index:96;background:#020617aa;opacity:0;pointer-events:none;transition:opacity .22s ease}
 .route-sheet{position:fixed;left:50%;bottom:0;z-index:97;width:min(430px,100%);padding:10px 18px calc(20px + var(--safe-bottom));border-radius:22px 22px 0 0;background:#141b28;box-shadow:0 -20px 60px #0009;transform:translate(-50%,100%);transition:transform .32s cubic-bezier(.16,1,.3,1)}
 .route-sheet-handle{width:36px;height:4px;margin:8px auto 12px;border-radius:99px;background:#334155}
@@ -2812,6 +2829,65 @@ function setupZipLookup(){
   [street,city,province].forEach(function(field){ field.addEventListener('input', lookup); field.addEventListener('blur', lookup); });
   zip.addEventListener('input', function(){ if(zip.dataset.autoFilled === '1') zip.dataset.autoFilled='0'; });
   lookup();
+}
+function routeLocationsInitAddressLookups(){
+  // Sedi aziendali: stesso pattern di ricerca gia' usato per clienti/urne/
+  // veterinari (Nominatim, non Google Places — non c'e' alcun widget Places
+  // gia' integrato da riusare — ma stessa esperienza: suggerimenti mentre si
+  // digita, un tap salva indirizzo E coordinate esatte). Un solo listener
+  // gestisce tutte le righe: una per sede esistente, piu' il modulo per
+  // registrarne una nuova.
+  document.querySelectorAll('.route-location-address').forEach(function(input){
+    const field=input.closest('.field');
+    const results=field?field.querySelector('.lookup-results'):null;
+    if(!results) return;
+    const latField=field.querySelector('.route-location-lat');
+    const lngField=field.querySelector('.route-location-lng');
+    const coordsNote=input.closest('form')?.querySelector('.route-location-coords');
+    const fetcher=ppmLookupFetcher();
+    ppmRegisterLookupPanel(input,results);
+    ppmBindLookupEmptyClose(input,results,fetcher);
+    const search=ppmDebounce(async function(){
+      const q=input.value.trim();
+      if(!q){ ppmCloseLookupPanel(results); return; }
+      if(q.length<3){ results.innerHTML=lookupHtmlState('Scrivi almeno 3 caratteri'); ppmOpenLookupPanel(results); return; }
+      results.innerHTML=lookupHtmlState('Ricerca in corso...');
+      ppmOpenLookupPanel(results);
+      const {token,signal}=fetcher.start();
+      try{
+        const res=await fetch(`/api/geocode/indirizzo?q=${encodeURIComponent(q)}`,{headers:{'Accept':'application/json'},signal});
+        const data=await res.json();
+        if(fetcher.stale(token)||input.value.trim()!==q) return;
+        if(!data.ok||!data.results.length){ results.innerHTML=lookupHtmlState(data.ok?'Nessun risultato':'Ricerca non disponibile'); return; }
+        results.innerHTML=data.results.map(function(r,i){
+          return `<button type="button" class="lookup-item" data-route-address-index="${i}"><span>${calendarHtml(r.display_name)}</span></button>`;
+        }).join('');
+        results.onclick=function(e){
+          const btn=e.target.closest('[data-route-address-index]');
+          if(!btn) return;
+          const picked=data.results[Number(btn.dataset.routeAddressIndex)];
+          if(!picked) return;
+          input.value=picked.display_name;
+          if(latField) latField.value=picked.lat;
+          if(lngField) lngField.value=picked.lng;
+          if(coordsNote) coordsNote.textContent=`Coordinate: ${picked.lat.toFixed(5)}, ${picked.lng.toFixed(5)}`;
+          ppmCloseLookupPanel(results);
+        };
+      }catch(error){
+        if(error.name==='AbortError'||fetcher.stale(token)) return;
+        results.innerHTML=lookupHtmlState('Ricerca temporaneamente non disponibile.');
+      }
+    },500);
+    input.addEventListener('input',function(){
+      // l'indirizzo e' cambiato a mano dopo un'eventuale selezione: le
+      // coordinate salvate non sono piu' affidabili finche' non se ne
+      // sceglie una nuova (torna al comportamento di sempre, geocodifica
+      // pigra al primo calcolo percorso).
+      if(latField) latField.value='';
+      if(lngField) lngField.value='';
+      search();
+    });
+  });
 }
 function normalizeUrnSearch(value){
   return String(value||'').toLocaleLowerCase('it').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
@@ -4495,6 +4571,11 @@ function calendarInitDayPages(){
     items.forEach(function(item){calendarDayObserver.observe(item);});
   }
   calendarSelectDay(Number(pages.dataset.initialDayIndex||0),{instant:true});
+  // per un operatore non-admin il campo Incaricato e' un input nascosto
+  // gia' valorizzato col proprio nome (nessuna tendina da compilare): va
+  // applicato subito al caricamento, non solo al cambio manuale, o il primo
+  // caricamento mostrerebbe comunque tutti gli appuntamenti.
+  calendarApplyFilters();
 }
 function calendarSetFilter(btn){
   document.querySelectorAll('.calendar-filter-pill').forEach(function(p){p.classList.remove('active');});
@@ -6692,6 +6773,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/whatsapp-diagnostica": return self.whatsapp_diagnostics(user)
         if path == "/api/clienti/search": return self.api_clients_search(user)
         if path == "/api/cap": return self.api_zip_lookup(user)
+        if path == "/api/geocode/indirizzo": return self.api_address_suggestions(user)
         if path == "/api/veterinari/search": return self.api_veterinarians_search(user)
         if path == "/api/calendario/animali/search": return self.api_calendar_animals_search(user)
         if path == "/api/calendario/pratiche/search": return self.api_calendar_practices_search(user)
@@ -7506,7 +7588,7 @@ class App(BaseHTTPRequestHandler):
             pagination=f'<nav class="balance-pagination" aria-label="Paginazione movimenti">{"".join(pagination_links)}</nav>'
         category_options="".join(
             f'<option value="{val}" {"selected" if (filters.category or "")==val else ""}>{label}</option>'
-            for val,label in (("","Tutte"),("W","W"),("D","D"),("Collaboratori","Collaboratori"))
+            for val,label in (("","Tutti"),("W","W"),("D","D"),("Collaboratori","Collaboratori"))
         )
         method_options="".join(
             f'<option value="{esc(method)}" {"selected" if (filters.payment_method or "")==method else ""}>{esc(method or "Tutti")}</option>'
@@ -7568,12 +7650,12 @@ class App(BaseHTTPRequestHandler):
           <div class="balance-filters-quick">
             <div class="field"><label for="balanceDateFrom">Data</label><div class="balance-date-range"><input id="balanceDateFrom" type="date" name="data_iniziale" value="{esc(filters.date_from or '')}"><span>-</span><input type="date" name="data_finale" value="{esc(filters.date_to or '')}" required></div></div>
             <div class="field"><label for="balanceStatus">Tipo</label><select id="balanceStatus" name="stato">{status_options}</select></div>
+            <div class="field"><label for="balanceCircuit">Circuito</label><select id="balanceCircuit" name="categoria">{category_options}</select></div>
             <div class="field"><label for="balanceSearch">Cerca</label><input id="balanceSearch" type="search" name="ricerca" value="{esc(filters.search)}" placeholder="Pratica, cliente, descrizione…"></div>
           </div>
           <details class="balance-filters-advanced"><summary>Filtri avanzati</summary>
             <div class="fields">
               <div class="field"><label for="balancePeriod">Periodo</label><select id="balancePeriod" name="periodo">{period_options}</select></div>
-              <div class="field"><label for="balanceCategory">Categoria</label><select id="balanceCategory" name="categoria">{category_options}</select></div>
               <div class="field"><label for="balanceCollaborator">Collaboratore</label><select id="balanceCollaborator" name="collaboratore">{collaborator_options}</select></div>
               <div class="field"><label for="balanceMethod">Metodo pagamento</label><select id="balanceMethod" name="metodo">{method_options}</select></div>
               <div class="field"><label for="balanceOperator">Operatore</label><select id="balanceOperator" name="operatore">{operator_options}</select></div>
@@ -8220,13 +8302,22 @@ class App(BaseHTTPRequestHandler):
         def week_day_sort_key(row):return (0 if row["all_day"] else 1,row["start_at"] or "")
         week_days=[start+timedelta(days=i) for i in range(7)]
         selected_index=next((i for i,d in enumerate(week_days) if d.isoformat()==selected),0)
+        # L'operatore non-admin vede sempre e solo il proprio nome: niente
+        # tendina da compilare a mano (il valore e' gia' quello del login),
+        # ma il filtro resta lato client sugli stessi dati (nessuna card e'
+        # mai nascosta lato server), quindi l'admin mantiene la tendina per
+        # poter controllare la giornata di ciascun operatore.
+        if user["role"]=="admin":
+            operator_filter_html=f'''<select class="calendar-filter-operator" onchange="calendarApplyFilters()" aria-label="Filtra per incaricato">
+            <option value="">Incaricato</option>{''.join(f'<option value="{esc(name.lower())}">{esc(name)}</option>' for name in CALENDAR_OPERATORS)}
+          </select>'''
+        else:
+            operator_filter_html=f'<input type="hidden" class="calendar-filter-operator" value="{esc(user["display_name"].lower())}">'
         filter_pills_html=f'''<div class="calendar-appt-filters">
           <button type="button" class="calendar-filter-pill active" data-filter-value="tutte" onclick="calendarSetFilter(this)">Tutti</button>
           <button type="button" class="calendar-filter-pill" data-filter-value="ritiri" onclick="calendarSetFilter(this)">Ritiri</button>
           <button type="button" class="calendar-filter-pill" data-filter-value="riconsegne" onclick="calendarSetFilter(this)">Riconsegne</button>
-          <select class="calendar-filter-operator" onchange="calendarApplyFilters()" aria-label="Filtra per incaricato">
-            <option value="">Incaricato</option>{''.join(f'<option value="{esc(name.lower())}">{esc(name)}</option>' for name in CALENDAR_OPERATORS)}
-          </select>
+          {operator_filter_html}
         </div>'''
         daybar_cards=[];day_pages=[]
         for i,day in enumerate(week_days):
@@ -8241,11 +8332,9 @@ class App(BaseHTTPRequestHandler):
             </button>''')
             pending=sum(1 for r in day_rows if self.calendar_appointment_pending(r))
             done=sum(1 for r in day_rows if self.calendar_appointment_done(r))
-            unassigned=sum(1 for r in day_rows if not r["assigned_user_id"])
-            stats_html=f'''<div class="calendar-appt-stats">
+            stats_html=f'''<div class="calendar-appt-stats calendar-appt-stats-2col">
               <div class="calendar-appt-stat calendar-appt-stat-pending"><span class="calendar-appt-stat-icon">{lucide("clock")}</span><b>{pending}</b><small>Da effettuare</small></div>
               <div class="calendar-appt-stat calendar-appt-stat-done"><span class="calendar-appt-stat-icon">{lucide("check-circle")}</span><b>{done}</b><small>Completati</small></div>
-              <div class="calendar-appt-stat calendar-appt-stat-unassigned"><span class="calendar-appt-stat-icon">{lucide("user")}</span><b>{unassigned}</b><small>Senza incaricato</small></div>
             </div>'''
             sorted_rows=sorted(day_rows,key=week_day_sort_key)
             list_html=''.join(self.calendar_appointment_card(row,client_names=client_names,practice_owner_names=practice_owner_names,color_settings=color_settings,animal_names_by_event=animal_names_by_event,cremation_type_by_event=cremation_type_by_event) for row in sorted_rows) or '<p class="calendar-appt-empty">Nessun appuntamento in programma.</p>'
@@ -8260,6 +8349,7 @@ class App(BaseHTTPRequestHandler):
             <div class="calendar-daybar" id="calendarDaybar">{''.join(daybar_cards)}</div>
             <button type="button" class="calendar-daybar-nav" onclick="calendarDaybarNav(1)" aria-label="Barra giorni successiva">›</button>
           </div>
+          <div class="calendar-route-edge-row"><button type="button" class="route-fab-edge" aria-label="Percorso giornaliero" title="Percorso giornaliero" onclick="routeOpenSheet('{selected}')">{lucide("truck")}<span>Percorso</span></button></div>
           {filter_pills_html}
           <div class="calendar-day-pages" id="calendarDayPages" data-initial-day-index="{selected_index}">{''.join(day_pages)}</div>
         </div>'''
@@ -8366,7 +8456,7 @@ class App(BaseHTTPRequestHandler):
               </form>
             </aside>
           </div>'''
-        body=f'''<main class="wrap calendar-wrap">{route_error_html}<div class="titlebar calendar-main-title"><div>{back_button}<h1>Calendario operativo</h1><p class="sub">Ritiri, riconsegne e promemoria</p></div><div class="calendar-quick-actions"><a class="icon-btn" href="/calendario/cestino" aria-label="Cestino" title="Cestino">{lucide("trash-2")}</a><a class="icon-btn calendar-settings-link" href="/calendario/impostazioni" aria-label="Impostazioni" title="Impostazioni">{lucide("settings")}</a><button type="button" class="icon-btn route-fab" aria-label="Percorso giornaliero" title="Percorso giornaliero" onclick="routeOpenSheet('{selected}')">{lucide("truck")}</button></div></div><nav class="calendar-date-nav"><a class="btn ghost" data-calendar-prev href="{view_url(prev_target)}" aria-label="Periodo precedente">←</a><label class="calendar-date-title"><span>{date_title}</span><input type="date" value="{selected}" onchange="const u=new URL(location.href);u.searchParams.set('data',this.value);location.href=u"></label><a class="btn ghost" data-calendar-next href="{view_url(next_target)}" aria-label="Periodo successivo">→</a><a class="btn ghost calendar-today" href="{view_url(rome_now().date())}">OGGI</a></nav><div class="calendar-toolbar"><nav class="calendar-view-switch">{switch}</nav></div>{content}{filters_html}{preference_script}{route_sheet_html}</main>'''
+        body=f'''<main class="wrap calendar-wrap">{route_error_html}<div class="titlebar calendar-main-title"><div>{back_button}<h1>Calendario operativo</h1><p class="sub">Ritiri, riconsegne e promemoria</p></div><div class="calendar-quick-actions"><a class="icon-btn" href="/calendario/cestino" aria-label="Cestino" title="Cestino">{lucide("trash-2")}</a><a class="icon-btn calendar-settings-link" href="/calendario/impostazioni" aria-label="Impostazioni" title="Impostazioni">{lucide("settings")}</a></div></div><nav class="calendar-date-nav"><a class="btn ghost" data-calendar-prev href="{view_url(prev_target)}" aria-label="Periodo precedente">←</a><label class="calendar-date-title"><span>{date_title}</span><input type="date" value="{selected}" onchange="const u=new URL(location.href);u.searchParams.set('data',this.value);location.href=u"></label><a class="btn ghost" data-calendar-next href="{view_url(next_target)}" aria-label="Periodo successivo">→</a><a class="btn ghost calendar-today" href="{view_url(rome_now().date())}">OGGI</a></nav><div class="calendar-toolbar"><nav class="calendar-view-switch">{switch}</nav></div>{content}{filters_html}{preference_script}{route_sheet_html}</main>'''
         self.send_html(layout("Calendario operativo",body,user))
 
     def calendar_settings(self,user):
@@ -9181,16 +9271,22 @@ class App(BaseHTTPRequestHandler):
         with db() as c:
             locations=c.execute("SELECT * FROM company_locations WHERE active=1 ORDER BY name").fetchall()
         is_admin=user["role"]=="admin"
+        def address_field(loc_id,current_address,current_lat,current_lng):
+            uid=f"loc{loc_id}" if loc_id else "locNew"
+            lat_val="" if current_lat is None else current_lat
+            lng_val="" if current_lng is None else current_lng
+            return f'''<div class="field full lookup"><label for="{uid}Address">Indirizzo</label><input id="{uid}Address" class="route-location-address" name="address" value="{esc(current_address)}" placeholder="Via, civico, città" autocomplete="off" required><div id="{uid}Results" class="lookup-results hidden"></div><input type="hidden" class="route-location-lat" name="lat" value="{lat_val}"><input type="hidden" class="route-location-lng" name="lng" value="{lng_val}"></div>'''
         rows=[]
         for loc in locations:
             coords=f"{loc['lat']:.5f}, {loc['lng']:.5f}" if loc["lat"] is not None and loc["lng"] is not None else "Non ancora geocodificata"
             if is_admin:
-                rows.append(f'''<form method="post" action="/percorso-giornaliero/sedi" class="tablebox" style="padding:10px 12px;margin-bottom:8px"><input type="hidden" name="id" value="{loc['id']}"><div class="fields"><div class="field"><label>Nome sede</label><input name="name" value="{esc(loc['name'])}" required></div><div class="field full"><label>Indirizzo</label><input name="address" value="{esc(loc['address'])}" placeholder="Via, civico, città" required></div></div><p class="sub" style="margin:6px 0">Coordinate: {esc(coords)}</p><button class="btn ghost" type="submit">Salva</button></form>''')
+                rows.append(f'''<form method="post" action="/percorso-giornaliero/sedi" class="tablebox" style="padding:10px 12px;margin-bottom:8px"><input type="hidden" name="id" value="{loc['id']}"><div class="fields"><div class="field"><label>Nome sede</label><input name="name" value="{esc(loc['name'])}" required></div>{address_field(loc['id'],loc['address'],loc['lat'],loc['lng'])}</div><p class="sub route-location-coords" style="margin:6px 0">Coordinate: {esc(coords)}</p><button class="btn ghost" type="submit">Salva</button></form>''')
             else:
                 rows.append(f'''<div class="tablebox" style="padding:10px 12px;margin-bottom:8px"><b>{esc(loc['name'])}</b><p class="sub" style="margin:4px 0">{esc(loc['address']) or 'Indirizzo non ancora configurato'}</p></div>''')
         rows_html=''.join(rows) or '<p class="sub">Nessuna sede configurata.</p>'
-        add_form=f'''<div style="height:14px"></div><section class="section"><h2>Aggiungi sede</h2><form method="post" action="/percorso-giornaliero/sedi"><div class="fields"><div class="field"><label>Nome sede</label><input name="name" placeholder="Es. Firenze" required></div><div class="field full"><label>Indirizzo</label><input name="address" placeholder="Via, civico, città" required></div></div><button class="btn" style="margin-top:12px">Aggiungi sede</button></form></section>''' if is_admin else ''
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Sedi aziendali</h1><p class="sub">Punti di partenza e arrivo disponibili nel Percorso giornaliero. {'' if is_admin else 'Solo gli amministratori possono modificarle.'}</p></div><a class="btn ghost" href="/percorso-giornaliero">Torna al percorso</a></div><section class="section"><h2>Sedi configurate</h2>{rows_html}</section>{add_form}</main>'''
+        add_form=f'''<div style="height:14px"></div><section class="section"><h2>Aggiungi sede</h2><form method="post" action="/percorso-giornaliero/sedi"><div class="fields"><div class="field"><label>Nome sede</label><input name="name" placeholder="Es. Firenze" required></div>{address_field(None,"",None,None)}</div><button class="btn" style="margin-top:12px">Aggiungi sede</button></form></section>''' if is_admin else ''
+        autocomplete_script='<script>document.addEventListener("DOMContentLoaded",routeLocationsInitAddressLookups)</script>' if is_admin else ''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Sedi aziendali</h1><p class="sub">Punti di partenza e arrivo disponibili nel Percorso giornaliero. {'' if is_admin else 'Solo gli amministratori possono modificarle.'}{' Cerca l’indirizzo e scegli un suggerimento: salva anche le coordinate esatte, senza aspettare il primo calcolo percorso.' if is_admin else ''}</p></div><a class="btn ghost" href="/percorso-giornaliero">Torna al percorso</a></div><section class="section"><h2>Sedi configurate</h2>{rows_html}</section>{add_form}{autocomplete_script}</main>'''
         self.send_html(layout("Sedi aziendali",body,user))
 
     def save_route_location(self,user):
@@ -9199,11 +9295,22 @@ class App(BaseHTTPRequestHandler):
         name=f.get("name","").strip()
         address=f.get("address","").strip()
         if not name or not address:return self.redirect("/percorso-giornaliero/sedi")
+        # Se e' stato scelto un suggerimento dalla ricerca indirizzo, le
+        # coordinate arrivano gia' precise nei campi nascosti lat/lng: le
+        # usiamo subito invece di aspettare la geocodifica pigra al primo
+        # calcolo percorso. Se l'indirizzo e' stato digitato a mano (o
+        # modificato dopo aver scelto un suggerimento) i campi restano vuoti
+        # e il comportamento e' quello di sempre: NULL, geocodifica pigra.
+        try:
+            lat=float(f.get("lat") or "")
+            lng=float(f.get("lng") or "")
+        except ValueError:
+            lat=lng=None
         with db() as c:
             if f.get("id"):
-                c.execute("UPDATE company_locations SET name=?,address=?,lat=NULL,lng=NULL,updated_at=? WHERE id=?",(name,address,stamp,int(f["id"])))
+                c.execute("UPDATE company_locations SET name=?,address=?,lat=?,lng=?,updated_at=? WHERE id=?",(name,address,lat,lng,stamp,int(f["id"])))
             else:
-                c.execute("INSERT INTO company_locations(name,address,active,created_at,updated_at) VALUES(?,?,1,?,?)",(name,address,stamp,stamp))
+                c.execute("INSERT INTO company_locations(name,address,lat,lng,active,created_at,updated_at) VALUES(?,?,?,?,1,?,?)",(name,address,lat,lng,stamp,stamp))
         self.redirect("/percorso-giornaliero/sedi")
 
     def route_plan_calculate(self,user):
@@ -11944,6 +12051,12 @@ class App(BaseHTTPRequestHandler):
         except Exception as exc:
             print(f"[CAP_LOOKUP] {type(exc).__name__}: {exc}",flush=True)
             return self.send_json({"ok":True,"zip":""})
+
+    def api_address_suggestions(self,user):
+        if user["role"]!="admin":return self.send_json({"ok":False,"error":"Solo gli amministratori possono modificare le sedi."},403)
+        q=(parse_qs(urlparse(self.path).query).get("q",[""])[0] or "").strip()
+        results=route_service.search_address_suggestions(q,limit=5)
+        return self.send_json({"ok":True,"results":results})
 
     def api_calendar_animals_search(self,user):
         q=(parse_qs(urlparse(self.path).query).get("q",[""])[0] or "").strip()
