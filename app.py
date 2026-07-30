@@ -94,6 +94,7 @@ from notification_service import (
     ensure_notification_schema,
     process_scheduled_notifications, process_calendar_notifications,
     process_daily_summaries, archive_old_notifications, notification_priority,
+    push_bullets,
 )
 from urn_inventory import DEFAULT_URNS
 
@@ -1325,7 +1326,7 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 .dashboard-recent{margin-top:26px}.dashboard-recent .titlebar{margin-bottom:12px}.dashboard-recent .titlebar a{color:#fb7185;display:inline-flex;align-items:center;gap:2px}.recent-practice-archive-arrow{font-size:16px}.recent-practice-list{display:flex;flex-direction:column;gap:8px}.recent-practice-card{display:grid;grid-template-columns:30fr 30fr 32fr 8fr;align-items:center;gap:8px;min-height:88px;padding:16px;border-radius:16px;border:1px solid #334155;border-left:4px solid #64748b;background:#1f2937;cursor:pointer;transition:transform .15s ease,box-shadow .15s ease}.recent-practice-card:hover{transform:translateY(-1px);box-shadow:0 10px 26px #03071240}.recent-practice-card[data-species="avatar-dog"]{border-left-color:#60a5fa}.recent-practice-card[data-species="avatar-cat"]{border-left-color:#4ade80}.recent-practice-card[data-species="avatar-other"]{border-left-color:#c084fc}.recent-practice-animal{display:flex;align-items:center;gap:10px;min-width:0}.recent-practice-avatar{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:19px;flex:0 0 38px}.recent-practice-animal-copy{display:flex;flex-direction:column;gap:2px;min-width:0}.recent-practice-name{font-size:18px;font-weight:700;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.recent-practice-meta{font-size:15px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.recent-practice-date{display:flex;flex-direction:column;gap:2px;min-width:0}.recent-practice-date-value{font-size:16px;font-weight:600;color:#e2e8f0}.recent-practice-owner{display:flex;flex-direction:column;gap:2px;min-width:0}.recent-practice-owner-name{font-size:15px;font-weight:600;color:#e2e8f0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.recent-practice-chevron{display:flex;align-items:center;justify-content:center;color:#64748b}.recent-practice-chevron .icon{width:20px;height:20px}.light-theme .recent-practice-card{background:#fff;border-color:#e2e8f0}.light-theme .recent-practice-name,.light-theme .recent-practice-date-value,.light-theme .recent-practice-owner-name{color:#111827}.light-theme .recent-practice-meta{color:#64748b}.light-theme .recent-practice-chevron{color:#94a3b8}@media(max-width:620px){.recent-practice-card{grid-template-columns:32fr 28fr 32fr 8fr;padding:14px;gap:6px;min-height:90px}.recent-practice-name{font-size:17px}.recent-practice-avatar{width:34px;height:34px;flex:0 0 34px;font-size:17px}}.load-previous-month{display:flex;justify-content:center;padding:8px 0 24px}.load-previous-month .btn{width:auto;min-width:240px}.budget-add{align-self:end;width:auto!important;min-height:42px;margin-top:auto}.budget-layout{display:block}.budget-workspace{display:grid;gap:12px}.budget-row{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(270px,.75fr);gap:16px;padding:12px;border:1px solid #334155;border-radius:13px;background:#11192566}.budget-cell{display:grid;align-content:start;gap:10px;min-width:0}.budget-cell-right .modern-check{min-height:42px}.budget-cell-right .field{min-width:0}.budget-cell:empty{display:none}.economic-estimate{margin-top:20px;padding-top:18px;border-top:1px solid #3b4658}.economic-estimate h3{margin:0 0 12px;font-size:15px}.catalog-summary-form{display:grid;gap:8px;margin-top:9px}.catalog-summary-form .modern-check{min-height:40px;padding:8px 10px}.light-theme .budget-row{border-color:#cbd5e1;background:#f8fafc}.light-theme .economic-estimate{border-color:#cbd5e1}
 *:focus-visible{outline:3px solid #fb7185!important;outline-offset:3px}.light-theme{background:#eef2f7;color:#111827}.light-theme .app-header,.light-theme .top{background:#fff;color:#111827}.light-theme .dashboard-panel,.light-theme .metric-card,.light-theme .payment-card,.light-theme .section,.light-theme .tablebox{background:#fff;color:#111827}.light-theme .header-search,.light-theme .icon-btn,.light-theme .header-actions time{background:#f8fafc;color:#111827}.light-theme .welcome p,.light-theme .metric-card em,.light-theme .payment-card em,.light-theme .activity-item small,.light-theme .activity-item time{color:#64748b}
 @media(max-width:1100px){.dashboard-states,.dashboard-payments{grid-template-columns:repeat(2,1fr)}.header-actions time{display:none}}
-@media(max-width:900px){body{min-height:100dvh;padding-bottom:calc(82px + var(--safe-bottom))}#main-content{min-height:100dvh;padding-left:var(--safe-left);padding-right:var(--safe-right)}.top{position:fixed;left:calc(10px + var(--safe-left));top:var(--safe-top);width:60px;height:60px;min-height:0;padding:0;margin:0;border:0;box-shadow:none;z-index:41;display:flex;align-items:center;justify-content:center}body .top{background:transparent}.top .nav{display:none}.top .brand{padding:0;gap:0}.brand-copy{display:inline}.brand-logo{width:44px;height:44px;padding:7px;box-sizing:border-box;border-radius:50%;object-fit:contain;background:linear-gradient(160deg,#1c2635,#121a27);border:1px solid #2b3849;box-shadow:0 8px 20px #05070f55}.app-header{position:fixed;left:calc(10px + var(--safe-left));right:calc(10px + var(--safe-right));top:var(--safe-top);width:auto;height:60px;z-index:40;display:flex;align-items:center;padding:0 8px 0 60px;border:1px solid #2b3849;border-radius:26px;box-shadow:0 16px 38px #05070f66;backdrop-filter:blur(20px)}body .app-header{background:linear-gradient(160deg,#1c2635f5,#121a27f5);border-color:#2b3849}.app-header .header-actions{display:flex;align-items:center;gap:8px;width:100%}.header-actions time,.header-new span{display:none}.app-header .header-search{position:static;display:flex;flex:1;min-width:0;align-items:center;gap:9px;height:44px;padding:0 15px;border-radius:22px;background:#0e1622;border:1px solid #263246;transition:border-color .2s ease,background-color .2s ease}.app-header .header-search:focus-within{border-color:#ef405f70;background:#111b28}.app-header .header-search .icon{width:17px;height:17px;flex:0 0 17px;color:#7c8aa0}.app-header .header-search input{flex:1;min-width:0;padding:0;background:transparent;border:0;color:#e7ecf3;font-size:16px}.app-header .header-search input::placeholder{color:#69788f}.app-header .icon-btn,.app-header .header-new{flex:0 0 auto;width:42px;height:42px;min-height:0;padding:0;border-radius:21px;border:1px solid #263246;background:#0e1622;box-shadow:0 6px 16px #05070f40;color:#8592a6;transition:transform .15s cubic-bezier(.34,1.4,.64,1),border-color .2s ease,color .2s ease}.app-header .icon-btn:hover{color:#e7ecf3;border-color:#3a4a60}.app-header .icon-btn:active,.app-header .header-new:active{transform:scale(.92)}.app-header .header-new{background:linear-gradient(135deg,#fb4c67,#d9284c);border-color:transparent;color:#fff;box-shadow:0 8px 20px #ef405f55}.app-header .icon-btn .notification-badge{min-width:16px;height:16px;padding:0 4px;font-size:9.5px;transform:translate(11px,-11px);box-shadow:0 0 0 2px #0e1622}.wrap{margin-left:0;padding:calc(86px + var(--safe-top)) 14px 22px}.bottom-nav{position:fixed;display:grid;grid-template-columns:repeat(5,1fr);align-items:end;left:calc(10px + var(--safe-left));right:calc(10px + var(--safe-right));bottom:calc(10px + var(--safe-bottom));z-index:90;height:68px;padding:0;border-radius:30px;background:linear-gradient(160deg,#1c2635f5,#121a27f5);border:1px solid #2b3849;box-shadow:0 16px 38px #05070f66;backdrop-filter:blur(20px)}.bottom-nav:before{content:'';position:absolute;top:0;left:50%;width:200px;height:40px;transform:translateX(-50%);background:#172131;z-index:1;clip-path:path('M54.08,0 A14,14 0 0 1 67.47,9.92 A34,34 0 0 1 100,34 A34,34 0 0 1 132.53,9.92 A14,14 0 0 1 145.92,0 Z')}.light-theme .bottom-nav:before{background:#eef2f7}.bottom-nav a,.bottom-nav button{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border:0;background:transparent;color:#8592a6;font-size:10.5px;font-weight:600;padding-bottom:11px;transition:color .25s ease,transform .15s cubic-bezier(.34,1.4,.64,1)}.bottom-nav a:active,.bottom-nav button:active{transform:scale(.92)}.bottom-nav .icon{width:21px;height:21px;transition:transform .15s ease}.bottom-nav a:first-child{color:#fb7185}.bottom-nav .bottom-new{position:relative;align-self:end;z-index:3;width:56px;height:56px;margin:0 auto 6px;border-radius:50%;background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;box-shadow:0 10px 26px #ef405f7a,0 0 0 7px #ef405f1f;transform:translateY(-20px);transition:transform .18s cubic-bezier(.34,1.4,.64,1),box-shadow .2s ease}.bottom-nav .bottom-new:active{transform:translateY(-20px) scale(.92)}.bottom-new span{display:none}.more-backdrop{position:fixed;display:block;inset:0;z-index:94;background:#020617cc;opacity:0;pointer-events:none;transition:opacity .25s ease}.more-menu{position:fixed;display:flex;flex-direction:column;left:calc(10px + var(--safe-left));right:calc(10px + var(--safe-right));bottom:calc(88px + var(--safe-bottom));z-index:95;max-height:76dvh;padding:20px 16px;border:1px solid #ffffff1a;border-radius:30px;background:linear-gradient(165deg,#171f2ef2,#0e141ff5);box-shadow:0 30px 90px #000a,inset 0 0 0 1px #ffffff0d;backdrop-filter:blur(24px);overflow:auto;transform:translateY(30px) scale(.96);opacity:0;pointer-events:none;transition:transform .28s cubic-bezier(.22,1,.36,1),opacity .22s ease}
+@media(max-width:900px){body{min-height:100dvh;padding-bottom:calc(82px + var(--safe-bottom))}#main-content{min-height:100dvh;padding-left:var(--safe-left);padding-right:var(--safe-right)}.top{position:fixed;left:calc(10px + var(--safe-left));top:var(--safe-top);width:60px;height:60px;min-height:0;padding:0;margin:0;border:0;box-shadow:none;z-index:41;display:flex;align-items:center;justify-content:center}body .top{background:transparent}.top .nav{display:none}.top .brand{padding:0;gap:0}.brand-copy{display:inline}.brand-logo{width:44px;height:44px;padding:7px;box-sizing:border-box;border-radius:50%;object-fit:contain;background:linear-gradient(160deg,#1c2635,#121a27);border:1px solid #2b3849;box-shadow:0 8px 20px #05070f55}.app-header{position:fixed;left:calc(10px + var(--safe-left));right:calc(10px + var(--safe-right));top:var(--safe-top);width:auto;height:60px;z-index:40;display:flex;align-items:center;padding:0 8px 0 60px;border:1px solid #2b3849;border-radius:26px;box-shadow:0 16px 38px #05070f66;backdrop-filter:blur(20px)}body .app-header{background:linear-gradient(160deg,#1c2635f5,#121a27f5);border-color:#2b3849}.app-header .header-actions{display:flex;align-items:center;gap:8px;width:100%}.header-actions time,.header-new span{display:none}.app-header .header-search{position:static;display:flex;flex:1;min-width:0;align-items:center;gap:9px;height:44px;padding:0 15px;border-radius:22px;background:#0e1622;border:1px solid #263246;transition:border-color .2s ease,background-color .2s ease}.app-header .header-search:focus-within{border-color:#ef405f70;background:#111b28}.app-header .header-search .icon{width:17px;height:17px;flex:0 0 17px;color:#7c8aa0}.app-header .header-search input{flex:1;min-width:0;padding:0;background:transparent;border:0;color:#e7ecf3;font-size:16px}.app-header .header-search input::placeholder{color:#69788f}.app-header .icon-btn,.app-header .header-new{flex:0 0 auto;width:42px;height:42px;min-height:0;padding:0;border-radius:21px;border:1px solid #263246;background:#0e1622;box-shadow:0 6px 16px #05070f40;color:#8592a6;transition:transform .15s cubic-bezier(.34,1.4,.64,1),border-color .2s ease,color .2s ease}.app-header .icon-btn:hover{color:#e7ecf3;border-color:#3a4a60}.app-header .icon-btn:active,.app-header .header-new:active{transform:scale(.92)}.app-header .header-new{background:linear-gradient(135deg,#fb4c67,#d9284c);border-color:transparent;color:#fff;box-shadow:0 8px 20px #ef405f55}.app-header .icon-btn .notification-badge{min-width:16px;height:16px;padding:0 4px;font-size:9.5px;transform:translate(11px,-11px);box-shadow:0 0 0 2px #0e1622}.wrap{margin-left:0;padding:calc(86px + var(--safe-top)) 14px calc(96px + var(--safe-bottom))}.bottom-nav{position:fixed;display:grid;grid-template-columns:repeat(5,1fr);align-items:end;left:calc(10px + var(--safe-left));right:calc(10px + var(--safe-right));bottom:calc(10px + var(--safe-bottom));z-index:90;height:68px;padding:0;border-radius:30px;background:linear-gradient(160deg,#1c2635f5,#121a27f5);border:1px solid #2b3849;box-shadow:0 16px 38px #05070f66;backdrop-filter:blur(20px)}.bottom-nav:before{content:'';position:absolute;top:0;left:50%;width:200px;height:40px;transform:translateX(-50%);background:#172131;z-index:1;clip-path:path('M54.08,0 A14,14 0 0 1 67.47,9.92 A34,34 0 0 1 100,34 A34,34 0 0 1 132.53,9.92 A14,14 0 0 1 145.92,0 Z')}.light-theme .bottom-nav:before{background:#eef2f7}.bottom-nav a,.bottom-nav button{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border:0;background:transparent;color:#8592a6;font-size:10.5px;font-weight:600;padding-bottom:11px;transition:color .25s ease,transform .15s cubic-bezier(.34,1.4,.64,1)}.bottom-nav a:active,.bottom-nav button:active{transform:scale(.92)}.bottom-nav .icon{width:21px;height:21px;transition:transform .15s ease}.bottom-nav a:first-child{color:#fb7185}.bottom-nav .bottom-new{position:relative;align-self:end;z-index:3;width:56px;height:56px;margin:0 auto 6px;border-radius:50%;background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;box-shadow:0 10px 26px #ef405f7a,0 0 0 7px #ef405f1f;transform:translateY(-20px);transition:transform .18s cubic-bezier(.34,1.4,.64,1),box-shadow .2s ease}.bottom-nav .bottom-new:active{transform:translateY(-20px) scale(.92)}.bottom-new span{display:none}.more-backdrop{position:fixed;display:block;inset:0;z-index:94;background:#020617cc;opacity:0;pointer-events:none;transition:opacity .25s ease}.more-menu{position:fixed;display:flex;flex-direction:column;left:calc(10px + var(--safe-left));right:calc(10px + var(--safe-right));bottom:calc(88px + var(--safe-bottom));z-index:95;max-height:76dvh;padding:20px 16px;border:1px solid #ffffff1a;border-radius:30px;background:linear-gradient(165deg,#171f2ef2,#0e141ff5);box-shadow:0 30px 90px #000a,inset 0 0 0 1px #ffffff0d;backdrop-filter:blur(24px);overflow:auto;transform:translateY(30px) scale(.96);opacity:0;pointer-events:none;transition:transform .28s cubic-bezier(.22,1,.36,1),opacity .22s ease}
 .more-open .more-menu{pointer-events:auto}
 .more-title{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;padding:0 4px}
 .more-title b{display:block;font-size:23px;font-weight:800;letter-spacing:-.01em}
@@ -2512,15 +2513,25 @@ APP_JS = r"""
     hidden=next;
     document.body.classList.toggle('ppm-bars-hidden',hidden);
   }
+  // A fondo pagina il rilascio del dito su iOS produce micro-correzioni di
+  // scrollY (assestamento del rimbalzo elastico/momentum): senza questa
+  // protezione bastano pochi px verso l'alto per far riapparire la barra
+  // proprio mentre l'utente sta per toccare l'ultimo pulsante, nascondendolo
+  // di nuovo un istante dopo averlo visto. Vicino al fondo reale della
+  // pagina la barra puo' quindi nascondersi normalmente scorrendo in giu',
+  // ma non viene piu' fatta ricomparire da un piccolo rimbalzo all'indietro.
+  const BOTTOM_GUARD=32;
   function ppmUpdateBarsOnScroll(){
     ticking=false;
     if(!mq.matches){ppmSetBarsHidden(false);lastY=Math.max(0,window.scrollY||0);return;}
     const y=Math.max(0,window.scrollY||document.documentElement.scrollTop||0);
     if(y<=4){ppmSetBarsHidden(false);lastY=y;return;}
     if(ppmBarsBusy()){lastY=y;return;}
+    const maxScroll=Math.max(0,document.documentElement.scrollHeight-window.innerHeight);
+    const nearBottom=y>=maxScroll-BOTTOM_GUARD;
     const delta=y-lastY;
     if(delta>THRESHOLD){ppmSetBarsHidden(true);lastY=y;}
-    else if(delta<-THRESHOLD){ppmSetBarsHidden(false);lastY=y;}
+    else if(delta<-THRESHOLD&&!nearBottom){ppmSetBarsHidden(false);lastY=y;}
   }
   window.addEventListener('scroll',function(){
     if(!ticking){ticking=true;requestAnimationFrame(ppmUpdateBarsOnScroll);}
@@ -6046,6 +6057,17 @@ def cremation_cycle_next_slot(c, cycle_date):
     start = cremation_time_add(last["planned_end"], CREMATION_CYCLE_GAP_MIN) if last else CREMATION_DAY_START
     end = cremation_time_add(start, CREMATION_CYCLE_DURATION_MIN)
     return start, end
+
+
+def cremation_notify_cycle_waiting(c,user_id,cycle_id,cycle_date,planned_start,planned_end):
+    day_cycles=[row["id"] for row in c.execute(
+        "SELECT id FROM cremation_cycles WHERE cycle_date=? ORDER BY planned_start ASC,id ASC",(cycle_date,)
+    ).fetchall()]
+    cycle_number=day_cycles.index(cycle_id)+1 if cycle_id in day_cycles else "?"
+    animal_count=c.execute("SELECT COUNT(*) n FROM practices WHERE cremation_cycle_id=? AND (deleted_at IS NULL OR deleted_at='')",(cycle_id,)).fetchone()["n"]
+    body=push_bullets(f"{planned_start} → {planned_end}",f"{animal_count} animale" if animal_count==1 else f"{animal_count} animali")
+    emit_notification(c,"cremation_cycle_waiting",f"Ciclo {cycle_number} in attesa",body,
+                       actor_user_id=user_id,payload={"url":f"/programma-cremazioni?data={cycle_date}"},db_path=DB_PATH)
 
 
 def kg_it(value):
@@ -10273,6 +10295,7 @@ class App(BaseHTTPRequestHandler):
                 cremation_log_status_change(c,practice_id,practice["status"],"In programma",user["id"],stamp)
                 if assisted_cremation_label(practice):
                     c.execute("UPDATE practices SET owner_notified_status='da_avvisare',owner_notified_at=NULL,owner_notified_by=NULL WHERE id=?",(practice_id,))
+                cremation_notify_cycle_waiting(c,user["id"],cycle_id,cycle_date,start,end)
         return self.send_json({"ok":True,"cycle_id":cycle_id})
 
     def cremation_assign_to_cycle(self,user,cycle_id):
@@ -10280,7 +10303,7 @@ class App(BaseHTTPRequestHandler):
         practice_id=(f.get("practice_id") or "").strip()
         stamp=now()
         with db() as c:
-            cycle=c.execute("SELECT id,status FROM cremation_cycles WHERE id=?",(cycle_id,)).fetchone()
+            cycle=c.execute("SELECT id,status,cycle_date,planned_start,planned_end FROM cremation_cycles WHERE id=?",(cycle_id,)).fetchone()
             if not cycle:return self.send_json({"ok":False,"error":"Ciclo non trovato"},404)
             if cycle["status"]=="completato":
                 return self.send_json({"ok":False,"error":"Il ciclo è già completato."},409)
@@ -10296,6 +10319,7 @@ class App(BaseHTTPRequestHandler):
                 c.execute("UPDATE practices SET owner_notified_status='da_avvisare',owner_notified_at=NULL,owner_notified_by=NULL WHERE id=?",(practice_id,))
             if cycle["status"]=="pianificato":
                 c.execute("UPDATE cremation_cycles SET status='in_attesa',updated_at=? WHERE id=?",(stamp,cycle_id))
+                cremation_notify_cycle_waiting(c,user["id"],cycle_id,cycle["cycle_date"],cycle["planned_start"],cycle["planned_end"])
         return self.send_json({"ok":True})
 
     def cremation_start_cycle(self,user,cycle_id):
@@ -11005,7 +11029,7 @@ class App(BaseHTTPRequestHandler):
             c.execute("INSERT INTO article_orders(article_id,ordered_by,created_at) VALUES(?,?,?)",(article_id,user["id"],stamp))
             reminder_id=ensure_reminder(c,reminder_type="product_reorder",entity_key=f"article:{article_id}",
                             title=f"Riordinare: {article['name']}",url=f"/prodotti#article-{article_id}",stamp=stamp)
-            emit_notification(c,"article_ordered","📦 Prodotto da ordinare",f'{article["name"]}\nRichiesto da {user["display_name"]}',actor_user_id=user["id"],payload={"url":"/prodotti","action_url":f"/promemoria/{reminder_id}/completa","action_label":"Segna come ordinato"},db_path=DB_PATH)
+            emit_notification(c,"article_ordered","Prodotto da ordinare",push_bullets(article["name"],f'da {user["display_name"]}'),actor_user_id=user["id"],payload={"url":"/","action_url":f"/promemoria/{reminder_id}/completa","action_label":"Segna come ordinato"},db_path=DB_PATH)
         self.redirect("/prodotti")
 
     def complete_reminder(self,user,reminder_id):
@@ -11516,7 +11540,7 @@ class App(BaseHTTPRequestHandler):
         if not count:return self.send_json({"ok":False,"error":"Nessun dispositivo registrato. Premi prima Abilita notifiche."},400)
         if not os.environ.get("VAPID_PRIVATE_KEY"):return self.send_json({"ok":False,"error":"VAPID_PRIVATE_KEY non configurata sul server."},503)
         def send_later():
-            with db() as c: emit_notification(c,"push_test","🔔 Test Pet Paradise","La notifica push funziona anche con la PWA chiusa.",actor_user_id=user["id"],target_user_ids=[user["id"]],payload={"url":"/notifiche"},db_path=DB_PATH)
+            with db() as c: emit_notification(c,"push_test","Test Pet Paradise","La notifica push funziona anche con la PWA chiusa.",actor_user_id=user["id"],target_user_ids=[user["id"]],payload={"url":"/notifiche"},db_path=DB_PATH)
         timer=threading.Timer(10,send_later); timer.daemon=True; timer.start()
         return self.send_json({"ok":True,"message":"Test programmato tra 10 secondi. Chiudi ora la PWA."})
 
@@ -13077,12 +13101,12 @@ class App(BaseHTTPRequestHandler):
                     self.cancel_whatsapp_scheduled(c,p["id"],user_id,"Annullato perché è stato inviato manualmente",message_type=msg["message_type"])
                     c.execute("UPDATE whatsapp_messages SET status='accettato_da_meta', updated_at=? WHERE id=?",(sent_at,msg_id))
                 owner=f'{p["owner_first_name"] or ""} {p["owner_last_name"] or ""}'.strip() or p["owner_company"] or "Cliente non indicato"
-                emit_notification(c,"whatsapp_sent","📲 Messaggio WhatsApp inviato",owner,p["id"],user_id,{"url":"/conversazioni-whatsapp"},db_path=DB_PATH)
+                emit_notification(c,"whatsapp_sent","WhatsApp inviato",owner,p["id"],user_id,{"url":"/conversazioni-whatsapp"},db_path=DB_PATH)
                 if not manual:
                     if is_catalog:
-                        emit_notification(c,"catalog_sent","📖 Catalogo inviato",owner,p["id"],user_id,db_path=DB_PATH)
+                        emit_notification(c,"catalog_sent","Catalogo inviato",owner,p["id"],user_id,db_path=DB_PATH)
                     else:
-                        emit_notification(c,"thank_you_sent","💚 Messaggio di ringraziamento inviato",owner,p["id"],user_id,{"url":f'/pratiche/{p["id"]}'},db_path=DB_PATH)
+                        emit_notification(c,"thank_you_sent","Ringraziamento inviato",owner,p["id"],user_id,{"url":f'/pratiche/{p["id"]}'},db_path=DB_PATH)
             print(f"[WHATSAPP] pratica_id={p['id']} message_row={msg_id} esito=ACCETTATO_DA_META http={http_status} message_id={message_id} risposta={response_body}", flush=True)
             return True, f"Accettato da Meta. Message ID: {message_id or 'non restituito'}"
         except urllib.error.HTTPError as exc:
@@ -13186,7 +13210,7 @@ class App(BaseHTTPRequestHandler):
             print(f"[WHATSAPP_CRON] run_id={run_id} errore={error}\n{traceback.format_exc()}",flush=True)
             with db() as c:
                 c.execute("UPDATE whatsapp_cron_runs SET finished_at=?,status='fallito',error=? WHERE id=?",(whatsapp_now(),error,run_id))
-                emit_notification(c,"whatsapp_cron_error","❌ Errore Cron WhatsApp","Controlla la diagnostica WhatsApp.",payload={"url":"/whatsapp-diagnostica"},db_path=DB_PATH)
+                emit_notification(c,"whatsapp_cron_error","Errore Cron WhatsApp","Controlla la diagnostica WhatsApp.",payload={"url":"/whatsapp-diagnostica"},db_path=DB_PATH)
             return self.send_json({"ok":False,"error":"Errore durante il cron"},500)
         with db() as c:
             c.execute("UPDATE whatsapp_cron_runs SET finished_at=?,status='completato',processed=? WHERE id=?",(whatsapp_now(),len(results),run_id))
@@ -13776,11 +13800,10 @@ class App(BaseHTTPRequestHandler):
             self.sync_voucher(c,pid,d)
             self.apply_used_voucher(c,pid,d,user["id"])
             c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"Creazione pratica",initial,user["id"],stamp))
-            owner=" ".join(x for x in (d.get("owner_first_name"),d.get("owner_last_name")) if x).strip() or d.get("owner_company") or "Cliente non indicato"
-            weight_line=f'\n⚖️ {d.get("estimated_weight")} kg' if d.get("estimated_weight") else ""
-            emit_notification(c,"practice_created","🐾 Nuova pratica",f'{owner}\n{d.get("animal_name") or number}{weight_line}\n📍 {d.get("destination_branch") or ""}',pid,user["id"],db_path=DB_PATH)
+            weight_part=f'{d.get("estimated_weight")} kg' if d.get("estimated_weight") else None
+            emit_notification(c,"practice_created","Nuova pratica",push_bullets(d.get("animal_name") or number,weight_part,d.get("destination_branch") or None),pid,user["id"],db_path=DB_PATH)
             if d.get("catalog_sent")=="Si":
-                emit_notification(c,"catalog_sent","📖 Catalogo inviato",f'{number} · {d.get("animal_name") or "Animale non indicato"}',pid,user["id"],db_path=DB_PATH)
+                emit_notification(c,"catalog_sent","Catalogo inviato",push_bullets(number,d.get("animal_name")),pid,user["id"],db_path=DB_PATH)
             if d.get("send_catalog")=="Si":
                 self.schedule_whatsapp_catalog(c,pid,user["id"])
             if calendar_event:
@@ -14206,15 +14229,18 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                     generate_ddt(practice_for_ddt(c,p_for_ddt), ASSETS / "DCS_NUOVO.pdf", DDT_DIR / p_for_ddt["ddt_pdf"])
             if not changes and not signature_changed:
                 c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"Dati verificati","Nessuna variazione ai dati",user["id"],stamp))
-            emit_notification(c,"practice_updated","✏️ Pratica modificata",f'{previous["practice_number"]} · {d.get("animal_name") or "Animale non indicato"}',pid,user["id"],db_path=DB_PATH)
+            emit_notification(c,"practice_updated","Pratica modificata",push_bullets(previous["practice_number"],d.get("animal_name")),pid,user["id"],db_path=DB_PATH)
             if previous["status"]!=requested_status:
                 if previous["status"]=="Consegnato" and requested_status!="Consegnato": self.cancel_whatsapp_scheduled(c,pid,user["id"],"Pratica spostata da Consegnato")
                 elif requested_status=="Consegnato": self.schedule_whatsapp_thanks(c,pid,user["id"])
-                if requested_status=="Consegnato": emit_notification(c,"practice_delivered","📦 Pratica consegnata",f'{d.get("animal_name") or previous["practice_number"]}\nCliente: {d.get("owner_first_name","")} {d.get("owner_last_name","")}',pid,user["id"],db_path=DB_PATH)
+                if requested_status=="Consegnato":
+                    delivered_owner=f'{d.get("owner_first_name","")} {d.get("owner_last_name","")}'.strip()
+                    emit_notification(c,"practice_delivered","Pratica consegnata",push_bullets(d.get("animal_name") or previous["practice_number"],delivered_owner or None),pid,user["id"],db_path=DB_PATH)
             if (previous["payment_status"] or "Da saldare") != d["payment_status"] and d["payment_status"]=="Pagato":
-                emit_notification(c,"payment_received","💰 Pagamento ricevuto",f'{d.get("owner_first_name","")} {d.get("owner_last_name","")}\n{money_it(effective_total(d))}',pid,user["id"],db_path=DB_PATH)
+                payment_owner=f'{d.get("owner_first_name","")} {d.get("owner_last_name","")}'.strip()
+                emit_notification(c,"payment_received","Pagamento ricevuto",push_bullets(payment_owner or None,money_it(effective_total(d))),pid,user["id"],db_path=DB_PATH)
             if previous["catalog_sent"]!="Si" and d.get("catalog_sent")=="Si":
-                emit_notification(c,"catalog_sent","📖 Catalogo inviato",f'{previous["practice_number"]} · {d.get("animal_name") or "Animale non indicato"}',pid,user["id"],db_path=DB_PATH)
+                emit_notification(c,"catalog_sent","Catalogo inviato",push_bullets(previous["practice_number"],d.get("animal_name")),pid,user["id"],db_path=DB_PATH)
             if (previous["send_catalog"] or "")!="Si" and d.get("send_catalog")=="Si":
                 self.schedule_whatsapp_catalog(c,pid,user["id"])
             elif (previous["send_catalog"] or "")=="Si" and d.get("send_catalog")!="Si":
@@ -14296,7 +14322,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 self.cancel_whatsapp_scheduled(c,pid,user["id"],"INVIARE CATALOGO deselezionato prima dell'invio",message_type="catalogo")
             if new_sent and current["catalog_sent"]!="Si":
                 practice=c.execute("SELECT practice_number,animal_name FROM practices WHERE id=?",(pid,)).fetchone()
-                emit_notification(c,"catalog_sent","📖 Catalogo inviato",f'{practice["practice_number"]} · {practice["animal_name"] or "Animale non indicato"}',pid,user["id"],db_path=DB_PATH)
+                emit_notification(c,"catalog_sent","Catalogo inviato",push_bullets(practice["practice_number"],practice["animal_name"]),pid,user["id"],db_path=DB_PATH)
         if ajax:return self.send_json({"ok":True,"send_catalog":new_send,"catalog_sent":new_sent})
         self.redirect(safe_return_path(f.get("practice_view"),f"/pratiche/{pid}"))
 
@@ -14357,9 +14383,11 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             elif old["status"] != "Consegnato" and new == "Consegnato":
                 self.schedule_whatsapp_thanks(c,pid,user["id"])
             if old["status"]!=new and new=="Consegnato":
-                emit_notification(c,"practice_delivered","📦 Pratica consegnata",f'{old["animal_name"] or old["practice_number"]}\nCliente: {(old["owner_first_name"] or "")} {(old["owner_last_name"] or "")}',pid,user["id"],db_path=DB_PATH)
+                delivered_owner=f'{(old["owner_first_name"] or "")} {(old["owner_last_name"] or "")}'.strip()
+                emit_notification(c,"practice_delivered","Pratica consegnata",push_bullets(old["animal_name"] or old["practice_number"],delivered_owner or None),pid,user["id"],db_path=DB_PATH)
             if old_payment!=payment and payment=="Pagato":
-                emit_notification(c,"payment_received","💰 Pagamento ricevuto",f'{(old["owner_first_name"] or "")} {(old["owner_last_name"] or "")}\n{money_it(effective_total(old))}',pid,user["id"],db_path=DB_PATH)
+                payment_owner=f'{(old["owner_first_name"] or "")} {(old["owner_last_name"] or "")}'.strip()
+                emit_notification(c,"payment_received","Pagamento ricevuto",push_bullets(payment_owner or None,money_it(effective_total(old))),pid,user["id"],db_path=DB_PATH)
         self.redirect(safe_return_path(f.get("practice_view"),f"/pratiche/{pid}"))
 
     def save_payment_macroarea(self,user,pid):
@@ -14519,7 +14547,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             )
         if new_status=="Pagato" and old_status!="Pagato":
             owner=f'{practice["owner_first_name"] or ""} {practice["owner_last_name"] or ""}'.strip()
-            emit_notification(c,"payment_received","💰 Pagamento ricevuto",f'{owner}\n{money_it(money_value(amount))}',pid,user["id"],db_path=DB_PATH)
+            emit_notification(c,"payment_received","Pagamento ricevuto",push_bullets(owner or None,money_it(money_value(amount))),pid,user["id"],db_path=DB_PATH)
         return None
 
     def remove_payment_macroarea(self,user,pid):
@@ -14671,7 +14699,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,"Pagamento rapido",old,f'{payment}' + (f' · {money_it(money_value(amount))}' if old!=payment and amount else ''),user["id"],stamp))
             if payment=="Pagato" and old!="Pagato":
                 owner=f'{row["owner_first_name"] or ""} {row["owner_last_name"] or ""}'.strip()
-                emit_notification(c,"payment_received","💰 Pagamento ricevuto",f'{owner}\n{money_it(money_value(amount))}',pid,user["id"],db_path=DB_PATH)
+                emit_notification(c,"payment_received","Pagamento ricevuto",push_bullets(owner or None,money_it(money_value(amount))),pid,user["id"],db_path=DB_PATH)
         if ajax:return self.send_json({"ok":True,"payment_method":method,"payment_status":payment})
         return self.redirect(safe_return_path(form.get("return_to") or self.headers.get("Referer"),"/"))
 
@@ -14713,7 +14741,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,"Cambio stato rapido",old["status"],new,user["id"],stamp))
                 if old["status"]=="Consegnato" and new!="Consegnato":self.cancel_whatsapp_scheduled(c,pid,user["id"],"Pratica spostata da Consegnato")
                 elif old["status"]!="Consegnato" and new=="Consegnato":self.schedule_whatsapp_thanks(c,pid,user["id"])
-                if new=="Consegnato":emit_notification(c,"practice_delivered","📦 Pratica consegnata",old["animal_name"] or old["practice_number"],pid,user["id"],db_path=DB_PATH)
+                if new=="Consegnato":emit_notification(c,"practice_delivered","Pratica consegnata",old["animal_name"] or old["practice_number"],pid,user["id"],db_path=DB_PATH)
         if ajax:return self.send_json({"ok":True,"status":new,"practice_id":pid})
         return self.redirect(safe_return_path(form.get("return_to") or self.headers.get("Referer"),"/"))
 

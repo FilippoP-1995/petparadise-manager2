@@ -50,6 +50,7 @@ NOTIFICATION_TYPES = {
     "calendar_daily_summary": ("Riepilogo calendario giornaliero", "OGGI"),
     "calendar_comment": ("Nuovo commento calendario", "MSG"),
     "daily_summary": ("Riepilogo del giorno", "☀️"),
+    "cremation_cycle_waiting": ("Ciclo cremazione in attesa", "🔥"),
 }
 
 # Tipi il cui invio push merita suono/vibrazione anche a telefono silenzioso
@@ -65,6 +66,12 @@ HIGH_PRIORITY_NOTIFICATION_TYPES = frozenset({
 
 def notification_priority(notification_type: str) -> str:
     return "alta" if notification_type in HIGH_PRIORITY_NOTIFICATION_TYPES else "normale"
+
+
+def push_bullets(*parts) -> str:
+    """Unisce solo le parti non vuote con '•', per corpi di notifica push
+    sintetici che non mostrano mai un'informazione a valore zero/assente."""
+    return " • ".join(str(p) for p in parts if p)
 
 
 # Per tipo raggruppabile, l'etichetta (singolare, plurale) usata quando più
@@ -343,22 +350,23 @@ def process_scheduled_notifications(conn, db_path) -> int:
     created = 0
     for row in rows:
         owner = " ".join(x for x in (row["owner_first_name"], row["owner_last_name"]) if x).strip()
-        base = f'{row["animal_name"] or row["practice_number"]} · {owner or "Cliente non indicato"}'
+        base = push_bullets(row["animal_name"] or row["practice_number"], owner or None, row["destination_branch"] or None)
         time_text = (row["pickup_time"] or "")[:5]
         if time_text and len(time_text) == 5:
             try:
                 due = datetime.fromisoformat(f"{today}T{time_text}") - timedelta(minutes=30)
                 if due <= current < due + timedelta(minutes=15):
                     created += _scheduled_once(conn, db_path, f"pickup-30m-{row['id']}-{today}-{time_text}", "pickup_30m",
-                                               "⏰ Recupero tra 30 minuti", base, row["id"])
+                                               "Ritiro tra 30 minuti", base, row["id"])
             except ValueError:
                 pass
     unpaid = conn.execute("""SELECT * FROM practices WHERE (deleted_at IS NULL OR deleted_at='')
                              AND status='Consegnato' AND COALESCE(payment_status,'Da saldare')='Da saldare'""").fetchall()
     for row in unpaid:
         day = current.date().isoformat()
+        urgent_body = push_bullets(row["practice_number"], f'Ritiro {row["destination_branch"]}' if row["destination_branch"] else None)
         created += _scheduled_once(conn, db_path, f"payment-due-{row['id']}-{day}", "payment_due",
-                                   "⚠️ Pratica ancora da saldare", row["animal_name"] or row["practice_number"], row["id"])
+                                   "Pratica urgente", urgent_body, row["id"])
     return created
 
 
@@ -389,8 +397,12 @@ def process_calendar_notifications(conn, db_path, current=None) -> int:
             key=f"calendar-daily-summary-{today}"
             if not conn.execute("SELECT 1 FROM scheduled_notification_events WHERE event_key=?",(key,)).fetchone():
                 conn.execute("INSERT INTO scheduled_notification_events(event_key,created_at) VALUES(?,?)",(key,stamp))
-                text="\n".join(f'{(row["start_at"] or "")[11:16]} - {row["title"]}' for row in rows[:12])
-                emit_notification(conn,"calendar_daily_summary",f"Eventi di oggi: {len(rows)}",text,payload={"url":f"/calendario?data={today}"},db_path=db_path);created+=1
+                if len(rows)==1:
+                    text=push_bullets((rows[0]["start_at"] or "")[11:16],rows[0]["title"])
+                else:
+                    first_time=(rows[0]["start_at"] or "")[11:16]
+                    text=push_bullets(f"{len(rows)} eventi",f"dalle {first_time}" if first_time else None)
+                emit_notification(conn,"calendar_daily_summary","Eventi di oggi",text,payload={"url":f"/calendario?data={today}"},db_path=db_path);created+=1
     return created
 
 
@@ -427,15 +439,20 @@ def _daily_summary_counts(conn, today: str) -> tuple[int, int, int, int]:
 
 
 def _format_daily_summary(ritiri: int, consegne: int, incomplete: int, other_reminders: int) -> str:
+    """Solo le categorie con almeno un elemento compaiono nel corpo, separate
+    da '•': un riepilogo a zero voci non deve elencare zeri irrilevanti."""
     def plural(n, singular, plural_form):
         return f"{n} {singular if n == 1 else plural_form}"
-    parts = [
-        plural(ritiri, "ritiro", "ritiri"),
-        plural(consegne, "consegna", "consegne"),
-        plural(incomplete, "pratica da completare", "pratiche da completare"),
-        plural(other_reminders, "promemoria da leggere", "promemoria da leggere"),
-    ]
-    return "Oggi: " + ", ".join(parts) + "."
+    parts = []
+    if ritiri:
+        parts.append(plural(ritiri, "ritiro", "ritiri"))
+    if consegne:
+        parts.append(plural(consegne, "consegna", "consegne"))
+    if incomplete:
+        parts.append(plural(incomplete, "pratica da completare", "pratiche da completare"))
+    if other_reminders:
+        parts.append(plural(other_reminders, "promemoria", "promemoria"))
+    return push_bullets(*parts) if parts else "Nessuna attività da segnalare"
 
 
 TIME_HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
@@ -480,7 +497,7 @@ def process_daily_summaries(conn, db_path, current=None) -> int:
         ritiri, consegne, incomplete, other_reminders = _daily_summary_counts(conn, today)
         text = _format_daily_summary(ritiri, consegne, incomplete, other_reminders)
         emit_notification(
-            conn, "daily_summary", "☀️ Riepilogo del giorno", text,
+            conn, "daily_summary", "Riepilogo di oggi", text,
             target_user_ids=[row["user_id"]], payload={"url": "/"}, db_path=db_path,
         )
         created += 1

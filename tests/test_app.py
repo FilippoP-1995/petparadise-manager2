@@ -3642,6 +3642,24 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("requestAnimationFrame(ppmUpdateBarsOnScroll)", js)
         self.assertIn("{passive:true}", js)
 
+    def test_bottom_nav_does_not_reappear_from_scroll_jitter_at_page_bottom(self):
+        # bug segnalato dall'utente su iPhone/PWA: al rilascio del dito in
+        # fondo pagina, il micro-assestamento del rimbalzo elastico di iOS
+        # faceva ricomparire la bottom-nav proprio sopra l'ultimo pulsante
+        # (es. "Salva"), appena visibile un istante prima col dito ancora
+        # sullo schermo. La barra deve poter nascondersi scorrendo in giu'
+        # come sempre, ma non deve piu' essere fatta ricomparire da un
+        # piccolo delta negativo quando si e' vicini al fondo reale pagina.
+        js = app.APP_JS
+        update_fn = js[js.index("function ppmUpdateBarsOnScroll()"):js.index("window.addEventListener('scroll'")]
+        self.assertIn("BOTTOM_GUARD", js)
+        self.assertIn("scrollHeight-window.innerHeight", update_fn)
+        self.assertIn("nearBottom", update_fn)
+        self.assertIn("delta<-THRESHOLD&&!nearBottom", update_fn)
+        # scendere resta invariato: il delta positivo continua a nascondere
+        # la barra indipendentemente dalla posizione nella pagina.
+        self.assertIn("delta>THRESHOLD){ppmSetBarsHidden(true)", update_fn)
+
     def test_mobile_headbar_stays_fixed_and_sits_close_to_the_safe_area(self):
         # richiesta dell'utente: l'headbar non deve piu' nascondersi durante lo
         # scroll (vedi test sopra) e deve stare piu' in alto, appena sotto la
@@ -3957,7 +3975,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(".wrap{max-width:1600px;margin-left:212px;margin-right:auto", app.CSS)
         # Mobile/tablet breakpoints stay untouched (sidebar collapses independently there).
         self.assertIn("@media(max-width:900px)", app.CSS)
-        self.assertIn(".wrap{margin-left:0;padding:calc(86px + var(--safe-top)) 14px 22px}", app.CSS)
+        self.assertIn(".wrap{margin-left:0;padding:calc(86px + var(--safe-top)) 14px calc(96px + var(--safe-bottom))}", app.CSS)
 
     def test_shared_lookup_panel_controller_is_defined_and_used_everywhere(self):
         js = app.APP_JS
@@ -7447,7 +7465,9 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.create_practice(admin)
         with app.db() as conn:
             notif = conn.execute("SELECT * FROM notifications WHERE type='practice_created' ORDER BY id DESC LIMIT 1").fetchone()
-        self.assertIn("⚖️ 7 kg", notif["text"])
+        self.assertEqual(notif["title"], "Nuova pratica")
+        self.assertIn("7 kg", notif["text"])
+        self.assertIn(" • ", notif["text"])
 
     def test_new_practice_from_calendar_event_prefers_client_address_over_vet(self):
         with app.db() as conn:
@@ -8792,11 +8812,148 @@ class PetParadiseTests(unittest.TestCase):
             created = process_daily_summaries(conn, str(app.DB_PATH), current=in_window)
             self.assertEqual(created, 1)
             row = conn.execute("SELECT * FROM notifications WHERE user_id=? AND type='daily_summary'", (admin,)).fetchone()
-            self.assertTrue(row["text"].startswith("Oggi: "))
+            self.assertEqual(row["title"], "Riepilogo di oggi")
+            self.assertEqual(row["text"], "Nessuna attività da segnalare")
             # a second check a few minutes later the same day must not duplicate it
             created_again = process_daily_summaries(conn, str(app.DB_PATH), current=in_window + timedelta(minutes=4))
             self.assertEqual(created_again, 0)
             self.assertEqual(conn.execute("SELECT count(*) n FROM notifications WHERE user_id=? AND type='daily_summary'", (admin,)).fetchone()["n"], 1)
+
+    def test_daily_summary_lists_only_nonzero_categories_separated_by_bullet(self):
+        # mockup del riepilogo push: "1 pratica da completare • 3 promemoria"
+        # niente categorie a zero, niente frasi lunghe.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()["id"]
+            stamp = app.now()
+            today = "2026-07-20"
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
+                   data_complete,created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-DS-1", "Privato", "Livorno", "In programma", today, 1, stamp, stamp, admin, "Fido"),
+            )
+            for i in range(3):
+                app.ensure_reminder(conn, reminder_type="product_reorder", entity_key=f"article:{9000+i}",
+                                     title=f"Riordinare articolo {i}", url="/prodotti", stamp=stamp)
+            conn.execute("INSERT INTO user_preferences(user_id,key,value) VALUES(?,?,?)", (admin, "daily_summary_enabled", "1"))
+            conn.execute("INSERT INTO user_preferences(user_id,key,value) VALUES(?,?,?)", (admin, "daily_summary_time", "08:00"))
+            in_window = datetime.fromisoformat(f"{today}T08:03:00")
+            created = process_daily_summaries(conn, str(app.DB_PATH), current=in_window)
+            self.assertEqual(created, 1)
+            row = conn.execute("SELECT * FROM notifications WHERE user_id=? AND type='daily_summary'", (admin,)).fetchone()
+            self.assertEqual(row["title"], "Riepilogo di oggi")
+            self.assertEqual(row["text"], "1 ritiro • 3 promemoria")
+
+    def test_pickup_30m_notification_is_terse_and_opens_the_practice(self):
+        # mockup "Ritiro programmato": titolo breve, corpo con • e apertura
+        # diretta della pratica interessata.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()["id"]
+            stamp = app.now()
+            current = notification_service._rome_now()
+            today = current.date().isoformat()
+            due_time = (current + timedelta(minutes=30)).strftime("%H:%M")
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,pickup_time,
+                   created_at,updated_at,created_by,animal_name,owner_first_name) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-PICKUP-1", "Privato", "Livorno", "Ritirato", today, due_time, stamp, stamp, admin, "Rex", "Anna"),
+            ).lastrowid
+            created = process_scheduled_notifications(conn, str(app.DB_PATH))
+            self.assertGreaterEqual(created, 1)
+            row = conn.execute("SELECT * FROM notifications WHERE type='pickup_30m' AND practice_id=?", (pid,)).fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(row["title"], "Ritiro tra 30 minuti")
+            self.assertEqual(row["text"], "Rex • Anna • Livorno")
+            self.assertEqual(json.loads(row["payload"])["url"], f"/pratiche/{pid}")
+
+    def test_payment_due_notification_uses_pratica_urgente_style(self):
+        # mockup "Pratica urgente": "DDT-4587 • Ritiro Livorno".
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()["id"]
+            stamp = app.now()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,payment_status,
+                   created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("CR-URGENT-1", "Privato", "Livorno", "Consegnato", "Da saldare", stamp, stamp, admin, "Luna"),
+            ).lastrowid
+            created = process_scheduled_notifications(conn, str(app.DB_PATH))
+            self.assertGreaterEqual(created, 1)
+            row = conn.execute("SELECT * FROM notifications WHERE type='payment_due' AND practice_id=?", (pid,)).fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(row["title"], "Pratica urgente")
+            self.assertEqual(row["text"], "CR-URGENT-1 • Ritiro Livorno")
+            self.assertEqual(json.loads(row["payload"])["url"], f"/pratiche/{pid}")
+
+    def test_article_ordered_notification_is_terse_and_opens_dashboard(self):
+        # mappatura scelta per la categoria "Promemoria" del mockup: l'unica
+        # push oggi legata alla tabella reminders (riordino prodotto).
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            article = conn.execute("SELECT id,name FROM articles WHERE active=1 LIMIT 1").fetchone()
+        captured = []
+        with patch("app.emit_notification", side_effect=lambda *a, **k: captured.append((a, k))):
+            self.handler.redirect = lambda url: None
+            self.handler.order_article(admin, article["id"])
+        args, kwargs = captured[-1]
+        self.assertEqual(args[2], "Prodotto da ordinare")
+        self.assertIn(article["name"], args[3])
+        self.assertIn(" • ", args[3])
+        self.assertEqual(kwargs["payload"]["url"], "/")
+
+    def test_cremation_cycle_notifies_ciclo_in_attesa_on_create_with_animal(self):
+        # mockup "Ciclo": "Ciclo N in attesa" / "13:00 → 14:00 • 1 animale".
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-CICLO-1", "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-08-01", stamp, stamp,
+                 admin["id"], "Bracco"),
+            ).lastrowid
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.form = lambda: {"data": "2026-08-01", "practice_id": str(pid)}
+        self.handler.cremation_create_cycle(admin)
+        self.assertTrue(responses[-1][0]["ok"])
+        cycle_id = responses[-1][0]["cycle_id"]
+        with app.db() as conn:
+            cycle = conn.execute("SELECT * FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()
+            row = conn.execute("SELECT * FROM notifications WHERE type='cremation_cycle_waiting' ORDER BY id DESC LIMIT 1").fetchone()
+        self.assertEqual(cycle["status"], "in_attesa")
+        self.assertEqual(row["title"], "Ciclo 1 in attesa")
+        self.assertEqual(row["text"], f'{cycle["planned_start"]} → {cycle["planned_end"]} • 1 animale')
+        self.assertEqual(json.loads(row["payload"])["url"], "/programma-cremazioni?data=2026-08-01")
+
+    def test_cremation_cycle_notifies_ciclo_in_attesa_on_assign_to_planned_cycle(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-CICLO-2", "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-08-02", stamp, stamp,
+                 admin["id"], "Micio"),
+            ).lastrowid
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.form = lambda: {"data": "2026-08-02"}
+        self.handler.cremation_create_cycle(admin)
+        cycle_id = responses[-1][0]["cycle_id"]
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT status FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()["status"], "pianificato")
+            before = conn.execute("SELECT count(*) n FROM notifications WHERE type='cremation_cycle_waiting'").fetchone()["n"]
+        responses.clear()
+        self.handler.form = lambda: {"practice_id": str(pid)}
+        self.handler.cremation_assign_to_cycle(admin, cycle_id)
+        self.assertTrue(responses[-1][0]["ok"])
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT status FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()["status"], "in_attesa")
+            after = conn.execute("SELECT count(*) n FROM notifications WHERE type='cremation_cycle_waiting'").fetchone()["n"]
+            row = conn.execute("SELECT * FROM notifications WHERE type='cremation_cycle_waiting' ORDER BY id DESC LIMIT 1").fetchone()
+        self.assertEqual(after, before + 1)
+        self.assertTrue(row["title"].startswith("Ciclo "))
+        self.assertTrue(row["title"].endswith(" in attesa"))
+        self.assertIn(" • 1 animale", row["text"])
 
     def test_notification_scheduling_uses_rome_timezone_not_server_local_clock(self):
         # bug segnalato dall'utente: il "Riepilogo del giorno" impostato per
