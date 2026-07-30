@@ -6270,6 +6270,42 @@ def channel_remaining(practice):
     return money_value(stored) if (stored or "").strip() else outstanding_amount(practice)
 
 
+def channel_paid_amount(c, practice_id, channel):
+    """Somma REALE dei movimenti registrati su un circuito (W o D) per una
+    pratica — la sola fonte di verita' per 'Gia' pagato {circuito}'. MAI
+    l'ultimo movimento registrato, MAI la somma di entrambi i circuiti
+    insieme: un totale puo' crescere dopo che un circuito e' gia' stato
+    saldato (extra aggiunto a pratica consegnata), e ogni circuito resta
+    indipendente dall'altro anche sulla stessa pratica."""
+    return money_value(c.execute(
+        "SELECT COALESCE(SUM(amount),0) amount FROM payment_movements WHERE practice_id=? AND payment_channel=?",
+        (practice_id, channel),
+    ).fetchone()["amount"])
+
+
+def recompute_practice_channel_balances(c, pid, practice):
+    """(deposit, remaining_balance, deposit_final, remaining_final) — Gia'
+    pagato e Rimanenza per W e per D, indipendenti, ricalcolati dalla somma
+    reale dei movimenti su ciascun circuito rispetto al totale di quello
+    stesso circuito (total_service per W, total_text per D — MAI
+    effective_total(), che su una pratica con entrambi i totali valorizzati
+    farebbe vincere D anche nel calcolo di W). Un residuo negativo
+    (pagamento eccedente) non viene MAI azzerato: e' un'anomalia da
+    mostrare, non da nascondere. Unica funzione che scrive questi 4 campi:
+    riusata da apply_payment_macroarea, remove_payment_macroarea,
+    record_payment_transition e delete_practice_payment_movement, cosi'
+    restano sempre coerenti tra loro."""
+    paid_w = channel_paid_amount(c, pid, "W")
+    paid_d = channel_paid_amount(c, pid, "D")
+    due_w = calculated_service_total(practice)
+    due_d = money_value(practice["total_text"])
+    deposit = f"{paid_w:.2f}"
+    remaining_balance = f"{due_w - paid_w:.2f}" if due_w else ""
+    deposit_final = f"{paid_d:.2f}"
+    remaining_final = f"{due_d - paid_d:.2f}" if due_d else ""
+    return deposit, remaining_balance, deposit_final, remaining_final
+
+
 def latest_movement_and_invoice(c, practice_id, type_prefix):
     """Latest payment_movements row of a given type ('acconto'/'saldo') for a
     practice, plus its linked movement_invoices row if one was ever saved."""
@@ -7925,24 +7961,7 @@ class App(BaseHTTPRequestHandler):
         has_acconto=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'acconto%' LIMIT 1",(pid,)).fetchone())
         has_saldo=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'saldo%' LIMIT 1",(pid,)).fetchone())
         new_status="Pagato" if has_saldo else ("Acconto" if has_acconto else "Da saldare")
-        due=effective_total(practice)
-        received=money_value(c.execute("SELECT COALESCE(SUM(amount),0) amount FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["amount"])
-        remaining=max(0.0,due-received)
-        acconto_row=c.execute("SELECT amount FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'acconto%' ORDER BY id DESC LIMIT 1",(pid,)).fetchone()
-        acconto_amount=f"{money_value(acconto_row['amount']):.2f}" if acconto_row else "0.00"
-        # same W/D column-pair split (and Pagato-zeroes-both special case) as
-        # save_payment_macroarea/remove_payment_macroarea
-        due_d=money_value(practice["total_text"])
-        if uses_total_d(practice):
-            deposit=practice["deposit"];deposit_final=acconto_amount
-        else:
-            deposit=acconto_amount;deposit_final=practice["deposit_final"]
-        if new_status=="Pagato":
-            remaining_balance="0.00";remaining_final="0.00" if due_d else ""
-        elif uses_total_d(practice):
-            remaining_balance=practice["remaining_balance"];remaining_final=f"{remaining:.2f}"
-        else:
-            remaining_balance=f"{remaining:.2f}";remaining_final=practice["remaining_final"]
+        deposit,remaining_balance,deposit_final,remaining_final=recompute_practice_channel_balances(c,pid,practice)
         stamp=now()
         c.execute(
             "UPDATE practices SET payment_status=?,deposit=?,remaining_balance=?,deposit_final=?,remaining_final=?,updated_at=? WHERE id=?",
@@ -11816,6 +11835,8 @@ class App(BaseHTTPRequestHandler):
         with db() as c:
             acconto_movement,acconto_invoice=latest_movement_and_invoice(c,r["id"],"acconto")
             saldo_movement,saldo_invoice=latest_movement_and_invoice(c,r["id"],"saldo")
+            saldo_w_exists=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'saldo%' AND payment_channel='W' LIMIT 1",(r["id"],)).fetchone())
+            saldo_d_exists=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'saldo%' AND payment_channel='D' LIMIT 1",(r["id"],)).fetchone())
         def macroarea_section(kind,label,movement,invoice,default_amount):
             date_value=str(movement["paid_at"] or "")[:10] if movement else ""
             amount_value=f'{money_value(movement["amount"]):.2f}' if movement else default_amount
@@ -11832,13 +11853,32 @@ class App(BaseHTTPRequestHandler):
                 f'''<form method="post" action="/pratiche/{r['id']}/pagamento-movimento/rimuovi" onsubmit="event.stopPropagation();return confirm('Rimuovere {label.lower()}? Verrà stornato anche nei Bilanci.')" style="display:inline"><input type="hidden" name="return_to" value="{return_to}"><input type="hidden" name="macroarea" value="{kind}"><button class="btn ghost" type="submit" style="margin-top:12px;margin-left:8px">Rimuovi {label.lower()}</button></form>'''
                 if movement else ""
             )
-            return f'''<section class="payment-macroarea" data-macroarea="{kind}"><h3>{label}</h3><form method="post" action="/pratiche/{r['id']}/pagamento-movimento" onsubmit="event.stopPropagation()"><input type="hidden" name="return_to" value="{return_to}"><input type="hidden" name="macroarea" value="{kind}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(16)}"><div class="fields"><div class="field"><label>Data {lower}</label><input type="date" name="{kind}_data" value="{esc(date_value)}" required></div><div class="field"><label>Totale {lower} €</label><input name="{kind}_totale" value="{esc(amount_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00" required></div><div class="field"><label>Circuito {lower}</label><select name="{kind}_circuito" onchange="ppmSyncMacroareaInvoiceSection(this)">{channel_options}</select></div><div class="field"><label>Modalità {lower}</label><select name="{kind}_modalita" required>{method_options}</select></div></div><div class="payment-invoice-section" data-macroarea-invoice="{kind}" {invoice_hidden}><div class="fields"><div class="field"><label>Importo fattura €</label><input name="{kind}_fattura_totale" value="{esc(invoice_total_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field"><label>Data fattura</label><input type="date" name="{kind}_fattura_data" value="{esc(invoice_date_value)}"></div><div class="field full"><label>Numero fattura</label><input name="{kind}_fattura_numero" value="{esc(invoice_number_value)}"></div></div></div><button class="btn" style="margin-top:12px">Salva pagamento</button></form>{remove_form}</section>'''
+            new_payment_btn=(
+                f'''<button class="btn ghost" type="submit" name="{kind}_extra" value="1" style="margin-top:12px;margin-left:8px" onclick="event.stopPropagation();return confirm('Registrare un nuovo pagamento {lower} distinto? Quello già salvato resta invariato.')">Registra nuovo pagamento {lower}</button>'''
+                if movement else ""
+            )
+            return f'''<section class="payment-macroarea" data-macroarea="{kind}"><h3>{label}</h3><form method="post" action="/pratiche/{r['id']}/pagamento-movimento" onsubmit="event.stopPropagation()"><input type="hidden" name="return_to" value="{return_to}"><input type="hidden" name="macroarea" value="{kind}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(16)}"><div class="fields"><div class="field"><label>Data {lower}</label><input type="date" name="{kind}_data" value="{esc(date_value)}" required></div><div class="field"><label>Totale {lower} €</label><input name="{kind}_totale" value="{esc(amount_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00" required></div><div class="field"><label>Circuito {lower}</label><select name="{kind}_circuito" onchange="ppmSyncMacroareaInvoiceSection(this)">{channel_options}</select></div><div class="field"><label>Modalità {lower}</label><select name="{kind}_modalita" required>{method_options}</select></div></div><div class="payment-invoice-section" data-macroarea-invoice="{kind}" {invoice_hidden}><div class="fields"><div class="field"><label>Importo fattura €</label><input name="{kind}_fattura_totale" value="{esc(invoice_total_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field"><label>Data fattura</label><input type="date" name="{kind}_fattura_data" value="{esc(invoice_date_value)}"></div><div class="field full"><label>Numero fattura</label><input name="{kind}_fattura_numero" value="{esc(invoice_number_value)}"></div></div></div><button class="btn" style="margin-top:12px">Salva pagamento</button>{new_payment_btn}</form>{remove_form}</section>'''
         acconto_html=macroarea_section("acconto","Acconto",acconto_movement,acconto_invoice,payment_deposit_amount)
         saldo_html=macroarea_section("saldo","Saldo",saldo_movement,saldo_invoice,payment_remaining_amount)
+        due_w=calculated_service_total(r)
+        due_d=money_value(r["total_text"] if "total_text" in r.keys() else "")
+        paid_w=money_value(r["deposit"] if "deposit" in r.keys() else "")
+        paid_d=money_value(r["deposit_final"] if "deposit_final" in r.keys() else "")
+        remaining_w=money_value(r["remaining_balance"] if "remaining_balance" in r.keys() else "")
+        remaining_d=money_value(r["remaining_final"] if "remaining_final" in r.keys() else "")
+        extras_note_w=(
+            f'<div class="flash warning" style="margin-top:10px">Il totale è aumentato per l\'aggiunta di nuovi elementi. I pagamenti precedenti sono stati mantenuti e resta da pagare {money_it(remaining_w)} (circuito W).</div>'
+            if saldo_w_exists and remaining_w>0.005 else ""
+        )
+        extras_note_d=(
+            f'<div class="flash warning" style="margin-top:10px">Il totale è aumentato per l\'aggiunta di nuovi elementi. I pagamenti precedenti sono stati mantenuti e resta da pagare {money_it(remaining_d)} (circuito D).</div>'
+            if saldo_d_exists and remaining_d>0.005 else ""
+        )
+        circuit_summary_html=f'''<div class="kvs" style="grid-template-columns:repeat(2,1fr);margin-bottom:14px"><div class="kv"><small>Circuito W</small><b>Totale {money_it(due_w)}</b><br><small>Già pagato {money_it(paid_w)} · Rimanenza {money_it(remaining_w)}</small></div><div class="kv"><small>Circuito D</small><b>Totale {money_it(due_d)}</b><br><small>Già pagato {money_it(paid_d)} · Rimanenza {money_it(remaining_d)}</small></div></div>{extras_note_w}{extras_note_d}'''
         return f'''<div class="inline-statuses" onclick="event.stopPropagation()">
         <form method="post" action="/pratiche/{r['id']}/stato-rapido" onsubmit="return savePracticeState(this,event)"><input type="hidden" name="return_to" value="{return_to}"><select class="inline-state-select practice-status {status_cls}" name="status" aria-label="Stato pratica" data-saved-value="{esc(r['status'])}" onchange="savePracticeState(this.form)">{state_options}</select><span class="inline-save-note" aria-live="polite"></span></form>
         <button type="button" class="inline-state-select {pay_cls}" aria-label="Stato pagamento" data-payment-popover="{modal_id}" onclick="openPaymentPopover(this)">{esc(payment)}</button>
-        <div class="payment-popover" id="{modal_id}" hidden onclick="if(event.target===this)closePaymentPopover(this)"><div class="payment-dialog"><div class="titlebar"><div><h2>Pagamento · {esc(r['practice_number'])}</h2><p class="sub">Registra acconto e saldo in modo indipendente.</p></div><button class="btn ghost" type="button" onclick="closePaymentPopover(this)">Chiudi</button></div>{acconto_html}{saldo_html}</div></div></div>'''
+        <div class="payment-popover" id="{modal_id}" hidden onclick="if(event.target===this)closePaymentPopover(this)"><div class="payment-dialog"><div class="titlebar"><div><h2>Pagamento · {esc(r['practice_number'])}</h2><p class="sub">Registra acconto e saldo in modo indipendente.</p></div><button class="btn ghost" type="button" onclick="closePaymentPopover(this)">Chiudi</button></div>{circuit_summary_html}{acconto_html}{saldo_html}</div></div></div>'''
 
     def practice_rows(self,rows,show_financials=False):
         rows=list(rows)
@@ -12854,18 +12894,25 @@ class App(BaseHTTPRequestHandler):
         if data["total_service_manual"]!="Si":
             data["total_service"]=(f"{calculated:.2f}" if calculated else "")
         if data["invoice_total_manual"]!="Si":data["invoice_total"]=data["total_service"]
-        due=effective_total(data)
-        # A practice marked Pagato can never have anything left to collect, on either
-        # circuit: force both remaining fields to zero regardless of the recorded
-        # deposit (a status flipped by hand without updating the deposit must not
-        # leave a stale balance behind).
-        if data["payment_status"]=="Pagato":
-            data["remaining_balance"]="0.00"
-            data["remaining_final"]="0.00" if money_value(data["total_text"]) else ""
-        else:
-            data["remaining_balance"]=(f"{max(0.0, due-money_value(data['deposit'])):.2f}" if due else "")
-            due_d=money_value(data["total_text"])
-            data["remaining_final"]=(f"{max(0.0, due_d-money_value(data['deposit_final'])):.2f}" if due_d else "")
+        # Rimanenza per circuito = Totale del circuito - Già pagato sul
+        # circuito, SEMPRE — anche a payment_status "Pagato". Un totale puo'
+        # crescere dopo che il circuito era gia' saldato (extra aggiunto a
+        # pratica consegnata): la vecchia versione forzava qui 0.00 per ogni
+        # pratica "Pagato", nascondendo il nuovo residuo finche' non si
+        # riapriva la finestra Pagamento. deposit/deposit_final sono gia' il
+        # "Gia' pagato" reale per circuito (somma dei movimenti, mantenuta
+        # da apply_payment_macroarea/remove_payment_macroarea/ecc. — MAI
+        # ricalcolata qui da un accesso diretto ai movimenti, questa
+        # funzione lavora solo sui dati del form). Ogni circuito usa il
+        # proprio totale (total_service per W, total_text per D): usare
+        # effective_total() per entrambi mescolerebbe D nel calcolo di W su
+        # una pratica con entrambi i circuiti valorizzati.
+        # Un risultato negativo (pagamento eccedente) NON viene azzerato:
+        # va segnalato, non nascosto (vedi UI pagamenti).
+        due_w=money_value(data["total_service"])
+        due_d=money_value(data["total_text"])
+        data["remaining_balance"]=(f"{due_w-money_value(data['deposit']):.2f}" if due_w else "")
+        data["remaining_final"]=(f"{due_d-money_value(data['deposit_final']):.2f}" if due_d else "")
         return data
 
     def is_complete(self,d):
@@ -14583,6 +14630,12 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 invoice_total=normalize_money_text(form.get(f"{prefix}_fattura_totale","")),
                 invoice_date=form.get(f"{prefix}_fattura_data","").strip(),
                 balance_key=form.get("balance_idempotency_key","").strip(),
+                # "Registra nuovo pagamento": azione esplicita e distinta dal
+                # normale "Salva pagamento" (che corregge l'ultimo movimento
+                # della macroarea). Mai dedotto automaticamente dall'importo:
+                # solo l'utente, confermando di aver ricevuto un incasso
+                # realmente nuovo, puo' impostarlo.
+                force_new=form.get(f"{prefix}_extra","")=="1",
             )
             if error:
                 return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
@@ -14590,7 +14643,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         if ajax:return self.send_json({"ok":True,"payment_status":new_status,"macroarea":macroarea})
         return self.redirect(safe_return_path(form.get("return_to") or self.headers.get("Referer"),"/"))
 
-    def apply_payment_macroarea(self,c,user,pid,practice,macroarea,*,data_field,totale_field,channel,method,invoice_number,invoice_total,invoice_date,balance_key=""):
+    def apply_payment_macroarea(self,c,user,pid,practice,macroarea,*,data_field,totale_field,channel,method,invoice_number,invoice_total,invoice_date,balance_key="",force_new=False):
         """Core logic shared by the Pagamento popover (save_payment_macroarea)
         above and practice creation (create_practice): validates and
         persists one acconto/saldo entry for one circuito — the
@@ -14600,7 +14653,16 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         Callers must pass an already-open connection and an already-fetched
         practice row (create_practice re-fetches it fresh between an acconto
         call and a saldo call in the same request, since deposit/remaining
-        fallback values must reflect what the first call just wrote)."""
+        fallback values must reflect what the first call just wrote).
+
+        force_new=True (only ever set by the explicit "Registra nuovo
+        pagamento" action) always creates a brand new payment_movements +
+        balance_movements row, even if one already exists for this
+        macroarea/circuito — e.g. an extra item added to a practice whose W
+        or D circuito was already fully paid needs a genuinely SECOND
+        payment, never a correction of the first one's amount/date. Without
+        force_new, an existing movement for the same macroarea is corrected
+        in place (typo fix on what you just entered) exactly as before."""
         try:
             date.fromisoformat(data_field)
         except ValueError:
@@ -14630,7 +14692,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         has_acconto_row=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'acconto%' LIMIT 1",(pid,)).fetchone())
         balance_type="Acconto" if macroarea=="acconto" else ("Saldo" if has_acconto_row else "Incasso completo")
         stamp=now()
-        if existing_movement:
+        if existing_movement and not force_new:
             c.execute(
                 "UPDATE payment_movements SET amount=?,paid_at=?,payment_channel=?,payment_method=?,movement_category=? WHERE id=?",
                 (amount,data_field,channel,method,category,existing_movement["id"]),
@@ -14662,6 +14724,14 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                     )
         else:
             idempotency_key=f'practice-movement:{pid}:{macroarea}:{balance_key or secrets.token_urlsafe(8)}'
+            # A double-tap/retry on this exact still-open form resubmits the
+            # same idempotency_key (it's a fixed hidden field, only
+            # regenerated when the popover is re-rendered), so if a
+            # balance_movements row with this key already exists, this call
+            # is a replay of one we already fully processed — skip creating
+            # a second payment_movements detail row for it (create_balance_movement
+            # itself already no-ops on the ledger side for a matching payload).
+            is_retry=bool(c.execute("SELECT 1 FROM balance_movements WHERE idempotency_key=? LIMIT 1",(idempotency_key,)).fetchone())
             create_balance_movement(
                 c,amount_cents=euros_to_cents(f"{amount:.2f}"),movement_date=data_field,category=category,
                 ledger_section="Entrata",movement_type=balance_type,idempotency_key=idempotency_key,
@@ -14670,7 +14740,8 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 collaborator_id=int(practice["collaborator_id"]) if practice["collaborator_id"] else None,
                 created_by=user["id"],
             )
-            self.add_payment_movement(c,pid,macroarea,category,amount,user["id"],"Pagamento registrato",data_field,payment_method=method,movement_category=category)
+            if not is_retry:
+                self.add_payment_movement(c,pid,macroarea,category,amount,user["id"],"Pagamento registrato",data_field,payment_method=method,movement_category=category)
             movement=c.execute("SELECT id FROM payment_movements WHERE practice_id=? AND payment_type LIKE ? ORDER BY id DESC LIMIT 1",(pid,f"{macroarea}%")).fetchone()
             movement_id=movement["id"] if movement else None
         if channel=="W" and movement_id:
@@ -14679,29 +14750,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         has_acconto=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'acconto%' LIMIT 1",(pid,)).fetchone())
         has_saldo=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'saldo%' LIMIT 1",(pid,)).fetchone())
         new_status="Pagato" if has_saldo else ("Acconto" if has_acconto else "Da saldare")
-        due=effective_total(practice)
-        received=money_value(c.execute("SELECT COALESCE(SUM(amount),0) amount FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["amount"])
-        remaining=max(0.0,due-received)
-        # Acconto/rimanenza are stored in a different column pair depending on
-        # which circuito this practice uses (W: deposit/remaining_balance,
-        # D: deposit_final/remaining_final) — updating the wrong pair used to
-        # leave a D-circuito acconto permanently showing as 0. A fully Pagato
-        # practice can never have anything left on either circuit though, so
-        # both remaining fields are forced to zero regardless of channel,
-        # same rule already enforced at creation/edit time.
-        due_d=money_value(practice["total_text"])
-        if uses_total_d(practice):
-            deposit=practice["deposit"]
-            deposit_final=f"{received:.2f}" if new_status=="Acconto" else practice["deposit_final"]
-        else:
-            deposit=f"{received:.2f}" if new_status=="Acconto" else practice["deposit"]
-            deposit_final=practice["deposit_final"]
-        if new_status=="Pagato":
-            remaining_balance="0.00";remaining_final="0.00" if due_d else ""
-        elif uses_total_d(practice):
-            remaining_balance=practice["remaining_balance"];remaining_final=f"{remaining:.2f}"
-        else:
-            remaining_balance=f"{remaining:.2f}";remaining_final=practice["remaining_final"]
+        deposit,remaining_balance,deposit_final,remaining_final=recompute_practice_channel_balances(c,pid,practice)
         date_field="deposit_paid_at" if macroarea=="acconto" else "paid_at"
         c.execute(
             f"UPDATE practices SET payment_status=?,payment_method=?,payment_amount=?,deposit=?,remaining_balance=?,deposit_final=?,remaining_final=?,{date_field}=?,updated_at=? WHERE id=?",
@@ -14769,26 +14818,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             has_acconto=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'acconto%' LIMIT 1",(pid,)).fetchone())
             has_saldo=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'saldo%' LIMIT 1",(pid,)).fetchone())
             new_status="Pagato" if has_saldo else ("Acconto" if has_acconto else "Da saldare")
-            due=effective_total(practice)
-            received=money_value(c.execute("SELECT COALESCE(SUM(amount),0) amount FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["amount"])
-            remaining=max(0.0,due-received)
-            acconto_row=c.execute("SELECT amount FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'acconto%' ORDER BY id DESC LIMIT 1",(pid,)).fetchone()
-            acconto_amount=f"{money_value(acconto_row['amount']):.2f}" if acconto_row else "0.00"
-            # same W/D column-pair split (and Pagato-zeroes-both special case)
-            # as save_payment_macroarea above, so removing a D-circuito payment
-            # correctly updates deposit_final/remaining_final instead of
-            # silently touching the W columns.
-            due_d=money_value(practice["total_text"])
-            if uses_total_d(practice):
-                deposit=practice["deposit"];deposit_final=acconto_amount
-            else:
-                deposit=acconto_amount;deposit_final=practice["deposit_final"]
-            if new_status=="Pagato":
-                remaining_balance="0.00";remaining_final="0.00" if due_d else ""
-            elif uses_total_d(practice):
-                remaining_balance=practice["remaining_balance"];remaining_final=f"{remaining:.2f}"
-            else:
-                remaining_balance=f"{remaining:.2f}";remaining_final=practice["remaining_final"]
+            deposit,remaining_balance,deposit_final,remaining_final=recompute_practice_channel_balances(c,pid,practice)
             date_field="deposit_paid_at" if macroarea=="acconto" else "paid_at"
             c.execute(
                 f"UPDATE practices SET payment_status=?,deposit=?,remaining_balance=?,deposit_final=?,remaining_final=?,{date_field}=?,updated_at=? WHERE id=?",
@@ -14831,7 +14861,6 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                     error=f'Numero fattura già usato nella pratica {conflict["practice_number"]}'
                     return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
             stamp=now()
-            due=effective_total(row)
             if old==payment:
                 error=self.correct_practice_payment_date(
                     c,row,payment,economic_at,user["id"]
@@ -14840,23 +14869,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 error=self.record_payment_transition(c,row,old,payment,amount,method,economic_at,user["id"],"Pagamento registrato",f'practice-payment:{form.get("balance_idempotency_key","").strip() or f"{pid}:{old}:{payment}:{amount}"}',channel=channel)
             if error:
                 return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
-            received=money_value(c.execute("SELECT COALESCE(SUM(amount),0) amount FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["amount"])
-            remaining=max(0.0,due-received)
-            # same W/D column-pair split (and Pagato-zeroes-both special case)
-            # as save_payment_macroarea/remove_payment_macroarea
-            due_d=money_value(row["total_text"])
-            if uses_total_d(row):
-                deposit=row["deposit"]
-                deposit_final=f"{received:.2f}" if payment=="Acconto" else row["deposit_final"]
-            else:
-                deposit=f"{received:.2f}" if payment=="Acconto" else row["deposit"]
-                deposit_final=row["deposit_final"]
-            if payment=="Pagato":
-                remaining_balance="0.00";remaining_final="0.00" if due_d else ""
-            elif uses_total_d(row):
-                remaining_balance=row["remaining_balance"];remaining_final=f"{remaining:.2f}"
-            else:
-                remaining_balance=f"{remaining:.2f}";remaining_final=row["remaining_final"]
+            deposit,remaining_balance,deposit_final,remaining_final=recompute_practice_channel_balances(c,pid,row)
             c.execute("UPDATE practices SET payment_status=?,payment_method=?,payment_amount=?,deposit=?,remaining_balance=?,deposit_final=?,remaining_final=?,updated_at=? WHERE id=?",(payment,method,amount,deposit,remaining_balance,deposit_final,remaining_final,stamp,pid))
             if movement_type_prefix:
                 movement=c.execute("SELECT id FROM payment_movements WHERE practice_id=? AND payment_type LIKE ? ORDER BY id DESC LIMIT 1",(pid,f"{movement_type_prefix}%")).fetchone()

@@ -201,7 +201,9 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
             movements = [m for m in get_movements(connection) if m.practice_id == pid]
         self.assertEqual(practice["payment_status"], "Acconto")
         self.assertEqual(practice["deposit_final"], "100.00")
-        self.assertEqual(practice["deposit"], "")
+        # deposit (W) is now always a real recomputed figure — "0.00" since
+        # there are no W movements — instead of being left blank/stale
+        self.assertEqual(practice["deposit"], "0.00")
         self.assertEqual(len(movements), 1)
         self.assertEqual((movements[0].movement_type, movements[0].amount_cents, movements[0].category), ("Acconto", 10000, "D"))
 

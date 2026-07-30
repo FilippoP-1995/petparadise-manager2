@@ -496,15 +496,18 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(data["total_service"], "450.00")
         self.assertEqual(data["invoice_total"], "450.00")
 
-    def test_pagato_forces_remaining_w_and_d_to_zero_even_if_deposit_is_short(self):
-        # A practice flipped to Pagato by hand, without the deposit fields being
-        # updated to match, must never show a leftover balance on either circuit.
+    def test_pagato_does_not_clamp_remaining_w_and_d_to_zero_when_deposit_is_short(self):
+        # remaining_balance/remaining_final must always reflect the real
+        # due-minus-paid figure, even when payment_status is "Pagato" — a
+        # Pagato practice whose total later grows (an extra item added after
+        # full settlement) must show the real outstanding amount instead of
+        # having it silently hidden behind a hardcoded zero.
         data = self.handler.normalized_fields({
             "price_cremation": "450", "total_text": "360", "deposit": "50", "deposit_final": "10",
             "payment_status": "Pagato",
         })
-        self.assertEqual(data["remaining_balance"], "0.00")
-        self.assertEqual(data["remaining_final"], "0.00")
+        self.assertEqual(data["remaining_balance"], "400.00")
+        self.assertEqual(data["remaining_final"], "350.00")
 
     def test_quick_payment_zeroes_remaining_final_too_when_marked_pagato(self):
         with app.db() as conn:
@@ -524,7 +527,13 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.quick_payment(admin, pid)
         with app.db() as conn:
             row = conn.execute("SELECT remaining_balance,remaining_final FROM practices WHERE id=?", (pid,)).fetchone()
-        self.assertEqual((row["remaining_balance"], row["remaining_final"]), ("0.00", "0.00"))
+        # remaining_balance (W) is now always the truthful due-minus-paid
+        # figure instead of being forced to "0.00" on Pagato; this fixture's
+        # total_service="450" was never actually made the effective W total
+        # (no total_service_manual="Si", no price_cremation), so
+        # calculated_service_total resolves W's due to 0 and remaining_balance
+        # is correctly empty — remaining_final (D) is genuinely settled (350+10=360)
+        self.assertEqual((row["remaining_balance"], row["remaining_final"]), ("", "0.00"))
 
     def test_startup_backfill_zeroes_stale_remaining_on_existing_pagato_practices(self):
         with app.db() as conn:
@@ -696,7 +705,10 @@ class PetParadiseTests(unittest.TestCase):
             row = conn.execute("SELECT payment_status,deposit,remaining_balance,deposit_final,remaining_final FROM practices WHERE id=?", (pid,)).fetchone()
         self.assertEqual(row["payment_status"], "Acconto")
         self.assertEqual((row["deposit_final"], row["remaining_final"]), ("100.00", "250.00"))
-        self.assertEqual((row["deposit"], row["remaining_balance"]), (None, None))
+        # W columns are recomputed truthfully from the (zero) W movements —
+        # not left stale/None, and critically not corrupted with the D
+        # amount, which was the original bug
+        self.assertEqual((row["deposit"], row["remaining_balance"]), ("0.00", ""))
 
     def test_payment_macroarea_d_circuito_does_not_require_payment_method(self):
         with app.db() as conn:
@@ -3905,7 +3917,10 @@ class PetParadiseTests(unittest.TestCase):
         }, items_total=30.0)
         self.assertEqual(data["vehicle_plate"], "TARGA LIBERA")
         self.assertEqual(data["total_service"], "330.00")
-        self.assertEqual(data["remaining_balance"], "150.00")
+        # remaining_balance (W) must come from W's own due (total_service),
+        # never from total_text (D's due) even on a mixed-circuit practice —
+        # 330 - 100 deposit = 230, not total_text(250) - 100 = 150
+        self.assertEqual(data["remaining_balance"], "230.00")
 
     def test_total_service_manual_override_is_not_clobbered_by_recalculation(self):
         # Totale W keeps being auto-computed from the preventivo by default...
@@ -5947,7 +5962,14 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(responses[-1][0]["payment_status"],"Pagato")
         with app.db() as conn:
             practice=conn.execute("SELECT payment_status,deposit,remaining_balance FROM practices WHERE id=?",(pid,)).fetchone()
-            self.assertEqual((practice["payment_status"],practice["deposit"],practice["remaining_balance"]),("Pagato","100.00","0.00"))
+            # payment_status flips to "Pagato" once an acconto+saldo pair
+            # exists (a single combined flag, independent of circuit), but
+            # remaining_balance (W) is no longer clamped to zero just
+            # because of that: this practice's whole due (300) lives on W,
+            # only 100 of it was ever paid via a W movement (the saldo here
+            # was deliberately registered on D), so W genuinely still shows
+            # 200 outstanding — the clamp used to silently hide this
+            self.assertEqual((practice["payment_status"],practice["deposit"],practice["remaining_balance"]),("Pagato","100.00","200.00"))
             open_d=sum(row.amount_cents for row in app.get_balance_movements(conn,filters=app.normalize_balance_filters()) if row.practice_id==pid and row.category=="D")
             self.assertEqual(open_d,20000)
         # Pagato -> Acconto: removing the saldo must subtract exactly that
@@ -5999,6 +6021,180 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.remove_payment_macroarea(admin,pid)
         self.assertTrue(responses[-1][0]["ok"])
         self.assertEqual(responses[-1][0]["payment_status"],"Da saldare")
+
+    def test_extra_after_full_settlement_w_registers_a_new_movement_without_rewriting_history(self):
+        # CR-000063-style scenario: a practice's circuito W is fully paid
+        # (acconto 100 + saldo 100 = totale 200), then an extra item raises
+        # the total to 300 — the old bug reused a fixed idempotency_key for
+        # "the saldo movement" and blew up with IdempotencyConflictError the
+        # moment a second, genuinely different saldo payment was attempted.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-EXTRA-W","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Nerone","Cremazione singola","Da saldare","200","200")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"macroarea":"acconto","acconto_data":"2026-07-10","acconto_totale":"100,00","acconto_circuito":"W","acconto_modalita":"Contanti","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"])
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-15","saldo_totale":"100,00","saldo_circuito":"W","saldo_modalita":"Contanti","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertEqual(responses[-1][0]["payment_status"],"Pagato")
+        with app.db() as conn:
+            practice=conn.execute("SELECT deposit,remaining_balance FROM practices WHERE id=?",(pid,)).fetchone()
+            self.assertEqual((practice["deposit"],practice["remaining_balance"]),("200.00","0.00"))
+            original_movements=conn.execute("SELECT id,payment_type,amount,paid_at FROM payment_movements WHERE practice_id=? ORDER BY id",(pid,)).fetchall()
+            self.assertEqual(len(original_movements),2)
+            original_balances=conn.execute("SELECT id,amount_cents,movement_date FROM balance_movements WHERE practice_id=? AND amount_cents>0 ORDER BY id",(pid,)).fetchall()
+            self.assertEqual(len(original_balances),2)
+            # extra item added after full payment: total_service goes 200 -> 300
+            conn.execute("UPDATE practices SET total_service_manual='Si',total_service='300' WHERE id=?",(pid,))
+        # a plain "Salva pagamento" on saldo (no force_new) would just correct
+        # the existing saldo movement in place — not what we want here
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-30","saldo_totale":"100,00","saldo_circuito":"W","saldo_modalita":"Bonifico","saldo_extra":"1","balance_idempotency_key":"extra-w-attempt-1","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        self.assertEqual(responses[-1][0]["payment_status"],"Pagato")
+        with app.db() as conn:
+            practice=conn.execute("SELECT deposit,remaining_balance FROM practices WHERE id=?",(pid,)).fetchone()
+            self.assertEqual((practice["deposit"],practice["remaining_balance"]),("300.00","0.00"))
+            movements=conn.execute("SELECT id,payment_type,amount,paid_at,payment_method FROM payment_movements WHERE practice_id=? ORDER BY id",(pid,)).fetchall()
+            self.assertEqual(len(movements),3)
+            # the first two movements are byte-identical to before — nothing
+            # was rewritten to accommodate the new total
+            self.assertEqual([(r["id"],r["payment_type"],float(r["amount"]),r["paid_at"]) for r in movements[:2]],
+                              [(original_movements[0]["id"],original_movements[0]["payment_type"],float(original_movements[0]["amount"]),original_movements[0]["paid_at"]),
+                               (original_movements[1]["id"],original_movements[1]["payment_type"],float(original_movements[1]["amount"]),original_movements[1]["paid_at"])])
+            self.assertEqual((movements[2]["payment_type"],float(movements[2]["amount"]),movements[2]["paid_at"],movements[2]["payment_method"]),("saldo",100.0,"2026-07-30","Bonifico"))
+            balances=conn.execute("SELECT id,amount_cents,movement_date,idempotency_key FROM balance_movements WHERE practice_id=? AND amount_cents>0 ORDER BY id",(pid,)).fetchall()
+            self.assertEqual(len(balances),3)
+            self.assertEqual([(r["id"],r["amount_cents"],r["movement_date"]) for r in balances[:2]],
+                              [(original_balances[0]["id"],original_balances[0]["amount_cents"],original_balances[0]["movement_date"]),
+                               (original_balances[1]["id"],original_balances[1]["amount_cents"],original_balances[1]["movement_date"])])
+            self.assertEqual((balances[2]["amount_cents"],balances[2]["movement_date"]),(10000,"2026-07-30"))
+            self.assertNotIn(balances[2]["idempotency_key"],(balances[0]["idempotency_key"],balances[1]["idempotency_key"]))
+
+    def test_extra_payment_double_tap_with_same_idempotency_key_does_not_duplicate(self):
+        # A double-tap on "Registra nuovo pagamento" resubmits the same
+        # still-rendered form, so the same balance_idempotency_key hidden
+        # field goes out twice — must not raise IdempotencyConflictError and
+        # must not create a second payment_movements/balance_movements row.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-EXTRA-RETRY","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Bruto","Cremazione singola","Da saldare","200","200")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-10","saldo_totale":"200,00","saldo_circuito":"W","saldo_modalita":"Contanti","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertEqual(responses[-1][0]["payment_status"],"Pagato")
+        with app.db() as conn:
+            conn.execute("UPDATE practices SET total_service_manual='Si',total_service='260' WHERE id=?",(pid,))
+        retry_form={"macroarea":"saldo","saldo_data":"2026-07-30","saldo_totale":"60,00","saldo_circuito":"W","saldo_modalita":"Pos","saldo_extra":"1","balance_idempotency_key":"retry-token-fixed","ajax":"1"}
+        self.handler.form=lambda:dict(retry_form)
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"])
+        self.handler.form=lambda:dict(retry_form)
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"])
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) n FROM payment_movements WHERE practice_id=? AND payment_type='saldo'",(pid,)).fetchone()["n"],2)
+            self.assertEqual(conn.execute("SELECT COUNT(*) n FROM balance_movements WHERE practice_id=? AND amount_cents>0",(pid,)).fetchone()["n"],2)
+            practice=conn.execute("SELECT deposit,remaining_balance FROM practices WHERE id=?",(pid,)).fetchone()
+            self.assertEqual((practice["deposit"],practice["remaining_balance"]),("260.00","0.00"))
+
+    def test_extra_after_full_settlement_d_is_independent_from_w(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,total_text)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?)""",("CR-EXTRA-D","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Ottavio","Cremazione singola","Da saldare","150")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-10","saldo_totale":"150,00","saldo_circuito":"D","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertEqual(responses[-1][0]["payment_status"],"Pagato")
+        with app.db() as conn:
+            conn.execute("UPDATE practices SET total_text='220' WHERE id=?",(pid,))
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-31","saldo_totale":"70,00","saldo_circuito":"D","saldo_extra":"1","balance_idempotency_key":"extra-d-attempt","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        with app.db() as conn:
+            practice=conn.execute("SELECT deposit,remaining_balance,deposit_final,remaining_final FROM practices WHERE id=?",(pid,)).fetchone()
+            # W side untouched (no W movements at all in this D-only practice)
+            self.assertEqual((practice["deposit"],practice["remaining_balance"]),("0.00",""))
+            self.assertEqual((practice["deposit_final"],practice["remaining_final"]),("220.00","0.00"))
+            movements=conn.execute("SELECT payment_channel,amount FROM payment_movements WHERE practice_id=? ORDER BY id",(pid,)).fetchall()
+            self.assertEqual([(r["payment_channel"],float(r["amount"])) for r in movements],[("D",150.0),("D",70.0)])
+
+    def test_total_reduced_below_paid_amount_shows_negative_remaining_not_clamped(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-OVERPAID","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Tito","Cremazione singola","Da saldare","200","200")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-10","saldo_totale":"200,00","saldo_circuito":"W","saldo_modalita":"Contanti","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        with app.db() as conn:
+            conn.execute("UPDATE practices SET total_service_manual='Si',total_service='150' WHERE id=?",(pid,))
+        # any macroarea save recomputes remaining_balance from the fresh total
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-10","saldo_totale":"200,00","saldo_circuito":"W","saldo_modalita":"Contanti","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        with app.db() as conn:
+            practice=conn.execute("SELECT remaining_balance FROM practices WHERE id=?",(pid,)).fetchone()
+            self.assertEqual(practice["remaining_balance"],"-50.00")
+
+    def test_payment_popover_shows_registra_nuovo_pagamento_and_extras_warning_per_circuit(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-POPOVER-EXTRA","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Cesare","Cremazione singola","Da saldare","200","200")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-10","saldo_totale":"200,00","saldo_circuito":"W","saldo_modalita":"Contanti","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        with app.db() as conn:
+            # simulates a normal practice edit adding an extra item: the main
+            # form's normalized_fields() always recomputes remaining_balance
+            # from the fresh total on every save, regardless of whether
+            # payment fields changed — so this happens even without touching
+            # the Pagamento popover
+            conn.execute("UPDATE practices SET total_service_manual='Si',total_service='260',remaining_balance='60.00' WHERE id=?",(pid,))
+            row=conn.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+        dialog=self.handler.status_badges(row)
+        self.assertIn('name="saldo_extra" value="1"',dialog)
+        self.assertIn("Registra nuovo pagamento saldo",dialog)
+        self.assertIn("Il totale è aumentato per l'aggiunta di nuovi elementi",dialog)
+        self.assertIn("resta da pagare € 60,00 (circuito W)",dialog)
+        self.assertIn("Circuito W",dialog)
+        self.assertIn("Circuito D",dialog)
+
+    def test_removing_extra_payment_stornos_only_the_latest_one(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-EXTRA-UNDO","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Adriano","Cremazione singola","Da saldare","200","200")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-10","saldo_totale":"200,00","saldo_circuito":"W","saldo_modalita":"Contanti","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        with app.db() as conn:
+            conn.execute("UPDATE practices SET total_service_manual='Si',total_service='260' WHERE id=?",(pid,))
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-30","saldo_totale":"60,00","saldo_circuito":"W","saldo_modalita":"Bonifico","saldo_extra":"1","balance_idempotency_key":"extra-undo","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        self.handler.form=lambda:{"macroarea":"saldo","ajax":"1"}
+        self.handler.remove_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"])
+        with app.db() as conn:
+            movements=conn.execute("SELECT amount FROM payment_movements WHERE practice_id=? AND payment_type='saldo'",(pid,)).fetchall()
+            self.assertEqual([float(r["amount"]) for r in movements],[200.0])
+            practice=conn.execute("SELECT deposit,remaining_balance FROM practices WHERE id=?",(pid,)).fetchone()
+            self.assertEqual((practice["deposit"],practice["remaining_balance"]),("200.00","60.00"))
 
     def test_acconto_and_saldo_keep_their_own_movement_dates(self):
         with app.db() as conn:
