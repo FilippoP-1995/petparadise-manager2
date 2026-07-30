@@ -1281,7 +1281,8 @@ body{background:radial-gradient(circle at top left,#fff8f3 0,#f4f1ed 34%,#ece5dd
 .month-block{margin-bottom:18px}.month-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.month-heading{display:flex;align-items:center;gap:10px}.month-toggle{width:34px;height:34px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--brand);font-size:22px;font-weight:800;line-height:1;cursor:pointer}.month-content[hidden]{display:none}.dashboard-table-scroll{overflow-x:scroll;scrollbar-gutter:stable;padding-bottom:8px;scrollbar-color:var(--brand) #eee7e0;scrollbar-width:auto}.dashboard-table-scroll table{min-width:1650px}.dashboard-table-scroll::-webkit-scrollbar{height:13px}.dashboard-table-scroll::-webkit-scrollbar-track{background:#eee7e0;border-radius:99px}.dashboard-table-scroll::-webkit-scrollbar-thumb{background:var(--brand);border:3px solid #eee7e0;border-radius:99px}
 .hidden{display:none!important}
 .practice-code-cr{color:#1e88e5}.practice-code-sm{color:#111}
-.lookup{position:relative}.lookup-results{position:absolute;left:0;right:0;top:100%;z-index:20;background:white;border:1px solid var(--line);border-radius:12px;margin-top:6px;box-shadow:0 10px 30px #4b392626;max-height:340px;overflow:auto}.lookup-item{display:block;width:100%;border:0;background:white;text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer;color:var(--ink)}.lookup-item:hover,.lookup-item:focus{background:#f7f2ee;outline:none}.lookup-item b{display:block}.lookup-item small{display:block;color:var(--muted);white-space:normal}.lookup-item-urn{display:flex;align-items:center;gap:10px}.lookup-item-thumb{width:36px;height:36px;flex:0 0 36px;border-radius:8px;object-fit:cover;background:#e2e8f0}.lookup-state{padding:10px 12px;color:var(--muted);font-size:13px}.selected-box{border:1px solid #b8d7c8;background:#edf7f2;color:#285b45;border-radius:10px;padding:12px;margin-top:10px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}.selected-box .btn{width:auto}
+.lookup{position:relative}.lookup-results{position:absolute;left:0;right:0;top:100%;z-index:20;background:white;border:1px solid var(--line);border-radius:12px;margin-top:6px;box-shadow:0 10px 30px #4b392626;max-height:340px;overflow:auto}
+.lookup-results.ppm-lookup-portal{position:fixed;right:auto;margin-top:0;z-index:150;box-shadow:0 16px 40px #05070f4d}.lookup-item{display:block;width:100%;border:0;background:white;text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer;color:var(--ink)}.lookup-item:hover,.lookup-item:focus{background:#f7f2ee;outline:none}.lookup-item b{display:block}.lookup-item small{display:block;color:var(--muted);white-space:normal}.lookup-item-urn{display:flex;align-items:center;gap:10px}.lookup-item-thumb{width:36px;height:36px;flex:0 0 36px;border-radius:8px;object-fit:cover;background:#e2e8f0}.lookup-state{padding:10px 12px;color:var(--muted);font-size:13px}.selected-box{border:1px solid #b8d7c8;background:#edf7f2;color:#285b45;border-radius:10px;padding:12px;margin-top:10px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}.selected-box .btn{width:auto}
 /* Dark professional interface */
 :root{--ink:#f5f7fb;--muted:#9ca7b8;--brand:#e9475b;--brand2:#ff6377;--paper:#111722;--bg:#090d14;--line:#293140;--green:#35c98a;--gold:#f5b83d}
 html{color-scheme:dark}body{background:radial-gradient(circle at 78% -10%,#31121e 0,transparent 32%),linear-gradient(135deg,#090d14,#0d121b 55%,#090d14);min-height:100dvh;color:var(--ink);font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
@@ -3410,13 +3411,55 @@ function ppmCloseLookupPanel(panel){
   if('hidden' in panel)panel.hidden=true;
   panel.innerHTML='';
 }
+function ppmPositionLookupPanel(panel){
+  // Molte card del form (es. .calendar-tap-card) usano backdrop-filter, che
+  // crea un proprio stacking context: un discendente position:absolute con
+  // z-index alto resta comunque "intrappolato" sotto le card successive,
+  // che avendo anch'esse backdrop-filter aprono un nuovo stacking context e
+  // vengono dipinte sopra per puro ordine nel DOM (bug segnalato dall'utente:
+  // il suggerimento ANIMALE appariva dietro Operatore/Titolo). Il portal
+  // verso <body>, gia' usato per il popover Pagamento, risolve lo stesso
+  // problema qui: fuori da qualunque antenato con backdrop-filter/transform,
+  // lo z-index del pannello torna a contare per davvero.
+  const input=panel._ppmLookupInput;
+  if(!input)return;
+  if(panel.parentElement!==document.body)document.body.appendChild(panel);
+  panel.classList.add('ppm-lookup-portal');
+  const rect=input.getBoundingClientRect();
+  const margin=8,gap=6;
+  const spaceBelow=window.innerHeight-rect.bottom-margin;
+  const spaceAbove=rect.top-margin;
+  const openUpward=spaceBelow<160&&spaceAbove>spaceBelow;
+  panel.style.left=Math.max(margin,rect.left)+'px';
+  panel.style.width=rect.width+'px';
+  if(openUpward){
+    panel.style.top='auto';
+    panel.style.bottom=(window.innerHeight-rect.top+gap)+'px';
+    panel.style.maxHeight=Math.max(120,Math.min(340,spaceAbove-gap))+'px';
+  }else{
+    panel.style.bottom='auto';
+    panel.style.top=(rect.bottom+gap)+'px';
+    panel.style.maxHeight=Math.max(120,Math.min(340,spaceBelow-gap))+'px';
+  }
+}
+function ppmRepositionOpenLookupPanels(){
+  ppmLookupPanels.forEach(entry=>{
+    if(!entry.input.isConnected){ppmLookupPanels.delete(entry);return;}
+    if(!entry.panel.classList.contains('hidden')&&!entry.panel.hidden)ppmPositionLookupPanel(entry.panel);
+  });
+}
+window.addEventListener('scroll',ppmRepositionOpenLookupPanels,{capture:true,passive:true});
+window.addEventListener('resize',ppmRepositionOpenLookupPanels);
+if(window.visualViewport)window.visualViewport.addEventListener('resize',ppmRepositionOpenLookupPanels);
 function ppmOpenLookupPanel(panel){
   if(!panel)return;
   panel.classList.remove('hidden');
   if('hidden' in panel)panel.hidden=false;
+  ppmPositionLookupPanel(panel);
 }
 function ppmRegisterLookupPanel(input,panel){
   if(!input||!panel)return;
+  panel._ppmLookupInput=input;
   ppmLookupPanels.add({input,panel});
 }
 document.addEventListener('click',function(e){
@@ -6932,11 +6975,20 @@ class App(BaseHTTPRequestHandler):
                 "Consegnato":c.execute(f"SELECT count(*) n FROM practices p WHERE ({active}) AND p.status='Consegnato' AND {consegna_date} BETWEEN date(?) AND date(?)",(practice_from.isoformat(),practice_to.isoformat())).fetchone()["n"],
             }
             open_rows=c.execute(f"SELECT p.* FROM practices p WHERE ({active}) AND COALESCE(p.payment_status,'Da saldare')!='Pagato'").fetchall()
-            movement_stats={row["category"]:row for row in c.execute(f"""SELECT CASE WHEN m.payment_type LIKE 'acconto_%' THEN 'Acconto' ELSE 'Pagato' END category,
+            # payment_type e' scritto letteralmente come 'acconto'/'saldo' da
+            # add_payment_movement (nessun suffisso): il vecchio IN(...) qui
+            # sotto elencava varianti legacy ('acconto_ordinario' ecc.) mai
+            # piu' scritte da anni, quindi ogni pagamento registrato con il
+            # flusso attuale veniva silenziosamente escluso e le card
+            # Pagamenti mostravano sempre 0 anche con movimenti reali visibili
+            # nei Bilanci (che leggono da balance_movements, non da qui).
+            # LIKE 'acconto%'/'saldo%' (senza underscore) copre sia il valore
+            # esatto attuale sia eventuali varianti storiche con suffisso.
+            movement_stats={row["category"]:row for row in c.execute(f"""SELECT CASE WHEN m.payment_type LIKE 'acconto%' THEN 'Acconto' ELSE 'Pagato' END category,
                                          count(DISTINCT m.practice_id) practice_count,COALESCE(sum(m.amount),0) amount
                                          FROM payment_movements m JOIN practices p ON p.id=m.practice_id
                                          WHERE ({active}) AND m.amount>0 AND date(m.paid_at) BETWEEN date(?) AND date(?)
-                                         AND m.payment_type IN ('acconto_ordinario','acconto_d','saldo_ordinario','saldo_d')
+                                         AND (m.payment_type LIKE 'acconto%' OR m.payment_type LIKE 'saldo%')
                                          GROUP BY category""",(payment_from.isoformat(),payment_to.isoformat())).fetchall()}
             recent=c.execute("SELECT * FROM practices WHERE deleted_at IS NULL OR deleted_at='' ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) DESC,id DESC LIMIT 10").fetchall()
             sync_reminders(c)

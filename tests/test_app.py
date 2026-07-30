@@ -3994,6 +3994,39 @@ class PetParadiseTests(unittest.TestCase):
         # The old ad-hoc per-function sequence counter was removed, not duplicated further.
         self.assertNotIn("calendarDeliveryAnimalLookupSequence", js)
 
+    def test_lookup_panels_are_portaled_to_body_to_escape_backdrop_filter_stacking_contexts(self):
+        # bug segnalato dall'utente: card come .calendar-tap-card usano
+        # backdrop-filter, che apre un proprio stacking context — un
+        # discendente position:absolute con z-index alto resta comunque
+        # "intrappolato" sotto le card successive (anch'esse con
+        # backdrop-filter), che vengono dipinte sopra per ordine nel DOM. Il
+        # fix riparenta il pannello a <body> (position:fixed, calcolato dalla
+        # posizione reale del campo) cosi' lo z-index torna a contare per
+        # davvero, indipendentemente da qualunque antenato con
+        # backdrop-filter/transform.
+        js = app.APP_JS
+        self.assertIn("function ppmPositionLookupPanel(panel)", js)
+        position_fn = js[js.index("function ppmPositionLookupPanel(panel)"):js.index("function ppmRepositionOpenLookupPanels")]
+        self.assertIn("document.body.appendChild(panel)", position_fn)
+        self.assertIn("panel.classList.add('ppm-lookup-portal')", position_fn)
+        self.assertIn("getBoundingClientRect()", position_fn)
+        # se lo spazio sotto e' insufficiente, apre verso l'alto invece di tagliarsi
+        self.assertIn("openUpward", position_fn)
+        self.assertIn("panel.style.bottom", position_fn)
+        # ogni open chiama il posizionamento, e si riposiziona su scroll/resize/tastiera iOS
+        open_fn = js[js.index("function ppmOpenLookupPanel(panel)"):js.index("function ppmRegisterLookupPanel")]
+        self.assertIn("ppmPositionLookupPanel(panel)", open_fn)
+        self.assertIn("window.addEventListener('scroll',ppmRepositionOpenLookupPanels", js)
+        self.assertIn("window.addEventListener('resize',ppmRepositionOpenLookupPanels)", js)
+        self.assertIn("window.visualViewport", js)
+        # ppmRegisterLookupPanel deve salvare il riferimento all'input sul
+        # pannello stesso, senza cambiare firma: nessuno dei ~15 call site
+        # esistenti (vet/cliente/urne/animale riconsegna/collega pratica...)
+        # deve essere toccato per far funzionare il posizionamento.
+        self.assertIn("panel._ppmLookupInput=input", js)
+        css = app.CSS
+        self.assertIn(".lookup-results.ppm-lookup-portal{position:fixed", css)
+
     def test_lookup_panels_reopen_after_being_closed_once(self):
         # Regression test: ppmCloseLookupPanel used to set the native `hidden`
         # attribute, but every "show" path only ever cleared the CSS class, so a
@@ -6085,6 +6118,137 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(app.money_it(200.0+200.0),page)
         with app.db() as conn:
             self.assertEqual(snapshot,(conn.execute("SELECT count(*) n FROM practices").fetchone()["n"],conn.execute("SELECT count(*) n FROM payment_movements").fetchone()["n"],conn.execute("SELECT count(*) n FROM practice_history").fetchone()["n"]))
+
+    def test_dashboard_payment_cards_reflect_movements_from_the_current_macroarea_flow(self):
+        # Bug reale segnalato dall'utente: apply_payment_macroarea scrive
+        # payment_type letteralmente 'acconto'/'saldo' (nessun suffisso), ma
+        # la query delle card Pagamenti filtrava su valori legacy mai più
+        # scritti ('acconto_ordinario' ecc.) — ogni pagamento registrato col
+        # flusso attuale (popover/creazione/modifica) veniva quindi ignorato
+        # e le card mostravano sempre 0, pur con i movimenti reali visibili
+        # nei Bilanci. Questo test usa il vero handler di registrazione, non
+        # INSERT diretti, per riprodurre esattamente lo scenario reale.
+        today=datetime.now().date().isoformat()
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp=app.now()
+            def practice(code,total_w="",total_d=""):
+                return conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                      animal_name,service_type,payment_status,total_service,total_text)
+                                      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                    (code,"Privato","Livorno","Ritirato",stamp,stamp,admin["id"],
+                                     code,"Cremazione singola","Da saldare",total_w,total_d)).lastrowid
+            pid_w=practice("CR-DASHFIX-W",total_w="300")
+            pid_d=practice("CR-DASHFIX-D",total_d="400")
+            pid_full=practice("CR-DASHFIX-FULL",total_w="250")
+        self.handler.headers={}
+        self.handler.redirect=lambda url:None
+        self.handler.form=lambda:{"macroarea":"acconto","acconto_data":today,"acconto_totale":"100,00","acconto_circuito":"W","acconto_modalita":"Pos"}
+        self.handler.save_payment_macroarea(admin,pid_w)
+        self.handler.form=lambda:{"macroarea":"acconto","acconto_data":today,"acconto_totale":"150,00","acconto_circuito":"D","acconto_modalita":""}
+        self.handler.save_payment_macroarea(admin,pid_d)
+        self.handler.form=lambda:{"macroarea":"acconto","acconto_data":today,"acconto_totale":"100,00","acconto_circuito":"W","acconto_modalita":"Contanti"}
+        self.handler.save_payment_macroarea(admin,pid_full)
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":today,"saldo_totale":"150,00","saldo_circuito":"W","saldo_modalita":"Contanti"}
+        self.handler.save_payment_macroarea(admin,pid_full)
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT payment_status FROM practices WHERE id=?",(pid_full,)).fetchone()["payment_status"],"Pagato")
+            movement_types={row["payment_type"] for row in conn.execute("SELECT DISTINCT payment_type FROM payment_movements")}
+            self.assertEqual(movement_types,{"acconto","saldo"})
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/?pagamenti_periodo=oggi";self.handler.dashboard(admin)
+        page=rendered[-1]
+        # 3 pratiche distinte hanno un movimento 'acconto' oggi (W, D, e quella
+        # poi saldata) = 100+150+100; 1 pratica ha un movimento 'saldo' = 150
+        self.assertIn('data-dashboard-payment="Acconto" data-count="3" data-amount="350.00"',page)
+        self.assertIn('data-dashboard-payment="Pagato" data-count="1" data-amount="150.00"',page)
+        self.assertIn('class="dash-stat-card payment-total"',page)
+        self.assertIn(app.money_it(350.0+150.0),page)
+
+    def test_dashboard_payment_cards_use_paid_at_not_created_at_and_update_immediately(self):
+        # created_at volutamente molto nel passato: se il filtro leggesse per
+        # errore created_at (o la data della pratica) invece di paid_at, la
+        # card "Oggi" continuerebbe a mostrare 0 anche col pagamento di oggi.
+        old_created=(datetime.now().date()-timedelta(days=60)).isoformat()+"T08:00:00"
+        today=datetime.now().date().isoformat()
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                              animal_name,service_type,payment_status,total_service) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                              ("CR-DASHFIX-DATE","Privato","Livorno","Ritirato",old_created,old_created,admin["id"],
+                               "Zeus","Cremazione singola","Da saldare","200")).lastrowid
+        self.handler.headers={}
+        self.handler.redirect=lambda url:None
+        self.handler.form=lambda:{"macroarea":"acconto","acconto_data":today,"acconto_totale":"120,00","acconto_circuito":"W","acconto_modalita":"Pos"}
+        self.handler.save_payment_macroarea(admin,pid)
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/?pagamenti_periodo=oggi";self.handler.dashboard(admin)
+        # nessuna cache: la stessa richiesta subito dopo la registrazione vede già il movimento
+        self.assertIn('data-dashboard-payment="Acconto" data-count="1" data-amount="120.00"',rendered[-1])
+
+    def test_dashboard_payment_cards_exclude_movements_outside_the_selected_period(self):
+        today=datetime.now().date();_,week_start,week_end=app.dashboard_period_bounds("settimana",today)
+        week_other_day=week_end if week_start==today else week_start
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                              animal_name,service_type,payment_status,total_service) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                              ("CR-DASHFIX-WEEK","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],
+                               "Era","Cremazione singola","Da saldare","200")).lastrowid
+        self.handler.headers={}
+        self.handler.redirect=lambda url:None
+        self.handler.form=lambda:{"macroarea":"acconto","acconto_data":week_other_day.isoformat(),"acconto_totale":"90,00","acconto_circuito":"W","acconto_modalita":"Pos"}
+        self.handler.save_payment_macroarea(admin,pid)
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/?pagamenti_periodo=settimana";self.handler.dashboard(admin)
+        self.assertIn('data-dashboard-payment="Acconto" data-count="1" data-amount="90.00"',rendered[-1])
+        if week_other_day!=today:
+            self.handler.path="/?pagamenti_periodo=oggi";self.handler.dashboard(admin)
+            self.assertIn('data-dashboard-payment="Acconto" data-count="0" data-amount="0.00"',rendered[-1])
+
+    def test_dashboard_payment_cards_exclude_removed_movements(self):
+        today=datetime.now().date().isoformat()
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                              animal_name,service_type,payment_status,total_service) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                              ("CR-DASHFIX-CANCEL","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],
+                               "Nix","Cremazione singola","Da saldare","200")).lastrowid
+        self.handler.headers={}
+        self.handler.redirect=lambda url:None
+        self.handler.form=lambda:{"macroarea":"acconto","acconto_data":today,"acconto_totale":"80,00","acconto_circuito":"W","acconto_modalita":"Pos"}
+        self.handler.save_payment_macroarea(admin,pid)
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/?pagamenti_periodo=oggi";self.handler.dashboard(admin)
+        self.assertIn('data-dashboard-payment="Acconto" data-count="1" data-amount="80.00"',rendered[-1])
+        self.handler.form=lambda:{"macroarea":"acconto"}
+        self.handler.remove_payment_macroarea(admin,pid)
+        self.handler.dashboard(admin)
+        self.assertIn('data-dashboard-payment="Acconto" data-count="0" data-amount="0.00"',rendered[-1])
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT count(*) n FROM payment_movements WHERE practice_id=?",(pid,)).fetchone()["n"],0)
+
+    def test_dashboard_payment_total_matches_bilanci_ledger_for_the_same_day(self):
+        today=datetime.now().date().isoformat()
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                              animal_name,service_type,payment_status,total_service) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                              ("CR-DASHFIX-LEDGER","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],
+                               "Hermes","Cremazione singola","Da saldare","300")).lastrowid
+        self.handler.headers={}
+        self.handler.redirect=lambda url:None
+        self.handler.form=lambda:{"macroarea":"acconto","acconto_data":today,"acconto_totale":"130,00","acconto_circuito":"W","acconto_modalita":"Pos","balance_idempotency_key":"dashfix-ledger-test"}
+        self.handler.save_payment_macroarea(admin,pid)
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/?pagamenti_periodo=oggi";self.handler.dashboard(admin)
+        self.assertIn('data-dashboard-payment="Acconto" data-count="1" data-amount="130.00"',rendered[-1])
+        with app.db() as conn:
+            ledger_cents=conn.execute(
+                "SELECT COALESCE(SUM(amount_cents),0) n FROM balance_movements WHERE practice_id=? AND ledger_section='Entrata' AND movement_type='Acconto' AND date(movement_date)=?",
+                (pid,today),
+            ).fetchone()["n"]
+        self.assertEqual(ledger_cents,13000)
 
     def test_dashboard_recent_practices_use_a_compact_card_list_not_a_table(self):
         with app.db() as conn:
