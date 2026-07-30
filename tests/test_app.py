@@ -6284,6 +6284,28 @@ class PetParadiseTests(unittest.TestCase):
             practice=conn.execute("SELECT remaining_final FROM practices WHERE id=?",(pid,)).fetchone()
             self.assertEqual(practice["remaining_final"],"-50.00")
 
+    def test_payment_diagnostics_page_lists_every_movement_admin_only(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            operator=conn.execute("SELECT * FROM users WHERE role!='admin' LIMIT 1").fetchone()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,total_text)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?)""",("CR-DIAG-PAGE","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Nerva","Cremazione singola","Da saldare","250")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-21","saldo_totale":"250,00","saldo_circuito":"D","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.practice_payment_diagnostics(admin,pid)
+        page=rendered[-1]
+        self.assertIn("payment_movements (1)",page)
+        self.assertIn("balance_movements (1)",page)
+        self.assertIn("250.0",page)
+        if operator:
+            errors=[];self.handler.send_error=lambda code,msg=None:errors.append(code)
+            self.handler.practice_payment_diagnostics(operator,pid)
+            self.assertEqual(errors,[403])
+
     def test_acconto_and_saldo_keep_their_own_movement_dates(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()

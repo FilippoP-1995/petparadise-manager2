@@ -6838,6 +6838,8 @@ class App(BaseHTTPRequestHandler):
         if match: return self.urn_detail_page(user, int(match.group(1)))
         match = re.fullmatch(r"/veterinari/(\d+)", path)
         if match: return self.veterinarian_detail(user, int(match.group(1)))
+        match = re.fullmatch(r"/pratiche/(\d+)/diagnostica-pagamenti", path)
+        if match: return self.practice_payment_diagnostics(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)", path)
         if match: return self.practice(user, int(match.group(1)))
         match = re.fullmatch(r"/notifiche/(\d+)/apri", path)
@@ -14035,6 +14037,32 @@ class App(BaseHTTPRequestHandler):
                 c.execute("UPDATE calendar_events SET linked_practice_id=?,updated_at=?,updated_by=? WHERE id=? AND linked_practice_id IS NULL",(pid,stamp,user["id"],calendar_event_id))
                 calendar_add_history(c,calendar_event_id,user["id"],"Creazione pratica","",number,stamp)
         self.redirect(f"/pratiche/{pid}")
+
+    def practice_payment_diagnostics(self,user,pid):
+        """Read-only admin dump of every payment_movements/balance_movements
+        row for one practice, plus the practice's own cached deposit/
+        remaining columns — added to diagnose a production report of a
+        deposit_final figure inconsistent with both tables, without needing
+        direct DB shell access. No writes, no side effects."""
+        if user["role"]!="admin":return self.send_error(403,"Solo gli amministratori possono vedere questa pagina.")
+        with db() as c:
+            practice=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+            if not practice:return self.send_error(404)
+            movements=c.execute("SELECT * FROM payment_movements WHERE practice_id=? ORDER BY id",(pid,)).fetchall()
+            balances=c.execute("SELECT * FROM balance_movements WHERE practice_id=? ORDER BY id",(pid,)).fetchall()
+        rows_html=lambda rows,cols:''.join(
+            '<tr>'+''.join(f'<td>{esc(str(r[col]) if col in r.keys() and r[col] is not None else "")}</td>' for col in cols)+'</tr>'
+            for r in rows
+        )
+        pm_cols=["id","payment_type","payment_channel","movement_category","amount","paid_at","payment_method","created_at"]
+        bm_cols=["id","category","movement_type","amount_cents","movement_date","idempotency_key","related_movement_id","created_at"]
+        body=f'''<main class="wrap"><div class="titlebar"><h1>Diagnostica pagamenti · {esc(practice['practice_number'])}</h1></div>
+        <section class="section"><h2>Colonne pratica (cache)</h2><table><tr><th>deposit</th><th>remaining_balance</th><th>deposit_final</th><th>remaining_final</th><th>payment_status</th><th>total_service</th><th>total_text</th></tr>
+        <tr><td>{esc(practice['deposit'] or '')}</td><td>{esc(practice['remaining_balance'] or '')}</td><td>{esc(practice['deposit_final'] or '')}</td><td>{esc(practice['remaining_final'] or '')}</td><td>{esc(practice['payment_status'] or '')}</td><td>{esc(practice['total_service'] or '')}</td><td>{esc(practice['total_text'] or '')}</td></tr></table></section>
+        <section class="section"><h2>payment_movements ({len(movements)})</h2><table><tr>{''.join(f'<th>{c}</th>' for c in pm_cols)}</tr>{rows_html(movements,pm_cols)}</table></section>
+        <section class="section"><h2>balance_movements ({len(balances)})</h2><table><tr>{''.join(f'<th>{c}</th>' for c in bm_cols)}</tr>{rows_html(balances,bm_cols)}</table></section>
+        </main>'''
+        self.send_html(layout(f"Diagnostica {practice['practice_number']}",body,user))
 
     def practice(self,user,pid,error=""):
         q=parse_qs(urlparse(getattr(self,"path","")).query); back_url=safe_return_path((q.get("return_to") or [""])[0],"/archivio/pratiche")
