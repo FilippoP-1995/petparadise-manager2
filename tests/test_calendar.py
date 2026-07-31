@@ -828,11 +828,12 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn('calendar-appt-stat-unassigned', month_page)
         self.assertIn('Senza incaricato', month_page)
 
-    def test_calendar_operator_filter_is_auto_selected_for_non_admin_and_a_select_for_admin(self):
-        # richiesta dell'utente: niente tendina "Incaricato" da compilare a
-        # mano per un operatore non-admin, il filtro deve gia' essere sul
-        # proprio nome (preso dal login); l'admin mantiene la tendina per
-        # poter controllare la giornata di ciascun operatore.
+    def test_calendar_operator_filter_is_a_shared_select_for_everyone_unfiltered_by_default(self):
+        # richiesta dell'utente: calendario condiviso, tutti (admin e non)
+        # vedono di default gli eventi inseriti da chiunque - niente piu'
+        # auto-filtro forzato sul proprio nome per i non-admin. La tendina
+        # "Incaricato" resta disponibile per tutti come filtro manuale
+        # opzionale, sempre vuota (nessun operatore) al primo caricamento.
         with app.db() as conn:
             serena = conn.execute("SELECT * FROM users WHERE username='serena'").fetchone()
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
@@ -841,18 +842,13 @@ class OperationalCalendarTests(unittest.TestCase):
         self.handler.path = "/calendario?vista=settimana&data=2026-08-12"
         self.handler.calendar_page(serena)
         operator_page = rendered[-1]
-        self.assertIn(f'<input type="hidden" class="calendar-filter-operator" value="{serena["display_name"].lower()}">', operator_page)
-        self.assertNotIn('<select class="calendar-filter-operator"', operator_page)
+        self.assertIn('<select class="calendar-filter-operator"', operator_page)
+        self.assertIn('<option value="">Incaricato</option>', operator_page)
+        self.assertNotIn('<input type="hidden" class="calendar-filter-operator"', operator_page)
         self.handler.calendar_page(admin)
         admin_page = rendered[-1]
         self.assertIn('<select class="calendar-filter-operator"', admin_page)
         self.assertIn('<option value="">Incaricato</option>', admin_page)
-        # il filtro va applicato anche al primo caricamento (non solo al
-        # cambio manuale), altrimenti l'operatore vedrebbe comunque tutti
-        # gli appuntamenti finche' non tocca qualcosa
-        self.assertIn("calendarSelectDay(Number(pages.dataset.initialDayIndex||0),{instant:true});", app.APP_JS)
-        init_fn = app.APP_JS[app.APP_JS.index("function calendarInitDayPages()"):app.APP_JS.index("function calendarSetFilter")]
-        self.assertIn("calendarApplyFilters();", init_fn)
 
     def test_animal_search_payment_summary_uses_saldo_rimanenza_label_for_w_circuit(self):
         stamp = datetime.now().isoformat(timespec="seconds")

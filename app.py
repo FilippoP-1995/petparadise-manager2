@@ -4584,10 +4584,6 @@ function calendarInitDayPages(){
     items.forEach(function(item){calendarDayObserver.observe(item);});
   }
   calendarSelectDay(Number(pages.dataset.initialDayIndex||0),{instant:true});
-  // per un operatore non-admin il campo Incaricato e' un input nascosto
-  // gia' valorizzato col proprio nome (nessuna tendina da compilare): va
-  // applicato subito al caricamento, non solo al cambio manuale, o il primo
-  // caricamento mostrerebbe comunque tutti gli appuntamenti.
   calendarApplyFilters();
 }
 function calendarSetFilter(btn){
@@ -8402,17 +8398,14 @@ class App(BaseHTTPRequestHandler):
         def week_day_sort_key(row):return (0 if row["all_day"] else 1,row["start_at"] or "")
         week_days=[start+timedelta(days=i) for i in range(7)]
         selected_index=next((i for i,d in enumerate(week_days) if d.isoformat()==selected),0)
-        # L'operatore non-admin vede sempre e solo il proprio nome: niente
-        # tendina da compilare a mano (il valore e' gia' quello del login),
-        # ma il filtro resta lato client sugli stessi dati (nessuna card e'
-        # mai nascosta lato server), quindi l'admin mantiene la tendina per
-        # poter controllare la giornata di ciascun operatore.
-        if user["role"]=="admin":
-            operator_filter_html=f'''<select class="calendar-filter-operator" onchange="calendarApplyFilters()" aria-label="Filtra per incaricato">
+        # Calendario condiviso: tutti gli utenti (admin e non) vedono di
+        # default gli eventi inseriti da chiunque, con l'avatar dell'operatore
+        # su ogni card a indicare chi l'ha in carico. La tendina Incaricato
+        # resta disponibile per tutti come filtro manuale opzionale, non piu'
+        # precompilata forzatamente col nome dell'utente loggato.
+        operator_filter_html=f'''<select class="calendar-filter-operator" onchange="calendarApplyFilters()" aria-label="Filtra per incaricato">
             <option value="">Incaricato</option>{''.join(f'<option value="{esc(name.lower())}">{esc(name)}</option>' for name in CALENDAR_OPERATORS)}
           </select>'''
-        else:
-            operator_filter_html=f'<input type="hidden" class="calendar-filter-operator" value="{esc(user["display_name"].lower())}">'
         filter_pills_html=f'''<div class="calendar-appt-filters">
           <button type="button" class="calendar-filter-pill active" data-filter-value="tutte" onclick="calendarSetFilter(this)">Tutti</button>
           <button type="button" class="calendar-filter-pill" data-filter-value="ritiri" onclick="calendarSetFilter(this)">Ritiri</button>
