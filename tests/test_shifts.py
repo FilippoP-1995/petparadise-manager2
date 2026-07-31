@@ -169,18 +169,24 @@ class ShiftsModuleTests(unittest.TestCase):
         self.assertIn('class="shift-month-legend"', page)
         self.assertIn("Nessun turno", page)
 
-    def test_shifts_page_mese_vacation_band_rounds_only_at_edges(self):
+    def test_shifts_page_mese_vacation_bar_is_one_continuous_span_colored_per_operator(self):
+        # Aug 10-12 2026 sono lunedi-mercoledi (stessa riga): deve essere
+        # UNA sola barra che copre le 3 colonne, non tre etichette separate.
         with app.db() as conn:
             from shift_service import create_vacation
             create_vacation(conn, "Serena", "2026-08-10", "2026-08-12", None, self.admin["id"])
+            operator_color = app.calendar_color_settings(conn)["operators"]["Serena"]
         rendered = []
         self.handler.send_html = lambda html, *a: rendered.append(html)
         self.handler.path = "/turni?vista=mese&data=2026-08-10"
         self.handler.shifts_page(self.admin)
         page = rendered[-1]
-        self.assertGreaterEqual(page.count("shift-vacation-band"), 3)
-        self.assertIn("band-start", page)
-        self.assertIn("band-end", page)
+        self.assertEqual(page.count('title="Serena"'), 1)
+        bar_start = page.index('title="Serena"')
+        bar_html = page[max(0, bar_start - 250):bar_start + 50]
+        self.assertIn("grid-column:1/4", bar_html)
+        self.assertIn(operator_color, bar_html)
+        self.assertNotIn("FERIE", page)
 
     # ---- plan page ----
     def test_shifts_plan_page_shows_grid_for_shift_operators_only_and_seven_days(self):
