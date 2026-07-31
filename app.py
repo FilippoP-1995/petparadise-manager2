@@ -69,6 +69,10 @@ from shift_service import (
     delete_vacation as delete_shift_vacation_row,
 )
 CALENDAR_OPERATOR_SLUGS={"Serena":"serena","Alessio":"alessio","Filippo":"filippo","Gianluca":"gianluca"}
+# Richiesta esplicita dell'utente: Gianluca non fa parte della sezione
+# Orari (turni/ferie/reperibilità) — resta invece normalmente tra gli
+# operatori di Calendario/Cremazioni (CALENDAR_OPERATORS, non toccato).
+SHIFT_OPERATORS=tuple(name for name in CALENDAR_OPERATORS if name!="Gianluca")
 CALENDAR_COLOR_PALETTE=(
     "#fb7185","#fde047","#4ade80","#60a5fa","#c084fc","#94a3b8",
     "#f43f5e","#14b8a6","#eab308","#7c3aed","#64748b",
@@ -2516,6 +2520,7 @@ body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY
 .shift-month-cell-branch.branch-livorno{color:var(--brand)}
 .shift-month-cell-branch.branch-empoli{color:var(--green)}
 .shift-month-cell-names{font-size:10.5px;line-height:1.35;color:var(--ink)}
+.shift-month-cell-time{color:var(--muted);font-size:9.5px}
 .shift-vacation-band{margin-top:auto;padding:2px 4px;background:#1d4ed8;color:#fff;font-size:9px;font-weight:800;letter-spacing:.04em;text-align:center}
 .shift-vacation-band.band-start{border-top-left-radius:6px;border-bottom-left-radius:6px}
 .shift-vacation-band.band-end{border-top-right-radius:6px;border-bottom-right-radius:6px}
@@ -6005,6 +6010,22 @@ def lucide(name, label=""):
     return f'<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"{aria}>{path}</svg>'
 
 
+def calendar_time_wheel_field(label,input_id,value=""):
+    """Stesso identico pattern (classi CSS, handler JS calendarTimeFocus/
+    calendarTimeBeforeInput/calendarTimeInput/calendarTimeBlur, selettore a
+    rotella) gia' usato da Calendario operativo e Programma Cremazioni per
+    l'inserimento orario — qui come funzione condivisa vera e propria invece
+    di un'ennesima copia locale, per un nuovo contesto (Orari/turni) senza
+    toccare le implementazioni esistenti di Calendario/Cremazioni."""
+    wheel_hours=''.join(f'<button class="calendar-wheel-option" type="button" data-time-value="{h}">{h:02d}</button>' for h in range(24))
+    wheel_minutes=''.join(f'<button class="calendar-wheel-option" type="button" data-time-value="{m}">{m:02d}</button>' for m in range(0,60,5))
+    return f'''<div class="calendar-datetime-row" style="grid-template-columns:64px 1fr">
+      <label>{esc(label)}</label>
+      <div class="calendar-time-slot" data-calendar-time><input class="calendar-time-entry" type="text" inputmode="numeric" id="{input_id}" data-time-entry value="{esc(value)}" placeholder="09:30" onfocus="calendarTimeFocus(this)" onbeforeinput="calendarTimeBeforeInput(this,event)" oninput="calendarTimeInput(this)" onblur="calendarTimeBlur(this)"></div>
+      <div class="calendar-time-wheel" data-time-wheel hidden><div class="calendar-wheel-column" data-wheel-part="hour">{wheel_hours}</div><span class="calendar-wheel-separator">:</span><div class="calendar-wheel-column" data-wheel-part="minute">{wheel_minutes}</div></div>
+    </div>'''
+
+
 def normalize_money_text(value):
     text=str(value or "").strip().replace("€","").replace(" ","")
     if "," in text and "." in text:
@@ -8736,8 +8757,8 @@ class App(BaseHTTPRequestHandler):
             color_settings=calendar_color_settings(c)
             shifts_by_day=shifts_for_range(c,range_start,range_end)
             vacations=vacations_overlapping(c,range_start,range_end)
-            banner_operator,banner_manual=oncall_operator_for_week(c,today_monday,list(CALENDAR_OPERATORS))
-            oncall_rotation=[(wk,)+oncall_operator_for_week(c,wk,list(CALENDAR_OPERATORS)) for wk in oncall_weeks]
+            banner_operator,banner_manual=oncall_operator_for_week(c,today_monday,list(SHIFT_OPERATORS))
+            oncall_rotation=[(wk,)+oncall_operator_for_week(c,wk,list(SHIFT_OPERATORS)) for wk in oncall_weeks]
         def vacation_operators_on(day):
             return [v["operator_name"] for v in vacations if date.fromisoformat(v["start_date"])<=day<=date.fromisoformat(v["end_date"])]
         today_sunday=today_monday+timedelta(days=6)
@@ -8787,14 +8808,26 @@ class App(BaseHTTPRequestHandler):
                         end_pct=format_time_pct(row["end_time"] or "23:59")
                         width_pct=max(end_pct-start_pct,3)
                         bar_html=f'<div class="shift-bar" style="left:{start_pct:.2f}%;width:{width_pct:.2f}%">{esc(row["start_time"] or "")} – {esc(row["end_time"] or "")}</div>'
-                    edit_href=f"/turni/pianifica?settimana={monday.isoformat()}&evidenzia={quote(row['operator_name'])}:{selected_date.isoformat()}"
+                    # La matita apre lo stesso popup di Pianifica turni come
+                    # overlay su questa pagina (non naviga altrove): chiudendo
+                    # il popup si resta sulla vista Orari da cui si e' partiti.
+                    row_data_shift=esc(json.dumps({
+                        "branch":row["branch"],
+                        "start_time":row["start_time"] if not row["all_day"] else "",
+                        "end_time":row["end_time"] if not row["all_day"] else "",
+                        "all_day":bool(row["all_day"]),
+                    }))
                     rows_html.append(f'''<div class="shift-operator-row">
                       <div class="shift-operator-name">{avatar}<div><b>{esc(row["operator_name"])}</b><small>{esc(branch)}</small></div></div>
                       <div class="shift-track">{bar_html}</div>
-                      <a class="icon-btn" href="{edit_href}" aria-label="Modifica turno di {esc(row['operator_name'])}">{lucide("pencil")}</a>
+                      <button type="button" class="icon-btn" data-operator="{esc(row['operator_name'])}" data-date="{selected_date.isoformat()}" data-shift="{row_data_shift}" data-locked-branch="{esc(row['branch'])}" onclick="turniOpenCellEditor(this)" aria-label="Modifica turno di {esc(row['operator_name'])}">{lucide("pencil")}</button>
                     </div>''')
                 body_html=''.join(rows_html) or '<p class="shift-empty-note">Nessun turno assegnato.</p>'
-                add_href=f"/turni/pianifica?settimana={monday.isoformat()}"
+                # "Aggiungi operatore" trasmette la sede della sezione da cui
+                # e' stato premuto: la pagina di pianificazione la blocca per
+                # ogni cella vuota aperta in questa sessione (niente tendina
+                # "Seleziona sede", richiesta esplicita dell'utente).
+                add_href=f"/turni/pianifica?settimana={monday.isoformat()}&sede={quote(branch)}&ritorno_vista={view}&ritorno_data={selected_date.isoformat()}"
                 branch_cls="branch-livorno" if branch=="Livorno" else "branch-empoli"
                 return f'''<section class="section">
                   <div class="shift-sede-head">
@@ -8813,6 +8846,12 @@ class App(BaseHTTPRequestHandler):
               <a class="cremation-nav-btn" href="/turni?vista=mese&data={next_month_first.isoformat()}" aria-label="Mese successivo">›</a>
               <a class="cremation-today-btn {"active" if (selected_date.month==today_date.month and selected_date.year==today_date.year) else ""}" href="/turni?vista=mese">Oggi</a>
             </div>'''
+            def shift_time_label(row):
+                if row["all_day"]:return "Tutto il giorno"
+                start,end=row["start_time"] or "",row["end_time"] or ""
+                if (start,end)==("08:30","13:00"):return "Mattina"
+                if (start,end)==("14:30","19:30"):return "Pomeriggio"
+                return f"{esc(start)}–{esc(end)}"
             def month_cell_html(day):
                 day_iso=day.isoformat()
                 day_data=shifts_by_day.get(day_iso,{})
@@ -8821,10 +8860,10 @@ class App(BaseHTTPRequestHandler):
                 if day.month!=selected_date.month:classes.append("is-other-month")
                 blocks=[]
                 for branch in SHIFT_BRANCHES:
-                    names=[r["operator_name"] for r in day_data.get(branch,[])]
-                    if names:
+                    branch_rows=day_data.get(branch,[])
+                    if branch_rows:
                         branch_cls="branch-livorno" if branch=="Livorno" else "branch-empoli"
-                        names_html="".join(f"<div>{esc(n)}</div>" for n in names)
+                        names_html="".join(f"<div>{esc(r['operator_name'])} <span class=\"shift-month-cell-time\">{shift_time_label(r)}</span></div>" for r in branch_rows)
                         blocks.append(f'<div class="shift-month-cell-branch {branch_cls}">{esc(branch.upper())}</div><div class="shift-month-cell-names">{names_html}</div>')
                 vac_today=vacation_operators_on(day)
                 vac_html=""
@@ -8854,6 +8893,7 @@ class App(BaseHTTPRequestHandler):
           {oncall_banner_html}
           {switch_html}
           {content}
+          {self.shift_cell_editor_html() if view=="giorno" else ""}
         </main>'''
         self.send_html(layout("Orari",body,user))
 
@@ -8869,6 +8909,28 @@ class App(BaseHTTPRequestHandler):
         highlight_operator,highlight_date="",""
         if ":" in evidenzia:
             highlight_operator,highlight_date=evidenzia.rsplit(":",1)
+        # Contesto sede: arriva da "Aggiungi operatore" (una sezione sede
+        # precisa nella vista giornaliera) o dalla matita di modifica (sede
+        # del turno stesso). Se presente e valido resta bloccato per tutta
+        # la sessione di pianificazione (propagato nei link di navigazione
+        # sotto); se assente non si assegna nulla di arbitrario — resta "",
+        # e ogni cella vuota apre normalmente la scelta sede come prima.
+        sede_raw=(q.get("sede") or [""])[0]
+        sede_error=""
+        if sede_raw and sede_raw not in SHIFT_BRANCHES:
+            sede_error=f'Sede "{esc(sede_raw)}" non valida: nessuna sede è stata impostata automaticamente.'
+        locked_sede=sede_raw if sede_raw in SHIFT_BRANCHES else ""
+        sede_qs=f"&sede={quote(locked_sede)}" if locked_sede else ""
+        sede_error_html=f'<div class="flash warning">{sede_error}</div>' if sede_error else ""
+        # "Torna a Orari": riporta esattamente alla vista (giorno/mese) e
+        # data da cui e' partito "Aggiungi operatore" o la matita di
+        # modifica, propagato invariato attraverso i cambi di settimana.
+        ritorno_vista=(q.get("ritorno_vista") or [""])[0]
+        if ritorno_vista not in ("giorno","mese"):ritorno_vista="giorno"
+        ritorno_data=(q.get("ritorno_data") or [""])[0]
+        try:date.fromisoformat(ritorno_data)
+        except ValueError:ritorno_data=""
+        ritorno_qs=f"&ritorno_vista={ritorno_vista}&ritorno_data={ritorno_data}" if ritorno_data else ""
         day_names=("Lun","Mar","Mer","Gio","Ven","Sab","Dom")
         if monday.month==sunday.month:
             week_label=f"{monday.day} – {sunday.day} {MONTH_NAMES_IT[sunday.month-1]} {sunday.year}"
@@ -8881,11 +8943,12 @@ class App(BaseHTTPRequestHandler):
         with db() as c:
             color_settings=calendar_color_settings(c)
             shifts_by_day=shifts_for_range(c,monday,sunday)
+        oggi_qs="&".join(p for p in (f"sede={quote(locked_sede)}" if locked_sede else "",ritorno_qs.lstrip("&")) if p)
         date_nav_html=f'''<div class="cremation-date-nav">
-          <a class="cremation-nav-btn" href="/turni/pianifica?settimana={prev_week}" aria-label="Settimana precedente">‹</a>
+          <a class="cremation-nav-btn" href="/turni/pianifica?settimana={prev_week}{sede_qs}{ritorno_qs}" aria-label="Settimana precedente">‹</a>
           <div class="cremation-date-label">{lucide("calendar")}<span>{esc(week_label)}</span></div>
-          <a class="cremation-nav-btn" href="/turni/pianifica?settimana={next_week}" aria-label="Settimana successiva">›</a>
-          <a class="cremation-today-btn {"active" if today_date.isoformat() in week_dates_iso else ""}" href="/turni/pianifica">Oggi</a>
+          <a class="cremation-nav-btn" href="/turni/pianifica?settimana={next_week}{sede_qs}{ritorno_qs}" aria-label="Settimana successiva">›</a>
+          <a class="cremation-today-btn {"active" if today_date.isoformat() in week_dates_iso else ""}" href="/turni/pianifica?{oggi_qs}">Oggi</a>
         </div>'''
         head_cells='<div></div>'+''.join(f'<div class="shift-plan-head-cell{" is-today" if d==today_date else ""}">{day_names[d.weekday()]}<br>{d.day:02d}/{d.month:02d}</div>' for d in week_days)
         branch_options=''.join(f'<option value="{b}">{b}</option>' for b in SHIFT_BRANCHES)
@@ -8912,29 +8975,50 @@ class App(BaseHTTPRequestHandler):
                 "all_day":bool(shift_row["all_day"]) if shift_row else False,
             }))
             evidenziata_cls=" evidenziata" if operator==highlight_operator and day_iso==highlight_date else ""
-            return f'<button type="button" class="shift-cell{" " if branch_cls else ""}{branch_cls}{has_cls}{evidenziata_cls}" data-operator="{esc(operator)}" data-date="{day_iso}" data-shift="{data_shift}" onclick="turniOpenCellEditor(this)">{cell_content}</button>'
+            # La sede di un turno gia' esistente vince sempre (non si cambia
+            # sede da questo popup); su una cella vuota si usa la sede
+            # bloccata dal contesto di pagina, se presente.
+            locked_branch_for_cell=shift_row["branch"] if shift_row else locked_sede
+            return f'<button type="button" class="shift-cell{" " if branch_cls else ""}{branch_cls}{has_cls}{evidenziata_cls}" data-operator="{esc(operator)}" data-date="{day_iso}" data-shift="{data_shift}" data-locked-branch="{esc(locked_branch_for_cell)}" onclick="turniOpenCellEditor(this)">{cell_content}</button>'
         rows_html=[]
-        for operator in CALENDAR_OPERATORS:
+        for operator in SHIFT_OPERATORS:
             avatar=self.calendar_operator_avatar(operator,"sm",color_settings["operators"].get(operator))
             rows_html.append(f'<div class="shift-plan-operator">{avatar}<span>{esc(operator)}</span></div>'+''.join(cell_html(operator,day) for day in week_days))
         grid_html=f'<div class="shift-plan-scroll"><div class="shift-plan-grid">{head_cells}{"".join(rows_html)}</div></div>'
         auto_open_js=""
         if highlight_operator and highlight_date:
             auto_open_js="var target=document.querySelector('.shift-cell.evidenziata');if(target){target.scrollIntoView({block:'center'});turniOpenCellEditor(target);}"
-        editor_html=f'''<div class="shift-cell-editor-backdrop" id="shiftCellEditorBackdrop" hidden onclick="if(event.target===this)turniCloseCellEditor()">
+        editor_html=self.shift_cell_editor_html(auto_open_js)
+        back_href=f"/turni?vista={ritorno_vista}&data={ritorno_data}" if ritorno_data else "/turni"
+        body=f'''<main class="wrap calendar-wrap">
+          <div class="titlebar calendar-main-title"><div><h1>Pianifica turni</h1><p class="sub">Seleziona una settimana e compila le celle per ogni operatore.</p></div><a class="btn ghost" href="{back_href}">← Torna a Orari</a></div>
+          {sede_error_html}
+          {date_nav_html}
+          {grid_html}
+          {editor_html}
+        </main>'''
+        self.send_html(layout("Pianifica turni",body,user))
+
+    def shift_cell_editor_html(self,auto_open_js=""):
+        # Popup condiviso: usato sia dalla griglia di Pianifica turni sia
+        # (come overlay, senza navigare via) dalla vista giornaliera di
+        # Orari — stessa identica logica in entrambi i casi, mai duplicata.
+        branch_options=''.join(f'<option value="{b}">{b}</option>' for b in SHIFT_BRANCHES)
+        return f'''<div class="shift-cell-editor-backdrop" id="shiftCellEditorBackdrop" hidden onclick="if(event.target===this)turniCloseCellEditor()">
           <form class="shift-cell-editor" id="shiftCellEditorForm" onsubmit="turniSaveCell(event)">
             <h3 id="shiftCellEditorTitle">Turno</h3>
             <input type="hidden" id="shiftCellOperator">
             <input type="hidden" id="shiftCellDate">
             <div class="fields">
-              <div class="field"><label>Sede</label><select id="shiftCellBranch"><option value="">Seleziona sede</option>{branch_options}</select></div>
+              <div class="field" id="shiftCellBranchField"><label>Sede</label><select id="shiftCellBranch"><option value="">Seleziona sede</option>{branch_options}</select></div>
+              <p class="sub" id="shiftCellSedeInfo" hidden></p>
               <div class="shift-view-switch">
                 <button type="button" class="btn ghost" onclick="turniSetPreset('mattina')">Mattina</button>
                 <button type="button" class="btn ghost" onclick="turniSetPreset('pomeriggio')">Pomeriggio</button>
               </div>
               <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="shiftCellAllDay" onchange="turniToggleAllDay(this)"> Tutto il giorno</label>
-              <div class="field" id="shiftCellStartField"><label>Orario inizio</label><input type="time" id="shiftCellStart"></div>
-              <div class="field" id="shiftCellEndField"><label>Orario fine</label><input type="time" id="shiftCellEnd"></div>
+              <div id="shiftCellStartField">{calendar_time_wheel_field("Orario inizio","shiftCellStart")}</div>
+              <div id="shiftCellEndField">{calendar_time_wheel_field("Orario fine","shiftCellEnd")}</div>
             </div>
             <p class="shift-cell-editor-note" id="shiftCellEditorNote"></p>
             <div class="actions">
@@ -8947,6 +9031,7 @@ class App(BaseHTTPRequestHandler):
         <script>(function(){{
           var backdrop=document.getElementById('shiftCellEditorBackdrop');
           var currentBtn=null;
+          function isGridCell(btn){{return !!(btn&&btn.classList.contains('shift-cell'));}}
           function applyCellResult(btn,cell){{
             btn.dataset.shift=JSON.stringify(cell);
             var branchCls=cell.branch?(cell.branch==='Livorno'?' branch-livorno has-shift':' branch-empoli has-shift'):'';
@@ -8961,10 +9046,23 @@ class App(BaseHTTPRequestHandler):
           window.turniOpenCellEditor=function(btn){{
             currentBtn=btn;
             var data=JSON.parse(btn.dataset.shift||'{{}}');
+            var lockedBranch=btn.dataset.lockedBranch||'';
+            var effectiveBranch=data.branch||lockedBranch||'';
             document.getElementById('shiftCellOperator').value=btn.dataset.operator;
             document.getElementById('shiftCellDate').value=btn.dataset.date;
             document.getElementById('shiftCellEditorTitle').textContent=btn.dataset.operator+' · '+btn.dataset.date;
-            document.getElementById('shiftCellBranch').value=data.branch||'';
+            var branchSelect=document.getElementById('shiftCellBranch');
+            var branchField=document.getElementById('shiftCellBranchField');
+            var sedeInfo=document.getElementById('shiftCellSedeInfo');
+            branchSelect.value=effectiveBranch;
+            if(effectiveBranch){{
+              branchField.hidden=true;
+              sedeInfo.hidden=false;
+              sedeInfo.textContent=btn.dataset.operator+' · '+effectiveBranch;
+            }}else{{
+              branchField.hidden=false;
+              sedeInfo.hidden=true;
+            }}
             document.getElementById('shiftCellAllDay').checked=!!data.all_day;
             document.getElementById('shiftCellStart').value=data.start_time||'';
             document.getElementById('shiftCellEnd').value=data.end_time||'';
@@ -8979,25 +9077,31 @@ class App(BaseHTTPRequestHandler):
             document.getElementById('shiftCellEndField').style.display=on?'none':'';
           }};
           window.turniSetPreset=function(kind){{
-            var range=kind==='mattina'?['08:00','13:00']:['14:00','19:00'];
+            var range=kind==='mattina'?['08:30','13:00']:['14:30','19:30'];
             var allDay=document.getElementById('shiftCellAllDay');
             allDay.checked=false;
             turniToggleAllDay(allDay);
             document.getElementById('shiftCellStart').value=range[0];
             document.getElementById('shiftCellEnd').value=range[1];
           }};
+          function afterCellChange(cell){{
+            if(currentBtn&&isGridCell(currentBtn)){{applyCellResult(currentBtn,cell);turniCloseCellEditor();}}
+            else{{location.reload();}}
+          }}
           window.turniSaveCell=function(ev){{
             ev.preventDefault();
             var note=document.getElementById('shiftCellEditorNote');
             var branch=document.getElementById('shiftCellBranch').value;
             if(!branch){{note.textContent='La sede è obbligatoria.';return;}}
             var allDay=document.getElementById('shiftCellAllDay').checked;
-            var payload={{operator:document.getElementById('shiftCellOperator').value,data:document.getElementById('shiftCellDate').value,branch:branch,all_day:allDay?'1':'0',start_time:allDay?'':document.getElementById('shiftCellStart').value,end_time:allDay?'':document.getElementById('shiftCellEnd').value,azione:'salva'}};
+            var startVal=document.getElementById('shiftCellStart').value;
+            var endVal=document.getElementById('shiftCellEnd').value;
+            if(!allDay&&startVal&&endVal&&endVal<=startVal){{note.textContent="L'orario fine deve essere successivo all'orario inizio.";return;}}
+            var payload={{operator:document.getElementById('shiftCellOperator').value,data:document.getElementById('shiftCellDate').value,branch:branch,all_day:allDay?'1':'0',start_time:allDay?'':startVal,end_time:allDay?'':endVal,azione:'salva'}};
             fetch('/turni/pianifica/cella',{{method:'POST',headers:{{'Content-Type':'application/x-www-form-urlencoded'}},body:new URLSearchParams(payload)}})
               .then(function(r){{return r.json();}}).then(function(res){{
                 if(!res.ok){{note.textContent=res.error||'Errore nel salvataggio.';return;}}
-                if(currentBtn)applyCellResult(currentBtn,res.cell);
-                turniCloseCellEditor();
+                afterCellChange(res.cell);
               }}).catch(function(){{note.textContent='Errore di rete.';}});
           }};
           window.turniRemoveCell=function(){{
@@ -9005,26 +9109,18 @@ class App(BaseHTTPRequestHandler):
             fetch('/turni/pianifica/cella',{{method:'POST',headers:{{'Content-Type':'application/x-www-form-urlencoded'}},body:new URLSearchParams(payload)}})
               .then(function(r){{return r.json();}}).then(function(res){{
                 if(!res.ok){{document.getElementById('shiftCellEditorNote').textContent=res.error||'Errore.';return;}}
-                if(currentBtn)applyCellResult(currentBtn,res.cell);
-                turniCloseCellEditor();
+                afterCellChange(res.cell);
               }});
           }};
           {auto_open_js}
         }})();</script>'''
-        body=f'''<main class="wrap calendar-wrap">
-          <div class="titlebar calendar-main-title"><div><h1>Pianifica turni</h1><p class="sub">Seleziona una settimana e compila le celle per ogni operatore.</p></div><a class="btn ghost" href="/turni">×</a></div>
-          {date_nav_html}
-          {grid_html}
-          {editor_html}
-        </main>'''
-        self.send_html(layout("Pianifica turni",body,user))
 
     def save_shift_cell(self,user):
         form=self.form()
         operator=(form.get("operator") or "").strip()
         work_date=(form.get("data") or "").strip()
         azione=form.get("azione") or "salva"
-        if operator not in CALENDAR_OPERATORS or not work_date:
+        if operator not in SHIFT_OPERATORS or not work_date:
             return self.send_json({"ok":False,"error":"Dati non validi."},400)
         try:date.fromisoformat(work_date)
         except ValueError:
@@ -9066,7 +9162,7 @@ class App(BaseHTTPRequestHandler):
               <form method="post" action="/turni/ferie/{row['id']}/elimina" onsubmit="return confirm('Eliminare queste ferie?')"><button class="btn ghost" type="submit">Elimina</button></form>
             </div>'''
         list_html=''.join(row_html(r) for r in rows) or '<p class="shift-empty-note">Nessuna ferie registrata.</p>'
-        operator_options=''.join(f'<option value="{esc(n)}">{esc(n)}</option>' for n in CALENDAR_OPERATORS)
+        operator_options=''.join(f'<option value="{esc(n)}">{esc(n)}</option>' for n in SHIFT_OPERATORS)
         error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
         body=f'''<main class="wrap calendar-form">
           <div class="titlebar"><div><h1>Ferie</h1><p class="sub">Gestione ferie operatori (nessuna sede richiesta).</p></div><a class="btn ghost" href="/turni">×</a></div>
@@ -9091,7 +9187,7 @@ class App(BaseHTTPRequestHandler):
         start_date=(form.get("start_date") or "").strip()
         end_date=(form.get("end_date") or "").strip()
         note=(form.get("note") or "").strip() or None
-        if operator not in CALENDAR_OPERATORS or not start_date or not end_date:
+        if operator not in SHIFT_OPERATORS or not start_date or not end_date:
             return self.redirect("/turni/ferie?errore="+quote("Compila operatore, data inizio e data fine."))
         try:
             d1=date.fromisoformat(start_date);d2=date.fromisoformat(end_date)
@@ -9114,10 +9210,10 @@ class App(BaseHTTPRequestHandler):
         weeks=[monday+timedelta(weeks=i) for i in range(8)]
         with db() as c:
             color_settings=calendar_color_settings(c)
-            rotation=[(wk,)+oncall_operator_for_week(c,wk,list(CALENDAR_OPERATORS)) for wk in weeks]
+            rotation=[(wk,)+oncall_operator_for_week(c,wk,list(SHIFT_OPERATORS)) for wk in weeks]
         def row_html(wk,op_name,is_manual):
             wk_sunday=wk+timedelta(days=6)
-            options=''.join(f'<option value="{esc(n)}" {"selected" if n==op_name else ""}>{esc(n)}</option>' for n in CALENDAR_OPERATORS)
+            options=''.join(f'<option value="{esc(n)}" {"selected" if n==op_name else ""}>{esc(n)}</option>' for n in SHIFT_OPERATORS)
             avatar=self.calendar_operator_avatar(op_name,"sm",color_settings["operators"].get(op_name)) if op_name else ""
             manual_note="Assegnazione manuale" if is_manual else "Rotazione automatica"
             is_current=wk==monday
@@ -9142,7 +9238,7 @@ class App(BaseHTTPRequestHandler):
             wk=shift_week_monday(date.fromisoformat(settimana))
         except ValueError:
             return self.redirect("/turni/reperibilita")
-        if operator not in CALENDAR_OPERATORS:
+        if operator not in SHIFT_OPERATORS:
             return self.redirect("/turni/reperibilita")
         with db() as c:
             save_oncall_week(c,wk,operator,user["id"])

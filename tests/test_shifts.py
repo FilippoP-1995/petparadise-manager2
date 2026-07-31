@@ -100,9 +100,16 @@ class ShiftsModuleTests(unittest.TestCase):
             self.assertIsNone(row)
 
     def test_save_shift_cell_allowed_for_non_admin_operator(self):
-        obj, status = self.save_cell(self.operator, operator="Gianluca", data="2026-08-12", branch="Empoli", start_time="10:00", end_time="18:00")
+        obj, status = self.save_cell(self.operator, operator="Filippo", data="2026-08-12", branch="Empoli", start_time="10:00", end_time="18:00")
         self.assertEqual(status, 200)
         self.assertTrue(obj["ok"])
+
+    def test_save_shift_cell_rejects_operator_outside_shift_operators(self):
+        # Gianluca resta un operatore valido per Calendario/Cremazioni ma non
+        # fa parte della sezione Orari (richiesta esplicita dell'utente).
+        obj, status = self.save_cell(self.admin, operator="Gianluca", data="2026-08-12", branch="Empoli", start_time="10:00", end_time="18:00")
+        self.assertEqual(status, 400)
+        self.assertFalse(obj["ok"])
 
     # ---- consultation views ----
     def test_shifts_page_giorno_groups_by_branch_and_shows_empty_note(self):
@@ -143,15 +150,83 @@ class ShiftsModuleTests(unittest.TestCase):
         self.assertIn("band-end", page)
 
     # ---- plan page ----
-    def test_shifts_plan_page_shows_grid_for_all_operators_and_seven_days(self):
+    def test_shifts_plan_page_shows_grid_for_shift_operators_only_and_seven_days(self):
         rendered = []
         self.handler.send_html = lambda html, *a: rendered.append(html)
         self.handler.path = "/turni/pianifica?settimana=2026-08-10"
         self.handler.shifts_plan_page(self.admin)
         page = rendered[-1]
-        for name in ("Serena", "Alessio", "Filippo", "Gianluca"):
+        for name in ("Serena", "Alessio", "Filippo"):
             self.assertIn(name, page)
-        self.assertEqual(page.count('<button type="button" class="shift-cell'), 28)
+        # Gianluca resta un operatore di Calendario/Cremazioni ma non fa
+        # parte della sezione Orari.
+        self.assertNotIn(">Gianluca<", page)
+        self.assertEqual(page.count('<button type="button" class="shift-cell'), 21)
+
+    def test_shifts_plan_page_cell_time_fields_use_shared_wheel_picker(self):
+        # Stesso identico componente orario (rotella nativa) gia' usato da
+        # Calendario/Cremazioni, non un semplice input type=time.
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/turni/pianifica?settimana=2026-08-10"
+        self.handler.shifts_plan_page(self.admin)
+        page = rendered[-1]
+        self.assertIn('id="shiftCellStart"', page)
+        self.assertIn('id="shiftCellEnd"', page)
+        self.assertNotIn('type="time" id="shiftCellStart"', page)
+        self.assertNotIn('type="time" id="shiftCellEnd"', page)
+        self.assertIn('class="calendar-time-entry"', page)
+        self.assertIn('data-time-wheel', page)
+        self.assertIn('calendarTimeFocus(this)', page)
+
+    def test_shifts_plan_page_sede_locked_from_query_hides_dropdown_via_data_attr(self):
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/turni/pianifica?settimana=2026-08-10&sede=Livorno"
+        self.handler.shifts_plan_page(self.admin)
+        page = rendered[-1]
+        # Ogni cella vuota eredita la sede bloccata dal contesto di pagina.
+        self.assertIn('data-locked-branch="Livorno"', page)
+        self.assertIn('id="shiftCellBranchField"', page)
+        self.assertIn('id="shiftCellSedeInfo"', page)
+
+    def test_shifts_plan_page_invalid_sede_shows_error_and_locks_nothing(self):
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/turni/pianifica?settimana=2026-08-10&sede=Roma"
+        self.handler.shifts_plan_page(self.admin)
+        page = rendered[-1]
+        self.assertIn("non valida", page)
+        self.assertNotIn('data-locked-branch="Roma"', page)
+
+    def test_shifts_plan_page_existing_shift_locked_branch_wins_over_query_sede(self):
+        self.save_cell(self.admin, operator="Serena", data="2026-08-10", branch="Empoli", start_time="09:00", end_time="17:00")
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/turni/pianifica?settimana=2026-08-10&sede=Livorno"
+        self.handler.shifts_plan_page(self.admin)
+        page = rendered[-1]
+        marker = page.index('data-operator="Serena" data-date="2026-08-10"')
+        window = page[marker:marker + 400]
+        self.assertIn('data-locked-branch="Empoli"', window)
+
+    def test_shifts_plan_page_back_button_targets_originating_view(self):
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/turni/pianifica?settimana=2026-08-10&ritorno_vista=mese&ritorno_data=2026-08-05"
+        self.handler.shifts_plan_page(self.admin)
+        page = rendered[-1]
+        self.assertIn('href="/turni?vista=mese&data=2026-08-05"', page)
+
+    def test_shifts_plan_page_week_nav_preserves_sede_and_ritorno(self):
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/turni/pianifica?settimana=2026-08-10&sede=Empoli&ritorno_vista=giorno&ritorno_data=2026-08-10"
+        self.handler.shifts_plan_page(self.admin)
+        page = rendered[-1]
+        self.assertIn("sede=Empoli", page)
+        self.assertIn("ritorno_vista=giorno", page)
+        self.assertIn("ritorno_data=2026-08-10", page)
 
     def test_shifts_plan_page_evidenzia_marks_the_right_cell(self):
         self.save_cell(self.admin, operator="Serena", data="2026-08-11", branch="Livorno", start_time="08:00", end_time="16:00")
@@ -193,23 +268,32 @@ class ShiftsModuleTests(unittest.TestCase):
             self.assertIsNone(row)
 
     def test_shifts_vacations_page_allowed_for_non_admin_operator(self):
-        self.handler.form = lambda: {"operator_name": "Gianluca", "start_date": "2026-09-01", "end_date": "2026-09-05"}
+        self.handler.form = lambda: {"operator_name": "Alessio", "start_date": "2026-09-01", "end_date": "2026-09-05"}
         self.handler.save_shift_vacation(self.operator)
         self.assertEqual(self.redirected, "/turni/ferie")
         with app.db() as conn:
-            row = conn.execute("SELECT * FROM shift_vacations WHERE operator_name='Gianluca'").fetchone()
+            row = conn.execute("SELECT * FROM shift_vacations WHERE operator_name='Alessio'").fetchone()
             self.assertIsNotNone(row)
+
+    def test_save_shift_vacation_rejects_operator_outside_shift_operators(self):
+        self.handler.form = lambda: {"operator_name": "Gianluca", "start_date": "2026-09-01", "end_date": "2026-09-05"}
+        self.handler.save_shift_vacation(self.admin)
+        self.assertIn("errore=", self.redirected)
+        with app.db() as conn:
+            row = conn.execute("SELECT * FROM shift_vacations WHERE operator_name='Gianluca'").fetchone()
+            self.assertIsNone(row)
 
     # ---- reperibilita ----
     def test_oncall_rotation_is_deterministic_across_calls(self):
         monday = week_monday(date(2026, 8, 10))
-        first = oncall_rotation_operator(monday, list(app.CALENDAR_OPERATORS))
-        second = oncall_rotation_operator(monday, list(app.CALENDAR_OPERATORS))
+        first = oncall_rotation_operator(monday, list(app.SHIFT_OPERATORS))
+        second = oncall_rotation_operator(monday, list(app.SHIFT_OPERATORS))
         self.assertEqual(first, second)
-        self.assertIn(first, app.CALENDAR_OPERATORS)
+        self.assertIn(first, app.SHIFT_OPERATORS)
+        self.assertNotIn("Gianluca", app.SHIFT_OPERATORS)
 
     def test_save_shift_oncall_persists_manual_override_and_page_reflects_it(self):
-        self.handler.form = lambda: {"settimana": "2026-08-10", "operator_name": "Gianluca"}
+        self.handler.form = lambda: {"settimana": "2026-08-10", "operator_name": "Alessio"}
         self.handler.save_shift_oncall(self.admin)
         self.assertEqual(self.redirected, "/turni/reperibilita")
         rendered = []
@@ -220,7 +304,7 @@ class ShiftsModuleTests(unittest.TestCase):
         self.assertIn("Assegnazione manuale", page)
 
     def test_save_shift_oncall_does_not_block_further_manual_changes(self):
-        self.handler.form = lambda: {"settimana": "2026-08-10", "operator_name": "Gianluca"}
+        self.handler.form = lambda: {"settimana": "2026-08-10", "operator_name": "Alessio"}
         self.handler.save_shift_oncall(self.admin)
         self.handler.form = lambda: {"settimana": "2026-08-10", "operator_name": "Serena"}
         self.handler.save_shift_oncall(self.admin)
@@ -228,6 +312,47 @@ class ShiftsModuleTests(unittest.TestCase):
             row = conn.execute("SELECT * FROM shift_oncall WHERE week_start='2026-08-10'").fetchone()
             self.assertEqual(row["operator_name"], "Serena")
             self.assertEqual(row["is_manual"], 1)
+
+    def test_save_shift_oncall_rejects_operator_outside_shift_operators(self):
+        self.handler.form = lambda: {"settimana": "2026-08-10", "operator_name": "Gianluca"}
+        self.handler.save_shift_oncall(self.admin)
+        with app.db() as conn:
+            row = conn.execute("SELECT * FROM shift_oncall WHERE week_start='2026-08-10'").fetchone()
+            self.assertIsNone(row)
+
+    # ---- matita inline sulla pagina principale Orari ----
+    def test_shifts_page_giorno_pencil_button_opens_editor_inline_not_a_link(self):
+        self.save_cell(self.admin, operator="Serena", data="2026-08-10", branch="Livorno", start_time="08:30", end_time="13:00")
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/turni?vista=giorno&data=2026-08-10"
+        self.handler.shifts_page(self.admin)
+        page = rendered[-1]
+        self.assertIn('onclick="turniOpenCellEditor(this)"', page)
+        self.assertIn('data-locked-branch="Livorno"', page)
+        self.assertIn('id="shiftCellEditorBackdrop"', page)  # popup condiviso presente sulla pagina
+
+    def test_shifts_page_mese_shows_mattina_pomeriggio_or_time_range_label(self):
+        self.save_cell(self.admin, operator="Serena", data="2026-08-10", branch="Livorno", start_time="08:30", end_time="13:00")
+        self.save_cell(self.admin, operator="Filippo", data="2026-08-10", branch="Livorno", start_time="14:30", end_time="19:30")
+        self.save_cell(self.admin, operator="Alessio", data="2026-08-10", branch="Empoli", start_time="09:15", end_time="12:00")
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/turni?vista=mese&data=2026-08-10"
+        self.handler.shifts_page(self.admin)
+        page = rendered[-1]
+        self.assertIn("Mattina", page)
+        self.assertIn("Pomeriggio", page)
+        self.assertIn("09:15", page)
+
+    def test_shifts_page_mese_shows_tutto_il_giorno_label(self):
+        self.save_cell(self.admin, operator="Serena", data="2026-08-10", branch="Livorno", all_day="1", start_time="", end_time="")
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/turni?vista=mese&data=2026-08-10"
+        self.handler.shifts_page(self.admin)
+        page = rendered[-1]
+        self.assertIn("Tutto il giorno", page)
 
 
 if __name__ == "__main__":
