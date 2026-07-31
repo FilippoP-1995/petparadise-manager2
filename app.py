@@ -1292,6 +1292,7 @@ body{background:radial-gradient(circle at top left,#fff8f3 0,#f4f1ed 34%,#ece5dd
 .home-logo{width:118px;height:118px;object-fit:contain;border-radius:24px;background:white;padding:10px;border:1px solid var(--line);box-shadow:0 8px 24px #4b392614}
 .month-block{margin-bottom:18px}.month-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.month-heading{display:flex;align-items:center;gap:10px}.month-toggle{width:34px;height:34px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--brand);font-size:22px;font-weight:800;line-height:1;cursor:pointer}.month-content[hidden]{display:none}.dashboard-table-scroll{overflow-x:scroll;scrollbar-gutter:stable;padding-bottom:8px;scrollbar-color:var(--brand) #eee7e0;scrollbar-width:auto}.dashboard-table-scroll table{min-width:1650px}.dashboard-table-scroll::-webkit-scrollbar{height:13px}.dashboard-table-scroll::-webkit-scrollbar-track{background:#eee7e0;border-radius:99px}.dashboard-table-scroll::-webkit-scrollbar-thumb{background:var(--brand);border:3px solid #eee7e0;border-radius:99px}
 .hidden{display:none!important}
+.section.collapsible>h2{cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;gap:10px}.section.collapsible>h2::after{content:'▾';font-size:13px;color:var(--muted);transition:transform .2s ease;flex:0 0 auto}.section.collapsible.collapsed>h2{margin-bottom:0}.section.collapsible.collapsed>h2::after{transform:rotate(-90deg)}.section.collapsible.collapsed>*:not(h2){display:none}
 .practice-code-cr{color:#1e88e5}.practice-code-sm{color:#111}
 .lookup{position:relative}.lookup-results{position:absolute;left:0;right:0;top:100%;z-index:20;background:white;border:1px solid var(--line);border-radius:12px;margin-top:6px;box-shadow:0 10px 30px #4b392626;max-height:340px;overflow:auto}
 .lookup-results.ppm-lookup-portal{position:fixed;right:auto;margin-top:0;z-index:150;box-shadow:0 16px 40px #05070f4d}.lookup-item{display:block;width:100%;border:0;background:white;text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer;color:var(--ink)}.lookup-item:hover,.lookup-item:focus{background:#f7f2ee;outline:none}.lookup-item b{display:block}.lookup-item small{display:block;color:var(--muted);white-space:normal}.lookup-item-urn{display:flex;align-items:center;gap:10px}.lookup-item-thumb{width:36px;height:36px;flex:0 0 36px;border-radius:8px;object-fit:cover;background:#e2e8f0}.lookup-state{padding:10px 12px;color:var(--muted);font-size:13px}.selected-box{border:1px solid #b8d7c8;background:#edf7f2;color:#285b45;border-radius:10px;padding:12px;margin-top:10px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}.selected-box .btn{width:auto}
@@ -2397,6 +2398,12 @@ body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY
 .route-quick-field label{display:block;margin-bottom:6px;font-size:12px;color:#8592a6;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
 .route-quick-field select{width:100%;padding:11px 12px;border-radius:11px;border:1px solid #263246;background:#0e1622;color:#f5f7fb;font-size:14.5px}
 .route-quick-field-select{display:block;width:100%;margin:-6px 0 14px;padding:11px 12px;border-radius:11px;border:1px solid #263246;background:#0e1622;color:#f5f7fb;font-size:14.5px}
+.route-quick-stops{list-style:none;margin:0 0 16px;padding:0;max-height:180px;overflow-y:auto;border:1px solid #263246;border-radius:12px}
+.route-quick-stops li{padding:9px 12px;border-bottom:1px solid #263246;font-size:13.5px}
+.route-quick-stops li:last-child{border-bottom:0}
+.route-quick-stops li small{display:block;color:#8592a6;font-size:11.5px;margin-top:2px}
+.light-theme .route-quick-stops{border-color:#e2e8f0}
+.light-theme .route-quick-stops li{border-color:#e2e8f0}
 .route-stop-type-badge{display:inline-block;margin-left:6px;padding:2px 8px;border-radius:99px;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;vertical-align:middle}
 .route-stop-type-badge.veterinario{background:#4c1d9533;color:#c4b5fd}
 .route-stop-type-badge.privato{background:#1e3a8a33;color:#93c5fd}
@@ -4219,6 +4226,12 @@ function balanceToggleDetails(summaryEl){
   summaryEl.classList.toggle('collapsed',collapsed);
   summaryEl.setAttribute('aria-expanded',collapsed?'false':'true');
 }
+document.addEventListener('click',function(e){
+  const h2=e.target.closest('h2');
+  if(!h2)return;
+  const section=h2.parentElement;
+  if(section&&section.classList.contains('collapsible')&&section.firstElementChild===h2)section.classList.toggle('collapsed');
+});
 document.addEventListener('click',function(e){
   if(!e.target.closest('.balance-move-menu-wrap')){
     document.querySelectorAll('.balance-move-menu-popover').forEach(function(p){p.hidden=true;});
@@ -7558,7 +7571,7 @@ class App(BaseHTTPRequestHandler):
             section=snapshot.sections[key]
             card_params={**filter_params,"view":key}
             cards.append(
-                f'''<a class="balance-card {tone}" href="/bilanci?{urlencode(card_params)}#balanceDetails" data-balance-card="{key}" data-balance-total-cents="{section.total_cents}" aria-current="{"true" if key==selected else "false"}"><span class="balance-card-copy">{lucide(icon)}<span>{esc(section.title)}</span></span><strong class="balance-card-value">{money_cents_it(section.total_cents)}</strong></a>'''
+                f'''<a class="balance-card {tone}" href="/bilanci?{urlencode(card_params)}#balanceDetails" data-balance-card="{key}" data-balance-total-cents="{section.total_cents}" aria-current="{"true" if (explicit_view and key==selected) else "false"}"><span class="balance-card-copy">{lucide(icon)}<span>{esc(section.title)}</span></span><strong class="balance-card-value">{money_cents_it(section.total_cents)}</strong></a>'''
             )
         selected_section=snapshot.sections[selected]
         is_outstanding=selected.startswith("da-riscuotere") or selected=="collaboratori-da-riscuotere"
@@ -7731,7 +7744,14 @@ class App(BaseHTTPRequestHandler):
         cards_html=f'<section class="balance-grid" aria-label="Riepilogo Bilanci">{"".join(cards)}</section>'
         section_lookup={key:(tone,icon) for key,tone,icon in section_order}
         selected_tone,selected_icon=section_lookup[selected]
-        summary_html=f'''<div class="balance-summary-card {selected_tone}" onclick="balanceToggleDetails(this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){{event.preventDefault();balanceToggleDetails(this);}}" aria-expanded="true" aria-controls="balanceDetailsList">
+        # nessuna voce preimpostata all'apertura di Bilanci: senza un "view"
+        # esplicito in URL (click su una card, o link diretto tipo quello
+        # del report settimanale) il riepilogo/elenco della sezione
+        # (Entrate W di default, solo per calcoli interni) parte chiuso —
+        # l'utente lo apre lui stesso cliccandoci sopra, esattamente come
+        # gia' succede per qualunque altra voce dopo il primo click.
+        summary_collapsed=not explicit_view
+        summary_html=f'''<div class="balance-summary-card {selected_tone}{" collapsed" if summary_collapsed else ""}" onclick="balanceToggleDetails(this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){{event.preventDefault();balanceToggleDetails(this);}}" aria-expanded="{"false" if summary_collapsed else "true"}" aria-controls="balanceDetailsList">
           <span class="balance-summary-icon">{lucide(selected_icon)}</span>
           <span class="balance-summary-copy"><span class="balance-summary-title">{esc(selected_section.title)}</span><strong class="balance-summary-value">{money_cents_it(selected_section.total_cents)}</strong></span>
           <span class="balance-summary-count">{total_rows} {"pratiche" if is_outstanding else "movimenti"}</span>
@@ -7739,7 +7759,7 @@ class App(BaseHTTPRequestHandler):
         </div>'''
         details_html=f'''<section id="balanceDetails" class="section balance-details" data-selected-balance-section="{esc(selected)}">
           {summary_html}
-          <div id="balanceDetailsList" data-balance-collapsible>{details}{pagination}</div>
+          <div id="balanceDetailsList" data-balance-collapsible{" collapsed" if summary_collapsed else ""}>{details}{pagination}</div>
         </section>'''
         filters_html=f'''<form class="section balance-filters no-advanced-collapse" method="get" action="/bilanci" aria-label="Filtri Bilanci" onsubmit="const b=this.querySelector('button');b.disabled=true;b.textContent='Caricamento…'">
           <h2>Filtri</h2><input type="hidden" name="view" value="{esc(selected)}">
@@ -8353,6 +8373,7 @@ class App(BaseHTTPRequestHandler):
             vets=c.execute("SELECT id,COALESCE(short_name,clinic_name) name FROM veterinarians WHERE active=1 ORDER BY name").fetchall()
             color_settings=calendar_color_settings(c)
             route_locations=c.execute("SELECT * FROM company_locations WHERE active=1 ORDER BY name").fetchall()
+            route_stops_today=route_eligible_events(c,selected)
         by_day={}
         for row in rows:
             cursor=max(start,date.fromisoformat(row["start_at"][:10]));last=min(end,date.fromisoformat(row["end_at"][:10]))
@@ -8494,22 +8515,27 @@ class App(BaseHTTPRequestHandler):
         else:date_title=f"{selected_date.day} {month_names[selected_date.month-1]} {selected_date.year}"
         back_button=f'<a class="btn ghost calendar-back-btn" href="{view_url(selected_date,back_view)}">← Torna a {"Mese" if back_view=="mese" else "Settimana"}</a>' if view=="giorno" and back_view else ''
         route_location_options=''.join(f'<option value="{loc["id"]}">{esc(loc["name"])}</option>' for loc in route_locations)
-        route_sheet_html=f'''<div class="route-sheet-backdrop" onclick="routeCloseSheet()"></div>
-          <aside class="route-sheet" aria-label="Percorso giornaliero" role="dialog" aria-modal="true">
-            <div class="route-sheet-handle"></div>
-            <h2 class="route-sheet-title">Percorso giornaliero</h2>
-            <button type="button" class="route-sheet-item" onclick="routeOpenQuickPopup()">
-              <span class="route-sheet-item-icon route-sheet-item-icon-red">{lucide("play")}</span>
-              <span class="route-sheet-item-copy"><b>Parti subito</b><small>Avvia rapidamente il percorso</small></span>
-            </button>
-            <a class="route-sheet-item" id="routeSettingsLink" href="/percorso-giornaliero?data={selected}">
-              <span class="route-sheet-item-icon route-sheet-item-icon-gray">{lucide("settings")}</span>
-              <span class="route-sheet-item-copy"><b>Impostazioni percorso</b><small>Personalizza percorso e ordine delle tappe</small></span>
-            </a>
-          </aside>
-          <div class="route-quick-backdrop" onclick="if(event.target===this)routeCloseQuickPopup()">
-            <aside class="route-quick-popup" aria-label="Parti subito" role="dialog" aria-modal="true">
-              <div class="route-quick-head"><h2>Parti subito</h2><button type="button" class="icon-btn" onclick="routeCloseQuickPopup()" aria-label="Chiudi">{lucide("x")}</button></div>
+        def route_stop_label(row):
+            time_label=row["start_at"][11:16] if len(row["start_at"] or "")>=16 else ""
+            client=" ".join(x for x in (row["client_first_name"],row["client_last_name"]) if x).strip()
+            who=row["animal_name"] or client or "Da definire"
+            place=row["address"] or row["zone"] or ""
+            place_html=f' <small>{esc(place)}</small>' if place else ""
+            return f'<li><b>{esc(row["event_type"])}</b> {esc(time_label)} · {esc(who)}{place_html}</li>'
+        has_route_stops=bool(route_stops_today)
+        route_stops_summary_html=(
+            f'<ul class="route-quick-stops">{"".join(route_stop_label(row) for row in route_stops_today)}</ul>'
+            if has_route_stops else ""
+        )
+        # richiesta esplicita dell'utente: prima di avviare un percorso
+        # mostrare un riepilogo delle tappe del giorno visualizzato e
+        # chiedere conferma; se quel giorno ha solo eventi "in sede"
+        # (route_eligible_events li esclude gia' a monte, per definizione
+        # non richiedono uno spostamento fisico) non ha senso impostare un
+        # percorso, quindi si avvisa invece di proporre un percorso vuoto.
+        route_quick_body=(
+            f'''<p class="sub">Tappe di oggi ({len(route_stops_today)}): conferma per avviare il percorso.</p>
+              {route_stops_summary_html}
               <form method="post" action="/percorso-giornaliero/calcola" id="routeQuickForm">
                 <input type="hidden" name="quick" value="1">
                 <input type="hidden" name="data" id="routeQuickDate" value="{selected}">
@@ -8531,8 +8557,29 @@ class App(BaseHTTPRequestHandler):
                   </select>
                 </div>
                 <select name="end_location_id" class="route-quick-field-select" data-route-field="end-sede" hidden>{route_location_options}</select>
-                <button class="btn" type="submit" style="width:100%;margin-top:4px">{lucide("navigation")} Avvia percorso</button>
-              </form>
+                <button class="btn" type="submit" style="width:100%;margin-top:4px">{lucide("check")} Conferma tappe e avvia percorso</button>
+              </form>'''
+            if has_route_stops else
+            f'''<div class="flash warning">Non ci sono eventi programmati fuori sede per il {esc(date_it(selected))}. Il percorso serve solo per organizzare le tappe quando si esce dalla sede: con soli eventi in sede (o nessun evento) non serve impostarne uno.</div>
+              <button type="button" class="btn ghost" style="width:100%;margin-top:12px" onclick="routeCloseQuickPopup()">Chiudi</button>'''
+        )
+        route_sheet_html=f'''<div class="route-sheet-backdrop" onclick="routeCloseSheet()"></div>
+          <aside class="route-sheet" aria-label="Percorso giornaliero" role="dialog" aria-modal="true">
+            <div class="route-sheet-handle"></div>
+            <h2 class="route-sheet-title">Percorso giornaliero</h2>
+            <button type="button" class="route-sheet-item" onclick="routeOpenQuickPopup()">
+              <span class="route-sheet-item-icon route-sheet-item-icon-red">{lucide("play")}</span>
+              <span class="route-sheet-item-copy"><b>Parti subito</b><small>Avvia rapidamente il percorso</small></span>
+            </button>
+            <a class="route-sheet-item" id="routeSettingsLink" href="/percorso-giornaliero?data={selected}">
+              <span class="route-sheet-item-icon route-sheet-item-icon-gray">{lucide("settings")}</span>
+              <span class="route-sheet-item-copy"><b>Impostazioni percorso</b><small>Personalizza percorso e ordine delle tappe</small></span>
+            </a>
+          </aside>
+          <div class="route-quick-backdrop" onclick="if(event.target===this)routeCloseQuickPopup()">
+            <aside class="route-quick-popup" aria-label="Parti subito" role="dialog" aria-modal="true">
+              <div class="route-quick-head"><h2>Parti subito</h2><button type="button" class="icon-btn" onclick="routeCloseQuickPopup()" aria-label="Chiudi">{lucide("x")}</button></div>
+              {route_quick_body}
             </aside>
           </div>'''
         body=f'''<main class="wrap calendar-wrap">{route_error_html}<div class="titlebar calendar-main-title"><div>{back_button}<h1>Calendario operativo</h1><p class="sub">Ritiri, riconsegne e promemoria</p></div><div class="calendar-quick-actions"><a class="icon-btn" href="/calendario/cestino" aria-label="Cestino" title="Cestino">{lucide("trash-2")}</a><a class="icon-btn calendar-settings-link" href="/calendario/impostazioni" aria-label="Impostazioni" title="Impostazioni">{lucide("settings")}</a></div></div><nav class="calendar-date-nav"><a class="btn ghost" data-calendar-prev href="{view_url(prev_target)}" aria-label="Periodo precedente">←</a><label class="calendar-date-title"><span>{date_title}</span><input type="date" value="{selected}" onchange="const u=new URL(location.href);u.searchParams.set('data',this.value);location.href=u"></label><a class="btn ghost" data-calendar-next href="{view_url(next_target)}" aria-label="Periodo successivo">→</a><a class="btn ghost calendar-today" href="{view_url(rome_now().date())}">OGGI</a></nav><div class="calendar-toolbar"><nav class="calendar-view-switch">{switch}</nav></div>{content}{filters_html}{preference_script}{route_sheet_html}</main>'''
@@ -12734,8 +12781,18 @@ class App(BaseHTTPRequestHandler):
             collaborator_id=row["collaborator_id"]
         self.redirect(f"/collaboratori/{collaborator_id}")
 
-    def fields_html(self,p=None,user=None):
-        return self._fields_html(p,user).replace("Totale servizio €","Totale W €")
+    def fields_html(self,p=None,user=None,collapsed=False):
+        # Ogni sezione del form pratica (Operatore, Richiesta, Speditore,
+        # Animale, Preventivo, ecc.) diventa apri/chiudi: in creazione resta
+        # tutta aperta (l'utente la sta compilando per la prima volta), in
+        # modifica parte tutta chiusa cosi' rientrando per cambiare un solo
+        # dato non si scorre l'intero form — vedi CSS ".section.collapsible"
+        # e il listener JS che alterna la classe "collapsed" al click su h2.
+        body=self._fields_html(p,user).replace("Totale servizio €","Totale W €")
+        cls_suffix=" collapsible collapsed" if collapsed else " collapsible"
+        body=body.replace('<section class="section hidden"',f'<section class="section{cls_suffix} hidden"')
+        body=body.replace('<section class="section">',f'<section class="section{cls_suffix}">')
+        return body
 
     def _fields_html(self,p=None,user=None):
         val=lambda k: esc(p[k] if p and k in p.keys() else "")
@@ -12799,7 +12856,16 @@ class App(BaseHTTPRequestHandler):
             # preview, no date yet" apart from "a real saldo the user typed in".
             touched_html=f'<input type="hidden" name="{totale_name}_touched" value="{val(totale_name+"_touched")}">' if macroarea=="saldo" else ""
             return f'''<div class="payment-macroarea-channel"><div class="fields"><div class="field"><label>{esc(label)} €</label><input name="{totale_name}" value="{val(totale_name)}" inputmode="decimal" placeholder="Numero, es. 120,00"></div><div class="field"><label>Data {esc(label)}</label><input type="date" name="{data_name}" value="{val(data_name)}"></div>{method_html}{fattura_html}</div>{touched_html}</div>'''
-        creation_payment_fields=f'''<section class="section hidden" id="creationPaymentSection"><h2>Pagamento</h2><p class="sub">Ogni importo è indipendente: compila solo D, solo W, o entrambi. Il circuito D non richiede il metodo di pagamento. Se per lo stesso incasso compili sia D che W, viene registrato solo D.</p><div class="fields" id="paymentEstremiRow"></div><div class="fields" id="paymentTotaleWRow"></div>{macro_field_group("acconto","W","Acconto W")}{macro_field_group("saldo","W","Saldo/Rimanenza W")}<div class="payment-macroarea"><div class="fields" id="paymentTotaleDRow"></div>{macro_field_group("acconto","D","Acconto D",show_method=False)}{macro_field_group("saldo","D","Rimanenza D",show_method=False)}</div></section>'''
+        def channel_payment_buttons(channel):
+            # Stessa identica funzione dei pulsanti del popup Pagamento
+            # (Salva pagamento / Registra nuovo pagamento), qui per circuito
+            # invece che per macroarea: "Registra nuovo pagamento" imposta
+            # force_new=True in edit_submit per qualunque macroarea (acconto
+            # e/o saldo) compilata su questo stesso circuito in questo
+            # salvataggio, cosi' riconosce da solo quale voce e' stata
+            # modificata senza bisogno di due coppie di pulsanti separate.
+            return f'''<div class="fields"><button class="btn" type="submit" style="margin-top:4px">Salva pagamento {channel}</button><button class="btn danger-btn" type="submit" name="{channel.lower()}_extra" value="1" style="margin-top:4px;margin-left:8px" onclick="return confirm('Registrare un nuovo pagamento {channel} distinto? Quello già salvato resta invariato.')">Registra nuovo pagamento {channel}</button></div>'''
+        creation_payment_fields=f'''<section class="section hidden" id="creationPaymentSection"><h2>Pagamento</h2><p class="sub">Ogni importo è indipendente: compila solo D, solo W, o entrambi. Il circuito D non richiede il metodo di pagamento. Se per lo stesso incasso compili sia D che W, viene registrato solo D.</p><div class="fields" id="paymentEstremiRow"></div><div class="fields" id="paymentTotaleWRow"></div>{macro_field_group("acconto","W","Acconto W")}{macro_field_group("saldo","W","Saldo/Rimanenza W")}{channel_payment_buttons("W")}<div class="payment-macroarea"><div class="fields" id="paymentTotaleDRow"></div>{macro_field_group("acconto","D","Acconto D",show_method=False)}{macro_field_group("saldo","D","Rimanenza D",show_method=False)}{channel_payment_buttons("D")}</div></section>'''
         if user is None or user["role"]=="admin":
             operator_field=f'''<div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option><option {selected('operator_name','GIANLUCA')}>GIANLUCA</option></select></div>'''
         else:
@@ -14331,7 +14397,11 @@ class App(BaseHTTPRequestHandler):
         autosave=f'''<div id="practiceAutosaveStatus" class="autosave-status" data-state="saved" role="status"><span data-autosave-label>Salvato</span><small data-autosave-time>Ultimo salvataggio: —</small><button class="autosave-retry" data-autosave-retry type="button" hidden>Riprova</button></div>'''
         error_html='' if (error and error_field) else (f'<div class="flash warning">{esc(error)}</div>' if error else '')
         error_target=f'<input type="hidden" id="formErrorField" value="{esc(error_field)}"><input type="hidden" id="formErrorMessage" value="{esc(error)}">' if (error and error_field) else ''
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Modifica {esc(p['practice_number'])}</h1><div class="sub">Completa o correggi i dati della pratica.</div>{autosave}</div><div class="actions"><button class="btn" form="practiceForm">Salva modifiche</button><button class="btn ghost" form="practiceForm" name="save_and_return" value="1">Salva e torna</button><a class="btn ghost" href="{esc(back_url)}">Annulla</a></div></div>{error_html}<form method="post" id="practiceForm" data-autosave-url="/api/pratiche/{pid}/autosave" data-updated-at="{esc(p['updated_at'])}"><input type="hidden" name="return_to" value="{esc(back_url)}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(24)}">{error_target}<div class="grid form-grid">{self.fields_html(display,user)}</div><div class="actions" style="margin-top:18px"><button class="btn">Salva modifiche</button><button class="btn ghost" name="save_and_return" value="1">Salva e torna</button><a class="btn ghost" href="{esc(back_url)}">Annulla</a></div></form></main>'''
+        # Le sezioni partono chiuse solo quando si riapre la pratica per la
+        # prima volta (non su un ripresentazione della pagina dopo un
+        # errore di validazione: li' l'utente deve vedere subito il campo
+        # incriminato, non doverlo cercare dentro una sezione richiusa).
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Modifica {esc(p['practice_number'])}</h1><div class="sub">Completa o correggi i dati della pratica.</div>{autosave}</div><div class="actions"><button class="btn" form="practiceForm">Salva modifiche</button><button class="btn ghost" form="practiceForm" name="save_and_return" value="1">Salva e torna</button><a class="btn ghost" href="{esc(back_url)}">Annulla</a></div></div>{error_html}<form method="post" id="practiceForm" data-autosave-url="/api/pratiche/{pid}/autosave" data-updated-at="{esc(p['updated_at'])}"><input type="hidden" name="return_to" value="{esc(back_url)}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(24)}">{error_target}<div class="grid form-grid">{self.fields_html(display,user,collapsed=(draft is None))}</div><div class="actions" style="margin-top:18px"><button class="btn">Salva modifiche</button><button class="btn ghost" name="save_and_return" value="1">Salva e torna</button><a class="btn ghost" href="{esc(back_url)}">Annulla</a></div></form></main>'''
         self.send_html(layout("Modifica pratica",body,user))
 
     def practice_autosave(self,user,pid):
@@ -14568,6 +14638,14 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                     # payment already collected. An unchanged amount (only
                     # date/method touched up) is still corrected in place.
                     force_new=(target_amount!=existing_amount or plan["channel"]!=existing_channel)
+                # "Registra nuovo pagamento W/D" nel Preventivo: stesso
+                # meccanismo esplicito del popup Pagamento, applicato a
+                # qualunque macroarea (acconto e/o saldo) sia stata
+                # compilata su quel circuito in questo stesso salvataggio —
+                # mai dedotto automaticamente, solo quando l'utente lo
+                # dichiara esplicitamente premendo quel pulsante.
+                if form.get(f"{plan['channel'].lower()}_extra","")=="1":
+                    force_new=True
                 payment_error=self.apply_payment_macroarea(
                     c,user,pid,fresh_practice,macroarea,
                     data_field=plan["data_field"],totale_field=plan["totale_field"],

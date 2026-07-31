@@ -418,12 +418,12 @@ class PetParadiseTests(unittest.TestCase):
 
     def test_notes_field_moved_out_of_preventivo_into_its_own_section(self):
         html = self.handler.fields_html()
-        preventivo_start = html.index('<section class="section"><h2>Preventivo</h2>')
+        preventivo_start = html.index('<section class="section collapsible"><h2>Preventivo</h2>')
         preventivo_end = html.index('</section>', preventivo_start)
         preventivo_html = html[preventivo_start:preventivo_end]
         self.assertNotIn('name="notes"', preventivo_html, "NOTE must no longer live inside the Preventivo section")
-        self.assertIn('<section class="section"><h2>Note</h2><div class="fields"><div class="field full"><label>NOTE</label><textarea name="notes">', html)
-        notes_section_pos = html.index('<section class="section"><h2>Note</h2>')
+        self.assertIn('<section class="section collapsible"><h2>Note</h2><div class="fields"><div class="field full"><label>NOTE</label><textarea name="notes">', html)
+        notes_section_pos = html.index('<section class="section collapsible"><h2>Note</h2>')
         self.assertGreater(notes_section_pos, preventivo_end, "the Note section must come after Preventivo")
 
     def test_cremazione_collettiva_relaxes_required_fields(self):
@@ -6250,6 +6250,94 @@ class PetParadiseTests(unittest.TestCase):
             practice=conn.execute("SELECT deposit_final,remaining_final FROM practices WHERE id=?",(pid,)).fetchone()
             self.assertEqual((practice["deposit_final"],practice["remaining_final"]),("280.00","0.00"))
 
+    def test_preventivo_w_extra_button_forces_new_payment_even_with_same_amount(self):
+        # "Registra nuovo pagamento W" nel Preventivo (creazione/modifica):
+        # stessa identica funzione del pulsante nel popup Pagamento, solo
+        # spostata per circuito. Anche con lo STESSO importo gia'
+        # registrato (che da solo non farebbe scattare l'euristica
+        # automatica di edit_submit), il flag esplicito w_extra=1 deve
+        # comunque forzare un movimento nuovo e distinto, mai una
+        # correzione del primo.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,owner_last_name,owner_phone,owner_tax_code,owner_street,owner_city,owner_province,owner_zip,
+                                service_type,payment_status,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                             ("CR-WBTN","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Anna","Neri","3331112222","NRIANN80A01H501U","Via Test","Livorno","LI","57100","Da decidere","Da saldare","300")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-10","saldo_totale":"300,00","saldo_circuito":"W","saldo_modalita":"Contanti","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        with app.db() as conn:
+            original=conn.execute("SELECT id,amount,paid_at FROM payment_movements WHERE practice_id=? AND payment_type='saldo'",(pid,)).fetchone()
+        self.handler.form=lambda:{
+            "operator_name":"FILIPPO","service_type":"Da decidere","request_origin":"Privato",
+            "owner_first_name":"Anna","owner_last_name":"Neri","owner_phone":"3331112222",
+            "owner_tax_code":"NRIANN80A01H501U","owner_street":"Via Test","owner_city":"Livorno",
+            "owner_province":"LI","owner_zip":"57100","payment_status":"Pagato","economic_at":"2026-07-10",
+            "saldo_w_totale":"300","saldo_w_totale_touched":"1","saldo_w_data":"2026-07-20","saldo_w_modalita":"Contanti",
+            "w_extra":"1",
+        }
+        redirects=[];self.handler.redirect=lambda url:redirects.append(url)
+        self.handler.edit_submit(admin,pid)
+        self.assertTrue(redirects,"edit_submit must succeed")
+        with app.db() as conn:
+            movements=conn.execute("SELECT id,amount,paid_at FROM payment_movements WHERE practice_id=? AND payment_type='saldo' ORDER BY id",(pid,)).fetchall()
+        self.assertEqual(len(movements),2)
+        self.assertEqual((movements[0]["id"],movements[0]["paid_at"]),(original["id"],original["paid_at"]))
+        self.assertEqual((float(movements[1]["amount"]),movements[1]["paid_at"]),(300.0,"2026-07-20"))
+
+    def test_preventivo_payment_section_shows_salva_and_registra_nuovo_for_w_and_d(self):
+        # i pulsanti devono comparire nella sezione Preventivo sia in
+        # creazione che in modifica, dopo le voci W e dopo le voci D —
+        # non solo nel popup Pagamento aperto dal riepilogo.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,total_service) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                             ("CR-PVBTN","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Silvio","Cremazione singola","Da saldare","200")).lastrowid
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.new_page(admin)
+        new_page=rendered[-1]
+        self.handler.path=f"/pratiche/{pid}/modifica"
+        self.handler.edit_page(admin,pid)
+        edit_page=rendered[-1]
+        for page in (new_page,edit_page):
+            self.assertIn('name="w_extra" value="1"',page)
+            self.assertIn('name="d_extra" value="1"',page)
+            self.assertIn("Salva pagamento W",page)
+            self.assertIn("Registra nuovo pagamento W",page)
+            self.assertIn("Salva pagamento D",page)
+            self.assertIn("Registra nuovo pagamento D",page)
+
+    def test_practice_form_sections_are_collapsible_open_on_create_closed_on_edit(self):
+        # tutte le sezioni del form pratica si possono aprire/chiudere; in
+        # creazione restano tutte aperte (le sta compilando per la prima
+        # volta), riaprendo una pratica esistente per modificarla partono
+        # tutte chiuse.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,total_service) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                             ("CR-COLLAPSE","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Ugo","Cremazione singola","Da saldare","200")).lastrowid
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.new_page(admin)
+        new_page=rendered[-1]
+        self.assertGreaterEqual(new_page.count('<section class="section collapsible">'),13)
+        self.assertIn('<section class="section collapsible hidden" id="creationPaymentSection">',new_page)
+        self.assertNotIn('collapsible collapsed',new_page)
+        self.handler.path=f"/pratiche/{pid}/modifica"
+        self.handler.edit_page(admin,pid)
+        edit_page_fresh=rendered[-1]
+        self.assertGreaterEqual(edit_page_fresh.count('<section class="section collapsible collapsed">'),13)
+        self.assertIn('<section class="section collapsible collapsed hidden" id="creationPaymentSection">',edit_page_fresh)
+        # ripresentazione dopo un errore di validazione: le sezioni restano
+        # aperte, altrimenti l'utente non vedrebbe il campo da correggere
+        self.handler.edit_page(admin,pid,draft={"owner_first_name":"Ugo"},error="Errore di prova",error_field="owner_last_name")
+        edit_page_error=rendered[-1]
+        self.assertNotIn('collapsible collapsed',edit_page_error)
+
     def test_edit_submit_accepts_negative_remaining_instead_of_failing_validation(self):
         # validation_error() checks every MONEY_FIELDS value against a
         # digits-only regex — but remaining_balance/remaining_final are
@@ -7068,7 +7156,15 @@ class PetParadiseTests(unittest.TestCase):
             self.assertIn(label,balances_page)
         self.assertEqual(balances_page.count('data-balance-card="'),11)
         self.assertEqual(balances_page.count('data-balance-total-cents="0"'),11)
-        self.assertIn('aria-current="true"',balances_page)
+        # nessuna voce preimpostata all'apertura: nessuna card evidenziata,
+        # il riepilogo/elenco parte chiuso finche' l'utente non ci clicca
+        # (assertNotIn scoped al body: il CSS statico contiene comunque la
+        # regola per lo stile .balance-card[aria-current="true"])
+        balances_body=balances_page.split('</style>',1)[1]
+        self.assertNotIn('aria-current="true"',balances_body)
+        self.assertIn('balance-summary-card balance-tone-w collapsed',balances_page)
+        self.assertIn('aria-expanded="false" aria-controls="balanceDetailsList"',balances_page)
+        self.assertIn('data-balance-collapsible collapsed',balances_page)
         self.assertIn('<span class="balance-summary-title">Entrate W</span>',balances_page)
         self.assertNotIn("<table",balances_page)
         self.assertIn("Nessun dato da visualizzare.",balances_page)
@@ -7086,6 +7182,21 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.payment_overview(admin,"da-saldare")
         self.assertIn("Da saldare D",rendered[-1])
         self.assertIn("Totale W e Totale D",rendered[-1])
+
+    def test_bilanci_explicit_view_still_expands_and_highlights_the_chosen_card(self):
+        # cliccare una card (view=... in URL) deve continuare a funzionare
+        # esattamente come prima: solo l'apertura "vuota" iniziale cambia
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.require_user=lambda:admin
+        self.handler.path="/bilanci?view=entrate-d"
+        self.handler.do_GET()
+        page=rendered[-1]
+        self.assertIn('data-balance-card="entrate-d" data-balance-total-cents="0" aria-current="true"',page)
+        self.assertNotIn('collapsed" onclick="balanceToggleDetails',page)
+        self.assertIn('aria-expanded="true" aria-controls="balanceDetailsList"',page)
+        self.assertNotIn('data-balance-collapsible collapsed',page)
 
     def test_balances_movements_render_as_color_coded_cards_not_a_table(self):
         with app.db() as conn:
@@ -10657,7 +10768,10 @@ class PetParadiseTests(unittest.TestCase):
 
     def test_calendar_page_includes_route_bottom_sheet_and_quick_popup(self):
         with app.db() as conn:
-            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            conn.execute("""INSERT INTO calendar_events(event_type,title,zone,location_type,address,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO PISA","Pisa","Veterinario","Via Test 1","Filippo","2026-08-12T09:30:00","2026-08-12T10:00:00","Da ritirare",admin["id"],stamp,stamp))
         rendered = []
         self.handler.send_html = lambda html, *a: rendered.append(html)
         self.handler.path = "/calendario?vista=giorno&data=2026-08-12"
@@ -10672,12 +10786,54 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('id="routeSettingsLink" href="/percorso-giornaliero?data=2026-08-12"', page)
         self.assertIn('class="route-quick-popup"', page)
         self.assertIn('action="/percorso-giornaliero/calcola" id="routeQuickForm"', page)
+        # scenario esplicito richiesto dall'utente: prima di avviare, un
+        # riepilogo delle tappe del giorno e una conferma esplicita
+        self.assertIn('class="route-quick-stops"', page)
+        stops_start = page.index('class="route-quick-stops"')
+        stops_end = page.index('</ul>', stops_start)
+        self.assertIn('09:30', page[stops_start:stops_end])
+        self.assertIn('Conferma tappe e avvia percorso', page)
         # il popup rapido non deve mostrare modalita', orario, tappe o statistiche
         quick_popup_start = page.index('class="route-quick-popup"')
         quick_popup_end = page.index('</aside>', quick_popup_start)
         quick_popup_html = page[quick_popup_start:quick_popup_end]
         self.assertNotIn('optimization_mode', quick_popup_html)
         self.assertNotIn('start_time', quick_popup_html)
+
+    def test_route_quick_popup_warns_when_day_has_only_in_sede_events(self):
+        # richiesta esplicita dell'utente: se gli eventi del giorno sono
+        # solo "in sede" (o non ce ne sono) il percorso non serve — deve
+        # comparire un avviso al posto del modulo punto di partenza/arrivo.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            conn.execute("""INSERT INTO calendar_events(event_type,title,destination_site,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro in sede","RITIRO IN SEDE","Livorno","Filippo","2026-08-13T09:30:00","2026-08-13T10:00:00","Da ritirare",admin["id"],stamp,stamp))
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/calendario?vista=giorno&data=2026-08-13"
+        self.handler.calendar_page(admin)
+        page = rendered[-1]
+        quick_popup_start = page.index('class="route-quick-popup"')
+        quick_popup_end = page.index('</aside>', quick_popup_start)
+        quick_popup_html = page[quick_popup_start:quick_popup_end]
+        self.assertIn('Non ci sono eventi programmati fuori sede', quick_popup_html)
+        self.assertNotIn('id="routeQuickForm"', quick_popup_html)
+        self.assertNotIn('class="route-quick-stops"', quick_popup_html)
+
+    def test_route_quick_popup_warns_when_day_has_no_events_at_all(self):
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/calendario?vista=giorno&data=2026-08-14"
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.calendar_page(admin)
+        page = rendered[-1]
+        quick_popup_start = page.index('class="route-quick-popup"')
+        quick_popup_end = page.index('</aside>', quick_popup_start)
+        quick_popup_html = page[quick_popup_start:quick_popup_end]
+        self.assertIn('Non ci sono eventi programmati fuori sede', quick_popup_html)
+        self.assertNotIn('id="routeQuickForm"', quick_popup_html)
 
     @patch("app.route_service.geocode_address", return_value=(43.55, 10.30))
     def test_route_plan_page_settings_screen_has_no_start_time_field_and_secondary_recalculate_button(self, _mock_geocode):
