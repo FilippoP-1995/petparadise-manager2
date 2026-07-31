@@ -171,7 +171,8 @@ class ShiftsModuleTests(unittest.TestCase):
 
     def test_shifts_page_mese_vacation_bar_is_one_continuous_span_colored_per_operator(self):
         # Aug 10-12 2026 sono lunedi-mercoledi (stessa riga): deve essere
-        # UNA sola barra che copre le 3 colonne, non tre etichette separate.
+        # UNA sola barra che copre le 3 colonne, non tre etichette separate,
+        # con testo "FERIE <NOME>" leggibile e colore dell'operatore.
         with app.db() as conn:
             from shift_service import create_vacation
             create_vacation(conn, "Serena", "2026-08-10", "2026-08-12", None, self.admin["id"])
@@ -183,10 +184,33 @@ class ShiftsModuleTests(unittest.TestCase):
         page = rendered[-1]
         self.assertEqual(page.count('title="Serena"'), 1)
         bar_start = page.index('title="Serena"')
-        bar_html = page[max(0, bar_start - 250):bar_start + 50]
+        bar_html = page[max(0, bar_start - 250):bar_start + 80]
         self.assertIn("grid-column:1/4", bar_html)
         self.assertIn(operator_color, bar_html)
-        self.assertNotIn("FERIE", page)
+        self.assertIn("FERIE SERENA", bar_html)
+
+    def test_shifts_page_mese_vacation_overlay_is_a_separate_grid_from_day_cells(self):
+        # Le barre ferie devono stare su una griglia sovrapposta separata,
+        # mai dentro la stessa griglia delle celle giorno: un elemento
+        # posizionato in modo esplicito li' dentro "riserva" quella cella
+        # per l'algoritmo di auto-posizionamento e sposta le celle giorno
+        # che ci finiscono sopra (bug reale gia' capitato in produzione).
+        with app.db() as conn:
+            from shift_service import create_vacation
+            create_vacation(conn, "Serena", "2026-08-10", "2026-08-12", None, self.admin["id"])
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/turni?vista=mese&data=2026-08-10"
+        self.handler.shifts_page(self.admin)
+        page = rendered[-1]
+        # Il secondo dei tre mesi del carosello e' quello selezionato
+        # (2026-08-10): il primo (luglio) non ha ferie registrate.
+        first_grid = page.index('<div class="shift-month-grid">')
+        grid_start = page.index('<div class="shift-month-grid">', first_grid + 1)
+        overlay_start = page.index('<div class="shift-month-overlay">', grid_start)
+        day_cells_html = page[grid_start:overlay_start]
+        self.assertNotIn("shift-vacation-bar", day_cells_html)
+        self.assertIn("shift-vacation-bar", page[overlay_start:overlay_start + 1000])
 
     # ---- plan page ----
     def test_shifts_plan_page_shows_grid_for_shift_operators_only_and_seven_days(self):

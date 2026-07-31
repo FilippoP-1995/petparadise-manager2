@@ -2532,10 +2532,12 @@ body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY
 .shift-cell-editor .actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
 .shift-cell-editor .actions .btn{flex:1;min-width:120px}
 .shift-cell-editor-note{min-height:16px;margin-top:8px;font-size:12px;color:#fca5a5}
-.shift-month-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin-top:10px}
+.shift-month-grid-wrap{position:relative;margin-top:10px}
+.shift-month-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-auto-rows:120px;gap:6px}
+.shift-month-overlay{position:absolute;inset:0;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-auto-rows:120px;gap:6px;pointer-events:none}
 .shift-month-dow-row{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin-bottom:4px}
 .shift-month-dow{text-align:center;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
-.shift-month-cell{position:relative;display:flex;flex-direction:column;height:98px;padding:6px 5px;border:1px solid var(--line);border-radius:12px;background:#182334;color:var(--ink);overflow:hidden}
+.shift-month-cell{position:relative;display:flex;flex-direction:column;height:120px;padding:6px 5px;border:1px solid var(--line);border-radius:12px;background:#182334;color:var(--ink);overflow:hidden}
 .light-theme .shift-month-cell{background:#f8fafc}
 .shift-month-cell b{font-size:12px;font-weight:700;flex:0 0 auto}
 .shift-month-cell.is-today{border-color:var(--brand2)}
@@ -2551,7 +2553,7 @@ body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY
 .shift-month-legend span{display:inline-flex;align-items:center;gap:6px}
 .shift-month-legend .dot{width:8px;height:8px;border-radius:50%}
 .calendar-drafts-banner{margin-bottom:16px}.calendar-drafts-banner h2{margin-bottom:8px}.calendar-draft-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid var(--line)}.calendar-draft-row:first-of-type{border-top:0}.calendar-draft-row a{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:650}.calendar-draft-row .icon-btn{width:32px;height:32px;font-size:18px;line-height:1}
-.shift-vacation-bar{align-self:end;height:5px;border-radius:3px;pointer-events:none;z-index:1}
+.shift-vacation-bar{align-self:end;display:flex;align-items:center;justify-content:center;height:16px;padding:0 4px;border-radius:4px;color:#fff;font-size:8.5px;font-weight:800;letter-spacing:.02em;white-space:nowrap;overflow:hidden;pointer-events:none;z-index:1}
 .shift-oncall-strip{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-top:14px}
 .shift-oncall-week{flex:0 0 auto;min-width:104px;padding:10px;border:1px solid var(--line);border-radius:12px;background:#182334;text-align:center;font-size:11px}
 .light-theme .shift-oncall-week{background:#f8fafc}
@@ -9025,11 +9027,19 @@ class App(BaseHTTPRequestHandler):
                             while col<7 and op in day_ops[col]:col+=1
                             end_col=col-1
                             color=color_settings["operators"].get(op) or "var(--muted)"
-                            bars.append(f'<div class="shift-vacation-bar" style="grid-column:{start_col+1}/{end_col+2};grid-row:{row+1};background:{esc(color)};margin-bottom:{3+slot*8}px" title="{esc(op)}"></div>')
+                            bars.append(f'<div class="shift-vacation-bar" style="grid-column:{start_col+1}/{end_col+2};grid-row:{row+1};background:{esc(color)};margin-bottom:{3+slot*20}px" title="{esc(op)}">FERIE {esc(op.upper())}</div>')
                 return ''.join(bars)
             def month_grid_html(anchor,anchor_grid_start):
+                # Le barre ferie sono su una griglia separata sovrapposta
+                # esattamente a quella dei giorni (stesse colonne/righe/gap),
+                # non dentro la stessa griglia: un elemento posizionato in
+                # modo esplicito (grid-column/grid-row) "riserva" quella
+                # cella per l'algoritmo di posizionamento automatico, e
+                # spostava le celle giorno auto-posizionate che ci finivano
+                # sopra — bug reale, non solo estetico.
                 cells_html=''.join(month_cell_html(anchor_grid_start+timedelta(days=i),anchor) for i in range(42))
-                return f'<div class="shift-month-grid">{cells_html}{vacation_bars_html(anchor_grid_start)}</div>'
+                bars_html=vacation_bars_html(anchor_grid_start)
+                return f'<div class="shift-month-grid-wrap"><div class="shift-month-grid">{cells_html}</div><div class="shift-month-overlay">{bars_html}</div></div>'
             # Carosello fluido a swipe nativo (scroll-snap) tra mese
             # precedente/corrente/successivo, stessa tecnica dello swipe
             # giorni: si preferisce ricaricare la pagina quando lo swipe si
