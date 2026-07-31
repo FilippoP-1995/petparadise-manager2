@@ -53,6 +53,36 @@ NOTIFICATION_TYPES = {
     "cremation_cycle_waiting": ("Ciclo cremazione in attesa", "🔥"),
 }
 
+# iOS Safari (Web Push su PWA installata) non espone alcun modo, via API, di
+# mostrare un'icona di categoria separata dall'icona dell'app nel banner
+# nativo: ne' il campo "badge" ne' la Badging API renderizzano un simbolo nel
+# banner, e la riga "da NomeApp" sotto il titolo e' generata da iOS stesso
+# dal manifest, non modificabile via payload (verificato prima di
+# implementare, come richiesto). L'unica leva realmente disponibile e'
+# anteporre un singolo simbolo al TITOLO del push (mai al corpo, che resta
+# sintetico senza emoji come da richiesta precedente) — qui solo per le
+# categorie esplicitamente richieste, tutte le altre restano invariate.
+NOTIFICATION_TITLE_SYMBOLS = {
+    "daily_summary": "🔔",
+    "calendar_daily_summary": "🔔",
+    "appointment_reminder": "🔔",
+    "calendar_reminder_30m": "🔔",
+    "practice_updated": "✏️",
+    "calendar_event_updated": "✏️",
+    "practice_delivered": "📦",
+    "delivery_scheduled": "📦",
+    "pickup_30m": "🚚",
+}
+
+
+def notification_push_title(notification_type: str, title: str) -> str:
+    """Titolo effettivamente mostrato nel banner push (mai quello salvato in
+    notifications.title, usato invece dal Centro notifiche in-app): antepone
+    il simbolo di categoria solo per i tipi mappati sopra."""
+    symbol = NOTIFICATION_TITLE_SYMBOLS.get(notification_type)
+    return f"{symbol} {title}" if symbol else title
+
+
 # Tipi il cui invio push merita suono/vibrazione anche a telefono silenzioso
 # in tasca: guasti e cose che bloccano un incasso. Tutto il resto resta a
 # priorità normale (visibile solo nel Centro notifiche e nel badge).
@@ -272,7 +302,7 @@ def emit_notification(
         ).fetchall()
         # un'azione rapida ha senso solo su un'occorrenza singola: una volta
         # raggruppata, non è più chiaro a quale elemento si applicherebbe.
-        push_data = {"title": title, "body": push_text, "icon": "/assets/pwa-192.png", **payload,
+        push_data = {"title": notification_push_title(notification_type, title), "body": push_text, "icon": "/assets/pwa-192.png", **payload,
                      "badge": "/assets/favicon-32.png", "tag": f"ppm-group-{notification_id}",
                      "type": notification_type, "notification_id": notification_id,
                      "priority": priority,

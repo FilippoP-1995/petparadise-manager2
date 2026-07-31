@@ -9872,6 +9872,57 @@ class PetParadiseTests(unittest.TestCase):
             self.assertEqual(row["title"], "Riepilogo di oggi")
             self.assertEqual(row["text"], "1 ritiro • 3 promemoria")
 
+    def test_notification_push_title_adds_category_symbol_only_for_mapped_types(self):
+        # iOS non offre alcuna API per un'icona di categoria separata nel
+        # banner nativo (verificato prima di implementare): l'unica leva
+        # disponibile e' anteporre un simbolo al titolo del push, solo per
+        # le categorie richieste — mai al corpo, mai al titolo salvato in
+        # notifications.title (quello resta per il Centro notifiche in-app).
+        cases = {
+            "daily_summary": "🔔 Riepilogo di oggi",
+            "calendar_daily_summary": "🔔 Riepilogo calendario",
+            "appointment_reminder": "🔔 Promemoria appuntamenti",
+            "calendar_reminder_30m": "🔔 Evento tra 30 minuti",
+            "practice_updated": "✏️ Pratica modificata",
+            "calendar_event_updated": "✏️ Evento modificato",
+            "practice_delivered": "📦 Pratica consegnata",
+            "delivery_scheduled": "📦 Consegna programmata",
+            "pickup_30m": "🚚 Ritiro tra 30 minuti",
+        }
+        for notification_type, expected in cases.items():
+            title = expected.split(" ", 1)[1]
+            self.assertEqual(notification_service.notification_push_title(notification_type, title), expected)
+        # tipi non mappati (pagamenti, whatsapp, sistema, ecc.) restano invariati
+        for notification_type, title in (
+            ("payment_received", "Pagamento ricevuto"),
+            ("payment_due", "Pratica ancora da saldare"),
+            ("whatsapp_error", "Errore invio WhatsApp"),
+            ("system_error", "Errori di sistema"),
+            ("practice_created", "Nuova pratica"),
+        ):
+            self.assertEqual(notification_service.notification_push_title(notification_type, title), title)
+
+    def test_pickup_30m_notification_stores_a_clean_title_symbol_only_in_push(self):
+        # la riga salvata in notifications.title (usata dal Centro notifiche
+        # in-app) non deve mai portare il simbolo: solo il payload push lo
+        # riceve, calcolato a parte da notification_push_title.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()["id"]
+            stamp = app.now()
+            current = notification_service._rome_now()
+            today = current.date().isoformat()
+            due_time = (current + timedelta(minutes=30)).strftime("%H:%M")
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,pickup_time,
+                   created_at,updated_at,created_by,animal_name,owner_first_name) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-PICKUP-SYMBOL", "Privato", "Livorno", "Ritirato", today, due_time, stamp, stamp, admin, "Otto", "Ada"),
+            ).lastrowid
+            created = process_scheduled_notifications(conn, str(app.DB_PATH))
+            self.assertGreaterEqual(created, 1)
+            row = conn.execute("SELECT * FROM notifications WHERE type='pickup_30m' AND practice_id=?", (pid,)).fetchone()
+        self.assertEqual(row["title"], "Ritiro tra 30 minuti")
+        self.assertEqual(notification_service.notification_push_title("pickup_30m", row["title"]), "🚚 Ritiro tra 30 minuti")
+
     def test_pickup_30m_notification_is_terse_and_opens_the_practice(self):
         # mockup "Ritiro programmato": titolo breve, corpo con • e apertura
         # diretta della pratica interessata.
