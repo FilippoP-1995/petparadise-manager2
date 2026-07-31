@@ -2454,7 +2454,7 @@ body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY
   body.ppm-bars-hidden .bottom-nav{transform:translateY(calc(100% + 24px))}
 }
 @media(prefers-reduced-motion:reduce){.bottom-nav{transition:none!important}}
-/* Turni operatori: riusa avatar/card/bottoni/daybar/pill esistenti, nuove
+/* Orari (turni operatori): riusa avatar/card/bottoni/daybar/pill esistenti, nuove
    sole classi per la parte senza equivalente (barra oraria, griglia
    pianificazione, editor cella, banda ferie). */
 .shift-oncall-banner{display:flex;align-items:center;gap:14px;margin-bottom:16px}
@@ -2823,7 +2823,13 @@ function updateRemainingBalance(){
   }
   const invoiceTotal=document.querySelector('input[name="invoice_total"]');
   if(invoiceTotal?.dataset.autoFilled==='1'){
-    invoiceTotal.value=ppmFormatInvoiceTotal(serviceTotal);
+    // TOTALE FATTURA (sezione Pagamento) si autocompila sommando Acconto W
+    // e Saldo/Rimanenza W (l'incasso complessivo sul circuito W, utile
+    // quando si fattura tutto insieme al saldo finale) — resta comunque
+    // sempre modificabile a mano, come prima.
+    const accontoW=ppmNumber(document.querySelector('input[name="acconto_w_totale"]')?.value||0);
+    const saldoW=ppmNumber(document.querySelector('input[name="saldo_w_totale"]')?.value||0);
+    invoiceTotal.value=ppmFormatInvoiceTotal(accontoW+saldoW);
   }
   const depositFinalField = document.querySelector('input[name="deposit_final"]');
   const remainingFinalField = document.querySelector('input[name="remaining_final"]');
@@ -2883,7 +2889,7 @@ document.addEventListener('input', function(e){
     }
   }
   if(e.target && e.target.matches('[data-preventivo-sum="1"]')) updatePreventivoTotal();
-  if(e.target && (e.target.name === 'deposit' || e.target.name === 'total_service' || e.target.name === 'total_text' || e.target.name === 'deposit_final')) updateRemainingBalance();
+  if(e.target && (e.target.name === 'deposit' || e.target.name === 'total_service' || e.target.name === 'total_text' || e.target.name === 'deposit_final' || e.target.name === 'acconto_w_totale' || e.target.name === 'saldo_w_totale')) updateRemainingBalance();
   if(e.target && (e.target.name === 'saldo_w_totale' || e.target.name === 'saldo_d_totale')){
     e.target.dataset.autoFilled='0';
     const touchedField=document.querySelector(`input[name="${e.target.name}_touched"]`);
@@ -3040,21 +3046,32 @@ function setupBudgetExtras(){
   }
   const depositField_=document.querySelector('input[name="deposit"]'); if(depositField_){depositField_.closest('.field').querySelector('label').textContent='Acconto W €';}
   const remainingBalanceField_=document.querySelector('input[name="remaining_balance"]'); if(remainingBalanceField_){remainingBalanceField_.closest('.field').querySelector('label').textContent='Saldo/Rimanenza W €';}
+  // NUMERO/DATA/TOTALE FATTURA e FARE FATTURA vivono ora nella sezione
+  // Pagamento, subito dopo "Aggiungi incasso successivo W" (richiesta
+  // esplicita dell'utente), non piu' nel Preventivo: costruiti come prima
+  // ma appesi a #paymentInvoiceRow invece che a "fields".
+  const invoiceRow=document.getElementById('paymentInvoiceRow')||fields;
   const invoiceNumber=document.querySelector('input[name="invoice_number"]');invoiceNumber.type='text';invoiceNumber.placeholder='Numero fattura';
   invoiceNumber.addEventListener('input',()=>{const makeInvoice=document.querySelector('input[name="make_invoice"]');if(makeInvoice&&invoiceNumber.value.trim())makeInvoice.checked=false;});
-  const invoiceField=document.createElement('div');invoiceField.className='field';invoiceField.innerHTML='<label>Numero fattura</label>';invoiceField.append(invoiceNumber);fields.append(invoiceField);
+  const invoiceField=document.createElement('div');invoiceField.className='field';invoiceField.innerHTML='<label>Numero fattura</label>';invoiceField.append(invoiceNumber);invoiceRow.append(invoiceField);
   const invoiceDate=document.querySelector('input[name="invoice_date"]');invoiceDate.type='date';
-  const invoiceDateField=document.createElement('div');invoiceDateField.className='field';invoiceDateField.innerHTML='<label>Data fattura</label>';invoiceDateField.append(invoiceDate);fields.append(invoiceDateField);
+  const invoiceDateField=document.createElement('div');invoiceDateField.className='field';invoiceDateField.innerHTML='<label>Data fattura</label>';invoiceDateField.append(invoiceDate);invoiceRow.append(invoiceDateField);
   const invoiceTotal=document.querySelector('input[name="invoice_total"]');invoiceTotal.type='text';invoiceTotal.inputMode='decimal';invoiceTotal.placeholder='Totale fattura';
   const invoiceTotalManual=document.querySelector('input[name="invoice_total_manual"]');
-  const invoiceTotalField=document.createElement('div');invoiceTotalField.className='field';invoiceTotalField.innerHTML='<label>Totale fattura €</label>';invoiceTotalField.append(invoiceTotal);fields.append(invoiceTotalField);
-  if(invoiceTotalManual?.value!=='Si'){invoiceTotal.dataset.autoFilled='1';const seed=(totalService?.value||'').trim();invoiceTotal.value=seed?ppmFormatInvoiceTotal(seed):'';}
+  const invoiceTotalField=document.createElement('div');invoiceTotalField.className='field';invoiceTotalField.innerHTML='<label>Totale fattura €</label>';invoiceTotalField.append(invoiceTotal);invoiceRow.append(invoiceTotalField);
+  if(invoiceTotalManual?.value!=='Si'){
+    invoiceTotal.dataset.autoFilled='1';
+    const accontoWSeed=ppmNumber(document.querySelector('input[name="acconto_w_totale"]')?.value||0);
+    const saldoWSeed=ppmNumber(document.querySelector('input[name="saldo_w_totale"]')?.value||0);
+    invoiceTotal.value=(accontoWSeed||saldoWSeed)?ppmFormatInvoiceTotal(accontoWSeed+saldoWSeed):'';
+  }
   else{invoiceTotal.value=ppmFormatInvoiceTotal(invoiceTotal.value);}
   invoiceTotal.addEventListener('input',()=>{invoiceTotal.dataset.autoFilled='0';if(invoiceTotalManual)invoiceTotalManual.value='Si';});
   invoiceTotal.addEventListener('blur',()=>{if(invoiceTotal.value.trim())invoiceTotal.value=ppmFormatInvoiceTotal(invoiceTotal.value);});
+  const makeInvoiceField=insertCheck(document.querySelector('input[name="make_invoice"]'),'FARE FATTURA',fields.lastElementChild);
+  if(makeInvoiceField)invoiceRow.append(makeInvoiceField);
   if(sendEstremiField)fields.append(sendEstremiField);
   const estremiSentField=insertCheck(document.querySelector('input[name="estremi_sent"]'),'ESTREMI INVIATI',sendEstremiField||fields.lastElementChild);
-  insertCheck(document.querySelector('input[name="make_invoice"]'),'FARE FATTURA',estremiSentField||sendEstremiField||fields.lastElementChild);
   // Totale W/Totale D, INVIARE ESTREMI/ESTREMI INVIATI move (not copy) into
   // the new Pagamento area on both create and edit, and the old
   // free-standing Acconto/Rimanenza W/D fields are retired from view on
@@ -3130,7 +3147,6 @@ function arrangeBudgetLayout(){
   addRow([field('price_night')]);
   addRow([field('accessorio_items_json')]);
   addRow([field('total_service'),field('deposit'),field('remaining_balance')],[field('send_estremi'),field('estremi_sent')]);
-  addRow([field('invoice_number'),field('invoice_date'),field('invoice_total')],[field('make_invoice')]);
   addRow([field('total_text'),field('deposit_final'),field('remaining_final')]);
   addRow([field('payment_status'),field('economic_at')],[field('payment_method')]);
   original.filter(node=>!used.has(node)).forEach(node=>addRow([node]));
@@ -4310,8 +4326,16 @@ function balanceToggleDetails(summaryEl){
 document.addEventListener('click',function(e){
   const h2=e.target.closest('h2');
   if(!h2)return;
-  const section=h2.parentElement;
-  if(section&&section.classList.contains('collapsible')&&section.firstElementChild===h2)section.classList.toggle('collapsed');
+  const section=h2.closest('.section.collapsible');
+  if(!section)return;
+  // placeCallBackFlag() sostituisce l'h2 di SPEDITORE con un wrapper
+  // ".section-heading-row" (per affiancare il flag DA RICHIAMARE al
+  // titolo): senza questo controllo il primo figlio della sezione non e'
+  // piu' l'h2 ma quel wrapper, e il click per aprire/chiudere smetteva di
+  // funzionare solo per quella sezione (i dati del proprietario sembravano
+  // "spariti" perche' irraggiungibili dietro una sezione chiusa e bloccata).
+  const headerEl=h2.parentElement.classList.contains('section-heading-row')?h2.parentElement:h2;
+  if(section.firstElementChild===headerEl)section.classList.toggle('collapsed');
 });
 document.addEventListener('click',function(e){
   if(!e.target.closest('.balance-move-menu-wrap')){
@@ -6674,7 +6698,7 @@ def collapse_advanced_search(body):
 
 
 SIDEBAR_LINKS=[
-    ("/","home","Dashboard"),("/calendario","calendar","Calendario"),("/turni","clock","Turni operatori"),("/bilanci","chart","Bilanci"),("/programma-cremazioni","paw","Programma Cremazioni"),("/notifiche","bell","Notifiche"),("/pratiche","archive","Archivio"),
+    ("/","home","Dashboard"),("/calendario","calendar","Calendario"),("/turni","clock","Orari"),("/bilanci","chart","Bilanci"),("/programma-cremazioni","paw","Programma Cremazioni"),("/notifiche","bell","Notifiche"),("/pratiche","archive","Archivio"),
     ("/catalogo-urne","archive","Catalogo Urne"),("/smaltimenti","archive","Smaltimenti"),("/conversazioni-whatsapp","message","Conversazioni WhatsApp"),("/veterinari","stethoscope","Veterinari"),
     ("/collaboratori","briefcase","Collaboratori"),
     ("/prodotti","clipboard","Prodotti"),("/ordini","receipt","Ordini"),
@@ -6689,7 +6713,7 @@ SIDEBAR_LINKS=[
 # apposta per non toccare la struttura dati condivisa con la sidebar desktop.
 MENU_CARD_META={
     "Dashboard":("red","Panoramica generale"),"Calendario":("purple","Eventi e appuntamenti"),
-    "Turni operatori":("teal","Pianificazione e reperibilità"),
+    "Orari":("teal","Pianificazione e reperibilità"),
     "Bilanci":("green","Entrate, uscite e statistiche"),"Programma Cremazioni":("lilac","Gestisci i cicli di cremazione"),
     "Notifiche":("red","Avvisi e promemoria"),"Archivio":("blue","Pratiche e documenti storici"),
     "Catalogo Urne":("amber","Gestione urne e prodotti"),"Smaltimenti":("cyan","Gestione smaltimenti"),
@@ -8826,12 +8850,12 @@ class App(BaseHTTPRequestHandler):
               <a class="btn ghost" style="margin-top:12px" href="/turni/reperibilita">{lucide("moon")} Gestisci rotazione</a>'''
             content=month_nav_html+dow_row+grid+f'<section class="section" style="margin-top:16px"><h2>Reperibilità notturna <small class="sub">(rotazione settimanale)</small></h2>{oncall_strip_html}</section>'
         body=f'''<main class="wrap calendar-wrap">
-          <div class="titlebar calendar-main-title"><div><h1>Turni operatori</h1><p class="sub">Pianificazione e reperibilità</p></div></div>
+          <div class="titlebar calendar-main-title"><div><h1>Orari</h1><p class="sub">Pianificazione e reperibilità</p></div></div>
           {oncall_banner_html}
           {switch_html}
           {content}
         </main>'''
-        self.send_html(layout("Turni operatori",body,user))
+        self.send_html(layout("Orari",body,user))
 
     def shifts_plan_page(self,user):
         q=parse_qs(urlparse(self.path).query)
@@ -8904,6 +8928,10 @@ class App(BaseHTTPRequestHandler):
             <input type="hidden" id="shiftCellDate">
             <div class="fields">
               <div class="field"><label>Sede</label><select id="shiftCellBranch"><option value="">Seleziona sede</option>{branch_options}</select></div>
+              <div class="shift-view-switch">
+                <button type="button" class="btn ghost" onclick="turniSetPreset('mattina')">Mattina</button>
+                <button type="button" class="btn ghost" onclick="turniSetPreset('pomeriggio')">Pomeriggio</button>
+              </div>
               <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="shiftCellAllDay" onchange="turniToggleAllDay(this)"> Tutto il giorno</label>
               <div class="field" id="shiftCellStartField"><label>Orario inizio</label><input type="time" id="shiftCellStart"></div>
               <div class="field" id="shiftCellEndField"><label>Orario fine</label><input type="time" id="shiftCellEnd"></div>
@@ -8949,6 +8977,14 @@ class App(BaseHTTPRequestHandler):
             var on=checkbox.checked;
             document.getElementById('shiftCellStartField').style.display=on?'none':'';
             document.getElementById('shiftCellEndField').style.display=on?'none':'';
+          }};
+          window.turniSetPreset=function(kind){{
+            var range=kind==='mattina'?['08:00','13:00']:['14:00','19:00'];
+            var allDay=document.getElementById('shiftCellAllDay');
+            allDay.checked=false;
+            turniToggleAllDay(allDay);
+            document.getElementById('shiftCellStart').value=range[0];
+            document.getElementById('shiftCellEnd').value=range[1];
           }};
           window.turniSaveCell=function(ev){{
             ev.preventDefault();
@@ -13378,7 +13414,7 @@ class App(BaseHTTPRequestHandler):
             # quale voce e' stata modificata senza bisogno di due coppie di
             # pulsanti separate.
             return f'''<div class="fields"><button class="btn" type="submit" style="margin-top:4px">Salva pagamento {channel}</button><button class="btn info-btn" type="submit" name="{channel.lower()}_extra" value="1" style="margin-top:4px;margin-left:8px" onclick="return confirm('Aggiungere un incasso {channel} successivo, distinto da quello già salvato?')">Aggiungi incasso successivo {channel}</button></div>'''
-        creation_payment_fields=f'''<section class="section hidden" id="creationPaymentSection"><h2>Pagamento</h2><p class="sub">Ogni importo è indipendente: compila solo D, solo W, o entrambi. Il circuito D non richiede il metodo di pagamento. Se per lo stesso incasso compili sia D che W, viene registrato solo D.</p><div class="fields" id="paymentEstremiRow"></div><div class="fields" id="paymentTotaleWRow"></div>{macro_field_group("acconto","W","Acconto W")}{macro_field_group("saldo","W","Saldo/Rimanenza W")}{channel_payment_buttons("W")}<div class="payment-macroarea"><div class="fields" id="paymentTotaleDRow"></div>{macro_field_group("acconto","D","Acconto D",show_method=False)}{macro_field_group("saldo","D","Rimanenza D",show_method=False)}{channel_payment_buttons("D")}</div></section>'''
+        creation_payment_fields=f'''<section class="section hidden" id="creationPaymentSection"><h2>Pagamento</h2><p class="sub">Ogni importo è indipendente: compila solo D, solo W, o entrambi. Il circuito D non richiede il metodo di pagamento. Se per lo stesso incasso compili sia D che W, viene registrato solo D.</p><div class="fields" id="paymentEstremiRow"></div><div class="fields" id="paymentTotaleWRow"></div>{macro_field_group("acconto","W","Acconto W")}{macro_field_group("saldo","W","Saldo/Rimanenza W")}{channel_payment_buttons("W")}<div class="fields" id="paymentInvoiceRow"></div><div class="payment-macroarea"><div class="fields" id="paymentTotaleDRow"></div>{macro_field_group("acconto","D","Acconto D",show_method=False)}{macro_field_group("saldo","D","Rimanenza D",show_method=False)}{channel_payment_buttons("D")}</div></section>'''
         if user is None or user["role"]=="admin":
             operator_field=f'''<div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option><option {selected('operator_name','GIANLUCA')}>GIANLUCA</option></select></div>'''
         else:
@@ -15134,31 +15170,26 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             edit_balance_key=f"practice-edit:{edit_balance_token}" if edit_balance_token else ""
             for macroarea,plan in macro_plan.items():
                 fresh_practice=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
-                existing_movement,_=latest_movement_and_invoice(c,pid,macroarea)
-                force_new=False
-                if existing_movement:
-                    target_amount=round(money_value(plan["totale_field"]),2)
-                    existing_amount=round(money_value(existing_movement["amount"]),2)
-                    existing_channel=existing_movement["payment_channel"] if existing_movement["payment_channel"] in ("W","D") else plan["channel"]
-                    # Unlike the Pagamento popover, the Preventivo section's
-                    # Acconto/Rimanenza fields have no explicit "correct
-                    # this" vs "register a new payment" toggle — if the
-                    # submitted amount (or circuito) genuinely differs from
-                    # the movement already on file (e.g. an extra item just
-                    # raised the total, so "Rimanenza D" now shows a real
-                    # new amount collected), treat it as an additional real
-                    # payment instead of silently rewriting the amount of a
-                    # payment already collected. An unchanged amount (only
-                    # date/method touched up) is still corrected in place.
-                    force_new=(target_amount!=existing_amount or plan["channel"]!=existing_channel)
-                # "Aggiungi incasso successivo W/D" nel Preventivo: stesso
-                # meccanismo esplicito del popup Pagamento, applicato a
-                # qualunque macroarea (acconto e/o saldo) sia stata
-                # compilata su quel circuito in questo stesso salvataggio —
-                # mai dedotto automaticamente, solo quando l'utente lo
-                # dichiara esplicitamente premendo quel pulsante.
-                if form.get(f"{plan['channel'].lower()}_extra","")=="1":
-                    force_new=True
+                # force_new scatta in due soli casi, mai dal solo importo
+                # diverso da quello gia' registrato (come accadeva prima):
+                # 1) click esplicito su "Aggiungi incasso successivo W/D";
+                # 2) il Totale {W/D} di questa stessa pratica e' SALITO in
+                #    questo stesso salvataggio (segno inequivocabile che la
+                #    nuova cifra e' un incasso extra dovuto a quell'aumento,
+                #    non una correzione di un valore appena scritto male).
+                # Il vecchio confronto "importo diverso" da solo non sapeva
+                # distinguere un incasso genuinamente nuovo da una semplice
+                # correzione di un errore di battitura inserito poco prima:
+                # un secondo salvataggio con l'importo giusto veniva letto
+                # come un secondo incasso reale, duplicando il movimento
+                # invece di correggerlo (bug reale riscontrato in
+                # produzione). Quando invece il Totale non e' cambiato,
+                # "Salva pagamento" corregge sempre il movimento gia'
+                # presente, con qualunque importo.
+                total_field_name="total_service" if plan["channel"]=="W" else "total_text"
+                total_before=euros_to_cents(f"{money_value(previous[total_field_name]):.2f}")
+                total_after=euros_to_cents(f"{money_value(d.get(total_field_name,'')):.2f}")
+                force_new=total_after>total_before or form.get(f"{plan['channel'].lower()}_extra","")=="1"
                 payment_error=self.apply_payment_macroarea(
                     c,user,pid,fresh_practice,macroarea,
                     data_field=plan["data_field"],totale_field=plan["totale_field"],

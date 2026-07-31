@@ -903,13 +903,19 @@ class PetParadiseTests(unittest.TestCase):
             app.APP_JS,
         )
 
-    def test_invoice_block_positioned_between_estremi_and_totale_d(self):
-        self.assertIn(
-            "addRow([field('total_service'),field('deposit'),field('remaining_balance')],[field('send_estremi'),field('estremi_sent')]);\n"
-            "  addRow([field('invoice_number'),field('invoice_date'),field('invoice_total')],[field('make_invoice')]);\n"
-            "  addRow([field('total_text'),field('deposit_final'),field('remaining_final')]);",
-            app.APP_JS,
-        )
+    def test_invoice_block_positioned_in_pagamento_after_incasso_successivo_w(self):
+        # richiesta esplicita dell'utente: NUMERO/DATA/TOTALE FATTURA e FARE
+        # FATTURA vivono ora nella sezione Pagamento, subito dopo "Aggiungi
+        # incasso successivo W" (non piu' nel Preventivo/budget layout).
+        html=self.handler.fields_html()
+        w_buttons_pos=html.index("Aggiungi incasso successivo W")
+        invoice_row_pos=html.index('id="paymentInvoiceRow"')
+        macroarea_d_pos=html.index('class="payment-macroarea"')
+        self.assertTrue(w_buttons_pos<invoice_row_pos<macroarea_d_pos)
+        self.assertIn("invoiceRow.append(invoiceField);",app.APP_JS)
+        self.assertIn("invoiceRow.append(invoiceDateField);",app.APP_JS)
+        self.assertIn("invoiceRow.append(invoiceTotalField);",app.APP_JS)
+        self.assertIn("if(makeInvoiceField)invoiceRow.append(makeInvoiceField);",app.APP_JS)
 
     def test_new_budget_invoice_and_transport_fields(self):
         html=self.handler.fields_html()
@@ -4129,16 +4135,17 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("function ppmFormatInvoiceTotal(value){", js)
         self.assertIn("return number.toFixed(2).replace('.', ',');", js)
         self.assertNotIn("`${number.toFixed(2).replace('.', ',')} €`", js)
-        self.assertIn("invoiceTotal.value=ppmFormatInvoiceTotal(serviceTotal);", js)
+        self.assertIn("invoiceTotal.value=ppmFormatInvoiceTotal(accontoW+saldoW);", js)
         self.assertIn("invoiceTotal.addEventListener('blur'", js)
 
-    def test_invoice_total_autofill_seeds_only_from_totale_w_never_totale_d(self):
+    def test_invoice_total_autofill_sums_acconto_w_and_saldo_w_never_totale_d(self):
+        # richiesta esplicita dell'utente: TOTALE FATTURA si autocompila
+        # sommando Acconto W + Saldo/Rimanenza W (l'incasso complessivo sul
+        # circuito W), non piu' copiando Totale W — e non deve mai leggere
+        # dal circuito D (total_text).
         js = app.APP_JS
-        # Totale fattura must always follow Totale W (total_service): never
-        # fall back to or prefer Totale D (total_text), which used to happen
-        # here and made the invoice total silently pick up the D circuito's
-        # total instead of the W one it actually belongs to.
-        self.assertIn("const seed=(totalService?.value||'').trim();", js)
+        self.assertIn('document.querySelector(\'input[name="acconto_w_totale"]\')?.value||0', js)
+        self.assertIn('document.querySelector(\'input[name="saldo_w_totale"]\')?.value||0', js)
         self.assertNotIn('total_text"]\')?.value||totalService', js)
         self.assertNotIn("definitive > 0 ? definitive : serviceTotal", js)
 
@@ -6250,6 +6257,58 @@ class PetParadiseTests(unittest.TestCase):
             practice=conn.execute("SELECT deposit_final,remaining_final FROM practices WHERE id=?",(pid,)).fetchone()
             self.assertEqual((practice["deposit_final"],practice["remaining_final"]),("280.00","0.00"))
 
+    def test_edit_form_correcting_a_mistyped_saldo_amount_replaces_not_duplicates(self):
+        # Riproduce il bug reale in produzione (pratica CR-000067): un
+        # acconto W da 180 gia' registrato, poi un saldo W salvato per
+        # errore a 360 (senza toccare il Totale W, rimasto 360), poi
+        # corretto a 180 con un secondo salvataggio della stessa sezione
+        # Preventivo, senza cliccare "Aggiungi incasso successivo W". Deve
+        # risultare UN SOLO movimento saldo (quello corretto, 180), non due
+        # — altrimenti Acconto W finiva doppio (720) e Rimanenza W negativa
+        # (-360), esattamente come segnalato.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,owner_last_name,owner_phone,owner_tax_code,owner_street,owner_city,owner_province,owner_zip,
+                                service_type,payment_status,total_service,total_service_manual)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                             ("CR-TYPO-FIX","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Elisabetta","Vitali","3339998888","VTLLBT80A01H501U","Via Test","Livorno","LI","57100","Da decidere","Da saldare","360","Si")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"macroarea":"acconto","acconto_data":"2026-07-22","acconto_totale":"180,00","acconto_circuito":"W","acconto_modalita":"Bonifico","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        redirects=[];self.handler.redirect=lambda url:redirects.append(url)
+        rendered=[];self.handler.send_html=lambda html,*a:rendered.append(html)
+        self.handler.path=f"/pratiche/{pid}/modifica"
+        def submit(saldo_amount):
+            with app.db() as conn:
+                current=conn.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+            economic_at=str(current["deposit_paid_at"] or current["paid_at"] or "2026-07-31")[:10]
+            self.handler.form=lambda:{
+                "operator_name":"FILIPPO","service_type":"Da decidere","request_origin":"Privato",
+                "owner_first_name":"Elisabetta","owner_last_name":"Vitali","owner_phone":"3339998888",
+                "owner_tax_code":"VTLLBT80A01H501U","owner_street":"Via Test","owner_city":"Livorno",
+                "owner_province":"LI","owner_zip":"57100","payment_status":current["payment_status"],"economic_at":economic_at,
+                "total_service":"360","total_service_manual":"Si","deposit":current["deposit"],"remaining_balance":current["remaining_balance"],
+                "deposit_final":current["deposit_final"],"remaining_final":current["remaining_final"] or "",
+                "saldo_w_totale":saldo_amount,"saldo_w_totale_touched":"1","saldo_w_data":"2026-07-31","saldo_w_modalita":"Pos",
+            }
+            redirects.clear();rendered.clear()
+            self.handler.edit_submit(admin,pid)
+            if not redirects and rendered:
+                import re as _re
+                m=_re.search(r'class="flash[^"]*">([^<]*)<',rendered[-1])
+                self.fail(f"salvataggio fallito: {m.group(1) if m else rendered[-1][:200]}")
+        # primo salvataggio: saldo digitato per errore a 360 invece di 180
+        submit("360")
+        # secondo salvataggio: correzione a 180, Totale W invariato, nessun w_extra
+        submit("180")
+        with app.db() as conn:
+            saldo_movements=conn.execute("SELECT amount FROM payment_movements WHERE practice_id=? AND payment_type='saldo' ORDER BY id",(pid,)).fetchall()
+            self.assertEqual([float(r["amount"]) for r in saldo_movements],[180.0])
+            practice=conn.execute("SELECT deposit,remaining_balance,payment_status FROM practices WHERE id=?",(pid,)).fetchone()
+            self.assertEqual((practice["deposit"],practice["remaining_balance"],practice["payment_status"]),("360.00","0.00","Pagato"))
+
     def test_preventivo_w_extra_button_forces_new_payment_even_with_same_amount(self):
         # "Aggiungi incasso successivo W" nel Preventivo (creazione/modifica):
         # stessa identica funzione del pulsante nel popup Pagamento, solo
@@ -6337,6 +6396,19 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.edit_page(admin,pid,draft={"owner_first_name":"Ugo"},error="Errore di prova",error_field="owner_last_name")
         edit_page_error=rendered[-1]
         self.assertNotIn('collapsible collapsed',edit_page_error)
+
+    def test_collapsible_toggle_handler_still_works_when_heading_wrapped_by_flag_row(self):
+        # placeCallBackFlag() (JS) sostituisce l'h2 della sezione SPEDITORE
+        # con un wrapper ".section-heading-row" per affiancare il flag DA
+        # RICHIAMARE al titolo: il gestore del click per aprire/chiudere le
+        # sezioni deve riconoscere anche questo caso, altrimenti la sezione
+        # coi dati del proprietario resta bloccata chiusa e inaccessibile
+        # (bug reale segnalato dall'utente dopo l'introduzione delle sezioni
+        # collassabili).
+        handler_src = app.APP_JS[app.APP_JS.index("document.addEventListener('click',function(e){\n  const h2="):]
+        handler_src = handler_src[:handler_src.index("});")]
+        self.assertIn("section-heading-row", handler_src)
+        self.assertIn("h2.closest('.section.collapsible')", handler_src)
 
     def test_edit_submit_accepts_negative_remaining_instead_of_failing_validation(self):
         # validation_error() checks every MONEY_FIELDS value against a
