@@ -2522,16 +2522,16 @@ body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY
 .shift-month-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin-top:10px}
 .shift-month-dow-row{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin-bottom:4px}
 .shift-month-dow{text-align:center;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
-.shift-month-cell{position:relative;display:flex;flex-direction:column;height:104px;padding:7px;border:1px solid var(--line);border-radius:12px;background:#182334;color:var(--ink);overflow:hidden}
+.shift-month-cell{position:relative;display:flex;flex-direction:column;min-height:88px;padding:7px;border:1px solid var(--line);border-radius:12px;background:#182334;color:var(--ink)}
 .light-theme .shift-month-cell{background:#f8fafc}
 .shift-month-cell b{font-size:12px;font-weight:700;flex:0 0 auto}
 .shift-month-cell.is-today{border-color:var(--brand2)}
 .shift-month-cell.is-other-month{opacity:.4}
-.shift-month-cell-branch{display:flex;align-items:center;gap:4px;margin-top:5px;min-width:0;flex:0 0 auto}
+.shift-month-cell-branch{display:flex;align-items:flex-start;gap:4px;margin-top:5px;min-width:0}
 .shift-month-cell-branch.branch-livorno{color:var(--brand)}
 .shift-month-cell-branch.branch-empoli{color:var(--green)}
-.shift-month-cell-dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:0 0 auto}
-.shift-month-cell-names{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:var(--ink)}
+.shift-month-cell-dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:0 0 auto;margin-top:4px}
+.shift-month-cell-names{min-width:0;overflow-wrap:break-word;font-size:9.5px;line-height:1.3;color:var(--ink)}
 .shift-month-nav-today{display:flex;justify-content:flex-end;margin:-4px 0 12px}
 .shift-month-legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:14px;padding:12px 14px;font-size:11.5px;color:var(--muted)}
 .shift-month-legend span{display:inline-flex;align-items:center;gap:6px}
@@ -8931,8 +8931,8 @@ class App(BaseHTTPRequestHandler):
                     branch_rows=day_data.get(branch,[])
                     if branch_rows:
                         branch_cls="branch-livorno" if branch=="Livorno" else "branch-empoli"
-                        names=", ".join(f"{r['operator_name']} {shift_time_label(r)}" for r in branch_rows)
-                        blocks.append(f'<div class="shift-month-cell-branch {branch_cls}"><span class="shift-month-cell-dot"></span><span class="shift-month-cell-names">{esc(names)}</span></div>')
+                        names_html="".join(f"<div>{esc(r['operator_name'])} {shift_time_label(r)}</div>" for r in branch_rows)
+                        blocks.append(f'<div class="shift-month-cell-branch {branch_cls}"><span class="shift-month-cell-dot"></span><div class="shift-month-cell-names">{names_html}</div></div>')
                 vac_today=vacation_operators_on(day)
                 vac_html=""
                 if vac_today:
