@@ -9741,6 +9741,10 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(notification_priority("payment_due"), "alta")
         self.assertEqual(notification_priority("system_error"), "alta")
         self.assertEqual(notification_priority("whatsapp_error"), "alta")
+        # un nuovo evento inserito in calendario va notato subito: richiesta
+        # esplicita di renderlo urgente (suono/vibrazione anche a telefono
+        # silenzioso), non solo visibile passivamente nel Centro notifiche
+        self.assertEqual(notification_priority("calendar_event_created"), "alta")
         self.assertEqual(notification_priority("practice_created"), "normale")
         self.assertEqual(notification_priority("payment_received"), "normale")
 

@@ -84,13 +84,16 @@ def notification_push_title(notification_type: str, title: str) -> str:
 
 
 # Tipi il cui invio push merita suono/vibrazione anche a telefono silenzioso
-# in tasca: guasti e cose che bloccano un incasso. Tutto il resto resta a
-# priorità normale (visibile solo nel Centro notifiche e nel badge).
+# in tasca: guasti, cose che bloccano un incasso, e un nuovo evento appena
+# inserito in calendario (da notare subito, non solo quando si riapre
+# l'app). Tutto il resto resta a priorità normale (visibile solo nel Centro
+# notifiche e nel badge).
 HIGH_PRIORITY_NOTIFICATION_TYPES = frozenset({
     "payment_due",
     "system_error",
     "whatsapp_error",
     "whatsapp_cron_error",
+    "calendar_event_created",
 })
 
 
