@@ -1288,7 +1288,7 @@ body.ppm-dragging-no-select,body.ppm-dragging-no-select *{-webkit-user-select:no
 .notif-type-list{display:flex;flex-direction:column;gap:8px}.notif-type-row{justify-content:flex-start;gap:12px}.notif-type-icon{font-size:19px;width:34px;height:34px;display:grid;place-items:center;flex:0 0 34px;border-radius:10px;background:#172033}.notif-type-copy{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}.notif-type-copy small{color:#94a3b8}.notif-type-row input[type=checkbox]{margin-left:auto;width:20px;height:20px}.light-theme .notif-type-icon{background:#f1f5f9}.light-theme .notif-type-copy small{color:#64748b}.login{max-width:410px;margin:10vh auto;background:white;padding:34px;border-radius:18px;border:1px solid var(--line)}.timeline{border-left:2px solid var(--line);margin-left:7px;padding-left:20px}.event{padding:0 0 18px;position:relative}.event:before{content:'';position:absolute;width:10px;height:10px;border-radius:50%;background:var(--brand);left:-26px;top:5px}.kvs{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.kv{background:#faf8f5;border-radius:10px;padding:12px}.kv small{display:block;color:var(--muted)}.signature-pad{width:100%;height:260px;border:2px dashed var(--line);border-radius:14px;background:white;touch-action:none}
 body{background:radial-gradient(circle at top left,#fff8f3 0,#f4f1ed 34%,#ece5dd 100%)}.top{backdrop-filter:saturate(1.2) blur(10px);box-shadow:0 8px 28px #4b392612}.brand{letter-spacing:.2px}.nav a{font-weight:650}.nav a.btn{box-shadow:0 8px 20px #a7404524}.wrap{animation:ppmFade .18s ease-out}.titlebar h1{letter-spacing:-.03em}.section,.card,.tablebox,.login{box-shadow:0 10px 30px #4b39260d}.section{transition:box-shadow .15s ease, transform .15s ease}.card{transition:transform .15s ease,box-shadow .15s ease}.card:hover{transform:translateY(-2px);box-shadow:0 14px 34px #4b392617}.btn{box-shadow:0 6px 16px #a740451f}.btn.ghost{box-shadow:none}.kv{border:1px solid #eee6df}.tablebox table tr:hover td{background:#fffaf6}input,select,textarea{transition:border-color .15s ease,box-shadow .15s ease}.danger{border-width:1px}.trash-note{background:#fff7e8;border:1px solid #f0cf9d;color:#765315;border-radius:12px;padding:12px 14px;margin-bottom:16px}.empty-state{text-align:center;padding:32px;color:var(--muted)}@keyframes ppmFade{from{opacity:.78;transform:translateY(3px)}to{opacity:1;transform:none}}
 .practice-layout{grid-template-columns:2fr 1fr}@media(max-width:800px){html,body{width:100%;max-width:100%;overflow-x:hidden}body{font-size:16px}.wrap{padding:14px}.top{height:auto;min-height:64px;padding:10px 12px;align-items:flex-start}.brand{font-size:17px}.nav{gap:4px;flex-wrap:wrap}.nav a{padding:8px 9px}.nav a span{display:none}.btn{width:100%;min-height:46px}.actions{width:100%}.actions .btn,.actions form{flex:1 1 100%}.stats,.form-grid,.fields,.kvs,.practice-layout{grid-template-columns:1fr}.section{padding:16px;border-radius:13px}.titlebar{align-items:flex-start;flex-direction:column}.wide{grid-column:auto}input,select,textarea{font-size:16px;min-height:46px}th:nth-child(4),td:nth-child(4){display:none}.badge{margin:2px 2px 2px 0}}
-.danger{border-color:#e2a5a5;background:#fff7f7}.btn.danger-btn{background:#b42323;color:white}.btn.danger-btn:hover{background:#8f1d1d}.danger-note{color:#8f1d1d;font-weight:700}
+.danger{border-color:#e2a5a5;background:#fff7f7}.btn.danger-btn{background:#b42323;color:white}.btn.danger-btn:hover{background:#8f1d1d}.danger-note{color:#8f1d1d;font-weight:700}.btn.info-btn{background:#1d4ed8;color:white}.btn.info-btn:hover{background:#1e40af}
 .home-logo{width:118px;height:118px;object-fit:contain;border-radius:24px;background:white;padding:10px;border:1px solid var(--line);box-shadow:0 8px 24px #4b392614}
 .month-block{margin-bottom:18px}.month-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.month-heading{display:flex;align-items:center;gap:10px}.month-toggle{width:34px;height:34px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--brand);font-size:22px;font-weight:800;line-height:1;cursor:pointer}.month-content[hidden]{display:none}.dashboard-table-scroll{overflow-x:scroll;scrollbar-gutter:stable;padding-bottom:8px;scrollbar-color:var(--brand) #eee7e0;scrollbar-width:auto}.dashboard-table-scroll table{min-width:1650px}.dashboard-table-scroll::-webkit-scrollbar{height:13px}.dashboard-table-scroll::-webkit-scrollbar-track{background:#eee7e0;border-radius:99px}.dashboard-table-scroll::-webkit-scrollbar-thumb{background:var(--brand);border:3px solid #eee7e0;border-radius:99px}
 .hidden{display:none!important}
@@ -11981,7 +11981,7 @@ class App(BaseHTTPRequestHandler):
                 if movement else ""
             )
             new_payment_btn=(
-                f'''<button class="btn danger-btn" type="submit" name="{kind}_extra" value="1" style="margin-top:12px;margin-left:8px" onclick="event.stopPropagation();return confirm('Registrare un nuovo pagamento {lower} distinto? Quello già salvato resta invariato.')">Registra nuovo pagamento {lower}</button>'''
+                f'''<button class="btn info-btn" type="submit" name="{kind}_extra" value="1" style="margin-top:12px;margin-left:8px" onclick="event.stopPropagation();return confirm('Aggiungere un incasso {lower} successivo, distinto da quello già salvato?')">Aggiungi incasso successivo {lower}</button>'''
                 if movement else ""
             )
             return f'''<section class="payment-macroarea" data-macroarea="{kind}"><h3>{label}</h3><form method="post" action="/pratiche/{r['id']}/pagamento-movimento" onsubmit="event.stopPropagation()"><input type="hidden" name="return_to" value="{return_to}"><input type="hidden" name="macroarea" value="{kind}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(16)}"><div class="fields"><div class="field"><label>Data {lower}</label><input type="date" name="{kind}_data" value="{esc(date_value)}" required></div><div class="field"><label>Totale {lower} €</label><input name="{kind}_totale" value="{esc(amount_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00" required></div><div class="field"><label>Circuito {lower}</label><select name="{kind}_circuito" onchange="ppmSyncMacroareaInvoiceSection(this)">{channel_options}</select></div><div class="field"><label>Modalità {lower}</label><select name="{kind}_modalita" required>{method_options}</select></div></div><div class="payment-invoice-section" data-macroarea-invoice="{kind}" {invoice_hidden}><div class="fields"><div class="field"><label>Importo fattura €</label><input name="{kind}_fattura_totale" value="{esc(invoice_total_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field"><label>Data fattura</label><input type="date" name="{kind}_fattura_data" value="{esc(invoice_date_value)}"></div><div class="field full"><label>Numero fattura</label><input name="{kind}_fattura_numero" value="{esc(invoice_number_value)}"></div></div></div><button class="btn" style="margin-top:12px">Salva pagamento</button>{new_payment_btn}</form>{remove_form}</section>'''
@@ -12858,13 +12858,14 @@ class App(BaseHTTPRequestHandler):
             return f'''<div class="payment-macroarea-channel"><div class="fields"><div class="field"><label>{esc(label)} €</label><input name="{totale_name}" value="{val(totale_name)}" inputmode="decimal" placeholder="Numero, es. 120,00"></div><div class="field"><label>Data {esc(label)}</label><input type="date" name="{data_name}" value="{val(data_name)}"></div>{method_html}{fattura_html}</div>{touched_html}</div>'''
         def channel_payment_buttons(channel):
             # Stessa identica funzione dei pulsanti del popup Pagamento
-            # (Salva pagamento / Registra nuovo pagamento), qui per circuito
-            # invece che per macroarea: "Registra nuovo pagamento" imposta
-            # force_new=True in edit_submit per qualunque macroarea (acconto
-            # e/o saldo) compilata su questo stesso circuito in questo
-            # salvataggio, cosi' riconosce da solo quale voce e' stata
-            # modificata senza bisogno di due coppie di pulsanti separate.
-            return f'''<div class="fields"><button class="btn" type="submit" style="margin-top:4px">Salva pagamento {channel}</button><button class="btn danger-btn" type="submit" name="{channel.lower()}_extra" value="1" style="margin-top:4px;margin-left:8px" onclick="return confirm('Registrare un nuovo pagamento {channel} distinto? Quello già salvato resta invariato.')">Registra nuovo pagamento {channel}</button></div>'''
+            # (Salva pagamento / Aggiungi incasso successivo), qui per
+            # circuito invece che per macroarea: "Aggiungi incasso
+            # successivo" imposta force_new=True in edit_submit per
+            # qualunque macroarea (acconto e/o saldo) compilata su questo
+            # stesso circuito in questo salvataggio, cosi' riconosce da solo
+            # quale voce e' stata modificata senza bisogno di due coppie di
+            # pulsanti separate.
+            return f'''<div class="fields"><button class="btn" type="submit" style="margin-top:4px">Salva pagamento {channel}</button><button class="btn info-btn" type="submit" name="{channel.lower()}_extra" value="1" style="margin-top:4px;margin-left:8px" onclick="return confirm('Aggiungere un incasso {channel} successivo, distinto da quello già salvato?')">Aggiungi incasso successivo {channel}</button></div>'''
         creation_payment_fields=f'''<section class="section hidden" id="creationPaymentSection"><h2>Pagamento</h2><p class="sub">Ogni importo è indipendente: compila solo D, solo W, o entrambi. Il circuito D non richiede il metodo di pagamento. Se per lo stesso incasso compili sia D che W, viene registrato solo D.</p><div class="fields" id="paymentEstremiRow"></div><div class="fields" id="paymentTotaleWRow"></div>{macro_field_group("acconto","W","Acconto W")}{macro_field_group("saldo","W","Saldo/Rimanenza W")}{channel_payment_buttons("W")}<div class="payment-macroarea"><div class="fields" id="paymentTotaleDRow"></div>{macro_field_group("acconto","D","Acconto D",show_method=False)}{macro_field_group("saldo","D","Rimanenza D",show_method=False)}{channel_payment_buttons("D")}</div></section>'''
         if user is None or user["role"]=="admin":
             operator_field=f'''<div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option><option {selected('operator_name','GIANLUCA')}>GIANLUCA</option></select></div>'''
@@ -14638,7 +14639,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                     # payment already collected. An unchanged amount (only
                     # date/method touched up) is still corrected in place.
                     force_new=(target_amount!=existing_amount or plan["channel"]!=existing_channel)
-                # "Registra nuovo pagamento W/D" nel Preventivo: stesso
+                # "Aggiungi incasso successivo W/D" nel Preventivo: stesso
                 # meccanismo esplicito del popup Pagamento, applicato a
                 # qualunque macroarea (acconto e/o saldo) sia stata
                 # compilata su quel circuito in questo stesso salvataggio —
@@ -14860,10 +14861,10 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 invoice_total=normalize_money_text(form.get(f"{prefix}_fattura_totale","")),
                 invoice_date=form.get(f"{prefix}_fattura_data","").strip(),
                 balance_key=form.get("balance_idempotency_key","").strip(),
-                # "Registra nuovo pagamento": azione esplicita e distinta dal
-                # normale "Salva pagamento" (che corregge l'ultimo movimento
-                # della macroarea). Mai dedotto automaticamente dall'importo:
-                # solo l'utente, confermando di aver ricevuto un incasso
+                # "Aggiungi incasso successivo": azione esplicita e distinta
+                # dal normale "Salva pagamento" (che corregge l'ultimo
+                # movimento della macroarea). Mai dedotto automaticamente
+                # dall'importo: solo l'utente, confermando di aver ricevuto un incasso
                 # realmente nuovo, puo' impostarlo.
                 force_new=form.get(f"{prefix}_extra","")=="1",
             )

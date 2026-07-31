@@ -6082,7 +6082,7 @@ class PetParadiseTests(unittest.TestCase):
             self.assertNotIn(balances[2]["idempotency_key"],(balances[0]["idempotency_key"],balances[1]["idempotency_key"]))
 
     def test_extra_payment_double_tap_with_same_idempotency_key_does_not_duplicate(self):
-        # A double-tap on "Registra nuovo pagamento" resubmits the same
+        # A double-tap on "Aggiungi incasso successivo" resubmits the same
         # still-rendered form, so the same balance_idempotency_key hidden
         # field goes out twice — must not raise IdempotencyConflictError and
         # must not create a second payment_movements/balance_movements row.
@@ -6173,7 +6173,7 @@ class PetParadiseTests(unittest.TestCase):
             row=conn.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
         dialog=self.handler.status_badges(row)
         self.assertIn('name="saldo_extra" value="1"',dialog)
-        self.assertIn("Registra nuovo pagamento saldo",dialog)
+        self.assertIn("Aggiungi incasso successivo saldo",dialog)
         self.assertIn("Il totale è aumentato per l'aggiunta di nuovi elementi",dialog)
         self.assertIn("resta da pagare € 60,00 (circuito W)",dialog)
         self.assertIn("Circuito W",dialog)
@@ -6251,7 +6251,7 @@ class PetParadiseTests(unittest.TestCase):
             self.assertEqual((practice["deposit_final"],practice["remaining_final"]),("280.00","0.00"))
 
     def test_preventivo_w_extra_button_forces_new_payment_even_with_same_amount(self):
-        # "Registra nuovo pagamento W" nel Preventivo (creazione/modifica):
+        # "Aggiungi incasso successivo W" nel Preventivo (creazione/modifica):
         # stessa identica funzione del pulsante nel popup Pagamento, solo
         # spostata per circuito. Anche con lo STESSO importo gia'
         # registrato (che da solo non farebbe scattare l'euristica
@@ -6307,9 +6307,9 @@ class PetParadiseTests(unittest.TestCase):
             self.assertIn('name="w_extra" value="1"',page)
             self.assertIn('name="d_extra" value="1"',page)
             self.assertIn("Salva pagamento W",page)
-            self.assertIn("Registra nuovo pagamento W",page)
+            self.assertIn("Aggiungi incasso successivo W",page)
             self.assertIn("Salva pagamento D",page)
-            self.assertIn("Registra nuovo pagamento D",page)
+            self.assertIn("Aggiungi incasso successivo D",page)
 
     def test_practice_form_sections_are_collapsible_open_on_create_closed_on_edit(self):
         # tutte le sezioni del form pratica si possono aprire/chiudere; in
@@ -6829,7 +6829,7 @@ class PetParadiseTests(unittest.TestCase):
     def test_dashboard_counts_multiple_movements_same_practice_same_day(self):
         # scenario 6: due movimenti di acconto sulla stessa pratica nello
         # stesso giorno (il secondo registrato come pagamento nuovo,
-        # distinto, tramite il pulsante "Registra nuovo pagamento")
+        # distinto, tramite il pulsante "Aggiungi incasso successivo")
         today=app.rome_now().date().isoformat()
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
