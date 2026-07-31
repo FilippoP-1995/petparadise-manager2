@@ -6816,8 +6816,8 @@ def collapse_advanced_search(body):
 
 
 SIDEBAR_LINKS=[
-    ("/","home","Dashboard"),("/calendario","calendar","Calendario"),("/turni","clock","Orari"),("/bilanci","chart","Bilanci"),("/programma-cremazioni","paw","Programma Cremazioni"),("/notifiche","bell","Notifiche"),("/pratiche","archive","Archivio"),
-    ("/catalogo-urne","archive","Catalogo Urne"),("/smaltimenti","archive","Smaltimenti"),("/conversazioni-whatsapp","message","Conversazioni WhatsApp"),("/veterinari","stethoscope","Veterinari"),
+    ("/","home","Dashboard"),("/calendario","calendar","Calendario"),("/bilanci","chart","Bilanci"),("/programma-cremazioni","paw","Programma Cremazioni"),("/notifiche","bell","Notifiche"),("/pratiche","archive","Archivio"),
+    ("/catalogo-urne","archive","Catalogo Urne"),("/smaltimenti","archive","Smaltimenti"),("/conversazioni-whatsapp","message","Conversazioni WhatsApp"),("/turni","clock","Orari"),("/veterinari","stethoscope","Veterinari"),
     ("/collaboratori","briefcase","Collaboratori"),
     ("/prodotti","clipboard","Prodotti"),("/ordini","receipt","Ordini"),
     ("/archivio/pratiche","clipboard","Gestionale"),("/clienti","users","Clienti"),
@@ -8829,8 +8829,8 @@ class App(BaseHTTPRequestHandler):
 
     def shifts_page(self,user):
         q=parse_qs(urlparse(self.path).query)
-        view=(q.get("vista") or ["giorno"])[0]
-        if view not in ("giorno","mese"):view="giorno"
+        view=(q.get("vista") or ["mese"])[0]
+        if view not in ("giorno","mese"):view="mese"
         selected=(q.get("data") or [rome_now().date().isoformat()])[0]
         try:date.fromisoformat(selected)
         except ValueError:selected=rome_now().date().isoformat()
