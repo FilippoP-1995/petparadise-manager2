@@ -365,7 +365,9 @@ class ShiftsModuleTests(unittest.TestCase):
         self.assertIn('data-locked-branch="Livorno"', page)
         self.assertIn('id="shiftCellEditorBackdrop"', page)  # popup condiviso presente sulla pagina
 
-    def test_shifts_page_mese_shows_mattina_pomeriggio_or_time_range_label(self):
+    def test_shifts_page_mese_shows_operator_names_never_times(self):
+        # Vista mensile = solo panoramica (chi e' a Livorno/Empoli): mai
+        # orari, richiesta esplicita dell'utente dopo celle deformate.
         self.save_cell(self.admin, operator="Serena", data="2026-08-10", branch="Livorno", start_time="08:30", end_time="13:00")
         self.save_cell(self.admin, operator="Filippo", data="2026-08-10", branch="Livorno", start_time="14:30", end_time="19:30")
         self.save_cell(self.admin, operator="Alessio", data="2026-08-10", branch="Empoli", start_time="09:15", end_time="12:00")
@@ -374,18 +376,41 @@ class ShiftsModuleTests(unittest.TestCase):
         self.handler.path = "/turni?vista=mese&data=2026-08-10"
         self.handler.shifts_page(self.admin)
         page = rendered[-1]
-        self.assertIn("Mattina", page)
-        self.assertIn("Pomeriggio", page)
-        self.assertIn("09:15", page)
+        self.assertIn(">Serena<", page)
+        self.assertIn(">Filippo<", page)
+        self.assertIn(">Alessio<", page)
+        self.assertNotIn("Mattina", page)
+        self.assertNotIn("Pomeriggio", page)
+        self.assertNotIn("09:15", page)
+        self.assertNotIn("Tutto il giorno", page)
 
-    def test_shifts_page_mese_shows_tutto_il_giorno_label(self):
+    def test_shifts_page_mese_collapses_to_operator_count_above_two(self):
+        # Oltre due operatori nella stessa sede/giorno: mostra "N operatori"
+        # invece dei nomi, per mantenere la cella di dimensione fissa.
+        for operator, start, end in (("Serena", "08:30", "13:00"), ("Filippo", "14:30", "19:30"), ("Alessio", "09:00", "18:00")):
+            self.save_cell(self.admin, operator=operator, data="2026-08-10", branch="Livorno", start_time=start, end_time=end)
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/turni?vista=mese&data=2026-08-10"
+        self.handler.shifts_page(self.admin)
+        page = rendered[-1]
+        self.assertIn("3 operatori", page)
+        cell_start = page.index('href="/turni?vista=giorno&data=2026-08-10"')
+        cell_html = page[max(0, cell_start - 200):cell_start + 400]
+        self.assertNotIn(">Serena<", cell_html)
+
+    def test_shifts_page_mese_cells_have_fixed_uniform_height(self):
         self.save_cell(self.admin, operator="Serena", data="2026-08-10", branch="Livorno", all_day="1", start_time="", end_time="")
         rendered = []
         self.handler.send_html = lambda html, *a: rendered.append(html)
         self.handler.path = "/turni?vista=mese&data=2026-08-10"
         self.handler.shifts_page(self.admin)
         page = rendered[-1]
-        self.assertIn("Tutto il giorno", page)
+        self.assertIn(".shift-month-cell{", page)
+        css_start = page.index(".shift-month-cell{")
+        css_rule = page[css_start:css_start + 200]
+        self.assertIn("height:", css_rule)
+        self.assertNotIn("min-height:", css_rule)
 
 
 if __name__ == "__main__":

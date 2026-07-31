@@ -1305,7 +1305,7 @@ body{background:radial-gradient(circle at top left,#fff8f3 0,#f4f1ed 34%,#ece5dd
 .home-logo{width:118px;height:118px;object-fit:contain;border-radius:24px;background:white;padding:10px;border:1px solid var(--line);box-shadow:0 8px 24px #4b392614}
 .month-block{margin-bottom:18px}.month-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.month-heading{display:flex;align-items:center;gap:10px}.month-toggle{width:34px;height:34px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--brand);font-size:22px;font-weight:800;line-height:1;cursor:pointer}.month-content[hidden]{display:none}.dashboard-table-scroll{overflow-x:scroll;scrollbar-gutter:stable;padding-bottom:8px;scrollbar-color:var(--brand) #eee7e0;scrollbar-width:auto}.dashboard-table-scroll table{min-width:1650px}.dashboard-table-scroll::-webkit-scrollbar{height:13px}.dashboard-table-scroll::-webkit-scrollbar-track{background:#eee7e0;border-radius:99px}.dashboard-table-scroll::-webkit-scrollbar-thumb{background:var(--brand);border:3px solid #eee7e0;border-radius:99px}
 .hidden{display:none!important}
-.section.collapsible>h2{cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;gap:10px}.section.collapsible>h2::after{content:'▾';font-size:13px;color:var(--muted);transition:transform .2s ease;flex:0 0 auto}.section.collapsible.collapsed>h2{margin-bottom:0}.section.collapsible.collapsed>h2::after{transform:rotate(-90deg)}.section.collapsible.collapsed>*:not(h2){display:none}
+.section.collapsible>h2{cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;gap:10px}.section.collapsible>h2::after,.section.collapsible>.section-heading-row>h2::after{content:'▾';font-size:13px;color:var(--muted);transition:transform .2s ease;flex:0 0 auto}.section.collapsible>.section-heading-row{cursor:pointer;user-select:none}.section.collapsible.collapsed>h2,.section.collapsible.collapsed>.section-heading-row{margin-bottom:0}.section.collapsible.collapsed>h2::after,.section.collapsible.collapsed>.section-heading-row>h2::after{transform:rotate(-90deg)}.section.collapsible.collapsed>*:not(h2):not(.section-heading-row){display:none}
 .practice-code-cr{color:#1e88e5}.practice-code-sm{color:#111}
 .lookup{position:relative}.lookup-results{position:absolute;left:0;right:0;top:100%;z-index:20;background:white;border:1px solid var(--line);border-radius:12px;margin-top:6px;box-shadow:0 10px 30px #4b392626;max-height:340px;overflow:auto}
 .lookup-results.ppm-lookup-portal{position:fixed;right:auto;margin-top:0;z-index:150;box-shadow:0 16px 40px #05070f4d}.lookup-item{display:block;width:100%;border:0;background:white;text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer;color:var(--ink)}.lookup-item:hover,.lookup-item:focus{background:#f7f2ee;outline:none}.lookup-item b{display:block}.lookup-item small{display:block;color:var(--muted);white-space:normal}.lookup-item-urn{display:flex;align-items:center;gap:10px}.lookup-item-thumb{width:36px;height:36px;flex:0 0 36px;border-radius:8px;object-fit:cover;background:#e2e8f0}.lookup-state{padding:10px 12px;color:var(--muted);font-size:13px}.selected-box{border:1px solid #b8d7c8;background:#edf7f2;color:#285b45;border-radius:10px;padding:12px;margin-top:10px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}.selected-box .btn{width:auto}
@@ -2522,16 +2522,17 @@ body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY
 .shift-month-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin-top:10px}
 .shift-month-dow-row{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin-bottom:4px}
 .shift-month-dow{text-align:center;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
-.shift-month-cell{position:relative;display:flex;flex-direction:column;min-height:88px;padding:7px;border:1px solid var(--line);border-radius:12px;background:#182334;color:var(--ink)}
+.shift-month-cell{position:relative;display:flex;flex-direction:column;height:98px;padding:6px 5px;border:1px solid var(--line);border-radius:12px;background:#182334;color:var(--ink);overflow:hidden}
 .light-theme .shift-month-cell{background:#f8fafc}
 .shift-month-cell b{font-size:12px;font-weight:700;flex:0 0 auto}
 .shift-month-cell.is-today{border-color:var(--brand2)}
 .shift-month-cell.is-other-month{opacity:.4}
-.shift-month-cell-branch{display:flex;align-items:flex-start;gap:4px;margin-top:5px;min-width:0}
+.shift-month-cell-branch{margin-top:4px;min-width:0;flex:0 0 auto}
 .shift-month-cell-branch.branch-livorno{color:var(--brand)}
 .shift-month-cell-branch.branch-empoli{color:var(--green)}
-.shift-month-cell-dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:0 0 auto;margin-top:4px}
-.shift-month-cell-names{min-width:0;overflow-wrap:break-word;font-size:9.5px;line-height:1.3;color:var(--ink)}
+.shift-month-cell-branch-label{display:flex;align-items:center;gap:3px;font-size:8px;font-weight:800;letter-spacing:.02em;white-space:nowrap;overflow:hidden}
+.shift-month-cell-dot{width:5px;height:5px;border-radius:50%;background:currentColor;flex:0 0 auto}
+.shift-month-cell-names{min-width:0;font-size:9.5px;line-height:1.28;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .shift-month-nav-today{display:flex;justify-content:flex-end;margin:-4px 0 12px}
 .shift-month-legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:14px;padding:12px 14px;font-size:11.5px;color:var(--muted)}
 .shift-month-legend span{display:inline-flex;align-items:center;gap:6px}
@@ -8921,13 +8922,13 @@ class App(BaseHTTPRequestHandler):
               <button type="button" class="calendar-daybar-nav" onclick="location.href='/turni?vista=mese&data={next_window_start.isoformat()}'" aria-label="Mese successivo">›</button>
             </div>
             <div class="shift-month-nav-today"><a class="btn ghost" href="/turni?vista=mese">{lucide("calendar")} Oggi</a></div>'''
-            def shift_time_label(row):
-                if row["all_day"]:return "Tutto il giorno"
-                start,end=row["start_time"] or "",row["end_time"] or ""
-                if (start,end)==("08:30","13:00"):return "Mattina"
-                if (start,end)==("14:30","19:30"):return "Pomeriggio"
-                return f"{esc(start)}–{esc(end)}"
             def month_cell_html(day):
+                # Vista mensile = solo panoramica: mai orari, mai più di due
+                # nomi per sede (altrimenti "N operatori"), cella sempre
+                # della stessa dimensione — requisito esplicito dell'utente
+                # dopo aver visto celle deformate/testo illeggibile. Il
+                # dettaglio completo (orari inclusi) resta nella vista
+                # giornaliera, a un tap di distanza.
                 day_iso=day.isoformat()
                 day_data=shifts_by_day.get(day_iso,{})
                 classes=["shift-month-cell"]
@@ -8938,8 +8939,11 @@ class App(BaseHTTPRequestHandler):
                     branch_rows=day_data.get(branch,[])
                     if branch_rows:
                         branch_cls="branch-livorno" if branch=="Livorno" else "branch-empoli"
-                        names_html="".join(f"<div>{esc(r['operator_name'])} {shift_time_label(r)}</div>" for r in branch_rows)
-                        blocks.append(f'<div class="shift-month-cell-branch {branch_cls}"><span class="shift-month-cell-dot"></span><div class="shift-month-cell-names">{names_html}</div></div>')
+                        if len(branch_rows)<=2:
+                            names_html="".join(f"<div>{esc(r['operator_name'])}</div>" for r in branch_rows)
+                        else:
+                            names_html=f"<div>{len(branch_rows)} operatori</div>"
+                        blocks.append(f'<div class="shift-month-cell-branch {branch_cls}"><div class="shift-month-cell-branch-label"><span class="shift-month-cell-dot"></span>{esc(branch[:3].upper())}</div><div class="shift-month-cell-names">{names_html}</div></div>')
                 vac_today=vacation_operators_on(day)
                 vac_html=""
                 if vac_today:
