@@ -60,6 +60,14 @@ from calendar_service import (
     route_eligible_events,
 )
 import route_service
+from shift_service import (
+    SHIFT_BRANCHES,
+    ensure_shift_schema, week_monday as shift_week_monday, week_bounds as shift_week_bounds,
+    upsert_shift, delete_shift as delete_shift_row, get_shift as get_shift_row,
+    shifts_for_range, vacations_overlapping, oncall_operator_for_week, save_oncall_week,
+    create_vacation as create_shift_vacation, list_vacations as list_shift_vacations,
+    delete_vacation as delete_shift_vacation_row,
+)
 CALENDAR_OPERATOR_SLUGS={"Serena":"serena","Alessio":"alessio","Filippo":"filippo","Gianluca":"gianluca"}
 CALENDAR_COLOR_PALETTE=(
     "#fb7185","#fde047","#4ade80","#60a5fa","#c084fc","#94a3b8",
@@ -1065,6 +1073,7 @@ def init_db():
             )
         ensure_notification_schema(c)
         ensure_calendar_schema(c)
+        ensure_shift_schema(c)
 
 
 def esc(value):
@@ -2134,7 +2143,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 @media(max-width:1100px){.cremation-summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:620px){.cremation-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.cremation-header{flex-direction:column}.cremation-header-nav{align-items:flex-start;width:100%}.cremation-date-nav{width:100%;justify-content:space-between}.cremation-view-tabs{width:100%;justify-content:center}.cremation-progress{flex-wrap:wrap}.cremation-animal-row{grid-template-columns:1fr;gap:6px}.cremation-animal-actions{margin-left:0;margin-top:4px}.cremation-timeline-item{grid-template-columns:36px minmax(0,1fr);gap:8px}.cremation-timeline-time{font-size:9px}}
 /* Wizard evento + dettaglio evento: redesign premium dark, coerente con Programma Cremazioni */
-.calendar-form-v2 .calendar-form-step{background:transparent;border:0;box-shadow:none;padding:18px 2px;animation:calendarStepIn .3s cubic-bezier(.22,1,.36,1)}
+.calendar-form-v2 .calendar-form-step{background:transparent;border:0;box-shadow:none;padding:18px 2px;animation:calendarStepIn .3s cubic-bezier(.22,1,.36,1);max-height:min(620px,calc(100dvh - 300px));overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
 .calendar-form-v2 .calendar-form-step.step-back{animation-name:calendarStepInBack}
 @keyframes calendarStepIn{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)}}
 @keyframes calendarStepInBack{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:translateX(0)}}
@@ -2445,6 +2454,78 @@ body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY
   body.ppm-bars-hidden .bottom-nav{transform:translateY(calc(100% + 24px))}
 }
 @media(prefers-reduced-motion:reduce){.bottom-nav{transition:none!important}}
+/* Turni operatori: riusa avatar/card/bottoni/daybar/pill esistenti, nuove
+   sole classi per la parte senza equivalente (barra oraria, griglia
+   pianificazione, editor cella, banda ferie). */
+.shift-oncall-banner{display:flex;align-items:center;gap:14px;margin-bottom:16px}
+.shift-oncall-icon{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;border-radius:12px;background:#312152;color:#c084fc}
+.shift-oncall-icon .icon{width:20px;height:20px}
+.shift-oncall-body{min-width:0;flex:1}
+.shift-oncall-body b{display:block;color:#c084fc;font-size:12px;letter-spacing:.05em}
+.shift-oncall-body span{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.shift-view-switch{display:flex;gap:9px;margin-bottom:16px}
+.shift-view-switch .btn{flex:1}
+.shift-sede-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.shift-sede-title{display:flex;align-items:center;gap:8px;font-weight:800;letter-spacing:.02em;font-size:14px}
+.shift-sede-title .icon{width:18px;height:18px}
+.shift-sede-title.branch-livorno{color:var(--brand)}
+.shift-sede-title.branch-empoli{color:var(--green)}
+.shift-operator-row{display:grid;grid-template-columns:minmax(0,150px) minmax(0,1fr) 38px;gap:12px;align-items:center;padding:14px 0;border-bottom:1px solid var(--line)}
+.shift-operator-row:last-child{border-bottom:0}
+.shift-operator-name{display:flex;align-items:center;gap:10px;min-width:0}
+.shift-operator-name b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.shift-operator-name small{display:block;color:var(--muted);font-size:11px}
+.shift-track{position:relative;height:34px;border-radius:10px;background:#182334}
+.light-theme .shift-track{background:#f1f5f9}
+.shift-bar{position:absolute;top:3px;bottom:3px;display:flex;align-items:center;justify-content:center;gap:6px;padding:0 10px;border-radius:8px;background:var(--brand);color:#fff;font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden}
+.shift-bar.all-day{position:static;width:100%;background:var(--green)}
+.shift-empty-note{padding:6px 0;color:var(--muted);font-size:13px}
+.shift-plan-grid{display:grid;grid-template-columns:132px repeat(7,minmax(104px,1fr));gap:6px;min-width:900px}
+.shift-plan-scroll{overflow-x:auto;padding-bottom:6px}
+.shift-plan-head-cell{padding:8px 4px;text-align:center;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.shift-plan-head-cell.is-today{color:var(--brand2)}
+.shift-plan-operator{display:flex;align-items:center;gap:8px;padding:8px 4px;font-size:12px;font-weight:700;min-width:0}
+.shift-plan-operator span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.shift-cell{min-height:62px;padding:6px;border:1px solid var(--line);border-radius:10px;background:#182334;cursor:pointer;display:flex;flex-direction:column;justify-content:center;gap:2px;font-size:11px;text-align:left}
+.light-theme .shift-cell{background:#f8fafc}
+.shift-cell:hover{border-color:#465065}
+.shift-cell.has-shift{border-color:transparent;color:#fff}
+.shift-cell-branch{font-weight:800;font-size:9.5px;letter-spacing:.05em;text-transform:uppercase}
+.shift-cell.branch-livorno{background:color-mix(in srgb,var(--brand) 30%,#182334)}
+.shift-cell.branch-empoli{background:color-mix(in srgb,var(--green) 26%,#182334)}
+.shift-cell-empty{display:grid;place-items:center;height:100%;color:var(--muted);font-size:20px;font-weight:300}
+.shift-cell.evidenziata{outline:2px solid var(--brand2);outline-offset:2px}
+.shift-cell-editor-backdrop[hidden]{display:none}
+.shift-cell-editor-backdrop{position:fixed;inset:0;z-index:1200;display:grid;place-items:center;padding:20px;background:rgba(4,10,20,.72)}
+.shift-cell-editor{width:min(420px,100%);padding:22px;border:1px solid var(--line);border-radius:18px;background:#202c3d;box-shadow:0 24px 70px rgba(0,0,0,.45)}
+.light-theme .shift-cell-editor{background:#fff;color:#111827}
+.shift-cell-editor h3{margin:0 0 16px}
+.shift-cell-editor .fields{display:grid;gap:12px}
+.shift-cell-editor .actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+.shift-cell-editor .actions .btn{flex:1;min-width:120px}
+.shift-cell-editor-note{min-height:16px;margin-top:8px;font-size:12px;color:#fca5a5}
+.shift-month-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin-top:10px}
+.shift-month-dow-row{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin-bottom:4px}
+.shift-month-dow{text-align:center;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.shift-month-cell{position:relative;display:flex;flex-direction:column;min-height:118px;padding:8px;border:1px solid var(--line);border-radius:12px;background:#182334;color:var(--ink);overflow:hidden}
+.light-theme .shift-month-cell{background:#f8fafc}
+.shift-month-cell b{font-size:12px;font-weight:700}
+.shift-month-cell.is-today{border-color:var(--brand2)}
+.shift-month-cell.is-other-month{opacity:.4}
+.shift-month-cell-branch{margin-top:6px;font-size:9.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.shift-month-cell-branch.branch-livorno{color:var(--brand)}
+.shift-month-cell-branch.branch-empoli{color:var(--green)}
+.shift-month-cell-names{font-size:10.5px;line-height:1.35;color:var(--ink)}
+.shift-vacation-band{margin-top:auto;padding:2px 4px;background:#1d4ed8;color:#fff;font-size:9px;font-weight:800;letter-spacing:.04em;text-align:center}
+.shift-vacation-band.band-start{border-top-left-radius:6px;border-bottom-left-radius:6px}
+.shift-vacation-band.band-end{border-top-right-radius:6px;border-bottom-right-radius:6px}
+.shift-oncall-strip{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-top:14px}
+.shift-oncall-week{flex:0 0 auto;min-width:104px;padding:10px;border:1px solid var(--line);border-radius:12px;background:#182334;text-align:center;font-size:11px}
+.light-theme .shift-oncall-week{background:#f8fafc}
+.shift-oncall-week.current{border-color:var(--brand2);box-shadow:0 0 0 2px color-mix(in srgb,var(--brand2) 35%,transparent)}
+.shift-oncall-week b{display:block;margin-top:4px;font-size:13px}
+@media(max-width:900px){.shift-operator-row{grid-template-columns:minmax(0,110px) minmax(0,1fr) 34px;gap:8px}.shift-plan-grid{grid-template-columns:104px repeat(7,minmax(92px,1fr))}}
+@media(prefers-reduced-motion:reduce){.shift-cell-editor-backdrop,.shift-cell-editor{transition:none!important}}
 """
 
 APP_JS = r"""
@@ -5889,6 +5970,8 @@ LUCIDE_PATHS = {
     "x": '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
     "filter": '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>',
     "navigation": '<polygon points="3 11 22 2 13 21 11 13 3 11"/>',
+    "moon": '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+    "map-pin": '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
 }
 
 
@@ -6591,7 +6674,7 @@ def collapse_advanced_search(body):
 
 
 SIDEBAR_LINKS=[
-    ("/","home","Dashboard"),("/calendario","calendar","Calendario"),("/percorso-giornaliero","truck","Percorso giornaliero"),("/bilanci","chart","Bilanci"),("/programma-cremazioni","paw","Programma Cremazioni"),("/notifiche","bell","Notifiche"),("/pratiche","archive","Archivio"),
+    ("/","home","Dashboard"),("/calendario","calendar","Calendario"),("/turni","clock","Turni operatori"),("/bilanci","chart","Bilanci"),("/programma-cremazioni","paw","Programma Cremazioni"),("/notifiche","bell","Notifiche"),("/pratiche","archive","Archivio"),
     ("/catalogo-urne","archive","Catalogo Urne"),("/smaltimenti","archive","Smaltimenti"),("/conversazioni-whatsapp","message","Conversazioni WhatsApp"),("/veterinari","stethoscope","Veterinari"),
     ("/collaboratori","briefcase","Collaboratori"),
     ("/prodotti","clipboard","Prodotti"),("/ordini","receipt","Ordini"),
@@ -6606,7 +6689,7 @@ SIDEBAR_LINKS=[
 # apposta per non toccare la struttura dati condivisa con la sidebar desktop.
 MENU_CARD_META={
     "Dashboard":("red","Panoramica generale"),"Calendario":("purple","Eventi e appuntamenti"),
-    "Percorso giornaliero":("teal","Ottimizza ritiri e riconsegne del giorno"),
+    "Turni operatori":("teal","Pianificazione e reperibilità"),
     "Bilanci":("green","Entrate, uscite e statistiche"),"Programma Cremazioni":("lilac","Gestisci i cicli di cremazione"),
     "Notifiche":("red","Avvisi e promemoria"),"Archivio":("blue","Pratiche e documenti storici"),
     "Catalogo Urne":("amber","Gestione urne e prodotti"),"Smaltimenti":("cyan","Gestione smaltimenti"),
@@ -6678,7 +6761,7 @@ def layout(title, body, user=None):
         slot1,slot2,slot3=(bottom_pool.get(label,("/","home",label)) for label in (bottom_slots+bottom_default)[:3])
         def bottom_icon(icon_name):return lucide("paw-soft" if icon_name=="paw" else icon_name)
         def bottom_label(label_text):return "Cremazioni" if label_text=="Programma Cremazioni" else label_text
-        mobile_nav=f'''<nav class="bottom-nav" aria-label="Navigazione mobile"><a href="{slot1[0]}">{bottom_icon(slot1[1])}<span>{esc(bottom_label(slot1[2]))}</span></a><a href="{slot2[0]}">{bottom_icon(slot2[1])}<span>{esc(bottom_label(slot2[2]))}</span></a><button class="bottom-new" type="button" onclick="toggleCreateMenu()" aria-label="Crea">{lucide("plus")}</button><a href="{slot3[0]}">{bottom_icon(slot3[1])}<span>{esc(bottom_label(slot3[2]))}</span></a><button type="button" onclick="toggleMoreMenu()">{lucide("menu")}<span>Altro</span></button></nav><div class="create-sheet-backdrop" onclick="toggleCreateMenu(false)"></div><aside class="create-sheet" aria-label="Crea"><a href="/nuova">{lucide("plus")}<span>Nuova pratica</span></a><a href="/calendario/nuovo" data-calendar-new-event>{lucide("calendar")}<span>Nuovo evento</span></a></aside><div class="more-backdrop" onclick="toggleMoreMenu(false)"></div><aside class="more-menu" aria-label="Altre funzioni"><div class="more-title"><div><b>Menu</b><small>Tutto a portata di mano</small></div><button class="more-close-btn" onclick="toggleMoreMenu(false)" aria-label="Chiudi">×</button></div><div class="more-card-list">{drawer_links}</div><button class="btn ghost install-btn" type="button" onclick="installPetParadise()">Installa App</button></aside>'''
+        mobile_nav=f'''<nav class="bottom-nav" aria-label="Navigazione mobile"><a href="{slot1[0]}">{bottom_icon(slot1[1])}<span>{esc(bottom_label(slot1[2]))}</span></a><a href="{slot2[0]}">{bottom_icon(slot2[1])}<span>{esc(bottom_label(slot2[2]))}</span></a><button class="bottom-new" type="button" onclick="toggleCreateMenu()" aria-label="Crea">{lucide("plus")}</button><a href="{slot3[0]}">{bottom_icon(slot3[1])}<span>{esc(bottom_label(slot3[2]))}</span></a><button type="button" onclick="toggleMoreMenu()">{lucide("menu")}<span>Altro</span></button></nav><div class="create-sheet-backdrop" onclick="toggleCreateMenu(false)"></div><aside class="create-sheet" aria-label="Crea"><a href="/nuova">{lucide("plus")}<span>Nuova pratica</span></a><a href="/calendario/nuovo" data-calendar-new-event>{lucide("calendar")}<span>Nuovo evento</span></a><a href="/turni/pianifica">{lucide("clock")}<span>Nuovo turno</span></a></aside><div class="more-backdrop" onclick="toggleMoreMenu(false)"></div><aside class="more-menu" aria-label="Altre funzioni"><div class="more-title"><div><b>Menu</b><small>Tutto a portata di mano</small></div><button class="more-close-btn" onclick="toggleMoreMenu(false)" aria-label="Chiudi">×</button></div><div class="more-card-list">{drawer_links}</div><button class="btn ghost install-btn" type="button" onclick="installPetParadise()">Installa App</button></aside>'''
     vapid_public=esc(os.environ.get("VAPID_PUBLIC_KEY",""))
     return f'''<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#e9475b"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="PP Manager"><meta name="application-name" content="Pet Paradise Manager"><meta name="format-detection" content="telephone=no"><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"><title>{esc(title)} - Pet Paradise Manager</title><style>{CSS}</style></head><body class="{body_class.strip()}"{body_attrs} data-vapid-public-key="{vapid_public}"><a class="skip-link" href="#main-content">Vai al contenuto</a><div class="ppm-pull-refresh" id="ppmPullRefresh" aria-hidden="true"><span class="ppm-pull-refresh-spinner"></span></div><aside class="top"><a class="brand" href="/"><img class="brand-logo brand-logo-dark" src="/assets/company_logo.png" alt="Pet Paradise"><img class="brand-logo brand-logo-light" src="/assets/company_logo_light.png" alt="Pet Paradise"><span class="brand-copy">Pet Paradise <small>MANAGER</small></span></a>{nav}</aside>{app_header}<div id="main-content">{body}</div>{mobile_nav}{APP_JS}</body></html>'''
 
@@ -6835,6 +6918,10 @@ class App(BaseHTTPRequestHandler):
             return self.send_static(image,content_type)
         if path == "/": return self.dashboard(user)
         if path == "/calendario": return self.calendar_page(user)
+        if path == "/turni": return self.shifts_page(user)
+        if path == "/turni/pianifica": return self.shifts_plan_page(user)
+        if path == "/turni/ferie": return self.shifts_vacations_page(user)
+        if path == "/turni/reperibilita": return self.shifts_oncall_page(user)
         if path == "/bilanci": return self.balances_page(user)
         match = re.fullmatch(r"/bilanci/movimenti/(\d+)/elimina",path)
         if match: return self.confirm_balance_movement_delete(user,int(match.group(1)))
@@ -6954,6 +7041,11 @@ class App(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/bilanci/movimenti-eliminati/(\d+)/ripristina",path)
         if match: return self.balance_movement_deletion_restore(user,int(match.group(1)))
         if path == "/calendario/nuovo": return self.save_calendar_event(user)
+        if path == "/turni/pianifica/cella": return self.save_shift_cell(user)
+        if path == "/turni/ferie": return self.save_shift_vacation(user)
+        match = re.fullmatch(r"/turni/ferie/(\d+)/elimina",path)
+        if match: return self.delete_shift_vacation(user,int(match.group(1)))
+        if path == "/turni/reperibilita": return self.save_shift_oncall(user)
         if path == "/percorso-giornaliero/calcola": return self.route_plan_calculate(user)
         if path == "/percorso-giornaliero/sedi": return self.save_route_location(user)
         match = re.fullmatch(r"/percorso-giornaliero/(\d+)/riordina",path)
@@ -8592,6 +8684,433 @@ class App(BaseHTTPRequestHandler):
             colors_section=f'''<div style="height:14px"></div><section class="section"><h2>Colori Calendario</h2><p class="sub">Personalizza i colori assegnati agli operatori e ai tipi/stati evento nel calendario.</p><form method="post" action="/calendario/impostazioni"><h3>Operatori</h3>{operator_rows}<h3>Stato / tipo evento</h3>{type_rows}<button class="btn" style="margin-top:16px">Salva colori</button></form></section>'''
         body=f'''<main class="wrap calendar-form"><div class="titlebar"><div><h1>Impostazioni Calendario</h1><p class="sub">Scegli la visualizzazione predefinita su questo dispositivo.</p></div><a class="btn ghost" href="/calendario">×</a></div><form class="section" onsubmit="event.preventDefault();localStorage.setItem('ppm_calendar_view',this.calendar_view.value);location.href='/calendario?vista='+encodeURIComponent(this.calendar_view.value)"><div class="calendar-type-grid">{choices}</div><button class="btn" style="margin-top:16px">Salva preferenza</button></form>{legend_section}{colors_section}<script>document.addEventListener('DOMContentLoaded',()=>{{const saved=localStorage.getItem('ppm_calendar_view')||'giorno';const choice=document.querySelector('[name=calendar_view][value="'+saved+'"]');if(choice)choice.checked=true;}});</script></main>'''
         self.send_html(layout("Impostazioni Calendario",body,user))
+
+    def shifts_page(self,user):
+        q=parse_qs(urlparse(self.path).query)
+        view=(q.get("vista") or ["giorno"])[0]
+        if view not in ("giorno","mese"):view="giorno"
+        selected=(q.get("data") or [rome_now().date().isoformat()])[0]
+        try:date.fromisoformat(selected)
+        except ValueError:selected=rome_now().date().isoformat()
+        selected_date=date.fromisoformat(selected)
+        today_date=rome_now().date()
+        day_names=("Lun","Mar","Mer","Gio","Ven","Sab","Dom")
+        monday=shift_week_monday(selected_date)
+        today_monday=shift_week_monday(today_date)
+        week_days=[monday+timedelta(days=i) for i in range(7)]
+        if view=="giorno":
+            range_start,range_end=monday,monday+timedelta(days=6)
+            grid_start=monday
+        else:
+            month_start=selected_date.replace(day=1)
+            grid_start=month_start-timedelta(days=month_start.weekday())
+            grid_days=[grid_start+timedelta(days=i) for i in range(42)]
+            range_start,range_end=grid_days[0],grid_days[-1]
+        oncall_window_start=monday-timedelta(weeks=1)
+        oncall_weeks=[oncall_window_start+timedelta(weeks=i) for i in range(6)]
+        with db() as c:
+            color_settings=calendar_color_settings(c)
+            shifts_by_day=shifts_for_range(c,range_start,range_end)
+            vacations=vacations_overlapping(c,range_start,range_end)
+            banner_operator,banner_manual=oncall_operator_for_week(c,today_monday,list(CALENDAR_OPERATORS))
+            oncall_rotation=[(wk,)+oncall_operator_for_week(c,wk,list(CALENDAR_OPERATORS)) for wk in oncall_weeks]
+        def vacation_operators_on(day):
+            return [v["operator_name"] for v in vacations if date.fromisoformat(v["start_date"])<=day<=date.fromisoformat(v["end_date"])]
+        today_sunday=today_monday+timedelta(days=6)
+        if today_monday.month==today_sunday.month:
+            week_label=f"Settimana {today_monday.isocalendar()[1]} ({today_monday.day} – {today_sunday.day} {MONTH_NAMES_IT[today_sunday.month-1][:3]})"
+        else:
+            week_label=f"Settimana {today_monday.isocalendar()[1]} ({today_monday.day} {MONTH_NAMES_IT[today_monday.month-1][:3]} – {today_sunday.day} {MONTH_NAMES_IT[today_sunday.month-1][:3]})"
+        banner_avatar=self.calendar_operator_avatar(banner_operator,"sm",color_settings["operators"].get(banner_operator)) if banner_operator else ""
+        oncall_banner_html=f'''<a class="section shift-oncall-banner" href="/turni/reperibilita">
+          <span class="shift-oncall-icon">{lucide("moon")}</span>
+          <span class="shift-oncall-body"><b>REPERIBILITÀ NOTTURNA</b><span>{esc(week_label)} — {esc(banner_operator or "Da assegnare")}</span></span>
+          {banner_avatar}
+          <span class="icon-btn" aria-hidden="true">{lucide("chevron-right")}</span>
+        </a>'''
+        switch_html=f'''<div class="shift-view-switch">
+          <a class="btn {"" if view=="giorno" else "ghost"}" href="/turni?vista=giorno&data={selected}">{lucide("calendar")} Vista giornaliera</a>
+          <a class="btn {"" if view=="mese" else "ghost"}" href="/turni?vista=mese&data={selected}">{lucide("calendar")} Vista mensile</a>
+        </div>'''
+        def format_time_pct(t):
+            h,m=(int(x) for x in t.split(":"))
+            return (h*60+m)/1440*100
+        if view=="giorno":
+            daybar_cards=[]
+            for day in week_days:
+                active_cls=" active" if day==selected_date else ""
+                today_cls=" is-today" if day==today_date else ""
+                day_total=sum(len(rows) for rows in shifts_by_day.get(day.isoformat(),{}).values())
+                daybar_cards.append(f'''<a class="calendar-daybar-card{active_cls}{today_cls}" href="/turni?vista=giorno&data={day.isoformat()}">
+                  <span class="calendar-daybar-dow">{day_names[day.weekday()].upper()}</span>
+                  <span class="calendar-daybar-num">{day.day:02d}</span>
+                  <span class="calendar-daybar-count">{day_total} turni</span>
+                </a>''')
+            daybar_html=f'''<div class="calendar-daybar-wrap">
+              <button type="button" class="calendar-daybar-nav" onclick="location.href='/turni?vista=giorno&data={(monday-timedelta(days=7)).isoformat()}'" aria-label="Settimana precedente">‹</button>
+              <div class="calendar-daybar">{''.join(daybar_cards)}</div>
+              <button type="button" class="calendar-daybar-nav" onclick="location.href='/turni?vista=giorno&data={(monday+timedelta(days=7)).isoformat()}'" aria-label="Settimana successiva">›</button>
+            </div>'''
+            def sede_card_html(branch):
+                day_shifts=shifts_by_day.get(selected_date.isoformat(),{}).get(branch,[])
+                rows_html=[]
+                for row in day_shifts:
+                    avatar=self.calendar_operator_avatar(row["operator_name"],"sm",color_settings["operators"].get(row["operator_name"]))
+                    if row["all_day"]:
+                        bar_html='<div class="shift-bar all-day">TUTTO IL GIORNO</div>'
+                    else:
+                        start_pct=format_time_pct(row["start_time"] or "00:00")
+                        end_pct=format_time_pct(row["end_time"] or "23:59")
+                        width_pct=max(end_pct-start_pct,3)
+                        bar_html=f'<div class="shift-bar" style="left:{start_pct:.2f}%;width:{width_pct:.2f}%">{esc(row["start_time"] or "")} – {esc(row["end_time"] or "")}</div>'
+                    edit_href=f"/turni/pianifica?settimana={monday.isoformat()}&evidenzia={quote(row['operator_name'])}:{selected_date.isoformat()}"
+                    rows_html.append(f'''<div class="shift-operator-row">
+                      <div class="shift-operator-name">{avatar}<div><b>{esc(row["operator_name"])}</b><small>{esc(branch)}</small></div></div>
+                      <div class="shift-track">{bar_html}</div>
+                      <a class="icon-btn" href="{edit_href}" aria-label="Modifica turno di {esc(row['operator_name'])}">{lucide("pencil")}</a>
+                    </div>''')
+                body_html=''.join(rows_html) or '<p class="shift-empty-note">Nessun turno assegnato.</p>'
+                add_href=f"/turni/pianifica?settimana={monday.isoformat()}"
+                branch_cls="branch-livorno" if branch=="Livorno" else "branch-empoli"
+                return f'''<section class="section">
+                  <div class="shift-sede-head">
+                    <span class="shift-sede-title {branch_cls}">{lucide("map-pin")} {esc(branch.upper())}</span>
+                    <a class="btn ghost" href="{add_href}">{lucide("plus")} Aggiungi operatore</a>
+                  </div>
+                  {body_html}
+                </section>'''
+            content=daybar_html+''.join(sede_card_html(branch) for branch in SHIFT_BRANCHES)
+        else:
+            prev_month_last=selected_date.replace(day=1)-timedelta(days=1)
+            next_month_first=(selected_date.replace(day=28)+timedelta(days=4)).replace(day=1)
+            month_nav_html=f'''<div class="cremation-date-nav">
+              <a class="cremation-nav-btn" href="/turni?vista=mese&data={prev_month_last.isoformat()}" aria-label="Mese precedente">‹</a>
+              <div class="cremation-date-label">{lucide("calendar")}<span>{MONTH_NAMES_IT[selected_date.month-1]} {selected_date.year}</span></div>
+              <a class="cremation-nav-btn" href="/turni?vista=mese&data={next_month_first.isoformat()}" aria-label="Mese successivo">›</a>
+              <a class="cremation-today-btn {"active" if (selected_date.month==today_date.month and selected_date.year==today_date.year) else ""}" href="/turni?vista=mese">Oggi</a>
+            </div>'''
+            def month_cell_html(day):
+                day_iso=day.isoformat()
+                day_data=shifts_by_day.get(day_iso,{})
+                classes=["shift-month-cell"]
+                if day==today_date:classes.append("is-today")
+                if day.month!=selected_date.month:classes.append("is-other-month")
+                blocks=[]
+                for branch in SHIFT_BRANCHES:
+                    names=[r["operator_name"] for r in day_data.get(branch,[])]
+                    if names:
+                        branch_cls="branch-livorno" if branch=="Livorno" else "branch-empoli"
+                        names_html="".join(f"<div>{esc(n)}</div>" for n in names)
+                        blocks.append(f'<div class="shift-month-cell-branch {branch_cls}">{esc(branch.upper())}</div><div class="shift-month-cell-names">{names_html}</div>')
+                vac_today=vacation_operators_on(day)
+                vac_html=""
+                if vac_today:
+                    is_start=day.weekday()==0 or not vacation_operators_on(day-timedelta(days=1))
+                    is_end=day.weekday()==6 or not vacation_operators_on(day+timedelta(days=1))
+                    band_cls=" ".join(c for c in ("band-start" if is_start else "","band-end" if is_end else "") if c)
+                    vac_html=f'<div class="shift-vacation-band {band_cls}">FERIE</div>'
+                href=f"/turni?vista=giorno&data={day_iso}"
+                return f'<a class="{" ".join(classes)}" href="{href}"><b>{day.day}</b>{"".join(blocks)}{vac_html}</a>'
+            dow_row='<div class="shift-month-dow-row">'+''.join(f'<div class="shift-month-dow">{n}</div>' for n in day_names)+'</div>'
+            grid='<div class="shift-month-grid">'+''.join(month_cell_html(grid_start+timedelta(days=i)) for i in range(42))+'</div>'
+            oncall_cards=[]
+            for wk,op_name,is_manual in oncall_rotation:
+                wk_sunday=wk+timedelta(days=6)
+                is_current=wk==today_monday
+                oncall_cards.append(f'''<div class="shift-oncall-week{" current" if is_current else ""}">
+                  <span>Sett. {wk.isocalendar()[1]}</span>
+                  <span>{wk.day} {MONTH_NAMES_IT[wk.month-1][:3]} – {wk_sunday.day} {MONTH_NAMES_IT[wk_sunday.month-1][:3]}</span>
+                  <b>{esc(op_name or "—")}</b>{f' {lucide("moon")}' if is_current else ''}
+                </div>''')
+            oncall_strip_html=f'''<div class="shift-oncall-strip">{''.join(oncall_cards)}</div>
+              <a class="btn ghost" style="margin-top:12px" href="/turni/reperibilita">{lucide("moon")} Gestisci rotazione</a>'''
+            content=month_nav_html+dow_row+grid+f'<section class="section" style="margin-top:16px"><h2>Reperibilità notturna <small class="sub">(rotazione settimanale)</small></h2>{oncall_strip_html}</section>'
+        body=f'''<main class="wrap calendar-wrap">
+          <div class="titlebar calendar-main-title"><div><h1>Turni operatori</h1><p class="sub">Pianificazione e reperibilità</p></div></div>
+          {oncall_banner_html}
+          {switch_html}
+          {content}
+        </main>'''
+        self.send_html(layout("Turni operatori",body,user))
+
+    def shifts_plan_page(self,user):
+        q=parse_qs(urlparse(self.path).query)
+        settimana=(q.get("settimana") or [rome_now().date().isoformat()])[0]
+        try:date.fromisoformat(settimana)
+        except ValueError:settimana=rome_now().date().isoformat()
+        monday=shift_week_monday(date.fromisoformat(settimana))
+        sunday=monday+timedelta(days=6)
+        week_days=[monday+timedelta(days=i) for i in range(7)]
+        evidenzia=(q.get("evidenzia") or [""])[0]
+        highlight_operator,highlight_date="",""
+        if ":" in evidenzia:
+            highlight_operator,highlight_date=evidenzia.rsplit(":",1)
+        day_names=("Lun","Mar","Mer","Gio","Ven","Sab","Dom")
+        if monday.month==sunday.month:
+            week_label=f"{monday.day} – {sunday.day} {MONTH_NAMES_IT[sunday.month-1]} {sunday.year}"
+        else:
+            week_label=f"{monday.day} {MONTH_NAMES_IT[monday.month-1]} – {sunday.day} {MONTH_NAMES_IT[sunday.month-1]} {sunday.year}"
+        prev_week=(monday-timedelta(days=7)).isoformat()
+        next_week=(monday+timedelta(days=7)).isoformat()
+        today_date=rome_now().date()
+        week_dates_iso=[d.isoformat() for d in week_days]
+        with db() as c:
+            color_settings=calendar_color_settings(c)
+            shifts_by_day=shifts_for_range(c,monday,sunday)
+        date_nav_html=f'''<div class="cremation-date-nav">
+          <a class="cremation-nav-btn" href="/turni/pianifica?settimana={prev_week}" aria-label="Settimana precedente">‹</a>
+          <div class="cremation-date-label">{lucide("calendar")}<span>{esc(week_label)}</span></div>
+          <a class="cremation-nav-btn" href="/turni/pianifica?settimana={next_week}" aria-label="Settimana successiva">›</a>
+          <a class="cremation-today-btn {"active" if today_date.isoformat() in week_dates_iso else ""}" href="/turni/pianifica">Oggi</a>
+        </div>'''
+        head_cells='<div></div>'+''.join(f'<div class="shift-plan-head-cell{" is-today" if d==today_date else ""}">{day_names[d.weekday()]}<br>{d.day:02d}/{d.month:02d}</div>' for d in week_days)
+        branch_options=''.join(f'<option value="{b}">{b}</option>' for b in SHIFT_BRANCHES)
+        def cell_html(operator,day):
+            day_iso=day.isoformat()
+            shift_row=None
+            for branch_rows in shifts_by_day.get(day_iso,{}).values():
+                for row in branch_rows:
+                    if row["operator_name"]==operator:
+                        shift_row=row;break
+                if shift_row:break
+            if shift_row:
+                branch_cls="branch-livorno" if shift_row["branch"]=="Livorno" else "branch-empoli"
+                has_cls=" has-shift"
+                time_label="Tutto il giorno" if shift_row["all_day"] else f'{esc(shift_row["start_time"] or "")}–{esc(shift_row["end_time"] or "")}'
+                cell_content=f'<span class="shift-cell-branch">{esc(shift_row["branch"].upper())}</span><span>{time_label}</span>'
+            else:
+                branch_cls="";has_cls=""
+                cell_content='<span class="shift-cell-empty">+</span>'
+            data_shift=esc(json.dumps({
+                "branch":shift_row["branch"] if shift_row else "",
+                "start_time":shift_row["start_time"] if shift_row and not shift_row["all_day"] else "",
+                "end_time":shift_row["end_time"] if shift_row and not shift_row["all_day"] else "",
+                "all_day":bool(shift_row["all_day"]) if shift_row else False,
+            }))
+            evidenziata_cls=" evidenziata" if operator==highlight_operator and day_iso==highlight_date else ""
+            return f'<button type="button" class="shift-cell{" " if branch_cls else ""}{branch_cls}{has_cls}{evidenziata_cls}" data-operator="{esc(operator)}" data-date="{day_iso}" data-shift="{data_shift}" onclick="turniOpenCellEditor(this)">{cell_content}</button>'
+        rows_html=[]
+        for operator in CALENDAR_OPERATORS:
+            avatar=self.calendar_operator_avatar(operator,"sm",color_settings["operators"].get(operator))
+            rows_html.append(f'<div class="shift-plan-operator">{avatar}<span>{esc(operator)}</span></div>'+''.join(cell_html(operator,day) for day in week_days))
+        grid_html=f'<div class="shift-plan-scroll"><div class="shift-plan-grid">{head_cells}{"".join(rows_html)}</div></div>'
+        auto_open_js=""
+        if highlight_operator and highlight_date:
+            auto_open_js="var target=document.querySelector('.shift-cell.evidenziata');if(target){target.scrollIntoView({block:'center'});turniOpenCellEditor(target);}"
+        editor_html=f'''<div class="shift-cell-editor-backdrop" id="shiftCellEditorBackdrop" hidden onclick="if(event.target===this)turniCloseCellEditor()">
+          <form class="shift-cell-editor" id="shiftCellEditorForm" onsubmit="turniSaveCell(event)">
+            <h3 id="shiftCellEditorTitle">Turno</h3>
+            <input type="hidden" id="shiftCellOperator">
+            <input type="hidden" id="shiftCellDate">
+            <div class="fields">
+              <div class="field"><label>Sede</label><select id="shiftCellBranch"><option value="">Seleziona sede</option>{branch_options}</select></div>
+              <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="shiftCellAllDay" onchange="turniToggleAllDay(this)"> Tutto il giorno</label>
+              <div class="field" id="shiftCellStartField"><label>Orario inizio</label><input type="time" id="shiftCellStart"></div>
+              <div class="field" id="shiftCellEndField"><label>Orario fine</label><input type="time" id="shiftCellEnd"></div>
+            </div>
+            <p class="shift-cell-editor-note" id="shiftCellEditorNote"></p>
+            <div class="actions">
+              <button type="button" class="btn ghost" onclick="turniCloseCellEditor()">Annulla</button>
+              <button type="button" class="btn danger-btn" onclick="turniRemoveCell()">Rimuovi turno</button>
+              <button type="submit" class="btn">Salva turno</button>
+            </div>
+          </form>
+        </div>
+        <script>(function(){{
+          var backdrop=document.getElementById('shiftCellEditorBackdrop');
+          var currentBtn=null;
+          function applyCellResult(btn,cell){{
+            btn.dataset.shift=JSON.stringify(cell);
+            var branchCls=cell.branch?(cell.branch==='Livorno'?' branch-livorno has-shift':' branch-empoli has-shift'):'';
+            btn.className='shift-cell'+branchCls;
+            if(cell.branch){{
+              var timeLabel=cell.all_day?'Tutto il giorno':((cell.start_time||'')+'–'+(cell.end_time||''));
+              btn.innerHTML='<span class="shift-cell-branch">'+cell.branch.toUpperCase()+'</span><span>'+timeLabel+'</span>';
+            }}else{{
+              btn.innerHTML='<span class="shift-cell-empty">+</span>';
+            }}
+          }}
+          window.turniOpenCellEditor=function(btn){{
+            currentBtn=btn;
+            var data=JSON.parse(btn.dataset.shift||'{{}}');
+            document.getElementById('shiftCellOperator').value=btn.dataset.operator;
+            document.getElementById('shiftCellDate').value=btn.dataset.date;
+            document.getElementById('shiftCellEditorTitle').textContent=btn.dataset.operator+' · '+btn.dataset.date;
+            document.getElementById('shiftCellBranch').value=data.branch||'';
+            document.getElementById('shiftCellAllDay').checked=!!data.all_day;
+            document.getElementById('shiftCellStart').value=data.start_time||'';
+            document.getElementById('shiftCellEnd').value=data.end_time||'';
+            turniToggleAllDay(document.getElementById('shiftCellAllDay'));
+            document.getElementById('shiftCellEditorNote').textContent='';
+            backdrop.hidden=false;
+          }};
+          window.turniCloseCellEditor=function(){{backdrop.hidden=true;currentBtn=null;}};
+          window.turniToggleAllDay=function(checkbox){{
+            var on=checkbox.checked;
+            document.getElementById('shiftCellStartField').style.display=on?'none':'';
+            document.getElementById('shiftCellEndField').style.display=on?'none':'';
+          }};
+          window.turniSaveCell=function(ev){{
+            ev.preventDefault();
+            var note=document.getElementById('shiftCellEditorNote');
+            var branch=document.getElementById('shiftCellBranch').value;
+            if(!branch){{note.textContent='La sede è obbligatoria.';return;}}
+            var allDay=document.getElementById('shiftCellAllDay').checked;
+            var payload={{operator:document.getElementById('shiftCellOperator').value,data:document.getElementById('shiftCellDate').value,branch:branch,all_day:allDay?'1':'0',start_time:allDay?'':document.getElementById('shiftCellStart').value,end_time:allDay?'':document.getElementById('shiftCellEnd').value,azione:'salva'}};
+            fetch('/turni/pianifica/cella',{{method:'POST',headers:{{'Content-Type':'application/x-www-form-urlencoded'}},body:new URLSearchParams(payload)}})
+              .then(function(r){{return r.json();}}).then(function(res){{
+                if(!res.ok){{note.textContent=res.error||'Errore nel salvataggio.';return;}}
+                if(currentBtn)applyCellResult(currentBtn,res.cell);
+                turniCloseCellEditor();
+              }}).catch(function(){{note.textContent='Errore di rete.';}});
+          }};
+          window.turniRemoveCell=function(){{
+            var payload={{operator:document.getElementById('shiftCellOperator').value,data:document.getElementById('shiftCellDate').value,azione:'rimuovi'}};
+            fetch('/turni/pianifica/cella',{{method:'POST',headers:{{'Content-Type':'application/x-www-form-urlencoded'}},body:new URLSearchParams(payload)}})
+              .then(function(r){{return r.json();}}).then(function(res){{
+                if(!res.ok){{document.getElementById('shiftCellEditorNote').textContent=res.error||'Errore.';return;}}
+                if(currentBtn)applyCellResult(currentBtn,res.cell);
+                turniCloseCellEditor();
+              }});
+          }};
+          {auto_open_js}
+        }})();</script>'''
+        body=f'''<main class="wrap calendar-wrap">
+          <div class="titlebar calendar-main-title"><div><h1>Pianifica turni</h1><p class="sub">Seleziona una settimana e compila le celle per ogni operatore.</p></div><a class="btn ghost" href="/turni">×</a></div>
+          {date_nav_html}
+          {grid_html}
+          {editor_html}
+        </main>'''
+        self.send_html(layout("Pianifica turni",body,user))
+
+    def save_shift_cell(self,user):
+        form=self.form()
+        operator=(form.get("operator") or "").strip()
+        work_date=(form.get("data") or "").strip()
+        azione=form.get("azione") or "salva"
+        if operator not in CALENDAR_OPERATORS or not work_date:
+            return self.send_json({"ok":False,"error":"Dati non validi."},400)
+        try:date.fromisoformat(work_date)
+        except ValueError:
+            return self.send_json({"ok":False,"error":"Data non valida."},400)
+        stamp=rome_now().isoformat(timespec="seconds")
+        with db() as c:
+            if azione=="rimuovi":
+                delete_shift_row(c,operator,work_date)
+                cell={"branch":"","start_time":"","end_time":"","all_day":False}
+            else:
+                branch=(form.get("branch") or "").strip()
+                if branch not in SHIFT_BRANCHES:
+                    return self.send_json({"ok":False,"error":"La sede è obbligatoria."},400)
+                all_day=form.get("all_day")=="1"
+                start_time=(form.get("start_time") or "").strip() or None
+                end_time=(form.get("end_time") or "").strip() or None
+                if not all_day and (not start_time or not end_time):
+                    return self.send_json({"ok":False,"error":"Indica orario inizio e fine, oppure seleziona Tutto il giorno."},400)
+                if all_day:
+                    start_time=None;end_time=None
+                upsert_shift(c,operator,work_date,branch,start_time,end_time,all_day,user["id"],stamp)
+                cell={"branch":branch,"start_time":start_time or "","end_time":end_time or "","all_day":all_day}
+        self.send_json({"ok":True,"cell":cell})
+
+    def shifts_vacations_page(self,user):
+        q=parse_qs(urlparse(self.path).query)
+        error=(q.get("errore") or [""])[0]
+        with db() as c:
+            rows=list_shift_vacations(c)
+            color_settings=calendar_color_settings(c)
+        today_iso=rome_now().date().isoformat()
+        def row_html(row):
+            avatar=self.calendar_operator_avatar(row["operator_name"],"sm",color_settings["operators"].get(row["operator_name"]))
+            status="in corso" if row["start_date"]<=today_iso<=row["end_date"] else ("passata" if row["end_date"]<today_iso else "in programma")
+            note_html=f'<div class="sub">{esc(row["note"])}</div>' if row["note"] else ''
+            return f'''<div class="shift-operator-row">
+              <div class="shift-operator-name">{avatar}<div><b>{esc(row["operator_name"])}</b><small>{date_it(row["start_date"])} – {date_it(row["end_date"])} · {status}</small></div></div>
+              {note_html}
+              <form method="post" action="/turni/ferie/{row['id']}/elimina" onsubmit="return confirm('Eliminare queste ferie?')"><button class="btn ghost" type="submit">Elimina</button></form>
+            </div>'''
+        list_html=''.join(row_html(r) for r in rows) or '<p class="shift-empty-note">Nessuna ferie registrata.</p>'
+        operator_options=''.join(f'<option value="{esc(n)}">{esc(n)}</option>' for n in CALENDAR_OPERATORS)
+        error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
+        body=f'''<main class="wrap calendar-form">
+          <div class="titlebar"><div><h1>Ferie</h1><p class="sub">Gestione ferie operatori (nessuna sede richiesta).</p></div><a class="btn ghost" href="/turni">×</a></div>
+          {error_html}
+          <form class="section" method="post" action="/turni/ferie">
+            <div class="fields">
+              <div class="field"><label>Operatore</label><select name="operator_name" required><option value="">Seleziona</option>{operator_options}</select></div>
+              <div class="field"><label>Data inizio</label><input type="date" name="start_date" required></div>
+              <div class="field"><label>Data fine</label><input type="date" name="end_date" required></div>
+              <div class="field full"><label>Note (opzionale)</label><textarea name="note" rows="2"></textarea></div>
+            </div>
+            <button class="btn" style="margin-top:16px" type="submit">Salva ferie</button>
+          </form>
+          <div style="height:14px"></div>
+          <section class="section"><h2>Ferie registrate</h2>{list_html}</section>
+        </main>'''
+        self.send_html(layout("Ferie",body,user))
+
+    def save_shift_vacation(self,user):
+        form=self.form()
+        operator=(form.get("operator_name") or "").strip()
+        start_date=(form.get("start_date") or "").strip()
+        end_date=(form.get("end_date") or "").strip()
+        note=(form.get("note") or "").strip() or None
+        if operator not in CALENDAR_OPERATORS or not start_date or not end_date:
+            return self.redirect("/turni/ferie?errore="+quote("Compila operatore, data inizio e data fine."))
+        try:
+            d1=date.fromisoformat(start_date);d2=date.fromisoformat(end_date)
+        except ValueError:
+            return self.redirect("/turni/ferie?errore="+quote("Date non valide."))
+        if d2<d1:
+            return self.redirect("/turni/ferie?errore="+quote("La data fine non può precedere la data inizio."))
+        with db() as c:
+            create_shift_vacation(c,operator,start_date,end_date,note,user["id"])
+        self.redirect("/turni/ferie")
+
+    def delete_shift_vacation(self,user,vacation_id):
+        with db() as c:
+            delete_shift_vacation_row(c,vacation_id)
+        self.redirect("/turni/ferie")
+
+    def shifts_oncall_page(self,user):
+        today_date=rome_now().date()
+        monday=shift_week_monday(today_date)
+        weeks=[monday+timedelta(weeks=i) for i in range(8)]
+        with db() as c:
+            color_settings=calendar_color_settings(c)
+            rotation=[(wk,)+oncall_operator_for_week(c,wk,list(CALENDAR_OPERATORS)) for wk in weeks]
+        def row_html(wk,op_name,is_manual):
+            wk_sunday=wk+timedelta(days=6)
+            options=''.join(f'<option value="{esc(n)}" {"selected" if n==op_name else ""}>{esc(n)}</option>' for n in CALENDAR_OPERATORS)
+            avatar=self.calendar_operator_avatar(op_name,"sm",color_settings["operators"].get(op_name)) if op_name else ""
+            manual_note="Assegnazione manuale" if is_manual else "Rotazione automatica"
+            is_current=wk==monday
+            return f'''<form method="post" action="/turni/reperibilita" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 0;border-bottom:1px solid var(--line)">
+              <div class="shift-operator-name" style="flex:1;min-width:180px">{avatar}<div><b>Sett. {wk.isocalendar()[1]}{" · in corso" if is_current else ""}</b><small>{wk.day:02d}/{wk.month:02d} – {wk_sunday.day:02d}/{wk_sunday.month:02d} · {manual_note}</small></div></div>
+              <input type="hidden" name="settimana" value="{wk.isoformat()}">
+              <select name="operator_name" style="min-width:140px">{options}</select>
+              <button class="btn ghost" type="submit">Salva</button>
+            </form>'''
+        rows_html=''.join(row_html(wk,op,manual) for wk,op,manual in rotation)
+        body=f'''<main class="wrap calendar-form">
+          <div class="titlebar"><div><h1>Reperibilità notturna</h1><p class="sub">Rotazione automatica tra gli operatori, modificabile manualmente in qualsiasi momento senza limiti.</p></div><a class="btn ghost" href="/turni">×</a></div>
+          <section class="section">{rows_html}</section>
+        </main>'''
+        self.send_html(layout("Reperibilità notturna",body,user))
+
+    def save_shift_oncall(self,user):
+        form=self.form()
+        settimana=(form.get("settimana") or "").strip()
+        operator=(form.get("operator_name") or "").strip()
+        try:
+            wk=shift_week_monday(date.fromisoformat(settimana))
+        except ValueError:
+            return self.redirect("/turni/reperibilita")
+        if operator not in CALENDAR_OPERATORS:
+            return self.redirect("/turni/reperibilita")
+        with db() as c:
+            save_oncall_week(c,wk,operator,user["id"])
+        self.redirect("/turni/reperibilita")
 
     def save_calendar_colors(self,user):
         if user["role"]!="admin":return self.send_error(403,"Solo gli amministratori possono modificare i colori del calendario.")

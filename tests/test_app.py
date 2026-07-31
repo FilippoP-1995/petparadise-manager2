@@ -10238,7 +10238,7 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path = "/percorso-giornaliero?data=2026-08-05"
         self.handler.route_plan_page(admin)
         page = rendered[-1]
-        self.assertIn("Percorso giornaliero", page)
+        self.assertIn("Impostazioni percorso", page)
         self.assertNotIn("Da correggere", page)
         self.assertNotIn("Tappe (", page)
 
@@ -10626,12 +10626,16 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.calendar_page(admin)
         self.assertIn('href="/percorso-giornaliero?data=2026-08-10"', rendered[-1])
 
-    def test_more_menu_and_sidebar_include_percorso_giornaliero_entry(self):
+    def test_more_menu_and_sidebar_do_not_include_percorso_giornaliero_entry(self):
+        # richiesta esplicita dell'utente: la voce "Percorso giornaliero" non
+        # deve comparire in nessun menu (ne' sidebar desktop ne' drawer
+        # "Altro" mobile), per nessun utente - la funzione resta comunque
+        # raggiungibile dal pulsante "Percorso" dedicato nel calendario.
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
         page = app.layout("Test", "<main></main>", admin)
-        self.assertIn('href="/percorso-giornaliero"', page)
-        self.assertIn("Percorso giornaliero", page)
+        self.assertNotIn('href="/percorso-giornaliero"', page)
+        self.assertNotIn("Percorso giornaliero", page)
 
     # ---- Percorso giornaliero Fase 2 (ottimizzazione reale, Google Places) --
 
