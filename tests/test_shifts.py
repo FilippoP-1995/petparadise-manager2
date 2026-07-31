@@ -291,10 +291,35 @@ class ShiftsModuleTests(unittest.TestCase):
             row = conn.execute("SELECT * FROM shift_vacations WHERE operator_name='Alessio'").fetchone()
             self.assertIsNone(row)
 
+    def test_shifts_page_has_ferie_button_in_giorno_and_mese_with_return_context(self):
+        for vista in ("giorno", "mese"):
+            rendered = []
+            self.handler.send_html = lambda html, *a: rendered.append(html)
+            self.handler.path = f"/turni?vista={vista}&data=2026-08-10"
+            self.handler.shifts_page(self.admin)
+            page = rendered[-1]
+            self.assertIn(f"/turni/ferie?ritorno_vista={vista}&ritorno_data=2026-08-10", page)
+
+    def test_shifts_vacations_page_back_button_and_form_carry_return_context(self):
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/turni/ferie?ritorno_vista=mese&ritorno_data=2026-08-10"
+        self.handler.shifts_vacations_page(self.admin)
+        page = rendered[-1]
+        self.assertIn('href="/turni?vista=mese&data=2026-08-10"', page)
+        self.assertIn('name="ritorno_vista" value="mese"', page)
+        self.assertIn('name="ritorno_data" value="2026-08-10"', page)
+
+    def test_save_shift_vacation_redirects_back_to_orari_context_when_provided(self):
+        self.handler.form = lambda: {"operator_name": "Alessio", "start_date": "2026-08-20", "end_date": "2026-08-25", "ritorno_vista": "mese", "ritorno_data": "2026-08-10"}
+        self.handler.save_shift_vacation(self.admin)
+        self.assertEqual(self.redirected, "/turni/ferie?ritorno_vista=mese&ritorno_data=2026-08-10")
+
     def test_delete_shift_vacation_removes_row(self):
         with app.db() as conn:
             from shift_service import create_vacation
             vac_id = create_vacation(conn, "Alessio", "2026-08-20", "2026-08-25", None, self.admin["id"])
+        self.handler.path = f"/turni/ferie/{vac_id}/elimina"
         self.handler.delete_shift_vacation(self.admin, vac_id)
         with app.db() as conn:
             row = conn.execute("SELECT * FROM shift_vacations WHERE id=?", (vac_id,)).fetchone()

@@ -8875,6 +8875,7 @@ class App(BaseHTTPRequestHandler):
         switch_html=f'''<div class="shift-view-switch">
           <a class="btn {"" if view=="giorno" else "ghost"}" href="/turni?vista=giorno&data={selected}">Giorno</a>
           <a class="btn {"" if view=="mese" else "ghost"}" href="/turni?vista=mese&data={selected}">Mese</a>
+          <a class="btn ghost tint-blue" style="margin-left:auto" href="/turni/ferie?ritorno_vista={view}&ritorno_data={selected}">{lucide("plus")} Ferie</a>
         </div>'''
         if view=="giorno":
             selected_index=(selected_date-monday).days
@@ -9299,6 +9300,9 @@ class App(BaseHTTPRequestHandler):
     def shifts_vacations_page(self,user):
         q=parse_qs(urlparse(self.path).query)
         error=(q.get("errore") or [""])[0]
+        ritorno_vista=(q.get("ritorno_vista") or [""])[0]
+        ritorno_data=(q.get("ritorno_data") or [""])[0]
+        back_href=f"/turni?vista={ritorno_vista}&data={ritorno_data}" if ritorno_data else "/turni"
         with db() as c:
             rows=list_shift_vacations(c)
             color_settings=calendar_color_settings(c)
@@ -9310,15 +9314,17 @@ class App(BaseHTTPRequestHandler):
             return f'''<div class="shift-operator-row">
               <div class="shift-operator-name">{avatar}<div><b>{esc(row["operator_name"])}</b><small>{date_it(row["start_date"])} – {date_it(row["end_date"])} · {status}</small></div></div>
               {note_html}
-              <form method="post" action="/turni/ferie/{row['id']}/elimina" onsubmit="return confirm('Eliminare queste ferie?')"><button class="btn ghost" type="submit">Elimina</button></form>
+              <form method="post" action="/turni/ferie/{row['id']}/elimina?return_to={quote('/turni/ferie'+(f'?ritorno_vista={ritorno_vista}&ritorno_data={ritorno_data}' if ritorno_data else ''),safe='')}" onsubmit="return confirm('Eliminare queste ferie?')"><button class="btn ghost" type="submit">Elimina</button></form>
             </div>'''
         list_html=''.join(row_html(r) for r in rows) or '<p class="shift-empty-note">Nessuna ferie registrata.</p>'
         operator_options=''.join(f'<option value="{esc(n)}">{esc(n)}</option>' for n in SHIFT_OPERATORS)
         error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
         body=f'''<main class="wrap calendar-form">
-          <div class="titlebar"><div><h1>Ferie</h1><p class="sub">Gestione ferie operatori (nessuna sede richiesta).</p></div><a class="btn ghost" href="/turni">×</a></div>
+          <div class="titlebar"><div><h1>Ferie</h1><p class="sub">Gestione ferie operatori (nessuna sede richiesta).</p></div><a class="btn ghost" href="{back_href}">× Torna a Orari</a></div>
           {error_html}
           <form class="section" method="post" action="/turni/ferie">
+            <input type="hidden" name="ritorno_vista" value="{esc(ritorno_vista)}">
+            <input type="hidden" name="ritorno_data" value="{esc(ritorno_data)}">
             <div class="fields">
               <div class="field"><label>Operatore</label><select name="operator_name" required><option value="">Seleziona</option>{operator_options}</select></div>
               <div class="field"><label>Data inizio</label><input type="date" name="start_date" required></div>
@@ -9338,22 +9344,27 @@ class App(BaseHTTPRequestHandler):
         start_date=(form.get("start_date") or "").strip()
         end_date=(form.get("end_date") or "").strip()
         note=(form.get("note") or "").strip() or None
+        ritorno_vista=(form.get("ritorno_vista") or "").strip()
+        ritorno_data=(form.get("ritorno_data") or "").strip()
+        back_qs=f"&ritorno_vista={quote(ritorno_vista)}&ritorno_data={quote(ritorno_data)}" if ritorno_data else ""
         if operator not in SHIFT_OPERATORS or not start_date or not end_date:
-            return self.redirect("/turni/ferie?errore="+quote("Compila operatore, data inizio e data fine."))
+            return self.redirect("/turni/ferie?errore="+quote("Compila operatore, data inizio e data fine.")+back_qs)
         try:
             d1=date.fromisoformat(start_date);d2=date.fromisoformat(end_date)
         except ValueError:
-            return self.redirect("/turni/ferie?errore="+quote("Date non valide."))
+            return self.redirect("/turni/ferie?errore="+quote("Date non valide.")+back_qs)
         if d2<d1:
-            return self.redirect("/turni/ferie?errore="+quote("La data fine non può precedere la data inizio."))
+            return self.redirect("/turni/ferie?errore="+quote("La data fine non può precedere la data inizio.")+back_qs)
         with db() as c:
             create_shift_vacation(c,operator,start_date,end_date,note,user["id"])
-        self.redirect("/turni/ferie")
+        self.redirect("/turni/ferie"+(f"?{back_qs[1:]}" if back_qs else ""))
 
     def delete_shift_vacation(self,user,vacation_id):
+        q=parse_qs(urlparse(self.path).query)
+        return_to=safe_return_path((q.get("return_to") or [""])[0],"/turni/ferie")
         with db() as c:
             delete_shift_vacation_row(c,vacation_id)
-        self.redirect("/turni/ferie")
+        self.redirect(return_to)
 
     def shifts_oncall_page(self,user):
         today_date=rome_now().date()
