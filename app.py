@@ -2536,6 +2536,7 @@ body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY
 .shift-month-legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:14px;padding:12px 14px;font-size:11.5px;color:var(--muted)}
 .shift-month-legend span{display:inline-flex;align-items:center;gap:6px}
 .shift-month-legend .dot{width:8px;height:8px;border-radius:50%}
+.calendar-drafts-banner{margin-bottom:16px}.calendar-drafts-banner h2{margin-bottom:8px}.calendar-draft-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid var(--line)}.calendar-draft-row:first-of-type{border-top:0}.calendar-draft-row a{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:650}.calendar-draft-row .icon-btn{width:32px;height:32px;font-size:18px;line-height:1}
 .shift-vacation-band{margin-top:auto;padding:2px 4px;background:#1d4ed8;color:#fff;font-size:9px;font-weight:800;letter-spacing:.04em;text-align:center}
 .shift-vacation-band.band-start{border-top-left-radius:6px;border-bottom-left-radius:6px}
 .shift-vacation-band.band-end{border-top-right-radius:6px;border-bottom-right-radius:6px}
@@ -5750,7 +5751,40 @@ function calendarInitLookups(){
   calendarRefreshWizardSummaries();
 }
 function calendarWizardDirty(form){return form.dataset.dirty==='1'||[...form.elements].some(input=>input.dataset.initialValue!==undefined&&input.value!==input.dataset.initialValue);}
-function calendarConfirmExit(event,href){const form=document.getElementById('calendarEventForm');if(form&&calendarWizardDirty(form)&&!confirm('Vuoi uscire? Le modifiche non salvate andranno perse.')){event?.preventDefault();return false;}calendarWizardAllowExit=true;if(href){event?.preventDefault();location.href=href;}return true;}
+let calendarExitHref='';
+function calendarConfirmExit(event,href){const form=document.getElementById('calendarEventForm');const backdrop=document.getElementById('calendarExitBackdrop');if(form&&backdrop&&calendarWizardDirty(form)){event?.preventDefault();calendarExitHref=href||'';backdrop.hidden=false;return false;}calendarWizardAllowExit=true;if(href){event?.preventDefault();location.href=href;}return true;}
+function calendarExitCancel(){const backdrop=document.getElementById('calendarExitBackdrop');if(backdrop)backdrop.hidden=true;}
+function calendarExitKeepDraft(){calendarWizardAllowExit=true;calendarExitCancel();if(calendarExitHref)location.href=calendarExitHref;}
+function calendarExitDiscardDraft(){const form=document.getElementById('calendarEventForm');const key=form?.dataset.draftKey;if(key){try{localStorage.removeItem(key);}catch(error){}}calendarWizardAllowExit=true;calendarExitCancel();if(calendarExitHref)location.href=calendarExitHref;}
+function renderCalendarDraftsBanner(){
+  const box=document.getElementById('calendarDraftsBanner');if(!box)return;
+  const drafts=[];
+  for(let i=0;i<localStorage.length;i++){
+    const key=localStorage.key(i);
+    if(!key||!key.startsWith('ppm_calendar_draft_'))continue;
+    let data;try{data=JSON.parse(localStorage.getItem(key));}catch(error){continue;}
+    if(!data||typeof data!=='object')continue;
+    const isEdit=key.startsWith('ppm_calendar_draft_edit_');
+    drafts.push({key,href:isEdit?`/calendario/${key.slice('ppm_calendar_draft_edit_'.length)}/modifica`:'/calendario/nuovo',title:data.title||data.event_type||'Bozza senza titolo',savedAt:data._savedAt||0});
+  }
+  box.innerHTML='';
+  if(!drafts.length){box.hidden=true;return;}
+  drafts.sort((a,b)=>b.savedAt-a.savedAt);
+  const section=document.createElement('div');section.className='section calendar-drafts-banner';
+  const h2=document.createElement('h2');h2.textContent=drafts.length===1?'1 bozza salvata':drafts.length+' bozze salvate';
+  section.appendChild(h2);
+  drafts.forEach(d=>{
+    const row=document.createElement('div');row.className='calendar-draft-row';
+    const a=document.createElement('a');a.href=d.href;a.textContent=d.title;
+    const btn=document.createElement('button');btn.type='button';btn.className='icon-btn';btn.setAttribute('aria-label','Elimina bozza');btn.textContent='×';
+    btn.onclick=()=>calendarDiscardDraftKey(d.key);
+    row.appendChild(a);row.appendChild(btn);
+    section.appendChild(row);
+  });
+  box.appendChild(section);
+  box.hidden=false;
+}
+function calendarDiscardDraftKey(key){try{localStorage.removeItem(key);}catch(error){}renderCalendarDraftsBanner();}
 function calendarSubmit(form){calendarSerialize();form.querySelectorAll('[aria-invalid="true"]').forEach(el=>el.removeAttribute('aria-invalid'));const invalid=[...form.elements].find(input=>!input.disabled&&!input.checkValidity());if(invalid){invalid.setAttribute('aria-invalid','true');calendarStep(Number(invalid.closest('[data-step]')?.dataset.step||1),'back','replace');invalid.reportValidity();return false;}try{if(new URL(form.action,location.href).pathname==='/calendario/nuovo')sessionStorage.setItem('ppm_calendar_created','1');}catch(error){}calendarWizardAllowExit=true;return true;}
 // history.back() is intentionally intercepted so the wizard returns to the previous step.
 function calendarWizardSwipe(){const form=document.getElementById('calendarEventForm');if(!form)return;calendarWizardHistoryReady=true;history.replaceState({calendarWizardStep:Number(form.dataset.currentStep||1)},'',location.href);form.querySelectorAll('input,select,textarea').forEach(input=>{input.dataset.initialValue=input.value;input.addEventListener('change',()=>form.dataset.dirty='1');input.addEventListener('input',()=>form.dataset.dirty='1');});let x=0,y=0,backGesture=false;form.addEventListener('touchstart',e=>{x=e.touches[0].clientX;y=e.touches[0].clientY;backGesture=x<18},{passive:true});form.addEventListener('touchmove',e=>{if(backGesture&&e.touches[0].clientX-x>16)e.preventDefault()},{passive:false});form.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-x,dy=e.changedTouches[0].clientY-y,step=Number(form.dataset.currentStep||1);if(backGesture&&dx>80&&dx>Math.abs(dy)*1.5&&step>1){e.preventDefault();calendarStep(step-1,'back','replace');}backGesture=false;},{passive:false});window.addEventListener('popstate',e=>{const step=Number(e.state?.calendarWizardStep||1);calendarStep(step,'back','none');});window.addEventListener('beforeunload',e=>{if(!calendarWizardAllowExit&&calendarWizardDirty(form)){e.preventDefault();e.returnValue='';}});}
@@ -5844,7 +5878,7 @@ function setupCalendarDraftAutosave(form){
     show('saved','Bozza ripristinata');
   };
   const save=ppmDebounce(()=>{
-    try{localStorage.setItem(key,JSON.stringify(serialize()));}catch(error){return;}
+    try{const data=serialize();data._savedAt=Date.now();localStorage.setItem(key,JSON.stringify(data));}catch(error){return;}
     show('saved','Bozza salvata');
   },1800);
   form.addEventListener('input',()=>{show('saving','Salvataggio…');save();});
@@ -5853,7 +5887,7 @@ function setupCalendarDraftAutosave(form){
   restore();
 }
 function shiftSwipeNav(){const main=document.querySelector('main[data-swipe-prev]');if(!main)return;let sx=0,sy=0,active=false;const skip=el=>el.closest('.calendar-daybar,.shift-cell-editor-backdrop,.shift-oncall-strip,a,button,input,select,textarea');main.addEventListener('touchstart',e=>{if(e.touches.length!==1||skip(e.target))return;sx=e.touches[0].clientX;sy=e.touches[0].clientY;active=true;},{passive:true});main.addEventListener('touchend',e=>{if(!active)return;active=false;const dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.5){const href=dx<0?main.dataset.swipeNext:main.dataset.swipePrev;if(href)location.href=href;}},{passive:true});}
-document.addEventListener('DOMContentLoaded',()=>{calendarInitLookups();calendarWizardSwipe();calendarSerialize();setupPracticeAutosave();calendarInitDateTimeSync();setupCalendarDraftAutosave(document.getElementById('calendarEventForm'));shiftSwipeNav();document.addEventListener('pointerdown',event=>{if(!event.target.closest('.calendar-datetime-row')&&!event.target.closest('#cremationEditOverlay'))document.querySelectorAll('[data-time-wheel]').forEach(wheel=>wheel.hidden=true);});});
+document.addEventListener('DOMContentLoaded',()=>{calendarInitLookups();calendarWizardSwipe();calendarSerialize();setupPracticeAutosave();calendarInitDateTimeSync();setupCalendarDraftAutosave(document.getElementById('calendarEventForm'));shiftSwipeNav();renderCalendarDraftsBanner();document.addEventListener('pointerdown',event=>{if(!event.target.closest('.calendar-datetime-row')&&!event.target.closest('#cremationEditOverlay'))document.querySelectorAll('[data-time-wheel]').forEach(wheel=>wheel.hidden=true);});});
 function showSwUpdateBanner(onConfirm){
   if(document.querySelector('.sw-update-banner'))return;
   const bar=document.createElement('div');bar.className='sw-update-banner';
@@ -8728,7 +8762,7 @@ class App(BaseHTTPRequestHandler):
               {route_quick_body}
             </aside>
           </div>'''
-        body=f'''<main class="wrap calendar-wrap">{route_error_html}<div class="titlebar calendar-main-title"><div>{back_button}<h1>Calendario operativo</h1><p class="sub">Ritiri, riconsegne e promemoria</p></div><div class="calendar-quick-actions"><a class="icon-btn" href="/calendario/cestino" aria-label="Cestino" title="Cestino">{lucide("trash-2")}</a><a class="icon-btn calendar-settings-link" href="/calendario/impostazioni" aria-label="Impostazioni" title="Impostazioni">{lucide("settings")}</a></div></div><nav class="calendar-date-nav"><a class="btn ghost" data-calendar-prev href="{view_url(prev_target)}" aria-label="Periodo precedente">←</a><label class="calendar-date-title"><span>{date_title}</span><input type="date" value="{selected}" onchange="const u=new URL(location.href);u.searchParams.set('data',this.value);location.href=u"></label><a class="btn ghost" data-calendar-next href="{view_url(next_target)}" aria-label="Periodo successivo">→</a><a class="btn ghost calendar-today" href="{view_url(rome_now().date())}">OGGI</a></nav><div class="calendar-toolbar"><nav class="calendar-view-switch">{switch}</nav></div>{content}{filters_html}{preference_script}{route_sheet_html}</main>'''
+        body=f'''<main class="wrap calendar-wrap">{route_error_html}<div class="titlebar calendar-main-title"><div>{back_button}<h1>Calendario operativo</h1><p class="sub">Ritiri, riconsegne e promemoria</p></div><div class="calendar-quick-actions"><a class="icon-btn" href="/calendario/cestino" aria-label="Cestino" title="Cestino">{lucide("trash-2")}</a><a class="icon-btn calendar-settings-link" href="/calendario/impostazioni" aria-label="Impostazioni" title="Impostazioni">{lucide("settings")}</a></div></div><div id="calendarDraftsBanner" hidden></div><nav class="calendar-date-nav"><a class="btn ghost" data-calendar-prev href="{view_url(prev_target)}" aria-label="Periodo precedente">←</a><label class="calendar-date-title"><span>{date_title}</span><input type="date" value="{selected}" onchange="const u=new URL(location.href);u.searchParams.set('data',this.value);location.href=u"></label><a class="btn ghost" data-calendar-next href="{view_url(next_target)}" aria-label="Periodo successivo">→</a><a class="btn ghost calendar-today" href="{view_url(rome_now().date())}">OGGI</a></nav><div class="calendar-toolbar"><nav class="calendar-view-switch">{switch}</nav></div>{content}{filters_html}{preference_script}{route_sheet_html}</main>'''
         self.send_html(layout("Calendario operativo",body,user))
 
     def calendar_settings(self,user):
@@ -9378,7 +9412,8 @@ class App(BaseHTTPRequestHandler):
           {wizard_qa("navigation","Naviga",f"https://www.google.com/maps/dir/?api=1&destination={quote(qa_address)}" if qa_address else "", ' target="_blank" rel="noopener noreferrer"' if qa_address else "")}
           {wizard_qa("receipt","Pratica",qa_practice_url)}
         </div>'''
-        body=f'''<main class="wrap calendar-form calendar-form-v2"><div class="titlebar"><div><h1>{'Modifica evento' if event_id else 'Nuovo evento'}</h1><p class="sub">Crea o modifica un evento in pochi passaggi</p></div><a class="btn ghost" href="{close_url}" onclick="return calendarConfirmExit(event,this.href)" aria-label="Chiudi">×</a></div>{error_html}{draft_status}<div class="calendar-steps" aria-label="Fasi evento" data-calendar-stepper hidden><button type="button" onclick="calendarStepFromIndicator(2)" aria-label="Vai alla fase 1">1</button><button type="button" onclick="calendarStepFromIndicator(3)" aria-label="Vai alla fase 2">2</button><button type="button" onclick="calendarStepFromIndicator(4)" aria-label="Vai alla fase 3">3</button><button type="button" onclick="calendarStepFromIndicator(5)" aria-label="Vai alla fase 4">4</button></div><form id="calendarEventForm" data-current-step="1" data-draft-key="{draft_key}" method="post" action="{action}" onsubmit="return calendarSubmit(this)">
+        exit_modal_html='<div class="shift-cell-editor-backdrop" id="calendarExitBackdrop" hidden onclick="if(event.target===this)calendarExitCancel()"><div class="shift-cell-editor" style="text-align:center"><h3>Vuoi salvare questa bozza?</h3><p class="sub">Potrai riprenderla in un secondo momento dalla sezione bozze in Calendario.</p><div class="actions" style="margin-top:18px;flex-direction:column"><button type="button" class="btn" onclick="calendarExitKeepDraft()">Salva bozza ed esci</button><button type="button" class="btn ghost danger-btn" onclick="calendarExitDiscardDraft()">Elimina ed esci</button><button type="button" class="btn ghost" onclick="calendarExitCancel()">Annulla</button></div></div></div>'
+        body=f'''<main class="wrap calendar-form calendar-form-v2"><div class="titlebar"><div><h1>{'Modifica evento' if event_id else 'Nuovo evento'}</h1><p class="sub">Crea o modifica un evento in pochi passaggi</p></div><a class="btn ghost" href="{close_url}" onclick="return calendarConfirmExit(event,this.href)" aria-label="Chiudi">×</a></div>{error_html}{draft_status}{exit_modal_html}<div class="calendar-steps" aria-label="Fasi evento" data-calendar-stepper hidden><button type="button" onclick="calendarStepFromIndicator(2)" aria-label="Vai alla fase 1">1</button><button type="button" onclick="calendarStepFromIndicator(3)" aria-label="Vai alla fase 2">2</button><button type="button" onclick="calendarStepFromIndicator(4)" aria-label="Vai alla fase 3">3</button><button type="button" onclick="calendarStepFromIndicator(5)" aria-label="Vai alla fase 4">4</button></div><form id="calendarEventForm" data-current-step="1" data-draft-key="{draft_key}" method="post" action="{action}" onsubmit="return calendarSubmit(this)">
         <section class="section calendar-form-step" data-step="1"><h2>Che tipo di evento vuoi creare?</h2><p class="sub">Scegli l'operazione da registrare.</p><div class="calendar-type-grid">{types}</div></section>
         <section class="section calendar-form-step" data-step="2" hidden><h2>Informazioni principali</h2><p class="sub">Controlla i dati principali dell'evento.</p>
           <div class="calendar-wizard-preview">{preview_icon_variants}<div class="calendar-wizard-preview-body"><span class="calendar-wizard-preview-eyebrow" data-type-summary>—</span><p class="calendar-wizard-preview-title" data-preview-title>{'Modifica evento' if event_id else 'Nuovo evento'}</p><span class="calendar-wizard-preview-badge" data-status-summary>—</span><div class="calendar-wizard-preview-meta"><span>{lucide("calendar")}<span data-preview-meta>Completa i passaggi successivi</span></span></div></div></div>
