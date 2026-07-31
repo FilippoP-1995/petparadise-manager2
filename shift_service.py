@@ -97,7 +97,7 @@ def get_shift(conn, operator_name, work_date):
 def shifts_for_range(conn, start_date, end_date):
     """Ritorna {work_date_iso: {branch: [righe]}} per l'intervallo [start_date,end_date] incluso."""
     rows = conn.execute(
-        "SELECT * FROM shifts WHERE work_date>=? AND work_date<=? ORDER BY operator_name",
+        "SELECT * FROM shifts WHERE work_date>=? AND work_date<=? ORDER BY (start_time IS NOT NULL), start_time, operator_name",
         (start_date.isoformat(), end_date.isoformat()),
     ).fetchall()
     by_day = {}
