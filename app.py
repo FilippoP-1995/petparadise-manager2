@@ -1648,7 +1648,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .calendar-daybar-wrap{display:flex;align-items:center;gap:4px;margin-bottom:14px}
 .calendar-daybar-nav{flex:0 0 auto;width:26px;height:26px;border:0;border-radius:8px;background:transparent;color:#8a96a8;font-size:19px;line-height:1;cursor:pointer;display:grid;place-items:center}
 .calendar-daybar-nav:hover{color:#e2e8f0;background:#1a2332}
-.calendar-daybar{display:flex;justify-content:center;gap:9px;flex:1 1 auto;min-width:0;overflow-x:auto;scroll-behavior:smooth;padding:4px 2px 10px;scrollbar-width:none}
+.calendar-daybar{display:flex;justify-content:center;gap:9px;flex:1 1 auto;min-width:0;overflow-x:auto;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;padding:4px 2px 10px;scrollbar-width:none}
 .calendar-daybar::-webkit-scrollbar{display:none}
 .calendar-daybar-card{flex:0 0 auto;min-width:62px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 8px;border:1px solid #334155;border-radius:16px;background:#1a2332;box-shadow:0 6px 16px #0307122e;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,background .18s ease,border-color .18s ease;text-decoration:none}
 .calendar-daybar-card:hover{border-color:#465065}
@@ -8828,23 +8828,24 @@ class App(BaseHTTPRequestHandler):
           <a class="btn {"" if view=="mese" else "ghost"}" href="/turni?vista=mese&data={selected}">{lucide("calendar")} Vista mensile</a>
         </div>'''
         if view=="giorno":
+            selected_index=(selected_date-monday).days
             daybar_cards=[]
-            for day in week_days:
+            for i,day in enumerate(week_days):
                 active_cls=" active" if day==selected_date else ""
                 today_cls=" is-today" if day==today_date else ""
                 day_total=sum(len(rows) for rows in shifts_by_day.get(day.isoformat(),{}).values())
-                daybar_cards.append(f'''<a class="calendar-daybar-card{active_cls}{today_cls}" href="/turni?vista=giorno&data={day.isoformat()}">
+                daybar_cards.append(f'''<button type="button" class="calendar-daybar-card{active_cls}{today_cls}" data-day-index="{i}" data-date="{day.isoformat()}" onclick="calendarSelectDay({i})">
                   <span class="calendar-daybar-dow">{day_names[day.weekday()].upper()}</span>
                   <span class="calendar-daybar-num">{day.day:02d}</span>
                   <span class="calendar-daybar-count">{day_total} turni</span>
-                </a>''')
+                </button>''')
             daybar_html=f'''<div class="calendar-daybar-wrap">
               <button type="button" class="calendar-daybar-nav" onclick="location.href='/turni?vista=giorno&data={(monday-timedelta(days=7)).isoformat()}'" aria-label="Settimana precedente">‹</button>
-              <div class="calendar-daybar">{''.join(daybar_cards)}</div>
+              <div class="calendar-daybar" id="calendarDaybar">{''.join(daybar_cards)}</div>
               <button type="button" class="calendar-daybar-nav" onclick="location.href='/turni?vista=giorno&data={(monday+timedelta(days=7)).isoformat()}'" aria-label="Settimana successiva">›</button>
             </div>'''
-            def sede_card_html(branch):
-                day_shifts=shifts_by_day.get(selected_date.isoformat(),{}).get(branch,[])
+            def sede_card_html(day,branch):
+                day_shifts=shifts_by_day.get(day.isoformat(),{}).get(branch,[])
                 branch_cls="branch-livorno" if branch=="Livorno" else "branch-empoli"
                 rows_html=[]
                 for row in day_shifts:
@@ -8871,14 +8872,14 @@ class App(BaseHTTPRequestHandler):
                     rows_html.append(f'''<div class="shift-operator-row">
                       <div class="shift-operator-name">{avatar}<div><b>{esc(row["operator_name"])}</b><small>{esc(branch)}</small></div></div>
                       {pill_html}
-                      <button type="button" class="icon-btn" data-operator="{esc(row['operator_name'])}" data-date="{selected_date.isoformat()}" data-shift="{row_data_shift}" data-locked-branch="{esc(row['branch'])}" onclick="turniOpenCellEditor(this)" aria-label="Modifica turno di {esc(row['operator_name'])}">{lucide("pencil")}</button>
+                      <button type="button" class="icon-btn" data-operator="{esc(row['operator_name'])}" data-date="{day.isoformat()}" data-shift="{row_data_shift}" data-locked-branch="{esc(row['branch'])}" onclick="turniOpenCellEditor(this)" aria-label="Modifica turno di {esc(row['operator_name'])}">{lucide("pencil")}</button>
                     </div>''')
                 body_html=''.join(rows_html) or f'<div class="shift-empty-state"><span class="shift-empty-state-icon">{lucide("users")}</span><span>Nessun turno assegnato.</span></div>'
                 # "Aggiungi operatore" trasmette la sede della sezione da cui
                 # e' stato premuto: la pagina di pianificazione la blocca per
                 # ogni cella vuota aperta in questa sessione (niente tendina
                 # "Seleziona sede", richiesta esplicita dell'utente).
-                add_href=f"/turni/pianifica?settimana={monday.isoformat()}&sede={quote(branch)}&ritorno_vista={view}&ritorno_data={selected_date.isoformat()}"
+                add_href=f"/turni/pianifica?settimana={monday.isoformat()}&sede={quote(branch)}&ritorno_vista={view}&ritorno_data={day.isoformat()}"
                 return f'''<section class="section shift-sede-card {branch_cls}">
                   <div class="shift-sede-head">
                     <span class="shift-sede-title {branch_cls}">{lucide("map-pin")} {esc(branch.upper())}</span>
@@ -8886,7 +8887,13 @@ class App(BaseHTTPRequestHandler):
                   </div>
                   {body_html}
                 </section>'''
-            content=daybar_html+''.join(sede_card_html(branch) for branch in SHIFT_BRANCHES)
+            # Carosello fluido a swipe nativo (scroll-snap), stessa identica
+            # tecnica gia' usata da Calendario/Cremazioni per lo swipe tra
+            # giorni (.calendar-day-pages/.calendar-day-page, calendarSelectDay
+            # e calendarInitDayPages sono riusati cosi' come sono — nessuna
+            # duplicazione di logica, nessun reload di pagina durante lo swipe).
+            day_pages=''.join(f'<div class="calendar-day-page" data-day-index="{i}" data-date="{day.isoformat()}">{sede_card_html(day,"Livorno")}{sede_card_html(day,"Empoli")}</div>' for i,day in enumerate(week_days))
+            content=daybar_html+f'<div class="calendar-day-pages" id="calendarDayPages" data-initial-day-index="{selected_index}">{day_pages}</div>'
         else:
             def add_months(d,n):
                 total=(d.month-1)+n
@@ -8962,11 +8969,14 @@ class App(BaseHTTPRequestHandler):
             oncall_strip_html=f'''<div class="shift-oncall-strip">{''.join(oncall_cards)}</div>
               <a class="btn ghost" style="margin-top:12px" href="/turni/reperibilita">{lucide("moon")} Gestisci rotazione</a>'''
             content=month_nav_html+dow_row+grid+legend_html+f'<section class="section" style="margin-top:16px"><h2>Reperibilità notturna <small class="sub">(rotazione settimanale)</small></h2>{oncall_strip_html}</section>'
-        if view=="giorno":
-            swipe_prev,swipe_next=(selected_date-timedelta(days=1)).isoformat(),(selected_date+timedelta(days=1)).isoformat()
-        else:
-            swipe_prev,swipe_next=prev_window_start.isoformat(),next_window_start.isoformat()
-        body=f'''<main class="wrap calendar-wrap" data-swipe-prev="/turni?vista={view}&data={swipe_prev}" data-swipe-next="/turni?vista={view}&data={swipe_next}">
+        # La vista giorno usa il carosello a scroll-snap (swipe nativo e
+        # fluido, gestito dal browser) per cambiare giorno: lo swipe custom
+        # qui sotto serve solo alla vista mese, che non ha un carosello di
+        # pagine pre-renderizzate.
+        swipe_attrs=""
+        if view=="mese":
+            swipe_attrs=f' data-swipe-prev="/turni?vista=mese&data={prev_window_start.isoformat()}" data-swipe-next="/turni?vista=mese&data={next_window_start.isoformat()}"'
+        body=f'''<main class="wrap calendar-wrap"{swipe_attrs}>
           <div class="titlebar calendar-main-title"><div><h1>Orari</h1><p class="sub">Pianificazione e reperibilità</p></div></div>
           {oncall_banner_html}
           {switch_html}
