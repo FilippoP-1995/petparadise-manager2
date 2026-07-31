@@ -2495,12 +2495,25 @@ body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY
 .light-theme .shift-empty-state-icon{background:#f1f5f9}
 .shift-empty-state-icon .icon{width:20px;height:20px}
 .shift-empty-state span{font-size:13px}
-.shift-plan-grid{display:grid;grid-template-columns:132px repeat(7,minmax(104px,1fr));gap:6px;min-width:900px}
+.shift-plan-grid{display:grid;grid-template-columns:84px repeat(7,minmax(104px,1fr));gap:6px;min-width:820px}
 .shift-plan-scroll{overflow-x:auto;padding-bottom:6px}
 .shift-plan-head-cell{padding:8px 4px;text-align:center;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
 .shift-plan-head-cell.is-today{color:var(--brand2)}
-.shift-plan-operator{display:flex;align-items:center;gap:8px;padding:8px 4px;font-size:12px;font-weight:700;min-width:0}
+.shift-plan-corner,.shift-plan-operator{position:sticky;left:0;z-index:3;background:var(--bg)}
+.shift-plan-operator{display:flex;align-items:center;gap:6px;padding:8px 4px;font-size:11.5px;font-weight:700;min-width:0}
 .shift-plan-operator span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.btn.ghost.tint-slate{background:#1e293b;border-color:#334155;color:#94a3b8}
+.btn.ghost.tint-blue{background:#172554;border-color:#28418f;color:#93c5fd}
+.btn.ghost.tint-violet{background:#3b0764;border-color:#5b21b6;color:#d8b4fe}
+.btn.ghost.tint-amber{background:#422006;border-color:#92640c;color:#fbbf24}
+.btn.ghost.tint-teal{background:#042f2e;border-color:#0d6d63;color:#5eead4}
+.light-theme .btn.ghost.tint-slate{background:#e2e8f0;border-color:#cbd5e1;color:#475569}
+.light-theme .btn.ghost.tint-blue{background:#dbeafe;border-color:#93c5fd;color:#1d4ed8}
+.light-theme .btn.ghost.tint-violet{background:#ede9fe;border-color:#c4b5fd;color:#6d28d9}
+.light-theme .btn.ghost.tint-amber{background:#fef3c7;border-color:#fcd34d;color:#92400e}
+.light-theme .btn.ghost.tint-teal{background:#ccfbf1;border-color:#5eead4;color:#0f766e}
+.cremation-nav-btn.tint-slate{background:#1e293b;border-color:#334155;color:#94a3b8}
+.light-theme .cremation-nav-btn.tint-slate{background:#e2e8f0;border-color:#cbd5e1;color:#475569}
 .shift-cell{min-height:62px;padding:6px;border:1px solid var(--line);border-radius:10px;background:#182334;cursor:pointer;display:flex;flex-direction:column;justify-content:center;gap:2px;font-size:11px;text-align:left}
 .light-theme .shift-cell{background:#f8fafc}
 .shift-cell:hover{border-color:#465065}
@@ -2546,7 +2559,7 @@ body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY
 .light-theme .shift-oncall-week{background:#f8fafc}
 .shift-oncall-week.current{border-color:var(--brand2);box-shadow:0 0 0 2px color-mix(in srgb,var(--brand2) 35%,transparent)}
 .shift-oncall-week b{display:block;margin-top:4px;font-size:13px}
-@media(max-width:900px){.shift-operator-row{grid-template-columns:minmax(0,110px) minmax(0,1fr) 34px;gap:8px}.shift-plan-grid{grid-template-columns:104px repeat(7,minmax(92px,1fr))}}
+@media(max-width:900px){.shift-operator-row{grid-template-columns:minmax(0,110px) minmax(0,1fr) 34px;gap:8px}.shift-plan-grid{grid-template-columns:68px repeat(7,minmax(92px,1fr))}}
 @media(prefers-reduced-motion:reduce){.shift-cell-editor-backdrop,.shift-cell-editor{transition:none!important}}
 """
 
@@ -5887,8 +5900,29 @@ function setupCalendarDraftAutosave(form){
   form.addEventListener('submit',()=>{try{localStorage.removeItem(key);}catch(error){}});
   restore();
 }
-function shiftSwipeNav(){const main=document.querySelector('main[data-swipe-prev]');if(!main)return;let sx=0,sy=0,active=false;const skip=el=>el.closest('.calendar-daybar,input,select,textarea');main.addEventListener('touchstart',e=>{if(e.touches.length!==1||skip(e.target))return;sx=e.touches[0].clientX;sy=e.touches[0].clientY;active=true;},{passive:true});main.addEventListener('touchend',e=>{if(!active)return;active=false;const dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.5){const href=dx<0?main.dataset.swipeNext:main.dataset.swipePrev;if(href)location.href=href;}},{passive:true});}
-document.addEventListener('DOMContentLoaded',()=>{calendarInitLookups();calendarWizardSwipe();calendarSerialize();setupPracticeAutosave();calendarInitDateTimeSync();setupCalendarDraftAutosave(document.getElementById('calendarEventForm'));shiftSwipeNav();renderCalendarDraftsBanner();document.addEventListener('pointerdown',event=>{if(!event.target.closest('.calendar-datetime-row')&&!event.target.closest('#cremationEditOverlay'))document.querySelectorAll('[data-time-wheel]').forEach(wheel=>wheel.hidden=true);});});
+function shiftInitMonthPages(){
+  const pages=document.getElementById('shiftMonthPages');
+  if(!pages)return;
+  const items=[...pages.querySelectorAll('.calendar-day-page')];
+  if(!items.length)return;
+  const mid=Math.floor(items.length/2);
+  const initial=items[mid];
+  if(initial)pages.scrollLeft=initial.offsetLeft;
+  if('IntersectionObserver' in window){
+    let navigated=false;
+    const observer=new IntersectionObserver(entries=>{
+      entries.forEach(entry=>{
+        if(navigated||!entry.isIntersecting||entry.intersectionRatio<0.6)return;
+        const idx=Number(entry.target.dataset.pageIndex);
+        if(idx===mid)return;
+        navigated=true;
+        location.href=entry.target.dataset.href;
+      });
+    },{root:pages,threshold:[0.6]});
+    items.forEach(item=>observer.observe(item));
+  }
+}
+document.addEventListener('DOMContentLoaded',()=>{calendarInitLookups();calendarWizardSwipe();calendarSerialize();setupPracticeAutosave();calendarInitDateTimeSync();setupCalendarDraftAutosave(document.getElementById('calendarEventForm'));shiftInitMonthPages();renderCalendarDraftsBanner();document.addEventListener('pointerdown',event=>{if(!event.target.closest('.calendar-datetime-row')&&!event.target.closest('#cremationEditOverlay'))document.querySelectorAll('[data-time-wheel]').forEach(wheel=>wheel.hidden=true);});});
 function showSwUpdateBanner(onConfirm){
   if(document.querySelector('.sw-update-banner'))return;
   const bar=document.createElement('div');bar.className='sw-update-banner';
@@ -8794,14 +8828,28 @@ class App(BaseHTTPRequestHandler):
         monday=shift_week_monday(selected_date)
         today_monday=shift_week_monday(today_date)
         week_days=[monday+timedelta(days=i) for i in range(7)]
+        def add_months(d,n):
+            total=(d.month-1)+n
+            year=d.year+total//12
+            month=total%12+1
+            return date(year,month,1)
+        def month_grid_start(anchor):
+            return anchor-timedelta(days=anchor.weekday())
         if view=="giorno":
             range_start,range_end=monday,monday+timedelta(days=6)
             grid_start=monday
         else:
-            month_start=selected_date.replace(day=1)
-            grid_start=month_start-timedelta(days=month_start.weekday())
-            grid_days=[grid_start+timedelta(days=i) for i in range(42)]
-            range_start,range_end=grid_days[0],grid_days[-1]
+            # Il range dati copre mese precedente/corrente/successivo: la
+            # vista mensile usa un carosello a scroll-snap di 3 mesi
+            # pre-renderizzati (stesso meccanismo dello swipe fluido tra
+            # giorni), quindi servono i dati di tutti e tre in anticipo.
+            current_month_start=selected_date.replace(day=1)
+            prev_month_start=add_months(current_month_start,-1)
+            next_month_start=add_months(current_month_start,1)
+            grid_start=month_grid_start(current_month_start)
+            prev_grid_start=month_grid_start(prev_month_start)
+            next_grid_start=month_grid_start(next_month_start)
+            range_start,range_end=prev_grid_start,next_grid_start+timedelta(days=41)
         oncall_window_start=monday-timedelta(weeks=1)
         oncall_weeks=[oncall_window_start+timedelta(weeks=i) for i in range(6)]
         with db() as c:
@@ -8896,15 +8944,12 @@ class App(BaseHTTPRequestHandler):
             day_pages=''.join(f'<div class="calendar-day-page" data-day-index="{i}" data-date="{day.isoformat()}">{sede_card_html(day,"Livorno")}{sede_card_html(day,"Empoli")}</div>' for i,day in enumerate(week_days))
             content=daybar_html+f'<div class="calendar-day-pages" id="calendarDayPages" data-initial-day-index="{selected_index}">{day_pages}</div>'
         else:
-            def add_months(d,n):
-                total=(d.month-1)+n
-                year=d.year+total//12
-                month=total%12+1
-                return date(year,month,1)
             # Striscia mesi orizzontale scorrevole, stesso identico
             # comportamento (classi/scroll) del daybar giorni di Calendario
             # operativo/Cremazioni, richiesta esplicita dell'utente — "Oggi"
-            # resta un pulsante separato, non parte della striscia.
+            # resta un pulsante separato, non parte della striscia. Serve
+            # per saltare a un mese lontano (tap diretto); lo swipe fluido
+            # tra mesi adiacenti e' gestito dal carosello sotto.
             month_window=[add_months(selected_date.replace(day=1),n) for n in range(-5,7)]
             month_cards=[]
             for m in month_window:
@@ -8914,15 +8959,13 @@ class App(BaseHTTPRequestHandler):
                   <span class="calendar-daybar-dow">{MONTH_NAMES_IT[m.month-1]}</span>
                   <span class="calendar-daybar-num" style="font-size:15px">{m.year}</span>
                 </a>''')
-            prev_window_start=add_months(selected_date.replace(day=1),-1)
-            next_window_start=add_months(selected_date.replace(day=1),1)
             month_nav_html=f'''<div class="calendar-daybar-wrap">
-              <button type="button" class="calendar-daybar-nav" onclick="location.href='/turni?vista=mese&data={prev_window_start.isoformat()}'" aria-label="Mese precedente">‹</button>
+              <button type="button" class="calendar-daybar-nav" onclick="location.href='/turni?vista=mese&data={prev_month_start.isoformat()}'" aria-label="Mese precedente">‹</button>
               <div class="calendar-daybar">{''.join(month_cards)}</div>
-              <button type="button" class="calendar-daybar-nav" onclick="location.href='/turni?vista=mese&data={next_window_start.isoformat()}'" aria-label="Mese successivo">›</button>
+              <button type="button" class="calendar-daybar-nav" onclick="location.href='/turni?vista=mese&data={next_month_start.isoformat()}'" aria-label="Mese successivo">›</button>
             </div>
             <div class="shift-month-nav-today"><a class="btn ghost" href="/turni?vista=mese">{lucide("calendar")} Oggi</a></div>'''
-            def month_cell_html(day):
+            def month_cell_html(day,month_anchor):
                 # Vista mensile = solo panoramica: mai orari, mai più di due
                 # nomi per sede (altrimenti "N operatori"), cella sempre
                 # della stessa dimensione — requisito esplicito dell'utente
@@ -8933,7 +8976,7 @@ class App(BaseHTTPRequestHandler):
                 day_data=shifts_by_day.get(day_iso,{})
                 classes=["shift-month-cell"]
                 if day==today_date:classes.append("is-today")
-                if day.month!=selected_date.month:classes.append("is-other-month")
+                if day.month!=month_anchor.month:classes.append("is-other-month")
                 blocks=[]
                 for branch in SHIFT_BRANCHES:
                     branch_rows=day_data.get(branch,[])
@@ -8954,7 +8997,22 @@ class App(BaseHTTPRequestHandler):
                 href=f"/turni?vista=giorno&data={day_iso}"
                 return f'<a class="{" ".join(classes)}" href="{href}"><b>{day.day}</b>{"".join(blocks)}{vac_html}</a>'
             dow_row='<div class="shift-month-dow-row">'+''.join(f'<div class="shift-month-dow">{n}</div>' for n in day_names)+'</div>'
-            grid='<div class="shift-month-grid">'+''.join(month_cell_html(grid_start+timedelta(days=i)) for i in range(42))+'</div>'
+            def month_grid_html(anchor,anchor_grid_start):
+                return '<div class="shift-month-grid">'+''.join(month_cell_html(anchor_grid_start+timedelta(days=i),anchor) for i in range(42))+'</div>'
+            # Carosello fluido a swipe nativo (scroll-snap) tra mese
+            # precedente/corrente/successivo, stessa tecnica dello swipe
+            # giorni: si preferisce ricaricare la pagina quando lo swipe si
+            # ferma su un mese adiacente (nessuna paginazione infinita) —
+            # il gesto di trascinamento resta comunque nativo e fluido.
+            month_pages=''.join(
+                f'<div class="calendar-day-page" data-page-index="{i}" data-href="/turni?vista=mese&data={anchor.isoformat()}">{month_grid_html(anchor,gstart)}</div>'
+                for i,(anchor,gstart) in enumerate((
+                    (prev_month_start,prev_grid_start),
+                    (current_month_start,grid_start),
+                    (next_month_start,next_grid_start),
+                ))
+            )
+            grid=f'<div class="calendar-day-pages" id="shiftMonthPages">{month_pages}</div>'
             legend_html=f'''<div class="shift-month-legend">
               <span><span class="dot" style="background:var(--brand)"></span>Livorno</span>
               <span><span class="dot" style="background:var(--green)"></span>Empoli</span>
@@ -8973,14 +9031,10 @@ class App(BaseHTTPRequestHandler):
             oncall_strip_html=f'''<div class="shift-oncall-strip">{''.join(oncall_cards)}</div>
               <a class="btn ghost" style="margin-top:12px" href="/turni/reperibilita">{lucide("moon")} Gestisci rotazione</a>'''
             content=month_nav_html+dow_row+grid+legend_html+f'<section class="section" style="margin-top:16px"><h2>Reperibilità notturna <small class="sub">(rotazione settimanale)</small></h2>{oncall_strip_html}</section>'
-        # La vista giorno usa il carosello a scroll-snap (swipe nativo e
-        # fluido, gestito dal browser) per cambiare giorno: lo swipe custom
-        # qui sotto serve solo alla vista mese, che non ha un carosello di
-        # pagine pre-renderizzate.
-        swipe_attrs=""
-        if view=="mese":
-            swipe_attrs=f' data-swipe-prev="/turni?vista=mese&data={prev_window_start.isoformat()}" data-swipe-next="/turni?vista=mese&data={next_window_start.isoformat()}"'
-        body=f'''<main class="wrap calendar-wrap"{swipe_attrs}>
+        # Sia la vista giorno che quella mese usano un carosello a
+        # scroll-snap (swipe nativo e fluido, gestito dal browser) per
+        # cambiare periodo: nessuno swipe custom via JS resta necessario.
+        body=f'''<main class="wrap calendar-wrap">
           <div class="titlebar calendar-main-title"><div><h1>Orari</h1><p class="sub">Pianificazione e reperibilità</p></div></div>
           {oncall_banner_html}
           {switch_html}
@@ -9037,12 +9091,12 @@ class App(BaseHTTPRequestHandler):
             shifts_by_day=shifts_for_range(c,monday,sunday)
         oggi_qs="&".join(p for p in (f"sede={quote(locked_sede)}" if locked_sede else "",ritorno_qs.lstrip("&")) if p)
         date_nav_html=f'''<div class="cremation-date-nav">
-          <a class="cremation-nav-btn" href="/turni/pianifica?settimana={prev_week}{sede_qs}{ritorno_qs}" aria-label="Settimana precedente">‹</a>
+          <a class="cremation-nav-btn tint-slate" href="/turni/pianifica?settimana={prev_week}{sede_qs}{ritorno_qs}" aria-label="Settimana precedente">‹</a>
           <div class="cremation-date-label">{lucide("calendar")}<span>{esc(week_label)}</span></div>
-          <a class="cremation-nav-btn" href="/turni/pianifica?settimana={next_week}{sede_qs}{ritorno_qs}" aria-label="Settimana successiva">›</a>
+          <a class="cremation-nav-btn tint-slate" href="/turni/pianifica?settimana={next_week}{sede_qs}{ritorno_qs}" aria-label="Settimana successiva">›</a>
           <a class="cremation-today-btn {"active" if today_date.isoformat() in week_dates_iso else ""}" href="/turni/pianifica?{oggi_qs}">Oggi</a>
         </div>'''
-        head_cells='<div></div>'+''.join(f'<div class="shift-plan-head-cell{" is-today" if d==today_date else ""}">{day_names[d.weekday()]}<br>{d.day:02d}/{d.month:02d}</div>' for d in week_days)
+        head_cells='<div class="shift-plan-corner"></div>'+''.join(f'<div class="shift-plan-head-cell{" is-today" if d==today_date else ""}">{day_names[d.weekday()]}<br>{d.day:02d}/{d.month:02d}</div>' for d in week_days)
         branch_options=''.join(f'<option value="{b}">{b}</option>' for b in SHIFT_BRANCHES)
         def cell_html(operator,day):
             day_iso=day.isoformat()
@@ -9083,7 +9137,7 @@ class App(BaseHTTPRequestHandler):
         editor_html=self.shift_cell_editor_html(auto_open_js)
         back_href=f"/turni?vista={ritorno_vista}&data={ritorno_data}" if ritorno_data else "/turni"
         body=f'''<main class="wrap calendar-wrap">
-          <div class="titlebar calendar-main-title"><div><h1>Pianifica turni</h1><p class="sub">Seleziona una settimana e compila le celle per ogni operatore.</p></div><a class="btn ghost" href="{back_href}">← Torna a Orari</a></div>
+          <div class="titlebar calendar-main-title"><div><h1>Pianifica turni</h1><p class="sub">Seleziona una settimana e compila le celle per ogni operatore.</p></div><a class="btn ghost tint-slate" href="{back_href}">← Torna a Orari</a></div>
           {sede_error_html}
           {date_nav_html}
           {grid_html}
@@ -9105,8 +9159,12 @@ class App(BaseHTTPRequestHandler):
               <div class="field" id="shiftCellBranchField"><label>Sede</label><select id="shiftCellBranch"><option value="">Seleziona sede</option>{branch_options}</select></div>
               <p class="sub" id="shiftCellSedeInfo" hidden></p>
               <div class="shift-view-switch">
-                <button type="button" class="btn ghost" onclick="turniSetPreset('mattina')">Mattina</button>
-                <button type="button" class="btn ghost" onclick="turniSetPreset('pomeriggio')">Pomeriggio</button>
+                <button type="button" class="btn ghost tint-blue" onclick="turniSetPreset('primo')">Primo turno</button>
+                <button type="button" class="btn ghost tint-violet" onclick="turniSetPreset('secondo')">Secondo turno</button>
+              </div>
+              <div class="shift-view-switch">
+                <button type="button" class="btn ghost tint-amber" onclick="turniSetPreset('mattina')">Mattina</button>
+                <button type="button" class="btn ghost tint-teal" onclick="turniSetPreset('pomeriggio')">Pomeriggio</button>
               </div>
               <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="shiftCellAllDay" onchange="turniToggleAllDay(this)"> Tutto il giorno</label>
               <div id="shiftCellStartField">{calendar_time_wheel_field("Orario inizio","shiftCellStart")}</div>
@@ -9114,7 +9172,7 @@ class App(BaseHTTPRequestHandler):
             </div>
             <p class="shift-cell-editor-note" id="shiftCellEditorNote"></p>
             <div class="actions">
-              <button type="button" class="btn ghost" onclick="turniCloseCellEditor()">Annulla</button>
+              <button type="button" class="btn ghost tint-slate" onclick="turniCloseCellEditor()">Annulla</button>
               <button type="button" class="btn danger-btn" onclick="turniRemoveCell()">Rimuovi turno</button>
               <button type="submit" class="btn">Salva turno</button>
             </div>
@@ -9169,7 +9227,8 @@ class App(BaseHTTPRequestHandler):
             document.getElementById('shiftCellEndField').style.display=on?'none':'';
           }};
           window.turniSetPreset=function(kind){{
-            var range=kind==='mattina'?['08:30','13:00']:['14:30','19:30'];
+            var presets={{mattina:['08:30','13:00'],pomeriggio:['14:30','19:30'],primo:['08:30','17:30'],secondo:['10:30','19:30']}};
+            var range=presets[kind]||presets.mattina;
             var allDay=document.getElementById('shiftCellAllDay');
             allDay.checked=false;
             turniToggleAllDay(allDay);
