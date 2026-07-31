@@ -136,6 +136,39 @@ class ShiftsModuleTests(unittest.TestCase):
         self.assertIn("Filippo", page)
         self.assertIn("Alessio", page)
 
+    def test_shifts_page_giorno_uses_time_pill_and_empty_state_not_gantt_bar(self):
+        # Rifinitura grafica su richiesta esplicita dell'utente: niente piu'
+        # barra proporzionale sulle 24h (troppo pesante), ora una pill con
+        # icona orologio; stato vuoto con icona centrata invece del solo testo.
+        self.save_cell(self.admin, operator="Serena", data="2026-08-10", branch="Livorno", start_time="08:00", end_time="16:00")
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/turni?vista=giorno&data=2026-08-10"
+        self.handler.shifts_page(self.admin)
+        page = rendered[-1]
+        self.assertIn('class="shift-time-pill"', page)
+        self.assertIn('class="section shift-sede-card branch-livorno"', page)
+        self.assertIn('class="shift-add-btn branch-livorno"', page)
+        self.assertIn('class="shift-empty-state"', page)
+        self.assertNotIn('class="shift-track"', page)
+        self.assertNotIn('class="shift-bar"', page)
+
+    def test_shifts_page_mese_has_horizontal_month_strip_and_legend(self):
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/turni?vista=mese&data=2026-08-10"
+        self.handler.shifts_page(self.admin)
+        page = rendered[-1]
+        # Stessa striscia orizzontale scorrevole (classi calendar-daybar-*)
+        # gia' usata per i giorni nel Calendario operativo/Cremazioni.
+        self.assertIn('class="calendar-daybar-wrap"', page)
+        self.assertIn('class="calendar-daybar"', page)
+        self.assertIn("Agosto", page)
+        self.assertIn("Luglio", page)
+        self.assertIn("Settembre", page)
+        self.assertIn('class="shift-month-legend"', page)
+        self.assertIn("Nessun turno", page)
+
     def test_shifts_page_mese_vacation_band_rounds_only_at_edges(self):
         with app.db() as conn:
             from shift_service import create_vacation
