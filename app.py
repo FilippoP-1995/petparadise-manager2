@@ -2467,8 +2467,8 @@ body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY
 .shift-oncall-body{min-width:0;flex:1}
 .shift-oncall-body b{display:block;color:#c084fc;font-size:10.5px;letter-spacing:.06em;font-weight:800}
 .shift-oncall-body span{display:block;color:var(--muted);font-size:11.5px;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.shift-view-switch{display:flex;gap:9px;margin-bottom:16px}
-.shift-view-switch .btn{flex:1}
+.shift-view-switch{display:flex;gap:6px;margin-bottom:16px}
+.shift-view-switch .btn{width:auto;flex:0 0 auto;min-height:0;padding:6px 16px;font-size:12.5px;border-radius:9px}
 .shift-sede-card{border-left-width:3px;border-left-style:solid}
 .shift-sede-card.branch-livorno{border-left-color:var(--brand)}
 .shift-sede-card.branch-empoli{border-left-color:var(--green)}
@@ -5887,7 +5887,7 @@ function setupCalendarDraftAutosave(form){
   form.addEventListener('submit',()=>{try{localStorage.removeItem(key);}catch(error){}});
   restore();
 }
-function shiftSwipeNav(){const main=document.querySelector('main[data-swipe-prev]');if(!main)return;let sx=0,sy=0,active=false;const skip=el=>el.closest('.calendar-daybar,.shift-cell-editor-backdrop,.shift-oncall-strip,a,button,input,select,textarea');main.addEventListener('touchstart',e=>{if(e.touches.length!==1||skip(e.target))return;sx=e.touches[0].clientX;sy=e.touches[0].clientY;active=true;},{passive:true});main.addEventListener('touchend',e=>{if(!active)return;active=false;const dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.5){const href=dx<0?main.dataset.swipeNext:main.dataset.swipePrev;if(href)location.href=href;}},{passive:true});}
+function shiftSwipeNav(){const main=document.querySelector('main[data-swipe-prev]');if(!main)return;let sx=0,sy=0,active=false;const skip=el=>el.closest('.calendar-daybar,input,select,textarea');main.addEventListener('touchstart',e=>{if(e.touches.length!==1||skip(e.target))return;sx=e.touches[0].clientX;sy=e.touches[0].clientY;active=true;},{passive:true});main.addEventListener('touchend',e=>{if(!active)return;active=false;const dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.5){const href=dx<0?main.dataset.swipeNext:main.dataset.swipePrev;if(href)location.href=href;}},{passive:true});}
 document.addEventListener('DOMContentLoaded',()=>{calendarInitLookups();calendarWizardSwipe();calendarSerialize();setupPracticeAutosave();calendarInitDateTimeSync();setupCalendarDraftAutosave(document.getElementById('calendarEventForm'));shiftSwipeNav();renderCalendarDraftsBanner();document.addEventListener('pointerdown',event=>{if(!event.target.closest('.calendar-datetime-row')&&!event.target.closest('#cremationEditOverlay'))document.querySelectorAll('[data-time-wheel]').forEach(wheel=>wheel.hidden=true);});});
 function showSwUpdateBanner(onConfirm){
   if(document.querySelector('.sw-update-banner'))return;
@@ -8825,8 +8825,8 @@ class App(BaseHTTPRequestHandler):
           <span class="icon-btn" aria-hidden="true">{lucide("chevron-right")}</span>
         </a>'''
         switch_html=f'''<div class="shift-view-switch">
-          <a class="btn {"" if view=="giorno" else "ghost"}" href="/turni?vista=giorno&data={selected}">{lucide("calendar")} Vista giornaliera</a>
-          <a class="btn {"" if view=="mese" else "ghost"}" href="/turni?vista=mese&data={selected}">{lucide("calendar")} Vista mensile</a>
+          <a class="btn {"" if view=="giorno" else "ghost"}" href="/turni?vista=giorno&data={selected}">Giorno</a>
+          <a class="btn {"" if view=="mese" else "ghost"}" href="/turni?vista=mese&data={selected}">Mese</a>
         </div>'''
         if view=="giorno":
             selected_index=(selected_date-monday).days
