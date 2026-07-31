@@ -7164,7 +7164,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn('aria-current="true"',balances_body)
         self.assertIn('balance-summary-card balance-tone-w collapsed',balances_page)
         self.assertIn('aria-expanded="false" aria-controls="balanceDetailsList"',balances_page)
-        self.assertIn('data-balance-collapsible collapsed',balances_page)
+        self.assertIn('data-balance-collapsible class="collapsed"',balances_page)
         self.assertIn('<span class="balance-summary-title">Entrate W</span>',balances_page)
         self.assertNotIn("<table",balances_page)
         self.assertIn("Nessun dato da visualizzare.",balances_page)
@@ -7196,7 +7196,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('data-balance-card="entrate-d" data-balance-total-cents="0" aria-current="true"',page)
         self.assertNotIn('collapsed" onclick="balanceToggleDetails',page)
         self.assertIn('aria-expanded="true" aria-controls="balanceDetailsList"',page)
-        self.assertNotIn('data-balance-collapsible collapsed',page)
+        self.assertNotIn('data-balance-collapsible class="collapsed"',page)
 
     def test_balances_movements_render_as_color_coded_cards_not_a_table(self):
         with app.db() as conn:

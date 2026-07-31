@@ -7759,7 +7759,7 @@ class App(BaseHTTPRequestHandler):
         </div>'''
         details_html=f'''<section id="balanceDetails" class="section balance-details" data-selected-balance-section="{esc(selected)}">
           {summary_html}
-          <div id="balanceDetailsList" data-balance-collapsible{" collapsed" if summary_collapsed else ""}>{details}{pagination}</div>
+          <div id="balanceDetailsList" data-balance-collapsible class="{"collapsed" if summary_collapsed else ""}">{details}{pagination}</div>
         </section>'''
         filters_html=f'''<form class="section balance-filters no-advanced-collapse" method="get" action="/bilanci" aria-label="Filtri Bilanci" onsubmit="const b=this.querySelector('button');b.disabled=true;b.textContent='Caricamento…'">
           <h2>Filtri</h2><input type="hidden" name="view" value="{esc(selected)}">
