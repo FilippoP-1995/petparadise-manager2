@@ -8857,13 +8857,13 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('calendar-type-check', page)
         self.assertIn('onclick="calendarTypeSelected(this)"', page)
 
-    def test_calendar_wizard_step2_shows_live_preview_and_summary_cards(self):
-        # redesign su mockup dell'utente: il wizard passa da 3 a 5 passaggi
-        # reali (griglia tipo evento invariata + 4 nuovi step numerati 1-4
-        # nell'indicatore visibile). Il nuovo step 2 "Informazioni principali"
-        # mostra una card di anteprima dal vivo (icona/titolo/badge/meta) e
-        # le card riassuntive Tipo evento/Stato iniziale/Cliente/Data e
-        # ora/Zona-Sede, tutte tap-to-navigate verso gli step successivi.
+    def test_calendar_wizard_has_no_step_navigation_type_grid_and_fields_on_one_page(self):
+        # richiesta esplicita dell'utente: eliminare completamente il wizard
+        # multi-step (Step 1->2->3->4->5, Avanti/Indietro, indicatore di
+        # progresso, riepilogo finale separato) e sostituirlo con un unico
+        # form contestuale per tipo, come TimeTree/Google Calendar — si
+        # sceglie il tipo e sotto compare subito l'unico blocco di campi
+        # rilevante, senza altri passaggi.
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
         rendered = []
@@ -8871,23 +8871,17 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path = "/calendario/nuovo"
         self.handler.calendar_event_form(admin)
         page = rendered[-1]
-        step2_start = page.index('data-step="2"')
-        step2_end = page.index('data-step="3"')
-        step2 = page[step2_start:step2_end]
-        self.assertIn('calendar-wizard-preview', step2)
-        self.assertIn('data-preview-title', step2)
-        self.assertIn('data-preview-meta', step2)
-        self.assertIn('calendar-card-list', step2)
-        self.assertIn('data-type-summary', step2)
-        self.assertIn('name="event_status"', step2)
-        self.assertIn('data-client-summary', step2)
-        self.assertIn('data-datetime-summary', step2)
-        self.assertIn('data-place-summary', step2)
-        self.assertIn('calendar-detail-quickactions', step2)
-        # "operator_name" non vive piu' qui: si sposta con "Quando e dove" (step 3)
-        self.assertNotIn('name="operator_name"', step2)
+        for gone in ('data-step="', 'data-calendar-stepper', 'calendar-form-step',
+                     'calendarStepFromIndicator', 'calendar-substep', "calendarSubStep(",
+                     'calendar-wizard-preview', '>Riepilogo<', '>Avanti<', '>Indietro<'):
+            self.assertNotIn(gone, page)
+        self.assertIn('Che tipo di evento vuoi creare?', page)
+        self.assertIn('id="calendarDetailsSection"', page)
 
-    def test_calendar_wizard_step3_is_quando_e_dove_with_operator_and_pickup_location(self):
+    def test_calendar_wizard_details_section_has_operator_and_pickup_location_together(self):
+        # operatore e "Luogo del ritiro" (pickup_location_block) vivono ora
+        # nello stesso, unico blocco di campi — non piu' separati su step
+        # diversi.
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
         rendered = []
@@ -8895,17 +8889,20 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path = "/calendario/nuovo"
         self.handler.calendar_event_form(admin)
         page = rendered[-1]
-        step3_start = page.index('data-step="3"')
-        step3_end = page.index('data-step="4"')
-        step3 = page[step3_start:step3_end]
-        self.assertIn('calendar-card-list', step3)
-        self.assertIn('calendar-tap-card', step3)
-        self.assertIn('name="operator_name"', step3)
-        # "Luogo del ritiro" (pickup_location_block) si e' spostato qui da "Cliente, animali, note"
-        self.assertIn('Luogo del ritiro', step3)
-        self.assertIn('name="location_type"', step3)
+        details_start = page.index('id="calendarDetailsSection"')
+        details_end = page.index('</form>', details_start)
+        details = page[details_start:details_end]
+        self.assertIn('calendar-card-list', details)
+        self.assertIn('calendar-tap-card', details)
+        self.assertIn('name="operator_name"', details)
+        self.assertIn('Luogo del ritiro', details)
+        self.assertIn('name="location_type"', details)
+        self.assertIn('Salva evento', details)
 
-    def test_calendar_wizard_step4_has_substep_navigation_for_pickup(self):
+    def test_calendar_wizard_cliente_animali_preventivo_are_collapsible_sections(self):
+        # non piu' sotto-passi "tocca per aprire" dentro uno step: sezioni
+        # apri/chiudi sempre presenti nella pagina, stesso pattern gia'
+        # usato dal form pratica (".section.collapsible").
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
         rendered = []
@@ -8913,57 +8910,9 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path = "/calendario/nuovo"
         self.handler.calendar_event_form(admin)
         page = rendered[-1]
-        step4_start = page.index('data-step="4"')
-        step4_end = page.index('data-step="5"')
-        step4 = page[step4_start:step4_end]
-        for substep in ('menu', 'cliente', 'animali', 'preventivo'):
-            self.assertIn(f'data-substep="{substep}"', step4)
-        self.assertIn("calendarSubStep('cliente')", step4)
-        self.assertIn("calendarSubStep('animali')", step4)
-        self.assertIn("calendarSubStep('preventivo')", step4)
-        # lo step 4 non salva piu' direttamente: avanza verso il Riepilogo (step 5)
-        self.assertIn('onclick="calendarStep(5)"', step4)
-        self.assertNotIn('Crea evento', step4)
-
-    def test_calendar_wizard_step5_is_a_riepilogo_with_the_real_submit_button(self):
-        # nuovo step aggiunto su richiesta esplicita dell'utente (mockup):
-        # un vero passaggio finale di riepilogo, con il pulsante di
-        # salvataggio reale spostato qui dallo step "Cliente, animali, note".
-        with app.db() as conn:
-            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
-        rendered = []
-        self.handler.send_html = lambda html, *a: rendered.append(html)
-        self.handler.path = "/calendario/nuovo"
-        self.handler.calendar_event_form(admin)
-        page = rendered[-1]
-        step5_start = page.index('data-step="5"')
-        step5 = page[step5_start:]
-        self.assertIn('Riepilogo', step5)
-        self.assertIn('calendar-wizard-preview', step5)
-        self.assertIn('calendar-summary-list', step5)
-        for attr in ('data-type-summary', 'data-status-summary', 'data-datetime-summary',
-                     'data-client-summary', 'data-animals-summary', 'data-venue-summary',
-                     'data-place-summary', 'data-operator-summary', 'data-estimate-summary',
-                     'data-note-summary'):
-            self.assertIn(attr, step5)
-        self.assertIn('calendar-detail-quickactions', step5)
-        self.assertIn('Salva evento', step5)
-        self.assertIn('onclick="calendarStep(4,\'back\')"', step5)
-
-    def test_calendar_wizard_stepper_has_four_dots_hidden_on_the_type_grid_step(self):
-        with app.db() as conn:
-            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
-        rendered = []
-        self.handler.send_html = lambda html, *a: rendered.append(html)
-        self.handler.path = "/calendario/nuovo"
-        self.handler.calendar_event_form(admin)
-        page = rendered[-1]
-        stepper_start = page.index('data-calendar-stepper')
-        stepper_html = page[stepper_start:page.index('</div>', stepper_start)]
-        self.assertIn('hidden', page[stepper_start:stepper_start + 40])
-        self.assertEqual(stepper_html.count('calendarStepFromIndicator'), 4)
-        self.assertIn('calendarStepFromIndicator(2)', stepper_html)
-        self.assertIn('calendarStepFromIndicator(5)', stepper_html)
+        for heading in ('Cliente / Proprietario', 'Animali', 'Preventivo'):
+            self.assertIn(f'<h2>{heading}</h2>', page)
+        self.assertEqual(page.count('class="section collapsible collapsed" data-calendar-types="Ritiro|Ritiro in sede"'), 3)
 
     def test_calendar_wizard_add_row_uses_animal_card_style(self):
         self.assertIn("calendar-animal-card", app.APP_JS)
@@ -8983,15 +8932,6 @@ class PetParadiseTests(unittest.TestCase):
         renumber_fn = js[js.index("function calendarRenumberAnimals"):js.index("function calendarAddRow")]
         self.assertIn("`ANIMALE ${index+1}`", renumber_fn)
         self.assertIn("title.dataset.hasContent!=='1'", renumber_fn)
-
-    def test_calendar_wizard_riepilogo_animals_summary_shows_real_detail(self):
-        # richiesta utente: non piu' "1 animale" ma specie/peso/nome; per piu'
-        # animali una sintesi compatta con conteggio residuo (es. "+1").
-        js = app.APP_JS
-        refresh_fn = js[js.index("function calendarRefreshWizardSummaries"):js.index("function calendarStepFromIndicator")]
-        self.assertNotIn("animal${animalCount", refresh_fn)
-        self.assertIn("bits.join(' · ')", refresh_fn)
-        self.assertIn("shown} +${extra}", refresh_fn)
 
     def test_calendar_event_detail_shows_five_tabs_header_and_quickactions(self):
         with app.db() as conn:

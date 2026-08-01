@@ -232,7 +232,7 @@ class OperationalCalendarTests(unittest.TestCase):
             self.handler.calendar_event_form(self.admin, event_id)
             html = rendered[-1]
             self.assertIn("Cliente / Proprietario", html)
-            self.assertIn("Veterinario di riferimento", html)
+            self.assertIn("Nome ambulatorio di riferimento", html)
             if expect_location_block:
                 self.assertIn("Luogo del ritiro", html)
                 self.assertNotIn('data-calendar-types="Ritiro" hidden', html)
