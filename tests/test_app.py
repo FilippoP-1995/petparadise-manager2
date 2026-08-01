@@ -8974,7 +8974,10 @@ class PetParadiseTests(unittest.TestCase):
         # reale, riga Preventivo con il totale, form di modifica rapida per
         # zona/operatore/note con salvataggio immediato verso i nuovi
         # endpoint, e schema colori per sezione.
-        self.assertIn('Cane · 18 kg · Argo', page)
+        # riga Animali dentro la hero card: nome in grassetto, specie/peso
+        # come dettaglio piccolo sotto (stesso pattern di Data e ora/Luogo).
+        self.assertIn('<b>Argo</b>', page)
+        self.assertIn('Cane · 18 kg', page)
         self.assertIn('120,00', page)
         self.assertIn(f'action="/calendario/{event_id}/zona"', page)
         self.assertIn(f'action="/calendario/{event_id}/operatore"', page)
@@ -9080,7 +9083,11 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('calendar-detail-hero-eyebrow', page)
         self.assertIn('calendar-detail-hero-meta', page)
         self.assertIn('calendar-avatar', page)  # avatar operatore in alto a destra
-        self.assertIn('Operatore</small>', page)
+        # Tutte le voci del riepilogo (incluso Operatore) sono ora righe
+        # compatte dentro la hero card stessa (richiesta esplicita
+        # dell'utente, mockup di riferimento): "Operatore" e' il testo in
+        # grassetto della riga, il valore e' nel <small> subito dopo.
+        self.assertIn('<b>Operatore</b>', page)
         # regressione: le icone colorate devono davvero vincere sul fondo
         # piatto di base (bug reale: stessa specificita', ordine nel foglio
         # di stile sbagliato faceva vincere sempre il grigio #202c3d).
@@ -9093,10 +9100,16 @@ class PetParadiseTests(unittest.TestCase):
 
     def test_calendar_detail_rows_are_compact_quickedit_or_link_through(self):
         # richiesta utente: ogni riga del riepilogo deve potersi modificare
-        # rapidamente (tap per rivelare il form, pillola "Cambia" solo su
-        # Stato) SENZA uscire dalla card, incluse Tipo evento/Cliente/
-        # Animali/Luogo (inizialmente rimandate al wizard completo, poi
-        # esplicitamente richieste anche loro come modifica rapida in-card).
+        # rapidamente (tap per rivelare il form) SENZA uscire dalla card.
+        # Evoluzione successiva (mockup fornito dall'utente): tutte le righe
+        # (Data e ora, Luogo, Animali, Cliente, Preventivo, Zona, Operatore,
+        # Note) sono state spostate dentro la hero card in cima, alla stessa
+        # dimensione compatta gia' usata li' per data/luogo/animale. "Stato
+        # ritiro" (prima una card separata con pillola "Cambia") e' stato
+        # eliminato: il badge colorato stesso, gia' presente sotto il
+        # titolo, e' ora cliccabile e apre lo stesso form di cambio stato.
+        # "Tipo evento" non e' piu' una riga modificabile rapidamente (resta
+        # comunque cambiabile dalla pagina di modifica completa).
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
             event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,location_type,address,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
@@ -9107,15 +9120,19 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path = f"/calendario/{event_id}"
         self.handler.calendar_event_detail(admin, event_id)
         page = rendered[-1]
-        self.assertEqual(page.count('<span class="calendar-quickedit-pill">'), 1)  # solo Stato
-        for action in ("stato", "data-ora", "preventivo", "zona", "operatore", "note", "tipo", "luogo", "cliente", "animali"):
+        for action in ("stato", "data-ora", "preventivo", "zona", "operatore", "note", "luogo", "cliente", "animali"):
             self.assertIn(f'action="/calendario/{event_id}/{action}"', page)
-        for label in ("Tipo evento", "Cliente", "Animali", "Luogo"):
-            self.assertIn(f'<small>{label}</small>', page)
-        # ogni riga e' un calendar-quickedit-card (tap per rivelare il form),
-        # nessuna riga complessa rimanda piu' al wizard per le sole modifiche
-        # semplici: il link a /modifica resta solo nel menu "..." della topbar.
-        self.assertEqual(page.count('class="calendar-tap-card calendar-quickedit-card"'), 10)
+        self.assertNotIn(f'action="/calendario/{event_id}/tipo"', page)
+        for label in ("Cliente", "Preventivo", "Zona", "Operatore", "Note"):
+            self.assertIn(f'<b>{label}</b>', page)
+        # ogni riga e' un calendar-quickedit-card dentro la hero-meta (tap
+        # per rivelare il form): per questa pratica (senza pratica collegata,
+        # senza ambulatorio riconsegna, senza pagamento) sono esattamente 8.
+        self.assertEqual(page.count('class="calendar-detail-hero-meta-item calendar-quickedit-card"'), 8)
+        # il badge stato e' cliccabile e riusa lo stesso form
+        self.assertIn('calendar-detail-status-quickedit', page)
+        self.assertIn('id="calendarDetailStatus"', page)
+        # il link a /modifica resta solo nel menu "..." della topbar.
         self.assertEqual(page.count(f'href="/calendario/{event_id}/modifica"'), 1)
 
     def test_calendar_detail_quick_edit_data_ora_reuses_normalize_event(self):

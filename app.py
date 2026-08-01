@@ -2424,8 +2424,9 @@ button.calendar-tap-card:active,a.calendar-tap-card:active{transform:scale(.985)
 .calendar-hero-text-purple{color:#c084fc}
 .calendar-detail-hero-titles h1{margin:0;font-size:21px;line-height:1.2}
 .calendar-detail-hero-avatar{flex:0 0 auto}
-.calendar-detail-hero-meta{position:relative;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px;padding-top:14px;border-top:1px solid #ffffff14}
-.calendar-detail-hero-meta-item{display:flex;align-items:center;gap:8px;min-width:0}
+.calendar-detail-hero-meta{position:relative;display:grid;grid-template-columns:1fr;gap:0;margin-top:16px;padding-top:4px;border-top:1px solid #ffffff14}
+.calendar-detail-hero-meta-item{display:flex;align-items:center;gap:10px;min-width:0;padding:9px 0;border-bottom:1px solid #ffffff0f}
+.calendar-detail-hero-meta-item:last-child{border-bottom:0}
 .calendar-detail-hero-meta-icon{flex:0 0 30px;width:30px;height:30px;border-radius:10px;display:grid;place-items:center}
 .calendar-detail-hero-meta-icon .icon{width:15px;height:15px}
 .calendar-detail-hero-meta-item div{min-width:0}
@@ -2434,8 +2435,14 @@ button.calendar-tap-card:active,a.calendar-tap-card:active{transform:scale(.985)
 .calendar-detail-hero-footer{position:relative;margin:14px 0 0}
 .light-theme .calendar-detail-hero{background:linear-gradient(165deg,#ffffff,#f8fafc);border-color:#e2e8f0}
 .light-theme .calendar-detail-hero-meta{border-color:#e2e8f0}
+.light-theme .calendar-detail-hero-meta-item{border-color:#e2e8f0}
 .light-theme .calendar-detail-hero-meta-item b{color:#0f172a}
-@media(max-width:480px){.calendar-detail-hero-meta{grid-template-columns:1fr;gap:8px}}
+.calendar-detail-status-quickedit{display:inline-block;cursor:pointer}
+.calendar-detail-status-badge{display:inline-flex;align-items:center;gap:4px}
+.calendar-detail-status-badge .icon{width:13px;height:13px;transition:transform .2s ease}
+.calendar-detail-status-quickedit.expanded .calendar-detail-status-badge .icon{transform:rotate(180deg)}
+.calendar-detail-status-quickedit .calendar-quickedit-form{display:none;margin-top:10px;padding-top:0;border-top:0}
+.calendar-detail-status-quickedit.expanded .calendar-quickedit-form{display:block}
 .calendar-quickedit-card{cursor:pointer;flex-wrap:wrap}
 .calendar-quickedit-card:active{transform:scale(.985)}
 .calendar-tap-card-link:hover .calendar-tap-card-icon,.calendar-quickedit-card:hover .calendar-tap-card-icon{filter:brightness(1.12);transition:filter .18s ease}
@@ -9885,16 +9892,28 @@ class App(BaseHTTPRequestHandler):
             </div>
           </div>
         </div>'''
-        status_badge=f'<span class="calendar-detail-status-badge {event_color_class(event)}">{esc((event["event_status"] or "Nessuno").upper())}</span>' if event["event_type"] in ("Ritiro","Ritiro in sede") else (f'<span class="calendar-detail-status-badge {event_color_class(event)}">{esc(event["event_status"].upper())}</span>' if event["event_status"] and event["event_type"] in ("Riconsegna","Riconsegna in sede") else '')
+        status_form=''
+        if event["event_type"] in ("Ritiro","Ritiro in sede"):
+            status_form=f'''<form method="post" action="/calendario/{event_id}/stato" data-client-empty="{"1" if not client_display else "0"}" onsubmit="return calendarConfirmPickupStatus(this)"><select id="calendarDetailStatus" name="status">{''.join(f'<option {"selected" if event["event_status"]==s else ""}>{s}</option>' for s in PICKUP_STATUSES)}</select><button class="btn" type="submit" style="margin-top:10px">Salva nuovo stato</button></form>'''
+        # Lo stato era prima anche una card grande separata in cima al
+        # riepilogo (ridondante col badge colorato gia' presente subito
+        # sotto il titolo): eliminata (richiesta esplicita dell'utente), il
+        # badge stesso e' ora cliccabile e apre lo stesso identico form di
+        # cambio stato (nessuna modifica alla validazione/azione POST).
+        if status_form:
+            status_badge=f'''<div class="calendar-detail-status-quickedit calendar-quickedit-card" onclick="if(!event.target.closest('.calendar-quickedit-form'))this.classList.toggle('expanded')">
+              <span class="calendar-detail-status-badge {event_color_class(event)}">{esc((event["event_status"] or "Nessuno").upper())} {lucide("chevron-down")}</span>
+              <div class="calendar-quickedit-form" onclick="event.stopPropagation()">{status_form}</div>
+            </div>'''
+        elif event["event_status"] and event["event_type"] in ("Riconsegna","Riconsegna in sede"):
+            status_badge=f'<span class="calendar-detail-status-badge {event_color_class(event)}">{esc(event["event_status"].upper())}</span>'
+        else:
+            status_badge=''
         hero_operator_name=event['operator_name'] or event['assigned_name'] or ''
         hero_avatar=self.calendar_operator_avatar(hero_operator_name,"md")
         hero_time="Tutto il giorno" if event['all_day'] else (f"{start_time_part} → {end_time_part}" if end_time_part and end_time_part!=start_time_part else start_time_part)
         hero_place_primary=event['zone'] or event['venue_name'] or event['location_type'] or '-'
         hero_place_secondary=event['venue_name'] if event['zone'] and event['venue_name'] and event['venue_name']!=hero_place_primary else ''
-        # L'operatore era gia' ripetuto subito sotto ("Creato da <nome>"): tolto
-        # dal riepilogo in alto a favore di info piu' utili a colpo d'occhio —
-        # animale (specie/peso/cremazione) ed eventuale cliente, se presenti
-        # (richiesta esplicita dell'utente).
         hero_animal_bits=[]
         if animals:
             first_animal=animals[0]
@@ -9905,6 +9924,76 @@ class App(BaseHTTPRequestHandler):
         hero_animal_main=hero_animal_name or (hero_animal_bits[0] if hero_animal_bits else "")
         hero_animal_sub=" · ".join(hero_animal_bits if hero_animal_name else hero_animal_bits[1:])
         if len(animals)>1:hero_animal_sub=(hero_animal_sub+f" · +{len(animals)-1} altri").strip(" ·")
+        # Tutte le voci del riepilogo (prima card grandi separate sotto le
+        # tab, da Data e ora a Note) sono ora righe compatte dentro la
+        # stessa hero card, della stessa dimensione delle righe gia'
+        # presenti: un tap su una riga apre il relativo form di modifica
+        # rapida, identico a prima (stessa azione POST/validazione), solo
+        # riposizionato e ridimensionato (richiesta esplicita dell'utente,
+        # mockup di riferimento fornito).
+        def hero_row(icon,color,main,sub,form_inner):
+            sub_html=f'<small>{sub}</small>' if sub else ''
+            if not form_inner:
+                return f'<div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-{color}">{lucide(icon)}</span><div><b>{main}</b>{sub_html}</div></div>'
+            return f'''<div class="calendar-detail-hero-meta-item calendar-quickedit-card" onclick="if(!event.target.closest('.calendar-quickedit-form'))this.classList.toggle('expanded')">
+              <span class="calendar-detail-hero-meta-icon calendar-icon-{color}">{lucide(icon)}</span>
+              <div><b>{main}</b>{sub_html}</div>
+              <div class="calendar-quickedit-form" onclick="event.stopPropagation()">{form_inner}</div>
+            </div>'''
+        hero_rows=[]
+        link_practice_card=''
+        if tab=="dettagli":
+            datetime_form=f'''<form method="post" action="/calendario/{event_id}/data-ora">
+              <div class="calendar-quickedit-datetime-grid">
+                <label>Data inizio<input type="date" name="start_date" value="{esc(start_date_part)}"></label>
+                <label>Ora inizio<input type="time" name="start_time" value="{esc(start_time_part)}"></label>
+                <label>Data fine<input type="date" name="end_date" value="{esc(end_date_part)}"></label>
+                <label>Ora fine<input type="time" name="end_time" value="{esc(end_time_part)}"></label>
+              </div>
+              <button class="btn ghost" type="submit" style="margin-top:10px">Salva data e ora</button>
+            </form>'''
+            hero_rows.append(hero_row("clock","purple",esc(hero_time),esc(date_it(start_date_part)),datetime_form))
+            luogo_form=f'''<form method="post" action="/calendario/{event_id}/luogo">
+              <select name="location_type"><option value="">Tipo luogo</option><option value="Privato" {"selected" if event['location_type']=='Privato' else ''}>Privato</option><option value="Veterinario" {"selected" if event['location_type']=='Veterinario' else ''}>Veterinario</option></select>
+              <input name="venue_name" placeholder="Nome struttura" value="{esc(event['venue_name'] or '')}">
+              <input name="address" placeholder="Indirizzo" value="{esc(event['address'] or '')}">
+              <select name="destination_site"><option value="">Sede (per ritiro/riconsegna in sede)</option><option value="Livorno" {"selected" if event['destination_site']=='Livorno' else ''}>Livorno</option><option value="Empoli" {"selected" if event['destination_site']=='Empoli' else ''}>Empoli</option></select>
+              <button class="btn ghost" type="submit" style="margin-top:10px">Salva luogo</button>
+            </form>'''
+            hero_rows.append(hero_row("home","teal",esc(hero_place_primary),esc(hero_place_secondary),luogo_form))
+            if event["delivery_clinic_name"]:
+                hero_rows.append(hero_row("stethoscope","blue","Ambulatorio riconsegna",esc(event["delivery_clinic_name"]),''))
+            animals_summary=calendar_animals_summary_text(animals)
+            animals_bootstrap=''.join(f"calendarAddRow('animal',{json.dumps(dict(a),ensure_ascii=False)});" for a in animals)
+            animali_form=f'''<form method="post" action="/calendario/{event_id}/animali" id="calendarDetailAnimalsForm">
+              <div class="calendar-repeat-list" data-calendar-list="animal"></div>
+              <input type="hidden" name="animals_json">
+              <button class="calendar-add-appt-btn" type="button" onclick="calendarAddRow('animal')">{lucide("plus")}<span>Aggiungi animale</span></button>
+              <button class="btn ghost" type="submit" style="margin-top:10px">Salva animali</button>
+            </form>
+            <script>document.addEventListener('DOMContentLoaded',function(){{{animals_bootstrap}}});</script>'''
+            hero_rows.append(hero_row("paw","amber",esc(hero_animal_main) or "Animali",esc(hero_animal_sub) or esc(animals_summary),animali_form))
+            cliente_form=f'''<form method="post" action="/calendario/{event_id}/cliente"><input name="client_first_name" placeholder="Nome" value="{esc(event['client_first_name'] or '')}"><input name="client_last_name" placeholder="Cognome" value="{esc(event['client_last_name'] or '')}"><input name="client_phone" placeholder="Telefono" value="{esc(event['client_phone'] or '')}"><button class="btn ghost" type="submit" style="margin-top:10px">Salva cliente</button></form>'''
+            hero_rows.append(hero_row("user","blue","Cliente",esc(client_display or '-'),cliente_form))
+            estimate_total_all=sum(float(i["amount"] or 0) for i in estimates)
+            estimate_form=f'''<form method="post" action="/calendario/{event_id}/preventivo"><input inputmode="decimal" name="amount" value="{f'{estimate_total_all:g}' if estimate_total_all else ''}" placeholder="Importo €"><button class="btn ghost" type="submit" style="margin-top:10px">Salva preventivo</button></form>'''
+            hero_rows.append(hero_row("receipt","pink","Preventivo",money_it(estimate_total_all),estimate_form))
+            if event['payment_status']:
+                hero_rows.append(hero_row("wallet","pink","Pagamento",f"{esc(event['payment_status'])} {money_it(event['payment_amount'])}",''))
+            if event["event_type"]!="Appuntamento":
+                zone_form=f'''<form method="post" action="/calendario/{event_id}/zona"><input name="zone" value="{esc(event['zone'] or '')}" placeholder="Es. Livorno"><button class="btn ghost" type="submit" style="margin-top:10px">Salva zona</button></form>'''
+                hero_rows.append(hero_row("archive","green","Zona",esc(event['zone'] or 'Non impostata'),zone_form))
+            operator_form=f'''<form method="post" action="/calendario/{event_id}/operatore"><select name="operator_name"><option value="">Nessuno</option>{''.join(f'<option {"selected" if (event["operator_name"] or "")==name else ""}>{esc(name)}</option>' for name in CALENDAR_OPERATORS)}</select><button class="btn ghost" type="submit" style="margin-top:10px">Salva operatore</button></form>'''
+            hero_rows.append(hero_row("user","amber","Operatore",esc(event['operator_name'] or event['assigned_name'] or 'Nessuno'),operator_form))
+            note_form=f'''<form method="post" action="/calendario/{event_id}/note"><textarea name="notes" style="white-space:pre-wrap">{esc(event["notes"] or "")}</textarea><button class="btn ghost" type="submit" style="margin-top:10px">Salva note</button></form>'''
+            hero_rows.append(hero_row("clipboard","purple","Note",esc((event["notes"] or "Nessuna nota").splitlines()[0][:80]),note_form))
+            if event["event_type"] in ("Ritiro","Ritiro in sede") and event["event_status"]=="Ritirato":
+                if event["linked_practice_id"]:
+                    unlink=f'''<form method="post" action="/calendario/{event_id}/scollega-pratica" onsubmit="return confirm('Confermi lo scollegamento della pratica da questo evento?')" style="margin-top:8px"><input type="hidden" name="confirm" value="SCOLLEGA"><button class="btn danger-btn" type="submit">Scollega pratica</button></form>''' if user["role"]=="admin" else ''
+                    link_practice_card=f'''<div class="calendar-tap-card"><span class="calendar-tap-card-icon">{lucide("receipt")}</span><div class="calendar-tap-card-body"><small>Pratica collegata</small><p>{esc(event["practice_number"])}</p><a class="btn ghost" style="margin-top:8px" href="/pratiche/{event['linked_practice_id']}">Apri pratica</a>{unlink}</div></div>'''
+                else:
+                    link_practice_card=f'''<div class="calendar-tap-card lookup"><span class="calendar-tap-card-icon">{lucide("receipt")}</span><div class="calendar-tap-card-body"><small>Collega pratica esistente</small><input id="calendarLinkPracticeSearch" data-event-id="{event_id}" autocomplete="off" placeholder="Cerca per animale, proprietario, veterinario o numero pratica"><div id="calendarLinkPracticeResults" class="lookup-results hidden"></div></div></div>'''
+        hero_rows_html=''.join(hero_rows) if hero_rows else f'''<div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-purple">{lucide("clock")}</span><div><b>{esc(hero_time)}</b><small>{esc(date_it(start_date_part))}</small></div></div><div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-teal">{lucide("home")}</span><div><b>{esc(hero_place_primary)}</b>{f'<small>{esc(hero_place_secondary)}</small>' if hero_place_secondary else ''}</div></div>{f'<div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-amber">{lucide("paw")}</span><div><b>{esc(hero_animal_main)}</b>{f"<small>{esc(hero_animal_sub)}</small>" if hero_animal_sub else ""}</div></div>' if hero_animal_main else ''}{f'<div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-purple">{lucide("user")}</span><div><b>{esc(client_display)}</b><small>Cliente</small></div></div>' if client_display else ''}'''
         header=f'''<div class="calendar-detail-topbar">
           <a class="calendar-detail-back" href="/calendario"><span class="calendar-detail-back-arrow">{lucide("chevron-right")}</span><span>Indietro</span></a>
           <h2 class="calendar-detail-topbar-title">Riepilogo evento</h2>
@@ -9927,88 +10016,12 @@ class App(BaseHTTPRequestHandler):
             {f'<div class="calendar-detail-hero-avatar">{hero_avatar}</div>' if hero_avatar else ''}
           </div>
           <div class="calendar-detail-hero-meta">
-            <div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-purple">{lucide("calendar")}</span><div><b>{esc(date_it(start_date_part))}</b><small>{esc(hero_time)}</small></div></div>
-            <div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-teal">{lucide("home")}</span><div><b>{esc(hero_place_primary)}</b>{f'<small>{esc(hero_place_secondary)}</small>' if hero_place_secondary else ''}</div></div>
-            {f'<div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-amber">{lucide("paw")}</span><div><b>{esc(hero_animal_main)}</b>{f"<small>{esc(hero_animal_sub)}</small>" if hero_animal_sub else ""}</div></div>' if hero_animal_main else ''}
-            {f'<div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-purple">{lucide("user")}</span><div><b>{esc(client_display)}</b><small>Cliente</small></div></div>' if client_display else ''}
+            {hero_rows_html}
           </div>
           <p class="sub calendar-detail-hero-footer">Creato da {esc(event['creator_name'])} · {esc(event['created_at'].replace('T',' ')[:16])}</p>
         </div>'''
         if tab=="dettagli":
-            def info_card(icon,label,value,color="",sub=""):
-                icon_cls=f"calendar-tap-card-icon calendar-icon-{color}" if color else "calendar-tap-card-icon"
-                sub_html=f'<small class="calendar-tap-card-sub">{sub}</small>' if sub else ''
-                return f'<div class="calendar-tap-card"><span class="{icon_cls}">{lucide(icon)}</span><div class="calendar-tap-card-body"><small>{label}</small><p>{value}</p>{sub_html}</div></div>'
-            def quickedit_row(icon,label,value,color,form_inner,pill=False,sub="",extra=""):
-                icon_cls=f"calendar-tap-card-icon calendar-icon-{color}" if color else "calendar-tap-card-icon"
-                pill_html='<span class="calendar-quickedit-pill">Cambia</span>' if pill else ''
-                sub_html=f'<small class="calendar-tap-card-sub">{sub}</small>' if sub else ''
-                return f'''<div class="calendar-tap-card calendar-quickedit-card" onclick="if(!event.target.closest('.calendar-quickedit-form'))this.classList.toggle('expanded')">
-                  <span class="{icon_cls}">{lucide(icon)}</span>
-                  <div class="calendar-tap-card-body"><small>{label}</small><p>{value}</p>{sub_html}</div>
-                  {pill_html}{extra}
-                  <span class="calendar-tap-card-chevron">{lucide("chevron-right")}</span>
-                  <div class="calendar-quickedit-form" onclick="event.stopPropagation()">{form_inner}</div>
-                </div>'''
-            cards=[]
-            if event["event_type"] in ("Ritiro","Ritiro in sede"):
-                status_form=f'''<form method="post" action="/calendario/{event_id}/stato" data-client-empty="{"1" if not client_display else "0"}" onsubmit="return calendarConfirmPickupStatus(this)"><select id="calendarDetailStatus" name="status">{''.join(f'<option {"selected" if event["event_status"]==s else ""}>{s}</option>' for s in PICKUP_STATUSES)}</select><button class="btn" type="submit" style="margin-top:10px">Salva nuovo stato</button></form>'''
-                cards.append(quickedit_row("clock","Stato ritiro",esc(event["event_status"] or "Nessuno"),"pink",status_form,pill=True))
-            tipo_form=f'''<form method="post" action="/calendario/{event_id}/tipo"><select name="event_type">{''.join(f'<option value="{esc(t)}" {"selected" if event["event_type"]==t else ""}>{esc("Promemoria" if t=="Appuntamento" else t)}</option>' for t in EVENT_TYPES)}</select><button class="btn ghost" type="submit" style="margin-top:10px">Salva tipo evento</button></form>'''
-            cards.append(quickedit_row(type_icon,"Tipo evento",esc(display_event_type),"orange",tipo_form))
-            datetime_form=f'''<form method="post" action="/calendario/{event_id}/data-ora">
-              <div class="calendar-quickedit-datetime-grid">
-                <label>Data inizio<input type="date" name="start_date" value="{esc(start_date_part)}"></label>
-                <label>Ora inizio<input type="time" name="start_time" value="{esc(start_time_part)}"></label>
-                <label>Data fine<input type="date" name="end_date" value="{esc(end_date_part)}"></label>
-                <label>Ora fine<input type="time" name="end_time" value="{esc(end_time_part)}"></label>
-              </div>
-              <button class="btn ghost" type="submit" style="margin-top:10px">Salva data e ora</button>
-            </form>'''
-            cards.append(quickedit_row("calendar","Data e ora",esc(datetime_value),"purple",datetime_form))
-            cliente_form=f'''<form method="post" action="/calendario/{event_id}/cliente"><input name="client_first_name" placeholder="Nome" value="{esc(event['client_first_name'] or '')}"><input name="client_last_name" placeholder="Cognome" value="{esc(event['client_last_name'] or '')}"><input name="client_phone" placeholder="Telefono" value="{esc(event['client_phone'] or '')}"><button class="btn ghost" type="submit" style="margin-top:10px">Salva cliente</button></form>'''
-            cards.append(quickedit_row("user","Cliente",esc(client_display or '-'),"blue",cliente_form))
-            animals_summary=calendar_animals_summary_text(animals)
-            first_emoji=species_avatar(animals[0]["species"])[0] if animals else '🐾'
-            animals_bootstrap=''.join(f"calendarAddRow('animal',{json.dumps(dict(a),ensure_ascii=False)});" for a in animals)
-            animali_form=f'''<form method="post" action="/calendario/{event_id}/animali" id="calendarDetailAnimalsForm">
-              <div class="calendar-repeat-list" data-calendar-list="animal"></div>
-              <input type="hidden" name="animals_json">
-              <button class="calendar-add-appt-btn" type="button" onclick="calendarAddRow('animal')">{lucide("plus")}<span>Aggiungi animale</span></button>
-              <button class="btn ghost" type="submit" style="margin-top:10px">Salva animali</button>
-            </form>
-            <script>document.addEventListener('DOMContentLoaded',function(){{{animals_bootstrap}}});</script>'''
-            cards.append(quickedit_row("paw","Animali",esc(animals_summary),"green",animali_form,extra=f'<span class="calendar-tap-card-avatar">{first_emoji}</span>'))
-            if event["delivery_clinic_name"]:cards.append(info_card("stethoscope","Ambulatorio riconsegna",esc(event["delivery_clinic_name"]),"blue"))
-            venue_value=esc(event['venue_name'] or event['location_type'] or '-')
-            venue_sub=esc(address) if address and event['venue_name'] else ''
-            luogo_form=f'''<form method="post" action="/calendario/{event_id}/luogo">
-              <select name="location_type"><option value="">Tipo luogo</option><option value="Privato" {"selected" if event['location_type']=='Privato' else ''}>Privato</option><option value="Veterinario" {"selected" if event['location_type']=='Veterinario' else ''}>Veterinario</option></select>
-              <input name="venue_name" placeholder="Nome struttura" value="{esc(event['venue_name'] or '')}">
-              <input name="address" placeholder="Indirizzo" value="{esc(event['address'] or '')}">
-              <select name="destination_site"><option value="">Sede (per ritiro/riconsegna in sede)</option><option value="Livorno" {"selected" if event['destination_site']=='Livorno' else ''}>Livorno</option><option value="Empoli" {"selected" if event['destination_site']=='Empoli' else ''}>Empoli</option></select>
-              <button class="btn ghost" type="submit" style="margin-top:10px">Salva luogo</button>
-            </form>'''
-            cards.append(quickedit_row("home","Luogo",venue_value,"teal",luogo_form,sub=venue_sub))
-            if event['payment_status']:cards.append(info_card("wallet","Pagamento",f"{esc(event['payment_status'])} {money_it(event['payment_amount'])}","pink"))
-            estimate_total_all=sum(float(i["amount"] or 0) for i in estimates)
-            estimate_form=f'''<form method="post" action="/calendario/{event_id}/preventivo"><input inputmode="decimal" name="amount" value="{f'{estimate_total_all:g}' if estimate_total_all else ''}" placeholder="Importo €"><button class="btn ghost" type="submit" style="margin-top:10px">Salva preventivo</button></form>'''
-            cards.append(quickedit_row("receipt","Preventivo",money_it(estimate_total_all),"pink",estimate_form))
-            if event["event_type"]!="Appuntamento":
-                zone_form=f'''<form method="post" action="/calendario/{event_id}/zona"><input name="zone" value="{esc(event['zone'] or '')}" placeholder="Es. Livorno"><button class="btn ghost" type="submit" style="margin-top:10px">Salva zona</button></form>'''
-                cards.append(quickedit_row("archive","Zona",esc(event['zone'] or 'Non impostata'),"green",zone_form))
-            operator_form=f'''<form method="post" action="/calendario/{event_id}/operatore"><select name="operator_name"><option value="">Nessuno</option>{''.join(f'<option {"selected" if (event["operator_name"] or "")==name else ""}>{esc(name)}</option>' for name in CALENDAR_OPERATORS)}</select><button class="btn ghost" type="submit" style="margin-top:10px">Salva operatore</button></form>'''
-            cards.append(quickedit_row("user","Operatore",esc(event['operator_name'] or event['assigned_name'] or 'Nessuno'),"amber",operator_form))
-            link_practice_card=''
-            if event["event_type"] in ("Ritiro","Ritiro in sede") and event["event_status"]=="Ritirato":
-                if event["linked_practice_id"]:
-                    unlink=f'''<form method="post" action="/calendario/{event_id}/scollega-pratica" onsubmit="return confirm('Confermi lo scollegamento della pratica da questo evento?')" style="margin-top:8px"><input type="hidden" name="confirm" value="SCOLLEGA"><button class="btn danger-btn" type="submit">Scollega pratica</button></form>''' if user["role"]=="admin" else ''
-                    link_practice_card=f'''<div class="calendar-tap-card"><span class="calendar-tap-card-icon">{lucide("receipt")}</span><div class="calendar-tap-card-body"><small>Pratica collegata</small><p>{esc(event["practice_number"])}</p><a class="btn ghost" style="margin-top:8px" href="/pratiche/{event['linked_practice_id']}">Apri pratica</a>{unlink}</div></div>'''
-                else:
-                    link_practice_card=f'''<div class="calendar-tap-card lookup"><span class="calendar-tap-card-icon">{lucide("receipt")}</span><div class="calendar-tap-card-body"><small>Collega pratica esistente</small><input id="calendarLinkPracticeSearch" data-event-id="{event_id}" autocomplete="off" placeholder="Cerca per animale, proprietario, veterinario o numero pratica"><div id="calendarLinkPracticeResults" class="lookup-results hidden"></div></div></div>'''
-            note_form=f'''<form method="post" action="/calendario/{event_id}/note"><textarea name="notes" style="white-space:pre-wrap">{esc(event["notes"] or "")}</textarea><button class="btn ghost" type="submit" style="margin-top:10px">Salva note</button></form>'''
-            cards.append(quickedit_row("clipboard","Note",esc((event["notes"] or "Nessuna nota").splitlines()[0][:80]),"purple",note_form))
-            panel=f'<div class="calendar-card-list">{"".join(cards)}{link_practice_card}</div>'
+            panel=f'<div class="calendar-card-list">{link_practice_card}</div>' if link_practice_card else ''
         elif tab=="animali":
             def animal_card(a):
                 emoji,avatar_cls=species_avatar(a["species"])
