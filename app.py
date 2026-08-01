@@ -1695,7 +1695,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
    piu' frammenti storici sparsi nel foglio di stile da redesign precedenti:
    invece di rincorrerli tutti (rischioso, ordine/specificita' incerti) le
    proprieta' visive chiave qui sotto usano !important per vincere sempre. */
-.calendar-form-v2 .calendar-v2-topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.calendar-form-v2 .calendar-v2-topbar{display:flex!important;flex-direction:row!important;align-items:flex-start;justify-content:space-between;gap:14px}
 .calendar-form-v2 .calendar-v2-close{flex:0 0 auto;width:38px;height:38px;padding:0;display:grid;place-items:center;border-radius:50%}
 .calendar-form-v2 .calendar-v2-draftrow{display:flex;justify-content:flex-end}
 .calendar-form-v2 .calendar-v2-draftrow .autosave-status{position:static;margin:0}
@@ -1707,7 +1707,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .calendar-form-v2 .calendar-v2-allday .modern-check{margin:0;font-size:10.5px;gap:5px;white-space:normal;line-height:1.15;text-align:center;min-width:0}
 .calendar-form-v2 .calendar-v2-row3>*{min-width:0}
 .calendar-form-v2 .calendar-v2-row3 .calendar-tap-card-body small{font-size:9.5px}
-.calendar-form-v2 .calendar-v2-row3 select{font-size:12px}
+.calendar-form-v2 .calendar-v2-row3 select{font-size:16px!important}
 /* Griglia tipo evento: SEMPRE 5 colonne in una riga sola, come nel mockup —
    niente wrap su schermi stretti: le card sono compatte apposta (icona
    piccola, testo minuscolo) per starci tutte e 5 anche su iPhone standard. */
@@ -1762,8 +1762,15 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .calendar-form-v2 .calendar-tap-card-icon .icon{width:14px;height:14px}
 .calendar-form-v2 .calendar-tap-card-body{gap:1px!important}
 .calendar-form-v2 .calendar-tap-card-body>small,.calendar-form-v2 .calendar-tap-card-body>label{font-size:8.5px!important;margin:0!important}
-.calendar-form-v2 .calendar-tap-card-body input,.calendar-form-v2 .calendar-tap-card-body select{font-size:12.5px!important}
+.calendar-form-v2 .calendar-tap-card-body input,.calendar-form-v2 .calendar-tap-card-body select{font-size:16px!important}
 .calendar-form-v2 .calendar-tap-card-body .calendar-wizard-error:empty{display:none!important}
+/* Ora sotto la data (invece che affiancata) nelle card Inizio/Fine, con la
+   casella dell'orario a piena larghezza cosi' i minuti sono sempre visibili
+   — stessa card, stesso padding/icona, cambia solo la disposizione interna. */
+.calendar-form-v2 .calendar-tap-card .calendar-datetime-row{grid-template-columns:1fr!important;grid-auto-flow:row!important;gap:2px!important}
+.calendar-form-v2 .calendar-tap-card .calendar-time-slot{width:100%!important}
+.calendar-form-v2 .calendar-tap-card .calendar-date-compact,.calendar-form-v2 .calendar-tap-card .calendar-time-entry{width:100%!important;text-align:left!important;font-size:16px!important}
+.calendar-form-v2 .calendar-tap-card .calendar-time-wheel{width:100%!important}
 .calendar-form-v2 .calendar-tap-card-check{font-size:9px!important;margin-top:2px!important;gap:4px!important}
 .calendar-form-v2 .calendar-tap-card-check input[type=checkbox]{width:13px;height:13px}
 .calendar-form-v2 .calendar-v2-card,.calendar-form-v2 .calendar-subblock{padding:9px!important;margin:0 0 5px!important;border-radius:14px!important}
@@ -1773,7 +1780,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .calendar-form-v2 .calendar-subblock .fields{gap:6px!important}
 .calendar-form-v2 .calendar-subblock .field{gap:3px!important}
 .calendar-form-v2 .calendar-subblock .field label{font-size:9.5px!important;margin:0!important}
-.calendar-form-v2 .calendar-subblock .field input{padding:8px 10px!important;font-size:13px!important}
+.calendar-form-v2 .calendar-subblock .field input{padding:8px 10px!important;font-size:16px!important}
 .calendar-form-v2 .calendar-location-tiles{margin-top:0!important}
 .calendar-form-v2 .calendar-location-tile{padding:8px 4px!important}
 .calendar-form-v2 .calendar-v2-topbar{margin-bottom:8px!important}
