@@ -239,6 +239,83 @@ class OperationalCalendarTests(unittest.TestCase):
             else:
                 self.assertIn('data-calendar-types="Ritiro" hidden', html)
 
+    def test_title_field_hidden_for_auto_titled_types_visible_for_appuntamento(self):
+        # Il titolo si genera da solo (zona/sede/animale): mostrarlo comunque
+        # come campo libero per Ritiro/Ritiro in sede/Riconsegna/Riconsegna
+        # in sede creerebbe due fonti di verita' in conflitto. Resta un
+        # campo di testo libero e obbligatorio solo per "Appuntamento", che
+        # non ha zona/sede/animale da cui derivarlo.
+        for kind, should_be_visible in (
+            ("Ritiro", False), ("Ritiro in sede", False),
+            ("Riconsegna", False), ("Riconsegna in sede", False),
+            ("Appuntamento", True),
+        ):
+            rendered = []
+            self.handler.path = "/calendario/nuovo"
+            self.handler.send_html = lambda html, status=200: rendered.append(html)
+            self.handler.calendar_event_form(self.admin, draft=self.event_form(kind))
+            html = rendered[-1]
+            if should_be_visible:
+                self.assertNotIn('data-calendar-types="Appuntamento" hidden', html)
+            else:
+                self.assertIn('data-calendar-types="Appuntamento" hidden', html)
+            self.assertIn('name="title"', html)
+
+    def test_pickup_location_pills_map_ambulatorio_domicilio_altro_indirizzo(self):
+        # "Luogo recupero" e' ora a pillole (Ambulatorio/Domicilio/Altro
+        # indirizzo) invece di un <select>; Domicilio e Altro indirizzo sono
+        # solo due etichette per lo stesso valore location_type="Privato"
+        # (stesso campo indirizzo libero, nessuna colonna nuova).
+        rendered = []
+        self.handler.path = "/calendario/nuovo"
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.calendar_event_form(self.admin, draft=self.event_form("Ritiro", location_type=""))
+        html = rendered[-1]
+        self.assertIn('data-pickup-pill="Veterinario"', html)
+        self.assertEqual(html.count('data-pickup-pill="Privato"'), 2)
+        self.assertIn(">Ambulatorio<", html)
+        self.assertIn(">Domicilio<", html)
+        self.assertIn(">Altro indirizzo<", html)
+        self.assertIn("function calendarPickupPillClick(", app.APP_JS)
+
+    def test_animal_search_returns_payment_method_service_type_site_and_urn(self):
+        stamp = datetime.now().isoformat(timespec="seconds")
+        with app.db() as conn:
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   animal_name,service_type,payment_method,pickup_date)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("PP-URN-01", "Privato", "Empoli", "Ritirato", stamp, stamp, self.admin["id"],
+                 "Briciola", "Cremazione singola", "Contanti", "2026-07-10"),
+            ).lastrowid
+            conn.execute(
+                "INSERT INTO practice_items(practice_id,category,label,price,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                (pid, "urna", "Urna bianca classica", "50", stamp, stamp),
+            )
+        response = {}
+        self.handler.path = "/api/calendario/animali/search?q=briciola"
+        self.handler.send_json = lambda obj, status=200: response.update(obj=obj, status=status)
+        self.handler.api_calendar_animals_search(self.admin)
+        result = response["obj"]["results"][0]
+        self.assertEqual(result["payment_method"], "Contanti")
+        self.assertEqual(result["service_type"], "Singola")
+        self.assertEqual(result["destination_branch"], "Empoli")
+        self.assertEqual(result["urn_summary"], "Urna bianca classica")
+
+    def test_delivery_wizard_shows_dettagli_pratica_summary_card(self):
+        rendered = []
+        self.handler.path = "/calendario/nuovo"
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.calendar_event_form(self.admin, draft=self.event_form("Riconsegna"))
+        html = rendered[-1]
+        for marker in (
+            "data-delivery-practice-summary", "data-delivery-total", "data-delivery-deposit",
+            "data-delivery-remaining", "data-delivery-service", "data-delivery-urn",
+        ):
+            self.assertIn(marker, html)
+        self.assertIn("Cerca pratica, animale o cliente", html)
+        self.assertIn("data-delivery-practice-summary", app.APP_JS)
+
     def test_new_event_notification_uses_emoji_specific_to_event_type(self):
         expected = {
             "Ritiro": "🐾", "Ritiro in sede": "🐾",
