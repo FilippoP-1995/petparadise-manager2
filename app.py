@@ -1681,7 +1681,12 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .calendar-filter-pill:hover{border-color:#465065}
 .calendar-filter-pill.active{background:#e9475b;border-color:#e9475b;color:#fff}
 .calendar-filter-operator{border:1px solid #334155;background:#131a26;color:#9ca7b8;border-radius:999px;padding:7px 14px;font-size:13px;font-weight:600}
-.calendar-pickup-pills{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.calendar-location-tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:6px}
+.calendar-location-tile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:14px 6px;border:1.5px solid #ffffff1f;border-radius:16px;background:linear-gradient(160deg,#1c2635d9,#141b27d9);color:#9ca7b8;font-size:12px;font-weight:700;cursor:pointer;text-align:center;transition:border-color .15s ease,color .15s ease}
+.calendar-location-tile .icon{width:22px;height:22px}
+.calendar-location-tile.active{border-color:#e9475b!important;color:#e9475b!important;box-shadow:0 0 0 1px #e9475b35}
+.light-theme .calendar-location-tile{background:#fff;border-color:#e2e8f0;color:#526174}
+.light-theme .calendar-location-tile.active{border-color:#e9475b!important;color:#e9475b!important;box-shadow:0 0 0 1px #e9475b35}
 .calendar-appt-list{display:flex;flex-direction:column;gap:12px}
 .calendar-appt-empty{text-align:center;padding:24px;color:#9ca7b8}
 .calendar-appt-card{display:flex;gap:12px;padding:14px 16px;border:1px solid #334155;border-left:4px solid #475569;border-radius:15px;background:linear-gradient(145deg,#1a2332,#151d29);box-shadow:0 10px 28px #0307122e;cursor:pointer}
@@ -5603,8 +5608,8 @@ async function calendarLookup(input,endpoint,results,select){
 function calendarSelectVeterinarian(form,item){form.veterinarian_id.value=item.id||'';form.veterinarian_name.value=item.clinic_name||item.display||'';form.veterinarian_contact.value=item.doctor_name||'';form.veterinarian_phone.value=item.phone||'';form.veterinarian_address.value=item.address||'';form.veterinarian_hours.value=item.notes||'';if(form.venue_name)form.venue_name.value=item.clinic_name||item.display||'';if(form.address)form.address.value=[item.address,item.city].filter(Boolean).join(' - ');form.phone.value=item.phone||'';const vetInput=document.getElementById('calendarVetSearch');if(vetInput)vetInput.value=item.clinic_name||item.display||'';}
 function calendarSyncPickupLocation(select){const form=select.form;form.querySelectorAll('[data-pickup-location]').forEach(el=>{const show=el.dataset.pickupLocation.split('|').includes(select.value);el.hidden=!show;el.querySelectorAll('input,select').forEach(input=>input.disabled=!show);});const addressField=form.elements.namedItem('address');if(addressField)addressField.required=!!select.value;calendarUpdateClientAddressButton(form);}
 function calendarPickupPillClick(button){
-  const group=button.closest('.calendar-pickup-pills');
-  if(group)group.querySelectorAll('.calendar-filter-pill').forEach(p=>p.classList.remove('active'));
+  const group=button.closest('.calendar-location-tiles');
+  if(group)group.querySelectorAll('.calendar-location-tile').forEach(p=>p.classList.remove('active'));
   button.classList.add('active');
   const input=button.form.location_type;if(!input)return;
   input.value=button.dataset.pickupPill;
@@ -9475,8 +9480,8 @@ class App(BaseHTTPRequestHandler):
         # quale delle due fu scelta, quindi "Domicilio" e' l'etichetta
         # canonica mostrata attiva. La ricerca ambulatorio (Veterinario)
         # resta identica a oggi, invariata.
-        pickup_pill=lambda value,label,active:f'<button type="button" class="calendar-filter-pill{" active" if active else ""}" data-pickup-pill="{value}" onclick="calendarPickupPillClick(this)">{label}</button>'
-        location_pills_html=f'''<div class="calendar-pickup-pills">{pickup_pill("Veterinario","Ambulatorio",location_type_value=="Veterinario")}{pickup_pill("Privato","Domicilio",location_type_value=="Privato")}{pickup_pill("Privato","Altro indirizzo",False)}</div>'''
+        pickup_tile=lambda value,icon,label,active:f'<button type="button" class="calendar-location-tile{" active" if active else ""}" data-pickup-pill="{value}" onclick="calendarPickupPillClick(this)">{lucide(icon)}<span>{label}</span></button>'
+        location_pills_html=f'''<div class="calendar-location-tiles">{pickup_tile("Veterinario","stethoscope","Ambulatorio",location_type_value=="Veterinario")}{pickup_tile("Privato","home","Domicilio",location_type_value=="Privato")}{pickup_tile("Privato","map-pin","Altro indirizzo",False)}</div>'''
         client_is_empty=not (val('client_id') or val('client_first_name') or val('client_last_name'))
         pickup_location_block=f'''<div class="calendar-subblock" data-calendar-types="Ritiro" {"" if event_type=="Ritiro" else "hidden"}><h3>Luogo del ritiro</h3><div class="fields"><div class="field full"><label>Luogo recupero *</label>{location_pills_html}<input type="hidden" name="location_type" value="{esc(location_type_value)}" data-prev-value="{esc(location_type_value)}"></div><div class="field full lookup" data-pickup-location="Veterinario" {"" if location_type_value=="Veterinario" else "hidden"}><label>Cerca veterinario</label><input id="calendarVetSearch" autocomplete="off" placeholder="Ambulatorio, medico o città"><div id="calendarVetResults" class="lookup-results hidden"></div><input type="hidden" name="veterinarian_id" value="{val('veterinarian_id')}"></div><div class="field" data-pickup-location="Veterinario" {"" if location_type_value=="Veterinario" else "hidden"}><label>Nome ambulatorio</label><input name="venue_name" value="{val('venue_name')}"></div><div class="field full"><label>Indirizzo *</label><input name="address" value="{val('address')}" {"required" if location_type_value else ""}><button type="button" class="btn ghost calendar-use-client-address" data-use-client-address hidden onclick="calendarUseClientAddress(this)">Usa indirizzo cliente</button></div></div></div>'''
         # Cliente/Proprietario e Veterinario di riferimento: nel wizard a
