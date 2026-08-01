@@ -798,6 +798,7 @@ def init_db():
         for name, definition in {
             "payment_method": "TEXT NOT NULL DEFAULT ''",
             "movement_category": "TEXT NOT NULL DEFAULT ''",
+            "is_extra": "INTEGER NOT NULL DEFAULT 0",
         }.items():
             if name not in payment_movement_existing:
                 c.execute(f"ALTER TABLE payment_movements ADD COLUMN {name} {definition}")
@@ -3082,9 +3083,9 @@ function setupBudgetExtras(){
   const depositField_=document.querySelector('input[name="deposit"]'); if(depositField_){depositField_.closest('.field').querySelector('label').textContent='Acconto W €';}
   const remainingBalanceField_=document.querySelector('input[name="remaining_balance"]'); if(remainingBalanceField_){remainingBalanceField_.closest('.field').querySelector('label').textContent='Saldo/Rimanenza W €';}
   // NUMERO/DATA/TOTALE FATTURA e FARE FATTURA vivono ora nella sezione
-  // Pagamento, subito dopo "Aggiungi incasso successivo W" (richiesta
-  // esplicita dell'utente), non piu' nel Preventivo: costruiti come prima
-  // ma appesi a #paymentInvoiceRow invece che a "fields".
+  // Pagamento, subito dopo "Salva pagamento W" (richiesta esplicita
+  // dell'utente), non piu' nel Preventivo: costruiti come prima ma
+  // appesi a #paymentInvoiceRow invece che a "fields".
   const invoiceRow=document.getElementById('paymentInvoiceRow')||fields;
   const invoiceNumber=document.querySelector('input[name="invoice_number"]');invoiceNumber.type='text';invoiceNumber.placeholder='Numero fattura';
   invoiceNumber.addEventListener('input',()=>{const makeInvoice=document.querySelector('input[name="make_invoice"]');if(makeInvoice&&invoiceNumber.value.trim())makeInvoice.checked=false;});
@@ -4046,6 +4047,8 @@ function ppmSyncMacroareaInvoiceSection(select){
   const form=select.closest('form');if(!form)return;
   const section=form.querySelector('[data-macroarea-invoice]');
   if(section)section.hidden=select.value!=='W';
+  const modalitaField=form.querySelector('[data-macroarea-modalita]');
+  if(modalitaField)modalitaField.hidden=select.value==='D';
   const method=form.querySelector('select[name$="_modalita"]');
   if(method)method.required=select.value!=='D';
 }
@@ -6555,7 +6558,7 @@ def latest_movement_and_invoice(c, practice_id, type_prefix):
     """Latest payment_movements row of a given type ('acconto'/'saldo') for a
     practice, plus its linked movement_invoices row if one was ever saved."""
     movement=c.execute(
-        "SELECT * FROM payment_movements WHERE practice_id=? AND payment_type LIKE ? ORDER BY id DESC LIMIT 1",
+        "SELECT * FROM payment_movements WHERE practice_id=? AND payment_type LIKE ? AND is_extra=0 ORDER BY id DESC LIMIT 1",
         (practice_id,f"{type_prefix}%"),
     ).fetchone()
     invoice=None
@@ -7268,6 +7271,10 @@ class App(BaseHTTPRequestHandler):
         if match: return self.save_payment_macroarea(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/pagamento-movimento/rimuovi", path)
         if match: return self.remove_payment_macroarea(user, int(match.group(1)))
+        match = re.fullmatch(r"/pratiche/(\d+)/pagamento-extra", path)
+        if match: return self.save_payment_extra(user, int(match.group(1)))
+        match = re.fullmatch(r"/pratiche/(\d+)/pagamento-extra/(\d+)/rimuovi", path)
+        if match: return self.remove_payment_extra(user, int(match.group(1)), int(match.group(2)))
         match = re.fullmatch(r"/pratiche/(\d+)/stato-rapido", path)
         if match: return self.quick_state(user, int(match.group(1)))
         if path == "/programma-cremazioni/cicli": return self.cremation_create_cycle(user)
@@ -12809,6 +12816,7 @@ class App(BaseHTTPRequestHandler):
         with db() as c:
             acconto_movement,acconto_invoice=latest_movement_and_invoice(c,r["id"],"acconto")
             saldo_movement,saldo_invoice=latest_movement_and_invoice(c,r["id"],"saldo")
+            extra_payments=c.execute("SELECT * FROM payment_movements WHERE practice_id=? AND is_extra=1 ORDER BY paid_at,id",(r["id"],)).fetchall()
             saldo_w_exists=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'saldo%' AND payment_channel='W' LIMIT 1",(r["id"],)).fetchone())
             saldo_d_exists=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'saldo%' AND payment_channel='D' LIMIT 1",(r["id"],)).fetchone())
         def macroarea_section(kind,label,movement,invoice,default_amount):
@@ -12827,11 +12835,8 @@ class App(BaseHTTPRequestHandler):
                 f'''<form method="post" action="/pratiche/{r['id']}/pagamento-movimento/rimuovi" onsubmit="event.stopPropagation();return confirm('Rimuovere {label.lower()}? Verrà stornato anche nei Bilanci.')" style="display:inline"><input type="hidden" name="return_to" value="{return_to}"><input type="hidden" name="macroarea" value="{kind}"><button class="btn ghost" type="submit" style="margin-top:12px;margin-left:8px">Rimuovi {label.lower()}</button></form>'''
                 if movement else ""
             )
-            new_payment_btn=(
-                f'''<button class="btn info-btn" type="submit" name="{kind}_extra" value="1" style="margin-top:12px;margin-left:8px" onclick="event.stopPropagation();return confirm('Aggiungere un incasso {lower} successivo, distinto da quello già salvato?')">Aggiungi incasso successivo {lower}</button>'''
-                if movement else ""
-            )
-            return f'''<section class="payment-macroarea" data-macroarea="{kind}"><h3>{label}</h3><form method="post" action="/pratiche/{r['id']}/pagamento-movimento" onsubmit="event.stopPropagation()"><input type="hidden" name="return_to" value="{return_to}"><input type="hidden" name="macroarea" value="{kind}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(16)}"><div class="fields"><div class="field"><label>Data {lower}</label><input type="date" name="{kind}_data" value="{esc(date_value)}" required></div><div class="field"><label>Totale {lower} €</label><input name="{kind}_totale" value="{esc(amount_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00" required></div><div class="field"><label>Circuito {lower}</label><select name="{kind}_circuito" onchange="ppmSyncMacroareaInvoiceSection(this)">{channel_options}</select></div><div class="field"><label>Modalità {lower}</label><select name="{kind}_modalita" required>{method_options}</select></div></div><div class="payment-invoice-section" data-macroarea-invoice="{kind}" {invoice_hidden}><div class="fields"><div class="field"><label>Importo fattura €</label><input name="{kind}_fattura_totale" value="{esc(invoice_total_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field"><label>Data fattura</label><input type="date" name="{kind}_fattura_data" value="{esc(invoice_date_value)}"></div><div class="field full"><label>Numero fattura</label><input name="{kind}_fattura_numero" value="{esc(invoice_number_value)}"></div></div></div><button class="btn" style="margin-top:12px">Salva pagamento</button>{new_payment_btn}</form>{remove_form}</section>'''
+            modalita_hidden="" if channel_value=="W" else "hidden"
+            return f'''<section class="payment-macroarea" data-macroarea="{kind}"><h3>{label}</h3><form method="post" action="/pratiche/{r['id']}/pagamento-movimento" onsubmit="event.stopPropagation()"><input type="hidden" name="return_to" value="{return_to}"><input type="hidden" name="macroarea" value="{kind}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(16)}"><div class="fields"><div class="field"><label>Data {lower}</label><input type="date" name="{kind}_data" value="{esc(date_value)}" required></div><div class="field"><label>Totale {lower} €</label><input name="{kind}_totale" value="{esc(amount_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00" required></div><div class="field"><label>Circuito {lower}</label><select name="{kind}_circuito" onchange="ppmSyncMacroareaInvoiceSection(this)">{channel_options}</select></div><div class="field" data-macroarea-modalita="{kind}" {modalita_hidden}><label>Modalità {lower}</label><select name="{kind}_modalita">{method_options}</select></div></div><div class="payment-invoice-section" data-macroarea-invoice="{kind}" {invoice_hidden}><div class="fields"><div class="field"><label>Importo fattura €</label><input name="{kind}_fattura_totale" value="{esc(invoice_total_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field"><label>Data fattura</label><input type="date" name="{kind}_fattura_data" value="{esc(invoice_date_value)}"></div><div class="field full"><label>Numero fattura</label><input name="{kind}_fattura_numero" value="{esc(invoice_number_value)}"></div></div></div><button class="btn" style="margin-top:12px">Salva pagamento</button></form>{remove_form}</section>'''
         acconto_html=macroarea_section("acconto","Acconto",acconto_movement,acconto_invoice,payment_deposit_amount)
         saldo_html=macroarea_section("saldo","Saldo",saldo_movement,saldo_invoice,payment_remaining_amount)
         due_w=calculated_service_total(r)
@@ -12849,10 +12854,25 @@ class App(BaseHTTPRequestHandler):
             if saldo_d_exists and remaining_d>0.005 else ""
         )
         circuit_summary_html=f'''<div class="kvs" style="grid-template-columns:repeat(2,1fr);margin-bottom:14px"><div class="kv"><small>Circuito W</small><b>Totale {money_it(due_w)}</b><br><small>Già pagato {money_it(paid_w)} · Rimanenza {money_it(remaining_w)}</small></div><div class="kv"><small>Circuito D</small><b>Totale {money_it(due_d)}</b><br><small>Già pagato {money_it(paid_d)} · Rimanenza {money_it(remaining_d)}</small></div></div>{extras_note_w}{extras_note_d}'''
+        extra_html=self.payment_extra_section_html(r["id"],extra_payments,return_to)
         return f'''<div class="inline-statuses" onclick="event.stopPropagation()">
         <form method="post" action="/pratiche/{r['id']}/stato-rapido" onsubmit="return savePracticeState(this,event)"><input type="hidden" name="return_to" value="{return_to}"><select class="inline-state-select practice-status {status_cls}" name="status" aria-label="Stato pratica" data-saved-value="{esc(r['status'])}" onchange="savePracticeState(this.form)">{state_options}</select><span class="inline-save-note" aria-live="polite"></span></form>
         <button type="button" class="inline-state-select {pay_cls}" aria-label="Stato pagamento" data-payment-popover="{modal_id}" onclick="openPaymentPopover(this)">{esc(payment)}</button>
-        <div class="payment-popover" id="{modal_id}" hidden onclick="if(event.target===this)closePaymentPopover(this)"><div class="payment-dialog"><div class="titlebar"><div><h2>Pagamento · {esc(r['practice_number'])}</h2><p class="sub">Registra acconto e saldo in modo indipendente.</p></div><button class="btn ghost" type="button" onclick="closePaymentPopover(this)">Chiudi</button></div>{circuit_summary_html}{acconto_html}{saldo_html}</div></div></div>'''
+        <div class="payment-popover" id="{modal_id}" hidden onclick="if(event.target===this)closePaymentPopover(this)"><div class="payment-dialog"><div class="titlebar"><div><h2>Pagamento · {esc(r['practice_number'])}</h2><p class="sub">Registra acconto e saldo in modo indipendente.</p></div><button class="btn ghost" type="button" onclick="closePaymentPopover(this)">Chiudi</button></div>{circuit_summary_html}{acconto_html}{saldo_html}{extra_html}</div></div></div>'''
+
+    def payment_extra_section_html(self,pid,extras,return_to):
+        # Riusato sia dal popup Pagamento (status_badges) sia dalla sezione
+        # Pagamento della pratica (_fields_html): stessa identica logica,
+        # mai duplicata. Un pagamento extra crea SEMPRE un nuovo movimento,
+        # mai una correzione di quello base — l'unica azione ambigua che
+        # aveva causato un bug reale in produzione.
+        method_options=''.join(f'<option value="{esc(m)}">{esc(m) or "Seleziona metodo"}</option>' for m in PAYMENT_METHODS)
+        channel_options=''.join(f'<option value="{v}">{v}</option>' for v in ("W","D"))
+        rows_html=''.join(
+            f'''<div class="payment-extra-row"><div><b>{esc(row["payment_channel"] or "")} · {money_it(money_value(row["amount"]))}</b><small>{date_it(str(row["paid_at"] or "")[:10])}</small></div><form method="post" action="/pratiche/{pid}/pagamento-extra/{row['id']}/rimuovi" onsubmit="event.stopPropagation();return confirm('Rimuovere questo pagamento extra? Verrà stornato anche nei Bilanci.')" style="display:inline"><input type="hidden" name="return_to" value="{esc(return_to)}"><button class="btn ghost" type="submit">Rimuovi</button></form></div>'''
+            for row in extras
+        ) or '<p class="sub">Nessun pagamento extra registrato.</p>'
+        return f'''<section class="payment-macroarea" data-macroarea="extra"><h3>Aggiungi pagamento extra</h3><p class="sub">Crea sempre un nuovo movimento, indipendente da Acconto/Saldo.</p><form method="post" action="/pratiche/{pid}/pagamento-extra" onsubmit="event.stopPropagation()"><input type="hidden" name="return_to" value="{esc(return_to)}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(16)}"><div class="fields"><div class="field"><label>Circuito</label><select name="extra_circuito" onchange="ppmSyncMacroareaInvoiceSection(this)">{channel_options}</select></div><div class="field"><label>Data</label><input type="date" name="extra_data" required></div><div class="field"><label>Totale €</label><input name="extra_totale" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00" required></div><div class="field" data-macroarea-modalita="extra"><label>Modalità</label><select name="extra_modalita">{method_options}</select></div></div><div class="payment-invoice-section" data-macroarea-invoice="extra"><div class="fields"><div class="field"><label>Importo fattura €</label><input name="extra_fattura_totale" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field"><label>Data fattura</label><input type="date" name="extra_fattura_data"></div><div class="field full"><label>Numero fattura</label><input name="extra_fattura_numero"></div></div></div><button class="btn" style="margin-top:12px">Aggiungi pagamento extra</button></form>{rows_html}</section>'''
 
     def practice_rows(self,rows,show_financials=False):
         rows=list(rows)
@@ -13704,15 +13724,11 @@ class App(BaseHTTPRequestHandler):
             touched_html=f'<input type="hidden" name="{totale_name}_touched" value="{val(totale_name+"_touched")}">' if macroarea=="saldo" else ""
             return f'''<div class="payment-macroarea-channel"><div class="fields"><div class="field"><label>{esc(label)} €</label><input name="{totale_name}" value="{val(totale_name)}" inputmode="decimal" placeholder="Numero, es. 120,00"></div><div class="field"><label>Data {esc(label)}</label><input type="date" name="{data_name}" value="{val(data_name)}"></div>{method_html}{fattura_html}</div>{touched_html}</div>'''
         def channel_payment_buttons(channel):
-            # Stessa identica funzione dei pulsanti del popup Pagamento
-            # (Salva pagamento / Aggiungi incasso successivo), qui per
-            # circuito invece che per macroarea: "Aggiungi incasso
-            # successivo" imposta force_new=True in edit_submit per
-            # qualunque macroarea (acconto e/o saldo) compilata su questo
-            # stesso circuito in questo salvataggio, cosi' riconosce da solo
-            # quale voce e' stata modificata senza bisogno di due coppie di
-            # pulsanti separate.
-            return f'''<div class="fields"><button class="btn" type="submit" style="margin-top:4px">Salva pagamento {channel}</button><button class="btn info-btn" type="submit" name="{channel.lower()}_extra" value="1" style="margin-top:4px;margin-left:8px" onclick="return confirm('Aggiungere un incasso {channel} successivo, distinto da quello già salvato?')">Aggiungi incasso successivo {channel}</button></div>'''
+            # I campi Acconto/Saldo correggono sempre il movimento gia'
+            # presente: un solo pulsante, nessuna scelta ambigua tra
+            # "correggi" e "nuovo incasso". Un incasso genuinamente nuovo si
+            # registra solo dal pulsante dedicato "Aggiungi pagamento extra".
+            return f'''<div class="fields"><button class="btn" type="submit" style="margin-top:4px">Salva pagamento {channel}</button></div>'''
         creation_payment_fields=f'''<section class="section hidden" id="creationPaymentSection"><h2>Pagamento</h2><p class="sub">Ogni importo è indipendente: compila solo D, solo W, o entrambi. Il circuito D non richiede il metodo di pagamento. Se per lo stesso incasso compili sia D che W, viene registrato solo D.</p><div class="fields" id="paymentEstremiRow"></div><div class="fields" id="paymentTotaleWRow"></div>{macro_field_group("acconto","W","Acconto W")}{macro_field_group("saldo","W","Saldo/Rimanenza W")}{channel_payment_buttons("W")}<div class="fields" id="paymentInvoiceRow"></div><div class="payment-macroarea"><div class="fields" id="paymentTotaleDRow"></div>{macro_field_group("acconto","D","Acconto D",show_method=False)}{macro_field_group("saldo","D","Rimanenza D",show_method=False)}{channel_payment_buttons("D")}</div></section>'''
         if user is None or user["role"]=="admin":
             operator_field=f'''<div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option><option {selected('operator_name','GIANLUCA')}>GIANLUCA</option></select></div>'''
@@ -14568,7 +14584,7 @@ class App(BaseHTTPRequestHandler):
         c.execute("UPDATE urns SET quantity=?,updated_at=? WHERE id=?",(new_quantity,now(),urn_id))
         c.execute("INSERT INTO urn_movements(urn_id,practice_id,user_id,movement_type,quantity_delta,old_quantity,new_quantity,note,created_at) VALUES(?,?,?,?,?,?,?,?,?)",(urn_id,practice_id,user_id,movement_type,actual_delta,old_quantity,new_quantity,note,now()))
 
-    def add_payment_movement(self,c,practice_id,payment_type,channel,amount,user_id,notes,paid_at=None,payment_method="",movement_category=""):
+    def add_payment_movement(self,c,practice_id,payment_type,channel,amount,user_id,notes,paid_at=None,payment_method="",movement_category="",is_extra=False):
         amount=round(float(amount),2)
         if amount<=0:return
         stamp=paid_at or now()
@@ -14584,15 +14600,15 @@ class App(BaseHTTPRequestHandler):
         duplicate=c.execute("""SELECT id FROM payment_movements
                                WHERE practice_id=? AND payment_type=? AND date(paid_at)=date(?)
                                  AND COALESCE(payment_method,'')=? AND COALESCE(movement_category,'')=?
-                                 AND ABS(amount-?)<0.005
+                                 AND ABS(amount-?)<0.005 AND is_extra=?
                                LIMIT 1""",
-                            (practice_id,payment_type,stamp,method,category,amount)).fetchone()
+                            (practice_id,payment_type,stamp,method,category,amount,1 if is_extra else 0)).fetchone()
         if duplicate:return
         c.execute("""INSERT INTO payment_movements(
                        practice_id,payment_type,payment_channel,payment_method,movement_category,
-                       amount,paid_at,user_id,notes,created_at
-                     ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                  (practice_id,payment_type,normalized_channel,method,category,amount,stamp,user_id,notes,now()))
+                       amount,paid_at,user_id,notes,created_at,is_extra
+                     ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                  (practice_id,payment_type,normalized_channel,method,category,amount,stamp,user_id,notes,now(),1 if is_extra else 0))
 
     def record_payment_transition(self,c,practice,old_status,new_status,amount,method,paid_at,user_id,reason,balance_idempotency_key="",balance_source="practice_payment_transition",channel=None):
         old_status=old_status or "Da saldare"; new_status=new_status or "Da saldare"
@@ -15235,6 +15251,7 @@ class App(BaseHTTPRequestHandler):
             p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
             if not p:return self.send_error(404)
             macro_prefill=self.macro_payment_prefill(c,pid,p) if draft is None else {}
+            extra_payments=c.execute("SELECT * FROM payment_movements WHERE practice_id=? AND is_extra=1 ORDER BY paid_at,id",(pid,)).fetchall()
         display=dict(draft) if draft is not None else {**dict(p),**macro_prefill}
         if "economic_at" not in display:
             display["economic_at"]=(
@@ -15249,7 +15266,14 @@ class App(BaseHTTPRequestHandler):
         # prima volta (non su un ripresentazione della pagina dopo un
         # errore di validazione: li' l'utente deve vedere subito il campo
         # incriminato, non doverlo cercare dentro una sezione richiusa).
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Modifica {esc(p['practice_number'])}</h1><div class="sub">Completa o correggi i dati della pratica.</div>{autosave}</div><div class="actions"><button class="btn" form="practiceForm">Salva modifiche</button><button class="btn ghost" form="practiceForm" name="save_and_return" value="1">Salva e torna</button><a class="btn ghost" href="{esc(back_url)}">Annulla</a></div></div>{error_html}<form method="post" id="practiceForm" data-autosave-url="/api/pratiche/{pid}/autosave" data-updated-at="{esc(p['updated_at'])}"><input type="hidden" name="return_to" value="{esc(back_url)}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(24)}">{error_target}<div class="grid form-grid">{self.fields_html(display,user,collapsed=(draft is None))}</div><div class="actions" style="margin-top:18px"><button class="btn">Salva modifiche</button><button class="btn ghost" name="save_and_return" value="1">Salva e torna</button><a class="btn ghost" href="{esc(back_url)}">Annulla</a></div></form></main>'''
+        # "Aggiungi pagamento extra" e' un form indipendente che posta su un
+        # endpoint diverso da quello della pratica: deve stare FUORI dal
+        # <form id="practiceForm"> (i form annidati non sono validi HTML —
+        # il browser scarta silenziosamente il tag <form> interno, lasciando
+        # i campi orfani senza inviarli da nessuna parte). Va quindi dopo la
+        # chiusura di practiceForm, non dentro fields_html.
+        payment_extra_html=self.payment_extra_section_html(pid,extra_payments,esc(getattr(self,"path","")))
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Modifica {esc(p['practice_number'])}</h1><div class="sub">Completa o correggi i dati della pratica.</div>{autosave}</div><div class="actions"><button class="btn" form="practiceForm">Salva modifiche</button><button class="btn ghost" form="practiceForm" name="save_and_return" value="1">Salva e torna</button><a class="btn ghost" href="{esc(back_url)}">Annulla</a></div></div>{error_html}<form method="post" id="practiceForm" data-autosave-url="/api/pratiche/{pid}/autosave" data-updated-at="{esc(p['updated_at'])}"><input type="hidden" name="return_to" value="{esc(back_url)}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(24)}">{error_target}<div class="grid form-grid">{self.fields_html(display,user,collapsed=(draft is None))}</div><div class="actions" style="margin-top:18px"><button class="btn">Salva modifiche</button><button class="btn ghost" name="save_and_return" value="1">Salva e torna</button><a class="btn ghost" href="{esc(back_url)}">Annulla</a></div></form><div class="grid form-grid">{payment_extra_html}</div></main>'''
         self.send_html(layout("Modifica pratica",body,user))
 
     def practice_autosave(self,user,pid):
@@ -15469,33 +15493,20 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             edit_balance_key=f"practice-edit:{edit_balance_token}" if edit_balance_token else ""
             for macroarea,plan in macro_plan.items():
                 fresh_practice=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
-                # force_new scatta in due soli casi, mai dal solo importo
-                # diverso da quello gia' registrato (come accadeva prima):
-                # 1) click esplicito su "Aggiungi incasso successivo W/D";
-                # 2) il Totale {W/D} di questa stessa pratica e' SALITO in
-                #    questo stesso salvataggio (segno inequivocabile che la
-                #    nuova cifra e' un incasso extra dovuto a quell'aumento,
-                #    non una correzione di un valore appena scritto male).
-                # Il vecchio confronto "importo diverso" da solo non sapeva
-                # distinguere un incasso genuinamente nuovo da una semplice
-                # correzione di un errore di battitura inserito poco prima:
-                # un secondo salvataggio con l'importo giusto veniva letto
-                # come un secondo incasso reale, duplicando il movimento
-                # invece di correggerlo (bug reale riscontrato in
-                # produzione). Quando invece il Totale non e' cambiato,
-                # "Salva pagamento" corregge sempre il movimento gia'
-                # presente, con qualunque importo.
-                total_field_name="total_service" if plan["channel"]=="W" else "total_text"
-                total_before=euros_to_cents(f"{money_value(previous[total_field_name]):.2f}")
-                total_after=euros_to_cents(f"{money_value(d.get(total_field_name,'')):.2f}")
-                force_new=total_after>total_before or form.get(f"{plan['channel'].lower()}_extra","")=="1"
+                # I campi Acconto/Saldo/Totale correggono sempre il movimento
+                # gia' presente (mai ne creano uno nuovo, qualunque importo):
+                # l'unico modo di registrare un incasso genuinamente nuovo e'
+                # il pulsante dedicato "Aggiungi pagamento extra"
+                # (save_payment_extra), non desunto dai dati di questo form.
+                # Elimina alla radice l'ambiguita' che causava un bug reale
+                # in produzione (una correzione di importo letta come un
+                # secondo incasso, duplicando il movimento).
                 payment_error=self.apply_payment_macroarea(
                     c,user,pid,fresh_practice,macroarea,
                     data_field=plan["data_field"],totale_field=plan["totale_field"],
                     channel=plan["channel"],method=plan["method"],
                     invoice_number=plan["invoice_number"],invoice_total=plan["invoice_total"],invoice_date=plan["invoice_date"],
                     balance_key=edit_balance_key,
-                    force_new=force_new,
                 )
                 if payment_error:raise ValueError(payment_error)
             p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
@@ -15703,12 +15714,9 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 invoice_total=normalize_money_text(form.get(f"{prefix}_fattura_totale","")),
                 invoice_date=form.get(f"{prefix}_fattura_data","").strip(),
                 balance_key=form.get("balance_idempotency_key","").strip(),
-                # "Aggiungi incasso successivo": azione esplicita e distinta
-                # dal normale "Salva pagamento" (che corregge l'ultimo
-                # movimento della macroarea). Mai dedotto automaticamente
-                # dall'importo: solo l'utente, confermando di aver ricevuto un incasso
-                # realmente nuovo, puo' impostarlo.
-                force_new=form.get(f"{prefix}_extra","")=="1",
+                # "Salva pagamento" corregge sempre l'ultimo movimento della
+                # macroarea: un incasso genuinamente nuovo si registra solo
+                # da "Aggiungi pagamento extra" (save_payment_extra).
             )
             if error:
                 return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
@@ -15716,7 +15724,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         if ajax:return self.send_json({"ok":True,"payment_status":new_status,"macroarea":macroarea})
         return self.redirect(safe_return_path(form.get("return_to") or self.headers.get("Referer"),"/"))
 
-    def apply_payment_macroarea(self,c,user,pid,practice,macroarea,*,data_field,totale_field,channel,method,invoice_number,invoice_total,invoice_date,balance_key="",force_new=False):
+    def apply_payment_macroarea(self,c,user,pid,practice,macroarea,*,data_field,totale_field,channel,method,invoice_number,invoice_total,invoice_date,balance_key="",force_new=False,is_extra=False):
         """Core logic shared by the Pagamento popover (save_payment_macroarea)
         above and practice creation (create_practice): validates and
         persists one acconto/saldo entry for one circuito — the
@@ -15817,16 +15825,18 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             # a second payment_movements detail row for it (create_balance_movement
             # itself already no-ops on the ledger side for a matching payload).
             is_retry=bool(c.execute("SELECT 1 FROM balance_movements WHERE idempotency_key=? LIMIT 1",(idempotency_key,)).fetchone())
+            movement_description="Pagamento extra registrato" if is_extra else "Pagamento registrato"
+            movement_source="practice_payment_extra" if is_extra else "practice_payment_macroarea"
             create_balance_movement(
                 c,amount_cents=euros_to_cents(f"{amount:.2f}"),movement_date=data_field,category=category,
                 ledger_section="Entrata",movement_type=balance_type,idempotency_key=idempotency_key,
                 practice_id=pid,practice_number_snapshot=practice["practice_number"] or "",
-                payment_method=method,description="Pagamento registrato",source="practice_payment_macroarea",
+                payment_method=method,description=movement_description,source=movement_source,
                 collaborator_id=int(practice["collaborator_id"]) if practice["collaborator_id"] else None,
                 created_by=user["id"],
             )
             if not is_retry:
-                self.add_payment_movement(c,pid,macroarea,category,amount,user["id"],"Pagamento registrato",data_field,payment_method=method,movement_category=category)
+                self.add_payment_movement(c,pid,macroarea,category,amount,user["id"],movement_description,data_field,payment_method=method,movement_category=category,is_extra=is_extra)
             movement=c.execute("SELECT id FROM payment_movements WHERE practice_id=? AND payment_type LIKE ? ORDER BY id DESC LIMIT 1",(pid,f"{macroarea}%")).fetchone()
             movement_id=movement["id"] if movement else None
         if channel=="W" and movement_id:
@@ -15915,6 +15925,98 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                     (pid,"Pagamento",old_status,f"{new_status} · {macroarea} rimosso",user["id"],stamp),
                 )
         if ajax:return self.send_json({"ok":True,"payment_status":new_status})
+        return self.redirect(safe_return_path(form.get("return_to") or self.headers.get("Referer"),"/"))
+
+    def save_payment_extra(self,user,pid):
+        """Unico modo per registrare un incasso genuinamente nuovo (mai una
+        correzione): riusa apply_payment_macroarea con force_new=True e
+        is_extra=True, cosi' il movimento creato e' sempre distinto da
+        quello base e riconoscibile in Bilanci (source/description
+        differenti). macroarea="saldo" e' solo l'etichetta usata dal
+        ledger (Acconto non ha senso per un extra)."""
+        form=self.form()
+        with db() as c:
+            practice=c.execute("SELECT * FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(pid,)).fetchone()
+            if not practice:
+                return self.send_error(404)
+            error=self.apply_payment_macroarea(
+                c,user,pid,practice,"saldo",
+                data_field=form.get("extra_data","").strip(),
+                totale_field=normalize_money_text(form.get("extra_totale","")),
+                channel=form.get("extra_circuito","").strip().upper(),
+                method=form.get("extra_modalita","").strip(),
+                invoice_number=form.get("extra_fattura_numero","").strip(),
+                invoice_total=normalize_money_text(form.get("extra_fattura_totale","")),
+                invoice_date=form.get("extra_fattura_data","").strip(),
+                balance_key=form.get("balance_idempotency_key","").strip(),
+                force_new=True,is_extra=True,
+            )
+            if error:
+                return self.practice(user,pid,error=error)
+        return self.redirect(safe_return_path(form.get("return_to") or self.headers.get("Referer"),"/"))
+
+    def remove_payment_extra(self,user,pid,movement_id):
+        """Rimuove UNA riga specifica di pagamento extra (mai 'l'ultima
+        della macroarea', a differenza di remove_payment_macroarea — con
+        piu' extra possibili serve puntare esattamente a quella scelta),
+        senza mai toccare il movimento base ne' altri extra."""
+        form=self.form()
+        with db() as c:
+            practice=c.execute("SELECT * FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(pid,)).fetchone()
+            if not practice:
+                return self.send_error(404)
+            existing_movement=c.execute("SELECT * FROM payment_movements WHERE id=? AND practice_id=? AND is_extra=1",(movement_id,pid)).fetchone()
+            if not existing_movement:
+                return self.redirect(safe_return_path(form.get("return_to") or self.headers.get("Referer"),"/"))
+            old_status=practice["payment_status"] or "Da saldare"
+            stamp=now()
+            amount_cents=euros_to_cents(f"{money_value(existing_movement['amount']):.2f}")
+            paid_at_date=str(existing_movement["paid_at"] or "")[:10]
+            # Nessuna chiave esterna diretta tra payment_movements e
+            # balance_movements: la riga ledger corrispondente si ritrova
+            # per pratica+source+importo+data, non ancora stornata — stesso
+            # limite gia' presente in remove_payment_macroarea (che punta
+            # "l'ultimo movimento non stornato di quel tipo"), qui ristretto
+            # pero' ai soli pagamenti extra cosi' non intercetta mai quello
+            # base.
+            target=c.execute(
+                """SELECT b.* FROM balance_movements b
+                   WHERE b.practice_id=? AND b.ledger_section='Entrata' AND b.source='practice_payment_extra'
+                     AND b.amount_cents=? AND b.movement_date=? AND b.amount_cents>0
+                     AND NOT EXISTS(SELECT 1 FROM balance_movements r WHERE r.related_movement_id=b.id AND r.movement_type='Storno')
+                   ORDER BY b.id DESC LIMIT 1""",
+                (pid,amount_cents,paid_at_date),
+            ).fetchone()
+            if target:
+                try:
+                    create_balance_reversal(
+                        c,original_movement_id=target["id"],movement_date=stamp[:10],
+                        idempotency_key=f"payment-extra-remove:{pid}:{movement_id}",
+                        description="Rimozione pagamento extra",
+                        source="manual_void",created_by=user["id"],
+                    )
+                except MovementAlreadyReversedError:
+                    pass
+            invoice_link=c.execute("SELECT invoice_id FROM movement_invoice_links WHERE payment_movement_id=?",(existing_movement["id"],)).fetchone()
+            c.execute("DELETE FROM movement_invoice_links WHERE payment_movement_id=?",(existing_movement["id"],))
+            if invoice_link:
+                remaining_links=c.execute("SELECT COUNT(*) n FROM movement_invoice_links WHERE invoice_id=?",(invoice_link["invoice_id"],)).fetchone()["n"]
+                if remaining_links==0:
+                    c.execute("DELETE FROM movement_invoices WHERE id=?",(invoice_link["invoice_id"],))
+            c.execute("DELETE FROM payment_movements WHERE id=?",(existing_movement["id"],))
+            has_acconto=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'acconto%' LIMIT 1",(pid,)).fetchone())
+            has_saldo=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'saldo%' LIMIT 1",(pid,)).fetchone())
+            new_status="Pagato" if has_saldo else ("Acconto" if has_acconto else "Da saldare")
+            deposit,remaining_balance,deposit_final,remaining_final=recompute_practice_channel_balances(c,pid,practice)
+            c.execute(
+                "UPDATE practices SET payment_status=?,deposit=?,remaining_balance=?,deposit_final=?,remaining_final=?,updated_at=? WHERE id=?",
+                (new_status,deposit,remaining_balance,deposit_final,remaining_final,stamp,pid),
+            )
+            if old_status!=new_status:
+                c.execute(
+                    "INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",
+                    (pid,"Pagamento",old_status,f"{new_status} · pagamento extra rimosso",user["id"],stamp),
+                )
         return self.redirect(safe_return_path(form.get("return_to") or self.headers.get("Referer"),"/"))
 
     def quick_payment(self,user,pid):

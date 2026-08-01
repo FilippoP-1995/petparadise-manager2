@@ -905,10 +905,14 @@ class PetParadiseTests(unittest.TestCase):
 
     def test_invoice_block_positioned_in_pagamento_after_incasso_successivo_w(self):
         # richiesta esplicita dell'utente: NUMERO/DATA/TOTALE FATTURA e FARE
-        # FATTURA vivono ora nella sezione Pagamento, subito dopo "Aggiungi
-        # incasso successivo W" (non piu' nel Preventivo/budget layout).
+        # FATTURA vivono ora nella sezione Pagamento, subito dopo "Salva
+        # pagamento W" (non piu' nel Preventivo/budget layout). Il vecchio
+        # pulsante "Aggiungi incasso successivo" e' stato rimosso di
+        # proposito: i campi base correggono sempre il movimento esistente,
+        # un incasso genuinamente nuovo si registra solo dal pulsante
+        # dedicato "Aggiungi pagamento extra".
         html=self.handler.fields_html()
-        w_buttons_pos=html.index("Aggiungi incasso successivo W")
+        w_buttons_pos=html.index("Salva pagamento W")
         invoice_row_pos=html.index('id="paymentInvoiceRow"')
         macroarea_d_pos=html.index('class="payment-macroarea"')
         self.assertTrue(w_buttons_pos<invoice_row_pos<macroarea_d_pos)
@@ -6063,23 +6067,26 @@ class PetParadiseTests(unittest.TestCase):
             self.assertEqual(len(original_balances),2)
             # extra item added after full payment: total_service goes 200 -> 300
             conn.execute("UPDATE practices SET total_service_manual='Si',total_service='300' WHERE id=?",(pid,))
-        # a plain "Salva pagamento" on saldo (no force_new) would just correct
-        # the existing saldo movement in place — not what we want here
-        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-30","saldo_totale":"100,00","saldo_circuito":"W","saldo_modalita":"Bonifico","saldo_extra":"1","balance_idempotency_key":"extra-w-attempt-1","ajax":"1"}
-        self.handler.save_payment_macroarea(admin,pid)
-        self.assertTrue(responses[-1][0]["ok"],responses[-1])
-        self.assertEqual(responses[-1][0]["payment_status"],"Pagato")
+        # a genuinely new payment goes through the dedicated "Aggiungi
+        # pagamento extra" endpoint — a plain "Salva pagamento" on saldo
+        # would just correct the existing movement in place, not what we
+        # want here
+        redirects=[];self.handler.redirect=lambda url:redirects.append(url);self.handler.headers={}
+        self.handler.form=lambda:{"extra_circuito":"W","extra_data":"2026-07-30","extra_totale":"100,00","extra_modalita":"Bonifico","balance_idempotency_key":"extra-w-attempt-1"}
+        self.handler.save_payment_extra(admin,pid)
+        self.assertTrue(redirects,"save_payment_extra must redirect on success")
         with app.db() as conn:
-            practice=conn.execute("SELECT deposit,remaining_balance FROM practices WHERE id=?",(pid,)).fetchone()
+            practice=conn.execute("SELECT deposit,remaining_balance,payment_status FROM practices WHERE id=?",(pid,)).fetchone()
+            self.assertEqual(practice["payment_status"],"Pagato")
             self.assertEqual((practice["deposit"],practice["remaining_balance"]),("300.00","0.00"))
-            movements=conn.execute("SELECT id,payment_type,amount,paid_at,payment_method FROM payment_movements WHERE practice_id=? ORDER BY id",(pid,)).fetchall()
+            movements=conn.execute("SELECT id,payment_type,amount,paid_at,payment_method,is_extra FROM payment_movements WHERE practice_id=? ORDER BY id",(pid,)).fetchall()
             self.assertEqual(len(movements),3)
             # the first two movements are byte-identical to before — nothing
             # was rewritten to accommodate the new total
             self.assertEqual([(r["id"],r["payment_type"],float(r["amount"]),r["paid_at"]) for r in movements[:2]],
                               [(original_movements[0]["id"],original_movements[0]["payment_type"],float(original_movements[0]["amount"]),original_movements[0]["paid_at"]),
                                (original_movements[1]["id"],original_movements[1]["payment_type"],float(original_movements[1]["amount"]),original_movements[1]["paid_at"])])
-            self.assertEqual((movements[2]["payment_type"],float(movements[2]["amount"]),movements[2]["paid_at"],movements[2]["payment_method"]),("saldo",100.0,"2026-07-30","Bonifico"))
+            self.assertEqual((movements[2]["payment_type"],float(movements[2]["amount"]),movements[2]["paid_at"],movements[2]["payment_method"],movements[2]["is_extra"]),("saldo",100.0,"2026-07-30","Bonifico",1))
             balances=conn.execute("SELECT id,amount_cents,movement_date,idempotency_key FROM balance_movements WHERE practice_id=? AND amount_cents>0 ORDER BY id",(pid,)).fetchall()
             self.assertEqual(len(balances),3)
             self.assertEqual([(r["id"],r["amount_cents"],r["movement_date"]) for r in balances[:2]],
@@ -6089,7 +6096,7 @@ class PetParadiseTests(unittest.TestCase):
             self.assertNotIn(balances[2]["idempotency_key"],(balances[0]["idempotency_key"],balances[1]["idempotency_key"]))
 
     def test_extra_payment_double_tap_with_same_idempotency_key_does_not_duplicate(self):
-        # A double-tap on "Aggiungi incasso successivo" resubmits the same
+        # A double-tap on "Aggiungi pagamento extra" resubmits the same
         # still-rendered form, so the same balance_idempotency_key hidden
         # field goes out twice — must not raise IdempotencyConflictError and
         # must not create a second payment_movements/balance_movements row.
@@ -6104,13 +6111,14 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(responses[-1][0]["payment_status"],"Pagato")
         with app.db() as conn:
             conn.execute("UPDATE practices SET total_service_manual='Si',total_service='260' WHERE id=?",(pid,))
-        retry_form={"macroarea":"saldo","saldo_data":"2026-07-30","saldo_totale":"60,00","saldo_circuito":"W","saldo_modalita":"Pos","saldo_extra":"1","balance_idempotency_key":"retry-token-fixed","ajax":"1"}
+        redirects=[];self.handler.redirect=lambda url:redirects.append(url);self.handler.headers={}
+        retry_form={"extra_circuito":"W","extra_data":"2026-07-30","extra_totale":"60,00","extra_modalita":"Pos","balance_idempotency_key":"retry-token-fixed"}
         self.handler.form=lambda:dict(retry_form)
-        self.handler.save_payment_macroarea(admin,pid)
-        self.assertTrue(responses[-1][0]["ok"])
+        self.handler.save_payment_extra(admin,pid)
+        self.assertTrue(redirects)
         self.handler.form=lambda:dict(retry_form)
-        self.handler.save_payment_macroarea(admin,pid)
-        self.assertTrue(responses[-1][0]["ok"])
+        self.handler.save_payment_extra(admin,pid)
+        self.assertEqual(len(redirects),2)
         with app.db() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) n FROM payment_movements WHERE practice_id=? AND payment_type='saldo'",(pid,)).fetchone()["n"],2)
             self.assertEqual(conn.execute("SELECT COUNT(*) n FROM balance_movements WHERE practice_id=? AND amount_cents>0",(pid,)).fetchone()["n"],2)
@@ -6129,9 +6137,10 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(responses[-1][0]["payment_status"],"Pagato")
         with app.db() as conn:
             conn.execute("UPDATE practices SET total_text='220' WHERE id=?",(pid,))
-        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-31","saldo_totale":"70,00","saldo_circuito":"D","saldo_extra":"1","balance_idempotency_key":"extra-d-attempt","ajax":"1"}
-        self.handler.save_payment_macroarea(admin,pid)
-        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        redirects=[];self.handler.redirect=lambda url:redirects.append(url);self.handler.headers={}
+        self.handler.form=lambda:{"extra_circuito":"D","extra_data":"2026-07-31","extra_totale":"70,00","balance_idempotency_key":"extra-d-attempt"}
+        self.handler.save_payment_extra(admin,pid)
+        self.assertTrue(redirects,"save_payment_extra must redirect on success")
         with app.db() as conn:
             practice=conn.execute("SELECT deposit,remaining_balance,deposit_final,remaining_final FROM practices WHERE id=?",(pid,)).fetchone()
             # W side untouched (no W movements at all in this D-only practice)
@@ -6160,7 +6169,7 @@ class PetParadiseTests(unittest.TestCase):
             practice=conn.execute("SELECT remaining_balance FROM practices WHERE id=?",(pid,)).fetchone()
             self.assertEqual(practice["remaining_balance"],"-50.00")
 
-    def test_payment_popover_shows_registra_nuovo_pagamento_and_extras_warning_per_circuit(self):
+    def test_payment_popover_shows_pagamento_extra_section_and_extras_warning_per_circuit(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
@@ -6179,14 +6188,14 @@ class PetParadiseTests(unittest.TestCase):
             conn.execute("UPDATE practices SET total_service_manual='Si',total_service='260',remaining_balance='60.00' WHERE id=?",(pid,))
             row=conn.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
         dialog=self.handler.status_badges(row)
-        self.assertIn('name="saldo_extra" value="1"',dialog)
-        self.assertIn("Aggiungi incasso successivo saldo",dialog)
+        self.assertIn(f'action="/pratiche/{pid}/pagamento-extra"',dialog)
+        self.assertIn("Aggiungi pagamento extra",dialog)
         self.assertIn("Il totale è aumentato per l'aggiunta di nuovi elementi",dialog)
         self.assertIn("resta da pagare € 60,00 (circuito W)",dialog)
         self.assertIn("Circuito W",dialog)
         self.assertIn("Circuito D",dialog)
 
-    def test_removing_extra_payment_stornos_only_the_latest_one(self):
+    def test_removing_extra_payment_stornos_only_the_extra_not_the_base(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
@@ -6198,27 +6207,71 @@ class PetParadiseTests(unittest.TestCase):
         self.assertTrue(responses[-1][0]["ok"],responses[-1])
         with app.db() as conn:
             conn.execute("UPDATE practices SET total_service_manual='Si',total_service='260' WHERE id=?",(pid,))
-        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-30","saldo_totale":"60,00","saldo_circuito":"W","saldo_modalita":"Bonifico","saldo_extra":"1","balance_idempotency_key":"extra-undo","ajax":"1"}
-        self.handler.save_payment_macroarea(admin,pid)
-        self.assertTrue(responses[-1][0]["ok"],responses[-1])
-        self.handler.form=lambda:{"macroarea":"saldo","ajax":"1"}
-        self.handler.remove_payment_macroarea(admin,pid)
-        self.assertTrue(responses[-1][0]["ok"])
+        redirects=[];self.handler.redirect=lambda url:redirects.append(url);self.handler.headers={}
+        self.handler.form=lambda:{"extra_circuito":"W","extra_data":"2026-07-30","extra_totale":"60,00","extra_modalita":"Bonifico","balance_idempotency_key":"extra-undo"}
+        self.handler.save_payment_extra(admin,pid)
+        self.assertTrue(redirects)
         with app.db() as conn:
-            movements=conn.execute("SELECT amount FROM payment_movements WHERE practice_id=? AND payment_type='saldo'",(pid,)).fetchall()
-            self.assertEqual([float(r["amount"]) for r in movements],[200.0])
+            extra_movement=conn.execute("SELECT id FROM payment_movements WHERE practice_id=? AND is_extra=1",(pid,)).fetchone()
+            practice=conn.execute("SELECT deposit,remaining_balance FROM practices WHERE id=?",(pid,)).fetchone()
+            self.assertEqual((practice["deposit"],practice["remaining_balance"]),("260.00","0.00"))
+        self.handler.form=lambda:{}
+        self.handler.remove_payment_extra(admin,pid,extra_movement["id"])
+        with app.db() as conn:
+            movements=conn.execute("SELECT amount,is_extra FROM payment_movements WHERE practice_id=? AND payment_type='saldo' ORDER BY id",(pid,)).fetchall()
+            self.assertEqual([(float(r["amount"]),r["is_extra"]) for r in movements],[(200.0,0)])
             practice=conn.execute("SELECT deposit,remaining_balance FROM practices WHERE id=?",(pid,)).fetchone()
             self.assertEqual((practice["deposit"],practice["remaining_balance"]),("200.00","60.00"))
 
+    def test_payment_popover_hides_modalita_field_for_circuito_d(self):
+        # Il circuito D non richiede mai un metodo di pagamento: il campo
+        # Modalita' nel popup Pagamento resta nel markup (per il toggle via
+        # ppmSyncMacroareaInvoiceSection quando si cambia circuito) ma il suo
+        # wrapper porta l'attributo hidden quando il circuito e' D.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,total_text) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                             ("CR-MODALITA-D","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Nerone","Cremazione singola","Da saldare","200")).lastrowid
+            row=conn.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+        dialog=self.handler.status_badges(row)
+        self.assertIn('data-macroarea-modalita="saldo" hidden',dialog)
+        self.assertIn('data-macroarea-modalita="acconto" hidden',dialog)
+
+    def test_bilanci_shows_pagamento_extra_registrato_label_linked_to_practice(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-BILANCI-EXTRA","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Marco","Cremazione singola","Da saldare","200","200")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-10","saldo_totale":"200,00","saldo_circuito":"W","saldo_modalita":"Contanti","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        redirects=[];self.handler.redirect=lambda url:redirects.append(url);self.handler.headers={}
+        self.handler.form=lambda:{"extra_circuito":"W","extra_data":"2026-07-20","extra_totale":"50,00","extra_modalita":"Bonifico","balance_idempotency_key":"bilanci-extra"}
+        self.handler.save_payment_extra(admin,pid)
+        self.assertTrue(redirects)
+        rendered=[];self.handler.send_html=lambda content,*a:rendered.append(content)
+        self.handler.path="/bilanci?periodo=tutto"
+        self.handler.balances_page(admin)
+        html=rendered[-1]
+        self.assertIn("Pagamento extra registrato",html)
+        self.assertIn(f"/pratiche/{pid}?return_to=",html)
+
     def test_edit_form_extra_on_settled_d_practice_registers_new_movement_no_double_count(self):
         # Reproduces the real production report: from the practice's
-        # "Modifica dati" -> Preventivo section (not the Pagamento popover),
-        # raising Totale D and confirming a new Rimanenza D on an
+        # "Modifica dati" -> Preventivo section, raising Totale D on an
         # already-fully-paid D practice used to either raise
         # IdempotencyConflictError or — worse — silently rewrite the
         # *original* settlement's amount via correct_practice_payment_amount
         # (with the original's old date) while ALSO registering a brand new
-        # movement for the same extra, double-counting it in Bilanci.
+        # movement for the same extra, double-counting it in Bilanci. With
+        # the redesigned flow, the base Rimanenza D field only ever corrects
+        # the existing movement in place (even when resubmitted unchanged
+        # alongside a Totale D increase); the genuinely new amount is
+        # registered separately through the dedicated "Aggiungi pagamento
+        # extra" button.
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
@@ -6232,17 +6285,31 @@ class PetParadiseTests(unittest.TestCase):
         self.assertTrue(responses[-1][0]["ok"],responses[-1])
         with app.db() as conn:
             original=conn.execute("SELECT id,amount,paid_at FROM payment_movements WHERE practice_id=? AND payment_type='saldo'",(pid,)).fetchone()
-        # from the practice edit form: Totale D 250->280, Rimanenza D typed as 30
+        # from the practice edit form: Totale D 250->280, Rimanenza D
+        # resubmitted unchanged (250) so it's present in macro_plan and the
+        # legacy total-changed reconciliation (correct_practice_payment_amount)
+        # is skipped in favour of apply_payment_macroarea's own in-place
+        # correction — which here is a no-op since nothing actually changed
         self.handler.form=lambda:{
             "operator_name":"FILIPPO","service_type":"Da decidere","request_origin":"Privato",
             "owner_first_name":"Anna","owner_last_name":"Neri","owner_phone":"3331112222",
             "owner_tax_code":"NRIANN80A01H501U","owner_street":"Via Test","owner_city":"Livorno",
             "owner_province":"LI","owner_zip":"57100","payment_status":"Pagato","economic_at":"2026-07-21",
-            "total_text":"280","saldo_d_totale":"30","saldo_d_totale_touched":"1","saldo_d_data":"2026-07-30",
+            "total_text":"280","saldo_d_totale":"250","saldo_d_totale_touched":"1","saldo_d_data":"2026-07-21",
         }
-        redirects=[];self.handler.redirect=lambda url:redirects.append(url)
+        redirects=[];self.handler.redirect=lambda url:redirects.append(url);self.handler.headers={}
         self.handler.edit_submit(admin,pid)
-        self.assertTrue(redirects,"edit_submit must redirect on success, not raise IdempotencyConflictError")
+        self.assertTrue(redirects,"edit_submit must redirect on success")
+        with app.db() as conn:
+            movement=conn.execute("SELECT id,amount,paid_at FROM payment_movements WHERE practice_id=? AND payment_type='saldo'",(pid,)).fetchone()
+            self.assertEqual((movement["id"],float(movement["amount"]),movement["paid_at"]),
+                              (original["id"],float(original["amount"]),original["paid_at"]))
+        # the extra 30 is registered through the dedicated button, never by
+        # typing an incremental amount into the base Rimanenza D field
+        redirects.clear()
+        self.handler.form=lambda:{"extra_circuito":"D","extra_data":"2026-07-30","extra_totale":"30,00","balance_idempotency_key":"edit-extra-d"}
+        self.handler.save_payment_extra(admin,pid)
+        self.assertTrue(redirects,"save_payment_extra must redirect on success")
         with app.db() as conn:
             movements=conn.execute("SELECT id,amount,paid_at FROM payment_movements WHERE practice_id=? AND payment_type='saldo' ORDER BY id",(pid,)).fetchall()
             self.assertEqual(len(movements),2)
@@ -6309,14 +6376,12 @@ class PetParadiseTests(unittest.TestCase):
             practice=conn.execute("SELECT deposit,remaining_balance,payment_status FROM practices WHERE id=?",(pid,)).fetchone()
             self.assertEqual((practice["deposit"],practice["remaining_balance"],practice["payment_status"]),("360.00","0.00","Pagato"))
 
-    def test_preventivo_w_extra_button_forces_new_payment_even_with_same_amount(self):
-        # "Aggiungi incasso successivo W" nel Preventivo (creazione/modifica):
-        # stessa identica funzione del pulsante nel popup Pagamento, solo
-        # spostata per circuito. Anche con lo STESSO importo gia'
-        # registrato (che da solo non farebbe scattare l'euristica
-        # automatica di edit_submit), il flag esplicito w_extra=1 deve
-        # comunque forzare un movimento nuovo e distinto, mai una
-        # correzione del primo.
+    def test_extra_payment_forces_new_movement_even_with_same_amount(self):
+        # "Aggiungi pagamento extra": anche con lo STESSO identico importo
+        # gia' registrato (che da solo non farebbe scattare alcuna euristica
+        # automatica), deve sempre creare un movimento nuovo e distinto, mai
+        # una correzione del primo — a differenza del campo base "Salva
+        # pagamento", che invece corregge sempre in place.
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
@@ -6330,27 +6395,23 @@ class PetParadiseTests(unittest.TestCase):
         self.assertTrue(responses[-1][0]["ok"],responses[-1])
         with app.db() as conn:
             original=conn.execute("SELECT id,amount,paid_at FROM payment_movements WHERE practice_id=? AND payment_type='saldo'",(pid,)).fetchone()
-        self.handler.form=lambda:{
-            "operator_name":"FILIPPO","service_type":"Da decidere","request_origin":"Privato",
-            "owner_first_name":"Anna","owner_last_name":"Neri","owner_phone":"3331112222",
-            "owner_tax_code":"NRIANN80A01H501U","owner_street":"Via Test","owner_city":"Livorno",
-            "owner_province":"LI","owner_zip":"57100","payment_status":"Pagato","economic_at":"2026-07-10",
-            "saldo_w_totale":"300","saldo_w_totale_touched":"1","saldo_w_data":"2026-07-20","saldo_w_modalita":"Contanti",
-            "w_extra":"1",
-        }
-        redirects=[];self.handler.redirect=lambda url:redirects.append(url)
-        self.handler.edit_submit(admin,pid)
-        self.assertTrue(redirects,"edit_submit must succeed")
+        redirects=[];self.handler.redirect=lambda url:redirects.append(url);self.handler.headers={}
+        self.handler.form=lambda:{"extra_circuito":"W","extra_data":"2026-07-20","extra_totale":"300,00","extra_modalita":"Contanti","balance_idempotency_key":"wbtn-extra"}
+        self.handler.save_payment_extra(admin,pid)
+        self.assertTrue(redirects,"save_payment_extra must succeed")
         with app.db() as conn:
             movements=conn.execute("SELECT id,amount,paid_at FROM payment_movements WHERE practice_id=? AND payment_type='saldo' ORDER BY id",(pid,)).fetchall()
         self.assertEqual(len(movements),2)
         self.assertEqual((movements[0]["id"],movements[0]["paid_at"]),(original["id"],original["paid_at"]))
         self.assertEqual((float(movements[1]["amount"]),movements[1]["paid_at"]),(300.0,"2026-07-20"))
 
-    def test_preventivo_payment_section_shows_salva_and_registra_nuovo_for_w_and_d(self):
-        # i pulsanti devono comparire nella sezione Preventivo sia in
-        # creazione che in modifica, dopo le voci W e dopo le voci D —
-        # non solo nel popup Pagamento aperto dal riepilogo.
+    def test_preventivo_payment_section_shows_salva_pagamento_extra_button_only_on_edit(self):
+        # nella sezione Preventivo restano solo i pulsanti "Salva pagamento
+        # W/D" (nessuna ambiguita' di scelta, sia in creazione che in
+        # modifica); il pulsante unico "Aggiungi pagamento extra" compare
+        # invece solo in modifica di una pratica gia' esistente — in
+        # creazione non ha ancora senso: non esiste alcun movimento
+        # rispetto a cui essere "extra".
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
@@ -6363,12 +6424,12 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.edit_page(admin,pid)
         edit_page=rendered[-1]
         for page in (new_page,edit_page):
-            self.assertIn('name="w_extra" value="1"',page)
-            self.assertIn('name="d_extra" value="1"',page)
             self.assertIn("Salva pagamento W",page)
-            self.assertIn("Aggiungi incasso successivo W",page)
             self.assertIn("Salva pagamento D",page)
-            self.assertIn("Aggiungi incasso successivo D",page)
+            self.assertNotIn("Aggiungi incasso successivo",page)
+        self.assertNotIn("Aggiungi pagamento extra",new_page)
+        self.assertIn("Aggiungi pagamento extra",edit_page)
+        self.assertIn(f'action="/pratiche/{pid}/pagamento-extra"',edit_page)
 
     def test_practice_form_sections_are_collapsible_open_on_create_closed_on_edit(self):
         # tutte le sezioni del form pratica si possono aprire/chiudere; in
@@ -6899,9 +6960,12 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(full_page.count("<b>CR-000063-SIM</b>"),2)
 
     def test_dashboard_counts_multiple_movements_same_practice_same_day(self):
-        # scenario 6: due movimenti di acconto sulla stessa pratica nello
-        # stesso giorno (il secondo registrato come pagamento nuovo,
-        # distinto, tramite il pulsante "Aggiungi incasso successivo")
+        # scenario 6: due movimenti sulla stessa pratica nello stesso giorno
+        # — il primo un acconto base, il secondo un pagamento extra distinto
+        # tramite il pulsante dedicato "Aggiungi pagamento extra" (il vecchio
+        # flag "acconto_extra" sui campi base non esiste piu' di proposito:
+        # un extra e' sempre di tipo Saldo/Incasso completo nel ledger, mai
+        # Acconto — vedi apply_payment_macroarea).
         today=app.rome_now().date().isoformat()
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
@@ -6912,15 +6976,22 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.form=lambda:{"macroarea":"acconto","acconto_data":today,"acconto_totale":"100,00","acconto_circuito":"W","acconto_modalita":"Pos","ajax":"1"}
         self.handler.save_payment_macroarea(admin,pid)
         self.assertTrue(responses[-1][0]["ok"],responses[-1])
-        self.handler.form=lambda:{"macroarea":"acconto","acconto_data":today,"acconto_totale":"50,00","acconto_circuito":"W","acconto_modalita":"Contanti","acconto_extra":"1","balance_idempotency_key":"sameday-extra","ajax":"1"}
-        self.handler.save_payment_macroarea(admin,pid)
-        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        self.handler.redirected=""
+        self.handler.redirect=lambda p: setattr(self.handler,"redirected",p)
+        self.handler.headers={}
+        self.handler.form=lambda:{"extra_data":today,"extra_totale":"50,00","extra_circuito":"W","extra_modalita":"Contanti","balance_idempotency_key":"sameday-extra"}
+        self.handler.save_payment_extra(admin,pid)
+        self.assertTrue(self.handler.redirected)
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
         self.handler.path="/?pagamenti_periodo=oggi";self.handler.dashboard(admin)
-        self.assertIn('data-dashboard-payment="Acconto" data-count="2" data-amount="150.00"',rendered[-1])
+        self.assertIn('data-dashboard-payment="Acconto" data-count="1" data-amount="100.00"',rendered[-1])
+        self.assertIn('data-dashboard-payment="Pagato" data-count="1" data-amount="50.00"',rendered[-1])
         self.handler.path=f"/pagamenti/acconti?periodo=oggi&dal={today}&al={today}"
         self.handler.payment_overview(admin,"acconti")
-        self.assertEqual(rendered[-1].count("<b>CR-SAMEDAY</b>"),2)
+        self.assertEqual(rendered[-1].count("<b>CR-SAMEDAY</b>"),1)
+        self.handler.path=f"/pagamenti/pagati?periodo=oggi&dal={today}&al={today}"
+        self.handler.payment_overview(admin,"pagati")
+        self.assertEqual(rendered[-1].count("<b>CR-SAMEDAY</b>"),1)
 
     def test_dashboard_counts_movements_same_practice_different_days_only_today(self):
         # scenario 7: due movimenti sulla stessa pratica in giorni diversi —
