@@ -1702,14 +1702,21 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .calendar-form-v2 .calendar-v2-card,.calendar-form-v2 .calendar-subblock{padding:16px;border:1px solid #ffffff14;border-radius:22px;background:linear-gradient(160deg,#1c2635d9,#141b27d9);backdrop-filter:blur(16px);box-shadow:0 10px 26px #05070f3d;margin:0 0 12px!important}
 .calendar-form-v2 .calendar-v2-eyebrow,.calendar-form-v2 .calendar-subblock>h3{margin:0 0 12px!important;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#9ca7b8}
 .calendar-form-v2 .calendar-v2-row2{display:grid!important;grid-template-columns:1fr 1fr!important;gap:9px;margin-bottom:9px}
-.calendar-form-v2 .calendar-v2-row3{display:grid!important;grid-template-columns:1fr 1fr auto!important;gap:9px;align-items:stretch;margin-bottom:12px}
-.calendar-form-v2 .calendar-v2-allday{display:flex;align-items:center;justify-content:center;padding:0 14px;border:1px solid #ffffff12;border-radius:22px;background:linear-gradient(160deg,#1c2635d9,#141b27d9)}
-.calendar-form-v2 .calendar-v2-allday .modern-check{margin:0}
-@media(max-width:640px){.calendar-form-v2 .calendar-v2-row3{grid-template-columns:1fr 1fr!important}.calendar-form-v2 .calendar-v2-allday{grid-column:1/-1}}
-.calendar-form-v2 .calendar-type-grid{display:grid!important;grid-template-columns:repeat(5,1fr)!important;gap:9px}
-.calendar-form-v2 .calendar-type-option{display:flex!important;flex-direction:column!important;align-items:flex-start!important;gap:10px!important;min-height:148px;padding:16px 14px!important;border-radius:20px!important}
-.calendar-form-v2 .calendar-type-option small.sub{font-size:11px;line-height:1.35}
-.calendar-form-v2 .calendar-type-option b{font-size:12.5px;letter-spacing:.02em}
+.calendar-form-v2 .calendar-v2-row3{display:grid!important;grid-template-columns:1fr 1fr 1fr!important;gap:6px;align-items:stretch;margin-bottom:12px}
+.calendar-form-v2 .calendar-v2-allday{display:flex;align-items:center;justify-content:center;padding:0 4px;border:1px solid #ffffff12;border-radius:22px;background:linear-gradient(160deg,#1c2635d9,#141b27d9);min-width:0}
+.calendar-form-v2 .calendar-v2-allday .modern-check{margin:0;font-size:10.5px;gap:5px;white-space:normal;line-height:1.15;text-align:center;min-width:0}
+.calendar-form-v2 .calendar-v2-row3>*{min-width:0}
+.calendar-form-v2 .calendar-v2-row3 .calendar-tap-card-body small{font-size:9.5px}
+.calendar-form-v2 .calendar-v2-row3 select{font-size:12px}
+/* Griglia tipo evento: SEMPRE 5 colonne in una riga sola, come nel mockup —
+   niente wrap su schermi stretti: le card sono compatte apposta (icona
+   piccola, testo minuscolo) per starci tutte e 5 anche su iPhone standard. */
+.calendar-form-v2 .calendar-type-grid{display:grid!important;grid-template-columns:repeat(5,1fr)!important;gap:5px}
+.calendar-form-v2 .calendar-type-option{display:flex!important;flex-direction:column!important;align-items:flex-start!important;gap:5px!important;min-height:96px;padding:8px 6px!important;border-radius:14px!important;min-width:0}
+.calendar-form-v2 .calendar-type-option .calendar-event-type-icon{flex:0 0 22px!important;width:22px!important;height:22px!important;border-radius:7px!important}
+.calendar-form-v2 .calendar-type-option .calendar-event-type-icon .icon{width:12px;height:12px}
+.calendar-form-v2 .calendar-type-option small.sub{font-size:7.5px;line-height:1.2;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.calendar-form-v2 .calendar-type-option b{font-size:9px;letter-spacing:0;line-height:1.15;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .calendar-form-v2 .calendar-type-check{position:absolute;opacity:0;width:0;height:0;overflow:hidden}
 .calendar-form-v2 .calendar-type-option:has(.calendar-icon-pink){border-color:#ef405f4d!important}
 .calendar-form-v2 .calendar-type-option:has(.calendar-icon-blue){border-color:#3b82f64d!important}
@@ -1721,11 +1728,13 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .calendar-form-v2 .calendar-type-option:has(input:checked):has(.calendar-icon-green){border-color:#22c55e!important;box-shadow:0 0 0 2px #22c55e40,0 0 22px #22c55e38!important}
 .calendar-form-v2 .calendar-type-option:has(input:checked):has(.calendar-icon-orange){border-color:#f59e0b!important;box-shadow:0 0 0 2px #f59e0b40,0 0 22px #f59e0b38!important}
 .calendar-form-v2 .calendar-type-option:has(input:checked):has(.calendar-icon-purple){border-color:#8b5cf6!important;box-shadow:0 0 0 2px #8b5cf640,0 0 22px #8b5cf638!important}
-@media(max-width:900px){.calendar-form-v2 .calendar-type-grid{grid-template-columns:repeat(3,1fr)!important}}
-@media(max-width:560px){.calendar-form-v2 .calendar-type-grid{grid-template-columns:repeat(2,1fr)!important}}
-.calendar-form-v2 .calendar-location-tiles{display:flex!important;flex-wrap:wrap}
-.calendar-form-v2 .calendar-location-tile{flex-direction:row!important;flex:1 1 auto;min-width:0;padding:12px 16px!important;gap:8px!important}
-.calendar-form-v2 .calendar-location-tile span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.calendar-form-v2 .calendar-location-tiles{display:grid!important;grid-template-columns:repeat(3,1fr)!important;gap:6px}
+.calendar-form-v2 .calendar-location-tile{flex-direction:row!important;justify-content:center;min-width:0;padding:10px 4px!important;gap:5px!important;font-size:10.5px!important}
+.calendar-form-v2 .calendar-location-tile .icon{width:16px;height:16px}
+.calendar-form-v2 .calendar-location-tile span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.calendar-form-v2 .calendar-v2-addr-row{display:flex;gap:8px;align-items:stretch}
+.calendar-form-v2 .calendar-v2-addr-row input{flex:1 1 0%!important;width:0!important;min-width:0!important}
+.calendar-form-v2 .calendar-v2-addr-row .calendar-use-client-address{flex:0 0 auto!important;width:max-content!important;max-width:45%!important;white-space:nowrap;font-size:11px;padding:0 12px;margin-top:0!important}
 .calendar-form-v2 section.collapsible{padding:0!important;border:1px solid #ffffff14;border-radius:18px;background:linear-gradient(160deg,#1c2635d9,#141b27d9);backdrop-filter:blur(16px);box-shadow:0 10px 26px #05070f3d;margin-bottom:10px;overflow:hidden}
 .calendar-form-v2 section.collapsible>h2{display:flex;align-items:center;gap:12px;margin:0!important;padding:14px 16px}
 .calendar-form-v2 section.collapsible>h2::after{margin-left:auto;font-size:16px}
@@ -1734,8 +1743,10 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .calendar-form-v2 section.collapsible.tone-orange>h2{color:#fdba74}
 .calendar-form-v2 section.collapsible.tone-blue>h2{color:#93c5fd}
 .calendar-form-v2 section.collapsible.tone-gray>h2{color:#e2e8f0}
-.calendar-form-v2 .calendar-detail-quickactions{grid-template-columns:repeat(4,1fr)!important}
-.calendar-form-v2 .calendar-detail-qa{flex-direction:row!important;min-height:48px!important;padding:10px 8px!important}
+.calendar-form-v2 .calendar-detail-quickactions{grid-template-columns:repeat(4,1fr)!important;gap:6px!important}
+.calendar-form-v2 .calendar-detail-qa{flex-direction:row!important;min-height:44px!important;padding:8px 4px!important;min-width:0;font-size:10px!important;gap:5px!important}
+.calendar-form-v2 .calendar-detail-qa-icon{flex:0 0 auto}
+.calendar-form-v2 .calendar-detail-qa>span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .calendar-form-v2 .calendar-v2-actions{display:flex;flex-direction:column;gap:10px;margin-top:6px}
 .calendar-form-v2 .calendar-v2-actions .btn{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;min-height:52px;font-size:15px}
 .light-theme.calendar-form-v2 .calendar-v2-card,.light-theme .calendar-form-v2 .calendar-v2-card,.light-theme .calendar-form-v2 .calendar-subblock,.light-theme .calendar-form-v2 section.collapsible,.light-theme .calendar-form-v2 .calendar-v2-allday{background:#fff;border-color:#e2e8f0}
@@ -9535,7 +9546,7 @@ class App(BaseHTTPRequestHandler):
         pickup_tile=lambda value,icon,label,active:f'<button type="button" class="calendar-location-tile{" active" if active else ""}" data-pickup-pill="{value}" onclick="calendarPickupPillClick(this)">{lucide(icon)}<span>{label}</span></button>'
         location_pills_html=f'''<div class="calendar-location-tiles">{pickup_tile("Veterinario","stethoscope","Ambulatorio",location_type_value=="Veterinario")}{pickup_tile("Privato","home","Domicilio",location_type_value=="Privato")}{pickup_tile("Privato","map-pin","Altro indirizzo",False)}</div>'''
         client_is_empty=not (val('client_id') or val('client_first_name') or val('client_last_name'))
-        pickup_location_block=f'''<div class="calendar-subblock" data-calendar-types="Ritiro" {"" if event_type=="Ritiro" else "hidden"}><h3>Luogo del ritiro</h3><div class="fields"><div class="field full"><label>Luogo recupero *</label>{location_pills_html}<input type="hidden" name="location_type" value="{esc(location_type_value)}" data-prev-value="{esc(location_type_value)}"></div><div class="field full lookup" data-pickup-location="Veterinario" {"" if location_type_value=="Veterinario" else "hidden"}><label>Cerca veterinario</label><input id="calendarVetSearch" autocomplete="off" placeholder="Ambulatorio, medico o città"><div id="calendarVetResults" class="lookup-results hidden"></div><input type="hidden" name="veterinarian_id" value="{val('veterinarian_id')}"></div><div class="field" data-pickup-location="Veterinario" {"" if location_type_value=="Veterinario" else "hidden"}><label>Nome ambulatorio</label><input name="venue_name" value="{val('venue_name')}"></div><div class="field full"><label>Indirizzo *</label><input name="address" value="{val('address')}" {"required" if location_type_value else ""}><button type="button" class="btn ghost calendar-use-client-address" data-use-client-address hidden onclick="calendarUseClientAddress(this)">Usa indirizzo cliente</button></div></div></div>'''
+        pickup_location_block=f'''<div class="calendar-subblock" data-calendar-types="Ritiro" {"" if event_type=="Ritiro" else "hidden"}><h3>Luogo del ritiro</h3><div class="fields"><div class="field full"><label>Luogo recupero *</label>{location_pills_html}<input type="hidden" name="location_type" value="{esc(location_type_value)}" data-prev-value="{esc(location_type_value)}"></div><div class="field full lookup" data-pickup-location="Veterinario" {"" if location_type_value=="Veterinario" else "hidden"}><label>Cerca veterinario</label><input id="calendarVetSearch" autocomplete="off" placeholder="Ambulatorio, medico o città"><div id="calendarVetResults" class="lookup-results hidden"></div><input type="hidden" name="veterinarian_id" value="{val('veterinarian_id')}"></div><div class="field" data-pickup-location="Veterinario" {"" if location_type_value=="Veterinario" else "hidden"}><label>Nome ambulatorio</label><input name="venue_name" value="{val('venue_name')}"></div><div class="field full"><label>Indirizzo *</label><div class="calendar-v2-addr-row"><input name="address" value="{val('address')}" {"required" if location_type_value else ""}><button type="button" class="btn ghost calendar-use-client-address" data-use-client-address hidden onclick="calendarUseClientAddress(this)">Usa indirizzo cliente</button></div></div></div></div>'''
         # Cliente/Proprietario e Veterinario di riferimento: nel wizard a
         # step erano due "calendar-subblock" separati dentro il sotto-passo
         # "cliente". Ora e' un'unica sezione apri/chiudi (niente piu' tap-
