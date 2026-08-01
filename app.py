@@ -2390,7 +2390,7 @@ button.calendar-tap-card:active,a.calendar-tap-card:active{transform:scale(.985)
 .calendar-detail-qa:nth-child(4) .calendar-detail-qa-icon{background:linear-gradient(135deg,#8b5cf6,#6d28d9);color:#fff;box-shadow:0 0 12px #8b5cf638}
 .calendar-detail-qa-disabled{opacity:.4;pointer-events:none}
 .calendar-detail-qa-menu-wrap{position:relative}
-.calendar-detail-qa-menu-wrap .calendar-appt-menu-popover{left:0;right:auto;bottom:calc(100% + 6px)}
+.calendar-detail-qa-menu-wrap .calendar-appt-menu-popover{left:auto;right:0;bottom:calc(100% + 6px)}
 .light-theme .calendar-detail-status-badge{background:#f1f5f9}
 .light-theme .calendar-detail-qa{background:#fff;border-color:#e2e8f0;color:#111827}
 @media(max-width:560px){.calendar-detail-quickactions{grid-template-columns:repeat(5,minmax(0,1fr))}.calendar-detail-qa{min-height:64px;font-size:10.5px}.calendar-detail-header-top{flex-wrap:wrap}}
@@ -3789,6 +3789,15 @@ function ppmOpenLookupPanel(panel){
 function ppmRegisterLookupPanel(input,panel){
   if(!input||!panel)return;
   panel._ppmLookupInput=input;
+  // Anche sull'input, cosi' un handler puo' ritrovare SEMPRE lo stesso
+  // pannello anche dopo che ppmPositionLookupPanel lo ha "portato" fuori
+  // da input.parentElement (dentro <body>): un secondo querySelector
+  // relativo al parent, dopo il primo open, non lo trova piu' (e' un
+  // fratello di <body>, non piu' un discendente del parent originale) —
+  // bug reale segnalato dall'utente: il pannello zona restava aperto per
+  // sempre dopo il primo utilizzo, perche' calendarZoneInput/Offer non
+  // riuscivano piu' a raggiungerlo per chiuderlo.
+  input._ppmLookupPanel=panel;
   ppmLookupPanels.add({input,panel});
 }
 document.addEventListener('click',function(e){
@@ -4842,16 +4851,26 @@ function calendarInitDayPages(){
   const items=[...pages.querySelectorAll('.calendar-day-page')];
   if(!items.length)return;
   if('IntersectionObserver' in window){
+    let navigatedToAdjacentWeek=false;
     calendarDayObserver=new IntersectionObserver(function(entries){
       entries.forEach(function(entry){
-        if(entry.isIntersecting&&entry.intersectionRatio>=0.6){
-          // solo evidenziazione barra + sync URL: MAI ri-scrollare qui
-          // #calendarDayPages, altrimenti si combatte con lo swipe che
-          // l'utente sta ancora facendo con il dito.
-          const idx=Number(entry.target.dataset.dayIndex);
-          calendarSetActiveDaybarCard(idx,false);
-          calendarSyncUrlToDay(idx);
+        if(!entry.isIntersecting||entry.intersectionRatio<0.6)return;
+        // Sentinelle prima di lunedi'/dopo domenica (nessun data-day-index,
+        // solo data-href): lo swipe che le raggiunge ricarica la pagina
+        // sulla settimana adiacente invece di fermarsi al bordo senza
+        // fare nulla (bug segnalato dall'utente).
+        if(entry.target.dataset.href){
+          if(navigatedToAdjacentWeek)return;
+          navigatedToAdjacentWeek=true;
+          location.href=entry.target.dataset.href;
+          return;
         }
+        // solo evidenziazione barra + sync URL: MAI ri-scrollare qui
+        // #calendarDayPages, altrimenti si combatte con lo swipe che
+        // l'utente sta ancora facendo con il dito.
+        const idx=Number(entry.target.dataset.dayIndex);
+        calendarSetActiveDaybarCard(idx,false);
+        calendarSyncUrlToDay(idx);
       });
     },{root:pages,threshold:[0.6]});
     items.forEach(function(item){calendarDayObserver.observe(item);});
@@ -5607,8 +5626,8 @@ function calendarHtml(value){return String(value||'').replace(/[&<>"']/g,char=>(
 function calendarDateIt(value){const match=String(value||'').match(/^(\d{4})-(\d{2})-(\d{2})/);return match?`${match[3]}/${match[2]}/${match[1]}`:String(value||'');}
 function formatVisibleDates(root=document.body){const excluded=new Set(['SCRIPT','STYLE','NOSCRIPT','TEXTAREA','INPUT','SELECT','OPTION','CODE','PRE']);const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);const nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);nodes.forEach(node=>{if(!node.parentElement||excluded.has(node.parentElement.tagName))return;node.nodeValue=node.nodeValue.replace(/\b(\d{4})-(\d{2})-(\d{2})(?=T|\b)/g,(_,year,month,day)=>`${day}/${month}/${year}`);});}
 function calendarZoneMatches(value){const norm=v=>v.toLocaleLowerCase('it').normalize('NFD').replace(/[̀-ͯ]/g,'');const query=norm(value.trim());return (window.CALENDAR_ZONES||[]).filter(zone=>norm(zone).includes(query)).slice(0,8);}
-function calendarZoneInput(input){const results=input.parentElement.querySelector('.calendar-zone-results');const matches=calendarZoneMatches(input.value);if(!input.value.trim()||!matches.length){ppmCloseLookupPanel(results);}else{results.innerHTML=matches.map(zone=>`<button type="button" data-zone="${calendarHtml(zone)}">${calendarHtml(zone)}</button>`).join('');ppmOpenLookupPanel(results);}results.onclick=e=>{const button=e.target.closest('[data-zone]');if(!button)return;input.value=button.dataset.zone;ppmCloseLookupPanel(results);calendarAutoTitle();};calendarAutoTitle();}
-function calendarZoneOffer(input){setTimeout(()=>{const results=input.parentElement.querySelector('.calendar-zone-results');if(results)ppmCloseLookupPanel(results);const value=input.value.trim();if(!value)return;const known=(window.CALENDAR_ZONES||[]).some(zone=>zone.toLocaleLowerCase('it')===value.toLocaleLowerCase('it'));const save=input.closest('.field')?.querySelector('input[name="save_zone"]');if(!known&&save&&!save.checked&&confirm(`Vuoi aggiungere ${value} ai suggerimenti?`))save.checked=true;},150);}
+function calendarZoneInput(input){const results=input._ppmLookupPanel||input.parentElement.querySelector('.calendar-zone-results');const matches=calendarZoneMatches(input.value);if(!input.value.trim()||!matches.length){ppmCloseLookupPanel(results);}else{results.innerHTML=matches.map(zone=>`<button type="button" data-zone="${calendarHtml(zone)}">${calendarHtml(zone)}</button>`).join('');ppmOpenLookupPanel(results);}results.onclick=e=>{const button=e.target.closest('[data-zone]');if(!button)return;input.value=button.dataset.zone;ppmCloseLookupPanel(results);calendarAutoTitle();};calendarAutoTitle();}
+function calendarZoneOffer(input){setTimeout(()=>{const results=input._ppmLookupPanel||input.parentElement.querySelector('.calendar-zone-results');if(results)ppmCloseLookupPanel(results);const value=input.value.trim();if(!value)return;const known=(window.CALENDAR_ZONES||[]).some(zone=>zone.toLocaleLowerCase('it')===value.toLocaleLowerCase('it'));const save=input.closest('.field')?.querySelector('input[name="save_zone"]');if(!known&&save&&!save.checked&&confirm(`Vuoi aggiungere ${value} ai suggerimenti?`))save.checked=true;},150);}
 function calendarTimeParts(input){const digits=input.value.replace(/\D/g,'').slice(0,4);if(!digits)return {hour:0,minute:0,digits};if(digits.length<=2)return {hour:Math.min(23,Number(digits)||0),minute:0,digits};const hour=digits.length===3?Number(digits[0]):Number(digits.slice(0,2)),minute=Number(digits.slice(-2));return {hour:Math.min(23,hour||0),minute:Math.min(59,minute||0),digits};}
 function calendarSetWheelTime(wheel,hour,minute,notify=true){const input=wheel.closest('.calendar-datetime-row')?.querySelector('[data-time-entry]');if(!input)return;input.value=`${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}`;input.dataset.timeDigits=`${String(hour).padStart(2,'0')}${String(minute).padStart(2,'0')}`;calendarSyncTimeWheel(input,false);if(notify)input.dispatchEvent(new Event('change',{bubbles:true}));}
 function calendarSyncTimeWheel(input,smooth=true){const wheel=input.closest('.calendar-datetime-row')?.querySelector('[data-time-wheel]');if(!wheel)return;const {hour,minute}=calendarTimeParts(input),wheelMinute=Math.max(0,Math.min(55,Math.round(minute/5)*5));wheel.dataset.syncing='1';wheel.querySelectorAll('.calendar-wheel-option').forEach(button=>button.classList.toggle('active',Number(button.dataset.timeValue)===(button.closest('[data-wheel-part="hour"]')?hour:wheelMinute)));wheel.querySelectorAll('.calendar-wheel-column').forEach(column=>{const active=column.querySelector('.active');if(active)column.scrollTo({top:active.offsetTop-(column.clientHeight-active.offsetHeight)/2,behavior:smooth?'smooth':'auto'});});clearTimeout(wheel._syncTimer);wheel._syncTimer=setTimeout(()=>delete wheel.dataset.syncing,420);}
@@ -5731,7 +5750,7 @@ async function calendarLookup(input,endpoint,results,select){
   }
 }
 function calendarSelectVeterinarian(form,item){form.veterinarian_id.value=item.id||'';form.veterinarian_name.value=item.clinic_name||item.display||'';form.veterinarian_contact.value=item.doctor_name||'';form.veterinarian_phone.value=item.phone||'';form.veterinarian_address.value=item.address||'';form.veterinarian_hours.value=item.notes||'';if(form.venue_name)form.venue_name.value=item.clinic_name||item.display||'';if(form.address)form.address.value=[item.address,item.city].filter(Boolean).join(' - ');form.phone.value=item.phone||'';const vetInput=document.getElementById('calendarVetSearch');if(vetInput)vetInput.value=item.clinic_name||item.display||'';}
-function calendarSyncPickupLocation(select){const form=select.form;form.querySelectorAll('[data-pickup-location]').forEach(el=>{const show=el.dataset.pickupLocation.split('|').includes(select.value);el.hidden=!show;el.querySelectorAll('input,select').forEach(input=>input.disabled=!show);});const addressField=form.elements.namedItem('address');if(addressField)addressField.required=!!select.value;calendarUpdateClientAddressButton(form);}
+function calendarSyncPickupLocation(select){const form=select.form;form.querySelectorAll('[data-pickup-location]').forEach(el=>{const show=el.dataset.pickupLocation.split('|').includes(select.value);el.hidden=!show;el.querySelectorAll('input,select').forEach(input=>input.disabled=!show);});calendarUpdateClientAddressButton(form);}
 function calendarPickupPillClick(button){
   const group=button.closest('.calendar-location-tiles');
   if(group)group.querySelectorAll('.calendar-location-tile').forEach(p=>p.classList.remove('active'));
@@ -8797,6 +8816,16 @@ class App(BaseHTTPRequestHandler):
           {operator_filter_html}
         </div>'''
         daybar_cards=[];day_pages=[]
+        # Sentinelle invisibili prima/dopo i 7 giorni della settimana: senza
+        # queste lo swipe si fermava semplicemente al bordo (lunedi'/domenica)
+        # senza fare nulla, perche' non esisteva una pagina successiva su cui
+        # "agganciarsi" (bug segnalato dall'utente in vista Settimana, ma
+        # identico anche in vista Giorno essendo lo stesso carosello). Stessa
+        # tecnica gia' usata per il carosello mesi di Turni: la sentinella
+        # occupa uno slot dello scroll-snap e, quando lo swipe si ferma su
+        # di essa, ricarica la pagina sul giorno adiacente (che sposta anche
+        # la finestra "start..end" della settimana visualizzata).
+        day_pages.append(f'<div class="calendar-day-page calendar-day-page-edge" data-href="{view_url(start-timedelta(days=1),view)}"></div>')
         for i,day in enumerate(week_days):
             day_rows=by_day.get(day.isoformat(),[])
             active_cls=" active" if day.isoformat()==selected else ""
@@ -8820,6 +8849,7 @@ class App(BaseHTTPRequestHandler):
               <div class="calendar-appt-list">{list_html}</div>
               <a class="calendar-add-appt-btn" href="/calendario/nuovo?data={day.isoformat()}">{lucide("plus")}<span>Aggiungi ritiro / riconsegna</span></a>
             </div>''')
+        day_pages.append(f'<div class="calendar-day-page calendar-day-page-edge" data-href="{view_url(start+timedelta(days=7),view)}"></div>')
         daybar_html=f'''<div id="calendarDayboard">
           <div class="calendar-daybar-wrap">
             <button type="button" class="calendar-daybar-nav" onclick="calendarDaybarNav(-1)" aria-label="Barra giorni precedente">‹</button>
@@ -9613,7 +9643,7 @@ class App(BaseHTTPRequestHandler):
         pickup_tile=lambda value,icon,label,active:f'<button type="button" class="calendar-location-tile{" active" if active else ""}" data-pickup-pill="{value}" onclick="calendarPickupPillClick(this)">{lucide(icon)}<span>{label}</span></button>'
         location_pills_html=f'''<div class="calendar-location-tiles">{pickup_tile("Veterinario","stethoscope","Ambulatorio",location_type_value=="Veterinario")}{pickup_tile("Privato","home","Domicilio",location_type_value=="Privato")}{pickup_tile("Privato","map-pin","Altro indirizzo",False)}</div>'''
         client_is_empty=not (val('client_id') or val('client_first_name') or val('client_last_name'))
-        pickup_location_block=f'''<div class="calendar-subblock" data-calendar-types="Ritiro" {"" if event_type=="Ritiro" else "hidden"}><h3>Luogo del ritiro</h3><div class="fields"><div class="field full"><label>Luogo recupero *</label>{location_pills_html}<input type="hidden" name="location_type" value="{esc(location_type_value)}" data-prev-value="{esc(location_type_value)}"></div><div class="field full lookup" data-pickup-location="Veterinario" {"" if location_type_value=="Veterinario" else "hidden"}><label>Cerca veterinario</label><input id="calendarVetSearch" autocomplete="off" placeholder="Ambulatorio, medico o città"><div id="calendarVetResults" class="lookup-results hidden"></div><input type="hidden" name="veterinarian_id" value="{val('veterinarian_id')}"></div><div class="field" data-pickup-location="Veterinario" {"" if location_type_value=="Veterinario" else "hidden"}><label>Nome ambulatorio</label><input name="venue_name" value="{val('venue_name')}"></div><div class="field full"><label>Indirizzo *</label><div class="calendar-v2-addr-row"><input name="address" value="{val('address')}" {"required" if location_type_value else ""}><button type="button" class="btn ghost calendar-use-client-address" data-use-client-address hidden onclick="calendarUseClientAddress(this)">Usa indirizzo cliente</button></div></div></div></div>'''
+        pickup_location_block=f'''<div class="calendar-subblock" data-calendar-types="Ritiro" {"" if event_type=="Ritiro" else "hidden"}><h3>Luogo del ritiro</h3><div class="fields"><div class="field full"><label>Luogo recupero *</label>{location_pills_html}<input type="hidden" name="location_type" value="{esc(location_type_value)}" data-prev-value="{esc(location_type_value)}"></div><div class="field full lookup" data-pickup-location="Veterinario" {"" if location_type_value=="Veterinario" else "hidden"}><label>Cerca veterinario</label><input id="calendarVetSearch" autocomplete="off" placeholder="Ambulatorio, medico o città"><div id="calendarVetResults" class="lookup-results hidden"></div><input type="hidden" name="veterinarian_id" value="{val('veterinarian_id')}"></div><div class="field" data-pickup-location="Veterinario" {"" if location_type_value=="Veterinario" else "hidden"}><label>Nome ambulatorio</label><input name="venue_name" value="{val('venue_name')}"></div><div class="field full"><label>Indirizzo</label><div class="calendar-v2-addr-row"><input name="address" value="{val('address')}"><button type="button" class="btn ghost calendar-use-client-address" data-use-client-address hidden onclick="calendarUseClientAddress(this)">Usa indirizzo cliente</button></div></div></div></div>'''
         # Cliente/Proprietario e Veterinario di riferimento: nel wizard a
         # step erano due "calendar-subblock" separati dentro il sotto-passo
         # "cliente". Ora e' un'unica sezione apri/chiudi (niente piu' tap-
@@ -9766,7 +9796,19 @@ class App(BaseHTTPRequestHandler):
                     cur=c.execute(f"INSERT INTO calendar_events({','.join(cols)}) VALUES({','.join('?' for _ in cols)})",tuple(data.values())+(user["id"],stamp,stamp,user["id"]));event_id=cur.lastrowid
                     calendar_sync_children(c,event_id,animals,estimates,stamp);calendar_add_history(c,event_id,user["id"],"Creazione evento","",data["title"],stamp)
                     event_type_emoji={"Ritiro":"🐾","Ritiro in sede":"🐾","Riconsegna":"📦","Riconsegna in sede":"📦","Appuntamento":"📅"}.get(data["event_type"],"📆")
-                    emit_notification(c,"calendar_event_created",f"{event_type_emoji} Nuovo evento calendario",data["title"],actor_user_id=user["id"],payload={"url":f"/calendario/{event_id}"},db_path=DB_PATH)
+                    # Il titolo auto-generato (data["title"]) copre gia' tipo
+                    # evento + zona/sede; per Ritiro/Ritiro in sede si aggiunge
+                    # specie, peso e tipo cremazione del primo animale cosi'
+                    # la notifica e' chiara a colpo d'occhio senza dover aprire
+                    # l'evento (richiesta esplicita dell'utente).
+                    notif_bits=[]
+                    if data["event_type"] in ("Ritiro","Ritiro in sede") and animals:
+                        first_animal=animals[0]
+                        if first_animal.get("species"):notif_bits.append(first_animal["species"])
+                        if first_animal.get("weight"):notif_bits.append(f'{first_animal["weight"]} kg')
+                        if first_animal.get("cremation_type"):notif_bits.append(first_animal["cremation_type"])
+                    notif_text=data["title"]+(f' • {" · ".join(notif_bits)}' if notif_bits else '')
+                    emit_notification(c,"calendar_event_created",f"{event_type_emoji} Nuovo evento calendario",notif_text,actor_user_id=user["id"],payload={"url":f"/calendario/{event_id}"},db_path=DB_PATH)
                 if linked_practice_id and data["event_type"] in ("Riconsegna","Riconsegna in sede"):
                     c.execute("UPDATE calendar_events SET linked_practice_id=? WHERE id=?",(linked_practice_id,event_id))
                 if data["event_status"] in ("Annullato","Completato"):
@@ -9849,6 +9891,20 @@ class App(BaseHTTPRequestHandler):
         hero_time="Tutto il giorno" if event['all_day'] else (f"{start_time_part} → {end_time_part}" if end_time_part and end_time_part!=start_time_part else start_time_part)
         hero_place_primary=event['zone'] or event['venue_name'] or event['location_type'] or '-'
         hero_place_secondary=event['venue_name'] if event['zone'] and event['venue_name'] and event['venue_name']!=hero_place_primary else ''
+        # L'operatore era gia' ripetuto subito sotto ("Creato da <nome>"): tolto
+        # dal riepilogo in alto a favore di info piu' utili a colpo d'occhio —
+        # animale (specie/peso/cremazione) ed eventuale cliente, se presenti
+        # (richiesta esplicita dell'utente).
+        hero_animal_bits=[]
+        if animals:
+            first_animal=animals[0]
+            if first_animal["species"]:hero_animal_bits.append(first_animal["species"])
+            if first_animal["weight"]:hero_animal_bits.append(f'{first_animal["weight"]} kg')
+            if first_animal["cremation_type"]:hero_animal_bits.append(first_animal["cremation_type"])
+        hero_animal_name=(animals[0]["name"] if animals and animals[0]["name"] else "") or event["animal_name"] or ""
+        hero_animal_main=hero_animal_name or (hero_animal_bits[0] if hero_animal_bits else "")
+        hero_animal_sub=" · ".join(hero_animal_bits if hero_animal_name else hero_animal_bits[1:])
+        if len(animals)>1:hero_animal_sub=(hero_animal_sub+f" · +{len(animals)-1} altri").strip(" ·")
         header=f'''<div class="calendar-detail-topbar">
           <a class="calendar-detail-back" href="/calendario"><span class="calendar-detail-back-arrow">{lucide("chevron-right")}</span><span>Indietro</span></a>
           <h2 class="calendar-detail-topbar-title">Riepilogo evento</h2>
@@ -9873,7 +9929,8 @@ class App(BaseHTTPRequestHandler):
           <div class="calendar-detail-hero-meta">
             <div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-purple">{lucide("calendar")}</span><div><b>{esc(date_it(start_date_part))}</b><small>{esc(hero_time)}</small></div></div>
             <div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-teal">{lucide("home")}</span><div><b>{esc(hero_place_primary)}</b>{f'<small>{esc(hero_place_secondary)}</small>' if hero_place_secondary else ''}</div></div>
-            <div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-amber">{lucide("user")}</span><div><b>{esc(hero_operator_name or '-')}</b><small>Operatore</small></div></div>
+            {f'<div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-amber">{lucide("paw")}</span><div><b>{esc(hero_animal_main)}</b>{f"<small>{esc(hero_animal_sub)}</small>" if hero_animal_sub else ""}</div></div>' if hero_animal_main else ''}
+            {f'<div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-purple">{lucide("user")}</span><div><b>{esc(client_display)}</b><small>Cliente</small></div></div>' if client_display else ''}
           </div>
           <p class="sub calendar-detail-hero-footer">Creato da {esc(event['creator_name'])} · {esc(event['created_at'].replace('T',' ')[:16])}</p>
         </div>'''

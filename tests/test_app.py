@@ -9221,13 +9221,16 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(row["location_type"], "Privato")
         self.assertEqual(row["address"], "Via Nuova 12")
         self.assertIn("saved=luogo", redirects[-1])
-        # indirizzo vuoto viene rifiutato (stessa validazione del wizard per Ritiro)
-        rendered = []
-        self.handler.send_html = lambda html, *a: rendered.append(html)
-        self.handler.path = f"/calendario/{event_id}"
+        # indirizzo vuoto e' accettato (non piu' obbligatorio, stessa
+        # validazione rilassata del wizard di creazione — richiesta esplicita
+        # dell'utente: puo' non essere ancora noto e va compilato in seguito)
+        redirects.clear()
         self.handler.form = lambda: {"location_type": "Privato", "venue_name": "", "address": "", "destination_site": ""}
         self.handler.calendar_event_action(admin, event_id, "luogo")
-        self.assertIn("indirizzo", rendered[-1].lower())
+        self.assertIn("saved=luogo", redirects[-1])
+        with app.db() as conn:
+            row = conn.execute("SELECT address FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+        self.assertEqual(row["address"], "")
 
     def test_calendar_detail_quick_edit_cliente_updates_names_and_unlinks(self):
         with app.db() as conn:

@@ -120,8 +120,10 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertEqual(parse_items(json.dumps([{"name":"","species":"","weight":"","cremation_type":"","notes":""}]),"animal"),[])
         with self.assertRaisesRegex(ValueError,"luogo del ritiro"):
             normalize_event(self.event_form("Ritiro",location_type=""))
-        with self.assertRaisesRegex(ValueError,"indirizzo del luogo del ritiro"):
-            normalize_event(self.event_form("Ritiro",address=""))
+        # L'indirizzo non e' piu' obbligatorio in creazione (richiesta
+        # esplicita dell'utente): puo' restare vuoto e venir compilato dopo.
+        pickup_no_address=normalize_event(self.event_form("Ritiro",address=""))
+        self.assertEqual(pickup_no_address["address"],"")
         pickup_in_sede=normalize_event(self.event_form("Ritiro in sede",location_type="",address=""))
         self.assertEqual((pickup_in_sede["location_type"],pickup_in_sede["address"]),("",""))
 

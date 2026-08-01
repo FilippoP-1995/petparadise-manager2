@@ -122,7 +122,24 @@ NOTIFICATION_GROUP_LABELS = {
 }
 
 
-def _group_summary_text(notification_type: str, count: int) -> str:
+def _group_summary_text(conn: sqlite3.Connection, notification_type: str, count: int, notification_id: int | None = None) -> str:
+    if notification_type == "calendar_event_created" and notification_id:
+        # A differenza degli altri tipi raggruppati, qui il fallback generico
+        # "Evento calendario creato × N" non diceva nulla di utile: l'utente
+        # deve capire subito DI COSA si tratta (tipo, zona/sede, animale) anche
+        # quando più eventi vengono creati in rapida successione. Ogni "text"
+        # salvato per riga e' gia' il corpo arricchito (titolo + eventuale
+        # specie/peso/cremazione), quindi basta elencarli.
+        rows = conn.execute(
+            "SELECT text FROM notification_group_items WHERE notification_id=? ORDER BY id DESC LIMIT 3",
+            (notification_id,),
+        ).fetchall()
+        items = [row["text"] for row in rows if row["text"]]
+        if items:
+            items.reverse()
+            summary = " • ".join(items)
+            extra = count - len(items)
+            return f"{summary} +{extra} altri" if extra > 0 else summary
     if notification_type in NOTIFICATION_GROUP_LABELS:
         singular, plural = NOTIFICATION_GROUP_LABELS[notification_type]
         return f"Oggi: {count} {plural if count > 1 else singular}"
@@ -272,17 +289,17 @@ def emit_notification(
         if existing:
             notification_id = existing["id"]
             group_count = existing["group_count"] + 1
-            grouped_text = _group_summary_text(notification_type, group_count)
+            conn.execute(
+                """INSERT INTO notification_group_items(notification_id,title,text,practice_id,created_at)
+                   VALUES(?,?,?,?,?)""",
+                (notification_id, title, text, practice_id, created_at),
+            )
+            grouped_text = _group_summary_text(conn, notification_type, group_count, notification_id)
             conn.execute(
                 """UPDATE notifications SET title=?,text=?,created_at=?,group_count=?,payload=?
                    WHERE id=?""",
                 (title, grouped_text, created_at, group_count,
                  json.dumps(payload, ensure_ascii=False), notification_id),
-            )
-            conn.execute(
-                """INSERT INTO notification_group_items(notification_id,title,text,practice_id,created_at)
-                   VALUES(?,?,?,?,?)""",
-                (notification_id, title, text, practice_id, created_at),
             )
             push_text = grouped_text
         else:
