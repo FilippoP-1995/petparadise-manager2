@@ -8911,8 +8911,9 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.calendar_event_form(admin)
         page = rendered[-1]
         for heading in ('Cliente / Proprietario', 'Animali', 'Preventivo'):
-            self.assertIn(f'<h2>{heading}</h2>', page)
-        self.assertEqual(page.count('class="section collapsible collapsed" data-calendar-types="Ritiro|Ritiro in sede"'), 3)
+            self.assertIn(f'{heading}</h2>', page)
+        for cls in ('tone-purple', 'tone-orange', 'tone-blue'):
+            self.assertIn(f'section collapsible collapsed {cls}" data-calendar-types="Ritiro|Ritiro in sede"', page)
 
     def test_calendar_wizard_add_row_uses_animal_card_style(self):
         self.assertIn("calendar-animal-card", app.APP_JS)

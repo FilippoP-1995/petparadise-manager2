@@ -1687,6 +1687,58 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .calendar-location-tile.active{border-color:#e9475b!important;color:#e9475b!important;box-shadow:0 0 0 1px #e9475b35}
 .light-theme .calendar-location-tile{background:#fff;border-color:#e2e8f0;color:#526174}
 .light-theme .calendar-location-tile.active{border-color:#e9475b!important;color:#e9475b!important;box-shadow:0 0 0 1px #e9475b35}
+/* "Nuovo evento" v3: layout compatto stile mockup 2026 — SOLO estetica, la
+   logica sotto resta identica (calendar_event_form/save_calendar_event
+   invariati). Regole scoperte sotto .calendar-form-v2 cosi' da non toccare
+   altre pagine che riusano le stesse classi (es. calendar_event_detail).
+   Alcuni selettori (.calendar-type-option/.calendar-type-grid) hanno gia'
+   piu' frammenti storici sparsi nel foglio di stile da redesign precedenti:
+   invece di rincorrerli tutti (rischioso, ordine/specificita' incerti) le
+   proprieta' visive chiave qui sotto usano !important per vincere sempre. */
+.calendar-form-v2 .calendar-v2-topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.calendar-form-v2 .calendar-v2-close{flex:0 0 auto;width:38px;height:38px;padding:0;display:grid;place-items:center;border-radius:50%}
+.calendar-form-v2 .calendar-v2-draftrow{display:flex;justify-content:flex-end}
+.calendar-form-v2 .calendar-v2-draftrow .autosave-status{position:static;margin:0}
+.calendar-form-v2 .calendar-v2-card,.calendar-form-v2 .calendar-subblock{padding:16px;border:1px solid #ffffff14;border-radius:22px;background:linear-gradient(160deg,#1c2635d9,#141b27d9);backdrop-filter:blur(16px);box-shadow:0 10px 26px #05070f3d;margin:0 0 12px!important}
+.calendar-form-v2 .calendar-v2-eyebrow,.calendar-form-v2 .calendar-subblock>h3{margin:0 0 12px!important;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#9ca7b8}
+.calendar-form-v2 .calendar-v2-row2{display:grid!important;grid-template-columns:1fr 1fr!important;gap:9px;margin-bottom:9px}
+.calendar-form-v2 .calendar-v2-row3{display:grid!important;grid-template-columns:1fr 1fr auto!important;gap:9px;align-items:stretch;margin-bottom:12px}
+.calendar-form-v2 .calendar-v2-allday{display:flex;align-items:center;justify-content:center;padding:0 14px;border:1px solid #ffffff12;border-radius:22px;background:linear-gradient(160deg,#1c2635d9,#141b27d9)}
+.calendar-form-v2 .calendar-v2-allday .modern-check{margin:0}
+@media(max-width:640px){.calendar-form-v2 .calendar-v2-row3{grid-template-columns:1fr 1fr!important}.calendar-form-v2 .calendar-v2-allday{grid-column:1/-1}}
+.calendar-form-v2 .calendar-type-grid{display:grid!important;grid-template-columns:repeat(5,1fr)!important;gap:9px}
+.calendar-form-v2 .calendar-type-option{display:flex!important;flex-direction:column!important;align-items:flex-start!important;gap:10px!important;min-height:148px;padding:16px 14px!important;border-radius:20px!important}
+.calendar-form-v2 .calendar-type-option small.sub{font-size:11px;line-height:1.35}
+.calendar-form-v2 .calendar-type-option b{font-size:12.5px;letter-spacing:.02em}
+.calendar-form-v2 .calendar-type-check{position:absolute;opacity:0;width:0;height:0;overflow:hidden}
+.calendar-form-v2 .calendar-type-option:has(.calendar-icon-pink){border-color:#ef405f4d!important}
+.calendar-form-v2 .calendar-type-option:has(.calendar-icon-blue){border-color:#3b82f64d!important}
+.calendar-form-v2 .calendar-type-option:has(.calendar-icon-green){border-color:#22c55e4d!important}
+.calendar-form-v2 .calendar-type-option:has(.calendar-icon-orange){border-color:#f59e0b4d!important}
+.calendar-form-v2 .calendar-type-option:has(.calendar-icon-purple){border-color:#8b5cf64d!important}
+.calendar-form-v2 .calendar-type-option:has(input:checked):has(.calendar-icon-pink){border-color:#ef405f!important;box-shadow:0 0 0 2px #ef405f40,0 0 22px #ef405f38!important}
+.calendar-form-v2 .calendar-type-option:has(input:checked):has(.calendar-icon-blue){border-color:#3b82f6!important;box-shadow:0 0 0 2px #3b82f640,0 0 22px #3b82f638!important}
+.calendar-form-v2 .calendar-type-option:has(input:checked):has(.calendar-icon-green){border-color:#22c55e!important;box-shadow:0 0 0 2px #22c55e40,0 0 22px #22c55e38!important}
+.calendar-form-v2 .calendar-type-option:has(input:checked):has(.calendar-icon-orange){border-color:#f59e0b!important;box-shadow:0 0 0 2px #f59e0b40,0 0 22px #f59e0b38!important}
+.calendar-form-v2 .calendar-type-option:has(input:checked):has(.calendar-icon-purple){border-color:#8b5cf6!important;box-shadow:0 0 0 2px #8b5cf640,0 0 22px #8b5cf638!important}
+@media(max-width:900px){.calendar-form-v2 .calendar-type-grid{grid-template-columns:repeat(3,1fr)!important}}
+@media(max-width:560px){.calendar-form-v2 .calendar-type-grid{grid-template-columns:repeat(2,1fr)!important}}
+.calendar-form-v2 .calendar-location-tiles{display:flex!important;flex-wrap:wrap}
+.calendar-form-v2 .calendar-location-tile{flex-direction:row!important;flex:1 1 auto;min-width:0;padding:12px 16px!important;gap:8px!important}
+.calendar-form-v2 .calendar-location-tile span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.calendar-form-v2 section.collapsible{padding:0!important;border:1px solid #ffffff14;border-radius:18px;background:linear-gradient(160deg,#1c2635d9,#141b27d9);backdrop-filter:blur(16px);box-shadow:0 10px 26px #05070f3d;margin-bottom:10px;overflow:hidden}
+.calendar-form-v2 section.collapsible>h2{display:flex;align-items:center;gap:12px;margin:0!important;padding:14px 16px}
+.calendar-form-v2 section.collapsible>h2::after{margin-left:auto;font-size:16px}
+.calendar-form-v2 section.collapsible>*:not(h2):not(.section-heading-row){padding:0 16px 16px}
+.calendar-form-v2 section.collapsible.tone-purple>h2{color:#c4b5fd}
+.calendar-form-v2 section.collapsible.tone-orange>h2{color:#fdba74}
+.calendar-form-v2 section.collapsible.tone-blue>h2{color:#93c5fd}
+.calendar-form-v2 section.collapsible.tone-gray>h2{color:#e2e8f0}
+.calendar-form-v2 .calendar-detail-quickactions{grid-template-columns:repeat(4,1fr)!important}
+.calendar-form-v2 .calendar-detail-qa{flex-direction:row!important;min-height:48px!important;padding:10px 8px!important}
+.calendar-form-v2 .calendar-v2-actions{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+.calendar-form-v2 .calendar-v2-actions .btn{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;min-height:52px;font-size:15px}
+.light-theme.calendar-form-v2 .calendar-v2-card,.light-theme .calendar-form-v2 .calendar-v2-card,.light-theme .calendar-form-v2 .calendar-subblock,.light-theme .calendar-form-v2 section.collapsible,.light-theme .calendar-form-v2 .calendar-v2-allday{background:#fff;border-color:#e2e8f0}
 .calendar-appt-list{display:flex;flex-direction:column;gap:12px}
 .calendar-appt-empty{text-align:center;padding:24px;color:#9ca7b8}
 .calendar-appt-card{display:flex;gap:12px;padding:14px 16px;border:1px solid #334155;border-left:4px solid #475569;border-radius:15px;background:linear-gradient(145deg,#1a2332,#151d29);box-shadow:0 10px 28px #0307122e;cursor:pointer}
@@ -9504,11 +9556,11 @@ class App(BaseHTTPRequestHandler):
         draft_status='<div id="calendarDraftStatus" class="autosave-status" data-state="idle" hidden role="status"><span data-draft-label></span></div>'
         location_card=''
         if event_type in ("Ritiro","Riconsegna"):
-            location_card=f'''<div class="calendar-tap-card calendar-zone-field lookup" data-calendar-types="Ritiro|Riconsegna" {"" if event_type in ("Ritiro","Riconsegna") else "hidden"}><span class="calendar-tap-card-icon calendar-icon-green">{lucide("archive")}</span><div class="calendar-tap-card-body"><small>Zona{' *' if event_type=='Ritiro' else ''}</small><input name="zone" value="{val('zone')}" autocomplete="off" oninput="calendarZoneInput(this)" onfocus="calendarZoneInput(this)" onblur="calendarZoneOffer(this)" placeholder="Scrivi per cercare una zona"><div class="calendar-zone-results" hidden></div><label class="calendar-tap-card-check"><input type="checkbox" name="save_zone" value="1"> Salva nei suggerimenti</label></div></div>'''
+            location_card=f'''<div class="calendar-tap-card calendar-zone-field lookup" data-calendar-types="Ritiro|Riconsegna" {"" if event_type in ("Ritiro","Riconsegna") else "hidden"}><span class="calendar-tap-card-icon calendar-icon-green">{lucide("map-pin")}</span><div class="calendar-tap-card-body"><small>Zona{' *' if event_type=='Ritiro' else ''}</small><input name="zone" value="{val('zone')}" autocomplete="off" oninput="calendarZoneInput(this)" onfocus="calendarZoneInput(this)" onblur="calendarZoneOffer(this)" placeholder="Scrivi per cercare una zona"><div class="calendar-zone-results" hidden></div><label class="calendar-tap-card-check"><input type="checkbox" name="save_zone" value="1"> Salva nei suggerimenti</label></div></div>'''
         elif event_type in ("Ritiro in sede","Riconsegna in sede"):
             location_card=f'''<div class="calendar-tap-card" data-calendar-types="Ritiro in sede|Riconsegna in sede" {"" if event_type in ("Ritiro in sede","Riconsegna in sede") else "hidden"}><span class="calendar-tap-card-icon calendar-icon-blue">{lucide("home")}</span><div class="calendar-tap-card-body"><small>Sede *</small><select name="destination_site" onchange="calendarAutoTitle()"><option value="">Seleziona</option><option {"selected" if raw("destination_site")=="Livorno" else ""}>Livorno</option><option {"selected" if raw("destination_site")=="Empoli" else ""}>Empoli</option></select></div></div>'''
         else:
-            location_card=f'''<div class="calendar-tap-card calendar-zone-field lookup" data-calendar-types="Ritiro|Riconsegna" hidden><span class="calendar-tap-card-icon calendar-icon-green">{lucide("archive")}</span><div class="calendar-tap-card-body"><small>Zona</small><input name="zone" value="{val('zone')}" autocomplete="off" oninput="calendarZoneInput(this)" onfocus="calendarZoneInput(this)" onblur="calendarZoneOffer(this)" placeholder="Scrivi per cercare una zona"><div class="calendar-zone-results" hidden></div><label class="calendar-tap-card-check"><input type="checkbox" name="save_zone" value="1"> Salva nei suggerimenti</label></div></div><div class="calendar-tap-card" data-calendar-types="Ritiro in sede|Riconsegna in sede" hidden><span class="calendar-tap-card-icon calendar-icon-blue">{lucide("home")}</span><div class="calendar-tap-card-body"><small>Sede</small><select name="destination_site" onchange="calendarAutoTitle()"><option value="">Seleziona</option><option>Livorno</option><option>Empoli</option></select></div></div>'''
+            location_card=f'''<div class="calendar-tap-card calendar-zone-field lookup" data-calendar-types="Ritiro|Riconsegna" hidden><span class="calendar-tap-card-icon calendar-icon-green">{lucide("map-pin")}</span><div class="calendar-tap-card-body"><small>Zona</small><input name="zone" value="{val('zone')}" autocomplete="off" oninput="calendarZoneInput(this)" onfocus="calendarZoneInput(this)" onblur="calendarZoneOffer(this)" placeholder="Scrivi per cercare una zona"><div class="calendar-zone-results" hidden></div><label class="calendar-tap-card-check"><input type="checkbox" name="save_zone" value="1"> Salva nei suggerimenti</label></div></div><div class="calendar-tap-card" data-calendar-types="Ritiro in sede|Riconsegna in sede" hidden><span class="calendar-tap-card-icon calendar-icon-blue">{lucide("home")}</span><div class="calendar-tap-card-body"><small>Sede</small><select name="destination_site" onchange="calendarAutoTitle()"><option value="">Seleziona</option><option>Livorno</option><option>Empoli</option></select></div></div>'''
         delivery_animal_card=f'''<div class="calendar-tap-card lookup" data-calendar-types="Riconsegna|Riconsegna in sede" {"" if event_type in ("Riconsegna","Riconsegna in sede") else "hidden"}><span class="calendar-tap-card-icon calendar-icon-green">{lucide("paw")}</span><div class="calendar-tap-card-body"><small>Animale *</small><input id="calendarDeliveryAnimalSearch" name="animal_name" value="{val('animal_name')}" placeholder="Cerca pratica, animale o cliente" autocomplete="off" oninput="calendarAutoTitle()"><div id="calendarDeliveryAnimalResults" class="lookup-results hidden"></div><input type="hidden" name="linked_practice_id" value="{val('linked_practice_id')}"></div></div>'''
         operator_card=f'''<div class="calendar-tap-card"><span class="calendar-tap-card-icon calendar-icon-orange">{lucide("user")}</span><div class="calendar-tap-card-body">{operator_field}</div></div>'''
         # Per Ritiro/Ritiro in sede/Riconsegna/Riconsegna in sede il titolo
@@ -9552,28 +9604,31 @@ class App(BaseHTTPRequestHandler):
         # (".section.collapsible", gestito da un listener globale gia'
         # esistente: nessun nuovo JS). Chiuse di default per non appesantire
         # il caso comune, ma a un tap, non un'intera schermata separata.
-        client_section=f'''<section class="section collapsible collapsed" data-calendar-types="Ritiro|Ritiro in sede" {"" if event_type in ("Ritiro","Ritiro in sede") else "hidden"}><h2>Cliente / Proprietario</h2>{client_block}</section>'''
-        animals_section=f'''<section class="section collapsible collapsed" data-calendar-types="Ritiro|Ritiro in sede" {"" if event_type in ("Ritiro","Ritiro in sede") else "hidden"}><h2>Animali</h2><p class="sub">Aggiungi uno o più animali al ritiro.</p><div class="calendar-repeat-list" data-calendar-list="animal"></div><input type="hidden" name="animals_json"><button class="calendar-add-appt-btn" type="button" onclick="calendarAddRow('animal')">{lucide("plus")}<span>Aggiungi animale</span></button></section>'''
-        estimate_section=f'''<section class="section collapsible collapsed" data-calendar-types="Ritiro|Ritiro in sede" {"" if event_type in ("Ritiro","Ritiro in sede") else "hidden"}><h2>Preventivo</h2><p class="sub">Voci previste per questo ritiro.</p><div class="calendar-repeat-list" data-calendar-list="estimate"></div><input type="hidden" name="estimate_json"><div class="calendar-estimate-total-bar">Totale automatico <b data-estimate-total>€ 0,00</b></div></section>'''
-        note_card=f'''<div class="calendar-tap-card"><span class="calendar-tap-card-icon">{lucide("clipboard")}</span><div class="calendar-tap-card-body"><small>Note</small><textarea name="notes">{val('notes')}</textarea></div></div>'''
-        body=f'''<main class="wrap calendar-form calendar-form-v2"><div class="titlebar"><div><h1>{'Modifica evento' if event_id else 'Nuovo evento'}</h1><p class="sub">Scegli il tipo di evento e compila i dati.</p></div><a class="btn ghost" href="{close_url}" onclick="return calendarConfirmExit(event,this.href)" aria-label="Chiudi">×</a></div>{error_html}{draft_status}{exit_modal_html}<form id="calendarEventForm" data-draft-key="{draft_key}" method="post" action="{action}" onsubmit="return calendarSubmit(this)">
+        client_section=f'''<section class="section collapsible collapsed tone-purple" data-calendar-types="Ritiro|Ritiro in sede" {"" if event_type in ("Ritiro","Ritiro in sede") else "hidden"}><h2><span class="calendar-tap-card-icon calendar-icon-purple">{lucide("user")}</span>Cliente / Proprietario</h2>{client_block}</section>'''
+        animals_section=f'''<section class="section collapsible collapsed tone-orange" data-calendar-types="Ritiro|Ritiro in sede" {"" if event_type in ("Ritiro","Ritiro in sede") else "hidden"}><h2><span class="calendar-tap-card-icon calendar-icon-orange">{lucide("paw")}</span>Animali</h2><p class="sub">Aggiungi uno o più animali al ritiro.</p><div class="calendar-repeat-list" data-calendar-list="animal"></div><input type="hidden" name="animals_json"><button class="calendar-add-appt-btn" type="button" onclick="calendarAddRow('animal')">{lucide("plus")}<span>Aggiungi animale</span></button></section>'''
+        estimate_section=f'''<section class="section collapsible collapsed tone-blue" data-calendar-types="Ritiro|Ritiro in sede" {"" if event_type in ("Ritiro","Ritiro in sede") else "hidden"}><h2><span class="calendar-tap-card-icon calendar-icon-blue">{lucide("wallet")}</span>Preventivo</h2><p class="sub">Voci previste per questo ritiro.</p><div class="calendar-repeat-list" data-calendar-list="estimate"></div><input type="hidden" name="estimate_json"><div class="calendar-estimate-total-bar">Totale automatico <b data-estimate-total>€ 0,00</b></div></section>'''
+        note_card=f'''<section class="section collapsible collapsed tone-gray"><h2><span class="calendar-tap-card-icon">{lucide("clipboard")}</span>Note</h2><textarea name="notes">{val('notes')}</textarea></section>'''
+        operator_row_html=f'''<div class="calendar-v2-row3">{operator_card}{pickup_status_card}<div class="calendar-v2-allday">{allday_card}</div></div>'''
+        body=f'''<main class="wrap calendar-form calendar-form-v2"><div class="titlebar calendar-v2-topbar"><div><h1>{'Modifica evento' if event_id else 'Nuovo evento'}</h1><p class="sub">Scegli il tipo di evento e compila i dati.</p></div><a class="btn ghost calendar-v2-close" href="{close_url}" onclick="return calendarConfirmExit(event,this.href)" aria-label="Chiudi">×</a></div>{error_html}<div class="calendar-v2-draftrow">{draft_status}</div>{exit_modal_html}<form id="calendarEventForm" data-draft-key="{draft_key}" method="post" action="{action}" onsubmit="return calendarSubmit(this)">
         <section class="section"><h2>Che tipo di evento vuoi creare?</h2><p class="sub">Scegli l'operazione da registrare.</p><div class="calendar-type-grid">{types}</div></section>
-        <section class="section" id="calendarDetailsSection" {"" if event_type else "hidden"}><h2>Dettagli evento</h2>
-          <div class="calendar-card-list">
-            <div class="calendar-tap-card"><span class="calendar-tap-card-icon calendar-icon-purple">{lucide("calendar")}</span><div class="calendar-tap-card-body"><small>Inizio</small>{datetime_row("","start_date",start_date,"start_time",start_time,True)}</div></div>
-            <div class="calendar-tap-card"><span class="calendar-tap-card-icon calendar-icon-blue">{lucide("clock")}</span><div class="calendar-tap-card-body"><small>Fine</small>{datetime_row("","end_date",end_date,"end_time",end_time)}</div></div>
-            {location_card}{pickup_location_block}{delivery_animal_card}{operator_card}{title_card}
-            {pickup_status_card}
-            <div class="calendar-tap-card">{allday_card}</div>
-          </div>
+        <div id="calendarDetailsSection" {'' if event_type else 'hidden'}>
+          {operator_row_html}
+          <section class="calendar-v2-card"><h2 class="calendar-v2-eyebrow">Dettagli evento</h2>
+            <div class="calendar-v2-row2">
+              <div class="calendar-tap-card"><span class="calendar-tap-card-icon calendar-icon-purple">{lucide("calendar")}</span><div class="calendar-tap-card-body"><small>Inizio</small>{datetime_row("","start_date",start_date,"start_time",start_time,True)}</div></div>
+              <div class="calendar-tap-card"><span class="calendar-tap-card-icon calendar-icon-blue">{lucide("clock")}</span><div class="calendar-tap-card-body"><small>Fine</small>{datetime_row("","end_date",end_date,"end_time",end_time)}</div></div>
+            </div>
+            {location_card}{delivery_animal_card}{title_card}
+          </section>
+          {pickup_location_block}
           {delivery_info_block}
           {client_section}
           {animals_section}
           {estimate_section}
           {note_card}
           {quick_actions_wizard}
-          <div class="actions" style="margin-top:18px"><button class="btn">{'Salva modifiche' if event_id else 'Salva evento'}</button><a class="btn ghost" href="{close_url}" onclick="return calendarConfirmExit(event,this.href)">Annulla</a></div>
-        </section>
+          <div class="calendar-v2-actions"><button class="btn">{lucide("save")}<span>{'Salva modifiche' if event_id else 'Salva evento'}</span></button><a class="btn ghost" href="{close_url}" onclick="return calendarConfirmExit(event,this.href)">Annulla</a></div>
+        </div>
         </form><script>window.CALENDAR_ZONES={zones_json};document.addEventListener('DOMContentLoaded',()=>{{{''.join(f"calendarAddRow('animal',{json.dumps(a,ensure_ascii=False)});" for a in animals) if event_type in ('Ritiro','Ritiro in sede','') else ''}{''.join(f"calendarAddRow('estimate',{json.dumps(i,ensure_ascii=False)});" for i in estimates) if event_type in ('Ritiro','Ritiro in sede','') else ''}calendarTypeChanged();calendarInitLookups();const allDay=document.querySelector('#calendarEventForm input[name="all_day"]');if(allDay)calendarAllDayChanged(allDay);document.querySelectorAll('[data-time-entry]').forEach(input=>{{calendarTimeInput(input);const wheel=input.closest('.calendar-datetime-row')?.querySelector('[data-time-wheel]');if(wheel)calendarInitTimeWheel(wheel);}});}});</script></main>'''
         self.send_html(layout("Modifica evento" if event_id else "Nuovo evento",body,user))
 
