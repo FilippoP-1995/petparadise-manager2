@@ -1695,7 +1695,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
    piu' frammenti storici sparsi nel foglio di stile da redesign precedenti:
    invece di rincorrerli tutti (rischioso, ordine/specificita' incerti) le
    proprieta' visive chiave qui sotto usano !important per vincere sempre. */
-.calendar-form-v2 .calendar-v2-topbar{display:flex!important;flex-direction:row!important;align-items:flex-start;justify-content:space-between;gap:14px}
+.calendar-form-v2 .calendar-v2-topbar{display:flex!important;flex-direction:row!important;align-items:flex-start;justify-content:space-between;gap:14px;margin-top:-16px}
 .calendar-form-v2 .calendar-v2-close{flex:0 0 auto;width:38px;height:38px;padding:0;display:grid;place-items:center;border-radius:50%}
 .calendar-form-v2 .calendar-v2-draftrow{display:flex;justify-content:flex-end}
 .calendar-form-v2 .calendar-v2-draftrow .autosave-status{position:static;margin:0}
