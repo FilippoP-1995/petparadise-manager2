@@ -4290,12 +4290,29 @@ document.addEventListener('DOMContentLoaded',function(){
     document.body.appendChild(el);
   });
 });
+function routeCurrentCalendarDate(fallback){
+  // La daybar (giorno/settimana) cambia il giorno mostrato via swipe/tap
+  // in modo puramente client-side (calendarSelectDay), senza ricaricare la
+  // pagina: il valore passato al bottone "Percorso" al render iniziale
+  // resta percio' quello del primo caricamento. La card attiva nella
+  // daybar e' invece sempre allineata al giorno che l'utente sta
+  // effettivamente guardando in quel momento.
+  const active=document.querySelector('.calendar-daybar-card.active');
+  return (active&&active.dataset.date)||fallback;
+}
 function routeOpenSheet(dateStr){
-  const dateInput=document.getElementById('routeQuickDate');
-  if(dateInput)dateInput.value=dateStr;
+  const effectiveDate=routeCurrentCalendarDate(dateStr);
   const settingsLink=document.getElementById('routeSettingsLink');
-  if(settingsLink)settingsLink.href='/percorso-giornaliero?data='+encodeURIComponent(dateStr);
+  if(settingsLink)settingsLink.href='/percorso-giornaliero?data='+encodeURIComponent(effectiveDate);
   document.body.classList.add('route-sheet-open');
+  routeRefreshQuickBody(effectiveDate);
+}
+function routeRefreshQuickBody(dateStr){
+  const body=document.getElementById('routeQuickBody');
+  if(!body)return;
+  fetch('/calendario/percorso-rapido?data='+encodeURIComponent(dateStr)).then(function(r){return r.json();}).then(function(data){
+    if(data&&data.ok)body.innerHTML=data.html;
+  }).catch(function(){});
 }
 function routeCloseSheet(){
   document.body.classList.remove('route-sheet-open');
@@ -7082,6 +7099,7 @@ class App(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/smaltimenti/storico/(\d+)",path)
         if match: return self.disposal_batch_detail(user,int(match.group(1)))
         if path == "/programma-cremazioni": return self.cremation_schedule(user)
+        if path == "/calendario/percorso-rapido": return self.calendar_route_quick(user)
         if path == "/percorso-giornaliero": return self.route_plan_page(user)
         if path == "/percorso-giornaliero/sedi": return self.route_locations_page(user)
         match = re.fullmatch(r"/percorso-giornaliero/(\d+)",path)
@@ -8560,6 +8578,68 @@ class App(BaseHTTPRequestHandler):
         legend_type_items=''.join(f'<span class="calendar-legend-item"><span class="calendar-legend-dot {legend_default_class[key]}" style="color:{esc(color_settings["types"][key])}"></span>{esc(key)}</span>' for key in ("Riconsegna","Appuntamento"))
         return f'<section class="calendar-legend-section"><div class="calendar-operator-legend">{legend_operator_items}</div><div class="calendar-day-legend"><div class="calendar-day-legend-group"><span class="calendar-day-legend-title">Colore = stato del ritiro</span>{legend_status_items}</div><div class="calendar-day-legend-group"><span class="calendar-day-legend-title">Colore fisso = altri tipi</span>{legend_type_items}</div></div></section>'
 
+    def route_quick_body_html(self,selected):
+        # Contenuto del popup "Parti subito": estratto in un metodo a se'
+        # stante cosi' da poter essere sia renderizzato nella pagina
+        # Calendario al primo caricamento, sia rigenerato via AJAX quando
+        # l'utente cambia giorno nella daybar senza ricaricare la pagina
+        # (calendarSelectDay/lo swipe sono puramente client-side: senza
+        # questo endpoint "Percorso" restava ancorato al giorno con cui la
+        # pagina era stata caricata, non a quello effettivamente visualizzato).
+        with db() as c:
+            route_locations=c.execute("SELECT * FROM company_locations WHERE active=1 ORDER BY name").fetchall()
+            route_stops_today=route_eligible_events(c,selected)
+        route_location_options=''.join(f'<option value="{loc["id"]}">{esc(loc["name"])}</option>' for loc in route_locations)
+        def route_stop_label(row):
+            time_label=row["start_at"][11:16] if len(row["start_at"] or "")>=16 else ""
+            client=" ".join(x for x in (row["client_first_name"],row["client_last_name"]) if x).strip()
+            who=row["animal_name"] or client or "Da definire"
+            place=row["address"] or row["zone"] or ""
+            place_html=f' <small>{esc(place)}</small>' if place else ""
+            return f'<li><b>{esc(row["event_type"])}</b> {esc(time_label)} · {esc(who)}{place_html}</li>'
+        has_route_stops=bool(route_stops_today)
+        route_stops_summary_html=(
+            f'<ul class="route-quick-stops">{"".join(route_stop_label(row) for row in route_stops_today)}</ul>'
+            if has_route_stops else ""
+        )
+        return (
+            f'''<p class="sub">Tappe di oggi ({len(route_stops_today)}): conferma per avviare il percorso.</p>
+              {route_stops_summary_html}
+              <form method="post" action="/percorso-giornaliero/calcola" id="routeQuickForm">
+                <input type="hidden" name="quick" value="1">
+                <input type="hidden" name="data" id="routeQuickDate" value="{selected}">
+                <input type="hidden" name="start_lat" data-route-geoloc="start_lat"><input type="hidden" name="start_lng" data-route-geoloc="start_lng">
+                <div class="route-quick-field">
+                  <label>Punto di partenza</label>
+                  <select name="start_location_type" onchange="routeToggleLocationFields(this,'start')">
+                    <option value="sede">Sede aziendale</option>
+                    <option value="attuale">Posizione attuale</option>
+                  </select>
+                </div>
+                <select name="start_location_id" class="route-quick-field-select" data-route-field="start-sede">{route_location_options}</select>
+                <button type="button" class="btn ghost route-quick-field-select" data-route-field="start-attuale" hidden onclick="routeRequestGeolocation('start',this.form)" style="width:100%">{lucide("navigation")} Usa posizione attuale</button>
+                <div class="route-quick-field">
+                  <label>Punto di arrivo</label>
+                  <select name="end_location_type" onchange="routeToggleLocationFields(this,'end')">
+                    <option value="stessa_partenza">Stessa sede di partenza</option>
+                    <option value="sede">Altra sede</option>
+                  </select>
+                </div>
+                <select name="end_location_id" class="route-quick-field-select" data-route-field="end-sede" hidden>{route_location_options}</select>
+                <button class="btn" type="submit" style="width:100%;margin-top:4px">{lucide("check")} Conferma tappe e avvia percorso</button>
+              </form>'''
+            if has_route_stops else
+            f'''<div class="flash warning">Non ci sono eventi programmati fuori sede per il {esc(date_it(selected))}. Il percorso serve solo per organizzare le tappe quando si esce dalla sede: con soli eventi in sede (o nessun evento) non serve impostarne uno.</div>
+              <button type="button" class="btn ghost" style="width:100%;margin-top:12px" onclick="routeCloseQuickPopup()">Chiudi</button>'''
+        )
+
+    def calendar_route_quick(self,user):
+        q=parse_qs(urlparse(self.path).query)
+        selected=(q.get("data") or [rome_now().date().isoformat()])[0]
+        try:date.fromisoformat(selected)
+        except ValueError:selected=rome_now().date().isoformat()
+        return self.send_json({"ok":True,"html":self.route_quick_body_html(selected)})
+
     def calendar_page(self,user):
         q=parse_qs(urlparse(self.path).query);selected=(q.get("data") or [rome_now().date().isoformat()])[0]
         route_error=(q.get("percorso_errore") or [""])[0]
@@ -8609,8 +8689,6 @@ class App(BaseHTTPRequestHandler):
             rows=[dict(row,animal_species=species_by_event.get(row["id"],""),payment_channel=payment_channels.get(row["linked_practice_id"],"")) for row in rows]
             vets=c.execute("SELECT id,COALESCE(short_name,clinic_name) name FROM veterinarians WHERE active=1 ORDER BY name").fetchall()
             color_settings=calendar_color_settings(c)
-            route_locations=c.execute("SELECT * FROM company_locations WHERE active=1 ORDER BY name").fetchall()
-            route_stops_today=route_eligible_events(c,selected)
         by_day={}
         for row in rows:
             cursor=max(start,date.fromisoformat(row["start_at"][:10]));last=min(end,date.fromisoformat(row["end_at"][:10]))
@@ -8748,55 +8826,18 @@ class App(BaseHTTPRequestHandler):
         elif view in ("mese","mista_mese","compatto"):date_title=f"{month_names[selected_date.month-1]} {selected_date.year}"
         else:date_title=f"{selected_date.day} {month_names[selected_date.month-1]} {selected_date.year}"
         back_button=f'<a class="btn ghost calendar-back-btn" href="{view_url(selected_date,back_view)}">← Torna a {"Mese" if back_view=="mese" else "Settimana"}</a>' if view=="giorno" and back_view else ''
-        route_location_options=''.join(f'<option value="{loc["id"]}">{esc(loc["name"])}</option>' for loc in route_locations)
-        def route_stop_label(row):
-            time_label=row["start_at"][11:16] if len(row["start_at"] or "")>=16 else ""
-            client=" ".join(x for x in (row["client_first_name"],row["client_last_name"]) if x).strip()
-            who=row["animal_name"] or client or "Da definire"
-            place=row["address"] or row["zone"] or ""
-            place_html=f' <small>{esc(place)}</small>' if place else ""
-            return f'<li><b>{esc(row["event_type"])}</b> {esc(time_label)} · {esc(who)}{place_html}</li>'
-        has_route_stops=bool(route_stops_today)
-        route_stops_summary_html=(
-            f'<ul class="route-quick-stops">{"".join(route_stop_label(row) for row in route_stops_today)}</ul>'
-            if has_route_stops else ""
-        )
         # richiesta esplicita dell'utente: prima di avviare un percorso
         # mostrare un riepilogo delle tappe del giorno visualizzato e
         # chiedere conferma; se quel giorno ha solo eventi "in sede"
         # (route_eligible_events li esclude gia' a monte, per definizione
         # non richiedono uno spostamento fisico) non ha senso impostare un
         # percorso, quindi si avvisa invece di proporre un percorso vuoto.
-        route_quick_body=(
-            f'''<p class="sub">Tappe di oggi ({len(route_stops_today)}): conferma per avviare il percorso.</p>
-              {route_stops_summary_html}
-              <form method="post" action="/percorso-giornaliero/calcola" id="routeQuickForm">
-                <input type="hidden" name="quick" value="1">
-                <input type="hidden" name="data" id="routeQuickDate" value="{selected}">
-                <input type="hidden" name="start_lat" data-route-geoloc="start_lat"><input type="hidden" name="start_lng" data-route-geoloc="start_lng">
-                <div class="route-quick-field">
-                  <label>Punto di partenza</label>
-                  <select name="start_location_type" onchange="routeToggleLocationFields(this,'start')">
-                    <option value="sede">Sede aziendale</option>
-                    <option value="attuale">Posizione attuale</option>
-                  </select>
-                </div>
-                <select name="start_location_id" class="route-quick-field-select" data-route-field="start-sede">{route_location_options}</select>
-                <button type="button" class="btn ghost route-quick-field-select" data-route-field="start-attuale" hidden onclick="routeRequestGeolocation('start',this.form)" style="width:100%">{lucide("navigation")} Usa posizione attuale</button>
-                <div class="route-quick-field">
-                  <label>Punto di arrivo</label>
-                  <select name="end_location_type" onchange="routeToggleLocationFields(this,'end')">
-                    <option value="stessa_partenza">Stessa sede di partenza</option>
-                    <option value="sede">Altra sede</option>
-                  </select>
-                </div>
-                <select name="end_location_id" class="route-quick-field-select" data-route-field="end-sede" hidden>{route_location_options}</select>
-                <button class="btn" type="submit" style="width:100%;margin-top:4px">{lucide("check")} Conferma tappe e avvia percorso</button>
-              </form>'''
-            if has_route_stops else
-            f'''<div class="flash warning">Non ci sono eventi programmati fuori sede per il {esc(date_it(selected))}. Il percorso serve solo per organizzare le tappe quando si esce dalla sede: con soli eventi in sede (o nessun evento) non serve impostarne uno.</div>
-              <button type="button" class="btn ghost" style="width:100%;margin-top:12px" onclick="routeCloseQuickPopup()">Chiudi</button>'''
-        )
+        # Il contenuto e' anche rigenerabile via AJAX (routeRefreshQuickBody
+        # in APP_JS, endpoint /calendario/percorso-rapido) perche' il giorno
+        # mostrato nella daybar puo' cambiare via swipe/tap senza ricaricare
+        # la pagina: senza il refresh, "Parti subito" restava ancorato al
+        # giorno con cui la pagina era stata caricata inizialmente.
+        route_quick_body=self.route_quick_body_html(selected)
         route_sheet_html=f'''<div class="route-sheet-backdrop" onclick="routeCloseSheet()"></div>
           <aside class="route-sheet" aria-label="Percorso giornaliero" role="dialog" aria-modal="true">
             <div class="route-sheet-handle"></div>
@@ -8813,7 +8854,7 @@ class App(BaseHTTPRequestHandler):
           <div class="route-quick-backdrop" onclick="if(event.target===this)routeCloseQuickPopup()">
             <aside class="route-quick-popup" aria-label="Parti subito" role="dialog" aria-modal="true">
               <div class="route-quick-head"><h2>Parti subito</h2><button type="button" class="icon-btn" onclick="routeCloseQuickPopup()" aria-label="Chiudi">{lucide("x")}</button></div>
-              {route_quick_body}
+              <div id="routeQuickBody">{route_quick_body}</div>
             </aside>
           </div>'''
         body=f'''<main class="wrap calendar-wrap">{route_error_html}<div class="titlebar calendar-main-title"><div>{back_button}<h1>Calendario operativo</h1><p class="sub">Ritiri, riconsegne e promemoria</p></div><div class="calendar-quick-actions"><a class="icon-btn" href="/calendario/cestino" aria-label="Cestino" title="Cestino">{lucide("trash-2")}</a><a class="icon-btn calendar-settings-link" href="/calendario/impostazioni" aria-label="Impostazioni" title="Impostazioni">{lucide("settings")}</a></div></div><div id="calendarDraftsBanner" hidden></div><nav class="calendar-date-nav"><a class="btn ghost" data-calendar-prev href="{view_url(prev_target)}" aria-label="Periodo precedente">←</a><label class="calendar-date-title"><span>{date_title}</span><input type="date" value="{selected}" onchange="const u=new URL(location.href);u.searchParams.set('data',this.value);location.href=u"></label><a class="btn ghost" data-calendar-next href="{view_url(next_target)}" aria-label="Periodo successivo">→</a><a class="btn ghost calendar-today" href="{view_url(rome_now().date())}">OGGI</a></nav><div class="calendar-toolbar"><nav class="calendar-view-switch">{switch}</nav></div>{content}{filters_html}{preference_script}{route_sheet_html}</main>'''
