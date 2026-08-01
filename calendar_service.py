@@ -198,7 +198,7 @@ def automatic_title(event_type, zone="", animal="", site=""):
     zone=_clean(zone).upper();animal=_clean(animal).upper();site=_clean(site).upper()
     if event_type=="Ritiro":return f"RITIRO {zone}".strip()
     if event_type=="Ritiro in sede":return f"RITIRO IN SEDE {site}".strip()
-    if event_type=="Riconsegna":return f"RICONSEGNA {animal}".strip()
+    if event_type=="Riconsegna":return " ".join(p for p in ("RICONSEGNA",animal,zone) if p)
     if event_type=="Riconsegna in sede":return f"RICONSEGNA {animal} IN SEDE {site}".strip()
     return ""
 

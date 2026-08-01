@@ -88,7 +88,7 @@ class OperationalCalendarTests(unittest.TestCase):
         expected = {
             "Ritiro": "RITIRO LIVORNO",
             "Ritiro in sede": "RITIRO IN SEDE LIVORNO",
-            "Riconsegna": "RICONSEGNA FIDO",
+            "Riconsegna": "RICONSEGNA FIDO LIVORNO",
             "Riconsegna in sede": "RICONSEGNA FIDO IN SEDE LIVORNO",
             "Appuntamento": "APPUNTAMENTO FORNITORE",
         }
@@ -112,7 +112,7 @@ class OperationalCalendarTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"sede"):
             normalize_event(self.event_form("Ritiro in sede",destination_site=""))
         delivery=normalize_event(self.event_form("Riconsegna",zone="Livorno"))
-        self.assertEqual((delivery["zone"],delivery["title"]),("Livorno","RICONSEGNA FIDO"))
+        self.assertEqual((delivery["zone"],delivery["title"]),("Livorno","RICONSEGNA FIDO LIVORNO"))
         delivery_in_sede=normalize_event(self.event_form("Riconsegna in sede",zone="Livorno"))
         self.assertEqual(delivery_in_sede["zone"],"")
         appointment=normalize_event(self.event_form("Appuntamento",zone="Livorno"))
@@ -375,7 +375,7 @@ class OperationalCalendarTests(unittest.TestCase):
         self.handler.path = "/calendario/nuovo"
         self.handler.send_html = lambda html, status=200: rendered.append(html)
         self.handler.calendar_event_form(self.admin)
-        self.assertIn("Ambulatorio riconsegna (facoltativo)", rendered[-1])
+        self.assertIn("Cerca ambulatorio", rendered[-1])
         self.assertIn("calendarDeliveryClinicSearch", rendered[-1])
         self.assertIn("function calendarSelectDeliveryClinic(form,item)", app.APP_JS)
 
@@ -818,29 +818,34 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("<b>22/07/2026 11:00 → 23/07/2026 18:00</b>", page)
 
     def test_delivery_clinic_hidden_for_riconsegna_in_sede_but_shown_for_riconsegna(self):
+        # Riconsegna (non in sede) ora ha lo stesso selettore Ambulatorio/
+        # Domicilio/Altro indirizzo del Ritiro: la ricerca ambulatorio
+        # compare solo scegliendo il pill "Ambulatorio", il campo Indirizzo
+        # resta sempre visibile per tutta la sezione "Riconsegna".
         rendered = []
         self.handler.path = "/calendario/nuovo"
         self.handler.send_html = lambda html, status=200: rendered.append(html)
 
         self.handler.calendar_event_form(self.admin, draft=self.event_form("Riconsegna in sede", destination_site="Livorno"))
         in_sede_html = rendered[-1]
-        clinic_marker = in_sede_html.index('id="calendarDeliveryClinicSearch"')
-        clinic_field_start = in_sede_html.rindex('data-calendar-types="Riconsegna"', 0, clinic_marker)
-        self.assertIn("hidden", in_sede_html[clinic_field_start:clinic_marker])
-        address_marker = in_sede_html.index('name="delivery_address"')
-        address_field_start = in_sede_html.rindex('data-calendar-types="Riconsegna"', 0, address_marker)
-        self.assertIn("hidden", in_sede_html[address_field_start:address_marker])
+        location_marker = in_sede_html.index('class="calendar-delivery-location"')
+        self.assertIn("hidden", in_sede_html[location_marker:location_marker + 80])
+        self.assertIn('id="calendarDeliveryClinicSearch"', in_sede_html)
+        self.assertIn('name="delivery_address"', in_sede_html)
 
         self.handler.calendar_event_form(self.admin, draft=self.event_form("Riconsegna"))
         riconsegna_html = rendered[-1]
-        clinic_marker = riconsegna_html.index('id="calendarDeliveryClinicSearch"')
-        clinic_field_start = riconsegna_html.rindex('data-calendar-types="Riconsegna"', 0, clinic_marker)
-        clinic_field_tag = riconsegna_html[clinic_field_start:clinic_marker]
-        self.assertNotIn("hidden>", clinic_field_tag)
+        location_marker = riconsegna_html.index('class="calendar-delivery-location"')
+        self.assertNotIn("hidden", riconsegna_html[location_marker:location_marker + 80])
+        # Senza un pill scelto la ricerca ambulatorio resta nascosta...
+        clinic_marker = riconsegna_html.index('data-delivery-pickup-location="Veterinario"')
+        self.assertIn("hidden", riconsegna_html[clinic_marker:clinic_marker + 80])
         self.assertIn('name="delivery_address"', riconsegna_html)
-        address_marker = riconsegna_html.index('name="delivery_address"')
-        address_field_start = riconsegna_html.rindex('data-calendar-types="Riconsegna"', 0, address_marker)
-        self.assertNotIn("hidden>", riconsegna_html[address_field_start:address_marker])
+        # ...ma scegliendo "Ambulatorio" (delivery_location_type=Veterinario) compare.
+        self.handler.calendar_event_form(self.admin, draft=self.event_form("Riconsegna", delivery_location_type="Veterinario"))
+        riconsegna_vet_html = rendered[-1]
+        clinic_marker = riconsegna_vet_html.index('data-delivery-pickup-location="Veterinario"')
+        self.assertNotIn("hidden", riconsegna_vet_html[clinic_marker:clinic_marker + 80])
 
     def test_delivery_animal_search_returns_owner_address_for_auto_fill(self):
         stamp = datetime.now().isoformat(timespec="seconds")
