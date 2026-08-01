@@ -4032,10 +4032,12 @@ class PetParadiseTests(unittest.TestCase):
         # discendente position:absolute con z-index alto resta comunque
         # "intrappolato" sotto le card successive (anch'esse con
         # backdrop-filter), che vengono dipinte sopra per ordine nel DOM. Il
-        # fix riparenta il pannello a <body> (position:fixed, calcolato dalla
-        # posizione reale del campo) cosi' lo z-index torna a contare per
-        # davvero, indipendentemente da qualunque antenato con
-        # backdrop-filter/transform.
+        # fix riparenta il pannello a <body> (position:absolute, ancorata
+        # alle coordinate reali del documento — rect + scroll corrente,
+        # non piu' position:fixed per via di un secondo bug iOS scoperto
+        # in seguito) cosi' lo z-index torna a contare per davvero,
+        # indipendentemente da qualunque antenato con backdrop-filter/
+        # transform.
         js = app.APP_JS
         self.assertIn("function ppmPositionLookupPanel(panel)", js)
         position_fn = js[js.index("function ppmPositionLookupPanel(panel)"):js.index("function ppmRepositionOpenLookupPanels")]
@@ -4057,7 +4059,15 @@ class PetParadiseTests(unittest.TestCase):
         # deve essere toccato per far funzionare il posizionamento.
         self.assertIn("panel._ppmLookupInput=input", js)
         css = app.CSS
-        self.assertIn(".lookup-results.ppm-lookup-portal{position:fixed", css)
+        # position:absolute (non piu' fixed): su iOS Safari con tastiera
+        # aperta un elemento fixed si ancora al layout viewport, che puo'
+        # differire dalla porzione di schermo davvero visibile, facendo
+        # apparire il pannello in cima alla pagina invece che accanto al
+        # campo (bug segnalato dall'utente con screenshot). Ancorare alle
+        # coordinate reali del documento (rect + scroll corrente) evita
+        # questa ambiguita'; il riposizionamento su scroll/resize resta
+        # comunque attivo per seguire l'input.
+        self.assertIn(".lookup-results.ppm-lookup-portal{position:absolute", css)
 
     def test_lookup_panels_reopen_after_being_closed_once(self):
         # Regression test: ppmCloseLookupPanel used to set the native `hidden`

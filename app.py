@@ -1309,7 +1309,7 @@ body{background:radial-gradient(circle at top left,#fff8f3 0,#f4f1ed 34%,#ece5dd
 .section.collapsible>h2{cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;gap:10px}.section.collapsible>h2::after,.section.collapsible>.section-heading-row>h2::after{content:'▾';font-size:13px;color:var(--muted);transition:transform .2s ease;flex:0 0 auto}.section.collapsible>.section-heading-row{cursor:pointer;user-select:none}.section.collapsible.collapsed>h2,.section.collapsible.collapsed>.section-heading-row{margin-bottom:0}.section.collapsible.collapsed>h2::after,.section.collapsible.collapsed>.section-heading-row>h2::after{transform:rotate(-90deg)}.section.collapsible.collapsed>*:not(h2):not(.section-heading-row){display:none}
 .practice-code-cr{color:#1e88e5}.practice-code-sm{color:#111}
 .lookup{position:relative}.lookup-results{position:absolute;left:0;right:0;top:100%;z-index:20;background:white;border:1px solid var(--line);border-radius:12px;margin-top:6px;box-shadow:0 10px 30px #4b392626;max-height:340px;overflow:auto}
-.lookup-results.ppm-lookup-portal{position:fixed;right:auto;margin-top:0;z-index:150;box-shadow:0 16px 40px #05070f4d}.lookup-item{display:block;width:100%;border:0;background:white;text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer;color:var(--ink)}.lookup-item:hover,.lookup-item:focus{background:#f7f2ee;outline:none}.lookup-item b{display:block}.lookup-item small{display:block;color:var(--muted);white-space:normal}.lookup-item-urn{display:flex;align-items:center;gap:10px}.lookup-item-thumb{width:36px;height:36px;flex:0 0 36px;border-radius:8px;object-fit:cover;background:#e2e8f0}.lookup-state{padding:10px 12px;color:var(--muted);font-size:13px}.selected-box{border:1px solid #b8d7c8;background:#edf7f2;color:#285b45;border-radius:10px;padding:12px;margin-top:10px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}.selected-box .btn{width:auto}
+.lookup-results.ppm-lookup-portal{position:absolute;right:auto;margin-top:0;z-index:150;box-shadow:0 16px 40px #05070f4d}.lookup-item{display:block;width:100%;border:0;background:white;text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer;color:var(--ink)}.lookup-item:hover,.lookup-item:focus{background:#f7f2ee;outline:none}.lookup-item b{display:block}.lookup-item small{display:block;color:var(--muted);white-space:normal}.lookup-item-urn{display:flex;align-items:center;gap:10px}.lookup-item-thumb{width:36px;height:36px;flex:0 0 36px;border-radius:8px;object-fit:cover;background:#e2e8f0}.lookup-state{padding:10px 12px;color:var(--muted);font-size:13px}.selected-box{border:1px solid #b8d7c8;background:#edf7f2;color:#285b45;border-radius:10px;padding:12px;margin-top:10px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}.selected-box .btn{width:auto}
 /* Dark professional interface */
 :root{--ink:#f5f7fb;--muted:#9ca7b8;--brand:#e9475b;--brand2:#ff6377;--paper:#111722;--bg:#090d14;--line:#293140;--green:#35c98a;--gold:#f5b83d}
 html{color-scheme:dark}body{background:radial-gradient(circle at 78% -10%,#31121e 0,transparent 32%),linear-gradient(135deg,#090d14,#0d121b 55%,#090d14);min-height:100dvh;color:var(--ink);font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
@@ -3742,22 +3742,33 @@ function ppmPositionLookupPanel(panel){
   // qui il calcolo "c'e' spazio sotto" restava vero anche quando quello
   // spazio era in realta' coperto dalla tastiera, rendendo il pannello
   // invisibile pur essendo presente nel DOM (bug: suggerimenti "che non
-  // funzionano" segnalato dall'utente, riproducibile solo su dispositivo
-  // reale con tastiera aperta, mai in un browser desktop).
+  // funzionano" segnalato dall'utente).
   const viewportHeight=window.visualViewport?window.visualViewport.height:window.innerHeight;
   const spaceBelow=viewportHeight-rect.bottom-margin;
   const spaceAbove=rect.top-margin;
   const openUpward=spaceBelow<160&&spaceAbove>spaceBelow;
-  panel.style.left=Math.max(margin,rect.left)+'px';
+  // position:fixed su iOS Safari con tastiera aperta si ancora al layout
+  // viewport (non a quello visivo), che puo' differire dalla porzione di
+  // schermo davvero visibile: il pannello compariva quindi in cima alla
+  // pagina invece che accanto al campo (bug segnalato dall'utente con
+  // screenshot). position:absolute ancorata alle coordinate REALI del
+  // documento (rect + scroll corrente) non soffre di questa ambiguita' —
+  // il listener di scroll/resize gia' presente lo riposiziona comunque
+  // ad ogni cambiamento.
+  const scrollX=window.scrollX||window.pageXOffset||0;
+  const scrollY=window.scrollY||window.pageYOffset||0;
+  panel.style.left=Math.max(margin,rect.left+scrollX)+'px';
   panel.style.width=rect.width+'px';
   if(openUpward){
-    panel.style.top='auto';
-    panel.style.bottom=(window.innerHeight-rect.top+gap)+'px';
-    panel.style.maxHeight=Math.max(120,Math.min(340,spaceAbove-gap))+'px';
-  }else{
+    const maxHeight=Math.max(120,Math.min(340,spaceAbove-gap));
     panel.style.bottom='auto';
-    panel.style.top=(rect.bottom+gap)+'px';
-    panel.style.maxHeight=Math.max(120,Math.min(340,spaceBelow-gap))+'px';
+    panel.style.top=(rect.top+scrollY-gap-maxHeight)+'px';
+    panel.style.maxHeight=maxHeight+'px';
+  }else{
+    const maxHeight=Math.max(120,Math.min(340,spaceBelow-gap));
+    panel.style.bottom='auto';
+    panel.style.top=(rect.bottom+scrollY+gap)+'px';
+    panel.style.maxHeight=maxHeight+'px';
   }
 }
 function ppmRepositionOpenLookupPanels(){
