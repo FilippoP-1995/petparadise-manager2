@@ -3588,7 +3588,7 @@ class PetParadiseTests(unittest.TestCase):
         # clip-path con raccordi tangenti (fillet) che fondono la curva
         # centrale nel bordo piatto della barra, come nel mockup.
         css = app.CSS
-        self.assertIn(".bottom-nav{position:fixed;display:grid;grid-template-columns:repeat(5,1fr);align-items:end;left:calc(10px + var(--safe-left));right:calc(10px + var(--safe-right));bottom:calc(10px + var(--safe-bottom));z-index:90;height:68px;padding:0;border-radius:30px;background:linear-gradient(160deg,#1c2635f5,#121a27f5);border:1px solid #2b3849;box-shadow:0 16px 38px #05070f66;backdrop-filter:blur(20px)}", css)
+        self.assertIn(".bottom-nav{position:fixed;display:grid;grid-template-columns:repeat(5,1fr);align-items:end;left:calc(20px + var(--safe-left));right:calc(20px + var(--safe-right));bottom:calc(10px + var(--safe-bottom));z-index:90;height:68px;padding:0;border-radius:30px;background:#1a1f2b;border:1px solid #2b3849;box-shadow:0 -8px 20px rgba(0,0,0,.4);backdrop-filter:blur(20px)}", css)
         self.assertNotIn(".bottom-nav:before,.bottom-nav:after{", css)
         self.assertIn(".bottom-nav:before{content:'';position:absolute;top:0;left:50%;width:200px;height:40px;transform:translateX(-50%);background:#172131;z-index:1;clip-path:path('M54.08,0 A14,14 0 0 1 67.47,9.92 A34,34 0 0 1 100,34 A34,34 0 0 1 132.53,9.92 A14,14 0 0 1 145.92,0 Z')}", css)
         self.assertIn(".light-theme .bottom-nav:before{background:#eef2f7}", css)
@@ -9391,9 +9391,6 @@ class PetParadiseTests(unittest.TestCase):
             "theme": "light",
             "return_to": "/il-mio-profilo",
             "dashboard_sections_json": json.dumps(["payments", "recent_practices"]),
-            "bottom_slot_1": "Calendario",
-            "bottom_slot_2": "Dashboard",
-            "bottom_slot_3": "Archivio",
         }
         self.handler.save_preferences(serena)
         self.assertEqual(redirects, ["/il-mio-profilo"])
@@ -9419,7 +9416,6 @@ class PetParadiseTests(unittest.TestCase):
             saved = {row["key"]: row["value"] for row in conn.execute("SELECT key,value FROM user_preferences WHERE user_id=?", (serena["id"],))}
         self.assertEqual(saved["theme"], "light")
         self.assertEqual(json.loads(saved["dashboard_sections"]), ["payments", "recent_practices"])
-        self.assertEqual(json.loads(saved["bottom_nav_slots"]), ["Calendario", "Dashboard", "Archivio"])
 
     def test_profile_page_renders_password_theme_sidebar_and_notification_sections(self):
         with app.db() as conn:
@@ -9432,7 +9428,6 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('href="/imposta-password?return_to=/il-mio-profilo"', page)
         self.assertIn('action="/il-mio-profilo/salva"', page)
         self.assertIn('action="/impostazioni/notifiche"', page)
-        self.assertIn("Barra di navigazione mobile", page)
 
     def test_profile_page_renders_drag_and_drop_lists_instead_of_numeric_fields(self):
         with app.db() as conn:
