@@ -1712,7 +1712,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
    niente wrap su schermi stretti: le card sono compatte apposta (icona
    piccola, testo minuscolo) per starci tutte e 5 anche su iPhone standard. */
 .calendar-form-v2 .calendar-type-grid{display:grid!important;grid-template-columns:repeat(5,1fr)!important;gap:5px}
-.calendar-form-v2 .calendar-type-option{display:flex!important;flex-direction:column!important;align-items:flex-start!important;gap:5px!important;min-height:96px;padding:8px 6px!important;border-radius:14px!important;min-width:0}
+.calendar-form-v2 .calendar-type-option{display:flex!important;flex-direction:column!important;align-items:flex-start!important;gap:4px!important;min-height:80px;padding:6px 5px!important;border-radius:12px!important;min-width:0}
 .calendar-form-v2 .calendar-type-option .calendar-event-type-icon{flex:0 0 22px!important;width:22px!important;height:22px!important;border-radius:7px!important}
 .calendar-form-v2 .calendar-type-option .calendar-event-type-icon .icon{width:12px;height:12px}
 .calendar-form-v2 .calendar-type-option small.sub{font-size:7.5px;line-height:1.2;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
@@ -1735,20 +1735,50 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .calendar-form-v2 .calendar-v2-addr-row{display:flex;gap:8px;align-items:stretch}
 .calendar-form-v2 .calendar-v2-addr-row input{flex:1 1 0%!important;width:0!important;min-width:0!important}
 .calendar-form-v2 .calendar-v2-addr-row .calendar-use-client-address{flex:0 0 auto!important;width:max-content!important;max-width:45%!important;white-space:nowrap;font-size:11px;padding:0 12px;margin-top:0!important}
-.calendar-form-v2 section.collapsible{padding:0!important;border:1px solid #ffffff14;border-radius:18px;background:linear-gradient(160deg,#1c2635d9,#141b27d9);backdrop-filter:blur(16px);box-shadow:0 10px 26px #05070f3d;margin-bottom:10px;overflow:hidden}
-.calendar-form-v2 section.collapsible>h2{display:flex;align-items:center;gap:12px;margin:0!important;padding:14px 16px}
-.calendar-form-v2 section.collapsible>h2::after{margin-left:auto;font-size:16px}
-.calendar-form-v2 section.collapsible>*:not(h2):not(.section-heading-row){padding:0 16px 16px}
+.calendar-form-v2 section.collapsible{padding:0!important;border:1px solid #ffffff14;border-radius:14px;background:linear-gradient(160deg,#1c2635d9,#141b27d9);backdrop-filter:blur(16px);box-shadow:0 10px 26px #05070f3d;margin-bottom:5px!important;overflow:hidden}
+.calendar-form-v2 section.collapsible>h2{display:flex;align-items:center;gap:8px;margin:0!important;padding:7px 10px;font-size:11.5px}
+.calendar-form-v2 section.collapsible>h2::after{margin-left:auto;font-size:14px}
+.calendar-form-v2 section.collapsible>*:not(h2):not(.section-heading-row){padding:0 12px 12px}
 .calendar-form-v2 section.collapsible.tone-purple>h2{color:#c4b5fd}
 .calendar-form-v2 section.collapsible.tone-orange>h2{color:#fdba74}
 .calendar-form-v2 section.collapsible.tone-blue>h2{color:#93c5fd}
 .calendar-form-v2 section.collapsible.tone-gray>h2{color:#e2e8f0}
-.calendar-form-v2 .calendar-detail-quickactions{grid-template-columns:repeat(4,1fr)!important;gap:6px!important}
-.calendar-form-v2 .calendar-detail-qa{flex-direction:row!important;min-height:44px!important;padding:8px 4px!important;min-width:0;font-size:10px!important;gap:5px!important}
+.calendar-form-v2 .calendar-detail-quickactions{grid-template-columns:repeat(4,1fr)!important;gap:6px!important;margin-bottom:8px!important}
+.calendar-form-v2 .calendar-detail-qa{flex-direction:row!important;min-height:40px!important;padding:6px 4px!important;min-width:0;font-size:10px!important;gap:5px!important}
 .calendar-form-v2 .calendar-detail-qa-icon{flex:0 0 auto}
 .calendar-form-v2 .calendar-detail-qa>span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-.calendar-form-v2 .calendar-v2-actions{display:flex;flex-direction:column;gap:10px;margin-top:6px}
-.calendar-form-v2 .calendar-v2-actions .btn{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;min-height:52px;font-size:15px}
+.calendar-form-v2 .calendar-v2-actions{display:flex;flex-direction:column;gap:8px;margin-top:2px}
+.calendar-form-v2 .calendar-v2-actions .btn{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;min-height:46px;font-size:14px}
+/* Compattazione verticale: la struttura orizzontale (righe/colonne) era gia'
+   corretta, ma ogni blocco era troppo "alto" per via del padding/icone dei
+   componenti generici (.calendar-tap-card, .section, .field) pensati per la
+   vecchia UI meno densa. Qui si riduce SOLO padding/gap/font-size — nessuna
+   struttura o logica cambia. */
+.calendar-form-v2 form>section.section{padding:0!important;margin:0 0 8px!important}
+.calendar-form-v2 form>section.section>h2{font-size:11px!important;font-weight:800!important;letter-spacing:.08em!important;text-transform:uppercase!important;color:#9ca7b8!important;margin:0 0 6px!important}
+.calendar-form-v2 form>section.section>p.sub{display:none!important}
+.calendar-form-v2 .calendar-tap-card{padding:8px 11px!important;gap:8px!important;border-radius:14px!important}
+.calendar-form-v2 .calendar-tap-card-icon{flex:0 0 26px!important;width:26px!important;height:26px!important;border-radius:9px!important}
+.calendar-form-v2 .calendar-tap-card-icon .icon{width:14px;height:14px}
+.calendar-form-v2 .calendar-tap-card-body{gap:1px!important}
+.calendar-form-v2 .calendar-tap-card-body>small,.calendar-form-v2 .calendar-tap-card-body>label{font-size:8.5px!important;margin:0!important}
+.calendar-form-v2 .calendar-tap-card-body input,.calendar-form-v2 .calendar-tap-card-body select{font-size:12.5px!important}
+.calendar-form-v2 .calendar-tap-card-body .calendar-wizard-error:empty{display:none!important}
+.calendar-form-v2 .calendar-tap-card-check{font-size:9px!important;margin-top:2px!important;gap:4px!important}
+.calendar-form-v2 .calendar-tap-card-check input[type=checkbox]{width:13px;height:13px}
+.calendar-form-v2 .calendar-v2-card,.calendar-form-v2 .calendar-subblock{padding:9px!important;margin:0 0 5px!important;border-radius:14px!important}
+.calendar-form-v2 .calendar-v2-eyebrow,.calendar-form-v2 .calendar-subblock>h3{margin:0 0 5px!important;font-size:9.5px!important}
+.calendar-form-v2 .calendar-v2-row2{gap:5px!important;margin-bottom:5px!important}
+.calendar-form-v2 .calendar-v2-row3{margin-bottom:5px!important}
+.calendar-form-v2 .calendar-subblock .fields{gap:6px!important}
+.calendar-form-v2 .calendar-subblock .field{gap:3px!important}
+.calendar-form-v2 .calendar-subblock .field label{font-size:9.5px!important;margin:0!important}
+.calendar-form-v2 .calendar-subblock .field input{padding:8px 10px!important;font-size:13px!important}
+.calendar-form-v2 .calendar-location-tiles{margin-top:0!important}
+.calendar-form-v2 .calendar-location-tile{padding:8px 4px!important}
+.calendar-form-v2 .calendar-v2-topbar{margin-bottom:8px!important}
+.calendar-form-v2 .calendar-v2-draftrow{margin-bottom:8px!important;min-height:0}
+.calendar-form-v2 .calendar-v2-draftrow:empty{display:none!important}
 .light-theme.calendar-form-v2 .calendar-v2-card,.light-theme .calendar-form-v2 .calendar-v2-card,.light-theme .calendar-form-v2 .calendar-subblock,.light-theme .calendar-form-v2 section.collapsible,.light-theme .calendar-form-v2 .calendar-v2-allday{background:#fff;border-color:#e2e8f0}
 .calendar-appt-list{display:flex;flex-direction:column;gap:12px}
 .calendar-appt-empty{text-align:center;padding:24px;color:#9ca7b8}
