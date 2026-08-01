@@ -13770,7 +13770,20 @@ class App(BaseHTTPRequestHandler):
             # "correggi" e "nuovo incasso". Un incasso genuinamente nuovo si
             # registra solo dal pulsante dedicato "Aggiungi pagamento extra".
             return f'''<div class="fields"><button class="btn" type="submit" style="margin-top:4px">Salva pagamento {channel}</button></div>'''
-        creation_payment_fields=f'''<section class="section hidden" id="creationPaymentSection"><h2>Pagamento</h2><p class="sub">Ogni importo è indipendente: compila solo D, solo W, o entrambi. Il circuito D non richiede il metodo di pagamento. Se per lo stesso incasso compili sia D che W, viene registrato solo D.</p><div class="fields" id="paymentEstremiRow"></div><div class="fields" id="paymentTotaleWRow"></div>{macro_field_group("acconto","W","Acconto W")}{macro_field_group("saldo","W","Saldo/Rimanenza W")}{channel_payment_buttons("W")}<div class="fields" id="paymentInvoiceRow"></div><div class="payment-macroarea"><div class="fields" id="paymentTotaleDRow"></div>{macro_field_group("acconto","D","Acconto D",show_method=False)}{macro_field_group("saldo","D","Rimanenza D",show_method=False)}{channel_payment_buttons("D")}</div></section>'''
+        # Il pulsante apre il popup "paymentExtraPopover" (costruito da
+        # edit_page, fuori da <form id="practiceForm"> perche' un <form> non
+        # puo' essere annidato in un altro — il browser scarterebbe
+        # silenziosamente il tag di apertura durante il parsing). Riusa lo
+        # stesso meccanismo gia' usato per il popup Pagamento del riepilogo
+        # (openPaymentPopover/closePaymentPopover), cosi' compare qui, dentro
+        # la sezione Pagamento della pratica, invece che isolato in fondo
+        # alla pagina. Solo in modifica: in creazione non esiste ancora
+        # nessun movimento rispetto a cui essere "extra".
+        payment_extra_trigger_html=(
+            '''<div class="fields" style="margin-top:14px"><button type="button" class="btn ghost" style="width:100%" data-payment-popover="paymentExtraPopover" onclick="openPaymentPopover(this)">+ Aggiungi pagamento extra</button></div>'''
+            if p and p.get('id') else ""
+        )
+        creation_payment_fields=f'''<section class="section hidden" id="creationPaymentSection"><h2>Pagamento</h2><p class="sub">Ogni importo è indipendente: compila solo D, solo W, o entrambi. Il circuito D non richiede il metodo di pagamento. Se per lo stesso incasso compili sia D che W, viene registrato solo D.</p><div class="fields" id="paymentEstremiRow"></div><div class="fields" id="paymentTotaleWRow"></div>{macro_field_group("acconto","W","Acconto W")}{macro_field_group("saldo","W","Saldo/Rimanenza W")}{channel_payment_buttons("W")}<div class="fields" id="paymentInvoiceRow"></div><div class="payment-macroarea"><div class="fields" id="paymentTotaleDRow"></div>{macro_field_group("acconto","D","Acconto D",show_method=False)}{macro_field_group("saldo","D","Rimanenza D",show_method=False)}{channel_payment_buttons("D")}</div>{payment_extra_trigger_html}</section>'''
         if user is None or user["role"]=="admin":
             operator_field=f'''<div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option><option {selected('operator_name','SERENA')}>SERENA</option><option {selected('operator_name','ALESSIO')}>ALESSIO</option><option {selected('operator_name','FILIPPO')}>FILIPPO</option><option {selected('operator_name','GIANLUCA')}>GIANLUCA</option></select></div>'''
         else:
@@ -15311,10 +15324,17 @@ class App(BaseHTTPRequestHandler):
         # endpoint diverso da quello della pratica: deve stare FUORI dal
         # <form id="practiceForm"> (i form annidati non sono validi HTML —
         # il browser scarta silenziosamente il tag <form> interno, lasciando
-        # i campi orfani senza inviarli da nessuna parte). Va quindi dopo la
-        # chiusura di practiceForm, non dentro fields_html.
+        # i campi orfani senza inviarli da nessuna parte). Per restare
+        # comunque visivamente dentro la sezione Pagamento (non isolato in
+        # fondo alla pagina) e' un popup, aperto dal pulsante "+ Aggiungi
+        # pagamento extra" dentro creation_payment_fields via lo stesso
+        # openPaymentPopover/closePaymentPopover gia' usato dal popup
+        # Pagamento del riepilogo pratiche (che gestisce anche lo spostamento
+        # a <body>, necessario perche' #main-content ha un transform per il
+        # pull-to-refresh).
         payment_extra_html=self.payment_extra_section_html(pid,extra_payments,esc(getattr(self,"path","")))
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Modifica {esc(p['practice_number'])}</h1><div class="sub">Completa o correggi i dati della pratica.</div>{autosave}</div><div class="actions"><button class="btn" form="practiceForm">Salva modifiche</button><button class="btn ghost" form="practiceForm" name="save_and_return" value="1">Salva e torna</button><a class="btn ghost" href="{esc(back_url)}">Annulla</a></div></div>{error_html}<form method="post" id="practiceForm" data-autosave-url="/api/pratiche/{pid}/autosave" data-updated-at="{esc(p['updated_at'])}"><input type="hidden" name="return_to" value="{esc(back_url)}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(24)}">{error_target}<div class="grid form-grid">{self.fields_html(display,user,collapsed=(draft is None))}</div><div class="actions" style="margin-top:18px"><button class="btn">Salva modifiche</button><button class="btn ghost" name="save_and_return" value="1">Salva e torna</button><a class="btn ghost" href="{esc(back_url)}">Annulla</a></div></form><div class="grid form-grid">{payment_extra_html}</div></main>'''
+        payment_extra_popover=f'''<div class="payment-popover" id="paymentExtraPopover" hidden onclick="if(event.target===this)closePaymentPopover(this)"><div class="payment-dialog"><div class="titlebar"><div><h2>Pagamento extra · {esc(p['practice_number'])}</h2><p class="sub">Registra un incasso aggiuntivo, indipendente da Acconto/Saldo.</p></div><button class="btn ghost" type="button" onclick="closePaymentPopover(this)">Chiudi</button></div>{payment_extra_html}</div></div>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Modifica {esc(p['practice_number'])}</h1><div class="sub">Completa o correggi i dati della pratica.</div>{autosave}</div><div class="actions"><button class="btn" form="practiceForm">Salva modifiche</button><button class="btn ghost" form="practiceForm" name="save_and_return" value="1">Salva e torna</button><a class="btn ghost" href="{esc(back_url)}">Annulla</a></div></div>{error_html}<form method="post" id="practiceForm" data-autosave-url="/api/pratiche/{pid}/autosave" data-updated-at="{esc(p['updated_at'])}"><input type="hidden" name="return_to" value="{esc(back_url)}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(24)}">{error_target}<div class="grid form-grid">{self.fields_html(display,user,collapsed=(draft is None))}</div><div class="actions" style="margin-top:18px"><button class="btn">Salva modifiche</button><button class="btn ghost" name="save_and_return" value="1">Salva e torna</button><a class="btn ghost" href="{esc(back_url)}">Annulla</a></div></form>{payment_extra_popover}</main>'''
         self.send_html(layout("Modifica pratica",body,user))
 
     def practice_autosave(self,user,pid):
