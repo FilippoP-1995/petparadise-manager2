@@ -2775,6 +2775,16 @@ APP_JS = r"""
   let lastY=Math.max(0,window.scrollY||0);
   let hidden=false;
   let ticking=false;
+  // Il rimbalzo elastico/momentum di iOS puo' far oscillare scrollY di pochi
+  // px in entrambe le direzioni tra un frame e l'altro durante lo scroll:
+  // senza questo blocco, ogni oscillazione superava la THRESHOLD e faceva
+  // ripartire la transizione CSS (.52s) nella direzione opposta prima che
+  // quella in corso finisse, lasciando la barra visivamente "a meta'" per
+  // tutta la durata dello scroll (bug segnalato dall'utente). Un nuovo
+  // cambio di stato non puo' avvenire finche' la transizione precedente non
+  // e' completata.
+  const TOGGLE_COOLDOWN_MS=560;
+  let lastToggleAt=0;
   function ppmBarsBusy(){
     if(document.body.classList.contains('modal-open'))return true;
     if(document.body.classList.contains('create-menu-open'))return true;
@@ -2785,7 +2795,10 @@ APP_JS = r"""
   }
   function ppmSetBarsHidden(next){
     if(hidden===next)return;
+    const now=Date.now();
+    if(now-lastToggleAt<TOGGLE_COOLDOWN_MS)return;
     hidden=next;
+    lastToggleAt=now;
     document.body.classList.toggle('ppm-bars-hidden',hidden);
   }
   // A fondo pagina il rilascio del dito su iOS produce micro-correzioni di
