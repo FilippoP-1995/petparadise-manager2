@@ -8230,8 +8230,8 @@ class PetParadiseTests(unittest.TestCase):
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
         self.handler.dashboard(admin)
         page=rendered[-1]
-        self.assertIn('class="reminders-add-btn"',page)
-        self.assertIn("Aggiungi promemoria",page)
+        self.assertIn('class="reminders-mini-add-btn"',page)
+        self.assertIn('aria-label="Aggiungi promemoria"',page)
         self.assertIn("openAddReminderModal()",page)
         self.assertIn('id="addReminderBackdrop"',page)
         self.assertIn('id="addReminderForm"',page)
@@ -8245,6 +8245,85 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("function closeAddReminderModal(){",js)
         self.assertIn("function submitAddReminder(event){",js)
         self.assertIn("/promemoria/nuovo",js)
+
+    def test_mini_add_button_sits_above_the_dots_column_and_icon_is_circular(self):
+        # richiesta esplicita dell'utente (mockup di riferimento fornito): il
+        # pulsante "+" per aggiungere un promemoria manuale deve essere
+        # piccolo e discreto, in alto a destra della card, PRIMA (cioe' sopra,
+        # nello stesso ordine di lettura) della colonna dei pallini; l'icona
+        # di ogni promemoria deve essere rotonda, non un quadrato arrotondato.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        side_col=page[page.index('class="reminders-side-col"'):page.index('</div>',page.index('id="ppmRemindersDots"'))]
+        self.assertLess(side_col.index('reminders-mini-add-btn'),side_col.index('id="ppmRemindersDots"'))
+        self.assertIn(".reminders-slide-icon{width:36px;height:36px;flex:0 0 36px;border-radius:50%}",app.CSS)
+
+    def test_manual_badge_is_on_its_own_line_above_the_title_not_inline(self):
+        # richiesta esplicita dell'utente: badge "MANUALE" in alto a sinistra
+        # del testo, non incollato davanti al titolo sulla stessa riga.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.form=lambda:{"title":"Richiamare il canile","ajax":"1"}
+        responses=[]
+        self.handler.send_json=lambda payload,status=200:responses.append((payload,status))
+        self.handler.add_manual_reminder(admin)
+        self.assertTrue(responses[-1][0]["ok"])
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        self.assertIn('<span class="reminders-manual-badge">MANUALE</span><b>Richiamare il canile</b>',page)
+        self.assertNotIn('<b><span class="reminders-manual-badge">',page)
+
+    def test_swipe_reveal_row_has_vedi_fatto_modifica_rimanda_with_distinct_colors(self):
+        # richiesta esplicita dell'utente (mockup di riferimento fornito): lo
+        # swipe verso sinistra deve rivelare esattamente Vedi/Fatto/Modifica/
+        # Rimanda, ciascuno con un colore diverso; "Elimina" resta riservato
+        # ai soli promemoria manuali (non fa parte del set base del mockup).
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,data_complete)
+                VALUES(?,?,?,?,?,?,?,?,?)""",("CR-SWIPEACT","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Argo",0)).lastrowid
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        slide_start=page.index(f'href="/pratiche/{pid}?return_to=%2F"',page.index('reminders-swipe-actions'))
+        actions_start=page.rindex('class="reminders-swipe-actions"',0,slide_start)
+        actions_html=page[actions_start:page.index('</div>',slide_start)]
+        self.assertIn('reminders-swipe-view',actions_html)
+        self.assertIn('>Vedi<',actions_html)
+        self.assertIn('reminders-swipe-done',actions_html)
+        self.assertIn('>Fatto<',actions_html)
+        self.assertIn('reminders-swipe-edit',actions_html)
+        self.assertIn('>Modifica<',actions_html)
+        self.assertIn('reminders-swipe-snooze',actions_html)
+        self.assertIn('>Rimanda<',actions_html)
+        self.assertNotIn('reminders-swipe-delete',actions_html)
+        self.assertIn(".reminders-swipe-btn.reminders-swipe-view{background:#7e57c2}",app.CSS)
+        self.assertIn(".reminders-swipe-btn.reminders-swipe-done{background:#22c55e}",app.CSS)
+        self.assertIn(".reminders-swipe-btn.reminders-swipe-edit{background:#3b82f6}",app.CSS)
+        self.assertIn(".reminders-swipe-btn.reminders-swipe-snooze{background:#f59e0b}",app.CSS)
+        self.assertIn("function reminderMarkDoneFromSwipe(btn){",app.APP_JS)
+
+    def test_manual_reminder_swipe_reveal_row_still_offers_elimina(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.form=lambda:{"title":"Promemoria a mano","ajax":"1"}
+        responses=[]
+        self.handler.send_json=lambda payload,status=200:responses.append((payload,status))
+        self.handler.add_manual_reminder(admin)
+        reminder_id=None
+        with app.db() as conn:
+            reminder_id=conn.execute("SELECT id FROM reminders WHERE reminder_type='manual'").fetchone()["id"]
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        slide_start=page.index(f'data-reminder-id="{reminder_id}"')
+        slide_html=page[slide_start:slide_start+3000]
+        self.assertIn('reminders-swipe-delete',slide_html)
+        self.assertIn('>Elimina<',slide_html)
 
     def test_manual_reminder_can_be_added_and_appears_with_pink_bar(self):
         with app.db() as conn:
