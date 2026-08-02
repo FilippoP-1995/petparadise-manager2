@@ -1610,8 +1610,8 @@ class PetParadiseTests(unittest.TestCase):
         with app.db() as conn:
             cycle = conn.execute("SELECT * FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()
         self.assertEqual(cycle["status"], "pianificato")
-        self.assertEqual(cycle["planned_start"], "08:00")
-        self.assertEqual(cycle["planned_end"], "09:30")
+        self.assertEqual(cycle["planned_start"], "08:30")
+        self.assertEqual(cycle["planned_end"], "10:00")
 
         responses.clear()
         self.handler.form = lambda: {"practice_id": str(first_id)}
@@ -1650,8 +1650,70 @@ class PetParadiseTests(unittest.TestCase):
         second_cycle_id = responses[-1][0]["cycle_id"]
         with app.db() as conn:
             second_cycle = conn.execute("SELECT * FROM cremation_cycles WHERE id=?", (second_cycle_id,)).fetchone()
-        self.assertEqual(second_cycle["planned_start"], "09:40")
-        self.assertEqual(second_cycle["planned_end"], "11:10")
+        self.assertEqual(second_cycle["planned_start"], "10:30")
+        self.assertEqual(second_cycle["planned_end"], "12:00")
+
+    def test_next_slot_api_suggests_8_30_for_first_cycle_of_an_empty_day(self):
+        # richiesta esplicita dell'utente: il primo ciclo di una giornata
+        # deve preimpostare come orario di inizio le 8:30.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.path = "/api/programma-cremazioni/prossimo-slot?data=2026-08-10"
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.api_cremation_next_slot(admin)
+        self.assertEqual(responses[-1], ({"ok": True, "start": "08:30", "end": "10:00"}, 200))
+
+    def test_next_slot_api_suggests_30_minutes_after_the_last_cycle_of_the_day(self):
+        # richiesta esplicita dell'utente: un nuovo ciclo quando ce ne sono
+        # gia' altri quel giorno si preimposta 30 minuti dopo la fine
+        # dell'ultimo ciclo gia' presente in quella data.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-08-10", "pianificato", "08:30", "10:00", stamp, stamp),
+            )
+        self.handler.path = "/api/programma-cremazioni/prossimo-slot?data=2026-08-10"
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.api_cremation_next_slot(admin)
+        self.assertEqual(responses[-1], ({"ok": True, "start": "10:30", "end": "12:00"}, 200))
+
+    def test_next_slot_api_rejects_an_invalid_date(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.path = "/api/programma-cremazioni/prossimo-slot?data=not-a-date"
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.api_cremation_next_slot(admin)
+        payload, status = responses[-1]
+        self.assertFalse(payload["ok"])
+        self.assertEqual(status, 400)
+
+    def test_quick_insert_popover_flips_up_when_it_would_be_clipped_by_the_scrollable_list(self):
+        # bug segnalato dall'utente: per l'ultimo animale della lista "in
+        # attesa" il menu a tendina si apriva sotto il pulsante e finiva
+        # tagliato dall'overflow-y:auto del contenitore scorrevole.
+        js = app.APP_JS
+        self.assertIn("cremation-quick-menu-flip-up", js)
+        toggle = js[js.index("function cremationToggleQuickMenu(btn){"):]
+        toggle = toggle[:toggle.index("\nfunction ", 10)]
+        self.assertIn("classList.add('cremation-quick-menu-flip-up')", toggle)
+        self.assertIn("scrollIntoView", toggle)
+        self.assertIn(".cremation-quick-menu-popover.cremation-quick-menu-flip-up{top:auto;bottom:calc(100% + 6px)}", app.CSS)
+
+    def test_create_cycle_modal_auto_suggests_start_time_instead_of_leaving_it_blank(self):
+        # richiesta esplicita dell'utente: scelta la data del nuovo ciclo,
+        # l'orario di inizio si preimposta da solo invece di restare vuoto.
+        js = app.APP_JS
+        self.assertIn("function cremationSuggestCreateTimes()", js)
+        self.assertIn("/api/programma-cremazioni/prossimo-slot?data=", js)
+        open_modal = js[js.index("function cremationOpenCreateModal(practiceId,cycleDate){"):]
+        open_modal = open_modal[:open_modal.index("\nfunction ", 10)]
+        self.assertIn("if(cycleDate)cremationSuggestCreateTimes();", open_modal)
+        self.assertIn("e.target.id==='cremationCreateDate')cremationSuggestCreateTimes();", js)
 
     def test_cremation_create_cycle_accepts_explicit_day_and_time_from_the_new_popup(self):
         # richiesta esplicita dell'utente: quando si crea un nuovo ciclo dal
@@ -2090,7 +2152,7 @@ class PetParadiseTests(unittest.TestCase):
             third = conn.execute("SELECT planned_start,planned_end FROM cremation_cycles WHERE id=?", (third_id,)).fetchone()
         self.assertEqual((first["planned_start"], first["planned_end"]), ("08:00", "10:30"))
         # pushed forward by the gap, keeping its own original 90-minute duration
-        self.assertEqual((second["planned_start"], second["planned_end"]), ("10:40", "12:10"))
+        self.assertEqual((second["planned_start"], second["planned_end"]), ("11:00", "12:30"))
         # untouched: still well after the cascade
         self.assertEqual((third["planned_start"], third["planned_end"]), ("15:00", "16:30"))
 

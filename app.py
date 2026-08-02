@@ -2239,6 +2239,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-action-delete:hover{background:#fb71851a}
 .cremation-action-add:hover{background:#c084fc1a}
 .cremation-quick-menu-popover{position:absolute;left:0;top:calc(100% + 6px);z-index:30;min-width:190px;max-width:250px;max-height:260px;overflow-y:auto;padding:6px;border:1px solid #334155;border-radius:10px;background:#172033;box-shadow:0 14px 34px #000a}
+.cremation-quick-menu-popover.cremation-quick-menu-flip-up{top:auto;bottom:calc(100% + 6px)}
 .cremation-quick-menu-popover button{display:flex;align-items:center;gap:6px;width:100%;padding:8px 10px;border:0;background:transparent;border-radius:7px;color:#e2e8f0;font-size:12px;text-align:left;cursor:pointer}
 .cremation-quick-menu-popover button:hover{background:#1f2937}
 .cremation-quick-menu-popover .icon{width:13px;height:13px}
@@ -5491,8 +5492,18 @@ function cremationToggleQuickMenu(btn){
   if(!wrap)return;
   const popover=wrap.querySelector('.cremation-quick-menu-popover');
   const willOpen=popover.hidden;
-  document.querySelectorAll('.cremation-quick-menu-popover').forEach(function(p){p.hidden=true;});
-  popover.hidden=!willOpen;
+  document.querySelectorAll('.cremation-quick-menu-popover').forEach(function(p){p.hidden=true;p.classList.remove('cremation-quick-menu-flip-up');});
+  if(!willOpen)return;
+  popover.hidden=false;
+  // per l'ultimo animale della lista il popover, posizionato sotto il
+  // pulsante, finiva tagliato dall'overflow-y:auto del contenitore
+  // scorrevole (bug segnalato dall'utente): se non c'e' spazio sotto lo
+  // apriamo verso l'alto invece che verso il basso.
+  const rect=popover.getBoundingClientRect();
+  const scroller=wrap.closest('.cremation-waiting-list')||document.documentElement;
+  const limitBottom=Math.min(scroller.getBoundingClientRect().bottom,window.innerHeight);
+  if(rect.bottom>limitBottom)popover.classList.add('cremation-quick-menu-flip-up');
+  popover.scrollIntoView({block:'nearest'});
 }
 document.addEventListener('click',function(e){
   if(!e.target.closest('.cremation-quick-menu-wrap')){
@@ -5507,6 +5518,33 @@ function cremationQuickAssign(el,practiceId,cycleId){
     .then(function(data){if(!data.ok){alert(data.error||'Operazione non riuscita');return;}cremationReloadWithOpenCycle(cycleId);})
     .catch(function(){cremationReloadWithOpenCycle(cycleId);});
 }
+function calendarSetTimeValue(input,value){
+  if(!input||!/^\d{2}:\d{2}$/.test(value))return;
+  input.value=value;
+  input.dataset.timeDigits=value.replace(':','');
+  input.dataset.timeComplete='1';
+  calendarSyncTimeWheel(input,false);
+}
+function cremationSuggestCreateTimes(){
+  // richiesta esplicita dell'utente: scelto il giorno del nuovo ciclo,
+  // l'orario di inizio si preimposta da solo (8:30 se e' il primo ciclo
+  // della giornata, altrimenti 30 minuti dopo la fine dell'ultimo ciclo
+  // gia' presente in quella data) invece di lasciare i campi vuoti.
+  const dateInput=document.getElementById('cremationCreateDate');
+  const cycleDate=dateInput?dateInput.value:'';
+  const startInput=document.getElementById('cremationCreateStart');
+  const endInput=document.getElementById('cremationCreateEnd');
+  if(!cycleDate||!startInput||!endInput)return;
+  fetch('/api/programma-cremazioni/prossimo-slot?data='+encodeURIComponent(cycleDate),{credentials:'same-origin'})
+    .then(function(res){return res.json();})
+    .then(function(data){
+      if(!data.ok)return;
+      calendarSetTimeValue(startInput,data.start);
+      calendarSetTimeValue(endInput,data.end);
+      cremationUpdateDurationPreview('cremationCreate');
+    })
+    .catch(function(){});
+}
 function cremationOpenCreateModal(practiceId,cycleDate){
   const overlay=document.getElementById('cremationCreateOverlay');
   if(!overlay)return false;
@@ -5520,8 +5558,12 @@ function cremationOpenCreateModal(practiceId,cycleDate){
   document.querySelectorAll('#cremationCreateOverlay [data-time-wheel]').forEach(function(w){w.hidden=true;delete w.dataset.ready;});
   cremationUpdateDurationPreview('cremationCreate');
   overlay.hidden=false;
+  if(cycleDate)cremationSuggestCreateTimes();
   return true;
 }
+document.addEventListener('change',function(e){
+  if(e.target&&e.target.id==='cremationCreateDate')cremationSuggestCreateTimes();
+});
 function cremationCloseCreateModal(){
   const overlay=document.getElementById('cremationCreateOverlay');
   if(overlay)overlay.hidden=true;
@@ -6785,8 +6827,8 @@ def initial_avatar(name):
 
 
 CREMATION_CYCLE_DURATION_MIN = 90
-CREMATION_CYCLE_GAP_MIN = 10
-CREMATION_DAY_START = "08:00"
+CREMATION_CYCLE_GAP_MIN = 30
+CREMATION_DAY_START = "08:30"
 CREMATION_STATUS_LABELS = {
     "pianificato": ("PIANIFICATO", "cremation-status-planned"),
     "in_attesa": ("IN ATTESA", "cremation-status-waiting"),
@@ -7616,6 +7658,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/api/veterinari/search": return self.api_veterinarians_search(user)
         if path == "/api/calendario/animali/search": return self.api_calendar_animals_search(user)
         if path == "/api/calendario/pratiche/search": return self.api_calendar_practices_search(user)
+        if path == "/api/programma-cremazioni/prossimo-slot": return self.api_cremation_next_slot(user)
         if path == "/api/notifiche/stato": return self.notification_status(user)
         match = re.fullmatch(r"/api/veterinari/(\d+)/buoni", path)
         if match: return self.api_veterinarian_vouchers(user, int(match.group(1)))
@@ -11908,6 +11951,15 @@ class App(BaseHTTPRequestHandler):
                     c.execute("UPDATE practices SET owner_notified_status='da_avvisare',owner_notified_at=NULL,owner_notified_by=NULL WHERE id=?",(practice_id,))
                 cremation_notify_cycle_waiting(c,user["id"],cycle_id,cycle_date,start,end)
         return self.send_json({"ok":True,"cycle_id":cycle_id})
+
+    def api_cremation_next_slot(self,user):
+        q=parse_qs(urlparse(self.path).query)
+        cycle_date=(q.get("data",[""])[0] or "").strip()[:10]
+        try:date.fromisoformat(cycle_date)
+        except ValueError:return self.send_json({"ok":False,"error":"Data non valida."},400)
+        with db() as c:
+            start,end=cremation_cycle_next_slot(c,cycle_date)
+        return self.send_json({"ok":True,"start":start,"end":end})
 
     def cremation_assign_to_cycle(self,user,cycle_id):
         f=self.form()
