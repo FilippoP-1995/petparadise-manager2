@@ -1323,7 +1323,7 @@ a{color:inherit;text-decoration:none}.top{height:68px;background:#fff;border-bot
 .reminders-slide-empty .reminders-slide-front{cursor:default}
 .reminders-swipe-complete-bg{position:absolute;inset:0;display:flex;align-items:center;gap:8px;padding:0 18px;background:#16a34a;color:#fff;font-weight:700;font-size:13px;border-radius:12px}
 .reminders-swipe-complete-bg .icon{width:22px;height:22px}
-.reminders-swipe-actions{position:absolute;inset:0;display:flex;align-items:stretch;justify-content:flex-end;background:#0f172a;border-radius:12px;overflow:hidden}
+.reminders-swipe-actions{position:absolute;inset:0;display:flex;align-items:stretch;justify-content:flex-end;background:#0f172a;border-radius:12px;overflow:hidden;touch-action:pan-y}
 .reminders-swipe-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:54px;border:0;background:#1e293b;color:#fff;font-size:9.5px;font-weight:600;cursor:pointer;border-left:1px solid #0f172a}
 .reminders-swipe-btn .icon{width:16px;height:16px}
 .reminders-swipe-btn.reminders-swipe-view{background:#7e57c2}
@@ -1718,9 +1718,10 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .calendar-daybar-wrap{display:flex;align-items:center;gap:4px;margin-bottom:14px}
 .calendar-daybar-nav{flex:0 0 auto;width:26px;height:26px;border:0;border-radius:8px;background:transparent;color:#8a96a8;font-size:19px;line-height:1;cursor:pointer;display:grid;place-items:center}
 .calendar-daybar-nav:hover{color:#e2e8f0;background:#1a2332}
-.calendar-daybar{position:relative;display:flex;justify-content:flex-start;gap:9px;flex:1 1 auto;min-width:0;overflow-x:auto;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;padding:4px 2px 10px;scrollbar-width:none}
+.calendar-daybar{position:relative;display:flex;justify-content:flex-start;gap:9px;flex:1 1 auto;min-width:0;overflow-x:auto;scroll-snap-type:x mandatory;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;padding:4px 2px 10px;scrollbar-width:none}
 .calendar-daybar::-webkit-scrollbar{display:none}
-.calendar-daybar-card{flex:0 0 auto;min-width:62px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 8px;border:1px solid #334155;border-radius:16px;background:#1a2332;box-shadow:0 6px 16px #0307122e;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,background .18s ease,border-color .18s ease;text-decoration:none}
+.calendar-daybar-edge{flex:0 0 40px;scroll-snap-align:start}
+.calendar-daybar-card{flex:0 0 auto;min-width:62px;scroll-snap-align:center;display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 8px;border:1px solid #334155;border-radius:16px;background:#1a2332;box-shadow:0 6px 16px #0307122e;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,background .18s ease,border-color .18s ease;text-decoration:none}
 .calendar-daybar-card:hover{border-color:#465065}
 .calendar-daybar-dow{font-size:11px;font-weight:700;color:#9ca7b8;letter-spacing:.04em}
 .calendar-daybar-num{font-size:20px;font-weight:800;color:#f5f7fb;line-height:1.1}
@@ -2195,9 +2196,10 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-daybar-wrap{display:flex;align-items:center;gap:4px;margin-bottom:14px}
 .cremation-daybar-nav{flex:0 0 auto;width:26px;height:26px;border:0;border-radius:8px;background:transparent;color:#8a96a8;font-size:19px;line-height:1;cursor:pointer;display:grid;place-items:center}
 .cremation-daybar-nav:hover{color:#e2e8f0;background:#1a2332}
-.cremation-daybar{position:relative;display:flex;justify-content:flex-start;gap:9px;flex:1 1 auto;min-width:0;overflow-x:auto;scroll-behavior:smooth;padding:4px 2px 10px;scrollbar-width:none}
+.cremation-daybar{position:relative;display:flex;justify-content:flex-start;gap:9px;flex:1 1 auto;min-width:0;overflow-x:auto;scroll-snap-type:x mandatory;scroll-behavior:smooth;padding:4px 2px 10px;scrollbar-width:none}
 .cremation-daybar::-webkit-scrollbar{display:none}
-.cremation-daybar-card{flex:0 0 auto;min-width:62px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 8px;border:1px solid #334155;border-radius:16px;background:#1a2332;box-shadow:0 6px 16px #0307122e;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,background .18s ease,border-color .18s ease;font-family:inherit}
+.cremation-daybar-edge{flex:0 0 40px;scroll-snap-align:start}
+.cremation-daybar-card{flex:0 0 auto;min-width:62px;scroll-snap-align:center;display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 8px;border:1px solid #334155;border-radius:16px;background:#1a2332;box-shadow:0 6px 16px #0307122e;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,background .18s ease,border-color .18s ease;font-family:inherit}
 .cremation-daybar-card:hover{border-color:#465065}
 .cremation-daybar-dow{font-size:11px;font-weight:700;color:#9ca7b8;letter-spacing:.04em}
 .cremation-daybar-num{font-size:20px;font-weight:800;color:#f5f7fb;line-height:1.1}
@@ -4560,21 +4562,26 @@ function setupReminderSwipe(slide){
   const front=slide.querySelector('.reminders-slide-front');
   const actionsEl=slide.querySelector('.reminders-swipe-actions');
   if(!front)return;
-  let startX=0,startY=0,dx=0,axisLocked=null,baseX=0,pointerId=null;
-  front.addEventListener('pointerdown',function(e){
+  // il gesto parte dalla SLIDE intera (non solo dalla card frontale): cosi'
+  // un dito posato sopra alle azioni gia' rivelate e trascinato verso destra
+  // le richiude comunque, invece di funzionare solo ripartendo dal lembo di
+  // card ancora visibile (richiesta esplicita dell'utente).
+  let startX=0,startY=0,dx=0,axisLocked=null,baseX=0,pointerId=null,downTarget=null;
+  slide.addEventListener('pointerdown',function(e){
     if(e.button)return;
     startX=e.clientX;startY=e.clientY;dx=0;axisLocked=null;
     baseX=slide.classList.contains('swiped-open')&&actionsEl?-actionsEl.offsetWidth:0;
     pointerId=e.pointerId;
+    downTarget=e.target;
     reminderCarouselPauseAuto();
   });
-  front.addEventListener('pointermove',function(e){
+  slide.addEventListener('pointermove',function(e){
     if(pointerId===null||e.pointerId!==pointerId)return;
     const moveX=e.clientX-startX,moveY=e.clientY-startY;
     if(axisLocked===null){
       if(Math.abs(moveX)<6&&Math.abs(moveY)<6)return;
       axisLocked=Math.abs(moveX)>Math.abs(moveY)?'x':'y';
-      if(axisLocked==='x'){try{front.setPointerCapture(pointerId);}catch(err){}}
+      if(axisLocked==='x'){try{slide.setPointerCapture(pointerId);}catch(err){}}
     }
     if(axisLocked!=='x')return;
     dx=moveX;
@@ -4589,9 +4596,13 @@ function setupReminderSwipe(slide){
     front.style.transition='';
     const moved=axisLocked==='x';
     const wasOpen=slide.classList.contains('swiped-open');
+    const target=downTarget;
     pointerId=null;
     if(!moved){
-      if(wasOpen){
+      // un tap (nessun trascinamento) chiude solo se e' partito dal lembo di
+      // card ancora visibile: un tap diretto su un pulsante azione deve
+      // eseguire quella azione, non richiudere la riga.
+      if(wasOpen&&target&&front.contains(target)){
         const suppress=function(ev){ev.preventDefault();ev.stopPropagation();};
         front.addEventListener('click',suppress,{capture:true,once:true});
         setTimeout(function(){front.removeEventListener('click',suppress,true);},400);
@@ -4613,14 +4624,14 @@ function setupReminderSwipe(slide){
       front.style.transform='';
       slide.classList.remove('swiped-open');
     }
-    if(Math.abs(dx)>6){
+    if(Math.abs(dx)>6&&target){
       const suppress=function(ev){ev.preventDefault();ev.stopPropagation();};
-      front.addEventListener('click',suppress,{capture:true,once:true});
-      setTimeout(function(){front.removeEventListener('click',suppress,true);},400);
+      target.addEventListener('click',suppress,{capture:true,once:true});
+      setTimeout(function(){target.removeEventListener('click',suppress,true);},400);
     }
   }
-  front.addEventListener('pointerup',finish);
-  front.addEventListener('pointercancel',finish);
+  slide.addEventListener('pointerup',finish);
+  slide.addEventListener('pointercancel',finish);
 }
 function setupRemindersCarousel(){
   const carousel=document.getElementById('ppmRemindersCarousel');
@@ -5176,6 +5187,26 @@ function cremationDaybarNav(dir){
   const bar=document.getElementById('cremationDaybar');
   if(bar)bar.scrollBy({left:dir*90,behavior:'smooth'});
 }
+function ppmInitDaybarEdgeSwipe(barId,edgeSelector){
+  // stessa tecnica delle sentinelle usata per il carosello dei giorni
+  // (calendarInitDayPages/cremationInitDayPages), qui applicata alla barra
+  // dei giorni in alto: swipe sinistra/destra sui riquadri Lun/Mar/.../Dom
+  // fino al bordo passa alla settimana precedente/successiva (richiesta
+  // esplicita dell'utente).
+  const bar=document.getElementById(barId);
+  if(!bar)return;
+  const edges=[...bar.querySelectorAll(edgeSelector)];
+  if(!edges.length||!('IntersectionObserver' in window))return;
+  let navigated=false;
+  const observer=new IntersectionObserver(function(entries){
+    entries.forEach(function(entry){
+      if(!entry.isIntersecting||entry.intersectionRatio<0.6||navigated)return;
+      navigated=true;
+      location.href=entry.target.dataset.href;
+    });
+  },{root:bar,threshold:[0.6]});
+  edges.forEach(function(edge){observer.observe(edge);});
+}
 var cremationDayObserver=null;
 function cremationInitDayPages(){
   const pages=document.getElementById('cremationDayPages');
@@ -5203,6 +5234,7 @@ function cremationInitDayPages(){
     items.forEach(function(item){cremationDayObserver.observe(item);});
   }
   cremationSelectDay(Number(pages.dataset.initialDayIndex||0),{instant:true});
+  ppmInitDaybarEdgeSwipe('cremationDaybar','.cremation-daybar-edge');
 }
 document.addEventListener('DOMContentLoaded',function(){
   cremationInitDayPages();
@@ -5271,6 +5303,7 @@ function calendarInitDayPages(){
     items.forEach(function(item){calendarDayObserver.observe(item);});
   }
   calendarSelectDay(Number(pages.dataset.initialDayIndex||0),{instant:true});
+  ppmInitDaybarEdgeSwipe('calendarDaybar','.calendar-daybar-edge');
   calendarApplyFilters();
 }
 function calendarSetFilter(btn){
@@ -9211,6 +9244,13 @@ class App(BaseHTTPRequestHandler):
         # di essa, ricarica la pagina sul giorno adiacente (che sposta anche
         # la finestra "start..end" della settimana visualizzata).
         day_pages.append(f'<div class="calendar-day-page calendar-day-page-edge" data-href="{view_url(start-timedelta(days=1),view)}"></div>')
+        # stessa tecnica anche sulla barra dei giorni in alto: lo swipe
+        # sinistra/destra sui riquadri Lun/Mar/.../Dom deve passare alla
+        # settimana precedente/successiva una volta raggiunto il bordo
+        # (richiesta esplicita dell'utente) — sempre di 7 giorni, indipendente
+        # dalla vista attiva (Giorno/Settimana), a differenza della freccia
+        # prev/next dell'intestazione che in vista Giorno avanza di 1 giorno.
+        daybar_cards.append(f'<div class="calendar-daybar-edge" data-href="{view_url(selected_date-timedelta(days=7),view)}"></div>')
         for i,day in enumerate(week_days):
             day_rows=by_day.get(day.isoformat(),[])
             active_cls=" active" if day.isoformat()==selected else ""
@@ -9235,6 +9275,7 @@ class App(BaseHTTPRequestHandler):
               <a class="calendar-add-appt-btn" href="/calendario/nuovo?data={day.isoformat()}">{lucide("plus")}<span>Aggiungi ritiro / riconsegna</span></a>
             </div>''')
         day_pages.append(f'<div class="calendar-day-page calendar-day-page-edge" data-href="{view_url(start+timedelta(days=7),view)}"></div>')
+        daybar_cards.append(f'<div class="calendar-daybar-edge" data-href="{view_url(selected_date+timedelta(days=7),view)}"></div>')
         daybar_html=f'''<div id="calendarDayboard">
           <div class="calendar-daybar-wrap">
             <button type="button" class="calendar-daybar-nav" onclick="calendarDaybarNav(-1)" aria-label="Barra giorni precedente">‹</button>
@@ -11669,6 +11710,11 @@ class App(BaseHTTPRequestHandler):
         # (bug segnalato dall'utente, identico a quello gia' risolto in
         # Calendario dato che la logica del carosello e' la stessa).
         day_pages.append(f'<div class="cremation-day-page cremation-day-page-edge" data-href="/programma-cremazioni?vista=settimana&data={prev_week}"></div>')
+        # stessa tecnica anche sulla barra dei giorni in alto: lo swipe
+        # sinistra/destra sui riquadri Lun/Mar/.../Dom deve passare alla
+        # settimana precedente/successiva una volta raggiunto il bordo
+        # (richiesta esplicita dell'utente).
+        daybar_cards.append(f'<div class="cremation-daybar-edge" data-href="/programma-cremazioni?vista=settimana&data={prev_week}"></div>')
         for i,d in enumerate(week_dates):
             day_cycles=cycles_by_date[d]
             day_date=date.fromisoformat(d)
@@ -11746,6 +11792,7 @@ class App(BaseHTTPRequestHandler):
               <div class="cremation-day-page-inner">{day_body}</div>
             </div>''')
         day_pages.append(f'<div class="cremation-day-page cremation-day-page-edge" data-href="/programma-cremazioni?vista=settimana&data={next_week}"></div>')
+        daybar_cards.append(f'<div class="cremation-daybar-edge" data-href="/programma-cremazioni?vista=settimana&data={next_week}"></div>')
 
         if monday.month==sunday.month:
             week_label=f"{monday.day} – {sunday.day} {MONTH_NAMES_IT[sunday.month-1]} {sunday.year}"
