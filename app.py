@@ -841,6 +841,14 @@ def init_db():
             # as-is so existing open/completed reminders keep working unchanged.
             c.execute("ALTER TABLE reminders ADD COLUMN entity_key TEXT NOT NULL DEFAULT ''")
             c.execute("UPDATE reminders SET entity_key=dedupe_key WHERE entity_key=''")
+        if "read_at" not in reminders_existing:
+            # Il badge (bell) deve sparire una volta aperta la tendina
+            # Promemoria e ricomparire solo per le occorrenze davvero nuove:
+            # read_at (globale, non per utente, come il resto della lista
+            # promemoria condivisa) e' NULL finche' non viene aperta la
+            # tendina, poi resta valorizzato finche' l'occorrenza non viene
+            # completata/sostituita da una nuova.
+            c.execute("ALTER TABLE reminders ADD COLUMN read_at TEXT")
         c.executescript("""
         CREATE TABLE IF NOT EXISTS whatsapp_inbound_messages (
           id INTEGER PRIMARY KEY,
@@ -4335,10 +4343,31 @@ function setupRemindersCard(){
     toggle.setAttribute('aria-expanded',open?'true':'false');
     body.style.maxHeight=open?body.scrollHeight+'px':'0px';
   }
-  toggle.addEventListener('click',function(){ setOpen(!card.classList.contains('open')); });
+  toggle.addEventListener('click',function(){
+    const opening=!card.classList.contains('open');
+    setOpen(opening);
+    if(opening)markRemindersRead();
+  });
   window.addEventListener('resize',function(){
     if(card.classList.contains('open'))body.style.maxHeight=body.scrollHeight+'px';
   });
+}
+function markRemindersRead(){
+  // Il badge sparisce subito appena aperta la tendina Promemoria (richiesta
+  // esplicita dell'utente): sia il pallino sulla card Promemoria della
+  // Dashboard sia quello sulla voce "Dashboard" del menu su tutte le altre
+  // pagine (quest'ultimo si aggiorna davvero solo al prossimo caricamento
+  // pagina, essendo renderizzato server-side, ma qui lo togliamo comunque
+  // se gia' visibile in questa stessa pagina).
+  fetch('/promemoria/segna-lette',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:'ajax=1'})
+    .then(function(res){return res.json();})
+    .then(function(data){
+      if(!data||!data.ok)return;
+      const badge=document.querySelector('.reminders-count-badge');
+      if(badge)badge.remove();
+      document.querySelectorAll('a[href="/"].nav-notification .notification-badge').forEach(function(el){el.remove();});
+    })
+    .catch(function(){});
 }
 document.addEventListener('DOMContentLoaded', setupRemindersCard);
 function syncDragOrder(root){
@@ -5408,15 +5437,19 @@ function reminderDismiss(event,reminderId,btn){
       if(list&&!list.querySelector('.reminders-todo-row')){
         list.innerHTML='<li class="reminders-todo-empty">Nessun promemoria attivo al momento.</li>';
       }
-      const badge=document.querySelector('.reminders-count-badge');
       const subtitle=document.querySelector('.reminders-card-copy small');
-      if(typeof data.remaining_total==='number'){
-        if(data.remaining_total>0){
-          if(badge)badge.textContent=data.remaining_total<100?data.remaining_total:'99+';
-          if(subtitle)subtitle.textContent=data.remaining_total+' attività attive · Report della settimana';
-        }else{
-          if(badge)badge.remove();
-          if(subtitle)subtitle.textContent='Nessuna attività attiva · Report della settimana';
+      if(subtitle&&typeof data.remaining_total==='number'){
+        subtitle.textContent=data.remaining_total>0?data.remaining_total+' attività attive · Report della settimana':'Nessuna attività attiva · Report della settimana';
+      }
+      // Il badge (bell) segue le sole occorrenze non lette, non il totale
+      // aperto: una volta aperta la tendina il badge e' gia' sparito (vedi
+      // markRemindersRead), un dismiss non deve farlo ricomparire.
+      const badge=document.querySelector('.reminders-count-badge');
+      if(typeof data.remaining_unread==='number'){
+        if(data.remaining_unread>0){
+          if(badge)badge.textContent=data.remaining_unread<100?data.remaining_unread:'99+';
+        }else if(badge){
+          badge.remove();
         }
       }
     })
@@ -7142,7 +7175,7 @@ def layout(title, body, user=None):
     if user:
         with db() as conn:
             unread=conn.execute("SELECT count(*) n FROM notifications WHERE user_id=? AND is_read=0",(user["id"],)).fetchone()["n"]
-            open_reminders_count=conn.execute("SELECT count(*) n FROM reminders WHERE completed_at IS NULL").fetchone()["n"]
+            open_reminders_count=conn.execute("SELECT count(*) n FROM reminders WHERE completed_at IS NULL AND read_at IS NULL").fetchone()["n"]
         unread_badge=f'<span class="notification-badge">{unread if unread < 100 else "99+"}</span>' if unread else ''
         reminder_badge=f'<span class="notification-badge">{open_reminders_count if open_reminders_count < 100 else "99+"}</span>' if open_reminders_count else ''
         prefs=load_preferences(user["id"])
@@ -7483,6 +7516,7 @@ class App(BaseHTTPRequestHandler):
         if match: return self.order_article(user, int(match.group(1)))
         match = re.fullmatch(r"/promemoria/(\d+)/completa", path)
         if match: return self.complete_reminder(user, int(match.group(1)))
+        if path == "/promemoria/segna-lette": return self.mark_reminders_read(user)
         if path == "/catalogo-urne/nuova": return self.save_urn(user)
         match = re.fullmatch(r"/catalogo-urne/(\d+)/modifica", path)
         if match: return self.save_urn(user, int(match.group(1)))
@@ -7957,7 +7991,13 @@ class App(BaseHTTPRequestHandler):
         weekly_w=money_cents_it(weekly_snapshot.sections["entrate-w"].total_cents)
         weekly_d=money_cents_it(weekly_snapshot.sections["entrate-d"].total_cents)
         reminders_count=len(open_reminders)
-        reminders_badge=f'<span class="reminders-count-badge">{reminders_count if reminders_count<100 else "99+"}</span>' if reminders_count else ''
+        # Il badge (bell) rappresenta solo le occorrenze non ancora "lette"
+        # (mai aperta la tendina Promemoria da quando sono comparse): sparisce
+        # una volta aperta la tendina, ricompare solo per occorrenze davvero
+        # nuove. Il sottotitolo "N attivita' attive" resta invece il totale
+        # aperto (il "da fare" reale), invariato.
+        reminders_unread_count=sum(1 for row in open_reminders if not row["read_at"])
+        reminders_badge=f'<span class="reminders-count-badge">{reminders_unread_count if reminders_unread_count<100 else "99+"}</span>' if reminders_unread_count else ''
         weekly_panel_html=f'''<div class="reminders-expand-week"><div><small>Entrate W</small><span class="figure-w">{weekly_w}</span></div><div><small>Entrate D</small><span class="figure-d">{weekly_d}</span></div></div><div class="reminders-expand-actions"><a class="btn ghost" href="{weekly_url}">Apri Bilanci</a></div>'''
         reminders_html=f'''<section class="reminders-card" id="ppmRemindersCard">
 <button type="button" class="reminders-card-header" id="ppmRemindersToggle" aria-expanded="false">
@@ -12537,11 +12577,22 @@ class App(BaseHTTPRequestHandler):
                 # italiano restano solo qui lato server, il JS si limita a
                 # sostituire il testo gia' pronto.
                 remaining_total=c.execute("SELECT count(*) n FROM reminders WHERE completed_at IS NULL").fetchone()["n"]
+                remaining_unread=c.execute("SELECT count(*) n FROM reminders WHERE completed_at IS NULL AND read_at IS NULL").fetchone()["n"]
                 group_count=c.execute("SELECT count(*) n FROM reminders WHERE reminder_type=? AND completed_at IS NULL",(row["reminder_type"],)).fetchone()["n"]
                 _icon,_color_cls,singular,plural=REMINDER_GROUP_LABELS.get(row["reminder_type"],REMINDER_GROUP_FALLBACK)
                 group_label=(singular if group_count==1 else plural).format(n=group_count) if group_count else ""
-                return self.send_json({"ok":True,"remaining_total":remaining_total,"group_count":group_count,"group_label":group_label})
+                return self.send_json({"ok":True,"remaining_total":remaining_total,"remaining_unread":remaining_unread,"group_count":group_count,"group_label":group_label})
         return self.redirect(safe_return_path(self.form().get("return_to") or self.headers.get("Referer"),"/"))
+
+    def mark_reminders_read(self,user):
+        # Il badge del centro Promemoria (bell) rappresenta solo le occorrenze
+        # non ancora viste: aprire la tendina le segna tutte come lette in un
+        # colpo solo (lista globale condivisa, non per utente, come il resto
+        # dei promemoria) cosi' il badge sparisce subito; ricompare solo per
+        # occorrenze davvero nuove create in seguito da sync_reminders().
+        with db() as c:
+            c.execute("UPDATE reminders SET read_at=? WHERE completed_at IS NULL AND read_at IS NULL",(now(),))
+        return self.send_json({"ok":True})
 
     def whatsapp_outbound_preview_text(self,message_type,owner_first_name,animal_name):
         """Human-readable rendering of an automated template send, for display

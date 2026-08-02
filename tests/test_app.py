@@ -8138,6 +8138,48 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIsNotNone(match)
         self.assertEqual(int(match.group(1)),open_count)
 
+    def test_reminders_badge_disappears_once_read_and_returns_only_for_new_occurrences(self):
+        # richiesta esplicita dell'utente: il badge (bell) del centro
+        # Promemoria deve sparire una volta aperta la tendina e ricomparire
+        # solo quando compaiono NUOVI promemoria, non semplicemente perche'
+        # la condizione sottostante resta ancora valida (quelli restano
+        # comunque visibili nella lista, solo senza badge).
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,data_complete)
+                VALUES(?,?,?,?,?,?,?,?,?)""",("CR-UNREAD1","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Fido",0))
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
+        self.handler.dashboard(admin)
+        anchor=re.search(r'href="/" class="nav-notification">.*?</a>',rendered[-1]).group(0)
+        self.assertIn('class="notification-badge"',anchor)
+        self.assertIn('class="reminders-count-badge"',rendered[-1])
+
+        self.handler.form=lambda:{"ajax":"1"}
+        responses=[]
+        self.handler.send_json=lambda payload,status=200:responses.append((payload,status))
+        self.handler.mark_reminders_read(admin)
+        self.assertEqual(responses[-1],({"ok":True},200))
+
+        self.handler.dashboard(admin)
+        anchor_after=re.search(r'href="/" class="nav-notification">.*?</a>',rendered[-1]).group(0)
+        self.assertNotIn('class="notification-badge"',anchor_after)
+        self.assertNotIn('class="reminders-count-badge"',rendered[-1])
+        # l'occorrenza resta comunque visibile nell'elenco, solo senza badge
+        self.assertIn("attività attive",rendered[-1])
+
+        # una condizione genuinamente NUOVA fa ricomparire il badge
+        with app.db() as conn:
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,data_complete)
+                VALUES(?,?,?,?,?,?,?,?,?)""",("CR-UNREAD2","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Luna",0))
+        self.handler.dashboard(admin)
+        anchor_new=re.search(r'href="/" class="nav-notification">.*?</a>',rendered[-1]).group(0)
+        self.assertIn('<span class="notification-badge">1</span>',anchor_new)
+
+        js=app.APP_JS
+        self.assertIn("function markRemindersRead(){",js)
+        self.assertIn("/promemoria/segna-lette",js)
+        self.assertIn("if(opening)markRemindersRead();",js)
+
     def test_weekly_report_section_reuses_bilanci_totals_for_last_7_days(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
