@@ -4869,11 +4869,21 @@ function cremationInitDayPages(){
   const items=[...pages.querySelectorAll('.cremation-day-page')];
   if(!items.length)return;
   if('IntersectionObserver' in window){
+    let navigatedToAdjacentWeek=false;
     cremationDayObserver=new IntersectionObserver(function(entries){
       entries.forEach(function(entry){
-        if(entry.isIntersecting&&entry.intersectionRatio>=0.6){
-          cremationSetActiveDaybarCard(Number(entry.target.dataset.dayIndex),false);
+        if(!entry.isIntersecting||entry.intersectionRatio<0.6)return;
+        // Sentinelle prima di lunedi'/dopo domenica (nessun data-day-index,
+        // solo data-href): lo swipe che le raggiunge ricarica la pagina
+        // sulla settimana adiacente invece di fermarsi al bordo senza
+        // fare nulla (stessa tecnica usata in Calendario).
+        if(entry.target.dataset.href){
+          if(navigatedToAdjacentWeek)return;
+          navigatedToAdjacentWeek=true;
+          location.href=entry.target.dataset.href;
+          return;
         }
+        cremationSetActiveDaybarCard(Number(entry.target.dataset.dayIndex),false);
       });
     },{root:pages,threshold:[0.6]});
     items.forEach(function(item){cremationDayObserver.observe(item);});
@@ -11380,6 +11390,13 @@ class App(BaseHTTPRequestHandler):
         board_index=week_dates.index(board_date)
         daybar_cards=[]
         day_pages=[]
+        # Sentinelle invisibili prima/dopo i 7 giorni della settimana, stessa
+        # tecnica gia' usata in Calendario (vedi calendar_page): senza queste
+        # lo swipe si fermava al bordo lunedi'/domenica senza fare nulla,
+        # perche' non esisteva una pagina successiva su cui "agganciarsi"
+        # (bug segnalato dall'utente, identico a quello gia' risolto in
+        # Calendario dato che la logica del carosello e' la stessa).
+        day_pages.append(f'<div class="cremation-day-page cremation-day-page-edge" data-href="/programma-cremazioni?vista=settimana&data={prev_week}"></div>')
         for i,d in enumerate(week_dates):
             day_cycles=cycles_by_date[d]
             day_date=date.fromisoformat(d)
@@ -11456,6 +11473,7 @@ class App(BaseHTTPRequestHandler):
             day_pages.append(f'''<div class="cremation-day-page" data-day-index="{i}" data-cremation-day="{d}">
               <div class="cremation-day-page-inner">{day_body}</div>
             </div>''')
+        day_pages.append(f'<div class="cremation-day-page cremation-day-page-edge" data-href="/programma-cremazioni?vista=settimana&data={next_week}"></div>')
 
         if monday.month==sunday.month:
             week_label=f"{monday.day} – {sunday.day} {MONTH_NAMES_IT[sunday.month-1]} {sunday.year}"
