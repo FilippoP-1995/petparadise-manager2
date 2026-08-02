@@ -6799,7 +6799,15 @@ def ensure_reminder(c,*,reminder_type,entity_key,title,url,stamp):
     as a new occurrence if the condition still holds — a plain UNIQUE
     dedupe_key on a fixed "type:id" string would block that forever once
     completed once. Refreshes title/url on an already-open occurrence so
-    day-counts embedded in the text (e.g. "da 6 giorni") stay current."""
+    day-counts embedded in the text (e.g. "da 6 giorni") stay current.
+
+    A row completed by close_stale_reminders() (completed_by IS NULL, the
+    underlying condition genuinely resolved) is fine to recreate later if the
+    same entity qualifies again — that's a legitimately new occurrence. A row
+    completed_by a user (the dismiss button in the Dashboard reminders card)
+    stays suppressed even if the sync condition is still true, or the very
+    next sync would immediately recreate it — the user explicitly asked for
+    a dismissed reminder to never come back on its own."""
     open_row=c.execute(
         "SELECT id,title,url FROM reminders WHERE reminder_type=? AND entity_key=? AND completed_at IS NULL",
         (reminder_type,entity_key),
@@ -6808,6 +6816,12 @@ def ensure_reminder(c,*,reminder_type,entity_key,title,url,stamp):
         if open_row["title"]!=title or open_row["url"]!=url:
             c.execute("UPDATE reminders SET title=?,url=? WHERE id=?",(title,url,open_row["id"]))
         return open_row["id"]
+    dismissed_row=c.execute(
+        "SELECT id FROM reminders WHERE reminder_type=? AND entity_key=? AND completed_by IS NOT NULL ORDER BY id DESC LIMIT 1",
+        (reminder_type,entity_key),
+    ).fetchone()
+    if dismissed_row:
+        return dismissed_row["id"]
     # stamp alone (second precision) isn't enough to keep dedupe_key unique
     # when the same entity closes and reopens within the same second (e.g.
     # two syncs back-to-back in a test, or a busy minute in production) — a

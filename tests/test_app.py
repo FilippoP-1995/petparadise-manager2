@@ -7880,17 +7880,17 @@ class PetParadiseTests(unittest.TestCase):
             completed=conn.execute("SELECT completed_at,completed_by FROM reminders WHERE id=?",(reminder_id,)).fetchone()
         self.assertIsNotNone(completed["completed_at"])
         self.assertEqual(completed["completed_by"],admin["id"])
-        # the underlying practice is STILL incomplete: marking "Fatto" only
-        # hides this occurrence, it must NOT block the reminder forever — a
-        # fresh open occurrence for the same practice reappears on next sync
+        # the underlying practice is STILL incomplete, but the user explicitly
+        # dismissed this occurrence from the Dashboard: it must stay
+        # dismissed and NOT reappear on the next sync (richiesta esplicita
+        # dell'utente — prima ricompariva subito riaprendo la sezione)
         self.handler.dashboard(admin)
-        self.assertIn("1 pratica con dati da completare",rendered[-1])
+        self.assertNotIn("pratica con dati da completare",rendered[-1])
         with app.db() as conn:
             reopened=conn.execute(
                 "SELECT id FROM reminders WHERE entity_key=? AND completed_at IS NULL",(f"practice:{pid}",)
             ).fetchone()
-        self.assertIsNotNone(reopened)
-        self.assertNotEqual(reopened["id"],reminder_id)
+        self.assertIsNone(reopened)
         # completing an already-completed reminder is a harmless no-op
         first_completed_at=completed["completed_at"]
         self.handler.complete_reminder(admin,reminder_id)
@@ -8020,6 +8020,40 @@ class PetParadiseTests(unittest.TestCase):
             rows=conn.execute("SELECT title FROM reminders WHERE entity_key=? AND completed_at IS NULL",(f"practice:{pid}",)).fetchall()
         self.assertEqual(len(rows),1)
         self.assertIn("da 8 giorni",rows[0]["title"])
+
+    def test_dismissed_reminder_does_not_reappear_on_the_next_sync(self):
+        # richiesta esplicita dell'utente: una volta eliminato un promemoria
+        # dalla Dashboard non deve ricomparire subito riaprendo quella
+        # sezione — prima ricompariva perche' sync_reminders() (che gira ad
+        # ogni apertura della Dashboard) ricreava una nuova occorrenza non
+        # appena la condizione sottostante (es. pratica ancora incompleta)
+        # risultava ancora vera, visto che la riga precedente era gia'
+        # 'completed'. Un dismiss manuale (completed_by valorizzato, a
+        # differenza della chiusura automatica di close_stale_reminders che
+        # lascia completed_by NULL) deve restare sospeso invece di essere
+        # ricreato.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,data_complete)
+                VALUES(?,?,?,?,?,?,?,?,?)""",("CR-STAYDISMISSED","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Fido",0)).lastrowid
+        with app.db() as conn:
+            app.sync_reminders(conn)
+            reminder_id=conn.execute("SELECT id FROM reminders WHERE entity_key=? AND completed_at IS NULL",(f"practice:{pid}",)).fetchone()["id"]
+        self.handler.form=lambda:{"ajax":"1"}
+        responses=[]
+        self.handler.send_json=lambda payload,status=200:responses.append((payload,status))
+        self.handler.complete_reminder(admin,reminder_id)
+        self.assertEqual(responses[-1],({"ok":True},200))
+        with app.db() as conn:
+            # la condizione sottostante (data_complete=0) non e' cambiata:
+            # un secondo sync (equivalente a riaprire la Dashboard) non deve
+            # ricreare una nuova occorrenza aperta.
+            app.sync_reminders(conn)
+            open_rows=conn.execute("SELECT id FROM reminders WHERE entity_key=? AND completed_at IS NULL",(f"practice:{pid}",)).fetchall()
+            all_rows=conn.execute("SELECT completed_by FROM reminders WHERE entity_key=?",(f"practice:{pid}",)).fetchall()
+        self.assertEqual(len(open_rows),0)
+        self.assertEqual(len(all_rows),1)
+        self.assertEqual(all_rows[0]["completed_by"],admin["id"])
 
     def test_reminder_badge_shows_total_open_count_on_dashboard_nav_icon(self):
         with app.db() as conn:
