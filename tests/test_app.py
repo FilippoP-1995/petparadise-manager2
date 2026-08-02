@@ -8180,6 +8180,88 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("/promemoria/segna-lette",js)
         self.assertIn("if(opening)markRemindersRead();",js)
 
+    def test_reminders_card_has_add_button_and_colored_bar_per_type(self):
+        # richiesta esplicita dell'utente (mockup di riferimento fornito):
+        # pulsante "Aggiungi promemoria" nella card, e una barra colorata
+        # laterale diversa per ogni tipo di promemoria, senza toccare nulla
+        # dell'esistente (conteggi, filtri, apertura/chiusura, menu).
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,data_complete)
+                VALUES(?,?,?,?,?,?,?,?,?)""",("CR-BARCHK","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Fido",0))
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        self.assertIn('class="reminders-add-btn"',page)
+        self.assertIn("Aggiungi promemoria",page)
+        self.assertIn("openAddReminderModal()",page)
+        self.assertIn('id="addReminderBackdrop"',page)
+        self.assertIn('id="addReminderForm"',page)
+        self.assertIn('id="addReminderTitle"',page)
+        # colore diverso per tipo, sulla riga della lista e sul report settimanale
+        self.assertIn("border-left:3px solid #9b5cf6",page)
+        self.assertIn("border-left:3px solid #3b82f6",page)
+        # nulla dell'esistente e' stato toccato: stessi meccanismi di apertura/conteggio
+        self.assertIn('data-reminder-toggle="reminderPanel_practice_incomplete"',page)
+        self.assertIn("reminderToggle(this)",page)
+
+        js=app.APP_JS
+        self.assertIn("function openAddReminderModal(){",js)
+        self.assertIn("function closeAddReminderModal(){",js)
+        self.assertIn("function submitAddReminder(event){",js)
+        self.assertIn("/promemoria/nuovo",js)
+
+    def test_manual_reminder_can_be_added_and_appears_with_pink_bar(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.form=lambda:{"title":"Chiamare proprietario Macco","ajax":"1"}
+        responses=[]
+        self.handler.send_json=lambda payload,status=200:responses.append((payload,status))
+        self.handler.add_manual_reminder(admin)
+        self.assertEqual(responses[-1],({"ok":True},200))
+        with app.db() as conn:
+            row=conn.execute("SELECT * FROM reminders WHERE reminder_type='manual'").fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["title"],"Chiamare proprietario Macco")
+        self.assertIsNone(row["completed_at"])
+
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        self.assertIn("border-left:3px solid #ff4d6d",page)
+        self.assertIn("1 promemoria manuale",page)
+        # sync_reminders() non deve mai toccare le occorrenze manuali: nessuna
+        # condizione da ricontrollare, restano aperte finche' non vengono
+        # eliminate a mano.
+        with app.db() as conn:
+            app.sync_reminders(conn)
+            still_open=conn.execute("SELECT count(*) n FROM reminders WHERE reminder_type='manual' AND completed_at IS NULL").fetchone()["n"]
+        self.assertEqual(still_open,1)
+
+        # e' dismissabile come tutti gli altri, tramite lo stesso meccanismo
+        reminder_id=row["id"]
+        self.handler.form=lambda:{"ajax":"1"}
+        responses2=[]
+        self.handler.send_json=lambda payload,status=200:responses2.append((payload,status))
+        self.handler.complete_reminder(admin,reminder_id)
+        self.assertTrue(responses2[-1][0]["ok"])
+        with app.db() as conn:
+            completed=conn.execute("SELECT completed_at FROM reminders WHERE id=?",(reminder_id,)).fetchone()
+        self.assertIsNotNone(completed["completed_at"])
+
+    def test_add_manual_reminder_requires_a_title(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.form=lambda:{"title":"   ","ajax":"1"}
+        responses=[]
+        self.handler.send_json=lambda payload,status=200:responses.append((payload,status))
+        self.handler.add_manual_reminder(admin)
+        self.assertEqual(responses[-1][1],400)
+        self.assertFalse(responses[-1][0]["ok"])
+        with app.db() as conn:
+            count=conn.execute("SELECT count(*) n FROM reminders WHERE reminder_type='manual'").fetchone()["n"]
+        self.assertEqual(count,0)
+
     def test_weekly_report_section_reuses_bilanci_totals_for_last_7_days(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
