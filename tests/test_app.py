@@ -4949,9 +4949,20 @@ class PetParadiseTests(unittest.TestCase):
 
     def test_row_selection_deselects_on_outside_click_and_sticky_column_stays_opaque(self):
         self.assertIn("document.addEventListener('click',(event)=>{",app.APP_JS)
-        self.assertIn("if(event.target.closest('tr.practice-row-link.row-selected'))return;",app.APP_JS)
+        self.assertIn("if(event.target.closest('.row-selected'))return;",app.APP_JS)
         self.assertIn(".practice-row-link.row-selected td:first-child{background:#502d40!important}",app.CSS)
         self.assertIn(".light-theme .practice-row-link.row-selected td:first-child{background:#fde3e7!important}",app.CSS)
+
+    def test_recent_practice_card_shows_light_border_highlight_when_selected(self):
+        # bug segnalato dall'utente: la card "Ultime pratiche" della Dashboard
+        # usa lo stesso meccanismo click-per-selezionare/doppio click-per-aprire
+        # delle righe tabella, ma non aveva nessuno stile per il primo click,
+        # quindi sembrava che il click non facesse nulla. La riga tabella usa
+        # un outline pesante + sfondo tinto: qui la richiesta esplicita e' un
+        # bordo leggero, non pesante.
+        self.assertIn(".recent-practice-card.row-selected{border-color:#ef405f80}",app.CSS)
+        self.assertIn(".light-theme .recent-practice-card.row-selected{border-color:#ef405f66}",app.CSS)
+        self.assertIn("document.querySelectorAll('.row-selected').forEach(other=>other.classList.remove('row-selected'));",app.APP_JS)
 
     def test_archive_page_always_shows_financial_columns(self):
         with app.db() as conn:
