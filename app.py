@@ -4572,18 +4572,29 @@ function balanceToggleDetails(summaryEl){
   summaryEl.setAttribute('aria-expanded',collapsed?'false':'true');
 }
 document.addEventListener('click',function(e){
-  const h2=e.target.closest('h2');
-  if(!h2)return;
-  const section=h2.closest('.section.collapsible');
+  const section=e.target.closest('.section.collapsible');
   if(!section)return;
-  // placeCallBackFlag() sostituisce l'h2 di SPEDITORE con un wrapper
-  // ".section-heading-row" (per affiancare il flag DA RICHIAMARE al
-  // titolo): senza questo controllo il primo figlio della sezione non e'
-  // piu' l'h2 ma quel wrapper, e il click per aprire/chiudere smetteva di
-  // funzionare solo per quella sezione (i dati del proprietario sembravano
-  // "spariti" perche' irraggiungibili dietro una sezione chiusa e bloccata).
-  const headerEl=h2.parentElement.classList.contains('section-heading-row')?h2.parentElement:h2;
-  if(section.firstElementChild===headerEl)section.classList.toggle('collapsed');
+  if(e.target.closest('a,button,input,select,textarea,label'))return;
+  const h2=e.target.closest('h2');
+  if(h2){
+    // placeCallBackFlag() sostituisce l'h2 di SPEDITORE con un wrapper
+    // ".section-heading-row" (per affiancare il flag DA RICHIAMARE al
+    // titolo): senza questo controllo il primo figlio della sezione non e'
+    // piu' l'h2 ma quel wrapper, e il click per aprire/chiudere smetteva di
+    // funzionare solo per quella sezione (i dati del proprietario sembravano
+    // "spariti" perche' irraggiungibili dietro una sezione chiusa e bloccata).
+    const headerEl=h2.parentElement.classList.contains('section-heading-row')?h2.parentElement:h2;
+    if(section.firstElementChild===headerEl)section.classList.toggle('collapsed');
+    return;
+  }
+  // Richiesta esplicita dell'utente: basta un tocco su QUALSIASI area della
+  // card, non solo sul titolo. Da chiusa non c'e' altro da vedere oltre
+  // all'intestazione, quindi qualunque punto la apre; da aperta si chiude
+  // solo se il tocco cade nello spazio vuoto della card stessa (mai su un
+  // campo o altro contenuto del corpo), cosi' non si rischia di richiudere
+  // la sezione mentre si compila un campo.
+  if(section.classList.contains('collapsed')){section.classList.remove('collapsed');return;}
+  if(e.target===section)section.classList.add('collapsed');
 });
 document.addEventListener('click',function(e){
   if(!e.target.closest('.balance-move-menu-wrap')){

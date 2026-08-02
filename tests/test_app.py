@@ -6487,10 +6487,22 @@ class PetParadiseTests(unittest.TestCase):
         # coi dati del proprietario resta bloccata chiusa e inaccessibile
         # (bug reale segnalato dall'utente dopo l'introduzione delle sezioni
         # collassabili).
-        handler_src = app.APP_JS[app.APP_JS.index("document.addEventListener('click',function(e){\n  const h2="):]
+        handler_src = app.APP_JS[app.APP_JS.index("document.addEventListener('click',function(e){\n  const section=e.target.closest('.section.collapsible');"):]
         handler_src = handler_src[:handler_src.index("});")]
         self.assertIn("section-heading-row", handler_src)
-        self.assertIn("h2.closest('.section.collapsible')", handler_src)
+        self.assertIn("e.target.closest('.section.collapsible')", handler_src)
+
+    def test_collapsible_section_opens_and_closes_from_a_tap_anywhere_on_the_card(self):
+        # richiesta esplicita dell'utente (screenshot pagina Modifica pratica,
+        # sezioni tipo SPEDITORE/Animale/Preventivo): prima bastava un tocco
+        # solo esattamente sul titolo per aprire/chiudere, mentre il resto
+        # della card (il padding attorno al titolo) non reagiva al tocco,
+        # dando l'impressione che bisognasse toccare due volte.
+        handler_src = app.APP_JS[app.APP_JS.index("document.addEventListener('click',function(e){\n  const section=e.target.closest('.section.collapsible');"):]
+        handler_src = handler_src[:handler_src.index("});")]
+        self.assertIn("if(e.target.closest('a,button,input,select,textarea,label'))return;", handler_src)
+        self.assertIn("if(section.classList.contains('collapsed')){section.classList.remove('collapsed');return;}", handler_src)
+        self.assertIn("if(e.target===section)section.classList.add('collapsed');", handler_src)
 
     def test_edit_submit_accepts_negative_remaining_instead_of_failing_validation(self):
         # validation_error() checks every MONEY_FIELDS value against a
