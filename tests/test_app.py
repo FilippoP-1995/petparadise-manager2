@@ -3665,11 +3665,31 @@ class PetParadiseTests(unittest.TestCase):
         # clip-path con raccordi tangenti (fillet) che fondono la curva
         # centrale nel bordo piatto della barra, come nel mockup.
         css = app.CSS
-        self.assertIn(".bottom-nav{position:fixed;display:grid;grid-template-columns:87fr 87fr 72fr 87fr 87fr;grid-template-rows:90px;align-items:end;left:calc(20px + var(--safe-left));right:calc(20px + var(--safe-right));bottom:calc(10px + var(--safe-bottom));z-index:90;height:90px;padding:0;border-radius:28px;background:#1a1f2b;border:1px solid #2a2f3b;box-shadow:0 -8px 20px rgba(0,0,0,.4);backdrop-filter:blur(20px)}", css)
+        self.assertIn(".bottom-nav{position:fixed;display:grid;grid-template-columns:87fr 87fr 72fr 87fr 87fr;grid-template-rows:72px;align-items:end;left:calc(20px + var(--safe-left));right:calc(20px + var(--safe-right));bottom:calc(10px + var(--safe-bottom));z-index:90;height:72px;padding:0;border-radius:28px;background:#1a1f2b;border:1px solid #2a2f3b;box-shadow:0 -8px 20px rgba(0,0,0,.4);backdrop-filter:blur(20px)}", css)
         self.assertNotIn(".bottom-nav:before,.bottom-nav:after{", css)
-        self.assertIn(".bottom-nav:before{content:'';position:absolute;top:0;left:50%;width:229px;height:46px;transform:translateX(-50%);background:#1a1f2b;z-index:1;clip-path:path('M61.81,0 A16,16 0 0 1 77.11,11.34 A38.86,38.86 0 0 1 114.29,38.86 A38.86,38.86 0 0 1 151.46,11.34 A16,16 0 0 1 166.77,0 Z')}", css)
+        self.assertIn(".bottom-nav:before{content:'';position:absolute;top:0;left:50%;width:90px;height:44px;transform:translateX(-50%);background:#1a1f2b;z-index:1;clip-path:path('M6.63,0 A12.8,12.8 0 0 1 19.42,13.33 A25.6,25.6 0 0 0 45,40 A25.6,25.6 0 0 0 70.58,13.33 A12.8,12.8 0 0 1 83.37,0 Z')}", css)
         self.assertIn(".light-theme .bottom-nav:before{background:#eef2f7}", css)
         self.assertIn(".light-theme .bottom-nav{background:linear-gradient(160deg,#ffffff,#f3f5f8)", css)
+
+    def test_bottom_nav_bar_and_fab_are_20_percent_smaller_with_a_deeper_notch(self):
+        # richiesta esplicita dell'utente: barra -20% (90->72px), pulsante
+        # rosso -20% (64->51.2px, margine di sollevamento riscalato in
+        # proporzione 40->32px per restare correttamente posizionato), e la
+        # tacca superiore deve scendere piu' in basso a "mezza U" toccando il
+        # pulsante a meta' del suo diametro (raccordo/fillet tangente al
+        # pulsante esattamente alla sua altezza di centro) invece di sfiorarlo
+        # solo vicino alla sommita'.
+        css = app.CSS
+        self.assertIn("grid-template-rows:72px", css)
+        self.assertIn("height:72px;padding:0;border-radius:28px", css)
+        self.assertIn(".bottom-nav .bottom-new{position:relative;align-self:end;z-index:3;width:51.2px;height:51.2px;margin:0 auto 32px", css)
+        self.assertIn(".bottom-nav a,.bottom-nav button{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:0;background:transparent;color:#a1a7b3;font-size:12px;font-weight:600;padding:19px 0", css)
+        # il raccordo (fillet, r=12.8) e' tangente esattamente al cerchio del
+        # pulsante (centro locale (0,14.4)=meta' del diametro 25.6, raggio
+        # 25.6): il punto di congiunzione fillet->pulsante e' a y=13.33, a
+        # ridosso dell'altezza di meta' diametro (14.4), non piu' vicino alla
+        # sommita' (y=0).
+        self.assertIn("clip-path:path('M6.63,0 A12.8,12.8 0 0 1 19.42,13.33 A25.6,25.6 0 0 0 45,40 A25.6,25.6 0 0 0 70.58,13.33 A12.8,12.8 0 0 1 83.37,0 Z')", css)
 
     def test_calendar_wizard_zone_field_has_placeholder_and_visible_input_box(self):
         # bug reale segnalato dall'utente: il campo Zona nello step 2 del
