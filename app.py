@@ -4332,6 +4332,7 @@ function setupDragReorder(root){
       e.preventDefault();
       const startY=e.clientY;
       let dy=0;
+      let compensation=0;
       item.classList.add('dragging');
       item.style.transition='none';
       item.style.zIndex=5;
@@ -4354,7 +4355,17 @@ function setupDragReorder(root){
         if(after)root.insertBefore(item,after);
         else root.appendChild(item);
         const itemAfter=item.getBoundingClientRect();
-        dy+=itemBefore.top-itemAfter.top;
+        // la correzione va conservata in compensation (non solo in dy): dy
+        // viene ricalcolato da zero ad ogni onMove come "distanza dito +
+        // compensation", quindi se il riordino sposta la voce piu' volte
+        // durante un trascinamento lungo, ogni correzione precedente deve
+        // restare cumulata, altrimenti al prossimo movimento del dito la
+        // voce "salta indietro" perdendo tutto lo spostamento gia' fatto
+        // (bug segnalato: la voce restava vicina alla posizione originale
+        // mentre il buco nella lista era gia' molto piu' in basso).
+        const correction=itemBefore.top-itemAfter.top;
+        compensation+=correction;
+        dy+=correction;
         item.style.transform='translateY('+dy+'px) scale(1.03)';
         siblings.forEach(function(el){
           const first=firstRects.get(el),last=el.getBoundingClientRect(),slideDy=first.top-last.top;
@@ -4369,7 +4380,7 @@ function setupDragReorder(root){
       }
       function onMove(ev){
         ev.preventDefault();
-        dy=ev.clientY-startY;
+        dy=(ev.clientY-startY)+compensation;
         item.style.transform='translateY('+dy+'px) scale(1.03)';
         const y=ev.clientY;
         const siblings=[...root.querySelectorAll('.drag-item')].filter(function(el){return el!==item;});
@@ -4394,6 +4405,14 @@ function setupDragReorder(root){
         document.body.classList.remove('ppm-dragging-no-select');
         window.removeEventListener('pointermove',onMove);
         window.removeEventListener('pointerup',onUp);
+        // al rilascio il browser sintetizza comunque un click sull'elemento
+        // che si trova sotto il dito in quel momento: per le voci del menu
+        // (link <a> veri) questo apriva la pagina su cui si era rilasciato
+        // il trascinamento, come se fosse stata toccata. Il prossimo click
+        // nella lista va quindi ignorato una tantum.
+        function suppressGhostClick(ev){ev.preventDefault();ev.stopPropagation();}
+        root.addEventListener('click',suppressGhostClick,{capture:true,once:true});
+        setTimeout(function(){root.removeEventListener('click',suppressGhostClick,true);},400);
         syncDragOrder(root);
         const group=root.closest('[data-drag-group][data-auto-submit]');
         if(group){if(group.requestSubmit)group.requestSubmit();else group.submit();}

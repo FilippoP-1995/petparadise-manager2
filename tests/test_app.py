@@ -9543,14 +9543,21 @@ class PetParadiseTests(unittest.TestCase):
         body = js[fn_start:fn_end]
         # l'item stesso (non solo i fratelli) viene traslato in base al
         # movimento reale del puntatore
-        self.assertIn("dy=ev.clientY-startY;", body)
+        self.assertIn("dy=(ev.clientY-startY)+compensation;", body)
         self.assertIn("item.style.transform='translateY('+dy+'px) scale(1.03)';", body)
         # al rilascio: transizione a molla (overshoot) verso la posizione naturale
         self.assertIn("item.style.transition='transform .32s cubic-bezier(.34,1.56,.64,1)';", body)
         self.assertIn("item.style.transform='';", body)
         # quando la card cambia cella nel DOM, l'offset visivo viene corretto
-        # subito dopo (mai un teletrasporto rispetto a dove si trova il dito)
-        self.assertIn("dy+=itemBefore.top-itemAfter.top;", body)
+        # subito dopo (mai un teletrasporto rispetto a dove si trova il dito) e
+        # la correzione resta cumulata in compensation: se durante un
+        # trascinamento lungo la card cambia cella piu' volte, ogni scarto va
+        # sommato ai precedenti, altrimenti al movimento successivo del dito
+        # la card "salta indietro" perdendo gli scarti gia' applicati (bug
+        # reale segnalato dall'utente sul riordino delle voci del menu).
+        self.assertIn("const correction=itemBefore.top-itemAfter.top;", body)
+        self.assertIn("compensation+=correction;", body)
+        self.assertIn("dy+=correction;", body)
         self.assertIn("body.ppm-dragging-no-select,body.ppm-dragging-no-select *", app.CSS)
 
     def test_sidebar_order_popup_open_close_js_is_wired(self):
