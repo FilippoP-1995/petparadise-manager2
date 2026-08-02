@@ -3588,9 +3588,9 @@ class PetParadiseTests(unittest.TestCase):
         # clip-path con raccordi tangenti (fillet) che fondono la curva
         # centrale nel bordo piatto della barra, come nel mockup.
         css = app.CSS
-        self.assertIn(".bottom-nav{position:fixed;display:grid;grid-template-columns:repeat(5,1fr);align-items:end;left:calc(20px + var(--safe-left));right:calc(20px + var(--safe-right));bottom:calc(10px + var(--safe-bottom));z-index:90;height:68px;padding:0;border-radius:30px;background:#1a1f2b;border:1px solid #2b3849;box-shadow:0 -8px 20px rgba(0,0,0,.4);backdrop-filter:blur(20px)}", css)
+        self.assertIn(".bottom-nav{position:fixed;display:grid;grid-template-columns:87fr 87fr 72fr 87fr 87fr;grid-template-rows:90px;align-items:end;left:calc(20px + var(--safe-left));right:calc(20px + var(--safe-right));bottom:calc(10px + var(--safe-bottom));z-index:90;height:90px;padding:0;border-radius:28px;background:#1a1f2b;border:1px solid #2a2f3b;box-shadow:0 -8px 20px rgba(0,0,0,.4);backdrop-filter:blur(20px)}", css)
         self.assertNotIn(".bottom-nav:before,.bottom-nav:after{", css)
-        self.assertIn(".bottom-nav:before{content:'';position:absolute;top:0;left:50%;width:200px;height:40px;transform:translateX(-50%);background:#172131;z-index:1;clip-path:path('M54.08,0 A14,14 0 0 1 67.47,9.92 A34,34 0 0 1 100,34 A34,34 0 0 1 132.53,9.92 A14,14 0 0 1 145.92,0 Z')}", css)
+        self.assertIn(".bottom-nav:before{content:'';position:absolute;top:0;left:50%;width:229px;height:46px;transform:translateX(-50%);background:#1a1f2b;z-index:1;clip-path:path('M61.81,0 A16,16 0 0 1 77.11,11.34 A38.86,38.86 0 0 1 114.29,38.86 A38.86,38.86 0 0 1 151.46,11.34 A16,16 0 0 1 166.77,0 Z')}", css)
         self.assertIn(".light-theme .bottom-nav:before{background:#eef2f7}", css)
         self.assertIn(".light-theme .bottom-nav{background:linear-gradient(160deg,#ffffff,#f3f5f8)", css)
 
