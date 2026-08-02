@@ -123,6 +123,28 @@ class ShiftsModuleTests(unittest.TestCase):
         self.assertIn("08:00", page)
         self.assertIn("Nessun turno assegnato", page)  # per Empoli, vuota quel giorno
 
+    def test_shifts_page_giorno_swipe_carousel_has_prev_next_week_sentinels(self):
+        # richiesta esplicita dell'utente: lo swipe tra i giorni della vista
+        # Giorno deve, una volta raggiunto l'ultimo/primo giorno della
+        # settimana, passare alla settimana precedente/successiva — stessa
+        # identica tecnica a sentinella scroll-snap gia' usata e verificata
+        # in Calendario/Cremazioni (data-href su una .calendar-day-page-edge
+        # vuota), NON la barra dei giorni in alto (quella va lasciata
+        # invariata: e' la parte che aveva causato il loop di navigazione
+        # segnalato in una richiesta precedente).
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/turni?vista=giorno&data=2026-08-10"
+        self.handler.shifts_page(self.admin)
+        page = rendered[-1]
+        self.assertEqual(page.count('class="calendar-day-page calendar-day-page-edge"'), 2)
+        self.assertIn('<div class="calendar-day-page calendar-day-page-edge" data-href="/turni?vista=giorno&data=2026-08-09"></div>', page)
+        self.assertIn('<div class="calendar-day-page calendar-day-page-edge" data-href="/turni?vista=giorno&data=2026-08-17"></div>', page)
+        # ancora esattamente 7 pagine "vere" (nessuna funzionalita' persa)
+        self.assertEqual(page.count('class="calendar-day-page" data-day-index='), 7)
+        # la barra dei giorni in alto non deve avere ricevuto sentinelle/swipe
+        self.assertNotIn('calendar-daybar-edge', page)
+
     def test_shifts_page_mese_lists_operators_per_branch_per_day(self):
         self.save_cell(self.admin, operator="Serena", data="2026-08-10", branch="Livorno", start_time="08:00", end_time="16:00")
         self.save_cell(self.admin, operator="Filippo", data="2026-08-10", branch="Livorno", start_time="09:00", end_time="17:00")

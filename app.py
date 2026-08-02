@@ -9511,7 +9511,18 @@ class App(BaseHTTPRequestHandler):
             # giorni (.calendar-day-pages/.calendar-day-page, calendarSelectDay
             # e calendarInitDayPages sono riusati cosi' come sono — nessuna
             # duplicazione di logica, nessun reload di pagina durante lo swipe).
-            day_pages=''.join(f'<div class="calendar-day-page" data-day-index="{i}" data-date="{day.isoformat()}">{sede_card_html(day,"Livorno")}{sede_card_html(day,"Empoli")}</div>' for i,day in enumerate(week_days))
+            # Sentinelle invisibili prima/dopo i 7 giorni (richiesta esplicita
+            # dell'utente): lo swipe che le raggiunge ricarica la pagina sulla
+            # settimana adiacente, stesso identico meccanismo gia' usato in
+            # Calendario/Cremazioni (non la barra dei giorni in alto, che non
+            # va toccata: e' quella che aveva causato il loop di navigazione
+            # segnalato in precedenza). ppmSaveScrollForNextLoad() e' gia'
+            # dentro calendarInitDayPages(), quindi lo scroll verticale resta
+            # allo stesso punto anche qui, senza codice aggiuntivo.
+            day_pages_list=[f'<div class="calendar-day-page calendar-day-page-edge" data-href="/turni?vista=giorno&data={(monday-timedelta(days=1)).isoformat()}"></div>']
+            day_pages_list+=[f'<div class="calendar-day-page" data-day-index="{i}" data-date="{day.isoformat()}">{sede_card_html(day,"Livorno")}{sede_card_html(day,"Empoli")}</div>' for i,day in enumerate(week_days)]
+            day_pages_list.append(f'<div class="calendar-day-page calendar-day-page-edge" data-href="/turni?vista=giorno&data={(monday+timedelta(days=7)).isoformat()}"></div>')
+            day_pages=''.join(day_pages_list)
             content=daybar_html+f'<div class="calendar-day-pages" id="calendarDayPages" data-initial-day-index="{selected_index}">{day_pages}</div>'
         else:
             # Striscia mesi orizzontale scorrevole, stesso identico
