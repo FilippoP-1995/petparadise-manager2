@@ -4509,6 +4509,14 @@ function reminderCloseOpenSlide(except){
     el.classList.remove('swiped-open');
   });
 }
+document.addEventListener('pointerdown',function(e){
+  // bug segnalato dall'utente: una volta rivelate le azioni con lo swipe,
+  // l'unico modo per "tornare indietro" era ritoccare lo stesso sliver di
+  // card ancora visibile (stretto, facile da mancare) o rifare lo swipe al
+  // contrario. Toccare qualunque punto fuori dalla slide aperta la richiude.
+  if(e.target.closest('.reminders-slide.swiped-open'))return;
+  if(document.querySelector('.reminders-slide.swiped-open'))reminderCloseOpenSlide();
+});
 function reminderCompleteFromSwipe(slide){
   const rid=slide.dataset.reminderId;
   if(!rid)return;

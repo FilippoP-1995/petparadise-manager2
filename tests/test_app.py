@@ -8325,6 +8325,15 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('reminders-swipe-delete',slide_html)
         self.assertIn('>Elimina<',slide_html)
 
+    def test_tapping_outside_an_open_swiped_reminder_closes_its_actions_row(self):
+        # bug segnalato dall'utente: dopo lo swipe che rivela le azioni, non
+        # c'era modo di "tornare indietro" senza per forza sceglierne una.
+        js = app.APP_JS
+        listener = js[js.index("document.addEventListener('pointerdown',function(e){\n  // bug segnalato"):]
+        listener = listener[:listener.index("});")+3]
+        self.assertIn("e.target.closest('.reminders-slide.swiped-open')", listener)
+        self.assertIn("reminderCloseOpenSlide();", listener)
+
     def test_manual_reminder_can_be_added_and_appears_with_pink_bar(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
