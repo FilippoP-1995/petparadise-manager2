@@ -8716,7 +8716,7 @@ class App(BaseHTTPRequestHandler):
             payment_line=f'{lucide("check-circle")}<span>Pagato · {money_it(row["payment_amount"])}</span>'
         elif payment_status_text:
             channel=row.get("payment_channel") or ""
-            payment_line=f'{lucide("wallet")}<span>{esc(payment_status_text)} · {money_it(row["payment_amount"])}{f" · Circuito {esc(channel)}" if channel else ""}</span>'
+            payment_line=f'{lucide("wallet")}<span>{esc(payment_status_text)} · {money_it(row["payment_amount"])}{f" {esc(channel)}" if channel else ""}</span>'
         else:
             payment_line=''
         operator_name=row['operator_name'] or row['assigned_name'] or row['creator_name']
@@ -10078,7 +10078,7 @@ class App(BaseHTTPRequestHandler):
             hero_rows.append(hero_row("receipt","pink","Preventivo",money_it(estimate_total_all),estimate_form))
             if event['payment_status']:
                 still_due=event['payment_status'] in ("Da pagare","Da saldare")
-                channel_suffix=f" · Circuito {payment_channel(linked_practice)}" if still_due and linked_practice else ""
+                channel_suffix=f" {payment_channel(linked_practice)}" if still_due and linked_practice else ""
                 hero_rows.append(hero_row("wallet","pink","Pagamento",f"{esc(event['payment_status'])} {money_it(event['payment_amount'])}{channel_suffix}",''))
             if event["event_type"]!="Appuntamento":
                 zone_form=f'''<form method="post" action="/calendario/{event_id}/zona"><input name="zone" value="{esc(event['zone'] or '')}" placeholder="Es. Livorno"><button class="btn ghost" type="submit" style="margin-top:10px">Salva zona</button></form>'''
