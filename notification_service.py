@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from calendar_service import event_type_emoji
+
 ROME_TZ = ZoneInfo("Europe/Rome")
 
 
@@ -113,6 +115,17 @@ def push_bullets(*parts) -> str:
 # la riga viene aggiornata sul posto con un riassunto ("5 nuovi ritiri oggi").
 # Un tipo non elencato qui usa comunque il fallback generico "<etichetta> × N".
 GROUP_WINDOW_MINUTES = 5
+# Gli eventi di calendario restano sempre individuali (richiesta esplicita
+# dell'utente: "ogni evento deve inviare la sua notifica"): raggrupparli,
+# come si fa per altri tipi ad alto volume, faceva "sparire" visivamente
+# eventi diversi dentro un'unica notifica riassuntiva con i testi concatenati,
+# rendendo poco chiaro quanti e quali eventi fossero davvero arrivati.
+NON_GROUPABLE_NOTIFICATION_TYPES = frozenset({
+    "calendar_event_created",
+    "calendar_event_updated",
+    "calendar_event_cancelled",
+    "calendar_reminder_30m",
+})
 NOTIFICATION_GROUP_LABELS = {
     "practice_created": ("nuovo ritiro", "nuovi ritiri"),
     "practice_delivered": ("pratica consegnata", "pratiche consegnate"),
@@ -280,7 +293,7 @@ def emit_notification(
     for user_id in _recipient_ids(conn, practice_id, actor_user_id, target_user_ids):
         if not preference_enabled(conn, user_id, notification_type):
             continue
-        existing = conn.execute(
+        existing = None if notification_type in NON_GROUPABLE_NOTIFICATION_TYPES else conn.execute(
             """SELECT id,group_count FROM notifications
                WHERE user_id=? AND type=? AND is_read=0 AND created_at>=?
                ORDER BY id DESC LIMIT 1""",
@@ -428,14 +441,14 @@ def process_calendar_notifications(conn, db_path, current=None) -> int:
     conn.execute("""UPDATE calendar_event_notifications SET status='annullato',error='Evento non piu attivo'
       WHERE status='programmato' AND event_id IN (SELECT id FROM calendar_events
       WHERE deleted_at IS NOT NULL OR COALESCE(event_status,'') IN ('Annullato','Completato'))""")
-    due=conn.execute("""SELECT n.id,e.id event_id,e.title,e.start_at FROM calendar_event_notifications n
+    due=conn.execute("""SELECT n.id,e.id event_id,e.title,e.start_at,e.event_type FROM calendar_event_notifications n
       JOIN calendar_events e ON e.id=n.event_id WHERE n.status='programmato' AND n.scheduled_at<=?
       AND (e.deleted_at IS NULL OR e.deleted_at='') AND COALESCE(e.event_status,'')!='Annullato' ORDER BY n.scheduled_at LIMIT 100""",(stamp,)).fetchall()
     for row in due:
         changed=conn.execute("UPDATE calendar_event_notifications SET status='in_invio' WHERE id=? AND status='programmato'",(row["id"],)).rowcount
         if not changed:continue
         try:
-            emit_notification(conn,"calendar_reminder_30m","Evento tra 30 minuti",row["title"],payload={"url":f'/calendario/{row["event_id"]}'},db_path=db_path)
+            emit_notification(conn,"calendar_reminder_30m",f"{event_type_emoji(row['event_type'])} Evento tra 30 minuti",row["title"],payload={"url":f'/calendario/{row["event_id"]}'},db_path=db_path)
             conn.execute("UPDATE calendar_event_notifications SET status='inviato',sent_at=?,error='' WHERE id=?",(stamp,row["id"]));created+=1
         except Exception as exc:
             conn.execute("UPDATE calendar_event_notifications SET status='fallito',error=? WHERE id=?",(f"{type(exc).__name__}: {exc}"[:500],row["id"]))

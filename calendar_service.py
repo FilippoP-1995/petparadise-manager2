@@ -122,6 +122,7 @@ def ensure_calendar_schema(conn):
         "delivery_clinic_name":"TEXT",
         "delivery_clinic_address":"TEXT",
         "delivery_clinic_phone":"TEXT",
+        "delivery_location_type":"TEXT",
     }
     for name,definition in delivery_clinic_columns.items():
         if name not in columns:conn.execute(f"ALTER TABLE calendar_events ADD COLUMN {name} {definition}")
@@ -271,6 +272,7 @@ def normalize_event(form, current=None):
       "delivery_clinic_name":_clean(form.get("delivery_clinic_name"),200) if event_type in ("Riconsegna","Riconsegna in sede") else "",
       "delivery_clinic_address":_clean(form.get("delivery_clinic_address"),500) if event_type in ("Riconsegna","Riconsegna in sede") else "",
       "delivery_clinic_phone":_clean(form.get("delivery_clinic_phone"),50) if event_type in ("Riconsegna","Riconsegna in sede") else "",
+      "delivery_location_type":_clean(form.get("delivery_location_type"),50) if event_type=="Riconsegna" and _clean(form.get("delivery_location_type"),50) in ("Privato","Veterinario") else "",
     }
 
 
@@ -302,6 +304,24 @@ def event_color_class(row):
 
 def event_type_dot_class(row):
     return {"Ritiro":"calendar-dot-red","Ritiro in sede":"calendar-dot-yellow","Riconsegna":"calendar-dot-blue","Riconsegna in sede":"calendar-dot-cyan","Appuntamento":"calendar-dot-purple"}.get(row["event_type"],"calendar-dot-gray")
+
+
+# Emoji distinta per ogni tipo di evento (richiesta esplicita dell'utente),
+# usata nelle notifiche push di creazione/modifica/annullamento cosi' il
+# tipo si riconosce a colpo d'occhio anche dal solo banner, senza aprire
+# l'app. "Ritiro"/"Ritiro in sede" e "Riconsegna"/"Riconsegna in sede" sono
+# volutamente diversi tra loro (non condividono piu' la stessa emoji).
+EVENT_TYPE_EMOJI = {
+    "Ritiro": "🐾",
+    "Ritiro in sede": "🏠",
+    "Riconsegna": "📦",
+    "Riconsegna in sede": "🚚",
+    "Appuntamento": "📅",
+}
+
+
+def event_type_emoji(event_type):
+    return EVENT_TYPE_EMOJI.get(event_type, "📆")
 
 
 def add_history(conn,event_id,user_id,action,old_value="",new_value="",stamp=None):

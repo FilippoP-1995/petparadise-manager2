@@ -320,8 +320,8 @@ class OperationalCalendarTests(unittest.TestCase):
 
     def test_new_event_notification_uses_emoji_specific_to_event_type(self):
         expected = {
-            "Ritiro": "🐾", "Ritiro in sede": "🐾",
-            "Riconsegna": "📦", "Riconsegna in sede": "📦",
+            "Ritiro": "🐾", "Ritiro in sede": "🏠",
+            "Riconsegna": "📦", "Riconsegna in sede": "🚚",
             "Appuntamento": "📅",
         }
         for event_type, emoji in expected.items():
