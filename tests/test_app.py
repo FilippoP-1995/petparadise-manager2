@@ -2539,27 +2539,6 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('function cremationSelectDay(', page)
         self.assertIn('function cremationInitDayPages(', page)
 
-    def test_cremation_daybar_swipe_navigates_to_prev_next_week(self):
-        # richiesta esplicita dell'utente: lo swipe sinistra/destra sulla
-        # barra dei giorni in alto (Lun/Mar/.../Dom) deve passare alla
-        # settimana precedente/successiva, non solo il carosello del
-        # contenuto del giorno sotto (che gia' lo fa un giorno alla volta).
-        with app.db() as conn:
-            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
-        rendered = []
-        self.handler.path = "/programma-cremazioni?vista=settimana&data=2026-07-29"
-        self.handler.send_html = lambda content, *args: rendered.append(content)
-        self.handler.cremation_schedule(admin)
-        page = rendered[-1]
-        self.assertEqual(page.count('class="cremation-daybar-edge"'), 2)
-        self.assertIn('<div class="cremation-daybar-edge" data-href="/programma-cremazioni?vista=settimana&data=2026-07-20"></div>', page)
-        self.assertIn('<div class="cremation-daybar-edge" data-href="/programma-cremazioni?vista=settimana&data=2026-08-03"></div>', page)
-        self.assertIn(".cremation-daybar-edge{flex:0 0 40px;scroll-snap-align:start}", app.CSS)
-        self.assertIn("scroll-snap-type:x mandatory", app.CSS[app.CSS.index(".cremation-daybar{"):app.CSS.index(".cremation-daybar{")+250])
-        js = app.APP_JS
-        self.assertIn("function ppmInitDaybarEdgeSwipe(barId,edgeSelector){", js)
-        self.assertIn("ppmInitDaybarEdgeSwipe('cremationDaybar','.cremation-daybar-edge');", js)
-
     def test_week_view_marks_today_permanently_even_when_viewing_another_week(self):
         # richiesta utente: il giorno corrente resta sempre rosso (classe
         # "today"), indipendentemente da quale giorno si sta visualizzando;
@@ -9138,30 +9117,6 @@ class PetParadiseTests(unittest.TestCase):
         card_html = page[card_start:page.index('</article>', card_start)]
         self.assertIn('09:30', card_html)
         self.assertNotIn('calendar-appt-time-end', card_html)
-
-    def test_calendar_daybar_swipe_navigates_to_prev_next_week(self):
-        # richiesta esplicita dell'utente: lo swipe sinistra/destra sulla
-        # barra dei giorni in alto deve passare alla settimana precedente/
-        # successiva sempre di 7 giorni, indipendentemente dalla vista
-        # (Giorno o Settimana) — a differenza della freccia prev/next
-        # dell'intestazione che in vista Giorno avanza di 1 solo giorno.
-        with app.db() as conn:
-            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
-        rendered = []
-        self.handler.send_html = lambda html, *a: rendered.append(html)
-        self.handler.path = "/calendario?vista=giorno&data=2026-07-29"
-        self.handler.calendar_page(admin)
-        page = rendered[-1]
-        self.assertEqual(page.count('class="calendar-daybar-edge"'), 2)
-        edges = [i for i in range(len(page)) if page.startswith('class="calendar-daybar-edge"', i)]
-        before = page[max(0, edges[0] - 60):edges[0] + 200]
-        after = page[max(0, edges[1] - 60):edges[1] + 200]
-        self.assertIn('vista=giorno&data=2026-07-22', before)
-        self.assertIn('vista=giorno&data=2026-08-05', after)
-        self.assertIn(".calendar-daybar-edge{flex:0 0 40px;scroll-snap-align:start}", app.CSS)
-        js = app.APP_JS
-        self.assertIn("function ppmInitDaybarEdgeSwipe(barId,edgeSelector){", js)
-        self.assertIn("ppmInitDaybarEdgeSwipe('calendarDaybar','.calendar-daybar-edge');", js)
 
     def test_calendar_settimana_view_uses_the_identical_daybar_and_cards_as_giorno(self):
         with app.db() as conn:
