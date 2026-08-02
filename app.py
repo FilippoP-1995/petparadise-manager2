@@ -1840,6 +1840,9 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .calendar-appt-notes{display:flex;align-items:flex-start;gap:5px;margin-top:2px;font-size:12px;font-style:italic;color:#c9ae5c}
 .calendar-appt-notes .icon{width:13px;height:13px;flex:0 0 auto;margin-top:1px}
 .light-theme .calendar-appt-notes{color:#92720c}
+.calendar-appt-payment{display:flex;align-items:flex-start;gap:5px;margin-top:2px;font-size:12px;font-weight:600;color:#ef405f}
+.calendar-appt-payment .icon{width:13px;height:13px;flex:0 0 auto;margin-top:1px}
+.light-theme .calendar-appt-payment{color:#c81c3c}
 .calendar-appt-bottom{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:4px;flex-wrap:wrap}
 .calendar-appt-status{font-size:10.5px;font-weight:800;padding:4px 10px;border-radius:99px;letter-spacing:.02em}
 .calendar-appt-actions{display:flex;align-items:center;gap:6px;margin-left:auto}
@@ -8695,6 +8698,14 @@ class App(BaseHTTPRequestHandler):
         notes_text=re.sub(r"\s+"," ",str(row["notes"] or "")).strip()
         notes_preview=notes_text if len(notes_text)<=90 else notes_text[:89].rstrip()+"…"
         notes_line=f'{lucide("clipboard")}<span>{esc(notes_preview)}</span>' if notes_preview else ''
+        payment_status_text=row["payment_status"] or ""
+        if payment_status_text=="Pagato":
+            payment_line=f'{lucide("check-circle")}<span>Pagato · {money_it(row["payment_amount"])}</span>'
+        elif payment_status_text:
+            channel=row.get("payment_channel") or ""
+            payment_line=f'{lucide("wallet")}<span>{esc(payment_status_text)} · {money_it(row["payment_amount"])}{f" · Circuito {esc(channel)}" if channel else ""}</span>'
+        else:
+            payment_line=''
         operator_name=row['operator_name'] or row['assigned_name'] or row['creator_name']
         avatar=self.calendar_operator_avatar(operator_name,"sm",color_settings["operators"].get(operator_name))
         status_text=row["event_status"] or ""
@@ -8728,6 +8739,7 @@ class App(BaseHTTPRequestHandler):
             {f'<div class="calendar-appt-name">{name_line}</div>' if name_line else ''}
             {f'<div class="calendar-appt-owner">{client_line}</div>' if client_line else ''}
             {f'<div class="calendar-appt-location">{location_line}</div>' if location_line else ''}
+            {f'<div class="calendar-appt-payment">{payment_line}</div>' if payment_line else ''}
             {f'<div class="calendar-appt-notes">{notes_line}</div>' if notes_line else ''}
             <div class="calendar-appt-bottom">{status_html}<div class="calendar-appt-actions">{phone_btn}{wa_btn}{nav_btn}{menu_btn}</div></div>
           </div>
