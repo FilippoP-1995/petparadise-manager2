@@ -849,6 +849,16 @@ def init_db():
             # tendina, poi resta valorizzato finche' l'occorrenza non viene
             # completata/sostituita da una nuova.
             c.execute("ALTER TABLE reminders ADD COLUMN read_at TEXT")
+        if "snoozed_until" not in reminders_existing:
+            # Azione "Rimanda" del widget Promemoria: rinvia di 1 giorno senza
+            # marcare l'occorrenza completata (resta la stessa riga, non ne
+            # crea una nuova) — nascosta dalle liste finche' snoozed_until
+            # non e' passato. ensure_reminder()/close_stale_reminders() non
+            # la considerano: una riga rinviata resta comunque "quella aperta"
+            # per la sua entity_key (niente duplicati) e viene comunque
+            # auto-risolta se la condizione sottostante si risolve nel
+            # frattempo.
+            c.execute("ALTER TABLE reminders ADD COLUMN snoozed_until TEXT")
         c.executescript("""
         CREATE TABLE IF NOT EXISTS whatsapp_inbound_messages (
           id INTEGER PRIMARY KEY,
@@ -1305,6 +1315,33 @@ CSS = r"""
 :root{--ink:#24312c;--muted:#6e7b75;--brand:#a74045;--brand2:#7f3035;--paper:#fff;--bg:#f4f1ed;--line:#ded8d1;--green:#39745b;--gold:#a87926;--safe-top:env(safe-area-inset-top,0px);--safe-bottom:env(safe-area-inset-bottom,0px);--safe-left:env(safe-area-inset-left,0px);--safe-right:env(safe-area-inset-right,0px)}
 *{box-sizing:border-box}html{overscroll-behavior-y:contain}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;overscroll-behavior-y:contain}
 a{color:inherit;text-decoration:none}.top{height:68px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:18px;padding:0 28px;position:sticky;top:0;z-index:5}.brand{font-weight:800;font-size:19px;color:var(--brand)}.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:1.5px}.nav{display:flex;gap:8px;margin-left:auto}.nav a{padding:9px 12px;border-radius:9px}.nav a:hover{background:#f3eeea}.wrap{max-width:1280px;margin:0 auto;padding:28px}.titlebar{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:22px}h1{margin:0;font-size:28px}h2{font-size:18px;margin:0 0 15px}.sub{color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:10px;background:var(--brand);color:white;padding:11px 16px;font-weight:700;cursor:pointer}.btn:hover{background:var(--brand2)}.btn.ghost{background:white;color:var(--ink);border:1px solid var(--line)}.grid{display:grid;gap:16px}.stats{grid-template-columns:repeat(3,1fr)}.card{background:var(--paper);border:1px solid var(--line);border-radius:15px;padding:20px;box-shadow:0 3px 15px #4b39260a}.stat{display:flex;justify-content:space-between;align-items:center}.stat b{font-size:32px;color:var(--brand)}.badge{display:inline-flex;padding:5px 9px;border-radius:99px;background:#eee9e3;font-size:12px;font-weight:700}.tag-red{background:#e53935;color:white}.tag-orange{background:#fb8c00;color:white}.tag-outline-orange{background:white;color:#fb8c00;border:2px solid #fb8c00}.tag-purple{background:#7e57c2;color:white}.tag-yellow,.pay-yellow{background:#fdd835;color:#3b3100}.tag-pink{background:#f06292;color:white}.tag-blue,.pay-blue{background:#1e88e5;color:white}.tag-green,.pay-green{background:#43a047;color:white}.status-stack{display:flex;gap:5px;flex-wrap:wrap}.form-grid{grid-template-columns:repeat(2,1fr)}.wide{grid-column:1/-1}.section{background:#fff;border:1px solid var(--line);border-radius:15px;padding:20px}.fields{display:grid;grid-template-columns:repeat(2,1fr);gap:13px}.field{display:flex;flex-direction:column;gap:6px}.field.full{grid-column:1/-1}label{font-weight:650;font-size:13px}input,select,textarea{width:100%;border:1px solid #cfc8c0;border-radius:9px;padding:11px 12px;background:white;color:var(--ink);font:inherit}input[type=checkbox]{width:auto;min-height:auto}textarea{min-height:90px;resize:vertical}input:focus,select:focus,textarea:focus{outline:3px solid #a7404520;border-color:var(--brand)}table{width:100%;border-collapse:collapse;background:white}th,td{text-align:left;padding:16px 14px;border-bottom:1px solid var(--line)}th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}thead th{position:sticky;top:0;z-index:2;background:#101620}.light-theme thead th{background:#fff}.tablebox{background:white;border:1px solid var(--line);border-radius:15px;max-height:min(65vh,620px);overflow:auto;-webkit-overflow-scrolling:touch;touch-action:none}.tablebox-scroll-top{overflow-x:auto;overflow-y:hidden;height:16px;margin-bottom:6px;position:sticky;top:76px;z-index:10;background:var(--paper)}.tablebox-scroll-top-inner{height:1px}@media(max-width:900px){.tablebox-scroll-top{display:none}}.actions{display:flex;gap:10px;flex-wrap:wrap}.flash{padding:13px 16px;border-radius:10px;background:#e5f2eb;color:#285b45;margin-bottom:16px}.warning{background:#fff1d8;color:#765315}.reminders-card{background:#1f2937;border:1px solid #334155;border-radius:15px;margin-bottom:20px;box-shadow:0 14px 36px #03071235;overflow:hidden}.reminders-card-header{display:flex;align-items:center;gap:14px;width:100%;padding:16px 18px;background:transparent;border:0;cursor:pointer;color:inherit;text-align:left;font:inherit}.reminders-card-icon{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:#4c1d24;color:#fb7185;flex:0 0 40px}.reminders-card-icon svg{width:20px;height:20px}.reminders-card-copy{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}.reminders-card-copy strong{font-size:16px;font-weight:700}.reminders-card-copy small{color:#94a3b8}.reminders-count-badge{display:inline-grid;place-items:center;min-width:22px;height:22px;padding:0 6px;margin-left:8px;border-radius:99px;background:#ef4444;color:#fff;font-size:12px;font-weight:800;vertical-align:middle}.reminders-card-chevron{color:#94a3b8;font-size:18px;line-height:1;transition:transform .25s ease;flex:0 0 auto}.reminders-card.open .reminders-card-chevron{transform:rotate(180deg);color:#ef4444}.reminders-card-body{max-height:0;overflow:hidden;transition:max-height .35s ease}.reminders-card-section-title{margin:0;padding:14px 18px 4px;font-size:13px;font-weight:700;color:#94a3b8;border-top:1px solid #334155}.reminders-add-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:max-content;margin:14px 18px 0 auto;height:40px;padding:0 16px;border:1px solid #ff4d6d;border-radius:20px;background:transparent;color:#ff4d6d;font-size:15px;font-weight:600;font-family:inherit;cursor:pointer}.reminders-add-btn:hover{background:#ff4d6d1a}.reminders-add-btn .icon{width:20px;height:20px}.light-theme .reminders-add-btn:hover{background:#ff4d6d12}.reminders-todo-list{list-style:none;margin:0;padding:4px 10px 6px}.reminders-todo-row{display:flex;align-items:center;gap:14px;padding:12px 8px;color:inherit;text-decoration:none;border-radius:10px;background:none;border:0;width:100%;font:inherit;text-align:left;cursor:pointer}.reminders-todo-row:hover{background:#ffffff0c}.reminders-todo-icon{width:34px;height:34px;flex:0 0 34px}.reminders-todo-icon svg{width:16px;height:16px}.reminders-todo-text{flex:1;font-weight:600}.reminders-todo-chevron{color:#94a3b8;font-size:18px;display:flex;align-items:center}.reminders-todo-empty{padding:12px 8px;color:#94a3b8}.reminders-week-row{display:flex;align-items:center;gap:14px;margin:6px 10px 14px;padding:16px 8px 4px;border-top:1px solid #334155;color:inherit;text-decoration:none;background:none;border-left:0;border-right:0;border-bottom:0;width:100%;font:inherit;text-align:left;cursor:pointer}.reminders-week-row:hover .reminders-week-copy b{color:#fb7185}.reminders-week-icon{width:34px;height:34px;flex:0 0 34px}.reminders-week-icon svg{width:16px;height:16px}.reminders-week-copy{flex:1;min-width:0}.reminders-week-copy b{text-decoration:underline;text-underline-offset:3px;transition:color .15s ease}.reminders-week-copy small{display:block;margin-top:4px;color:#cbd5e1}.reminders-week-chevron{color:#94a3b8;font-size:18px;display:flex;align-items:center}.figure-w{color:#60a5fa;font-weight:700}.figure-d{color:#fbbf24;font-weight:700}.reminders-todo-chevron .icon,.reminders-week-chevron .icon{width:16px;height:16px;transition:transform .25s ease;transform:rotate(90deg)}.reminders-todo-row[aria-expanded="true"] .reminders-todo-chevron .icon,.reminders-week-row[aria-expanded="true"] .reminders-week-chevron .icon{transform:rotate(270deg)}.reminders-todo-row.reminders-row-active,.reminders-week-row.reminders-row-active{background:#ffffff0c}.reminders-expand{max-height:0;overflow:hidden;transition:max-height .3s ease;margin:2px 8px 0;border-radius:10px;background:#161c27;border:1px solid #263140}.reminders-expand-row{display:flex;align-items:center;gap:10px;padding:10px 10px;border-top:1px solid #1f2937;cursor:pointer}.reminders-expand-row:first-child{border-top:0}.reminders-expand-avatar{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:15px;flex:0 0 30px;background:#0f172a}.reminders-expand-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}.reminders-expand-title{font-weight:700;font-size:13px;color:#f5f7fb}.reminders-expand-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:11.5px;color:#94a3b8}.reminders-expand-meta .badge{font-size:10px;padding:2px 7px}.reminders-expand-urn{display:flex;align-items:center;gap:4px}.reminders-expand-urn .icon{width:12px;height:12px}.reminders-expand-weight{font-size:12px;font-weight:600;color:#94a3b8}.reminders-expand-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:0 0 auto;padding:10px}@media(max-width:620px){.reminders-expand-row{flex-wrap:wrap}.reminders-expand-actions{flex:1 1 100%;justify-content:flex-start;padding:6px 0 0 40px}}.reminders-expand-actions .btn{padding:7px 12px;font-size:12px}.reminders-expand-empty{padding:12px 10px;color:#94a3b8;font-size:13px;margin:0}.reminders-dismiss-btn{display:grid;place-items:center;width:30px;height:30px;padding:0;border:0;border-radius:8px;background:transparent;color:#94a3b8;cursor:pointer;flex:0 0 auto}.reminders-dismiss-btn:hover{background:#ffffff14;color:#fb7185}.reminders-dismiss-btn .icon{width:15px;height:15px}.light-theme .reminders-dismiss-btn:hover{background:#00000010}.reminders-expand-week{display:flex;gap:24px;padding:12px 10px 4px}.reminders-expand-week div{display:flex;flex-direction:column;gap:2px}.reminders-expand-week small{color:#94a3b8;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em}.reminders-expand-week span{font-size:18px;font-weight:700}.light-theme .reminders-card{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .reminders-card-copy small{color:#64748b}.light-theme .reminders-card-section-title{color:#526174;border-color:#e2e8f0}.light-theme .reminders-todo-row:hover{background:#00000008}.light-theme .reminders-todo-chevron,.light-theme .reminders-week-chevron{color:#64748b}.light-theme .reminders-week-row{border-color:#e2e8f0}.light-theme .reminders-week-copy small{color:#334155}.light-theme .reminders-todo-row.reminders-row-active,.light-theme .reminders-week-row.reminders-row-active{background:#00000008}.light-theme .reminders-expand{background:#f8fafc;border-color:#e2e8f0}.light-theme .reminders-expand-row{border-color:#e2e8f0}.light-theme .reminders-expand-avatar{background:#e2e8f0}.light-theme .reminders-expand-title{color:#111827}.light-theme .reminders-expand-meta{color:#64748b}.light-theme .reminders-expand-weight{color:#64748b}.light-theme .reminders-expand-empty{color:#64748b}
+.reminders-carousel-row{display:flex;align-items:stretch;gap:8px;padding:14px 14px 0}
+.reminders-carousel{flex:1;min-width:0;height:88px;overflow-y:auto;overflow-x:hidden;scroll-snap-type:y mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.reminders-carousel::-webkit-scrollbar{display:none}
+.reminders-slide{position:relative;height:88px;scroll-snap-align:start;scroll-snap-stop:always;overflow:hidden;border-radius:12px}
+.reminders-slide+.reminders-slide{margin-top:6px}
+.reminders-slide-empty .reminders-slide-front{cursor:default}
+.reminders-swipe-complete-bg{position:absolute;inset:0;display:flex;align-items:center;gap:8px;padding:0 18px;background:#16a34a;color:#fff;font-weight:700;font-size:13px;border-radius:12px}
+.reminders-swipe-complete-bg .icon{width:22px;height:22px}
+.reminders-swipe-actions{position:absolute;inset:0;display:flex;align-items:stretch;justify-content:flex-end;background:#0f172a;border-radius:12px;overflow:hidden}
+.reminders-swipe-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:62px;border:0;background:#1e293b;color:#cbd5e1;font-size:10px;font-weight:600;cursor:pointer;border-left:1px solid #0f172a}
+.reminders-swipe-btn .icon{width:16px;height:16px}
+.reminders-swipe-btn.reminders-swipe-delete{background:#7f1d2d;color:#fecdd3}
+.reminders-slide-front{position:relative;z-index:2;display:flex;align-items:center;gap:12px;height:100%;padding:0 14px;background:#1f2937;border-radius:12px;touch-action:pan-y;transition:transform .28s cubic-bezier(.22,1,.36,1);will-change:transform}
+.reminders-slide-icon{width:36px;height:36px;flex:0 0 36px}
+.reminders-slide-icon svg{width:17px;height:17px}
+.reminders-slide-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.reminders-slide-copy b{font-size:13.5px;font-weight:700;color:#f5f7fb;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:6px}
+.reminders-slide-copy small{font-size:11.5px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.reminders-manual-badge{flex:0 0 auto;padding:2px 7px;border-radius:99px;background:#ff4d6d;color:#fff;font-size:9px;font-weight:800;letter-spacing:.03em}
+.reminders-dots{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;width:10px}
+.reminders-dot{width:5px;height:5px;border-radius:50%;background:#334155;transition:background .2s ease,transform .2s ease}
+.reminders-dot.active{background:#ff4d6d;transform:scale(1.6)}
+.reminders-card .reminders-add-btn{margin:12px 14px 14px auto}
+.light-theme .reminders-slide-front{background:#fff}
+.light-theme .reminders-slide-copy b{color:#111827}
+.light-theme .reminders-slide-copy small{color:#64748b}
+.light-theme .reminders-dot{background:#cbd5e1}
 .drag-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;max-height:420px;overflow:auto;-webkit-overflow-scrolling:touch}.drag-list-scrollable{max-height:min(60vh,480px)}.drag-item{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid #334155;border-radius:12px;background:#1f2937;-webkit-touch-callout:none;transition:box-shadow .15s ease,border-color .15s ease}.drag-item.dragging{box-shadow:0 20px 46px #000a;border-color:#56657a;position:relative;z-index:5;cursor:grabbing}.drag-handle{cursor:grab;color:#94a3b8;font-weight:800;letter-spacing:2px;padding:6px 8px;touch-action:none;flex:0 0 auto}.drag-handle:active{cursor:grabbing}
 body.ppm-dragging-no-select,body.ppm-dragging-no-select *{-webkit-user-select:none!important;-moz-user-select:none!important;-ms-user-select:none!important;user-select:none!important}.drag-item-icon{display:grid;place-items:center;width:30px;height:30px;flex:0 0 30px}.drag-item-icon svg{width:16px;height:16px}.drag-item-label{flex:1;font-weight:600}.drag-item-visible-wrap{display:flex;align-items:center;flex:0 0 auto}.drag-item-visible-wrap input[type=checkbox]{width:20px;height:20px}.light-theme .drag-item{background:#fff;color:#111827;border-color:#cbd5e1}.light-theme .drag-handle{color:#64748b}
 .notif-type-list{display:flex;flex-direction:column;gap:8px}.notif-type-row{justify-content:flex-start;gap:12px}.notif-type-icon{font-size:19px;width:34px;height:34px;display:grid;place-items:center;flex:0 0 34px;border-radius:10px;background:#172033}.notif-type-copy{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}.notif-type-copy small{color:#94a3b8}.notif-type-row input[type=checkbox]{margin-left:auto;width:20px;height:20px}.light-theme .notif-type-icon{background:#f1f5f9}.light-theme .notif-type-copy small{color:#64748b}.login{max-width:410px;margin:10vh auto;background:white;padding:34px;border-radius:18px;border:1px solid var(--line)}.timeline{border-left:2px solid var(--line);margin-left:7px;padding-left:20px}.event{padding:0 0 18px;position:relative}.event:before{content:'';position:absolute;width:10px;height:10px;border-radius:50%;background:var(--brand);left:-26px;top:5px}.kvs{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.kv{background:#faf8f5;border-radius:10px;padding:12px}.kv small{display:block;color:var(--muted)}.signature-pad{width:100%;height:260px;border:2px dashed var(--line);border-radius:14px;background:white;touch-action:none}
@@ -4333,32 +4370,13 @@ async function saveInvoiceNumber(input){
   }catch(error){input.value=previous;input.classList.add('input-error');alert(error.message);}
   finally{input.disabled=false;input.dataset.saving='';}
 }
-function setupRemindersCard(){
-  const card=document.getElementById('ppmRemindersCard');
-  if(!card)return;
-  const toggle=document.getElementById('ppmRemindersToggle');
-  const body=card.querySelector('.reminders-card-body');
-  function setOpen(open){
-    card.classList.toggle('open',open);
-    toggle.setAttribute('aria-expanded',open?'true':'false');
-    body.style.maxHeight=open?body.scrollHeight+'px':'0px';
-  }
-  toggle.addEventListener('click',function(){
-    const opening=!card.classList.contains('open');
-    setOpen(opening);
-    if(opening)markRemindersRead();
-  });
-  window.addEventListener('resize',function(){
-    if(card.classList.contains('open'))body.style.maxHeight=body.scrollHeight+'px';
-  });
-}
 function markRemindersRead(){
-  // Il badge sparisce subito appena aperta la tendina Promemoria (richiesta
-  // esplicita dell'utente): sia il pallino sulla card Promemoria della
-  // Dashboard sia quello sulla voce "Dashboard" del menu su tutte le altre
-  // pagine (quest'ultimo si aggiorna davvero solo al prossimo caricamento
-  // pagina, essendo renderizzato server-side, ma qui lo togliamo comunque
-  // se gia' visibile in questa stessa pagina).
+  // Il badge sparisce non appena il widget Promemoria e' visibile (ora
+  // sempre aperto, richiesta esplicita dell'utente): sia il pallino sulla
+  // card Promemoria della Dashboard sia quello sulla voce "Dashboard" del
+  // menu su tutte le altre pagine (quest'ultimo si aggiorna davvero solo al
+  // prossimo caricamento pagina, essendo renderizzato server-side, ma qui
+  // lo togliamo comunque se gia' visibile in questa stessa pagina).
   fetch('/promemoria/segna-lette',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:'ajax=1'})
     .then(function(res){return res.json();})
     .then(function(data){
@@ -4372,9 +4390,26 @@ function markRemindersRead(){
 function openAddReminderModal(){
   const backdrop=document.getElementById('addReminderBackdrop');
   if(!backdrop)return;
+  const editId=document.getElementById('addReminderEditId');
+  const heading=document.getElementById('addReminderTitleHeading');
+  if(editId)editId.value='';
+  if(heading)heading.textContent='Aggiungi promemoria';
   backdrop.hidden=false;
   const input=document.getElementById('addReminderTitle');
   if(input){input.value='';setTimeout(function(){input.focus();},50);}
+}
+function editManualReminder(reminderId,btn){
+  const slide=btn.closest('.reminders-slide');
+  const backdrop=document.getElementById('addReminderBackdrop');
+  const input=document.getElementById('addReminderTitle');
+  const editId=document.getElementById('addReminderEditId');
+  const heading=document.getElementById('addReminderTitleHeading');
+  if(!backdrop||!input)return;
+  input.value=slide?(slide.dataset.title||''):'';
+  if(editId)editId.value=reminderId;
+  if(heading)heading.textContent='Modifica promemoria';
+  backdrop.hidden=false;
+  setTimeout(function(){input.focus();input.select();},50);
 }
 function closeAddReminderModal(){
   const backdrop=document.getElementById('addReminderBackdrop');
@@ -4385,8 +4420,10 @@ function submitAddReminder(event){
   const form=event.target;
   const title=form.title.value.trim();
   if(!title)return false;
+  const editId=form.edit_id.value;
+  const url=editId?('/promemoria/'+editId+'/modifica'):'/promemoria/nuovo';
   const payload=new URLSearchParams();payload.set('title',title);payload.set('ajax','1');
-  fetch('/promemoria/nuovo',{method:'POST',body:payload,headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin'})
+  fetch(url,{method:'POST',body:payload,headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin'})
     .then(function(res){return res.json();})
     .then(function(data){
       if(!data||!data.ok){alert((data&&data.error)||'Operazione non riuscita');return;}
@@ -4395,7 +4432,194 @@ function submitAddReminder(event){
     .catch(function(){alert('Operazione non riuscita');});
   return false;
 }
-document.addEventListener('DOMContentLoaded', setupRemindersCard);
+// Widget Promemoria: carosello verticale a scroll-snap "una slide alla
+// volta" (richiesta esplicita dell'utente, mockup di riferimento fornito).
+// Stessa tecnica IntersectionObserver gia' usata e verificata in questa
+// sessione per i caroselli giorno/settimana di Calendario/Cremazioni
+// (calendarInitDayPages/cremationInitDayPages), qui in verticale per
+// sincronizzare l'indicatore a pallini con la slide effettivamente in vista.
+var reminderCarouselTimer=null;
+var reminderCarouselPauseTimer=null;
+function reminderCarouselStartAuto(){
+  clearInterval(reminderCarouselTimer);
+  const carousel=document.getElementById('ppmRemindersCarousel');
+  if(!carousel)return;
+  const slides=carousel.querySelectorAll('.reminders-slide');
+  if(slides.length<2)return;
+  reminderCarouselTimer=setInterval(function(){
+    const h=carousel.clientHeight;
+    if(!h)return;
+    const maxScroll=carousel.scrollHeight-h;
+    const next=carousel.scrollTop+h>=maxScroll-4?0:carousel.scrollTop+h;
+    carousel.scrollTo({top:next,behavior:'smooth'});
+  },360000);
+}
+function reminderCarouselStopAuto(){clearInterval(reminderCarouselTimer);}
+function reminderCarouselPauseAuto(){
+  // L'utente puo' fermare temporaneamente la rotazione automatica
+  // scorrendo/toccando la lista; riprende da sola dopo qualche secondo di
+  // inattivita' (richiesta esplicita dell'utente).
+  reminderCarouselStopAuto();
+  clearTimeout(reminderCarouselPauseTimer);
+  reminderCarouselPauseTimer=setTimeout(reminderCarouselStartAuto,5000);
+}
+function reminderRefreshDots(){
+  const carousel=document.getElementById('ppmRemindersCarousel');
+  const dots=document.getElementById('ppmRemindersDots');
+  if(!carousel||!dots)return;
+  const n=carousel.querySelectorAll('.reminders-slide').length;
+  dots.innerHTML='';
+  for(let i=0;i<n;i++){
+    const d=document.createElement('span');
+    d.className='reminders-dot'+(i===0?' active':'');
+    dots.appendChild(d);
+  }
+}
+function reminderRemoveSlide(slide){
+  reminderCloseOpenSlide();
+  const carousel=slide.closest('.reminders-carousel');
+  slide.style.transition='opacity .2s ease,max-height .25s ease,margin .25s ease';
+  slide.style.maxHeight=slide.offsetHeight+'px';
+  requestAnimationFrame(function(){
+    slide.style.opacity='0';
+    slide.style.maxHeight='0px';
+    slide.style.marginTop='0px';
+  });
+  setTimeout(function(){
+    slide.remove();
+    if(carousel&&!carousel.querySelector('.reminders-slide')){
+      carousel.innerHTML='<div class="reminders-slide reminders-slide-empty"><div class="reminders-slide-front"><span class="reminders-slide-copy"><b>Nessun promemoria attivo</b><small>Sei in pari con tutto</small></span></div></div>';
+    }
+    reminderRefreshDots();
+  },260);
+}
+function reminderCloseOpenSlide(except){
+  document.querySelectorAll('.reminders-slide.swiped-open').forEach(function(el){
+    if(el===except)return;
+    const f=el.querySelector('.reminders-slide-front');
+    if(f)f.style.transform='';
+    el.classList.remove('swiped-open');
+  });
+}
+function reminderCompleteFromSwipe(slide){
+  const rid=slide.dataset.reminderId;
+  if(!rid)return;
+  fetch('/promemoria/'+rid+'/completa',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:'ajax=1'})
+    .then(function(res){return res.json();})
+    .then(function(data){
+      if(!data.ok){
+        alert(data.error||'Operazione non riuscita');
+        slide.style.opacity='';
+        const front=slide.querySelector('.reminders-slide-front');
+        if(front)front.style.transform='';
+        return;
+      }
+      reminderRemoveSlide(slide);
+    })
+    .catch(function(){
+      slide.style.opacity='';
+      const front=slide.querySelector('.reminders-slide-front');
+      if(front)front.style.transform='';
+    });
+}
+function snoozeReminder(reminderId,btn){
+  const slide=btn.closest('.reminders-slide');
+  fetch('/promemoria/'+reminderId+'/rimanda',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:'ajax=1'})
+    .then(function(res){return res.json();})
+    .then(function(data){
+      if(!data.ok){alert(data.error||'Operazione non riuscita');return;}
+      if(slide)reminderRemoveSlide(slide);
+    })
+    .catch(function(){alert('Operazione non riuscita');});
+}
+function setupReminderSwipe(slide){
+  const front=slide.querySelector('.reminders-slide-front');
+  const actionsEl=slide.querySelector('.reminders-swipe-actions');
+  if(!front)return;
+  let startX=0,startY=0,dx=0,axisLocked=null,baseX=0,pointerId=null;
+  front.addEventListener('pointerdown',function(e){
+    if(e.button)return;
+    startX=e.clientX;startY=e.clientY;dx=0;axisLocked=null;
+    baseX=slide.classList.contains('swiped-open')&&actionsEl?-actionsEl.offsetWidth:0;
+    pointerId=e.pointerId;
+    reminderCarouselPauseAuto();
+  });
+  front.addEventListener('pointermove',function(e){
+    if(pointerId===null||e.pointerId!==pointerId)return;
+    const moveX=e.clientX-startX,moveY=e.clientY-startY;
+    if(axisLocked===null){
+      if(Math.abs(moveX)<6&&Math.abs(moveY)<6)return;
+      axisLocked=Math.abs(moveX)>Math.abs(moveY)?'x':'y';
+      if(axisLocked==='x'){try{front.setPointerCapture(pointerId);}catch(err){}}
+    }
+    if(axisLocked!=='x')return;
+    dx=moveX;
+    let next=baseX+dx;
+    const leftLimit=actionsEl?-(actionsEl.offsetWidth+16):-16;
+    next=Math.max(leftLimit,Math.min(100,next));
+    front.style.transition='none';
+    front.style.transform='translateX('+next+'px)';
+  });
+  function finish(e){
+    if(pointerId===null||(e.pointerId!==undefined&&e.pointerId!==pointerId))return;
+    front.style.transition='';
+    const moved=axisLocked==='x';
+    const wasOpen=slide.classList.contains('swiped-open');
+    pointerId=null;
+    if(!moved){
+      if(wasOpen){
+        const suppress=function(ev){ev.preventDefault();ev.stopPropagation();};
+        front.addEventListener('click',suppress,{capture:true,once:true});
+        setTimeout(function(){front.removeEventListener('click',suppress,true);},400);
+        reminderCloseOpenSlide();
+      }
+      return;
+    }
+    const finalX=baseX+dx;
+    if(finalX>70){
+      front.style.transform='translateX(140%)';
+      slide.style.transition='opacity .18s ease';
+      slide.style.opacity='0';
+      setTimeout(function(){reminderCompleteFromSwipe(slide);},170);
+    }else if(actionsEl&&finalX<-40){
+      reminderCloseOpenSlide(slide);
+      front.style.transform='translateX(-'+actionsEl.offsetWidth+'px)';
+      slide.classList.add('swiped-open');
+    }else{
+      front.style.transform='';
+      slide.classList.remove('swiped-open');
+    }
+    if(Math.abs(dx)>6){
+      const suppress=function(ev){ev.preventDefault();ev.stopPropagation();};
+      front.addEventListener('click',suppress,{capture:true,once:true});
+      setTimeout(function(){front.removeEventListener('click',suppress,true);},400);
+    }
+  }
+  front.addEventListener('pointerup',finish);
+  front.addEventListener('pointercancel',finish);
+}
+function setupRemindersCarousel(){
+  const carousel=document.getElementById('ppmRemindersCarousel');
+  if(!carousel)return;
+  markRemindersRead();
+  carousel.querySelectorAll('.reminders-slide[data-reminder-id]').forEach(setupReminderSwipe);
+  const dots=document.getElementById('ppmRemindersDots');
+  const allSlides=[...carousel.querySelectorAll('.reminders-slide')];
+  if(dots&&allSlides.length>1&&'IntersectionObserver' in window){
+    const observer=new IntersectionObserver(function(entries){
+      entries.forEach(function(entry){
+        if(!entry.isIntersecting||entry.intersectionRatio<0.6)return;
+        const idx=allSlides.indexOf(entry.target);
+        dots.querySelectorAll('.reminders-dot').forEach(function(d,i){d.classList.toggle('active',i===idx);});
+      });
+    },{root:carousel,threshold:[0.6]});
+    allSlides.forEach(function(s){observer.observe(s);});
+  }
+  carousel.addEventListener('pointerdown',reminderCarouselPauseAuto,{passive:true});
+  carousel.addEventListener('scroll',reminderCarouselPauseAuto,{passive:true});
+  reminderCarouselStartAuto();
+}
+document.addEventListener('DOMContentLoaded', setupRemindersCarousel);
 function syncDragOrder(root){
   const group=root.closest('[data-drag-group]');
   if(!group)return;
@@ -5415,84 +5639,20 @@ function cremationToggleCycleCard(headerEl){
     cremationCollapseBody(body);
   }
 }
-function reminderSyncOuterCard(){
-  const card=document.getElementById('ppmRemindersCard');
-  if(!card||!card.classList.contains('open'))return;
-  const body=card.querySelector('.reminders-card-body');
-  // il pannello interno può crescere dopo che il contenitore esterno ha già
-  // fissato il proprio max-height al click: 'none' evita che il contenuto
-  // nuovo venga tagliato e impedisca lo scroll (bug segnalato dall'utente)
-  if(body)body.style.maxHeight='none';
-}
-function reminderCloseAll(){
-  document.querySelectorAll('.reminders-expand.expanded').forEach(function(panel){
-    panel.classList.remove('expanded');
-    cremationCollapseBody(panel);
-  });
-  document.querySelectorAll('[data-reminder-toggle]').forEach(function(btn){
-    btn.setAttribute('aria-expanded','false');
-    btn.classList.remove('reminders-row-active');
-  });
-  reminderSyncOuterCard();
-}
 function reminderDismiss(event,reminderId,btn){
+  // Completa/elimina un promemoria dal widget carosello: nessun badge o
+  // etichetta di gruppo da aggiornare (non esistono piu' nella nuova
+  // struttura a slide singola), basta rimuovere la slide con un'animazione
+  // e lasciare che l'indicatore a pallini si aggiorni di conseguenza.
   event.stopPropagation();
-  const row=btn.closest('.reminders-expand-row');
+  const slide=btn.closest('.reminders-slide');
   fetch('/promemoria/'+reminderId+'/completa',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',body:'ajax=1'})
     .then(function(res){return res.json();})
     .then(function(data){
       if(!data.ok){alert(data.error||'Operazione non riuscita');return;}
-      if(!row)return;
-      const panel=row.closest('.reminders-expand');
-      row.remove();
-      if(panel&&!panel.querySelector('.reminders-expand-row')){
-        panel.insertAdjacentHTML('beforeend','<p class="reminders-expand-empty">Nessun elemento da gestire.</p>');
-      }
-      // Tutto il resto della card (etichetta del gruppo, badge, sottotitolo)
-      // si aggiorna subito con i valori gia' pronti dal server, senza dover
-      // chiudere la tendina e ricaricare la pagina (richiesta esplicita
-      // dell'utente).
-      const li=panel&&panel.closest('li');
-      const textEl=li&&li.querySelector('.reminders-todo-text');
-      if(data.group_count>0){
-        if(textEl&&data.group_label)textEl.textContent=data.group_label;
-      }else if(li){
-        li.remove();
-      }
-      const list=document.querySelector('.reminders-todo-list');
-      if(list&&!list.querySelector('.reminders-todo-row')){
-        list.innerHTML='<li class="reminders-todo-empty">Nessun promemoria attivo al momento.</li>';
-      }
-      const subtitle=document.querySelector('.reminders-card-copy small');
-      if(subtitle&&typeof data.remaining_total==='number'){
-        subtitle.textContent=data.remaining_total>0?data.remaining_total+' attività attive · Report della settimana':'Nessuna attività attiva · Report della settimana';
-      }
-      // Il badge (bell) segue le sole occorrenze non lette, non il totale
-      // aperto: una volta aperta la tendina il badge e' gia' sparito (vedi
-      // markRemindersRead), un dismiss non deve farlo ricomparire.
-      const badge=document.querySelector('.reminders-count-badge');
-      if(typeof data.remaining_unread==='number'){
-        if(data.remaining_unread>0){
-          if(badge)badge.textContent=data.remaining_unread<100?data.remaining_unread:'99+';
-        }else if(badge){
-          badge.remove();
-        }
-      }
+      if(slide)reminderRemoveSlide(slide);
     })
     .catch(function(){alert('Operazione non riuscita');});
-}
-function reminderToggle(btn){
-  const panelId=btn.dataset.reminderToggle;
-  const panel=document.getElementById(panelId);
-  if(!panel)return;
-  const reactivating=panel.classList.contains('expanded');
-  reminderCloseAll();
-  if(reactivating)return;
-  panel.classList.add('expanded');
-  btn.setAttribute('aria-expanded','true');
-  btn.classList.add('reminders-row-active');
-  cremationExpandBody(panel,panel);
-  reminderSyncOuterCard();
 }
 var cremationWeekMode=null;
 function cremationShowToast(message){
@@ -7209,6 +7369,18 @@ REMINDER_BAR_COLORS={
 }
 REMINDER_BAR_COLOR_DEFAULT="#64748b"
 REMINDER_WEEKLY_BAR_COLOR="#3b82f6"
+# Nome breve di categoria mostrato come sottotitolo di ogni slide del widget
+# Promemoria (mockup di riferimento fornito dall'utente: "Amministrazione",
+# "Cremazioni", ecc. accanto alla scadenza relativa).
+REMINDER_CATEGORY_NAMES={
+    "manual":"Promemoria manuale",
+    "practice_incomplete":"Amministrazione",
+    "product_reorder":"Amministrazione",
+    "delivered_unpaid":"Pagamenti",
+    "cremation_pending":"Cremazioni",
+    "assisted_notify_pending":"Cremazioni",
+}
+REMINDER_CATEGORY_DEFAULT="Promemoria"
 
 
 def layout(title, body, user=None):
@@ -7218,7 +7390,7 @@ def layout(title, body, user=None):
     if user:
         with db() as conn:
             unread=conn.execute("SELECT count(*) n FROM notifications WHERE user_id=? AND is_read=0",(user["id"],)).fetchone()["n"]
-            open_reminders_count=conn.execute("SELECT count(*) n FROM reminders WHERE completed_at IS NULL AND read_at IS NULL").fetchone()["n"]
+            open_reminders_count=conn.execute("SELECT count(*) n FROM reminders WHERE completed_at IS NULL AND read_at IS NULL AND (snoozed_until IS NULL OR snoozed_until<=?)",(now(),)).fetchone()["n"]
         unread_badge=f'<span class="notification-badge">{unread if unread < 100 else "99+"}</span>' if unread else ''
         reminder_badge=f'<span class="notification-badge">{open_reminders_count if open_reminders_count < 100 else "99+"}</span>' if open_reminders_count else ''
         prefs=load_preferences(user["id"])
@@ -7561,6 +7733,10 @@ class App(BaseHTTPRequestHandler):
         if match: return self.complete_reminder(user, int(match.group(1)))
         if path == "/promemoria/segna-lette": return self.mark_reminders_read(user)
         if path == "/promemoria/nuovo": return self.add_manual_reminder(user)
+        match = re.fullmatch(r"/promemoria/(\d+)/modifica", path)
+        if match: return self.edit_manual_reminder(user, int(match.group(1)))
+        match = re.fullmatch(r"/promemoria/(\d+)/rimanda", path)
+        if match: return self.snooze_reminder(user, int(match.group(1)))
         if path == "/catalogo-urne/nuova": return self.save_urn(user)
         match = re.fullmatch(r"/catalogo-urne/(\d+)/modifica", path)
         if match: return self.save_urn(user, int(match.group(1)))
@@ -7750,7 +7926,7 @@ class App(BaseHTTPRequestHandler):
             payment_movements=dashboard_payment_movements(c,payment_from,payment_to)
             recent=c.execute("SELECT * FROM practices WHERE deleted_at IS NULL OR deleted_at='' ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) DESC,id DESC LIMIT 10").fetchall()
             sync_reminders(c)
-            open_reminders=c.execute("SELECT * FROM reminders WHERE completed_at IS NULL ORDER BY created_at DESC").fetchall()
+            open_reminders=c.execute("SELECT * FROM reminders WHERE completed_at IS NULL AND (snoozed_until IS NULL OR snoozed_until<=?) ORDER BY created_at ASC",(now(),)).fetchall()
             rome_today=datetime.now(ROME_TZ).date();week_start=rome_today-timedelta(days=6)
             weekly_filters=normalize_balance_filters(date_from=week_start.isoformat(),date_to=rome_today.isoformat())
             weekly_snapshot=get_balance_snapshot(c,filters=weekly_filters)
@@ -7828,250 +8004,111 @@ class App(BaseHTTPRequestHandler):
         saved_dashboard_order=[sid for sid in parse_preference_list(load_preferences(user["id"]).get("dashboard_sections","")) if sid in dashboard_sections]
         dashboard_order=saved_dashboard_order or default_dashboard_order
         sections_html=''.join(dashboard_sections[sid] for sid in dashboard_order)
-        reminder_groups={}
+        # Widget Promemoria: lista piatta cronologica "una riga (slide) alla
+        # volta" invece della vecchia card espandibile raggruppata per tipo
+        # (richiesta esplicita dell'utente, mockup di riferimento fornito).
+        # Ogni riga aperta di reminders ha gia' un titolo descrittivo
+        # completo e un url pronti (costruiti da sync_reminders/
+        # ensure_reminder per ciascun tipo): si riusano direttamente invece
+        # di ricostruire un rendering per pratica come faceva la vecchia
+        # card con pannelli espandibili raggruppati.
+        def reminder_relative_day(date_text):
+            days=reminder_days_since(date_text,today)
+            if days is None:return ""
+            if days==0:return "Oggi"
+            if days==1:return "Ieri"
+            if days==-1:return "Domani"
+            if days>1:return f"{days} giorni fa"
+            return date_it(date_text)
+
+        def reminder_render_url(url):
+            # Le url dei promemoria automatici (sync_reminders) sono salvate
+            # "nude" (es. "/pratiche/123"): il return_to verso la Dashboard
+            # si aggiunge qui al momento del render, come faceva prima
+            # reminder_practice_url, cosi' tornando indietro dalla pratica si
+            # riatterra sulla Dashboard invece che sull'ultima pagina vista.
+            if url.startswith("/pratiche/") and "?" not in url:
+                return f'{url}?return_to={quote(getattr(self,"path","/"),safe="")}'
+            return url
+
+        reminder_slides=[]
         for row in open_reminders:
-            reminder_groups.setdefault(row["reminder_type"],[]).append(row)
-        reminder_group_order=list(REMINDER_GROUP_LABELS)+[t for t in reminder_groups if t not in REMINDER_GROUP_LABELS]
-
-        # every automatic reminder type but product_reorder keys off a practice
-        # (entity_key "practice:{id}") — batch-fetch them all once, plus their
-        # urn items, so each expanded panel below can render a rich row
-        # without a query per row.
-        reminder_practice_ids=set()
-        for rows in reminder_groups.values():
-            for row in rows:
-                key=row["entity_key"] or ""
-                if key.startswith("practice:"):
-                    try:reminder_practice_ids.add(int(key.split(":",1)[1]))
-                    except ValueError:pass
-        reminder_practices_by_id={}
-        reminder_urn_items_by_practice={}
-        if reminder_practice_ids:
-            with db() as c:
-                marks=','.join('?' for _ in reminder_practice_ids)
-                for row in c.execute(f"SELECT * FROM practices WHERE id IN ({marks})",tuple(reminder_practice_ids)).fetchall():
-                    reminder_practices_by_id[row["id"]]=row
-                for row in c.execute(f"SELECT practice_id,label FROM practice_items WHERE practice_id IN ({marks}) AND category='urna' ORDER BY practice_id,sort_order",tuple(reminder_practice_ids)).fetchall():
-                    reminder_urn_items_by_practice.setdefault(row["practice_id"],[]).append(row["label"])
-                reminder_delivery_dates={row["id"]:row["ddate"] for row in c.execute(f"SELECT id,{dashboard_practice_date_sql('consegnati','practices')} ddate FROM practices WHERE id IN ({marks})",tuple(reminder_practice_ids)).fetchall()}
-                reminder_cycle_ids={p["cremation_cycle_id"] for p in reminder_practices_by_id.values() if p["cremation_cycle_id"]}
-                reminder_cycle_info={}
-                if reminder_cycle_ids:
-                    marks_cyc=','.join('?' for _ in reminder_cycle_ids)
-                    reminder_cycle_info={row["id"]:(row["cycle_date"],row["planned_start"]) for row in c.execute(f"SELECT id,cycle_date,planned_start FROM cremation_cycles WHERE id IN ({marks_cyc})",tuple(reminder_cycle_ids)).fetchall()}
-            # today's cycles with room, for the "Inserisci in programma" quick
-            # action on cremation_pending rows — same shape as the day view's
-            # own insertable_cycles, just scoped to today since the Dashboard
-            # has no week/day context of its own.
-            with db() as c:
-                today_cycles=c.execute("SELECT * FROM cremation_cycles WHERE cycle_date=? AND status!='completato' ORDER BY planned_start ASC,id ASC",(today.isoformat(),)).fetchall()
-                today_cycle_ids=[row["id"] for row in today_cycles]
-                today_cycle_counts={cid:0 for cid in today_cycle_ids}
-                if today_cycle_ids:
-                    marks2=','.join('?' for _ in today_cycle_ids)
-                    for row in c.execute(f"SELECT cremation_cycle_id,COUNT(*) n FROM practices WHERE cremation_cycle_id IN ({marks2}) AND (deleted_at IS NULL OR deleted_at='') GROUP BY cremation_cycle_id",tuple(today_cycle_ids)).fetchall():
-                        today_cycle_counts[row["cremation_cycle_id"]]=row["n"]
-        else:
-            today_cycles=[];today_cycle_counts={};reminder_delivery_dates={};reminder_cycle_info={}
-        reminder_insertable_cycles=[(idx+1,cyc["id"]) for idx,cyc in enumerate(today_cycles) if today_cycle_counts.get(cyc["id"],0)<2]
-
-        def reminder_owner_and_urn(p):
-            owner=" ".join(x for x in [p["owner_first_name"],p["owner_last_name"]] if x).strip() or (p["owner_company"] or "Cliente non indicato")
-            urn_labels=[]
-            for label in reminder_urn_items_by_practice.get(p["id"],[]):
-                label=compact_text(label)
-                if label and label not in urn_labels:urn_labels.append(label)
-            return owner," / ".join(urn_labels)
-
-        reminder_name_counts={}
-        for pid in reminder_practice_ids:
-            p=reminder_practices_by_id.get(pid)
-            if not p:continue
-            key=(p["animal_name"] or "").strip().lower()
-            if key:reminder_name_counts[key]=reminder_name_counts.get(key,0)+1
-
-        def reminder_animal_name_html(p):
-            name=esc(p["animal_name"] or "Da inserire")
-            key=(p["animal_name"] or "").strip().lower()
-            surname=(p["owner_last_name"] or "").strip()
-            if key and reminder_name_counts.get(key,0)>1 and surname:
-                name+=f' <small class="cremation-owner-hint">({esc(surname)})</small>'
-            return name
-
-        def reminder_practice_url(pid):
-            return f'/pratiche/{pid}?return_to={quote(getattr(self,"path","/"),safe="")}'
-
-        def reminder_cycle_quick_menu(p):
-            """Same 'Inserisci in ciclo esistente / crea nuovo ciclo' quick menu
-            already used in Programma Cremazioni, reusing the exact same
-            cremationQuickAssign/cremationQuickCreateAndAssign endpoints — only
-            offered when the practice is actually eligible (Ritirato, cremazione
-            singola, non ancora in un ciclo), otherwise just "Apri pratica"."""
-            if p["status"]!="Ritirato" or p["service_type"]!="Cremazione singola" or p["cremation_cycle_id"]:
-                return ""
-            items=[f'<button type="button" onclick="cremationQuickAssign(this,{p["id"]},{cid})">{lucide("chevron-right")}<span>Ciclo {n} di oggi</span></button>' for n,cid in reminder_insertable_cycles]
-            items.append(f'<button type="button" class="cremation-quick-menu-create" onclick="cremationQuickCreateAndAssign(this,{p["id"]})">{lucide("plus")}<span>Crea nuovo ciclo</span></button>')
-            return f'''<div class="cremation-quick-menu-wrap" onclick="event.stopPropagation()">
-              <button type="button" class="cremation-quick-insert-btn" onclick="cremationToggleQuickMenu(this)">{lucide("plus")}<span>Inserisci in programma</span></button>
-              <div class="cremation-quick-menu-popover" hidden>{''.join(items)}</div>
-            </div>'''
-
-        def reminder_dismiss_button_html(reminder_id):
-            # richiesta esplicita dell'utente: le voci del Centro Promemoria
-            # devono potersi eliminare SOLO dalla vista promemoria (mai la
-            # pratica/notifica sottostante) — riusa esattamente lo stesso
-            # meccanismo gia' esistente di /promemoria/<id>/completa (che
-            # marca solo la riga della tabella reminders, invariato per
-            # tutto il resto), qui in modalita' ajax con rimozione morbida
-            # della riga invece di un redirect/reload di pagina.
-            return f'<button type="button" class="reminders-dismiss-btn" onclick="reminderDismiss(event,{reminder_id},this)" aria-label="Elimina dal promemoria" title="Elimina dal promemoria">{lucide("x")}</button>'
-
-        def reminder_animal_row_html(p,show_cycle_action,reminder_id=None):
-            avatar_emoji,avatar_cls=species_avatar(p["species"] if "species" in p.keys() else "")
-            weight=(p["estimated_weight"] or "").strip()
-            owner,urn=reminder_owner_and_urn(p)
-            code=(p["provenance"] or "").strip().upper()
-            provenance_html=f'<span class="cremation-provenance-chip {provenance_color_class(code)}">{esc(code)}</span>' if code else '<span class="cremation-dash">—</span>'
-            tags=self.tag_badges(p)
-            tags_html=tags if '<span class="badge' in tags else '<span class="cremation-dash">—</span>'
-            urn_html=f'{lucide("archive")}<span>{esc(urn)}</span>' if urn else '<span class="cremation-dash">—</span>'
-            url=reminder_practice_url(p["id"])
-            action=reminder_cycle_quick_menu(p) if show_cycle_action else ""
-            dismiss=reminder_dismiss_button_html(reminder_id) if reminder_id else ""
-            return f'''<div class="reminders-expand-row" {row_open_attrs(url,f'Apri pratica {p["practice_number"]}')}>
-              <span class="reminders-expand-avatar {avatar_cls}" aria-hidden="true">{avatar_emoji}</span>
-              <div class="reminders-expand-main">
-                <span class="reminders-expand-title">{reminder_animal_name_html(p)}</span>
-                {f'<span class="reminders-expand-weight">{esc(weight)} kg</span>' if weight else ''}
-                <span class="reminders-expand-meta"><span>{esc(owner)}</span>{provenance_html}<span>{esc(date_it(p["pickup_date"] or p["created_at"]))}</span><span class="badge {practice_status_class(p['status'])}">{esc(p['status'])}</span></span>
-                <span class="reminders-expand-meta">{tags_html}<span class="reminders-expand-urn">{urn_html}</span></span>
-              </div>
-              <div class="reminders-expand-actions" onclick="event.stopPropagation()">{action}<a class="btn ghost" href="{url}">Apri pratica</a>{dismiss}</div>
-            </div>'''
-
-        def reminder_unpaid_row_html(p,reminder_id=None):
-            total=effective_total(p);remaining=outstanding_amount(p);paid=total-remaining
-            payment=p["payment_status"] or "Da saldare";pay_cls={"Da saldare":"pay-yellow","Acconto":"pay-blue","Pagato":"pay-green"}.get(payment,"")
-            owner,_=reminder_owner_and_urn(p)
-            url=reminder_practice_url(p["id"])
-            dismiss=reminder_dismiss_button_html(reminder_id) if reminder_id else ""
-            return f'''<div class="reminders-expand-row" {row_open_attrs(url,f'Apri pratica {p["practice_number"]}')}>
-              <div class="reminders-expand-main">
-                <span class="reminders-expand-title">{esc(p["practice_number"])} · {reminder_animal_name_html(p)}</span>
-                <span class="reminders-expand-meta"><span>{esc(owner)}</span><span>Consegnato il {esc(date_it(reminder_delivery_dates.get(p['id']) or p['updated_at']))}</span></span>
-                <span class="reminders-expand-meta"><span>Totale {money_it(total)}</span><span>Versato {money_it(paid)}</span><span>Residuo {money_it(remaining)}</span><span class="badge {pay_cls}">{esc(payment)}</span></span>
-              </div>
-              <div class="reminders-expand-actions" onclick="event.stopPropagation()">{self.status_badges(p)}<a class="btn ghost" href="{url}">Apri pratica</a>{dismiss}</div>
-            </div>'''
-
-        def reminder_assisted_notify_row_html(p,reminder_id=None):
-            owner,_=reminder_owner_and_urn(p)
-            url=reminder_practice_url(p["id"])
-            label=assisted_cremation_label(p)
-            cycle_date,planned_start=reminder_cycle_info.get(p["cremation_cycle_id"],("",""))
-            when_bits=[]
-            if cycle_date:when_bits.append(f'<span>{esc(date_it(cycle_date))}</span>')
-            if planned_start:when_bits.append(f'<span>ore {esc(planned_start)}</span>')
-            dismiss=reminder_dismiss_button_html(reminder_id) if reminder_id else ""
-            return f'''<div class="reminders-expand-row" {row_open_attrs(url,f'Apri pratica {p["practice_number"]}')}>
-              <div class="reminders-expand-main">
-                <span class="reminders-expand-title">{reminder_animal_name_html(p)}</span>
-                <span class="reminders-expand-meta"><span>{esc(owner)}</span>{''.join(when_bits)}<span class="badge tag-red">{esc(label)}</span></span>
-              </div>
-              <div class="reminders-expand-actions" onclick="event.stopPropagation()"><a class="btn ghost" href="{url}">Apri pratica</a>{dismiss}</div>
-            </div>'''
-
-        def reminder_generic_row_html(row):
-            dismiss=reminder_dismiss_button_html(row["id"]) if "id" in row.keys() and row["id"] else ""
-            url=row["url"] or ""
-            # Un promemoria manuale non punta a nessuna pagina: niente tap
-            # per aprire ne' pulsante "Apri", resta un semplice testo con
-            # la sola azione di eliminazione.
-            open_attrs=row_open_attrs(url,esc(row["title"])) if url else ""
-            open_link=f'<a class="btn ghost" href="{esc(url)}">Apri</a>' if url else ""
-            return f'''<div class="reminders-expand-row" {open_attrs}>
-              <div class="reminders-expand-main"><span class="reminders-expand-title">{esc(row["title"])}</span></div>
-              <div class="reminders-expand-actions" onclick="event.stopPropagation()">{open_link}{dismiss}</div>
-            </div>'''
-
-        def reminder_panel_html(rtype,rows):
-            if rtype=="cremation_pending":
-                items=[]
-                for row in rows:
-                    p=reminder_practices_by_id.get(int(row["entity_key"].split(":",1)[1])) if row["entity_key"].startswith("practice:") else None
-                    if p:items.append(reminder_animal_row_html(p,show_cycle_action=True,reminder_id=row["id"]))
-                return ''.join(items) or '<p class="reminders-expand-empty">Nessun elemento da gestire.</p>'
-            if rtype=="delivered_unpaid":
-                items=[]
-                for row in rows:
-                    p=reminder_practices_by_id.get(int(row["entity_key"].split(":",1)[1])) if row["entity_key"].startswith("practice:") else None
-                    if p:items.append(reminder_unpaid_row_html(p,reminder_id=row["id"]))
-                return ''.join(items) or '<p class="reminders-expand-empty">Nessun elemento da gestire.</p>'
-            if rtype=="practice_incomplete":
-                items=[]
-                for row in rows:
-                    p=reminder_practices_by_id.get(int(row["entity_key"].split(":",1)[1])) if row["entity_key"].startswith("practice:") else None
-                    if p:items.append(reminder_animal_row_html(p,show_cycle_action=False,reminder_id=row["id"]))
-                return ''.join(items) or '<p class="reminders-expand-empty">Nessun elemento da gestire.</p>'
-            if rtype=="assisted_notify_pending":
-                items=[]
-                for row in rows:
-                    p=reminder_practices_by_id.get(int(row["entity_key"].split(":",1)[1])) if row["entity_key"].startswith("practice:") else None
-                    if p:items.append(reminder_assisted_notify_row_html(p,reminder_id=row["id"]))
-                return ''.join(items) or '<p class="reminders-expand-empty">Nessun elemento da gestire.</p>'
-            return ''.join(reminder_generic_row_html(row) for row in rows) or '<p class="reminders-expand-empty">Nessun elemento da gestire.</p>'
-
-        reminder_todo_rows=[]
-        for rtype in reminder_group_order:
-            rows=reminder_groups.get(rtype)
-            if not rows:continue
-            icon,color_cls,singular,plural=REMINDER_GROUP_LABELS.get(rtype,REMINDER_GROUP_FALLBACK)
-            n=len(rows)
-            group_label=(singular if n==1 else plural).format(n=n)
-            panel_id=f"reminderPanel_{rtype}"
-            bar_color=REMINDER_BAR_COLORS.get(rtype,REMINDER_BAR_COLOR_DEFAULT)
-            reminder_todo_rows.append(
-                f'''<li><button type="button" class="reminders-todo-row" style="border-left:3px solid {bar_color}" data-reminder-toggle="{esc(panel_id)}" aria-expanded="false" onclick="reminderToggle(this)">'''
-                f'''<span class="metric-icon reminders-todo-icon {color_cls}">{lucide(icon)}</span><span class="reminders-todo-text">{esc(group_label)}</span>'''
-                f'''<span class="reminders-todo-chevron" aria-hidden="true">{lucide("chevron-right")}</span></button>'''
-                f'''<div class="reminders-expand" id="{esc(panel_id)}">{reminder_panel_html(rtype,rows)}</div></li>'''
-            )
-        reminder_todo_list=''.join(reminder_todo_rows) or '<li class="reminders-todo-empty">Nessun promemoria attivo al momento.</li>'
+            rtype=row["reminder_type"]
+            icon,color_cls,_singular,_plural=REMINDER_GROUP_LABELS.get(rtype,REMINDER_GROUP_FALLBACK)
+            reminder_slides.append({
+                "sort_key":row["created_at"] or "",
+                "id":row["id"],
+                "icon":icon,"color_cls":color_cls,
+                "bar_color":REMINDER_BAR_COLORS.get(rtype,REMINDER_BAR_COLOR_DEFAULT),
+                "category":REMINDER_CATEGORY_NAMES.get(rtype,REMINDER_CATEGORY_DEFAULT),
+                "is_manual":rtype=="manual",
+                "title":row["title"],"url":reminder_render_url(row["url"] or ""),
+                "date_label":reminder_relative_day(row["created_at"]),
+            })
         weekly_query=urlencode({"periodo":"personalizzato","data_iniziale":week_start.isoformat(),"data_finale":rome_today.isoformat()})
         weekly_url=f"/bilanci?{weekly_query}&view=entrate-w#balanceDetails"
         weekly_w=money_cents_it(weekly_snapshot.sections["entrate-w"].total_cents)
         weekly_d=money_cents_it(weekly_snapshot.sections["entrate-d"].total_cents)
-        reminders_count=len(open_reminders)
-        # Il badge (bell) rappresenta solo le occorrenze non ancora "lette"
-        # (mai aperta la tendina Promemoria da quando sono comparse): sparisce
-        # una volta aperta la tendina, ricompare solo per occorrenze davvero
-        # nuove. Il sottotitolo "N attivita' attive" resta invece il totale
-        # aperto (il "da fare" reale), invariato.
-        reminders_unread_count=sum(1 for row in open_reminders if not row["read_at"])
-        reminders_badge=f'<span class="reminders-count-badge">{reminders_unread_count if reminders_unread_count<100 else "99+"}</span>' if reminders_unread_count else ''
-        weekly_panel_html=f'''<div class="reminders-expand-week"><div><small>Entrate W</small><span class="figure-w">{weekly_w}</span></div><div><small>Entrate D</small><span class="figure-d">{weekly_d}</span></div></div><div class="reminders-expand-actions"><a class="btn ghost" href="{weekly_url}">Apri Bilanci</a></div>'''
+        # Il Report della settimana non e' un promemoria vero (non arriva
+        # dalla tabella reminders), ma richiesta esplicita dell'utente: deve
+        # comunque comparire come una delle slide della lista cronologica
+        # invece di stare in una riga fissa separata — qui e' una slide
+        # sintetica ordinata su "oggi", senza id (non completabile/
+        # rinviabile/eliminabile, solo apribile).
+        reminder_slides.append({
+            "sort_key":rome_today.isoformat()+"T23:59:59",
+            "id":None,"icon":"chart","color_cls":"state-blue","bar_color":REMINDER_WEEKLY_BAR_COLOR,
+            "category":"Report","is_manual":False,
+            "title":"Report della settimana",
+            "subtitle_override":f"Entrate W {weekly_w} · Entrate D {weekly_d}",
+            "url":weekly_url,"date_label":"",
+        })
+        reminder_slides.sort(key=lambda slide:slide["sort_key"])
+
+        def reminder_slide_html(slide):
+            rid=slide["id"]
+            manual_badge='<span class="reminders-manual-badge">MANUALE</span>' if slide["is_manual"] else ''
+            subtitle=slide.get("subtitle_override") or (f"{esc(slide['category'])} · {esc(slide['date_label'])}" if slide["date_label"] else esc(slide["category"]))
+            front=f'''<a class="reminders-slide-front" href="{esc(slide['url'])}" style="border-left:3px solid {slide['bar_color']}">
+              <span class="metric-icon reminders-slide-icon {slide['color_cls']}">{lucide(slide['icon'])}</span>
+              <span class="reminders-slide-copy"><b>{manual_badge}{esc(slide['title'])}</b><small>{subtitle}</small></span>
+            </a>'''
+            if rid is None:
+                return f'<div class="reminders-slide">{front}</div>'
+            edit_btn=(f'<a class="reminders-swipe-btn" href="{esc(slide["url"])}" aria-label="Modifica">{lucide("pencil")}<span>Modifica</span></a>' if slide["url"]
+                else f'<button type="button" class="reminders-swipe-btn" onclick="editManualReminder({rid},this)" aria-label="Modifica">{lucide("pencil")}<span>Modifica</span></button>')
+            delete_btn=f'<button type="button" class="reminders-swipe-btn reminders-swipe-delete" onclick="reminderDismiss(event,{rid},this)" aria-label="Elimina">{lucide("x")}<span>Elimina</span></button>' if slide["is_manual"] else ''
+            actions=f'''<div class="reminders-swipe-actions">
+              <a class="reminders-swipe-btn" href="{esc(slide['url'])}" aria-label="Apri">{lucide("chevron-right")}<span>Apri</span></a>
+              {edit_btn}
+              <button type="button" class="reminders-swipe-btn" onclick="snoozeReminder({rid},this)" aria-label="Rimanda">{lucide("clock")}<span>Rimanda</span></button>
+              {delete_btn}
+            </div>'''
+            complete_bg=f'<div class="reminders-swipe-complete-bg">{lucide("check-circle")}<span>Completa</span></div>'
+            return f'''<div class="reminders-slide" data-reminder-id="{rid}" data-title="{esc(slide['title'])}">
+              {complete_bg}
+              {actions}
+              {front}
+            </div>'''
+
+        reminders_slides_html=''.join(reminder_slide_html(slide) for slide in reminder_slides) or f'''<div class="reminders-slide reminders-slide-empty">
+          <div class="reminders-slide-front" style="border-left:3px solid {REMINDER_BAR_COLOR_DEFAULT}">
+            <span class="metric-icon reminders-slide-icon state-blue">{lucide("check-circle")}</span>
+            <span class="reminders-slide-copy"><b>Nessun promemoria attivo</b><small>Sei in pari con tutto</small></span>
+          </div>
+        </div>'''
         reminders_html=f'''<section class="reminders-card" id="ppmRemindersCard">
-<button type="button" class="reminders-card-header" id="ppmRemindersToggle" aria-expanded="false">
-<span class="reminders-card-icon">{lucide("bell")}</span>
-<span class="reminders-card-copy"><strong>Promemoria{reminders_badge}</strong><small>{f"{reminders_count} attività attive" if reminders_count else "Nessuna attività attiva"} · Report della settimana</small></span>
-<span class="reminders-card-chevron" aria-hidden="true">⌄</span>
-</button>
-<div class="reminders-card-body"><div class="reminders-card-inner">
+<div class="reminders-carousel-row">
+  <div class="reminders-carousel" id="ppmRemindersCarousel">{reminders_slides_html}</div>
+  <div class="reminders-dots" id="ppmRemindersDots">{''.join('<span class="reminders-dot"></span>' for _ in reminder_slides)}</div>
+</div>
 <button type="button" class="reminders-add-btn" onclick="openAddReminderModal()">{lucide("plus")}<span>Aggiungi promemoria</span></button>
-<h3 class="reminders-card-section-title">Cose da fare</h3>
-<ul class="reminders-todo-list">{reminder_todo_list}</ul>
-<button type="button" class="reminders-week-row" style="border-left:3px solid {REMINDER_WEEKLY_BAR_COLOR}" data-reminder-toggle="reminderPanel_weekly" aria-expanded="false" onclick="reminderToggle(this)">
-<span class="metric-icon reminders-week-icon state-blue">{lucide("chart")}</span>
-<span class="reminders-week-copy"><b>Report della settimana</b><small>Entrate W <span class="figure-w">{weekly_w}</span> · Entrate D <span class="figure-d">{weekly_d}</span></small></span>
-<span class="reminders-week-chevron" aria-hidden="true">{lucide("chevron-right")}</span>
-</button>
-<div class="reminders-expand" id="reminderPanel_weekly">{weekly_panel_html}</div>
-</div></div>
 </section>
 <div class="shift-cell-editor-backdrop" id="addReminderBackdrop" hidden onclick="if(event.target===this)closeAddReminderModal()">
   <div class="shift-cell-editor">
-    <h3>Aggiungi promemoria</h3>
+    <h3 id="addReminderTitleHeading">Aggiungi promemoria</h3>
     <form id="addReminderForm" onsubmit="return submitAddReminder(event)">
+      <input type="hidden" name="edit_id" id="addReminderEditId" value="">
       <div class="field full"><label>Titolo</label><input name="title" id="addReminderTitle" required maxlength="200" placeholder="Es. Chiamare proprietario Macco" autocomplete="off"></div>
       <div class="actions" style="margin-top:14px">
         <button type="button" class="btn ghost" onclick="closeAddReminderModal()">Annulla</button>
@@ -12635,27 +12672,22 @@ class App(BaseHTTPRequestHandler):
             if not row["completed_at"]:
                 c.execute("UPDATE reminders SET completed_at=?,completed_by=? WHERE id=?",(now(),user["id"],reminder_id))
             if ajax:
-                # Il pannello aggiorna subito testo/contatori senza dover
-                # chiudere la tendina e ricaricare la pagina (richiesta
-                # esplicita dell'utente): le regole di singolare/plurale in
-                # italiano restano solo qui lato server, il JS si limita a
-                # sostituire il testo gia' pronto.
-                remaining_total=c.execute("SELECT count(*) n FROM reminders WHERE completed_at IS NULL").fetchone()["n"]
-                remaining_unread=c.execute("SELECT count(*) n FROM reminders WHERE completed_at IS NULL AND read_at IS NULL").fetchone()["n"]
-                group_count=c.execute("SELECT count(*) n FROM reminders WHERE reminder_type=? AND completed_at IS NULL",(row["reminder_type"],)).fetchone()["n"]
-                _icon,_color_cls,singular,plural=REMINDER_GROUP_LABELS.get(row["reminder_type"],REMINDER_GROUP_FALLBACK)
-                group_label=(singular if group_count==1 else plural).format(n=group_count) if group_count else ""
-                return self.send_json({"ok":True,"remaining_total":remaining_total,"remaining_unread":remaining_unread,"group_count":group_count,"group_label":group_label})
+                # Il widget rimuove subito la slide lato JS senza ricaricare
+                # la pagina: qui basta confermare l'esito, nessun'altra
+                # etichetta/conteggio da ricalcolare (la nuova struttura a
+                # slide singola non ha piu' badge di gruppo).
+                return self.send_json({"ok":True})
         return self.redirect(safe_return_path(self.form().get("return_to") or self.headers.get("Referer"),"/"))
 
     def mark_reminders_read(self,user):
         # Il badge del centro Promemoria (bell) rappresenta solo le occorrenze
-        # non ancora viste: aprire la tendina le segna tutte come lette in un
-        # colpo solo (lista globale condivisa, non per utente, come il resto
-        # dei promemoria) cosi' il badge sparisce subito; ricompare solo per
-        # occorrenze davvero nuove create in seguito da sync_reminders().
+        # non ancora viste: il widget essendo sempre visibile le segna tutte
+        # come lette al caricamento della pagina (lista globale condivisa,
+        # non per utente, come il resto dei promemoria) cosi' il badge
+        # sparisce subito; ricompare solo per occorrenze davvero nuove create
+        # in seguito da sync_reminders().
         with db() as c:
-            c.execute("UPDATE reminders SET read_at=? WHERE completed_at IS NULL AND read_at IS NULL",(now(),))
+            c.execute("UPDATE reminders SET read_at=? WHERE completed_at IS NULL AND read_at IS NULL AND (snoozed_until IS NULL OR snoozed_until<=?)",(now(),now()))
         return self.send_json({"ok":True})
 
     def add_manual_reminder(self,user):
@@ -12674,6 +12706,37 @@ class App(BaseHTTPRequestHandler):
         with db() as c:
             c.execute("INSERT INTO reminders(reminder_type,entity_key,dedupe_key,title,url,created_at) VALUES(?,?,?,?,?,?)",
                 ("manual",key,key,title,"",stamp))
+        if ajax:return self.send_json({"ok":True})
+        return self.redirect("/")
+
+    def edit_manual_reminder(self,user,reminder_id):
+        # Azione "Modifica" dello swipe sinistro, solo per i promemoria
+        # manuali (per quelli automatici "Modifica" apre semplicemente la
+        # pratica collegata, stesso link di "Apri" — non serve un endpoint
+        # dedicato). Aggiorna solo il titolo, invariato tutto il resto.
+        ajax=self.form().get("ajax")=="1"
+        title=(self.form().get("title") or "").strip()[:200]
+        if not title:
+            return self.send_json({"ok":False,"error":"Inserisci un titolo"},400) if ajax else self.redirect("/")
+        with db() as c:
+            row=c.execute("SELECT * FROM reminders WHERE id=? AND reminder_type='manual'",(reminder_id,)).fetchone()
+            if not row:
+                return self.send_json({"ok":False,"error":"Promemoria non trovato"},404) if ajax else self.send_error(404)
+            c.execute("UPDATE reminders SET title=? WHERE id=?",(title,reminder_id))
+        if ajax:return self.send_json({"ok":True})
+        return self.redirect("/")
+
+    def snooze_reminder(self,user,reminder_id):
+        # Azione "Rimanda" dello swipe sinistro: rinvia di 1 giorno senza
+        # marcare l'occorrenza completata (stessa riga, nessun duplicato) —
+        # richiesta esplicita dell'utente, vedi migrazione snoozed_until.
+        ajax=self.form().get("ajax")=="1"
+        with db() as c:
+            row=c.execute("SELECT id FROM reminders WHERE id=? AND completed_at IS NULL",(reminder_id,)).fetchone()
+            if not row:
+                return self.send_json({"ok":False,"error":"Promemoria non trovato"},404) if ajax else self.redirect("/")
+            snoozed_until=(rome_now()+timedelta(days=1)).isoformat(timespec="seconds")
+            c.execute("UPDATE reminders SET snoozed_until=? WHERE id=?",(snoozed_until,reminder_id))
         if ajax:return self.send_json({"ok":True})
         return self.redirect("/")
 

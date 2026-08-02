@@ -38,11 +38,6 @@ class PetParadiseTests(unittest.TestCase):
         app.DATA, app.DB_PATH, app.DDT_DIR = self.old
         self.temp.cleanup()
 
-    def reminder_panel_html(self,page,reminder_type):
-        start=page.index(f'id="reminderPanel_{reminder_type}"')
-        end=page.index('</div></li>',start)
-        return page[start:end]
-
     def test_practice_autosave_debounce_success_conflict_and_no_side_effects(self):
         stamp="2026-07-15T10:00:00"
         with app.db() as conn:
@@ -3721,14 +3716,10 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.send_html = lambda content, *args: rendered.append(content); self.handler.path = "/"
         self.handler.dashboard(admin)
         page = rendered[-1]
-        self.assertIn("1 assistita da avvisare", page)
-        panel = self.reminder_panel_html(page, "assisted_notify_pending")
-        self.assertIn("Nilde", panel)
-        self.assertIn("Francesca Craba", panel)
-        self.assertIn("27/07/2026", panel)
-        self.assertIn("ore 09:00", panel)
-        self.assertIn("Assistita", panel)
-        self.assertIn(f'href="/pratiche/{assisted_id}?return_to=%2F"', panel)
+        self.assertIn("Nilde", page)
+        self.assertIn("F. Craba", page)
+        self.assertIn(f'href="/pratiche/{assisted_id}?return_to=%2F"', page)
+        self.assertIn("border-left:3px solid #22c55e", page)
 
         # marcare come avvisato chiude il promemoria al sync successivo
         with app.db() as conn:
@@ -7844,9 +7835,8 @@ class PetParadiseTests(unittest.TestCase):
         page=rendered[-1]
         self.assertNotIn("hanno dati ancora da completare",page)
         self.assertIn('id="ppmRemindersCard"',page)
-        self.assertIn('id="ppmRemindersToggle"',page)
-        self.assertIn(f'href="/pratiche/{pid}?return_to=%2F"',self.reminder_panel_html(page,"practice_incomplete"))
-        self.assertIn("1 pratica con dati da completare",page)
+        self.assertIn(f'href="/pratiche/{pid}?return_to=%2F"',page)
+        self.assertIn("Nuvola",page)
         with app.db() as conn:
             reminder_id=conn.execute(
                 "SELECT id FROM reminders WHERE entity_key=?",(f"practice:{pid}",)
@@ -7869,7 +7859,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(article_id["name"],product_reminder["title"])
         self.assertEqual(product_reminder["url"],f"/prodotti#article-{article_id['id']}")
         self.handler.dashboard(admin)
-        self.assertIn("1 prodotto da ordinare",rendered[-1])
+        self.assertIn(article_id["name"],rendered[-1])
         self.assertIn(f'href="/prodotti#article-{article_id["id"]}"',rendered[-1])
         # completing the practice reminder via AJAX marks it done, with an audit trail
         responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
@@ -7946,8 +7936,9 @@ class PetParadiseTests(unittest.TestCase):
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
         self.handler.dashboard(admin)
         page=rendered[-1]
-        self.assertIn("1 pratica consegnata ma non pagata",page)
-        self.assertIn(f'href="/pratiche/{pid}?return_to=%2F"',self.reminder_panel_html(page,"delivered_unpaid"))
+        self.assertIn("Leo",page)
+        self.assertIn(f'href="/pratiche/{pid}?return_to=%2F"',page)
+        self.assertIn("border-left:3px solid #facc15",page)
         # once fully paid, the reminder auto-resolves on the next sync
         with app.db() as conn:
             conn.execute("UPDATE practices SET payment_status='Pagato',deposit='150' WHERE id=?",(pid,))
@@ -7978,10 +7969,9 @@ class PetParadiseTests(unittest.TestCase):
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
         self.handler.dashboard(admin)
         page=rendered[-1]
-        self.assertIn("2 cremazioni singole in attesa",page)
-        panel=self.reminder_panel_html(page,"cremation_pending")
-        self.assertIn(f'href="/pratiche/{pending_pid}?return_to=%2F"',panel)
-        self.assertIn(f'href="/pratiche/{fresh_pid}?return_to=%2F"',panel)
+        self.assertIn(f'href="/pratiche/{pending_pid}?return_to=%2F"',page)
+        self.assertIn(f'href="/pratiche/{fresh_pid}?return_to=%2F"',page)
+        self.assertNotIn(f'href="/pratiche/{collettiva_pid}?return_to=%2F"',page)
         with app.db() as conn:
             fresh_reminder=conn.execute(
                 "SELECT title FROM reminders WHERE reminder_type='cremation_pending' AND entity_key=?",(f"practice:{fresh_pid}",)
@@ -8085,18 +8075,15 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIsNotNone(reopened)
         self.assertNotEqual(reopened["id"],reminder_id)
 
-    def test_dismiss_response_updates_group_label_badge_and_subtitle_without_reload(self):
+    def test_dismiss_removes_the_slide_client_side_without_reload(self):
         # richiesta esplicita dell'utente: i promemoria si devono aggiornare
-        # subito dopo l'eliminazione (etichetta del gruppo, badge, sottotitolo
-        # "N attivita' attive"), senza dover chiudere la tendina e ricaricare
-        # la pagina. Il conteggio/etichetta italiani restano calcolati lato
-        # server, il JS si limita a sostituire il testo pronto nella risposta.
+        # subito dopo l'eliminazione, senza dover ricaricare la pagina. La
+        # nuova struttura a slide singola non ha piu' etichette di gruppo/
+        # badge da ricalcolare: il JS rimuove semplicemente la slide.
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             pid1=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,data_complete)
                 VALUES(?,?,?,?,?,?,?,?,?)""",("CR-GRP1","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Fido",0)).lastrowid
-            pid2=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,data_complete)
-                VALUES(?,?,?,?,?,?,?,?,?)""",("CR-GRP2","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Luna",0)).lastrowid
         with app.db() as conn:
             app.sync_reminders(conn)
             id1=conn.execute("SELECT id FROM reminders WHERE entity_key=?",(f"practice:{pid1}",)).fetchone()["id"]
@@ -8107,21 +8094,12 @@ class PetParadiseTests(unittest.TestCase):
         payload,status=responses[-1]
         self.assertEqual(status,200)
         self.assertTrue(payload["ok"])
-        self.assertEqual(payload["group_count"],1)
-        self.assertEqual(payload["group_label"],"1 pratica con dati da completare")
-        self.assertGreaterEqual(payload["remaining_total"],1)
 
         js=app.APP_JS
         dismiss_fn=js[js.index("function reminderDismiss(event,reminderId,btn){"):]
-        dismiss_fn=dismiss_fn[:dismiss_fn.index("\n}")]
-        self.assertIn("data.group_label",dismiss_fn)
-        self.assertIn("data.group_count",dismiss_fn)
-        self.assertIn("data.remaining_total",dismiss_fn)
-        self.assertIn("reminders-todo-text",dismiss_fn)
-        self.assertIn("reminders-card-copy small",dismiss_fn)
-
-        with app.db() as conn:
-            conn.execute("DELETE FROM reminders WHERE entity_key=?",(f"practice:{pid2}",))
+        dismiss_fn=dismiss_fn[:dismiss_fn.index("\nfunction ")]
+        self.assertIn("reminderRemoveSlide(slide)",dismiss_fn)
+        self.assertIn("function reminderRemoveSlide(slide){",js)
 
     def test_reminder_badge_shows_total_open_count_on_dashboard_nav_icon(self):
         with app.db() as conn:
@@ -8139,11 +8117,12 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(int(match.group(1)),open_count)
 
     def test_reminders_badge_disappears_once_read_and_returns_only_for_new_occurrences(self):
-        # richiesta esplicita dell'utente: il badge (bell) del centro
-        # Promemoria deve sparire una volta aperta la tendina e ricomparire
-        # solo quando compaiono NUOVI promemoria, non semplicemente perche'
-        # la condizione sottostante resta ancora valida (quelli restano
-        # comunque visibili nella lista, solo senza badge).
+        # richiesta esplicita dell'utente: il badge (bell) sulla voce
+        # Dashboard del menu deve sparire una volta visto il widget Promemoria
+        # (ora sempre visibile) e ricomparire solo quando compaiono NUOVI
+        # promemoria, non semplicemente perche' la condizione sottostante
+        # resta ancora valida (quelli restano comunque visibili nella lista,
+        # solo senza badge).
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,data_complete)
@@ -8152,7 +8131,6 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.dashboard(admin)
         anchor=re.search(r'href="/" class="nav-notification">.*?</a>',rendered[-1]).group(0)
         self.assertIn('class="notification-badge"',anchor)
-        self.assertIn('class="reminders-count-badge"',rendered[-1])
 
         self.handler.form=lambda:{"ajax":"1"}
         responses=[]
@@ -8163,9 +8141,8 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.dashboard(admin)
         anchor_after=re.search(r'href="/" class="nav-notification">.*?</a>',rendered[-1]).group(0)
         self.assertNotIn('class="notification-badge"',anchor_after)
-        self.assertNotIn('class="reminders-count-badge"',rendered[-1])
         # l'occorrenza resta comunque visibile nell'elenco, solo senza badge
-        self.assertIn("attività attive",rendered[-1])
+        self.assertIn("Fido",rendered[-1])
 
         # una condizione genuinamente NUOVA fa ricomparire il badge
         with app.db() as conn:
@@ -8178,13 +8155,12 @@ class PetParadiseTests(unittest.TestCase):
         js=app.APP_JS
         self.assertIn("function markRemindersRead(){",js)
         self.assertIn("/promemoria/segna-lette",js)
-        self.assertIn("if(opening)markRemindersRead();",js)
+        self.assertIn("markRemindersRead();",app.APP_JS[app.APP_JS.index("function setupRemindersCarousel()"):])
 
     def test_reminders_card_has_add_button_and_colored_bar_per_type(self):
         # richiesta esplicita dell'utente (mockup di riferimento fornito):
         # pulsante "Aggiungi promemoria" nella card, e una barra colorata
-        # laterale diversa per ogni tipo di promemoria, senza toccare nulla
-        # dell'esistente (conteggi, filtri, apertura/chiusura, menu).
+        # laterale diversa per ogni tipo di promemoria.
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,data_complete)
@@ -8201,9 +8177,6 @@ class PetParadiseTests(unittest.TestCase):
         # colore diverso per tipo, sulla riga della lista e sul report settimanale
         self.assertIn("border-left:3px solid #9b5cf6",page)
         self.assertIn("border-left:3px solid #3b82f6",page)
-        # nulla dell'esistente e' stato toccato: stessi meccanismi di apertura/conteggio
-        self.assertIn('data-reminder-toggle="reminderPanel_practice_incomplete"',page)
-        self.assertIn("reminderToggle(this)",page)
 
         js=app.APP_JS
         self.assertIn("function openAddReminderModal(){",js)
@@ -8229,7 +8202,9 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.dashboard(admin)
         page=rendered[-1]
         self.assertIn("border-left:3px solid #ff4d6d",page)
-        self.assertIn("1 promemoria manuale",page)
+        self.assertIn("Chiamare proprietario Macco",page)
+        self.assertIn("MANUALE</span>",page)
+        self.assertIn("Promemoria manuale",page)
         # sync_reminders() non deve mai toccare le occorrenze manuali: nessuna
         # condizione da ricontrollare, restano aperte finche' non vengono
         # eliminate a mano.
@@ -8280,21 +8255,30 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn("Saldo netto",page)
         self.assertIn('data_iniziale='+(today_rome-timedelta(days=6)).isoformat(),page)
 
-    def test_reminders_card_collapsed_by_default_matching_the_compact_mockup(self):
+    def test_reminders_widget_is_always_visible_no_expand_collapse(self):
+        # richiesta esplicita dell'utente (mockup di riferimento fornito): la
+        # sezione Promemoria non e' piu' una card espandibile/collassabile,
+        # niente piu' titolo "Promemoria"/contatore attivita'/pulsante
+        # espandi. Con nessun promemoria attivo mostra un messaggio vuoto al
+        # posto della vecchia riga statica.
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
         self.handler.dashboard(admin)
         page=rendered[-1]
         self.assertIn('<section class="reminders-card" id="ppmRemindersCard">',page)
-        self.assertIn('aria-expanded="false"',page)
-        self.assertIn("Nessuna attività attiva · Report della settimana",page)
-        # no popup/overlay of any kind - a plain in-place expanding card
+        self.assertNotIn('id="ppmRemindersToggle"',page)
+        self.assertNotIn('aria-expanded="false"',page)
+        self.assertNotIn('<strong>Promemoria',page)
+        self.assertIn("Nessun promemoria attivo",page)
         card_start=page.index('<section class="reminders-card"')
         card_end=page.index('</section>',card_start)
         self.assertNotIn("payment-popover",page[card_start:card_end])
 
-    def test_reminders_card_group_with_multiple_items_expands_every_animal_row_inline(self):
+    def test_reminders_multiple_items_of_same_type_each_get_their_own_slide(self):
+        # niente piu' raggruppamento/conteggio per tipo (richiesta esplicita
+        # dell'utente: "NON creare categorie. NON dividerli. Rimane
+        # un'unica lista cronologica"): ogni pratica ha la sua slide.
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             pids=[]
@@ -8305,42 +8289,27 @@ class PetParadiseTests(unittest.TestCase):
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
         self.handler.dashboard(admin)
         page=rendered[-1]
-        self.assertIn("2 pratiche con dati da completare",page)
-        # the accordion panel lists every individual animal, not a single link to the archive
-        panel=self.reminder_panel_html(page,"practice_incomplete")
+        # ogni pratica ha la sua slide (front cliccabile); la stessa url puo'
+        # comparire piu' volte nella singola slide (anche nel pulsante swipe
+        # "Modifica", che per i tipi automatici punta alla stessa pratica).
         for pid in pids:
-            self.assertIn(f'href="/pratiche/{pid}?return_to=%2F"',panel)
+            self.assertIn(f'class="reminders-slide-front" href="/pratiche/{pid}?return_to=%2F"',page)
 
-    def test_reminders_card_js_and_css_use_a_smooth_expanding_card_not_a_popup(self):
-        self.assertIn("function setupRemindersCard()", app.APP_JS)
-        self.assertIn("ppmRemindersCard", app.APP_JS)
-        self.assertIn("ppmRemindersToggle", app.APP_JS)
+    def test_reminders_carousel_uses_scroll_snap_not_a_popup(self):
+        # scroll verticale fluido "una slide alla volta" (richiesta esplicita
+        # dell'utente), stessa tecnica scroll-snap+IntersectionObserver gia'
+        # usata e verificata per i caroselli di Calendario/Cremazioni.
+        self.assertIn("function setupRemindersCarousel()", app.APP_JS)
+        self.assertIn("ppmRemindersCarousel", app.APP_JS)
         self.assertNotIn("ppmRemindersOverlay", app.APP_JS)
         self.assertNotIn("ppmOpenReminders", app.APP_JS)
-        self.assertIn(".reminders-card-body{max-height:0;overflow:hidden;transition:max-height .35s ease}", app.CSS)
-        self.assertIn("body.style.maxHeight=open?body.scrollHeight+'px':'0px';", app.APP_JS)
+        self.assertIn("scroll-snap-type:y mandatory", app.CSS)
+        self.assertIn("IntersectionObserver", app.APP_JS[app.APP_JS.index("function setupRemindersCarousel()"):app.APP_JS.index("function setupRemindersCarousel()")+1500])
 
-    def test_reminders_animal_row_shows_name_and_weight_on_separate_lines(self):
-        # bug reale segnalato dall'utente: "Nilde · 15 kg" su una riga sola si
-        # spezzava in modo illeggibile su mobile e il tasto "Inserisci in
-        # programma" finiva sovrapposto al testo. Nome e peso vanno ora su
-        # due righe distinte, senza il punto separatore.
-        with app.db() as conn:
-            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
-            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,created_at,updated_at,created_by,
-                animal_name,estimated_weight,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-                ("CR-WEIGHTROW","Privato","Livorno","Ritirato","Cremazione singola",stamp,stamp,admin["id"],"Nilde","15",1)).lastrowid
-        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
-        self.handler.dashboard(admin)
-        page=rendered[-1]
-        panel=self.reminder_panel_html(page,"cremation_pending")
-        self.assertIn('<span class="reminders-expand-title">Nilde</span>',panel)
-        self.assertIn('<span class="reminders-expand-weight">15 kg</span>',panel)
-        self.assertNotIn("Nilde · 15 kg",panel)
-        # su mobile il blocco azioni va a capo sotto il testo, non sovrapposto
-        self.assertIn("@media(max-width:620px){.reminders-expand-row{flex-wrap:wrap}.reminders-expand-actions{flex:1 1 100%",app.CSS)
-
-    def test_reminders_are_accordion_buttons_not_navigation_links(self):
+    def test_reminders_slide_is_a_real_link_that_opens_directly(self):
+        # richiesta esplicita dell'utente: "cliccando sulla card deve aprire
+        # direttamente quella schermata" — un solo tap, non piu' un pulsante
+        # che espande/collassa un pannello.
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name)
@@ -8348,46 +8317,9 @@ class PetParadiseTests(unittest.TestCase):
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
         self.handler.dashboard(admin)
         page=rendered[-1]
-        # the reminder row itself is a <button> with a JS toggle, never an <a href> that navigates away
-        row_start=page.index('data-reminder-toggle="reminderPanel_practice_incomplete"')
-        row_tag_start=page.rindex('<button',0,row_start)
-        self.assertEqual(page[row_tag_start:row_tag_start+7],'<button')
-        self.assertIn('onclick="reminderToggle(this)"',page[row_tag_start:row_start+200])
-        self.assertNotIn(f'<a href="/pratiche/{pid}"',page)
-        # the panel starts collapsed and reuses the cremation max-height helpers
-        self.assertIn('id="reminderPanel_practice_incomplete"',page)
-        self.assertIn("function reminderToggle(btn)", app.APP_JS)
-        self.assertIn("function reminderCloseAll()", app.APP_JS)
-        self.assertIn("cremationExpandBody(panel,panel)", app.APP_JS)
-        self.assertIn("cremationCollapseBody(panel)", app.APP_JS)
-
-    def test_reminder_toggle_resyncs_the_outer_reminders_card_height(self):
-        # bug reale segnalato dall'utente: aprendo un promemoria dopo che la card
-        # "Promemoria" esterna aveva già il suo max-height fissato, il contenuto
-        # veniva tagliato e non era possibile scrollare per vederlo tutto.
-        self.assertIn("function reminderSyncOuterCard()", app.APP_JS)
-        self.assertIn("body.style.maxHeight='none'", app.APP_JS)
-        toggle_body=app.APP_JS[app.APP_JS.index("function reminderToggle(btn)"):]
-        self.assertIn("reminderSyncOuterCard()", toggle_body[:toggle_body.index("function ",10)])
-        closeall_body=app.APP_JS[app.APP_JS.index("function reminderCloseAll()"):]
-        self.assertIn("reminderSyncOuterCard()", closeall_body[:closeall_body.index("function ",10)])
-
-    def test_reminders_expand_panel_reuses_the_same_row_actions_as_the_practice_pages(self):
-        with app.db() as conn:
-            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
-            pickup=(date.today()-timedelta(days=6)).isoformat()
-            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,created_at,updated_at,created_by,
-                animal_name,owner_first_name,owner_last_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                ("CR-ROWACT","Privato","Livorno","Ritirato","Cremazione singola",stamp,stamp,admin["id"],"Birba","Mario","Conti",pickup,1)).lastrowid
-        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
-        self.handler.dashboard(admin)
-        page=rendered[-1]
-        panel=self.reminder_panel_html(page,"cremation_pending")
-        self.assertIn('class="reminders-expand-row"',panel)
-        self.assertIn(f"practiceRowSelect(this,event,'/pratiche/{pid}?return_to=%2F')",panel)
-        self.assertIn('onclick="event.stopPropagation()"',panel)
-        self.assertIn(f'href="/pratiche/{pid}?return_to=%2F"',panel)
-        self.assertIn("Inserisci in programma",panel)
+        self.assertIn(f'<a class="reminders-slide-front" href="/pratiche/{pid}?return_to=%2F"',page)
+        self.assertNotIn('data-reminder-toggle',page)
+        self.assertNotIn('onclick="reminderToggle(this)"',page)
 
     def test_reminders_row_can_be_dismissed_without_touching_the_underlying_practice(self):
         # richiesta esplicita dell'utente: le voci del Centro Promemoria devono
@@ -8395,7 +8327,7 @@ class PetParadiseTests(unittest.TestCase):
         # sottostante), per non accumulare le notifiche li'. Riusa lo stesso
         # meccanismo gia' esistente /promemoria/<id>/completa (marca solo la
         # riga della tabella reminders), qui in modalita' ajax con rimozione
-        # morbida della riga invece di un redirect di pagina.
+        # morbida della slide invece di un redirect di pagina.
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             pickup=(date.today()-timedelta(days=6)).isoformat()
@@ -8405,23 +8337,15 @@ class PetParadiseTests(unittest.TestCase):
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
         self.handler.dashboard(admin)
         page=rendered[-1]
-        panel=self.reminder_panel_html(page,"cremation_pending")
-        self.assertIn('class="reminders-dismiss-btn"',panel)
-        self.assertIn("reminderDismiss(event,",panel)
-        # il pulsante dismiss e' dentro l'area che gia' ferma la propagazione
-        # (mai il click sulla riga che apre la pratica)
-        actions_start=panel.index('class="reminders-expand-actions"')
-        self.assertIn('reminders-dismiss-btn',panel[actions_start:])
+        self.assertIn('class="reminders-swipe-complete-bg"',page)
+        self.assertIn("reminderDismiss(event,",page)
 
         js=app.APP_JS
         self.assertIn("function reminderDismiss(event,reminderId,btn){", js)
         self.assertIn("/promemoria/'+reminderId+'/completa", js)
-        self.assertIn("row.remove();", js)
 
-        import re as _re
-        m=_re.search(r"reminderDismiss\(event,(\d+),this\)",panel)
-        self.assertIsNotNone(m)
-        reminder_id=int(m.group(1))
+        with app.db() as conn:
+            reminder_id=conn.execute("SELECT id FROM reminders WHERE entity_key=?",(f"practice:{pid}",)).fetchone()["id"]
         responses=[]
         self.handler.form=lambda:{"ajax":"1"}
         self.handler.send_json=lambda payload,status=200:responses.append((payload,status))
@@ -8436,9 +8360,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(practice["status"],"Ritirato")
         self.assertIsNone(practice["deleted_at"])
 
-    def test_reminders_accordion_keeps_only_one_panel_open_and_resolved_reminders_vanish(self):
-        self.assertIn("reminders-row-active",app.CSS)
-        # empty-state copy is produced server-side by reminder_panel_html when a group has no rows
+    def test_reminders_resolved_reminder_vanishes_entirely(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,
@@ -8446,12 +8368,15 @@ class PetParadiseTests(unittest.TestCase):
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
         self.handler.dashboard(admin)
         page=rendered[-1]
+        self.assertIn("Fido",page)
         with app.db() as conn:
             conn.execute("UPDATE practices SET data_complete=1 WHERE id=?",(pid,))
         self.handler.dashboard(admin)
         page2=rendered[-1]
-        # once resolved, the reminder row disappears entirely rather than leaving an empty panel visible in the list
-        self.assertNotIn("pratica con dati da completare",page2)
+        # once resolved, the slide disappears entirely instead of leaving an empty panel visible in the list
+        # (data-reminder-id="...) — not a bare substring match, which would also hit the
+        # '[data-reminder-id]' CSS selector embedded in the static APP_JS on every page)
+        self.assertNotIn('data-reminder-id="',page2)
 
     def test_must_change_password_gate_and_change_password_flow(self):
         with app.db() as conn:
