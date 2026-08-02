@@ -8043,7 +8043,8 @@ class PetParadiseTests(unittest.TestCase):
         responses=[]
         self.handler.send_json=lambda payload,status=200:responses.append((payload,status))
         self.handler.complete_reminder(admin,reminder_id)
-        self.assertEqual(responses[-1],({"ok":True},200))
+        self.assertEqual(responses[-1][1],200)
+        self.assertTrue(responses[-1][0]["ok"])
         with app.db() as conn:
             # la condizione sottostante (data_complete=0) non e' cambiata:
             # un secondo sync (equivalente a riaprire la Dashboard) non deve
@@ -8054,6 +8055,73 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(len(open_rows),0)
         self.assertEqual(len(all_rows),1)
         self.assertEqual(all_rows[0]["completed_by"],admin["id"])
+
+    def test_dismissed_reminder_reopens_after_48_hours_if_still_unresolved(self):
+        # richiesta esplicita dell'utente: un promemoria eliminato deve
+        # restare sospeso, ma se dopo 48 ore la condizione (es. dati pratica
+        # ancora da completare) non e' stata risolta deve ritornare tra i
+        # promemoria come una nuova occorrenza.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,data_complete)
+                VALUES(?,?,?,?,?,?,?,?,?)""",("CR-SNOOZE48","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Fido",0)).lastrowid
+        with app.db() as conn:
+            app.sync_reminders(conn)
+            reminder_id=conn.execute("SELECT id FROM reminders WHERE entity_key=? AND completed_at IS NULL",(f"practice:{pid}",)).fetchone()["id"]
+        self.handler.form=lambda:{"ajax":"1"}
+        self.handler.send_json=lambda payload,status=200:None
+        self.handler.complete_reminder(admin,reminder_id)
+        with app.db() as conn:
+            almost_48h=(datetime.now()-timedelta(hours=47)).isoformat(timespec="seconds")
+            conn.execute("UPDATE reminders SET completed_at=? WHERE id=?",(almost_48h,reminder_id))
+            app.sync_reminders(conn)
+            still_suppressed=conn.execute("SELECT id FROM reminders WHERE entity_key=? AND completed_at IS NULL",(f"practice:{pid}",)).fetchone()
+        self.assertIsNone(still_suppressed)
+        with app.db() as conn:
+            past_48h=(datetime.now()-timedelta(hours=49)).isoformat(timespec="seconds")
+            conn.execute("UPDATE reminders SET completed_at=? WHERE id=?",(past_48h,reminder_id))
+            app.sync_reminders(conn)
+            reopened=conn.execute("SELECT id FROM reminders WHERE entity_key=? AND completed_at IS NULL",(f"practice:{pid}",)).fetchone()
+        self.assertIsNotNone(reopened)
+        self.assertNotEqual(reopened["id"],reminder_id)
+
+    def test_dismiss_response_updates_group_label_badge_and_subtitle_without_reload(self):
+        # richiesta esplicita dell'utente: i promemoria si devono aggiornare
+        # subito dopo l'eliminazione (etichetta del gruppo, badge, sottotitolo
+        # "N attivita' attive"), senza dover chiudere la tendina e ricaricare
+        # la pagina. Il conteggio/etichetta italiani restano calcolati lato
+        # server, il JS si limita a sostituire il testo pronto nella risposta.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid1=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,data_complete)
+                VALUES(?,?,?,?,?,?,?,?,?)""",("CR-GRP1","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Fido",0)).lastrowid
+            pid2=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,data_complete)
+                VALUES(?,?,?,?,?,?,?,?,?)""",("CR-GRP2","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Luna",0)).lastrowid
+        with app.db() as conn:
+            app.sync_reminders(conn)
+            id1=conn.execute("SELECT id FROM reminders WHERE entity_key=?",(f"practice:{pid1}",)).fetchone()["id"]
+        self.handler.form=lambda:{"ajax":"1"}
+        responses=[]
+        self.handler.send_json=lambda payload,status=200:responses.append((payload,status))
+        self.handler.complete_reminder(admin,id1)
+        payload,status=responses[-1]
+        self.assertEqual(status,200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["group_count"],1)
+        self.assertEqual(payload["group_label"],"1 pratica con dati da completare")
+        self.assertGreaterEqual(payload["remaining_total"],1)
+
+        js=app.APP_JS
+        dismiss_fn=js[js.index("function reminderDismiss(event,reminderId,btn){"):]
+        dismiss_fn=dismiss_fn[:dismiss_fn.index("\n}")]
+        self.assertIn("data.group_label",dismiss_fn)
+        self.assertIn("data.group_count",dismiss_fn)
+        self.assertIn("data.remaining_total",dismiss_fn)
+        self.assertIn("reminders-todo-text",dismiss_fn)
+        self.assertIn("reminders-card-copy small",dismiss_fn)
+
+        with app.db() as conn:
+            conn.execute("DELETE FROM reminders WHERE entity_key=?",(f"practice:{pid2}",))
 
     def test_reminder_badge_shows_total_open_count_on_dashboard_nav_icon(self):
         with app.db() as conn:
@@ -8234,7 +8302,8 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.form=lambda:{"ajax":"1"}
         self.handler.send_json=lambda payload,status=200:responses.append((payload,status))
         self.handler.complete_reminder(admin,reminder_id)
-        self.assertEqual(responses[-1],({"ok":True},200))
+        self.assertEqual(responses[-1][1],200)
+        self.assertTrue(responses[-1][0]["ok"])
         with app.db() as conn:
             reminder=conn.execute("SELECT completed_at FROM reminders WHERE id=?",(reminder_id,)).fetchone()
             practice=conn.execute("SELECT status,deleted_at FROM practices WHERE id=?",(pid,)).fetchone()

@@ -5393,10 +5393,31 @@ function reminderDismiss(event,reminderId,btn){
       if(panel&&!panel.querySelector('.reminders-expand-row')){
         panel.insertAdjacentHTML('beforeend','<p class="reminders-expand-empty">Nessun elemento da gestire.</p>');
       }
+      // Tutto il resto della card (etichetta del gruppo, badge, sottotitolo)
+      // si aggiorna subito con i valori gia' pronti dal server, senza dover
+      // chiudere la tendina e ricaricare la pagina (richiesta esplicita
+      // dell'utente).
+      const li=panel&&panel.closest('li');
+      const textEl=li&&li.querySelector('.reminders-todo-text');
+      if(data.group_count>0){
+        if(textEl&&data.group_label)textEl.textContent=data.group_label;
+      }else if(li){
+        li.remove();
+      }
+      const list=document.querySelector('.reminders-todo-list');
+      if(list&&!list.querySelector('.reminders-todo-row')){
+        list.innerHTML='<li class="reminders-todo-empty">Nessun promemoria attivo al momento.</li>';
+      }
       const badge=document.querySelector('.reminders-count-badge');
-      if(badge){
-        const n=Math.max(0,parseInt(badge.textContent,10)-1||0);
-        if(n>0)badge.textContent=n;else badge.remove();
+      const subtitle=document.querySelector('.reminders-card-copy small');
+      if(typeof data.remaining_total==='number'){
+        if(data.remaining_total>0){
+          if(badge)badge.textContent=data.remaining_total<100?data.remaining_total:'99+';
+          if(subtitle)subtitle.textContent=data.remaining_total+' attività attive · Report della settimana';
+        }else{
+          if(badge)badge.remove();
+          if(subtitle)subtitle.textContent='Nessuna attività attiva · Report della settimana';
+        }
       }
     })
     .catch(function(){alert('Operazione non riuscita');});
@@ -6791,6 +6812,9 @@ def latest_movement_and_invoice(c, practice_id, type_prefix):
     return movement, invoice
 
 
+DISMISS_SNOOZE_HOURS=48
+
+
 def ensure_reminder(c,*,reminder_type,entity_key,title,url,stamp):
     """Open a new reminder occurrence for (reminder_type, entity_key) unless
     one is already open. Keying recurrence off entity_key (stable per
@@ -6805,9 +6829,12 @@ def ensure_reminder(c,*,reminder_type,entity_key,title,url,stamp):
     underlying condition genuinely resolved) is fine to recreate later if the
     same entity qualifies again — that's a legitimately new occurrence. A row
     completed_by a user (the dismiss button in the Dashboard reminders card)
-    stays suppressed even if the sync condition is still true, or the very
-    next sync would immediately recreate it — the user explicitly asked for
-    a dismissed reminder to never come back on its own."""
+    stays suppressed for DISMISS_SNOOZE_HOURS even if the sync condition is
+    still true, or the very next sync would immediately recreate it — but
+    after that window, if the condition still hasn't been fixed, it reopens
+    as a fresh occurrence (richiesta esplicita dell'utente: es. una pratica
+    con dati da completare torna nei promemoria se dopo 48 ore i dati non
+    sono ancora stati inseriti)."""
     open_row=c.execute(
         "SELECT id,title,url FROM reminders WHERE reminder_type=? AND entity_key=? AND completed_at IS NULL",
         (reminder_type,entity_key),
@@ -6817,11 +6844,17 @@ def ensure_reminder(c,*,reminder_type,entity_key,title,url,stamp):
             c.execute("UPDATE reminders SET title=?,url=? WHERE id=?",(title,url,open_row["id"]))
         return open_row["id"]
     dismissed_row=c.execute(
-        "SELECT id FROM reminders WHERE reminder_type=? AND entity_key=? AND completed_by IS NOT NULL ORDER BY id DESC LIMIT 1",
+        "SELECT id,completed_at FROM reminders WHERE reminder_type=? AND entity_key=? AND completed_by IS NOT NULL ORDER BY id DESC LIMIT 1",
         (reminder_type,entity_key),
     ).fetchone()
     if dismissed_row:
-        return dismissed_row["id"]
+        try:
+            dismissed_at=datetime.fromisoformat(dismissed_row["completed_at"])
+            snoozed=(datetime.fromisoformat(stamp)-dismissed_at)<timedelta(hours=DISMISS_SNOOZE_HOURS)
+        except (TypeError,ValueError):
+            snoozed=True
+        if snoozed:
+            return dismissed_row["id"]
     # stamp alone (second precision) isn't enough to keep dedupe_key unique
     # when the same entity closes and reopens within the same second (e.g.
     # two syncs back-to-back in a test, or a busy minute in production) — a
@@ -12497,7 +12530,17 @@ class App(BaseHTTPRequestHandler):
                 return self.send_json({"ok":False,"error":"Promemoria non trovato"},404) if ajax else self.send_error(404)
             if not row["completed_at"]:
                 c.execute("UPDATE reminders SET completed_at=?,completed_by=? WHERE id=?",(now(),user["id"],reminder_id))
-        if ajax:return self.send_json({"ok":True})
+            if ajax:
+                # Il pannello aggiorna subito testo/contatori senza dover
+                # chiudere la tendina e ricaricare la pagina (richiesta
+                # esplicita dell'utente): le regole di singolare/plurale in
+                # italiano restano solo qui lato server, il JS si limita a
+                # sostituire il testo gia' pronto.
+                remaining_total=c.execute("SELECT count(*) n FROM reminders WHERE completed_at IS NULL").fetchone()["n"]
+                group_count=c.execute("SELECT count(*) n FROM reminders WHERE reminder_type=? AND completed_at IS NULL",(row["reminder_type"],)).fetchone()["n"]
+                _icon,_color_cls,singular,plural=REMINDER_GROUP_LABELS.get(row["reminder_type"],REMINDER_GROUP_FALLBACK)
+                group_label=(singular if group_count==1 else plural).format(n=group_count) if group_count else ""
+                return self.send_json({"ok":True,"remaining_total":remaining_total,"group_count":group_count,"group_label":group_label})
         return self.redirect(safe_return_path(self.form().get("return_to") or self.headers.get("Referer"),"/"))
 
     def whatsapp_outbound_preview_text(self,message_type,owner_first_name,animal_name):
