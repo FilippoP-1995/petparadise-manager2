@@ -2539,6 +2539,26 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('function cremationSelectDay(', page)
         self.assertIn('function cremationInitDayPages(', page)
 
+    def test_crossing_a_week_boundary_via_swipe_preserves_vertical_scroll_position(self):
+        # bug segnalato dall'utente: swipando oltre l'ultimo giorno della
+        # settimana la pagina si ricaricava sempre "da sopra" come se si
+        # aggiornasse, mentre lo swipe tra i giorni della stessa settimana
+        # non muove mai lo scroll verticale. La posizione va salvata prima
+        # del cambio pagina e ripristinata al caricamento della settimana
+        # adiacente.
+        js = app.APP_JS
+        self.assertIn("function ppmSaveScrollForNextLoad(){", js)
+        self.assertIn("sessionStorage.setItem('ppmScrollRestore',String(window.scrollY));", js)
+        self.assertIn("function ppmRestoreScrollIfPending(){", js)
+        self.assertIn("window.scrollTo(0,y);", js)
+        self.assertIn("document.addEventListener('DOMContentLoaded',ppmRestoreScrollIfPending);", js)
+        cremation_block = js[js.index("function cremationInitDayPages(){"):]
+        cremation_block = cremation_block[:cremation_block.index("\nfunction ", 10)]
+        self.assertIn("ppmSaveScrollForNextLoad();\n          location.href=entry.target.dataset.href;", cremation_block)
+        calendar_block = js[js.index("function calendarInitDayPages(){"):]
+        calendar_block = calendar_block[:calendar_block.index("\nfunction ", 10)]
+        self.assertIn("ppmSaveScrollForNextLoad();\n          location.href=entry.target.dataset.href;", calendar_block)
+
     def test_week_view_marks_today_permanently_even_when_viewing_another_week(self):
         # richiesta utente: il giorno corrente resta sempre rosso (classe
         # "today"), indipendentemente da quale giorno si sta visualizzando;

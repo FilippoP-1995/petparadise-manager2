@@ -5185,6 +5185,24 @@ function cremationDaybarNav(dir){
   const bar=document.getElementById('cremationDaybar');
   if(bar)bar.scrollBy({left:dir*90,behavior:'smooth'});
 }
+function ppmSaveScrollForNextLoad(){
+  // bug segnalato dall'utente: passando alla settimana adiacente con lo
+  // swipe la pagina si ricaricava sempre dall'alto, mentre lo swipe tra
+  // giorni della stessa settimana non muove mai lo scroll verticale — qui
+  // salviamo la posizione prima del cambio pagina per poterla ripristinare
+  // appena la settimana adiacente e' caricata.
+  try{sessionStorage.setItem('ppmScrollRestore',String(window.scrollY));}catch(err){}
+}
+function ppmRestoreScrollIfPending(){
+  let saved;
+  try{saved=sessionStorage.getItem('ppmScrollRestore');}catch(err){saved=null;}
+  if(saved===null)return;
+  try{sessionStorage.removeItem('ppmScrollRestore');}catch(err){}
+  const y=Number(saved);
+  if(!Number.isFinite(y))return;
+  requestAnimationFrame(function(){window.scrollTo(0,y);});
+}
+document.addEventListener('DOMContentLoaded',ppmRestoreScrollIfPending);
 var cremationDayObserver=null;
 function cremationInitDayPages(){
   const pages=document.getElementById('cremationDayPages');
@@ -5203,6 +5221,7 @@ function cremationInitDayPages(){
         if(entry.target.dataset.href){
           if(navigatedToAdjacentWeek)return;
           navigatedToAdjacentWeek=true;
+          ppmSaveScrollForNextLoad();
           location.href=entry.target.dataset.href;
           return;
         }
@@ -5266,6 +5285,7 @@ function calendarInitDayPages(){
         if(entry.target.dataset.href){
           if(navigatedToAdjacentWeek)return;
           navigatedToAdjacentWeek=true;
+          ppmSaveScrollForNextLoad();
           location.href=entry.target.dataset.href;
           return;
         }
