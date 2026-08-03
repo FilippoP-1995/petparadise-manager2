@@ -3080,18 +3080,15 @@ function updateRemainingBalance(){
   }
   const invoiceTotal=document.querySelector('input[name="invoice_total"]');
   if(invoiceTotal){
-    // TOTALE FATTURA (sezione Pagamento) si autocompila sommando Acconto W
-    // e Saldo/Rimanenza W (l'incasso complessivo sul circuito W, utile
-    // quando si fattura tutto insieme al saldo finale) — resta sempre
-    // automatico finche' non esiste ancora una fattura vera emessa (numero
-    // fattura o FARE FATTURA spuntato), cosi' nessun tocco accidentale puo'
-    // piu' congelarlo su un valore vecchio mentre il totale cresce.
-    const alreadyIssued=ppmInvoiceAlreadyIssued();
-    invoiceTotal.readOnly=!alreadyIssued;
-    if(!alreadyIssued){
-      const accontoW=ppmNumber(document.querySelector('input[name="acconto_w_totale"]')?.value||0);
-      const saldoW=ppmNumber(document.querySelector('input[name="saldo_w_totale"]')?.value||0);
-      invoiceTotal.value=ppmFormatInvoiceTotal(accontoW+saldoW);
+    // TOTALE FATTURA (sezione Pagamento) segue sempre Totale W in tempo
+    // reale finche' l'utente non lo modifica di persona (invoice_total_manual,
+    // stesso meccanismo di total_service_manual) o non esiste gia' una
+    // fattura vera emessa (numero fattura o FARE FATTURA spuntato) — resta
+    // pero' SEMPRE modificabile a mano in entrambi i casi, l'auto-follow si
+    // ferma soltanto, non blocca piu' il campo (niente readOnly).
+    const invoiceTotalManual=document.querySelector('input[name="invoice_total_manual"]');
+    if(invoiceTotalManual?.value!=='Si' && !ppmInvoiceAlreadyIssued()){
+      invoiceTotal.value=serviceTotal?ppmFormatInvoiceTotal(serviceTotal):'';
     }
   }
   const depositFinalField = document.querySelector('input[name="deposit_final"]');
@@ -3321,20 +3318,16 @@ function setupBudgetExtras(){
   const invoiceDateField=document.createElement('div');invoiceDateField.className='field';invoiceDateField.innerHTML='<label>Data fattura</label>';invoiceDateField.append(invoiceDate);invoiceRow.append(invoiceDateField);
   const invoiceTotal=document.querySelector('input[name="invoice_total"]');invoiceTotal.type='text';invoiceTotal.inputMode='decimal';invoiceTotal.placeholder='Totale fattura';
   const invoiceTotalField=document.createElement('div');invoiceTotalField.className='field';invoiceTotalField.innerHTML='<label>Totale fattura €</label>';invoiceTotalField.append(invoiceTotal);invoiceRow.append(invoiceTotalField);
-  // "Totale fattura" resta sempre automatico (Acconto W + Saldo/Rimanenza
-  // W, vedi ppmInvoiceAlreadyIssued/updateRemainingBalance) finche' non
-  // esiste ancora una fattura vera emessa: il campo e' di sola lettura in
-  // quel caso, cosi' nessun tocco accidentale (autofill, tap involontario)
-  // puo' piu' congelarlo su un valore vecchio mentre il totale cresce. Una
-  // volta emessa una fattura vera (numero fattura o FARE FATTURA spuntato)
-  // l'importo registrato resta modificabile a mano, com'era prima.
-  invoiceTotal.readOnly=!ppmInvoiceAlreadyIssued();
-  if(ppmInvoiceAlreadyIssued()) invoiceTotal.value=ppmFormatInvoiceTotal(invoiceTotal.value);
-  else{
-    const accontoWSeed=ppmNumber(document.querySelector('input[name="acconto_w_totale"]')?.value||0);
-    const saldoWSeed=ppmNumber(document.querySelector('input[name="saldo_w_totale"]')?.value||0);
-    invoiceTotal.value=(accontoWSeed||saldoWSeed)?ppmFormatInvoiceTotal(accontoWSeed+saldoWSeed):'';
-  }
+  const invoiceTotalManual=document.querySelector('input[name="invoice_total_manual"]');
+  // "Totale fattura" segue sempre Totale W finche' l'utente non lo modifica
+  // di persona (invoice_total_manual, stesso meccanismo di
+  // total_service_manual) o non esiste gia' una fattura vera emessa (numero
+  // fattura o FARE FATTURA spuntato): resta pero' SEMPRE modificabile a
+  // mano in entrambi i casi, un tocco diretto smette solo di farlo seguire
+  // il ricalcolo automatico (vedi updateRemainingBalance).
+  if(invoiceTotalManual?.value==='Si' || ppmInvoiceAlreadyIssued()) invoiceTotal.value=ppmFormatInvoiceTotal(invoiceTotal.value);
+  else invoiceTotal.value=(totalService&&ppmNumber(totalService.value))?ppmFormatInvoiceTotal(totalService.value):'';
+  invoiceTotal.addEventListener('input',()=>{ if(invoiceTotalManual) invoiceTotalManual.value='Si'; });
   invoiceTotal.addEventListener('blur',()=>{if(invoiceTotal.value.trim())invoiceTotal.value=ppmFormatInvoiceTotal(invoiceTotal.value);});
   const makeInvoiceField=insertCheck(document.querySelector('input[name="make_invoice"]'),'FARE FATTURA',fields.lastElementChild);
   if(makeInvoiceField)invoiceRow.append(makeInvoiceField);
@@ -15246,14 +15239,14 @@ class App(BaseHTTPRequestHandler):
         calculated=calculated_service_total(data)+items_total
         if data["total_service_manual"]!="Si":
             data["total_service"]=(f"{calculated:.2f}" if calculated else "")
-        # "Totale fattura" segue sempre il totale reale finche' non esiste
-        # ancora una fattura vera emessa (numero fattura o FARE FATTURA
-        # spuntato): prima di allora nessun blocco "manuale" e' possibile,
-        # cosi' un tocco accidentale sul campo (autofill, tap involontario)
-        # non lo congela piu' su un valore vecchio mentre il totale cresce.
-        # Una volta emessa una fattura reale, il suo importo resta quello
+        # "Totale fattura" segue sempre il totale reale finche' l'utente non
+        # lo modifica di persona (invoice_total_manual, stesso meccanismo di
+        # total_service_manual: resta comunque sempre modificabile a mano,
+        # solo l'auto-follow si ferma) o finche' non esiste ancora una
+        # fattura vera emessa (numero fattura o FARE FATTURA spuntato). Una
+        # volta emessa una fattura reale, il suo importo resta quello
         # registrato finche' non viene esplicitamente rifatta.
-        if not (data["make_invoice"]=="Si" or data["invoice_number"]):
+        if data["invoice_total_manual"]!="Si" and not (data["make_invoice"]=="Si" or data["invoice_number"]):
             data["invoice_total"]=data["total_service"]
         # Rimanenza per circuito = Totale del circuito - Già pagato sul
         # circuito, SEMPRE — anche a payment_status "Pagato". Un totale puo'

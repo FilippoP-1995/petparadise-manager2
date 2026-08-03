@@ -76,12 +76,12 @@ class PetParadiseTests(unittest.TestCase):
         with app.db() as conn:self.assertEqual(conn.execute("SELECT animal_name FROM practices WHERE id=?",(pid,)).fetchone()["animal_name"],"Fido Junior")
         self.assertNotEqual(new_version,stamp)
 
-    def test_invoice_total_recomputes_on_preventivo_changes_until_a_real_invoice_exists(self):
-        # Un tocco accidentale sul campo "Totale fattura" (autofill, tap
-        # involontario) non deve piu' congelarlo per sempre su un valore
-        # vecchio: prima che esista una fattura vera (numero fattura o FARE
-        # FATTURA), il campo segue sempre il totale reale, anche se in
-        # passato e' stato scritto un valore diverso a mano.
+    def test_invoice_total_recomputes_on_preventivo_changes_until_manually_overridden(self):
+        # "Totale fattura" segue sempre "Totale W" finche' non esiste una
+        # fattura vera (numero fattura o FARE FATTURA) E l'utente non lo ha
+        # modificato di persona (invoice_total_manual): a quel punto il
+        # valore scritto a mano resta, esattamente come richiesto
+        # dall'utente ("deve essere sempre modificabile").
         stamp = "2026-07-15T10:00:00"
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
@@ -104,9 +104,9 @@ class PetParadiseTests(unittest.TestCase):
             row = conn.execute("SELECT total_service,invoice_total,invoice_total_manual FROM practices WHERE id=?", (pid,)).fetchone()
             self.assertEqual((row["total_service"], row["invoice_total"], row["invoice_total_manual"]), ("150.00", "150.00", ""))
 
-        # A stray edit lands "999.00" in invoice_total (e.g. an accidental
-        # touch) without a real invoice being issued yet: it must NOT stick —
-        # the next preventivo change resyncs it to the real total.
+        # A deliberate manual edit (invoice_total_manual="Si", set client-side
+        # only when the user types directly into the field) must stick — a
+        # further preventivo change must NOT resync it back to the total.
         self.handler.form = lambda: {"updated_at": version, "changes_json": json.dumps({"invoice_total": "999.00", "invoice_total_manual": "Si"})}
         self.handler.practice_autosave(admin, pid)
         version = captured[-1][0]["updated_at"]
@@ -115,7 +115,7 @@ class PetParadiseTests(unittest.TestCase):
         version = captured[-1][0]["updated_at"]
         with app.db() as conn:
             row = conn.execute("SELECT total_service,invoice_total FROM practices WHERE id=?", (pid,)).fetchone()
-            self.assertEqual((row["total_service"], row["invoice_total"]), ("200.00", "200.00"))
+            self.assertEqual((row["total_service"], row["invoice_total"]), ("200.00", "999.00"))
 
         # Once a real invoice is recorded (numero fattura assegnato), its
         # amount is protected: further preventivo changes must not touch it.
@@ -129,11 +129,11 @@ class PetParadiseTests(unittest.TestCase):
             self.assertEqual((row["total_service"], row["invoice_total"], row["invoice_number"]), ("300.00", "200.00", "FT-500"))
 
     def test_reported_bug_invoice_total_realigns_via_salva_pagamento_w(self):
-        # Riproduce esattamente il caso segnalato dall'utente: una pratica
-        # con Saldo/Rimanenza W = 310 (il totale reale) ma "Totale fattura"
-        # rimasto congelato a 274 da un tocco passato, nessuna fattura vera
-        # emessa. Il pulsante "Salva pagamento W" (submit dell'intero
-        # practiceForm) deve riallineare "Totale fattura" al totale reale.
+        # Riproduce il caso segnalato dall'utente: "Totale W" = 310 (il
+        # totale reale) ma "Totale fattura" rimasto a 274, nessuna fattura
+        # vera emessa e nessun override manuale attivo. Il pulsante "Salva
+        # pagamento W" (submit dell'intero practiceForm) deve riallineare
+        # "Totale fattura" al totale reale.
         stamp = "2026-07-15T10:00:00"
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
@@ -144,7 +144,38 @@ class PetParadiseTests(unittest.TestCase):
                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 ("CR-BUGREPORT", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Buddy",
                  "Anna", "Bianchi", "3339990000", "X", "Via Roma", "Livorno", "LI", "57100",
-                 "310.00", "274.00", "Si", "Da saldare"),
+                 "310.00", "274.00", "", "Da saldare"),
+            ).lastrowid
+        self.handler.redirect = lambda path: None
+        self.handler.form = lambda: {
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "3339990000",
+            "owner_tax_code": "X", "owner_street": "Via Roma", "owner_city": "Livorno", "owner_province": "LI",
+            "owner_zip": "57100", "total_service": "310.00", "total_service_manual": "Si", "saldo_w_totale": "310.00",
+            "invoice_total": "274.00", "invoice_total_manual": "", "payment_status": "Da saldare",
+        }
+        self.handler.edit_submit(admin, pid)
+        with app.db() as conn:
+            row = conn.execute("SELECT total_service,invoice_total FROM practices WHERE id=?", (pid,)).fetchone()
+        self.assertEqual((row["total_service"], row["invoice_total"]), ("310.00", "310.00"))
+
+    def test_invoice_total_manual_override_sticks_via_salva_pagamento_w(self):
+        # Complemento del test precedente: se invoice_total_manual="Si" e'
+        # esplicitamente presente (l'utente ha scritto a mano il totale
+        # fattura), "Salva pagamento W" NON deve piu' riallinearlo al totale
+        # reale — richiesta esplicita dell'utente, il campo deve restare
+        # modificabile e il valore scritto a mano deve restare.
+        stamp = "2026-07-15T10:00:00"
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,
+                   created_by,animal_name,owner_first_name,owner_last_name,owner_phone,owner_tax_code,owner_street,
+                   owner_city,owner_province,owner_zip,total_service,invoice_total,invoice_total_manual,payment_status)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-MANUALOK", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Buddy",
+                 "Anna", "Bianchi", "3339990000", "X", "Via Roma", "Livorno", "LI", "57100",
+                 "310.00", "274.00", "", "Da saldare"),
             ).lastrowid
         self.handler.redirect = lambda path: None
         self.handler.form = lambda: {
@@ -157,7 +188,7 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.edit_submit(admin, pid)
         with app.db() as conn:
             row = conn.execute("SELECT total_service,invoice_total FROM practices WHERE id=?", (pid,)).fetchone()
-        self.assertEqual((row["total_service"], row["invoice_total"]), ("310.00", "310.00"))
+        self.assertEqual((row["total_service"], row["invoice_total"]), ("310.00", "274.00"))
 
     def test_autosave_clears_catalog_checkboxes_when_urn_is_filled_in(self):
         stamp = "2026-07-15T10:00:00"
@@ -4777,30 +4808,32 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("function ppmFormatInvoiceTotal(value){", js)
         self.assertIn("return number.toFixed(2).replace('.', ',');", js)
         self.assertNotIn("`${number.toFixed(2).replace('.', ',')} €`", js)
-        self.assertIn("invoiceTotal.value=ppmFormatInvoiceTotal(accontoW+saldoW);", js)
+        self.assertIn("invoiceTotal.value=serviceTotal?ppmFormatInvoiceTotal(serviceTotal):'';", js)
         self.assertIn("invoiceTotal.addEventListener('blur'", js)
 
-    def test_invoice_total_field_is_read_only_and_auto_synced_until_a_real_invoice_exists(self):
-        # Regressione: un tocco accidentale su "Totale fattura" (autofill,
-        # tap involontario) non deve poter congelare il campo su un valore
-        # vecchio. Prima che esista una fattura vera, il campo e' di sola
-        # lettura e segue sempre Acconto W + Saldo/Rimanenza W.
+    def test_invoice_total_field_is_always_editable_and_auto_synced_until_manually_overridden(self):
+        # Bug segnalato dall'utente: "Totale fattura" non seguiva "Totale W"
+        # e non era mai modificabile a mano. Ora il campo NON e' mai
+        # readOnly, e segue Totale W in automatico finche' l'utente non lo
+        # tocca di persona (invoice_total_manual, stesso meccanismo gia'
+        # usato per total_service_manual) o non esiste gia' una fattura
+        # vera emessa.
         js = app.APP_JS
         self.assertIn("function ppmInvoiceAlreadyIssued(){", js)
-        self.assertIn("invoiceTotal.readOnly=!ppmInvoiceAlreadyIssued();", js)
-        self.assertIn("invoiceTotal.readOnly=!alreadyIssued;", js)
-        self.assertNotIn("invoiceTotalManual", js)
+        self.assertNotIn("invoiceTotal.readOnly", js)
+        self.assertIn("const invoiceTotalManual=document.querySelector('input[name=\"invoice_total_manual\"]');", js)
+        self.assertIn("invoiceTotal.addEventListener('input',()=>{ if(invoiceTotalManual) invoiceTotalManual.value='Si'; });", js)
 
-    def test_invoice_total_autofill_sums_acconto_w_and_saldo_w_never_totale_d(self):
-        # richiesta esplicita dell'utente: TOTALE FATTURA si autocompila
-        # sommando Acconto W + Saldo/Rimanenza W (l'incasso complessivo sul
-        # circuito W), non piu' copiando Totale W — e non deve mai leggere
-        # dal circuito D (total_text).
+    def test_invoice_total_autofollows_totale_w_not_acconto_plus_saldo(self):
+        # Bug segnalato dall'utente: "Totale fattura" restava fermo quando
+        # si modificava "Totale W" e cambiava solo toccando "Rimanenza"
+        # (Saldo/Rimanenza W), perche' la formula sommava Acconto W + Saldo
+        # W invece di seguire il totale reale. Ora segue direttamente Totale
+        # W (serviceTotal), sia nel ricalcolo live sia al caricamento pagina.
         js = app.APP_JS
-        self.assertIn('document.querySelector(\'input[name="acconto_w_totale"]\')?.value||0', js)
-        self.assertIn('document.querySelector(\'input[name="saldo_w_totale"]\')?.value||0', js)
-        self.assertNotIn('total_text"]\')?.value||totalService', js)
-        self.assertNotIn("definitive > 0 ? definitive : serviceTotal", js)
+        self.assertIn("invoiceTotal.value=serviceTotal?ppmFormatInvoiceTotal(serviceTotal):'';", js)
+        self.assertIn("invoiceTotal.value=(totalService&&ppmNumber(totalService.value))?ppmFormatInvoiceTotal(totalService.value):'';", js)
+        self.assertNotIn("invoiceTotal.value=ppmFormatInvoiceTotal(accontoW+saldoW);", js)
 
     def test_invoice_total_accepts_plain_number_with_euro_sign_or_comma(self):
         with app.db() as conn:
