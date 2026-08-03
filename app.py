@@ -2650,7 +2650,7 @@ body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY
 .light-theme .route-stop-menu-popover button:hover{background:#f1f5f9}
 /* Auto-hide della sola barra inferiore durante lo scroll (solo mobile, in stile Safari iOS); la headbar superiore resta sempre fissa */
 @media(max-width:900px){
-  .bottom-nav{transition:transform .52s cubic-bezier(.16,1,.3,1);will-change:transform}
+  .bottom-nav{transition:transform .85s cubic-bezier(.16,1,.3,1);will-change:transform}
   body.ppm-bars-hidden .bottom-nav{transform:translateY(calc(100% + 24px))}
 }
 @media(prefers-reduced-motion:reduce){.bottom-nav{transition:none!important}}
@@ -2844,8 +2844,9 @@ APP_JS = r"""
   // quella in corso finisse, lasciando la barra visivamente "a meta'" per
   // tutta la durata dello scroll (bug segnalato dall'utente). Un nuovo
   // cambio di stato non puo' avvenire finche' la transizione precedente non
-  // e' completata.
-  const TOGGLE_COOLDOWN_MS=560;
+  // e' completata. Deve restare allineato alla durata della transizione CSS
+  // di .bottom-nav (.85s) piu' un margine.
+  const TOGGLE_COOLDOWN_MS=890;
   let lastToggleAt=0;
   function ppmBarsBusy(){
     if(document.body.classList.contains('modal-open'))return true;

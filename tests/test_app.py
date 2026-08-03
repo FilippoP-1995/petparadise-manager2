@@ -4030,8 +4030,13 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn("body.ppm-bars-hidden .top,body.ppm-bars-hidden .app-header{transform:translateY(-130%)}", css)
         self.assertIn("body.ppm-bars-hidden .bottom-nav{transform:translateY(calc(100% + 24px))}", css)
         self.assertIn("@media(prefers-reduced-motion:reduce){.bottom-nav{transition:none!important}}", css)
+        # richiesta esplicita dell'utente: animazione piu' lenta di quella
+        # originaria (.52s); il cooldown anti-flicker lato JS deve restare
+        # allineato alla nuova durata (vedi TOGGLE_COOLDOWN_MS piu' sotto).
+        self.assertIn(".bottom-nav{transition:transform .85s cubic-bezier(.16,1,.3,1);will-change:transform}", css)
         js = app.APP_JS
         self.assertIn("window.matchMedia('(max-width:900px)')", js)
+        self.assertIn("const TOGGLE_COOLDOWN_MS=890;", js)
         self.assertIn("function ppmBarsBusy()", js)
         busy = js[js.index("function ppmBarsBusy()"):js.index("function ppmSetBarsHidden")]
         self.assertIn("modal-open", busy)
