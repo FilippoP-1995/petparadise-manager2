@@ -4599,11 +4599,81 @@ class PetParadiseTests(unittest.TestCase):
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/archivio/pratiche"
         self.handler.archive(admin)
         page=rendered[-1]
-        self.assertIn('<div class="tablebox dashboard-table-scroll"><table class="practice-list-table">',page)
+        self.assertIn('<div class="tablebox dashboard-table-scroll archive-tablebox"><table class="practice-list-table">',page)
+
+    def test_archive_tablebox_has_no_height_cap_and_native_touch_scroll(self):
+        # Lo scroll scattoso su Archivio era causato dal max-height/touch-action:none
+        # condiviso da .tablebox: per Archivio serve scroll nativo di pagina, non un
+        # riquadro interno con altezza limitata.
+        self.assertIn(".tablebox.archive-tablebox{max-height:none;touch-action:auto}", app.CSS)
+        self.assertIn("document.querySelectorAll('.tablebox:not(.archive-tablebox)').forEach(function(box){", app.APP_JS)
+
+    def test_archive_month_collapse_state_persists_per_user(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            for number,date in (("CR-COLLAPSE1","2026-07-10"),("CR-COLLAPSE2","2026-06-10")):
+                conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,pickup_date)
+                                VALUES(?,?,?,?,?,?,?,?,?)""",(number,"Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Luna",date))
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/archivio/pratiche?stato=Ritirato"
+        self.handler.archive(admin)
+        page=rendered[-1]
+        # senza preferenza salvata, tutti i mesi partono aperti (comportamento invariato)
+        self.assertIn('data-month-key="2026-07" aria-expanded="true"',page)
+        self.assertIn('data-month-key="2026-06" aria-expanded="true"',page)
+
+        responses=[];self.handler.send_json=lambda payload,status=200:responses.append((payload,status))
+        self.handler.form=lambda:{"mese":"2026-06","chiuso":"1"}
+        self.handler.save_archive_month_state(admin)
+        self.assertEqual(responses[-1],({"ok":True},200))
+        with app.db() as conn:
+            value=conn.execute("SELECT value FROM user_preferences WHERE user_id=? AND key='archive_collapsed_months'",(admin["id"],)).fetchone()["value"]
+        self.assertEqual(json.loads(value),["2026-06"])
+
+        self.handler.archive(admin)
+        page=rendered[-1]
+        self.assertIn('data-month-key="2026-06" aria-expanded="false" aria-label="Apri Giugno 2026" onclick="toggleArchiveMonth(this)">+</button>',page)
+        self.assertIn('data-month-key="2026-07" aria-expanded="true"',page)
+        self.assertIn('<div class="month-content" hidden><div class="tablebox dashboard-table-scroll archive-tablebox">',page)
+
+        # riaprire il mese lo rimuove dalla lista salvata
+        self.handler.form=lambda:{"mese":"2026-06","chiuso":"0"}
+        self.handler.save_archive_month_state(admin)
+        with app.db() as conn:
+            value=conn.execute("SELECT value FROM user_preferences WHERE user_id=? AND key='archive_collapsed_months'",(admin["id"],)).fetchone()["value"]
+        self.assertEqual(json.loads(value),[])
+
+    def test_archive_month_state_rejects_invalid_month_key(self):
+        responses=[];self.handler.send_json=lambda payload,status=200:responses.append((payload,status))
+        self.handler.form=lambda:{"mese":"nope","chiuso":"1"}
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.save_archive_month_state(admin)
+        self.assertEqual(responses[-1],({"ok":False,"error":"Mese non valido."},400))
+
+    def test_archive_rows_carry_practice_id_and_flash_free_restore_script(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,pickup_date)
+                                VALUES(?,?,?,?,?,?,?,?,?)""",("CR-ROWID","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Luna","2026-07-20")).lastrowid
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/archivio/pratiche"
+        self.handler.archive(admin)
+        page=rendered[-1]
+        self.assertIn(f'data-practice-id="{pid}"',page)
+        self.assertIn('<div id="archiveList">',page)
+        self.assertIn("visibility:hidden",app.CSS)
+        self.assertIn(f"ppm_archive_state:{admin['id']}",page)
+        self.assertIn("isBack",page)
+        self.assertIn("archive-row-highlight",page)
+        self.assertIn("fetch('/archivio/mese-stato'",page)
+        import inspect
+        self.assertIn('if path == "/archivio/mese-stato": return self.save_archive_month_state(user)',inspect.getsource(app.App._route_post))
 
     def test_list_scroll_and_filter_state_restore_is_wired_for_all_target_pages(self):
-        for path in ("/archivio/pratiche", "/calendario", "/clienti", "/veterinari", "/catalogo-urne", "/ordini/storico"):
+        for path in ("/calendario", "/clienti", "/veterinari", "/catalogo-urne", "/ordini/storico"):
             self.assertIn(f"'{path}':", app.APP_JS)
+        # Archivio ha una propria implementazione dedicata (vedi test_archive_*
+        # sotto), non usa più il sistema condiviso PPM_LIST_PAGES.
+        self.assertNotIn("'/archivio/pratiche':", app.APP_JS)
         self.assertIn("extraInputs:['urnCatalogSearch']", app.APP_JS)
         self.assertIn("function setupListStateRestore(){", app.APP_JS)
         self.assertIn("document.addEventListener('DOMContentLoaded', setupListStateRestore);", app.APP_JS)

@@ -1357,6 +1357,10 @@ body{background:radial-gradient(circle at top left,#fff8f3 0,#f4f1ed 34%,#ece5dd
 .danger{border-color:#e2a5a5;background:#fff7f7}.btn.danger-btn{background:#b42323;color:white}.btn.danger-btn:hover{background:#8f1d1d}.danger-note{color:#8f1d1d;font-weight:700}.btn.info-btn{background:#1d4ed8;color:white}.btn.info-btn:hover{background:#1e40af}
 .home-logo{width:118px;height:118px;object-fit:contain;border-radius:24px;background:white;padding:10px;border:1px solid var(--line);box-shadow:0 8px 24px #4b392614}
 .month-block{margin-bottom:18px}.month-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.month-heading{display:flex;align-items:center;gap:10px}.month-toggle{width:34px;height:34px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--brand);font-size:22px;font-weight:800;line-height:1;cursor:pointer}.month-content[hidden]{display:none}.dashboard-table-scroll{overflow-x:scroll;scrollbar-gutter:stable;padding-bottom:8px;scrollbar-color:var(--brand) #eee7e0;scrollbar-width:auto}.dashboard-table-scroll table{min-width:1650px}.dashboard-table-scroll::-webkit-scrollbar{height:13px}.dashboard-table-scroll::-webkit-scrollbar-track{background:#eee7e0;border-radius:99px}.dashboard-table-scroll::-webkit-scrollbar-thumb{background:var(--brand);border:3px solid #eee7e0;border-radius:99px}
+.tablebox.archive-tablebox{max-height:none;touch-action:auto}
+.archive-row-highlight{box-shadow:0 0 0 2px var(--brand) inset,0 0 14px 2px #a7404559;transition:box-shadow 2.2s ease}
+.archive-row-highlight.archive-row-fade{box-shadow:none}
+#archiveList{visibility:hidden}
 .hidden{display:none!important}
 .section.collapsible>h2{cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;gap:10px}.section.collapsible>h2::after,.section.collapsible>.section-heading-row>h2::after{content:'▾';font-size:13px;color:var(--muted);transition:transform .2s ease;flex:0 0 auto}.section.collapsible>.section-heading-row{cursor:pointer;user-select:none}.section.collapsible.collapsed>h2,.section.collapsible.collapsed>.section-heading-row{margin-bottom:0}.section.collapsible.collapsed>h2::after,.section.collapsible.collapsed>.section-heading-row>h2::after{transform:rotate(-90deg)}.section.collapsible.collapsed>*:not(h2):not(.section-heading-row){display:none}
 .practice-code-cr{color:#1e88e5}.practice-code-sm{color:#111}
@@ -3578,7 +3582,7 @@ function setupTableTouchScroll(){
       window.ppmMomentumStoppers.forEach(function(stop){stop();});
     },{capture:true,passive:true});
   }
-  document.querySelectorAll('.tablebox').forEach(function(box){
+  document.querySelectorAll('.tablebox:not(.archive-tablebox)').forEach(function(box){
     if(box.dataset.touchScrollReady) return;
     box.dataset.touchScrollReady='1';
     let axis=null,phase='table';
@@ -3655,7 +3659,6 @@ function setupTableTouchScroll(){
 }
 document.addEventListener('DOMContentLoaded', setupTableTouchScroll);
 const PPM_LIST_PAGES={
-  '/archivio/pratiche':{detail:/^\/pratiche\/\d+/},
   '/calendario':{detail:/^\/calendario\/\d+/,calendar:true},
   '/clienti':{detail:/^\/clienti\/\d+/},
   '/veterinari':{detail:/^\/veterinari\/\d+/},
@@ -7927,6 +7930,7 @@ class App(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/bilanci/movimenti-eliminati/(\d+)/ripristina",path)
         if match: return self.balance_movement_deletion_restore(user,int(match.group(1)))
         if path == "/calendario/nuovo": return self.save_calendar_event(user)
+        if path == "/archivio/mese-stato": return self.save_archive_month_state(user)
         if path == "/turni/pianifica/cella": return self.save_shift_cell(user)
         if path == "/turni/ferie": return self.save_shift_vacation(user)
         match = re.fullmatch(r"/turni/ferie/(\d+)/elimina",path)
@@ -13829,7 +13833,7 @@ class App(BaseHTTPRequestHandler):
             practice_url=f'/pratiche/{r["id"]}?return_to={quote(self.path,safe="")}'
             provenance=esc(r["provenance"] if "provenance" in r.keys() and r["provenance"] else "-")
             delete_cell=f'''<form onclick="event.stopPropagation()" method="post" action="/pratiche/{r['id']}/elimina" onsubmit="return confirm('Spostare questa pratica nel Cestino? Potrai ripristinarla in seguito.')"><button class="btn danger-btn" type="submit">Elimina</button></form>'''
-            html.append(f'<tr class="practice-row-link {avatar_cls}" {row_open_attrs(practice_url,f"Apri pratica {code}")}><td>{animal_cell}</td><td>{age_cell}</td><td>{owner}<br><small>{esc(r["owner_phone"])}</small></td><td>{esc(recovery_date)}</td><td><a href="{practice_url}"><b class="{code_cls}">{esc(code)}</b></a></td><td>{vet_label}</td><td><b>{provenance}</b></td><td>{esc(r["destination_branch"])}</td><td>{self.tag_controls(r)}</td><td>{notes_cell}</td><td>{urn_cell}</td><td><b>{paid_cell}</b></td><td>{invoice_cell}</td>{financial_cells}<td>{self.status_badges(r)}</td><td>{delete_cell}</td></tr>')
+            html.append(f'<tr class="practice-row-link {avatar_cls}" data-practice-id="{r["id"]}" {row_open_attrs(practice_url,f"Apri pratica {code}")}><td>{animal_cell}</td><td>{age_cell}</td><td>{owner}<br><small>{esc(r["owner_phone"])}</small></td><td>{esc(recovery_date)}</td><td><a href="{practice_url}"><b class="{code_cls}">{esc(code)}</b></a></td><td>{vet_label}</td><td><b>{provenance}</b></td><td>{esc(r["destination_branch"])}</td><td>{self.tag_controls(r)}</td><td>{notes_cell}</td><td>{urn_cell}</td><td><b>{paid_cell}</b></td><td>{invoice_cell}</td>{financial_cells}<td>{self.status_badges(r)}</td><td>{delete_cell}</td></tr>')
         return ''.join(html)
 
     def recent_practice_cards_html(self,rows):
@@ -14099,6 +14103,22 @@ class App(BaseHTTPRequestHandler):
             print(f"[VOUCHER_SEARCH] errore tipo={type(exc).__name__} vet_id={vet_id}", flush=True)
             return self.send_json({"ok":False,"error":"Errore durante la lettura buoni"},500)
 
+    def save_archive_month_state(self,user):
+        form=self.form()
+        month_key=(form.get("mese") or "").strip()[:20]
+        if not re.fullmatch(r"\d{4}-\d{2}|Senza data",month_key):
+            return self.send_json({"ok":False,"error":"Mese non valido."},400)
+        collapsed=form.get("chiuso")=="1"
+        with db() as c:
+            row=c.execute("SELECT value FROM user_preferences WHERE user_id=? AND key='archive_collapsed_months'",(user["id"],)).fetchone()
+            months=set(parse_preference_list(row["value"] if row else ""))
+            if collapsed:
+                months.add(month_key)
+            else:
+                months.discard(month_key)
+            c.execute("INSERT INTO user_preferences(user_id,key,value) VALUES(?,?,?) ON CONFLICT(user_id,key) DO UPDATE SET value=excluded.value",(user["id"],"archive_collapsed_months",json.dumps(sorted(months),ensure_ascii=False)))
+        return self.send_json({"ok":True})
+
     def archive(self,user):
         q=parse_qs(urlparse(self.path).query)
         term=q.get("q",[""])[0].strip()
@@ -14179,6 +14199,7 @@ class App(BaseHTTPRequestHandler):
             groups.setdefault(key,[]).append(r)
         blocks=[]
         archive_financial_headers='<th>Totale W</th><th>Totale D</th><th>Acconto</th><th>Rimanenza</th>'
+        collapsed_months=set(parse_preference_list(load_preferences(user["id"]).get("archive_collapsed_months","")))
         for key,items in groups.items():
             title=key
             if key != "Senza data":
@@ -14186,10 +14207,56 @@ class App(BaseHTTPRequestHandler):
                     y,m=key.split("-"); title=f"{month_names[int(m)]} {y}"
                 except Exception:
                     pass
-            blocks.append(f'''<section class="month-block"><div class="month-title"><div class="month-heading"><button class="month-toggle" type="button" aria-expanded="true" aria-label="Chiudi {esc(title)}" onclick="toggleArchiveMonth(this)">-</button><h2>{esc(title)}</h2></div><span class="badge">{len(items)} pratiche</span></div><div class="month-content"><div class="tablebox dashboard-table-scroll"><table class="practice-list-table"><thead><tr><th>Animale</th><th>Età</th><th>Proprietario</th><th>Data recupero</th><th>Codice pratica</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Totale pagato</th><th>Fattura</th>{archive_financial_headers}<th>Stati</th><th>Azione</th></tr></thead><tbody>{self.practice_rows(items,True)}</tbody></table></div></div></section>''')
-        results_html=''.join(blocks) if blocks else '<section class="section"><p class="sub">Nessuna pratica trovata.</p></section>'
+            is_closed=key in collapsed_months
+            expanded_attr="false" if is_closed else "true"
+            toggle_symbol="+" if is_closed else "-"
+            toggle_label=("Apri " if is_closed else "Chiudi ")+title
+            content_hidden=" hidden" if is_closed else ""
+            blocks.append(f'''<section class="month-block"><div class="month-title"><div class="month-heading"><button class="month-toggle" type="button" data-month-key="{esc(key)}" aria-expanded="{expanded_attr}" aria-label="{esc(toggle_label)}" onclick="toggleArchiveMonth(this)">{toggle_symbol}</button><h2>{esc(title)}</h2></div><span class="badge">{len(items)} pratiche</span></div><div class="month-content"{content_hidden}><div class="tablebox dashboard-table-scroll archive-tablebox"><table class="practice-list-table"><thead><tr><th>Animale</th><th>Età</th><th>Proprietario</th><th>Data recupero</th><th>Codice pratica</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Totale pagato</th><th>Fattura</th>{archive_financial_headers}<th>Stati</th><th>Azione</th></tr></thead><tbody>{self.practice_rows(items,True)}</tbody></table></div></div></section>''')
+        results_html='<div id="archiveList">'+(''.join(blocks) if blocks else '<section class="section"><p class="sub">Nessuna pratica trovata.</p></section>')+'</div>'
         filters_html=f'''<section class="search-after-results"><h2>Ricerca e filtri</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Ricerca generale</label><input name="q" value="{esc(term)}" placeholder="Proprietario, telefono, microchip, pratica, DDT"></div><div class="field"><label>Nome animale</label><input name="animale" value="{esc(animal)}"></div><div class="field"><label>Tipo cremazione</label><select name="servizio">{service_opts}</select></div><div class="field"><label>Veterinario</label><input name="veterinario" value="{esc(vet)}" placeholder="Clinica o medico"></div><div class="field"><label>Collaboratore</label><input name="collaboratore" value="{esc(collaborator)}"></div><div class="field"><label>Spesa minima</label><input type="number" min="0" step="0.01" name="spesa_min" value="{esc(spesa_min)}" inputmode="decimal" placeholder="Es. 100"></div><div class="field"><label>Spesa massima</label><input type="number" min="0" step="0.01" name="spesa_max" value="{esc(spesa_max)}" inputmode="decimal" placeholder="Es. 350"></div><div class="field"><label>Periodo dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Periodo al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Stato pratica</label><select name="stato">{opts}</select></div><div class="field"><label>Pagamento</label><select name="pagamento">{pay_opts}</select></div></div><button class="btn" style="margin-top:12px">Cerca</button><a class="btn ghost" style="margin-top:12px" href="/archivio/pratiche">Pulisci filtri</a></form></section>'''
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>ARCHIVIO</h1><div class="sub">{len(rows)} pratiche trovate{promemoria_label}</div></div></div>{results_html}{filters_html}<script>function toggleArchiveMonth(button){{const content=button.closest('.month-block').querySelector('.month-content');const closing=button.getAttribute('aria-expanded')==='true';button.setAttribute('aria-expanded',String(!closing));button.textContent=closing?'+':'-';button.setAttribute('aria-label',(closing?'Apri ':'Chiudi ')+button.closest('.month-heading').querySelector('h2').textContent);content.hidden=closing;}}</script></main>'''
+        archive_restore_js=r'''
+(function(){
+  const userKey='ppm_archive_state:__USER_ID__';
+  let refPath='';
+  try{ refPath=document.referrer?new URL(document.referrer).pathname:''; }catch(e){}
+  const navEntry=(performance.getEntriesByType&&performance.getEntriesByType('navigation')[0])||null;
+  const isBack=(navEntry&&navEntry.type==='back_forward')||/^\/pratiche\/\d+/.test(refPath);
+  const list=document.getElementById('archiveList');
+  function reveal(){ if(list) list.style.visibility='visible'; }
+  if(isBack){
+    let state=null;
+    try{ state=JSON.parse(sessionStorage.getItem(userKey)||'null'); }catch(e){}
+    if(state && typeof state.search==='string' && state.search!==location.search){
+      location.replace(location.pathname+state.search);
+      return;
+    }
+    if(state && typeof state.scrollY==='number'){
+      window.scrollTo(0,state.scrollY);
+    }
+    const match=refPath.match(/^\/pratiche\/(\d+)/);
+    if(match){
+      const row=document.querySelector('[data-practice-id="'+match[1]+'"]');
+      if(row){
+        row.classList.add('archive-row-highlight');
+        setTimeout(function(){ row.classList.add('archive-row-fade'); },300);
+        setTimeout(function(){ row.classList.remove('archive-row-highlight','archive-row-fade'); },2600);
+      }
+    }
+  }
+  reveal();
+  let saveTimer=null;
+  function save(){
+    clearTimeout(saveTimer);
+    saveTimer=setTimeout(function(){
+      try{ sessionStorage.setItem(userKey,JSON.stringify({search:location.search,scrollY:window.scrollY||document.documentElement.scrollTop||0})); }catch(e){}
+    },200);
+  }
+  window.addEventListener('scroll',save,{passive:true});
+  save();
+})();
+'''.replace('__USER_ID__',str(user["id"]))
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>ARCHIVIO</h1><div class="sub">{len(rows)} pratiche trovate{promemoria_label}</div></div></div>{results_html}{filters_html}<script>function toggleArchiveMonth(button){{const content=button.closest('.month-block').querySelector('.month-content');const closing=button.getAttribute('aria-expanded')==='true';button.setAttribute('aria-expanded',String(!closing));button.textContent=closing?'+':'-';button.setAttribute('aria-label',(closing?'Apri ':'Chiudi ')+button.closest('.month-heading').querySelector('h2').textContent);content.hidden=closing;const monthKey=button.dataset.monthKey;if(monthKey){{const payload=new URLSearchParams();payload.set('mese',monthKey);payload.set('chiuso',closing?'1':'0');fetch('/archivio/mese-stato',{{method:'POST',headers:{{'Content-Type':'application/x-www-form-urlencoded'}},body:payload.toString()}}).catch(function(){{}});}}}}{archive_restore_js}</script></main>'''
         body=body.replace('<label>Servizio</label><select name="servizio">','<label>Tipo cremazione</label><select name="servizio">')
         self.send_html(layout("Archivio",body,user))
 
