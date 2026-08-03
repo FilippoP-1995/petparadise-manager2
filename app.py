@@ -3038,6 +3038,12 @@ function ppmFormatInvoiceTotal(value){
   const number = typeof value === 'number' ? value : ppmNumber(value);
   return number.toFixed(2).replace('.', ',');
 }
+function ppmInvoiceAlreadyIssued(){
+  const makeInvoice=document.querySelector('input[name="make_invoice"]');
+  const issued=makeInvoice && (makeInvoice.type==='checkbox' ? makeInvoice.checked : makeInvoice.value==='Si');
+  const invoiceNumber=document.querySelector('input[name="invoice_number"]');
+  return !!issued || !!(invoiceNumber?.value||'').trim();
+}
 function updatePreventivoTotal(){
   const fields = document.querySelectorAll('[data-preventivo-sum="1"]');
   const itemPrices = document.querySelectorAll('.practice-repeat-row [data-key="price"]');
@@ -3066,14 +3072,20 @@ function updateRemainingBalance(){
     remainingField.value = ppmFormat(remaining);
   }
   const invoiceTotal=document.querySelector('input[name="invoice_total"]');
-  if(invoiceTotal?.dataset.autoFilled==='1'){
+  if(invoiceTotal){
     // TOTALE FATTURA (sezione Pagamento) si autocompila sommando Acconto W
     // e Saldo/Rimanenza W (l'incasso complessivo sul circuito W, utile
-    // quando si fattura tutto insieme al saldo finale) — resta comunque
-    // sempre modificabile a mano, come prima.
-    const accontoW=ppmNumber(document.querySelector('input[name="acconto_w_totale"]')?.value||0);
-    const saldoW=ppmNumber(document.querySelector('input[name="saldo_w_totale"]')?.value||0);
-    invoiceTotal.value=ppmFormatInvoiceTotal(accontoW+saldoW);
+    // quando si fattura tutto insieme al saldo finale) — resta sempre
+    // automatico finche' non esiste ancora una fattura vera emessa (numero
+    // fattura o FARE FATTURA spuntato), cosi' nessun tocco accidentale puo'
+    // piu' congelarlo su un valore vecchio mentre il totale cresce.
+    const alreadyIssued=ppmInvoiceAlreadyIssued();
+    invoiceTotal.readOnly=!alreadyIssued;
+    if(!alreadyIssued){
+      const accontoW=ppmNumber(document.querySelector('input[name="acconto_w_totale"]')?.value||0);
+      const saldoW=ppmNumber(document.querySelector('input[name="saldo_w_totale"]')?.value||0);
+      invoiceTotal.value=ppmFormatInvoiceTotal(accontoW+saldoW);
+    }
   }
   const depositFinalField = document.querySelector('input[name="deposit_final"]');
   const remainingFinalField = document.querySelector('input[name="remaining_final"]');
@@ -3296,24 +3308,30 @@ function setupBudgetExtras(){
   // appesi a #paymentInvoiceRow invece che a "fields".
   const invoiceRow=document.getElementById('paymentInvoiceRow')||fields;
   const invoiceNumber=document.querySelector('input[name="invoice_number"]');invoiceNumber.type='text';invoiceNumber.placeholder='Numero fattura';
-  invoiceNumber.addEventListener('input',()=>{const makeInvoice=document.querySelector('input[name="make_invoice"]');if(makeInvoice&&invoiceNumber.value.trim())makeInvoice.checked=false;});
+  invoiceNumber.addEventListener('input',()=>{const makeInvoice=document.querySelector('input[name="make_invoice"]');if(makeInvoice&&invoiceNumber.value.trim())makeInvoice.checked=false;updateRemainingBalance();});
   const invoiceField=document.createElement('div');invoiceField.className='field';invoiceField.innerHTML='<label>Numero fattura</label>';invoiceField.append(invoiceNumber);invoiceRow.append(invoiceField);
   const invoiceDate=document.querySelector('input[name="invoice_date"]');invoiceDate.type='date';
   const invoiceDateField=document.createElement('div');invoiceDateField.className='field';invoiceDateField.innerHTML='<label>Data fattura</label>';invoiceDateField.append(invoiceDate);invoiceRow.append(invoiceDateField);
   const invoiceTotal=document.querySelector('input[name="invoice_total"]');invoiceTotal.type='text';invoiceTotal.inputMode='decimal';invoiceTotal.placeholder='Totale fattura';
-  const invoiceTotalManual=document.querySelector('input[name="invoice_total_manual"]');
   const invoiceTotalField=document.createElement('div');invoiceTotalField.className='field';invoiceTotalField.innerHTML='<label>Totale fattura €</label>';invoiceTotalField.append(invoiceTotal);invoiceRow.append(invoiceTotalField);
-  if(invoiceTotalManual?.value!=='Si'){
-    invoiceTotal.dataset.autoFilled='1';
+  // "Totale fattura" resta sempre automatico (Acconto W + Saldo/Rimanenza
+  // W, vedi ppmInvoiceAlreadyIssued/updateRemainingBalance) finche' non
+  // esiste ancora una fattura vera emessa: il campo e' di sola lettura in
+  // quel caso, cosi' nessun tocco accidentale (autofill, tap involontario)
+  // puo' piu' congelarlo su un valore vecchio mentre il totale cresce. Una
+  // volta emessa una fattura vera (numero fattura o FARE FATTURA spuntato)
+  // l'importo registrato resta modificabile a mano, com'era prima.
+  invoiceTotal.readOnly=!ppmInvoiceAlreadyIssued();
+  if(ppmInvoiceAlreadyIssued()) invoiceTotal.value=ppmFormatInvoiceTotal(invoiceTotal.value);
+  else{
     const accontoWSeed=ppmNumber(document.querySelector('input[name="acconto_w_totale"]')?.value||0);
     const saldoWSeed=ppmNumber(document.querySelector('input[name="saldo_w_totale"]')?.value||0);
     invoiceTotal.value=(accontoWSeed||saldoWSeed)?ppmFormatInvoiceTotal(accontoWSeed+saldoWSeed):'';
   }
-  else{invoiceTotal.value=ppmFormatInvoiceTotal(invoiceTotal.value);}
-  invoiceTotal.addEventListener('input',()=>{invoiceTotal.dataset.autoFilled='0';if(invoiceTotalManual)invoiceTotalManual.value='Si';});
   invoiceTotal.addEventListener('blur',()=>{if(invoiceTotal.value.trim())invoiceTotal.value=ppmFormatInvoiceTotal(invoiceTotal.value);});
   const makeInvoiceField=insertCheck(document.querySelector('input[name="make_invoice"]'),'FARE FATTURA',fields.lastElementChild);
   if(makeInvoiceField)invoiceRow.append(makeInvoiceField);
+  document.querySelector('input[name="make_invoice"]')?.addEventListener('change',updateRemainingBalance);
   if(sendEstremiField)fields.append(sendEstremiField);
   const estremiSentField=insertCheck(document.querySelector('input[name="estremi_sent"]'),'ESTREMI INVIATI',sendEstremiField||fields.lastElementChild);
   // Totale W/Totale D, INVIARE ESTREMI/ESTREMI INVIATI move (not copy) into
@@ -4434,7 +4452,12 @@ function closeAddReminderModal(){
 function submitAddReminder(event){
   event.preventDefault();
   const form=event.target;
-  const title=form.title.value.trim();
+  // Attenzione: NON usare form.title — "title" e' una proprieta' nativa di
+  // ogni elemento HTML (il tooltip), quindi form.title restituisce sempre
+  // quella (stringa vuota) invece del campo <input name="title">, e
+  // form.title.value.trim() lancia un errore silenzioso che blocca il
+  // salvataggio ad ogni click, senza nessun messaggio visibile.
+  const title=(document.getElementById('addReminderTitle')?.value||'').trim();
   if(!title)return false;
   const editId=form.edit_id.value;
   const url=editId?('/promemoria/'+editId+'/modifica'):'/promemoria/nuovo';
@@ -14883,7 +14906,15 @@ class App(BaseHTTPRequestHandler):
         calculated=calculated_service_total(data)+items_total
         if data["total_service_manual"]!="Si":
             data["total_service"]=(f"{calculated:.2f}" if calculated else "")
-        if data["invoice_total_manual"]!="Si":data["invoice_total"]=data["total_service"]
+        # "Totale fattura" segue sempre il totale reale finche' non esiste
+        # ancora una fattura vera emessa (numero fattura o FARE FATTURA
+        # spuntato): prima di allora nessun blocco "manuale" e' possibile,
+        # cosi' un tocco accidentale sul campo (autofill, tap involontario)
+        # non lo congela piu' su un valore vecchio mentre il totale cresce.
+        # Una volta emessa una fattura reale, il suo importo resta quello
+        # registrato finche' non viene esplicitamente rifatta.
+        if not (data["make_invoice"]=="Si" or data["invoice_number"]):
+            data["invoice_total"]=data["total_service"]
         # Rimanenza per circuito = Totale del circuito - Già pagato sul
         # circuito, SEMPRE — anche a payment_status "Pagato". Un totale puo'
         # crescere dopo che il circuito era gia' saldato (extra aggiunto a
