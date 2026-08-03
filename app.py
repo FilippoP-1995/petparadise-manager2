@@ -4298,6 +4298,33 @@ function closePaymentPopover(button){
   target.hidden=true;
   document.body.style.overflow='';
 }
+function ppmOpenScheduleDeliveryModal(practiceId){
+  const backdrop=document.getElementById('scheduleDeliveryBackdrop');
+  if(!backdrop)return;
+  document.getElementById('scheduleDeliveryPracticeId').value=practiceId;
+  fetch('/api/pratiche/'+practiceId+'/riconsegna-prefill',{credentials:'same-origin'})
+    .then(function(res){return res.json();})
+    .then(function(data){
+      if(!data||!data.ok)return;
+      document.getElementById('scheduleDeliveryAnimalName').value=data.animal_name||'';
+      document.getElementById('scheduleDeliveryFirstName').value=data.client_first_name||'';
+      document.getElementById('scheduleDeliveryLastName').value=data.client_last_name||'';
+      document.getElementById('scheduleDeliveryPhone').value=data.client_phone||'';
+      document.getElementById('scheduleDeliveryZone').value=data.zone||'';
+      document.getElementById('scheduleDeliveryAddress').value=data.delivery_address||'';
+      document.getElementById('scheduleDeliveryPaymentStatus').value=data.payment_status||'';
+      document.getElementById('scheduleDeliveryPaymentAmount').value=data.payment_amount||'';
+      const hint=document.getElementById('scheduleDeliveryHint');
+      if(hint&&data.animal_name)hint.textContent='Riconsegna per '+data.animal_name+': proprietario, indirizzo e pagamento ripresi automaticamente dalla pratica.';
+    })
+    .catch(function(){});
+  backdrop.hidden=false;document.body.style.overflow='hidden';
+}
+function ppmCloseScheduleDeliveryModal(){
+  const backdrop=document.getElementById('scheduleDeliveryBackdrop');
+  if(backdrop)backdrop.hidden=true;
+  document.body.style.overflow='';
+}
 function ppmSyncMacroareaInvoiceSection(select){
   const form=select.closest('form');if(!form)return;
   const section=form.querySelector('[data-macroarea-invoice]');
@@ -4360,6 +4387,13 @@ async function savePracticeState(form,event){
     select.dataset.savedValue=data.status;select.classList.remove('practice-status-blue','practice-status-red','practice-status-yellow','practice-status-green');
     const cls=practiceStatusCss(data.status);if(cls)select.classList.add(cls);
     if(note)note.textContent='Salvato';
+    // richiesta esplicita dell'utente: quando una pratica passa a "Da
+    // consegnare" dal riepilogo, propone subito di fissare la riconsegna
+    // con tutti i dati (anche il pagamento) ripresi automaticamente.
+    if(data.status==='Da consegnare'&&previous!=='Da consegnare'){
+      const practiceMatch=form.action.match(/\/pratiche\/(\d+)\//);
+      if(practiceMatch&&window.ppmOpenScheduleDeliveryModal)ppmOpenScheduleDeliveryModal(practiceMatch[1]);
+    }
     const activeFilter=new URLSearchParams(location.search).get('stato');
     if(row&&activeFilter&&activeFilter!==data.status){row.style.opacity='0';setTimeout(()=>row.remove(),180);}
     else if(note)setTimeout(()=>{note.textContent='';},1400);
@@ -7227,6 +7261,21 @@ def channel_remaining(practice):
     return money_value(stored) if (stored or "").strip() else outstanding_amount(practice)
 
 
+def delivery_payment_prefill(practice):
+    """Stato/importo pagamento da riprendere automaticamente quando si fissa
+    una riconsegna a partire da una pratica: stessa identica decisione gia'
+    usata (prima duplicata inline) in api_calendar_animals_search — Pagato
+    resta Pagato con il totale, un acconto>0 diventa "Da saldare" con la
+    rimanenza, altrimenti "Da pagare" con il totale."""
+    total=effective_total(practice)
+    if (practice["payment_status"] or "Da saldare")=="Pagato":
+        return "Pagato",total
+    deposit=channel_deposit(practice)
+    if deposit>0:
+        return "Da saldare",outstanding_amount(practice)
+    return "Da pagare",total
+
+
 def channel_paid_amount(c, practice_id, channel):
     """Somma REALE dei movimenti registrati su un circuito (W o D) per una
     pratica — la sola fonte di verita' per 'Gia' pagato {circuito}'. Letta
@@ -7643,6 +7692,21 @@ REMINDER_CATEGORY_NAMES={
 REMINDER_CATEGORY_DEFAULT="Promemoria"
 
 
+def schedule_delivery_modal_html(user):
+    """Popup "Fissa riconsegna": apre un normale form di creazione evento
+    Riconsegna con i campi non visibili gia' precompilati dalla pratica
+    (vedi ppmOpenScheduleDeliveryModal in APP_JS), lasciando solo
+    data/ora/operatore da confermare. Inclusa solo nelle pagine che la
+    usano (riepilogo pratica, Programma Cremazioni) — non in layout(),
+    per non aggiungere name="start_time" e altri campi a ogni pagina del
+    gestionale."""
+    if user["role"]=="admin":
+        operator_field=f'<div class="field"><label>Operatore *</label><select name="operator_name" required><option value="">Seleziona operatore</option>{"".join(f"<option>{esc(name)}</option>" for name in CALENDAR_OPERATORS)}</select></div>'
+    else:
+        operator_field=f'<input type="hidden" name="operator_name" value="{esc(user["display_name"])}">'
+    return f'''<div class="shift-cell-editor-backdrop" id="scheduleDeliveryBackdrop" hidden onclick="if(event.target===this)ppmCloseScheduleDeliveryModal()"><div class="shift-cell-editor"><h3>Fissa riconsegna</h3><p class="sub" id="scheduleDeliveryHint">Animale, proprietario, indirizzo e pagamento vengono ripresi automaticamente dalla pratica.</p><form method="post" action="/calendario/nuovo"><input type="hidden" name="event_type" value="Riconsegna"><input type="hidden" name="all_day" value="0"><input type="hidden" name="linked_practice_id" id="scheduleDeliveryPracticeId"><input type="hidden" name="animal_name" id="scheduleDeliveryAnimalName"><input type="hidden" name="client_first_name" id="scheduleDeliveryFirstName"><input type="hidden" name="client_last_name" id="scheduleDeliveryLastName"><input type="hidden" name="client_phone" id="scheduleDeliveryPhone"><input type="hidden" name="zone" id="scheduleDeliveryZone"><input type="hidden" name="delivery_address" id="scheduleDeliveryAddress"><input type="hidden" name="payment_status" id="scheduleDeliveryPaymentStatus"><input type="hidden" name="payment_amount" id="scheduleDeliveryPaymentAmount">{operator_field}<div class="fields"><div class="field"><label>Data riconsegna *</label><input type="date" name="start_date" required></div><div class="field"><label>Ora *</label><input type="text" name="start_time" placeholder="10:30" required></div></div><div class="actions" style="margin-top:14px"><button type="button" class="btn ghost" onclick="ppmCloseScheduleDeliveryModal()">Annulla</button><button type="submit" class="btn">Fissa riconsegna</button></div></form></div></div>'''
+
+
 def layout(title, body, user=None):
     body=body.replace("<th>Veterinario</th><th>Sede</th>","<th>Veterinario</th><th>Provenienza</th><th>Sede</th>")
     body=collapse_advanced_search(body)
@@ -7885,6 +7949,8 @@ class App(BaseHTTPRequestHandler):
         if path == "/api/veterinari/search": return self.api_veterinarians_search(user)
         if path == "/api/calendario/animali/search": return self.api_calendar_animals_search(user)
         if path == "/api/calendario/pratiche/search": return self.api_calendar_practices_search(user)
+        match = re.fullmatch(r"/api/pratiche/(\d+)/riconsegna-prefill", path)
+        if match: return self.api_practice_delivery_prefill(user, int(match.group(1)))
         if path == "/api/programma-cremazioni/prossimo-slot": return self.api_cremation_next_slot(user)
         if path == "/api/programma-cremazioni/scambio-candidati": return self.api_cremation_swap_candidates(user)
         if path == "/api/notifiche/stato": return self.notification_status(user)
@@ -11480,6 +11546,9 @@ class App(BaseHTTPRequestHandler):
             if status=="completato":
                 if cycle["actual_end"]:
                     actions.append(f'<span class="cremation-completed-note">Completato alle {esc(cycle["actual_end"][11:16])} {lucide("check-circle")}</span>')
+                for animal_row in animals:
+                    delivery_label=f' {esc(animal_row["animal_name"])}' if len(animals)>1 and animal_row["animal_name"] else ""
+                    actions.append(f'<button type="button" class="cremation-action-btn cremation-action-planned" onclick="ppmOpenScheduleDeliveryModal({animal_row["id"]})">{lucide("truck")}<span>Fissa riconsegna{delivery_label}</span></button>')
                 actions.append(f'<button type="button" class="cremation-action-btn cremation-action-planned" onclick="cremationRevertComplete({cycle["id"]})">{lucide("undo-2")}<span>Annulla completamento</span></button>')
                 actions.append(f'<button type="button" class="cremation-action-btn cremation-action-delete" onclick="cremationDeleteCycle({cycle["id"]})">{lucide("x")}<span>Elimina ciclo</span></button>')
             else:
@@ -11689,6 +11758,7 @@ class App(BaseHTTPRequestHandler):
         {add_animal_modal_html}
         {confirm_modal_html}
         {swap_modal_html}
+        {schedule_delivery_modal_html(user)}
         </main>'''
         self.send_html(layout("Programma Cremazioni",body,user))
 
@@ -11952,6 +12022,9 @@ class App(BaseHTTPRequestHandler):
                 if status=="completato":
                     if cycle["actual_end"]:
                         actions.append(f'<span class="cremation-completed-note">Completato alle {esc(cycle["actual_end"][11:16])} {lucide("check-circle")}</span>')
+                    for animal_row in animals:
+                        delivery_label=f' {esc(animal_row["animal_name"])}' if len(animals)>1 and animal_row["animal_name"] else ""
+                        actions.append(f'<button type="button" class="cremation-action-btn cremation-action-planned" onclick="ppmOpenScheduleDeliveryModal({animal_row["id"]})">{lucide("truck")}<span>Fissa riconsegna{delivery_label}</span></button>')
                     actions.append(f'<button type="button" class="cremation-action-btn cremation-action-planned" onclick="cremationRevertComplete({cycle["id"]})">{lucide("undo-2")}<span>Annulla completamento</span></button>')
                     actions.append(f'<button type="button" class="cremation-action-btn cremation-action-delete" onclick="cremationDeleteCycle({cycle["id"]})">{lucide("x")}<span>Elimina ciclo</span></button>')
                 else:
@@ -12212,6 +12285,7 @@ class App(BaseHTTPRequestHandler):
         {add_animal_modal_html}
         {confirm_modal_html}
         {swap_modal_html}
+        {schedule_delivery_modal_html(user)}
         <div id="cremationToast" class="cremation-toast" hidden></div>
         </main>'''
         self.send_html(layout("Programma Cremazioni",body,user))
@@ -14079,11 +14153,12 @@ class App(BaseHTTPRequestHandler):
                 channel="D" if uses_total_d(row) else "W"
                 total=effective_total(row);deposit=channel_deposit(row);remaining=outstanding_amount(row)
                 base_status=(row["payment_status"] or "Da saldare")
-                if base_status=="Pagato":detail=f"Pagato {channel} · {money_it(total)}";calendar_status="Pagato";calendar_amount=total
-                elif deposit>0:
+                calendar_status,calendar_amount=delivery_payment_prefill(row)
+                if calendar_status=="Pagato":detail=f"Pagato {channel} · {money_it(total)}"
+                elif calendar_status=="Da saldare":
                     remaining_channel_label="Saldo/Rimanenza W" if channel=="W" else f"Rimanenza {channel}"
-                    detail=f"Acconto {channel} · {money_it(deposit)} · {remaining_channel_label} · {money_it(remaining)}";calendar_status="Da saldare";calendar_amount=remaining
-                else:detail=f"Da pagare {channel} · {money_it(total)}";calendar_status="Da pagare";calendar_amount=total
+                    detail=f"Acconto {channel} · {money_it(deposit)} · {remaining_channel_label} · {money_it(remaining)}"
+                else:detail=f"Da pagare {channel} · {money_it(total)}"
                 owner=" ".join(part for part in (row["owner_first_name"],row["owner_last_name"]) if part).strip()
                 owner_address=", ".join(part for part in (row["owner_street"],row["owner_city"],row["owner_province"]) if part).strip()
                 service_type=row["service_type"] or ""
@@ -14094,6 +14169,27 @@ class App(BaseHTTPRequestHandler):
         except Exception as exc:
             print(f"[CALENDAR_ANIMAL_SEARCH] {type(exc).__name__}: {exc}",flush=True)
             return self.send_json({"ok":False,"error":"Errore durante la ricerca animali"},500)
+
+    def api_practice_delivery_prefill(self,user,pid):
+        # Sola lettura: nessun dato della pratica viene modificato. Usato dal
+        # popup "Fissa riconsegna" per precompilare animale, proprietario,
+        # indirizzo e pagamento senza dover ricercare/ridigitare nulla.
+        with db() as c:
+            row=c.execute("SELECT * FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(pid,)).fetchone()
+        if not row:return self.send_json({"ok":False,"error":"Pratica non trovata"},404)
+        payment_status,payment_amount=delivery_payment_prefill(row)
+        delivery_address=", ".join(part for part in (row["owner_street"],row["owner_city"],row["owner_province"]) if part).strip()
+        return self.send_json({
+            "ok":True,
+            "animal_name":row["animal_name"] or "",
+            "client_first_name":row["owner_first_name"] or "",
+            "client_last_name":row["owner_last_name"] or "",
+            "client_phone":row["owner_phone"] or "",
+            "zone":row["owner_city"] or "",
+            "delivery_address":delivery_address,
+            "payment_status":payment_status,
+            "payment_amount":f"{payment_amount:.2f}",
+        })
 
     def api_calendar_practices_search(self,user):
         q=(parse_qs(urlparse(self.path).query).get("q",[""])[0] or "").strip()
@@ -16272,6 +16368,7 @@ class App(BaseHTTPRequestHandler):
         body=body.replace(f'<div class="kv"><small>Catalogo urna</small><b>{esc(catalog_value)}</b></div>',"")
         if error:
             body=body.replace('<main class="wrap">','<main class="wrap"><div class="flash warning">'+esc(error)+'</div>',1)
+        body+=schedule_delivery_modal_html(user)
         self.send_html(layout(p["practice_number"],body,user))
 
     def macro_payment_prefill(self,c,pid,practice):

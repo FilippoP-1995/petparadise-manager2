@@ -2027,6 +2027,145 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual((practice["status"], practice["cremation_registered"]), ("Da consegnare", "Si"))
         self.assertEqual((history["event_type"], history["old_value"], history["new_value"]), ("Cambio stato rapido", "In programma", "Da consegnare"))
 
+    def test_delivery_payment_prefill_covers_pagato_acconto_da_pagare(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pagato_id = conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                animal_name,total_service,total_service_manual,payment_status) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                                ("CR-DPAG","Privato","Livorno","Consegnato",stamp,stamp,admin["id"],"Sam","240.00","Si","Pagato")).lastrowid
+            acconto_id = conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                animal_name,total_service,total_service_manual,deposit,payment_status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                ("CR-DACC","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Luna","200.00","Si","50.00","Acconto")).lastrowid
+            dapagare_id = conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                animal_name,total_service,total_service_manual,payment_status) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                                ("CR-DPAY","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Argo","150.00","Si","Da saldare")).lastrowid
+        with app.db() as conn:
+            pagato=conn.execute("SELECT * FROM practices WHERE id=?",(pagato_id,)).fetchone()
+            acconto=conn.execute("SELECT * FROM practices WHERE id=?",(acconto_id,)).fetchone()
+            dapagare=conn.execute("SELECT * FROM practices WHERE id=?",(dapagare_id,)).fetchone()
+        self.assertEqual(app.delivery_payment_prefill(pagato), ("Pagato", 240.0))
+        self.assertEqual(app.delivery_payment_prefill(acconto), ("Da saldare", 150.0))
+        self.assertEqual(app.delivery_payment_prefill(dapagare), ("Da pagare", 150.0))
+
+    def test_api_practice_delivery_prefill_returns_practice_data_for_the_popup(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pid = conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                animal_name,owner_first_name,owner_last_name,owner_phone,owner_street,owner_city,owner_province,total_service,total_service_manual,payment_status)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                ("CR-PREFILL","Privato","Livorno","Consegnato",stamp,stamp,admin["id"],"Sam","Laura","Barone","3339990000",
+                                 "Via Roma 1","Livorno","LI","240.00","Si","Pagato")).lastrowid
+        responses=[];self.handler.send_json=lambda payload,status=200:responses.append((payload,status))
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.api_practice_delivery_prefill(admin,pid)
+        payload,status=responses[-1]
+        self.assertEqual(status,200)
+        self.assertEqual(payload, {
+            "ok": True,
+            "animal_name": "Sam",
+            "client_first_name": "Laura",
+            "client_last_name": "Barone",
+            "client_phone": "3339990000",
+            "zone": "Livorno",
+            "delivery_address": "Via Roma 1, Livorno, LI",
+            "payment_status": "Pagato",
+            "payment_amount": "240.00",
+        })
+
+    def test_api_practice_delivery_prefill_404_for_missing_practice(self):
+        responses=[];self.handler.send_json=lambda payload,status=200:responses.append((payload,status))
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.api_practice_delivery_prefill(admin,999999)
+        self.assertEqual(responses[-1][1],404)
+
+    def test_schedule_delivery_popup_and_trigger_are_wired(self):
+        # richiesta esplicita dell'utente: popup "Fissa riconsegna" nel
+        # riepilogo pratica e in Programma Cremazioni (non su ogni pagina
+        # del gestionale, per non introdurre campi generici tipo
+        # name="start_time" ovunque), con i dati della pratica (anche il
+        # pagamento) ripresi automaticamente, e aperto in automatico quando
+        # una pratica passa a "Da consegnare" dal riepilogo.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pid = conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name)
+                                VALUES(?,?,?,?,?,?,?,?)""",("CR-POPUP","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Sam")).lastrowid
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.practice(admin,pid)
+        page=rendered[-1]
+        self.assertIn('id="scheduleDeliveryBackdrop"',page)
+        self.assertIn('action="/calendario/nuovo"',page)
+        self.assertIn('id="scheduleDeliveryPracticeId"',page)
+        self.assertIn('id="scheduleDeliveryPaymentStatus"',page)
+        self.assertIn('id="scheduleDeliveryPaymentAmount"',page)
+        js=app.APP_JS
+        self.assertIn("function ppmOpenScheduleDeliveryModal(practiceId){",js)
+        self.assertIn("function ppmCloseScheduleDeliveryModal(){",js)
+        self.assertIn("/api/pratiche/'+practiceId+'/riconsegna-prefill'",js)
+        save_state_fn=js[js.index("async function savePracticeState"):]
+        save_state_fn=save_state_fn[:save_state_fn.index("\n}\n")+3]
+        self.assertIn("data.status==='Da consegnare'&&previous!=='Da consegnare'",save_state_fn)
+        self.assertIn("ppmOpenScheduleDeliveryModal(practiceMatch[1])",save_state_fn)
+        # regressione: il popup NON deve comparire su pagine che non lo usano
+        # (era in layout(), globale su ogni pagina, e il suo campo generico
+        # name="start_time" rompeva un test di un'altra pagina che ne
+        # verificava l'assenza).
+        rendered2=[];self.handler.send_html=lambda content,*args:rendered2.append(content);self.handler.path="/"
+        self.handler.dashboard(admin)
+        self.assertNotIn('id="scheduleDeliveryBackdrop"',rendered2[-1])
+
+    def test_cremation_day_view_shows_fissa_riconsegna_button_for_single_animal_cycle(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,actual_end,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                ("2026-07-20", "completato", "08:00", "09:30", stamp, stamp, stamp),
+            ).lastrowid
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-FISSA1", "Privato", "Livorno", "Da consegnare", "Cremazione singola", "2026-07-20", stamp, stamp,
+                 admin["id"], "Sam", cycle_id),
+            ).lastrowid
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-20"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn(f'onclick="ppmOpenScheduleDeliveryModal({pid})"', page)
+        self.assertIn('>Fissa riconsegna</span>', page)
+        self.assertNotIn('>Fissa riconsegna Sam</span>', page)
+
+    def test_cremation_week_view_shows_one_fissa_riconsegna_button_per_animal_in_combo_cycle(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,actual_end,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                ("2026-07-20", "completato", "08:00", "09:30", stamp, stamp, stamp),
+            ).lastrowid
+            pid1 = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-FISSA2A", "Privato", "Livorno", "Da consegnare", "Cremazione singola", "2026-07-20", stamp, stamp,
+                 admin["id"], "Sam", cycle_id),
+            ).lastrowid
+            pid2 = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-FISSA2B", "Privato", "Livorno", "Da consegnare", "Cremazione singola", "2026-07-20", stamp, stamp,
+                 admin["id"], "Luna", cycle_id),
+            ).lastrowid
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-20&vista=settimana"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn(f'onclick="ppmOpenScheduleDeliveryModal({pid1})"', page)
+        self.assertIn(f'onclick="ppmOpenScheduleDeliveryModal({pid2})"', page)
+        self.assertIn('>Fissa riconsegna Sam</span>', page)
+        self.assertIn('>Fissa riconsegna Luna</span>', page)
+
         # the completed cycle keeps showing on the timeline for that day
         rendered = []
         self.handler.path = "/programma-cremazioni?data=2026-07-20"
