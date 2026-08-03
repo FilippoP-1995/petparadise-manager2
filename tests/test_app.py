@@ -1330,6 +1330,51 @@ class PetParadiseTests(unittest.TestCase):
         second_num = int(second_collab["practice_number"].split("-")[1])
         self.assertEqual(second_num, first_num + 1)
 
+    def test_practice_created_page_shows_premium_celebration_markup(self):
+        # richiesta esplicita dell'utente: la stessa animazione premium a
+        # particelle (gia' usata per la creazione di un evento calendario)
+        # deve comparire anche dopo la creazione di una pratica.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        redirects = []; self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.form = lambda: {"operator_name": "ALESSIO", "service_type": "Cremazione singola", "request_origin": "Privato", "destination_branch": "Livorno", "tag_da_richiamare": "Si"}
+        self.handler.create_practice(admin)
+        pid = int(redirects[-1].split("/pratiche/")[1])
+        self.assertEqual(redirects[-1], f"/pratiche/{pid}")
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.practice(admin, pid)
+        page = rendered[-1]
+        self.assertIn('calendar-created-wave', page)
+        self.assertIn('calendar-created-particles', page)
+        self.assertIn('calendar-created-paw', page)
+        self.assertIn('calendar-created-reflection', page)
+        self.assertIn('✔ Pratica creata con successo', page)
+        self.assertNotIn('calendar-created-confetti', page)
+        self.assertEqual(page.count('<i style="--bx:'), len(app.PARTICLE_VECTORS))
+        self.assertIn("sessionStorage.getItem('ppm_practice_created')==='1'", page)
+
+    def test_new_practice_form_wires_press_animation_and_creation_flag(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.assertIn("function ppmPracticeCreateSubmit(form){", app.APP_JS)
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.new_page(admin)
+        page = rendered[-1]
+        self.assertIn('onsubmit="return ppmPracticeCreateSubmit(this)"', page)
+        self.assertEqual(page.count('class="btn ppm-press-btn"'), 2)
+        self.assertEqual(page.count('onclick="ppmBtnPress(this)"'), 2)
+
+    def test_new_practice_error_redisplay_clears_stale_creation_flag(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.new_page(admin, error="Errore di prova", error_field="owner_first_name")
+        page = rendered[-1]
+        self.assertIn('sessionStorage.removeItem("ppm_practice_created")', page)
+
     def test_collaborator_detail_groups_by_month_and_marks_month_billing_status(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
