@@ -10146,6 +10146,61 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('calendar-icon-amber', page)
         self.assertIn('09:00 → 09:30', page)
 
+    def test_calendar_created_celebration_uses_premium_particles_not_confetti(self):
+        # richiesta esplicita dell'utente: sostituire l'animazione coriandoli
+        # con particelle luminose eleganti che convergono a formare la
+        # zampetta, niente coriandoli/carta/stelle/fuochi d'artificio.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,created_by,created_at,updated_at,event_status,start_at,end_at)
+                VALUES(?,?,?,?,?,?,?,?,?)""", ("Ritiro","RITIRO CELEBR","Pisa",admin["id"],stamp,stamp,"Da ritirare","2026-07-30T09:00:00","2026-07-30T09:30:00")).lastrowid
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(admin, event_id)
+        page = rendered[-1]
+        self.assertIn('calendar-created-wave', page)
+        self.assertIn('calendar-created-particles', page)
+        self.assertIn('calendar-created-paw', page)
+        self.assertIn('calendar-created-reflection', page)
+        self.assertIn('✔ Pratica creata con successo', page)
+        self.assertNotIn('calendar-created-confetti', page)
+        self.assertNotIn('calendar-created-check', page)
+        self.assertNotIn('Evento creato!', page)
+        self.assertEqual(page.count('<i style="--bx:'), len(app.PARTICLE_VECTORS))
+        # meccanismo di trigger invariato: il flag sessionStorage impostato
+        # da calendarSubmit() al submit reale, letto solo al prossimo
+        # caricamento pagina (dopo la conferma server) resta identico.
+        self.assertIn("sessionStorage.getItem('ppm_calendar_created')==='1'", page)
+
+    def test_calendar_created_celebration_css_has_no_confetti_and_respects_reduced_motion(self):
+        css = app.CSS
+        self.assertNotIn('calendarConfettiFall', css)
+        self.assertNotIn('calendar-created-confetti', css)
+        self.assertNotIn('calendarCheckPulse', css)
+        for keyframe in ('ppmCelWave', 'ppmCelParticle', 'ppmCelPaw', 'ppmCelText', 'ppmCelReflection'):
+            self.assertIn(f'@keyframes {keyframe}', css)
+        self.assertIn('.calendar-created-celebration{animation:none!important;opacity:0!important}', css)
+        self.assertEqual(len(app.PARTICLE_VECTORS), 16)
+
+    def test_calendar_save_button_has_press_micro_animation_only_on_create(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,created_by,created_at,updated_at,event_status,start_at,end_at)
+                VALUES(?,?,?,?,?,?,?,?,?)""", ("Ritiro","RITIRO EDIT","Pisa",admin["id"],stamp,stamp,"Da ritirare","2026-07-30T09:00:00","2026-07-30T09:30:00")).lastrowid
+        self.assertIn('function ppmBtnPress(btn){', app.APP_JS)
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/calendario/nuovo"
+        self.handler.calendar_event_form(admin)
+        new_page = rendered[-1]
+        self.assertIn('id="calendarSaveBtn" onclick="ppmBtnPress(this)"', new_page)
+        rendered.clear()
+        self.handler.path = f"/calendario/{event_id}/modifica"
+        self.handler.calendar_event_form(admin, event_id)
+        edit_page = rendered[-1]
+        self.assertNotIn('id="calendarSaveBtn"', edit_page)
+
     def test_calendar_event_detail_animali_and_preventivo_tabs_use_card_style(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
