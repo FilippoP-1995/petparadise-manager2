@@ -2187,6 +2187,11 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-animal-open{display:flex;align-items:center;gap:3px;color:#fb7185;font-size:12px;font-weight:700;white-space:nowrap}
 .cremation-animal-remove{width:24px;height:24px;flex:0 0 24px;display:flex;align-items:center;justify-content:center;border-radius:7px;border:1px solid #334155;background:transparent;color:#94a3b8;cursor:pointer}
 .cremation-animal-remove:hover{border-color:#fb7185;color:#fb7185}
+.cremation-animal-swap{width:24px;height:24px;flex:0 0 24px;display:flex;align-items:center;justify-content:center;border-radius:7px;border:1px solid #334155;background:transparent;color:#94a3b8;cursor:pointer}
+.cremation-animal-swap:hover{border-color:#60a5fa;color:#60a5fa}
+.cremation-animal-swap .icon{width:13px;height:13px}
+.cremation-animal-row.cremation-swap-highlight .cremation-animal-id,.cremation-week-animal-line.cremation-swap-highlight{animation:cremationSwapPulse .9s ease}
+@keyframes cremationSwapPulse{0%{background:#60a5fa33}50%{background:#60a5fa1a}100%{background:transparent}}
 .cremation-animal-remove .icon{width:13px;height:13px}
 .cremation-animal-open .icon{width:14px;height:14px}
 .cremation-dash{color:#475569}
@@ -5669,6 +5674,119 @@ function cremationRemoveFromCycle(el,practiceId){
       .catch(function(){cremationSoftRefreshCycle(cycleId);});
   },{title:'Rimuovi animale',confirmLabel:'Rimuovi'});
 }
+var cremationSwapSourceId=null,cremationSwapSourceName='';
+function cremationOpenSwapModal(practiceId,name){
+  cremationSwapSourceId=practiceId;
+  cremationSwapSourceName=name;
+  const overlay=document.getElementById('cremationSwapOverlay');
+  if(!overlay)return;
+  const search=document.getElementById('cremationSwapSearch');
+  if(search)search.value='';
+  const list=document.getElementById('cremationSwapList');
+  const empty=document.getElementById('cremationSwapEmpty');
+  if(list)list.innerHTML='';
+  if(empty){empty.hidden=false;empty.textContent='Caricamento…';}
+  overlay.hidden=false;
+  fetch('/api/programma-cremazioni/scambio-candidati?pratica_id='+practiceId,{credentials:'same-origin'})
+    .then(function(res){return res.json();})
+    .then(function(data){
+      if(!data.ok){if(empty){empty.hidden=false;empty.textContent=data.error||'Errore nel caricamento.';}return;}
+      cremationRenderSwapCandidates(data.animals);
+    })
+    .catch(function(){if(empty){empty.hidden=false;empty.textContent='Errore di rete.';}});
+}
+function cremationRenderSwapCandidates(animals){
+  const list=document.getElementById('cremationSwapList');
+  const empty=document.getElementById('cremationSwapEmpty');
+  if(!list)return;
+  list.innerHTML='';
+  animals.forEach(function(a){
+    const btn=document.createElement('button');
+    btn.type='button';
+    btn.className='cremation-add-animal-card';
+    btn.dataset.search=(String(a.name||'')+' '+String(a.owner||'')).toLowerCase();
+    const timeBit=a.start?(a.start+'–'+a.end):'';
+    const metaBits=[a.weight?a.weight+' kg':'',a.owner||'',[a.cycle_date_label,timeBit].filter(Boolean).join(' · '),a.status_label].filter(Boolean);
+    btn.innerHTML='<span class="cremation-animal-avatar" aria-hidden="true">'+calendarHtml(a.avatar||'')+'</span>'
+      +'<div class="cremation-add-animal-info"><div class="cremation-animal-name">'+calendarHtml(a.name||'')+'</div>'
+      +'<div class="cremation-add-animal-meta">'+calendarHtml(metaBits.join(' · '))+'</div></div>';
+    btn.addEventListener('click',function(){cremationSwapPick(a.id,a.name);});
+    list.appendChild(btn);
+  });
+  if(empty){empty.hidden=animals.length>0;empty.textContent='Nessun altro animale pianificato questa settimana.';}
+}
+function cremationFilterSwapList(input){
+  const term=input.value.trim().toLowerCase();
+  const cards=document.querySelectorAll('#cremationSwapList .cremation-add-animal-card');
+  let anyVisible=false;
+  cards.forEach(function(card){
+    const match=!term||card.dataset.search.includes(term);
+    card.hidden=!match;
+    if(match)anyVisible=true;
+  });
+  const empty=document.getElementById('cremationSwapEmpty');
+  if(empty&&cards.length)empty.hidden=anyVisible;
+}
+function cremationCloseSwapModal(){
+  const overlay=document.getElementById('cremationSwapOverlay');
+  if(overlay)overlay.hidden=true;
+}
+function cremationSwapPick(targetId,targetName){
+  cremationCloseSwapModal();
+  const sourceId=cremationSwapSourceId,sourceName=cremationSwapSourceName;
+  cremationOpenConfirmModal('Scambiare '+sourceName+' con '+targetName+'?',function(){
+    cremationExecuteSwap(sourceId,targetId);
+  },{title:'Scambia animali',confirmLabel:'Scambia'});
+}
+function cremationExecuteSwap(sourceId,targetId){
+  fetch('/programma-cremazioni/scambia',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',
+    body:'pratica_a='+encodeURIComponent(sourceId)+'&pratica_b='+encodeURIComponent(targetId)})
+    .then(function(res){return res.json();})
+    .then(function(data){
+      if(!data.ok){alert(data.error||'Operazione non riuscita');return;}
+      cremationSwapRelocate('.cremation-animal-row',sourceId,targetId);
+      cremationSwapRelocate('.cremation-week-animal-line',sourceId,targetId);
+    })
+    .catch(function(){alert('Operazione non riuscita');});
+}
+function cremationElementIsOnScreen(el){
+  const r=el.getBoundingClientRect();
+  return r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<window.innerHeight&&r.left<window.innerWidth;
+}
+function cremationSwapRelocate(selector,idA,idB){
+  // scambia in-place i due nodi DOM gia' renderizzati (con tutto il loro
+  // contenuto: etichette, urna, badge avviso, ecc.) invece di ricostruirli
+  // o ricaricare la pagina — cosi' ogni dato dell'animale resta corretto
+  // senza duplicare la logica di rendering in JS. Nodo segnaposto per
+  // gestire correttamente anche nodi adiacenti/nello stesso genitore.
+  const a=document.querySelector(selector+'[data-practice-id="'+idA+'"]');
+  const b=document.querySelector(selector+'[data-practice-id="'+idB+'"]');
+  if(!a||!b||a===b)return;
+  const onScreenA=cremationElementIsOnScreen(a),onScreenB=cremationElementIsOnScreen(b);
+  const rectA=onScreenA?a.getBoundingClientRect():null;
+  const rectB=onScreenB?b.getBoundingClientRect():null;
+  const placeholder=document.createComment('cremation-swap');
+  a.parentNode.insertBefore(placeholder,a);
+  b.parentNode.insertBefore(a,b);
+  placeholder.parentNode.insertBefore(b,placeholder);
+  placeholder.remove();
+  if(rectA)cremationFlipAnimate(a,rectA);
+  if(rectB)cremationFlipAnimate(b,rectB);
+}
+function cremationFlipAnimate(el,fromRect){
+  const toRect=el.getBoundingClientRect();
+  const dx=fromRect.left-toRect.left,dy=fromRect.top-toRect.top;
+  el.classList.add('cremation-swap-highlight');
+  if(Math.abs(dx)>=1||Math.abs(dy)>=1){
+    el.style.transition='none';
+    el.style.transform='translate('+dx+'px,'+dy+'px)';
+    requestAnimationFrame(function(){
+      el.style.transition='transform .45s cubic-bezier(.22,1,.36,1)';
+      el.style.transform='';
+    });
+  }
+  setTimeout(function(){el.style.transition='';el.style.transform='';el.classList.remove('cremation-swap-highlight');},950);
+}
 function cremationToggleOwnerNotified(btn,practiceId,newStatus){
   // nella vista Settimana il giorno mostrato e' scelto solo lato client (lo
   // scroll del day-bar non cambia l'URL): un location.reload() nudo perdeva
@@ -6185,7 +6303,24 @@ function practiceSerializeItems(){
     const values=[...list.children].map(row=>Object.fromEntries([...row.querySelectorAll('[data-key]')].map(input=>[input.dataset.key,input.value])));
     hidden.value=JSON.stringify(values);
   });
+  practiceSyncCalcoTags();
   updatePreventivoTotal();
+}
+function practiceSyncCalcoTags(){
+  // richiesta esplicita dell'utente: selezionando un calco (riga con
+  // sottotipo Generico/Zampa/Naso/Polpastrello) la relativa etichetta
+  // operativa si spunta da sola; rimuovendo la riga o riportandola a un
+  // sottotipo diverso la disseleziona automaticamente. Gira ad ogni
+  // aggiunta/modifica/rimozione riga calco perche' e' dentro
+  // practiceSerializeItems(), gia' agganciata a tutti quei punti.
+  const subtypes=new Set([...document.querySelectorAll('[data-practice-list="calco"] [data-key="subtype"]')].map(function(sel){return sel.value;}));
+  const fieldBySubtype={'':'tag_calco','zampa':'tag_calco','naso':'tag_calco_nose','polpastrello':'tag_calco_paw'};
+  const active=new Set();
+  subtypes.forEach(function(subtype){const field=fieldBySubtype[subtype];if(field)active.add(field);});
+  ['tag_calco','tag_calco_nose','tag_calco_paw'].forEach(function(name){
+    const box=document.querySelector(`input[type="checkbox"][name="${name}"]`);
+    if(box)box.checked=active.has(name);
+  });
 }
 async function calendarLookup(input,endpoint,results,select){
   const q=input.value.trim();
@@ -6656,6 +6791,7 @@ LUCIDE_PATHS = {
     "navigation": '<polygon points="3 11 22 2 13 21 11 13 3 11"/>',
     "moon": '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
     "eye": '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
+    "repeat": '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
     "map-pin": '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
 }
 
@@ -7712,6 +7848,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/api/calendario/animali/search": return self.api_calendar_animals_search(user)
         if path == "/api/calendario/pratiche/search": return self.api_calendar_practices_search(user)
         if path == "/api/programma-cremazioni/prossimo-slot": return self.api_cremation_next_slot(user)
+        if path == "/api/programma-cremazioni/scambio-candidati": return self.api_cremation_swap_candidates(user)
         if path == "/api/notifiche/stato": return self.notification_status(user)
         match = re.fullmatch(r"/api/veterinari/(\d+)/buoni", path)
         if match: return self.api_veterinarian_vouchers(user, int(match.group(1)))
@@ -7904,6 +8041,7 @@ class App(BaseHTTPRequestHandler):
         if match: return self.cremation_delete_cycle(user, int(match.group(1)))
         match = re.fullmatch(r"/programma-cremazioni/pratiche/(\d+)/rimuovi", path)
         if match: return self.cremation_remove_from_cycle(user, int(match.group(1)))
+        if path == "/programma-cremazioni/scambia": return self.cremation_swap_animals(user)
         match = re.fullmatch(r"/pratiche/(\d+)/comunicazione-proprietario", path)
         if match: return self.owner_notified_toggle(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/catalogo-inviato", path)
@@ -11185,7 +11323,7 @@ class App(BaseHTTPRequestHandler):
             if assisted_cremation_label(row):
                 notified=("owner_notified_status" in row.keys() and row["owner_notified_status"]=="avvisato")
                 notify_badge=f'<span class="cremation-week-notify-badge {"cremation-notify-green" if notified else "cremation-notify-red"}">{"🟢 AVVISATO" if notified else "🔴 DA AVVISARE"}</span>'
-            return f'''<div class="cremation-week-animal-line">
+            return f'''<div class="cremation-week-animal-line" data-practice-id="{row['id']}">
               <span class="cremation-week-animal-name-group"><span class="cremation-week-animal-name">{avatar_emoji} {animal_name_html(row)}{weight_txt}</span>{provenance_html}</span>
               {notify_badge}
               {tags_line_html}
@@ -11240,9 +11378,10 @@ class App(BaseHTTPRequestHandler):
             provenance_html=f'<span class="cremation-provenance-chip {provenance_color_class(code)}">{esc(code)}</span>' if code else '<span class="cremation-dash">—</span>'
             url=practice_url(row)
             remove_html=f'<button type="button" class="cremation-animal-remove" onclick="event.stopPropagation();cremationRemoveFromCycle(this,{row["id"]})" aria-label="Rimuovi dal ciclo" title="Rimuovi dal ciclo">{lucide("x")}</button>' if removable else ""
+            swap_html=f'<button type="button" class="cremation-animal-swap" onclick="event.stopPropagation();cremationOpenSwapModal({row["id"]},{esc(json.dumps(row["animal_name"] or "Animale"))},{esc(json.dumps(weight))})" aria-label="Scambia animale" title="Scambia con un altro animale">{lucide("repeat")}</button>' if removable else ""
             notifier_id=row["owner_notified_by"] if "owner_notified_by" in row.keys() and row["owner_notified_by"] else None
             notify_html=owner_notify_html(row,notifier_names.get(int(notifier_id)) if notifier_id else None)
-            return f'''<div class="cremation-animal-row" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}>
+            return f'''<div class="cremation-animal-row" data-practice-id="{row['id']}" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}>
               <div class="cremation-animal-id">
                 <span class="cremation-animal-avatar {avatar_cls}" aria-hidden="true">{avatar_emoji}</span>
                 <div class="cremation-animal-name-wrap"><span class="cremation-animal-name">{prefix}{animal_name_html(row)}</span><span class="cremation-animal-weight">{weight_html}</span></div>
@@ -11250,7 +11389,7 @@ class App(BaseHTTPRequestHandler):
               <div class="cremation-animal-col"><small>Provenienza</small>{provenance_html}</div>
               <div class="cremation-animal-col"><small>Etichette</small><div class="cremation-animal-tags">{tags_html(row)}</div></div>
               <div class="cremation-animal-col"><small>Urna</small><div class="cremation-animal-urn">{urn_html(row)}</div></div>
-              <div class="cremation-animal-actions"><a class="cremation-animal-open" href="{url}" onclick="event.stopPropagation()"><span>Apri pratica</span>{lucide("chevron-right")}</a>{remove_html}</div>
+              <div class="cremation-animal-actions"><a class="cremation-animal-open" href="{url}" onclick="event.stopPropagation()"><span>Apri pratica</span>{lucide("chevron-right")}</a>{swap_html}{remove_html}</div>
               {notify_html}
             </div>'''
 
@@ -11417,6 +11556,16 @@ class App(BaseHTTPRequestHandler):
             <div class="cremation-modal-actions"><button type="button" class="btn ghost" onclick="cremationCloseConfirmModal()">Annulla</button><button type="button" class="btn" id="cremationConfirmActionBtn">Conferma</button></div>
           </div>
         </div>'''
+        swap_modal_html='''<div class="cremation-modal-overlay" id="cremationSwapOverlay" hidden onclick="if(event.target===this)cremationCloseSwapModal()">
+          <div class="cremation-modal cremation-modal-lg">
+            <div class="cremation-modal-head"><h3>Scambia animale</h3><button type="button" class="cremation-modal-close" onclick="cremationCloseSwapModal()" aria-label="Chiudi">×</button></div>
+            <div class="cremation-search-wrap">
+              <input type="text" class="cremation-modal-search" id="cremationSwapSearch" autocomplete="off" placeholder="Cerca animale o proprietario..." oninput="cremationFilterSwapList(this)">
+            </div>
+            <div class="cremation-add-animal-list" id="cremationSwapList"></div>
+            <p class="cremation-quick-menu-empty" id="cremationSwapEmpty" hidden>Nessun altro animale pianificato questa settimana.</p>
+          </div>
+        </div>'''
 
         def owner_label(row):
             owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip() or row["owner_company"] or ""
@@ -11484,6 +11633,7 @@ class App(BaseHTTPRequestHandler):
         {create_modal_html}
         {add_animal_modal_html}
         {confirm_modal_html}
+        {swap_modal_html}
         </main>'''
         self.send_html(layout("Programma Cremazioni",body,user))
 
@@ -11601,9 +11751,10 @@ class App(BaseHTTPRequestHandler):
             provenance_html=f'<span class="cremation-provenance-chip {provenance_color_class(code)}">{esc(code)}</span>' if code else '<span class="cremation-dash">—</span>'
             url=practice_url(row)
             remove_html=f'<button type="button" class="cremation-animal-remove" onclick="event.stopPropagation();cremationRemoveFromCycle(this,{row["id"]})" aria-label="Rimuovi dal ciclo" title="Rimuovi dal ciclo">{lucide("x")}</button>' if removable else ""
+            swap_html=f'<button type="button" class="cremation-animal-swap" onclick="event.stopPropagation();cremationOpenSwapModal({row["id"]},{esc(json.dumps(row["animal_name"] or "Animale"))},{esc(json.dumps(weight))})" aria-label="Scambia animale" title="Scambia con un altro animale">{lucide("repeat")}</button>' if removable else ""
             notifier_id=row["owner_notified_by"] if "owner_notified_by" in row.keys() and row["owner_notified_by"] else None
             notify_html=owner_notify_html(row,notifier_names.get(int(notifier_id)) if notifier_id else None)
-            return f'''<div class="cremation-animal-row" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}>
+            return f'''<div class="cremation-animal-row" data-practice-id="{row['id']}" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}>
               <div class="cremation-animal-id">
                 <span class="cremation-animal-avatar {avatar_cls}" aria-hidden="true">{avatar_emoji}</span>
                 <div class="cremation-animal-name-wrap"><span class="cremation-animal-name">{prefix}{animal_name_html(row)}</span><span class="cremation-animal-weight">{weight_html}</span></div>
@@ -11611,7 +11762,7 @@ class App(BaseHTTPRequestHandler):
               <div class="cremation-animal-col"><small>Provenienza</small>{provenance_html}</div>
               <div class="cremation-animal-col"><small>Etichette</small><div class="cremation-animal-tags">{tags_html(row)}</div></div>
               <div class="cremation-animal-col"><small>Urna</small><div class="cremation-animal-urn">{urn_html(row)}</div></div>
-              <div class="cremation-animal-actions"><a class="cremation-animal-open" href="{url}" onclick="event.stopPropagation()"><span>Apri pratica</span>{lucide("chevron-right")}</a>{remove_html}</div>
+              <div class="cremation-animal-actions"><a class="cremation-animal-open" href="{url}" onclick="event.stopPropagation()"><span>Apri pratica</span>{lucide("chevron-right")}</a>{swap_html}{remove_html}</div>
               {notify_html}
             </div>'''
 
@@ -11629,7 +11780,7 @@ class App(BaseHTTPRequestHandler):
             if assisted_cremation_label(row):
                 notified=("owner_notified_status" in row.keys() and row["owner_notified_status"]=="avvisato")
                 notify_badge=f'<span class="cremation-week-notify-badge {"cremation-notify-green" if notified else "cremation-notify-red"}">{"🟢 AVVISATO" if notified else "🔴 DA AVVISARE"}</span>'
-            return f'''<div class="cremation-week-animal-line">
+            return f'''<div class="cremation-week-animal-line" data-practice-id="{row['id']}">
               <span class="cremation-week-animal-name-group"><span class="cremation-week-animal-name">{avatar_emoji} {animal_name_html(row)}{weight_txt}</span>{provenance_html}</span>
               {notify_badge}
               {tags_html}
@@ -11892,6 +12043,16 @@ class App(BaseHTTPRequestHandler):
             <div class="cremation-modal-actions"><button type="button" class="btn ghost" onclick="cremationCloseConfirmModal()">Annulla</button><button type="button" class="btn" id="cremationConfirmActionBtn">Conferma</button></div>
           </div>
         </div>'''
+        swap_modal_html='''<div class="cremation-modal-overlay" id="cremationSwapOverlay" hidden onclick="if(event.target===this)cremationCloseSwapModal()">
+          <div class="cremation-modal cremation-modal-lg">
+            <div class="cremation-modal-head"><h3>Scambia animale</h3><button type="button" class="cremation-modal-close" onclick="cremationCloseSwapModal()" aria-label="Chiudi">×</button></div>
+            <div class="cremation-search-wrap">
+              <input type="text" class="cremation-modal-search" id="cremationSwapSearch" autocomplete="off" placeholder="Cerca animale o proprietario..." oninput="cremationFilterSwapList(this)">
+            </div>
+            <div class="cremation-add-animal-list" id="cremationSwapList"></div>
+            <p class="cremation-quick-menu-empty" id="cremationSwapEmpty" hidden>Nessun altro animale pianificato questa settimana.</p>
+          </div>
+        </div>'''
 
         def add_animal_card_html(row):
             avatar_emoji,avatar_cls=species_avatar(row["species"] if "species" in row.keys() else "")
@@ -11981,6 +12142,7 @@ class App(BaseHTTPRequestHandler):
         {edit_modal_html}
         {add_animal_modal_html}
         {confirm_modal_html}
+        {swap_modal_html}
         <div id="cremationToast" class="cremation-toast" hidden></div>
         </main>'''
         self.send_html(layout("Programma Cremazioni",body,user))
@@ -12178,6 +12340,83 @@ class App(BaseHTTPRequestHandler):
                 remaining=c.execute("SELECT COUNT(*) n FROM practices WHERE cremation_cycle_id=? AND (deleted_at IS NULL OR deleted_at='')",(cycle_id,)).fetchone()["n"]
                 if remaining==0:
                     c.execute("UPDATE cremation_cycles SET status='pianificato',updated_at=? WHERE id=?",(stamp,cycle_id))
+        return self.send_json({"ok":True})
+
+    def api_cremation_swap_candidates(self,user):
+        q=parse_qs(urlparse(self.path).query)
+        practice_id=(q.get("pratica_id") or [""])[0].strip()
+        with db() as c:
+            practice=c.execute("SELECT id,cremation_cycle_id FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(practice_id,)).fetchone()
+            if not practice or not practice["cremation_cycle_id"]:
+                return self.send_json({"ok":False,"error":"Animale non trovato o non ancora pianificato."},404)
+            own_cycle=c.execute("SELECT id,cycle_date FROM cremation_cycles WHERE id=?",(practice["cremation_cycle_id"],)).fetchone()
+            if not own_cycle:
+                return self.send_json({"ok":False,"error":"Ciclo non trovato."},404)
+            try:cycle_date=date.fromisoformat(own_cycle["cycle_date"])
+            except ValueError:return self.send_json({"ok":False,"error":"Data del ciclo non valida."},400)
+            monday=cycle_date-timedelta(days=cycle_date.weekday())
+            week_dates=[(monday+timedelta(days=i)).isoformat() for i in range(7)]
+            marks=','.join('?' for _ in week_dates)
+            week_cycles=c.execute(f"SELECT id,cycle_date,status,planned_start,planned_end FROM cremation_cycles WHERE cycle_date IN ({marks})",tuple(week_dates)).fetchall()
+            cycles_by_id={row["id"]:row for row in week_cycles}
+            candidates=[]
+            if cycles_by_id:
+                marks2=','.join('?' for _ in cycles_by_id)
+                rows=c.execute(f"SELECT * FROM practices WHERE cremation_cycle_id IN ({marks2}) AND (deleted_at IS NULL OR deleted_at='') ORDER BY id ASC",tuple(cycles_by_id.keys())).fetchall()
+                for row in rows:
+                    # esclude se stesso e il suo eventuale compagno di ciclo combo:
+                    # scambiare con un animale del proprio stesso ciclo sarebbe un
+                    # no-op (richiesta esplicita dell'utente: mostrare "tutti gli
+                    # animali", ma non ha senso proporre il ciclo di partenza).
+                    if row["cremation_cycle_id"]==practice["cremation_cycle_id"]:continue
+                    cyc=cycles_by_id.get(row["cremation_cycle_id"])
+                    if not cyc:continue
+                    status_label,_=CREMATION_STATUS_LABELS.get(cyc["status"],(cyc["status"].upper(),""))
+                    avatar_emoji,_=species_avatar(row["species"] if "species" in row.keys() else "")
+                    owner=" ".join(x for x in (row["owner_first_name"],row["owner_last_name"]) if x).strip() or row["owner_company"] or ""
+                    weight=(row["estimated_weight"] or "").strip()
+                    candidates.append({
+                        "id":row["id"],
+                        "cycle_id":cyc["id"],
+                        "name":row["animal_name"] or "Da inserire",
+                        "weight":weight,
+                        "owner":owner,
+                        "avatar":avatar_emoji,
+                        "cycle_date":cyc["cycle_date"],
+                        "cycle_date_label":date_it(cyc["cycle_date"]),
+                        "start":cyc["planned_start"],
+                        "end":cyc["planned_end"],
+                        "status_label":status_label,
+                        "search":f'{(row["animal_name"] or "").lower()} {owner.lower()}',
+                    })
+        return self.send_json({"ok":True,"animals":candidates})
+
+    def cremation_swap_animals(self,user):
+        f=self.form()
+        pid_a=(f.get("pratica_a") or "").strip()
+        pid_b=(f.get("pratica_b") or "").strip()
+        if not pid_a or not pid_b or pid_a==pid_b:
+            return self.send_json({"ok":False,"error":"Seleziona due animali diversi."},400)
+        stamp=now()
+        with db() as c:
+            practice_a=c.execute("SELECT id,cremation_cycle_id FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(pid_a,)).fetchone()
+            practice_b=c.execute("SELECT id,cremation_cycle_id FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(pid_b,)).fetchone()
+            if not practice_a or not practice_b:
+                return self.send_json({"ok":False,"error":"Animale non trovato. Ricarica la pagina."},404)
+            cycle_a=practice_a["cremation_cycle_id"]
+            cycle_b=practice_b["cremation_cycle_id"]
+            if not cycle_a or not cycle_b:
+                return self.send_json({"ok":False,"error":"Entrambi gli animali devono già appartenere a un ciclo."},409)
+            if cycle_a==cycle_b:
+                return self.send_json({"ok":False,"error":"I due animali sono già nello stesso ciclo."},409)
+            # scambio puro della sola appartenenza al ciclo: nessun'altra colonna
+            # di practices ne' di cremation_cycles viene toccata, quindi stato,
+            # orario, durata, posizione e numero del ciclo restano invariati e
+            # ogni altro dato dell'animale (etichette, urna, assistita, note,
+            # proprietario...) resta sulla stessa riga pratica, viaggiando con
+            # essa automaticamente (richiesta esplicita dell'utente).
+            c.execute("UPDATE practices SET cremation_cycle_id=?,updated_at=? WHERE id=?",(cycle_b,stamp,pid_a))
+            c.execute("UPDATE practices SET cremation_cycle_id=?,updated_at=? WHERE id=?",(cycle_a,stamp,pid_b))
         return self.send_json({"ok":True})
 
     def owner_notified_toggle(self,user,pid):

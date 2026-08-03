@@ -387,6 +387,30 @@ class PetParadiseTests(unittest.TestCase):
         ]), "calco")
         self.assertEqual(len(items), 5)
 
+    def test_calco_subtype_selection_auto_syncs_the_matching_operational_tag(self):
+        # richiesta esplicita dell'utente: selezionando un calco (Zampa/
+        # Generico -> CALCO, Naso -> CALCO NASO, Polpastrello -> CALCO
+        # POLPASTRELLO) la relativa etichetta operativa si spunta da sola;
+        # rimuovendo la riga o cambiando sottotipo la dissepunta.
+        js = app.APP_JS
+        self.assertIn("function practiceSyncCalcoTags(){", js)
+        fn = js[js.index("function practiceSyncCalcoTags(){"):]
+        fn = fn[:fn.index("\nfunction ", 10)]
+        self.assertIn("'':'tag_calco'", fn)
+        self.assertIn("'zampa':'tag_calco'", fn)
+        self.assertIn("'naso':'tag_calco_nose'", fn)
+        self.assertIn("'polpastrello':'tag_calco_paw'", fn)
+        # gira ad ogni serializzazione (aggiunta/modifica/rimozione riga:
+        # practiceAddRow e il pulsante di rimozione chiamano gia' questa),
+        # e anche al bootstrap iniziale del form (runBootstrap chiama
+        # practiceSerializeItems() una volta caricati gli item esistenti).
+        serialize_fn = js[js.index("function practiceSerializeItems(){"):]
+        serialize_fn = serialize_fn[:serialize_fn.index("\nfunction ", 10)]
+        self.assertIn("practiceSyncCalcoTags();", serialize_fn)
+        form_html = self.handler.fields_html()
+        bootstrap = form_html[form_html.index("function runBootstrap(){"):]
+        self.assertIn("practiceSerializeItems();", bootstrap[:400])
+
     def test_possibile_tags_render_as_badges(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
@@ -2721,6 +2745,210 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(status, 200)
         with app.db() as conn:
             self.assertIsNone(conn.execute("SELECT cremation_cycle_id FROM practices WHERE id=?", (pid,)).fetchone()["cremation_cycle_id"])
+
+    def _make_swap_fixture(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+
+            def practice(code, name, tags=None):
+                tags = tags or {}
+                cols = ["practice_number", "request_origin", "destination_branch", "status", "service_type",
+                        "created_at", "updated_at", "created_by", "animal_name", "species", "estimated_weight",
+                        "owner_first_name", "owner_last_name", "provenance"] + list(tags.keys())
+                vals = [code, "Privato", "Livorno", "In programma", "Cremazione singola", stamp, stamp,
+                        admin["id"], name, "Cane", "5", "Mario", "Rossi", "L"] + list(tags.values())
+                placeholders = ",".join("?" for _ in vals)
+                return conn.execute(f"INSERT INTO practices({','.join(cols)}) VALUES({placeholders})", vals).lastrowid
+
+            luna = practice("SW-LUNA", "Luna", {"tag_assistita": "Si", "notes": "attenzione speciale"})
+            buddy = practice("SW-BUDDY", "Buddy")
+            rocky = practice("SW-ROCKY", "Rocky")
+            ozzy = practice("SW-OZZY", "Ozzy")
+            other_week = practice("SW-OTHERWEEK", "FuoriSettimana")
+
+            cyc_combo = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-08-10", "in_attesa", "08:30", "10:00", stamp, stamp),
+            ).lastrowid
+            cyc_single = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-08-12", "completato", "14:00", "15:30", stamp, stamp),
+            ).lastrowid
+            cyc_single2 = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-08-13", "in_corso", "09:00", "10:30", stamp, stamp),
+            ).lastrowid
+            other_week_cycle = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-08-20", "in_attesa", "08:30", "10:00", stamp, stamp),
+            ).lastrowid
+            conn.execute("UPDATE practices SET cremation_cycle_id=? WHERE id IN (?,?)", (cyc_combo, luna, buddy))
+            conn.execute("UPDATE practices SET cremation_cycle_id=? WHERE id=?", (cyc_single, rocky))
+            conn.execute("UPDATE practices SET cremation_cycle_id=? WHERE id=?", (cyc_single2, ozzy))
+            conn.execute("UPDATE practices SET cremation_cycle_id=? WHERE id=?", (other_week_cycle, other_week))
+        return dict(admin=admin, luna=luna, buddy=buddy, rocky=rocky, ozzy=ozzy, other_week=other_week,
+                    cyc_combo=cyc_combo, cyc_single=cyc_single, cyc_single2=cyc_single2, other_week_cycle=other_week_cycle)
+
+    def test_swap_candidates_lists_the_week_excludes_own_cycle_and_returns_expected_fields(self):
+        fx = self._make_swap_fixture()
+        self.handler.path = f"/api/programma-cremazioni/scambio-candidati?pratica_id={fx['luna']}"
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.api_cremation_swap_candidates(fx["admin"])
+        payload, status = responses[-1]
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        ids = {a["id"] for a in payload["animals"]}
+        # esclude se stesso e il compagno di ciclo combo (Buddy), esclude
+        # l'animale di una settimana diversa; include gli altri due
+        self.assertNotIn(fx["luna"], ids)
+        self.assertNotIn(fx["buddy"], ids)
+        self.assertNotIn(fx["other_week"], ids)
+        self.assertEqual(ids, {fx["rocky"], fx["ozzy"]})
+        rocky_entry = next(a for a in payload["animals"] if a["id"] == fx["rocky"])
+        self.assertEqual(rocky_entry["name"], "Rocky")
+        self.assertEqual(rocky_entry["weight"], "5")
+        self.assertEqual(rocky_entry["owner"], "Mario Rossi")
+        self.assertEqual(rocky_entry["cycle_date"], "2026-08-12")
+        self.assertEqual(rocky_entry["cycle_date_label"], "12/08/2026")
+        self.assertEqual(rocky_entry["start"], "14:00")
+        self.assertEqual(rocky_entry["end"], "15:30")
+        self.assertEqual(rocky_entry["status_label"], "COMPLETATO")
+        self.assertEqual(rocky_entry["search"], "rocky mario rossi")
+
+    def test_swap_candidates_rejects_missing_or_unassigned_practice(self):
+        fx = self._make_swap_fixture()
+        with app.db() as conn:
+            unassigned = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("SW-FREE", "Privato", "Livorno", "Ritirato", "Cremazione singola", app.now(), app.now(),
+                 fx["admin"]["id"], "Libero"),
+            ).lastrowid
+        for pid in (999999, unassigned):
+            self.handler.path = f"/api/programma-cremazioni/scambio-candidati?pratica_id={pid}"
+            responses = []
+            self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+            self.handler.api_cremation_swap_candidates(fx["admin"])
+            payload, status = responses[-1]
+            self.assertFalse(payload["ok"])
+            self.assertEqual(status, 404)
+
+    def test_swap_single_to_single_exchanges_only_cycle_membership(self):
+        fx = self._make_swap_fixture()
+        self.handler.form = lambda: {"pratica_a": str(fx["rocky"]), "pratica_b": str(fx["ozzy"])}
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.cremation_swap_animals(fx["admin"])
+        self.assertEqual(responses[-1], ({"ok": True}, 200))
+        with app.db() as conn:
+            rocky_row = conn.execute("SELECT cremation_cycle_id FROM practices WHERE id=?", (fx["rocky"],)).fetchone()
+            ozzy_row = conn.execute("SELECT cremation_cycle_id FROM practices WHERE id=?", (fx["ozzy"],)).fetchone()
+            cyc_single = conn.execute("SELECT status,planned_start,planned_end,cycle_date FROM cremation_cycles WHERE id=?", (fx["cyc_single"],)).fetchone()
+            cyc_single2 = conn.execute("SELECT status,planned_start,planned_end,cycle_date FROM cremation_cycles WHERE id=?", (fx["cyc_single2"],)).fetchone()
+        self.assertEqual(rocky_row["cremation_cycle_id"], fx["cyc_single2"])
+        self.assertEqual(ozzy_row["cremation_cycle_id"], fx["cyc_single"])
+        # i due cicli restano identici: stato, orario, data invariati
+        self.assertEqual(dict(cyc_single), {"status": "completato", "planned_start": "14:00", "planned_end": "15:30", "cycle_date": "2026-08-12"})
+        self.assertEqual(dict(cyc_single2), {"status": "in_corso", "planned_start": "09:00", "planned_end": "10:30", "cycle_date": "2026-08-13"})
+
+    def test_swap_combo_to_single_moves_only_the_selected_animal_leaving_the_combo_partner_untouched(self):
+        fx = self._make_swap_fixture()
+        self.handler.form = lambda: {"pratica_a": str(fx["luna"]), "pratica_b": str(fx["rocky"])}
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.cremation_swap_animals(fx["admin"])
+        self.assertEqual(responses[-1], ({"ok": True}, 200))
+        with app.db() as conn:
+            luna_row = conn.execute("SELECT cremation_cycle_id FROM practices WHERE id=?", (fx["luna"],)).fetchone()
+            rocky_row = conn.execute("SELECT cremation_cycle_id FROM practices WHERE id=?", (fx["rocky"],)).fetchone()
+            buddy_row = conn.execute("SELECT cremation_cycle_id,tag_assistita FROM practices WHERE id=?", (fx["buddy"],)).fetchone()
+            luna_full = conn.execute("SELECT tag_assistita,notes,provenance FROM practices WHERE id=?", (fx["luna"],)).fetchone()
+        self.assertEqual(luna_row["cremation_cycle_id"], fx["cyc_single"])
+        self.assertEqual(rocky_row["cremation_cycle_id"], fx["cyc_combo"])
+        # Buddy (compagno di ciclo combo) resta esattamente dov'era
+        self.assertEqual(buddy_row["cremation_cycle_id"], fx["cyc_combo"])
+        # l'intera scheda di Luna (etichette, note, provenienza) la segue nel nuovo ciclo
+        self.assertEqual(luna_full["tag_assistita"], "Si")
+        self.assertEqual(luna_full["notes"], "attenzione speciale")
+        self.assertEqual(luna_full["provenance"], "L")
+
+    def test_swap_rejects_same_practice_same_cycle_or_missing_practice(self):
+        fx = self._make_swap_fixture()
+        cases = [
+            ({"pratica_a": str(fx["rocky"]), "pratica_b": str(fx["rocky"])}, 400),
+            ({"pratica_a": str(fx["luna"]), "pratica_b": str(fx["buddy"])}, 409),  # stesso ciclo combo
+            ({"pratica_a": "999999", "pratica_b": str(fx["rocky"])}, 404),
+        ]
+        for form, expected_status in cases:
+            self.handler.form = lambda form=form: form
+            responses = []
+            self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+            self.handler.cremation_swap_animals(fx["admin"])
+            payload, status = responses[-1]
+            self.assertFalse(payload["ok"])
+            self.assertEqual(status, expected_status)
+
+    def test_swap_rejects_when_either_animal_has_no_cycle(self):
+        fx = self._make_swap_fixture()
+        with app.db() as conn:
+            unassigned = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("SW-FREE2", "Privato", "Livorno", "Ritirato", "Cremazione singola", app.now(), app.now(),
+                 fx["admin"]["id"], "Libero2"),
+            ).lastrowid
+        self.handler.form = lambda: {"pratica_a": str(fx["rocky"]), "pratica_b": str(unassigned)}
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.cremation_swap_animals(fx["admin"])
+        payload, status = responses[-1]
+        self.assertFalse(payload["ok"])
+        self.assertEqual(status, 409)
+
+    def test_swap_writes_no_practice_history_and_does_not_touch_notification_status(self):
+        # richiesta esplicita dell'utente: lo scambio non deve toccare la
+        # cronologia ne' nessun'altra funzione esistente (qui: lo stato di
+        # avviso proprietario, che deve viaggiare con l'animale invariato).
+        fx = self._make_swap_fixture()
+        with app.db() as conn:
+            conn.execute("UPDATE practices SET owner_notified_status='avvisato' WHERE id=?", (fx["luna"],))
+            history_before = conn.execute("SELECT COUNT(*) n FROM practice_history").fetchone()["n"]
+        self.handler.form = lambda: {"pratica_a": str(fx["luna"]), "pratica_b": str(fx["rocky"])}
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.cremation_swap_animals(fx["admin"])
+        self.assertTrue(responses[-1][0]["ok"])
+        with app.db() as conn:
+            history_after = conn.execute("SELECT COUNT(*) n FROM practice_history").fetchone()["n"]
+            luna_notified = conn.execute("SELECT owner_notified_status FROM practices WHERE id=?", (fx["luna"],)).fetchone()
+        self.assertEqual(history_before, history_after)
+        self.assertEqual(luna_notified["owner_notified_status"], "avvisato")
+
+    def test_swap_icon_and_modal_markup_present_on_day_and_week_views(self):
+        fx = self._make_swap_fixture()
+        rendered = []
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.path = "/programma-cremazioni?vista=giorno&data=2026-08-10"
+        self.handler.cremation_schedule(fx["admin"])
+        day_page = rendered[-1]
+        self.handler.path = "/programma-cremazioni?vista=settimana&data=2026-08-10"
+        self.handler.cremation_schedule(fx["admin"])
+        week_page = rendered[-1]
+        for page in (day_page, week_page):
+            self.assertIn('class="cremation-animal-swap"', page)
+            self.assertIn(f'cremationOpenSwapModal({fx["luna"]},', page)
+            self.assertIn(f'data-practice-id="{fx["luna"]}"', page)
+            self.assertIn('id="cremationSwapOverlay"', page)
+            self.assertIn('id="cremationSwapSearch"', page)
+            self.assertIn('id="cremationSwapList"', page)
+            self.assertIn('oninput="cremationFilterSwapList(this)"', page)
+        js = app.APP_JS
+        for fn in ("cremationOpenSwapModal", "cremationRenderSwapCandidates", "cremationFilterSwapList",
+                   "cremationSwapPick", "cremationExecuteSwap", "cremationSwapRelocate", "cremationFlipAnimate"):
+            self.assertIn(f"function {fn}(", js)
+        self.assertIn("cremationOpenConfirmModal('Scambiare '+sourceName+' con '+targetName+'?'", js)
 
     def test_cremation_schedule_week_view_groups_cycles_by_day_in_compact_rows(self):
         monday = date(2026, 7, 20)  # a known Monday
