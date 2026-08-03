@@ -8668,22 +8668,25 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIsNone(still_open)
 
     def test_cremation_pending_reminder_fires_immediately_for_every_cremazione_singola_ritirata(self):
+        # richiesta esplicita dell'utente: non piu' ogni pratica in attesa,
+        # solo quelle con un'etichetta speciale (assistita o lavorazione
+        # calco) — le pratiche di fixture qui sono quindi taggate.
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             today=date.today()
             waiting_pickup=(today-timedelta(days=9)).isoformat()
             fresh_pickup=today.isoformat()
             pending_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,created_at,updated_at,created_by,
-                animal_name,owner_first_name,owner_last_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                ("CR-CREM1","Privato","Livorno","Ritirato","Cremazione singola",stamp,stamp,admin["id"],"Nuvola","Franco","Rossi",waiting_pickup,1)).lastrowid
+                animal_name,owner_first_name,owner_last_name,pickup_date,data_complete,tag_assistita) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-CREM1","Privato","Livorno","Ritirato","Cremazione singola",stamp,stamp,admin["id"],"Nuvola","Franco","Rossi",waiting_pickup,1,"Si")).lastrowid
             # fires the same day too: the count must match the full Programma Cremazioni list, not just stalled ones
             fresh_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,created_at,updated_at,created_by,
-                animal_name,owner_first_name,owner_last_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                ("CR-CREM3","Privato","Livorno","Ritirato","Cremazione singola",stamp,stamp,admin["id"],"Luna","Paolo","Neri",fresh_pickup,1)).lastrowid
+                animal_name,owner_first_name,owner_last_name,pickup_date,data_complete,tag_calco) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-CREM3","Privato","Livorno","Ritirato","Cremazione singola",stamp,stamp,admin["id"],"Luna","Paolo","Neri",fresh_pickup,1,"Si")).lastrowid
             # same wait, but a collective cremation must NOT trigger this specific reminder type
             collettiva_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,created_at,updated_at,created_by,
-                animal_name,owner_first_name,owner_last_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                ("CR-CREM2","Privato","Livorno","Ritirato","Cremazione collettiva",stamp,stamp,admin["id"],"Rex","Anna","Verdi",waiting_pickup,1)).lastrowid
+                animal_name,owner_first_name,owner_last_name,pickup_date,data_complete,tag_assistita) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-CREM2","Privato","Livorno","Ritirato","Cremazione collettiva",stamp,stamp,admin["id"],"Rex","Anna","Verdi",waiting_pickup,1,"Si")).lastrowid
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
         self.handler.dashboard(admin)
         page=rendered[-1]
@@ -8718,8 +8721,8 @@ class PetParadiseTests(unittest.TestCase):
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             pickup=(date.today()-timedelta(days=6)).isoformat()
             pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,created_at,updated_at,created_by,
-                animal_name,owner_first_name,owner_last_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                ("CR-REFRESH","Privato","Livorno","Ritirato","Cremazione singola",stamp,stamp,admin["id"],"Birba","Mario","Conti",pickup,1)).lastrowid
+                animal_name,owner_first_name,owner_last_name,pickup_date,data_complete,tag_assistita) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-REFRESH","Privato","Livorno","Ritirato","Cremazione singola",stamp,stamp,admin["id"],"Birba","Mario","Conti",pickup,1,"Si")).lastrowid
         with app.db() as conn:
             app.sync_reminders(conn)
         with app.db() as conn:
@@ -8728,6 +8731,27 @@ class PetParadiseTests(unittest.TestCase):
             rows=conn.execute("SELECT title FROM reminders WHERE entity_key=? AND completed_at IS NULL",(f"practice:{pid}",)).fetchall()
         self.assertEqual(len(rows),1)
         self.assertIn("da 8 giorni",rows[0]["title"])
+
+    def test_cremation_pending_reminder_no_longer_fires_for_ordinary_untagged_practice(self):
+        # richiesta esplicita dell'utente: una pratica normale in attesa di
+        # cremazione, senza etichette speciali, non deve piu' generare un
+        # promemoria individuale (la card si riempiva di voci poco utili).
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,created_at,updated_at,created_by,
+                animal_name,owner_first_name,owner_last_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-ORDINARIA","Privato","Livorno","Ritirato","Cremazione singola",stamp,stamp,admin["id"],"Fido","Elena","Bianchi",
+                 (date.today()-timedelta(days=3)).isoformat(),1)).lastrowid
+        with app.db() as conn:
+            app.sync_reminders(conn)
+            row=conn.execute("SELECT id FROM reminders WHERE reminder_type='cremation_pending' AND entity_key=?",(f"practice:{pid}",)).fetchone()
+        self.assertIsNone(row)
+        # ma se le viene aggiunta un'etichetta CALCO NASO, al sync successivo compare
+        with app.db() as conn:
+            conn.execute("UPDATE practices SET tag_calco_nose='Si' WHERE id=?",(pid,))
+            app.sync_reminders(conn)
+            row2=conn.execute("SELECT id FROM reminders WHERE reminder_type='cremation_pending' AND entity_key=? AND completed_at IS NULL",(f"practice:{pid}",)).fetchone()
+        self.assertIsNotNone(row2)
 
     def test_dismissed_reminder_does_not_reappear_on_the_next_sync(self):
         # richiesta esplicita dell'utente: una volta eliminato un promemoria
@@ -9233,8 +9257,8 @@ class PetParadiseTests(unittest.TestCase):
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             pickup=(date.today()-timedelta(days=6)).isoformat()
             pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,created_at,updated_at,created_by,
-                animal_name,owner_first_name,owner_last_name,pickup_date,data_complete) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                ("CR-DISMISS","Privato","Livorno","Ritirato","Cremazione singola",stamp,stamp,admin["id"],"Birba","Mario","Conti",pickup,1)).lastrowid
+                animal_name,owner_first_name,owner_last_name,pickup_date,data_complete,tag_assistita) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-DISMISS","Privato","Livorno","Ritirato","Cremazione singola",stamp,stamp,admin["id"],"Birba","Mario","Conti",pickup,1,"Si")).lastrowid
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
         self.handler.dashboard(admin)
         page=rendered[-1]
@@ -12534,6 +12558,113 @@ class PetParadiseTests(unittest.TestCase):
         self.assertLess(second_pos, first_pos)
         self.assertIn("CICLO 1", page[second_pos:first_pos])
         self.assertIn("CICLO 2", page[first_pos:first_pos+3000])
+
+    def test_estremi_pending_reminder_fires_and_clears_when_no_longer_pending(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                animal_name,owner_first_name,owner_last_name,send_estremi) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-ESTREMI","Privato","Livorno","Consegnato",stamp,stamp,admin["id"],"Argo","Sara","Neri","Si")).lastrowid
+        with app.db() as conn:
+            app.sync_reminders(conn)
+            row=conn.execute("SELECT title,url FROM reminders WHERE reminder_type='estremi_pending' AND entity_key=? AND completed_at IS NULL",(f"practice:{pid}",)).fetchone()
+        self.assertIsNotNone(row)
+        self.assertIn("Argo",row["title"])
+        self.assertEqual(row["url"],f"/pratiche/{pid}")
+        with app.db() as conn:
+            conn.execute("UPDATE practices SET send_estremi='' WHERE id=?",(pid,))
+            app.sync_reminders(conn)
+            still_open=conn.execute("SELECT id FROM reminders WHERE reminder_type='estremi_pending' AND entity_key=? AND completed_at IS NULL",(f"practice:{pid}",)).fetchone()
+        self.assertIsNone(still_open)
+
+    def test_event_imminent_reminder_fires_only_within_the_hour_and_for_active_events(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            now=app.rome_now().replace(tzinfo=None)
+            soon_id=conn.execute("""INSERT INTO calendar_events(event_type,title,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO ZONA CENTRO","Serena",(now+timedelta(minutes=30)).isoformat(timespec="seconds"),
+                 (now+timedelta(minutes=45)).isoformat(timespec="seconds"),"Da ritirare",admin["id"],stamp,stamp)).lastrowid
+            far_id=conn.execute("""INSERT INTO calendar_events(event_type,title,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("Riconsegna","RICONSEGNA LONTANA","Serena",(now+timedelta(hours=3)).isoformat(timespec="seconds"),
+                 (now+timedelta(hours=3,minutes=30)).isoformat(timespec="seconds"),"In programma",admin["id"],stamp,stamp)).lastrowid
+            past_id=conn.execute("""INSERT INTO calendar_events(event_type,title,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO GIA INIZIATO","Serena",(now-timedelta(minutes=10)).isoformat(timespec="seconds"),
+                 (now+timedelta(minutes=5)).isoformat(timespec="seconds"),"Da ritirare",admin["id"],stamp,stamp)).lastrowid
+            done_id=conn.execute("""INSERT INTO calendar_events(event_type,title,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("Riconsegna in sede","RICONSEGNA GIA COMPLETATA","Serena",(now+timedelta(minutes=20)).isoformat(timespec="seconds"),
+                 (now+timedelta(minutes=40)).isoformat(timespec="seconds"),"Completato",admin["id"],stamp,stamp)).lastrowid
+        with app.db() as conn:
+            app.sync_reminders(conn)
+            open_keys={row["entity_key"] for row in conn.execute("SELECT entity_key FROM reminders WHERE reminder_type='event_imminent' AND completed_at IS NULL")}
+        self.assertIn(f"event:{soon_id}",open_keys)
+        self.assertNotIn(f"event:{far_id}",open_keys)
+        self.assertNotIn(f"event:{past_id}",open_keys)
+        self.assertNotIn(f"event:{done_id}",open_keys)
+
+    def test_reminder_priority_breaks_ties_at_equal_created_at(self):
+        # richiesta esplicita dell'utente: a parita' di data/orario, i
+        # promemoria manuali vengono prima di quelli amministrativi.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                animal_name,data_complete) VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("CR-PRIORITA","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Otto",0)).lastrowid
+            conn.execute("""INSERT INTO reminders(reminder_type,entity_key,dedupe_key,title,url,created_at) VALUES(?,?,?,?,?,?)""",
+                ("manual",f"manual:{stamp}",f"manual:{stamp}","Richiamare il canile","",stamp))
+            app.sync_reminders(conn)
+            conn.execute("UPDATE reminders SET created_at=? WHERE reminder_type='practice_incomplete' AND entity_key=?",(stamp,f"practice:{pid}"))
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        manual_pos=page.index("Richiamare il canile")
+        incomplete_pos=page.index(f"CR-PRIORITA")
+        self.assertLess(manual_pos,incomplete_pos)
+
+    def test_reminders_dots_never_exceed_five_regardless_of_open_count(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            for i in range(15):
+                conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                    animal_name,data_complete) VALUES(?,?,?,?,?,?,?,?,?)""",
+                    (f"CR-DOTS{i}","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],f"Animale{i}",0))
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        dots_html=page[page.index('id="ppmRemindersDots"'):page.index('</div>',page.index('id="ppmRemindersDots"'))]
+        self.assertLessEqual(dots_html.count('class="reminders-dot'),5)
+        # 15 pratiche + 1 slide sintetica "Report della settimana" sempre presente
+        self.assertIn('data-real-count="16"',page)
+
+    def test_reminders_carousel_wraps_edge_slides_with_non_interactive_clones(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            for i in range(3):
+                conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                    animal_name,data_complete) VALUES(?,?,?,?,?,?,?,?,?)""",
+                    (f"CR-LOOP{i}","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],f"Loop{i}",0))
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        carousel=page[page.index('id="ppmRemindersCarousel"'):page.index('</section>',page.index('id="ppmRemindersCarousel"'))]
+        self.assertEqual(carousel.count('data-reminder-clone="1"'),2)
+        clone_start=carousel.index('data-reminder-clone="1"')
+        clone_end=carousel.index('</div>',clone_start)
+        # while a clone is fine having data-title text, it must never carry
+        # data-reminder-id (would wire it into setupReminderSwipe/dot count)
+        self.assertNotIn('data-reminder-id',carousel[max(0,clone_start-200):clone_end])
+
+    def test_reminders_carousel_setup_positions_infinite_loop_and_skips_clones_in_dots(self):
+        js=app.APP_JS
+        fn=js[js.index("function setupRemindersCarousel(){"):]
+        fn=fn[:fn.index("\ndocument.addEventListener('DOMContentLoaded', setupRemindersCarousel);")]
+        self.assertIn("data-reminder-clone",fn)
+        self.assertIn("carousel.scrollTop=realSlides[0].offsetTop",fn)
+        self.assertIn("carousel.scrollTop=realSlides[realSlides.length-1].offsetTop",fn)
+        self.assertIn("reminderUpdateDots(",fn)
 
 
 if __name__ == "__main__":

@@ -1345,9 +1345,10 @@ a{color:inherit;text-decoration:none}.top{height:68px;background:#fff;border-bot
 .reminders-mini-add-btn{display:grid;place-items:center;width:22px;height:22px;padding:0;border:0;border-radius:50%;background:#ff4d6d;color:#fff;cursor:pointer;flex:0 0 auto}
 .reminders-mini-add-btn:hover{background:#f43f5e}
 .reminders-mini-add-btn .icon{width:13px;height:13px}
-.reminders-dots{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;width:10px}
-.reminders-dot{width:5px;height:5px;border-radius:50%;background:#334155;transition:background .2s ease,transform .2s ease}
+.reminders-dots{flex:1;max-height:88px;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;width:10px}
+.reminders-dot{width:5px;height:5px;border-radius:50%;background:#334155;transition:background .2s ease,transform .2s ease,opacity .15s ease}
 .reminders-dot.active{background:#ff4d6d;transform:scale(1.6)}
+.reminders-dot.entering{opacity:0;transform:scale(.4)}
 .light-theme .reminders-slide-front{background:#fff}
 .light-theme .reminders-slide-copy b{color:#111827}
 .light-theme .reminders-slide-copy small{color:#64748b}
@@ -4509,9 +4510,11 @@ function reminderCarouselStartAuto(){
   reminderCarouselTimer=setInterval(function(){
     const h=carousel.clientHeight;
     if(!h)return;
-    const maxScroll=carousel.scrollHeight-h;
-    const next=carousel.scrollTop+h>=maxScroll-4?0:carousel.scrollTop+h;
-    carousel.scrollTo({top:next,behavior:'smooth'});
+    // Niente piu' caso speciale "in fondo, salta a 0": col clone del primo
+    // slide in coda (loop infinito, vedi setupRemindersCarousel) la
+    // continuazione e' gia' naturale, e l'osservatore corregge la
+    // posizione non appena lo scroll si assesta sul clone.
+    carousel.scrollTo({top:carousel.scrollTop+h,behavior:'smooth'});
   },360000);
 }
 function reminderCarouselStopAuto(){clearInterval(reminderCarouselTimer);}
@@ -4523,17 +4526,33 @@ function reminderCarouselPauseAuto(){
   clearTimeout(reminderCarouselPauseTimer);
   reminderCarouselPauseTimer=setTimeout(reminderCarouselStartAuto,5000);
 }
-function reminderRefreshDots(){
+function reminderUpdateDots(centerIndex){
+  // Indicatore a finestra scorrevole: al massimo 5 pallini anche con
+  // decine di promemoria, centrata sullo slide corrente. Ricostruisce i
+  // pallini solo quando la finestra si sposta davvero (non ad ogni slide),
+  // con una breve dissolvenza in ingresso per i nuovi pallini.
   const carousel=document.getElementById('ppmRemindersCarousel');
   const dots=document.getElementById('ppmRemindersDots');
   if(!carousel||!dots)return;
-  const n=carousel.querySelectorAll('.reminders-slide').length;
-  dots.innerHTML='';
-  for(let i=0;i<n;i++){
-    const d=document.createElement('span');
-    d.className='reminders-dot'+(i===0?' active':'');
-    dots.appendChild(d);
+  const total=carousel.querySelectorAll('.reminders-slide:not([data-reminder-clone])').length;
+  if(!total)return;
+  const windowSize=Math.min(5,total);
+  const start=Math.max(0,Math.min(total-windowSize,centerIndex-Math.floor(windowSize/2)));
+  if(String(start)!==dots.dataset.windowStart){
+    dots.dataset.windowStart=String(start);
+    dots.innerHTML='';
+    for(let i=0;i<windowSize;i++){
+      const d=document.createElement('span');
+      d.className='reminders-dot entering';
+      dots.appendChild(d);
+    }
+    requestAnimationFrame(function(){
+      dots.querySelectorAll('.reminders-dot').forEach(function(d){d.classList.remove('entering');});
+    });
   }
+  dots.querySelectorAll('.reminders-dot').forEach(function(d,i){
+    d.classList.toggle('active',start+i===centerIndex);
+  });
 }
 function reminderRemoveSlide(slide){
   reminderCloseOpenSlide();
@@ -4547,10 +4566,17 @@ function reminderRemoveSlide(slide){
   });
   setTimeout(function(){
     slide.remove();
-    if(carousel&&!carousel.querySelector('.reminders-slide')){
-      carousel.innerHTML='<div class="reminders-slide reminders-slide-empty"><div class="reminders-slide-front"><span class="reminders-slide-copy"><b>Nessun promemoria attivo</b><small>Sei in pari con tutto</small></span></div></div>';
+    if(carousel){
+      // i cloni ai bordi (loop infinito) diventerebbero disallineati dopo
+      // la rimozione di uno slide reale: li tolgo qui, il loop riprende al
+      // prossimo caricamento della Dashboard — gli altri slide restano
+      // perfettamente funzionanti nel frattempo, solo senza wrap-around.
+      carousel.querySelectorAll('.reminders-slide[data-reminder-clone]').forEach(function(c){c.remove();});
+      if(!carousel.querySelector('.reminders-slide')){
+        carousel.innerHTML='<div class="reminders-slide reminders-slide-empty"><div class="reminders-slide-front"><span class="reminders-slide-copy"><b>Nessun promemoria attivo</b><small>Sei in pari con tutto</small></span></div></div>';
+      }
     }
-    reminderRefreshDots();
+    reminderUpdateDots(0);
   },260);
 }
 function reminderCloseOpenSlide(except){
@@ -4687,15 +4713,36 @@ function setupRemindersCarousel(){
   const carousel=document.getElementById('ppmRemindersCarousel');
   if(!carousel)return;
   markRemindersRead();
-  carousel.querySelectorAll('.reminders-slide[data-reminder-id]').forEach(setupReminderSwipe);
-  const dots=document.getElementById('ppmRemindersDots');
   const allSlides=[...carousel.querySelectorAll('.reminders-slide')];
-  if(dots&&allSlides.length>1&&'IntersectionObserver' in window){
+  const realSlides=allSlides.filter(function(s){return !s.hasAttribute('data-reminder-clone');});
+  realSlides.filter(function(s){return s.hasAttribute('data-reminder-id');}).forEach(setupReminderSwipe);
+  // Loop infinito coi cloni ai bordi (vedi reminder_slide_html/dashboard
+  // in Python): se presenti, all'apertura ci si posiziona gia' sul primo
+  // slide reale saltando il clone iniziale, senza animazione.
+  const hasLoop=allSlides.length>realSlides.length;
+  const leadingClone=hasLoop?allSlides[0]:null;
+  const trailingClone=hasLoop?allSlides[allSlides.length-1]:null;
+  if(hasLoop&&realSlides[0])carousel.scrollTop=realSlides[0].offsetTop;
+  const dots=document.getElementById('ppmRemindersDots');
+  if(dots&&realSlides.length>1&&'IntersectionObserver' in window){
     const observer=new IntersectionObserver(function(entries){
       entries.forEach(function(entry){
         if(!entry.isIntersecting||entry.intersectionRatio<0.6)return;
-        const idx=allSlides.indexOf(entry.target);
-        dots.querySelectorAll('.reminders-dot').forEach(function(d,i){d.classList.toggle('active',i===idx);});
+        if(entry.target===leadingClone){
+          // ci si e' fermati sul clone dell'ultimo slide (scorrendo verso
+          // l'alto oltre il primo): salto istantaneo, senza transizione,
+          // al vero ultimo slide — impercettibile perche' identico al clone.
+          carousel.scrollTop=realSlides[realSlides.length-1].offsetTop;
+          reminderUpdateDots(realSlides.length-1);
+          return;
+        }
+        if(entry.target===trailingClone){
+          carousel.scrollTop=realSlides[0].offsetTop;
+          reminderUpdateDots(0);
+          return;
+        }
+        const idx=realSlides.indexOf(entry.target);
+        if(idx>=0)reminderUpdateDots(idx);
       });
     },{root:carousel,threshold:[0.6]});
     allSlides.forEach(function(s){observer.observe(s);});
@@ -7110,6 +7157,14 @@ CREMATION_ASSISTED_TAGS = (
     ("tag_possibile_assistita", "Probabile Assistita"),
     ("tag_saluto", "Saluto"),
 )
+# lavorazioni calco: usate per capire se una pratica "in attesa di
+# cremazione" merita un promemoria (non ogni pratica normale, solo
+# quelle con una lavorazione speciale in corso, vedi sync_reminders)
+CREMATION_CALCO_TAGS = (
+    "tag_calco", "tag_possibile_calco", "tag_calco_urna",
+    "tag_calco_paw", "tag_possibile_calco_paw",
+    "tag_calco_nose", "tag_possibile_calco_nose",
+)
 
 
 def assisted_cremation_label(p):
@@ -7473,11 +7528,18 @@ def sync_reminders(c):
                             url=f"/pratiche/{row['id']}",stamp=stamp)
     close_stale_reminders(c,"delivered_unpaid",unpaid_keys,stamp)
 
+    cremation_tag_cols=",".join(t for key,_ in CREMATION_ASSISTED_TAGS for t in (key,))+","+",".join(CREMATION_CALCO_TAGS)
     cremation_rows=c.execute(
-        f"SELECT id,animal_name,owner_first_name,owner_last_name,owner_company,pickup_date,created_at FROM practices WHERE {active} AND status='Ritirato' AND service_type='Cremazione singola'"
+        f"SELECT id,animal_name,owner_first_name,owner_last_name,owner_company,pickup_date,created_at,{cremation_tag_cols} FROM practices WHERE {active} AND status='Ritirato' AND service_type='Cremazione singola'"
     ).fetchall()
     cremation_keys=set()
     for row in cremation_rows:
+        # richiesta esplicita dell'utente: una pratica normale in attesa di
+        # cremazione, senza etichette speciali (assistita o lavorazione
+        # calco), non deve piu' generare un promemoria individuale — la
+        # pratica non viene toccata, viene solo esclusa da questa lista.
+        if not assisted_cremation_label(row) and not any(row[t]=="Si" for t in CREMATION_CALCO_TAGS):
+            continue
         days=reminder_days_since(row["pickup_date"] or row["created_at"],today)
         key=f"practice:{row['id']}";cremation_keys.add(key)
         when=f"da {days} giorni" if days is not None and days>0 else "da oggi"
@@ -7485,6 +7547,38 @@ def sync_reminders(c):
                         title=f"{row['animal_name'] or 'Animale'} ({reminder_owner_label(row)}) è in attesa di cremazione {when}",
                         url=f"/pratiche/{row['id']}",stamp=stamp)
     close_stale_reminders(c,"cremation_pending",cremation_keys,stamp)
+
+    estremi_rows=c.execute(
+        f"SELECT id,animal_name,owner_first_name,owner_last_name,owner_company FROM practices WHERE {active} AND send_estremi='Si'"
+    ).fetchall()
+    estremi_keys=set()
+    for row in estremi_rows:
+        key=f"practice:{row['id']}";estremi_keys.add(key)
+        ensure_reminder(c,reminder_type="estremi_pending",entity_key=key,
+                        title=f"Inviare estremi per {row['animal_name'] or 'animale'} ({reminder_owner_label(row)})",
+                        url=f"/pratiche/{row['id']}",stamp=stamp)
+    close_stale_reminders(c,"estremi_pending",estremi_keys,stamp)
+
+    # eventi (Ritiro/Ritiro in sede/Riconsegna/Riconsegna in sede) che
+    # iniziano entro un'ora: sync_reminders gira solo quando la Dashboard
+    # viene aperta, quindi non e' una notifica push in tempo reale, ma
+    # compare/scompare al successivo caricamento entro quella finestra.
+    now_dt=rome_now()
+    now_iso=now_dt.isoformat(timespec="seconds")
+    window_iso=(now_dt+timedelta(hours=1)).isoformat(timespec="seconds")
+    event_rows=c.execute(
+        """SELECT id,event_type,title,start_at FROM calendar_events
+           WHERE (deleted_at IS NULL OR deleted_at='') AND event_type IN ('Ritiro','Ritiro in sede','Riconsegna','Riconsegna in sede')
+             AND event_status NOT IN ('Ritirato','Annullato','Completato') AND start_at>? AND start_at<=?""",
+        (now_iso,window_iso),
+    ).fetchall()
+    event_keys=set()
+    for row in event_rows:
+        key=f"event:{row['id']}";event_keys.add(key)
+        ensure_reminder(c,reminder_type="event_imminent",entity_key=key,
+                        title=f"{row['title']} tra poco",
+                        url=f"/calendario/{row['id']}",stamp=stamp)
+    close_stale_reminders(c,"event_imminent",event_keys,stamp)
 
     assisted_rows=c.execute(
         f"SELECT * FROM practices WHERE {active} AND cremation_cycle_id IS NOT NULL AND owner_notified_status='da_avvisare'"
@@ -7673,6 +7767,8 @@ REMINDER_GROUP_LABELS={
     "delivered_unpaid": ("calendar","state-red","{n} pratica consegnata ma non pagata","{n} pratiche consegnate ma non pagate"),
     "cremation_pending": ("paw","state-green","{n} cremazione singola in attesa","{n} cremazioni singole in attesa"),
     "assisted_notify_pending": ("phone","state-red","{n} assistita da avvisare","{n} assistite da avvisare"),
+    "estremi_pending": ("clipboard","state-purple","{n} pratica con estremi da inviare","{n} pratiche con estremi da inviare"),
+    "event_imminent": ("calendar","state-blue","{n} appuntamento imminente","{n} appuntamenti imminenti"),
 }
 REMINDER_GROUP_FALLBACK=("bell","state-blue","{n} promemoria attivo","{n} promemoria attivi")
 # Barra colorata laterale su ogni voce del Centro Promemoria (richiesta
@@ -7688,6 +7784,8 @@ REMINDER_BAR_COLORS={
     "delivered_unpaid":"#facc15",
     "cremation_pending":"#22c55e",
     "assisted_notify_pending":"#22c55e",
+    "estremi_pending":"#9b5cf6",
+    "event_imminent":"#3b82f6",
 }
 REMINDER_BAR_COLOR_DEFAULT="#64748b"
 REMINDER_WEEKLY_BAR_COLOR="#3b82f6"
@@ -7701,8 +7799,25 @@ REMINDER_CATEGORY_NAMES={
     "delivered_unpaid":"Pagamenti",
     "cremation_pending":"Cremazioni",
     "assisted_notify_pending":"Cremazioni",
+    "estremi_pending":"Amministrazione",
+    "event_imminent":"Appuntamenti",
 }
 REMINDER_CATEGORY_DEFAULT="Promemoria"
+# Priorita' usata SOLO come criterio di ordinamento secondario quando due
+# promemoria condividono lo stesso sort_key cronologico (capita spesso: i
+# promemoria generati nella stessa sincronizzazione condividono lo stesso
+# timestamp) — l'ordine cronologico resta sempre il criterio primario.
+REMINDER_PRIORITY_RANK={
+    "manual":0,
+    "assisted_notify_pending":1,
+    "event_imminent":2,
+    "cremation_pending":3,
+    "practice_incomplete":4,
+    "delivered_unpaid":4,
+    "estremi_pending":4,
+    "product_reorder":4,
+}
+REMINDER_PRIORITY_DEFAULT=9
 
 
 
@@ -8373,7 +8488,7 @@ class App(BaseHTTPRequestHandler):
             rtype=row["reminder_type"]
             icon,color_cls,_singular,_plural=REMINDER_GROUP_LABELS.get(rtype,REMINDER_GROUP_FALLBACK)
             reminder_slides.append({
-                "sort_key":row["created_at"] or "",
+                "sort_key":(row["created_at"] or "",REMINDER_PRIORITY_RANK.get(rtype,REMINDER_PRIORITY_DEFAULT)),
                 "id":row["id"],
                 "icon":icon,"color_cls":color_cls,
                 "bar_color":REMINDER_BAR_COLORS.get(rtype,REMINDER_BAR_COLOR_DEFAULT),
@@ -8393,7 +8508,7 @@ class App(BaseHTTPRequestHandler):
         # sintetica ordinata su "oggi", senza id (non completabile/
         # rinviabile/eliminabile, solo apribile).
         reminder_slides.append({
-            "sort_key":rome_today.isoformat()+"T23:59:59",
+            "sort_key":(rome_today.isoformat()+"T23:59:59",REMINDER_PRIORITY_DEFAULT),
             "id":None,"icon":"chart","color_cls":"state-blue","bar_color":REMINDER_WEEKLY_BAR_COLOR,
             "category":"Report","is_manual":False,
             "title":"Report della settimana",
@@ -8402,7 +8517,7 @@ class App(BaseHTTPRequestHandler):
         })
         reminder_slides.sort(key=lambda slide:slide["sort_key"])
 
-        def reminder_slide_html(slide):
+        def reminder_slide_html(slide,is_clone=False):
             rid=slide["id"]
             manual_badge='<span class="reminders-manual-badge">MANUALE</span>' if slide["is_manual"] else ''
             subtitle=slide.get("subtitle_override") or (f"{esc(slide['category'])} · {esc(slide['date_label'])}" if slide["date_label"] else esc(slide["category"]))
@@ -8410,6 +8525,14 @@ class App(BaseHTTPRequestHandler):
               <span class="metric-icon reminders-slide-icon {slide['color_cls']}">{lucide(slide['icon'])}</span>
               <span class="reminders-slide-copy">{manual_badge}<b>{esc(slide['title'])}</b><small>{subtitle}</small></span>
             </a>'''
+            if is_clone:
+                # clone ai bordi per lo scroll verticale infinito (vedi
+                # setupRemindersCarousel): identico visivamente allo slide
+                # reale che rappresenta, mai interattivo (niente swipe-azioni,
+                # niente data-reminder-id) ed escluso dal conteggio/dalla
+                # finestra dei pallini — e' solo un punto d'appoggio per far
+                # sembrare lo scroll continuo tra ultimo e primo promemoria.
+                return f'<div class="reminders-slide" aria-hidden="true" data-reminder-clone="1" tabindex="-1">{front}</div>'
             if rid is None:
                 return f'<div class="reminders-slide">{front}</div>'
             view_btn=f'<a class="reminders-swipe-btn reminders-swipe-view" href="{esc(slide["url"])}" aria-label="Vedi">{lucide("eye")}<span>Vedi</span></a>'
@@ -8432,18 +8555,30 @@ class App(BaseHTTPRequestHandler):
               {front}
             </div>'''
 
-        reminders_slides_html=''.join(reminder_slide_html(slide) for slide in reminder_slides) or f'''<div class="reminders-slide reminders-slide-empty">
+        real_slide_count=len(reminder_slides)
+        real_slides_html=''.join(reminder_slide_html(slide) for slide in reminder_slides)
+        if real_slide_count>=2:
+            reminders_slides_html=(
+                reminder_slide_html(reminder_slides[-1],is_clone=True)
+                +real_slides_html
+                +reminder_slide_html(reminder_slides[0],is_clone=True)
+            )
+        else:
+            reminders_slides_html=real_slides_html
+        reminders_slides_html=reminders_slides_html or f'''<div class="reminders-slide reminders-slide-empty">
           <div class="reminders-slide-front" style="border-left:3px solid {REMINDER_BAR_COLOR_DEFAULT}">
             <span class="metric-icon reminders-slide-icon state-blue">{lucide("check-circle")}</span>
             <span class="reminders-slide-copy"><b>Nessun promemoria attivo</b><small>Sei in pari con tutto</small></span>
           </div>
         </div>'''
+        initial_dots_count=min(5,real_slide_count)
+        reminders_dots_html=''.join('<span class="reminders-dot"></span>' for _ in range(initial_dots_count))
         reminders_html=f'''<section class="reminders-card" id="ppmRemindersCard">
 <div class="reminders-carousel-row">
-  <div class="reminders-carousel" id="ppmRemindersCarousel">{reminders_slides_html}</div>
+  <div class="reminders-carousel" id="ppmRemindersCarousel" data-real-count="{real_slide_count}">{reminders_slides_html}</div>
   <div class="reminders-side-col">
     <button type="button" class="reminders-mini-add-btn" onclick="openAddReminderModal()" aria-label="Aggiungi promemoria">{lucide("plus")}</button>
-    <div class="reminders-dots" id="ppmRemindersDots">{''.join('<span class="reminders-dot"></span>' for _ in reminder_slides)}</div>
+    <div class="reminders-dots" id="ppmRemindersDots">{reminders_dots_html}</div>
   </div>
 </div>
 </section>
