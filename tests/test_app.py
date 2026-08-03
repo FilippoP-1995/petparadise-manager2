@@ -2133,7 +2133,7 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.send_html = lambda content, *args: rendered.append(content)
         self.handler.cremation_schedule(admin)
         page = rendered[-1]
-        self.assertIn(f'href="/calendario/nuovo?linked_practice_id={pid}"', page)
+        self.assertIn(f'href="/calendario/nuovo?linked_practice_id={pid}&return_to={quote(self.handler.path,safe="")}"', page)
         self.assertIn('>Fissa riconsegna</span>', page)
         self.assertNotIn('>Fissa riconsegna Sam</span>', page)
 
@@ -2160,9 +2160,9 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.send_html = lambda content, *args: rendered.append(content)
         self.handler.cremation_schedule(admin)
         page = rendered[-1]
-        self.assertIn(f'href="/calendario/{event_id}"', page)
+        self.assertIn(f'href="/calendario/{event_id}?return_to={quote(self.handler.path,safe="")}"', page)
         self.assertIn('>Vedi riconsegna</span>', page)
-        self.assertNotIn(f'href="/calendario/nuovo?linked_practice_id={pid}"', page)
+        self.assertNotIn(f'href="/calendario/nuovo?linked_practice_id={pid}&return_to=', page)
         self.assertNotIn('>Fissa riconsegna</span>', page)
 
     def test_cremation_week_view_shows_one_fissa_riconsegna_button_per_animal_in_combo_cycle(self):
@@ -2189,8 +2189,8 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.send_html = lambda content, *args: rendered.append(content)
         self.handler.cremation_schedule(admin)
         page = rendered[-1]
-        self.assertIn(f'href="/calendario/nuovo?linked_practice_id={pid1}"', page)
-        self.assertIn(f'href="/calendario/nuovo?linked_practice_id={pid2}"', page)
+        self.assertIn(f'href="/calendario/nuovo?linked_practice_id={pid1}&return_to={quote(self.handler.path,safe="")}"', page)
+        self.assertIn(f'href="/calendario/nuovo?linked_practice_id={pid2}&return_to={quote(self.handler.path,safe="")}"', page)
         self.assertIn('>Fissa riconsegna Sam</span>', page)
         self.assertIn('>Fissa riconsegna Luna</span>', page)
 
@@ -12312,6 +12312,90 @@ class PetParadiseTests(unittest.TestCase):
         position_fn = position_fn[:position_fn.index("\n}\n") + 3]
         self.assertIn("const anchor=input.closest('.lookup')||input;", position_fn)
         self.assertIn("const rect=anchor.getBoundingClientRect();", position_fn)
+
+    def test_calendar_event_detail_back_link_honors_return_to(self):
+        # bug segnalato dall'utente: da Programma Cremazioni si apre
+        # "Vedi riconsegna" (riepilogo evento), e "Indietro" deve tornare
+        # a Cremazioni, non sempre a /calendario.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,animal_name,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("Riconsegna in sede","RICONSEGNA TEST","Sam","Serena","2026-07-30T09:00:00","2026-07-30T09:30:00","In programma",admin["id"],stamp,stamp)).lastrowid
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}?return_to=%2Fprogramma-cremazioni%3Fdata%3D2026-07-20"
+        self.handler.calendar_event_detail(admin, event_id)
+        self.assertIn('class="calendar-detail-back" href="/programma-cremazioni?data=2026-07-20"', rendered[-1])
+        rendered2 = []
+        self.handler.send_html = lambda html, *a: rendered2.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(admin, event_id)
+        self.assertIn('class="calendar-detail-back" href="/calendario"', rendered2[-1])
+
+    def test_route_plan_page_back_link_honors_return_to(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/percorso-giornaliero?data=2026-07-20&return_to=%2Fcalendario%3Fvista%3Dsettimana"
+        self.handler.route_plan_page(admin)
+        self.assertIn('class="calendar-detail-back" href="/calendario?vista=settimana"', rendered[-1])
+
+    def test_cremation_day_and_week_delivery_links_carry_return_to_the_cremation_page(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,actual_end,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                ("2026-07-24", "completato", "08:00", "09:30", stamp, stamp, stamp),
+            ).lastrowid
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-RETURNTO", "Privato", "Livorno", "Da consegnare", "Cremazione singola", "2026-07-24", stamp, stamp,
+                 admin["id"], "Sam", cycle_id),
+            ).lastrowid
+        rendered = []
+        day_path = "/programma-cremazioni?data=2026-07-24"
+        self.handler.path = day_path
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        self.assertIn(f'return_to={quote(day_path,safe="")}', rendered[-1])
+        rendered_week = []
+        week_path = "/programma-cremazioni?data=2026-07-24&vista=settimana"
+        self.handler.path = week_path
+        self.handler.send_html = lambda content, *args: rendered_week.append(content)
+        self.handler.cremation_schedule(admin)
+        self.assertIn(f'return_to={quote(week_path,safe="")}', rendered_week[-1])
+
+    def test_new_practice_page_annulla_honors_return_to(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/nuova?return_to=%2Fprogramma-cremazioni"
+        self.handler.new_page(admin)
+        self.assertIn('href="/programma-cremazioni">Annulla</a>', rendered[-1])
+        rendered2 = []
+        self.handler.send_html = lambda html, *a: rendered2.append(html)
+        self.handler.path = "/nuova"
+        self.handler.new_page(admin)
+        self.assertIn('href="/">Annulla</a>', rendered2[-1])
+
+    def test_create_menu_sets_new_practice_return_to_dynamically(self):
+        js = app.APP_JS
+        toggle_fn = js[js.index("function toggleCreateMenu"):]
+        toggle_fn = toggle_fn[:toggle_fn.index("\n}\n") + 3]
+        self.assertIn("const practiceLink=document.querySelector('[data-new-practice-link]');", toggle_fn)
+        self.assertIn("practiceLink.href='/nuova?return_to='+encodeURIComponent(location.pathname+location.search);", toggle_fn)
+
+    def test_trash_page_back_link_points_to_archivio(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.trash_page(admin)
+        self.assertIn('href="/archivio">Torna all archivio</a>', rendered[-1])
 
 
 if __name__ == "__main__":

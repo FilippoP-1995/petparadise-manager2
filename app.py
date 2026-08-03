@@ -6574,6 +6574,8 @@ function toggleCreateMenu(force){
       const data=params?params.get('data'):null;
       link.href=data?`/calendario/nuovo?data=${encodeURIComponent(data)}`:'/calendario/nuovo';
     }
+    const practiceLink=document.querySelector('[data-new-practice-link]');
+    if(practiceLink)practiceLink.href='/nuova?return_to='+encodeURIComponent(location.pathname+location.search);
   }
 }
 function calendarInitDateTimeSync(){
@@ -7729,7 +7731,7 @@ def layout(title, body, user=None):
             return f'''<a href="{href}" class="more-card drag-item{notif_cls}" data-drag-key="{esc(label)}" draggable="false" style="--accent:{accent}"><span class="drag-handle" aria-label="Trascina per riordinare {esc(label)}">::</span><span class="more-card-icon">{lucide(icon)}</span><span class="more-card-copy"><b>{esc(label)}</b>{f"<small>{esc(subtitle)}</small>" if subtitle else ""}</span>{badge}<span class="more-card-chevron">{lucide("chevron-right")}</span></a>'''
         drawer_links=''.join(more_card(href,icon,label) for href,icon,label in links)
         drawer_order_json=esc(json.dumps([label for _,_,label in links],ensure_ascii=False))
-        mobile_nav=f'''<nav class="bottom-nav" aria-label="Navigazione mobile"><a href="/">{lucide("home")}<span>Dashboard</span></a><a href="/calendario">{lucide("calendar")}<span>Calendario</span></a><button class="bottom-new" type="button" onclick="toggleCreateMenu()" aria-label="Crea">{lucide("plus")}</button><a href="/programma-cremazioni">{lucide("paw-soft")}<span>Cremazioni</span></a><button type="button" onclick="toggleMoreMenu()">{lucide("more-horizontal")}<span>Altro</span></button></nav><div class="create-sheet-backdrop" onclick="toggleCreateMenu(false)"></div><aside class="create-sheet" aria-label="Crea"><a href="/nuova">{lucide("plus")}<span>Nuova pratica</span></a><a href="/calendario/nuovo" data-calendar-new-event>{lucide("calendar")}<span>Nuovo evento</span></a><a href="/turni/pianifica">{lucide("clock")}<span>Nuovo turno</span></a></aside><div class="more-backdrop" onclick="toggleMoreMenu(false)"></div><aside class="more-menu" aria-label="Altre funzioni"><div class="more-title"><div><b>Menu</b><small>Tutto a portata di mano</small></div><div class="more-title-actions"><button class="more-edit-btn" type="button" onclick="toggleMoreMenuEdit()" aria-label="Riordina le voci del menu"><span class="more-edit-icon more-edit-icon-pencil">{lucide("pencil")}</span><span class="more-edit-icon more-edit-icon-check">{lucide("check")}</span><span class="more-edit-label">Modifica</span></button><button class="more-close-btn" onclick="toggleMoreMenu(false)" aria-label="Chiudi">×</button></div></div><form id="moreMenuOrderForm" data-drag-group action="/il-mio-profilo/salva" method="post"><input type="hidden" name="return_to" value="/il-mio-profilo"><input type="hidden" name="sidebar_order_json" data-drag-order value="{drawer_order_json}"><div class="more-card-list" data-drag-root>{drawer_links}</div></form><button class="btn ghost install-btn" type="button" onclick="installPetParadise()">Installa App</button></aside>'''
+        mobile_nav=f'''<nav class="bottom-nav" aria-label="Navigazione mobile"><a href="/">{lucide("home")}<span>Dashboard</span></a><a href="/calendario">{lucide("calendar")}<span>Calendario</span></a><button class="bottom-new" type="button" onclick="toggleCreateMenu()" aria-label="Crea">{lucide("plus")}</button><a href="/programma-cremazioni">{lucide("paw-soft")}<span>Cremazioni</span></a><button type="button" onclick="toggleMoreMenu()">{lucide("more-horizontal")}<span>Altro</span></button></nav><div class="create-sheet-backdrop" onclick="toggleCreateMenu(false)"></div><aside class="create-sheet" aria-label="Crea"><a href="/nuova" data-new-practice-link>{lucide("plus")}<span>Nuova pratica</span></a><a href="/calendario/nuovo" data-calendar-new-event>{lucide("calendar")}<span>Nuovo evento</span></a><a href="/turni/pianifica">{lucide("clock")}<span>Nuovo turno</span></a></aside><div class="more-backdrop" onclick="toggleMoreMenu(false)"></div><aside class="more-menu" aria-label="Altre funzioni"><div class="more-title"><div><b>Menu</b><small>Tutto a portata di mano</small></div><div class="more-title-actions"><button class="more-edit-btn" type="button" onclick="toggleMoreMenuEdit()" aria-label="Riordina le voci del menu"><span class="more-edit-icon more-edit-icon-pencil">{lucide("pencil")}</span><span class="more-edit-icon more-edit-icon-check">{lucide("check")}</span><span class="more-edit-label">Modifica</span></button><button class="more-close-btn" onclick="toggleMoreMenu(false)" aria-label="Chiudi">×</button></div></div><form id="moreMenuOrderForm" data-drag-group action="/il-mio-profilo/salva" method="post"><input type="hidden" name="return_to" value="/il-mio-profilo"><input type="hidden" name="sidebar_order_json" data-drag-order value="{drawer_order_json}"><div class="more-card-list" data-drag-root>{drawer_links}</div></form><button class="btn ghost install-btn" type="button" onclick="installPetParadise()">Installa App</button></aside>'''
     vapid_public=esc(os.environ.get("VAPID_PUBLIC_KEY",""))
     return f'''<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#e9475b"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="PP Manager"><meta name="application-name" content="Pet Paradise Manager"><meta name="format-detection" content="telephone=no"><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"><title>{esc(title)} - Pet Paradise Manager</title><style>{CSS}</style></head><body class="{body_class.strip()}"{body_attrs} data-vapid-public-key="{vapid_public}"><a class="skip-link" href="#main-content">Vai al contenuto</a><div class="ppm-pull-refresh" id="ppmPullRefresh" aria-hidden="true"><span class="ppm-pull-refresh-spinner"></span></div><aside class="top"><a class="brand" href="/"><img class="brand-logo brand-logo-dark" src="/assets/company_logo.png" alt="Pet Paradise"><img class="brand-logo brand-logo-light" src="/assets/company_logo_light.png" alt="Pet Paradise"><span class="brand-copy">Pet Paradise <small>MANAGER</small></span></a>{nav}</aside>{app_header}<div id="main-content">{body}</div>{mobile_nav}{APP_JS}</body></html>'''
 
@@ -10335,7 +10337,7 @@ class App(BaseHTTPRequestHandler):
         action=f'/calendario/{event_id}/modifica' if event_id else '/calendario/nuovo'
         zones_json=json.dumps([row['name'] for row in zones],ensure_ascii=False).replace("</","<\\/")
         error_html=f'<div class="calendar-validation" role="alert">{esc(error)}</div><script>sessionStorage.removeItem("ppm_calendar_created")</script>' if error else ''
-        close_url=f'/calendario/{event_id}' if event_id else '/calendario'
+        close_url=f'/calendario/{event_id}' if event_id else safe_return_path((q.get("return_to") or [""])[0],"/calendario")
         wheel_hours=''.join(f'<button class="calendar-wheel-option" type="button" data-time-value="{hour}">{hour:02d}</button>' for hour in range(24))
         wheel_minutes=''.join(f'<button class="calendar-wheel-option" type="button" data-time-value="{minute}">{minute:02d}</button>' for minute in range(0,60,5))
         def datetime_row(label,date_name,date_value,time_name,time_value,required=False):
@@ -10508,6 +10510,7 @@ class App(BaseHTTPRequestHandler):
 
     def calendar_event_detail(self,user,event_id,error=""):
         q=parse_qs(urlparse(self.path).query)
+        back_url=safe_return_path((q.get("return_to") or [""])[0],"/calendario")
         tab=(q.get("tab") or ["dettagli"])[0]
         if tab not in ("dettagli","animali","preventivo","commenti","storico"):tab="dettagli"
         saved=(q.get("saved") or [""])[0]
@@ -10673,7 +10676,7 @@ class App(BaseHTTPRequestHandler):
                     link_practice_card=f'''<div class="calendar-tap-card lookup"><span class="calendar-tap-card-icon">{lucide("receipt")}</span><div class="calendar-tap-card-body"><small>Collega pratica esistente</small><input id="calendarLinkPracticeSearch" data-event-id="{event_id}" autocomplete="off" placeholder="Cerca per animale, proprietario, veterinario o numero pratica"><div id="calendarLinkPracticeResults" class="lookup-results hidden"></div></div></div>'''
         hero_rows_html=''.join(hero_rows) if hero_rows else f'''<div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-purple">{lucide("clock")}</span><div><b>{esc(hero_time)}</b><small>{esc(date_it(start_date_part))}</small></div></div><div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-teal">{lucide("home")}</span><div><b>{esc(hero_place_primary)}</b>{f'<small>{esc(hero_place_secondary)}</small>' if hero_place_secondary else ''}</div></div>{f'<div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-amber">{lucide("paw")}</span><div><b>{esc(hero_animal_main)}</b>{f"<small>{esc(hero_animal_sub)}</small>" if hero_animal_sub else ""}</div></div>' if hero_animal_main else ''}{f'<div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-purple">{lucide("user")}</span><div><b>{esc(client_display)}</b><small>Cliente</small></div></div>' if client_display else ''}'''
         header=f'''<div class="calendar-detail-topbar">
-          <a class="calendar-detail-back" href="/calendario"><span class="calendar-detail-back-arrow">{lucide("chevron-right")}</span><span>Indietro</span></a>
+          <a class="calendar-detail-back" href="{esc(back_url)}"><span class="calendar-detail-back-arrow">{lucide("chevron-right")}</span><span>Indietro</span></a>
           <h2 class="calendar-detail-topbar-title">Riepilogo evento</h2>
           <div class="calendar-appt-menu-wrap calendar-detail-topbar-menu">
             <button type="button" class="calendar-detail-topbar-menu-btn" aria-label="Altre azioni" onclick="calendarToggleApptMenu(this)">{lucide("more-vertical")}</button>
@@ -10929,6 +10932,7 @@ class App(BaseHTTPRequestHandler):
     def route_plan_page(self,user,plan_id=None,inline_error=None):
         q=parse_qs(urlparse(self.path).query)
         error=inline_error or (q.get("errore") or [""])[0]
+        back_url=safe_return_path((q.get("return_to") or [""])[0],"/calendario")
         with db() as c:
             if plan_id:
                 plan=c.execute("SELECT * FROM route_plans WHERE id=?",(plan_id,)).fetchone()
@@ -10958,7 +10962,7 @@ class App(BaseHTTPRequestHandler):
         google_configured=bool(os.environ.get("GOOGLE_MAPS_API_KEY","").strip())
         error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
         header=f'''<div class="calendar-detail-topbar">
-          <a class="calendar-detail-back" href="/calendario"><span class="calendar-detail-back-arrow">{lucide("chevron-right")}</span><span>Indietro</span></a>
+          <a class="calendar-detail-back" href="{esc(back_url)}"><span class="calendar-detail-back-arrow">{lucide("chevron-right")}</span><span>Indietro</span></a>
           <h2 class="calendar-detail-topbar-title">Impostazioni percorso</h2>
           <a class="icon-btn" href="/percorso-giornaliero/sedi" aria-label="Configura sedi aziendali" title="Configura sedi aziendali">{lucide("settings")}</a>
         </div>'''
@@ -11568,9 +11572,9 @@ class App(BaseHTTPRequestHandler):
                     delivery_label=f' {esc(animal_row["animal_name"])}' if len(animals)>1 and animal_row["animal_name"] else ""
                     existing_delivery_id=delivery_event_by_practice.get(animal_row["id"])
                     if existing_delivery_id:
-                        actions.append(f'<a class="cremation-action-btn cremation-action-active" href="/calendario/{existing_delivery_id}">{lucide("truck")}<span>Vedi riconsegna{delivery_label}</span></a>')
+                        actions.append(f'<a class="cremation-action-btn cremation-action-active" href="/calendario/{existing_delivery_id}?return_to={quote(self.path,safe="")}">{lucide("truck")}<span>Vedi riconsegna{delivery_label}</span></a>')
                     else:
-                        actions.append(f'<a class="cremation-action-btn cremation-action-planned" href="/calendario/nuovo?linked_practice_id={animal_row["id"]}">{lucide("truck")}<span>Fissa riconsegna{delivery_label}</span></a>')
+                        actions.append(f'<a class="cremation-action-btn cremation-action-planned" href="/calendario/nuovo?linked_practice_id={animal_row["id"]}&return_to={quote(self.path,safe="")}">{lucide("truck")}<span>Fissa riconsegna{delivery_label}</span></a>')
                 actions.append(f'<button type="button" class="cremation-action-btn cremation-action-planned" onclick="cremationRevertComplete({cycle["id"]})">{lucide("undo-2")}<span>Annulla completamento</span></button>')
                 actions.append(f'<button type="button" class="cremation-action-btn cremation-action-delete" onclick="cremationDeleteCycle({cycle["id"]})">{lucide("x")}<span>Elimina ciclo</span></button>')
             else:
@@ -12054,9 +12058,9 @@ class App(BaseHTTPRequestHandler):
                         delivery_label=f' {esc(animal_row["animal_name"])}' if len(animals)>1 and animal_row["animal_name"] else ""
                         existing_delivery_id=delivery_event_by_practice.get(animal_row["id"])
                         if existing_delivery_id:
-                            actions.append(f'<a class="cremation-action-btn cremation-action-active" href="/calendario/{existing_delivery_id}">{lucide("truck")}<span>Vedi riconsegna{delivery_label}</span></a>')
+                            actions.append(f'<a class="cremation-action-btn cremation-action-active" href="/calendario/{existing_delivery_id}?return_to={quote(self.path,safe="")}">{lucide("truck")}<span>Vedi riconsegna{delivery_label}</span></a>')
                         else:
-                            actions.append(f'<a class="cremation-action-btn cremation-action-planned" href="/calendario/nuovo?linked_practice_id={animal_row["id"]}">{lucide("truck")}<span>Fissa riconsegna{delivery_label}</span></a>')
+                            actions.append(f'<a class="cremation-action-btn cremation-action-planned" href="/calendario/nuovo?linked_practice_id={animal_row["id"]}&return_to={quote(self.path,safe="")}">{lucide("truck")}<span>Fissa riconsegna{delivery_label}</span></a>')
                     actions.append(f'<button type="button" class="cremation-action-btn cremation-action-planned" onclick="cremationRevertComplete({cycle["id"]})">{lucide("undo-2")}<span>Annulla completamento</span></button>')
                     actions.append(f'<button type="button" class="cremation-action-btn cremation-action-delete" onclick="cremationDeleteCycle({cycle["id"]})">{lucide("x")}<span>Elimina ciclo</span></button>')
                 else:
@@ -14910,6 +14914,7 @@ class App(BaseHTTPRequestHandler):
 
     def new_page(self,user,draft=None,error="",error_field=""):
         q=parse_qs(urlparse(getattr(self,"path","")).query);calendar_event_id=(q.get("calendar_event_id") or [""])[0];prefill={}
+        back_url=f'/calendario/{calendar_event_id}' if calendar_event_id.isdigit() else safe_return_path((q.get("return_to") or [""])[0],"/")
         if calendar_event_id.isdigit():
             with db() as c:
                 event=c.execute("SELECT * FROM calendar_events WHERE id=? AND deleted_at IS NULL",(int(calendar_event_id),)).fetchone()
@@ -14929,7 +14934,7 @@ class App(BaseHTTPRequestHandler):
         # that leaves the user hunting for which of ~100 fields is wrong.
         error_html='' if (error and error_field) else (f'<div class="flash warning">{esc(error)}</div>' if error else '')
         error_target=f'<input type="hidden" id="formErrorField" value="{esc(error_field)}"><input type="hidden" id="formErrorMessage" value="{esc(error)}">' if (error and error_field) else ''
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Nuova pratica</h1><div class="sub">Inserisci subito i dati disponibili; potrai completarli in seguito.</div></div><div class="actions"><button class="btn" form="practiceForm">Crea pratica</button></div></div>{error_html}<form method="post" id="practiceForm">{hidden}{error_target}<div class="grid form-grid">{self.fields_html(prefill,user)}</div><div class="actions" style="margin-top:18px"><button class="btn">Crea pratica</button><a class="btn ghost" href="{f'/calendario/{calendar_event_id}' if calendar_event_id.isdigit() else '/'}">Annulla</a></div></form></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Nuova pratica</h1><div class="sub">Inserisci subito i dati disponibili; potrai completarli in seguito.</div></div><div class="actions"><button class="btn" form="practiceForm">Crea pratica</button></div></div>{error_html}<form method="post" id="practiceForm">{hidden}{error_target}<div class="grid form-grid">{self.fields_html(prefill,user)}</div><div class="actions" style="margin-top:18px"><button class="btn">Crea pratica</button><a class="btn ghost" href="{esc(back_url)}">Annulla</a></div></form></main>'''
         self.send_html(layout("Nuova pratica",body,user))
 
     def normalized_fields(self,f,items_total=0.0,has_frame_urn=False,has_urn_item=False):
@@ -17453,7 +17458,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             content=f'''<div class="trash-note">Le pratiche nel Cestino non compaiono in Dashboard e Archivio. Ripristinale se sono state eliminate per errore.</div><div class="tablebox"><table class="premium-table"><thead><tr><th>Data recupero</th><th>Pratica</th><th>Animale</th><th>Speditore</th><th>Veterinario</th><th>Azioni</th></tr></thead><tbody>{''.join(body_rows)}</tbody></table></div>'''
         else:
             content='<section class="section empty-state">Il Cestino e vuoto.</section>'
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Cestino</h1><div class="sub">Pratiche eliminate ma ancora recuperabili.</div></div><a class="btn ghost" href="/archivio/pratiche">Torna all archivio</a></div>{content}</main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Cestino</h1><div class="sub">Pratiche eliminate ma ancora recuperabili.</div></div><a class="btn ghost" href="/archivio">Torna all archivio</a></div>{content}</main>'''
         self.send_html(layout("Cestino", body, user))
 
     def sync_sequence_counter(self,c,prefix):
