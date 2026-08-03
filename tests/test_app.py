@@ -12178,6 +12178,141 @@ class PetParadiseTests(unittest.TestCase):
         # distanza zero, quindi l'arrivo previsto coincide esattamente con "adesso"
         self.assertEqual(stop["estimated_arrival"], "14:30")
 
+    def test_calendar_delivery_pickup_pills_carry_client_side_address_mode(self):
+        # richiesta esplicita dell'utente: l'indirizzo della riconsegna
+        # fuori sede deve dipendere dal luogo scelto (Ambulatorio/Domicilio/
+        # Altro indirizzo), non essere sempre quello del proprietario.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/calendario/nuovo"
+        self.handler.calendar_event_form(admin)
+        page = rendered[-1]
+        self.assertIn('data-delivery-pickup-pill="Veterinario" data-delivery-address-mode="clinic"', page)
+        self.assertIn('data-delivery-pickup-pill="Privato" data-delivery-address-mode="domicilio"', page)
+        self.assertIn('data-delivery-pickup-pill="Privato" data-delivery-address-mode="manual"', page)
+
+    def test_calendar_delivery_animal_lookup_no_longer_autofills_address_unconditionally(self):
+        js = app.APP_JS
+        self.assertNotIn("if(form.delivery_address)form.delivery_address.value=item.owner_address||'';", js)
+        lookup_fn = js[js.index("async function calendarDeliveryAnimalLookup"):]
+        lookup_fn = lookup_fn[:lookup_fn.index("\n}\n") + 3]
+        self.assertIn("form.dataset.deliveryOwnerAddress=item.owner_address||''", lookup_fn)
+        self.assertIn("if(form.dataset.deliveryAddressMode==='domicilio')form.delivery_address.value=item.owner_address||''", lookup_fn)
+
+    def test_calendar_delivery_pickup_pill_click_applies_address_by_mode(self):
+        js = app.APP_JS
+        self.assertIn("calendarDeliveryAddressModeChanged(button.form,button.dataset.deliveryAddressMode);", js)
+        mode_fn = js[js.index("function calendarDeliveryAddressModeChanged"):]
+        mode_fn = mode_fn[:mode_fn.index("\n}\n") + 3]
+        self.assertIn("if(mode==='domicilio')form.delivery_address.value=form.dataset.deliveryOwnerAddress||''", mode_fn)
+        self.assertIn("else if(mode==='manual')form.delivery_address.value=''", mode_fn)
+        self.assertIn("else if(mode==='clinic'&&!(form.delivery_clinic_id&&form.delivery_clinic_id.value))form.delivery_address.value=''", mode_fn)
+        # cambiando luogo si nasconde anche l'eventuale avviso "veterinario senza indirizzo"
+        self.assertIn("const warning=form.querySelector('[data-vet-address-warning]');if(warning)warning.hidden=true;", mode_fn)
+
+    def test_calendar_delivery_vet_without_address_shows_warning_with_continue_and_edit_actions(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/calendario/nuovo"
+        self.handler.calendar_event_form(admin)
+        page = rendered[-1]
+        self.assertIn('data-vet-address-warning hidden', page)
+        self.assertIn("Per questo veterinario l'indirizzo non è presente in anagrafica.", page)
+        self.assertIn('onclick="calendarDismissVetAddressWarning(this)">Continua comunque</button>', page)
+        self.assertIn('data-vet-edit-link href="#" target="_blank" rel="noopener noreferrer">Modifica anagrafica</a>', page)
+        js = app.APP_JS
+        self.assertIn("function calendarDismissVetAddressWarning(button){const warning=button.closest('[data-vet-address-warning]');if(warning)warning.hidden=true;}", js)
+        clinic_fn = js[js.index("function calendarSelectDeliveryClinic"):]
+        clinic_fn = clinic_fn[:clinic_fn.index("\n}\n") + 3]
+        self.assertIn("if(item.address){", clinic_fn)
+        self.assertIn("if(link&&item.id)link.href='/veterinari/'+item.id;", clinic_fn)
+
+    def test_calendar_detail_topbar_menu_opens_downward_not_offscreen(self):
+        # bug segnalato dall'utente con screenshot: il menu tre puntini del
+        # riepilogo evento ereditava l'apertura verso l'alto (pensata per i
+        # menu in fondo a una card/lista) ma il bottone sta in cima alla
+        # pagina, quindi il menu finiva sopra il viewport, illeggibile.
+        self.assertIn(".calendar-detail-topbar-menu .calendar-appt-menu-popover{left:auto;right:0;top:calc(100% + 6px);bottom:auto}", app.CSS)
+
+    def test_normalized_fields_does_not_overwrite_manually_edited_owner_fields(self):
+        # bug urgente segnalato dall'utente (pratica CR-000094): una volta
+        # collegato un veterinario come "speditore", ogni salvataggio
+        # successivo sovrascriveva SEMPRE nome/cognome/telefono/indirizzo
+        # del proprietario con i dati di quel veterinario, anche se
+        # l'utente li aveva appena corretti a mano — le modifiche
+        # sembravano salvare ma restavano sempre le stesse.
+        with app.db() as conn:
+            stamp = app.now()
+            vet_id = conn.execute(
+                "INSERT INTO veterinarians(clinic_name,phone,address,city,active,created_at,updated_at) VALUES(?,?,?,?,1,?,?)",
+                ("Clinica Vet", "0500000000", "Via Veterinario 1", "Pisa", stamp, stamp),
+            ).lastrowid
+        edited = self.handler.normalized_fields({
+            "owner_veterinarian_id": str(vet_id),
+            "owner_first_name": "Mario",
+            "owner_last_name": "Rossi",
+            "owner_phone": "3331112222",
+            "owner_street": "Via Roma 5",
+            "owner_city": "Livorno",
+        })
+        self.assertEqual(edited["owner_first_name"], "Mario")
+        self.assertEqual(edited["owner_last_name"], "Rossi")
+        self.assertEqual(edited["owner_phone"], "3331112222")
+        self.assertEqual(edited["owner_street"], "Via Roma 5")
+        self.assertEqual(edited["owner_city"], "Livorno")
+        # ma il prefill alla prima selezione (campi ancora vuoti) resta invariato
+        prefilled = self.handler.normalized_fields({"owner_veterinarian_id": str(vet_id)})
+        self.assertEqual(prefilled["owner_first_name"], "Clinica Vet")
+        self.assertEqual(prefilled["owner_phone"], "0500000000")
+        self.assertEqual(prefilled["owner_street"], "Via Veterinario 1")
+        self.assertEqual(prefilled["owner_city"], "Pisa")
+
+    def test_cremation_vedi_riconsegna_button_is_green_not_blue(self):
+        # richiesta esplicita dell'utente: il bottone deve diventare verde
+        # (cremation-action-active) quando passa da "Fissa" a "Vedi
+        # riconsegna", per distinguerlo visivamente dal blu di "Fissa
+        # riconsegna" (cremation-action-planned).
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,actual_end,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                ("2026-07-22", "completato", "08:00", "09:30", stamp, stamp, stamp),
+            ).lastrowid
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-VERDE1", "Privato", "Livorno", "Da consegnare", "Cremazione singola", "2026-07-22", stamp, stamp,
+                 admin["id"], "Sam", cycle_id),
+            ).lastrowid
+            conn.execute(
+                """INSERT INTO calendar_events(event_type,title,animal_name,linked_practice_id,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("Riconsegna in sede","RICONSEGNA SAM","Sam",pid,"Serena","2026-07-23T10:00:00","2026-07-23T10:30:00","In programma",admin["id"],stamp,stamp),
+            )
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-22"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn('class="cremation-action-btn cremation-action-active"', page)
+        self.assertIn('>Vedi riconsegna</span>', page)
+
+    def test_lookup_panel_anchors_to_the_lookup_container_not_just_the_input(self):
+        # bug segnalato dall'utente su iPhone: l'elenco risultati della
+        # barra di ricerca in alto era largo solo quanto il campo di testo
+        # (l'icona di ricerca a fianco lo restringeva), non quanto tutta la
+        # barra — il pannello va ancorato al contenitore .lookup (icona +
+        # campo), non al solo <input>.
+        js = app.APP_JS
+        position_fn = js[js.index("function ppmPositionLookupPanel"):]
+        position_fn = position_fn[:position_fn.index("\n}\n") + 3]
+        self.assertIn("const anchor=input.closest('.lookup')||input;", position_fn)
+        self.assertIn("const rect=anchor.getBoundingClientRect();", position_fn)
+
 
 if __name__ == "__main__":
     unittest.main()

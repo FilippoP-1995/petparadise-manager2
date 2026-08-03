@@ -2498,7 +2498,7 @@ button.calendar-tap-card:active,a.calendar-tap-card:active{transform:scale(.985)
 .calendar-detail-topbar-menu-btn{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:#ffffff10;border:1px solid #ffffff14;color:#dfe4eb;transition:transform .15s cubic-bezier(.34,1.4,.64,1),background .18s ease}
 .calendar-detail-topbar-menu-btn:hover{background:#ffffff1a}
 .calendar-detail-topbar-menu-btn:active{transform:scale(.92)}
-.calendar-detail-topbar-menu .calendar-appt-menu-popover{left:auto;right:0}
+.calendar-detail-topbar-menu .calendar-appt-menu-popover{left:auto;right:0;top:calc(100% + 6px);bottom:auto}
 .light-theme .calendar-detail-back{color:#334155}
 .light-theme .calendar-detail-topbar-title{color:#0f172a}
 .light-theme .calendar-detail-topbar-menu-btn{background:#00000008;border-color:#e2e8f0;color:#334155}
@@ -3868,7 +3868,14 @@ function ppmPositionLookupPanel(panel){
   if(!input)return;
   if(panel.parentElement!==document.body)document.body.appendChild(panel);
   panel.classList.add('ppm-lookup-portal');
-  const rect=input.getBoundingClientRect();
+  // Ancorato al contenitore .lookup (icona + campo), non al solo <input>:
+  // su iOS l'elenco risultati della barra di ricerca in alto risultava
+  // largo quanto il solo campo di testo invece di tutta la barra, perche'
+  // qui si usava la larghezza del campo anziche' quella dell'intero
+  // contenitore di ricerca (stesso problema, in misura minore, per le
+  // altre ricerche con icona a fianco del campo, es. .calendar-tap-card.lookup).
+  const anchor=input.closest('.lookup')||input;
+  const rect=anchor.getBoundingClientRect();
   const margin=8,gap=6;
   // Su iOS Safari window.innerHeight NON si riduce quando si apre la
   // tastiera (solo visualViewport.height lo fa): usando window.innerHeight
@@ -6420,8 +6427,32 @@ async function calendarPickupClientLookup(input,results){
   }
 }
 function calendarConfirmPickupStatus(form){const select=form.elements.namedItem('status');if(select&&select.value==='Ritirato'&&form.dataset.clientEmpty==='1')return confirm('Cliente non inserito: vuoi completarlo ora prima di generare la pratica? Annulla per compilarlo, OK per procedere comunque.');return true;}
-function calendarSelectDeliveryClinic(form,item){form.delivery_clinic_id.value=item.id||'';form.delivery_clinic_name.value=item.clinic_name||item.display||'';form.delivery_clinic_address.value=item.address||'';form.delivery_clinic_phone.value=item.phone||'';const input=document.getElementById('calendarDeliveryClinicSearch');if(input)input.value=item.clinic_name||item.display||'';if(form.delivery_address&&item.address)form.delivery_address.value=item.address;}
-function calendarDeliveryPickupPillClick(button){const group=button.closest('.calendar-location-tiles');if(group)group.querySelectorAll('.calendar-location-tile').forEach(p=>p.classList.remove('active'));button.classList.add('active');const input=button.form.delivery_location_type;if(!input)return;input.value=button.dataset.deliveryPickupPill;button.form.querySelectorAll('[data-delivery-pickup-location]').forEach(el=>{const show=el.dataset.deliveryPickupLocation.split('|').includes(input.value);el.hidden=!show;});}
+function calendarSelectDeliveryClinic(form,item){
+  form.delivery_clinic_id.value=item.id||'';form.delivery_clinic_name.value=item.clinic_name||item.display||'';form.delivery_clinic_address.value=item.address||'';form.delivery_clinic_phone.value=item.phone||'';
+  const input=document.getElementById('calendarDeliveryClinicSearch');if(input)input.value=item.clinic_name||item.display||'';
+  const warning=form.querySelector('[data-vet-address-warning]');
+  if(item.address){
+    if(form.delivery_address)form.delivery_address.value=item.address;
+    if(warning)warning.hidden=true;
+  }else{
+    if(form.delivery_address)form.delivery_address.value='';
+    if(warning){
+      warning.hidden=false;
+      const link=warning.querySelector('[data-vet-edit-link]');
+      if(link&&item.id)link.href='/veterinari/'+item.id;
+    }
+  }
+}
+function calendarDismissVetAddressWarning(button){const warning=button.closest('[data-vet-address-warning]');if(warning)warning.hidden=true;}
+function calendarDeliveryAddressModeChanged(form,mode){
+  form.dataset.deliveryAddressMode=mode;
+  const warning=form.querySelector('[data-vet-address-warning]');if(warning)warning.hidden=true;
+  if(!form.delivery_address)return;
+  if(mode==='domicilio')form.delivery_address.value=form.dataset.deliveryOwnerAddress||'';
+  else if(mode==='manual')form.delivery_address.value='';
+  else if(mode==='clinic'&&!(form.delivery_clinic_id&&form.delivery_clinic_id.value))form.delivery_address.value='';
+}
+function calendarDeliveryPickupPillClick(button){const group=button.closest('.calendar-location-tiles');if(group)group.querySelectorAll('.calendar-location-tile').forEach(p=>p.classList.remove('active'));button.classList.add('active');const input=button.form.delivery_location_type;if(!input)return;input.value=button.dataset.deliveryPickupPill;button.form.querySelectorAll('[data-delivery-pickup-location]').forEach(el=>{const show=el.dataset.deliveryPickupLocation.split('|').includes(input.value);el.hidden=!show;});calendarDeliveryAddressModeChanged(button.form,button.dataset.deliveryAddressMode);}
 async function calendarDeliveryAnimalLookup(input,results){
   const q=input.value.trim();
   const fetcher=input._ppmFetcher||(input._ppmFetcher=ppmLookupFetcher());
@@ -6435,7 +6466,7 @@ async function calendarDeliveryAnimalLookup(input,results){
     const items=data.results||[];
     results.innerHTML=items.map((item,index)=>`<button type="button" class="lookup-item" data-delivery-animal-index="${index}"><span><b>${calendarHtml(item.animal_name||'Animale senza nome')}</b><small>${calendarHtml([item.owner_name,item.species,item.pickup_date?`recupero ${calendarDateIt(item.pickup_date)}`:'',item.practice_number].filter(Boolean).join(' · '))}</small><small>${calendarHtml(item.payment_summary||'')}</small></span></button>`).join('')||'<div class="lookup-state">Nessun animale o proprietario trovato.</div>';
     ppmOpenLookupPanel(results);
-    results.onclick=e=>{const button=e.target.closest('[data-delivery-animal-index]');if(!button)return;const item=items[Number(button.dataset.deliveryAnimalIndex)],form=input.form;input.value=item.animal_name||'';form.linked_practice_id.value=item.practice_id||'';form.payment_status.value=item.calendar_payment_status||'Da pagare';form.payment_amount.value=Number(item.calendar_payment_amount||0).toFixed(2).replace('.',',');if(form.delivery_address)form.delivery_address.value=item.owner_address||'';const detail=form.querySelector('[data-delivery-payment-detail]');if(detail)detail.value=item.payment_summary||'';const money=v=>`€ ${Number(v||0).toFixed(2).replace('.',',')}`;const summary=form.querySelector('[data-delivery-practice-summary]');if(summary){summary.hidden=false;const set=(sel,val)=>{const el=summary.querySelector(sel);if(el)el.textContent=val;};set('[data-delivery-total]',money(item.total));set('[data-delivery-deposit]',money(item.deposit));set('[data-delivery-remaining]',money(item.remaining));set('[data-delivery-service]',item.service_type||'—');set('[data-delivery-urn]',item.urn_summary||'—');const channelRow=summary.querySelector('[data-delivery-channel-row]');if(channelRow){const stillDue=Number(item.remaining||0)>0;channelRow.hidden=!stillDue;if(stillDue)set('[data-delivery-channel]',item.payment_channel||'—');}}calendarAutoTitle(true);ppmCloseLookupPanel(results);results.onclick=null;};
+    results.onclick=e=>{const button=e.target.closest('[data-delivery-animal-index]');if(!button)return;const item=items[Number(button.dataset.deliveryAnimalIndex)],form=input.form;input.value=item.animal_name||'';form.linked_practice_id.value=item.practice_id||'';form.payment_status.value=item.calendar_payment_status||'Da pagare';form.payment_amount.value=Number(item.calendar_payment_amount||0).toFixed(2).replace('.',',');if(form.delivery_address){form.dataset.deliveryOwnerAddress=item.owner_address||'';if(form.dataset.deliveryAddressMode==='domicilio')form.delivery_address.value=item.owner_address||'';}const detail=form.querySelector('[data-delivery-payment-detail]');if(detail)detail.value=item.payment_summary||'';const money=v=>`€ ${Number(v||0).toFixed(2).replace('.',',')}`;const summary=form.querySelector('[data-delivery-practice-summary]');if(summary){summary.hidden=false;const set=(sel,val)=>{const el=summary.querySelector(sel);if(el)el.textContent=val;};set('[data-delivery-total]',money(item.total));set('[data-delivery-deposit]',money(item.deposit));set('[data-delivery-remaining]',money(item.remaining));set('[data-delivery-service]',item.service_type||'—');set('[data-delivery-urn]',item.urn_summary||'—');const channelRow=summary.querySelector('[data-delivery-channel-row]');if(channelRow){const stillDue=Number(item.remaining||0)>0;channelRow.hidden=!stillDue;if(stillDue)set('[data-delivery-channel]',item.payment_channel||'—');}}calendarAutoTitle(true);ppmCloseLookupPanel(results);results.onclick=null;};
   }catch(error){
     if(error.name==='AbortError'||fetcher.stale(token))return;
     results.innerHTML='<div class="lookup-state">Ricerca temporaneamente non disponibile.</div>';ppmOpenLookupPanel(results);
@@ -6469,6 +6500,8 @@ async function calendarLinkPracticeLookup(input,results){
   }
 }
 function calendarInitLookups(){
+  const deliveryActivePill=document.querySelector('.calendar-delivery-location .calendar-location-tile.active');
+  if(deliveryActivePill)deliveryActivePill.form.dataset.deliveryAddressMode=deliveryActivePill.dataset.deliveryAddressMode||'';
   const vet=document.getElementById('calendarVetSearch'),vetResults=document.getElementById('calendarVetResults');
   if(vet){ppmRegisterLookupPanel(vet,vetResults);vet.addEventListener('input',()=>calendarLookup(vet,'/api/veterinari/search',vetResults,item=>calendarSelectVeterinarian(vet.form,item)));}
   const deliveryAnimal=document.getElementById('calendarDeliveryAnimalSearch'),deliveryResults=document.getElementById('calendarDeliveryAnimalResults');
@@ -10354,9 +10387,9 @@ class App(BaseHTTPRequestHandler):
         # nessun riepilogo separato: tutto e' gia' visibile prima di Salvare.
         pickup_status_card=f'''<div class="calendar-tap-card" data-calendar-types="Ritiro|Ritiro in sede" {"" if event_type in ("Ritiro","Ritiro in sede") else "hidden"}><span class="calendar-tap-card-icon calendar-icon-orange">{lucide("clock")}</span><div class="calendar-tap-card-body"><small>Stato iniziale</small><select name="event_status">{pickup_status}</select></div></div>'''
         delivery_location_type_value=val('delivery_location_type') or ("Veterinario" if val('delivery_clinic_id') else "")
-        delivery_pickup_tile=lambda value,icon,label,active:f'<button type="button" class="calendar-location-tile{" active" if active else ""}" data-delivery-pickup-pill="{value}" onclick="calendarDeliveryPickupPillClick(this)">{lucide(icon)}<span>{label}</span></button>'
-        delivery_location_pills_html=f'''<div class="calendar-location-tiles">{delivery_pickup_tile("Veterinario","stethoscope","Ambulatorio",delivery_location_type_value=="Veterinario")}{delivery_pickup_tile("Privato","home","Domicilio",delivery_location_type_value=="Privato")}{delivery_pickup_tile("Privato","map-pin","Altro indirizzo",False)}</div>'''
-        delivery_info_block=f'''<div data-calendar-types="Riconsegna|Riconsegna in sede" {"" if event_type in ("Riconsegna","Riconsegna in sede") else "hidden"}><input type="hidden" name="event_status" value="In programma"><div class="calendar-card-list"><div class="calendar-tap-card"><span class="calendar-tap-card-icon calendar-icon-pink">{lucide("wallet")}</span><div class="calendar-tap-card-body"><small>Stato pagamento</small><select name="payment_status">{payment_status}</select></div></div><div class="calendar-tap-card"><span class="calendar-tap-card-icon calendar-icon-pink">{lucide("receipt")}</span><div class="calendar-tap-card-body"><small>Importo</small><input inputmode="decimal" name="payment_amount" value="{val('payment_amount','0')}"></div></div><input data-delivery-payment-detail type="hidden" value=""><div class="calendar-summary-list" data-delivery-practice-summary hidden><div class="calendar-summary-row"><span class="calendar-summary-row-icon calendar-icon-pink">{lucide("wallet")}</span><span class="calendar-summary-row-label">Importo totale</span><span class="calendar-summary-row-value" data-delivery-total>—</span></div><div class="calendar-summary-row"><span class="calendar-summary-row-icon calendar-icon-green">{lucide("check-circle")}</span><span class="calendar-summary-row-label">Già pagato</span><span class="calendar-summary-row-value" data-delivery-deposit>—</span></div><div class="calendar-summary-row"><span class="calendar-summary-row-icon calendar-icon-orange">{lucide("clock")}</span><span class="calendar-summary-row-label">Da pagare</span><span class="calendar-summary-row-value" data-delivery-remaining>—</span></div><div class="calendar-summary-row" data-delivery-channel-row hidden><span class="calendar-summary-row-icon calendar-icon-orange">{lucide("receipt")}</span><span class="calendar-summary-row-label">Circuito</span><span class="calendar-summary-row-value" data-delivery-channel>—</span></div><div class="calendar-summary-row"><span class="calendar-summary-row-icon calendar-icon-purple">{lucide("flame")}</span><span class="calendar-summary-row-label">Tipo cremazione</span><span class="calendar-summary-row-value" data-delivery-service>—</span></div><div class="calendar-summary-row"><span class="calendar-summary-row-icon calendar-icon-blue">{lucide("archive")}</span><span class="calendar-summary-row-label">Urna</span><span class="calendar-summary-row-value" data-delivery-urn>—</span></div></div><div class="calendar-delivery-location" data-calendar-types="Riconsegna" {"" if event_type=="Riconsegna" else "hidden"}><div class="field full"><label>Luogo riconsegna</label>{delivery_location_pills_html}<input type="hidden" name="delivery_location_type" value="{esc(delivery_location_type_value)}"></div><div class="calendar-tap-card lookup" data-delivery-pickup-location="Veterinario" {"" if delivery_location_type_value=="Veterinario" else "hidden"}><span class="calendar-tap-card-icon calendar-icon-blue">{lucide("stethoscope")}</span><div class="calendar-tap-card-body"><small>Cerca ambulatorio</small><input id="calendarDeliveryClinicSearch" value="{val('delivery_clinic_name')}" autocomplete="off" placeholder="Cerca ambulatorio o veterinario"><div id="calendarDeliveryClinicResults" class="lookup-results hidden"></div><input type="hidden" name="delivery_clinic_id" value="{val('delivery_clinic_id')}"><input type="hidden" name="delivery_clinic_name" value="{val('delivery_clinic_name')}"><input type="hidden" name="delivery_clinic_address" value="{val('delivery_clinic_address')}"><input type="hidden" name="delivery_clinic_phone" value="{val('delivery_clinic_phone')}"></div></div><div class="calendar-tap-card"><span class="calendar-tap-card-icon calendar-icon-green">{lucide("home")}</span><div class="calendar-tap-card-body"><small>Indirizzo</small><input name="delivery_address" value="{val('address')}" placeholder="Compilato automaticamente selezionando la pratica o l'ambulatorio"></div></div></div></div></div>'''
+        delivery_pickup_tile=lambda value,icon,label,active,address_mode:f'<button type="button" class="calendar-location-tile{" active" if active else ""}" data-delivery-pickup-pill="{value}" data-delivery-address-mode="{address_mode}" onclick="calendarDeliveryPickupPillClick(this)">{lucide(icon)}<span>{label}</span></button>'
+        delivery_location_pills_html=f'''<div class="calendar-location-tiles">{delivery_pickup_tile("Veterinario","stethoscope","Ambulatorio",delivery_location_type_value=="Veterinario","clinic")}{delivery_pickup_tile("Privato","home","Domicilio",delivery_location_type_value=="Privato","domicilio")}{delivery_pickup_tile("Privato","map-pin","Altro indirizzo",False,"manual")}</div>'''
+        delivery_info_block=f'''<div data-calendar-types="Riconsegna|Riconsegna in sede" {"" if event_type in ("Riconsegna","Riconsegna in sede") else "hidden"}><input type="hidden" name="event_status" value="In programma"><div class="calendar-card-list"><div class="calendar-tap-card"><span class="calendar-tap-card-icon calendar-icon-pink">{lucide("wallet")}</span><div class="calendar-tap-card-body"><small>Stato pagamento</small><select name="payment_status">{payment_status}</select></div></div><div class="calendar-tap-card"><span class="calendar-tap-card-icon calendar-icon-pink">{lucide("receipt")}</span><div class="calendar-tap-card-body"><small>Importo</small><input inputmode="decimal" name="payment_amount" value="{val('payment_amount','0')}"></div></div><input data-delivery-payment-detail type="hidden" value=""><div class="calendar-summary-list" data-delivery-practice-summary hidden><div class="calendar-summary-row"><span class="calendar-summary-row-icon calendar-icon-pink">{lucide("wallet")}</span><span class="calendar-summary-row-label">Importo totale</span><span class="calendar-summary-row-value" data-delivery-total>—</span></div><div class="calendar-summary-row"><span class="calendar-summary-row-icon calendar-icon-green">{lucide("check-circle")}</span><span class="calendar-summary-row-label">Già pagato</span><span class="calendar-summary-row-value" data-delivery-deposit>—</span></div><div class="calendar-summary-row"><span class="calendar-summary-row-icon calendar-icon-orange">{lucide("clock")}</span><span class="calendar-summary-row-label">Da pagare</span><span class="calendar-summary-row-value" data-delivery-remaining>—</span></div><div class="calendar-summary-row" data-delivery-channel-row hidden><span class="calendar-summary-row-icon calendar-icon-orange">{lucide("receipt")}</span><span class="calendar-summary-row-label">Circuito</span><span class="calendar-summary-row-value" data-delivery-channel>—</span></div><div class="calendar-summary-row"><span class="calendar-summary-row-icon calendar-icon-purple">{lucide("flame")}</span><span class="calendar-summary-row-label">Tipo cremazione</span><span class="calendar-summary-row-value" data-delivery-service>—</span></div><div class="calendar-summary-row"><span class="calendar-summary-row-icon calendar-icon-blue">{lucide("archive")}</span><span class="calendar-summary-row-label">Urna</span><span class="calendar-summary-row-value" data-delivery-urn>—</span></div></div><div class="calendar-delivery-location" data-calendar-types="Riconsegna" {"" if event_type=="Riconsegna" else "hidden"}><div class="field full"><label>Luogo riconsegna</label>{delivery_location_pills_html}<input type="hidden" name="delivery_location_type" value="{esc(delivery_location_type_value)}"></div><div class="calendar-tap-card lookup" data-delivery-pickup-location="Veterinario" {"" if delivery_location_type_value=="Veterinario" else "hidden"}><span class="calendar-tap-card-icon calendar-icon-blue">{lucide("stethoscope")}</span><div class="calendar-tap-card-body"><small>Cerca ambulatorio</small><input id="calendarDeliveryClinicSearch" value="{val('delivery_clinic_name')}" autocomplete="off" placeholder="Cerca ambulatorio o veterinario"><div id="calendarDeliveryClinicResults" class="lookup-results hidden"></div><input type="hidden" name="delivery_clinic_id" value="{val('delivery_clinic_id')}"><input type="hidden" name="delivery_clinic_name" value="{val('delivery_clinic_name')}"><input type="hidden" name="delivery_clinic_address" value="{val('delivery_clinic_address')}"><input type="hidden" name="delivery_clinic_phone" value="{val('delivery_clinic_phone')}"></div></div><div class="flash warning" data-vet-address-warning hidden>Per questo veterinario l'indirizzo non è presente in anagrafica.<div class="actions" style="margin-top:8px"><button type="button" class="btn ghost" onclick="calendarDismissVetAddressWarning(this)">Continua comunque</button><a class="btn ghost" data-vet-edit-link href="#" target="_blank" rel="noopener noreferrer">Modifica anagrafica</a></div></div><div class="calendar-tap-card"><span class="calendar-tap-card-icon calendar-icon-green">{lucide("home")}</span><div class="calendar-tap-card-body"><small>Indirizzo</small><input name="delivery_address" value="{val('address')}" placeholder="Compilato automaticamente selezionando la pratica o l'ambulatorio"></div></div></div></div></div>'''
         # Cliente/Animali/Preventivo: non piu' sotto-passi "tocca per aprire"
         # dentro uno step, ma sezioni apri/chiudi sempre presenti nella
         # pagina — stesso identico pattern gia' usato dal form pratica
@@ -11535,7 +11568,7 @@ class App(BaseHTTPRequestHandler):
                     delivery_label=f' {esc(animal_row["animal_name"])}' if len(animals)>1 and animal_row["animal_name"] else ""
                     existing_delivery_id=delivery_event_by_practice.get(animal_row["id"])
                     if existing_delivery_id:
-                        actions.append(f'<a class="cremation-action-btn cremation-action-planned" href="/calendario/{existing_delivery_id}">{lucide("truck")}<span>Vedi riconsegna{delivery_label}</span></a>')
+                        actions.append(f'<a class="cremation-action-btn cremation-action-active" href="/calendario/{existing_delivery_id}">{lucide("truck")}<span>Vedi riconsegna{delivery_label}</span></a>')
                     else:
                         actions.append(f'<a class="cremation-action-btn cremation-action-planned" href="/calendario/nuovo?linked_practice_id={animal_row["id"]}">{lucide("truck")}<span>Fissa riconsegna{delivery_label}</span></a>')
                 actions.append(f'<button type="button" class="cremation-action-btn cremation-action-planned" onclick="cremationRevertComplete({cycle["id"]})">{lucide("undo-2")}<span>Annulla completamento</span></button>')
@@ -12021,7 +12054,7 @@ class App(BaseHTTPRequestHandler):
                         delivery_label=f' {esc(animal_row["animal_name"])}' if len(animals)>1 and animal_row["animal_name"] else ""
                         existing_delivery_id=delivery_event_by_practice.get(animal_row["id"])
                         if existing_delivery_id:
-                            actions.append(f'<a class="cremation-action-btn cremation-action-planned" href="/calendario/{existing_delivery_id}">{lucide("truck")}<span>Vedi riconsegna{delivery_label}</span></a>')
+                            actions.append(f'<a class="cremation-action-btn cremation-action-active" href="/calendario/{existing_delivery_id}">{lucide("truck")}<span>Vedi riconsegna{delivery_label}</span></a>')
                         else:
                             actions.append(f'<a class="cremation-action-btn cremation-action-planned" href="/calendario/nuovo?linked_practice_id={animal_row["id"]}">{lucide("truck")}<span>Fissa riconsegna{delivery_label}</span></a>')
                     actions.append(f'<button type="button" class="cremation-action-btn cremation-action-planned" onclick="cremationRevertComplete({cycle["id"]})">{lucide("undo-2")}<span>Annulla completamento</span></button>')
@@ -14957,20 +14990,28 @@ class App(BaseHTTPRequestHandler):
                 full_name = owner_vet["clinic_name"] or owner_vet["short_name"] or ""
                 short_name = owner_vet["short_name"] or full_name
                 address = owner_vet["address"] or ""
-                data["owner_first_name"] = full_name
-                data["owner_last_name"] = ""
-                data["owner_company"] = full_name
-                data["owner_phone"] = owner_vet["phone"] or data["owner_phone"]
-                data["owner_street"] = address or data["owner_street"]
-                data["owner_city"] = owner_vet["city"] or data["owner_city"]
+                # Prefill soltanto se il campo e' ancora vuoto: la prima
+                # selezione del veterinario come speditore lo compila gia'
+                # lato client (vedi owner_veterinarian_id in APP_JS); se poi
+                # l'utente modifica a mano questi campi (es. per correggere
+                # il vero proprietario) il salvataggio non deve piu'
+                # sovrascriverli ad ogni submit — prima lo faceva sempre,
+                # rendendo impossibile correggere una pratica una volta
+                # collegata per errore a un veterinario come speditore.
+                data["owner_first_name"] = data["owner_first_name"] or full_name
+                data["owner_company"] = data["owner_company"] or full_name
+                data["owner_phone"] = data["owner_phone"] or owner_vet["phone"] or ""
+                data["owner_street"] = data["owner_street"] or address
+                data["owner_city"] = data["owner_city"] or owner_vet["city"] or ""
                 m = re.search(r"\b(\d{5})\b", address)
                 if m and not data["owner_zip"]:
                     data["owner_zip"] = m.group(1)
                 m = re.search(r"\b([A-Z]{2})\b\s*$", address)
                 if m and not data["owner_province"]:
                     data["owner_province"] = m.group(1)
-                data["origin_mode"] = "Testo libero"
-                data["origin_text"] = short_name
+                if not data["origin_text"]:
+                    data["origin_mode"] = "Testo libero"
+                    data["origin_text"] = short_name
         if data["veterinarian_id"]:
             with db() as c:
                 vet = c.execute("SELECT * FROM veterinarians WHERE id=? AND active=1", (data["veterinarian_id"],)).fetchone()
