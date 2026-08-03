@@ -820,6 +820,9 @@ def init_db():
         users_existing = {row["name"] for row in c.execute("PRAGMA table_info(users)")}
         if "must_change_password" not in users_existing:
             c.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0")
+        cremation_cycles_existing = {row["name"] for row in c.execute("PRAGMA table_info(cremation_cycles)")}
+        if "sort_order" not in cremation_cycles_existing:
+            c.execute("ALTER TABLE cremation_cycles ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
         c.executescript("""
         CREATE TABLE IF NOT EXISTS user_preferences (
           user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -2112,6 +2115,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 [data-cycle-dropzone].cremation-drop-hover{outline:2px solid #4ade80;outline-offset:2px}
 .cremation-cycles-timeline{display:flex;flex-direction:column;gap:16px}
 .cremation-timeline-item{display:grid;grid-template-columns:56px minmax(0,1fr);gap:14px;position:relative}
+.cremation-timeline-item.drag-item{padding:0;border:1px solid transparent;border-radius:12px;background:transparent}
 .cremation-timeline-rail{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;padding-top:14px}
 .cremation-timeline-item:not(:last-child) .cremation-timeline-rail:before{content:"";position:absolute;top:32px;bottom:-16px;left:50%;width:2px;background:#334155;transform:translateX(-50%);z-index:0}
 .cremation-timeline-time{font-size:11px;color:#94a3b8;font-weight:600;white-space:nowrap;position:relative;z-index:1}
@@ -8123,6 +8127,7 @@ class App(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/pratiche/(\d+)/stato-rapido", path)
         if match: return self.quick_state(user, int(match.group(1)))
         if path == "/programma-cremazioni/cicli": return self.cremation_create_cycle(user)
+        if path == "/programma-cremazioni/riordina-cicli": return self.cremation_reorder_cycles(user)
         match = re.fullmatch(r"/programma-cremazioni/cicli/(\d+)/assegna", path)
         if match: return self.cremation_assign_to_cycle(user, int(match.group(1)))
         match = re.fullmatch(r"/programma-cremazioni/cicli/(\d+)/avvia", path)
@@ -11371,7 +11376,7 @@ class App(BaseHTTPRequestHandler):
             assignable=c.execute("""SELECT * FROM practices WHERE (deleted_at IS NULL OR deleted_at='') AND status!='Consegnato'
                 AND service_type='Cremazione singola' AND cremation_cycle_id IS NULL
                 ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) ASC,id ASC""").fetchall()
-            cycles=c.execute("SELECT * FROM cremation_cycles WHERE cycle_date=? ORDER BY planned_start ASC,id ASC",(cycle_date,)).fetchall()
+            cycles=c.execute("SELECT * FROM cremation_cycles WHERE cycle_date=? ORDER BY sort_order ASC,planned_start ASC,id ASC",(cycle_date,)).fetchall()
             cycle_ids=[row["id"] for row in cycles]
             cycle_practices={cid:[] for cid in cycle_ids}
             assigned=[]
@@ -11593,10 +11598,11 @@ class App(BaseHTTPRequestHandler):
                 actions.append(f'<button type="button" class="cremation-action-btn cremation-action-delete" onclick="cremationDeleteCycle({cycle["id"]})">{lucide("x")}<span>Elimina ciclo</span></button>')
             action_html=''.join(actions)
             dropzone_attr=f'data-cycle-dropzone="{cycle["id"]}"' if status!="completato" and len(animals)<2 else ""
-            cycle_items.append(f'''<div class="cremation-timeline-item">
+            cycle_items.append(f'''<div class="cremation-timeline-item drag-item" data-drag-key="{cycle['id']}">
               <div class="cremation-timeline-rail"><span class="cremation-timeline-time">{esc(cycle["planned_start"])}</span><span class="cremation-timeline-dot {dot_cls_map.get(status,"")}"></span><span class="cremation-timeline-time cremation-timeline-time-end">{esc(cycle["planned_end"])}</span></div>
               <div class="cremation-cycle-card cremation-cycle-{status}" {dropzone_attr} data-cycle-card data-cycle-id="{cycle['id']}" onclick="cremationToggleCycleCard(this)">
                 <div class="cremation-cycle-head">
+                  <span class="drag-handle" aria-label="Trascina per riordinare il ciclo">::</span>
                   <span class="cremation-cycle-number {status_cls}">CICLO {idx+1}</span>
                   <span class="cremation-cycle-time">{esc(cycle["planned_start"])} → {esc(cycle["planned_end"])}</span>
                   <span class="cremation-status-badge {status_cls}">{esc(status_label)}</span>
@@ -11776,7 +11782,12 @@ class App(BaseHTTPRequestHandler):
         </div>
         {progress_html}
         <section class="cremation-column cremation-planning-column">
-          <div class="cremation-cycles-timeline">{cycles_html}</div>
+          <form data-drag-group data-auto-submit action="/programma-cremazioni/riordina-cicli" method="post">
+            <input type="hidden" name="data" value="{esc(cycle_date)}">
+            <input type="hidden" name="return_to" value="{esc(self.path)}">
+            <input type="hidden" name="ordine_json" data-drag-order>
+            <div class="cremation-cycles-timeline" data-drag-root>{cycles_html}</div>
+          </form>
           <button type="button" class="cremation-add-cycle-btn" onclick="cremationCreateEmptyCycle()">{lucide("plus")}<span>Aggiungi nuovo ciclo</span></button>
         </section>
         {edit_modal_html}
@@ -11808,7 +11819,7 @@ class App(BaseHTTPRequestHandler):
                 AND service_type='Cremazione singola' AND cremation_cycle_id IS NULL
                 ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) ASC,id ASC""").fetchall()
             marks=','.join('?' for _ in week_dates)
-            cycles=c.execute(f"SELECT * FROM cremation_cycles WHERE cycle_date IN ({marks}) ORDER BY cycle_date ASC,planned_start ASC,id ASC",tuple(week_dates)).fetchall()
+            cycles=c.execute(f"SELECT * FROM cremation_cycles WHERE cycle_date IN ({marks}) ORDER BY cycle_date ASC,sort_order ASC,planned_start ASC,id ASC",tuple(week_dates)).fetchall()
             cycle_ids=[row["id"] for row in cycles]
             cycle_practices={cid:[] for cid in cycle_ids}
             assigned=[]
@@ -12079,10 +12090,11 @@ class App(BaseHTTPRequestHandler):
                     actions.append(f'<button type="button" class="cremation-action-btn cremation-action-delete" onclick="cremationDeleteCycle({cycle["id"]})">{lucide("x")}<span>Elimina ciclo</span></button>')
                 action_html=''.join(actions)
                 dropzone_attr=f'data-cycle-dropzone="{cycle["id"]}"' if status!="completato" and len(animals)<2 else ""
-                row_items.append(f'''<div class="cremation-timeline-item cremation-week-cycle-item">
+                row_items.append(f'''<div class="cremation-timeline-item cremation-week-cycle-item drag-item" data-drag-key="{cycle['id']}">
                   <div class="cremation-timeline-rail"><span class="cremation-timeline-time">{esc(cycle["planned_start"])}</span><span class="cremation-timeline-dot {dot_cls_map.get(status,"")}"></span><span class="cremation-timeline-time cremation-timeline-time-end">{esc(cycle["planned_end"])}</span></div>
                   <div class="cremation-week-cycle-card cremation-cycle-{status}" {dropzone_attr} data-cycle-card data-cycle-id="{cycle['id']}" onclick="cremationToggleCycleCard(this)">
                     <div class="cremation-week-cycle-head">
+                      <span class="drag-handle" aria-label="Trascina per riordinare il ciclo">::</span>
                       <div class="cremation-week-cycle-main">
                         <span class="cremation-cycle-number {status_cls}">CICLO {idx+1}</span>
                         <span class="cremation-cycle-time">{esc(cycle["planned_start"])} → {esc(cycle["planned_end"])}</span>
@@ -12100,7 +12112,15 @@ class App(BaseHTTPRequestHandler):
                     </div>
                   </div>
                 </div>''')
-            day_body=''.join(row_items) if row_items else '<p class="cremation-dash" style="padding:8px 0">Nessun ciclo pianificato.</p>'
+            if row_items:
+                day_body=f'''<form data-drag-group data-auto-submit action="/programma-cremazioni/riordina-cicli" method="post">
+                  <input type="hidden" name="data" value="{esc(d)}">
+                  <input type="hidden" name="return_to" value="{esc(self.path)}">
+                  <input type="hidden" name="ordine_json" data-drag-order>
+                  <div class="cremation-cycles-timeline" data-drag-root>{''.join(row_items)}</div>
+                </form>'''
+            else:
+                day_body='<p class="cremation-dash" style="padding:8px 0">Nessun ciclo pianificato.</p>'
             day_body+=f'<button type="button" class="cremation-add-cycle-btn" style="margin-top:6px" onclick="cremationCreateCycleForDay(\'{d}\')">{lucide("plus")}<span>Aggiungi ciclo</span></button>'
             cycles_count=len(day_cycles)
             count_label=f'{cycles_count} {"ciclo" if cycles_count==1 else "cicli"}'
@@ -12352,8 +12372,9 @@ class App(BaseHTTPRequestHandler):
             else:
                 start,end=cremation_cycle_next_slot(c,cycle_date)
             status="in_attesa" if practice_id else "pianificato"
-            cycle_id=c.execute("INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
-                                (cycle_date,status,start,end,stamp,stamp)).lastrowid
+            next_order=c.execute("SELECT COALESCE(MAX(sort_order),0)+1 n FROM cremation_cycles WHERE cycle_date=?",(cycle_date,)).fetchone()["n"]
+            cycle_id=c.execute("INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                                (cycle_date,status,start,end,next_order,stamp,stamp)).lastrowid
             if practice_id:
                 c.execute("UPDATE practices SET cremation_cycle_id=?,updated_at=? WHERE id=?",(cycle_id,stamp,practice_id))
                 cremation_log_status_change(c,practice_id,practice["status"],"In programma",user["id"],stamp)
@@ -12489,6 +12510,26 @@ class App(BaseHTTPRequestHandler):
                         c.execute("UPDATE cremation_cycles SET planned_start=?,planned_end=?,updated_at=? WHERE id=?",(row_start,row_end,stamp,row["id"]))
                 prev_end=row_end
         return self.send_json({"ok":True})
+
+    def cremation_reorder_cycles(self,user):
+        form=self.form()
+        cycle_date=(form.get("data") or "").strip()
+        try:date.fromisoformat(cycle_date)
+        except ValueError:return self.send_error(400)
+        try:order=json.loads(form.get("ordine_json") or "[]")
+        except (ValueError,TypeError):order=[]
+        try:order=[int(k) for k in order]
+        except (TypeError,ValueError):order=[]
+        return_to=safe_return_path(form.get("return_to"),f"/programma-cremazioni?data={cycle_date}")
+        with db() as c:
+            cycles=c.execute("SELECT id FROM cremation_cycles WHERE cycle_date=?",(cycle_date,)).fetchall()
+            by_id={row["id"] for row in cycles}
+            ordered=[cid for cid in order if cid in by_id]
+            ordered+=[row["id"] for row in cycles if row["id"] not in ordered]
+            stamp=now()
+            for index,cid in enumerate(ordered,start=1):
+                c.execute("UPDATE cremation_cycles SET sort_order=?,updated_at=? WHERE id=?",(index,stamp,cid))
+        self.redirect(return_to)
 
     def cremation_delete_cycle(self,user,cycle_id):
         stamp=now()

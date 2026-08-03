@@ -12397,6 +12397,144 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.trash_page(admin)
         self.assertIn('href="/archivio">Torna all archivio</a>', rendered[-1])
 
+    def test_cremation_cycles_sort_order_migration_is_idempotent(self):
+        with app.db() as conn:
+            cols = {row["name"] for row in conn.execute("PRAGMA table_info(cremation_cycles)")}
+        self.assertIn("sort_order", cols)
+        app.init_db()  # re-running the migration must not error or duplicate the column
+        with app.db() as conn:
+            cols2 = {row["name"] for row in conn.execute("PRAGMA table_info(cremation_cycles)")}
+        self.assertIn("sort_order", cols2)
+
+    def test_cremation_day_view_default_order_unchanged_when_never_reordered(self):
+        # cicli mai riordinati (sort_order=0 per tutti): l'ordine resta
+        # quello di oggi, guidato dall'orario pianificato.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            late_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-25", "in_attesa", "14:00", "15:00", stamp, stamp),
+            ).lastrowid
+            early_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-25", "in_attesa", "08:00", "09:00", stamp, stamp),
+            ).lastrowid
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-25"
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertLess(page.index(f'data-cycle-id="{early_id}"'), page.index(f'data-cycle-id="{late_id}"'))
+
+    def test_cremation_new_cycle_appends_after_max_sort_order(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                ("2026-07-26", "in_attesa", "08:00", "09:00", 5, stamp, stamp),
+            )
+        self.handler.form = lambda: {"data": "2026-07-26", "planned_start": "10:00", "planned_end": "11:00"}
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.cremation_create_cycle(admin)
+        new_id = responses[-1][0]["cycle_id"]
+        with app.db() as conn:
+            row = conn.execute("SELECT sort_order FROM cremation_cycles WHERE id=?", (new_id,)).fetchone()
+        self.assertEqual(row["sort_order"], 6)
+
+    def test_cremation_reorder_cycles_updates_sort_order_only_for_that_date(self):
+        with app.db() as conn:
+            stamp = app.now()
+            a_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-27", "in_attesa", "08:00", "09:00", stamp, stamp),
+            ).lastrowid
+            b_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-27", "completato", "10:00", "11:00", stamp, stamp),
+            ).lastrowid
+            other_day_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-28", "in_attesa", "08:00", "09:00", stamp, stamp),
+            ).lastrowid
+        # b prima di a, e un id di un altro giorno che deve essere ignorato
+        self.handler.form = lambda: {"data": "2026-07-27", "ordine_json": json.dumps([b_id, a_id, other_day_id]), "return_to": "/programma-cremazioni?data=2026-07-27"}
+        redirects = []
+        self.handler.redirect = lambda url: redirects.append(url)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.cremation_reorder_cycles(admin)
+        self.assertEqual(redirects[-1], "/programma-cremazioni?data=2026-07-27")
+        with app.db() as conn:
+            a = conn.execute("SELECT * FROM cremation_cycles WHERE id=?", (a_id,)).fetchone()
+            b = conn.execute("SELECT * FROM cremation_cycles WHERE id=?", (b_id,)).fetchone()
+            other = conn.execute("SELECT * FROM cremation_cycles WHERE id=?", (other_day_id,)).fetchone()
+        self.assertEqual(b["sort_order"], 1)
+        self.assertEqual(a["sort_order"], 2)
+        # niente altro tocco: orari e stato restano quelli originali
+        self.assertEqual((a["planned_start"], a["planned_end"], a["status"]), ("08:00", "09:00", "in_attesa"))
+        self.assertEqual((b["planned_start"], b["planned_end"], b["status"]), ("10:00", "11:00", "completato"))
+        # il ciclo di un altro giorno non è stato toccato
+        self.assertEqual(other["sort_order"], 0)
+
+    def test_cremation_reorder_cycles_invalid_date_returns_400(self):
+        self.handler.form = lambda: {"data": "non-una-data", "ordine_json": "[]"}
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        errors = []
+        self.handler.send_error = lambda status, *a: errors.append(status)
+        self.handler.cremation_reorder_cycles(admin)
+        self.assertEqual(errors[-1], 400)
+
+    def test_cremation_day_and_week_markup_wires_drag_reorder(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-29", "in_attesa", "08:00", "09:00", stamp, stamp),
+            ).lastrowid
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-29"
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn('data-drag-group data-auto-submit action="/programma-cremazioni/riordina-cicli" method="post"', page)
+        self.assertIn('<input type="hidden" name="data" value="2026-07-29">', page)
+        self.assertIn('<input type="hidden" name="ordine_json" data-drag-order>', page)
+        self.assertIn('class="cremation-cycles-timeline" data-drag-root', page)
+        self.assertIn(f'class="cremation-timeline-item drag-item" data-drag-key="{cycle_id}"', page)
+        self.assertIn('<span class="drag-handle" aria-label="Trascina per riordinare il ciclo">::</span>', page)
+        rendered_week = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-29&vista=settimana"
+        self.handler.send_html = lambda content, *a: rendered_week.append(content)
+        self.handler.cremation_schedule(admin)
+        week_page = rendered_week[-1]
+        self.assertIn('data-drag-group data-auto-submit action="/programma-cremazioni/riordina-cicli" method="post"', week_page)
+        self.assertIn(f'cremation-timeline-item cremation-week-cycle-item drag-item" data-drag-key="{cycle_id}"', week_page)
+
+    def test_cremation_ciclo_numbering_follows_new_sort_order(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            first_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                ("2026-07-30", "in_attesa", "08:00", "09:00", 2, stamp, stamp),
+            ).lastrowid
+            second_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                ("2026-07-30", "in_attesa", "10:00", "11:00", 1, stamp, stamp),
+            ).lastrowid
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-30"
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        # sort_order fa vincere il ciclo delle 10:00 (sort_order=1) come CICLO 1
+        second_pos = page.index(f'data-cycle-id="{second_id}"')
+        first_pos = page.index(f'data-cycle-id="{first_id}"')
+        self.assertLess(second_pos, first_pos)
+        self.assertIn("CICLO 1", page[second_pos:first_pos])
+        self.assertIn("CICLO 2", page[first_pos:first_pos+3000])
+
 
 if __name__ == "__main__":
     unittest.main()
