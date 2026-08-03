@@ -1902,6 +1902,86 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("cremationSoftRefreshCycle(cycleId)", delete_body)
         self.assertNotIn("location.reload()", delete_body)
 
+    def test_cremation_day_view_shows_accessories_next_to_urn(self):
+        # richiesta esplicita dell'utente: gli accessori della pratica
+        # (collane, braccialetti ecc.) devono comparire accanto all'urna
+        # quando l'animale e' inserito in un ciclo di cremazione.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-20", "in_attesa", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+            with_both_id = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-ACCESS1", "Privato", "Livorno", "In programma", "Cremazione singola", "2026-07-20", stamp, stamp,
+                 admin["id"], "Fido", cycle_id),
+            ).lastrowid
+            conn.execute("INSERT INTO practice_items(practice_id,category,label,price,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                         (with_both_id, "urna", "Urna in legno", "40.00", 0, stamp, stamp))
+            conn.execute("INSERT INTO practice_items(practice_id,category,label,price,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                         (with_both_id, "accessorio", "Collana con zampetta", "15.00", 0, stamp, stamp))
+            only_urn_id = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-URNONLY", "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-20", stamp, stamp,
+                 admin["id"], "Argo", None),
+            ).lastrowid
+            conn.execute("INSERT INTO practice_items(practice_id,category,label,price,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                         (only_urn_id, "urna", "Urna in ceramica", "50.00", 0, stamp, stamp))
+
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-20"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        urn_block_start = page.index(f'data-practice-id="{with_both_id}"')
+        urn_block = page[urn_block_start:page.index("cremation-animal-actions", urn_block_start)]
+        self.assertIn('class="cremation-animal-urn"', urn_block)
+        self.assertIn("Urna in legno", urn_block)
+        self.assertIn('class="cremation-animal-accessory"', urn_block)
+        self.assertIn("Collana con zampetta", urn_block)
+        # ordine: urna prima, accessorio subito dopo (accanto)
+        self.assertLess(urn_block.index("Urna in legno"), urn_block.index("Collana con zampetta"))
+
+        only_urn_block_start = page.index(f'data-practice-id="{only_urn_id}"')
+        only_urn_block = page[only_urn_block_start:only_urn_block_start+2000]
+        self.assertIn("Urna in ceramica", only_urn_block)
+        self.assertNotIn('cremation-animal-accessory', only_urn_block)
+
+    def test_cremation_week_view_shows_accessories_next_to_urn(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-20", "in_attesa", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-WEEKACC", "Privato", "Livorno", "In programma", "Cremazione singola", "2026-07-20", stamp, stamp,
+                 admin["id"], "Luna", cycle_id),
+            ).lastrowid
+            conn.execute("INSERT INTO practice_items(practice_id,category,label,price,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                         (pid, "urna", "Urna piccola", "35.00", 0, stamp, stamp))
+            conn.execute("INSERT INTO practice_items(practice_id,category,label,price,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                         (pid, "accessorio", "Bracciale con nome", "12.00", 0, stamp, stamp))
+
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-20&vista=settimana"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        block_start = page.index(f'data-practice-id="{pid}"')
+        block = page[block_start:page.index("cremation-animal-actions", block_start)]
+        self.assertIn("Urna piccola", block)
+        self.assertIn('class="cremation-animal-accessory"', block)
+        self.assertIn("Bracciale con nome", block)
+        self.assertLess(block.index("Urna piccola"), block.index("Bracciale con nome"))
+
     def test_cremation_start_and_complete_cycle_moves_animals_to_da_consegnare(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()

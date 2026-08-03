@@ -2176,7 +2176,8 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-animal-col{display:flex;flex-direction:column;gap:4px;align-items:flex-start;min-width:60px}
 .cremation-animal-col small{color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.04em}
 .cremation-animal-tags{display:flex;flex-wrap:wrap;gap:4px}
-.cremation-animal-urn{display:flex;align-items:center;gap:5px;font-size:12px;color:#cbd5e1}
+.cremation-animal-urn{display:flex;align-items:center;flex-wrap:wrap;gap:5px;font-size:12px;color:#cbd5e1}
+.cremation-animal-accessory{display:flex;align-items:center;gap:4px}
 .cremation-animal-urn .icon{width:13px;height:13px}
 .cremation-animal-actions{display:flex;align-items:center;gap:8px;margin-left:auto}.cremation-notify{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin-top:8px;padding:10px 12px;border-radius:12px;background:#0f172a;border:1px solid #263246;cursor:default}.cremation-notify-head{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.03em}.cremation-notify-head .icon{width:14px;height:14px}.cremation-notify-body{display:flex;flex-wrap:wrap;align-items:center;gap:10px}.cremation-notify-badge{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:999px;font-size:13px;font-weight:800;letter-spacing:.02em}.cremation-notify-red{background:#450a0a;color:#fca5a5;box-shadow:0 0 0 1px #ef444450 inset}.cremation-notify-green{background:#052e16;color:#86efac;box-shadow:0 0 0 1px #22c55e50 inset}.cremation-notify-detail{display:flex;gap:8px;font-size:12px;color:#94a3b8}.cremation-notify-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-left:auto}.cremation-notify-toggle{padding:7px 14px;border-radius:9px;border:1px solid #ef444470;background:#7f1d1d;color:#fecaca;font-weight:700;font-size:12.5px;cursor:pointer;white-space:nowrap}.cremation-notify-toggle:hover{background:#991b1b}.cremation-notify-toggle-undo{background:transparent;border-color:#334155;color:#94a3b8}.cremation-notify-toggle-undo:hover{background:#1f2937}.cremation-notify-wa{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:9px;background:#052e16;color:#25d366;font-weight:700;font-size:12.5px;text-decoration:none;white-space:nowrap}.cremation-notify-wa:hover{background:#064e26}.cremation-notify-wa .icon{width:15px;height:15px}.cremation-notify-wa-disabled{opacity:.4;cursor:not-allowed;pointer-events:none}.light-theme .cremation-notify{background:#f8fafc;border-color:#e2e8f0}.light-theme .cremation-notify-head{color:#64748b}.light-theme .cremation-notify-detail{color:#64748b}.light-theme .cremation-notify-toggle-undo{border-color:#cbd5e1;color:#64748b}@media(max-width:620px){.cremation-notify-actions{margin-left:0;width:100%}.cremation-notify-toggle,.cremation-notify-wa{flex:1 1 auto;justify-content:center}}
 .cremation-waiting-row-wide{display:flex;flex-wrap:wrap;align-items:center;gap:16px;padding:12px 0;border-top:1px solid #263246;cursor:pointer}
@@ -6820,6 +6821,7 @@ LUCIDE_PATHS = {
     "eye": '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
     "repeat": '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
     "map-pin": '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+    "gift": '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/>',
 }
 
 
@@ -11299,10 +11301,13 @@ class App(BaseHTTPRequestHandler):
             all_rows=list({row["id"]:row for row in list(waiting)+list(assigned)+list(assignable)}.values())
             practice_ids={row["id"] for row in all_rows}
             urn_items_by_practice={}
+            accessory_items_by_practice={}
             if practice_ids:
                 marks=','.join('?' for _ in practice_ids)
                 for irow in c.execute(f"SELECT practice_id,label FROM practice_items WHERE practice_id IN ({marks}) AND category='urna' ORDER BY practice_id,sort_order",tuple(practice_ids)):
                     urn_items_by_practice.setdefault(irow["practice_id"],[]).append(irow["label"])
+                for irow in c.execute(f"SELECT practice_id,label FROM practice_items WHERE practice_id IN ({marks}) AND category='accessorio' ORDER BY practice_id,sort_order",tuple(practice_ids)):
+                    accessory_items_by_practice.setdefault(irow["practice_id"],[]).append(irow["label"])
             collaborator_ids={int(row["collaborator_id"]) for row in all_rows if "collaborator_id" in row.keys() and row["collaborator_id"]}
             collaborator_codes={}
             if collaborator_ids:
@@ -11329,6 +11334,17 @@ class App(BaseHTTPRequestHandler):
             if value:return f'{lucide("archive")}<span>{esc(value)}</span>'
             if row["send_catalog"]=="Si":return '<span class="badge tag-outline-orange">INVIARE CATALOGO</span>'
             return '<span class="cremation-dash">—</span>'
+
+        def accessory_value(row):
+            labels=[]
+            for label in accessory_items_by_practice.get(row["id"],[]):
+                label=compact_text(label)
+                if label and label not in labels:labels.append(label)
+            return " / ".join(labels)
+
+        def accessory_html(row):
+            value=accessory_value(row)
+            return f'<span class="cremation-animal-accessory">{lucide("gift")}<span>{esc(value)}</span></span>' if value else ''
 
         def tags_html(row):
             html=self.tag_badges(row)
@@ -11426,7 +11442,7 @@ class App(BaseHTTPRequestHandler):
               </div>
               <div class="cremation-animal-col"><small>Provenienza</small>{provenance_html}</div>
               <div class="cremation-animal-col"><small>Etichette</small><div class="cremation-animal-tags">{tags_html(row)}</div></div>
-              <div class="cremation-animal-col"><small>Urna</small><div class="cremation-animal-urn">{urn_html(row)}</div></div>
+              <div class="cremation-animal-col"><small>Urna</small><div class="cremation-animal-urn">{urn_html(row)}{accessory_html(row)}</div></div>
               <div class="cremation-animal-actions"><a class="cremation-animal-open" href="{url}" onclick="event.stopPropagation()"><span>Apri pratica</span>{lucide("chevron-right")}</a>{swap_html}{remove_html}</div>
               {notify_html}
             </div>'''
@@ -11708,10 +11724,13 @@ class App(BaseHTTPRequestHandler):
             all_rows=list({row["id"]:row for row in list(waiting)+list(assigned)+list(assignable)}.values())
             practice_ids={row["id"] for row in all_rows}
             urn_items_by_practice={}
+            accessory_items_by_practice={}
             if practice_ids:
                 marks3=','.join('?' for _ in practice_ids)
                 for irow in c.execute(f"SELECT practice_id,label FROM practice_items WHERE practice_id IN ({marks3}) AND category='urna' ORDER BY practice_id,sort_order",tuple(practice_ids)):
                     urn_items_by_practice.setdefault(irow["practice_id"],[]).append(irow["label"])
+                for irow in c.execute(f"SELECT practice_id,label FROM practice_items WHERE practice_id IN ({marks3}) AND category='accessorio' ORDER BY practice_id,sort_order",tuple(practice_ids)):
+                    accessory_items_by_practice.setdefault(irow["practice_id"],[]).append(irow["label"])
             collaborator_ids={int(row["collaborator_id"]) for row in all_rows if "collaborator_id" in row.keys() and row["collaborator_id"]}
             collaborator_codes={}
             if collaborator_ids:
@@ -11754,6 +11773,17 @@ class App(BaseHTTPRequestHandler):
             if value:return f'{lucide("archive")}<span>{esc(value)}</span>'
             if row["send_catalog"]=="Si":return '<span class="badge tag-outline-orange">INVIARE CATALOGO</span>'
             return '<span class="cremation-dash">—</span>'
+
+        def accessory_value(row):
+            labels=[]
+            for label in accessory_items_by_practice.get(row["id"],[]):
+                label=compact_text(label)
+                if label and label not in labels:labels.append(label)
+            return " / ".join(labels)
+
+        def accessory_html(row):
+            value=accessory_value(row)
+            return f'<span class="cremation-animal-accessory">{lucide("gift")}<span>{esc(value)}</span></span>' if value else ''
 
         def tags_html(row):
             html=self.tag_badges(row)
@@ -11799,7 +11829,7 @@ class App(BaseHTTPRequestHandler):
               </div>
               <div class="cremation-animal-col"><small>Provenienza</small>{provenance_html}</div>
               <div class="cremation-animal-col"><small>Etichette</small><div class="cremation-animal-tags">{tags_html(row)}</div></div>
-              <div class="cremation-animal-col"><small>Urna</small><div class="cremation-animal-urn">{urn_html(row)}</div></div>
+              <div class="cremation-animal-col"><small>Urna</small><div class="cremation-animal-urn">{urn_html(row)}{accessory_html(row)}</div></div>
               <div class="cremation-animal-actions"><a class="cremation-animal-open" href="{url}" onclick="event.stopPropagation()"><span>Apri pratica</span>{lucide("chevron-right")}</a>{swap_html}{remove_html}</div>
               {notify_html}
             </div>'''
