@@ -8811,6 +8811,71 @@ class PetParadiseTests(unittest.TestCase):
             count=conn.execute("SELECT count(*) n FROM reminders WHERE reminder_type='manual'").fetchone()["n"]
         self.assertEqual(count,0)
 
+    def test_form_reads_request_body_only_once_and_caches_it(self):
+        # Bug segnalato dall'utente: self.form() legge il corpo della POST
+        # direttamente dal socket, senza salvarlo. Un handler che la chiama
+        # due volte (add_manual_reminder, edit_manual_reminder,
+        # complete_reminder, balance_legacy_movement_delete avevano tutti
+        # questo bug) trova la seconda volta lo stream gia' esaurito: su un
+        # socket reale questo blocca la richiesta fino al timeout invece di
+        # restituire subito un dizionario vuoto, con l'effetto "il tasto
+        # Salva non fa niente, poi dopo tanto tempo arriva un errore".
+        payload="title=Fare+bonifico&ajax=1"
+        self.handler.headers={"Content-Length":str(len(payload.encode()))}
+        self.handler.rfile=io.BytesIO(payload.encode())
+        first=self.handler.form()
+        second=self.handler.form()
+        self.assertEqual(first,{"title":"Fare bonifico","ajax":"1"})
+        self.assertEqual(second,first)
+
+    def test_add_manual_reminder_works_through_the_real_request_body_reader(self):
+        # Stessa richiesta del bottone "Salva" del popup, ma esercitando il
+        # vero self.form() (non il lambda di comodo usato altrove nei test)
+        # cosi' una regressione sulla doppia lettura del socket verrebbe
+        # colta qui.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        payload="title=Fare+bonifico+assicurazione&ajax=1"
+        self.handler.headers={"Content-Length":str(len(payload.encode()))}
+        self.handler.rfile=io.BytesIO(payload.encode())
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.add_manual_reminder(admin)
+        self.assertEqual(responses[-1],({"ok":True},200))
+        with app.db() as conn:
+            row=conn.execute("SELECT title FROM reminders WHERE reminder_type='manual'").fetchone()
+        self.assertEqual(row["title"],"Fare bonifico assicurazione")
+
+    def test_edit_and_complete_manual_reminder_work_through_the_real_request_body_reader(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        payload="title=Vecchio+titolo&ajax=1"
+        self.handler.headers={"Content-Length":str(len(payload.encode()))}
+        self.handler.rfile=io.BytesIO(payload.encode())
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.add_manual_reminder(admin)
+        with app.db() as conn:
+            reminder_id=conn.execute("SELECT id FROM reminders WHERE reminder_type='manual'").fetchone()["id"]
+
+        payload=f"title=Titolo+modificato&edit_id={reminder_id}&ajax=1"
+        self.handler.headers={"Content-Length":str(len(payload.encode()))}
+        self.handler.rfile=io.BytesIO(payload.encode())
+        del self.handler._form_cache
+        self.handler.edit_manual_reminder(admin,reminder_id)
+        self.assertEqual(responses[-1],({"ok":True},200))
+        with app.db() as conn:
+            title=conn.execute("SELECT title FROM reminders WHERE id=?",(reminder_id,)).fetchone()["title"]
+        self.assertEqual(title,"Titolo modificato")
+
+        payload="ajax=1"
+        self.handler.headers={"Content-Length":str(len(payload.encode()))}
+        self.handler.rfile=io.BytesIO(payload.encode())
+        del self.handler._form_cache
+        self.handler.complete_reminder(admin,reminder_id)
+        self.assertEqual(responses[-1],({"ok":True},200))
+        with app.db() as conn:
+            completed=conn.execute("SELECT completed_at FROM reminders WHERE id=?",(reminder_id,)).fetchone()["completed_at"]
+        self.assertIsNotNone(completed)
+
     def test_weekly_report_section_reuses_bilanci_totals_for_last_7_days(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()

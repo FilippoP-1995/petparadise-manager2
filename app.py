@@ -7739,8 +7739,17 @@ class App(BaseHTTPRequestHandler):
         self.send_response(303); self.send_header("Location", path); self.end_headers()
 
     def form(self):
-        size = int(self.headers.get("Content-Length", 0))
-        return {k: v[-1] for k, v in parse_qs(self.rfile.read(size).decode()).items()}
+        # Legge il corpo della richiesta direttamente dal socket: una seconda
+        # lettura troverebbe lo stream gia' consumato e resterebbe bloccata
+        # fino al timeout (bug reale che ha causato salvataggi "silenziosi"
+        # in piu' handler). Il risultato viene quindi messo in cache
+        # sull'istanza — creata una volta per richiesta da BaseHTTPRequestHandler
+        # — cosi' chiamate multiple a self.form() nello stesso handler sono
+        # sempre sicure.
+        if not hasattr(self, "_form_cache"):
+            size = int(self.headers.get("Content-Length", 0))
+            self._form_cache = {k: v[-1] for k, v in parse_qs(self.rfile.read(size).decode()).items()}
+        return self._form_cache
 
     def user(self):
         jar = cookies.SimpleCookie(self.headers.get("Cookie", "")); morsel = jar.get("ppm_session")
@@ -9000,8 +9009,9 @@ class App(BaseHTTPRequestHandler):
         practices row). The row's own idempotency_key already fully
         identifies it; re-derive everything from get_movements() itself
         (never from the submitted form) so the delete can never be spoofed."""
-        return_to=safe_return_path(self.form().get("return_to"),"/bilanci")
-        legacy_key=self.form().get("legacy_key","").strip()
+        form=self.form()
+        return_to=safe_return_path(form.get("return_to"),"/bilanci")
+        legacy_key=form.get("legacy_key","").strip()
         try:
             with db() as c:
                 practice_id=practice_id_for_legacy_key(c,legacy_key)
@@ -13052,7 +13062,8 @@ class App(BaseHTTPRequestHandler):
         self.redirect("/prodotti")
 
     def complete_reminder(self,user,reminder_id):
-        ajax=self.form().get("ajax")=="1"
+        form=self.form()
+        ajax=form.get("ajax")=="1"
         with db() as c:
             row=c.execute("SELECT * FROM reminders WHERE id=?",(reminder_id,)).fetchone()
             if not row:
@@ -13065,7 +13076,7 @@ class App(BaseHTTPRequestHandler):
                 # etichetta/conteggio da ricalcolare (la nuova struttura a
                 # slide singola non ha piu' badge di gruppo).
                 return self.send_json({"ok":True})
-        return self.redirect(safe_return_path(self.form().get("return_to") or self.headers.get("Referer"),"/"))
+        return self.redirect(safe_return_path(form.get("return_to") or self.headers.get("Referer"),"/"))
 
     def mark_reminders_read(self,user):
         # Il badge del centro Promemoria (bell) rappresenta solo le occorrenze
@@ -13085,8 +13096,9 @@ class App(BaseHTTPRequestHandler):
         # non lo tocca mai (non chiama ne' ensure_reminder ne'
         # close_stale_reminders per reminder_type="manual") — resta aperto
         # finche' non viene eliminato a mano dal pulsante dismiss esistente.
-        ajax=self.form().get("ajax")=="1"
-        title=(self.form().get("title") or "").strip()[:200]
+        form=self.form()
+        ajax=form.get("ajax")=="1"
+        title=(form.get("title") or "").strip()[:200]
         if not title:
             return self.send_json({"ok":False,"error":"Inserisci un titolo"},400) if ajax else self.redirect("/")
         stamp=now()
@@ -13102,8 +13114,9 @@ class App(BaseHTTPRequestHandler):
         # manuali (per quelli automatici "Modifica" apre semplicemente la
         # pratica collegata, stesso link di "Apri" — non serve un endpoint
         # dedicato). Aggiorna solo il titolo, invariato tutto il resto.
-        ajax=self.form().get("ajax")=="1"
-        title=(self.form().get("title") or "").strip()[:200]
+        form=self.form()
+        ajax=form.get("ajax")=="1"
+        title=(form.get("title") or "").strip()[:200]
         if not title:
             return self.send_json({"ok":False,"error":"Inserisci un titolo"},400) if ajax else self.redirect("/")
         with db() as c:
