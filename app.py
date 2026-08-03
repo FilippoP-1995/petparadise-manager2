@@ -6214,7 +6214,7 @@ document.addEventListener('DOMContentLoaded',function(){
   const tax=document.querySelector('input[name="owner_tax_code"]');
   if(tax) tax.addEventListener('input',()=>{tax.value=tax.value.toUpperCase();});
   const globalSearch=document.getElementById('globalSearch'),globalSearchResults=document.getElementById('globalSearchResults');
-  if(globalSearch&&globalSearchResults){ppmRegisterLookupPanel(globalSearch,globalSearchResults);globalSearch.addEventListener('input',()=>calendarLookup(globalSearch,'/api/calendario/pratiche/search',globalSearchResults,item=>{location.href=`/pratiche/${item.practice_id}`;}));}
+  if(globalSearch&&globalSearchResults){ppmRegisterLookupPanel(globalSearch,globalSearchResults);globalSearch.addEventListener('input',()=>calendarLookup(globalSearch,'/api/calendario/pratiche/search',globalSearchResults,item=>{location.href=`/pratiche/${item.practice_id}?return_to=${encodeURIComponent(location.pathname+location.search)}`;}));}
   initializePushNotifications();
   formatVisibleDates();
   new MutationObserver(records=>{if(records.some(record=>record.addedNodes.length))formatVisibleDates();}).observe(document.body,{childList:true,subtree:true});
@@ -9201,11 +9201,12 @@ class App(BaseHTTPRequestHandler):
         notes_preview=notes_text if len(notes_text)<=90 else notes_text[:89].rstrip()+"…"
         notes_line=f'{lucide("clipboard")}<span>{esc(notes_preview)}</span>' if notes_preview else ''
         payment_status_text=row["payment_status"] or ""
+        channel=row.get("payment_channel") or ""
+        channel_suffix=f" {esc(channel)}" if channel else ""
         if payment_status_text=="Pagato":
-            payment_line=f'{lucide("check-circle")}<span>Pagato · {money_it(row["payment_amount"])}</span>'
+            payment_line=f'{lucide("check-circle")}<span>Pagato · {money_it(row["payment_amount"])}{channel_suffix}</span>'
         elif payment_status_text:
-            channel=row.get("payment_channel") or ""
-            payment_line=f'{lucide("wallet")}<span>{esc(payment_status_text)} · {money_it(row["payment_amount"])}{f" {esc(channel)}" if channel else ""}</span>'
+            payment_line=f'{lucide("wallet")}<span>{esc(payment_status_text)} · {money_it(row["payment_amount"])}{channel_suffix}</span>'
         else:
             payment_line=''
         operator_name=row['operator_name'] or row['assigned_name'] or row['creator_name']

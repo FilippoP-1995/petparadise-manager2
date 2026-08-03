@@ -4594,6 +4594,16 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('id="globalSearchResults"', page)
         self.assertIn("ppmRegisterLookupPanel(globalSearch,globalSearchResults)", app.APP_JS)
         self.assertIn("/api/calendario/pratiche/search", app.APP_JS)
+        # bug segnalato dall'utente: aprendo una pratica dalla barra di
+        # ricerca in alto mentre si e' su una pagina qualsiasi, "Torna alla
+        # pagina precedente" riportava sempre in Archivio invece che sulla
+        # pagina da cui si era partiti, perche' il link non portava
+        # return_to. Deve portare esattamente la pagina corrente (percorso
+        # + eventuali filtri in query string).
+        self.assertIn(
+            "location.href=`/pratiche/${item.practice_id}?return_to=${encodeURIComponent(location.pathname+location.search)}`;",
+            app.APP_JS,
+        )
 
     def test_invoice_total_formats_two_decimals_without_euro_sign_in_value(self):
         js = app.APP_JS
@@ -9611,6 +9621,31 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(f'/calendario/{pickup_id}/modifica', page)
         self.assertIn(f'action="/calendario/{pickup_id}/elimina"', page)
         self.assertIn('Aggiungi ritiro / riconsegna', page)
+
+    def test_calendar_appt_card_shows_payment_channel_even_when_pagato(self):
+        # bug segnalato dall'utente: la card mostrava "Pagato · 240,00" senza
+        # indicare il circuito (W/D), mentre per gli stati "Da pagare"/
+        # "Acconto" il circuito veniva mostrato correttamente. Il ramo
+        # "Pagato" del codice si dimenticava di leggere payment_channel.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pid = conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                animal_name,owner_first_name,owner_last_name,total_text)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                                ("CR-SAM","Privato","Livorno","Consegnato",stamp,stamp,admin["id"],"Sam","Laura","Barone","240")).lastrowid
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,client_first_name,client_last_name,
+                start_at,end_at,event_status,payment_status,payment_amount,linked_practice_id,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("Riconsegna","RICONSEGNA SAM IN SEDE LIVORNO","Laura","Barone",
+                 "2026-07-28T15:30:00","2026-07-28T15:30:00","In programma","Pagato","240",pid,admin["id"],stamp,stamp)).lastrowid
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/calendario?vista=giorno&data=2026-07-28"
+        self.handler.calendar_page(admin)
+        page = rendered[-1]
+        card_start = page.index(f'data-event-id="{event_id}"')
+        card_html = page[card_start:page.index('</article>', card_start)]
+        self.assertIn('Pagato · € 240,00 D', card_html)
 
     def test_calendar_appt_card_shows_title_first_and_vet_name_instead_of_address(self):
         # richiesta esplicita dell'utente: il nome dell'animale non e' piu'
