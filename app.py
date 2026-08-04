@@ -348,7 +348,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS cremation_cycles (
           id INTEGER PRIMARY KEY,
           cycle_date TEXT NOT NULL,
-          status TEXT NOT NULL DEFAULT 'in_attesa' CHECK(status IN ('pianificato','in_attesa','in_corso','completato')),
+          status TEXT NOT NULL DEFAULT 'in_attesa' CHECK(status IN ('pianificato','in_attesa','completato')),
           planned_start TEXT NOT NULL,
           planned_end TEXT NOT NULL,
           actual_start TEXT,
@@ -846,6 +846,10 @@ def init_db():
         cremation_cycles_existing = {row["name"] for row in c.execute("PRAGMA table_info(cremation_cycles)")}
         if "sort_order" not in cremation_cycles_existing:
             c.execute("ALTER TABLE cremation_cycles ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
+        # lo stato 'in_corso' e' stato eliminato: un ciclo passa direttamente
+        # da in_attesa a completato. Eventuali cicli rimasti a meta' (dati
+        # legacy) tornano in_attesa, senza toccare le pratiche collegate.
+        c.execute("UPDATE cremation_cycles SET status='in_attesa',actual_start=NULL WHERE status='in_corso'")
         c.executescript("""
         CREATE TABLE IF NOT EXISTS user_preferences (
           user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -2150,11 +2154,9 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-dot-done{background:#64748b}
 .cremation-dot-planned{background:#60a5fa}
 .cremation-cycle-card{background:#1f2937;border:1px solid #334155;border-left:4px solid #475569;border-radius:14px;padding:16px;min-width:0;cursor:pointer}
-.cremation-cycle-card.cremation-cycle-in_corso,.cremation-week-cycle-card.cremation-cycle-in_corso{background:rgba(59,130,246,.08);border-color:rgba(59,130,246,.4);border-left-color:#3b82f6;box-shadow:0 0 16px rgba(59,130,246,.16)}
 .cremation-cycle-card.cremation-cycle-in_attesa,.cremation-week-cycle-card.cremation-cycle-in_attesa{background:rgba(251,146,60,.08);border-color:rgba(251,146,60,.35);border-left-color:#fb923c;box-shadow:0 0 14px rgba(251,146,60,.12)}
 .cremation-cycle-card.cremation-cycle-completato,.cremation-week-cycle-card.cremation-cycle-completato{background:rgba(74,222,128,.08);border-color:rgba(74,222,128,.35);border-left-color:#4ade80;box-shadow:0 0 14px rgba(74,222,128,.12)}
 .cremation-cycle-card.cremation-cycle-pianificato,.cremation-week-cycle-card.cremation-cycle-pianificato{background:rgba(96,165,250,.05);border-left-color:#60a5fa}
-.cremation-cycle-in_corso .cremation-cycle-body-inner{background:rgba(59,130,246,.04)}
 .cremation-cycle-in_attesa .cremation-cycle-body-inner{background:rgba(251,146,60,.04)}
 .cremation-cycle-completato .cremation-cycle-body-inner{background:rgba(74,222,128,.04)}
 .cremation-cycle-pianificato .cremation-cycle-body-inner{background:rgba(96,165,250,.03)}
@@ -2168,13 +2170,11 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-cycle-number{font-weight:800;font-size:14px}
 .cremation-cycle-number.cremation-status-planned{color:#93c5fd}
 .cremation-cycle-number.cremation-status-waiting{color:#fb923c}
-.cremation-cycle-number.cremation-status-active{color:#4ade80}
 .cremation-cycle-number.cremation-status-done{color:#94a3b8}
 .cremation-cycle-time{color:#94a3b8;font-size:13px}
 .cremation-status-badge{font-size:11px;font-weight:700;letter-spacing:.03em;padding:4px 12px;border-radius:99px;white-space:nowrap}
 .cremation-status-planned{background:#172554;color:#93c5fd}
 .cremation-status-waiting{background:#431407;color:#fb923c}
-.cremation-status-active{background:#052e16;color:#4ade80}
 .cremation-status-done{background:#1e293b;color:#94a3b8}
 .cremation-cycle-action{margin-left:auto;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .cremation-remaining{display:flex;align-items:center;gap:5px;color:#94a3b8;font-size:12px;white-space:nowrap}
@@ -2263,7 +2263,6 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-week-status-icon .icon{width:14px;height:14px}
 .cremation-week-status-icon.cremation-status-planned{background:#172554;color:#93c5fd}
 .cremation-week-status-icon.cremation-status-waiting{background:#431407;color:#fb923c}
-.cremation-week-status-icon.cremation-status-active{background:#052e16;color:#4ade80}
 .cremation-week-status-icon.cremation-status-done{background:#1e293b;color:#94a3b8}
 .light-theme .cremation-daybar-card{background:#fff;border-color:#e2e8f0}
 .light-theme .cremation-daybar-dow{color:#526174}
@@ -2363,7 +2362,6 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-future-pickup-meta small{font-size:10px;color:#94a3b8}
 .cremation-future-pickup-row{cursor:default;opacity:.85}
 .light-theme .cremation-cycle-card,.light-theme .cremation-waiting-card{background:#fff;border-color:#e2e8f0;color:#111827}
-.light-theme .cremation-cycle-card.cremation-cycle-in_corso,.light-theme .cremation-week-cycle-card.cremation-cycle-in_corso{background:rgba(59,130,246,.12);border-color:rgba(59,130,246,.45);border-left-color:#3b82f6}
 .light-theme .cremation-cycle-card.cremation-cycle-in_attesa,.light-theme .cremation-week-cycle-card.cremation-cycle-in_attesa{background:rgba(251,146,60,.12);border-color:rgba(251,146,60,.4);border-left-color:#fb923c}
 .light-theme .cremation-cycle-card.cremation-cycle-completato,.light-theme .cremation-week-cycle-card.cremation-cycle-completato{background:rgba(74,222,128,.12);border-color:rgba(74,222,128,.4);border-left-color:#4ade80}
 .light-theme .cremation-cycle-card.cremation-cycle-pianificato,.light-theme .cremation-week-cycle-card.cremation-cycle-pianificato{background:rgba(96,165,250,.08);border-left-color:#60a5fa}
@@ -5507,12 +5505,6 @@ function cremationSoftRefreshCycle(cycleId){
     })
     .catch(function(){cremationReloadWithOpenCycle(cycleId);});
 }
-function cremationStartCycle(id){
-  fetch('/programma-cremazioni/cicli/'+id+'/avvia',{method:'POST',credentials:'same-origin'})
-    .then(function(res){return res.json();})
-    .then(function(data){if(!data.ok)alert(data.error||'Operazione non riuscita');cremationSoftRefreshCycle(id);})
-    .catch(function(){cremationSoftRefreshCycle(id);});
-}
 function cremationOpenConfirmModal(message,onConfirm,options){
   options=options||{};
   const overlay=document.getElementById('cremationConfirmOverlay');
@@ -5536,16 +5528,8 @@ function cremationCompleteCycle(id){
       .catch(function(){cremationSoftRefreshCycle(id);});
   },{title:'Termina ciclo',confirmLabel:'Termina ciclo'});
 }
-function cremationRevertStart(id){
-  cremationOpenConfirmModal('Confermi di annullare l\'avvio? Il ciclo tornera\' in attesa.',function(){
-    fetch('/programma-cremazioni/cicli/'+id+'/annulla-avvio',{method:'POST',credentials:'same-origin'})
-      .then(function(res){return res.json();})
-      .then(function(data){if(!data.ok)alert(data.error||'Operazione non riuscita');cremationSoftRefreshCycle(id);})
-      .catch(function(){cremationSoftRefreshCycle(id);});
-  },{title:'Annulla avvio',confirmLabel:'Annulla avvio'});
-}
 function cremationRevertComplete(id){
-  cremationOpenConfirmModal('Confermi di annullare il completamento? Il ciclo tornera\' in corso e gli animali torneranno allo stato precedente.',function(){
+  cremationOpenConfirmModal('Confermi di annullare il completamento? Il ciclo tornera\' in attesa e gli animali torneranno allo stato precedente.',function(){
     fetch('/programma-cremazioni/cicli/'+id+'/annulla-completamento',{method:'POST',credentials:'same-origin'})
       .then(function(res){return res.json();})
       .then(function(data){if(!data.ok)alert(data.error||'Operazione non riuscita');cremationSoftRefreshCycle(id);})
@@ -6059,23 +6043,6 @@ function cremationWeekResetView(){
   cremationSetActiveStat(null);
   cremationResetAnimaliSelection();
 }
-function cremationGoToActiveCycle(){
-  const activeCard=document.querySelector('.cremation-week-cycle-card.cremation-cycle-in_corso');
-  if(!activeCard){
-    cremationShowToast('Nessun ciclo in corso');
-    return;
-  }
-  const page=activeCard.closest('.cremation-day-page');
-  if(page)cremationSelectDay(Number(page.dataset.dayIndex));
-  if(!activeCard.classList.contains('expanded')){
-    cremationToggleCycleCard(activeCard.querySelector('.cremation-week-cycle-head'));
-  }
-  setTimeout(function(){
-    activeCard.scrollIntoView({behavior:'smooth',block:'center'});
-    activeCard.classList.add('cremation-stat-highlight');
-    setTimeout(function(){activeCard.classList.remove('cremation-stat-highlight');},2000);
-  },150);
-}
 function cremationFilterAnimaliList(input){
   const q=(input.value||'').toLowerCase().trim();
   const rows=document.querySelectorAll('#cremationAnimaliList [data-search]');
@@ -6168,9 +6135,6 @@ function cremationWeekStatClick(card,mode){
     cremationFilterCyclesByStatus('completato');
   }else if(mode==='in_attesa'){
     cremationFilterCyclesByStatus('in_attesa');
-  }else if(mode==='in_corso'){
-    cremationFilterCyclesByStatus('in_corso');
-    cremationGoToActiveCycle();
   }else if(mode==='animali'){
     cremationSetTimelineHidden(true);
     cremationOpenPanel('cremationAnimaliPanel');
@@ -7189,7 +7153,6 @@ CREMATION_DAY_START = "08:30"
 CREMATION_STATUS_LABELS = {
     "pianificato": ("PIANIFICATO", "cremation-status-planned"),
     "in_attesa": ("IN ATTESA", "cremation-status-waiting"),
-    "in_corso": ("IN CORSO", "cremation-status-active"),
     "completato": ("COMPLETATO", "cremation-status-done"),
 }
 
@@ -8337,12 +8300,8 @@ class App(BaseHTTPRequestHandler):
         if path == "/programma-cremazioni/riordina-cicli": return self.cremation_reorder_cycles(user)
         match = re.fullmatch(r"/programma-cremazioni/cicli/(\d+)/assegna", path)
         if match: return self.cremation_assign_to_cycle(user, int(match.group(1)))
-        match = re.fullmatch(r"/programma-cremazioni/cicli/(\d+)/avvia", path)
-        if match: return self.cremation_start_cycle(user, int(match.group(1)))
         match = re.fullmatch(r"/programma-cremazioni/cicli/(\d+)/termina", path)
         if match: return self.cremation_complete_cycle(user, int(match.group(1)))
-        match = re.fullmatch(r"/programma-cremazioni/cicli/(\d+)/annulla-avvio", path)
-        if match: return self.cremation_revert_start(user, int(match.group(1)))
         match = re.fullmatch(r"/programma-cremazioni/cicli/(\d+)/annulla-completamento", path)
         if match: return self.cremation_revert_complete(user, int(match.group(1)))
         match = re.fullmatch(r"/programma-cremazioni/cicli/(\d+)/modifica", path)
@@ -11772,16 +11731,14 @@ class App(BaseHTTPRequestHandler):
 
         total_cycles=len(cycles)
         completed_count=sum(1 for row in cycles if row["status"]=="completato")
-        active_index=next((idx+1 for idx,row in enumerate(cycles) if row["status"]=="in_corso"),None)
-        current_index=active_index or (min(completed_count+1,total_cycles) if total_cycles else 0)
+        current_index=min(completed_count+1,total_cycles) if total_cycles else 0
         in_attesa_count=sum(1 for row in cycles if row["status"]=="in_attesa")
-        in_corso_count=sum(1 for row in cycles if row["status"]=="in_corso")
         animali_count=len(assigned)
         fine_prevista=max((row["planned_end"] for row in cycles),default="")
 
         now_dt=rome_now()
         cycle_items=[]
-        dot_cls_map={"in_corso":"cremation-dot-active","in_attesa":"cremation-dot-waiting","completato":"cremation-dot-done","pianificato":"cremation-dot-planned"}
+        dot_cls_map={"in_attesa":"cremation-dot-waiting","completato":"cremation-dot-done","pianificato":"cremation-dot-planned"}
         for idx,cycle in enumerate(cycles):
             animals=cycle_practices.get(cycle["id"],[])
             status=cycle["status"]
@@ -11813,15 +11770,12 @@ class App(BaseHTTPRequestHandler):
                 if len(animals)<2:
                     actions.append(add_animal_button_html(cycle["id"]))
                 if status=="in_attesa":
-                    actions.append(f'<button type="button" class="cremation-action-btn cremation-action-waiting" onclick="cremationStartCycle({cycle["id"]})">{lucide("play")}<span>Avvia ciclo</span></button>')
-                elif status=="in_corso":
                     try:
                         end_dt=datetime.combine(view_date,datetime.strptime(cycle["planned_end"],"%H:%M").time())
                         remaining=max(0,round((end_dt-now_dt).total_seconds()/60))
                         remaining_html=f'<div class="cremation-remaining">{lucide("clock")}<span>Rimangono {remaining} min</span></div>'
                     except ValueError:pass
                     actions.append(f'<button type="button" class="cremation-action-btn cremation-action-active" onclick="cremationCompleteCycle({cycle["id"]})">{lucide("check-circle")}<span>Termina ciclo</span></button>')
-                    actions.append(f'<button type="button" class="cremation-action-btn cremation-action-planned" onclick="cremationRevertStart({cycle["id"]})">{lucide("undo-2")}<span>Annulla avvio</span></button>')
                 actions.append(f'<button type="button" class="cremation-action-btn cremation-action-delete" onclick="cremationDeleteCycle({cycle["id"]})">{lucide("x")}<span>Elimina ciclo</span></button>')
             action_html=''.join(actions)
             dropzone_attr=f'data-cycle-dropzone="{cycle["id"]}"' if status!="completato" and len(animals)<2 else ""
@@ -11857,7 +11811,6 @@ class App(BaseHTTPRequestHandler):
         summary_specs=[
             ("flame","state-red","Cicli oggi",str(total_cycles),"Totali",None),
             ("paw","state-blue","Animali",str(animali_count),"Totali",None),
-            ("play","state-green","In corso",str(in_corso_count),"Adesso",None),
             ("clock","payment-due","In attesa",str(len(waiting)),"Prossimi","waiting"),
             ("check-circle","state-blue","Completati",str(completed_count),"Oggi",None),
             ("clock","state-purple","Fine prevista",esc(fine_prevista) or "-","Oggi",None),
@@ -12266,7 +12219,6 @@ class App(BaseHTTPRequestHandler):
 
         total_cycles=len(cycles)
         animali_count=len(waiting)
-        in_corso_count=sum(1 for row in cycles if row["status"]=="in_corso")
         in_attesa_count=sum(1 for row in cycles if row["status"]=="in_attesa")
         completed_count=sum(1 for row in cycles if row["status"]=="completato")
         last_cycle=max(cycles,key=lambda r:(r["cycle_date"],r["planned_end"]),default=None)
@@ -12276,8 +12228,8 @@ class App(BaseHTTPRequestHandler):
         else:
             fine_prevista_value="-"
 
-        status_icon_map={"completato":"check-circle","in_corso":"play","in_attesa":"clock","pianificato":"clock"}
-        dot_cls_map={"in_corso":"cremation-dot-active","in_attesa":"cremation-dot-waiting","completato":"cremation-dot-done","pianificato":"cremation-dot-planned"}
+        status_icon_map={"completato":"check-circle","in_attesa":"clock","pianificato":"clock"}
+        dot_cls_map={"in_attesa":"cremation-dot-waiting","completato":"cremation-dot-done","pianificato":"cremation-dot-planned"}
         now_dt=rome_now()
 
         cycle_position={}
@@ -12327,15 +12279,12 @@ class App(BaseHTTPRequestHandler):
                     if len(animals)<2:
                         actions.append(add_animal_button_html(cycle["id"]))
                     if status=="in_attesa":
-                        actions.append(f'<button type="button" class="cremation-action-btn cremation-action-waiting" onclick="cremationStartCycle({cycle["id"]})">{lucide("play")}<span>Avvia ciclo</span></button>')
-                    elif status=="in_corso":
                         try:
                             end_dt=datetime.combine(day_date,datetime.strptime(cycle["planned_end"],"%H:%M").time())
                             remaining=max(0,round((end_dt-now_dt).total_seconds()/60))
                             remaining_html=f'<div class="cremation-remaining">{lucide("clock")}<span>Rimangono {remaining} min</span></div>'
                         except ValueError:pass
                         actions.append(f'<button type="button" class="cremation-action-btn cremation-action-active" onclick="cremationCompleteCycle({cycle["id"]})">{lucide("check-circle")}<span>Termina ciclo</span></button>')
-                        actions.append(f'<button type="button" class="cremation-action-btn cremation-action-planned" onclick="cremationRevertStart({cycle["id"]})">{lucide("undo-2")}<span>Annulla avvio</span></button>')
                     actions.append(f'<button type="button" class="cremation-action-btn cremation-action-delete" onclick="cremationDeleteCycle({cycle["id"]})">{lucide("x")}<span>Elimina ciclo</span></button>')
                 action_html=''.join(actions)
                 dropzone_attr=f'data-cycle-dropzone="{cycle["id"]}"' if status!="completato" and len(animals)<2 else ""
@@ -12425,7 +12374,6 @@ class App(BaseHTTPRequestHandler):
         summary_specs=[
             ("flame","state-red","Cicli questa settimana",str(total_cycles),"Totali","tutti"),
             ("paw","state-blue","Animali",str(animali_count),"Da pianificare","animali"),
-            ("play","state-green","In corso",str(in_corso_count),"Adesso","in_corso"),
             ("clock","payment-due","In attesa",str(in_attesa_count),"Prossimi","in_attesa"),
             ("check-circle","state-blue","Completati",str(completed_count),"Questa settimana","completati"),
             ("clock","state-purple","Fine prevista",fine_prevista_value,"","fine_prevista"),
@@ -12665,23 +12613,13 @@ class App(BaseHTTPRequestHandler):
                 cremation_notify_cycle_waiting(c,user["id"],cycle_id,cycle["cycle_date"],cycle["planned_start"],cycle["planned_end"])
         return self.send_json({"ok":True})
 
-    def cremation_start_cycle(self,user,cycle_id):
-        stamp=now()
-        with db() as c:
-            cycle=c.execute("SELECT id,status FROM cremation_cycles WHERE id=?",(cycle_id,)).fetchone()
-            if not cycle:return self.send_json({"ok":False,"error":"Ciclo non trovato"},404)
-            if cycle["status"]!="in_attesa":
-                return self.send_json({"ok":False,"error":"Il ciclo non è in attesa di avvio."},409)
-            c.execute("UPDATE cremation_cycles SET status='in_corso',actual_start=?,updated_at=? WHERE id=?",(stamp,stamp,cycle_id))
-        return self.send_json({"ok":True})
-
     def cremation_complete_cycle(self,user,cycle_id):
         stamp=now()
         with db() as c:
             cycle=c.execute("SELECT id,status FROM cremation_cycles WHERE id=?",(cycle_id,)).fetchone()
             if not cycle:return self.send_json({"ok":False,"error":"Ciclo non trovato"},404)
-            if cycle["status"]!="in_corso":
-                return self.send_json({"ok":False,"error":"Il ciclo non è in corso."},409)
+            if cycle["status"]!="in_attesa":
+                return self.send_json({"ok":False,"error":"Il ciclo non è in attesa di completamento."},409)
             c.execute("UPDATE cremation_cycles SET status='completato',actual_end=?,updated_at=? WHERE id=?",(stamp,stamp,cycle_id))
             practices=c.execute("SELECT * FROM practices WHERE cremation_cycle_id=? AND (deleted_at IS NULL OR deleted_at='')",(cycle_id,)).fetchall()
             for row in practices:
@@ -12690,31 +12628,21 @@ class App(BaseHTTPRequestHandler):
                 cremation_log_status_change(c,row["id"],row["status"] or "Ritirato","Da consegnare",user["id"],stamp)
         return self.send_json({"ok":True})
 
-    def cremation_revert_start(self,user,cycle_id):
-        """Annulla un avvio per errore: torna in_attesa, nessun'altra
-        conseguenza da disfare (avviare un ciclo non tocca le pratiche)."""
-        stamp=now()
-        with db() as c:
-            cycle=c.execute("SELECT id,status FROM cremation_cycles WHERE id=?",(cycle_id,)).fetchone()
-            if not cycle:return self.send_json({"ok":False,"error":"Ciclo non trovato"},404)
-            if cycle["status"]!="in_corso":
-                return self.send_json({"ok":False,"error":"Il ciclo non è in corso."},409)
-            c.execute("UPDATE cremation_cycles SET status='in_attesa',actual_start=NULL,updated_at=? WHERE id=?",(stamp,cycle_id))
-        return self.send_json({"ok":True})
-
     def cremation_revert_complete(self,user,cycle_id):
-        """Annulla un completamento per errore: torna in_corso e riporta ogni
-        pratica collegata allo stato che aveva PRIMA del completamento (letto
-        dalla stessa riga di practice_history scritta da cremation_complete_cycle),
-        mai un valore fisso indovinato — cosi' resta corretto anche per pratiche
-        che partivano da stati diversi da 'Ritirato'."""
+        """Annulla un completamento per errore: torna in_attesa (lo stato IN
+        CORSO e' stato eliminato, un ciclo passa direttamente da in_attesa a
+        completato) e riporta ogni pratica collegata allo stato che aveva
+        PRIMA del completamento (letto dalla stessa riga di practice_history
+        scritta da cremation_complete_cycle), mai un valore fisso indovinato —
+        cosi' resta corretto anche per pratiche che partivano da stati diversi
+        da 'Ritirato'."""
         stamp=now()
         with db() as c:
             cycle=c.execute("SELECT id,status FROM cremation_cycles WHERE id=?",(cycle_id,)).fetchone()
             if not cycle:return self.send_json({"ok":False,"error":"Ciclo non trovato"},404)
             if cycle["status"]!="completato":
                 return self.send_json({"ok":False,"error":"Il ciclo non è completato."},409)
-            c.execute("UPDATE cremation_cycles SET status='in_corso',actual_end=NULL,updated_at=? WHERE id=?",(stamp,cycle_id))
+            c.execute("UPDATE cremation_cycles SET status='in_attesa',actual_end=NULL,updated_at=? WHERE id=?",(stamp,cycle_id))
             practices=c.execute("SELECT * FROM practices WHERE cremation_cycle_id=? AND (deleted_at IS NULL OR deleted_at='')",(cycle_id,)).fetchall()
             for row in practices:
                 if row["status"]!="Da consegnare":continue

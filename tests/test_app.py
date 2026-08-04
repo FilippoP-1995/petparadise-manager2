@@ -2215,10 +2215,16 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Bracciale con nome", block)
         self.assertLess(block.index("Urna piccola"), block.index("Bracciale con nome"))
 
-    def test_cremation_start_and_complete_cycle_moves_animals_to_da_consegnare(self):
+    def test_cremation_complete_cycle_moves_animals_to_da_consegnare(self):
+        # lo stato IN CORSO e' stato eliminato: un ciclo in_attesa si completa
+        # direttamente, senza passare da un "avvio" separato.
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
             stamp = app.now()
+            pianificato_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-20", "pianificato", "07:00", "07:30", stamp, stamp),
+            ).lastrowid
             cycle_id = conn.execute(
                 "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
                 ("2026-07-20", "in_attesa", "08:00", "09:30", stamp, stamp),
@@ -2233,17 +2239,9 @@ class PetParadiseTests(unittest.TestCase):
 
         responses = []
         self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
-        # cannot terminate a cycle that hasn't started
-        self.handler.cremation_complete_cycle(admin, cycle_id)
+        # cannot terminate a cycle that has no animals yet (still pianificato)
+        self.handler.cremation_complete_cycle(admin, pianificato_id)
         self.assertFalse(responses[-1][0]["ok"])
-
-        responses.clear()
-        self.handler.cremation_start_cycle(admin, cycle_id)
-        self.assertEqual(responses[-1], ({"ok": True}, 200))
-        with app.db() as conn:
-            row = conn.execute("SELECT status,actual_start FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()
-        self.assertEqual(row["status"], "in_corso")
-        self.assertIsNotNone(row["actual_start"])
 
         responses.clear()
         self.handler.cremation_complete_cycle(admin, cycle_id)
@@ -2454,10 +2452,6 @@ class PetParadiseTests(unittest.TestCase):
 
         responses = []
         self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
-        self.handler.cremation_start_cycle(admin, cycle_id)
-        self.assertEqual(responses[-1], ({"ok": True}, 200))
-
-        responses.clear()
         self.handler.cremation_complete_cycle(admin, cycle_id)
         self.assertEqual(responses[-1], ({"ok": True}, 200))
         with app.db() as conn:
@@ -2467,44 +2461,6 @@ class PetParadiseTests(unittest.TestCase):
             ).fetchone()
         self.assertEqual((practice["status"], practice["cremation_registered"]), ("Da consegnare", "Si"))
         self.assertEqual((history["event_type"], history["old_value"], history["new_value"]), ("Cambio stato rapido", "Ritirato", "Da consegnare"))
-
-    def test_cremation_revert_start_returns_cycle_to_in_attesa(self):
-        # richiesta esplicita dell'utente: possibilita' di tornare indietro se
-        # un operatore avvia un ciclo per sbaglio (oggi si poteva solo andare
-        # avanti: in_attesa -> in_corso -> completato, mai indietro).
-        with app.db() as conn:
-            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
-            cycle_id = conn.execute(
-                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
-                ("2026-07-21", "in_attesa", "08:00", "09:30", stamp, stamp),
-            ).lastrowid
-        responses = []
-        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
-        self.handler.cremation_start_cycle(admin, cycle_id)
-        self.assertEqual(responses[-1], ({"ok": True}, 200))
-        with app.db() as conn:
-            self.assertEqual(conn.execute("SELECT status FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()["status"], "in_corso")
-
-        responses.clear()
-        self.handler.cremation_revert_start(admin, cycle_id)
-        self.assertEqual(responses[-1], ({"ok": True}, 200))
-        with app.db() as conn:
-            cycle = conn.execute("SELECT status,actual_start FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()
-        self.assertEqual(cycle["status"], "in_attesa")
-        self.assertIsNone(cycle["actual_start"])
-
-    def test_cremation_revert_start_rejects_when_not_in_corso(self):
-        with app.db() as conn:
-            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
-            cycle_id = conn.execute(
-                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
-                ("2026-07-21", "in_attesa", "08:00", "09:30", stamp, stamp),
-            ).lastrowid
-        responses = []
-        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
-        self.handler.cremation_revert_start(admin, cycle_id)
-        self.assertEqual(responses[-1][1], 409)
-        self.assertFalse(responses[-1][0]["ok"])
 
     def test_cremation_revert_complete_restores_cycle_and_practice_status(self):
         with app.db() as conn:
@@ -2522,7 +2478,6 @@ class PetParadiseTests(unittest.TestCase):
 
         responses = []
         self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
-        self.handler.cremation_start_cycle(admin, cycle_id)
         self.handler.cremation_complete_cycle(admin, cycle_id)
         with app.db() as conn:
             practice = conn.execute("SELECT status,cremation_registered FROM practices WHERE id=?", (pid,)).fetchone()
@@ -2537,7 +2492,8 @@ class PetParadiseTests(unittest.TestCase):
             history = conn.execute(
                 "SELECT event_type,old_value,new_value FROM practice_history WHERE practice_id=? ORDER BY id DESC LIMIT 1", (pid,)
             ).fetchone()
-        self.assertEqual(cycle["status"], "in_corso")
+        # lo stato IN CORSO e' stato eliminato: annullare il completamento torna in_attesa
+        self.assertEqual(cycle["status"], "in_attesa")
         self.assertIsNone(cycle["actual_end"])
         # torna esattamente allo stato che aveva PRIMA del completamento (In programma), non un valore fisso indovinato
         self.assertEqual((practice["status"], practice["cremation_registered"]), ("In programma", ""))
@@ -2548,7 +2504,7 @@ class PetParadiseTests(unittest.TestCase):
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
             cycle_id = conn.execute(
                 "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
-                ("2026-07-21", "in_corso", "08:00", "09:30", stamp, stamp),
+                ("2026-07-21", "in_attesa", "08:00", "09:30", stamp, stamp),
             ).lastrowid
         responses = []
         self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
@@ -2989,10 +2945,11 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(f"cremationOpenEditModal({pianificato_id},'08:00','09:30','2026-07-20')", page)
         self.assertIn(f"cremationOpenEditModal({in_attesa_id},'09:40','11:10','2026-07-20')", page)
         self.assertNotIn("cremationEditCycle(", page)
-        # pianificato (no animal yet) must not offer "Avvia ciclo"; in_attesa must
+        # pianificato (no animal yet) must not offer "Termina ciclo"; in_attesa must
+        # (lo stato IN CORSO e' stato eliminato: un ciclo in_attesa si completa direttamente)
         pianificato_card = page[page.index(f'cremationOpenEditModal({pianificato_id}'):page.index(f'cremationOpenEditModal({in_attesa_id}')]
-        self.assertNotIn('cremationStartCycle', pianificato_card)
-        self.assertIn(f'cremationStartCycle({in_attesa_id})', page)
+        self.assertNotIn('cremationCompleteCycle', pianificato_card)
+        self.assertIn(f'cremationCompleteCycle({in_attesa_id})', page)
 
         # the shared edit modal (reusing the calendar event time-picker widget) is rendered once, hidden
         self.assertEqual(page.count('id="cremationEditOverlay"'), 1)
@@ -3302,7 +3259,7 @@ class PetParadiseTests(unittest.TestCase):
             ).lastrowid
             cyc_single2 = conn.execute(
                 "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
-                ("2026-08-13", "in_corso", "09:00", "10:30", stamp, stamp),
+                ("2026-08-13", "in_attesa", "09:00", "10:30", stamp, stamp),
             ).lastrowid
             other_week_cycle = conn.execute(
                 "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
@@ -3376,7 +3333,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(ozzy_row["cremation_cycle_id"], fx["cyc_single"])
         # i due cicli restano identici: stato, orario, data invariati
         self.assertEqual(dict(cyc_single), {"status": "completato", "planned_start": "14:00", "planned_end": "15:30", "cycle_date": "2026-08-12"})
-        self.assertEqual(dict(cyc_single2), {"status": "in_corso", "planned_start": "09:00", "planned_end": "10:30", "cycle_date": "2026-08-13"})
+        self.assertEqual(dict(cyc_single2), {"status": "in_attesa", "planned_start": "09:00", "planned_end": "10:30", "cycle_date": "2026-08-13"})
 
     def test_swap_combo_to_single_moves_only_the_selected_animal_leaving_the_combo_partner_untouched(self):
         fx = self._make_swap_fixture()
@@ -3585,7 +3542,7 @@ class PetParadiseTests(unittest.TestCase):
             practice("CR-BUDDY", "Buddy", "In programma", done_cycle)
             waiting_cycle = cycle(monday, "in_attesa", "13:00", "14:30")
             practice("CR-DAISY", "Daisy", "In programma", waiting_cycle)
-            running_cycle = cycle(tuesday, "in_corso", "10:00", "11:30", None)
+            running_cycle = cycle(tuesday, "in_attesa", "10:00", "11:30", None)
             practice("CR-ROCKY", "Rocky", "In programma", running_cycle)
             practice("CR-MILO", "Milo", "Ritirato")
 
@@ -3595,16 +3552,17 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.cremation_schedule(admin)
         page = rendered[-1]
 
-        # all six stat cards are wired to the same click dispatcher with a distinct mode
-        for mode in ("tutti", "animali", "in_corso", "in_attesa", "completati", "fine_prevista"):
+        # all five stat cards are wired to the same click dispatcher with a distinct mode
+        # (lo stato IN CORSO e' stato eliminato: un ciclo passa direttamente da in_attesa a completato)
+        for mode in ("tutti", "animali", "in_attesa", "completati", "fine_prevista"):
             self.assertIn(f'data-stat="{mode}"', page)
             self.assertIn(f"cremationWeekStatClick(this,'{mode}')", page)
-        self.assertEqual(page.count('data-stat="'), 6)
+        self.assertEqual(page.count('data-stat="'), 5)
 
-        # "In attesa" now reflects cycles with status IN ATTESA (1: waiting_cycle), not unassigned animals
+        # "In attesa" reflects every cycle not yet completed (2: waiting_cycle + running_cycle)
         stat_start = page.index('data-stat="in_attesa"')
         in_attesa_card = page[stat_start:stat_start + 900]
-        self.assertIn('<strong class="dash-stat-value">1</strong>', in_attesa_card)
+        self.assertIn('<strong class="dash-stat-value">2</strong>', in_attesa_card)
 
         # the "Animali" panel now lists animals still waiting to be scheduled
         # (status Ritirato, not yet assigned to any cycle) — the same waiting-list
@@ -3662,7 +3620,7 @@ class PetParadiseTests(unittest.TestCase):
         # the JS dispatcher always resets the full view before applying any new filter/panel
         # (never stacks a filter on top of a previously active one)
         for fn in ("cremationWeekStatClick", "cremationWeekResetView", "cremationFilterCyclesByStatus",
-                   "cremationGoToActiveCycle", "cremationSetTimelineHidden",
+                   "cremationSetTimelineHidden",
                    "cremationFilterAnimaliList", "cremationShowToast", "cremationSetActiveStat"):
             self.assertEqual(page.count(f"function {fn}("), 1)
         reset_call_index = page.index("function cremationWeekStatClick(")
@@ -3707,14 +3665,8 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("btn.closest('[data-cycle-id]')", notify_body)
         self.assertIn("cremationReloadWithOpenCycle(cycleId);", notify_body)
 
-        # avvia/termina ciclo non usano piu' cremationReloadWithOpenCycle
+        # termina ciclo non usa piu' cremationReloadWithOpenCycle
         # (navigazione completa): vedi cremationSoftRefreshCycle piu' sotto.
-        start_start = js.index("function cremationStartCycle(")
-        start_body = js[start_start:start_start + 400]
-        self.assertIn("cremationSoftRefreshCycle(id);", start_body)
-        self.assertNotIn("location.reload()", start_body)
-        self.assertNotIn("cremationReloadWithOpenCycle(id);", start_body)
-
         complete_start = js.index("function cremationCompleteCycle(")
         complete_body = js[complete_start:complete_start + 500]
         self.assertIn("cremationSoftRefreshCycle(id);", complete_body)
@@ -3732,7 +3684,7 @@ class PetParadiseTests(unittest.TestCase):
         js = app.APP_JS
         self.assertIn("function cremationSoftRefreshCycle(cycleId){", js)
         start = js.index("function cremationSoftRefreshCycle(cycleId){")
-        end = js.index("function cremationStartCycle(")
+        end = js.index("function cremationOpenConfirmModal(")
         body = js[start:end]
         self.assertNotIn("location.href", body)
         self.assertNotIn("location.reload()", body)
@@ -4683,13 +4635,11 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('onclick="event.stopPropagation()"', body_tag)
 
     def test_cremation_cycle_border_colors_match_status(self):
-        # regression 1: in_corso used to render green (identical to "completed"
-        # elsewhere) and completato used to render dim grey instead of green.
+        # regression: completato used to render dim grey instead of green.
         # regression 2: in the week view, the generic .cremation-week-cycle-card
         # base rule (same specificity, later in the stylesheet) silently overrode
         # these status colors, so the compound selector must win regardless of order.
         for selector_prefix, hexcolor in (
-            (".cremation-cycle-card.cremation-cycle-in_corso,.cremation-week-cycle-card.cremation-cycle-in_corso", "#3b82f6"),
             (".cremation-cycle-card.cremation-cycle-completato,.cremation-week-cycle-card.cremation-cycle-completato", "#4ade80"),
             (".cremation-cycle-card.cremation-cycle-in_attesa,.cremation-week-cycle-card.cremation-cycle-in_attesa", "#fb923c"),
             (".cremation-cycle-card.cremation-cycle-pianificato,.cremation-week-cycle-card.cremation-cycle-pianificato", "#60a5fa"),
@@ -4702,7 +4652,7 @@ class PetParadiseTests(unittest.TestCase):
         # a very light, low-opacity background + glow per status, on top of the
         # existing dark card look — never a solid/loud fill, and never applied
         # per animal row (a two-animal cycle must read as one uniform card).
-        for status, rgb in (("in_corso", "59,130,246"), ("in_attesa", "251,146,60"), ("completato", "74,222,128")):
+        for status, rgb in (("in_attesa", "251,146,60"), ("completato", "74,222,128")):
             selector_prefix = f".cremation-cycle-card.cremation-cycle-{status},.cremation-week-cycle-card.cremation-cycle-{status}"
             start = app.CSS.index(selector_prefix)
             rule = app.CSS[start:app.CSS.index("}", start) + 1]
@@ -4717,7 +4667,6 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn("box-shadow", pianificato_rule)
 
         # the expanded detail panel picks up a much more delicate tint of the same hue
-        self.assertIn(".cremation-cycle-in_corso .cremation-cycle-body-inner{background:rgba(59,130,246,.04)}", app.CSS)
         self.assertIn(".cremation-cycle-completato .cremation-cycle-body-inner{background:rgba(74,222,128,.04)}", app.CSS)
         self.assertIn(".cremation-cycle-in_attesa .cremation-cycle-body-inner{background:rgba(251,146,60,.04)}", app.CSS)
 
@@ -4728,7 +4677,6 @@ class PetParadiseTests(unittest.TestCase):
         # ".light-theme .cremation-cycle-card{background:#fff}" override can't
         # silently win the cascade and erase the status color again
         self.assertIn(".light-theme .cremation-cycle-card.cremation-cycle-completato,.light-theme .cremation-week-cycle-card.cremation-cycle-completato{background:rgba(74,222,128,.12)", app.CSS)
-        self.assertIn(".light-theme .cremation-cycle-card.cremation-cycle-in_corso,.light-theme .cremation-week-cycle-card.cremation-cycle-in_corso{background:rgba(59,130,246,.12)", app.CSS)
 
     def test_cremation_schedule_remembers_last_selected_view_across_visits(self):
         with app.db() as conn:
