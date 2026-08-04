@@ -10024,6 +10024,32 @@ class PetParadiseTests(unittest.TestCase):
         card_html = page[card_start:page.index('</article>', card_start)]
         self.assertIn('Pagato · € 240,00 D', card_html)
 
+    def test_calendar_appt_card_colors_payment_status_green_when_paid_yellow_when_due(self):
+        # richiesta esplicita dell'utente: lo stato pagamento sulle card
+        # riconsegna deve avere colori diversi, verde se e' gia' tutto
+        # pagato, giallo (amber) se deve ancora saldare.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            paid_id = conn.execute("""INSERT INTO calendar_events(event_type,title,animal_name,operator_name,start_at,end_at,event_status,payment_status,payment_amount,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("Riconsegna","RICONSEGNA VERDE","Luna","Serena","2026-07-28T09:00:00","2026-07-28T09:30:00","Completato","Pagato","100",admin["id"],stamp,stamp)).lastrowid
+            due_id = conn.execute("""INSERT INTO calendar_events(event_type,title,animal_name,operator_name,start_at,end_at,event_status,payment_status,payment_amount,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("Riconsegna","RICONSEGNA GIALLA","Rocky","Serena","2026-07-28T10:00:00","2026-07-28T10:30:00","In programma","Da saldare","50",admin["id"],stamp,stamp)).lastrowid
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/calendario?vista=giorno&data=2026-07-28"
+        self.handler.calendar_page(admin)
+        page = rendered[-1]
+        paid_start = page.index(f'data-event-id="{paid_id}"')
+        paid_card = page[paid_start:page.index('</article>', paid_start)]
+        self.assertIn('calendar-appt-payment calendar-appt-payment-paid', paid_card)
+        due_start = page.index(f'data-event-id="{due_id}"')
+        due_card = page[due_start:page.index('</article>', due_start)]
+        self.assertIn('calendar-appt-payment calendar-appt-payment-due', due_card)
+        self.assertIn('.calendar-appt-payment-paid{color:#22c55e}', app.CSS)
+        self.assertIn('.calendar-appt-payment-due{color:#fbbf24}', app.CSS)
+
     def test_calendar_appt_card_shows_title_first_and_vet_name_instead_of_address(self):
         # richiesta esplicita dell'utente: il nome dell'animale non e' piu'
         # l'informazione principale della card ("deve saltare all'occhio" era
@@ -10102,9 +10128,14 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path = "/calendario?vista=settimana&data=2026-07-28"
         self.handler.calendar_page(admin)
         week_page = rendered[-1]
-        for marker in ('class="calendar-daybar-card', 'class="calendar-appt-card"', 'RICONSEGNA', 'Stella', 'COMPLETATO'):
+        for marker in ('class="calendar-daybar-card', 'class="calendar-appt-card"', 'RICONSEGNA', 'Stella'):
             self.assertIn(marker, day_page)
             self.assertIn(marker, week_page)
+        # richiesta esplicita dell'utente: le riconsegne non hanno uno stato
+        # gestibile/visibile, quindi nessuna badge di stato sulla card anche
+        # se il dato in DB (legacy) ce l'ha ancora.
+        self.assertNotIn('COMPLETATO', day_page)
+        self.assertNotIn('COMPLETATO', week_page)
 
     def test_calendar_stat_cards_reflect_pending_done_and_unassigned_counts(self):
         with app.db() as conn:
@@ -10126,10 +10157,49 @@ class PetParadiseTests(unittest.TestCase):
         page = rendered[-1]
         page_start = page.index('class="calendar-day-page" data-day-index="2" data-date="2026-07-29"')
         day_section = page[page_start:page_start + 4000]
-        self.assertIn('<b>2</b><small>Da effettuare</small>', day_section)
+        # richiesta esplicita dell'utente: "Da effettuare"/"Completati" riguardano
+        # solo i ritiri (RITIRO A pending, RITIRO B done); RICONSEGNA C non conta
+        # piu' in nessuno dei due, anche se il suo event_status e' "In programma".
+        self.assertIn('<b>1</b><small>Da effettuare</small>', day_section)
         self.assertIn('<b>1</b><small>Completati</small>', day_section)
         # card "Senza incaricato" rimossa dalla vista Settimana/Giorno
         self.assertNotIn('Senza incaricato', day_section)
+
+    def test_calendar_pending_done_stat_cards_are_clickable_pickup_only_filters(self):
+        # richiesta esplicita dell'utente: cliccando "Da effettuare"/"Completati"
+        # devono comparire SOLO i ritiri (rispettivamente non ancora ritirati o
+        # gia' ritirati); le riconsegne non hanno stato e non compaiono mai
+        # in questi due filtri, anche se sono nella lista del giorno.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            conn.execute("""INSERT INTO calendar_events(event_type,title,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO PENDING","Filippo","2026-07-29T08:00:00","2026-07-29T09:00:00","Da ritirare",admin["id"],stamp,stamp))
+            conn.execute("""INSERT INTO calendar_events(event_type,title,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO DONE","Filippo","2026-07-29T10:00:00","2026-07-29T11:00:00","Ritirato",admin["id"],stamp,stamp))
+            conn.execute("""INSERT INTO calendar_events(event_type,title,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("Riconsegna","RICONSEGNA COMPLETATA","Filippo","2026-07-29T12:00:00","2026-07-29T13:00:00","Completato",admin["id"],stamp,stamp))
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/calendario?vista=giorno&data=2026-07-29"
+        self.handler.calendar_page(admin)
+        page = rendered[-1]
+        # le due card sono cliccabili come le pillole Tutti/Ritiri/Riconsegne
+        self.assertIn('calendar-appt-stat-clickable" data-filter-value="pending" onclick="calendarSetFilter(this)"', page)
+        self.assertIn('calendar-appt-stat-clickable" data-filter-value="done" onclick="calendarSetFilter(this)"', page)
+        # JS: pillole e card statistiche condividono lo stesso meccanismo di filtro attivo
+        set_filter_start = page.index('function calendarSetFilter(')
+        set_filter_body = page[set_filter_start:set_filter_start + 600]
+        self.assertIn("document.querySelectorAll('[data-filter-value]')", set_filter_body)
+        apply_filters_start = page.index('function calendarApplyFilters(')
+        apply_filters_body = page[apply_filters_start:apply_filters_start + 300]
+        self.assertIn("document.querySelector('[data-filter-value].active')", apply_filters_body)
+        # la card riconsegna (anche se "Completato") non porta mai i token
+        # "pending"/"done" nel proprio data-filter: il click su Da effettuare
+        # o su Completati non la mostra mai.
+        self.assertIn('data-filter="tutte riconsegne unassigned"', page)
 
     def test_calendar_month_view_shows_numeric_summary_not_event_titles(self):
         with app.db() as conn:
@@ -10519,6 +10589,36 @@ class PetParadiseTests(unittest.TestCase):
         pink_pos = css.index('.calendar-tap-card-icon.calendar-icon-pink{')
         base_pos = css.index('.calendar-tap-card-icon{')
         self.assertLess(base_pos, pink_pos)
+
+    def test_calendar_detail_riconsegna_shows_no_status_badge_and_colors_payment_by_status(self):
+        # richiesta esplicita dell'utente: le riconsegne non devono avere
+        # stati (nessuna badge, a differenza dei ritiri che ne hanno una
+        # cliccabile), e lo stato di pagamento deve avere colori diversi:
+        # verde se e' gia' tutto pagato, giallo (amber) se deve ancora saldare.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            paid_id = conn.execute("""INSERT INTO calendar_events(event_type,title,animal_name,operator_name,start_at,end_at,event_status,payment_status,payment_amount,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("Riconsegna","RICONSEGNA PAGATA","Stella","Serena","2026-07-29T11:00:00","2026-07-29T11:30:00","Completato","Pagato","150",admin["id"],stamp,stamp)).lastrowid
+            due_id = conn.execute("""INSERT INTO calendar_events(event_type,title,animal_name,operator_name,start_at,end_at,event_status,payment_status,payment_amount,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("Riconsegna","RICONSEGNA DA SALDARE","Argo","Serena","2026-07-29T12:00:00","2026-07-29T12:30:00","In programma","Da saldare","80",admin["id"],stamp,stamp)).lastrowid
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{paid_id}"
+        self.handler.calendar_event_detail(admin, paid_id)
+        paid_body = rendered[-1].split('</style>', 1)[1]
+        self.assertNotIn('calendar-detail-status-badge', paid_body)
+        self.assertNotIn('COMPLETATO', paid_body)
+        self.assertIn('calendar-icon-green', paid_body)
+
+        rendered.clear()
+        self.handler.path = f"/calendario/{due_id}"
+        self.handler.calendar_event_detail(admin, due_id)
+        due_body = rendered[-1].split('</style>', 1)[1]
+        self.assertNotIn('calendar-detail-status-badge', due_body)
+        self.assertNotIn('IN PROGRAMMA', due_body)
+        self.assertIn('calendar-icon-amber', due_body)
 
     def test_calendar_detail_rows_are_compact_quickedit_or_link_through(self):
         # richiesta utente: ogni riga del riepilogo deve potersi modificare

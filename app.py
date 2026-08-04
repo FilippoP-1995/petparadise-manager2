@@ -1780,6 +1780,9 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .calendar-appt-stat-unassigned .calendar-appt-stat-icon{color:#c084fc}
 .calendar-appt-stat-pickup b{color:#4ade80}
 .calendar-appt-stat-delivery b{color:#60a5fa}
+.calendar-appt-stat-clickable{cursor:pointer}
+.calendar-appt-stat-pending.active{border-color:#fb923c;box-shadow:0 0 0 2px #fb923c40}
+.calendar-appt-stat-done.active{border-color:#4ade80;box-shadow:0 0 0 2px #4ade8040}
 .calendar-appt-filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .calendar-filter-pill{border:1px solid #334155;background:#131a26;color:#9ca7b8;border-radius:999px;padding:7px 16px;font-size:13px;font-weight:600;cursor:pointer}
 .calendar-filter-pill:hover{border-color:#465065}
@@ -1930,6 +1933,10 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .calendar-appt-payment{display:flex;align-items:flex-start;gap:5px;margin-top:2px;font-size:12px;font-weight:600;color:#ef405f}
 .calendar-appt-payment .icon{width:13px;height:13px;flex:0 0 auto;margin-top:1px}
 .light-theme .calendar-appt-payment{color:#c81c3c}
+.calendar-appt-payment-paid{color:#22c55e}
+.calendar-appt-payment-due{color:#fbbf24}
+.light-theme .calendar-appt-payment-paid{color:#15803d}
+.light-theme .calendar-appt-payment-due{color:#b45309}
 .calendar-appt-bottom{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:4px;flex-wrap:wrap}
 .calendar-appt-status{font-size:10.5px;font-weight:800;padding:4px 10px;border-radius:99px;letter-spacing:.02em}
 .calendar-appt-actions{display:flex;align-items:center;gap:6px;margin-left:auto}
@@ -5433,12 +5440,16 @@ function calendarInitDayPages(){
   calendarApplyFilters();
 }
 function calendarSetFilter(btn){
-  document.querySelectorAll('.calendar-filter-pill').forEach(function(p){p.classList.remove('active');});
+  // le card "Da effettuare"/"Completati" (solo ritiri, richiesta esplicita
+  // dell'utente) sono filtri cliccabili esattamente come le pillole
+  // Tutti/Ritiri/Riconsegne: stesso stato attivo unico, condiviso tramite
+  // [data-filter-value], cosi' cliccare l'uno disattiva l'altro.
+  document.querySelectorAll('[data-filter-value]').forEach(function(p){p.classList.remove('active');});
   btn.classList.add('active');
   calendarApplyFilters();
 }
 function calendarApplyFilters(){
-  const activePill=document.querySelector('.calendar-filter-pill.active');
+  const activePill=document.querySelector('[data-filter-value].active');
   const filterValue=activePill?activePill.dataset.filterValue:'tutte';
   const operatorSelect=document.querySelector('.calendar-filter-operator');
   const operator=(operatorSelect&&operatorSelect.value||'').toLowerCase();
@@ -9390,13 +9401,14 @@ class App(BaseHTTPRequestHandler):
         return title
 
     def calendar_appointment_pending(self,row):
+        # Le riconsegne non hanno uno stato gestibile dall'utente (richiesta
+        # esplicita): le card "Da effettuare"/"Completati" del calendario
+        # riguardano solo i ritiri.
         if row["event_type"] in ("Ritiro","Ritiro in sede"):return row["event_status"] not in ("Ritirato","Annullato")
-        if row["event_type"] in ("Riconsegna","Riconsegna in sede"):return row["event_status"]!="Completato"
         return False
 
     def calendar_appointment_done(self,row):
         if row["event_type"] in ("Ritiro","Ritiro in sede"):return row["event_status"]=="Ritirato"
-        if row["event_type"] in ("Riconsegna","Riconsegna in sede"):return row["event_status"]=="Completato"
         return False
 
     def calendar_appointment_phone(self,row):
@@ -9453,6 +9465,10 @@ class App(BaseHTTPRequestHandler):
         payment_status_text=row["payment_status"] or ""
         channel=row.get("payment_channel") or ""
         channel_suffix=f" {esc(channel)}" if channel else ""
+        # richiesta esplicita dell'utente: stato pagamento colorato in modo
+        # diverso sulle riconsegne, verde se gia' tutto pagato, giallo se
+        # deve ancora saldare.
+        payment_cls="calendar-appt-payment-paid" if payment_status_text=="Pagato" else "calendar-appt-payment-due" if payment_status_text else ""
         if payment_status_text=="Pagato":
             payment_line=f'{lucide("check-circle")}<span>Pagato · {money_it(row["payment_amount"])}{channel_suffix}</span>'
         elif payment_status_text:
@@ -9461,7 +9477,10 @@ class App(BaseHTTPRequestHandler):
             payment_line=''
         operator_name=row['operator_name'] or row['assigned_name'] or row['creator_name']
         avatar=self.calendar_operator_avatar(operator_name,"sm",color_settings["operators"].get(operator_name))
-        status_text=row["event_status"] or ""
+        # Le riconsegne non hanno uno stato gestibile dall'utente (richiesta
+        # esplicita): nessuna badge di stato sulla card, a prescindere da
+        # cosa contenga event_status.
+        status_text=row["event_status"] or "" if is_pickup else ""
         status_html=f'<span class="calendar-appt-status" style="background:{hex_}22;color:{hex_}">{esc(status_text.upper())}</span>' if status_text else ''
         phone=self.calendar_appointment_phone(row)
         tel=re.sub(r"[^0-9+]","",phone) if phone else ""
@@ -9492,7 +9511,7 @@ class App(BaseHTTPRequestHandler):
             {f'<div class="calendar-appt-name">{name_line}</div>' if name_line else ''}
             {f'<div class="calendar-appt-owner">{client_line}</div>' if client_line else ''}
             {f'<div class="calendar-appt-location">{location_line}</div>' if location_line else ''}
-            {f'<div class="calendar-appt-payment">{payment_line}</div>' if payment_line else ''}
+            {f'<div class="calendar-appt-payment {payment_cls}">{payment_line}</div>' if payment_line else ''}
             {f'<div class="calendar-appt-notes">{notes_line}</div>' if notes_line else ''}
             <div class="calendar-appt-bottom">{status_html}<div class="calendar-appt-actions">{phone_btn}{wa_btn}{nav_btn}{menu_btn}</div></div>
           </div>
@@ -9682,8 +9701,8 @@ class App(BaseHTTPRequestHandler):
             pending=sum(1 for r in day_rows if self.calendar_appointment_pending(r))
             done=sum(1 for r in day_rows if self.calendar_appointment_done(r))
             stats_html=f'''<div class="calendar-appt-stats calendar-appt-stats-2col">
-              <div class="calendar-appt-stat calendar-appt-stat-pending"><span class="calendar-appt-stat-icon">{lucide("clock")}</span><b>{pending}</b><small>Da effettuare</small></div>
-              <div class="calendar-appt-stat calendar-appt-stat-done"><span class="calendar-appt-stat-icon">{lucide("check-circle")}</span><b>{done}</b><small>Completati</small></div>
+              <div class="calendar-appt-stat calendar-appt-stat-pending calendar-appt-stat-clickable" data-filter-value="pending" onclick="calendarSetFilter(this)"><span class="calendar-appt-stat-icon">{lucide("clock")}</span><b>{pending}</b><small>Da effettuare</small></div>
+              <div class="calendar-appt-stat calendar-appt-stat-done calendar-appt-stat-clickable" data-filter-value="done" onclick="calendarSetFilter(this)"><span class="calendar-appt-stat-icon">{lucide("check-circle")}</span><b>{done}</b><small>Completati</small></div>
             </div>'''
             sorted_rows=sorted(day_rows,key=week_day_sort_key)
             list_html=''.join(self.calendar_appointment_card(row,client_names=client_names,practice_owner_names=practice_owner_names,color_settings=color_settings,animal_names_by_event=animal_names_by_event,cremation_type_by_event=cremation_type_by_event) for row in sorted_rows) or '<p class="calendar-appt-empty">Nessun appuntamento in programma.</p>'
@@ -10775,9 +10794,9 @@ class App(BaseHTTPRequestHandler):
               <span class="calendar-detail-status-badge {event_color_class(event)}">{esc((event["event_status"] or "Nessuno").upper())} {lucide("chevron-down")}</span>
               <div class="calendar-quickedit-form" onclick="event.stopPropagation()">{status_form}</div>
             </div>'''
-        elif event["event_status"] and event["event_type"] in ("Riconsegna","Riconsegna in sede"):
-            status_badge=f'<span class="calendar-detail-status-badge {event_color_class(event)}">{esc(event["event_status"].upper())}</span>'
         else:
+            # Le riconsegne non hanno uno stato gestibile dall'utente
+            # (richiesta esplicita): nessuna badge di stato nel riepilogo.
             status_badge=''
         hero_operator_name=event['operator_name'] or event['assigned_name'] or ''
         hero_avatar=self.calendar_operator_avatar(hero_operator_name,"md")
@@ -10851,7 +10870,8 @@ class App(BaseHTTPRequestHandler):
             if event['payment_status']:
                 still_due=event['payment_status'] in ("Da pagare","Da saldare")
                 channel_suffix=f" {payment_channel(linked_practice)}" if still_due and linked_practice else ""
-                hero_rows.append(hero_row("wallet","pink","Pagamento",f"{esc(event['payment_status'])} {money_it(event['payment_amount'])}{channel_suffix}",''))
+                # richiesta esplicita dell'utente: verde se gia' tutto pagato, giallo (amber) se deve ancora saldare
+                hero_rows.append(hero_row("wallet","amber" if still_due else "green","Pagamento",f"{esc(event['payment_status'])} {money_it(event['payment_amount'])}{channel_suffix}",''))
             if event["event_type"]!="Appuntamento":
                 zone_form=f'''<form method="post" action="/calendario/{event_id}/zona"><input name="zone" value="{esc(event['zone'] or '')}" placeholder="Es. Livorno"><button class="btn ghost" type="submit" style="margin-top:10px">Salva zona</button></form>'''
                 hero_rows.append(hero_row("archive","green","Zona",esc(event['zone'] or 'Non impostata'),zone_form))
