@@ -10228,6 +10228,28 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('.calendar-created-celebration{animation:none!important;opacity:0!important}', css)
         self.assertEqual(len(app.PARTICLE_VECTORS), 16)
 
+    def test_calendar_created_celebration_is_50_percent_slower_than_original(self):
+        # richiesta esplicita dell'utente: rallentare del 50% l'animazione di
+        # creazione (sia Nuovo evento sia Nuova pratica, stesso meccanismo
+        # condiviso) — ogni durata/ritardo originale x1.5.
+        css = app.CSS
+        self.assertIn('animation:calendarCelebrateFade 1.92s ease forwards', css)
+        self.assertIn('animation:ppmCelWave .51s ease-out .21s both', css)
+        self.assertIn('animation:ppmCelPaw .39s cubic-bezier(.16,1,.3,1) .69s both', css)
+        self.assertIn('animation:ppmCelText .36s ease-out .9s both', css)
+        self.assertIn('animation:ppmCelReflection .285s linear 1.35s both', css)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,created_by,created_at,updated_at,event_status,start_at,end_at)
+                VALUES(?,?,?,?,?,?,?,?,?)""", ("Ritiro","RITIRO SLOW","Pisa",admin["id"],stamp,stamp,"Da ritirare","2026-07-30T09:00:00","2026-07-30T09:30:00")).lastrowid
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(admin, event_id)
+        page = rendered[-1]
+        self.assertIn('--pdelay:0ms', page)
+        self.assertIn(f'--pdur:{round(560*1.5)}ms', page)
+
     def test_calendar_save_button_has_press_micro_animation_only_on_create(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
@@ -12739,7 +12761,7 @@ class PetParadiseTests(unittest.TestCase):
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
                 animal_name,owner_first_name,owner_last_name,send_estremi) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-                ("CR-ESTREMI","Privato","Livorno","Consegnato",stamp,stamp,admin["id"],"Argo","Sara","Neri","Si")).lastrowid
+                ("CR-ESTREMI","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Argo","Sara","Neri","Si")).lastrowid
         with app.db() as conn:
             app.sync_reminders(conn)
             row=conn.execute("SELECT title,url FROM reminders WHERE reminder_type='estremi_pending' AND entity_key=? AND completed_at IS NULL",(f"practice:{pid}",)).fetchone()
@@ -12751,6 +12773,30 @@ class PetParadiseTests(unittest.TestCase):
             app.sync_reminders(conn)
             still_open=conn.execute("SELECT id FROM reminders WHERE reminder_type='estremi_pending' AND entity_key=? AND completed_at IS NULL",(f"practice:{pid}",)).fetchone()
         self.assertIsNone(still_open)
+
+    def test_estremi_pending_and_assisted_notify_reminders_stop_once_delivered(self):
+        # richiesta esplicita dell'utente: nessun promemoria deve comparire
+        # per una pratica gia' Consegnato, tranne "delivered_unpaid" (che
+        # esiste apposta per quel caso e resta invariato).
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            estremi_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                animal_name,owner_first_name,owner_last_name,send_estremi) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-ESTREMI-CONS","Privato","Livorno","Consegnato",stamp,stamp,admin["id"],"Bruno","Ada","Rossi","Si")).lastrowid
+            cycle_id=conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-27","in_attesa","09:00","10:30",stamp,stamp),
+            ).lastrowid
+            assisted_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                animal_name,owner_first_name,owner_last_name,cremation_cycle_id,owner_notified_status,tag_assistita)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-ASSIST-CONS","Privato","Livorno","Consegnato",stamp,stamp,admin["id"],"Cleo","Ivo","Bianchi",cycle_id,"da_avvisare","Si")).lastrowid
+        with app.db() as conn:
+            app.sync_reminders(conn)
+            estremi_open=conn.execute("SELECT id FROM reminders WHERE reminder_type='estremi_pending' AND entity_key=? AND completed_at IS NULL",(f"practice:{estremi_pid}",)).fetchone()
+            assisted_open=conn.execute("SELECT id FROM reminders WHERE reminder_type='assisted_notify_pending' AND entity_key=? AND completed_at IS NULL",(f"practice:{assisted_pid}",)).fetchone()
+        self.assertIsNone(estremi_open)
+        self.assertIsNone(assisted_open)
 
     def test_event_imminent_reminder_fires_only_within_the_hour_and_for_active_events(self):
         with app.db() as conn:
