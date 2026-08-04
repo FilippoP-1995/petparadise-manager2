@@ -1729,6 +1729,163 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('cremationToggleWaitingPanel(this)', page)
         self.assertNotIn('data-cycle-dropzone="new"', page)
 
+    def test_future_pickup_singola_rows_query_filters_correctly(self):
+        # richiesta esplicita dell'utente: solo Ritiro/Ritiro in sede,
+        # cremazione singola, non ancora effettuato (Da confermare/Da
+        # ritirare), oggi o giorni successivi, senza pratica gia' collegata.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            existing_pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,created_at,updated_at,created_by,animal_name)
+                   VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("CR-FUTLINK", "Privato", "Livorno", "Ritirato", "Cremazione singola", stamp, stamp, admin["id"], "Fido"),
+            ).lastrowid
+
+            def event(event_type, event_status, start_at, animal_species="Cane", cremation_type="Singola", linked_practice_id=None):
+                eid = conn.execute(
+                    """INSERT INTO calendar_events(event_type,title,created_by,created_at,updated_at,event_status,start_at,end_at,linked_practice_id)
+                       VALUES(?,?,?,?,?,?,?,?,?)""",
+                    (event_type, f"{event_type} test", admin["id"], stamp, stamp, event_status, start_at, start_at, linked_practice_id),
+                ).lastrowid
+                conn.execute(
+                    "INSERT INTO calendar_event_animals(event_id,name,species,weight,cremation_type,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                    (eid, "Fido", animal_species, "12", cremation_type, stamp, stamp),
+                )
+                return eid
+
+            future_ok = event("Ritiro", "Da confermare", "2026-08-05T09:00:00")
+            today_ok = event("Ritiro in sede", "Da ritirare", "2026-08-04T18:00:00")
+            past = event("Ritiro", "Da confermare", "2026-08-03T09:00:00")
+            already_ritirato = event("Ritiro", "Ritirato", "2026-08-05T09:00:00")
+            collettiva = event("Ritiro", "Da confermare", "2026-08-05T09:00:00", cremation_type="Collettiva")
+            not_pickup = event("Riconsegna", "In programma", "2026-08-05T09:00:00")
+            already_linked = event("Ritiro", "Da confermare", "2026-08-05T09:00:00", linked_practice_id=existing_pid)
+            rows = app.future_pickup_singola_rows(conn, "2026-08-04")
+        ids = {row["event_id"] for row in rows}
+        self.assertEqual(ids, {future_ok, today_ok})
+        self.assertNotIn(past, ids)
+        self.assertNotIn(already_ritirato, ids)
+        self.assertNotIn(collettiva, ids)
+        self.assertNotIn(not_pickup, ids)
+        self.assertNotIn(already_linked, ids)
+
+    def test_cremation_schedule_shows_future_pickup_cards_non_actionable(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute(
+                """INSERT INTO calendar_events(event_type,title,client_first_name,client_last_name,created_by,created_at,updated_at,event_status,start_at,end_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro", "Ritiro futuro test", "Mario", "Bianchi", admin["id"], stamp, stamp, "Da confermare", "2026-08-05T10:30:00", "2026-08-05T11:00:00"),
+            ).lastrowid
+            conn.execute(
+                "INSERT INTO calendar_event_animals(event_id,name,species,weight,cremation_type,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                (event_id, "Rocky", "Cane", "40", "Singola", stamp, stamp),
+            )
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-08-04"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn("Rocky", page)
+        self.assertIn("40 kg", page)
+        self.assertIn("Mario Bianchi", page)
+        self.assertIn("Non ancora affidato", page)
+        self.assertIn("RITIRO 05/08", page)
+        self.assertIn('class="cremation-add-animal-card cremation-future-pickup-card"', page)
+        # nessun collegamento reale: mai un onclick di assegnazione per una
+        # card "in arrivo" (non esiste una pratica da poter assegnare) —
+        # asserzione diretta sull'helper che genera la card, piu' robusta
+        # di uno slicing di stringa sull'HTML completo della pagina (la
+        # stessa card compare due volte in pagina: nel pannello Animali e
+        # nel popup Aggiungi animale).
+        with app.db() as conn:
+            future_row = app.future_pickup_singola_rows(conn, "2026-08-04")[0]
+        card_html = app.future_pickup_card_html(future_row)
+        self.assertNotIn("onclick", card_html)
+        self.assertNotIn("cremationAddAnimalConfirm", card_html)
+        self.assertNotIn("cremationQuickAssign", card_html)
+        self.assertIn(card_html, page)
+        self.assertEqual(page.count(card_html), 2)
+
+    def test_cremation_schedule_week_shows_future_pickup_row(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute(
+                """INSERT INTO calendar_events(event_type,title,person_company,created_by,created_at,updated_at,event_status,start_at,end_at)
+                   VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro in sede", "Ritiro futuro settimana", "Clinica Veterinaria Test", admin["id"], stamp, stamp, "Da ritirare", "2026-08-06T09:00:00", "2026-08-06T09:30:00"),
+            ).lastrowid
+            conn.execute(
+                "INSERT INTO calendar_event_animals(event_id,name,species,weight,cremation_type,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                (event_id, "Micia", "Gatto", "4", "Singola", stamp, stamp),
+            )
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-08-04&vista=settimana"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn("Micia", page)
+        self.assertIn("Clinica Veterinaria Test", page)
+        self.assertIn("NON ANCORA AFFIDATO", page)
+        self.assertIn("cremation-future-pickup-row", page)
+
+    def test_api_cremation_swap_candidates_includes_future_pickups_as_non_selectable(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("CR-SWAP-FUT", "Privato", "Livorno", "In programma", "Cremazione singola", stamp, stamp, admin["id"], "Argo"),
+            ).lastrowid
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-08-04", "in_attesa", "09:00", "10:30", stamp, stamp),
+            ).lastrowid
+            conn.execute("UPDATE practices SET cremation_cycle_id=? WHERE id=?", (cycle_id, pid))
+            event_id = conn.execute(
+                """INSERT INTO calendar_events(event_type,title,client_first_name,created_by,created_at,updated_at,event_status,start_at,end_at)
+                   VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro", "Ritiro futuro swap", "Elena", admin["id"], stamp, stamp, "Da confermare", "2026-08-05T09:00:00", "2026-08-05T09:30:00"),
+            ).lastrowid
+            conn.execute(
+                "INSERT INTO calendar_event_animals(event_id,name,species,weight,cremation_type,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                (event_id, "Whisky", "Cane", "20", "Singola", stamp, stamp),
+            )
+        captured = []
+        self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+        self.handler.path = f"/api/programma-cremazioni/scambio-candidati?pratica_id={pid}"
+        self.handler.api_cremation_swap_candidates(admin)
+        body, status = captured[-1]
+        self.assertEqual(status, 200)
+        self.assertTrue(body["ok"])
+        future_entries = [a for a in body["animals"] if a.get("future")]
+        self.assertEqual(len(future_entries), 1)
+        entry = future_entries[0]
+        self.assertEqual(entry["name"], "Whisky")
+        self.assertEqual(entry["owner"], "Elena")
+        self.assertEqual(entry["id"], f"future:{event_id}")
+        self.assertNotIn("cycle_id", entry)
+
+    def test_future_pickup_disappears_once_event_marked_ritirato(self):
+        # comportamento richiesto (punto 8): una volta che il ritiro viene
+        # effettuato (evento -> Ritirato), l'animale smette di comparire
+        # come "in arrivo" — nessuna azione aggiuntiva necessaria, e'
+        # conseguenza diretta del filtro sullo status dell'evento.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute(
+                """INSERT INTO calendar_events(event_type,title,created_by,created_at,updated_at,event_status,start_at,end_at)
+                   VALUES(?,?,?,?,?,?,?,?)""",
+                ("Ritiro", "Ritiro da completare", admin["id"], stamp, stamp, "Da ritirare", "2026-08-04T09:00:00", "2026-08-04T09:30:00"),
+            ).lastrowid
+            conn.execute(
+                "INSERT INTO calendar_event_animals(event_id,name,species,weight,cremation_type,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                (event_id, "Bruno", "Cane", "15", "Singola", stamp, stamp),
+            )
+            self.assertEqual({r["event_id"] for r in app.future_pickup_singola_rows(conn, "2026-08-04")}, {event_id})
+            conn.execute("UPDATE calendar_events SET event_status='Ritirato' WHERE id=?", (event_id,))
+            self.assertEqual(list(app.future_pickup_singola_rows(conn, "2026-08-04")), [])
+
     def test_cremation_create_and_assign_to_cycle_enforce_two_animal_limit_and_promote_status(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()

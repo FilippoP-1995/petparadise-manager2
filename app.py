@@ -2357,6 +2357,11 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-add-animal-meta{font-size:11px;color:#94a3b8;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .cremation-add-animal-tags{display:flex;flex-wrap:wrap;gap:4px}
 .cremation-add-animal-btn{flex:0 0 auto;padding:6px 12px;border-radius:8px;background:#fb718522;color:#fb7185;font-size:11px;font-weight:700;white-space:nowrap}
+.cremation-future-pickup-card{cursor:default;border-style:dashed;opacity:.85}
+.cremation-future-pickup-card:hover{border-color:#334155}
+.cremation-future-pickup-meta{display:flex;align-items:center;gap:6px;margin-top:2px}
+.cremation-future-pickup-meta small{font-size:10px;color:#94a3b8}
+.cremation-future-pickup-row{cursor:default;opacity:.85}
 .light-theme .cremation-cycle-card,.light-theme .cremation-waiting-card{background:#fff;border-color:#e2e8f0;color:#111827}
 .light-theme .cremation-cycle-card.cremation-cycle-in_corso,.light-theme .cremation-week-cycle-card.cremation-cycle-in_corso{background:rgba(59,130,246,.12);border-color:rgba(59,130,246,.45);border-left-color:#3b82f6}
 .light-theme .cremation-cycle-card.cremation-cycle-in_attesa,.light-theme .cremation-week-cycle-card.cremation-cycle-in_attesa{background:rgba(251,146,60,.12);border-color:rgba(251,146,60,.4);border-left-color:#fb923c}
@@ -5823,17 +5828,27 @@ function cremationRenderSwapCandidates(animals){
   if(!list)return;
   list.innerHTML='';
   animals.forEach(function(a){
-    const btn=document.createElement('button');
-    btn.type='button';
-    btn.className='cremation-add-animal-card';
-    btn.dataset.search=(String(a.name||'')+' '+String(a.owner||'')).toLowerCase();
-    const timeBit=a.start?(a.start+'–'+a.end):'';
-    const metaBits=[a.weight?a.weight+' kg':'',a.owner||'',[a.cycle_date_label,timeBit].filter(Boolean).join(' · '),a.status_label].filter(Boolean);
-    btn.innerHTML='<span class="cremation-animal-avatar" aria-hidden="true">'+calendarHtml(a.avatar||'')+'</span>'
-      +'<div class="cremation-add-animal-info"><div class="cremation-animal-name">'+calendarHtml(a.name||'')+'</div>'
-      +'<div class="cremation-add-animal-meta">'+calendarHtml(metaBits.join(' · '))+'</div></div>';
-    btn.addEventListener('click',function(){cremationSwapPick(a.id,a.name);});
-    list.appendChild(btn);
+    // gli animali "future" (ritiro odierno/futuro non ancora effettuato)
+    // sono solo grafici: nessun collegamento reale, un <div> non cliccabile
+    // invece del <button> usato per i candidati veri (richiesta esplicita
+    // dell'utente — non esiste ancora una pratica da poter scambiare).
+    const el=document.createElement(a.future?'div':'button');
+    if(!a.future)el.type='button';
+    el.className='cremation-add-animal-card'+(a.future?' cremation-future-pickup-card':'');
+    el.dataset.search=(String(a.name||'')+' '+String(a.owner||'')).toLowerCase();
+    let metaHtml;
+    if(a.future){
+      metaHtml='<div class="cremation-add-animal-meta">'+calendarHtml([a.weight?a.weight+' kg':'',a.owner||''].filter(Boolean).join(' · '))+'</div>'
+        +'<div class="cremation-future-pickup-meta"><span class="cremation-status-badge cremation-status-waiting">RITIRO '+calendarHtml(a.pickup_date_label||'')+' · '+calendarHtml(a.pickup_time||'')+'</span><small>Non ancora affidato</small></div>';
+    }else{
+      const timeBit=a.start?(a.start+'–'+a.end):'';
+      const metaBits=[a.weight?a.weight+' kg':'',a.owner||'',[a.cycle_date_label,timeBit].filter(Boolean).join(' · '),a.status_label].filter(Boolean);
+      metaHtml='<div class="cremation-add-animal-meta">'+calendarHtml(metaBits.join(' · '))+'</div>';
+    }
+    el.innerHTML='<span class="cremation-animal-avatar" aria-hidden="true">'+calendarHtml(a.avatar||'')+'</span>'
+      +'<div class="cremation-add-animal-info"><div class="cremation-animal-name">'+calendarHtml(a.name||'')+'</div>'+metaHtml+'</div>';
+    if(!a.future)el.addEventListener('click',function(){cremationSwapPick(a.id,a.name);});
+    list.appendChild(el);
   });
   if(empty){empty.hidden=animals.length>0;empty.textContent='Nessun altro animale pianificato questa settimana.';}
 }
@@ -7177,6 +7192,53 @@ CREMATION_STATUS_LABELS = {
     "in_corso": ("IN CORSO", "cremation-status-active"),
     "completato": ("COMPLETATO", "cremation-status-done"),
 }
+
+
+def future_pickup_singola_rows(c, today_iso):
+    """Animali con cremazione singola previsti in un Ritiro/Ritiro in sede
+    di calendario non ancora effettuato (oggi o giorni successivi): non
+    hanno ancora una riga practices (nasce solo quando l'evento passa a
+    'Ritirato' e viene creata la pratica, gate in create_practice), quindi
+    per costruzione linked_practice_id e' sempre NULL finche' restano in
+    questo stato — richiesta esplicita dell'utente di mostrarli comunque,
+    a scopo solo informativo, nelle liste animali di Programma Cremazioni."""
+    return c.execute("""SELECT e.id AS event_id,e.start_at,e.client_first_name,e.client_last_name,
+            e.person_company,e.veterinarian_name,a.name AS animal_name,a.species,a.weight
+        FROM calendar_events e JOIN calendar_event_animals a ON a.event_id=e.id
+        WHERE (e.deleted_at IS NULL OR e.deleted_at='') AND e.event_type IN ('Ritiro','Ritiro in sede')
+          AND e.event_status IN ('Da confermare','Da ritirare') AND e.linked_practice_id IS NULL
+          AND a.cremation_type='Singola' AND date(e.start_at)>=?
+        ORDER BY e.start_at ASC""", (today_iso,)).fetchall()
+
+
+def future_pickup_owner_label(row):
+    """Proprietario se presente sull'evento, altrimenti l'ambulatorio
+    (veterinario) del ritiro — ordine esplicitamente richiesto dall'utente."""
+    owner=" ".join(x for x in (row["client_first_name"],row["client_last_name"]) if x).strip()
+    return owner or row["person_company"] or row["veterinarian_name"] or ""
+
+
+def future_pickup_card_html(row):
+    """Card puramente informativa (nessun onclick verso assegna/scambia:
+    non esiste ancora una pratica da collegare) per un animale cremazione
+    singola in arrivo da un ritiro futuro/odierno non ancora effettuato."""
+    avatar_emoji,avatar_cls=species_avatar(row["species"] or "")
+    weight=(row["weight"] or "").strip()
+    owner=future_pickup_owner_label(row)
+    pickup_date=row["start_at"][:10]
+    pickup_time=row["start_at"][11:16]
+    try:pickup_label=datetime.strptime(pickup_date,"%Y-%m-%d").strftime("%d/%m")
+    except ValueError:pickup_label=pickup_date
+    meta_bits=[bit for bit in (f'{esc(weight)} kg' if weight else '',esc(owner) if owner else '') if bit]
+    search_key=esc(f'{(row["animal_name"] or "").lower()} {owner.lower()}')
+    return f'''<div class="cremation-add-animal-card cremation-future-pickup-card" data-search="{search_key}">
+      <span class="cremation-animal-avatar {avatar_cls}" aria-hidden="true">{avatar_emoji}</span>
+      <div class="cremation-add-animal-info">
+        <div class="cremation-animal-name">{esc(row["animal_name"] or "Da inserire")}</div>
+        <div class="cremation-add-animal-meta">{' · '.join(meta_bits)}</div>
+        <div class="cremation-future-pickup-meta"><span class="cremation-status-badge cremation-status-waiting">RITIRO {pickup_label} · {esc(pickup_time)}</span><small>Non ancora affidato</small></div>
+      </div>
+    </div>'''
 # etichette operative che attivano la gestione "Comunicazione proprietario"
 # per le cremazioni assistite (ordine = priorità di visualizzazione quando
 # più di una fosse valorizzata sulla stessa pratica)
@@ -11538,6 +11600,7 @@ class App(BaseHTTPRequestHandler):
             assignable=c.execute("""SELECT * FROM practices WHERE (deleted_at IS NULL OR deleted_at='') AND status!='Consegnato'
                 AND service_type='Cremazione singola' AND cremation_cycle_id IS NULL
                 ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) ASC,id ASC""").fetchall()
+            future_pickups=future_pickup_singola_rows(c,today_date.isoformat())
             cycles=c.execute("SELECT * FROM cremation_cycles WHERE cycle_date=? ORDER BY sort_order ASC,planned_start ASC,id ASC",(cycle_date,)).fetchall()
             cycle_ids=[row["id"] for row in cycles]
             cycle_practices={cid:[] for cid in cycle_ids}
@@ -11703,7 +11766,9 @@ class App(BaseHTTPRequestHandler):
               {notify_html}
             </div>'''
 
-        waiting_cards=''.join(waiting_card_html(row) for row in waiting) or '<p class="cremation-dash" style="padding:8px 0">Nessun animale in attesa di pianificazione.</p>'
+        waiting_cards=''.join(waiting_card_html(row) for row in waiting)
+        waiting_cards+=''.join(future_pickup_card_html(row) for row in future_pickups)
+        waiting_cards=waiting_cards or '<p class="cremation-dash" style="padding:8px 0">Nessun animale in attesa di pianificazione.</p>'
 
         total_cycles=len(cycles)
         completed_count=sum(1 for row in cycles if row["status"]=="completato")
@@ -11912,6 +11977,7 @@ class App(BaseHTTPRequestHandler):
             </button>'''
 
         add_animal_cards_html=''.join(add_animal_card_html(row) for row in assignable)
+        add_animal_cards_html+=''.join(future_pickup_card_html(row) for row in future_pickups)
         add_animal_suggestions=[]
         for row in assignable:
             name=(row["animal_name"] or "").strip()
@@ -11927,7 +11993,7 @@ class App(BaseHTTPRequestHandler):
               <div class="cremation-search-suggestions" id="cremationAddAnimalSuggestions" hidden></div>
             </div>
             <div class="cremation-add-animal-list" id="cremationAddAnimalList">{add_animal_cards_html}</div>
-            <p class="cremation-quick-menu-empty" id="cremationAddAnimalEmpty" {"hidden" if assignable else ""}>Nessun animale disponibile da aggiungere.</p>
+            <p class="cremation-quick-menu-empty" id="cremationAddAnimalEmpty" {"hidden" if (assignable or future_pickups) else ""}>Nessun animale disponibile da aggiungere.</p>
           </div>
         </div>'''
 
@@ -11979,6 +12045,7 @@ class App(BaseHTTPRequestHandler):
             assignable=c.execute("""SELECT * FROM practices WHERE (deleted_at IS NULL OR deleted_at='') AND status!='Consegnato'
                 AND service_type='Cremazione singola' AND cremation_cycle_id IS NULL
                 ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) ASC,id ASC""").fetchall()
+            future_pickups=future_pickup_singola_rows(c,today_date.isoformat())
             marks=','.join('?' for _ in week_dates)
             cycles=c.execute(f"SELECT * FROM cremation_cycles WHERE cycle_date IN ({marks}) ORDER BY cycle_date ASC,sort_order ASC,planned_start ASC,id ASC",tuple(week_dates)).fetchall()
             cycle_ids=[row["id"] for row in cycles]
@@ -12174,7 +12241,28 @@ class App(BaseHTTPRequestHandler):
               <div class="cremation-animal-actions" onclick="event.stopPropagation()">{animali_quick_insert_menu_html(row)}<a class="cremation-animal-open" href="{url}"><span>Apri pratica</span>{lucide("chevron-right")}</a></div>
             </div>'''
 
+        def future_pickup_row_html_wide(row):
+            avatar_emoji,avatar_cls=species_avatar(row["species"] or "")
+            weight=(row["weight"] or "").strip()
+            weight_html=f'{esc(weight)} kg' if weight else '<span class="cremation-dash">—</span>'
+            species_html=esc(row["species"]) if row["species"] else '<span class="cremation-dash">—</span>'
+            owner=future_pickup_owner_label(row)
+            owner_html=esc(owner) if owner else '<span class="cremation-dash">—</span>'
+            pickup_date=row["start_at"][:10];pickup_time=row["start_at"][11:16]
+            search_key=esc(f'{(row["animal_name"] or "").lower()} {owner.lower()}')
+            return f'''<div class="cremation-waiting-row-wide cremation-future-pickup-row" data-search="{search_key}">
+              <div class="cremation-animal-col"><small>Stato</small><span class="cremation-status-badge cremation-status-waiting">NON ANCORA AFFIDATO</span></div>
+              <div class="cremation-animal-id">
+                <span class="cremation-animal-avatar {avatar_cls}" aria-hidden="true">{avatar_emoji}</span>
+                <div class="cremation-animal-name-wrap"><span class="cremation-animal-name">{esc(row["animal_name"] or "Da inserire")}</span><span class="cremation-animal-weight">{weight_html}</span></div>
+              </div>
+              <div class="cremation-animal-col"><small>Specie</small><span>{species_html}</span></div>
+              <div class="cremation-animal-col"><small>Proprietario</small><span>{owner_html}</span></div>
+              <div class="cremation-animal-col"><small>Ritiro</small><span>{esc(date_it(pickup_date))} · {esc(pickup_time)}</span></div>
+            </div>'''
+
         animali_panel_rows=[animali_waiting_row_html(row) for row in waiting]
+        animali_panel_rows+=[future_pickup_row_html_wide(row) for row in future_pickups]
 
         total_cycles=len(cycles)
         animali_count=len(waiting)
@@ -12433,6 +12521,7 @@ class App(BaseHTTPRequestHandler):
             </button>'''
 
         add_animal_cards_html=''.join(add_animal_card_html(row) for row in assignable)
+        add_animal_cards_html+=''.join(future_pickup_card_html(row) for row in future_pickups)
         add_animal_suggestions=[]
         for row in assignable:
             name=(row["animal_name"] or "").strip()
@@ -12448,7 +12537,7 @@ class App(BaseHTTPRequestHandler):
               <div class="cremation-search-suggestions" id="cremationAddAnimalSuggestions" hidden></div>
             </div>
             <div class="cremation-add-animal-list" id="cremationAddAnimalList">{add_animal_cards_html}</div>
-            <p class="cremation-quick-menu-empty" id="cremationAddAnimalEmpty" {"hidden" if assignable else ""}>Nessun animale disponibile da aggiungere.</p>
+            <p class="cremation-quick-menu-empty" id="cremationAddAnimalEmpty" {"hidden" if (assignable or future_pickups) else ""}>Nessun animale disponibile da aggiungere.</p>
           </div>
         </div>'''
 
@@ -12771,6 +12860,25 @@ class App(BaseHTTPRequestHandler):
                         "status_label":status_label,
                         "search":f'{(row["animal_name"] or "").lower()} {owner.lower()}',
                     })
+            # richiesta esplicita dell'utente: in coda, solo a scopo
+            # informativo (nessun collegamento/azione reale possibile —
+            # non esiste ancora una pratica), gli animali cremazione
+            # singola in arrivo da un ritiro odierno/futuro non ancora
+            # effettuato. Stessa query gia' usata per le altre due liste.
+            for row in future_pickup_singola_rows(c,rome_now().date().isoformat()):
+                owner=future_pickup_owner_label(row)
+                avatar_emoji,_=species_avatar(row["species"] or "")
+                candidates.append({
+                    "id":f'future:{row["event_id"]}',
+                    "future":True,
+                    "name":row["animal_name"] or "Da inserire",
+                    "weight":(row["weight"] or "").strip(),
+                    "owner":owner,
+                    "avatar":avatar_emoji,
+                    "pickup_date_label":date_it(row["start_at"][:10]),
+                    "pickup_time":row["start_at"][11:16],
+                    "search":f'{(row["animal_name"] or "").lower()} {owner.lower()}',
+                })
         return self.send_json({"ok":True,"animals":candidates})
 
     def cremation_swap_animals(self,user):
