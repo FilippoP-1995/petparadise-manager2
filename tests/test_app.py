@@ -10447,6 +10447,40 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.calendar_event_detail(admin, event_id)
         self.assertIn("Zona aggiornata.", rendered[-1])
 
+    def test_calendar_event_delete_from_detail_returns_to_origin_page_not_itself(self):
+        # bug reale segnalato dall'utente: eliminando un evento dal riepilogo,
+        # il redirect si basava solo su return_to (form)/Referer; il Referer
+        # di un form inviato dalla pagina di dettaglio e' la pagina stessa,
+        # quindi dopo l'eliminazione il riepilogo (di un evento ormai
+        # cestinato) restava aperto finche' l'utente non cambiava pagina a
+        # mano. Fix: i form "Sposta nel cestino" portano ora con se' la
+        # pagina di provenienza (stessa usata dal link "Indietro").
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?)""",
+                ("Appuntamento","PROMEMORIA ELIMINA TEST","2026-07-30T09:00:00","2026-07-30T09:30:00","",admin["id"],stamp,stamp)).lastrowid
+
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}?return_to=%2Fcalendario%3Fdata%3D2026-07-30"
+        self.handler.calendar_event_detail(admin, event_id)
+        page = rendered[-1]
+        # entrambi i form "Sposta nel cestino" (menu quick-actions in basso e
+        # menu della topbar) portano con se' la pagina di provenienza
+        self.assertEqual(page.count(f'action="/calendario/{event_id}/elimina"'), 2)
+        self.assertEqual(page.count('<input type="hidden" name="return_to" value="/calendario?data=2026-07-30">'), 2)
+
+        redirects = []
+        self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.headers = {"Referer": f"/calendario/{event_id}"}
+        self.handler.form = lambda: {"return_to": "/calendario?data=2026-07-30"}
+        self.handler.calendar_event_action(admin, event_id, "elimina")
+        self.assertEqual(redirects[-1], "/calendario?data=2026-07-30")
+        with app.db() as conn:
+            row = conn.execute("SELECT deleted_at FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+        self.assertIsNotNone(row["deleted_at"])
+
     def test_calendar_detail_hero_card_and_topbar_match_mockup(self):
         # richiesta utente (mockup IMG_1773): Hero Card con icona, eyebrow tipo,
         # badge stato, avatar operatore, riga meta a 3 colonne, e topbar

@@ -10758,7 +10758,7 @@ class App(BaseHTTPRequestHandler):
           <div class="calendar-appt-menu-wrap calendar-detail-qa-menu-wrap">
             <button type="button" class="calendar-detail-qa" onclick="calendarToggleApptMenu(this)"><span class="calendar-detail-qa-icon">{lucide("more-vertical")}</span><span>Altro</span></button>
             <div class="calendar-appt-menu-popover" hidden>
-              <form method="post" action="/calendario/{event_id}/elimina" onsubmit="return confirm('Spostare questo evento nel cestino?')"><button type="submit">Sposta nel cestino</button></form>
+              <form method="post" action="/calendario/{event_id}/elimina" onsubmit="return confirm('Spostare questo evento nel cestino?')"><input type="hidden" name="return_to" value="{esc(back_url)}"><button type="submit">Sposta nel cestino</button></form>
             </div>
           </div>
         </div>'''
@@ -10873,7 +10873,7 @@ class App(BaseHTTPRequestHandler):
             <button type="button" class="calendar-detail-topbar-menu-btn" aria-label="Altre azioni" onclick="calendarToggleApptMenu(this)">{lucide("more-vertical")}</button>
             <div class="calendar-appt-menu-popover" hidden>
               <a href="/calendario/{event_id}/modifica">Modifica evento</a>
-              <form method="post" action="/calendario/{event_id}/elimina" onsubmit="return confirm('Spostare questo evento nel cestino?')"><button type="submit">Sposta nel cestino</button></form>
+              <form method="post" action="/calendario/{event_id}/elimina" onsubmit="return confirm('Spostare questo evento nel cestino?')"><input type="hidden" name="return_to" value="{esc(back_url)}"><button type="submit">Sposta nel cestino</button></form>
             </div>
           </div>
         </div>
