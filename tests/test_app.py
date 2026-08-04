@@ -10818,6 +10818,45 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("dy+=correction;", body)
         self.assertIn("body.ppm-dragging-no-select,body.ppm-dragging-no-select *", app.CSS)
 
+    def test_drag_reorder_ajax_save_skips_page_reload_when_flagged(self):
+        # richiesta esplicita dell'utente: dopo lo scambio manuale dei cicli
+        # di cremazione non deve ricaricare la pagina (perdendo la posizione
+        # di scroll) — un form con data-ajax-save si salva via fetch() senza
+        # navigare; senza quell'attributo il comportamento resta quello di
+        # sempre (submit reale, es. percorso giornaliero, dove il reload
+        # serve a mostrare orari/distanze ricalcolati).
+        js = app.APP_JS
+        fn_start = js.index("function setupDragReorder(root){")
+        fn_end = js.index("document.addEventListener('DOMContentLoaded',function(){\n  document.querySelectorAll('[data-drag-root]')")
+        body = js[fn_start:fn_end]
+        self.assertIn("group.hasAttribute('data-ajax-save')", body)
+        # il body va codificato come application/x-www-form-urlencoded (quello
+        # che self.form() sa leggere lato server): una FormData grezza invia
+        # multipart/form-data e il salvataggio fallirebbe con 400 (bug reale
+        # trovato testando dal vivo il drag).
+        self.assertIn("fetch(group.action,{method:'POST',body:new URLSearchParams(new FormData(group))})", body)
+        self.assertIn(".catch(function(){location.reload();});", body)
+        # senza il flag, il ramo esistente (submit reale) resta invariato.
+        self.assertIn("}else if(group.requestSubmit){group.requestSubmit();}else{group.submit();}", body)
+
+    def test_cremation_reorder_form_opts_into_ajax_save_and_drops_return_to(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-29", "in_attesa", "08:00", "09:00", stamp, stamp),
+            )
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-29"
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn('data-ajax-save action="/programma-cremazioni/riordina-cicli"', page)
+        # return_to serviva solo per il redirect post-submit rimosso: ora che
+        # il salvataggio e' via fetch() non deve piu' comparire nel form.
+        form_html = page.split('<form data-drag-group')[1].split('</form>')[0]
+        self.assertNotIn('name="return_to"', form_html)
+
     def test_sidebar_order_popup_open_close_js_is_wired(self):
         self.assertIn("function setupSidebarOrderPopup()", app.APP_JS)
         self.assertIn("ppmOpenSidebarOrder", app.APP_JS)
@@ -12615,13 +12654,15 @@ class PetParadiseTests(unittest.TestCase):
                 ("2026-07-28", "in_attesa", "08:00", "09:00", stamp, stamp),
             ).lastrowid
         # b prima di a, e un id di un altro giorno che deve essere ignorato
-        self.handler.form = lambda: {"data": "2026-07-27", "ordine_json": json.dumps([b_id, a_id, other_day_id]), "return_to": "/programma-cremazioni?data=2026-07-27"}
-        redirects = []
-        self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.form = lambda: {"data": "2026-07-27", "ordine_json": json.dumps([b_id, a_id, other_day_id])}
+        captured = []
+        self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
         self.handler.cremation_reorder_cycles(admin)
-        self.assertEqual(redirects[-1], "/programma-cremazioni?data=2026-07-27")
+        # richiesta esplicita dell'utente: il riordino si salva in
+        # background (fetch), niente piu' redirect/reload di pagina.
+        self.assertEqual(captured[-1], ({"ok": True}, 200))
         with app.db() as conn:
             a = conn.execute("SELECT * FROM cremation_cycles WHERE id=?", (a_id,)).fetchone()
             b = conn.execute("SELECT * FROM cremation_cycles WHERE id=?", (b_id,)).fetchone()
@@ -12638,10 +12679,11 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.form = lambda: {"data": "non-una-data", "ordine_json": "[]"}
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
-        errors = []
-        self.handler.send_error = lambda status, *a: errors.append(status)
+        captured = []
+        self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
         self.handler.cremation_reorder_cycles(admin)
-        self.assertEqual(errors[-1], 400)
+        self.assertEqual(captured[-1][1], 400)
+        self.assertFalse(captured[-1][0]["ok"])
 
     def test_cremation_day_and_week_markup_wires_drag_reorder(self):
         with app.db() as conn:
@@ -12655,7 +12697,7 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.send_html = lambda content, *a: rendered.append(content)
         self.handler.cremation_schedule(admin)
         page = rendered[-1]
-        self.assertIn('data-drag-group data-auto-submit action="/programma-cremazioni/riordina-cicli" method="post"', page)
+        self.assertIn('data-drag-group data-auto-submit data-ajax-save action="/programma-cremazioni/riordina-cicli" method="post"', page)
         self.assertIn('<input type="hidden" name="data" value="2026-07-29">', page)
         self.assertIn('<input type="hidden" name="ordine_json" data-drag-order>', page)
         self.assertIn('class="cremation-cycles-timeline" data-drag-root', page)
@@ -12666,7 +12708,7 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.send_html = lambda content, *a: rendered_week.append(content)
         self.handler.cremation_schedule(admin)
         week_page = rendered_week[-1]
-        self.assertIn('data-drag-group data-auto-submit action="/programma-cremazioni/riordina-cicli" method="post"', week_page)
+        self.assertIn('data-drag-group data-auto-submit data-ajax-save action="/programma-cremazioni/riordina-cicli" method="post"', week_page)
         self.assertIn(f'cremation-timeline-item cremation-week-cycle-item drag-item" data-drag-key="{cycle_id}"', week_page)
 
     def test_cremation_ciclo_numbering_follows_new_sort_order(self):

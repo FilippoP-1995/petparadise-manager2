@@ -4870,7 +4870,19 @@ function setupDragReorder(root){
         setTimeout(function(){root.removeEventListener('click',suppressGhostClick,true);},400);
         syncDragOrder(root);
         const group=root.closest('[data-drag-group][data-auto-submit]');
-        if(group){if(group.requestSubmit)group.requestSubmit();else group.submit();}
+        if(group){
+          if(group.hasAttribute('data-ajax-save')){
+            // Salva in background senza ricaricare la pagina: l'ordine e'
+            // gia' corretto a schermo (spostato durante il trascinamento),
+            // un reload servirebbe solo a confermarlo e farebbe perdere la
+            // posizione di scroll. In caso di errore si ricarica comunque,
+            // cosi' la pagina torna sicuramente allineata al server.
+            fetch(group.action,{method:'POST',body:new URLSearchParams(new FormData(group))})
+              .then(function(r){if(!r.ok)throw new Error('bad status');return r.json();})
+              .then(function(data){if(!data||!data.ok)throw new Error('not ok');})
+              .catch(function(){location.reload();});
+          }else if(group.requestSubmit){group.requestSubmit();}else{group.submit();}
+        }
       }
       window.addEventListener('pointermove',onMove);
       window.addEventListener('pointerup',onUp);
@@ -11932,9 +11944,8 @@ class App(BaseHTTPRequestHandler):
         </div>
         {progress_html}
         <section class="cremation-column cremation-planning-column">
-          <form data-drag-group data-auto-submit action="/programma-cremazioni/riordina-cicli" method="post">
+          <form data-drag-group data-auto-submit data-ajax-save action="/programma-cremazioni/riordina-cicli" method="post">
             <input type="hidden" name="data" value="{esc(cycle_date)}">
-            <input type="hidden" name="return_to" value="{esc(self.path)}">
             <input type="hidden" name="ordine_json" data-drag-order>
             <div class="cremation-cycles-timeline" data-drag-root>{cycles_html}</div>
           </form>
@@ -12263,9 +12274,8 @@ class App(BaseHTTPRequestHandler):
                   </div>
                 </div>''')
             if row_items:
-                day_body=f'''<form data-drag-group data-auto-submit action="/programma-cremazioni/riordina-cicli" method="post">
+                day_body=f'''<form data-drag-group data-auto-submit data-ajax-save action="/programma-cremazioni/riordina-cicli" method="post">
                   <input type="hidden" name="data" value="{esc(d)}">
-                  <input type="hidden" name="return_to" value="{esc(self.path)}">
                   <input type="hidden" name="ordine_json" data-drag-order>
                   <div class="cremation-cycles-timeline" data-drag-root>{''.join(row_items)}</div>
                 </form>'''
@@ -12662,15 +12672,18 @@ class App(BaseHTTPRequestHandler):
         return self.send_json({"ok":True})
 
     def cremation_reorder_cycles(self,user):
+        # Chiamato esclusivamente via fetch() dal drag-reorder (mai da un
+        # submit di form reale: nessun pulsante posta qui), cosi' il
+        # riordino si salva senza ricaricare la pagina ne' perdere la
+        # posizione di scroll — richiesta esplicita dell'utente.
         form=self.form()
         cycle_date=(form.get("data") or "").strip()
         try:date.fromisoformat(cycle_date)
-        except ValueError:return self.send_error(400)
+        except ValueError:return self.send_json({"ok":False,"error":"Data non valida"},400)
         try:order=json.loads(form.get("ordine_json") or "[]")
         except (ValueError,TypeError):order=[]
         try:order=[int(k) for k in order]
         except (TypeError,ValueError):order=[]
-        return_to=safe_return_path(form.get("return_to"),f"/programma-cremazioni?data={cycle_date}")
         with db() as c:
             cycles=c.execute("SELECT id FROM cremation_cycles WHERE cycle_date=?",(cycle_date,)).fetchall()
             by_id={row["id"] for row in cycles}
@@ -12679,7 +12692,7 @@ class App(BaseHTTPRequestHandler):
             stamp=now()
             for index,cid in enumerate(ordered,start=1):
                 c.execute("UPDATE cremation_cycles SET sort_order=?,updated_at=? WHERE id=?",(index,stamp,cid))
-        self.redirect(return_to)
+        return self.send_json({"ok":True})
 
     def cremation_delete_cycle(self,user,cycle_id):
         stamp=now()
