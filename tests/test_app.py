@@ -5862,11 +5862,14 @@ class PetParadiseTests(unittest.TestCase):
         with app.db() as conn:
             self.assertEqual(conn.execute("SELECT count(*) n FROM notifications").fetchone()["n"],notifications_before)
             self.assertEqual(conn.execute("SELECT status FROM practices WHERE id=?",(pid_full,)).fetchone()["status"],"Da consegnare")
-        # Sanity check: "Consegnato" still emits its own notification as before.
+        # Sanity check: "Consegnato" still emits its own notification as before
+        # (una copia per ogni utente attivo: destinatari = tutto lo staff,
+        # filtrato per utente solo dalle preferenze per tipo).
         self.handler.form=lambda:{"status":"Consegnato","ajax":"1"}
         self.handler.quick_state(admin,pid_quick)
         with app.db() as conn:
-            self.assertEqual(conn.execute("SELECT count(*) n FROM notifications").fetchone()["n"],notifications_before+1)
+            active_users=conn.execute("SELECT count(*) n FROM users WHERE active=1").fetchone()["n"]
+            self.assertEqual(conn.execute("SELECT count(*) n FROM notifications").fetchone()["n"],notifications_before+active_users)
 
     def test_scheduled_whatsapp_appears_in_conversations(self):
         with app.db() as conn:
@@ -11183,6 +11186,39 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(notification_priority("practice_created"), "normale")
         self.assertEqual(notification_priority("payment_received"), "normale")
 
+    def test_notifications_reach_every_active_user_not_only_admins_or_the_actor(self):
+        # richiesta esplicita dell'utente: prima le notifiche senza
+        # target_user_ids esplicito arrivavano solo agli admin (+ a chi ha
+        # fatto l'azione), quindi un operatore non admin non veniva mai
+        # avvisato di un'azione fatta da un collega. Ora il pool di
+        # destinatari e' tutto lo staff attivo; chi riceve davvero cosa resta
+        # governato dalle preferenze per tipo (invariate, default abilitato).
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            other_admin_id = conn.execute(
+                "INSERT INTO users(username,password_hash,display_name,role) VALUES('admin2','x','Admin Due','admin')"
+            ).lastrowid
+            operator_id = conn.execute(
+                "INSERT INTO users(username,password_hash,display_name,role) VALUES('operatore_broadcast','x','Operatore B','operator')"
+            ).lastrowid
+            inactive_operator_id = conn.execute(
+                "INSERT INTO users(username,password_hash,display_name,role,active) VALUES('operatore_inattivo','x','Operatore I','operator',0)"
+            ).lastrowid
+            emit_notification(conn, "practice_created", "🐾 Nuova pratica", "Zeus unico marker", actor_user_id=admin["id"])
+            # notification_group_items.text conserva sempre il testo
+            # originale per occorrenza, anche se la riga in notifications e'
+            # gia' stata riscritta con un riassunto raggruppato — query
+            # robusta indipendentemente dall'ordine/timing degli altri test.
+            recipients = {row["user_id"] for row in conn.execute(
+                """SELECT n.user_id FROM notification_group_items gi
+                   JOIN notifications n ON n.id=gi.notification_id
+                   WHERE gi.text='Zeus unico marker'"""
+            )}
+        self.assertIn(admin["id"], recipients)
+        self.assertIn(other_admin_id, recipients)
+        self.assertIn(operator_id, recipients)
+        self.assertNotIn(inactive_operator_id, recipients)
+
     def test_emit_notification_groups_bursts_within_five_minutes_into_one_row(self):
         # Simulates "più ritiri creati in pochi minuti": instead of 3 separate
         # push notifications, the same row is updated in place with a summary,
@@ -11469,7 +11505,10 @@ class PetParadiseTests(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT status FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()["status"], "in_attesa")
             after = conn.execute("SELECT count(*) n FROM notifications WHERE type='cremation_cycle_waiting'").fetchone()["n"]
             row = conn.execute("SELECT * FROM notifications WHERE type='cremation_cycle_waiting' ORDER BY id DESC LIMIT 1").fetchone()
-        self.assertEqual(after, before + 1)
+            # una notifica per ogni utente attivo (destinatari = tutto lo
+            # staff, filtrato per utente solo dalle preferenze per tipo).
+            active_users = conn.execute("SELECT count(*) n FROM users WHERE active=1").fetchone()["n"]
+        self.assertEqual(after, before + active_users)
         self.assertTrue(row["title"].startswith("Ciclo "))
         self.assertTrue(row["title"].endswith(" in attesa"))
         self.assertIn(" • 1 animale", row["text"])

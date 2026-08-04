@@ -239,17 +239,14 @@ def preference_enabled(conn: sqlite3.Connection, user_id: int, notification_type
     return row is None or bool(row["enabled"])
 
 
-def _recipient_ids(conn, practice_id=None, actor_user_id=None, target_user_ids=None):
-    if target_user_ids is not None:
-        recipients = {int(value) for value in target_user_ids if value}
-    else:
-        recipients = {row["id"] for row in conn.execute("SELECT id FROM users WHERE active=1 AND role='admin'")}
-        if practice_id:
-            row = conn.execute("SELECT created_by FROM practices WHERE id=?", (practice_id,)).fetchone()
-            if row and row["created_by"]:
-                recipients.add(row["created_by"])
-        if actor_user_id:
-            recipients.add(int(actor_user_id))
+def _recipient_ids(conn, target_user_ids=None):
+    # Il pool dei possibili destinatari e' sempre tutto lo staff attivo (non
+    # solo gli admin): chi deve davvero ricevere una notifica di un dato tipo
+    # e' gia' governato da preference_enabled(), tramite gli interruttori per
+    # tipo in "Il mio profilo" — richiesta esplicita dell'utente, prima un
+    # operatore non riceveva mai una notifica per un'azione fatta da un
+    # collega, indipendentemente dalle sue preferenze.
+    recipients = {int(value) for value in target_user_ids if value} if target_user_ids is not None else set()
     if not recipients:
         recipients = {row["id"] for row in conn.execute("SELECT id FROM users WHERE active=1")}
     return sorted(recipients)
@@ -290,7 +287,7 @@ def emit_notification(
     window_start = (_rome_now() - timedelta(minutes=GROUP_WINDOW_MINUTES)).isoformat(timespec="seconds")
     priority = notification_priority(notification_type)
     queued = []
-    for user_id in _recipient_ids(conn, practice_id, actor_user_id, target_user_ids):
+    for user_id in _recipient_ids(conn, target_user_ids):
         if not preference_enabled(conn, user_id, notification_type):
             continue
         existing = None if notification_type in NON_GROUPABLE_NOTIFICATION_TYPES else conn.execute(
