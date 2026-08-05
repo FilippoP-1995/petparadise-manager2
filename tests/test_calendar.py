@@ -318,6 +318,57 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("Cerca pratica, animale o cliente", html)
         self.assertIn("data-delivery-practice-summary", app.APP_JS)
 
+    def test_delivery_wizard_shows_channel_letter_on_amount_when_still_due(self):
+        # richiesta esplicita dell'utente: quando si fissa una riconsegna
+        # partendo da una pratica, la riga "Importo" deve mostrare anche
+        # la sigla del circuito (W/D) se c'e' ancora da pagare.
+        with app.db() as conn:
+            stamp = datetime.now().isoformat(timespec="seconds")
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   animal_name,owner_first_name,owner_last_name,payment_status,total_text) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("PP-WIZ-D", "Privato", "Livorno", "Ritirato", stamp, stamp, self.admin["id"],
+                 "Birba", "Mario", "Rossi", "Da saldare", "150"),
+            ).lastrowid
+        pages = []
+        self.handler.path = f"/calendario/nuovo?linked_practice_id={pid}"
+        self.handler.send_html = lambda html, status=200: pages.append(html)
+        self.handler.calendar_event_form(self.admin)
+        self.assertIn("<small>Importo D</small>", pages[0])
+
+    def test_delivery_wizard_hides_channel_letter_when_already_paid(self):
+        with app.db() as conn:
+            stamp = datetime.now().isoformat(timespec="seconds")
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   animal_name,owner_first_name,owner_last_name,payment_status,total_text) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("PP-WIZ-PAID", "Privato", "Livorno", "Ritirato", stamp, stamp, self.admin["id"],
+                 "Birba", "Mario", "Rossi", "Pagato", "150"),
+            ).lastrowid
+        pages = []
+        self.handler.path = f"/calendario/nuovo?linked_practice_id={pid}"
+        self.handler.send_html = lambda html, status=200: pages.append(html)
+        self.handler.calendar_event_form(self.admin)
+        self.assertIn("<small>Importo</small>", pages[0])
+        self.assertNotIn("<small>Importo D</small>", pages[0])
+
+    def test_delivery_edit_form_shows_channel_letter_from_linked_practice(self):
+        event_id = self.save(self.event_form("Riconsegna"))
+        with app.db() as conn:
+            stamp = datetime.now().isoformat(timespec="seconds")
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   animal_name,owner_first_name,owner_last_name,payment_status) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("PP-EDIT-W", "Privato", "Livorno", "Ritirato", stamp, stamp, self.admin["id"],
+                 "Birba", "Mario", "Rossi", "Da saldare"),
+            ).lastrowid
+            conn.execute("UPDATE calendar_events SET linked_practice_id=? WHERE id=?", (pid, event_id))
+        pages = []
+        self.handler.path = f"/calendario/{event_id}/modifica"
+        self.handler.send_html = lambda html, status=200: pages.append(html)
+        self.handler.calendar_event_form(self.admin, event_id)
+        self.assertIn("<small>Importo W</small>", pages[0])
+
     def test_new_event_notification_title_is_specific_to_event_type_and_location(self):
         # richiesta esplicita dell'utente: il banner della notifica deve
         # mostrare subito il tipo di ritiro/riconsegna e dove si svolge
