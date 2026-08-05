@@ -318,19 +318,103 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("Cerca pratica, animale o cliente", html)
         self.assertIn("data-delivery-practice-summary", app.APP_JS)
 
-    def test_new_event_notification_uses_emoji_specific_to_event_type(self):
-        expected = {
-            "Ritiro": "🐾", "Ritiro in sede": "🏠",
-            "Riconsegna": "📦", "Riconsegna in sede": "🚚",
-            "Appuntamento": "📅",
+    def test_new_event_notification_title_is_specific_to_event_type_and_location(self):
+        # richiesta esplicita dell'utente: il banner della notifica deve
+        # mostrare subito il tipo di ritiro/riconsegna e dove si svolge
+        # (in sede o zona), senza dover aprire il gestionale — niente piu'
+        # titolo generico "Nuovo evento calendario" con solo l'emoji a
+        # distinguere il tipo.
+        expected_titles = {
+            "Ritiro": "Ritiro Zona Livorno", "Ritiro in sede": "Ritiro in sede",
+            "Riconsegna": "Riconsegna Zona Livorno", "Riconsegna in sede": "Riconsegna in sede",
+            "Appuntamento": "📅 Nuovo evento calendario",
         }
-        for event_type, emoji in expected.items():
+        for event_type, expected_title in expected_titles.items():
             self.handler.form = lambda event_type=event_type: self.event_form(event_type)
             with patch("app.emit_notification", return_value=[]) as mock_emit:
                 self.handler.save_calendar_event(self.admin)
             kind, title = mock_emit.call_args.args[1], mock_emit.call_args.args[2]
             self.assertEqual(kind, "calendar_event_created")
-            self.assertTrue(title.startswith(emoji), f"{event_type}: {title!r}")
+            self.assertEqual(title, expected_title, f"{event_type}: {title!r}")
+
+    def test_new_pickup_notification_body_shows_species_weight_and_time(self):
+        form = self.event_form("Ritiro", animals_json=json.dumps([
+            {"name": "Birba", "species": "Cane", "weight": "18", "notes": ""},
+        ]))
+        self.handler.form = lambda: form
+        with patch("app.emit_notification", return_value=[]) as mock_emit:
+            self.handler.save_calendar_event(self.admin)
+        text = mock_emit.call_args.args[3]
+        self.assertEqual(text, "Cane • 18 kg\n09:30 - 10:30")
+
+    def test_new_pickup_in_sede_notification_omits_missing_end_time(self):
+        form = self.event_form("Ritiro in sede", start_time="14:00", end_time="14:00", animals_json=json.dumps([
+            {"name": "Micio", "species": "Gatto", "weight": "4", "notes": ""},
+        ]))
+        self.handler.form = lambda: form
+        with patch("app.emit_notification", return_value=[]) as mock_emit:
+            self.handler.save_calendar_event(self.admin)
+        title = mock_emit.call_args.args[2]
+        text = mock_emit.call_args.args[3]
+        self.assertEqual(title, "Ritiro in sede")
+        self.assertEqual(text, "Gatto • 4 kg\n14:00")
+
+    def test_new_delivery_notification_shows_animal_and_payment_status(self):
+        form = self.event_form("Riconsegna", payment_status="Pagato")
+        self.handler.form = lambda: form
+        with patch("app.emit_notification", return_value=[]) as mock_emit:
+            self.handler.save_calendar_event(self.admin)
+        title = mock_emit.call_args.args[2]
+        text = mock_emit.call_args.args[3]
+        self.assertEqual(title, "Riconsegna Zona Livorno")
+        self.assertEqual(text, "Fido\nPagamento: SALDATO")
+
+    def test_new_delivery_notification_shows_da_saldare_when_not_paid(self):
+        form = self.event_form("Riconsegna in sede", payment_status="Da saldare")
+        self.handler.form = lambda: form
+        with patch("app.emit_notification", return_value=[]) as mock_emit:
+            self.handler.save_calendar_event(self.admin)
+        text = mock_emit.call_args.args[3]
+        self.assertEqual(text, "Fido\nPagamento: DA SALDARE")
+
+    def test_updated_pickup_notification_shows_new_status_only_when_it_changed(self):
+        pid = self.save(self.event_form("Ritiro", event_status="Da confermare"))
+        form = self.event_form("Ritiro", event_status="Ritirato")
+        self.handler.form = lambda: form
+        with patch("app.emit_notification", return_value=[]) as mock_emit:
+            self.handler.save_calendar_event(self.admin, pid)
+        kind, title, text = mock_emit.call_args.args[1], mock_emit.call_args.args[2], mock_emit.call_args.args[3]
+        self.assertEqual(kind, "calendar_event_updated")
+        self.assertEqual(title, "Ritiro Zona Livorno")
+        self.assertIn("Stato: RITIRATO", text)
+
+        # nessun cambio di stato: la riga "Stato:" non compare
+        self.handler.form = lambda: self.event_form("Ritiro", event_status="Ritirato", zone="Pisa")
+        with patch("app.emit_notification", return_value=[]) as mock_emit:
+            self.handler.save_calendar_event(self.admin, pid)
+        text = mock_emit.call_args.args[3]
+        self.assertNotIn("Stato:", text)
+
+    def test_payment_received_notification_shows_channel_letter(self):
+        # richiesta esplicita dell'utente: il banner "Pagamento ricevuto"
+        # deve mostrare anche la sigla del circuito (W/D), mantenendo il
+        # nome del proprietario gia' presente oggi.
+        with app.db() as conn:
+            stamp = datetime.now().isoformat(timespec="seconds")
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   animal_name,owner_first_name,owner_last_name,payment_status,total_service,total_service_manual)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("PP-CHANNEL-01", "Privato", "Livorno", "Ritirato", stamp, stamp, self.admin["id"],
+                 "Birba", "Mario", "Rossi", "Da saldare", "150", "Si"),
+            ).lastrowid
+        self.handler.form = lambda: {"payment_status": "Pagato", "payment_method": "Pos", "payment_amount": "150",
+                                      "invoice_number": "", "invoice_total": "", "invoice_date": "",
+                                      "economic_at": "2026-07-14", "payment_channel": "W"}
+        with patch("app.emit_notification", return_value=[]) as mock_emit:
+            self.handler.quick_payment(self.admin, pid)
+        text = mock_emit.call_args.args[3]
+        self.assertEqual(text, "Mario Rossi • W • € 150,00")
 
     def test_delivery_zone_and_clinic_are_persisted_and_shown_without_growing_the_card(self):
         stamp = datetime.now().isoformat(timespec="seconds")

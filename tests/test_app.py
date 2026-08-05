@@ -812,6 +812,27 @@ class PetParadiseTests(unittest.TestCase):
         # amount, which was the original bug
         self.assertEqual((row["deposit"], row["remaining_balance"]), ("0.00", ""))
 
+    def test_payment_macroarea_notification_shows_channel_letter_and_owner(self):
+        # richiesta esplicita dell'utente: il banner "Pagamento ricevuto"
+        # deve mostrare anche la sigla del circuito (W/D) registrato,
+        # mantenendo il nome del proprietario gia' presente oggi.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   animal_name,owner_first_name,owner_last_name,service_type,payment_status,total_text)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-CHANNEL-POP", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Mulan",
+                 "Giulia", "Bianchi", "Cremazione singola", "Da saldare", "150"),
+            ).lastrowid
+        self.handler.form = lambda: {"macroarea": "saldo", "saldo_data": "2026-07-20", "saldo_totale": "150,00", "saldo_circuito": "D", "saldo_modalita": "Contanti"}
+        self.handler.headers = {}
+        self.handler.redirect = lambda url: None
+        with patch("app.emit_notification", return_value=[]) as mock_emit:
+            self.handler.save_payment_macroarea(admin, pid)
+        text = mock_emit.call_args.args[3]
+        self.assertEqual(text, "Giulia Bianchi • D • € 150,00")
+
     def test_payment_macroarea_d_circuito_does_not_require_payment_method(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()

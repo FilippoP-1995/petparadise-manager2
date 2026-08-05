@@ -55,6 +55,7 @@ from balance_repair import repair_duplicate_balance_movements
 from calendar_service import (
     EVENT_TYPES, PICKUP_STATUSES, DELIVERY_STATUSES, PAYMENT_STATUSES, CALENDAR_OPERATORS,
     add_history as calendar_add_history,
+    calendar_push_location_title, calendar_pickup_push_text, calendar_delivery_push_text,
     ensure_calendar_schema, event_color_class, event_type_dot_class, event_type_emoji, normalize_event, overlap_rows,
     parse_items as calendar_parse_items, period_bounds as calendar_period_bounds,
     schedule_event_notifications, sync_children as calendar_sync_children,
@@ -11011,26 +11012,46 @@ class App(BaseHTTPRequestHandler):
                     if old_animals!=animals:calendar_add_history(c,event_id,user["id"],"Modifica animali",json.dumps(old_animals,ensure_ascii=False),json.dumps(animals,ensure_ascii=False),stamp)
                     if old_estimates!=estimates:calendar_add_history(c,event_id,user["id"],"Modifica preventivo",json.dumps(old_estimates,ensure_ascii=False),json.dumps(estimates,ensure_ascii=False),stamp)
                     kind="calendar_event_cancelled" if data["event_status"]=="Annullato" and old["event_status"]!="Annullato" else "calendar_event_updated"
-                    emit_notification(c,kind,f"{event_type_emoji(data['event_type'])} Evento calendario aggiornato",data["title"],actor_user_id=user["id"],payload={"url":f"/calendario/{event_id}"},db_path=DB_PATH)
+                    # Contenuto del banner ristretto a quanto serve
+                    # all'operatore per capire l'aggiornamento senza aprire
+                    # il gestionale (richiesta esplicita dell'utente): stesso
+                    # formato usato alla creazione, con l'aggiunta del nuovo
+                    # stato quando e' proprio quello che e' cambiato.
+                    if data["event_type"] in ("Ritiro","Ritiro in sede"):
+                        upd_title=calendar_push_location_title(data["event_type"],data["zone"])
+                        upd_text=calendar_pickup_push_text(animals,data["start_at"],data["end_at"])
+                        if data["event_status"]!=old["event_status"]:
+                            status_line=f"Stato: {data['event_status'].upper()}"
+                            upd_text=f"{upd_text}\n{status_line}" if upd_text else status_line
+                    elif data["event_type"] in ("Riconsegna","Riconsegna in sede"):
+                        upd_title=calendar_push_location_title(data["event_type"],data["zone"])
+                        upd_text=calendar_delivery_push_text(data["animal_name"],data["payment_status"])
+                    else:
+                        upd_title=f"{event_type_emoji(data['event_type'])} Evento calendario aggiornato"
+                        upd_text=data["title"]
+                    emit_notification(c,kind,upd_title,upd_text,actor_user_id=user["id"],payload={"url":f"/calendario/{event_id}"},db_path=DB_PATH)
                 else:
                     created_now=True
                     if user["role"]!="admin": data["operator_name"]=user["display_name"]
                     cols=list(data)+["created_by","created_at","updated_at","updated_by"]
                     cur=c.execute(f"INSERT INTO calendar_events({','.join(cols)}) VALUES({','.join('?' for _ in cols)})",tuple(data.values())+(user["id"],stamp,stamp,user["id"]));event_id=cur.lastrowid
                     calendar_sync_children(c,event_id,animals,estimates,stamp);calendar_add_history(c,event_id,user["id"],"Creazione evento","",data["title"],stamp)
-                    # Il titolo auto-generato (data["title"]) copre gia' tipo
-                    # evento + zona/sede; per Ritiro/Ritiro in sede si aggiunge
-                    # specie, peso e tipo cremazione del primo animale cosi'
-                    # la notifica e' chiara a colpo d'occhio senza dover aprire
-                    # l'evento (richiesta esplicita dell'utente).
-                    notif_bits=[]
-                    if data["event_type"] in ("Ritiro","Ritiro in sede") and animals:
-                        first_animal=animals[0]
-                        if first_animal.get("species"):notif_bits.append(first_animal["species"])
-                        if first_animal.get("weight"):notif_bits.append(f'{first_animal["weight"]} kg')
-                        if first_animal.get("cremation_type"):notif_bits.append(first_animal["cremation_type"])
-                    notif_text=data["title"]+(f' • {" · ".join(notif_bits)}' if notif_bits else '')
-                    emit_notification(c,"calendar_event_created",f"{event_type_emoji(data['event_type'])} Nuovo evento calendario",notif_text,actor_user_id=user["id"],payload={"url":f"/calendario/{event_id}"},db_path=DB_PATH)
+                    # Banner mirato al tipo evento (richiesta esplicita
+                    # dell'utente): per Ritiro tipo/zona + specie/peso +
+                    # orario, per Riconsegna tipo/zona + nome animale + stato
+                    # pagamento, cosi' l'operatore capisce tutto senza aprire
+                    # il gestionale. Gli altri tipi (Appuntamento) restano
+                    # col titolo generico di prima.
+                    if data["event_type"] in ("Ritiro","Ritiro in sede"):
+                        new_title=calendar_push_location_title(data["event_type"],data["zone"])
+                        new_text=calendar_pickup_push_text(animals,data["start_at"],data["end_at"])
+                    elif data["event_type"] in ("Riconsegna","Riconsegna in sede"):
+                        new_title=calendar_push_location_title(data["event_type"],data["zone"])
+                        new_text=calendar_delivery_push_text(data["animal_name"],data["payment_status"])
+                    else:
+                        new_title=f"{event_type_emoji(data['event_type'])} Nuovo evento calendario"
+                        new_text=data["title"]
+                    emit_notification(c,"calendar_event_created",new_title,new_text,actor_user_id=user["id"],payload={"url":f"/calendario/{event_id}"},db_path=DB_PATH)
                 if linked_practice_id and data["event_type"] in ("Riconsegna","Riconsegna in sede"):
                     c.execute("UPDATE calendar_events SET linked_practice_id=? WHERE id=?",(linked_practice_id,event_id))
                 if data["event_status"] in ("Annullato","Completato"):
@@ -17312,7 +17333,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                     emit_notification(c,"practice_delivered","Pratica consegnata",push_bullets(d.get("animal_name") or previous["practice_number"],delivered_owner or None),pid,user["id"],db_path=DB_PATH)
             if (previous["payment_status"] or "Da saldare") != d["payment_status"] and d["payment_status"]=="Pagato":
                 payment_owner=f'{d.get("owner_first_name","")} {d.get("owner_last_name","")}'.strip()
-                emit_notification(c,"payment_received","Pagamento ricevuto",push_bullets(payment_owner or None,money_it(effective_total(d))),pid,user["id"],db_path=DB_PATH)
+                emit_notification(c,"payment_received","Pagamento ricevuto",push_bullets(payment_owner or None,payment_channel(d),money_it(effective_total(d))),pid,user["id"],db_path=DB_PATH)
             if previous["catalog_sent"]!="Si" and d.get("catalog_sent")=="Si":
                 emit_notification(c,"catalog_sent","Catalogo inviato",push_bullets(previous["practice_number"],d.get("animal_name")),pid,user["id"],db_path=DB_PATH)
             if (previous["send_catalog"] or "")!="Si" and d.get("send_catalog")=="Si":
@@ -17461,7 +17482,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 emit_notification(c,"practice_delivered","Pratica consegnata",push_bullets(old["animal_name"] or old["practice_number"],delivered_owner or None),pid,user["id"],db_path=DB_PATH)
             if old_payment!=payment and payment=="Pagato":
                 payment_owner=f'{(old["owner_first_name"] or "")} {(old["owner_last_name"] or "")}'.strip()
-                emit_notification(c,"payment_received","Pagamento ricevuto",push_bullets(payment_owner or None,money_it(effective_total(old))),pid,user["id"],db_path=DB_PATH)
+                emit_notification(c,"payment_received","Pagamento ricevuto",push_bullets(payment_owner or None,payment_channel(old),money_it(effective_total(old))),pid,user["id"],db_path=DB_PATH)
         self.redirect(safe_return_path(f.get("practice_view"),f"/pratiche/{pid}"))
 
     def save_payment_macroarea(self,user,pid):
@@ -17634,7 +17655,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             )
         if new_status=="Pagato" and old_status!="Pagato":
             owner=f'{practice["owner_first_name"] or ""} {practice["owner_last_name"] or ""}'.strip()
-            emit_notification(c,"payment_received","Pagamento ricevuto",push_bullets(owner or None,money_it(money_value(amount))),pid,user["id"],db_path=DB_PATH)
+            emit_notification(c,"payment_received","Pagamento ricevuto",push_bullets(owner or None,channel or payment_channel(practice),money_it(money_value(amount))),pid,user["id"],db_path=DB_PATH)
         return None
 
     def remove_payment_macroarea(self,user,pid):
@@ -17842,7 +17863,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,"Pagamento rapido",old,f'{payment}' + (f' · {money_it(money_value(amount))}' if old!=payment and amount else ''),user["id"],stamp))
             if payment=="Pagato" and old!="Pagato":
                 owner=f'{row["owner_first_name"] or ""} {row["owner_last_name"] or ""}'.strip()
-                emit_notification(c,"payment_received","Pagamento ricevuto",push_bullets(owner or None,money_it(money_value(amount))),pid,user["id"],db_path=DB_PATH)
+                emit_notification(c,"payment_received","Pagamento ricevuto",push_bullets(owner or None,channel or payment_channel(row),money_it(money_value(amount))),pid,user["id"],db_path=DB_PATH)
         if ajax:return self.send_json({"ok":True,"payment_method":method,"payment_status":payment})
         return self.redirect(safe_return_path(form.get("return_to") or self.headers.get("Referer"),"/"))
 

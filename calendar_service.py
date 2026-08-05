@@ -204,6 +204,70 @@ def automatic_title(event_type, zone="", animal="", site=""):
     return ""
 
 
+def calendar_push_location_title(event_type, zone):
+    """Titolo della notifica push per Ritiro/Riconsegna (richiesta esplicita
+    dell'utente): 'Ritiro in sede' / 'Ritiro Zona X' / 'Riconsegna in sede' /
+    'Riconsegna Zona X' — stessi dati (event_type/zone) gia' validati da
+    normalize_event, nessuna query aggiuntiva necessaria."""
+    base = "Ritiro" if event_type in ("Ritiro", "Ritiro in sede") else "Riconsegna"
+    if event_type.endswith("in sede"):
+        return f"{base} in sede"
+    zone = _clean(zone)
+    return f"{base} Zona {zone}" if zone else base
+
+
+def calendar_push_time_range(start_at, end_at):
+    """'HH:MM - HH:MM' se l'evento ha un orario di fine diverso dall'inizio,
+    altrimenti solo 'HH:MM' (quando l'operatore non specifica un orario di
+    fine, normalize_event lo imposta uguale all'inizio)."""
+    start = (start_at or "")[11:16]
+    end = (end_at or "")[11:16]
+    if not start:
+        return ""
+    return f"{start} - {end}" if end and end != start else start
+
+
+def calendar_pickup_push_text(animals, start_at, end_at):
+    """Corpo della notifica push di Ritiro/Modifica ritiro: specie e peso del
+    primo animale su una riga, orario sulla riga successiva — solo i dati
+    realmente presenti (richiesta esplicita dell'utente)."""
+    lines = []
+    if animals:
+        first = animals[0]
+        bits = []
+        species = _clean(first.get("species") or "")
+        if species:
+            bits.append(species)
+        weight = _clean(first.get("weight") or "")
+        if weight:
+            bits.append(f"{weight} kg")
+        if bits:
+            lines.append(" • ".join(bits))
+    time_range = calendar_push_time_range(start_at, end_at)
+    if time_range:
+        lines.append(time_range)
+    return "\n".join(lines)
+
+
+def calendar_delivery_push_payment_label(payment_status):
+    """Etichetta stato pagamento per il banner di Riconsegna: SALDATO solo
+    quando davvero pagato, altrimenti DA SALDARE — vocabolario dedicato al
+    banner push (richiesta esplicita dell'utente), distinto da
+    PAYMENT_STATUSES che distingue anche 'Da pagare'."""
+    return "SALDATO" if payment_status == "Pagato" else "DA SALDARE"
+
+
+def calendar_delivery_push_text(animal_name, payment_status):
+    """Corpo della notifica push di Riconsegna/Modifica riconsegna: nome
+    animale su una riga, stato pagamento sulla riga successiva."""
+    lines = []
+    animal_name = _clean(animal_name)
+    if animal_name:
+        lines.append(animal_name)
+    lines.append(f"Pagamento: {calendar_delivery_push_payment_label(payment_status)}")
+    return "\n".join(lines)
+
+
 def normalize_time(value, default=""):
     value=re.sub(r"\D", "", str(value or ""))
     if not value:return default
