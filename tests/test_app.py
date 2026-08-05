@@ -8220,6 +8220,18 @@ class PetParadiseTests(unittest.TestCase):
         # la lista scorre insieme alla pagina, niente scroll interno separato
         self.assertIn('.recent-practice-list{display:flex;flex-direction:column;gap:8px}',app.CSS)
 
+    def test_recent_practice_card_date_does_not_overlap_owner_column(self):
+        # bug reale segnalato dall'utente (screenshot): su schermi stretti
+        # il testo della colonna data ("05/08/2026") non veniva ne'
+        # troncato ne' contenuto e finiva per sovrapporsi visivamente al
+        # testo della colonna proprietario accanto, perche' il flex della
+        # data non aveva overflow/nowrap/ellipsis (a differenza di nome e
+        # meta, che gia' li avevano).
+        self.assertIn(
+            '.recent-practice-date-value{display:flex;align-items:center;gap:6px;font-size:16px;font-weight:600;color:#e2e8f0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+            app.CSS,
+        )
+
     def test_recent_practice_card_opens_the_practice_and_uses_the_chevron(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
