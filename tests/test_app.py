@@ -1124,8 +1124,84 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Fatture per movimento",page)
         self.assertIn(f'name="movement_{movement_id}"',page)
         self.assertIn(f'action="/pratiche/{pid}/fatture-movimenti"',page)
-        self.assertIn("Non fatturato",page)
-        self.assertIn(f'/pratiche/{pid}',rendered[-1])
+
+    def test_invoice_conflict_does_not_flag_practices_own_movement_invoice(self):
+        # bug reale segnalato dall'utente: una fattura registrata dal
+        # popover Pagamento finisce in movement_invoices, non nella colonna
+        # legacy practices.invoice_number — senza esclusione per pratica,
+        # il controllo duplicati bloccava anche il reinserimento dello
+        # stesso numero gia' posseduto dalla STESSA pratica.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-SELFCONFLICT","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Ugo","Cremazione singola","Da saldare","100","100")).lastrowid
+            conn.execute("INSERT INTO movement_invoices(practice_id,invoice_number,invoice_date,invoice_total,payment_method,payment_channel,created_at,created_by) VALUES(?,?,?,?,?,?,?,?)",
+                         (pid,"FT-SELF","2026-07-01","100.00","Pos","W",stamp,admin["id"]))
+            self.assertIsNone(self.handler.invoice_conflict(conn,"FT-SELF",exclude_id=pid))
+            other_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,owner_first_name)
+                                VALUES(?,?,?,?,?,?,?,?)""",("CR-OTHERPRACTICE","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Bea")).lastrowid
+            conflict=self.handler.invoice_conflict(conn,"FT-SELF",exclude_id=other_pid)
+            self.assertEqual(conflict["practice_number"],"CR-SELFCONFLICT")
+
+    def test_save_invoice_accepts_number_already_registered_via_movement_invoice_same_practice(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-SAMEFATT","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Elio","Cremazione singola","Da saldare","150","150")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"payment_status":"Pagato","payment_method":"Pos","payment_amount":"150,00","payment_channel":"W","economic_at":"2026-07-10","saldo_invoice_number":"FT-999","saldo_invoice_total":"150,00","ajax":"1"}
+        self.handler.quick_payment(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"])
+        # bug reale: riprovare a salvare la fattura della pratica (stesso
+        # numero gia' registrato dal popover pagamento per QUESTA pratica)
+        # veniva rifiutato con "Numero fattura gia' usato" — ora deve
+        # funzionare.
+        self.handler.form=lambda:{"invoice_number":"FT-999","invoice_date":"2026-07-10","invoice_total":"150,00"}
+        self.handler.redirect=lambda path:None
+        self.handler.save_invoice(admin,pid)
+        with app.db() as conn:
+            row=conn.execute("SELECT invoice_number FROM practices WHERE id=?",(pid,)).fetchone()
+        self.assertEqual(row["invoice_number"],"FT-999")
+
+    def test_practice_edit_form_shows_invoice_from_movement_invoices_when_legacy_field_empty(self):
+        # bug reale segnalato dall'utente: la fattura esiste (la vede la
+        # sezione Fatture, la vede il controllo duplicati), ma il form
+        # della pratica risultava vuoto perche' leggeva solo la colonna
+        # legacy practices.invoice_number, mai movement_invoices.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-EMPTYFORM","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Rita","Cremazione singola","Da saldare","80","80")).lastrowid
+            conn.execute("INSERT INTO movement_invoices(practice_id,invoice_number,invoice_date,invoice_total,payment_method,payment_channel,created_at,created_by) VALUES(?,?,?,?,?,?,?,?)",
+                         (pid,"FT-MOV","2026-07-05","80.00","Pos","W",stamp,admin["id"]))
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.edit_page(admin,pid)
+        page=rendered[-1]
+        self.assertIn('name="invoice_number" value="FT-MOV"',page)
+        self.assertIn('name="invoice_date" value="2026-07-05"',page)
+        self.assertIn('name="invoice_total" value="80.00"',page)
+
+    def test_archive_senza_fattura_filter_excludes_practices_with_any_invoice(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            no_invoice_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,owner_first_name)
+                                VALUES(?,?,?,?,?,?,?,?)""",("CR-NOFATT","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Tino")).lastrowid
+            legacy_pid=conn.execute("""INSERT INTO practices(practice_number,invoice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,owner_first_name)
+                                VALUES(?,?,?,?,?,?,?,?,?)""",("CR-LEGACYFATT","FT-L1","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Uma")).lastrowid
+            movement_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,owner_first_name)
+                                VALUES(?,?,?,?,?,?,?,?)""",("CR-MOVFATT","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Vito")).lastrowid
+            conn.execute("INSERT INTO movement_invoices(practice_id,invoice_number,invoice_date,invoice_total,payment_method,payment_channel,created_at,created_by) VALUES(?,?,?,?,?,?,?,?)",
+                         (movement_pid,"FT-M1","2026-07-06","50.00","Pos","W",stamp,admin["id"]))
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/archivio/pratiche?senza_fattura=1"
+        self.handler.archive(admin)
+        page=rendered[-1]
+        self.assertIn("CR-NOFATT",page)
+        self.assertNotIn("CR-LEGACYFATT",page)
+        self.assertNotIn("CR-MOVFATT",page)
 
     def test_cr_codes_shift_on_delete_and_restore(self):
         with app.db() as conn:

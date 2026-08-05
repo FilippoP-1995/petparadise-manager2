@@ -14935,6 +14935,7 @@ class App(BaseHTTPRequestHandler):
         dashboard_period=q.get("periodo",[""])[0].strip()
         if dashboard_event not in ("ritirati","in_programma","da_consegnare","consegnati"):dashboard_event=""
         with_deposit=q.get("con_acconto",[""])[0].strip()=="1"
+        no_invoice=q.get("senza_fattura",[""])[0].strip()=="1"
         promemoria=q.get("promemoria",[""])[0].strip()
         event_date_sql=dashboard_practice_date_sql(dashboard_event,"practices") if dashboard_event and dashboard_event!="da_consegnare" else ""
         event_select=f", {event_date_sql} AS dashboard_event_date" if event_date_sql else ""
@@ -14977,6 +14978,14 @@ class App(BaseHTTPRequestHandler):
             sql += " AND COALESCE(payment_status,'Da saldare')=?"; args.append(payment)
         if with_deposit:
             sql += " AND CAST(REPLACE(COALESCE(NULLIF(deposit,''),'0'), ',', '.') AS REAL)>0"
+        if no_invoice:
+            # "Senza fattura" vale davvero solo se non esiste nessuna
+            # fattura ne' sulla colonna legacy ne' su movement_invoices
+            # (stessa doppia fonte gia' unificata da invoice_conflict e
+            # dalla sezione Fatture) — altrimenti il filtro rischierebbe
+            # di elencare pratiche che una fattura ce l'hanno gia', solo
+            # registrata dal popover Pagamento.
+            sql += " AND COALESCE(invoice_number,'')='' AND practices.id NOT IN (SELECT practice_id FROM movement_invoices)"
         if promemoria == "catalogo":
             sql += " AND send_catalog='Si' AND status!='Consegnato'"
         if promemoria == "estremi":
@@ -15012,7 +15021,7 @@ class App(BaseHTTPRequestHandler):
             content_hidden=" hidden" if is_closed else ""
             blocks.append(f'''<section class="month-block"><div class="month-title"><div class="month-heading"><button class="month-toggle" type="button" data-month-key="{esc(key)}" aria-expanded="{expanded_attr}" aria-label="{esc(toggle_label)}" onclick="toggleArchiveMonth(this)">{toggle_symbol}</button><h2>{esc(title)}</h2></div><span class="badge">{len(items)} pratiche</span></div><div class="month-content"{content_hidden}><div class="tablebox dashboard-table-scroll archive-tablebox"><table class="practice-list-table"><thead><tr><th>Animale</th><th>Età</th><th>Proprietario</th><th>Data recupero</th><th>Codice pratica</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Totale pagato</th><th>Fattura</th>{archive_financial_headers}<th>Stati</th><th>Azione</th></tr></thead><tbody>{self.practice_rows(items,True)}</tbody></table></div></div></section>''')
         results_html='<div id="archiveList">'+(''.join(blocks) if blocks else '<section class="section"><p class="sub">Nessuna pratica trovata.</p></section>')+'</div>'
-        filters_html=f'''<section class="search-after-results"><h2>Ricerca e filtri</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Ricerca generale</label><input name="q" value="{esc(term)}" placeholder="Proprietario, telefono, microchip, pratica, DDT"></div><div class="field"><label>Nome animale</label><input name="animale" value="{esc(animal)}"></div><div class="field"><label>Tipo cremazione</label><select name="servizio">{service_opts}</select></div><div class="field"><label>Veterinario</label><input name="veterinario" value="{esc(vet)}" placeholder="Clinica o medico"></div><div class="field"><label>Collaboratore</label><input name="collaboratore" value="{esc(collaborator)}"></div><div class="field"><label>Spesa minima</label><input type="number" min="0" step="0.01" name="spesa_min" value="{esc(spesa_min)}" inputmode="decimal" placeholder="Es. 100"></div><div class="field"><label>Spesa massima</label><input type="number" min="0" step="0.01" name="spesa_max" value="{esc(spesa_max)}" inputmode="decimal" placeholder="Es. 350"></div><div class="field"><label>Periodo dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Periodo al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Stato pratica</label><select name="stato">{opts}</select></div><div class="field"><label>Pagamento</label><select name="pagamento">{pay_opts}</select></div></div><button class="btn" style="margin-top:12px">Cerca</button><a class="btn ghost" style="margin-top:12px" href="/archivio/pratiche">Pulisci filtri</a></form></section>'''
+        filters_html=f'''<section class="search-after-results"><h2>Ricerca e filtri</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Ricerca generale</label><input name="q" value="{esc(term)}" placeholder="Proprietario, telefono, microchip, pratica, DDT"></div><div class="field"><label>Nome animale</label><input name="animale" value="{esc(animal)}"></div><div class="field"><label>Tipo cremazione</label><select name="servizio">{service_opts}</select></div><div class="field"><label>Veterinario</label><input name="veterinario" value="{esc(vet)}" placeholder="Clinica o medico"></div><div class="field"><label>Collaboratore</label><input name="collaboratore" value="{esc(collaborator)}"></div><div class="field"><label>Spesa minima</label><input type="number" min="0" step="0.01" name="spesa_min" value="{esc(spesa_min)}" inputmode="decimal" placeholder="Es. 100"></div><div class="field"><label>Spesa massima</label><input type="number" min="0" step="0.01" name="spesa_max" value="{esc(spesa_max)}" inputmode="decimal" placeholder="Es. 350"></div><div class="field"><label>Periodo dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Periodo al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Stato pratica</label><select name="stato">{opts}</select></div><div class="field"><label>Pagamento</label><select name="pagamento">{pay_opts}</select></div><div class="field"><label><input type="checkbox" name="senza_fattura" value="1" {"checked" if no_invoice else ""}> Senza fattura</label></div></div><button class="btn" style="margin-top:12px">Cerca</button><a class="btn ghost" style="margin-top:12px" href="/archivio/pratiche">Pulisci filtri</a></form></section>'''
         archive_restore_js=r'''
 (function(){
   const userKey='ppm_archive_state:__USER_ID__';
@@ -15431,6 +15440,16 @@ class App(BaseHTTPRequestHandler):
         raw=lambda k,default="": (p[k] if p and k in p.keys() and p[k] not in (None,"") else default)
         selected=lambda k,v,default="": "selected" if str(raw(k,default))==v else ""
         tag_select=lambda name,label,cls: f'''<div class="field"><label><input type="checkbox" name="{name}" value="Si" {"checked" if raw(name)=="Si" else ""}> <span class="badge {cls}">{label}</span></label></div>'''
+        # Fattura: la pratica ha una colonna singola legacy
+        # (invoice_number/date/total su practices), ma una fattura puo'
+        # invece esistere SOLO in movement_invoices se registrata dal
+        # popover Pagamento (stessa fonte gia' usata dalla sezione Fatture
+        # e da invoice_conflict) — se il campo legacy e' vuoto, il form
+        # deve comunque mostrare l'ultima fattura per movimento della
+        # pratica invece di apparire vuoto (bug reale segnalato
+        # dall'utente: la fattura esiste, "Fatture" e il controllo
+        # duplicati la vedono, ma il form no).
+        movement_invoice_fallback=None
         with db() as c:
             vets=c.execute("SELECT * FROM veterinarians WHERE active=1 ORDER BY COALESCE(short_name, clinic_name), clinic_name").fetchall()
             urns=c.execute("SELECT * FROM urns WHERE active=1 AND category='Urna' ORDER BY name").fetchall()
@@ -15438,6 +15457,11 @@ class App(BaseHTTPRequestHandler):
             if p and "id" in p.keys() and p["id"]:
                 for row in c.execute("SELECT category,subtype,urn_catalog_id,label,price FROM practice_items WHERE practice_id=? ORDER BY category,sort_order",(p["id"],)).fetchall():
                     practice_items_bootstrap[row["category"]].append({"subtype":row["subtype"] or "","urn_catalog_id":row["urn_catalog_id"],"label":row["label"] or "","price":row["price"]})
+                if not (p["invoice_number"] if "invoice_number" in p.keys() else ""):
+                    movement_invoice_fallback=c.execute(
+                        "SELECT invoice_number,invoice_date,invoice_total FROM movement_invoices WHERE practice_id=? ORDER BY id DESC LIMIT 1",
+                        (p["id"],),
+                    ).fetchone()
         vet_option=lambda v, selected_id: f'<option value="{v["id"]}" data-shortname="{esc(v["short_name"] or v["clinic_name"])}" data-fullname="{esc(v["clinic_name"])}" data-address="{esc(v["address"])}" data-city="{esc(v["city"])}" data-phone="{esc(v["phone"])}" data-provenance="{veterinarian_provenance(v["short_name"],v["clinic_name"])}" {"selected" if str(selected_id)==str(v["id"]) else ""}>{esc(v["short_name"] or v["clinic_name"])}{(" - "+esc(v["clinic_name"])) if v["short_name"] else ""}</option>'
         vet_options='<option value="">Nessun veterinario selezionato</option>'+''.join(vet_option(v, raw("veterinarian_id")) for v in vets)
         owner_vet_options='<option value="">Compilazione manuale</option>'+''.join(vet_option(v, raw("owner_veterinarian_id")) for v in vets)
@@ -15465,6 +15489,9 @@ class App(BaseHTTPRequestHandler):
         delivery_clinic_checked='checked' if raw('delivery_at_clinic')=="Si" else ''
         delivery_home_checked='checked' if raw('delivery_at_home')=="Si" else ''
         make_invoice_checked='checked' if raw('make_invoice')=="Si" else ''
+        invoice_number_display=val('invoice_number') or (esc(movement_invoice_fallback["invoice_number"]) if movement_invoice_fallback else "")
+        invoice_date_display=val('invoice_date') or (esc(movement_invoice_fallback["invoice_date"]) if movement_invoice_fallback else "")
+        invoice_total_display=val('invoice_total') or (esc(movement_invoice_fallback["invoice_total"]) if movement_invoice_fallback else "")
         selected_payment_status=raw("payment_status","Da saldare")
         payment_options=''.join(f'<option {"selected" if selected_payment_status==state else ""}>{state}</option>' for state in PAYMENT_STATES)
         economic_date_value=(
@@ -15514,7 +15541,7 @@ class App(BaseHTTPRequestHandler):
             operator_display=raw('operator_name') or user['display_name'].upper()
             operator_field=f'''<input type="hidden" name="operator_name" value="{esc(operator_display)}"><div class="field"><label>Operatore</label><p style="margin:0;padding:11px 0;font-weight:700">{esc(operator_display)}</p></div>'''
         return f'''<section class="section"><h2>Operatore e stati</h2><div class="fields">{operator_field}<div class="field"><label>Stato pratica</label><select name="status"><option {selected('status','Ritirato','Ritirato')}>Ritirato</option><option {selected('status','In programma','Ritirato')}>In programma</option><option {selected('status','Cremato','Ritirato')}>Cremato</option><option {selected('status','Da consegnare','Ritirato')}>Da consegnare</option><option {selected('status','Consegnato','Ritirato')}>Consegnato</option><option data-collective-only="1" {selected('status','Smaltito','Ritirato')}>Smaltito</option></select></div></div></section>
-        <select name="payment_status" class="hidden">{payment_options}</select><input type="hidden" name="economic_at" value="{esc(economic_date_value)}"><select name="payment_method" class="hidden">{payment_method_options}</select><input type="hidden" name="catalog_sent" value="{'Si' if catalog_sent_checked else ''}"><input type="hidden" name="estremi_sent" value="{'Si' if estremi_sent_checked else ''}"><input type="hidden" name="invoice_number" value="{val('invoice_number')}"><input type="hidden" name="invoice_date" value="{val('invoice_date')}"><input type="hidden" name="invoice_total" value="{val('invoice_total')}"><input type="hidden" name="invoice_total_manual" value="{'Si' if raw('invoice_total_manual')=='Si' else ''}"><input type="hidden" name="make_invoice" value="{'Si' if make_invoice_checked else ''}">
+        <select name="payment_status" class="hidden">{payment_options}</select><input type="hidden" name="economic_at" value="{esc(economic_date_value)}"><select name="payment_method" class="hidden">{payment_method_options}</select><input type="hidden" name="catalog_sent" value="{'Si' if catalog_sent_checked else ''}"><input type="hidden" name="estremi_sent" value="{'Si' if estremi_sent_checked else ''}"><input type="hidden" name="invoice_number" value="{invoice_number_display}"><input type="hidden" name="invoice_date" value="{invoice_date_display}"><input type="hidden" name="invoice_total" value="{invoice_total_display}"><input type="hidden" name="invoice_total_manual" value="{'Si' if raw('invoice_total_manual')=='Si' else ''}"><input type="hidden" name="make_invoice" value="{'Si' if make_invoice_checked else ''}">
         <section class="section"><h2>Richiesta</h2><div class="fields"><div class="field"><label>Servizio *</label><select name="service_type" required><option value="" {"selected" if not raw("service_type") else ""}>SELEZIONA</option><option {selected('service_type','Da decidere')}>Da decidere</option><option {selected('service_type','Cremazione singola')}>Cremazione singola</option><option {selected('service_type','Cremazione collettiva')}>Cremazione collettiva</option></select></div><div class="field"><label>Origine richiesta *</label><select name="request_origin" required><option {selected('request_origin','Veterinario')}>Veterinario</option><option {selected('request_origin','Privato')}>Privato</option><option value="Consegna in sede" {selected('request_origin','Consegna in sede')}>Consegnato in sede</option><option {selected('request_origin','Collaboratore')}>Collaboratore</option></select></div><div class="field"><label>Sede di destinazione</label><select name="destination_branch"><option {selected('destination_branch','Livorno')}>Livorno</option><option {selected('destination_branch','Empoli')}>Empoli</option></select></div><div class="field"><label>Data recupero</label><input type="date" name="pickup_date" value="{val('pickup_date')}"></div></div></section>
         <section class="section"><h2>SPEDITORE</h2><div class="fields"><input type="hidden" name="client_id" value="{val('client_id')}"><div class="field full lookup"><label>Cerca cliente in anagrafica</label><input id="clientSearch" autocomplete="off" placeholder="Scrivi nome, telefono, email, codice fiscale, città..."><div id="clientResults" class="lookup-results hidden"></div><div id="clientSelected" class="selected-box hidden"><span id="clientSelectedText"></span><button class="btn ghost" type="button" id="clearClientSelection">Cancella selezione</button></div><small class="sub">Se scegli un cliente, i campi vengono compilati automaticamente. Se li modifichi, l'anagrafica non viene aggiornata senza conferma.</small></div><div class="field full lookup"><label>Usa veterinario come speditore</label><input id="ownerVetSearch" autocomplete="off" placeholder="Scrivi per cercare il veterinario"><div id="ownerVetResults" class="lookup-results hidden"></div><select name="owner_veterinarian_id" class="hidden" aria-hidden="true" tabindex="-1">{owner_vet_options}</select><small class="sub">Compila automaticamente i dati dello speditore. Sul DDT, nel Luogo di origine, verra scritto solo il nome breve del veterinario.</small></div><div class="field full lookup {'hidden' if raw('request_origin')!='Collaboratore' else ''}" id="collaboratorSearchBox"><label>Cerca collaboratore in anagrafica</label><input id="collaboratorSearch" autocomplete="off" placeholder="Scrivi per cercare il collaboratore"><div id="collaboratorResults" class="lookup-results hidden"></div><input type="hidden" name="collaborator_id" value="{val('collaborator_id')}"><input type="hidden" name="collaborator_name" value="{val('collaborator_name')}"><small class="sub">Compila automaticamente nome, indirizzo, P.IVA/codice fiscale e codice SDI dall'anagrafica collaboratori.</small></div><div class="field"><label>Nome *</label><input name="owner_first_name" value="{val('owner_first_name')}" required></div><div class="field"><label>Cognome *</label><input name="owner_last_name" value="{val('owner_last_name')}" required></div><div class="field"><label>Ragione sociale</label><input name="owner_company" value="{val('owner_company')}"></div><div class="field"><label>Telefono *</label><input type="tel" inputmode="numeric" name="owner_phone" value="{val('owner_phone')}" required></div><div class="field"><label>Secondo telefono</label><input type="tel" inputmode="numeric" name="owner_phone_2" value="{val('owner_phone_2')}"></div><div class="field"><label>Note telefono</label><input name="owner_phone_note" value="{val('owner_phone_note')}" placeholder="Testo libero"></div><div class="field"><label>Email</label><input type="email" name="owner_email" value="{val('owner_email')}"></div><div class="field"><label>Codice fiscale *</label><input name="owner_tax_code" value="{val('owner_tax_code')}" required></div><div class="field"><label>Partita IVA</label><input name="owner_vat" value="{val('owner_vat')}"></div><div class="field"><label>Codice SDI</label><input name="owner_sdi" value="{val('owner_sdi')}"></div><div class="field full"><label>Indirizzo *</label><input name="owner_street" value="{val('owner_street') or val('owner_address')}" required></div><div class="field"><label>Comune *</label><input name="owner_city" value="{val('owner_city')}" required></div><div class="field"><label>Provincia *</label><input name="owner_province" value="{val('owner_province')}" maxlength="2" placeholder="Si compila dal comune" required></div><div class="field"><label>CAP *</label><input name="owner_zip" value="{val('owner_zip')}" inputmode="numeric" required></div><div class="field full"><label>Note cliente</label><textarea name="owner_notes" placeholder="Note anagrafiche utili">{val('owner_notes')}</textarea></div></div></section>
         <section class="section"><h2>DESTINATARIO E LUOGO DI DESTINAZIONE</h2><p class="sub">Compilati automaticamente in base alla sede selezionata: Livorno oppure Empoli.</p></section>
@@ -16692,6 +16719,7 @@ class App(BaseHTTPRequestHandler):
                 JOIN practices p ON p.id=mi.practice_id
                 WHERE lower(trim(mi.invoice_number))=lower(trim(?))"""
         args2=[number]
+        if exclude_id is not None:sql2+=" AND mi.practice_id<>?";args2.append(exclude_id)
         if exclude_movement_invoice_id is not None:sql2+=" AND mi.id<>?";args2.append(exclude_movement_invoice_id)
         return c.execute(sql2,args2).fetchone()
 
@@ -17395,7 +17423,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             movements=c.execute(f"SELECT * FROM payment_movements WHERE practice_id=? AND id IN ({marks})",(pid,*movement_ids)).fetchall()
             if len(movements)!=len(movement_ids):
                 return self.practice(user,pid,error="Alcuni movimenti selezionati non sono più validi.")
-            conflict=self.invoice_conflict(c,invoice_number)
+            conflict=self.invoice_conflict(c,invoice_number,exclude_id=pid)
             if conflict:
                 return self.practice(user,pid,error=f'Numero fattura già usato nella pratica {conflict["practice_number"]}')
             total=sum(money_value(m["amount"]) for m in movements)
@@ -17573,7 +17601,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             return "Data fattura non valida."
         existing_movement,existing_invoice=latest_movement_and_invoice(c,pid,macroarea)
         if invoice_number:
-            conflict=self.invoice_conflict(c,invoice_number,exclude_movement_invoice_id=existing_invoice["id"] if existing_invoice else None)
+            conflict=self.invoice_conflict(c,invoice_number,exclude_id=pid,exclude_movement_invoice_id=existing_invoice["id"] if existing_invoice else None)
             if conflict:
                 return f'Numero fattura già usato nella pratica {conflict["practice_number"]}'
         is_collaborator=(practice["request_origin"] or "")=="Collaboratore" or bool(practice["collaborator_id"])
@@ -17851,7 +17879,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 if movement_type_prefix and old==payment else (None,None)
             )
             if active_invoice_number:
-                conflict=self.invoice_conflict(c,active_invoice_number,exclude_movement_invoice_id=existing_invoice["id"] if existing_invoice else None)
+                conflict=self.invoice_conflict(c,active_invoice_number,exclude_id=pid,exclude_movement_invoice_id=existing_invoice["id"] if existing_invoice else None)
                 if conflict:
                     error=f'Numero fattura già usato nella pratica {conflict["practice_number"]}'
                     return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error)
