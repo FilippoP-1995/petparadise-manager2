@@ -5,6 +5,7 @@ import hmac
 import html
 import base64
 import json
+import math
 import os
 import re
 import secrets
@@ -1362,9 +1363,10 @@ a{color:inherit;text-decoration:none}.top{height:68px;background:#fff;border-bot
 .reminders-swipe-btn.reminders-swipe-snooze{background:#f59e0b}
 .reminders-swipe-btn.reminders-swipe-delete{background:#7f1d2d;color:#fecdd3}
 .reminders-slide-front{position:relative;z-index:2;display:flex;align-items:center;gap:12px;height:100%;padding:0 14px;background:#1f2937;border-radius:12px;touch-action:pan-y;transition:transform .28s cubic-bezier(.22,1,.36,1);will-change:transform}
-.reminders-slide-icon{width:36px;height:36px;flex:0 0 36px;border-radius:50%}
+.reminders-slide-icon{width:38px;height:38px;flex:0 0 38px;border-radius:12px}
 .reminders-slide-icon svg{width:17px;height:17px}
-.reminders-slide-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.reminders-slide-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.reminders-slide-eyebrow{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .reminders-slide-copy b{font-size:13.5px;font-weight:700;color:#f5f7fb;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
 .reminders-slide-copy small{font-size:11.5px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .reminders-manual-badge{display:inline-block;align-self:flex-start;padding:1px 7px;margin-bottom:2px;border-radius:99px;background:#ff4d6d;color:#fff;font-size:9px;font-weight:800;letter-spacing:.03em}
@@ -1434,11 +1436,67 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 .dash-stat-chevron{position:absolute;z-index:1;right:16px;top:16px;color:#94a3b8;font-size:18px;line-height:1}
 .state-red{--card-glow:#83184375;--icon-bg:#881337;--icon-color:#fb7185;--icon-shadow:#e11d4840}.state-blue{--card-glow:#17255480;--icon-bg:#172554;--icon-color:#60a5fa;--icon-shadow:#2563eb40}.state-purple{--card-glow:#3b076480;--icon-bg:#3b0764;--icon-color:#c084fc;--icon-shadow:#9333ea40}.state-green{--card-glow:#052e2b85;--icon-bg:#064e3b;--icon-color:#4ade80;--icon-shadow:#16a34a40}.state-pink{--card-glow:#831843a0;--icon-bg:#831843;--icon-color:#ff4d6d;--icon-shadow:#ff4d6d40}
 .dashboard-payments{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.payment-card{min-height:116px}.payment-due{--card-glow:#713f123d;--icon-bg:#573713;--icon-color:#fbbf24;--icon-shadow:#f59e0b35}.payment-deposit{--card-glow:#17255465;--icon-bg:#172554;--icon-color:#60a5fa;--icon-shadow:#2563eb35}.payment-paid{--card-glow:#052e2b75;--icon-bg:#064e3b;--icon-color:#4ade80;--icon-shadow:#16a34a35}.payment-total{--card-glow:#3b076480;--icon-bg:#3b0764;--icon-color:#c084fc;--icon-shadow:#9333ea40}
+/* Icona di sfondo semi-trasparente + sparkline su ogni card statistica (richiesta esplicita dell'utente, mockup di riferimento) */
+.dash-stat-bgicon{position:absolute;z-index:0;right:-10px;bottom:-14px;width:62%;height:62%;color:var(--icon-color);opacity:.07;pointer-events:none}
+.dash-stat-bgicon svg{width:100%;height:100%}
+.dash-stat-bgicon-char{display:flex;align-items:flex-end;justify-content:flex-end;font-size:76px;font-weight:800;line-height:1}
+.dash-stat-spark{position:relative;z-index:1;width:100%;height:22px;margin-top:auto}
+.dash-stat-spark polyline{fill:none;stroke:var(--icon-color);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;opacity:.85}
+/* Selettore periodo compatto (stessa pillola .period-selector, versione ridotta per stare sopra la griglia card senza intestazione grande) */
+.period-selector-compact{grid-template-columns:repeat(3,minmax(0,auto));width:max-content;margin-left:auto}
+.period-selector-compact a,.period-selector-compact button{min-width:76px;min-height:32px;padding:6px 10px;font-size:12.5px;border:0;background:transparent;color:#aeb9c8;font-family:inherit;cursor:pointer;border-radius:9px}
+.period-selector-compact a:hover,.period-selector-compact button:hover{color:#fff;background:#253248}
+.period-selector-compact a.active,.period-selector-compact button.active{color:#fff;background:#ef405f;box-shadow:0 5px 14px #ef405f40}
+/* Carosello periodo (giorno/settimana/mese) swipeabile senza reload, stesso pattern di .calendar-day-pages/.calendar-day-page */
+.dashboard-period-pages{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.dashboard-period-pages::-webkit-scrollbar{display:none}
+.dashboard-period-page{flex:0 0 100%;scroll-snap-align:start;min-width:0}
+/* Sezione Analytics (nuova): grafico incassi + donut pratiche per stato */
+.dashboard-analytics{margin-top:24px}
+.dashboard-analytics .dashboard-period-page{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(260px,1fr);gap:14px;align-items:stretch}
+.analytics-panel{padding:18px 20px}
+.analytics-panel-title{margin:0 0 10px;font-size:12.5px;font-weight:700;letter-spacing:.03em;color:#94a3b8;text-transform:uppercase}
+.analytics-linechart-value{font-size:26px;font-weight:800;display:flex;align-items:baseline;gap:8px}
+.analytics-linechart-value small{font-size:12px;font-weight:600;color:#94a3b8}
+.analytics-delta-badge{display:inline-flex;align-items:center;gap:5px;margin:8px 0 4px;padding:4px 10px;border-radius:99px;font-size:12px;font-weight:700}
+.analytics-delta-badge small{font-weight:500;color:inherit;opacity:.8;margin-left:2px}
+.analytics-delta-up{background:#052e2b75;color:#4ade80}.analytics-delta-down{background:#4c051975;color:#fb7185}.analytics-delta-flat{background:#1f293780;color:#94a3b8}
+.dashboard-linechart-svg{width:100%;height:140px;margin-top:8px}
+.dashboard-linechart-area{fill:#ef405f22}
+.dashboard-linechart-line{fill:none;stroke:#fb7185;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
+.dashboard-linechart-dot{fill:#fb7185;stroke:#1f2937;stroke-width:2}
+.analytics-linechart-labels{display:flex;justify-content:space-between;margin-top:6px;color:#94a3b8;font-size:11px}
+.analytics-donut-row{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.dashboard-donut-svg{width:150px;height:150px;flex:0 0 150px}
+.dashboard-donut-arc{transition:stroke-dasharray .3s ease}
+.dashboard-donut-total{font-size:30px;font-weight:800;fill:#f5f7fb}
+.dashboard-donut-total-label{font-size:11px;fill:#94a3b8}
+.dashboard-donut-legend{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px;flex:1;min-width:140px}
+.dashboard-donut-legend li{display:flex;align-items:center;gap:8px;font-size:13px;color:#cbd5e1}
+.dashboard-donut-legend b{margin-left:auto;color:#f5f7fb;font-weight:700}
+.dashboard-donut-dot{width:9px;height:9px;border-radius:50%;flex:0 0 9px}
+/* Riga quick-stat (nuova): 4 mini-card con sparkline + variazione vs ieri */
+.dashboard-quickstats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-top:14px}
+.quick-stat-card{position:relative;display:flex;gap:12px;padding:14px 16px;border:1px solid #334155;border-radius:14px;background:#1f2937}
+.quick-stat-icon{flex:0 0 38px;width:38px;height:38px;align-self:flex-start;display:grid;place-items:center;border-radius:11px;background:var(--icon-bg);color:var(--icon-color)}
+.quick-stat-icon .icon{width:17px;height:17px}
+.quick-stat-right{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.quick-stat-body{display:flex;flex-direction:column;gap:2px;min-width:0}
+.quick-stat-body b{font-size:19px;font-weight:800}
+.quick-stat-body small{color:#94a3b8;font-size:11.5px}
+.quick-stat-spark{width:100%;height:18px}
+.quick-stat-spark polyline{fill:none;stroke:var(--icon-color);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;opacity:.8}
+.quick-stat-delta{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:700}
+.quick-stat-delta .icon{width:12px;height:12px}
+.quick-stat-delta small{color:#94a3b8;font-weight:500;margin-left:2px}
+.quick-stat-delta-up{color:#4ade80}.quick-stat-delta-down{color:#fb7185}.quick-stat-delta-flat{color:#94a3b8}
+@media(max-width:1100px){.dashboard-quickstats{grid-template-columns:repeat(2,1fr)}.dashboard-analytics .dashboard-period-page{grid-template-columns:1fr}}
+@media(max-width:620px){.dashboard-quickstats{grid-template-columns:1fr}.analytics-donut-row{flex-direction:column;align-items:flex-start}.period-selector-compact a,.period-selector-compact button{min-width:0}}
 .dashboard-panel{min-height:350px;padding:20px;border:1px solid #334155;border-radius:15px;background:#1f2937;box-shadow:0 18px 48px #03071235}.dashboard-panel>header{display:flex;align-items:flex-start;justify-content:space-between;gap:15px}.dashboard-panel h2{margin:0;font-size:16px}.dashboard-panel header p{margin:8px 0 0;color:#94a3b8}.dashboard-panel header p strong{color:#fff;font-size:21px}.dashboard-panel header a{color:#fb7185;font-size:13px}
 .activity-list{display:flex;flex-direction:column;margin-top:14px}.activity-item{display:grid;grid-template-columns:42px minmax(0,1fr) auto;align-items:center;gap:11px;padding:12px 0;border-bottom:1px solid #334155}.activity-item:last-child{border-bottom:0}.activity-item b,.activity-item small{display:block}.activity-item b{font-size:13px}.activity-item small{margin-top:3px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.activity-item time{color:#94a3b8;font-size:11px}.activity-icon{width:38px;height:38px;--icon-bg:#243244;--icon-color:#5eead4;--icon-shadow:transparent}.activity-1 .activity-icon{--icon-bg:#422006;--icon-color:#fbbf24}.activity-2 .activity-icon{--icon-bg:#3b0764;--icon-color:#c084fc}.activity-3 .activity-icon{--icon-bg:#4c0519;--icon-color:#fb7185}.activity-empty{padding:40px 10px;color:#94a3b8;text-align:center}
 .bottom-nav,.more-menu,.more-backdrop{display:none}.tag-red{background:#7f1d2d;color:#fecdd3}.tag-orange{background:#7c2d12;color:#fed7aa}.tag-outline-orange{background:#3b1d0c;color:#fdba74;border-color:#f97316}.tag-purple{background:#4c1d95;color:#e9d5ff}.tag-yellow{background:#713f12;color:#fef08a}.tag-pink{background:#831843;color:#fbcfe8}.tag-blue{background:#1e3a8a;color:#bfdbfe}.tag-green{background:#14532d;color:#bbf7d0}
 .search-after-results{margin-top:32px}.search-after-results>h2{display:none}.search-after-results .section{box-shadow:0 12px 34px #0307122e}.advanced-search{margin:16px 0 24px;border:1px solid var(--line);border-radius:14px;background:#202c3d;overflow:hidden}.advanced-search summary{display:flex;align-items:center;justify-content:space-between;min-height:48px;padding:12px 16px;cursor:pointer;font-weight:600;list-style:none}.advanced-search summary::-webkit-details-marker{display:none}.advanced-search summary:after{content:'+';font-size:22px;line-height:1}.advanced-search[open] summary:after{content:'−'}.advanced-search form{margin:0;border:0;border-top:1px solid var(--line);border-radius:0;box-shadow:none!important}.light-theme .advanced-search{background:#fff}
-.dashboard-recent{margin-top:26px}.dashboard-recent .titlebar{margin-bottom:12px}.dashboard-recent .titlebar a{color:#fb7185;display:inline-flex;align-items:center;gap:2px}.recent-practice-archive-arrow{font-size:16px}.recent-practice-list{display:flex;flex-direction:column;gap:8px}.recent-practice-card{display:grid;grid-template-columns:30fr 30fr 32fr 8fr;align-items:center;gap:8px;min-height:88px;padding:16px;border-radius:16px;border:1px solid #334155;border-left:4px solid #64748b;background:#1f2937;cursor:pointer;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}.recent-practice-card:hover{transform:translateY(-1px);box-shadow:0 10px 26px #03071240}.recent-practice-card.row-selected{border-color:#ef405f80}.light-theme .recent-practice-card.row-selected{border-color:#ef405f66}.recent-practice-card[data-species="avatar-dog"]{border-left-color:#60a5fa}.recent-practice-card[data-species="avatar-cat"]{border-left-color:#4ade80}.recent-practice-card[data-species="avatar-other"]{border-left-color:#c084fc}.recent-practice-animal{display:flex;align-items:center;gap:10px;min-width:0}.recent-practice-avatar{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:19px;flex:0 0 38px}.recent-practice-animal-copy{display:flex;flex-direction:column;gap:2px;min-width:0}.recent-practice-name{font-size:18px;font-weight:700;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.recent-practice-meta{font-size:15px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.recent-practice-date{display:flex;flex-direction:column;gap:2px;min-width:0}.recent-practice-date-value{font-size:16px;font-weight:600;color:#e2e8f0}.recent-practice-owner{display:flex;flex-direction:column;gap:2px;min-width:0}.recent-practice-owner-name{font-size:15px;font-weight:600;color:#e2e8f0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.recent-practice-chevron{display:flex;align-items:center;justify-content:center;color:#64748b}.recent-practice-chevron .icon{width:20px;height:20px}.light-theme .recent-practice-card{background:#fff;border-color:#e2e8f0}.light-theme .recent-practice-name,.light-theme .recent-practice-date-value,.light-theme .recent-practice-owner-name{color:#111827}.light-theme .recent-practice-meta{color:#64748b}.light-theme .recent-practice-chevron{color:#94a3b8}@media(max-width:620px){.recent-practice-card{grid-template-columns:32fr 28fr 32fr 8fr;padding:14px;gap:6px;min-height:90px}.recent-practice-name{font-size:17px}.recent-practice-avatar{width:34px;height:34px;flex:0 0 34px;font-size:17px}}.load-previous-month{display:flex;justify-content:center;padding:8px 0 24px}.load-previous-month .btn{width:auto;min-width:240px}.budget-add{align-self:end;width:auto!important;min-height:42px;margin-top:auto}.budget-layout{display:block}.budget-workspace{display:grid;gap:12px}.budget-row{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(270px,.75fr);gap:16px;padding:12px;border:1px solid #334155;border-radius:13px;background:#11192566}.budget-cell{display:grid;align-content:start;gap:10px;min-width:0}.budget-cell-right .modern-check{min-height:42px}.budget-cell-right .field{min-width:0}.budget-cell:empty{display:none}.economic-estimate{margin-top:20px;padding-top:18px;border-top:1px solid #3b4658}.economic-estimate h3{margin:0 0 12px;font-size:15px}.catalog-summary-form{display:grid;gap:8px;margin-top:9px}.catalog-summary-form .modern-check{min-height:40px;padding:8px 10px}.light-theme .budget-row{border-color:#cbd5e1;background:#f8fafc}.light-theme .economic-estimate{border-color:#cbd5e1}
+.dashboard-recent{margin-top:26px}.dashboard-recent .titlebar{margin-bottom:12px}.dashboard-recent .titlebar a{color:#fb7185;display:inline-flex;align-items:center;gap:2px}.recent-practice-archive-arrow{font-size:16px}.recent-practice-list{display:flex;flex-direction:column;gap:8px}.recent-practice-card{display:grid;grid-template-columns:30fr 30fr 32fr 8fr;align-items:center;gap:8px;min-height:88px;padding:16px;border-radius:16px;border:1px solid #334155;border-left:4px solid #64748b;background:#1f2937;cursor:pointer;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}.recent-practice-card:hover{transform:translateY(-1px);box-shadow:0 10px 26px #03071240}.recent-practice-card.row-selected{border-color:#ef405f80}.light-theme .recent-practice-card.row-selected{border-color:#ef405f66}.recent-practice-card[data-species="avatar-dog"]{border-left-color:#60a5fa}.recent-practice-card[data-species="avatar-cat"]{border-left-color:#4ade80}.recent-practice-card[data-species="avatar-other"]{border-left-color:#c084fc}.recent-practice-animal{display:flex;align-items:center;gap:10px;min-width:0}.recent-practice-avatar{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:19px;flex:0 0 38px}.recent-practice-animal-copy{display:flex;flex-direction:column;gap:2px;min-width:0}.recent-practice-name{font-size:18px;font-weight:700;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.recent-practice-meta{font-size:15px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.recent-practice-date{display:flex;flex-direction:column;gap:2px;min-width:0}.recent-practice-date-value{display:flex;align-items:center;gap:6px;font-size:16px;font-weight:600;color:#e2e8f0}.recent-practice-date-value .icon{width:14px;height:14px;flex:0 0 14px;color:#64748b}.recent-practice-owner{display:flex;flex-direction:column;gap:2px;min-width:0}.recent-practice-owner-name{font-size:15px;font-weight:600;color:#e2e8f0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.recent-practice-chevron{display:flex;align-items:center;justify-content:center;color:#64748b}.recent-practice-chevron .icon{width:20px;height:20px}.light-theme .recent-practice-card{background:#fff;border-color:#e2e8f0}.light-theme .recent-practice-name,.light-theme .recent-practice-date-value,.light-theme .recent-practice-owner-name{color:#111827}.light-theme .recent-practice-meta{color:#64748b}.light-theme .recent-practice-chevron{color:#94a3b8}@media(max-width:620px){.recent-practice-card{grid-template-columns:32fr 28fr 32fr 8fr;padding:14px;gap:6px;min-height:90px}.recent-practice-name{font-size:17px}.recent-practice-avatar{width:34px;height:34px;flex:0 0 34px;font-size:17px}}.load-previous-month{display:flex;justify-content:center;padding:8px 0 24px}.load-previous-month .btn{width:auto;min-width:240px}.budget-add{align-self:end;width:auto!important;min-height:42px;margin-top:auto}.budget-layout{display:block}.budget-workspace{display:grid;gap:12px}.budget-row{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(270px,.75fr);gap:16px;padding:12px;border:1px solid #334155;border-radius:13px;background:#11192566}.budget-cell{display:grid;align-content:start;gap:10px;min-width:0}.budget-cell-right .modern-check{min-height:42px}.budget-cell-right .field{min-width:0}.budget-cell:empty{display:none}.economic-estimate{margin-top:20px;padding-top:18px;border-top:1px solid #3b4658}.economic-estimate h3{margin:0 0 12px;font-size:15px}.catalog-summary-form{display:grid;gap:8px;margin-top:9px}.catalog-summary-form .modern-check{min-height:40px;padding:8px 10px}.light-theme .budget-row{border-color:#cbd5e1;background:#f8fafc}.light-theme .economic-estimate{border-color:#cbd5e1}
 *:focus-visible{outline:3px solid #fb7185!important;outline-offset:3px}.light-theme{background:#eef2f7;color:#111827}.light-theme .app-header,.light-theme .top{background:#fff;color:#111827}.light-theme .dashboard-panel,.light-theme .metric-card,.light-theme .payment-card,.light-theme .section,.light-theme .tablebox{background:#fff;color:#111827}.light-theme .header-search,.light-theme .icon-btn,.light-theme .header-actions time{background:#f8fafc;color:#111827}.light-theme .welcome p,.light-theme .metric-card em,.light-theme .payment-card em,.light-theme .activity-item small,.light-theme .activity-item time{color:#64748b}
 @media(max-width:1100px){.dashboard-states,.dashboard-payments{grid-template-columns:repeat(2,1fr)}.header-actions time{display:none}}
 @media(max-width:900px){body{min-height:100dvh;padding-bottom:calc(82px + var(--safe-bottom))}#main-content{min-height:100dvh;padding-left:var(--safe-left);padding-right:var(--safe-right)}.top{position:fixed;left:calc(10px + var(--safe-left));top:var(--safe-top);width:60px;height:60px;min-height:0;padding:0;margin:0;border:0;box-shadow:none;z-index:41;display:flex;align-items:center;justify-content:center}body .top{background:transparent}.top .nav{display:none}.top .brand{padding:0;gap:0}.brand-copy{display:inline}.brand-logo{width:44px;height:44px;padding:7px;box-sizing:border-box;border-radius:50%;object-fit:contain;background:linear-gradient(160deg,#1c2635,#121a27);border:1px solid #2b3849;box-shadow:0 8px 20px #05070f55}.app-header{position:fixed;left:calc(10px + var(--safe-left));right:calc(10px + var(--safe-right));top:var(--safe-top);width:auto;height:60px;z-index:40;display:flex;align-items:center;padding:0 8px 0 60px;border:1px solid #2b3849;border-radius:26px;box-shadow:0 16px 38px #05070f66;backdrop-filter:blur(20px)}body .app-header{background:linear-gradient(160deg,#1c2635f5,#121a27f5);border-color:#2b3849}.app-header .header-actions{display:flex;align-items:center;gap:8px;width:100%}.header-actions time,.header-new span{display:none}.app-header .header-search{position:static;display:flex;flex:1;min-width:0;align-items:center;gap:9px;height:44px;padding:0 15px;border-radius:22px;background:#0e1622;border:1px solid #263246;transition:border-color .2s ease,background-color .2s ease}.app-header .header-search:focus-within{border-color:#ef405f70;background:#111b28}.app-header .header-search .icon{width:17px;height:17px;flex:0 0 17px;color:#7c8aa0}.app-header .header-search input{flex:1;min-width:0;padding:0;background:transparent;border:0;color:#e7ecf3;font-size:16px}.app-header .header-search input::placeholder{color:#69788f}.app-header .icon-btn,.app-header .header-new{flex:0 0 auto;width:42px;height:42px;min-height:0;padding:0;border-radius:21px;border:1px solid #263246;background:#0e1622;box-shadow:0 6px 16px #05070f40;color:#8592a6;transition:transform .15s cubic-bezier(.34,1.4,.64,1),border-color .2s ease,color .2s ease}.app-header .icon-btn:hover{color:#e7ecf3;border-color:#3a4a60}.app-header .icon-btn:active,.app-header .header-new:active{transform:scale(.92)}.app-header .header-new{background:linear-gradient(135deg,#fb4c67,#d9284c);border-color:transparent;color:#fff;box-shadow:0 8px 20px #ef405f55}.app-header .icon-btn .notification-badge{min-width:16px;height:16px;padding:0 4px;font-size:9.5px;transform:translate(11px,-11px);box-shadow:0 0 0 2px #0e1622}.wrap{margin-left:0;padding:calc(86px + var(--safe-top)) 14px calc(96px + var(--safe-bottom))}.bottom-nav{position:fixed;display:grid;grid-template-columns:87fr 87fr 72fr 87fr 87fr;grid-template-rows:72px;align-items:end;left:calc(20px + var(--safe-left));right:calc(20px + var(--safe-right));bottom:calc(10px + var(--safe-bottom));z-index:90;height:72px;padding:0;border-radius:28px;background:#1a1f2b;border:1px solid #2a2f3b;box-shadow:0 -8px 20px rgba(0,0,0,.4);backdrop-filter:blur(20px)}.bottom-nav:before{content:'';position:absolute;top:0;left:50%;width:90px;height:44px;transform:translateX(-50%);background:#1a1f2b;z-index:1;clip-path:path('M6.63,0 A12.8,12.8 0 0 1 19.42,13.33 A25.6,25.6 0 0 0 45,40 A25.6,25.6 0 0 0 70.58,13.33 A12.8,12.8 0 0 1 83.37,0 Z')}.light-theme .bottom-nav:before{background:#eef2f7}.bottom-nav a,.bottom-nav button{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:0;background:transparent;color:#a1a7b3;font-size:12px;font-weight:600;padding:19px 0;transition:color .25s ease,transform .15s cubic-bezier(.34,1.4,.64,1)}.bottom-nav a:active,.bottom-nav button:active{transform:scale(.92)}.bottom-nav .icon{width:24px;height:24px;transition:transform .15s ease}.bottom-nav a.nav-active{color:#ff4d6d}
@@ -5373,6 +5431,47 @@ document.addEventListener('DOMContentLoaded',function(){
   cremationInitDayPages();
   cremationOpenPendingCycle();
 });
+// Carosello periodo Dashboard (Oggi/Settimana/Mese, cicli Pratiche/Pagamenti/
+// Analytics): stesso pattern di calendarSelectDay/calendarInitDayPages,
+// ma senza sentinelle ai bordi (solo 3 pagine fisse, niente "carica
+// altro"). Cambio pillola/swipe non naviga mai, non ricarica la pagina.
+function dashboardSetActivePeriod(pillsId,idx,sync){
+  const pills=document.getElementById(pillsId);
+  if(pills)pills.querySelectorAll('[data-period-index]').forEach(function(p){p.classList.toggle('active',Number(p.dataset.periodIndex)===Number(idx));});
+  if(sync&&pills){
+    const pill=pills.querySelector('[data-period-index="'+idx+'"]');
+    if(pill&&pill.dataset.dashboardPeriod){
+      const url=new URL(location.href);
+      url.searchParams.set(pill.dataset.dashboardPeriod,pill.dataset.periodValue);
+      history.replaceState(null,'',url);
+    }
+  }
+}
+function dashboardSelectPeriod(pagesId,pillsId,idx,instant){
+  const pages=document.getElementById(pagesId);
+  if(!pages)return;
+  const page=pages.querySelector('[data-period-index="'+idx+'"]');
+  if(page)pages.scrollTo({left:page.offsetLeft,behavior:instant?'auto':'smooth'});
+  dashboardSetActivePeriod(pillsId,idx,!instant);
+}
+function dashboardInitPeriodPages(pages){
+  const items=[...pages.querySelectorAll(':scope > [data-period-index]')];
+  if(!items.length)return;
+  const pillsId=pages.dataset.pillsId;
+  if('IntersectionObserver' in window){
+    const obs=new IntersectionObserver(function(entries){
+      entries.forEach(function(entry){
+        if(!entry.isIntersecting||entry.intersectionRatio<0.6)return;
+        dashboardSetActivePeriod(pillsId,Number(entry.target.dataset.periodIndex),true);
+      });
+    },{root:pages,threshold:[0.6]});
+    items.forEach(function(item){obs.observe(item);});
+  }
+  dashboardSelectPeriod(pages.id,pillsId,Number(pages.dataset.initialIndex||0),true);
+}
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('[data-dashboard-period-pages]').forEach(dashboardInitPeriodPages);
+});
 function calendarSyncUrlToDay(idx){
   const card=document.querySelector('.calendar-daybar-card[data-day-index="'+idx+'"]');
   if(!card||!card.dataset.date)return;
@@ -7758,6 +7857,34 @@ def dashboard_payment_row_amount(row):
     return row["amount_cents"]/100.0
 
 
+def dashboard_sparkline_points(values,width=100,height=32,pad=3):
+    """Punti SVG ("x,y x,y ...") per una mini-sparkline, normalizzati sul
+    minimo/massimo della serie passata. Riusato da tutte le card statistica
+    e dal grafico Analytics — un solo algoritmo di normalizzazione."""
+    if not values:return ""
+    lo,hi=min(values),max(values)
+    span=(hi-lo) or 1
+    n=len(values)
+    step=(width-2*pad)/max(1,n-1)
+    points=[]
+    for i,v in enumerate(values):
+        x=pad+i*step
+        y=height/2 if hi==lo else pad+(height-2*pad)*(1-(v-lo)/span)
+        points.append(f"{x:.1f},{y:.1f}")
+    return " ".join(points)
+
+
+def dashboard_delta_pct(today_val,yesterday_val):
+    """(percentuale, direzione) del confronto odierno vs ieri per le quick
+    stat card — direzione in ('up','down','flat')."""
+    if yesterday_val==0:
+        return (0,"flat") if today_val==0 else (100,"up")
+    pct=round((today_val-yesterday_val)/yesterday_val*100)
+    if pct>0:return pct,"up"
+    if pct<0:return pct,"down"
+    return 0,"flat"
+
+
 def dashboard_payment_row_owner(row):
     if row["collaborator_name"]:
         return row["collaborator_name"]
@@ -8419,13 +8546,24 @@ class App(BaseHTTPRequestHandler):
         payment_period,payment_from,payment_to=dashboard_period_bounds((q.get("pagamenti_periodo") or ["oggi"])[0],today)
         active="p.deleted_at IS NULL OR p.deleted_at=''"
         ritiro_date=dashboard_practice_date_sql("ritirati","p");programma_date=dashboard_practice_date_sql("in_programma","p");consegna_date=dashboard_practice_date_sql("consegnati","p")
+        rome_today=datetime.now(ROME_TZ).date();week_start=rome_today-timedelta(days=6);yesterday=rome_today-timedelta(days=1)
+        period_index_map={"oggi":0,"settimana":1,"mese":2}
         with db() as c:
-            counts={
-                "Ritirato":c.execute(f"SELECT count(*) n FROM practices p WHERE ({active}) AND p.status IN ('Ritirato','Cremato','Da consegnare','Consegnato','Smaltito') AND {ritiro_date} BETWEEN date(?) AND date(?)",(practice_from.isoformat(),practice_to.isoformat())).fetchone()["n"],
-                "In programma":c.execute(f"SELECT count(*) n FROM practices p WHERE ({active}) AND p.status='In programma' AND ((p.pickup_date IS NULL OR p.pickup_date='') OR {programma_date} BETWEEN date(?) AND date(?))",(practice_from.isoformat(),practice_to.isoformat())).fetchone()["n"],
-                "Da consegnare":c.execute(f"SELECT count(*) n FROM practices p WHERE ({active}) AND p.status='Da consegnare'").fetchone()["n"],
-                "Consegnato":c.execute(f"SELECT count(*) n FROM practices p WHERE ({active}) AND p.status='Consegnato' AND {consegna_date} BETWEEN date(?) AND date(?)",(practice_from.isoformat(),practice_to.isoformat())).fetchone()["n"],
-            }
+            def compute_counts(p_from,p_to):
+                return {
+                    "Ritirato":c.execute(f"SELECT count(*) n FROM practices p WHERE ({active}) AND p.status IN ('Ritirato','Cremato','Da consegnare','Consegnato','Smaltito') AND {ritiro_date} BETWEEN date(?) AND date(?)",(p_from.isoformat(),p_to.isoformat())).fetchone()["n"],
+                    "In programma":c.execute(f"SELECT count(*) n FROM practices p WHERE ({active}) AND p.status='In programma' AND ((p.pickup_date IS NULL OR p.pickup_date='') OR {programma_date} BETWEEN date(?) AND date(?))",(p_from.isoformat(),p_to.isoformat())).fetchone()["n"],
+                    "Da consegnare":c.execute(f"SELECT count(*) n FROM practices p WHERE ({active}) AND p.status='Da consegnare'").fetchone()["n"],
+                    "Consegnato":c.execute(f"SELECT count(*) n FROM practices p WHERE ({active}) AND p.status='Consegnato' AND {consegna_date} BETWEEN date(?) AND date(?)",(p_from.isoformat(),p_to.isoformat())).fetchone()["n"],
+                }
+            # Le 8 card statistica ora precalcolano TUTTI e 3 i periodi
+            # (oggi/settimana/mese) nella stessa richiesta, cosi' lo swipe
+            # lato client tra le 3 pagine non ricarica mai la pagina: la
+            # FORMULA di ciascun conteggio resta identica a prima (stessa
+            # query, stesso filtro), cambia solo quante volte viene chiamata.
+            period_bounds={p:dashboard_period_bounds(p,today)[1:] for p in ("oggi","settimana","mese")}
+            counts_by_period={p:compute_counts(*bounds) for p,bounds in period_bounds.items()}
+            counts=counts_by_period[practice_period]
             open_rows=c.execute(f"SELECT p.* FROM practices p WHERE ({active}) AND COALESCE(p.payment_status,'Da saldare')!='Pagato'").fetchall()
             # Le card Pagamenti (Acconti/Pagati/Totale incassato) e le pagine
             # di dettaglio aperte dalle card leggono tutte dalla STESSA
@@ -8437,87 +8575,272 @@ class App(BaseHTTPRequestHandler):
             # un incasso reale (causa sia di importi "fantasma" sulle card
             # sia di dettagli vuoti o incoerenti, a seconda che il singolo
             # LIKE usato in quel punto includesse o meno quelle righe).
-            payment_movements=dashboard_payment_movements(c,payment_from,payment_to)
+            # "Da saldare" e' una fotografia delle rimanenze aperte ORA, non
+            # legata al periodo (invariato: gia' cosi' prima), quindi si
+            # calcola una volta sola.
+            open_due=[row for row in open_rows if outstanding_amount(row)>0]
+            da_saldare_count=len(open_due)
+            da_saldare_total=sum(outstanding_amount(row) for row in open_due)
+            def compute_payment_period(p_from,p_to):
+                movements=dashboard_payment_movements(c,p_from,p_to)
+                acconto_movements=[row for row in movements if row["movement_type"]=="Acconto"]
+                saldo_movements=[row for row in movements if row["movement_type"] in ("Saldo","Incasso completo")]
+                p_counts={"Da saldare":da_saldare_count,"Acconto":len(acconto_movements),"Pagato":len(saldo_movements)}
+                p_totals={
+                    "Da saldare":da_saldare_total,
+                    "Acconto":sum(dashboard_payment_row_amount(row) for row in acconto_movements),
+                    "Pagato":sum(dashboard_payment_row_amount(row) for row in saldo_movements),
+                }
+                return p_counts,p_totals
+            payment_data_by_period={p:compute_payment_period(*bounds) for p,bounds in period_bounds.items()}
+            payment_counts,payment_totals=payment_data_by_period[payment_period]
+            total_incassato=payment_totals["Acconto"]+payment_totals["Pagato"]
             recent=c.execute("SELECT * FROM practices WHERE deleted_at IS NULL OR deleted_at='' ORDER BY date(COALESCE(NULLIF(pickup_date,''),created_at)) DESC,id DESC LIMIT 10").fetchall()
             sync_reminders(c)
             open_reminders=c.execute("SELECT * FROM reminders WHERE completed_at IS NULL AND (snoozed_until IS NULL OR snoozed_until<=?) ORDER BY created_at ASC",(now(),)).fetchall()
-            rome_today=datetime.now(ROME_TZ).date();week_start=rome_today-timedelta(days=6)
             weekly_filters=normalize_balance_filters(date_from=week_start.isoformat(),date_to=rome_today.isoformat())
             weekly_snapshot=get_balance_snapshot(c,filters=weekly_filters)
-        def state_url(event,state="",include_dates=True):
-            params={"dashboard_event":event,"periodo":practice_period}
+            # --- Sparkline/Analytics: trend reale a 7 giorni, stessa fonte
+            # dati gia' usata sopra (dashboard_practice_date_sql/
+            # dashboard_payment_movements), solo raggruppata per giorno
+            # invece che sommata sull'intero periodo. Sempre gli ultimi 7
+            # giorni, indipendentemente dal periodo (oggi/settimana/mese)
+            # mostrato dalla card — le sparkline sono decorative, non legate
+            # al selettore periodo.
+            def daily_practice_counts(date_sql,status_filter_sql):
+                rows=c.execute(f"""SELECT {date_sql} d, COUNT(*) n FROM practices p
+                    WHERE ({active}) AND {status_filter_sql} AND {date_sql} BETWEEN date(?) AND date(?)
+                    GROUP BY d""",(week_start.isoformat(),rome_today.isoformat())).fetchall()
+                return {row["d"]:row["n"] for row in rows if row["d"]}
+            ritirati_by_day=daily_practice_counts(ritiro_date,"p.status IN ('Ritirato','Cremato','Da consegnare','Consegnato','Smaltito')")
+            in_programma_by_day=daily_practice_counts(programma_date,"p.status='In programma'")
+            consegnati_by_day=daily_practice_counts(consegna_date,"p.status='Consegnato'")
+            da_consegnare_event_date=status_event_date_sql("Da consegnare","p")
+            da_consegnare_by_day=daily_practice_counts(da_consegnare_event_date,"p.status='Da consegnare'")
+            trend_movements=dashboard_payment_movements(c,week_start,rome_today)
+            acconto_by_day={};saldo_by_day={};total_by_day={}
+            for row in trend_movements:
+                d=(row["movement_date"] or "")[:10]
+                if not d:continue
+                amt=dashboard_payment_row_amount(row)
+                total_by_day[d]=total_by_day.get(d,0)+amt
+                if row["movement_type"]=="Acconto":acconto_by_day[d]=acconto_by_day.get(d,0)+amt
+                elif row["movement_type"] in ("Saldo","Incasso completo"):saldo_by_day[d]=saldo_by_day.get(d,0)+amt
+            # "Da saldare" e' una fotografia (rimanenze aperte ORA), non un
+            # flusso: come proxy per la sparkline conto quante di queste
+            # pratiche sono state create in ciascuno degli ultimi 7 giorni
+            # (dato reale, non un vero storico del saldo aperto).
+            da_saldare_by_day={}
+            for row in open_due:
+                d=(row["created_at"] or "")[:10]
+                if d and d>=week_start.isoformat():da_saldare_by_day[d]=da_saldare_by_day.get(d,0)+1
+            nuove_rows=c.execute(f"SELECT date(p.created_at) d, COUNT(*) n FROM practices p WHERE ({active}) AND date(p.created_at) BETWEEN date(?) AND date(?) GROUP BY d",(week_start.isoformat(),rome_today.isoformat())).fetchall()
+            nuove_by_day={row["d"]:row["n"] for row in nuove_rows if row["d"]}
+            pratiche_ieri=c.execute(f"SELECT count(*) n FROM practices p WHERE ({active}) AND p.status IN ('Ritirato','Cremato','Da consegnare','Consegnato','Smaltito') AND {ritiro_date} BETWEEN date(?) AND date(?)",(yesterday.isoformat(),yesterday.isoformat())).fetchone()["n"]
+        trend_days=[week_start+timedelta(days=i) for i in range(7)]
+        def trend_values(by_day):
+            return [float(by_day.get(d.isoformat(),0)) for d in trend_days]
+        state_trend={"Ritirato":trend_values(ritirati_by_day),"In programma":trend_values(in_programma_by_day),
+                     "Da consegnare":trend_values(da_consegnare_by_day),"Consegnato":trend_values(consegnati_by_day)}
+        payment_trend={"Da saldare":trend_values(da_saldare_by_day),"Acconto":trend_values(acconto_by_day),"Pagato":trend_values(saldo_by_day)}
+        total_trend=[a+b for a,b in zip(payment_trend["Acconto"],payment_trend["Pagato"])]
+        nuove_trend=trend_values(nuove_by_day)
+        pratiche_oggi=counts_by_period["oggi"]["Ritirato"]
+        incassi_oggi=total_by_day.get(rome_today.isoformat(),0.0)
+        incassi_ieri=total_by_day.get(yesterday.isoformat(),0.0)
+        nuove_oggi=int(nuove_by_day.get(rome_today.isoformat(),0))
+        nuove_ieri=int(nuove_by_day.get(yesterday.isoformat(),0))
+        def state_url(event,period,p_from,p_to,state="",include_dates=True):
+            params={"dashboard_event":event,"periodo":period}
             if state:params["stato"]=state
-            if include_dates:params.update({"dal":practice_from.isoformat(),"al":practice_to.isoformat()})
+            if include_dates:params.update({"dal":p_from.isoformat(),"al":p_to.isoformat()})
             return "/archivio/pratiche?"+urlencode(params)
-        state_specs=[
-            ("Ritirato","Ritirati","archive","state-yellow",state_url("ritirati")),
-            ("In programma","In programma","calendar","state-red",state_url("in_programma","In programma")),
-            ("Da consegnare","Da consegnare","clipboard","state-purple",state_url("da_consegnare","Da consegnare",False)),
-            ("Consegnato","Consegnati","home","state-green",state_url("consegnati","Consegnato")),
-        ]
-        state_cards=''.join(
-            f'''<a class="dash-stat-card {cls}" data-dashboard-card="{state}" data-count="{counts[state]}" href="{href}">
+        def state_specs_for(period,p_from,p_to):
+            return [
+                ("Ritirato","Ritirati","archive","state-yellow",state_url("ritirati",period,p_from,p_to)),
+                ("In programma","In programma","calendar","state-red",state_url("in_programma",period,p_from,p_to,"In programma")),
+                ("Da consegnare","Da consegnare","truck","state-purple",state_url("da_consegnare",period,p_from,p_to,"Da consegnare",False)),
+                ("Consegnato","Consegnati","home","state-green",state_url("consegnati",period,p_from,p_to,"Consegnato")),
+            ]
+        def dash_stat_card(cls,label,icon,value,desc,href,extra_attrs,sparkline_values,bg_char=None):
+            bg_html=(f'<span class="dash-stat-bgicon dash-stat-bgicon-char" aria-hidden="true">{esc(bg_char)}</span>' if bg_char
+                      else f'<span class="dash-stat-bgicon" aria-hidden="true">{lucide(icon)}</span>')
+            points=dashboard_sparkline_points(sparkline_values)
+            spark_html=f'<svg class="dash-stat-spark" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true"><polyline points="{points}"/></svg>' if points else ''
+            return f'''<a class="dash-stat-card {cls}" {extra_attrs} href="{href}">
+              {bg_html}
               <span class="dash-stat-head"><span class="dash-stat-icon">{lucide(icon)}</span><span class="dash-stat-title">{label}</span></span>
-              <strong class="dash-stat-value">{counts[state]}</strong>
-              <span class="dash-stat-desc">{"Aperti, senza scadenza" if state=="Da consegnare" else "Apri elenco"}</span>
+              <strong class="dash-stat-value">{value}</strong>
+              <span class="dash-stat-desc">{desc}</span>
+              {spark_html}
               <span class="dash-stat-chevron" aria-hidden="true">›</span>
             </a>'''
-            for state,label,icon,cls,href in state_specs
-        )
-        open_due=[row for row in open_rows if outstanding_amount(row)>0]
-        acconto_movements=[row for row in payment_movements if row["movement_type"]=="Acconto"]
-        saldo_movements=[row for row in payment_movements if row["movement_type"] in ("Saldo","Incasso completo")]
-        payment_counts={"Da saldare":len(open_due),"Acconto":len(acconto_movements),"Pagato":len(saldo_movements)}
-        payment_totals={
-            "Da saldare":sum(outstanding_amount(row) for row in open_due),
-            "Acconto":sum(dashboard_payment_row_amount(row) for row in acconto_movements),
-            "Pagato":sum(dashboard_payment_row_amount(row) for row in saldo_movements),
-        }
-        total_incassato=payment_totals["Acconto"]+payment_totals["Pagato"]
-        payment_query=urlencode({"dal":payment_from.isoformat(),"al":payment_to.isoformat(),"periodo":payment_period})
-        payment_specs=[
-            ("Da saldare","Da saldare","wallet","payment-due",f"/pagamenti/da-saldare?{payment_query}"),
-            ("Acconto","Acconti","receipt","payment-deposit",f"/pagamenti/acconti?{payment_query}"),
-            ("Pagato","Pagati","chart","payment-paid",f"/pagamenti/pagati?{payment_query}"),
-        ]
-        payment_period_label={"oggi":"Oggi","settimana":"Settimana","mese":"Mese"}.get(payment_period,"Oggi")
-        # il numero grande conta MOVIMENTI (incassi effettivamente avvenuti
-        # nel periodo), non pratiche uniche: una stessa pratica con piu'
-        # movimenti nello stesso periodo viene contata una volta per
-        # movimento, cosi' il numero coincide sempre col numero di righe
-        # mostrate nella pagina di dettaglio aperta dalla card.
-        payment_cards=''.join(
-            f'''<a class="dash-stat-card {cls}" data-dashboard-payment="{state}" data-count="{payment_counts[state]}" data-amount="{payment_totals[state]:.2f}" href="{href}">
-              <span class="dash-stat-head"><span class="dash-stat-icon">{lucide(icon)}</span><span class="dash-stat-title">{label}</span></span>
-              <strong class="dash-stat-value">{payment_counts[state]}</strong>
-              <span class="dash-stat-desc">{money_it(payment_totals[state])}{"<small>Tutte le rimanenze aperte</small>" if state=="Da saldare" else "<small>movimenti nel periodo</small>"}</span>
-              <span class="dash-stat-chevron" aria-hidden="true">›</span>
-            </a>'''
-            for state,label,icon,cls,href in payment_specs
-        )
-        payment_cards+=f'''<a class="dash-stat-card payment-total" href="/pagamenti/totale-incassato?{payment_query}">
-          <span class="dash-stat-head"><span class="dash-stat-icon">{lucide("chart")}</span><span class="dash-stat-title">Totale incassato</span></span>
-          <strong class="dash-stat-value">{money_it(total_incassato)}</strong>
-          <span class="dash-stat-desc">{payment_period_label}</span>
-          <span class="dash-stat-chevron" aria-hidden="true">›</span>
-        </a>'''
-        def selector(key,current,other_key,other):
-            links=[]
-            for value,label in (("oggi","Oggi"),("settimana","Settimana"),("mese","Mese")):
-                links.append(f'<a data-dashboard-period="{key}" data-period-value="{value}" class="{"active" if current==value else ""}" href="/?{urlencode({key:value,other_key:other})}">{label}</a>')
-            return '<nav class="period-selector" aria-label="Seleziona periodo">'+''.join(links)+'</nav>'
-        practice_selector=selector("pratiche_periodo",practice_period,"pagamenti_periodo",payment_period);payment_selector=selector("pagamenti_periodo",payment_period,"pratiche_periodo",practice_period)
+        def practice_page_html(period):
+            p_from,p_to=period_bounds[period]
+            counts_p=counts_by_period[period]
+            cards=''.join(
+                dash_stat_card(cls,label,icon,str(counts_p[state]),
+                    "Aperti, senza scadenza" if state=="Da consegnare" else "Apri elenco",
+                    href,f'data-dashboard-card="{state}" data-count="{counts_p[state]}"',state_trend[state])
+                for state,label,icon,cls,href in state_specs_for(period,p_from,p_to)
+            )
+            return f'<div class="dashboard-period-page" data-period-index="{period_index_map[period]}"><section class="dashboard-states">{cards}</section></div>'
+        def payment_page_html(period):
+            p_from,p_to=period_bounds[period]
+            p_counts,p_totals=payment_data_by_period[period]
+            payment_query=urlencode({"dal":p_from.isoformat(),"al":p_to.isoformat(),"periodo":period})
+            payment_specs=[
+                ("Da saldare","Da saldare","wallet","payment-due",f"/pagamenti/da-saldare?{payment_query}"),
+                ("Acconto","Acconti","receipt","payment-deposit",f"/pagamenti/acconti?{payment_query}"),
+                ("Pagato","Pagati","chart","payment-paid",f"/pagamenti/pagati?{payment_query}"),
+            ]
+            # il numero grande conta MOVIMENTI (incassi effettivamente avvenuti
+            # nel periodo), non pratiche uniche: una stessa pratica con piu'
+            # movimenti nello stesso periodo viene contata una volta per
+            # movimento, cosi' il numero coincide sempre col numero di righe
+            # mostrate nella pagina di dettaglio aperta dalla card.
+            cards=''.join(
+                dash_stat_card(cls,label,icon,str(p_counts[state]),
+                    f'{money_it(p_totals[state])}{"<small>Tutte le rimanenze aperte</small>" if state=="Da saldare" else "<small>movimenti nel periodo</small>"}',
+                    href,f'data-dashboard-payment="{state}" data-count="{p_counts[state]}" data-amount="{p_totals[state]:.2f}"',payment_trend[state])
+                for state,label,icon,cls,href in payment_specs
+            )
+            period_label={"oggi":"Oggi","settimana":"Settimana","mese":"Mese"}[period]
+            cards+=dash_stat_card("payment-total","Totale incassato","chart",money_it(p_totals["Acconto"]+p_totals["Pagato"]),
+                period_label,f"/pagamenti/totale-incassato?{payment_query}",'',total_trend,bg_char="€")
+            return f'<div class="dashboard-period-page" data-period-index="{period_index_map[period]}"><section class="dashboard-payments">{cards}</section></div>'
+        def period_pill_nav(key,current,pages_id):
+            pills_id=f"{pages_id}Pills"
+            pills=''.join(
+                f'<button type="button" class="{"active" if current==value else ""}" data-dashboard-period="{key}" data-period-value="{value}" data-period-index="{idx}" onclick="dashboardSelectPeriod(\'{pages_id}\',\'{pills_id}\',{idx})">{label}</button>'
+                for idx,(value,label) in enumerate((("oggi","Oggi"),("settimana","Settimana"),("mese","Mese")))
+            )
+            return f'<nav class="period-selector period-selector-compact" id="{pills_id}" aria-label="Seleziona periodo">{pills}</nav>'
+        practice_pills=period_pill_nav("pratiche_periodo",practice_period,"dashboardPracticePages")
+        payment_pills=period_pill_nav("pagamenti_periodo",payment_period,"dashboardPaymentPages")
+        practice_pages_html=''.join(practice_page_html(p) for p in ("oggi","settimana","mese"))
+        payment_pages_html=''.join(payment_page_html(p) for p in ("oggi","settimana","mese"))
         persistence_script='''<script>(function(){const allowed=['oggi','settimana','mese'];const url=new URL(location.href);let changed=false;['pratiche_periodo','pagamenti_periodo'].forEach(key=>{const saved=localStorage.getItem('ppm_'+key);if(!url.searchParams.has(key)&&allowed.includes(saved)&&saved!=='oggi'){url.searchParams.set(key,saved);changed=true;}});if(changed){location.replace(url);return;}document.querySelectorAll('[data-dashboard-period]').forEach(link=>link.addEventListener('click',()=>localStorage.setItem('ppm_'+link.dataset.dashboardPeriod,link.dataset.periodValue)));})();</script>'''
         hour=rome_now().hour;greeting="Buongiorno" if hour<13 else "Buon pomeriggio" if hour<18 else "Buonasera"
+        # --- Sezione ANALYTICS (nuova): grafico incassi ultimi 7 giorni +
+        # donut pratiche per stato. Il donut riusa 1:1 counts_by_period (le
+        # stesse cifre gia' mostrate dalle card sopra), il grafico incassi
+        # riusa total_by_day gia' calcolato sopra per le sparkline — nessuna
+        # nuova query, solo nuova visualizzazione degli stessi dati.
+        day_names_it=("Lun","Mar","Mer","Gio","Ven","Sab","Dom")
+        incassi_labels=[day_names_it[d.weekday()] for d in trend_days]
+        def line_chart_svg(values,width=560,height=140,pad_x=10,pad_y=16):
+            if not values:return ""
+            lo,hi=min(values),max(values)
+            span=(hi-lo) or 1
+            n=len(values)
+            step=(width-2*pad_x)/max(1,n-1)
+            pts=[]
+            for i,v in enumerate(values):
+                x=pad_x+i*step
+                y=height/2 if hi==lo else pad_y+(height-2*pad_y)*(1-(v-lo)/span)
+                pts.append((x,y))
+            poly=" ".join(f"{x:.1f},{y:.1f}" for x,y in pts)
+            dots=''.join(f'<circle class="dashboard-linechart-dot" cx="{x:.1f}" cy="{y:.1f}" r="4"/>' for x,y in pts)
+            area=f"M{pts[0][0]:.1f},{height-pad_y:.1f} "+" ".join(f"L{x:.1f},{y:.1f}" for x,y in pts)+f" L{pts[-1][0]:.1f},{height-pad_y:.1f} Z"
+            return f'''<svg class="dashboard-linechart-svg" viewBox="0 0 {width} {height}">
+              <path class="dashboard-linechart-area" d="{area}"/>
+              <polyline class="dashboard-linechart-line" points="{poly}"/>
+              {dots}
+            </svg>'''
+        incassi_total_7d=sum(total_by_day.values())
+        incassi_prev_total=weekly_snapshot.sections["entrate-w"].total_cents/100.0+weekly_snapshot.sections["entrate-d"].total_cents/100.0
+        incassi_delta_pct,incassi_delta_dir=dashboard_delta_pct(incassi_total_7d,0)
+        incassi_chart_html=f'''<div class="dashboard-panel analytics-panel">
+          <h3 class="analytics-panel-title">Incassi ultimi 7 giorni</h3>
+          <div class="analytics-linechart-value">{money_it(incassi_total_7d)}<small>Totale</small></div>
+          <span class="analytics-delta-badge analytics-delta-{incassi_delta_dir}">{"↑" if incassi_delta_dir=="up" else "↓" if incassi_delta_dir=="down" else "–"} {abs(incassi_delta_pct)}%<small>vs 7 giorni precedenti</small></span>
+          {line_chart_svg([total_by_day.get(d.isoformat(),0.0) for d in trend_days])}
+          <div class="analytics-linechart-labels">{''.join(f"<span>{esc(lbl)}</span>" for lbl in incassi_labels)}</div>
+        </div>'''
+        def donut_svg(counts_p,size=176,stroke=22):
+            total=sum(counts_p.values())
+            radius=(size-stroke)/2
+            circumference=2*math.pi*radius
+            cx=cy=size/2
+            segments=[("Ritirato","#fde047"),("In programma","#fb7185"),("Da consegnare","#c084fc"),("Consegnato","#4ade80")]
+            arcs=[];offset=0.0
+            for state,color in segments:
+                frac=(counts_p[state]/total) if total else 0.0
+                length=frac*circumference
+                arcs.append(f'<circle class="dashboard-donut-arc" cx="{cx}" cy="{cy}" r="{radius}" stroke="{color}" stroke-width="{stroke}" fill="none" stroke-dasharray="{length:.2f} {circumference-length:.2f}" stroke-dashoffset="{-offset:.2f}" transform="rotate(-90 {cx} {cy})"/>')
+                offset+=length
+            return f'''<svg class="dashboard-donut-svg" viewBox="0 0 {size} {size}">
+              <circle cx="{cx}" cy="{cy}" r="{radius}" stroke="#334155" stroke-width="{stroke}" fill="none"/>
+              {''.join(arcs)}
+              <text class="dashboard-donut-total" x="{cx}" y="{cy-6}" text-anchor="middle">{total}</text>
+              <text class="dashboard-donut-total-label" x="{cx}" y="{cy+14}" text-anchor="middle">Totale</text>
+            </svg>'''
+        def donut_page_html(period):
+            counts_p=counts_by_period[period]
+            total=sum(counts_p.values()) or 1
+            legend_specs=[("Ritirato","Ritirati","#fde047"),("In programma","In programma","#fb7185"),("Da consegnare","Da consegnare","#c084fc"),("Consegnato","Consegnati","#4ade80")]
+            legend=''.join(
+                f'<li><span class="dashboard-donut-dot" style="background:{color}"></span>{label}<b>{counts_p[state]} ({round(100*counts_p[state]/total)}%)</b></li>'
+                for state,label,color in legend_specs
+            )
+            return f'''<div class="dashboard-panel analytics-panel analytics-donut-panel">
+              <h3 class="analytics-panel-title">Pratiche per stato</h3>
+              <div class="analytics-donut-row">{donut_svg(counts_p)}<ul class="dashboard-donut-legend">{legend}</ul></div>
+            </div>'''
+        analytics_pills=period_pill_nav("analytics_periodo",practice_period if practice_period in period_index_map else "oggi","dashboardAnalyticsPages")
+        analytics_pages_html=''.join(
+            f'<div class="dashboard-period-page" data-period-index="{period_index_map[p]}">{incassi_chart_html}{donut_page_html(p)}</div>'
+            for p in ("oggi","settimana","mese")
+        )
+        analytics_html=f'''<section class="dashboard-analytics">
+          <div class="dashboard-section-head"><h2 class="dashboard-heading">Analytics</h2>{analytics_pills}</div>
+          <div class="dashboard-period-pages" id="dashboardAnalyticsPages" data-dashboard-period-pages data-pills-id="dashboardAnalyticsPagesPills" data-initial-index="{period_index_map.get(practice_period,0)}">{analytics_pages_html}</div>
+        </section>'''
+        # --- Riga "quick stats" (nuova): 4 mini-card con sparkline e
+        # variazione vs ieri. "Pratiche oggi"/"Da saldare" riusano numeri
+        # gia' calcolati sopra (stessa fonte delle card grandi); "Incassi
+        # oggi" riusa total_by_day; "Nuove pratiche" e' l'unica query
+        # davvero nuova (semplice conteggio per data di creazione).
+        da_saldare_oggi_new=da_saldare_by_day.get(rome_today.isoformat(),0)
+        da_saldare_ieri_new=da_saldare_by_day.get(yesterday.isoformat(),0)
+        quick_specs=[
+            ("search","state-blue","Pratiche oggi",str(pratiche_oggi),*dashboard_delta_pct(pratiche_oggi,pratiche_ieri),trend_values(ritirati_by_day)),
+            ("sun","payment-paid","Incassi oggi",money_it(incassi_oggi),*dashboard_delta_pct(incassi_oggi,incassi_ieri),trend_values(total_by_day)),
+            ("wallet","payment-due","Da saldare",str(da_saldare_count),*dashboard_delta_pct(da_saldare_oggi_new,da_saldare_ieri_new),trend_values(da_saldare_by_day)),
+            ("calendar","state-blue","Nuove pratiche",str(nuove_oggi),*dashboard_delta_pct(nuove_oggi,nuove_ieri),nuove_trend),
+        ]
+        def quick_stat_card(icon,cls,label,value,delta_pct,delta_dir,trend):
+            points=dashboard_sparkline_points(trend)
+            spark=f'<svg class="quick-stat-spark" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true"><polyline points="{points}"/></svg>' if points else ''
+            arrow=lucide("arrow-up") if delta_dir=="up" else lucide("arrow-down") if delta_dir=="down" else "–"
+            return f'''<div class="quick-stat-card {cls}">
+              <span class="quick-stat-icon">{lucide(icon)}</span>
+              <div class="quick-stat-right">
+                <div class="quick-stat-body"><b>{value}</b><small>{label}</small></div>
+                {spark}
+                <span class="quick-stat-delta quick-stat-delta-{delta_dir}">{arrow} {abs(delta_pct)}%<small>vs ieri</small></span>
+              </div>
+            </div>'''
+        quick_stats_html=f'<section class="dashboard-quickstats">{"".join(quick_stat_card(*spec) for spec in quick_specs)}</section>'
         dashboard_sections={
-            "practices": f'''<div class="dashboard-section-head"><h2 class="dashboard-heading">Pratiche / Ritiri</h2>{practice_selector}</div><section class="dashboard-states">{state_cards}</section>''',
-            "payments": f'''<div class="dashboard-section-head"><h2 class="dashboard-heading">Pagamenti</h2>{payment_selector}</div><section class="dashboard-payments">{payment_cards}</section>''',
+            "practices": f'''<div class="dashboard-section-head">{practice_pills}</div><div class="dashboard-period-pages" id="dashboardPracticePages" data-dashboard-period-pages data-pills-id="dashboardPracticePagesPills" data-initial-index="{period_index_map.get(practice_period,0)}">{practice_pages_html}</div>''',
+            "payments": f'''<div class="dashboard-section-head">{payment_pills}</div><div class="dashboard-period-pages" id="dashboardPaymentPages" data-dashboard-period-pages data-pills-id="dashboardPaymentPagesPills" data-initial-index="{period_index_map.get(payment_period,0)}">{payment_pages_html}</div>''',
             "recent_practices": f'''<section class="dashboard-recent"><div class="titlebar"><h2>Ultime 10 pratiche per data recupero</h2><a href="/archivio/pratiche">Apri archivio<span class="recent-practice-archive-arrow" aria-hidden="true">›</span></a></div>{self.recent_practice_cards_html(recent)}</section>''',
         }
         default_dashboard_order=[sid for sid,_ in DASHBOARD_SECTION_LABELS]
         saved_dashboard_order=[sid for sid in parse_preference_list(load_preferences(user["id"]).get("dashboard_sections","")) if sid in dashboard_sections]
         dashboard_order=saved_dashboard_order or default_dashboard_order
-        sections_html=''.join(dashboard_sections[sid] for sid in dashboard_order)
+        # Analytics e quick-stats non sono (ancora) tra le sezioni
+        # riordinabili dall'utente (DASHBOARD_SECTION_LABELS): compaiono in
+        # una posizione fissa subito dopo "payments", coerente col mockup,
+        # senza toccare le impostazioni di riordino gia' esistenti.
+        sections_parts=[]
+        for sid in dashboard_order:
+            sections_parts.append(dashboard_sections[sid])
+            if sid=="payments":sections_parts.append(analytics_html+quick_stats_html)
+        if "payments" not in dashboard_order:sections_parts.append(analytics_html+quick_stats_html)
+        sections_html=''.join(sections_parts)
         # Widget Promemoria: lista piatta cronologica "una riga (slide) alla
         # volta" invece della vecchia card espandibile raggruppata per tipo
         # (richiesta esplicita dell'utente, mockup di riferimento fornito).
@@ -8583,9 +8906,15 @@ class App(BaseHTTPRequestHandler):
             rid=slide["id"]
             manual_badge='<span class="reminders-manual-badge">MANUALE</span>' if slide["is_manual"] else ''
             subtitle=slide.get("subtitle_override") or (f"{esc(slide['category'])} · {esc(slide['date_label'])}" if slide["date_label"] else esc(slide["category"]))
+            # Eyebrow statico sopra il titolo (richiesta esplicita
+            # dell'utente, mockup di riferimento): "PROMEMORIA" per i veri
+            # promemoria, "REPORT" per la sola slide sintetica del report
+            # settimanale — colore legato al tipo, stesso bar_color gia'
+            # usato per il bordo sinistro, nessun nuovo dato/colore inventato.
+            eyebrow="REPORT" if slide["category"]=="Report" else "PROMEMORIA"
             front=f'''<a class="reminders-slide-front" href="{esc(slide['url'])}" style="border-left:3px solid {slide['bar_color']}">
               <span class="metric-icon reminders-slide-icon {slide['color_cls']}">{lucide(slide['icon'])}</span>
-              <span class="reminders-slide-copy">{manual_badge}<b>{esc(slide['title'])}</b><small>{subtitle}</small></span>
+              <span class="reminders-slide-copy"><span class="reminders-slide-eyebrow" style="color:{slide['bar_color']}">{eyebrow}</span>{manual_badge}<b>{esc(slide['title'])}</b><small>{subtitle}</small></span>
             </a>'''
             if is_clone:
                 # clone ai bordi per lo scroll verticale infinito (vedi
@@ -14307,13 +14636,12 @@ class App(BaseHTTPRequestHandler):
                 <span class="recent-practice-avatar {avatar_cls}" aria-hidden="true">{avatar_emoji}</span>
                 <div class="recent-practice-animal-copy">
                   <span class="recent-practice-name">{name}</span>
-                  <span class="recent-practice-meta">{species_label} • {weight_label}</span>
+                  <span class="recent-practice-meta">{species_label} • {weight_label} • {age_label}</span>
                 </div>
               </div>
               <div class="recent-practice-date">
-                <span class="recent-practice-date-value">{esc(recovery_date)}</span>
+                <span class="recent-practice-date-value">{lucide("calendar")}{esc(recovery_date)}</span>
                 {time_html}
-                <span class="recent-practice-meta">{age_label}</span>
               </div>
               <div class="recent-practice-owner">
                 <span class="recent-practice-owner-name">{owner_label}</span>

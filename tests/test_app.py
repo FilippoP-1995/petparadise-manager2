@@ -7636,7 +7636,10 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn("data-balance-card",page)
         self.assertIn("Ultime 10 pratiche per data recupero",page);self.assertIn("Apri archivio",page)
         self.assertNotIn("Attività recenti",page);self.assertNotIn("Centro notifiche",page)
-        self.assertEqual(page.count('class="period-selector"'),2);self.assertIn("/notifiche",page)
+        # richiesta esplicita dell'utente (mockup): i selettori periodo sono
+        # ora pillole compatte come quella di ANALYTICS, una per Pratiche,
+        # una per Pagamenti, una nuova per Analytics stesso — 3 in totale.
+        self.assertEqual(page.count('class="period-selector period-selector-compact"'),3);self.assertIn("/notifiche",page)
         self.assertIn("dashboard_event=ritirati",page);self.assertNotIn("dashboard_event=ritirati&amp;stato=Ritirato",page)
         self.handler.path=f"/?pratiche_periodo=settimana&pagamenti_periodo=settimana";self.handler.dashboard(admin);week_page=rendered[-1]
         self.assertIn('data-dashboard-card="Ritirato" data-count="3"',week_page)
@@ -9126,12 +9129,13 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("const title=(document.getElementById('addReminderTitle')?.value||'').trim();", fn)
         self.assertNotIn("const title=form.title.value", fn)
 
-    def test_mini_add_button_sits_above_the_dots_column_and_icon_is_circular(self):
+    def test_mini_add_button_sits_above_the_dots_column_and_icon_is_rounded_square(self):
         # richiesta esplicita dell'utente (mockup di riferimento fornito): il
         # pulsante "+" per aggiungere un promemoria manuale deve essere
         # piccolo e discreto, in alto a destra della card, PRIMA (cioe' sopra,
-        # nello stesso ordine di lettura) della colonna dei pallini; l'icona
-        # di ogni promemoria deve essere rotonda, non un quadrato arrotondato.
+        # nello stesso ordine di lettura) della colonna dei pallini. L'icona
+        # di ogni promemoria era rotonda in un mockup precedente; il mockup
+        # Dashboard piu' recente la vuole invece un quadrato arrotondato.
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/"
@@ -9139,7 +9143,7 @@ class PetParadiseTests(unittest.TestCase):
         page=rendered[-1]
         side_col=page[page.index('class="reminders-side-col"'):page.index('</div>',page.index('id="ppmRemindersDots"'))]
         self.assertLess(side_col.index('reminders-mini-add-btn'),side_col.index('id="ppmRemindersDots"'))
-        self.assertIn(".reminders-slide-icon{width:36px;height:36px;flex:0 0 36px;border-radius:50%}",app.CSS)
+        self.assertIn(".reminders-slide-icon{width:38px;height:38px;flex:0 0 38px;border-radius:12px}",app.CSS)
 
     def test_manual_badge_is_on_its_own_line_above_the_title_not_inline(self):
         # richiesta esplicita dell'utente: badge "MANUALE" in alto a sinistra
@@ -10903,7 +10907,11 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path = "/"
         self.handler.dashboard(alessio)
         default_page = rendered[-1]
-        for section_text in ("Pratiche / Ritiri", "Pagamenti", "Ultime 10 pratiche per data recupero"):
+        # richiesta esplicita dell'utente (mockup): niente più intestazioni
+        # "Pratiche / Ritiri"/"Pagamenti" sopra le card — la presenza/assenza
+        # e l'ordine delle sezioni si verificano ora sui loro contenitori
+        # strutturali (id="dashboardPracticePages"/"dashboardPaymentPages").
+        for section_text in ('id="dashboardPracticePages"', 'id="dashboardPaymentPages"', "Ultime 10 pratiche per data recupero"):
             self.assertIn(section_text, default_page)
         self.assertNotIn("light-theme", default_page.split("<body", 1)[1].split(">", 1)[0])
 
@@ -10920,9 +10928,9 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path = "/"
         self.handler.dashboard(serena)
         serena_page = rendered[-1]
-        self.assertNotIn("Pratiche / Ritiri", serena_page)
+        self.assertNotIn('id="dashboardPracticePages"', serena_page)
         self.assertNotIn("Entrate anno in corso", serena_page)
-        payments_index = serena_page.index('<h2 class="dashboard-heading">Pagamenti</h2>')
+        payments_index = serena_page.index('id="dashboardPaymentPages"')
         recent_index = serena_page.index("<h2>Ultime 10 pratiche per data recupero</h2>")
         self.assertLess(payments_index, recent_index)
         self.assertIn('class="light-theme"', serena_page.split("<body", 1)[1].split(">", 1)[0])
@@ -10930,7 +10938,7 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path = "/"
         self.handler.dashboard(alessio)
         alessio_page = rendered[-1]
-        for section_text in ("Pratiche / Ritiri", "Pagamenti", "Ultime 10 pratiche per data recupero"):
+        for section_text in ('id="dashboardPracticePages"', 'id="dashboardPaymentPages"', "Ultime 10 pratiche per data recupero"):
             self.assertIn(section_text, alessio_page)
         self.assertNotIn("light-theme", alessio_page.split("<body", 1)[1].split(">", 1)[0])
 
