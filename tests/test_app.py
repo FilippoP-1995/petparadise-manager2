@@ -2215,6 +2215,73 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Bracciale con nome", block)
         self.assertLess(block.index("Urna piccola"), block.index("Bracciale con nome"))
 
+    def test_cremation_day_view_shows_all_urns_and_accessories_even_with_duplicate_labels(self):
+        # bug segnalato dall'utente: quando una pratica ha piu' urne (o
+        # accessori) con la stessa etichetta testuale, la vecchia logica di
+        # dedup ne scartava i doppioni mostrandone solo una invece di
+        # tutte. Vanno mostrate tutte le righe presenti in practice_items,
+        # a prescindere dal testo dell'etichetta.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-20", "in_attesa", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-DUPITEMS", "Privato", "Livorno", "In programma", "Cremazione singola", "2026-07-20", stamp, stamp,
+                 admin["id"], "Birba", cycle_id),
+            ).lastrowid
+            for sort_order in (0, 1):
+                conn.execute("INSERT INTO practice_items(practice_id,category,label,price,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                             (pid, "urna", "Urna in legno", "40.00", sort_order, stamp, stamp))
+            for sort_order in (0, 1):
+                conn.execute("INSERT INTO practice_items(practice_id,category,label,price,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                             (pid, "accessorio", "Collana con zampetta", "15.00", sort_order, stamp, stamp))
+
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-20"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        block_start = page.index(f'data-practice-id="{pid}"')
+        block = page[block_start:page.index("cremation-animal-actions", block_start)]
+        self.assertIn("Urna in legno / Urna in legno", block)
+        self.assertIn("Collana con zampetta / Collana con zampetta", block)
+
+    def test_cremation_week_view_shows_all_urns_and_accessories_even_with_duplicate_labels(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-20", "in_attesa", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-DUPWEEK", "Privato", "Livorno", "In programma", "Cremazione singola", "2026-07-20", stamp, stamp,
+                 admin["id"], "Otto", cycle_id),
+            ).lastrowid
+            for sort_order in (0, 1):
+                conn.execute("INSERT INTO practice_items(practice_id,category,label,price,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                             (pid, "urna", "Urna piccola", "35.00", sort_order, stamp, stamp))
+            for sort_order in (0, 1):
+                conn.execute("INSERT INTO practice_items(practice_id,category,label,price,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                             (pid, "accessorio", "Bracciale con nome", "12.00", sort_order, stamp, stamp))
+
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-20&vista=settimana"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        block_start = page.index(f'data-practice-id="{pid}"')
+        block = page[block_start:page.index("cremation-animal-actions", block_start)]
+        self.assertIn("Urna piccola / Urna piccola", block)
+        self.assertIn("Bracciale con nome / Bracciale con nome", block)
+
     def test_cremation_complete_cycle_moves_animals_to_da_consegnare(self):
         # lo stato IN CORSO e' stato eliminato: un ciclo in_attesa si completa
         # direttamente, senza passare da un "avvio" separato.

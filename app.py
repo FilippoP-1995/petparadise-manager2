@@ -11953,7 +11953,7 @@ class App(BaseHTTPRequestHandler):
             labels=[]
             for label in urn_items_by_practice.get(row["id"],[]):
                 label=compact_text(label)
-                if label and label not in labels:labels.append(label)
+                if label:labels.append(label)
             return " / ".join(labels)
 
         def urn_html(row):
@@ -11966,7 +11966,7 @@ class App(BaseHTTPRequestHandler):
             labels=[]
             for label in accessory_items_by_practice.get(row["id"],[]):
                 label=compact_text(label)
-                if label and label not in labels:labels.append(label)
+                if label:labels.append(label)
             return " / ".join(labels)
 
         def accessory_html(row):
@@ -12409,7 +12409,7 @@ class App(BaseHTTPRequestHandler):
             labels=[]
             for label in urn_items_by_practice.get(row["id"],[]):
                 label=compact_text(label)
-                if label and label not in labels:labels.append(label)
+                if label:labels.append(label)
             return " / ".join(labels)
 
         def urn_html(row):
@@ -12422,7 +12422,7 @@ class App(BaseHTTPRequestHandler):
             labels=[]
             for label in accessory_items_by_practice.get(row["id"],[]):
                 label=compact_text(label)
-                if label and label not in labels:labels.append(label)
+                if label:labels.append(label)
             return " / ".join(labels)
 
         def accessory_html(row):
