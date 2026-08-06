@@ -15615,6 +15615,16 @@ class App(BaseHTTPRequestHandler):
                     with db() as c:
                         client=c.execute("SELECT * FROM clients WHERE id=?",(event["client_id"],)).fetchone()
                 prefill={"client_id":event["client_id"] or "","owner_first_name":(client["first_name"] if client else event["client_first_name"]) or "","owner_last_name":(client["last_name"] if client else event["client_last_name"]) or "","owner_company":(client["company_name"] if client else "") or "","owner_phone":(client["phone"] if client else event["client_phone"]) or "","owner_phone_2":(client["phone_2"] if client else "") or "","owner_email":(client["email"] if client else "") or "","owner_tax_code":(client["tax_code"] if client else "") or "","owner_vat":(client["vat_number"] if client else "") or "","owner_street":(client["street"] or client["address"] if client else "") or "","owner_city":(client["city"] if client else "") or "","owner_province":(client["province"] if client else "") or "","owner_zip":(client["zip"] if client else "") or "","owner_notes":(client["notes"] if client else "") or "","pickup_address":event["address"] or "","pickup_date":event["start_at"][:10],"destination_branch":event["destination_site"] or "Livorno","request_origin":"Veterinario" if event["veterinarian_id"] else "Privato","veterinarian_id":event["veterinarian_id"] or "","clinic_name":event["veterinarian_name"] or "","notes":event["notes"] or "","animal_name":(animal["name"] if animal else event["animal_name"]) or "","species":animal["species"] if animal else "","estimated_weight":animal["weight"] if animal else "","service_type":f'Cremazione {animal["cremation_type"].lower()}' if animal and animal["cremation_type"] else ""}
+                # Ritiro a domicilio (location_type "Privato", stessa
+                # colonna condivisa con l'etichetta "Altro indirizzo" —
+                # vedi commento su calendarPickupPillClick): riporta
+                # l'indirizzo inserito in fase di creazione dell'evento
+                # nel campo "Luogo di origine" della pratica, richiesta
+                # esplicita dell'utente. Nessun riporto per il Veterinario:
+                # quell'indirizzo arriva gia' dall'anagrafica ambulatorio.
+                if event["location_type"]=="Privato" and event["address"]:
+                    prefill["origin_mode"]="Testo libero"
+                    prefill["origin_text"]=event["address"]
         if draft is not None:prefill=draft
         hidden=(f'<input type="hidden" name="calendar_event_id" value="{calendar_event_id}"><input type="hidden" name="pickup_time" value="{event["start_at"][11:16]}">' if calendar_event_id.isdigit() and event else '')
         hidden+=f'<input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(24)}">'

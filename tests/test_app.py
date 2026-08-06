@@ -10153,6 +10153,39 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('value="Via Cliente 9"', page)
         self.assertNotIn('value="Via Veterinario 1', page)
 
+    def test_new_practice_from_calendar_event_carries_domicilio_address_to_origin_text(self):
+        # richiesta esplicita dell'utente: se il ritiro era a domicilio
+        # (location_type "Privato"), l'indirizzo inserito in fase di
+        # creazione dell'evento deve comparire nel campo "Luogo di
+        # origine" della nuova pratica, non andare perso.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,start_at,end_at,client_first_name,client_last_name,
+                                        location_type,address,event_status,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                     ("Ritiro","Ritiro test","2026-07-20T10:00:00","2026-07-20T11:00:00","Elena","Conti",
+                                      "Privato","Via Casa 5 - Livorno","Ritirato",admin["id"],stamp,stamp)).lastrowid
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = f"/nuova?calendar_event_id={event_id}"
+        self.handler.new_page(admin)
+        page = rendered[-1]
+        self.assertIn('name="origin_text" value="Via Casa 5 - Livorno"', page)
+        self.assertIn('<option selected>Testo libero</option>', page)
+
+    def test_new_practice_from_calendar_event_does_not_carry_address_when_veterinario(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,start_at,end_at,client_first_name,client_last_name,
+                                        location_type,address,event_status,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                     ("Ritiro","Ritiro test","2026-07-20T10:00:00","2026-07-20T11:00:00","Elena","Conti",
+                                      "Veterinario","Via Ambulatorio 3 - Livorno","Ritirato",admin["id"],stamp,stamp)).lastrowid
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = f"/nuova?calendar_event_id={event_id}"
+        self.handler.new_page(admin)
+        page = rendered[-1]
+        self.assertNotIn('name="origin_text" value="Via Ambulatorio 3', page)
+
     def test_calendar_day_view_shows_swipeable_daybar_and_rich_appointment_cards(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
