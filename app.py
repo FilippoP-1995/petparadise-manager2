@@ -14964,6 +14964,8 @@ class App(BaseHTTPRequestHandler):
         date_to=q.get("al",[""])[0].strip()
         state=q.get("stato",[""])[0].strip()
         payment=q.get("pagamento",[""])[0].strip()
+        circuit=q.get("circuito",[""])[0].strip().upper()
+        if circuit not in ("W","D"):circuit=""
         dashboard_event=q.get("dashboard_event",[""])[0].strip()
         dashboard_period=q.get("periodo",[""])[0].strip()
         if dashboard_event not in ("ritirati","in_programma","da_consegnare","consegnati"):dashboard_event=""
@@ -15009,6 +15011,12 @@ class App(BaseHTTPRequestHandler):
             sql += " AND status=?"; args.append(state)
         if payment:
             sql += " AND COALESCE(payment_status,'Da saldare')=?"; args.append(payment)
+        if circuit:
+            # Stessa regola gia' usata da payment_channel()/uses_total_d():
+            # Totale D valorizzato (>0) vuol dire circuito D, altrimenti W —
+            # nessuna nuova logica, solo lo stesso criterio in SQL.
+            comparison=">0" if circuit=="D" else "<=0"
+            sql += f" AND CAST(REPLACE(COALESCE(NULLIF(total_text,''),'0'), ',', '.') AS REAL){comparison}"
         if with_deposit:
             sql += " AND CAST(REPLACE(COALESCE(NULLIF(deposit,''),'0'), ',', '.') AS REAL)>0"
         if no_invoice:
@@ -15028,6 +15036,7 @@ class App(BaseHTTPRequestHandler):
             rows=c.execute(sql,args).fetchall()
         opts='<option value="">Tutti gli stati</option>'+''.join(f'<option {"selected" if state==s else ""}>{esc(s)}</option>' for s in STATES)
         pay_opts='<option value="">Tutti i pagamenti</option>'+''.join(f'<option {"selected" if payment==s else ""}>{esc(s)}</option>' for s in PAYMENT_STATES)
+        circuit_opts='<option value="">Tutti i circuiti</option>'+''.join(f'<option value="{c}" {"selected" if circuit==c else ""}>{c}</option>' for c in ("W","D"))
         service_opts=''.join(f'<option value="{esc(x)}" {"selected" if service==x else ""}>{esc(x or "Tutti i servizi")}</option>' for x in ["","Da decidere","Cremazione singola","Cremazione collettiva"])
         period_names={"oggi":"Oggi","settimana":"Settimana in corso","mese":"Mese corrente"}
         promemoria_label = f" - {period_names.get(dashboard_period,dashboard_period)}" if dashboard_event else f" - Ricerca rapida: {esc(quick)}" if quick else " - Pratiche con acconto" if with_deposit else " - Promemoria catalogo" if promemoria=="catalogo" else " - Promemoria estremi" if promemoria=="estremi" else ""
@@ -15054,7 +15063,7 @@ class App(BaseHTTPRequestHandler):
             content_hidden=" hidden" if is_closed else ""
             blocks.append(f'''<section class="month-block"><div class="month-title"><div class="month-heading"><button class="month-toggle" type="button" data-month-key="{esc(key)}" aria-expanded="{expanded_attr}" aria-label="{esc(toggle_label)}" onclick="toggleArchiveMonth(this)">{toggle_symbol}</button><h2>{esc(title)}</h2></div><span class="badge">{len(items)} pratiche</span></div><div class="month-content"{content_hidden}><div class="tablebox dashboard-table-scroll archive-tablebox"><table class="practice-list-table"><thead><tr><th>Animale</th><th>Età</th><th>Proprietario</th><th>Data recupero</th><th>Codice pratica</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Totale pagato</th><th>Fattura</th>{archive_financial_headers}<th>Stati</th><th>Azione</th></tr></thead><tbody>{self.practice_rows(items,True)}</tbody></table></div></div></section>''')
         results_html='<div id="archiveList">'+(''.join(blocks) if blocks else '<section class="section"><p class="sub">Nessuna pratica trovata.</p></section>')+'</div>'
-        filters_html=f'''<section class="search-after-results"><h2>Ricerca e filtri</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Ricerca generale</label><input name="q" value="{esc(term)}" placeholder="Proprietario, telefono, microchip, pratica, DDT"></div><div class="field"><label>Nome animale</label><input name="animale" value="{esc(animal)}"></div><div class="field"><label>Tipo cremazione</label><select name="servizio">{service_opts}</select></div><div class="field"><label>Veterinario</label><input name="veterinario" value="{esc(vet)}" placeholder="Clinica o medico"></div><div class="field"><label>Collaboratore</label><input name="collaboratore" value="{esc(collaborator)}"></div><div class="field"><label>Spesa minima</label><input type="number" min="0" step="0.01" name="spesa_min" value="{esc(spesa_min)}" inputmode="decimal" placeholder="Es. 100"></div><div class="field"><label>Spesa massima</label><input type="number" min="0" step="0.01" name="spesa_max" value="{esc(spesa_max)}" inputmode="decimal" placeholder="Es. 350"></div><div class="field"><label>Periodo dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Periodo al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Stato pratica</label><select name="stato">{opts}</select></div><div class="field"><label>Pagamento</label><select name="pagamento">{pay_opts}</select></div><div class="field"><label><input type="checkbox" name="senza_fattura" value="1" {"checked" if no_invoice else ""}> Senza fattura</label></div></div><button class="btn" style="margin-top:12px">Cerca</button><a class="btn ghost" style="margin-top:12px" href="/archivio/pratiche">Pulisci filtri</a></form></section>'''
+        filters_html=f'''<section class="search-after-results"><h2>Ricerca e filtri</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Ricerca generale</label><input name="q" value="{esc(term)}" placeholder="Proprietario, telefono, microchip, pratica, DDT"></div><div class="field"><label>Nome animale</label><input name="animale" value="{esc(animal)}"></div><div class="field"><label>Tipo cremazione</label><select name="servizio">{service_opts}</select></div><div class="field"><label>Veterinario</label><input name="veterinario" value="{esc(vet)}" placeholder="Clinica o medico"></div><div class="field"><label>Collaboratore</label><input name="collaboratore" value="{esc(collaborator)}"></div><div class="field"><label>Spesa minima</label><input type="number" min="0" step="0.01" name="spesa_min" value="{esc(spesa_min)}" inputmode="decimal" placeholder="Es. 100"></div><div class="field"><label>Spesa massima</label><input type="number" min="0" step="0.01" name="spesa_max" value="{esc(spesa_max)}" inputmode="decimal" placeholder="Es. 350"></div><div class="field"><label>Periodo dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Periodo al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Stato pratica</label><select name="stato">{opts}</select></div><div class="field"><label>Pagamento</label><select name="pagamento">{pay_opts}</select></div><div class="field"><label>Circuito</label><select name="circuito">{circuit_opts}</select></div><div class="field"><label><input type="checkbox" name="senza_fattura" value="1" {"checked" if no_invoice else ""}> Senza fattura</label></div></div><button class="btn" style="margin-top:12px">Cerca</button><a class="btn ghost" style="margin-top:12px" href="/archivio/pratiche">Pulisci filtri</a></form></section>'''
         archive_restore_js=r'''
 (function(){
   const userKey='ppm_archive_state:__USER_ID__';

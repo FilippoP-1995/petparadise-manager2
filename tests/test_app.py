@@ -1203,6 +1203,30 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn("CR-LEGACYFATT",page)
         self.assertNotIn("CR-MOVFATT",page)
 
+    def test_archive_circuito_filter_shows_only_matching_practices(self):
+        # richiesta esplicita dell'utente: filtro circuito W/D nella
+        # ricerca avanzata di Archivio, stessa regola gia' usata da
+        # payment_channel()/uses_total_d() (Totale D valorizzato = D).
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            w_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,owner_first_name)
+                                VALUES(?,?,?,?,?,?,?,?)""",("CR-CIRCW","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Aldo")).lastrowid
+            d_pid=conn.execute("""INSERT INTO practices(practice_number,total_text,request_origin,destination_branch,status,created_at,updated_at,created_by,owner_first_name)
+                                VALUES(?,?,?,?,?,?,?,?,?)""",("CR-CIRCD","330","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Bice")).lastrowid
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/archivio/pratiche?circuito=D"
+        self.handler.archive(admin)
+        page=rendered[-1]
+        self.assertIn("CR-CIRCD",page)
+        self.assertNotIn("CR-CIRCW",page)
+
+        rendered.clear()
+        self.handler.path="/archivio/pratiche?circuito=W"
+        self.handler.archive(admin)
+        page=rendered[-1]
+        self.assertIn("CR-CIRCW",page)
+        self.assertNotIn("CR-CIRCD",page)
+
     def test_cr_codes_shift_on_delete_and_restore(self):
         with app.db() as conn:
             user=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now();ids=[]
