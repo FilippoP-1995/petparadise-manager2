@@ -578,6 +578,56 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertNotIn("+ Nuovo evento", pages["current"])
         self.assertIn(f"{self.admin['display_name']} <span", pages["current"])
 
+    def test_delivery_card_recomputes_amount_live_when_totale_d_added_after_event_creation(self):
+        # bug reale segnalato dall'utente: l'importo salvato sull'evento e'
+        # uno scatto preso alla creazione (quando Totale D era vuoto, quindi
+        # si usava Totale W). Se in seguito viene compilato Totale D — che
+        # per regola di business SOSTITUISCE sempre il Totale W — la card
+        # deve ricalcolare l'importo dal vivo (330 D), non restare ferma al
+        # vecchio importo W (410) etichettato pero' col circuito nuovo (D).
+        with app.db() as conn:
+            stamp = datetime.now().isoformat(timespec="seconds")
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   owner_first_name,service_type,payment_status,total_service,total_service_manual)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-GEA", "Privato", "Livorno", "Ritirato", stamp, stamp, self.admin["id"],
+                 "Leslie", "Cremazione singola", "Da saldare", "410", "Si"),
+            ).lastrowid
+        event_id = self.save(self.event_form("Riconsegna", payment_status="Da pagare", payment_amount="410"))
+        with app.db() as conn:
+            conn.execute("UPDATE calendar_events SET linked_practice_id=? WHERE id=?", (pid, event_id))
+            # Totale D aggiunto in un secondo momento, come nel caso reale
+            conn.execute("UPDATE practices SET total_text=? WHERE id=?", ("330", pid))
+        rendered = []
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.path = "/calendario?vista=giorno&data=2026-07-15"
+        self.handler.calendar_page(self.admin)
+        page = rendered[-1]
+        self.assertIn("€ 330,00 D", page)
+        self.assertNotIn("€ 410,00", page)
+
+    def test_event_detail_payment_row_recomputes_amount_live_when_totale_d_added_after_event_creation(self):
+        with app.db() as conn:
+            stamp = datetime.now().isoformat(timespec="seconds")
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   owner_first_name,service_type,payment_status,total_service,total_service_manual)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-GEA2", "Privato", "Livorno", "Ritirato", stamp, stamp, self.admin["id"],
+                 "Leslie", "Cremazione singola", "Da saldare", "410", "Si"),
+            ).lastrowid
+        event_id = self.save(self.event_form("Riconsegna", payment_status="Da pagare", payment_amount="410"))
+        with app.db() as conn:
+            conn.execute("UPDATE calendar_events SET linked_practice_id=? WHERE id=?", (pid, event_id))
+            conn.execute("UPDATE practices SET total_text=? WHERE id=?", ("330", pid))
+        rendered = []
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(self.admin, event_id)
+        page = rendered[-1]
+        self.assertIn("Da pagare € 330,00 D", page)
+
     def test_day_view_shows_status_badges_and_colors_but_no_legend(self):
         self.save(self.event_form("Ritiro", title="RITIRO FIDO", event_status="Da confermare", start_time="08:30", end_time="09:00"))
         self.save(self.event_form("Ritiro", title="RITIRO LUNA", event_status="Da ritirare", start_time="09:30", end_time="10:00"))

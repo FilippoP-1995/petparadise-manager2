@@ -9948,13 +9948,22 @@ class App(BaseHTTPRequestHandler):
                 for ctype_row in c.execute(f"SELECT event_id,group_concat(DISTINCT cremation_type) ctypes FROM calendar_event_animals WHERE event_id IN ({placeholders}) AND trim(COALESCE(cremation_type,''))<>'' GROUP BY event_id",event_ids):
                     cremation_type_by_event[ctype_row["event_id"]]=ctype_row["ctypes"] or ""
             linked_ids={int(row["linked_practice_id"]) for row in rows if row["linked_practice_id"]}
-            payment_channels={};practice_owner_names={}
+            payment_channels={};practice_owner_names={};practice_payment_live={}
             if linked_ids:
                 linked_marks=','.join('?' for _ in linked_ids)
-                for practice_row in c.execute(f"SELECT id,total_text,owner_first_name,owner_last_name,owner_company FROM practices WHERE id IN ({linked_marks})",tuple(linked_ids)):
+                for practice_row in c.execute(f"SELECT * FROM practices WHERE id IN ({linked_marks})",tuple(linked_ids)):
                     payment_channels[practice_row["id"]]=payment_channel(practice_row)
                     owner=" ".join(x for x in (practice_row["owner_first_name"],practice_row["owner_last_name"]) if x).strip() or practice_row["owner_company"] or ""
                     if owner:practice_owner_names[practice_row["id"]]=owner
+                    # Stato/importo salvati sull'evento sono uno scatto preso
+                    # al momento della creazione/prefill: se in seguito viene
+                    # compilato il Totale D della pratica (che sostituisce
+                    # sempre il Totale W, richiesta esplicita dell'utente),
+                    # l'evento non si aggiorna da solo e la card mostrerebbe
+                    # un importo vecchio abbinato al circuito nuovo — si
+                    # ricalcola sempre dal vivo con la stessa funzione gia'
+                    # usata per il prefill del wizard.
+                    practice_payment_live[practice_row["id"]]=delivery_payment_prefill(practice_row)
             client_ids={int(row["client_id"]) for row in rows if row["client_id"]}
             client_names={}
             if client_ids:
@@ -9962,7 +9971,18 @@ class App(BaseHTTPRequestHandler):
                 for client_row in c.execute(f"SELECT id,first_name,last_name,company_name FROM clients WHERE id IN ({client_marks})",tuple(client_ids)):
                     name=" ".join(x for x in (client_row["first_name"],client_row["last_name"]) if x).strip() or client_row["company_name"] or ""
                     if name:client_names[client_row["id"]]=name
-            rows=[dict(row,animal_species=species_by_event.get(row["id"],""),payment_channel=payment_channels.get(row["linked_practice_id"],"")) for row in rows]
+            def _merge_calendar_row(row):
+                merged=dict(row,animal_species=species_by_event.get(row["id"],""),payment_channel=payment_channels.get(row["linked_practice_id"],""))
+                # Se l'evento e' gia' segnato "Pagato" a mano, resta cosi'
+                # com'e': e' una conferma esplicita dell'operatore, non uno
+                # scatto da correggere. Il ricalcolo dal vivo serve solo
+                # quando c'e' ancora qualcosa da incassare, il caso reale
+                # segnalato dall'utente.
+                if merged["payment_status"]!="Pagato":
+                    live=practice_payment_live.get(row["linked_practice_id"])
+                    if live:merged["payment_status"],merged["payment_amount"]=live
+                return merged
+            rows=[_merge_calendar_row(row) for row in rows]
             vets=c.execute("SELECT id,COALESCE(short_name,clinic_name) name FROM veterinarians WHERE active=1 ORDER BY name").fetchall()
             color_settings=calendar_color_settings(c)
         by_day={}
@@ -11229,10 +11249,23 @@ class App(BaseHTTPRequestHandler):
             estimate_form=f'''<form method="post" action="/calendario/{event_id}/preventivo"><input inputmode="decimal" name="amount" value="{f'{estimate_total_all:g}' if estimate_total_all else ''}" placeholder="Importo €"><button class="btn ghost" type="submit" style="margin-top:10px">Salva preventivo</button></form>'''
             hero_rows.append(hero_row("receipt","pink","Preventivo",money_it(estimate_total_all),estimate_form))
             if event['payment_status']:
-                still_due=event['payment_status'] in ("Da pagare","Da saldare")
+                # Stato/importo salvati sull'evento sono uno scatto preso al
+                # momento della creazione/prefill: se in seguito viene
+                # compilato il Totale D della pratica (che sostituisce
+                # sempre il Totale W, richiesta esplicita dell'utente),
+                # l'evento non si aggiorna da solo e mostrerebbe un importo
+                # vecchio abbinato al circuito nuovo. Quando la pratica e'
+                # collegata, ricalcola sempre dal vivo con la stessa
+                # funzione gia' usata per il prefill del wizard, cosi' i
+                # due non possono mai disallinearsi.
+                if linked_practice and event['payment_status']!="Pagato":
+                    display_status,display_amount=delivery_payment_prefill(linked_practice)
+                else:
+                    display_status,display_amount=event['payment_status'],money_value(event['payment_amount'])
+                still_due=display_status in ("Da pagare","Da saldare")
                 channel_suffix=f" {payment_channel(linked_practice)}" if still_due and linked_practice else ""
                 # richiesta esplicita dell'utente: verde se gia' tutto pagato, giallo (amber) se deve ancora saldare
-                hero_rows.append(hero_row("wallet","amber" if still_due else "green","Pagamento",f"{esc(event['payment_status'])} {money_it(event['payment_amount'])}{channel_suffix}",''))
+                hero_rows.append(hero_row("wallet","amber" if still_due else "green","Pagamento",f"{esc(display_status)} {money_it(display_amount)}{channel_suffix}",''))
             if event["event_type"]!="Appuntamento":
                 zone_form=f'''<form method="post" action="/calendario/{event_id}/zona"><input name="zone" value="{esc(event['zone'] or '')}" placeholder="Es. Livorno"><button class="btn ghost" type="submit" style="margin-top:10px">Salva zona</button></form>'''
                 hero_rows.append(hero_row("archive","green","Zona",esc(event['zone'] or 'Non impostata'),zone_form))
