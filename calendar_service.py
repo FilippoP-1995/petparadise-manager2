@@ -216,15 +216,30 @@ def calendar_push_location_title(event_type, zone):
     return f"{base} Zona {zone}" if zone else base
 
 
+def _format_push_date(value):
+    """'GG/MM/AAAA' dalla parte data di un timestamp ISO, senza dipendere
+    da date_it() (in app.py, che importa da questo modulo — evita un
+    import circolare)."""
+    parts = str(value or "")[:10].split("-")
+    if len(parts) != 3:
+        return ""
+    year, month, day = parts
+    return f"{day}/{month}/{year}"
+
+
 def calendar_push_time_range(start_at, end_at):
-    """'HH:MM - HH:MM' se l'evento ha un orario di fine diverso dall'inizio,
-    altrimenti solo 'HH:MM' (quando l'operatore non specifica un orario di
-    fine, normalize_event lo imposta uguale all'inizio)."""
+    """'GG/MM/AAAA HH:MM - HH:MM' (o solo l'orario di inizio se non c'e' un
+    orario di fine diverso — quando l'operatore non lo specifica,
+    normalize_event lo imposta uguale all'inizio): la data resta sempre
+    presente, richiesta esplicita dell'utente per capire subito quando
+    senza dover aprire il gestionale."""
+    date_part = _format_push_date(start_at)
     start = (start_at or "")[11:16]
     end = (end_at or "")[11:16]
     if not start:
-        return ""
-    return f"{start} - {end}" if end and end != start else start
+        return date_part
+    time_part = f"{start} - {end}" if end and end != start else start
+    return f"{date_part} {time_part}" if date_part else time_part
 
 
 def calendar_pickup_push_text(animals, start_at, end_at):

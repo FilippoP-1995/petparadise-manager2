@@ -396,7 +396,7 @@ class OperationalCalendarTests(unittest.TestCase):
         with patch("app.emit_notification", return_value=[]) as mock_emit:
             self.handler.save_calendar_event(self.admin)
         text = mock_emit.call_args.args[3]
-        self.assertEqual(text, "Cane • 18 kg\n09:30 - 10:30")
+        self.assertEqual(text, "Cane • 18 kg\n15/07/2026 09:30 - 10:30")
 
     def test_new_pickup_in_sede_notification_omits_missing_end_time(self):
         form = self.event_form("Ritiro in sede", start_time="14:00", end_time="14:00", animals_json=json.dumps([
@@ -408,7 +408,7 @@ class OperationalCalendarTests(unittest.TestCase):
         title = mock_emit.call_args.args[2]
         text = mock_emit.call_args.args[3]
         self.assertEqual(title, "Ritiro in sede")
-        self.assertEqual(text, "Gatto • 4 kg\n14:00")
+        self.assertEqual(text, "Gatto • 4 kg\n15/07/2026 14:00")
 
     def test_new_delivery_notification_shows_animal_and_payment_status(self):
         form = self.event_form("Riconsegna", payment_status="Pagato")
