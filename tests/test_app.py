@@ -2336,6 +2336,67 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Bracciale con nome", block)
         self.assertLess(block.index("Urna piccola"), block.index("Bracciale con nome"))
 
+    def test_cremation_day_view_shows_practice_notes_on_assigned_animal_card(self):
+        # richiesta esplicita dell'utente: le note della pratica devono
+        # comparire anche dalla card del ciclo di cremazione, non solo
+        # aprendo la pratica.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-20", "in_attesa", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+            with_notes_id = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id,notes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-NOTES1", "Privato", "Livorno", "In programma", "Cremazione singola", "2026-07-20", stamp, stamp,
+                 admin["id"], "Birba", cycle_id, "Attenzione: proprietario molto ansioso"),
+            ).lastrowid
+            no_notes_id = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-NONOTES", "Privato", "Livorno", "In programma", "Cremazione singola", "2026-07-20", stamp, stamp,
+                 admin["id"], "Argo", cycle_id),
+            ).lastrowid
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-20"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        notes_block_start = page.index(f'data-practice-id="{with_notes_id}"')
+        notes_block = page[notes_block_start:page.index("cremation-animal-actions", notes_block_start)+2000]
+        self.assertIn('class="cremation-animal-notes"', notes_block)
+        self.assertIn("Attenzione: proprietario molto ansioso", notes_block)
+
+        no_notes_block_start = page.index(f'data-practice-id="{no_notes_id}"')
+        no_notes_block = page[no_notes_block_start:no_notes_block_start+2000]
+        self.assertNotIn('class="cremation-animal-notes"', no_notes_block)
+
+    def test_cremation_week_view_shows_practice_notes_on_assigned_animal_card(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-20", "in_attesa", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id,notes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-WEEKNOTES", "Privato", "Livorno", "In programma", "Cremazione singola", "2026-07-20", stamp, stamp,
+                 admin["id"], "Luna", cycle_id, "Portare kit calco"),
+            ).lastrowid
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-20&vista=settimana"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        block_start = page.index(f'data-practice-id="{pid}"')
+        block = page[block_start:page.index("cremation-animal-actions", block_start)+2000]
+        self.assertIn('class="cremation-animal-notes"', block)
+        self.assertIn("Portare kit calco", block)
+
     def test_cremation_day_view_shows_all_urns_and_accessories_even_with_duplicate_labels(self):
         # bug segnalato dall'utente: quando una pratica ha piu' urne (o
         # accessori) con la stessa etichetta testuale, la vecchia logica di

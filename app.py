@@ -2273,7 +2273,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-animal-urn{display:flex;align-items:center;flex-wrap:wrap;gap:5px;font-size:12px;color:#cbd5e1}
 .cremation-animal-accessory{display:flex;align-items:center;gap:4px}
 .cremation-animal-urn .icon{width:13px;height:13px}
-.cremation-animal-actions{display:flex;align-items:center;gap:8px;margin-left:auto}.cremation-notify{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin-top:8px;padding:10px 12px;border-radius:12px;background:#0f172a;border:1px solid #263246;cursor:default}.cremation-notify-head{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.03em}.cremation-notify-head .icon{width:14px;height:14px}.cremation-notify-body{display:flex;flex-wrap:wrap;align-items:center;gap:10px}.cremation-notify-badge{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:999px;font-size:13px;font-weight:800;letter-spacing:.02em}.cremation-notify-red{background:#450a0a;color:#fca5a5;box-shadow:0 0 0 1px #ef444450 inset}.cremation-notify-green{background:#052e16;color:#86efac;box-shadow:0 0 0 1px #22c55e50 inset}.cremation-notify-detail{display:flex;gap:8px;font-size:12px;color:#94a3b8}.cremation-notify-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-left:auto}.cremation-notify-toggle{padding:7px 14px;border-radius:9px;border:1px solid #ef444470;background:#7f1d1d;color:#fecaca;font-weight:700;font-size:12.5px;cursor:pointer;white-space:nowrap}.cremation-notify-toggle:hover{background:#991b1b}.cremation-notify-toggle-undo{background:transparent;border-color:#334155;color:#94a3b8}.cremation-notify-toggle-undo:hover{background:#1f2937}.cremation-notify-wa{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:9px;background:#052e16;color:#25d366;font-weight:700;font-size:12.5px;text-decoration:none;white-space:nowrap}.cremation-notify-wa:hover{background:#064e26}.cremation-notify-wa .icon{width:15px;height:15px}.cremation-notify-wa-disabled{opacity:.4;cursor:not-allowed;pointer-events:none}.light-theme .cremation-notify{background:#f8fafc;border-color:#e2e8f0}.light-theme .cremation-notify-head{color:#64748b}.light-theme .cremation-notify-detail{color:#64748b}.light-theme .cremation-notify-toggle-undo{border-color:#cbd5e1;color:#64748b}@media(max-width:620px){.cremation-notify-actions{margin-left:0;width:100%}.cremation-notify-toggle,.cremation-notify-wa{flex:1 1 auto;justify-content:center}}
+.cremation-animal-actions{display:flex;align-items:center;gap:8px;margin-left:auto}.cremation-animal-notes{grid-column:1/-1;display:flex;align-items:flex-start;gap:8px;margin-top:6px;padding:8px 10px;border-radius:10px;background:#0f172a;border:1px solid #263246;color:#cbd5e1;font-size:13px;cursor:default}.cremation-animal-notes .icon{width:14px;height:14px;flex:0 0 14px;margin-top:2px;color:#94a3b8}.light-theme .cremation-animal-notes{background:#f8fafc;border-color:#e2e8f0;color:#334155}.cremation-notify{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin-top:8px;padding:10px 12px;border-radius:12px;background:#0f172a;border:1px solid #263246;cursor:default}.cremation-notify-head{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.03em}.cremation-notify-head .icon{width:14px;height:14px}.cremation-notify-body{display:flex;flex-wrap:wrap;align-items:center;gap:10px}.cremation-notify-badge{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:999px;font-size:13px;font-weight:800;letter-spacing:.02em}.cremation-notify-red{background:#450a0a;color:#fca5a5;box-shadow:0 0 0 1px #ef444450 inset}.cremation-notify-green{background:#052e16;color:#86efac;box-shadow:0 0 0 1px #22c55e50 inset}.cremation-notify-detail{display:flex;gap:8px;font-size:12px;color:#94a3b8}.cremation-notify-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-left:auto}.cremation-notify-toggle{padding:7px 14px;border-radius:9px;border:1px solid #ef444470;background:#7f1d1d;color:#fecaca;font-weight:700;font-size:12.5px;cursor:pointer;white-space:nowrap}.cremation-notify-toggle:hover{background:#991b1b}.cremation-notify-toggle-undo{background:transparent;border-color:#334155;color:#94a3b8}.cremation-notify-toggle-undo:hover{background:#1f2937}.cremation-notify-wa{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:9px;background:#052e16;color:#25d366;font-weight:700;font-size:12.5px;text-decoration:none;white-space:nowrap}.cremation-notify-wa:hover{background:#064e26}.cremation-notify-wa .icon{width:15px;height:15px}.cremation-notify-wa-disabled{opacity:.4;cursor:not-allowed;pointer-events:none}.light-theme .cremation-notify{background:#f8fafc;border-color:#e2e8f0}.light-theme .cremation-notify-head{color:#64748b}.light-theme .cremation-notify-detail{color:#64748b}.light-theme .cremation-notify-toggle-undo{border-color:#cbd5e1;color:#64748b}@media(max-width:620px){.cremation-notify-actions{margin-left:0;width:100%}.cremation-notify-toggle,.cremation-notify-wa{flex:1 1 auto;justify-content:center}}
 .cremation-waiting-row-wide{display:flex;flex-wrap:wrap;align-items:center;gap:16px;padding:12px 0;border-top:1px solid #263246;cursor:pointer}
 .cremation-waiting-list .cremation-waiting-row-wide:first-child{border-top:none;padding-top:6px}
 .cremation-animal-select{display:flex;align-items:center;flex:0 0 auto}
@@ -12127,6 +12127,13 @@ class App(BaseHTTPRequestHandler):
             swap_html=f'<button type="button" class="cremation-animal-swap" onclick="event.stopPropagation();cremationOpenSwapModal({row["id"]},{esc(json.dumps(row["animal_name"] or "Animale"))},{esc(json.dumps(weight))})" aria-label="Scambia animale" title="Scambia con un altro animale">{lucide("repeat")}</button>' if removable else ""
             notifier_id=row["owner_notified_by"] if "owner_notified_by" in row.keys() and row["owner_notified_by"] else None
             notify_html=owner_notify_html(row,notifier_names.get(int(notifier_id)) if notifier_id else None)
+            # Note della pratica visibili anche dalla card del ciclo
+            # (richiesta esplicita dell'utente), stesso pattern gia' usato
+            # per le note sulla card evento calendario: icona clipboard,
+            # spazi normalizzati, troncate se molto lunghe.
+            notes_text=re.sub(r"\s+"," ",str(row["notes"] or "")).strip()
+            notes_preview=notes_text if len(notes_text)<=140 else notes_text[:139].rstrip()+"…"
+            notes_html=f'<div class="cremation-animal-notes">{lucide("clipboard")}<span>{esc(notes_preview)}</span></div>' if notes_preview else ''
             return f'''<div class="cremation-animal-row" data-practice-id="{row['id']}" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}>
               <div class="cremation-animal-id">
                 <span class="cremation-animal-avatar {avatar_cls}" aria-hidden="true">{avatar_emoji}</span>
@@ -12136,6 +12143,7 @@ class App(BaseHTTPRequestHandler):
               <div class="cremation-animal-col"><small>Etichette</small><div class="cremation-animal-tags">{tags_html(row)}</div></div>
               <div class="cremation-animal-col"><small>Urna</small><div class="cremation-animal-urn">{urn_html(row)}{accessory_html(row)}</div></div>
               <div class="cremation-animal-actions"><a class="cremation-animal-open" href="{url}" onclick="event.stopPropagation()"><span>Apri pratica</span>{lucide("chevron-right")}</a>{swap_html}{remove_html}</div>
+              {notes_html}
               {notify_html}
             </div>'''
 
@@ -12531,6 +12539,13 @@ class App(BaseHTTPRequestHandler):
             swap_html=f'<button type="button" class="cremation-animal-swap" onclick="event.stopPropagation();cremationOpenSwapModal({row["id"]},{esc(json.dumps(row["animal_name"] or "Animale"))},{esc(json.dumps(weight))})" aria-label="Scambia animale" title="Scambia con un altro animale">{lucide("repeat")}</button>' if removable else ""
             notifier_id=row["owner_notified_by"] if "owner_notified_by" in row.keys() and row["owner_notified_by"] else None
             notify_html=owner_notify_html(row,notifier_names.get(int(notifier_id)) if notifier_id else None)
+            # Note della pratica visibili anche dalla card del ciclo
+            # (richiesta esplicita dell'utente), stesso pattern gia' usato
+            # per le note sulla card evento calendario: icona clipboard,
+            # spazi normalizzati, troncate se molto lunghe.
+            notes_text=re.sub(r"\s+"," ",str(row["notes"] or "")).strip()
+            notes_preview=notes_text if len(notes_text)<=140 else notes_text[:139].rstrip()+"…"
+            notes_html=f'<div class="cremation-animal-notes">{lucide("clipboard")}<span>{esc(notes_preview)}</span></div>' if notes_preview else ''
             return f'''<div class="cremation-animal-row" data-practice-id="{row['id']}" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}>
               <div class="cremation-animal-id">
                 <span class="cremation-animal-avatar {avatar_cls}" aria-hidden="true">{avatar_emoji}</span>
@@ -12540,6 +12555,7 @@ class App(BaseHTTPRequestHandler):
               <div class="cremation-animal-col"><small>Etichette</small><div class="cremation-animal-tags">{tags_html(row)}</div></div>
               <div class="cremation-animal-col"><small>Urna</small><div class="cremation-animal-urn">{urn_html(row)}{accessory_html(row)}</div></div>
               <div class="cremation-animal-actions"><a class="cremation-animal-open" href="{url}" onclick="event.stopPropagation()"><span>Apri pratica</span>{lucide("chevron-right")}</a>{swap_html}{remove_html}</div>
+              {notes_html}
               {notify_html}
             </div>'''
 
