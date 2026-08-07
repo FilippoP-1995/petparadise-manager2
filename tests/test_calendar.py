@@ -963,6 +963,28 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("Apri pratica", rendered[-1])
         self.assertIn("PP-LINK-04", rendered[-1])
 
+    def test_riconsegna_event_detail_shows_apri_pratica_when_linked(self):
+        # richiesta esplicita dell'utente: da un evento Riconsegna gia'
+        # collegato a una pratica deve essere possibile aprirla dal
+        # riepilogo, non solo per un Ritiro segnato Ritirato.
+        with app.db() as conn:
+            stamp = datetime.now().isoformat(timespec="seconds")
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name)
+                   VALUES(?,?,?,?,?,?,?,?)""",
+                ("PP-RICLINK", "Privato", "Livorno", "Ritirato", stamp, stamp, self.admin["id"], "Kira"),
+            ).lastrowid
+        event_id = self.save(self.event_form("Riconsegna in sede"))
+        with app.db() as conn:
+            conn.execute("UPDATE calendar_events SET linked_practice_id=? WHERE id=?", (pid, event_id))
+        rendered = []
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(self.admin, event_id)
+        page = rendered[-1]
+        self.assertIn("Apri pratica", page)
+        self.assertIn(f'href="/pratiche/{pid}"', page)
+
     def test_event_detail_merges_note_into_dettagli_and_removes_separate_tab(self):
         event_id = self.save(self.event_form("Appuntamento", title="APPUNTAMENTO NOTE", notes="Richiamare il cliente prima delle 18"))
         rendered = []

@@ -11147,6 +11147,13 @@ class App(BaseHTTPRequestHandler):
         if event["event_type"] in ("Ritiro","Ritiro in sede") and event["event_status"]=="Ritirato":
             create_practice_url=f"/pratiche/{event['linked_practice_id']}" if event["linked_practice_id"] else f"/nuova?calendar_event_id={event_id}"
             create_practice_label="Apri pratica" if event["linked_practice_id"] else "+ Crea pratica"
+        elif event["event_type"] in ("Riconsegna","Riconsegna in sede") and event["linked_practice_id"]:
+            # Una Riconsegna collegata a una pratica (fissata dal riepilogo
+            # pratica, o collegata al salvataggio) deve poter aprirla da
+            # qui — richiesta esplicita dell'utente: prima il pulsante
+            # "Apri pratica" compariva solo per Ritiro/Ritirato.
+            create_practice_url=f"/pratiche/{event['linked_practice_id']}"
+            create_practice_label="Apri pratica"
         def qa(icon,label,href,extra=""):
             if href:return f'<a class="calendar-detail-qa" href="{href}"{extra}><span class="calendar-detail-qa-icon">{lucide(icon)}</span><span>{label}</span></a>'
             return f'<span class="calendar-detail-qa calendar-detail-qa-disabled"><span class="calendar-detail-qa-icon">{lucide(icon)}</span><span>{label}</span></span>'
