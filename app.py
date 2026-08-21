@@ -10938,7 +10938,13 @@ class App(BaseHTTPRequestHandler):
         title_card=f'''<div class="calendar-tap-card" data-calendar-types="Appuntamento" {"" if event_type=="Appuntamento" else "hidden"}><span class="calendar-tap-card-icon">{lucide("pencil")}</span><div class="calendar-tap-card-body"><small>Titolo *</small><input name="title" value="{title_value}" required oninput="this.dataset.manual='1'"></div></div>'''
         allday_card=f'''<label class="modern-check calendar-allday-check"><input type="checkbox" name="all_day" value="1" {"checked" if raw("all_day") else ""} onchange="calendarAllDayChanged(this)"> Tutto il giorno</label>'''
         qa_phone=val('client_phone') or val('phone')
-        qa_tel=only_digits(qa_phone) if qa_phone else ''
+        # Niente "+" forzato in testa: un numero italiano scritto senza
+        # prefisso internazionale (il caso comune) diventerebbe un numero
+        # francese (+33) o comunque sbagliato per il dialer — si preserva
+        # solo un eventuale "+" gia' scritto a mano dall'operatore, stesso
+        # pattern gia' corretto altrove (calendar_appointment card, popup
+        # telefono cliente).
+        qa_tel=re.sub(r"[^0-9+]","",qa_phone) if qa_phone else ''
         qa_wa=self.wa_digits(qa_phone) if qa_phone else ''
         qa_address=val('address') or val('delivery_address')
         qa_practice_url=f"/pratiche/{val('linked_practice_id')}" if val('linked_practice_id') else ''
@@ -10946,7 +10952,7 @@ class App(BaseHTTPRequestHandler):
             if href:return f'<a class="calendar-detail-qa" href="{href}"{extra}><span class="calendar-detail-qa-icon">{lucide(icon)}</span><span>{label}</span></a>'
             return f'<span class="calendar-detail-qa calendar-detail-qa-disabled"><span class="calendar-detail-qa-icon">{lucide(icon)}</span><span>{label}</span></span>'
         quick_actions_wizard=f'''<div class="calendar-detail-quickactions">
-          {wizard_qa("phone","Chiama",f"tel:+{qa_tel}" if qa_tel else "")}
+          {wizard_qa("phone","Chiama",f"tel:{esc(qa_tel)}" if qa_tel else "")}
           {wizard_qa("message","WhatsApp",f"https://wa.me/{qa_wa}" if qa_wa else "", ' target="_blank" rel="noopener noreferrer"' if qa_wa else "")}
           {wizard_qa("navigation","Naviga",f"https://www.google.com/maps/dir/?api=1&destination={quote(qa_address)}" if qa_address else "", ' target="_blank" rel="noopener noreferrer"' if qa_address else "")}
           {wizard_qa("receipt","Pratica",qa_practice_url)}
@@ -11128,7 +11134,11 @@ class App(BaseHTTPRequestHandler):
             history=c.execute("SELECT h.*,u.display_name FROM calendar_event_history h LEFT JOIN users u ON u.id=h.user_id WHERE event_id=? ORDER BY h.created_at DESC",(event_id,)).fetchall()
         tabs=''.join(f'<a class="{"active" if tab==key else ""}" href="/calendario/{event_id}?tab={key}">{label}</a>' for key,label in (("dettagli","Dettagli"),("animali","Animali"),("preventivo","Preventivo"),("commenti","Commenti"),("storico","Storico")))
         phone=self.calendar_appointment_phone(event)
-        tel=only_digits(phone)
+        # Niente "+" forzato in testa: stesso bug/fix di qa_tel piu' sopra
+        # nel form evento — un numero italiano scritto senza prefisso
+        # internazionale diventava un numero francese (+33) o comunque
+        # sbagliato per il dialer.
+        tel=re.sub(r"[^0-9+]","",phone) if phone else ""
         wa=self.wa_digits(phone) if phone else ""
         address=self.calendar_appointment_address(event)
         display_event_type="Promemoria" if event["event_type"]=="Appuntamento" else event["event_type"]
@@ -11158,7 +11168,7 @@ class App(BaseHTTPRequestHandler):
             if href:return f'<a class="calendar-detail-qa" href="{href}"{extra}><span class="calendar-detail-qa-icon">{lucide(icon)}</span><span>{label}</span></a>'
             return f'<span class="calendar-detail-qa calendar-detail-qa-disabled"><span class="calendar-detail-qa-icon">{lucide(icon)}</span><span>{label}</span></span>'
         quick_actions=f'''<div class="calendar-detail-quickactions">
-          {qa("phone","Chiama",f"tel:+{tel}" if tel else "")}
+          {qa("phone","Chiama",f"tel:{esc(tel)}" if tel else "")}
           {qa("message","WhatsApp",f"https://wa.me/{wa}" if wa else "", ' target="_blank" rel="noopener noreferrer"' if wa else "")}
           {qa("navigation","Naviga",f"https://www.google.com/maps/dir/?api=1&destination={quote(address)}" if address else "", ' target="_blank" rel="noopener noreferrer"' if address else "")}
           {qa("receipt",create_practice_label or "Pratica",create_practice_url)}

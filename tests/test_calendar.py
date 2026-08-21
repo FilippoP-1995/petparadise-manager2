@@ -224,6 +224,19 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertEqual(event["veterinarian_address"], "Via Roma 1")
         self.assertEqual((client["first_name"], vet["clinic_name"]), ("Mario", "Clinica Test"))
 
+    def test_edit_wizard_call_quickaction_does_not_add_a_forced_prefix(self):
+        # stesso bug/fix della pagina di dettaglio evento: il "+" forzato
+        # trasformava un numero italiano in un numero interpretato come
+        # francese (+33) dal dialer.
+        event_id = self.save(self.event_form("Ritiro", client_phone="3339990000"))
+        rendered = []
+        self.handler.path = f"/calendario/{event_id}/modifica"
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.calendar_event_form(self.admin, event_id)
+        html = rendered[-1]
+        self.assertIn("tel:3339990000", html)
+        self.assertNotIn("tel:+3339990000", html)
+
     def test_pickup_location_block_is_hidden_only_for_ritiro_in_sede(self):
         pickup_id = self.save(self.event_form("Ritiro"))
         onsite_id = self.save(self.event_form("Ritiro in sede", location_type="", address=""))

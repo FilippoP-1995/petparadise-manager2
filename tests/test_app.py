@@ -10623,6 +10623,24 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("`ANIMALE ${index+1}`", renumber_fn)
         self.assertIn("title.dataset.hasContent!=='1'", renumber_fn)
 
+    def test_calendar_event_detail_call_link_preserves_manually_written_prefix(self):
+        # se l'operatore ha scritto a mano un prefisso internazionale
+        # (es. numero estero), va rispettato cosi' com'e' — solo il
+        # "+" aggiunto automaticamente dal codice era il bug.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,client_first_name,client_last_name,client_phone,
+                operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO ESTERO","Pisa","Marc","Dupont","+33 6 12 34 56 78",
+                 "Serena","2026-07-30T09:00:00","2026-07-30T09:30:00","Da ritirare",admin["id"],stamp,stamp)).lastrowid
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(admin, event_id)
+        page = rendered[-1]
+        self.assertIn('tel:+33612345678', page)
+
     def test_calendar_event_detail_shows_five_tabs_header_and_quickactions(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
@@ -10644,7 +10662,12 @@ class PetParadiseTests(unittest.TestCase):
             self.assertIn(f'>{label}</a>', page)
         self.assertIn('calendar-detail-header', page)
         self.assertIn('calendar-detail-quickactions', page)
-        self.assertIn('tel:+3339990000', page)
+        # bug reale segnalato dall'utente: un "+" anteposto forzatamente al
+        # numero (senza prefisso internazionale gia' scritto a mano) veniva
+        # interpretato dal dialer come prefisso francese (+33) invece che
+        # il numero italiano cosi' come inserito.
+        self.assertIn('tel:3339990000', page)
+        self.assertNotIn('tel:+3339990000', page)
         self.assertIn('https://wa.me/393339990000', page)
         self.assertIn('google.com/maps/dir', page)
         self.assertIn('calendar-detail-qa-disabled', page)  # Pratica non disponibile prima del ritiro
