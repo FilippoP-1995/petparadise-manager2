@@ -7067,6 +7067,27 @@ class PetParadiseTests(unittest.TestCase):
             self.assertIn(token,dialog)
             self.assertIn(token,page)
 
+    def test_rimuovi_acconto_button_appears_once_an_acconto_is_registered(self):
+        # richiesta esplicita dell'utente: come "Rimuovi saldo", deve
+        # esserci un "Rimuovi acconto" per annullare un acconto gia'
+        # registrato (es. il cliente cambia idea e vuole saldare tutto
+        # subito) — gia' generato dalla stessa macroarea_section usata per
+        # il saldo, verificato qui perche' nessun test lo copriva ancora.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-RIMACC","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Noe","Cremazione singola","Da saldare","150","150")).lastrowid
+        responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+        self.handler.form=lambda:{"macroarea":"acconto","acconto_data":"2026-07-17","acconto_totale":"50,00","acconto_circuito":"W","acconto_modalita":"Pos","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertEqual(responses[-1][0]["payment_status"],"Acconto")
+        with app.db() as conn:
+            row=conn.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+        dialog=self.handler.status_badges(row)
+        self.assertIn("Rimuovi acconto",dialog)
+        self.assertIn(f'action="/pratiche/{pid}/pagamento-movimento/rimuovi"',dialog)
+
     def test_payment_macroareas_are_independent_always_visible_and_precompiled(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
@@ -9869,6 +9890,15 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(".payment-dialog{padding:12px 10px;max-height:97dvh}", app.CSS)
         self.assertIn(".payment-dialog .sub{display:none}", app.CSS)
         self.assertIn(".payment-dialog{width:min(620px,100%);max-height:90dvh;overflow:auto;", app.CSS)
+
+    def test_scrollable_popup_dialogs_lock_touch_scroll_to_vertical_only(self):
+        # bug reale segnalato dall'utente: scorrendo il popup pagamento
+        # verticalmente col dito, un lieve spostamento laterale veniva
+        # comunque "seguito" dal gesto invece di restare bloccato sul solo
+        # asse verticale — nessuna proprieta' touch-action era impostata
+        # sui contenitori scrollabili dei popup.
+        self.assertIn(".payment-dialog{width:min(620px,100%);max-height:90dvh;overflow:auto;touch-action:pan-y;", app.CSS)
+        self.assertIn(".order-modal-card{width:min(560px,100%);max-height:min(720px,calc(100dvh - 40px));overflow:auto;touch-action:pan-y;", app.CSS)
 
     def test_new_page_with_error_field_skips_top_banner_and_targets_the_field(self):
         with app.db() as conn:
