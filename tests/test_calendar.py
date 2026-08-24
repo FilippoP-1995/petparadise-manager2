@@ -389,8 +389,8 @@ class OperationalCalendarTests(unittest.TestCase):
         # titolo generico "Nuovo evento calendario" con solo l'emoji a
         # distinguere il tipo.
         expected_titles = {
-            "Ritiro": "Ritiro Zona Livorno", "Ritiro in sede": "Ritiro in sede",
-            "Riconsegna": "Riconsegna Zona Livorno", "Riconsegna in sede": "Riconsegna in sede",
+            "Ritiro": "Ritiro Zona Livorno", "Ritiro in sede": "Ritiro in sede Livorno",
+            "Riconsegna": "Riconsegna Zona Livorno", "Riconsegna in sede": "Riconsegna in sede Livorno",
             "Appuntamento": "📅 Nuovo evento calendario",
         }
         for event_type, expected_title in expected_titles.items():
@@ -400,6 +400,23 @@ class OperationalCalendarTests(unittest.TestCase):
             kind, title = mock_emit.call_args.args[1], mock_emit.call_args.args[2]
             self.assertEqual(kind, "calendar_event_created")
             self.assertEqual(title, expected_title, f"{event_type}: {title!r}")
+
+    def test_new_and_updated_in_sede_notification_title_uses_the_actual_site(self):
+        # richiesta esplicita dell'utente: il titolo deve riportare la
+        # sede vera dell'evento (Livorno/Empoli), non solo "in sede".
+        form = self.event_form("Riconsegna in sede", destination_site="Empoli")
+        self.handler.form = lambda: form
+        with patch("app.emit_notification", return_value=[]) as mock_emit:
+            self.handler.save_calendar_event(self.admin)
+        title = mock_emit.call_args.args[2]
+        self.assertEqual(title, "Riconsegna in sede Empoli")
+        event_id = int(self.redirected.rsplit("/", 1)[-1])
+
+        self.handler.form = lambda: self.event_form("Riconsegna in sede", destination_site="Empoli", payment_status="Pagato")
+        with patch("app.emit_notification", return_value=[]) as mock_emit:
+            self.handler.save_calendar_event(self.admin, event_id)
+        title = mock_emit.call_args.args[2]
+        self.assertEqual(title, "Riconsegna in sede Empoli")
 
     def test_new_pickup_notification_body_shows_species_weight_and_time(self):
         form = self.event_form("Ritiro", animals_json=json.dumps([
@@ -420,7 +437,7 @@ class OperationalCalendarTests(unittest.TestCase):
             self.handler.save_calendar_event(self.admin)
         title = mock_emit.call_args.args[2]
         text = mock_emit.call_args.args[3]
-        self.assertEqual(title, "Ritiro in sede")
+        self.assertEqual(title, "Ritiro in sede Livorno")
         self.assertEqual(text, "Gatto • 4 kg\n15/07/2026 14:00")
 
     def test_new_delivery_notification_shows_animal_and_payment_status(self):

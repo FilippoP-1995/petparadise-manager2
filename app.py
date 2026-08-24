@@ -11055,13 +11055,13 @@ class App(BaseHTTPRequestHandler):
                     # formato usato alla creazione, con l'aggiunta del nuovo
                     # stato quando e' proprio quello che e' cambiato.
                     if data["event_type"] in ("Ritiro","Ritiro in sede"):
-                        upd_title=calendar_push_location_title(data["event_type"],data["zone"])
+                        upd_title=calendar_push_location_title(data["event_type"],data["zone"],data["destination_site"])
                         upd_text=calendar_pickup_push_text(animals,data["start_at"],data["end_at"])
                         if data["event_status"]!=old["event_status"]:
                             status_line=f"Stato: {data['event_status'].upper()}"
                             upd_text=f"{upd_text}\n{status_line}" if upd_text else status_line
                     elif data["event_type"] in ("Riconsegna","Riconsegna in sede"):
-                        upd_title=calendar_push_location_title(data["event_type"],data["zone"])
+                        upd_title=calendar_push_location_title(data["event_type"],data["zone"],data["destination_site"])
                         upd_text=calendar_delivery_push_text(data["animal_name"],data["payment_status"])
                     else:
                         upd_title=f"{event_type_emoji(data['event_type'])} Evento calendario aggiornato"
@@ -11080,10 +11080,10 @@ class App(BaseHTTPRequestHandler):
                     # il gestionale. Gli altri tipi (Appuntamento) restano
                     # col titolo generico di prima.
                     if data["event_type"] in ("Ritiro","Ritiro in sede"):
-                        new_title=calendar_push_location_title(data["event_type"],data["zone"])
+                        new_title=calendar_push_location_title(data["event_type"],data["zone"],data["destination_site"])
                         new_text=calendar_pickup_push_text(animals,data["start_at"],data["end_at"])
                     elif data["event_type"] in ("Riconsegna","Riconsegna in sede"):
-                        new_title=calendar_push_location_title(data["event_type"],data["zone"])
+                        new_title=calendar_push_location_title(data["event_type"],data["zone"],data["destination_site"])
                         new_text=calendar_delivery_push_text(data["animal_name"],data["payment_status"])
                     else:
                         new_title=f"{event_type_emoji(data['event_type'])} Nuovo evento calendario"

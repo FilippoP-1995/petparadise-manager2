@@ -204,14 +204,16 @@ def automatic_title(event_type, zone="", animal="", site=""):
     return ""
 
 
-def calendar_push_location_title(event_type, zone):
+def calendar_push_location_title(event_type, zone, site=""):
     """Titolo della notifica push per Ritiro/Riconsegna (richiesta esplicita
-    dell'utente): 'Ritiro in sede' / 'Ritiro Zona X' / 'Riconsegna in sede' /
-    'Riconsegna Zona X' — stessi dati (event_type/zone) gia' validati da
-    normalize_event, nessuna query aggiuntiva necessaria."""
+    dell'utente): 'Ritiro in sede Livorno' / 'Ritiro Zona X' /
+    'Riconsegna in sede Empoli' / 'Riconsegna Zona X' — stessi dati
+    (event_type/zone/destination_site) gia' validati da normalize_event,
+    nessuna query aggiuntiva necessaria."""
     base = "Ritiro" if event_type in ("Ritiro", "Ritiro in sede") else "Riconsegna"
     if event_type.endswith("in sede"):
-        return f"{base} in sede"
+        site = _clean(site)
+        return f"{base} in sede {site}" if site else f"{base} in sede"
     zone = _clean(zone)
     return f"{base} Zona {zone}" if zone else base
 
