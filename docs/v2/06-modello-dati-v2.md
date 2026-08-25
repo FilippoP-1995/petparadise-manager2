@@ -72,7 +72,8 @@ invoices(
   invoice_date DATE,
   total_amount_cents BIGINT NOT NULL,
   channel payment_channel NOT NULL,     -- enum: 'W' | 'D'
-  practice_id BIGINT NOT NULL REFERENCES practices(id) ON DELETE RESTRICT,
+  practice_id BIGINT REFERENCES practices(id) ON DELETE SET NULL,
+  practice_number_snapshot TEXT NOT NULL,   -- riferimento leggibile anche se la pratica sparisce
   created_by BIGINT REFERENCES users(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 )
@@ -85,7 +86,7 @@ invoice_payment_links(
 )
 ```
 - **DECISION**: eliminate completamente le colonne `invoice_number/invoice_date/invoice_total/invoice_total_manual/make_invoice` da `practices`. Una pratica non "ha" più una fattura come attributo proprio: **ha zero o più fatture**, sempre lette dalla stessa tabella.
-- **RISK**: `ON DELETE RESTRICT` su `practice_id` impedisce di cancellare (anche in modo permanente) una pratica che ha già fatture emesse — **scelta intenzionale**: una fattura è un documento fiscale, non deve mai sparire silenziosamente per cascata. Se serve davvero eliminare la pratica, la fattura va gestita esplicitamente prima (nota di credito/storno), non cancellata a cascata.
+- **DECISION (rivista dopo la tua risposta)**: hai indicato di voler permettere comunque la cancellazione di una pratica con fatture emesse. Ho scelto **`ON DELETE SET NULL`** invece di `ON DELETE CASCADE` — non `RESTRICT` (che avrebbe bloccato la cancellazione, contro la tua indicazione), ma **nemmeno CASCADE** (che avrebbe cancellato anche la fattura stessa, un documento fiscale — in contrasto con la tua stessa regola "nessuna perdita di dati"). Con `SET NULL` + `practice_number_snapshot` (stesso pattern già usato correttamente da `balance_movements` in V1): la pratica è cancellabile liberamente, la fattura resta come record fiscale indipendente e leggibile anche dopo. **Se invece intendevi che anche la fattura debba sparire con la pratica, dimmelo esplicitamente e cambio a CASCADE** — non l'ho presunto.
 
 ### 2. Pagamenti: un solo ledger, circuito mai ambiguo
 
@@ -225,8 +226,12 @@ CREATE TYPE practice_status AS ENUM
 CREATE TYPE pickup_status AS ENUM
   ('da_confermare','da_ritirare','ritirato','annullato');
 
-CREATE TYPE delivery_status AS ENUM
-  ('in_programma','completato');   -- FACT: 'completato' esiste nel vocabolario V1 ma è irraggiungibile da UI — in V2 va reso raggiungibile o rimosso, decisione di prodotto da confermare
+-- DECISION (confermata dall'utente): 'completato' eliminato dal
+-- vocabolario Riconsegna — non esiste nella pratica reale, il flusso
+-- attuale (riconsegna considerata gestita quando programmata) resta
+-- invariato. Nessun enum delivery_status: una Riconsegna in V2 non ha
+-- affatto un campo di stato proprio (colonna eliminata), coerente col
+-- fatto che in V1 era comunque sempre forzata a un solo valore fisso.
 
 CREATE TYPE cremation_cycle_status AS ENUM
   ('pianificato','in_attesa','completato');
@@ -236,7 +241,7 @@ CREATE TYPE ledger_section AS ENUM ('Entrata','Uscita');
 CREATE TYPE user_role AS ENUM ('admin','operator');
 ```
 
-**FACT → DECISION diretta**: il flusso "completamento ciclo cremazione" in V1 salta lo stato `"cremato"` (va direttamente a `"da_consegnare"`). **RISK se non corretto**: la V2 erediterebbe la stessa incoerenza già documentata. **DECISION**: il completamento di un ciclo in V2 porta esplicitamente la pratica a `"cremato"`, e un passo separato (con propria autorizzazione/tracciamento) porta a `"da_consegnare"` — **questa è una decisione di prodotto, non solo tecnica: da confermare con l'utente prima di implementarla**, perché cambia il comportamento operativo percepito dagli operatori (un passaggio in più da compiere).
+**FACT → DECISION diretta**: il flusso "completamento ciclo cremazione" in V1 salta lo stato `"cremato"` (va direttamente a `"da_consegnare"`). **DECISION (confermata dall'utente)**: il completamento di un ciclo in V2 porta esplicitamente la pratica a `"cremato"`, e un passo separato (con propria autorizzazione/tracciamento in `audit_log`) porta a `"da_consegnare"`. **RISK accettato consapevolmente**: introduce un click/passaggio operativo in più per gli operatori rispetto a oggi — da comunicare chiaramente in fase di formazione al passaggio V1→V2, non una sorpresa dell'ultimo minuto.
 
 ---
 
@@ -244,7 +249,22 @@ CREATE TYPE user_role AS ENUM ('admin','operator');
 
 `clients`, `veterinarians` (+`veterinarian_hours`), `collaborators` (+`collaborator_price_tiers`), `company_locations`, `urns`, `articles`, `shifts`, `shift_vacations`, `shift_oncall`, `route_plans`, `route_plan_stops`, `geocode_cache`, `notifications`, `notification_group_items`, `notification_delivery_log`, `push_subscriptions`, `reminders`, `whatsapp_messages`, `whatsapp_inbound_messages`, `whatsapp_cron_runs`, `email_orders`, `article_orders`, `settings` — portate in V2 con: FK esplicite ovunque mancanti, timestamp/audit standardizzati, `TEXT` liberi sostituiti da tipi propri dove rappresentano un dato strutturato (es. importi, date, orari), enum dove il vocabolario è chiuso. **Nessun redesign strutturale**: l'audit non ha trovato incoerenze concettuali in questi domini.
 
-`calendar_events` + figlie (`calendar_event_animals`→confluisce in `animals` con `event_id` opzionale invece di `practice_id`, oppure tabella separata — **ASSUMPTION da chiarire con l'utente**: un animale di un Ritiro non ancora diventato pratica e un animale di una pratica sono lo stesso concetto o due? Nell'audit risultano trattati diversamente in V1; la scelta di modellazione dipende da una decisione di prodotto, non solo tecnica) — dettaglio completo rimandato al documento architettura backend V2 (09), dove si progetta anche il domain layer che consuma queste tabelle.
+`calendar_events` + figlie. **DECISION (confermata dall'utente)**: `animals` è un'unica tabella condivisa, con **entrambe** le colonne di collegamento opzionali:
+```
+animals(
+  id BIGINT PK,
+  calendar_event_id BIGINT REFERENCES calendar_events(id) ON DELETE CASCADE,
+  practice_id BIGINT REFERENCES practices(id) ON DELETE CASCADE,
+  name TEXT, species TEXT, breed TEXT, age_years SMALLINT, age_months SMALLINT,
+  estimated_weight_grams INTEGER, microchip TEXT, cremation_type TEXT,
+  sort_order SMALLINT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+)
+CHECK (calendar_event_id IS NOT NULL OR practice_id IS NOT NULL)
+```
+Un animale nasce collegato solo a `calendar_event_id` (Ritiro non ancora diventato pratica). Quando il Ritiro diventa pratica, la **stessa riga** riceve anche `practice_id` (mai una copia nuova) — questo è esattamente il comportamento richiesto: "nessuna duplicazione/ricopiatura dei dati animale in quel passaggio". Se in futuro un animale dovesse esistere su una pratica senza essere mai passato da un evento Ritiro (es. inserimento diretto), `calendar_event_id` resta semplicemente NULL.
+
+Dettaglio completo del dominio Calendario rimandato al documento architettura backend V2 (09).
 
 ---
 
@@ -266,10 +286,14 @@ CREATE TYPE user_role AS ENUM ('admin','operator');
 
 ---
 
-## Domande aperte per te prima di finalizzare questo documento
+## Decisioni confermate dall'utente (chiude le domande aperte della versione precedente di questo documento)
 
-1. **`client_id` obbligatorio su `practices`**: confermi questa direzione? Comporta un passo di migrazione dedicato (creazione client per pratiche storiche senza collegamento).
-2. **Stato "Cremato" reso raggiungibile davvero** nel flusso ciclo cremazione (un passo operativo in più per gli operatori) — o preferisci che resti "salta cremato" ma tolto dal vocabolario stati per coerenza?
-3. **Stato "Completato" per Riconsegna**: lo rendiamo raggiungibile da UI (nuova funzionalità operativa) o lo eliminiamo dal vocabolario visto che oggi non è mai usato?
-4. **Animali di un Ritiro non ancora pratica**: stessa tabella `animals` degli animali di pratica, o tabella separata? Influenza come si progetta il passaggio "Ritiro→Pratica".
-5. **`ON DELETE RESTRICT` su `invoices.practice_id`**: confermi che una pratica con fatture emesse non deve mai essere cancellabile nemmeno permanentemente?
+| # | Domanda | Decisione finale |
+|---|---|---|
+| 1 | `client_id` obbligatorio su `practices`? | **Sì** — richiede passo di migrazione dedicato (creazione/collegamento client per pratiche storiche senza collegamento), vedi doc. 07 |
+| 2 | Stato "Cremato" reso raggiungibile davvero? | **Sì** — passaggio operativo reale, un click in più per gli operatori, da comunicare in formazione |
+| 3 | Stato "Completato" per Riconsegna? | **Eliminato dal vocabolario** — nessuna colonna di stato su Riconsegna in V2 |
+| 4 | Animali Ritiro-non-ancora-pratica: stessa tabella o separata? | **Stessa tabella** `animals`, con `calendar_event_id`/`practice_id` entrambi opzionali (vedi sopra) |
+| 5 | Pratica con fatture: cancellabile? | **Sì, cancellabile** — ma la fattura non viene mai cancellata con essa (`SET NULL` + snapshot, non `CASCADE` né `RESTRICT`, vedi nota sopra: da confermare se invece si vuole CASCADE anche sulla fattura) |
+
+Questo documento è considerato **stabile** per procedere al documento 07 (Strategia di migrazione), fatta salva l'eventuale correzione sul punto 5 se la tua intenzione era diversa da quella che ho assunto.

@@ -13,6 +13,7 @@ from unittest.mock import patch
 from urllib.parse import quote
 
 import app
+import backup_service
 import email_service
 import notification_service
 import route_service
@@ -13519,6 +13520,58 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("carousel.scrollTop=realSlides[0].offsetTop",fn)
         self.assertIn("carousel.scrollTop=realSlides[realSlides.length-1].offsetTop",fn)
         self.assertIn("reminderUpdateDots(",fn)
+
+    def test_backup_cron_rejects_missing_or_wrong_secret(self):
+        # stesso schema di sicurezza gia' usato dal cron WhatsApp: nessuna
+        # sessione utente, solo un secret condiviso letto da query o header.
+        with patch.dict(os.environ, {"BACKUP_CRON_SECRET": "il-segreto-giusto"}):
+            self.handler.path = "/cron/backup"
+            self.handler.headers = {}
+            captured = []
+            self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+            self.handler.backup_cron()
+            self.assertEqual(captured[-1][1], 403)
+            self.assertFalse(captured[-1][0]["ok"])
+
+            self.handler.headers = {"X-Cron-Secret": "sbagliato"}
+            captured.clear()
+            self.handler.backup_cron()
+            self.assertEqual(captured[-1][1], 403)
+
+    def test_backup_cron_runs_backup_and_notifies_on_success(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        with patch.dict(os.environ, {"BACKUP_CRON_SECRET": "il-segreto-giusto"}):
+            self.handler.path = "/cron/backup"
+            self.handler.headers = {"X-Cron-Secret": "il-segreto-giusto"}
+            captured = []
+            self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+            fake_result = backup_service.BackupResult(ok=True, backup_name="pet_paradise_test.db.gz", size_bytes=1234)
+            with patch("app.run_database_backup", return_value=fake_result) as mock_backup:
+                self.handler.backup_cron()
+            mock_backup.assert_called_once()
+        self.assertEqual(captured[-1][1], 200)
+        self.assertTrue(captured[-1][0]["ok"])
+        with app.db() as conn:
+            note = conn.execute("SELECT title,text FROM notifications WHERE type='backup_completed' ORDER BY id DESC LIMIT 1").fetchone()
+        self.assertIsNotNone(note)
+        self.assertIn("pet_paradise_test.db.gz", note["text"])
+
+    def test_backup_cron_notifies_system_error_on_failure(self):
+        with patch.dict(os.environ, {"BACKUP_CRON_SECRET": "il-segreto-giusto"}):
+            self.handler.path = "/cron/backup"
+            self.handler.headers = {"X-Cron-Secret": "il-segreto-giusto"}
+            captured = []
+            self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+            fake_result = backup_service.BackupResult(ok=False, error="rete non disponibile")
+            with patch("app.run_database_backup", return_value=fake_result):
+                self.handler.backup_cron()
+        self.assertEqual(captured[-1][1], 500)
+        self.assertFalse(captured[-1][0]["ok"])
+        with app.db() as conn:
+            note = conn.execute("SELECT title,text FROM notifications WHERE type='system_error' ORDER BY id DESC LIMIT 1").fetchone()
+        self.assertIsNotNone(note)
+        self.assertIn("rete non disponibile", note["text"])
 
 
 if __name__ == "__main__":

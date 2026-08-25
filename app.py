@@ -62,6 +62,7 @@ from calendar_service import (
     route_eligible_events,
 )
 import route_service
+from backup_service import run_database_backup
 from shift_service import (
     SHIFT_BRANCHES,
     ensure_shift_schema, week_monday as shift_week_monday, week_bounds as shift_week_bounds,
@@ -8181,6 +8182,7 @@ class App(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/health": return self.send_text("ok")
         if path == "/cron/whatsapp": return self.whatsapp_cron()
+        if path == "/cron/backup": return self.backup_cron()
         if path == "/webhook/whatsapp": return self.whatsapp_webhook_verify()
         if path == "/manifest.json": return self.send_static(ASSETS / "manifest.json","application/manifest+json; charset=utf-8", "no-cache")
         if path == "/sw.js": return self.service_worker()
@@ -8321,6 +8323,7 @@ class App(BaseHTTPRequestHandler):
     def _route_post(self):
         path = urlparse(self.path).path
         if path == "/cron/whatsapp": return self.whatsapp_cron()
+        if path == "/cron/backup": return self.backup_cron()
         if path == "/webhook/whatsapp": return self.whatsapp_webhook_receive()
         if path == "/login": return self.login_submit()
         user = self.require_user()
@@ -16363,6 +16366,47 @@ class App(BaseHTTPRequestHandler):
             c.execute("UPDATE whatsapp_cron_runs SET finished_at=?,status='completato',processed=? WHERE id=?",(whatsapp_now(),len(results),run_id))
         print(f"[WHATSAPP_CRON] run_id={run_id} completato processed={len(results)} results={json.dumps(results,ensure_ascii=False)}", flush=True)
         return self.send_json({"ok":True,"processed":len(results),"scheduled_notifications":scheduled_created,"results":results})
+
+    def backup_cron_authorized(self):
+        # Stesso identico schema di whatsapp_cron_authorized: un secret
+        # condiviso, mai una sessione utente, perche' il chiamante e' il
+        # job Cron Render (processo separato, nessun cookie).
+        secret=os.environ.get("BACKUP_CRON_SECRET","").strip()
+        if not secret:
+            return False, "variabile ambiente BACKUP_CRON_SECRET assente o vuota"
+        qs=parse_qs(urlparse(self.path).query)
+        query_secret=((qs.get("secret") or [""])[0] or "").strip()
+        header_secret=(self.headers.get("X-Cron-Secret","") or "").strip()
+        provided=query_secret or header_secret
+        source="query" if query_secret else ("header" if header_secret else "nessuna")
+        if not provided:
+            return False, "parametro ?secret= mancante e header X-Cron-Secret mancante"
+        if not hmac.compare_digest(provided,secret):
+            return False, f"secret errato ricevuto da {source}: lunghezza_ricevuta={len(provided)} lunghezza_attesa={len(secret)}"
+        return True, f"secret corretto ricevuto da {source}"
+
+    def backup_cron(self):
+        # Il job Cron di Render e' un PROCESSO SEPARATO, senza il
+        # Persistent Disk montato (solo il servizio web ce l'ha) - per
+        # questo il backup vero e proprio gira qui, dentro il servizio
+        # web, svegliato da una chiamata HTTP esterna. Stesso principio
+        # architetturale gia' usato per il cron WhatsApp.
+        ok,reason=self.backup_cron_authorized()
+        if not ok:
+            print(f"[BACKUP_CRON] 403 {reason}", flush=True)
+            return self.send_json({"ok":False,"error":reason},403)
+        print(f"[BACKUP_CRON] avviato, autorizzato={reason}", flush=True)
+        result=run_database_backup(DB_PATH)
+        status=200 if result.ok else 500
+        if result.ok:
+            print(f"[BACKUP_CRON] completato {json.dumps(result.to_dict(),ensure_ascii=False)}", flush=True)
+            with db() as c:
+                emit_notification(c,"backup_completed","Backup completato",f"{result.backup_name} ({result.size_bytes} byte)",db_path=DB_PATH)
+        else:
+            print(f"[BACKUP_CRON] FALLITO {json.dumps(result.to_dict(),ensure_ascii=False)}", flush=True)
+            with db() as c:
+                emit_notification(c,"system_error","Backup database fallito",result.error,db_path=DB_PATH)
+        return self.send_json(result.to_dict(),status)
 
     def whatsapp_webhook_verify(self):
         qs=parse_qs(urlparse(self.path).query)

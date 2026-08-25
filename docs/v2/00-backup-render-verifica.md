@@ -52,7 +52,33 @@ Se in futuro si userà il **PostgreSQL gestito** di Render (prodotto diverso dal
 4. Verifica di integrità automatica dopo ogni backup (riapertura del file copiato e controllo `PRAGMA integrity_check`).
 5. **Un test di ripristino periodico reale** — come giustamente scrivi tu, "un backup mai testato come restore non va considerato affidabile". Questo va pianificato come procedura ricorrente, non solo come script.
 
-**Domanda per te prima di procedere**: vuoi che implementi questo script di backup indipendente ORA (prima di continuare con i documenti V2)? Mi servirebbe sapere dove vuoi che i backup vengano copiati (hai già un account di storage cloud, es. Backblaze B2/AWS S3/Google Cloud Storage, o preferisci che te ne consigli uno economico adatto a un singolo file di poche centinaia di KB/pochi MB al giorno?).
+**Implementato** (vedi commit successivo): `backup_service.py`, endpoint `/cron/backup`, `cron_backup.py`, servizio cron dedicato in `render.yaml`. Storage consigliato: **Backblaze B2**.
+
+## Perché Backblaze B2
+
+- **FACT** (documentazione ufficiale Backblaze, verificata 2026-08-25): primi 10GB di storage sempre gratuiti; oltre, $6.95/TB/mese (~$0,007/GB); download gratuiti fino a 3 volte lo storage medio mensile; le chiamate API standard sono gratuite.
+- **Per questo caso d'uso** (un file compresso di poche centinaia di KB/pochi MB al giorno, conservato ~30 giorni → totale ben sotto 1GB): **il costo mensile atteso è €0**, resta interamente nella soglia gratuita.
+- **Compatibile S3**: nessuna libreria proprietaria necessaria, lo script usa `boto3` (standard, ampiamente testato) puntato all'endpoint S3-compatibile di B2.
+
+## Cosa devi fare tu (azioni che non posso compiere per te — creazione account/credenziali)
+
+1. **Crea un account Backblaze** su backblaze.com (o usa un provider S3-compatibile diverso se lo preferisci — AWS S3/Google Cloud Storage funzionano allo stesso modo, basta cambiare l'endpoint).
+2. **Crea un bucket privato** (es. `pet-paradise-backups`), regione a tua scelta (consiglio una regione EU per residenza dati in Europa).
+3. **Crea una Application Key** con permessi di lettura/scrittura/eliminazione **solo su quel bucket** (mai una chiave con accesso a tutto l'account) — Backblaze genera un `keyID` e una `applicationKey`, mostrata **una sola volta**: salvala subito in un posto sicuro (password manager), non recuperabile dopo.
+4. **Annota l'endpoint S3** del tuo bucket (mostrato nella dashboard B2 accanto al bucket, formato tipo `https://s3.<regione>.backblazeb2.com`).
+5. **Nel pannello Render**, sul servizio web `pet-paradise-manager`, imposta queste variabili d'ambiente (già dichiarate in `render.yaml` con `sync: false`, quindi Render ti chiederà il valore al primo deploy, non lo leggerà da questo repository):
+   - `BACKUP_CRON_SECRET` — una stringa lunga e casuale a tua scelta (es. generata con un password manager), stesso principio del `WHATSAPP_CRON_SECRET` già esistente
+   - `BACKUP_S3_ENDPOINT` — l'endpoint del punto 4
+   - `BACKUP_S3_KEY_ID` — il `keyID` del punto 3
+   - `BACKUP_S3_APPLICATION_KEY` — la `applicationKey` del punto 3
+   - `BACKUP_S3_BUCKET` — il nome del bucket del punto 2
+6. **Sul nuovo servizio cron** `pet-paradise-backup-cron` (creato automaticamente al prossimo deploy da Blueprint, leggendo `render.yaml`), imposta:
+   - `BACKUP_CRON_URL` — l'URL pubblico del tuo servizio web + `/cron/backup` (es. `https://pet-paradise-manager.onrender.com/cron/backup`)
+   - `BACKUP_CRON_SECRET` — **lo stesso identico valore** impostato al punto 5
+
+Il backup gira automaticamente ogni notte alle 02:00 UTC (~03:00-04:00 ora italiana a seconda dell'ora legale). Puoi verificare che funzioni controllando i log del servizio cron su Render dopo la prima esecuzione, oppure il Centro notifiche del gestionale (comparirà "Backup completato" o un errore).
+
+**Passo finale, come hai giustamente richiesto tu stesso**: dopo la prima esecuzione riuscita, fai un **test di ripristino reale** (scarica il file dal bucket, decomprimilo, aprilo con un client SQLite qualsiasi e verifica che i dati ci siano) — un backup mai testato come restore non va considerato affidabile.
 
 ## Sources
 - [Persistent Disks – Render Docs](https://render.com/docs/disks)
