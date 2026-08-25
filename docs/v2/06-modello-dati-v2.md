@@ -297,3 +297,354 @@ Dettaglio completo del dominio Calendario rimandato al documento architettura ba
 | 5 | Pratica con fatture: cancellabile? | **Sì, cancellabile** — ma la fattura non viene mai cancellata con essa (`SET NULL` + snapshot, non `CASCADE` né `RESTRICT`, vedi nota sopra: da confermare se invece si vuole CASCADE anche sulla fattura) |
 
 Questo documento è considerato **stabile** per procedere al documento 07 (Strategia di migrazione), fatta salva l'eventuale correzione sul punto 5 se la tua intenzione era diversa da quella che ho assunto.
+
+---
+
+# Addendum — Completamento modello dati (chiusura condizioni Architecture Gate, doc 13)
+
+> Ogni gruppo di colonne trovato non mappato dall'audit (doc 13 §2.1-2.2) è indirizzato qui con: destinazione V2, trasformazione, motivo architetturale, strategia di migrazione, strategia di verifica, possibilità di deprecazione futura. **Nessuna struttura è stata eliminata** solo perché V1 la usa male — dove il comportamento V1 andava comunque ridisegnato (non solo rinominato), è dichiarato esplicitamente. Classificazione per ogni punto: **DECISIONE TECNICA** (presa qui, motivata) o **DECISIONE AZIENDALE NECESSARIA** (non presa, richiede una tua risposta) o **ASSUMPTION** (da validare sui dati reali).
+
+## A. Owner snapshot storico
+
+```
+practices(
+  ...
+  owner_snapshot JSONB,   -- scattato UNA VOLTA alla creazione della pratica, mai più riscritto
+  ...
+)
+```
+
+- **Destinazione V2**: un unico campo `owner_snapshot JSONB` su `practices` (non 16 colonne separate), contenente `{first_name, last_name, phone, phone_2, email, tax_code, address, street, city, province, zip, company, vat, sdi, notes, phone_note}` così come risultavano al momento della creazione/ultima modifica della pratica.
+- **Trasformazione**: le 16 colonne `owner_*` di V1 confluiscono in un solo oggetto JSON, non in 16 colonne V2 parallele.
+- **Motivo architetturale**: uno snapshot JSON, per costruzione, **non può** essere letto/joinato come se fosse `clients` — questo lo rende impossibile da usare accidentalmente come seconda fonte di verità dell'anagrafica corrente (a differenza di 16 colonne "vive" che inviterebbero a essere aggiornate in parallelo a `clients`, ricreando la stessa dualità già vista per le fatture). `clients` resta l'**unica** fonte per "qual è oggi l'indirizzo di questo cliente"; `owner_snapshot` risponde solo a "qual era l'indirizzo quando fu creata QUESTA pratica" — usato per stampa DDT/documenti storici, mai per calcoli o ricerche.
+- **Migrazione**: per ogni pratica V1, costruire il JSON dalle 16 colonne `owner_*` così come sono oggi, indipendentemente dal fatto che `client_id` fosse già collegato o meno.
+- **Verifica**: conteggio pratiche con `owner_snapshot` non nullo in V2 = conteggio pratiche V1 con almeno un campo `owner_*` valorizzato; verifica a campione che il JSON contenga esattamente gli stessi valori delle colonne originali.
+- **Deprecazione futura**: nessuna prevista — è uno storico, per definizione non decade. Non va rimosso "perché vecchio".
+- **Classificazione**: DECISIONE TECNICA (forma dello snapshot — JSON vs colonne — presa da me, motivata sopra). Nessuna decisione aziendale necessaria: rispetta esattamente il vincolo che hai posto ("distinguibile dall'anagrafica corrente, non deve diventare una seconda fonte di verità").
+
+## B. DDT / trasporto / tracciabilità
+
+```
+practices(
+  ...
+  transport_method TEXT,
+  vehicle_plate TEXT,
+  temperature_mode TEXT,
+  package_count INTEGER,
+  container_id TEXT,
+  lot_number TEXT,
+  treatment_method TEXT,
+  delivery_at_clinic BOOLEAN NOT NULL DEFAULT false,
+  delivery_at_home BOOLEAN NOT NULL DEFAULT false,
+  signatory_identity_document_number TEXT,
+  signatory_identity_document_date DATE,
+  signatory_signing_place TEXT,
+  ddt_share_token TEXT UNIQUE,
+  original_practice_number TEXT,
+  ...
+)
+```
+
+- **Destinazione V2**: colonne dirette e tipizzate su `practices` (non una tabella separata — sono attributi 1:1 della pratica, non righe ripetute, quindi normalizzarle in una tabella figlia non ridurrebbe alcuna duplicazione reale).
+- **Trasformazione**: solo tipizzazione (`package_count` → intero, le due date → `DATE`, `delivery_at_clinic/at_home` da `TEXT` "Si"/vuoto → `BOOLEAN`). Nessuna perdita semantica.
+- **Motivo architetturale**: mantenuti 1:1 come richiesto esplicitamente — nessuno di questi campi viene dichiarato "non necessario" da questo documento.
+- **Migrazione**: copia diretta con coercizione di tipo, verificata a campione.
+- **Verifica**: confronto valore-per-valore su un campione statisticamente significativo, non solo conteggio.
+- **`ddt_share_token`**: preservato **esattamente com'è** (incluso il vincolo `UNIQUE`), perché link di condivisione già distribuiti a clienti reali devono continuare a funzionare dopo il cutover.
+- **`original_practice_number`**: preservato esattamente com'è, resta parte integrante del meccanismo di cestino/ripristino (vedi anche doc 13 §2.1.2).
+- **⚠️ DECISIONE AZIENDALE NECESSARIA — non presa qui**: `transport_method`, `vehicle_plate`, `temperature_mode`, `container_id`, `lot_number`, `treatment_method` hanno l'aspetto di dati di tracciabilità potenzialmente soggetti a obblighi normativi (trasporto sottoprodotti animali); `signatory_identity_document_*`/`signing_place` sono dati del documento d'identità del firmatario, potenzialmente soggetti a normativa privacy con un proprio periodo di conservazione. **Questo documento NON decide una policy di conservazione/retention per questi campi** — non è una decisione tecnica che un architetto software possa prendere al posto tuo (o di chi segue gli aspetti normativi/legali dell'azienda). Per ora restano preservati senza scadenza, come richiesto esplicitamente ("per ora devono essere tutti preservati").
+- **ASSUMPTION**: `transport_method`/`temperature_mode`/`treatment_method` potrebbero essere vocabolari chiusi (candidati a `ENUM` invece di `TEXT` libero) — da verificare sui valori realmente presenti in produzione prima di finalizzare il DDL, non assunto qui.
+- **Deprecazione futura**: nessuna — in attesa della decisione aziendale sopra, questi campi non vanno considerati deprecabili.
+
+## C. Provenienza / origine
+
+```
+practices(
+  ...
+  origin_type origin_type_enum NOT NULL DEFAULT 'non_specificato',  -- enum: 'veterinario' | 'domicilio' | 'consegna_in_sede' | 'collaboratore' | 'altro' | 'non_specificato'
+  origin_contact_name TEXT,        -- sostituisce origin_first_name + origin_last_name (un solo campo display, coerente col resto del modello)
+  origin_free_text TEXT,           -- sostituisce origin_text, usato solo quando origin_type='altro'
+  provenance_code TEXT,            -- invariato: alimenta il badge colorato già in uso (doc 13 §2.1.3)
+  ...
+)
+```
+
+- **Destinazione V2**: un discriminatore esplicito `origin_type` (invece di dedurre la modalità da quale-campo-è-valorizzato, stesso principio già applicato al circuito W/D) + un campo di contatto unico + un campo libero solo per il caso residuale.
+- **Trasformazione**: `pickup_address_mode`/`transporter_mode`/`origin_mode` (3 colonne che oggi esprimono varianti della stessa domanda "da dove/come arriva l'animale") collassano nell'unico enum `origin_type`; `origin_first_name`+`origin_last_name` → `origin_contact_name`; `origin_text` → `origin_free_text`; `provenance` → `provenance_code` (rinominato per chiarezza, valore invariato).
+- **Motivo architetturale**: elimina la stessa classe di ambiguità già risolta per i pagamenti — oggi la modalità di provenienza è **dedotta** da quale colonna è piena, esattamente il pattern che ha causato il bug W/D. Un enum esplicito rende impossibile lo stato "nessuna modalità dichiarata ma dati presenti" o viceversa.
+- **⚠️ DECISIONE AZIENDALE NECESSARIA — non presa qui**: la logica di fallback reale (es. "se non c'è indirizzo di ritiro esplicito, usa quello del veterinario collegato" o simili) vive oggi solo nel codice V1 e non è mai stata dichiarata come regola di business esplicita in nessun documento. Non la ricostruisco per assunzione, come richiesto — la struttura dati sopra è pronta ad accogliere qualunque regola tu confermi, ma la regola stessa resta un tuo punto aperto.
+- **Migrazione**: mappatura dai valori V1 esistenti ai nuovi valori enum (tabella di corrispondenza da scrivere una volta nota la regola di business); i casi non riconducibili a un valore noto finiscono in `origin_type='non_specificato'` con `origin_free_text` popolato dal valore grezzo originale, **mai scartati**.
+- **Verifica**: nessuna pratica migrata deve avere `origin_type='non_specificato'` E `origin_free_text` vuoto se in V1 esisteva un qualunque valore in uno dei campi sorgente.
+- **Deprecazione futura**: nessuna.
+
+## D. Override manuali (decisioni operatore, non dati derivati)
+
+```
+practices(
+  ...
+  computed_total_override_cents BIGINT,      -- NULL = usa sempre il totale calcolato da practice_line_items
+  computed_total_override_reason TEXT,
+  computed_total_override_by BIGINT REFERENCES users(id),
+  computed_total_override_at TIMESTAMPTZ,
+  to_invoice BOOLEAN NOT NULL DEFAULT false, -- sostituisce make_invoice: "questa pratica deve essere fatturata"
+  ...
+)
+```
+
+- **Destinazione V2**: un blocco esplicito di override sulla pratica, **separato** dal calcolo automatico (mai una sovrascrittura silenziosa dei due).
+- **Trasformazione**: `total_service_manual`/`invoice_total_manual` (flag booleani "questo è stato corretto a mano" accoppiati a un valore) diventano un unico meccanismo esplicito: se `computed_total_override_cents` è valorizzato, l'interfaccia mostra **quel** valore come totale ufficiale (con indicazione visiva "valore corretto manualmente da {utente} il {data}: {motivo}"), il totale calcolato da `practice_line_items` resta comunque visibile a fianco per confronto, mai nascosto. `make_invoice` → `to_invoice` (stesso significato, solo rinominato per chiarezza semantica visto che in V2 non convive più con le colonne fattura legacy).
+- **Motivo architetturale**: risponde esattamente al vincolo posto ("non deve essere possibile che un ricalcolo automatico sovrascriva silenziosamente una decisione manuale storica") — finché `computed_total_override_cents` non viene esplicitamente azzerato da un operatore (azione dedicata "torna al calcolo automatico", loggata in `audit_log`), nessun ricalcolo lo tocca.
+- **Migrazione**: dove `total_service_manual='Si'` in V1, popolare `computed_total_override_cents` col valore che risultava allora; `computed_total_override_reason` viene popolato con un testo standard ("valore manuale migrato da V1") dato che V1 non registrava un motivo esplicito — **limite noto della fonte dati, non introdotto dalla migrazione**.
+- **Verifica**: ogni pratica V1 con flag manuale attivo deve avere un corrispondente `computed_total_override_cents` non nullo in V2, con lo stesso importo.
+- **Deprecazione futura**: nessuna — il meccanismo di override è strutturale, non un residuo temporaneo.
+- **Classificazione**: DECISIONE TECNICA (presa qui, coerente col vincolo esplicito che hai dato).
+
+## E. Workflow operativo
+
+```
+practices(
+  ...
+  send_catalog BOOLEAN NOT NULL DEFAULT false,
+  catalog_sent BOOLEAN NOT NULL DEFAULT false,
+  send_estremi BOOLEAN NOT NULL DEFAULT false,
+  estremi_sent BOOLEAN NOT NULL DEFAULT false,
+  voucher_requested BOOLEAN NOT NULL DEFAULT false,
+  use_voucher BOOLEAN NOT NULL DEFAULT false,
+  whatsapp_thanks_sent_at TIMESTAMPTZ,
+  whatsapp_thanks_last_error TEXT,
+  no_whatsapp_message BOOLEAN NOT NULL DEFAULT false,
+  cremation_registered BOOLEAN NOT NULL DEFAULT false,
+  cremation_queued BOOLEAN NOT NULL DEFAULT false,
+  ...
+)
+```
+
+- **Destinazione V2**: colonne dirette su `practices`, stessa semantica di V1, solo tipizzate (`TEXT` "Si"/vuoto → `BOOLEAN`, date libere → `TIMESTAMPTZ`).
+- **Trasformazione**: nessuna trasformazione concettuale — sono flag di processo 1:1 per pratica, nessuna normalizzazione necessaria.
+- **Motivo architetturale**: nessuna incoerenza trovata in questi campi dall'audit — l'unico problema era l'omissione, non il design. Preservati as-is.
+- **Migrazione**: copia diretta con coercizione booleana.
+- **Verifica**: conteggio pratiche con ciascun flag attivo, V1 vs V2, deve coincidere esattamente.
+- **Deprecazione futura**: nessuna prevista oggi.
+- **Classificazione**: DECISIONE TECNICA, a basso rischio.
+
+## F. Collaboratori — fatturazione interna vs documento fiscale
+
+```
+practices(
+  ...
+  collaborator_billing_status collaborator_billing_status_enum NOT NULL DEFAULT 'da_fatturare',  -- enum: 'da_fatturare' | 'fatturato'
+  collaborator_billing_invoiced_at TIMESTAMPTZ,
+  collaborator_name_fallback TEXT,   -- SOLO per le pratiche storiche che la migrazione non riesce a ricollegare a un collaborator_id reale
+  ...
+)
+```
+
+- **Destinazione V2**: `collaborator_billing_status`/`collaborator_billing_invoiced_at` restano **esplicitamente separati** da `invoices` — è un flag di processo interno ("questo collaboratore va pagato/è stato pagato per questa pratica"), non un documento fiscale. Tenerli fusi dentro `invoices` avrebbe ricreato esattamente la dualità fatture che il resto di questo documento elimina.
+- **`collaborator_name`**: **non** portato avanti come colonna live in V2. **Motivo**: V1 stesso già risolve `collaborator_name` → `collaborator_id` quando possibile (app.py:1085, `UPDATE practices SET collaborator_id=? WHERE collaborator_name=? AND collaborator_id IS NULL`) — la migrazione applica la stessa risoluzione una volta per tutte in Fase B. `collaborator_name_fallback` resta **solo** come rete di sicurezza per le (eventuali) pratiche storiche che restano irrisolvibili anche dopo quel tentativo, **non eliminato "perché sembra vecchio"** ma degradato a caso residuale esplicito.
+- **Migrazione**: passo 1, risolvere `collaborator_name`→`collaborator_id` con la stessa query già usata da V1; passo 2, per le righe non risolte, popolare `collaborator_name_fallback` col valore originale (**mai scartato**).
+- **Verifica**: zero pratiche con `collaborator_id IS NULL AND collaborator_name_fallback IS NULL` se in V1 esisteva un `collaborator_name` valorizzato.
+- **Deprecazione futura**: `collaborator_name_fallback` è **candidato a deprecazione** solo dopo aver verificato (query dedicata, sezione query di verifica) che sia sempre NULL su tutto il dataset migrato — non prima, e non per assunzione.
+- **Classificazione**: DECISIONE TECNICA sulla forma; nessuna decisione aziendale necessaria (hai già dato la direzione esplicita: "non confondere il workflow interno con il documento fiscale").
+
+## G. Notifica proprietario cremazione
+
+```
+practices(
+  ...
+  owner_notified_status owner_notified_status_enum NOT NULL DEFAULT 'da_avvisare',  -- enum: 'da_avvisare' | 'avvisato'
+  owner_notified_at TIMESTAMPTZ,
+  owner_notified_by BIGINT REFERENCES users(id),
+  ...
+)
+```
+
+- **Destinazione V2**: colonne dirette su `practices`, identiche nel significato a V1 — **stato corrente interrogabile direttamente** (query "quali pratiche sono da avvisare oggi" resta O(1) su indice, non una scansione di `audit_log`).
+- **Trasformazione**: nessuna, solo tipizzazione ed enum invece di `TEXT` libero.
+- **Motivo architetturale**: `audit_log` rappresenta lo **storico** (quando è cambiato, chi l'ha cambiato) — ogni transizione di questo stato scrive **anche** una riga in `audit_log` (per la regola di atomicità del doc 09), ma lo stato corrente resta una colonna diretta, non ricavata dal log. Le due cose non si sostituiscono a vicenda, come richiesto.
+- **Migrazione**: copia diretta.
+- **Verifica**: conteggio per stato, V1 vs V2, deve coincidere.
+- **Deprecazione futura**: nessuna.
+
+## H. `practice_line_items.subtype`
+
+```
+practice_line_items(
+  ...
+  subtype TEXT,   -- es. 'naso' | 'polpastrello' | 'zampa' per category='calco'
+  ...
+)
+```
+
+- **Destinazione V2**: aggiunta diretta al modello già presente in questo documento (era un'omissione, non una decisione).
+- **Migrazione/Verifica**: copia diretta da `practice_items.subtype`, conteggio per (category, subtype) V1 vs V2.
+- **Classificazione**: DECISIONE TECNICA, correzione di un'omissione, nessun impatto su decisioni già prese altrove.
+
+## I. Veterinarian vouchers
+
+```
+veterinarian_vouchers(
+  id BIGINT PK,
+  veterinarian_id BIGINT NOT NULL REFERENCES veterinarians(id),
+  practice_id BIGINT REFERENCES practices(id) ON DELETE SET NULL,   -- stesso pattern di invoices/payments: il buono resta anche se la pratica viene cancellata
+  practice_number_snapshot TEXT,
+  status TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  used_at TIMESTAMPTZ,
+  note TEXT
+)
+
+practices(
+  ...
+  used_voucher_id BIGINT REFERENCES veterinarian_vouchers(id),   -- ora FK reale, in V1 non lo era
+  ...
+)
+```
+
+- **Destinazione V2**: tabella preservata con lo stesso ruolo, con FK reali dove in V1 mancavano.
+- **Motivo architetturale**: stesso principio già applicato a `invoices`/`payments` — un buono è un record di valore economico/contabile, non deve sparire se la pratica collegata viene cancellata.
+- **Migrazione**: copia diretta, con collegamento FK esplicito.
+- **Verifica**: conteggio + verifica che ogni `used_voucher_id` su `practices` punti a un buono realmente esistente in V2 (oggi non garantito, vedi doc 13 §2.5).
+- **Deprecazione futura**: nessuna.
+
+## J. Disposal batches (smaltimento collettivo)
+
+```
+disposal_batches(
+  id BIGINT PK,
+  period_from DATE NOT NULL,
+  period_to DATE NOT NULL,
+  confirmed_at TIMESTAMPTZ,
+  confirmed_by BIGINT REFERENCES users(id),
+  total_count INTEGER NOT NULL,
+  breakdown_json JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+)
+disposal_batch_practices(
+  id BIGINT PK,
+  batch_id BIGINT NOT NULL REFERENCES disposal_batches(id) ON DELETE CASCADE,
+  practice_id BIGINT NOT NULL REFERENCES practices(id)   -- FK esplicita, non dichiarata in V1
+)
+```
+
+- **Destinazione V2**: tabelle preservate, con FK esplicite dove mancanti.
+- **Motivo architetturale**: rilevanza per tracciabilità/storico dello smaltimento collettivo — stesso tipo di cautela già applicato al Gruppo B (potenziale rilevanza normativa). **DECISIONE AZIENDALE NON PRESA QUI**: se esistano obblighi di conservazione specifici per questi lotti va confermato da te/da chi segue gli aspetti normativi, non assunto da questo documento. Fino ad allora: preservati senza scadenza.
+- **Migrazione/Verifica**: copia diretta, conteggio + verifica catena `disposal_batch_practices→practices` non orfana.
+- **Deprecazione futura**: nessuna, in attesa della decisione aziendale sopra.
+
+## K. Ledger reversibility — storni
+
+```
+payment_deletions(              -- equivalente V2 di balance_movement_deletions, stesso ruolo
+  id BIGINT PK,
+  payment_id BIGINT,             -- riferimento informativo, NON FK (il pagamento originale può non esistere più)
+  snapshot_json JSONB NOT NULL,  -- copia completa della riga payments prima della cancellazione/storno
+  deletion_kind TEXT NOT NULL,
+  deleted_by BIGINT REFERENCES users(id),
+  deleted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  restored_at TIMESTAMPTZ,
+  restored_by BIGINT REFERENCES users(id)
+)
+```
+
+- **Destinazione V2**: tabella dedicata, mai omessa — è il meccanismo che rende gli storni realmente ripristinabili, esplicitamente il requisito fondamentale che hai richiamato.
+- **Motivo architetturale**: preserva esattamente il pattern V1 (snapshot JSON pre-cancellazione), generalizzato al nuovo nome tabella `payments`. **Questo era il gap più grave trovato dall'audit — ora chiuso a livello di modello.**
+- **Migrazione**: copia diretta da `balance_movement_deletions`.
+- **Verifica**: conteggio + verifica che ogni riga abbia uno `snapshot_json` valido e parsabile.
+- **Deprecazione futura**: nessuna, mai.
+- **Classificazione**: DECISIONE TECNICA (presa, in diretta esecuzione della tua istruzione esplicita "NON eliminare questo concetto").
+
+## L. Urn movements
+
+```
+urn_movements(
+  id BIGINT PK,
+  urn_id BIGINT NOT NULL REFERENCES urns(id),
+  practice_id BIGINT REFERENCES practices(id) ON DELETE SET NULL,
+  user_id BIGINT REFERENCES users(id),
+  movement_type TEXT NOT NULL,
+  quantity_delta INTEGER NOT NULL,
+  old_quantity INTEGER NOT NULL,
+  new_quantity INTEGER NOT NULL,
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+)
+```
+
+- **Destinazione V2**: tabella preservata, stesso ruolo (log movimenti di magazzino), con FK esplicite dove mancanti in V1.
+- **Migrazione/Verifica**: copia diretta, conteggio + verifica che la sequenza `old_quantity`→`new_quantity` per ciascuna urna resti internamente coerente (nessun salto non spiegato da un `quantity_delta`).
+- **Deprecazione futura**: nessuna.
+
+## M. Calendar zones
+
+```
+calendar_zones(id BIGINT PK, name TEXT NOT NULL, is_default BOOLEAN NOT NULL DEFAULT false, created_at TIMESTAMPTZ NOT NULL DEFAULT now())
+```
+
+- **Destinazione V2**: aggiunta esplicitamente alla lista delle "tabelle che restano concettualmente invariate" (era un'omissione di elenco, non una decisione — l'audit l'aveva segnalato come rischio trascurabile ma comunque da correggere per completezza).
+
+---
+
+## N. Pagamenti — completamento colonne `payments`
+
+```
+payments(
+  ...  -- struttura invariata rispetto a quanto già definito sopra
+  source payment_source_enum NOT NULL DEFAULT 'native',   -- enum: 'native' | 'v1_migration' | 'api' | 'automatic'
+  metadata_json JSONB,
+  ...
+)
+```
+
+- **Destinazione V2**: le 2 colonne mancanti (`source`, `metadata_json`, segnalate da doc 13 §2.4) aggiunte esplicitamente allo schema `payments` già definito in questo documento.
+- **Motivo architetturale**: `source` rende distinguibile in modo permanente "questo pagamento esisteva già in V1 ed è stato migrato" da "questo è nato nativamente in V2" — proprietà preziosa proprio durante il periodo di verifica post-migrazione (doc 07/11), non solo un dettaglio storico. `metadata_json` preserva qualunque contesto non standardizzato che V1 aveva libertà di scrivere, senza dover anticipare oggi ogni possibile caso d'uso futuro.
+- **Migrazione**: ogni riga migrata da `balance_movements` riceve `source='v1_migration'`; ogni riga creata dopo il cutover riceve `source='native'` (o `'api'`/`'automatic'` a seconda dell'origine).
+- **Verifica**: conteggio `source='v1_migration'` in V2 = conteggio totale righe migrate da `balance_movements`.
+- **Deprecazione futura**: nessuna.
+
+## O. Fatture — riconciliazione importo fattura vs importo incassato
+
+```
+invoices(
+  ...
+  total_amount_cents BIGINT NOT NULL,   -- importo del documento fiscale, immutabile salvo correzione esplicita tracciata in audit_log
+  ...
+)
+-- paid_total_cents, residual_cents, payment_status NON sono colonne memorizzate:
+-- sono sempre calcolati a runtime da invoice_payment_links → payments, mai una seconda fonte
+```
+
+- **Regola esplicita (come richiesto)**: `invoices.total_amount_cents` rappresenta **l'importo del documento fiscale**, deciso al momento dell'emissione — **non** è la somma dei pagamenti collegati. `payments` rappresenta **quanto è stato effettivamente incassato**. I due importi **non devono essere uguali per definizione**, ma devono essere sempre riconciliabili con un unico calcolo, mai due fonti divergenti:
+  - **Totale fattura** = `invoices.total_amount_cents` (valore fisso, del documento).
+  - **Totale pagato** = `SUM(payments.amount_cents) attraverso invoice_payment_links` per quella fattura (calcolato live, mai memorizzato — stesso principio già applicato al "pagato" di pratica).
+  - **Residuo** = Totale fattura − Totale pagato.
+  - **Stato pagamento fattura** (calcolato, enum derivato): `non_pagata` (pagato=0), `parziale` (0 < pagato < fattura), `pagata` (pagato = fattura), `sovrapagata` (pagato > fattura).
+  - **Esempio esplicito richiesto**: una fattura da €340 con €120 pagati resta sempre "fattura da €340, €120 pagati, €220 residui" — nessuna delle due cifre viene mai fatta collassare sull'altra.
+- **Comportamento in caso di incoerenza (sovrapagamento)**: **mai corretto automaticamente in silenzio**. Lo stato `sovrapagata` è visivamente evidenziato nell'interfaccia e richiede intervento umano esplicito (storno di un pagamento in eccesso o correzione della fattura, entrambi tracciati in `audit_log`) — stessa disciplina già applicata ovunque in questo documento a ogni caso di incoerenza tra fonti.
+- **Motivo architetturale**: chiude il gap trovato dall'audit (doc 13 §5) mantenendo il principio "mai una seconda fonte di verità" — `total_amount_cents` è l'unica fonte per "quanto è la fattura", il ledger `payments` è l'unica fonte per "quanto è stato pagato", e la riconciliazione fra i due è sempre un calcolo, mai un terzo valore memorizzato che potrebbe disallinearsi da entrambi.
+- **Classificazione**: DECISIONE TECNICA (formalizza esattamente la regola di business che hai già dato esplicitamente in questo turno).
+
+## P. Calendario — Riconsegna senza pratica collegata
+
+```
+calendar_events(
+  ...
+  preliminary_payment_status TEXT,     -- rinominato da payment_status: esplicitamente "preliminare", MAI letto quando linked_practice_id è valorizzato
+  preliminary_payment_amount BIGINT,   -- rinominato da payment_amount, stessa logica
+  ...
+)
+```
+
+- **Destinazione V2**: **non eliminate** — rinominate per rendere esplicito nel nome stesso che sono un dato preliminare/pre-collegamento, mai la fonte di verità una volta che la Riconsegna è collegata a una pratica.
+- **Regola di funzionamento**:
+  1. Finché `linked_practice_id IS NULL`, `preliminary_payment_status`/`preliminary_payment_amount` sono liberamente modificabili dall'operatore e rappresentano una stima/accordo preliminare — esattamente il caso reale verificato nel codice V1 (doc 13 §1).
+  2. Nel momento in cui l'evento viene collegato a una pratica (`linked_practice_id` diventa valorizzato), questi due campi diventano **congelati** (mai più scritti dall'interfaccia) — restano come **storico** di cosa era stato stimato prima del collegamento, non vengono cancellati.
+  3. Da quel momento, l'unica fonte di verità per lo stato di pagamento della Riconsegna è la pratica collegata (`payments` + `practice_line_items`), come già definito nel resto di questo documento.
+- **Regola di riconciliazione al momento del collegamento (nessun dato perso silenziosamente, come richiesto)**: se `preliminary_payment_amount` differisce dal totale calcolato sulla pratica a cui ci si sta per collegare, l'operatore vede un **avviso esplicito** prima di confermare il collegamento ("l'importo preliminare stimato su questo evento [€X] differisce dal totale della pratica [€Y] — confermi comunque il collegamento?") — mai un collegamento silenzioso che fa sparire la discrepanza. L'esito (confermato/annullato) viene scritto in `audit_log`.
+- **Motivo architetturale**: risolve l'incoerenza reale trovata dall'audit senza eliminare una capacità operativa oggi effettivamente usata (prefill pagamento preliminare su Riconsegna, doc 03), rispettando al tempo stesso il principio "mai due fonti di verità per lo stesso importo" — i due campi non sono mai autoritativi contemporaneamente al ledger, sono sequenziali nel tempo (prima/dopo il collegamento), mai concorrenti.
+- **Migrazione**: copia diretta `payment_status`→`preliminary_payment_status`, `payment_amount`→`preliminary_payment_amount`.
+- **Verifica**: nessuna Riconsegna con `linked_practice_id` valorizzato deve mostrare in UI un valore diverso da quello calcolato dalla pratica collegata (test end-to-end dedicato).
+- **Deprecazione futura**: nessuna.
+
+---
+
+**Stato di questo addendum**: chiude tutte le condizioni del doc 13 relative al modello dati (sezioni 2, 5, punto sulla riconciliazione calendario) che erano classificate come decisione tecnica. Le decisioni aziendali esplicitamente NON prese qui (retention DDT/trasporto, retention disposal_batches, regola di fallback provenienza) restano elencate nel report di chiusura Architecture Gate, non nascoste.

@@ -65,6 +65,15 @@ alembic/
 
 **Regola vincolante** (diretta applicazione della richiesta esplicita dell'utente "mai un nuovo app.py enorme"): **nessuna riga di business logic dentro `api/routes/*`**. Una route fa solo: valida input (Pydantic, automatico), chiama un servizio, mappa il risultato in uno schema di risposta. Se una route inizia a contenere `if`/logica di stato, è un segnale che quella logica appartiene a `domain/` o `services/` e va spostata.
 
+### Regola vincolante — atomicità modifica di dominio + audit (condizione Architecture Gate, doc 13 §1)
+
+**DECISION (obbligatoria, non derogabile)**: **ogni operazione di dominio che produce una modifica persistente e il relativo `audit_log` devono essere scritti nella stessa transazione database. Non sono ammesse transazioni separate tra modifica di dominio e audit.**
+
+- **Perché**: se la scrittura di dominio e la riga di `audit_log` fossero in due transazioni distinte, un fallimento tra le due produrrebbe esattamente l'incoerenza che l'intero progetto V2 vuole eliminare — un cambio di stato realmente avvenuto ma senza traccia di chi/quando/perché, indistinguibile da un audit_log incompleto per bug.
+- **Come si applica in pratica**: nello strato `services/` (mai in `domain/`, che resta puro e senza I/O, né in `api/routes`), ogni caso d'uso che modifica un'entità apre **un solo blocco transazionale** che contiene sia la scrittura sul repository dell'entità sia l'insert su `audit_log`. Se una delle due fallisce, la transazione fa rollback su entrambe — mai un commit parziale.
+- **Applicabilità**: regola trasversale, vale per **ogni** entità V2 presente e futura (non solo Pratiche/Pagamenti) — inclusi i domini a basso rischio come Clienti/Veterinari se in futuro sviluppano un proprio audit.
+- **Verifica**: un test di integrazione dedicato per ogni service che tocca `audit_log` deve simulare un fallimento a metà operazione (es. vincolo violato sull'insert di dominio) e verificare che **nessuna riga di audit orfana resti committata**.
+
 ## Macchine a stati esplicite (Decisione 13 dell'utente)
 
 Ogni entità con stati (Pratica, Ritiro, Riconsegna, Ciclo di cremazione) ha in `domain/<entità>/state_machine.py`:
