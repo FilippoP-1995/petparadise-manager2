@@ -87,6 +87,19 @@ async def sample_location(db_session: AsyncSession) -> CompanyLocation:
 
 
 @pytest_asyncio.fixture
+async def sample_collaborator(db_session: AsyncSession):
+    """Collaboratore reale minimo, richiesto da practices.collaborator_id -
+    dominio Fatture/Pagamenti (test collaborator_billing_status separato
+    da fatture/pagamenti, doc06 Addendum F)."""
+    from models.collaborator import Collaborator
+
+    collaborator = Collaborator(name="Collaboratore di test", active=True)
+    db_session.add(collaborator)
+    await db_session.flush()
+    return collaborator
+
+
+@pytest_asyncio.fixture
 async def sample_zone(db_session: AsyncSession) -> CalendarZone:
     """Zona geografica reale minima, richiesta da pickup_type='domicilio'
     (doc06 Addendum C)."""

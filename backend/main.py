@@ -7,6 +7,8 @@ from api.routes import (
     company_locations,
     cremation_cycles,
     deliveries,
+    invoices,
+    payments,
     pickups,
     practices,
     references,
@@ -27,6 +29,8 @@ app.include_router(cremation_cycles.router)
 app.include_router(company_locations.router)
 app.include_router(urns.router)
 app.include_router(articles.router)
+app.include_router(invoices.router)
+app.include_router(payments.router)
 
 
 @app.get("/health")

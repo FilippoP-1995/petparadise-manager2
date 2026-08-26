@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
+import { PracticePaymentsSection } from "@/features/payments/PracticePaymentsSection";
+
 import { usePractice, useTransitionPractice, useTrashPractice, type PracticeStatusValue } from "./api";
 
 const WORKFLOW_NEXT: Record<string, PracticeStatusValue> = {
@@ -81,6 +83,8 @@ export function PracticeDetailPage() {
       </div>
 
       {actionError && <p className="error-banner">{actionError}</p>}
+
+      <PracticePaymentsSection practice={currentPractice} />
 
       <div className="actions">
         {nextStatus && (

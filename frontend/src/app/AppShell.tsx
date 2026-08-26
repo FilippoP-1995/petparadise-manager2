@@ -14,6 +14,7 @@ export function AppShell() {
           <Link to="/ritiri">Ritiri</Link>
           <Link to="/riconsegne">Riconsegne</Link>
           <Link to="/cicli-cremazione">Cicli di cremazione</Link>
+          <Link to="/fatture">Fatture</Link>
           <Link to="/clienti">Clienti</Link>
           <Link to="/veterinari">Veterinari</Link>
           <Link to="/sedi">Sedi</Link>

@@ -967,6 +967,195 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/invoices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Invoices */
+        get: operations["list_invoices_api_invoices_get"];
+        put?: never;
+        /** Create Invoice */
+        post: operations["create_invoice_api_invoices_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/invoices/{invoice_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Invoice */
+        get: operations["get_invoice_api_invoices__invoice_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/invoices/{invoice_id}/riconciliazione": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Invoice Reconciliation */
+        get: operations["get_invoice_reconciliation_api_invoices__invoice_id__riconciliazione_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/invoices/{invoice_id}/collega-pagamento": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Link Payment */
+        post: operations["link_payment_api_invoices__invoice_id__collega_pagamento_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Payments */
+        get: operations["list_payments_api_payments_get"];
+        put?: never;
+        /** Register Payment */
+        post: operations["register_payment_api_payments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/payments/practice/{practice_id}/riconciliazione": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Practice Reconciliation */
+        get: operations["get_practice_reconciliation_api_payments_practice__practice_id__riconciliazione_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/payments/{payment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Payment */
+        get: operations["get_payment_api_payments__payment_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/payments/{payment_id}/storna": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reverse Payment */
+        post: operations["reverse_payment_api_payments__payment_id__storna_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/payments/{payment_id}/elimina": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Delete Payment */
+        post: operations["delete_payment_api_payments__payment_id__elimina_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/payments/deletions/{deletion_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Payment Deletion */
+        get: operations["get_payment_deletion_api_payments_deletions__deletion_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/payments/deletions/{deletion_id}/ripristina": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore Payment Deletion */
+        post: operations["restore_payment_deletion_api_payments_deletions__deletion_id__ripristina_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -1366,6 +1555,13 @@ export interface components {
             /** Practice Id */
             practice_id: number | null;
         };
+        /** DeletePaymentRequest */
+        DeletePaymentRequest: {
+            /** Deletion Kind */
+            deletion_kind: string;
+            /** Reason */
+            reason: string;
+        };
         /** DeliveryCreate */
         DeliveryCreate: {
             /**
@@ -1492,6 +1688,64 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** InvoiceCreate */
+        InvoiceCreate: {
+            /** Practice Id */
+            practice_id: number;
+            /** Invoice Number */
+            invoice_number: string;
+            /** Invoice Date */
+            invoice_date?: string | null;
+            /** Total Amount Cents */
+            total_amount_cents: number;
+            channel: components["schemas"]["PaymentChannel"];
+        };
+        /** InvoiceRead */
+        InvoiceRead: {
+            /** Id */
+            id: number;
+            /** Invoice Number */
+            invoice_number: string;
+            /** Invoice Date */
+            invoice_date: string | null;
+            /** Total Amount Cents */
+            total_amount_cents: number;
+            channel: components["schemas"]["PaymentChannel"];
+            /** Practice Id */
+            practice_id: number | null;
+            /** Practice Number Snapshot */
+            practice_number_snapshot: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * InvoiceReconciliationRead
+         * @description doc06 Addendum O: le due cifre non collassano mai l'una sull'altra -
+         *     fattura, pagato e residuo restano sempre distinti e visibili insieme.
+         */
+        InvoiceReconciliationRead: {
+            /** Invoice Id */
+            invoice_id: number;
+            /** Total Amount Cents */
+            total_amount_cents: number;
+            /** Paid Cents */
+            paid_cents: number;
+            /** Residual Cents */
+            residual_cents: number;
+            /** Status */
+            status: string;
+        };
+        /**
+         * LedgerSection
+         * @description doc06 '2. Pagamenti: un solo ledger' - dimensione indipendente dal
+         *     channel (W/D/Collaboratori): un movimento e' sempre o un'Entrata o
+         *     un'Uscita, indipendentemente da quale circuito lo classifica.
+         * @enum {string}
+         */
+        LedgerSection: "Entrata" | "Uscita";
         /** LineItemInput */
         LineItemInput: {
             /** Category */
@@ -1536,6 +1790,11 @@ export interface components {
              */
             confirm_despite_mismatch: boolean;
         };
+        /** LinkPaymentToInvoiceRequest */
+        LinkPaymentToInvoiceRequest: {
+            /** Payment Id */
+            payment_id: number;
+        };
         /** LoginRequest */
         LoginRequest: {
             /** Username */
@@ -1573,6 +1832,95 @@ export interface components {
          * @enum {string}
          */
         PaymentChannel: "W" | "D" | "Collaboratori";
+        /** PaymentCreate */
+        PaymentCreate: {
+            /** Practice Id */
+            practice_id?: number | null;
+            /**
+             * Movement Date
+             * Format: date
+             */
+            movement_date: string;
+            channel: components["schemas"]["PaymentChannel"];
+            ledger_section: components["schemas"]["LedgerSection"];
+            /** Movement Type */
+            movement_type: string;
+            /** Amount Cents */
+            amount_cents: number;
+            /** Payment Method */
+            payment_method?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Collaborator Id */
+            collaborator_id?: number | null;
+        };
+        /** PaymentDeletionRead */
+        PaymentDeletionRead: {
+            /** Id */
+            id: number;
+            /** Payment Id */
+            payment_id: number;
+            /** Deletion Kind */
+            deletion_kind: string;
+            /** Deleted By */
+            deleted_by: number | null;
+            /**
+             * Deleted At
+             * Format: date-time
+             */
+            deleted_at: string;
+            /** Restored At */
+            restored_at: string | null;
+            /** Restored By */
+            restored_by: number | null;
+        };
+        /** PaymentRead */
+        PaymentRead: {
+            /** Id */
+            id: number;
+            /**
+             * Payment Uuid
+             * Format: uuid
+             */
+            payment_uuid: string;
+            /** Practice Id */
+            practice_id: number | null;
+            /** Practice Number Snapshot */
+            practice_number_snapshot: string;
+            /**
+             * Movement Date
+             * Format: date
+             */
+            movement_date: string;
+            channel: components["schemas"]["PaymentChannel"];
+            ledger_section: components["schemas"]["LedgerSection"];
+            /** Movement Type */
+            movement_type: string;
+            /** Amount Cents */
+            amount_cents: number;
+            /** Payment Method */
+            payment_method: string | null;
+            /** Description */
+            description: string | null;
+            /** Related Payment Id */
+            related_payment_id: number | null;
+            /** Collaborator Id */
+            collaborator_id: number | null;
+            source: components["schemas"]["PaymentSource"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * PaymentSource
+         * @description doc06 Addendum N: distingue permanentemente un pagamento nato
+         *     nativamente in V2 da uno migrato da V1 - utile durante tutto il
+         *     periodo di verifica post-migrazione (doc07/11), non solo storico.
+         * @enum {string}
+         */
+        PaymentSource: "native" | "v1_migration" | "api" | "automatic";
         /**
          * PickupCreate
          * @description Mai un campo pickup_status qui (doc09 'lo stato iniziale non e' mai
@@ -1960,6 +2308,36 @@ export interface components {
              * @default 0
              */
             line_items_total_cents: number;
+            /**
+             * Effective Total Cents
+             * @default 0
+             */
+            effective_total_cents: number;
+        };
+        /**
+         * PracticeReconciliationRead
+         * @description Riconciliazione a livello pratica (non fattura): totale effettivo
+         *     (override se presente, altrimenti somma preventivo - domain.practice.
+         *     rules.effective_total_cents, mai ricalcolato in parallelo) contro
+         *     quanto risulta pagato sul ledger, per canale.
+         */
+        PracticeReconciliationRead: {
+            /** Practice Id */
+            practice_id: number;
+            /** Effective Total Cents */
+            effective_total_cents: number;
+            /** Paid W Cents */
+            paid_w_cents: number;
+            /** Paid D Cents */
+            paid_d_cents: number;
+            /** Paid Collaboratori Cents */
+            paid_collaboratori_cents: number;
+            /** Paid Total Cents */
+            paid_total_cents: number;
+            /** Residual Cents */
+            residual_cents: number;
+            /** Status */
+            status: string;
         };
         /**
          * PracticeStatus
@@ -2084,6 +2462,11 @@ export interface components {
         RemoveAnimalRequest: {
             /** Animal Id */
             animal_id: number;
+        };
+        /** ReversePaymentRequest */
+        ReversePaymentRequest: {
+            /** Reason */
+            reason: string;
         };
         /**
          * RevertCycleRequest
@@ -4811,6 +5194,455 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ArticleOrderRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_invoices_api_invoices_get: {
+        parameters: {
+            query?: {
+                /** @description Ricerca per numero fattura o numero pratica */
+                q?: string | null;
+                practice_id?: number | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_invoice_api_invoices_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvoiceCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_invoice_api_invoices__invoice_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invoice_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_invoice_reconciliation_api_invoices__invoice_id__riconciliazione_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invoice_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceReconciliationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    link_payment_api_invoices__invoice_id__collega_pagamento_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invoice_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkPaymentToInvoiceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceReconciliationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_payments_api_payments_get: {
+        parameters: {
+            query: {
+                practice_id: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    register_payment_api_payments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaymentCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_practice_reconciliation_api_payments_practice__practice_id__riconciliazione_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                practice_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeReconciliationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_payment_api_payments__payment_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                payment_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reverse_payment_api_payments__payment_id__storna_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                payment_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReversePaymentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_payment_api_payments__payment_id__elimina_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                payment_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeletePaymentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentDeletionRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_payment_deletion_api_payments_deletions__deletion_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deletion_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentDeletionRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_payment_deletion_api_payments_deletions__deletion_id__ripristina_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deletion_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentRead"];
                 };
             };
             /** @description Validation Error */

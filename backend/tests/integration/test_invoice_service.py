@@ -1,0 +1,127 @@
+import pytest
+
+from domain.errors import NotFoundError, ValidationDomainError
+from models.practice import PaymentChannel
+from schemas.invoice import InvoiceCreate
+from schemas.payment import PaymentCreate
+from services import invoice_service, payment_service, practice_service
+from schemas.practice import LineItemInput, PracticeCreate
+
+
+async def _create_practice(db_session, admin_user, sample_client, sample_location, total_cents=34000):
+    practice = await practice_service.create_practice(
+        db_session,
+        PracticeCreate(
+            client_id=sample_client.id,
+            destination_branch_id=sample_location.id,
+            request_origin="Collaboratore",
+            service_type="Cremazione singola",
+            line_items=[LineItemInput(category="Cremazione", description="Cremazione singola", amount_cents=total_cents, channel=PaymentChannel.W)],
+        ),
+        actor_user_id=admin_user.id,
+    )
+    return practice
+
+
+def _invoice_data(practice_id, **overrides):
+    base = dict(practice_id=practice_id, invoice_number="FT-0001", total_amount_cents=34000, channel=PaymentChannel.W)
+    base.update(overrides)
+    return InvoiceCreate(**base)
+
+
+async def test_create_invoice(db_session, admin_user, sample_client, sample_location):
+    practice = await _create_practice(db_session, admin_user, sample_client, sample_location)
+    invoice = await invoice_service.create_invoice(db_session, _invoice_data(practice.id), actor_user_id=admin_user.id)
+    assert invoice.invoice_number == "FT-0001"
+    assert invoice.practice_number_snapshot == practice.practice_number
+    assert invoice.total_amount_cents == 34000
+
+
+async def test_create_invoice_rejects_collaboratori_channel(db_session, admin_user, sample_client, sample_location):
+    practice = await _create_practice(db_session, admin_user, sample_client, sample_location)
+    with pytest.raises(ValidationDomainError):
+        await invoice_service.create_invoice(
+            db_session, _invoice_data(practice.id, channel=PaymentChannel.collaboratori), actor_user_id=admin_user.id
+        )
+
+
+async def test_create_invoice_rejects_duplicate_number(db_session, admin_user, sample_client, sample_location):
+    practice = await _create_practice(db_session, admin_user, sample_client, sample_location)
+    await invoice_service.create_invoice(db_session, _invoice_data(practice.id), actor_user_id=admin_user.id)
+
+    practice2 = await _create_practice(db_session, admin_user, sample_client, sample_location)
+    with pytest.raises(ValidationDomainError):
+        await invoice_service.create_invoice(db_session, _invoice_data(practice2.id), actor_user_id=admin_user.id)
+
+
+async def test_create_invoice_unknown_practice_raises_not_found(db_session, admin_user):
+    with pytest.raises(NotFoundError):
+        await invoice_service.create_invoice(db_session, _invoice_data(999999), actor_user_id=admin_user.id)
+
+
+async def test_reconciliation_non_pagata_with_no_payments(db_session, admin_user, sample_client, sample_location):
+    practice = await _create_practice(db_session, admin_user, sample_client, sample_location)
+    invoice = await invoice_service.create_invoice(db_session, _invoice_data(practice.id), actor_user_id=admin_user.id)
+
+    recon = await invoice_service.get_reconciliation(db_session, invoice.id)
+    assert recon.status == "non_pagata"
+    assert recon.paid_cents == 0
+    assert recon.residual_cents == 34000
+
+
+async def test_reconciliation_parziale_pagata_sovrapagata(db_session, admin_user, sample_client, sample_location):
+    practice = await _create_practice(db_session, admin_user, sample_client, sample_location)
+    invoice = await invoice_service.create_invoice(db_session, _invoice_data(practice.id), actor_user_id=admin_user.id)
+
+    async def _pay_and_link(amount_cents):
+        payment = await payment_service.register_payment(
+            db_session,
+            PaymentCreate(
+                practice_id=practice.id, movement_date="2026-01-01", channel=PaymentChannel.W,
+                ledger_section="Entrata", movement_type="Acconto", amount_cents=amount_cents,
+            ),
+            actor_user_id=admin_user.id,
+        )
+        await payment_service.link_payment_to_invoice(db_session, invoice.id, payment.id, actor_user_id=admin_user.id)
+        return payment
+
+    await _pay_and_link(12000)
+    recon = await invoice_service.get_reconciliation(db_session, invoice.id)
+    assert recon.status == "parziale"
+    assert recon.paid_cents == 12000
+    assert recon.residual_cents == 22000
+
+    await _pay_and_link(22000)
+    recon = await invoice_service.get_reconciliation(db_session, invoice.id)
+    assert recon.status == "pagata"
+    assert recon.residual_cents == 0
+
+    await _pay_and_link(5000)
+    recon = await invoice_service.get_reconciliation(db_session, invoice.id)
+    assert recon.status == "sovrapagata", "il sovrapagamento e' uno stato visibile, mai auto-corretto"
+    assert recon.paid_cents == 39000
+    assert recon.residual_cents == -5000
+
+
+async def test_reversed_payment_excluded_from_reconciliation(db_session, admin_user, sample_client, sample_location):
+    practice = await _create_practice(db_session, admin_user, sample_client, sample_location)
+    invoice = await invoice_service.create_invoice(db_session, _invoice_data(practice.id), actor_user_id=admin_user.id)
+
+    payment = await payment_service.register_payment(
+        db_session,
+        PaymentCreate(
+            practice_id=practice.id, movement_date="2026-01-01", channel=PaymentChannel.W,
+            ledger_section="Entrata", movement_type="Saldo", amount_cents=34000,
+        ),
+        actor_user_id=admin_user.id,
+    )
+    await payment_service.link_payment_to_invoice(db_session, invoice.id, payment.id, actor_user_id=admin_user.id)
+
+    recon = await invoice_service.get_reconciliation(db_session, invoice.id)
+    assert recon.status == "pagata"
+
+    await payment_service.reverse_payment(db_session, payment.id, "errore importo", actor_user_id=admin_user.id)
+
+    recon = await invoice_service.get_reconciliation(db_session, invoice.id)
+    assert recon.status == "non_pagata", "il pagamento stornato non deve piu' contare come incassato"
+    assert recon.paid_cents == 0

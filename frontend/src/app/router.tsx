@@ -12,6 +12,9 @@ import { CremationCycleListPage } from "@/features/cremation-cycles/CremationCyc
 import { DeliveryDetailPage } from "@/features/deliveries/DeliveryDetailPage";
 import { DeliveryFormPage } from "@/features/deliveries/DeliveryFormPage";
 import { DeliveryListPage } from "@/features/deliveries/DeliveryListPage";
+import { InvoiceDetailPage } from "@/features/invoices/InvoiceDetailPage";
+import { InvoiceFormPage } from "@/features/invoices/InvoiceFormPage";
+import { InvoiceListPage } from "@/features/invoices/InvoiceListPage";
 import { PracticeDetailPage } from "@/features/practices/PracticeDetailPage";
 import { PracticeFormPage } from "@/features/practices/PracticeFormPage";
 import { PracticeListPage } from "@/features/practices/PracticeListPage";
@@ -73,6 +76,9 @@ export const router = createBrowserRouter([
       { path: "/catalogo-urne/:urnId", element: <UrnDetailPage /> },
       { path: "/catalogo-urne/:urnId/modifica", element: <UrnFormPage /> },
       { path: "/prodotti", element: <ArticleListPage /> },
+      { path: "/fatture", element: <InvoiceListPage /> },
+      { path: "/fatture/nuova", element: <InvoiceFormPage /> },
+      { path: "/fatture/:invoiceId", element: <InvoiceDetailPage /> },
       { path: "/", element: <PracticeListPage /> },
     ],
   },

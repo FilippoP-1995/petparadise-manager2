@@ -2,6 +2,7 @@ from datetime import date, datetime, time
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from domain.practice.rules import effective_total_cents as _effective_total_cents
 from models.practice import CollaboratorBillingStatus, OwnerNotifiedStatus, PaymentChannel, PickupType, PracticeStatus
 
 
@@ -202,10 +203,16 @@ class PracticeRead(BaseModel):
     tags: list[int] = Field(default_factory=list)
 
     line_items_total_cents: int = 0
+    # dominio Fatture/Pagamenti: espone domain.practice.rules.effective_total_cents
+    # (override se presente, altrimenti somma preventivo) - mai ricalcolato
+    # in parallelo con una propria formula, stessa funzione gia' riusata da
+    # domain/delivery/rules.py per la riconciliazione Riconsegna.
+    effective_total_cents: int = 0
 
     @classmethod
     def from_practice(cls, practice) -> "PracticeRead":
         data = cls.model_validate(practice).model_dump()
         data["tags"] = [t.id for t in practice.tags]
         data["line_items_total_cents"] = sum(li.amount_cents for li in practice.line_items)
+        data["effective_total_cents"] = _effective_total_cents(practice)
         return cls(**data)

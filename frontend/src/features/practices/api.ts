@@ -81,6 +81,55 @@ export function useCompanyLocations() {
   });
 }
 
+function invalidatePractice(queryClient: ReturnType<typeof useQueryClient>, practiceId: number) {
+  queryClient.invalidateQueries({ queryKey: ["practices"] });
+  queryClient.invalidateQueries({ queryKey: ["practices", practiceId] });
+  queryClient.invalidateQueries({ queryKey: ["payments", "practice", practiceId, "riconciliazione"] });
+}
+
+export function useSetTotalOverride() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ practiceId, amountCents, reason }: { practiceId: number; amountCents: number; reason: string }) => {
+      const { data, error } = await apiClient.POST("/api/practices/{practice_id}/override-total", {
+        params: { path: { practice_id: practiceId } },
+        body: { amount_cents: amountCents, reason },
+      });
+      if (error) throw new Error((error as { detail?: string }).detail ?? "Dati non validi");
+      return data;
+    },
+    onSuccess: (_data, vars) => invalidatePractice(queryClient, vars.practiceId),
+  });
+}
+
+export function useClearTotalOverride() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (practiceId: number) => {
+      const { data, error } = await apiClient.POST("/api/practices/{practice_id}/clear-total-override", {
+        params: { path: { practice_id: practiceId } },
+      });
+      if (error) throw new Error((error as { detail?: string }).detail ?? "Operazione non consentita");
+      return data;
+    },
+    onSuccess: (_data, practiceId) => invalidatePractice(queryClient, practiceId),
+  });
+}
+
+export function useMarkCollaboratorBilled() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (practiceId: number) => {
+      const { data, error } = await apiClient.POST("/api/practices/{practice_id}/mark-collaborator-billed", {
+        params: { path: { practice_id: practiceId } },
+      });
+      if (error) throw new Error((error as { detail?: string }).detail ?? "Operazione non consentita");
+      return data;
+    },
+    onSuccess: (_data, practiceId) => invalidatePractice(queryClient, practiceId),
+  });
+}
+
 export function useTrashPractice() {
   const queryClient = useQueryClient();
   return useMutation({
