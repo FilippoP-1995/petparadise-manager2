@@ -5,6 +5,7 @@ from models.calendar_zone import CalendarZone
 from models.client import Client
 from models.collaborator import Collaborator
 from models.company_location import CompanyLocation
+from models.cremation_cycle import CremationCycle, CremationCycleStatus
 from models.practice import (
     CollaboratorBillingStatus,
     OwnerNotifiedStatus,
@@ -31,6 +32,8 @@ __all__ = [
     "Collaborator",
     "CollaboratorBillingStatus",
     "CompanyLocation",
+    "CremationCycle",
+    "CremationCycleStatus",
     "DeliveryType",
     "OwnerNotifiedStatus",
     "PaymentChannel",

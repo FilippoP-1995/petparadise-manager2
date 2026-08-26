@@ -298,6 +298,40 @@ async def transition_practice_state(
     return await practice_repo.get_by_id(practice_id)
 
 
+async def apply_automatic_cycle_side_effect(
+    db: AsyncSession,
+    practice: Practice,
+    target_status: PracticeStatus,
+    *,
+    cremation_registered: bool,
+    cycle_id: int,
+    actor_user_id: int,
+) -> None:
+    """doc14 §1: 'in_programma -> cremato: Sistema (side-effect automatico
+    del completamento ciclo) ... audit_log, azione distinta se manuale vs
+    automatica'. Non e' ne' un workflow (transition_practice_state - target
+    non e' il prossimo bordo dichiarato per il verso 'indietro') ne' una
+    correzione umana discrezionale (correct_practice_state, riservata
+    all'Admin con motivo a scelta dell'operatore): e' una conseguenza
+    deterministica e automatica di un evento di dominio del ciclo di
+    cremazione (completamento o ripristino), applicata qui direttamente.
+    NON chiama commit() - il chiamante (cremation_cycle_service) puo'
+    toccare piu' pratiche nella stessa transazione, un solo commit finale."""
+    old_status = practice.status
+    practice.status = target_status
+    practice.cremation_registered = cremation_registered
+    AuditRepository(db).record(
+        entity_type=ENTITY_TYPE,
+        entity_id=practice.id,
+        action="state_changed",
+        field_name="status",
+        old_value=old_status.value,
+        new_value=target_status.value,
+        user_id=actor_user_id,
+        reason=f"side-effect automatico: ciclo di cremazione #{cycle_id}",
+    )
+
+
 async def correct_practice_state(
     db: AsyncSession, practice_id: int, request: CorrectionRequest, *, actor_user_id: int
 ) -> Practice:

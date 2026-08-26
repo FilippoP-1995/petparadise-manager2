@@ -119,12 +119,13 @@ class Practice(TimestampMixin, Base):
     veterinarian_id: Mapped[int | None] = mapped_column(ForeignKey("veterinarians.id"))
     origin_veterinarian_id: Mapped[int | None] = mapped_column(ForeignKey("veterinarians.id"))
 
-    # TEMPORARY CROSS-DOMAIN CONSTRAINT (doc06 REFERENCES cremation_cycles(id)
-    # ON DELETE SET NULL): stesso trattamento di originating_pickup_event_id
-    # sopra - dominio Ciclo di cremazione non ancora costruito. Stesso passo
-    # di migrazione futuro (verifica dati -> verifica orfani -> aggiungi FK
-    # -> ON DELETE SET NULL) quando quel dominio verra' introdotto.
-    cremation_cycle_id: Mapped[int | None] = mapped_column(Integer)
+    # RIMOSSO (era qui come TEMPORARY CROSS-DOMAIN CONSTRAINT): il Gate
+    # Animali<->Cicli (round 2) ha chiuso la decisione aziendale sulla
+    # granularita' dell'assegnazione al ciclo di cremazione a favore del
+    # livello ANIMALE, non PRATICA - animals.cremation_cycle_id e' ora
+    # l'unica fonte di verita' (vedi models/animal.py). Questo campo non
+    # e' mai stato letto/scritto da alcun service (verificato prima di
+    # rimuoverlo) - nessun refactor di logica esistente necessario.
 
     pickup_date: Mapped[date | None] = mapped_column(Date)
     pickup_time: Mapped[time | None] = mapped_column(Time)

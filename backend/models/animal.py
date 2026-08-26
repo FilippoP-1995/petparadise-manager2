@@ -24,6 +24,15 @@ class Animal(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     calendar_event_id: Mapped[int | None] = mapped_column(ForeignKey("calendar_events.id", ondelete="CASCADE"))
     practice_id: Mapped[int | None] = mapped_column(ForeignKey("practices.id", ondelete="CASCADE"))
+    # Gate Animali<->Cicli (round 2, confermato dall'utente): fonte di
+    # verita' dell'assegnazione al ciclo di cremazione, a livello ANIMALE
+    # (non piu' practices.cremation_cycle_id, rimosso). ON DELETE SET NULL
+    # - relazione debole per design (doc05): eliminare un ciclo non
+    # completato lascia semplicemente l'animale non assegnato, mai
+    # cancellato. Un ciclo 'completato' non e' comunque mai eliminabile
+    # (vietato per costruzione, doc14 SS4) quindi questo SET NULL scatta
+    # solo per cicli pianificato/in_attesa.
+    cremation_cycle_id: Mapped[int | None] = mapped_column(ForeignKey("cremation_cycles.id", ondelete="SET NULL"))
     name: Mapped[str | None] = mapped_column(String(120))
     species: Mapped[str | None] = mapped_column(String(60))
     breed: Mapped[str | None] = mapped_column(String(120))

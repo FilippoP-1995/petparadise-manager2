@@ -666,6 +666,128 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/cremation-cycles/eligible-animals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Eligible Animals */
+        get: operations["list_eligible_animals_api_cremation_cycles_eligible_animals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cremation-cycles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Cycles */
+        get: operations["list_cycles_api_cremation_cycles_get"];
+        put?: never;
+        /** Create Cycle */
+        post: operations["create_cycle_api_cremation_cycles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cremation-cycles/{cycle_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Cycle */
+        get: operations["get_cycle_api_cremation_cycles__cycle_id__get"];
+        /** Update Cycle */
+        put: operations["update_cycle_api_cremation_cycles__cycle_id__put"];
+        post?: never;
+        /** Delete Cycle */
+        delete: operations["delete_cycle_api_cremation_cycles__cycle_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cremation-cycles/{cycle_id}/assign-animal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Assign Animal */
+        post: operations["assign_animal_api_cremation_cycles__cycle_id__assign_animal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cremation-cycles/{cycle_id}/remove-animal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Remove Animal */
+        post: operations["remove_animal_api_cremation_cycles__cycle_id__remove_animal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cremation-cycles/{cycle_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete Cycle */
+        post: operations["complete_cycle_api_cremation_cycles__cycle_id__complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cremation-cycles/{cycle_id}/revert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revert Cycle */
+        post: operations["revert_cycle_api_cremation_cycles__cycle_id__revert_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -728,6 +850,11 @@ export interface components {
             id: number;
             /** Sort Order */
             sort_order: number;
+        };
+        /** AssignAnimalRequest */
+        AssignAnimalRequest: {
+            /** Animal Id */
+            animal_id: number;
         };
         /**
          * CancelPickupAndTrashPracticeRequest
@@ -879,6 +1006,113 @@ export interface components {
              * @default Da decidere
              */
             service_type: string;
+        };
+        /**
+         * CremationCycleCreate
+         * @description Mai un campo status qui (stesso principio doc09 esteso a ogni
+         *     entita' con FSM): un ciclo nasce sempre 'pianificato', con 0 animali
+         *     (doc14 §4 grafo).
+         */
+        CremationCycleCreate: {
+            /**
+             * Cycle Date
+             * Format: date
+             */
+            cycle_date: string;
+            /**
+             * Planned Start
+             * Format: time
+             */
+            planned_start: string;
+            /**
+             * Planned End
+             * Format: time
+             */
+            planned_end: string;
+            /** Cremation Location Id */
+            cremation_location_id?: number | null;
+        };
+        /** CremationCycleRead */
+        CremationCycleRead: {
+            /** Id */
+            id: number;
+            status: components["schemas"]["CremationCycleStatus"];
+            /**
+             * Cycle Date
+             * Format: date
+             */
+            cycle_date: string;
+            /**
+             * Planned Start
+             * Format: time
+             */
+            planned_start: string;
+            /**
+             * Planned End
+             * Format: time
+             */
+            planned_end: string;
+            /** Completed At */
+            completed_at: string | null;
+            /** Cremation Location Id */
+            cremation_location_id: number | null;
+            /** Sort Order */
+            sort_order: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Animals */
+            animals: components["schemas"]["CycleAnimalRead"][];
+        };
+        /**
+         * CremationCycleStatus
+         * @description doc14 §4 - invariati da V1 (CHECK gia' presente a livello DB in V1),
+         *     grafo di transizione in domain/cremation_cycle/state_machine.py.
+         * @enum {string}
+         */
+        CremationCycleStatus: "pianificato" | "in_attesa" | "completato";
+        /** CremationCycleUpdate */
+        CremationCycleUpdate: {
+            /**
+             * Cycle Date
+             * Format: date
+             */
+            cycle_date: string;
+            /**
+             * Planned Start
+             * Format: time
+             */
+            planned_start: string;
+            /**
+             * Planned End
+             * Format: time
+             */
+            planned_end: string;
+            /** Cremation Location Id */
+            cremation_location_id?: number | null;
+        };
+        /**
+         * CycleAnimalRead
+         * @description Non lo stesso AnimalRead usato dentro Pratica: qui serve anche
+         *     practice_id, per la visualizzazione coerente degli animali provenienti
+         *     da pratiche con piu' animali (sezione esplicita della richiesta).
+         */
+        CycleAnimalRead: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string | null;
+            /** Species */
+            species: string | null;
+            /** Practice Id */
+            practice_id: number | null;
         };
         /** DeliveryCreate */
         DeliveryCreate: {
@@ -1356,8 +1590,6 @@ export interface components {
             veterinarian_id: number | null;
             /** Origin Veterinarian Id */
             origin_veterinarian_id: number | null;
-            /** Cremation Cycle Id */
-            cremation_cycle_id: number | null;
             pickup_type: components["schemas"]["PickupType"];
             /** Pickup Location Id */
             pickup_location_id: number | null;
@@ -1595,6 +1827,21 @@ export interface components {
             line_items?: components["schemas"]["LineItemInput"][];
             /** Tag Ids */
             tag_ids?: number[];
+        };
+        /** RemoveAnimalRequest */
+        RemoveAnimalRequest: {
+            /** Animal Id */
+            animal_id: number;
+        };
+        /**
+         * RevertCycleRequest
+         * @description Correzione (sezione 'ATTENZIONE ALLA SEMANTICA' della richiesta):
+         *     motivo obbligatorio, audit dedicato - stesso rigore della correzione
+         *     di stato Pratica.
+         */
+        RevertCycleRequest: {
+            /** Reason */
+            reason: string;
         };
         /** TagRead */
         TagRead: {
@@ -3374,6 +3621,355 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeliveryRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_eligible_animals_api_cremation_cycles_eligible_animals_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CycleAnimalRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_cycles_api_cremation_cycles_get: {
+        parameters: {
+            query?: {
+                status?: string | null;
+                cycle_date?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CremationCycleRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_cycle_api_cremation_cycles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CremationCycleCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CremationCycleRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_cycle_api_cremation_cycles__cycle_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cycle_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CremationCycleRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_cycle_api_cremation_cycles__cycle_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cycle_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CremationCycleUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CremationCycleRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_cycle_api_cremation_cycles__cycle_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cycle_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assign_animal_api_cremation_cycles__cycle_id__assign_animal_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cycle_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignAnimalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CremationCycleRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_animal_api_cremation_cycles__cycle_id__remove_animal_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cycle_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RemoveAnimalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CremationCycleRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_cycle_api_cremation_cycles__cycle_id__complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cycle_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CremationCycleRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revert_cycle_api_cremation_cycles__cycle_id__revert_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cycle_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevertCycleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CremationCycleRead"];
                 };
             };
             /** @description Validation Error */

@@ -134,7 +134,6 @@ class PracticeRead(BaseModel):
     collaborator_id: int | None
     veterinarian_id: int | None
     origin_veterinarian_id: int | None
-    cremation_cycle_id: int | None
 
     pickup_type: PickupType
     pickup_location_id: int | None

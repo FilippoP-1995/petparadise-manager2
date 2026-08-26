@@ -13,6 +13,7 @@ export function AppShell() {
           <Link to="/pratiche">Pratiche</Link>
           <Link to="/ritiri">Ritiri</Link>
           <Link to="/riconsegne">Riconsegne</Link>
+          <Link to="/cicli-cremazione">Cicli di cremazione</Link>
           <Link to="/clienti">Clienti</Link>
           <Link to="/veterinari">Veterinari</Link>
         </nav>

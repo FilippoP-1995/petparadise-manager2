@@ -3,6 +3,9 @@ import { createBrowserRouter, ScrollRestoration } from "react-router-dom";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { ClientFormPage } from "@/features/clients/ClientFormPage";
 import { ClientListPage } from "@/features/clients/ClientListPage";
+import { CremationCycleDetailPage } from "@/features/cremation-cycles/CremationCycleDetailPage";
+import { CremationCycleFormPage } from "@/features/cremation-cycles/CremationCycleFormPage";
+import { CremationCycleListPage } from "@/features/cremation-cycles/CremationCycleListPage";
 import { DeliveryDetailPage } from "@/features/deliveries/DeliveryDetailPage";
 import { DeliveryFormPage } from "@/features/deliveries/DeliveryFormPage";
 import { DeliveryListPage } from "@/features/deliveries/DeliveryListPage";
@@ -53,6 +56,9 @@ export const router = createBrowserRouter([
       { path: "/riconsegne", element: <DeliveryListPage /> },
       { path: "/riconsegne/nuova", element: <DeliveryFormPage /> },
       { path: "/riconsegne/:deliveryId", element: <DeliveryDetailPage /> },
+      { path: "/cicli-cremazione", element: <CremationCycleListPage /> },
+      { path: "/cicli-cremazione/nuovo", element: <CremationCycleFormPage /> },
+      { path: "/cicli-cremazione/:cycleId", element: <CremationCycleDetailPage /> },
       { path: "/", element: <PracticeListPage /> },
     ],
   },
