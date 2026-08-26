@@ -13754,12 +13754,12 @@ class App(BaseHTTPRequestHandler):
         for row in rows:
             owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip()
             invoice_total=money_value(row["invoice_total"]) if "invoice_total" in row.keys() and row["invoice_total"] else money_value(row["total_service"])
-            entries.append({"sort_key":row["invoice_date"] or row["created_at"] or "","number":row["invoice_number"],"date":row["invoice_date"],"practice_number":row["practice_number"],"owner":owner,"animal":row["animal_name"] or "","total":invoice_total,"channel":payment_channel(row),"url":f'/pratiche/{row["id"]}?return_to={quote(getattr(self,"path",""),safe="")}'})
+            entries.append({"sort_key":row["invoice_date"] or row["created_at"] or "","number":row["invoice_number"],"date":row["invoice_date"],"practice_number":row["practice_number"],"owner":owner,"animal":row["animal_name"] or "","total":invoice_total,"channel":payment_channel(row),"pid":row["id"],"url":f'/pratiche/{row["id"]}?return_to={quote(getattr(self,"path",""),safe="")}'})
         for mrow in movement_rows:
             owner=((mrow["owner_first_name"] or "")+" "+(mrow["owner_last_name"] or "")).strip()
-            entries.append({"sort_key":mrow["invoice_date"] or mrow["created_at"] or "","number":mrow["invoice_number"],"date":mrow["invoice_date"],"practice_number":mrow["practice_number"],"owner":owner,"animal":mrow["animal_name"] or "","total":money_value(mrow["invoice_total"]),"channel":mrow["payment_channel"] or "-","url":f'/pratiche/{mrow["practice_id"]}?return_to={quote(getattr(self,"path",""),safe="")}'})
+            entries.append({"sort_key":mrow["invoice_date"] or mrow["created_at"] or "","number":mrow["invoice_number"],"date":mrow["invoice_date"],"practice_number":mrow["practice_number"],"owner":owner,"animal":mrow["animal_name"] or "","total":money_value(mrow["invoice_total"]),"channel":mrow["payment_channel"] or "-","pid":mrow["practice_id"],"url":f'/pratiche/{mrow["practice_id"]}?return_to={quote(getattr(self,"path",""),safe="")}'})
         entries.sort(key=lambda e:e["sort_key"],reverse=True)
-        table=[f'''<tr class="practice-row-link" {row_open_attrs(e["url"],f'Apri pratica {e["practice_number"]}')}><td><b>{esc(e["number"])}</b></td><td>{esc(date_it(e["date"]))}</td><td><a href="{e["url"]}">{esc(e["practice_number"])}</a></td><td>{esc(e["owner"])}</td><td>{esc(e["animal"])}</td><td>{esc(e["channel"])}</td><td>{money_it(e["total"])}</td><td><a class="btn ghost" href="{e["url"]}">Apri</a></td></tr>''' for e in entries]
+        table=[f'''<tr class="practice-row-link" data-practice-id="{e["pid"]}" {row_open_attrs(e["url"],f'Apri pratica {e["practice_number"]}')}><td><b>{esc(e["number"])}</b></td><td>{esc(date_it(e["date"]))}</td><td><a href="{e["url"]}">{esc(e["practice_number"])}</a></td><td>{esc(e["owner"])}</td><td>{esc(e["animal"])}</td><td>{esc(e["channel"])}</td><td>{money_it(e["total"])}</td><td><a class="btn ghost" href="{e["url"]}">Apri</a></td></tr>''' for e in entries]
         # Solo circuito W: il circuito D non deve comparire in "Da fatturare"
         # (richiesta esplicita). Escludi inoltre le pratiche di provenienza
         # Veterinario che hanno usufruito di un buono maturato e il cui
@@ -13772,25 +13772,41 @@ class App(BaseHTTPRequestHandler):
         for row in reminders:
             r_url=f'/pratiche/{row["id"]}?return_to={quote(getattr(self,"path",""),safe="")}'
             r_owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip()
-            reminder_table.append(f'''<tr class="practice-row-link" {row_open_attrs(r_url,f'Apri pratica {row["practice_number"]}')}><td><a href="{r_url}">{esc(row["practice_number"])}</a></td><td>{esc(date_it(row["created_at"]))}</td><td>{esc(r_owner)}</td><td>{esc(row["animal_name"] or "")}</td><td>{money_it(effective_total(row))}</td><td><a class="btn ghost" href="{r_url}">Apri</a></td></tr>''')
+            reminder_table.append(f'''<tr class="practice-row-link" data-practice-id="{row["id"]}" {row_open_attrs(r_url,f'Apri pratica {row["practice_number"]}')}><td><a href="{r_url}">{esc(row["practice_number"])}</a></td><td>{esc(date_it(row["created_at"]))}</td><td>{esc(r_owner)}</td><td>{esc(row["animal_name"] or "")}</td><td>{money_it(effective_total(row))}</td><td><a class="btn ghost" href="{r_url}">Apri</a></td></tr>''')
         empty='<tr><td colspan="8" class="sub">Nessuna fattura trovata.</td></tr>'
         reminder_empty='<tr><td colspan="6" class="sub">Nessuna pratica da fatturare.</td></tr>'
         tipo_options=''.join(f'<option value="{value}"{" selected" if tipo==value else ""}>{label}</option>' for value,label in (("","Entrambe"),("fatturate","Fatturate"),("da_fatturare","Da fatturare")))
         fatturate_section=f'''<section class="tablebox"><h2>Fatture emesse</h2><table><thead><tr><th>Fattura</th><th>Data</th><th>Pratica</th><th>Cliente</th><th>Animale</th><th>Circuito</th><th>Totale</th><th></th></tr></thead><tbody>{''.join(table) or empty}</tbody></table></section>''' if show_fatturate else ''
         da_fatturare_section=f'''<section class="tablebox" style="margin-top:20px"><h2>Da fatturare</h2><table><thead><tr><th>Pratica</th><th>Creazione</th><th>Cliente</th><th>Animale</th><th>Totale</th><th></th></tr></thead><tbody>{''.join(reminder_table) or reminder_empty}</tbody></table></section>''' if show_da_fatturare else ''
         scroll_restore_script='''<script>(function(){
-  var KEY='ppmFattureScrollY';
-  window.addEventListener('beforeunload',function(){
-    try{sessionStorage.setItem(KEY,String(window.scrollY||document.documentElement.scrollTop||0));}catch(e){}
+  // beforeunload non e' affidabile su mobile (in particolare Safari/iOS
+  // spesso non lo esegue in tempo, o per niente, su una normale
+  // navigazione di link) - salviamo invece al click, che e' sincrono e
+  // avviene sempre prima che la navigazione parta.
+  var SCROLL_KEY='ppmFattureScrollY';
+  var ID_KEY='ppmFattureLastId';
+  document.addEventListener('click',function(e){
+    var row=e.target.closest('.tablebox .practice-row-link');
+    if(!row)return;
+    try{
+      sessionStorage.setItem(SCROLL_KEY,String(window.scrollY||document.documentElement.scrollTop||0));
+      var pid=row.getAttribute('data-practice-id');
+      if(pid)sessionStorage.setItem(ID_KEY,pid);
+    }catch(err){}
   });
   document.addEventListener('DOMContentLoaded',function(){
-    var saved;
-    try{saved=sessionStorage.getItem(KEY);}catch(e){saved=null;}
-    if(saved===null)return;
-    try{sessionStorage.removeItem(KEY);}catch(e){}
-    var y=Number(saved);
-    if(!Number.isFinite(y))return;
-    requestAnimationFrame(function(){window.scrollTo(0,y);});
+    var savedY,savedId;
+    try{savedY=sessionStorage.getItem(SCROLL_KEY);savedId=sessionStorage.getItem(ID_KEY);}catch(err){savedY=null;savedId=null;}
+    if(savedY===null&&savedId===null)return;
+    try{sessionStorage.removeItem(SCROLL_KEY);sessionStorage.removeItem(ID_KEY);}catch(err){}
+    if(savedId){
+      var row=document.querySelector('.tablebox [data-practice-id="'+savedId+'"]');
+      if(row)row.classList.add('row-selected');
+    }
+    var y=Number(savedY);
+    if(Number.isFinite(y)){
+      requestAnimationFrame(function(){window.scrollTo(0,y);});
+    }
   });
 })();</script>'''
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>Fatture</h1><p class="sub">Ogni fattura identifica e apre la pratica collegata. Una pratica con acconto e saldo fatturati separatamente compare come due righe distinte.</p></div></div><form class="section" method="get"><div class="fields"><div class="field full"><label>Numero fattura o pratica</label><input name="q" value="{esc(term)}" placeholder="Cerca per fattura, pratica, cliente o animale"></div><div class="field"><label>Tipo</label><select name="tipo">{tipo_options}</select></div><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div></div><button class="btn" style="margin-top:12px">Cerca</button></form>{fatturate_section}{da_fatturare_section}</main>{scroll_restore_script}'''

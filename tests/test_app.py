@@ -1279,13 +1279,25 @@ class PetParadiseTests(unittest.TestCase):
 
     def test_invoices_page_includes_scroll_restore_script(self):
         with app.db() as conn:
-            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,owner_first_name,animal_name)
+                                VALUES(?,?,?,?,?,?,?,?,?)""",("CR-SCROLLTEST","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Ada","Birillo")).lastrowid
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
         self.handler.path="/fatture"
         self.handler.invoices_page(admin)
         page=rendered[-1]
-        self.assertIn("ppmFattureScrollY",page)
-        self.assertIn("beforeunload",page)
+        own_script=page.split('ppmFattureScrollY')[1]
+        # Salvataggio al click (sincrono, affidabile anche su mobile), non
+        # piu' su beforeunload (inconsistente su iOS/Safari) - verificato
+        # cercando il commento esplicito che documenta la scelta, non
+        # l'assenza globale della stringa (usata altrove per altre feature).
+        self.assertIn("non e' affidabile su mobile",page)
+        self.assertIn("ppmFattureLastId",own_script)
+        self.assertIn("addEventListener('click'",own_script)
+        # Ogni riga deve portare l'id pratica, necessario per poterla
+        # ri-evidenziare (row-selected) al ritorno dalla pratica.
+        self.assertIn(f'data-practice-id="{pid}"',page)
+        self.assertIn("classList.add('row-selected')",own_script)
 
     def test_invoices_page_da_fatturare_respects_date_and_text_filters(self):
         with app.db() as conn:
