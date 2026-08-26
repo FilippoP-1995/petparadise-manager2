@@ -13760,10 +13760,12 @@ class App(BaseHTTPRequestHandler):
             entries.append({"sort_key":mrow["invoice_date"] or mrow["created_at"] or "","number":mrow["invoice_number"],"date":mrow["invoice_date"],"practice_number":mrow["practice_number"],"owner":owner,"animal":mrow["animal_name"] or "","total":money_value(mrow["invoice_total"]),"channel":mrow["payment_channel"] or "-","url":f'/pratiche/{mrow["practice_id"]}?return_to={quote(getattr(self,"path",""),safe="")}'})
         entries.sort(key=lambda e:e["sort_key"],reverse=True)
         table=[f'''<tr class="practice-row-link" {row_open_attrs(e["url"],f'Apri pratica {e["practice_number"]}')}><td><b>{esc(e["number"])}</b></td><td>{esc(date_it(e["date"]))}</td><td><a href="{e["url"]}">{esc(e["practice_number"])}</a></td><td>{esc(e["owner"])}</td><td>{esc(e["animal"])}</td><td>{esc(e["channel"])}</td><td>{money_it(e["total"])}</td><td><a class="btn ghost" href="{e["url"]}">Apri</a></td></tr>''' for e in entries]
-        # Escludi le pratiche di provenienza Veterinario che hanno usufruito di
-        # un buono maturato e il cui importo e' quindi pari a zero - richiesta
-        # esplicita: non hanno bisogno di fattura, il buono copre gia' il costo.
-        reminders=[row for row in reminders if not (
+        # Solo circuito W: il circuito D non deve comparire in "Da fatturare"
+        # (richiesta esplicita). Escludi inoltre le pratiche di provenienza
+        # Veterinario che hanno usufruito di un buono maturato e il cui
+        # importo e' quindi pari a zero: non hanno bisogno di fattura, il
+        # buono copre gia' il costo.
+        reminders=[row for row in reminders if payment_channel(row)=="W" and not (
             (row["request_origin"] or "")=="Veterinario" and row["use_voucher"]=="Si" and effective_total(row)<=0
         )]
         reminder_table=[]
@@ -13776,7 +13778,22 @@ class App(BaseHTTPRequestHandler):
         tipo_options=''.join(f'<option value="{value}"{" selected" if tipo==value else ""}>{label}</option>' for value,label in (("","Entrambe"),("fatturate","Fatturate"),("da_fatturare","Da fatturare")))
         fatturate_section=f'''<section class="tablebox"><h2>Fatture emesse</h2><table><thead><tr><th>Fattura</th><th>Data</th><th>Pratica</th><th>Cliente</th><th>Animale</th><th>Circuito</th><th>Totale</th><th></th></tr></thead><tbody>{''.join(table) or empty}</tbody></table></section>''' if show_fatturate else ''
         da_fatturare_section=f'''<section class="tablebox" style="margin-top:20px"><h2>Da fatturare</h2><table><thead><tr><th>Pratica</th><th>Creazione</th><th>Cliente</th><th>Animale</th><th>Totale</th><th></th></tr></thead><tbody>{''.join(reminder_table) or reminder_empty}</tbody></table></section>''' if show_da_fatturare else ''
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Fatture</h1><p class="sub">Ogni fattura identifica e apre la pratica collegata. Una pratica con acconto e saldo fatturati separatamente compare come due righe distinte.</p></div></div><form class="section" method="get"><div class="fields"><div class="field full"><label>Numero fattura o pratica</label><input name="q" value="{esc(term)}" placeholder="Cerca per fattura, pratica, cliente o animale"></div><div class="field"><label>Tipo</label><select name="tipo">{tipo_options}</select></div><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div></div><button class="btn" style="margin-top:12px">Cerca</button></form>{fatturate_section}{da_fatturare_section}</main>'''
+        scroll_restore_script='''<script>(function(){
+  var KEY='ppmFattureScrollY';
+  window.addEventListener('beforeunload',function(){
+    try{sessionStorage.setItem(KEY,String(window.scrollY||document.documentElement.scrollTop||0));}catch(e){}
+  });
+  document.addEventListener('DOMContentLoaded',function(){
+    var saved;
+    try{saved=sessionStorage.getItem(KEY);}catch(e){saved=null;}
+    if(saved===null)return;
+    try{sessionStorage.removeItem(KEY);}catch(e){}
+    var y=Number(saved);
+    if(!Number.isFinite(y))return;
+    requestAnimationFrame(function(){window.scrollTo(0,y);});
+  });
+})();</script>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Fatture</h1><p class="sub">Ogni fattura identifica e apre la pratica collegata. Una pratica con acconto e saldo fatturati separatamente compare come due righe distinte.</p></div></div><form class="section" method="get"><div class="fields"><div class="field full"><label>Numero fattura o pratica</label><input name="q" value="{esc(term)}" placeholder="Cerca per fattura, pratica, cliente o animale"></div><div class="field"><label>Tipo</label><select name="tipo">{tipo_options}</select></div><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div></div><button class="btn" style="margin-top:12px">Cerca</button></form>{fatturate_section}{da_fatturare_section}</main>{scroll_restore_script}'''
         self.send_html(layout("Fatture",body,user))
 
     def urn_catalog_page(self,user):

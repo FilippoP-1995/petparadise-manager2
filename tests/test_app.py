@@ -1263,6 +1263,30 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('Da fatturare</h2>',page)
         self.assertIn('CR-TIPODAFATT',page)
 
+    def test_invoices_page_da_fatturare_excludes_circuito_d(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            w_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,owner_first_name,animal_name,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?)""",("CR-CIRCW","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Ines","Toby","60","60")).lastrowid
+            d_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,owner_first_name,animal_name,total_text)
+                                VALUES(?,?,?,?,?,?,?,?,?,?)""",("CR-CIRCD","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Lia","Simba","70")).lastrowid
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/fatture"
+        self.handler.invoices_page(admin)
+        reminders_section=rendered[-1].split('Da fatturare</h2>')[1]
+        self.assertIn(f'/pratiche/{w_pid}',reminders_section)
+        self.assertNotIn(f'/pratiche/{d_pid}',reminders_section)
+
+    def test_invoices_page_includes_scroll_restore_script(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/fatture"
+        self.handler.invoices_page(admin)
+        page=rendered[-1]
+        self.assertIn("ppmFattureScrollY",page)
+        self.assertIn("beforeunload",page)
+
     def test_invoices_page_da_fatturare_respects_date_and_text_filters(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
