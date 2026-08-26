@@ -4,6 +4,29 @@
 
 ---
 
+## AGGIORNAMENTO — decisioni chiuse dopo la tua risposta
+
+Tutte le decisioni sotto sono ora **chiuse**, tranne le due normative (#7, #9) che restano **VERIFICA NORMATIVA PENDENTE** con una decisione provvisoria prudenziale confermata. Il dettaglio tecnico completo di ogni chiusura vive nei documenti collegati (doc 06 per il modello dati, doc 14 per le macchine a stati) — qui sotto solo l'esito, non ripetuto due volte.
+
+| # | Decisione | Esito | Dettaglio in |
+|---|---|---|---|
+| 1 | Regressioni stato Pratica | ✅ Chiusa — workflow normale vs correzione eccezionale (solo Admin, motivo, audit) | doc 14 §1 |
+| 2 | Salti di stato Pratica | ✅ Chiusa implicitamente — coperti dal meccanismo di correzione | doc 14 §1 |
+| 3 | Ruoli su transizioni Pratica | ✅ Chiusa — Operator: workflow; Admin: anche correzioni, senza bypass | doc 14 §1 |
+| 4 | Ritiro annullato con pratica collegata | ✅ Chiusa — nessuna modifica automatica; azione distinta "Annulla ritiro e cancella anche la pratica" | doc 14 §2 |
+| 5 | Ritiro "annullato" terminale/riapribile | ✅ Chiusa — terminale, mai riapribile | doc 14 §2 |
+| 6 | Cambio `event_type` a metà flusso | ✅ Già chiusa in questo documento (tecnica) | doc 14 §2 |
+| 7 | DDT/trasporto — retention normativa | 🔶 **VERIFICA NORMATIVA PENDENTE** — decisione provvisoria: conservare tutto, scelta tecnica prudenziale, non obbligo accertato | doc 06 Addendum B |
+| 8 | Provenienza/origine — logica di fallback | ✅ Chiusa — modello multi-sede esplicito (affido/destinazione/cremazione/riconsegna), nessuna logica di fallback: tutto è scelto esplicitamente dall'operatore | doc 06 Addendum C (riscritto) |
+| 9 | Disposal batches — retention normativa | 🔶 **VERIFICA NORMATIVA PENDENTE** — stessa decisione provvisoria di #7 | doc 06 Addendum J |
+| 10 | Correzione ciclo completato | ✅ Già chiusa in questo documento (tecnica) | doc 14 §4 |
+| 11 | Limite 2 animali per ciclo | ✅ Chiusa — resta 2, regola di dominio deliberata, enforcement backend obbligatorio | doc 14 §4 |
+| — | **NUOVA**: relazione Ritiro → Pratica | ✅ Chiusa — il caso ordinario è `Ritiro → Pratica`; le due entità restano tecnicamente distinte, relazione resa esplicita e bidirezionale (`originating_pickup_event_id`) | doc 06 §"Relazione Ritiro → Pratica" |
+
+**Le sezioni di dettaglio sotto restano come riferimento storico** (mostrano il ragionamento/le opzioni originarie) — lo stato aggiornato di ciascuna è quello della tabella sopra, non quello scritto nella sezione "DECISIONE RICHIESTA DA ME" originale.
+
+---
+
 ## DECISIONE #1 — Regressioni di stato Pratica
 **Classificazione: A**
 
@@ -359,20 +382,21 @@ RITIRO — decisioni #4, #5
 
 ---
 
-## Riepilogo classificazione finale
+## Riepilogo classificazione finale (aggiornato)
 
 | # | Decisione | Classe | Stato |
 |---|---|---|---|
-| 1 | Regressioni stato Pratica | A | Aperta — attende risposta |
-| 2 | Salti di stato Pratica | A | Aperta — attende risposta |
-| 3 | Ruoli su transizioni Pratica | A | Aperta — attende risposta |
-| 4 | Ritiro annullato con pratica collegata | A | Aperta — attende risposta |
-| 5 | Ritiro "annullato" terminale/riapribile | A | Aperta — attende risposta |
-| 6 | Cambio `event_type` a metà flusso | B | **Chiusa** — decisione tecnica presa |
-| 7 | DDT/trasporto — retention normativa | D | Aperta — richiede verifica compliance, non risposta tecnica |
-| 8 | Provenienza/origine — logica di fallback | A | Aperta — attende risposta |
-| 9 | Disposal batches — retention normativa | D | Aperta — richiede verifica compliance |
-| 10 | Correzione ciclo completato | B | **Chiusa** — decisione tecnica presa |
-| 11 | Limite 2 animali per ciclo | A | Aperta — attende risposta |
+| 1 | Regressioni stato Pratica | A | ✅ **Chiusa** — doc 14 §1 |
+| 2 | Salti di stato Pratica | A | ✅ **Chiusa implicitamente** — doc 14 §1 |
+| 3 | Ruoli su transizioni Pratica | A | ✅ **Chiusa** — doc 14 §1 |
+| 4 | Ritiro annullato con pratica collegata | A | ✅ **Chiusa** — doc 14 §2 |
+| 5 | Ritiro "annullato" terminale/riapribile | A | ✅ **Chiusa** — doc 14 §2 |
+| 6 | Cambio `event_type` a metà flusso | B | ✅ **Chiusa** — decisione tecnica presa |
+| 7 | DDT/trasporto — retention normativa | D | 🔶 **VERIFICA NORMATIVA PENDENTE** — decisione provvisoria: conservare tutto (scelta tecnica prudenziale, non obbligo accertato) |
+| 8 | Provenienza/origine — logica di fallback | A | ✅ **Chiusa** — doc 06 Addendum C (riscritto) |
+| 9 | Disposal batches — retention normativa | D | 🔶 **VERIFICA NORMATIVA PENDENTE** — stessa decisione provvisoria di #7 |
+| 10 | Correzione ciclo completato | B | ✅ **Chiusa** — decisione tecnica presa |
+| 11 | Limite 2 animali per ciclo | A | ✅ **Chiusa** — doc 14 §4 |
+| — | Relazione Ritiro → Pratica (nuova) | A | ✅ **Chiusa** — doc 06 §"Relazione Ritiro → Pratica" |
 
-**9 decisioni restano da chiudere** (7 categoria A, 2 categoria D) — **2 sono già chiuse** (categoria B, nessuna azione richiesta da te).
+**Tutte le decisioni sono ora chiuse**, tranne le due normative (#7, #9) che restano esplicitamente **VERIFICA NORMATIVA PENDENTE** — non bloccanti per lo sviluppo (la decisione provvisoria "conservare tutto" è già operativa), ma non vanno mai descritte come un obbligo di legge accertato finché non arriva una verifica reale con un consulente/commercialista.

@@ -159,7 +159,8 @@ practices(
   practice_number TEXT NOT NULL UNIQUE,
   status practice_status NOT NULL DEFAULT 'in_programma',   -- enum, vedi Stati
   request_origin TEXT NOT NULL,             -- 'Privato' | 'Veterinario' | 'Collaboratore' | 'Consegna in sede'
-  destination_branch TEXT NOT NULL,
+  originating_pickup_event_id BIGINT REFERENCES calendar_events(id) ON DELETE SET NULL,  -- NUOVO, vedi "Relazione Ritiro -> Pratica" sotto
+  destination_branch_id BIGINT NOT NULL REFERENCES company_locations(id),  -- ERA destination_branch TEXT libero, vedi Addendum C
   client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE RESTRICT,   -- DECISION: obbligatorio, vedi sotto
   service_type TEXT NOT NULL,               -- 'Da decidere' | 'Cremazione singola' | 'Cremazione collettiva'
   collaborator_id BIGINT REFERENCES collaborators(id),
@@ -195,6 +196,14 @@ practice_line_items(              -- sostituisce ~30 colonne price_* fisse
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 )
 ```
+
+### Relazione Ritiro → Pratica (decisione aziendale, aggiornamento post Architecture Gate)
+
+- **DECISION (confermata dall'utente)**: nel modello operativo reale, una pratica rappresenta sostanzialmente il ritiro formalizzato/documentato — **il caso ordinario/di progetto è `RITIRO → PRATICA`**, non "pratica indipendente creata dal nulla". Le due entità **restano tecnicamente distinte** (`calendar_events` per il Ritiro, `practices` per la pratica) — l'utente ha esplicitamente escluso una fusione fisica delle tabelle — ma la relazione tra le due deve essere rappresentata esplicitamente e in entrambe le direzioni, non solo da evento→pratica come oggi.
+- **FACT**: in V1 la relazione è oggi **unidirezionale**: `calendar_events.linked_practice_id` punta alla pratica generata, ma non esiste alcuna colonna sul lato `practices` che punti indietro al Ritiro di origine — l'unico modo per risalire dalla pratica al ritiro è una query inversa su `linked_practice_id`.
+- **DECISIONE TECNICA**: aggiunta `practices.originating_pickup_event_id BIGINT REFERENCES calendar_events(id) ON DELETE SET NULL` — rende la relazione interrogabile direttamente dal lato pratica (es. "da quale ritiro nasce questa pratica, con che indirizzo/orario/animali era stato registrato"), senza duplicare i dati del ritiro sulla pratica. `ON DELETE SET NULL` (non CASCADE, non RESTRICT) per lo stesso principio già applicato ovunque: la pratica non deve mai sparire né essere bloccata dalla sorte del ritiro che l'ha generata.
+- **Come nasce una pratica "ordinaria"**: il caso d'uso di dominio `create_practice_from_pickup(pickup_event_id)` valorizza `originating_pickup_event_id` e **copia** (non collega live) i dati di logistica del ritiro (vedi `pickup_type`/`pickup_location_id`/ecc., Addendum C aggiornato sotto) sulla pratica al momento della creazione — stesso principio già applicato agli animali (Addendum "tabelle concettualmente invariate": la riga non si duplica, ma qui si tratta di campi scalari non di una riga condivisibile, quindi la copia avviene una volta, alla creazione, e da quel momento la pratica è la fonte autoritativa per sé stessa).
+- **Cosa resta esplicitamente aperto**: l'utente ha confermato il caso *ordinario*. Non è stato specificato se le pratiche con `request_origin='Collaboratore'` o `'Consegna in sede'` debbano **sempre** avere anch'esse un ritiro di origine, o se restino legittimamente casi senza `originating_pickup_event_id` valorizzato (pratica creata direttamente). **Non lo si assume in nessuna delle due direzioni** — il campo è nullable proprio per non forzare una regola non confermata; se in futuro emerge che è obbligatorio anche per questi casi, diventa un vincolo `NOT NULL` condizionato, da aggiungere quando confermato.
 
 - **DECISION — `client_id` obbligatorio (`NOT NULL`)**: oggi una pratica può avere i dati del proprietario scritti direttamente come testo, senza mai passare da un vero record `clients`. In V2, ogni pratica **deve** riferire un cliente reale (creato al volo se non esiste, stessa UX di oggi — solo che il collegamento diventa garantito, non opzionale).
   - **RISK di migrazione**: pratiche storiche V1 con `owner_first_name`/`owner_last_name` ecc. scritti a mano ma senza `client_id` collegato **devono** ricevere un cliente creato ad-hoc durante la migrazione (deduplicando per nome+telefono dove possibile, esattamente come fa già `find_client_duplicates` in V1 — stesso algoritmo, riusato in fase di migrazione). Questo è un passo esplicito del documento 07 (Strategia di migrazione), non un dettaglio implicito.
@@ -352,30 +361,89 @@ practices(
 - **Verifica**: confronto valore-per-valore su un campione statisticamente significativo, non solo conteggio.
 - **`ddt_share_token`**: preservato **esattamente com'è** (incluso il vincolo `UNIQUE`), perché link di condivisione già distribuiti a clienti reali devono continuare a funzionare dopo il cutover.
 - **`original_practice_number`**: preservato esattamente com'è, resta parte integrante del meccanismo di cestino/ripristino (vedi anche doc 13 §2.1.2).
-- **⚠️ DECISIONE AZIENDALE NECESSARIA — non presa qui**: `transport_method`, `vehicle_plate`, `temperature_mode`, `container_id`, `lot_number`, `treatment_method` hanno l'aspetto di dati di tracciabilità potenzialmente soggetti a obblighi normativi (trasporto sottoprodotti animali); `signatory_identity_document_*`/`signing_place` sono dati del documento d'identità del firmatario, potenzialmente soggetti a normativa privacy con un proprio periodo di conservazione. **Questo documento NON decide una policy di conservazione/retention per questi campi** — non è una decisione tecnica che un architetto software possa prendere al posto tuo (o di chi segue gli aspetti normativi/legali dell'azienda). Per ora restano preservati senza scadenza, come richiesto esplicitamente ("per ora devono essere tutti preservati").
+- **🔶 VERIFICA NORMATIVA PENDENTE**: `transport_method`, `vehicle_plate`, `temperature_mode`, `container_id`, `lot_number`, `treatment_method` hanno l'aspetto di dati di tracciabilità potenzialmente soggetti a obblighi normativi (trasporto sottoprodotti animali); `signatory_identity_document_*`/`signing_place` sono dati del documento d'identità del firmatario, potenzialmente soggetti a normativa privacy con un proprio periodo di conservazione. **L'utente ha confermato esplicitamente**: non è stata ancora fatta una verifica con un consulente/commercialista su questi obblighi. **Decisione provvisoria confermata dall'utente: conservare tutti questi dati indefinitamente.** Questa è dichiarata esplicitamente **una scelta tecnica prudenziale**, **non** la descrizione di un obbligo normativo verificato — la distinzione va mantenuta anche in ogni documento futuro che tratti questo punto.
 - **ASSUMPTION**: `transport_method`/`temperature_mode`/`treatment_method` potrebbero essere vocabolari chiusi (candidati a `ENUM` invece di `TEXT` libero) — da verificare sui valori realmente presenti in produzione prima di finalizzare il DDL, non assunto qui.
-- **Deprecazione futura**: nessuna — in attesa della decisione aziendale sopra, questi campi non vanno considerati deprecabili.
+- **Deprecazione futura**: nessuna, per scelta prudenziale — resta soggetta a revisione se/quando arriva una verifica normativa reale (VERIFICA NORMATIVA PENDENTE, non chiusa da questo documento).
 
-## C. Provenienza / origine
+## C. Provenienza / origine / logistica multi-sede (RIVISTA dopo l'aggiornamento decisioni aziendali — doc 15)
+
+> **Chiusura della decisione aziendale precedentemente aperta**: l'utente ha chiarito il modello reale — Pet Paradise opera su più sedi (oggi Livorno, con l'impianto di cremazione, ed Empoli; l'azienda serve anche zone come Pisa, Firenze, Viareggio); un animale può essere affidato in una sede/zona e la cremazione può avvenire in una sede diversa da quella di affido; la riconsegna può avvenire in ambulatorio o a domicilio, con una propria zona. Questa sezione sostituisce integralmente la versione precedente (basata su un solo campo `origin_type` insufficiente a rappresentare tutto questo).
+
+**DECISIONE TECNICA — principio guida**: **niente viene mai dedotto**. Ogni concetto elencato dall'utente (sede di affido, luogo/zona del ritiro, sede di destinazione, modalità di riconsegna, luogo/zona di riconsegna, sede che esegue la cremazione, veterinario/collaboratore come punto di affido) diventa un campo esplicito, mai un valore inferito da un altro campo — stesso principio già applicato al circuito W/D e già presente nel resto di questo documento. Questo **chiude anche** la decisione aziendale rimasta aperta sulla "logica di fallback": non esiste una logica di fallback automatica da progettare, perché l'operatore sceglie sempre esplicitamente ogni campo — non c'è nulla da dedurre.
+
+### Lato Ritiro/Affido — su `practices` (via `originating_pickup_event_id` per le pratiche nate da un Ritiro, valorizzati comunque per le pratiche create direttamente)
 
 ```
+CREATE TYPE pickup_type AS ENUM ('sede_aziendale','domicilio','veterinario','collaboratore','altro');
+
 practices(
   ...
-  origin_type origin_type_enum NOT NULL DEFAULT 'non_specificato',  -- enum: 'veterinario' | 'domicilio' | 'consegna_in_sede' | 'collaboratore' | 'altro' | 'non_specificato'
-  origin_contact_name TEXT,        -- sostituisce origin_first_name + origin_last_name (un solo campo display, coerente col resto del modello)
-  origin_free_text TEXT,           -- sostituisce origin_text, usato solo quando origin_type='altro'
-  provenance_code TEXT,            -- invariato: alimenta il badge colorato già in uso (doc 13 §2.1.3)
+  pickup_type pickup_type NOT NULL DEFAULT 'domicilio',
+  pickup_location_id BIGINT REFERENCES company_locations(id),   -- valorizzato SOLO se pickup_type='sede_aziendale'
+  pickup_zone_id BIGINT REFERENCES calendar_zones(id),           -- valorizzato SOLO se pickup_type='domicilio' (riuso della tabella zone gia' esistente in V1, non una nuova struttura)
+  pickup_address TEXT,                                           -- gia' esistente, indirizzo puntuale (domicilio/altro)
+  pickup_contact_name TEXT,                                      -- sostituisce origin_first_name+origin_last_name, valorizzato solo per pickup_type='altro'
+  -- pickup_type='veterinario'  -> il punto di affido E' origin_veterinarian_id (gia' FK esistente), nessun altro campo lo duplica
+  -- pickup_type='collaboratore' -> il punto di affido E' collaborator_id (gia' FK esistente), nessun altro campo lo duplica
+  provenance_code TEXT,   -- invariato: alimenta il badge colorato gia' in uso (doc 13 §2.1.3)
   ...
 )
 ```
 
-- **Destinazione V2**: un discriminatore esplicito `origin_type` (invece di dedurre la modalità da quale-campo-è-valorizzato, stesso principio già applicato al circuito W/D) + un campo di contatto unico + un campo libero solo per il caso residuale.
-- **Trasformazione**: `pickup_address_mode`/`transporter_mode`/`origin_mode` (3 colonne che oggi esprimono varianti della stessa domanda "da dove/come arriva l'animale") collassano nell'unico enum `origin_type`; `origin_first_name`+`origin_last_name` → `origin_contact_name`; `origin_text` → `origin_free_text`; `provenance` → `provenance_code` (rinominato per chiarezza, valore invariato).
-- **Motivo architetturale**: elimina la stessa classe di ambiguità già risolta per i pagamenti — oggi la modalità di provenienza è **dedotta** da quale colonna è piena, esattamente il pattern che ha causato il bug W/D. Un enum esplicito rende impossibile lo stato "nessuna modalità dichiarata ma dati presenti" o viceversa.
-- **⚠️ DECISIONE AZIENDALE NECESSARIA — non presa qui**: la logica di fallback reale (es. "se non c'è indirizzo di ritiro esplicito, usa quello del veterinario collegato" o simili) vive oggi solo nel codice V1 e non è mai stata dichiarata come regola di business esplicita in nessun documento. Non la ricostruisco per assunzione, come richiesto — la struttura dati sopra è pronta ad accogliere qualunque regola tu confermi, ma la regola stessa resta un tuo punto aperto.
-- **Migrazione**: mappatura dai valori V1 esistenti ai nuovi valori enum (tabella di corrispondenza da scrivere una volta nota la regola di business); i casi non riconducibili a un valore noto finiscono in `origin_type='non_specificato'` con `origin_free_text` popolato dal valore grezzo originale, **mai scartati**.
-- **Verifica**: nessuna pratica migrata deve avere `origin_type='non_specificato'` E `origin_free_text` vuoto se in V1 esisteva un qualunque valore in uno dei campi sorgente.
-- **Deprecazione futura**: nessuna.
+- **`sede di affido/ritiro`** → `pickup_type='sede_aziendale'` + `pickup_location_id` (FK a `company_locations`, la stessa tabella già esistente in V1 con le sedi Livorno/Empoli — non una nuova struttura). Esempio dell'utente: "animale preso dalla sede di Empoli" → `pickup_type='sede_aziendale'`, `pickup_location_id` = riga Empoli.
+- **`luogo/zona del ritiro quando necessario`** → `pickup_type='domicilio'` + `pickup_zone_id` (FK a `calendar_zones`, tabella di zone già esistente in V1 — Addendum M) per la zona geografica, + `pickup_address` per l'indirizzo puntuale quando serve.
+- **`veterinario/collaboratore come punto di affido`** → `pickup_type='veterinario'`/`'collaboratore'`, il punto di affido è direttamente `origin_veterinarian_id`/`collaborator_id` (FK già esistenti in questo documento) — **nessun campo aggiuntivo li duplica**, evitando la stessa ambiguità già risolta per i pagamenti (mai due modi di dire la stessa cosa).
+
+### Lato Destinazione/Cremazione — su `practices` e `cremation_cycles`
+
+```
+practices(
+  ...
+  destination_branch_id BIGINT NOT NULL REFERENCES company_locations(id),   -- ERA destination_branch TEXT libero (vedi nota sotto)
+  ...
+)
+
+cremation_cycles(
+  ...
+  cremation_location_id BIGINT REFERENCES company_locations(id),   -- NUOVO
+  ...
+)
+```
+
+- **`sede di destinazione`** → `practices.destination_branch_id`, ora **FK reale** verso `company_locations` invece del `TEXT` libero di V1 (che oggi vale sempre e solo "Livorno" o "Empoli", i due valori di `BRANCHES` in app.py — **FACT verificato nel codice**). Rappresenta quale sede aziendale è amministrativamente responsabile della pratica (rilevante oggi anche per il tipo di documento generato: Livorno = "FORNO CREMATORIO", Empoli = "IMPRESA FUNEBRE", **FACT** da `BRANCHES` in app.py).
+- **`sede che esegue la cremazione`** → `cremation_cycles.cremation_location_id`, **deliberatamente separata** da `destination_branch_id`: nell'esempio dell'utente, una pratica destinata a Empoli può comunque essere cremata a Livorno (l'unica sede con l'impianto) — le due informazioni possono divergere, quindi non possono essere lo stesso campo. Vive sul **ciclo di cremazione** (non sulla singola pratica) perché è la sede fisica dove avviene l'operazione condivisa da tutti gli animali assegnati a quel ciclo, non un attributo della singola pratica.
+- **ASSUMPTION tecnica, non aziendale**: oggi con solo 2 sedi e un solo impianto, `cremation_location_id` coinciderà quasi sempre con l'unica sede "FORNO CREMATORIO" — il campo è comunque modellato esplicitamente (non hardcoded) per non presumere che resti sempre così se in futuro si aprisse un secondo impianto.
+
+### Lato Riconsegna — su `calendar_events` (non su `practices`, coerentemente con Addendum P)
+
+```
+CREATE TYPE delivery_type AS ENUM ('ambulatorio','domicilio','sede_aziendale','altro');
+
+calendar_events(
+  ...
+  delivery_type delivery_type,                                    -- sostituisce delivery_location_type libero
+  delivery_veterinarian_id BIGINT REFERENCES veterinarians(id),    -- rinominato da delivery_clinic_id, stesso ruolo, valorizzato solo se delivery_type='ambulatorio'
+  delivery_location_id BIGINT REFERENCES company_locations(id),    -- NUOVO, valorizzato solo se delivery_type='sede_aziendale'
+  delivery_zone_id BIGINT REFERENCES calendar_zones(id),            -- NUOVO, valorizzato solo se delivery_type='domicilio'
+  delivery_address TEXT,                                            -- indirizzo puntuale quando serve
+  ...
+)
+```
+
+- **Perché sulla Riconsegna e non sulla Pratica**: stesso principio già stabilito nell'Addendum P per i campi di pagamento preliminare — la riconsegna è un evento che può non esistere ancora quando la pratica viene creata (la cremazione potrebbe non essere nemmeno iniziata), quindi l'informazione "dove/come verrà riconsegnato" appartiene all'evento Riconsegna, non alla pratica. Aggiungere questi campi anche su `practices` li duplicherebbe, ricreando la stessa classe di problema (due fonti per lo stesso dato) che questo intero documento elimina sistematicamente.
+- **`modalità di riconsegna`** → `delivery_type` esplicito (sostituisce il libero `delivery_location_type` di V1).
+- **`luogo/zona di riconsegna`** → `delivery_zone_id` (domicilio) o `delivery_location_id` (sede aziendale) o `delivery_veterinarian_id` (ambulatorio), mai dedotti dal tipo.
+
+### Migrazione (per tutti i campi sopra)
+
+- `destination_branch` (TEXT "Livorno"/"Empoli") → risolto a `destination_branch_id` per nome, matching diretto con `company_locations.name` (già seedate con questi due nomi esatti in V1, **FACT**).
+- `pickup_address_mode`/`origin_mode`/`transporter_mode`/`origin_text`/`origin_first_name`/`origin_last_name` → mappati a `pickup_type`/`pickup_zone_id`/`pickup_address`/`pickup_contact_name` secondo i valori realmente presenti (tabella di corrispondenza da scrivere in fase di DDL, valori non riconducibili finiscono in `pickup_type='altro'` con `pickup_contact_name`/`pickup_address` popolati dal valore grezzo, **mai scartati**).
+- `calendar_events.delivery_location_type`/`delivery_clinic_id`/`delivery_clinic_name`/`delivery_clinic_address`/`delivery_clinic_phone` → mappati a `delivery_type`/`delivery_veterinarian_id`/`delivery_address`.
+- **Verifica**: nessuna pratica/evento migrato deve perdere l'informazione di sede/zona/indirizzo che aveva in V1 — stesso principio "mai scartare" già applicato a ogni altro campo in questo documento.
+
+### Classificazione
+
+**DECISIONE TECNICA** per la struttura dei campi (la scelta di quali FK/enum usare) — **motivata direttamente dalla decisione aziendale ricevuta** (multi-sede, affido/destinazione/cremazione distinti, riconsegna in ambulatorio o domicilio). Nessuna regola di fallback da inventare, perché il modello richiede sempre una scelta esplicita dell'operatore, mai un'inferenza automatica.
 
 ## D. Override manuali (decisioni operatore, non dati derivati)
 
@@ -527,9 +595,10 @@ disposal_batch_practices(
 ```
 
 - **Destinazione V2**: tabelle preservate, con FK esplicite dove mancanti.
-- **Motivo architetturale**: rilevanza per tracciabilità/storico dello smaltimento collettivo — stesso tipo di cautela già applicato al Gruppo B (potenziale rilevanza normativa). **DECISIONE AZIENDALE NON PRESA QUI**: se esistano obblighi di conservazione specifici per questi lotti va confermato da te/da chi segue gli aspetti normativi, non assunto da questo documento. Fino ad allora: preservati senza scadenza.
+- **Motivo architetturale**: rilevanza per tracciabilità/storico dello smaltimento collettivo — stesso tipo di cautela già applicato al Gruppo B (potenziale rilevanza normativa).
+- **🔶 VERIFICA NORMATIVA PENDENTE**: se esistano obblighi di conservazione specifici per questi lotti non è stato ancora verificato con un consulente/commercialista. **Decisione provvisoria confermata dall'utente: conservare indefinitamente**, dichiarata esplicitamente come scelta tecnica prudenziale, non come obbligo normativo accertato.
 - **Migrazione/Verifica**: copia diretta, conteggio + verifica catena `disposal_batch_practices→practices` non orfana.
-- **Deprecazione futura**: nessuna, in attesa della decisione aziendale sopra.
+- **Deprecazione futura**: nessuna, per scelta prudenziale — soggetta a revisione se/quando arriva una verifica normativa reale.
 
 ## K. Ledger reversibility — storni
 
@@ -648,3 +717,9 @@ calendar_events(
 ---
 
 **Stato di questo addendum**: chiude tutte le condizioni del doc 13 relative al modello dati (sezioni 2, 5, punto sulla riconciliazione calendario) che erano classificate come decisione tecnica. Le decisioni aziendali esplicitamente NON prese qui (retention DDT/trasporto, retention disposal_batches, regola di fallback provenienza) restano elencate nel report di chiusura Architecture Gate, non nascoste.
+
+---
+
+## Aggiornamento — decisioni aziendali chiuse dopo l'Architecture Gate (doc 15)
+
+La sezione **C** sopra è stata riscritta integralmente: chiude la decisione aziendale sulla logica di provenienza/sede, sostituendo il precedente `origin_type` insufficiente con un modello esplicito di logistica multi-sede (affido, destinazione, cremazione, riconsegna). Aggiunta la relazione esplicita Ritiro → Pratica (`originating_pickup_event_id`). Le due voci di retention normativa (DDT/trasporto in Addendum B, disposal_batches in Addendum J) sono state riformulate come **VERIFICA NORMATIVA PENDENTE** con conservazione indefinita dichiarata esplicitamente come scelta tecnica prudenziale, non come obbligo normativo — su richiesta esplicita dell'utente, per non far passare una supposizione come un fatto accertato. Dettaglio completo delle decisioni e del loro stato in `docs/v2/15-decisioni-aziendali-aperte.md`.
