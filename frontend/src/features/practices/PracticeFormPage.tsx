@@ -4,7 +4,8 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import { z } from "zod";
 
-import { useClient, useClients, type Client } from "@/features/clients/api";
+import { useClient, type Client } from "@/features/clients/api";
+import { ClientPicker } from "@/shared/ClientPicker";
 
 import { useCompanyLocations, useCreatePractice } from "./api";
 import { usePracticeDraft } from "./usePracticeDraft";
@@ -29,9 +30,7 @@ export function PracticeFormPage() {
   const createPractice = useCreatePractice();
   const { data: locations } = useCompanyLocations();
   const [serverError, setServerError] = useState<string | null>(null);
-  const [clientSearch, setClientSearch] = useState("");
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
-  const { data: clientResults } = useClients({ q: clientSearch });
   const draft = usePracticeDraft<FormValues>(DRAFT_KEY);
   const [promptDismissed, setPromptDismissed] = useState(false);
   const showRestorePrompt = draft.hasStoredDraft && !promptDismissed;
@@ -151,40 +150,7 @@ export function PracticeFormPage() {
       <form className="card" onSubmit={handleSubmit(onSubmit)}>
         <div className="field full">
           <label>Cliente</label>
-          {selectedClient ? (
-            <p>
-              {[selectedClient.first_name, selectedClient.last_name].filter(Boolean).join(" ") || selectedClient.company_name}{" "}
-              <button type="button" className="btn-ghost" onClick={() => selectClient(null)}>
-                Cambia
-              </button>
-            </p>
-          ) : (
-            <>
-              <input
-                placeholder="Cerca cliente per nome o telefono..."
-                value={clientSearch}
-                onChange={(e) => setClientSearch(e.target.value)}
-              />
-              {clientResults && clientSearch && (
-                <ul className="reminders-todo-list">
-                  {clientResults.map((c) => (
-                    <li key={c.id}>
-                      <button
-                        type="button"
-                        className="reminders-todo-row"
-                        onClick={() => {
-                          selectClient(c);
-                          setClientSearch("");
-                        }}
-                      >
-                        {[c.first_name, c.last_name].filter(Boolean).join(" ") || c.company_name}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </>
-          )}
+          <ClientPicker selectedClient={selectedClient} onSelect={selectClient} />
           {errors.client_id && !selectedClient && <p className="field-error">Seleziona un cliente prima di salvare.</p>}
         </div>
 

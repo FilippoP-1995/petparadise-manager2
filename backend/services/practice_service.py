@@ -6,6 +6,7 @@ from domain.errors import NotFoundError, ValidationDomainError
 from domain.practice.rules import build_owner_snapshot, ensure_direct_creation_origin, ensure_valid_service_type
 from domain.practice.state_machine import validate_correction_transition, validate_workflow_transition
 from models.animal import Animal
+from models.calendar_event import PickupStatus
 from models.practice import CollaboratorBillingStatus, OwnerNotifiedStatus, Practice, PracticeLineItem, PracticeStatus
 from repositories.audit_repository import AuditRepository
 from repositories.client_repository import ClientRepository
@@ -102,17 +103,17 @@ def _apply_mutable_fields(practice: Practice, data) -> None:
         setattr(practice, field_name, getattr(data, field_name))
 
 
-async def create_practice(db: AsyncSession, data: PracticeCreate, *, actor_user_id: int) -> Practice:
-    """Percorso B (diretto) - doc06 'Relazione Ritiro -> Pratica'. Il
-    Percorso A (da Ritiro) non e' disponibile in questa fase: il dominio
-    Ritiro (calendar_events) non e' ancora stato costruito in V2."""
-    ensure_valid_service_type(data.service_type)
-    ensure_direct_creation_origin(data.request_origin)
+async def _create_practice_core(
+    db: AsyncSession, data: PracticeCreate, *, client, originating_pickup_event_id: int | None, actor_user_id: int
+) -> Practice:
+    """Nucleo condiviso di creazione pratica - doc09: 'create_practice
+    imposta sempre status=ritirato, per ENTRAMBI i percorsi di creazione'.
+    Un'unica implementazione di numerazione/owner_snapshot/stato
+    hardcoded/audit atomico, usata sia dal Percorso B (create_practice,
+    sotto) sia dal Percorso A (create_practice_from_pickup) - la differenza
+    tra i due percorsi (quali origini sono ammesse, da dove arrivano
+    client/campi di logistica) resta nei rispettivi chiamanti, mai qui."""
     await _resolve_references(db, data)
-
-    client = await ClientRepository(db).get_by_id(data.client_id)
-    if client is None or not client.active:
-        raise NotFoundError(f"Cliente {data.client_id} non trovato")
 
     practice_repo = PracticeRepository(db)
     audit = AuditRepository(db)
@@ -124,8 +125,9 @@ async def create_practice(db: AsyncSession, data: PracticeCreate, *, actor_user_
     practice = Practice(
         practice_number=practice_number,
         status=PracticeStatus.ritirato,  # doc14 SS1: mai un parametro di creazione
-        client_id=data.client_id,
+        client_id=client.id,
         owner_snapshot=build_owner_snapshot(client),
+        originating_pickup_event_id=originating_pickup_event_id,
         created_by=actor_user_id,
     )
     _apply_mutable_fields(practice, data)
@@ -138,9 +140,98 @@ async def create_practice(db: AsyncSession, data: PracticeCreate, *, actor_user_
     await db.flush()  # assegna practice.id, popola gli id delle righe figlie in cascata
 
     audit.record(entity_type=ENTITY_TYPE, entity_id=practice.id, action="created", user_id=actor_user_id)
+    return practice
+
+
+async def create_practice(db: AsyncSession, data: PracticeCreate, *, actor_user_id: int) -> Practice:
+    """Percorso B (diretto) - doc06 'Relazione Ritiro -> Pratica'."""
+    ensure_valid_service_type(data.service_type)
+    ensure_direct_creation_origin(data.request_origin)
+
+    client = await ClientRepository(db).get_by_id(data.client_id)
+    if client is None or not client.active:
+        raise NotFoundError(f"Cliente {data.client_id} non trovato")
+
+    practice = await _create_practice_core(db, data, client=client, originating_pickup_event_id=None, actor_user_id=actor_user_id)
 
     await db.commit()
-    return await practice_repo.get_by_id(practice.id)
+    return await PracticeRepository(db).get_by_id(practice.id)
+
+
+async def create_practice_from_pickup(
+    db: AsyncSession,
+    pickup_event,
+    *,
+    destination_branch_id: int,
+    service_type: str,
+    actor_user_id: int,
+) -> Practice:
+    """Percorso A - doc06 'Relazione Ritiro -> Pratica' + sezione 5/10 della
+    richiesta 'RITIRO/RICONSEGNA'. Il chiamante (services/pickup_service.py)
+    deve aver gia' caricato `pickup_event` con un lock di riga
+    (SELECT ... FOR UPDATE, CalendarEventRepository.get_by_id_for_update)
+    per tutta la durata di QUESTA transazione - qui non si acquisisce un
+    lock nuovo, si assume che il chiamante lo tenga gia'. Riusa
+    _create_practice_core: nessuna logica di creazione pratica duplicata
+    nel dominio Ritiro (regola esplicita ricevuta)."""
+    if pickup_event.pickup_status != PickupStatus.ritirato:
+        raise ValidationDomainError("Il ritiro deve essere nello stato 'ritirato' prima di generare una pratica.")
+    if pickup_event.linked_practice_id is not None:
+        raise ValidationDomainError("Questo ritiro e' gia' collegato a una pratica.")
+    if pickup_event.client_id is None:
+        raise ValidationDomainError("Il ritiro deve avere un cliente assegnato prima di generare una pratica.")
+
+    ensure_valid_service_type(service_type)
+
+    client = await ClientRepository(db).get_by_id(pickup_event.client_id)
+    if client is None or not client.active:
+        raise NotFoundError(f"Cliente {pickup_event.client_id} non trovato")
+
+    data = PracticeCreate(
+        client_id=client.id,
+        destination_branch_id=destination_branch_id,
+        # doc06 non definisce request_origin per il Percorso A: stessa
+        # logica esatta gia' verificata in V1 (FACT, app.py:15740 -
+        # "Veterinario" if event["veterinarian_id"] else "Privato").
+        request_origin="Veterinario" if pickup_event.veterinarian_id else "Privato",
+        service_type=service_type,
+        collaborator_id=pickup_event.collaborator_id,
+        origin_veterinarian_id=pickup_event.veterinarian_id,
+        pickup_type=pickup_event.pickup_type,
+        pickup_location_id=pickup_event.pickup_location_id,
+        pickup_zone_id=pickup_event.pickup_zone_id,
+        pickup_address=pickup_event.pickup_address,
+        pickup_contact_name=pickup_event.pickup_contact_name,
+        notes=pickup_event.notes,
+    )
+    practice = await _create_practice_core(
+        db, data, client=client, originating_pickup_event_id=pickup_event.id, actor_user_id=actor_user_id
+    )
+
+    # Stessa riga, mai una copia (doc06 'calendar_events + figlie') - risolve
+    # anche il bug V1 dove solo il primo animale sopravviveva alla
+    # conversione (FACT, app.py:15733,15740). Riparentela via le collezioni
+    # ORM (non solo settando la FK a mano): entrambe le relazioni
+    # (CalendarEvent.animals e Practice.animals) usano
+    # cascade='delete-orphan', che richiede che l'oggetto risulti spostato
+    # attraverso le collezioni stesse, non solo con un UPDATE diretto sulla
+    # colonna - altrimenti l'animale resta "orfano" della vecchia
+    # collezione e viene cancellato al flush invece di essere riassegnato.
+    for animal in list(pickup_event.animals):
+        pickup_event.animals.remove(animal)
+        practice.animals.append(animal)
+
+    pickup_event.linked_practice_id = practice.id
+    AuditRepository(db).record(
+        entity_type="calendar_event",
+        entity_id=pickup_event.id,
+        action="practice_created",
+        new_value=practice.practice_number,
+        user_id=actor_user_id,
+    )
+
+    await db.commit()
+    return await PracticeRepository(db).get_by_id(practice.id)
 
 
 async def update_practice(db: AsyncSession, practice_id: int, data: PracticeUpdate, *, actor_user_id: int) -> Practice:

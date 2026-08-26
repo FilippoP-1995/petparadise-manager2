@@ -424,6 +424,248 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/pickups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Pickups */
+        get: operations["list_pickups_api_pickups_get"];
+        put?: never;
+        /** Create Pickup */
+        post: operations["create_pickup_api_pickups_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pickups/{pickup_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Pickup */
+        get: operations["get_pickup_api_pickups__pickup_id__get"];
+        /** Update Pickup */
+        put: operations["update_pickup_api_pickups__pickup_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pickups/{pickup_id}/transition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transition Pickup
+         * @description doc14 §2 - Operator o Admin indistintamente.
+         */
+        post: operations["transition_pickup_api_pickups__pickup_id__transition_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pickups/{pickup_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Pickup
+         * @description Azione A (sezione 6): annullamento normale, la pratica collegata
+         *     (se esiste) non viene toccata - il campo linked_practice_id nella
+         *     risposta permette al frontend di mostrare l'avviso.
+         */
+        post: operations["cancel_pickup_api_pickups__pickup_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pickups/{pickup_id}/cancel-and-trash-practice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Pickup And Trash Practice
+         * @description Azione B (sezione 6): distinta da A, conferma esplicita separata
+         *     (motivo obbligatorio) - Operator o Admin, non riservata all'Admin
+         *     (sezione 7).
+         */
+        post: operations["cancel_pickup_and_trash_practice_api_pickups__pickup_id__cancel_and_trash_practice_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pickups/{pickup_id}/create-practice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Practice From Pickup
+         * @description Percorso A - vedi services/pickup_service.py e
+         *     services/practice_service.py per il dettaglio del lock/transazione.
+         */
+        post: operations["create_practice_from_pickup_api_pickups__pickup_id__create_practice_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pickups/{pickup_id}/trash": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Trash Pickup */
+        post: operations["trash_pickup_api_pickups__pickup_id__trash_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pickups/{pickup_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore Pickup */
+        post: operations["restore_pickup_api_pickups__pickup_id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Deliveries */
+        get: operations["list_deliveries_api_deliveries_get"];
+        put?: never;
+        /** Create Delivery */
+        post: operations["create_delivery_api_deliveries_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deliveries/{delivery_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Delivery */
+        get: operations["get_delivery_api_deliveries__delivery_id__get"];
+        /** Update Delivery */
+        put: operations["update_delivery_api_deliveries__delivery_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deliveries/{delivery_id}/link-practice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Link Delivery To Practice */
+        post: operations["link_delivery_to_practice_api_deliveries__delivery_id__link_practice_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deliveries/{delivery_id}/trash": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Trash Delivery */
+        post: operations["trash_delivery_api_deliveries__delivery_id__trash_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deliveries/{delivery_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore Delivery */
+        post: operations["restore_delivery_api_deliveries__delivery_id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -486,6 +728,21 @@ export interface components {
             id: number;
             /** Sort Order */
             sort_order: number;
+        };
+        /**
+         * CancelPickupAndTrashPracticeRequest
+         * @description doc.15 sezione 6B: azione distinta, conferma esplicita separata -
+         *     motivo sempre obbligatorio qui (a differenza dell'annullamento
+         *     normale), proprio perche' comporta la cestinazione anche della pratica.
+         */
+        CancelPickupAndTrashPracticeRequest: {
+            /** Reason */
+            reason: string;
+        };
+        /** CancelPickupRequest */
+        CancelPickupRequest: {
+            /** Reason */
+            reason?: string | null;
         };
         /** ClientCreate */
         ClientCreate: {
@@ -607,6 +864,143 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /**
+         * CreatePracticeFromPickupRequest
+         * @description Percorso A. destination_branch_id/service_type restano una scelta
+         *     esplicita dell'operatore al momento della creazione (doc06 Addendum C:
+         *     'niente viene mai dedotto') - non copiati automaticamente da nessun
+         *     campo del Ritiro, che non li possiede.
+         */
+        CreatePracticeFromPickupRequest: {
+            /** Destination Branch Id */
+            destination_branch_id: number;
+            /**
+             * Service Type
+             * @default Da decidere
+             */
+            service_type: string;
+        };
+        /** DeliveryCreate */
+        DeliveryCreate: {
+            /**
+             * Start At
+             * Format: date-time
+             */
+            start_at: string;
+            /**
+             * End At
+             * Format: date-time
+             */
+            end_at: string;
+            /** Client Id */
+            client_id?: number | null;
+            delivery_type: components["schemas"]["DeliveryType"];
+            /** Delivery Veterinarian Id */
+            delivery_veterinarian_id?: number | null;
+            /** Delivery Location Id */
+            delivery_location_id?: number | null;
+            /** Delivery Zone Id */
+            delivery_zone_id?: number | null;
+            /** Delivery Address */
+            delivery_address?: string | null;
+            /** Notes */
+            notes?: string | null;
+            /** Linked Practice Id */
+            linked_practice_id?: number | null;
+            /** Preliminary Payment Status */
+            preliminary_payment_status?: string | null;
+            /** Preliminary Payment Amount */
+            preliminary_payment_amount?: number | null;
+        };
+        /** DeliveryRead */
+        DeliveryRead: {
+            /** Id */
+            id: number;
+            /**
+             * Start At
+             * Format: date-time
+             */
+            start_at: string;
+            /**
+             * End At
+             * Format: date-time
+             */
+            end_at: string;
+            /** Client Id */
+            client_id: number | null;
+            delivery_type: components["schemas"]["DeliveryType"];
+            /** Delivery Veterinarian Id */
+            delivery_veterinarian_id: number | null;
+            /** Delivery Location Id */
+            delivery_location_id: number | null;
+            /** Delivery Zone Id */
+            delivery_zone_id: number | null;
+            /** Delivery Address */
+            delivery_address: string | null;
+            /** Notes */
+            notes: string | null;
+            /** Linked Practice Id */
+            linked_practice_id: number | null;
+            /** Preliminary Payment Status */
+            preliminary_payment_status: string | null;
+            /** Preliminary Payment Amount */
+            preliminary_payment_amount: number | null;
+            /** Deleted At */
+            deleted_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * DeliveryType
+         * @description doc06 Addendum C (riscritto) - stesso principio del pickup_type
+         *     sulla Pratica: nessuna logica di fallback, sempre una scelta esplicita.
+         * @enum {string}
+         */
+        DeliveryType: "ambulatorio" | "domicilio" | "sede_aziendale" | "altro";
+        /**
+         * DeliveryUpdate
+         * @description linked_practice_id NON e' qui: il collegamento passa solo dalla
+         *     azione dedicata /link (doc06 Addendum P, riconciliazione esplicita).
+         *     preliminary_payment_* restano modificabili SOLO se la riconsegna non e'
+         *     ancora collegata - verificato nel service (congelamento).
+         */
+        DeliveryUpdate: {
+            /**
+             * Start At
+             * Format: date-time
+             */
+            start_at: string;
+            /**
+             * End At
+             * Format: date-time
+             */
+            end_at: string;
+            /** Client Id */
+            client_id?: number | null;
+            delivery_type: components["schemas"]["DeliveryType"];
+            /** Delivery Veterinarian Id */
+            delivery_veterinarian_id?: number | null;
+            /** Delivery Location Id */
+            delivery_location_id?: number | null;
+            /** Delivery Zone Id */
+            delivery_zone_id?: number | null;
+            /** Delivery Address */
+            delivery_address?: string | null;
+            /** Notes */
+            notes?: string | null;
+            /** Preliminary Payment Status */
+            preliminary_payment_status?: string | null;
+            /** Preliminary Payment Amount */
+            preliminary_payment_amount?: number | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -646,6 +1040,16 @@ export interface components {
             /** Sort Order */
             sort_order: number;
         };
+        /** LinkDeliveryToPracticeRequest */
+        LinkDeliveryToPracticeRequest: {
+            /** Practice Id */
+            practice_id: number;
+            /**
+             * Confirm Despite Mismatch
+             * @default false
+             */
+            confirm_despite_mismatch: boolean;
+        };
         /** LoginRequest */
         LoginRequest: {
             /** Username */
@@ -684,12 +1088,144 @@ export interface components {
          */
         PaymentChannel: "W" | "D" | "Collaboratori";
         /**
+         * PickupCreate
+         * @description Mai un campo pickup_status qui (doc09 'lo stato iniziale non e' mai
+         *     un parametro di creazione', principio esteso a ogni entita' con FSM,
+         *     non solo Pratica) - hardcoded server-side a 'da_confermare' (FACT: V1
+         *     stesso default, calendar_service.py normalize_event).
+         */
+        PickupCreate: {
+            /**
+             * Start At
+             * Format: date-time
+             */
+            start_at: string;
+            /**
+             * End At
+             * Format: date-time
+             */
+            end_at: string;
+            /** Client Id */
+            client_id?: number | null;
+            /** Veterinarian Id */
+            veterinarian_id?: number | null;
+            /** Collaborator Id */
+            collaborator_id?: number | null;
+            pickup_type: components["schemas"]["PickupType"];
+            /** Pickup Location Id */
+            pickup_location_id?: number | null;
+            /** Pickup Zone Id */
+            pickup_zone_id?: number | null;
+            /** Pickup Address */
+            pickup_address?: string | null;
+            /** Pickup Contact Name */
+            pickup_contact_name?: string | null;
+            /** Notes */
+            notes?: string | null;
+            /** Animals */
+            animals?: components["schemas"]["AnimalInput"][];
+        };
+        /** PickupRead */
+        PickupRead: {
+            /** Id */
+            id: number;
+            pickup_status: components["schemas"]["PickupStatus"];
+            /**
+             * Start At
+             * Format: date-time
+             */
+            start_at: string;
+            /**
+             * End At
+             * Format: date-time
+             */
+            end_at: string;
+            /** Client Id */
+            client_id: number | null;
+            /** Veterinarian Id */
+            veterinarian_id: number | null;
+            /** Collaborator Id */
+            collaborator_id: number | null;
+            pickup_type: components["schemas"]["PickupType"];
+            /** Pickup Location Id */
+            pickup_location_id: number | null;
+            /** Pickup Zone Id */
+            pickup_zone_id: number | null;
+            /** Pickup Address */
+            pickup_address: string | null;
+            /** Pickup Contact Name */
+            pickup_contact_name: string | null;
+            /** Notes */
+            notes: string | null;
+            /** Linked Practice Id */
+            linked_practice_id: number | null;
+            /** Deleted At */
+            deleted_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Animals */
+            animals: components["schemas"]["AnimalRead"][];
+        };
+        /**
+         * PickupStatus
+         * @description doc14 §2 - enum chiuso, grafo di transizione in
+         *     domain/pickup/state_machine.py. 'annullato' e' terminale (nessuna
+         *     transizione in uscita, mai riapribile - decisione aziendale chiusa).
+         * @enum {string}
+         */
+        PickupStatus: "da_confermare" | "da_ritirare" | "ritirato" | "annullato";
+        /**
          * PickupType
          * @description doc06 Addendum C (riscritto) - nessuna logica di fallback: il tipo
          *     e' sempre scelto esplicitamente dall'operatore.
          * @enum {string}
          */
         PickupType: "sede_aziendale" | "domicilio" | "veterinario" | "collaboratore" | "altro";
+        /**
+         * PickupUpdate
+         * @description Stessi campi di creazione. Un ritiro 'annullato' e' terminale e non
+         *     e' modificabile (doc.14 §2 + sezione 6 della richiesta corrente) -
+         *     verificato nel service, non nello schema.
+         */
+        PickupUpdate: {
+            /**
+             * Start At
+             * Format: date-time
+             */
+            start_at: string;
+            /**
+             * End At
+             * Format: date-time
+             */
+            end_at: string;
+            /** Client Id */
+            client_id?: number | null;
+            /** Veterinarian Id */
+            veterinarian_id?: number | null;
+            /** Collaborator Id */
+            collaborator_id?: number | null;
+            pickup_type: components["schemas"]["PickupType"];
+            /** Pickup Location Id */
+            pickup_location_id?: number | null;
+            /** Pickup Zone Id */
+            pickup_zone_id?: number | null;
+            /** Pickup Address */
+            pickup_address?: string | null;
+            /** Pickup Contact Name */
+            pickup_contact_name?: string | null;
+            /** Notes */
+            notes?: string | null;
+            /** Animals */
+            animals?: components["schemas"]["AnimalInput"][];
+        };
         /** PracticeCreate */
         PracticeCreate: {
             /** Destination Branch Id */
@@ -1070,6 +1606,10 @@ export interface components {
             label: string;
             /** Category */
             category: string | null;
+        };
+        /** TransitionPickupRequest */
+        TransitionPickupRequest: {
+            target_status: components["schemas"]["PickupStatus"];
         };
         /** TransitionRequest */
         TransitionRequest: {
@@ -2236,6 +2776,604 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TagRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_pickups_api_pickups_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                status?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PickupRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_pickup_api_pickups_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PickupCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PickupRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_pickup_api_pickups__pickup_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pickup_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PickupRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_pickup_api_pickups__pickup_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pickup_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PickupUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PickupRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transition_pickup_api_pickups__pickup_id__transition_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pickup_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransitionPickupRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PickupRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_pickup_api_pickups__pickup_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pickup_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CancelPickupRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PickupRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_pickup_and_trash_practice_api_pickups__pickup_id__cancel_and_trash_practice_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pickup_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CancelPickupAndTrashPracticeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PickupRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_practice_from_pickup_api_pickups__pickup_id__create_practice_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pickup_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePracticeFromPickupRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trash_pickup_api_pickups__pickup_id__trash_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pickup_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PickupRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_pickup_api_pickups__pickup_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pickup_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PickupRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_deliveries_api_deliveries_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_delivery_api_deliveries_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeliveryCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_delivery_api_deliveries__delivery_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                delivery_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_delivery_api_deliveries__delivery_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                delivery_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeliveryUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    link_delivery_to_practice_api_deliveries__delivery_id__link_practice_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                delivery_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkDeliveryToPracticeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trash_delivery_api_deliveries__delivery_id__trash_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                delivery_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_delivery_api_deliveries__delivery_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                delivery_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryRead"];
                 };
             };
             /** @description Validation Error */

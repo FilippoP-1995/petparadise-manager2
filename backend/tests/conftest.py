@@ -18,6 +18,7 @@ from api.dependencies import get_current_user  # noqa: E402
 from auth.security import hash_password  # noqa: E402
 from database import get_session  # noqa: E402
 from main import app  # noqa: E402
+from models.calendar_zone import CalendarZone  # noqa: E402
 from models.client import Client  # noqa: E402
 from models.company_location import CompanyLocation  # noqa: E402
 from models.user import User, UserRole  # noqa: E402
@@ -83,6 +84,16 @@ async def sample_location(db_session: AsyncSession) -> CompanyLocation:
     db_session.add(location)
     await db_session.flush()
     return location
+
+
+@pytest_asyncio.fixture
+async def sample_zone(db_session: AsyncSession) -> CalendarZone:
+    """Zona geografica reale minima, richiesta da pickup_type='domicilio'
+    (doc06 Addendum C)."""
+    zone = CalendarZone(name="Zona di test")
+    db_session.add(zone)
+    await db_session.flush()
+    return zone
 
 
 @pytest_asyncio.fixture

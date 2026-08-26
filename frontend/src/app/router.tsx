@@ -3,9 +3,15 @@ import { createBrowserRouter, ScrollRestoration } from "react-router-dom";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { ClientFormPage } from "@/features/clients/ClientFormPage";
 import { ClientListPage } from "@/features/clients/ClientListPage";
+import { DeliveryDetailPage } from "@/features/deliveries/DeliveryDetailPage";
+import { DeliveryFormPage } from "@/features/deliveries/DeliveryFormPage";
+import { DeliveryListPage } from "@/features/deliveries/DeliveryListPage";
 import { PracticeDetailPage } from "@/features/practices/PracticeDetailPage";
 import { PracticeFormPage } from "@/features/practices/PracticeFormPage";
 import { PracticeListPage } from "@/features/practices/PracticeListPage";
+import { PickupDetailPage } from "@/features/pickups/PickupDetailPage";
+import { PickupFormPage } from "@/features/pickups/PickupFormPage";
+import { PickupListPage } from "@/features/pickups/PickupListPage";
 import { VeterinarianFormPage } from "@/features/veterinarians/VeterinarianFormPage";
 import { VeterinarianListPage } from "@/features/veterinarians/VeterinarianListPage";
 
@@ -41,6 +47,12 @@ export const router = createBrowserRouter([
       { path: "/pratiche", element: <PracticeListPage /> },
       { path: "/pratiche/nuova", element: <PracticeFormPage /> },
       { path: "/pratiche/:practiceId", element: <PracticeDetailPage /> },
+      { path: "/ritiri", element: <PickupListPage /> },
+      { path: "/ritiri/nuovo", element: <PickupFormPage /> },
+      { path: "/ritiri/:pickupId", element: <PickupDetailPage /> },
+      { path: "/riconsegne", element: <DeliveryListPage /> },
+      { path: "/riconsegne/nuova", element: <DeliveryFormPage /> },
+      { path: "/riconsegne/:deliveryId", element: <DeliveryDetailPage /> },
       { path: "/", element: <PracticeListPage /> },
     ],
   },

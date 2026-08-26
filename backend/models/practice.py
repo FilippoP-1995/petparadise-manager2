@@ -6,7 +6,6 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
-    Enum,
     ForeignKey,
     Integer,
     SmallInteger,
@@ -19,16 +18,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import Base
-from models.base import TimestampMixin
-
-
-def _pg_enum(enum_cls: type, name: str) -> Enum:
-    """SQLAlchemy usa di default il NOME del membro Python (non il suo
-    .value) come label dell'ENUM Postgres - irrilevante quando nome e
-    valore coincidono (es. PracticeStatus), ma PaymentChannel.collaboratori
-    ha value='Collaboratori': senza values_callable il DB memorizzerebbe
-    'collaboratori', diverso dal letterale 'Collaboratori' di doc06."""
-    return Enum(enum_cls, name=name, values_callable=lambda cls: [e.value for e in cls])
+from models.base import TimestampMixin, pg_enum as _pg_enum
 
 
 class PracticeStatus(str, enum.Enum):
@@ -109,17 +99,18 @@ class Practice(TimestampMixin, Base):
     )
     request_origin: Mapped[str] = mapped_column(String(30), nullable=False)
 
-    # TEMPORARY CROSS-DOMAIN CONSTRAINT (doc06 REFERENCES calendar_events(id)
-    # ON DELETE SET NULL): FK non ancora vincolata a livello DB perche' il
-    # dominio Ritiro (calendar_events) non esisteva ancora al momento della
-    # migrazione 7598b50714a9. Colonna presente per schema completo. Passo
-    # di migrazione futuro, da eseguire quando il dominio Ritiro viene
-    # introdotto: 1) verificare i dati esistenti; 2) verificare eventuali
-    # riferimenti orfani (originating_pickup_event_id che non punta a nessun
-    # calendar_events.id reale); 3) aggiungere il vincolo FK; 4) applicare
-    # ON DELETE SET NULL (mai CASCADE/RESTRICT - la pratica non deve mai
-    # sparire ne' essere bloccata dalla sorte del ritiro che l'ha generata).
-    originating_pickup_event_id: Mapped[int | None] = mapped_column(Integer)
+    # RISOLTO (era TEMPORARY CROSS-DOMAIN CONSTRAINT nella migrazione
+    # 7598b50714a9, quando calendar_events non esisteva ancora): il dominio
+    # Ritiro e' ora costruito (migrazione successiva) - FK reale applicata,
+    # con i 4 passi pianificati eseguiti: 1) nessun dato esistente da
+    # verificare (nessuna pratica aveva questo campo valorizzato, Percorso A
+    # non era mai stato raggiungibile); 2) nessun riferimento orfano
+    # possibile per lo stesso motivo; 3-4) FK aggiunta con ON DELETE SET
+    # NULL (mai CASCADE/RESTRICT - la pratica non deve mai sparire ne'
+    # essere bloccata dalla sorte del ritiro che l'ha generata).
+    originating_pickup_event_id: Mapped[int | None] = mapped_column(
+        ForeignKey("calendar_events.id", ondelete="SET NULL")
+    )
 
     destination_branch_id: Mapped[int] = mapped_column(ForeignKey("company_locations.id"), nullable=False)
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="RESTRICT"), nullable=False)

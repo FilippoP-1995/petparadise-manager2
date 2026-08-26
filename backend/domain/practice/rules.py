@@ -37,6 +37,19 @@ def ensure_direct_creation_origin(request_origin: str) -> None:
         )
 
 
+def effective_total_cents(practice) -> int:
+    """doc06 Addendum D: se presente, l'override manuale e' il totale
+    ufficiale (mai una sovrascrittura silenziosa del calcolo automatico -
+    entrambi restano sempre disponibili, ma questo e' 'il' totale quando
+    serve un solo numero, es. per la riconciliazione doc06 Addendum P).
+    Riusato dal dominio Riconsegna (domain/delivery/rules.py) per lo stesso
+    identico motivo per cui e' gia' usato altrove - non ricalcolato in
+    parallelo con una propria formula."""
+    if practice.computed_total_override_cents is not None:
+        return practice.computed_total_override_cents
+    return sum(li.amount_cents for li in practice.line_items)
+
+
 def build_owner_snapshot(client) -> dict:
     """doc06 Addendum A: scattato UNA VOLTA alla creazione, mai piu'
     riscritto. Usa i campi realmente presenti sul dominio Clienti V2 (vedi

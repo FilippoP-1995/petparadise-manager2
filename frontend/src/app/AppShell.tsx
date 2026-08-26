@@ -11,6 +11,8 @@ export function AppShell() {
         <span className="brand">Pet Paradise Manager V2</span>
         <nav>
           <Link to="/pratiche">Pratiche</Link>
+          <Link to="/ritiri">Ritiri</Link>
+          <Link to="/riconsegne">Riconsegne</Link>
           <Link to="/clienti">Clienti</Link>
           <Link to="/veterinari">Veterinari</Link>
         </nav>

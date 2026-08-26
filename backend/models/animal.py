@@ -9,11 +9,12 @@ from database import Base
 class Animal(Base):
     """doc06 (versione finale, sezione 'calendar_events + figlie'): tabella
     condivisa Ritiro/Pratica, N animali senza limite artificiale (elimina
-    animal2_* di V1). calendar_event_id resta SENZA vincolo FK per ora: il
-    dominio Ritiro (calendar_events) non e' ancora stato costruito in V2 -
-    la colonna esiste per compatibilita' futura (stessa riga, mai copiata,
-    quando un Ritiro diventa Pratica), il vincolo FK verra' aggiunto con
-    una migrazione dedicata quando quel dominio verra' costruito."""
+    animal2_* di V1). Un animale nasce collegato solo a calendar_event_id
+    (Ritiro non ancora diventato pratica); quando il Ritiro diventa pratica,
+    la STESSA riga riceve anche practice_id (mai una copia nuova, mai
+    ricreata) - questo e' l'esatto meccanismo che risolve il bug V1 dove
+    solo il primo animale di un Ritiro multi-animale sopravviveva alla
+    conversione in pratica (verificato: app.py:15733,15740)."""
 
     __tablename__ = "animals"
     __table_args__ = (
@@ -21,7 +22,7 @@ class Animal(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    calendar_event_id: Mapped[int | None] = mapped_column(Integer)  # FK futura, vedi docstring
+    calendar_event_id: Mapped[int | None] = mapped_column(ForeignKey("calendar_events.id", ondelete="CASCADE"))
     practice_id: Mapped[int | None] = mapped_column(ForeignKey("practices.id", ondelete="CASCADE"))
     name: Mapped[str | None] = mapped_column(String(120))
     species: Mapped[str | None] = mapped_column(String(60))
