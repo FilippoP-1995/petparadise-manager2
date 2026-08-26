@@ -1230,9 +1230,52 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn(f'/pratiche/{movement_pid}',reminders_section)
         self.assertNotIn(f'/pratiche/{vet_zero_pid}',reminders_section)
         self.assertIn(f'/pratiche/{vet_paid_pid}',reminders_section)
-        # L'elenco deve essere reso come voci di blocco (verticali), non un unico
-        # paragrafo di link inline concatenati.
-        self.assertIn('<a class="event" href="/pratiche/', reminders_section)
+        # L'elenco deve essere una tabella con colonne (creazione/cliente/
+        # animale/totale), non piu' un elenco verticale di solo testo.
+        self.assertIn('<th>Creazione</th>',reminders_section)
+        self.assertIn('<th>Totale</th>',reminders_section)
+        self.assertIn('80,00',reminders_section)
+        self.assertIn('Rosa',reminders_section)
+        self.assertIn('Micio',reminders_section)
+        # Con il filtro Tipo di default (Entrambe) compaiono entrambe le
+        # sezioni, come due elenchi distinti.
+        self.assertIn('Fatture emesse</h2>',page)
+        self.assertIn('Da fatturare</h2>',page)
+
+    def test_invoices_page_tipo_filter_shows_only_the_selected_list(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            conn.execute("""INSERT INTO practices(practice_number,invoice_number,invoice_date,request_origin,destination_branch,status,created_at,updated_at,created_by,owner_first_name,animal_name)
+                          VALUES(?,?,?,?,?,?,?,?,?,?,?)""",("CR-TIPOFATT","FT-TIPO1","2026-07-01","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Elio","Nerino"))
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,owner_first_name,animal_name)
+                          VALUES(?,?,?,?,?,?,?,?,?)""",("CR-TIPODAFATT","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Fara","Birba"))
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/fatture?tipo=fatturate"
+        self.handler.invoices_page(admin)
+        page=rendered[-1]
+        self.assertIn('Fatture emesse</h2>',page)
+        self.assertNotIn('Da fatturare</h2>',page)
+        self.assertIn('CR-TIPOFATT',page)
+        rendered.clear();self.handler.path="/fatture?tipo=da_fatturare"
+        self.handler.invoices_page(admin)
+        page=rendered[-1]
+        self.assertNotIn('Fatture emesse</h2>',page)
+        self.assertIn('Da fatturare</h2>',page)
+        self.assertIn('CR-TIPODAFATT',page)
+
+    def test_invoices_page_da_fatturare_respects_date_and_text_filters(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            in_range_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,owner_first_name,animal_name)
+                                VALUES(?,?,?,?,?,?,?,?,?)""",("CR-DAFATTD1","Privato","Livorno","Ritirato","2026-07-10T09:00:00","2026-07-10T09:00:00",admin["id"],"Nina","Argo")).lastrowid
+            out_of_range_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,owner_first_name,animal_name)
+                                VALUES(?,?,?,?,?,?,?,?,?)""",("CR-DAFATTD2","Privato","Livorno","Ritirato","2026-01-05T09:00:00","2026-01-05T09:00:00",admin["id"],"Nina","Argo")).lastrowid
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/fatture?dal=2026-07-01&al=2026-07-31"
+        self.handler.invoices_page(admin)
+        reminders_section=rendered[-1].split('Da fatturare</h2>')[1]
+        self.assertIn(f'/pratiche/{in_range_pid}',reminders_section)
+        self.assertNotIn(f'/pratiche/{out_of_range_pid}',reminders_section)
 
     def test_archive_circuito_filter_shows_only_matching_practices(self):
         # richiesta esplicita dell'utente: filtro circuito W/D nella

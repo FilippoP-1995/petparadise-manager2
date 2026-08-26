@@ -13718,6 +13718,9 @@ class App(BaseHTTPRequestHandler):
 
     def invoices_page(self,user):
         q=parse_qs(urlparse(self.path).query); term=(q.get("q") or [""])[0].strip(); date_from=(q.get("dal") or [""])[0].strip(); date_to=(q.get("al") or [""])[0].strip()
+        tipo=(q.get("tipo") or [""])[0].strip()
+        if tipo not in ("fatturate","da_fatturare"):tipo=""
+        show_fatturate=tipo!="da_fatturare"; show_da_fatturare=tipo!="fatturate"
         where=["(deleted_at IS NULL OR deleted_at='')","COALESCE(invoice_number,'')<>''"]; args=[]
         if term:
             where.append("(UNACCENT(invoice_number) LIKE ? OR UNACCENT(practice_number) LIKE ? OR UNACCENT(owner_first_name) LIKE ? OR UNACCENT(owner_last_name) LIKE ? OR UNACCENT(animal_name) LIKE ?)");args.extend([like_term(term)]*5)
@@ -13728,22 +13731,25 @@ class App(BaseHTTPRequestHandler):
             where_mi.append("(UNACCENT(mi.invoice_number) LIKE ? OR UNACCENT(p.practice_number) LIKE ? OR UNACCENT(p.owner_first_name) LIKE ? OR UNACCENT(p.owner_last_name) LIKE ? OR UNACCENT(p.animal_name) LIKE ?)");args_mi.extend([like_term(term)]*5)
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_from): where_mi.append("date(mi.invoice_date)>=date(?)");args_mi.append(date_from)
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_to): where_mi.append("date(mi.invoice_date)<=date(?)");args_mi.append(date_to)
+        # "Da fatturare" = ogni pratica senza fattura ne' sulla colonna legacy
+        # ne' su movement_invoices (stessa doppia fonte gia' unificata dal
+        # filtro "Senza fattura" dell'Archivio), non solo quelle con
+        # make_invoice='Si' - quel flag manuale lasciava fuori pratiche che
+        # avevano comunque bisogno di fattura (bug reale gia' corretto).
+        # Non avendo una data fattura (non esiste ancora), i filtri data/testo
+        # si applicano su creazione/anagrafica pratica, cosi' gli stessi
+        # filtri della ricerca funzionano anche su questo elenco.
+        where_rem=["(deleted_at IS NULL OR deleted_at='')","COALESCE(invoice_number,'')=''","id NOT IN (SELECT practice_id FROM movement_invoices)"]; args_rem=[]
+        if term:
+            where_rem.append("(UNACCENT(practice_number) LIKE ? OR UNACCENT(owner_first_name) LIKE ? OR UNACCENT(owner_last_name) LIKE ? OR UNACCENT(animal_name) LIKE ?)");args_rem.extend([like_term(term)]*4)
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_from): where_rem.append("date(created_at)>=date(?)");args_rem.append(date_from)
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_to): where_rem.append("date(created_at)<=date(?)");args_rem.append(date_to)
         with db() as c:
-            rows=c.execute(f"SELECT * FROM practices WHERE {' AND '.join(where)} ORDER BY COALESCE(NULLIF(invoice_date,''),created_at) DESC,id DESC",args).fetchall()
+            rows=c.execute(f"SELECT * FROM practices WHERE {' AND '.join(where)} ORDER BY COALESCE(NULLIF(invoice_date,''),created_at) DESC,id DESC",args).fetchall() if show_fatturate else []
             movement_rows=c.execute(f"""SELECT mi.*,p.practice_number,p.owner_first_name,p.owner_last_name,p.animal_name
                                         FROM movement_invoices mi JOIN practices p ON p.id=mi.practice_id
-                                        WHERE {' AND '.join(where_mi)}""",args_mi).fetchall()
-            # "Da fatturare" = ogni pratica senza fattura ne' sulla colonna
-            # legacy ne' su movement_invoices (stessa doppia fonte gia'
-            # unificata dal filtro "Senza fattura" dell'Archivio), non solo
-            # quelle con make_invoice='Si' - quel flag manuale lasciava fuori
-            # pratiche che avevano comunque bisogno di fattura (bug reale
-            # segnalato dall'utente: l'elenco non mostrava tutte le pratiche).
-            reminders=c.execute("""SELECT * FROM practices
-                                    WHERE (deleted_at IS NULL OR deleted_at='')
-                                      AND COALESCE(invoice_number,'')=''
-                                      AND id NOT IN (SELECT practice_id FROM movement_invoices)
-                                    ORDER BY updated_at DESC""").fetchall()
+                                        WHERE {' AND '.join(where_mi)}""",args_mi).fetchall() if show_fatturate else []
+            reminders=c.execute(f"SELECT * FROM practices WHERE {' AND '.join(where_rem)} ORDER BY created_at DESC",args_rem).fetchall() if show_da_fatturare else []
         entries=[]
         for row in rows:
             owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip()
@@ -13760,9 +13766,17 @@ class App(BaseHTTPRequestHandler):
         reminders=[row for row in reminders if not (
             (row["request_origin"] or "")=="Veterinario" and row["use_voucher"]=="Si" and effective_total(row)<=0
         )]
-        reminder_html=''.join(f'<a class="event" href="/pratiche/{row["id"]}"><b>{esc(row["practice_number"])}</b> · {esc(((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip())} · {esc(row["animal_name"] or "")}</a>' for row in reminders) or '<p class="sub">Nessuna pratica da fatturare.</p>'
+        reminder_table=[]
+        for row in reminders:
+            r_url=f'/pratiche/{row["id"]}?return_to={quote(getattr(self,"path",""),safe="")}'
+            r_owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip()
+            reminder_table.append(f'''<tr class="practice-row-link" {row_open_attrs(r_url,f'Apri pratica {row["practice_number"]}')}><td><a href="{r_url}">{esc(row["practice_number"])}</a></td><td>{esc(date_it(row["created_at"]))}</td><td>{esc(r_owner)}</td><td>{esc(row["animal_name"] or "")}</td><td>{money_it(effective_total(row))}</td><td><a class="btn ghost" href="{r_url}">Apri</a></td></tr>''')
         empty='<tr><td colspan="8" class="sub">Nessuna fattura trovata.</td></tr>'
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Fatture</h1><p class="sub">Ogni fattura identifica e apre la pratica collegata. Una pratica con acconto e saldo fatturati separatamente compare come due righe distinte.</p></div></div><form class="section" method="get"><div class="fields"><div class="field full"><label>Numero fattura o pratica</label><input name="q" value="{esc(term)}" placeholder="Cerca per fattura, pratica, cliente o animale"></div><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div></div><button class="btn" style="margin-top:12px">Cerca</button></form><section class="tablebox"><table><thead><tr><th>Fattura</th><th>Data</th><th>Pratica</th><th>Cliente</th><th>Animale</th><th>Circuito</th><th>Totale</th><th></th></tr></thead><tbody>{''.join(table) or empty}</tbody></table></section><section class="section" style="margin-top:20px"><h2>Da fatturare</h2><div class="timeline">{reminder_html}</div></section></main>'''
+        reminder_empty='<tr><td colspan="6" class="sub">Nessuna pratica da fatturare.</td></tr>'
+        tipo_options=''.join(f'<option value="{value}"{" selected" if tipo==value else ""}>{label}</option>' for value,label in (("","Entrambe"),("fatturate","Fatturate"),("da_fatturare","Da fatturare")))
+        fatturate_section=f'''<section class="tablebox"><h2>Fatture emesse</h2><table><thead><tr><th>Fattura</th><th>Data</th><th>Pratica</th><th>Cliente</th><th>Animale</th><th>Circuito</th><th>Totale</th><th></th></tr></thead><tbody>{''.join(table) or empty}</tbody></table></section>''' if show_fatturate else ''
+        da_fatturare_section=f'''<section class="tablebox" style="margin-top:20px"><h2>Da fatturare</h2><table><thead><tr><th>Pratica</th><th>Creazione</th><th>Cliente</th><th>Animale</th><th>Totale</th><th></th></tr></thead><tbody>{''.join(reminder_table) or reminder_empty}</tbody></table></section>''' if show_da_fatturare else ''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Fatture</h1><p class="sub">Ogni fattura identifica e apre la pratica collegata. Una pratica con acconto e saldo fatturati separatamente compare come due righe distinte.</p></div></div><form class="section" method="get"><div class="fields"><div class="field full"><label>Numero fattura o pratica</label><input name="q" value="{esc(term)}" placeholder="Cerca per fattura, pratica, cliente o animale"></div><div class="field"><label>Tipo</label><select name="tipo">{tipo_options}</select></div><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div></div><button class="btn" style="margin-top:12px">Cerca</button></form>{fatturate_section}{da_fatturare_section}</main>'''
         self.send_html(layout("Fatture",body,user))
 
     def urn_catalog_page(self,user):
