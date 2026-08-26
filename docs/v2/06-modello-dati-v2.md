@@ -681,7 +681,7 @@ payments(
 ```
 invoices(
   ...
-  total_amount_cents BIGINT NOT NULL,   -- importo del documento fiscale, immutabile salvo correzione esplicita tracciata in audit_log
+  total_amount_cents BIGINT NOT NULL,   -- importo del documento fiscale, immutabile salvo correzione esplicita tracciata in audit_log (meccanismo definito in Addendum R)
   ...
 )
 -- paid_total_cents, residual_cents, payment_status NON sono colonne memorizzate:
@@ -789,3 +789,86 @@ completati, la pratica resta `in_programma`; il terzo animale assegnato a
 un secondo ciclo e completato, solo a quel punto la pratica passa a
 `cremato`. Ripristino del secondo ciclo verificato riportare la pratica a
 `in_programma`.
+
+---
+
+## R. Correzione di una fattura già emessa (`correct_invoice_total`)
+
+**Contesto**: l'Addendum O sopra dichiarava `invoices.total_amount_cents`
+"immutabile salvo correzione esplicita tracciata in `audit_log`", senza
+però definire il meccanismo di quella correzione — a differenza
+dell'Addendum D (override manuali su `practices`), che aveva già `_reason`/
+`_by`/`_at` dedicati. Al momento dell'implementazione del dominio Fatture/
+Pagamenti questo è stato segnalato esplicitamente come punto non
+specificato, non inventato a quel turno. L'utente ha poi chiuso la
+decisione in questo turno.
+
+**DECISIONE AZIENDALE (confermata dall'utente in questo turno)**: una
+fattura già emessa **può** essere corretta — nella pratica quotidiana può
+rendersi necessario correggere un errore di registrazione — ma la
+correzione è un'operazione **eccezionale e fortemente controllata**, non
+un campo modificabile liberamente:
+
+- **Solo Admin** può correggere una fattura emessa (stesso principio già
+  applicato a `correct_practice_state` — `require_role`, mai un controllo
+  applicativo sparso).
+- Il nuovo `total_amount_cents` è fornito esplicitamente dall'operatore,
+  **mai** ricalcolato automaticamente da nient'altro.
+- **Motivo obbligatorio** (stesso principio già applicato a
+  `correct_practice_state`/`set_total_override`).
+- **Nessun campo aggiuntivo sullo schema `invoices`** (niente
+  `total_amount_cents_reason`/`_by`/`_at` dedicati come in Addendum D):
+  vecchio importo, nuovo importo, motivo, utente e timestamp vivono
+  interamente in `audit_log` (`action='total_corrected'`, `old_value`,
+  `new_value`, `reason`, `user_id`, `created_at`) — nessuna seconda fonte
+  di verità parallela alla riga `invoices` stessa, stesso principio
+  applicato ovunque in questo documento.
+- **Atomicità** (doc09, regola vincolante): la scrittura del nuovo importo
+  e la riga `audit_log` avvengono nella stessa transazione — o entrambe o
+  nessuna.
+- **I pagamenti già registrati non vengono mai toccati** dalla correzione
+  (nessuna riga `payments`/`invoice_payment_links` modificata, cancellata
+  o ricreata) — la riconciliazione (Addendum O) continua a calcolarsi live
+  dal ledger contro il nuovo `total_amount_cents`, senza alcun ricalcolo
+  "speciale": è lo stesso identico calcolo di sempre, semplicemente contro
+  un totale diverso. Un pagamento parziale/sovrapagamento risultante dalla
+  correzione non viene mai corretto automaticamente (stessa disciplina già
+  applicata al sovrapagamento ordinario).
+- `invoice_number`, `invoice_date`, `channel`, `practice_id`,
+  `practice_number_snapshot`, `created_by`, `created_at` **restano
+  invariati** — la correzione tocca esclusivamente `total_amount_cents`.
+- La correzione **non comporta mai** la cancellazione della fattura (resta
+  lo stesso record, stesso id, stesso `invoice_number`).
+
+**Implementazione**: azione di dominio dedicata e semanticamente distinta
+(`services/invoice_service.py::correct_invoice_total`), **non** un
+PUT/PATCH generico che permetterebbe di modificare liberamente qualunque
+campo — stesso principio già applicato a `correct_practice_state` (mai un
+`update_practice` esteso per includere lo stato).
+
+**Verifica di coerenza con doc09/doc14 (richiesta esplicitamente)**:
+- doc09 "Regola vincolante — atomicità modifica di dominio + audit" è
+  dichiarata esplicitamente trasversale ("vale per ogni entità V2 presente
+  e futura") — nessuna modifica necessaria, `correct_invoice_total` la
+  rispetta per costruzione.
+- doc14 (macchine a stati) non necessita alcun aggiornamento: `invoices`
+  non ha mai avuto un campo di stato proprio né una macchina a stati (solo
+  quattro entità la posseggono — Pratica, Ritiro, Ciclo di cremazione, e
+  Riconsegna esplicitamente senza — verificato in quel documento durante
+  la ricerca preliminare di questo dominio). `correct_invoice_total` non è
+  una transizione di stato, è la correzione di un valore immutabile per
+  costruzione — stesso genere di azione di `set_total_override`/
+  `clear_total_override` su `practices`, che infatti non compaiono in
+  doc14 nemmeno loro.
+- Nessuna incoerenza trovata con il modello finanziario già implementato:
+  la riconciliazione (Addendum O) resta un calcolo puro (fattura, ledger,
+  residuo), quindi "funziona automaticamente" con qualunque valore di
+  `total_amount_cents`, corretto o originale, senza bisogno di alcuna
+  modifica al codice di riconciliazione stesso.
+
+**Classificazione**: DECISIONE AZIENDALE (la possibilità stessa di
+correggere, e il suo perimetro, sono una scelta di processo confermata
+esplicitamente dall'utente in questo turno) + DECISIONE TECNICA
+(l'implementazione tramite azione dedicata invece di un campo modificabile
+liberamente, coerente con il principio già stabilito per
+`correct_practice_state`).
