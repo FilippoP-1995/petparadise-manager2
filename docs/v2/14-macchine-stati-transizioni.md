@@ -35,7 +35,7 @@
 
 | Transizione | Permessa | Chi può eseguirla | Prerequisiti | Side-effect | Audit |
 |---|---|---|---|---|---|
-| `[creazione]` → `ritirato` | ✅ **DECISIONE TECNICA** — è il default FACT confermato (app.py:16945) | Operatore/Admin (chiunque crei una pratica) | Nessuno | — | `audit_log action='created'` |
+| `[creazione]` → `ritirato` | ✅ **DECISIONE AZIENDALE CHIUSA** (aggiornamento doc 15 — vedi dettaglio sotto) — unico stato di ingresso possibile, per entrambi i percorsi di creazione | Operatore/Admin (chiunque crei una pratica) | Nessuno | — | `audit_log action='created'` |
 | `ritirato` → `in_programma` | ✅ **DECISIONE TECNICA** — coerente con l'ordine dichiarato in `STATES` e col fatto che "in programma" precede la cremazione | Operatore/Admin | Nessuno | — | `audit_log action='state_changed'` |
 | `in_programma` → `cremato` | ✅ **DECISIONE TECNICA** — completamento ciclo di cremazione (decisione utente già confermata in doc 06) | Sistema (side-effect automatico del completamento ciclo) **o** Operatore/Admin manualmente | Ciclo di cremazione collegato in stato `completato`, **oppure** azione manuale esplicita | — | `audit_log`, azione distinta se manuale vs automatica |
 | `cremato` → `da_consegnare` | ✅ **DECISIONE TECNICA** — passo operativo separato, come confermato da te in doc 06 | Operatore/Admin (azione esplicita, non automatica) | Stato corrente = `cremato` | — | `audit_log` |
@@ -57,10 +57,22 @@ L'utente ha chiarito la regola: **non regressioni libere, ma nemmeno stati irrev
 - **Perché questo chiude anche il punto "salti di stato" (`request_origin='Consegna in sede'` ecc.)**: qualunque salto che in futuro si rivelasse necessario come caso "normale" per un'origine specifica resta comunque **disponibile fin da subito** come correzione Admin — non è più un blocco che impedisce di lavorare in attesa di una decisione. Se in futuro si volesse promuovere un salto specifico da "correzione" a "transizione normale" per una particolare origine, è un raffinamento successivo, non un prerequisito per iniziare lo sviluppo.
 - **L'Admin non ha un bypass incontrollato** (esplicitamente richiesto): anche le correzioni passano da validazione, audit, transazione atomica e motivo obbligatorio — nessuna scorciatoia che salti queste regole.
 
+### Punto di ingresso — due percorsi di creazione, un solo stato iniziale (DECISIONE AZIENDALE CHIUSA, aggiornamento doc 15)
+
+L'utente ha chiuso esplicitamente il punto lasciato aperto: **entrambi i percorsi di creazione di una pratica entrano sempre e solo a `ritirato`**, mai altrove.
+
+| Percorso | Come si crea | `originating_pickup_event_id` | Stato iniziale |
+|---|---|---|---|
+| **A — normale** | `Ritiro → Pratica` (doc 06 §"Relazione Ritiro → Pratica") | Valorizzato | `ritirato` |
+| **B — diretto** | Pratica `Collaboratore`/`Consegna in sede` creata direttamente, senza un Ritiro di origine | `NULL` | `ritirato` |
+
+- **Motivazione aziendale (non tecnica, riportata come ricevuta)**: quando una pratica `Collaboratore`/`Consegna in sede` viene creata direttamente, l'animale è già fisicamente preso in carico da Pet Paradise nel momento in cui la pratica viene registrata — `ritirato` rappresenta correttamente lo stato reale dell'animale, indipendentemente dal fatto che esista o meno un evento Ritiro di origine.
+- **Vincolo esplicito, di dominio non di interfaccia (richiesto testualmente dall'utente)**: il caso d'uso `create_practice` (percorso A o B) **non accetta mai uno stato come parametro dall'esterno** — lo stato iniziale è **sempre** hardcoded a `ritirato` nel servizio di dominio, indipendentemente da cosa venga passato all'API. Questo elimina alla radice il comportamento V1 già segnalato come FACT sopra (`initial=f.get("status","Ritirato")`, che accetta qualunque valore dal form) — in V2 non esiste affatto un campo "stato iniziale" esposto dall'API di creazione. Qualunque cambio di stato successivo alla creazione deve sempre passare dalle transizioni esplicite di questo documento (workflow o correzione), mai da un valore imposto in fase di creazione.
+- **Non è un'autorizzazione a creare pratiche in stati arbitrari** (esplicitamente escluso dall'utente): le uniche due modalità di ingresso ammesse sono A e B sopra, entrambe allo stesso stato `ritirato` — non esiste un percorso C non documentato.
+
 ### Punti tecnici residui (non bloccanti)
 
 1. **La transizione automatica `in_programma`→`cremato` generata dal completamento ciclo: deve essere reversibile 1:1 con `revert_complete`** (FACT, comportamento già esistente e corretto in V1, doc 03) — la proposta tecnica è preservarlo (il ripristino del ciclo riporta la pratica allo stato precedente noto), ma la lista esatta degli stati "precedenti noti" da cui si può tornare non è stata riverificata riga per riga in questo documento.
-2. **Punto di ingresso per pratiche non nate da un Ritiro** (`request_origin='Collaboratore'`/`'Consegna in sede'` create direttamente, senza `originating_pickup_event_id`): la decisione aziendale ricevuta conferma che il caso *ordinario* è `Ritiro → Pratica` (ingresso a `ritirato`, doc 06 §"Relazione Ritiro → Pratica"), ma non specifica se questi casi eccezionali debbano sempre iniziare comunque da `ritirato` o possano iniziare altrove — **non assunto**, resta un punto aperto minore, non bloccante grazie al meccanismo di correzione sopra (nel dubbio, si crea a `ritirato` e si corregge se necessario, con motivo tracciato).
 
 ---
 
@@ -97,17 +109,18 @@ L'utente ha chiarito la regola: **non regressioni libere, ma nemmeno stati irrev
 
 **B. Annullamento del ritiro con pratica collegata — due azioni distinte, non una sola:**
 
-| Azione | Cosa succede alla pratica | Conferma richiesta | Audit |
-|---|---|---|---|
-| **"Annulla ritiro"** (azione normale) | **Nessuna modifica automatica**. Il sistema segnala in modo evidente che il ritiro annullato ha una pratica associata (badge/avviso nella UI, non un blocco) | Conferma standard | `audit_log` sul Ritiro |
-| **"Annulla ritiro e cancella anche la pratica collegata"** (azione distinta, esplicita) | Applica il flusso di **cestinazione** già definito per la pratica (soft-delete, scollegamento eventi calendario collegati, doc 06 §"Cancellazione pratica coerente") — **mai** una `DELETE` diretta | Conferma esplicita separata, che rende chiaro che verrà coinvolta anche la pratica (es. "Verrà cestinata anche la pratica {numero} collegata — confermi?") | Due righe `audit_log`: una sul Ritiro, una sulla Pratica (`action='trashed'`, motivo="ritiro collegato annullato") |
+| Azione | Chi può eseguirla | Cosa succede alla pratica | Conferma richiesta | Audit |
+|---|---|---|---|---|
+| **"Annulla ritiro"** (azione normale) | **Operator o Admin** — operazione normale del workflow, non riservata all'Admin (decisione aziendale chiusa) | **Nessuna modifica automatica**. Il sistema segnala in modo evidente che il ritiro annullato ha una pratica associata (badge/avviso nella UI, non un blocco) | Conferma standard | `audit_log` sul Ritiro |
+| **"Annulla ritiro e cancella anche la pratica collegata"** (azione distinta, esplicita) | **Operator o Admin** — stesso livello dell'annullamento normale, nessuna restrizione aggiuntiva di ruolo indicata | Applica il flusso di **cestinazione** già definito per la pratica (soft-delete, scollegamento eventi calendario collegati, doc 06 §"Cancellazione pratica coerente") — **mai** una `DELETE` diretta | Conferma esplicita separata, che rende chiaro che verrà coinvolta anche la pratica (es. "Verrà cestinata anche la pratica {numero} collegata — confermi?") | Due righe `audit_log`: una sul Ritiro, una sulla Pratica (`action='trashed'`, motivo="ritiro collegato annullato") |
 
 - **Documenti fiscali mai coinvolti automaticamente**: se la pratica cestinata ha fatture, si applica la regola già stabilita in doc 06 (`invoices.practice_id ON DELETE SET NULL` + snapshot) — la fattura non sparisce mai per effetto di questa azione, coerentemente con la regola generale "nessuna perdita di documenti fiscali".
 - **Nessuna modifica automatica oltre a quanto sopra**: l'azione normale di annullamento non tocca in alcun modo la pratica; solo l'azione distinta ed esplicita lo fa.
 
 ### Punti tecnici residui (non bloccanti)
-1. **Chi può eseguire l'annullamento del Ritiro**: non specificato nella decisione ricevuta (che riguardava esplicitamente le correzioni di stato Pratica, non l'autorizzazione ad annullare un Ritiro) — **non esteso per assunzione**. Proposta di default a bassa invasività: stesso livello di chiunque oggi gestisce i Ritiri (Operator+Admin), da confermare se si desidera restringerlo.
-2. **Cambio di `event_type`** (es. Ritiro → Ritiro in sede): **già chiuso come decisione tecnica** (doc 15, decisione #6) — mai un reset silenzioso dello stato, l'operatore deve sempre scegliere esplicitamente il nuovo stato, `linked_practice_id` non viene mai toccato da un cambio di tipo.
+1. **Cambio di `event_type`** (es. Ritiro → Ritiro in sede): **già chiuso come decisione tecnica** (doc 15, decisione #6) — mai un reset silenzioso dello stato, l'operatore deve sempre scegliere esplicitamente il nuovo stato, `linked_practice_id` non viene mai toccato da un cambio di tipo.
+
+**Chi può eseguire l'annullamento del Ritiro — CHIUSA**: Operator o Admin, per entrambe le varianti (vedi tabella sopra) — non riservata all'Admin, decisione aziendale esplicita.
 
 ---
 
@@ -163,7 +176,9 @@ L'utente ha chiarito la regola: **non regressioni libere, ma nemmeno stati irrev
 | 6 | Ritiro | Cambio `event_type` a metà flusso | ✅ **Chiusa** (già in doc 15) — mai reset silenzioso |
 | 7 | Ciclo cremazione | Procedura di correzione per ciclo `completato` per errore | ✅ **Chiusa** (già in doc 15) — usa il ripristino `completato→in_attesa` già esistente |
 | 8 | Ciclo cremazione | Limite di 2 animali per ciclo | ✅ **Chiusa** — resta 2, regola di dominio, enforcement lato backend obbligatorio |
+| 9 | Pratica | Chi può annullare un Ritiro | ✅ **Chiusa** — Operator o Admin, per entrambe le varianti di annullamento |
+| 10 | Pratica | Punto di ingresso per pratiche non nate da un Ritiro | ✅ **Chiusa** — sempre `ritirato`, per entrambi i percorsi (A: da Ritiro, B: diretto); mai settabile via API |
 
-**Punti tecnici residui non bloccanti** (non richiedono una tua risposta per iniziare lo sviluppo, restano annotati nei rispettivi paragrafi sopra): reversibilità esatta di `in_programma`→`cremato` da ogni stato precedente noto; punto di ingresso per pratiche eccezionali non nate da un Ritiro; chi può annullare un Ritiro; chi può completare/ripristinare un ciclo.
+**Punti tecnici residui non bloccanti** (non richiedono una tua risposta per iniziare lo sviluppo, restano annotati nei rispettivi paragrafi sopra): reversibilità esatta di `in_programma`→`cremato` da ogni stato precedente noto; chi può completare/ripristinare un ciclo di cremazione.
 
 **Tutte le decisioni aziendali di questo documento sono ora chiuse.** Nessuna transizione del workflow normale resta bloccata da un punto aperto.

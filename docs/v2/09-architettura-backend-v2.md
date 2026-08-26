@@ -82,6 +82,13 @@ Ogni entità con stati (Pratica, Ritiro, Riconsegna, Ciclo di cremazione) ha in 
 - Per ogni transizione: chi può eseguirla (quale ruolo), quali side-effect dichiara (es. "Riconsegna→Completata genera una riga di audit e chiude il ciclo di cremazione collegato se presente") — dichiarati come dati/callback registrati, eseguiti poi dal service layer dentro la stessa transazione.
 - Un tentativo di transizione non presente nella tabella solleva un errore di dominio esplicito (`InvalidTransitionError`), mai un semplice "non succede nulla" silenzioso come spesso avviene oggi in V1.
 
+### Regola vincolante — lo stato iniziale non è mai un parametro di creazione (decisione aziendale, doc 14 §1)
+
+**DECISION (obbligatoria, non derogabile)**: gli schemi Pydantic di **creazione** di un'entità con macchina a stati (`PracticeCreate`, `PickupCreate`, ecc.) **non includono mai un campo `status`/`stato`**. Lo stato iniziale è sempre hardcoded nel service layer (`create_practice` imposta sempre `status='ritirato'`, per entrambi i percorsi di creazione — da Ritiro o diretta, doc 06 §"Relazione Ritiro → Pratica"), mai letto da un valore fornito dal chiamante API.
+
+- **Perché**: chiude alla radice l'esatto comportamento V1 già documentato come FACT in doc 14 (`initial=f.get("status","Ritirato")`, che accetta qualunque valore passato dal form) — in V1 è tecnicamente possibile creare una pratica già in uno stato avanzato semplicemente passando un parametro diverso. In V2 questo non è un problema di validazione da controllare a runtime, è strutturalmente impossibile: il campo non esiste nello schema di input, quindi non c'è alcun valore da validare o rifiutare.
+- **Applicabilità**: stessa regola per ogni entità con FSM (Pratica, Ritiro) — nessuna eccezione "per comodità" in nessun endpoint di creazione, incluse eventuali API di importazione/migrazione (che devono usare un percorso esplicitamente diverso e verificato, mai lo stesso endpoint di creazione con un parametro extra).
+
 ## Autenticazione — DECISION: sessioni server-side, non JWT
 
 - **Motivazione**: il gestionale è uso interno di un piccolo team, non un'API pubblica multi-tenant. Le sessioni server-side (rivedibili/invalidabili istantaneamente lato server — es. "disconnetti tutti", cambio password che invalida le sessioni esistenti) sono più semplici da ragionare e più sicure operativamente di JWT stateless, il cui vantaggio principale (nessuno stato lato server, scalabilità orizzontale senza sticky session) non è un problema reale per questo carico.

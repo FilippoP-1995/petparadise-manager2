@@ -22,6 +22,8 @@ Tutte le decisioni sotto sono ora **chiuse**, tranne le due normative (#7, #9) c
 | 10 | Correzione ciclo completato | ✅ Già chiusa in questo documento (tecnica) | doc 14 §4 |
 | 11 | Limite 2 animali per ciclo | ✅ Chiusa — resta 2, regola di dominio deliberata, enforcement backend obbligatorio | doc 14 §4 |
 | — | **NUOVA**: relazione Ritiro → Pratica | ✅ Chiusa — il caso ordinario è `Ritiro → Pratica`; le due entità restano tecnicamente distinte, relazione resa esplicita e bidirezionale (`originating_pickup_event_id`) | doc 06 §"Relazione Ritiro → Pratica" |
+| — | **NUOVA (round 3)**: chi può annullare un Ritiro | ✅ Chiusa — Operator o Admin, non riservata all'Admin, per entrambe le varianti (annullamento semplice e "annulla e cancella anche la pratica") | doc 14 §2 |
+| — | **NUOVA (round 3)**: pratiche create direttamente (senza Ritiro di origine) | ✅ Chiusa — due percorsi ammessi (A: da Ritiro, B: diretto per Collaboratore/Consegna in sede), **entrambi** entrano sempre a stato `ritirato`; lo stato iniziale non è mai un parametro esposto dall'API di creazione | doc 06 §"Relazione Ritiro → Pratica", doc 14 §1, doc 09 §"lo stato iniziale non è mai un parametro di creazione" |
 
 **Le sezioni di dettaglio sotto restano come riferimento storico** (mostrano il ragionamento/le opzioni originarie) — lo stato aggiornato di ciascuna è quello della tabella sopra, non quello scritto nella sezione "DECISIONE RICHIESTA DA ME" originale.
 
@@ -398,5 +400,7 @@ RITIRO — decisioni #4, #5
 | 10 | Correzione ciclo completato | B | ✅ **Chiusa** — decisione tecnica presa |
 | 11 | Limite 2 animali per ciclo | A | ✅ **Chiusa** — doc 14 §4 |
 | — | Relazione Ritiro → Pratica (nuova) | A | ✅ **Chiusa** — doc 06 §"Relazione Ritiro → Pratica" |
+| — | Chi può annullare un Ritiro (nuova, round 3) | A | ✅ **Chiusa** — doc 14 §2 |
+| — | Pratiche create direttamente, stato iniziale (nuova, round 3) | A | ✅ **Chiusa** — doc 06, doc 14 §1, doc 09 |
 
 **Tutte le decisioni sono ora chiuse**, tranne le due normative (#7, #9) che restano esplicitamente **VERIFICA NORMATIVA PENDENTE** — non bloccanti per lo sviluppo (la decisione provvisoria "conservare tutto" è già operativa), ma non vanno mai descritte come un obbligo di legge accertato finché non arriva una verifica reale con un consulente/commercialista.
