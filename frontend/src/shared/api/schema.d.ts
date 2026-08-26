@@ -1019,6 +1019,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/invoices/{invoice_id}/correggi-totale": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Correct Invoice Total
+         * @description doc06 Addendum R - correzione eccezionale: SOLO Admin, motivo
+         *     obbligatorio, azione dedicata (mai un PUT/PATCH generico).
+         */
+        post: operations["correct_invoice_total_api_invoices__invoice_id__correggi_totale_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/invoices/{invoice_id}/collega-pagamento": {
         parameters: {
             query?: never;
@@ -1425,6 +1446,18 @@ export interface components {
              * @default false
              */
             has_cremation_plant: boolean;
+        };
+        /**
+         * CorrectInvoiceTotalRequest
+         * @description doc06 Addendum R: correzione eccezionale - SOLO Admin (verificato a
+         *     livello route via require_role), motivo obbligatorio, mai un PUT/PATCH
+         *     generico. Il nuovo importo e' fornito esplicitamente, mai ricalcolato.
+         */
+        CorrectInvoiceTotalRequest: {
+            /** Total Amount Cents */
+            total_amount_cents: number;
+            /** Reason */
+            reason: string;
         };
         /** CorrectionRequest */
         CorrectionRequest: {
@@ -5332,6 +5365,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InvoiceReconciliationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    correct_invoice_total_api_invoices__invoice_id__correggi_totale_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invoice_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CorrectInvoiceTotalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceRead"];
                 };
             };
             /** @description Validation Error */

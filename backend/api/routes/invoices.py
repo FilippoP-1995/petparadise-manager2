@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.dependencies import get_current_user
+from api.dependencies import get_current_user, require_role
 from database import get_session
 from domain.errors import NotFoundError, ValidationDomainError
-from models.user import User
+from models.user import User, UserRole
 from repositories.invoice_repository import InvoiceRepository
-from schemas.invoice import InvoiceCreate, InvoiceReconciliationRead, InvoiceRead
+from schemas.invoice import CorrectInvoiceTotalRequest, InvoiceCreate, InvoiceReconciliationRead, InvoiceRead
 from schemas.payment import LinkPaymentToInvoiceRequest
 from services import invoice_service, payment_service
 
@@ -47,6 +47,23 @@ async def get_invoice_reconciliation(
 async def create_invoice(payload: InvoiceCreate, db: AsyncSession = Depends(get_session), user: User = Depends(get_current_user)):
     try:
         return await invoice_service.create_invoice(db, payload, actor_user_id=user.id)
+    except ValidationDomainError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+    except NotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.post("/{invoice_id}/correggi-totale", response_model=InvoiceRead)
+async def correct_invoice_total(
+    invoice_id: int,
+    payload: CorrectInvoiceTotalRequest,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(require_role(UserRole.admin)),
+):
+    """doc06 Addendum R - correzione eccezionale: SOLO Admin, motivo
+    obbligatorio, azione dedicata (mai un PUT/PATCH generico)."""
+    try:
+        return await invoice_service.correct_invoice_total(db, invoice_id, payload, actor_user_id=user.id)
     except ValidationDomainError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
     except NotFoundError as exc:

@@ -65,6 +65,33 @@ export function useCreateInvoice() {
   });
 }
 
+export function useCorrectInvoiceTotal() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      invoiceId,
+      totalAmountCents,
+      reason,
+    }: {
+      invoiceId: number;
+      totalAmountCents: number;
+      reason: string;
+    }) => {
+      const { data, error } = await apiClient.POST("/api/invoices/{invoice_id}/correggi-totale", {
+        params: { path: { invoice_id: invoiceId } },
+        body: { total_amount_cents: totalAmountCents, reason },
+      });
+      if (error) throw new Error((error as { detail?: string }).detail ?? "Operazione non consentita");
+      return data;
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["invoices", vars.invoiceId] });
+      queryClient.invalidateQueries({ queryKey: ["invoices", vars.invoiceId, "riconciliazione"] });
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+    },
+  });
+}
+
 export function useLinkPaymentToInvoice() {
   const queryClient = useQueryClient();
   return useMutation({

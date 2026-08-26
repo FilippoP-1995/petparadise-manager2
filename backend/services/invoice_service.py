@@ -7,7 +7,7 @@ from models.invoice import Invoice
 from repositories.audit_repository import AuditRepository
 from repositories.invoice_repository import InvoiceRepository
 from repositories.practice_repository import PracticeRepository
-from schemas.invoice import InvoiceCreate, InvoiceReconciliationRead
+from schemas.invoice import CorrectInvoiceTotalRequest, InvoiceCreate, InvoiceReconciliationRead
 
 ENTITY_TYPE = "invoice"
 
@@ -56,6 +56,44 @@ async def create_invoice(db: AsyncSession, data: InvoiceCreate, *, actor_user_id
         raise ValidationDomainError(f"Numero fattura '{data.invoice_number}' gia' utilizzato.") from exc
 
     return await repo.get_by_id(invoice.id)
+
+
+async def correct_invoice_total(
+    db: AsyncSession, invoice_id: int, request: CorrectInvoiceTotalRequest, *, actor_user_id: int
+) -> Invoice:
+    """doc06 Addendum R: correzione eccezionale di una fattura gia' emessa -
+    SOLO Admin (verificato a livello route via require_role), motivo
+    obbligatorio. Azione dedicata e semanticamente distinta, non un
+    PUT/PATCH generico (stesso principio di correct_practice_state).
+    Tocca esclusivamente total_amount_cents: invoice_number, practice_id,
+    practice_number_snapshot e tutto il resto restano invariati. I
+    pagamenti collegati non vengono mai toccati - la riconciliazione
+    (Addendum O) si ricalcola da sola al prossimo GET, e' un calcolo puro
+    contro qualunque totale."""
+    ensure_positive_total(request.total_amount_cents)
+
+    repo = InvoiceRepository(db)
+    audit = AuditRepository(db)
+
+    invoice = await repo.get_by_id(invoice_id)
+    if invoice is None:
+        raise NotFoundError(f"Fattura {invoice_id} non trovata")
+
+    old_amount = invoice.total_amount_cents
+    invoice.total_amount_cents = request.total_amount_cents
+    audit.record(
+        entity_type=ENTITY_TYPE,
+        entity_id=invoice.id,
+        action="total_corrected",
+        field_name="total_amount_cents",
+        old_value=str(old_amount),
+        new_value=str(request.total_amount_cents),
+        user_id=actor_user_id,
+        reason=request.reason,
+    )
+
+    await db.commit()
+    return await repo.get_by_id(invoice_id)
 
 
 async def get_reconciliation(db: AsyncSession, invoice_id: int) -> InvoiceReconciliationRead:

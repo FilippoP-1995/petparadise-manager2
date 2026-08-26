@@ -119,3 +119,97 @@ async def test_list_invoices_filters_by_practice(authed_client: AsyncClient, sam
     assert filtered.status_code == 200
     numbers = {i["invoice_number"] for i in filtered.json()}
     assert numbers == {"FT-FILTER-1"}
+
+
+# --- doc06 Addendum R: correzione fattura emessa (correct_invoice_total) ---
+
+
+async def test_operator_cannot_correct_invoice_total_returns_403(
+    client: AsyncClient, admin_user: User, operator_user: User, sample_client, sample_location
+):
+    async def _as_admin():
+        return admin_user
+
+    app.dependency_overrides[get_current_user] = _as_admin
+    practice = await _create_practice(client, sample_client, sample_location)
+    invoice = (await client.post("/api/invoices", json=_invoice_payload(practice["id"], invoice_number="FT-CORR-403"))).json()
+
+    async def _as_operator():
+        return operator_user
+
+    app.dependency_overrides[get_current_user] = _as_operator
+    try:
+        response = await client.post(
+            f"/api/invoices/{invoice['id']}/correggi-totale", json={"total_amount_cents": 10000, "reason": "tentativo operatore"}
+        )
+        assert response.status_code == 403
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+async def test_admin_correction_without_reason_returns_422(authed_client: AsyncClient, sample_client, sample_location):
+    practice = await _create_practice(authed_client, sample_client, sample_location)
+    invoice = (await authed_client.post("/api/invoices", json=_invoice_payload(practice["id"], invoice_number="FT-CORR-NOREASON"))).json()
+
+    response = await authed_client.post(
+        f"/api/invoices/{invoice['id']}/correggi-totale", json={"total_amount_cents": 10000, "reason": ""}
+    )
+    assert response.status_code == 422
+
+
+async def test_admin_correction_with_reason_succeeds(authed_client: AsyncClient, sample_client, sample_location):
+    practice = await _create_practice(authed_client, sample_client, sample_location)
+    invoice = (await authed_client.post("/api/invoices", json=_invoice_payload(practice["id"], invoice_number="FT-CORR-OK"))).json()
+
+    response = await authed_client.post(
+        f"/api/invoices/{invoice['id']}/correggi-totale", json={"total_amount_cents": 30000, "reason": "errore di battitura"}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_amount_cents"] == 30000
+    assert body["invoice_number"] == "FT-CORR-OK", "invoice_number non deve cambiare"
+    assert body["practice_id"] == practice["id"], "practice_id non deve cambiare"
+    assert body["practice_number_snapshot"] == practice["practice_number"], "lo snapshot non deve cambiare"
+
+
+async def test_correction_reconciliation_reflects_new_total_and_existing_payments(
+    authed_client: AsyncClient, sample_client, sample_location
+):
+    practice = await _create_practice(authed_client, sample_client, sample_location)
+    invoice = (await authed_client.post("/api/invoices", json=_invoice_payload(practice["id"], invoice_number="FT-CORR-RECON"))).json()
+    payment = (
+        await authed_client.post(
+            "/api/payments",
+            json={
+                "practice_id": practice["id"], "movement_date": "2026-01-01", "channel": "W",
+                "ledger_section": "Entrata", "movement_type": "Acconto", "amount_cents": 20000,
+            },
+        )
+    ).json()
+    await authed_client.post(f"/api/invoices/{invoice['id']}/collega-pagamento", json={"payment_id": payment["id"]})
+
+    await authed_client.post(
+        f"/api/invoices/{invoice['id']}/correggi-totale", json={"total_amount_cents": 15000, "reason": "sconto post-emissione"}
+    )
+
+    recon = (await authed_client.get(f"/api/invoices/{invoice['id']}/riconciliazione")).json()
+    assert recon["total_amount_cents"] == 15000
+    assert recon["paid_cents"] == 20000, "il pagamento gia' collegato resta invariato"
+    assert recon["status"] == "sovrapagata"
+
+
+async def test_correct_invoice_total_unknown_invoice_returns_404(authed_client: AsyncClient):
+    response = await authed_client.post(
+        "/api/invoices/999999/correggi-totale", json={"total_amount_cents": 100, "reason": "motivo"}
+    )
+    assert response.status_code == 404
+
+
+async def test_correct_invoice_total_rejects_non_positive_amount_with_422(authed_client: AsyncClient, sample_client, sample_location):
+    practice = await _create_practice(authed_client, sample_client, sample_location)
+    invoice = (await authed_client.post("/api/invoices", json=_invoice_payload(practice["id"], invoice_number="FT-CORR-NEG"))).json()
+
+    response = await authed_client.post(
+        f"/api/invoices/{invoice['id']}/correggi-totale", json={"total_amount_cents": 0, "reason": "motivo"}
+    )
+    assert response.status_code == 422

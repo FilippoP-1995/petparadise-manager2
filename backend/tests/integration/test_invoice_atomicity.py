@@ -53,3 +53,38 @@ async def test_failed_audit_write_rolls_back_invoice_creation(db_session, admin_
 
     assert await repo.get_by_id(invoice_id) is None, "nessuna fattura orfana deve sopravvivere se l'audit fallisce"
     assert await repo.get_by_invoice_number("FT-ATOM-1") is None, "il numero fattura deve tornare libero dopo il rollback"
+
+
+async def test_failed_audit_write_rolls_back_invoice_total_correction(db_session, admin_user, sample_client, sample_location):
+    """doc06 Addendum R: la correzione del totale e il relativo audit_log
+    devono essere nella stessa transazione - se l'audit fallisce, il
+    totale originale della fattura non deve risultare alterato."""
+    practice = await _create_practice(db_session, admin_user, sample_client, sample_location)
+    repo = InvoiceRepository(db_session)
+
+    invoice = Invoice(
+        invoice_number="FT-ATOM-2",
+        total_amount_cents=34000,
+        channel=PaymentChannel.W,
+        practice_id=practice.id,
+        practice_number_snapshot=practice.practice_number,
+        created_by=admin_user.id,
+    )
+    repo.add(invoice)
+    await db_session.flush()
+    await db_session.commit()
+    invoice_id = invoice.id
+
+    reloaded = await repo.get_by_id(invoice_id)
+    reloaded.total_amount_cents = 1000
+
+    AuditRepository(db_session).record(
+        entity_type=None, entity_id=invoice_id, action="total_corrected", user_id=admin_user.id, reason="test atomicita'"
+    )
+
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+    await db_session.rollback()
+
+    final = await repo.get_by_id(invoice_id)
+    assert final.total_amount_cents == 34000, "il totale originale non deve cambiare se l'audit della correzione fallisce"

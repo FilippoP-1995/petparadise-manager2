@@ -1,6 +1,9 @@
+import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { useInvoice, useInvoiceReconciliation } from "./api";
+import { useAuth } from "@/features/auth/useAuth";
+
+import { useCorrectInvoiceTotal, useInvoice, useInvoiceReconciliation } from "./api";
 
 function money(cents: number) {
   return (cents / 100).toLocaleString("it-IT", { style: "currency", currency: "EUR" });
@@ -13,12 +16,71 @@ const STATUS_LABELS: Record<string, string> = {
   sovrapagata: "Sovrapagata",
 };
 
+function CorrectInvoiceTotalForm({ invoiceId, currentTotalCents }: { invoiceId: number; currentTotalCents: number }) {
+  const correctTotal = useCorrectInvoiceTotal();
+  const [open, setOpen] = useState(false);
+  const [amountEuro, setAmountEuro] = useState("");
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  if (!open) {
+    return (
+      <button type="button" className="btn-ghost" onClick={() => setOpen(true)}>
+        Correggi totale fattura
+      </button>
+    );
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    const amount = Number(amountEuro.replace(",", "."));
+    if (!amount || amount <= 0) {
+      setError("Importo non valido.");
+      return;
+    }
+    if (!reason.trim()) {
+      setError("Il motivo e' obbligatorio.");
+      return;
+    }
+    setError(null);
+    try {
+      await correctTotal.mutateAsync({ invoiceId, totalAmountCents: Math.round(amount * 100), reason });
+      setOpen(false);
+      setAmountEuro("");
+      setReason("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Operazione non riuscita");
+    }
+  }
+
+  return (
+    <form className="field-row" onSubmit={handleSubmit}>
+      <input
+        inputMode="decimal"
+        placeholder={`Attuale: ${money(currentTotalCents)}`}
+        value={amountEuro}
+        onChange={(e) => setAmountEuro(e.target.value)}
+      />
+      <input placeholder="Motivo della correzione" value={reason} onChange={(e) => setReason(e.target.value)} />
+      <button className="btn" type="submit" disabled={correctTotal.isPending}>
+        Conferma correzione
+      </button>
+      <button type="button" className="btn-ghost" onClick={() => setOpen(false)}>
+        Annulla
+      </button>
+      {error && <p className="field-error">{error}</p>}
+    </form>
+  );
+}
+
 export function InvoiceDetailPage() {
   const { invoiceId } = useParams();
   const navigate = useNavigate();
   const id = Number(invoiceId);
   const { data: invoice, isLoading, isError } = useInvoice(id);
   const { data: recon } = useInvoiceReconciliation(id);
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
 
   if (isLoading) return <p className="loading">Caricamento...</p>;
   if (isError || !invoice) return <p className="error-banner">Fattura non trovata.</p>;
@@ -69,6 +131,20 @@ export function InvoiceDetailPage() {
               Sovrapagamento rilevato: sono stati incassati {money(recon.paid_cents - recon.total_amount_cents)} in
               piu' rispetto al documento fiscale. Non viene corretto automaticamente - verifica se serve uno storno o
               una correzione della fattura.
+            </p>
+          )}
+
+          {isAdmin ? (
+            <div style={{ marginTop: 12 }}>
+              <p className="sub">
+                Correzione eccezionale del documento fiscale - solo Admin, motivo obbligatorio, tracciata in
+                audit_log. I pagamenti gia' collegati non vengono mai toccati.
+              </p>
+              <CorrectInvoiceTotalForm invoiceId={invoice.id} currentTotalCents={invoice.total_amount_cents} />
+            </div>
+          ) : (
+            <p className="sub" style={{ marginTop: 12 }}>
+              Solo gli amministratori possono correggere il totale di una fattura emessa.
             </p>
           )}
         </div>
