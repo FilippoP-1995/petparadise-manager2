@@ -309,3 +309,34 @@ async def test_mark_owner_notified(db_session, admin_user, sample_client, sample
     assert updated.owner_notified_status == OwnerNotifiedStatus.avvisato
     assert updated.owner_notified_by == admin_user.id
     assert updated.owner_notified_at is not None
+
+
+async def test_practice_can_hold_more_animals_than_the_cremation_cycle_limit(
+    db_session, admin_user, sample_client, sample_location
+):
+    """Verifica richiesta esplicitamente prima di procedere con Ritiro/
+    Riconsegna: 'PRATICA con 3 animali (A, B, C)' deve essere rappresentabile
+    senza limite artificiale - il limite di 2 animali (doc14 §4) e' una
+    regola del CICLO DI CREMAZIONE, non della Pratica, e non esiste ancora
+    (dominio non costruito) - qui si verifica solo il lato Pratica.
+    NOTA (non risolvibile qui, segnalata nel report): non esiste oggi alcuna
+    colonna che leghi un singolo animals.id a un cremation_cycles.id -
+    l'unica relazione documentata (doc06) e' practices.cremation_cycle_id,
+    quindi lo scenario 'stessa pratica, animali divisi su due cicli diversi'
+    NON e' rappresentabile con il modello attuale senza una nuova relazione
+    animals->cremation_cycles che doc06 non definisce."""
+    practice = await practice_service.create_practice(
+        db_session,
+        _create_data(
+            sample_location,
+            sample_client,
+            animals=[
+                AnimalInput(name="A", species="Cane"),
+                AnimalInput(name="B", species="Gatto"),
+                AnimalInput(name="C", species="Coniglio"),
+            ],
+        ),
+        actor_user_id=admin_user.id,
+    )
+    assert {a.name for a in practice.animals} == {"A", "B", "C"}
+    assert len(practice.animals) == 3

@@ -109,9 +109,16 @@ class Practice(TimestampMixin, Base):
     )
     request_origin: Mapped[str] = mapped_column(String(30), nullable=False)
 
-    # NOTA: FK verso calendar_events(id) non ancora vincolata a livello DB -
-    # il dominio Ritiro non e' stato ancora costruito in V2 (vedi report di
-    # fine dominio). Colonna presente per schema completo (doc06).
+    # TEMPORARY CROSS-DOMAIN CONSTRAINT (doc06 REFERENCES calendar_events(id)
+    # ON DELETE SET NULL): FK non ancora vincolata a livello DB perche' il
+    # dominio Ritiro (calendar_events) non esisteva ancora al momento della
+    # migrazione 7598b50714a9. Colonna presente per schema completo. Passo
+    # di migrazione futuro, da eseguire quando il dominio Ritiro viene
+    # introdotto: 1) verificare i dati esistenti; 2) verificare eventuali
+    # riferimenti orfani (originating_pickup_event_id che non punta a nessun
+    # calendar_events.id reale); 3) aggiungere il vincolo FK; 4) applicare
+    # ON DELETE SET NULL (mai CASCADE/RESTRICT - la pratica non deve mai
+    # sparire ne' essere bloccata dalla sorte del ritiro che l'ha generata).
     originating_pickup_event_id: Mapped[int | None] = mapped_column(Integer)
 
     destination_branch_id: Mapped[int] = mapped_column(ForeignKey("company_locations.id"), nullable=False)
@@ -121,8 +128,11 @@ class Practice(TimestampMixin, Base):
     veterinarian_id: Mapped[int | None] = mapped_column(ForeignKey("veterinarians.id"))
     origin_veterinarian_id: Mapped[int | None] = mapped_column(ForeignKey("veterinarians.id"))
 
-    # NOTA: FK verso cremation_cycles(id) non ancora vincolata - dominio
-    # Ciclo di cremazione non ancora costruito in V2.
+    # TEMPORARY CROSS-DOMAIN CONSTRAINT (doc06 REFERENCES cremation_cycles(id)
+    # ON DELETE SET NULL): stesso trattamento di originating_pickup_event_id
+    # sopra - dominio Ciclo di cremazione non ancora costruito. Stesso passo
+    # di migrazione futuro (verifica dati -> verifica orfani -> aggiungi FK
+    # -> ON DELETE SET NULL) quando quel dominio verra' introdotto.
     cremation_cycle_id: Mapped[int | None] = mapped_column(Integer)
 
     pickup_date: Mapped[date | None] = mapped_column(Date)
@@ -208,8 +218,11 @@ class Practice(TimestampMixin, Base):
     owner_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     owner_notified_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
 
-    # Addendum I - voucher veterinario. NOTA: FK verso veterinarian_vouchers
-    # non ancora vincolata - tabella non ancora costruita in V2.
+    # Addendum I - voucher veterinario.
+    # TEMPORARY CROSS-DOMAIN CONSTRAINT (doc06 REFERENCES
+    # veterinarian_vouchers(id) ON DELETE SET NULL): stesso trattamento di
+    # originating_pickup_event_id sopra - dominio Voucher non ancora
+    # costruito.
     used_voucher_id: Mapped[int | None] = mapped_column(Integer)
 
     animals: Mapped[list["Animal"]] = relationship(
