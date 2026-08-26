@@ -3775,6 +3775,7 @@ const PPM_LIST_PAGES={
   '/veterinari':{detail:/^\/veterinari\/\d+/},
   '/catalogo-urne':{detail:/^\/catalogo-urne\/\d+/,extraInputs:['urnCatalogSearch']},
   '/ordini/storico':{detail:/^\/ordini\/\d+/},
+  '/fatture':{detail:/^\/pratiche\/\d+/},
 };
 function ppmListScrollTarget(cfg){
   if(cfg.calendar){
@@ -13778,38 +13779,32 @@ class App(BaseHTTPRequestHandler):
         tipo_options=''.join(f'<option value="{value}"{" selected" if tipo==value else ""}>{label}</option>' for value,label in (("","Entrambe"),("fatturate","Fatturate"),("da_fatturare","Da fatturare")))
         fatturate_section=f'''<section class="tablebox"><h2>Fatture emesse</h2><table><thead><tr><th>Fattura</th><th>Data</th><th>Pratica</th><th>Cliente</th><th>Animale</th><th>Circuito</th><th>Totale</th><th></th></tr></thead><tbody>{''.join(table) or empty}</tbody></table></section>''' if show_fatturate else ''
         da_fatturare_section=f'''<section class="tablebox" style="margin-top:20px"><h2>Da fatturare</h2><table><thead><tr><th>Pratica</th><th>Creazione</th><th>Cliente</th><th>Animale</th><th>Totale</th><th></th></tr></thead><tbody>{''.join(reminder_table) or reminder_empty}</tbody></table></section>''' if show_da_fatturare else ''
-        scroll_restore_script='''<script>(function(){
-  // beforeunload non e' affidabile su mobile (in particolare Safari/iOS
-  // spesso non lo esegue in tempo, o per niente, su una normale
-  // navigazione di link) - salviamo invece al click, che e' sincrono e
-  // avviene sempre prima che la navigazione parta.
-  var SCROLL_KEY='ppmFattureScrollY';
+        # Il ripristino dello scroll usa lo stesso meccanismo generico gia'
+        # collaudato per Calendario/Clienti/Veterinari/Catalogo urne/Ordini
+        # (PPM_LIST_PAGES + setupListStateRestore, salva la posizione in
+        # continuo durante lo scroll ed e' quindi molto piu' affidabile di
+        # un salvataggio singolo al click) - "/fatture" e' stata aggiunta a
+        # quella lista. Qui resta solo la riselezione della riga aperta
+        # l'ultima volta, che quel meccanismo generico non copre.
+        row_reselect_script='''<script>(function(){
   var ID_KEY='ppmFattureLastId';
   document.addEventListener('click',function(e){
     var row=e.target.closest('.tablebox .practice-row-link');
     if(!row)return;
-    try{
-      sessionStorage.setItem(SCROLL_KEY,String(window.scrollY||document.documentElement.scrollTop||0));
-      var pid=row.getAttribute('data-practice-id');
-      if(pid)sessionStorage.setItem(ID_KEY,pid);
-    }catch(err){}
+    var pid=row.getAttribute('data-practice-id');
+    if(!pid)return;
+    try{sessionStorage.setItem(ID_KEY,pid);}catch(err){}
   });
   document.addEventListener('DOMContentLoaded',function(){
-    var savedY,savedId;
-    try{savedY=sessionStorage.getItem(SCROLL_KEY);savedId=sessionStorage.getItem(ID_KEY);}catch(err){savedY=null;savedId=null;}
-    if(savedY===null&&savedId===null)return;
-    try{sessionStorage.removeItem(SCROLL_KEY);sessionStorage.removeItem(ID_KEY);}catch(err){}
-    if(savedId){
-      var row=document.querySelector('.tablebox [data-practice-id="'+savedId+'"]');
-      if(row)row.classList.add('row-selected');
-    }
-    var y=Number(savedY);
-    if(Number.isFinite(y)){
-      requestAnimationFrame(function(){window.scrollTo(0,y);});
-    }
+    var savedId;
+    try{savedId=sessionStorage.getItem(ID_KEY);}catch(err){savedId=null;}
+    if(!savedId)return;
+    try{sessionStorage.removeItem(ID_KEY);}catch(err){}
+    var row=document.querySelector('.tablebox [data-practice-id="'+savedId+'"]');
+    if(row)row.classList.add('row-selected');
   });
 })();</script>'''
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Fatture</h1><p class="sub">Ogni fattura identifica e apre la pratica collegata. Una pratica con acconto e saldo fatturati separatamente compare come due righe distinte.</p></div></div><form class="section" method="get"><div class="fields"><div class="field full"><label>Numero fattura o pratica</label><input name="q" value="{esc(term)}" placeholder="Cerca per fattura, pratica, cliente o animale"></div><div class="field"><label>Tipo</label><select name="tipo">{tipo_options}</select></div><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div></div><button class="btn" style="margin-top:12px">Cerca</button></form>{fatturate_section}{da_fatturare_section}</main>{scroll_restore_script}'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Fatture</h1><p class="sub">Ogni fattura identifica e apre la pratica collegata. Una pratica con acconto e saldo fatturati separatamente compare come due righe distinte.</p></div></div><form class="section" method="get"><div class="fields"><div class="field full"><label>Numero fattura o pratica</label><input name="q" value="{esc(term)}" placeholder="Cerca per fattura, pratica, cliente o animale"></div><div class="field"><label>Tipo</label><select name="tipo">{tipo_options}</select></div><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div></div><button class="btn" style="margin-top:12px">Cerca</button></form>{fatturate_section}{da_fatturare_section}</main>{row_reselect_script}'''
         self.send_html(layout("Fatture",body,user))
 
     def urn_catalog_page(self,user):

@@ -1286,18 +1286,16 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path="/fatture"
         self.handler.invoices_page(admin)
         page=rendered[-1]
-        own_script=page.split('ppmFattureScrollY')[1]
-        # Salvataggio al click (sincrono, affidabile anche su mobile), non
-        # piu' su beforeunload (inconsistente su iOS/Safari) - verificato
-        # cercando il commento esplicito che documenta la scelta, non
-        # l'assenza globale della stringa (usata altrove per altre feature).
-        self.assertIn("non e' affidabile su mobile",page)
-        self.assertIn("ppmFattureLastId",own_script)
+        own_script=page.split('ppmFattureLastId')[1]
         self.assertIn("addEventListener('click'",own_script)
+        self.assertIn("classList.add('row-selected')",own_script)
         # Ogni riga deve portare l'id pratica, necessario per poterla
         # ri-evidenziare (row-selected) al ritorno dalla pratica.
         self.assertIn(f'data-practice-id="{pid}"',page)
-        self.assertIn("classList.add('row-selected')",own_script)
+        # Il ripristino dello scroll usa il meccanismo generico condiviso
+        # (PPM_LIST_PAGES), non uno script dedicato - "/fatture" deve essere
+        # registrata li' con il pattern delle pagine pratica come "detail".
+        self.assertIn("'/fatture':{detail:/^\\/pratiche\\/\\d+/}",page)
 
     def test_invoices_page_da_fatturare_respects_date_and_text_filters(self):
         with app.db() as conn:
