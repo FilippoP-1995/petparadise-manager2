@@ -20,6 +20,7 @@ class AuditRepository:
         field_name: str | None = None,
         old_value: str | None = None,
         new_value: str | None = None,
+        reason: str | None = None,
     ) -> AuditLog:
         entry = AuditLog(
             entity_type=entity_type,
@@ -28,6 +29,7 @@ class AuditRepository:
             field_name=field_name,
             old_value=old_value,
             new_value=new_value,
+            reason=reason,
             user_id=user_id,
         )
         self._session.add(entry)

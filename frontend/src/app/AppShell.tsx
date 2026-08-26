@@ -10,6 +10,7 @@ export function AppShell() {
       <header className="top-nav">
         <span className="brand">Pet Paradise Manager V2</span>
         <nav>
+          <Link to="/pratiche">Pratiche</Link>
           <Link to="/clienti">Clienti</Link>
           <Link to="/veterinari">Veterinari</Link>
         </nav>

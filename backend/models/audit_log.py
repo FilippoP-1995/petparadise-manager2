@@ -21,5 +21,9 @@ class AuditLog(Base):
     field_name: Mapped[str | None] = mapped_column(String(100))
     old_value: Mapped[str | None] = mapped_column(Text)
     new_value: Mapped[str | None] = mapped_column(Text)
+    # doc14 (correzioni eccezionali di stato): il motivo e' obbligatorio per
+    # una correzione, ma il modello generico doc06 non prevedeva una colonna
+    # dedicata - aggiunta additiva, NULL per ogni azione che non lo richiede.
+    reason: Mapped[str | None] = mapped_column(Text)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

@@ -14,3 +14,9 @@ class NotFoundError(DomainError):
 
 class PermissionDomainError(DomainError):
     pass
+
+
+class InvalidTransitionError(DomainError):
+    """doc09 'Macchine a stati esplicite': un tentativo di transizione non
+    presente nella tabella delle transizioni permesse - mai un 'non succede
+    nulla' silenzioso."""

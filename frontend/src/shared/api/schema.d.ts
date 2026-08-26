@@ -161,6 +161,269 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/practices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Practices */
+        get: operations["list_practices_api_practices_get"];
+        put?: never;
+        /** Create Practice */
+        post: operations["create_practice_api_practices_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/practices/{practice_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Practice */
+        get: operations["get_practice_api_practices__practice_id__get"];
+        /** Update Practice */
+        put: operations["update_practice_api_practices__practice_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/practices/{practice_id}/transition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transition Practice
+         * @description doc14 §1 - workflow normale: Operator o Admin, nessun motivo.
+         */
+        post: operations["transition_practice_api_practices__practice_id__transition_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/practices/{practice_id}/correct-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Correct Practice State
+         * @description doc14 §1 - correzione eccezionale: SOLO Admin, motivo obbligatorio.
+         */
+        post: operations["correct_practice_state_api_practices__practice_id__correct_state_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/practices/{practice_id}/trash": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Trash Practice */
+        post: operations["trash_practice_api_practices__practice_id__trash_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/practices/{practice_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore Practice */
+        post: operations["restore_practice_api_practices__practice_id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/practices/{practice_id}/override-total": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Override Total */
+        post: operations["override_total_api_practices__practice_id__override_total_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/practices/{practice_id}/clear-total-override": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clear Total Override */
+        post: operations["clear_total_override_api_practices__practice_id__clear_total_override_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/practices/{practice_id}/notify-owner": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Notify Owner */
+        post: operations["notify_owner_api_practices__practice_id__notify_owner_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/practices/{practice_id}/mark-collaborator-billed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark Collaborator Billed */
+        post: operations["mark_collaborator_billed_api_practices__practice_id__mark_collaborator_billed_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/references/company-locations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Company Locations */
+        get: operations["list_company_locations_api_references_company_locations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/references/collaborators": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Collaborators */
+        get: operations["list_collaborators_api_references_collaborators_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/references/urns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Urns */
+        get: operations["list_urns_api_references_urns_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/references/calendar-zones": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Calendar Zones */
+        get: operations["list_calendar_zones_api_references_calendar_zones_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/references/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Tags */
+        get: operations["list_tags_api_references_tags_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -182,6 +445,48 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AnimalInput */
+        AnimalInput: {
+            /** Name */
+            name?: string | null;
+            /** Species */
+            species?: string | null;
+            /** Breed */
+            breed?: string | null;
+            /** Age Years */
+            age_years?: number | null;
+            /** Age Months */
+            age_months?: number | null;
+            /** Estimated Weight Grams */
+            estimated_weight_grams?: number | null;
+            /** Microchip */
+            microchip?: string | null;
+            /** Cremation Type */
+            cremation_type?: string | null;
+        };
+        /** AnimalRead */
+        AnimalRead: {
+            /** Name */
+            name?: string | null;
+            /** Species */
+            species?: string | null;
+            /** Breed */
+            breed?: string | null;
+            /** Age Years */
+            age_years?: number | null;
+            /** Age Months */
+            age_months?: number | null;
+            /** Estimated Weight Grams */
+            estimated_weight_grams?: number | null;
+            /** Microchip */
+            microchip?: string | null;
+            /** Cremation Type */
+            cremation_type?: string | null;
+            /** Id */
+            id: number;
+            /** Sort Order */
+            sort_order: number;
+        };
         /** ClientCreate */
         ClientCreate: {
             /** First Name */
@@ -289,10 +594,57 @@ export interface components {
             /** Notes */
             notes?: string | null;
         };
+        /**
+         * CollaboratorBillingStatus
+         * @description doc06 Addendum F - flag di processo interno, esplicitamente separato
+         *     dal documento fiscale (invoices).
+         * @enum {string}
+         */
+        CollaboratorBillingStatus: "da_fatturare" | "fatturato";
+        /** CorrectionRequest */
+        CorrectionRequest: {
+            target_status: components["schemas"]["PracticeStatus"];
+            /** Reason */
+            reason: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** LineItemInput */
+        LineItemInput: {
+            /** Category */
+            category: string;
+            /** Description */
+            description: string;
+            /** Subtype */
+            subtype?: string | null;
+            /** Amount Cents */
+            amount_cents: number;
+            /** @default W */
+            channel: components["schemas"]["PaymentChannel"];
+            /** Urn Catalog Id */
+            urn_catalog_id?: number | null;
+        };
+        /** LineItemRead */
+        LineItemRead: {
+            /** Category */
+            category: string;
+            /** Description */
+            description: string;
+            /** Subtype */
+            subtype?: string | null;
+            /** Amount Cents */
+            amount_cents: number;
+            /** @default W */
+            channel: components["schemas"]["PaymentChannel"];
+            /** Urn Catalog Id */
+            urn_catalog_id?: number | null;
+            /** Id */
+            id: number;
+            /** Sort Order */
+            sort_order: number;
         };
         /** LoginRequest */
         LoginRequest: {
@@ -308,6 +660,425 @@ export interface components {
             /** Display Name */
             display_name: string;
             role: components["schemas"]["UserRole"];
+        };
+        /** OverrideTotalRequest */
+        OverrideTotalRequest: {
+            /** Amount Cents */
+            amount_cents: number;
+            /** Reason */
+            reason: string;
+        };
+        /**
+         * OwnerNotifiedStatus
+         * @description doc06 Addendum G - stato corrente interrogabile direttamente,
+         *     distinto dallo storico in audit_log.
+         * @enum {string}
+         */
+        OwnerNotifiedStatus: "da_avvisare" | "avvisato";
+        /**
+         * PaymentChannel
+         * @description doc06 '2. Pagamenti: un solo ledger, circuito mai ambiguo' - ogni
+         *     riga di preventivo dichiara esplicitamente il proprio circuito, mai
+         *     dedotto da quale campo e' valorizzato (il bug reale gia' trovato in V1).
+         * @enum {string}
+         */
+        PaymentChannel: "W" | "D" | "Collaboratori";
+        /**
+         * PickupType
+         * @description doc06 Addendum C (riscritto) - nessuna logica di fallback: il tipo
+         *     e' sempre scelto esplicitamente dall'operatore.
+         * @enum {string}
+         */
+        PickupType: "sede_aziendale" | "domicilio" | "veterinario" | "collaboratore" | "altro";
+        /** PracticeCreate */
+        PracticeCreate: {
+            /** Destination Branch Id */
+            destination_branch_id: number;
+            /** Request Origin */
+            request_origin: string;
+            /** Service Type */
+            service_type: string;
+            /** Collaborator Id */
+            collaborator_id?: number | null;
+            /** Veterinarian Id */
+            veterinarian_id?: number | null;
+            /** Origin Veterinarian Id */
+            origin_veterinarian_id?: number | null;
+            /** @default domicilio */
+            pickup_type: components["schemas"]["PickupType"];
+            /** Pickup Location Id */
+            pickup_location_id?: number | null;
+            /** Pickup Zone Id */
+            pickup_zone_id?: number | null;
+            /** Pickup Address */
+            pickup_address?: string | null;
+            /** Pickup Contact Name */
+            pickup_contact_name?: string | null;
+            /** Provenance Code */
+            provenance_code?: string | null;
+            /** Microchip */
+            microchip?: string | null;
+            /** Notes */
+            notes?: string | null;
+            /** Ddt Number */
+            ddt_number?: number | null;
+            /** Ddt Date */
+            ddt_date?: string | null;
+            /** Ddt Pdf Path */
+            ddt_pdf_path?: string | null;
+            /** Signature Data */
+            signature_data?: string | null;
+            /** Transport Method */
+            transport_method?: string | null;
+            /** Vehicle Plate */
+            vehicle_plate?: string | null;
+            /** Temperature Mode */
+            temperature_mode?: string | null;
+            /** Package Count */
+            package_count?: number | null;
+            /** Container Id */
+            container_id?: string | null;
+            /** Lot Number */
+            lot_number?: string | null;
+            /** Treatment Method */
+            treatment_method?: string | null;
+            /**
+             * Delivery At Clinic
+             * @default false
+             */
+            delivery_at_clinic: boolean;
+            /**
+             * Delivery At Home
+             * @default false
+             */
+            delivery_at_home: boolean;
+            /** Signatory Identity Document Number */
+            signatory_identity_document_number?: string | null;
+            /** Signatory Identity Document Date */
+            signatory_identity_document_date?: string | null;
+            /** Signatory Signing Place */
+            signatory_signing_place?: string | null;
+            /**
+             * To Invoice
+             * @default false
+             */
+            to_invoice: boolean;
+            /**
+             * Send Catalog
+             * @default false
+             */
+            send_catalog: boolean;
+            /**
+             * Send Estremi
+             * @default false
+             */
+            send_estremi: boolean;
+            /**
+             * Voucher Requested
+             * @default false
+             */
+            voucher_requested: boolean;
+            /**
+             * Use Voucher
+             * @default false
+             */
+            use_voucher: boolean;
+            /**
+             * No Whatsapp Message
+             * @default false
+             */
+            no_whatsapp_message: boolean;
+            /** Animals */
+            animals?: components["schemas"]["AnimalInput"][];
+            /** Line Items */
+            line_items?: components["schemas"]["LineItemInput"][];
+            /** Tag Ids */
+            tag_ids?: number[];
+            /** Client Id */
+            client_id: number;
+        };
+        /** PracticeRead */
+        PracticeRead: {
+            /** Id */
+            id: number;
+            /** Practice Number */
+            practice_number: string;
+            status: components["schemas"]["PracticeStatus"];
+            /** Request Origin */
+            request_origin: string;
+            /** Originating Pickup Event Id */
+            originating_pickup_event_id: number | null;
+            /** Destination Branch Id */
+            destination_branch_id: number;
+            /** Client Id */
+            client_id: number;
+            /** Service Type */
+            service_type: string;
+            /** Collaborator Id */
+            collaborator_id: number | null;
+            /** Veterinarian Id */
+            veterinarian_id: number | null;
+            /** Origin Veterinarian Id */
+            origin_veterinarian_id: number | null;
+            /** Cremation Cycle Id */
+            cremation_cycle_id: number | null;
+            pickup_type: components["schemas"]["PickupType"];
+            /** Pickup Location Id */
+            pickup_location_id: number | null;
+            /** Pickup Zone Id */
+            pickup_zone_id: number | null;
+            /** Pickup Address */
+            pickup_address: string | null;
+            /** Pickup Contact Name */
+            pickup_contact_name: string | null;
+            /** Provenance Code */
+            provenance_code: string | null;
+            /** Microchip */
+            microchip: string | null;
+            /** Notes */
+            notes: string | null;
+            /** Ddt Number */
+            ddt_number: number | null;
+            /** Ddt Date */
+            ddt_date: string | null;
+            /** Ddt Pdf Path */
+            ddt_pdf_path: string | null;
+            /** Signature Data */
+            signature_data: string | null;
+            /** Data Complete */
+            data_complete: boolean;
+            /** Owner Snapshot */
+            owner_snapshot: {
+                [key: string]: unknown;
+            } | null;
+            /** Transport Method */
+            transport_method: string | null;
+            /** Vehicle Plate */
+            vehicle_plate: string | null;
+            /** Temperature Mode */
+            temperature_mode: string | null;
+            /** Package Count */
+            package_count: number | null;
+            /** Container Id */
+            container_id: string | null;
+            /** Lot Number */
+            lot_number: string | null;
+            /** Treatment Method */
+            treatment_method: string | null;
+            /** Delivery At Clinic */
+            delivery_at_clinic: boolean;
+            /** Delivery At Home */
+            delivery_at_home: boolean;
+            /** Signatory Identity Document Number */
+            signatory_identity_document_number: string | null;
+            /** Signatory Identity Document Date */
+            signatory_identity_document_date: string | null;
+            /** Signatory Signing Place */
+            signatory_signing_place: string | null;
+            /** Ddt Share Token */
+            ddt_share_token: string | null;
+            /** Original Practice Number */
+            original_practice_number: string | null;
+            /** Computed Total Override Cents */
+            computed_total_override_cents: number | null;
+            /** Computed Total Override Reason */
+            computed_total_override_reason: string | null;
+            /** Computed Total Override At */
+            computed_total_override_at: string | null;
+            /** To Invoice */
+            to_invoice: boolean;
+            /** Send Catalog */
+            send_catalog: boolean;
+            /** Catalog Sent */
+            catalog_sent: boolean;
+            /** Send Estremi */
+            send_estremi: boolean;
+            /** Estremi Sent */
+            estremi_sent: boolean;
+            /** Voucher Requested */
+            voucher_requested: boolean;
+            /** Use Voucher */
+            use_voucher: boolean;
+            /** Whatsapp Thanks Sent At */
+            whatsapp_thanks_sent_at: string | null;
+            /** No Whatsapp Message */
+            no_whatsapp_message: boolean;
+            /** Cremation Registered */
+            cremation_registered: boolean;
+            /** Cremation Queued */
+            cremation_queued: boolean;
+            collaborator_billing_status: components["schemas"]["CollaboratorBillingStatus"];
+            /** Collaborator Billing Invoiced At */
+            collaborator_billing_invoiced_at: string | null;
+            /** Collaborator Name Fallback */
+            collaborator_name_fallback: string | null;
+            owner_notified_status: components["schemas"]["OwnerNotifiedStatus"];
+            /** Owner Notified At */
+            owner_notified_at: string | null;
+            /** Used Voucher Id */
+            used_voucher_id: number | null;
+            /** Deleted At */
+            deleted_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Animals */
+            animals: components["schemas"]["AnimalRead"][];
+            /** Line Items */
+            line_items: components["schemas"]["LineItemRead"][];
+            /** Tags */
+            tags?: number[];
+            /**
+             * Line Items Total Cents
+             * @default 0
+             */
+            line_items_total_cents: number;
+        };
+        /**
+         * PracticeStatus
+         * @description doc06 'Stati e macchine a stati' + doc14 §1 - enum chiuso, workflow
+         *     lineare validato in domain/practice/state_machine.py, mai un valore
+         *     libero accettato dal database o dall'applicazione.
+         * @enum {string}
+         */
+        PracticeStatus: "ritirato" | "in_programma" | "cremato" | "da_consegnare" | "consegnato" | "smaltito";
+        /**
+         * PracticeUpdate
+         * @description client_id NON e' modificabile dopo la creazione (doc06 Addendum A:
+         *     owner_snapshot e' legato al cliente al momento della creazione - farlo
+         *     scivolare su un cliente diverso dopo renderebbe ambiguo cosa rappresenta
+         *     lo snapshot storico).
+         */
+        PracticeUpdate: {
+            /** Destination Branch Id */
+            destination_branch_id: number;
+            /** Request Origin */
+            request_origin: string;
+            /** Service Type */
+            service_type: string;
+            /** Collaborator Id */
+            collaborator_id?: number | null;
+            /** Veterinarian Id */
+            veterinarian_id?: number | null;
+            /** Origin Veterinarian Id */
+            origin_veterinarian_id?: number | null;
+            /** @default domicilio */
+            pickup_type: components["schemas"]["PickupType"];
+            /** Pickup Location Id */
+            pickup_location_id?: number | null;
+            /** Pickup Zone Id */
+            pickup_zone_id?: number | null;
+            /** Pickup Address */
+            pickup_address?: string | null;
+            /** Pickup Contact Name */
+            pickup_contact_name?: string | null;
+            /** Provenance Code */
+            provenance_code?: string | null;
+            /** Microchip */
+            microchip?: string | null;
+            /** Notes */
+            notes?: string | null;
+            /** Ddt Number */
+            ddt_number?: number | null;
+            /** Ddt Date */
+            ddt_date?: string | null;
+            /** Ddt Pdf Path */
+            ddt_pdf_path?: string | null;
+            /** Signature Data */
+            signature_data?: string | null;
+            /** Transport Method */
+            transport_method?: string | null;
+            /** Vehicle Plate */
+            vehicle_plate?: string | null;
+            /** Temperature Mode */
+            temperature_mode?: string | null;
+            /** Package Count */
+            package_count?: number | null;
+            /** Container Id */
+            container_id?: string | null;
+            /** Lot Number */
+            lot_number?: string | null;
+            /** Treatment Method */
+            treatment_method?: string | null;
+            /**
+             * Delivery At Clinic
+             * @default false
+             */
+            delivery_at_clinic: boolean;
+            /**
+             * Delivery At Home
+             * @default false
+             */
+            delivery_at_home: boolean;
+            /** Signatory Identity Document Number */
+            signatory_identity_document_number?: string | null;
+            /** Signatory Identity Document Date */
+            signatory_identity_document_date?: string | null;
+            /** Signatory Signing Place */
+            signatory_signing_place?: string | null;
+            /**
+             * To Invoice
+             * @default false
+             */
+            to_invoice: boolean;
+            /**
+             * Send Catalog
+             * @default false
+             */
+            send_catalog: boolean;
+            /**
+             * Send Estremi
+             * @default false
+             */
+            send_estremi: boolean;
+            /**
+             * Voucher Requested
+             * @default false
+             */
+            voucher_requested: boolean;
+            /**
+             * Use Voucher
+             * @default false
+             */
+            use_voucher: boolean;
+            /**
+             * No Whatsapp Message
+             * @default false
+             */
+            no_whatsapp_message: boolean;
+            /** Animals */
+            animals?: components["schemas"]["AnimalInput"][];
+            /** Line Items */
+            line_items?: components["schemas"]["LineItemInput"][];
+            /** Tag Ids */
+            tag_ids?: number[];
+        };
+        /** TagRead */
+        TagRead: {
+            /** Id */
+            id: number;
+            /** Code */
+            code: string;
+            /** Label */
+            label: string;
+            /** Category */
+            category: string | null;
+        };
+        /** TransitionRequest */
+        TransitionRequest: {
+            target_status: components["schemas"]["PracticeStatus"];
+        };
+        /** TrashRequest */
+        TrashRequest: {
+            /** Reason */
+            reason?: string | null;
         };
         /**
          * UserRole
@@ -445,6 +1216,13 @@ export interface components {
             service_duration_minutes?: number | null;
             /** Hours */
             hours?: components["schemas"]["VeterinarianHoursInput"][];
+        };
+        /** _NamedRead */
+        _NamedRead: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
         };
     };
     responses: never;
@@ -882,6 +1660,582 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VeterinarianRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_practices_api_practices_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                status?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_practice_api_practices_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PracticeCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_practice_api_practices__practice_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                practice_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_practice_api_practices__practice_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                practice_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PracticeUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transition_practice_api_practices__practice_id__transition_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                practice_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    correct_practice_state_api_practices__practice_id__correct_state_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                practice_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CorrectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trash_practice_api_practices__practice_id__trash_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                practice_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrashRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_practice_api_practices__practice_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                practice_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    override_total_api_practices__practice_id__override_total_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                practice_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OverrideTotalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_total_override_api_practices__practice_id__clear_total_override_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                practice_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    notify_owner_api_practices__practice_id__notify_owner_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                practice_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_collaborator_billed_api_practices__practice_id__mark_collaborator_billed_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                practice_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_company_locations_api_references_company_locations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["_NamedRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_collaborators_api_references_collaborators_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["_NamedRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_urns_api_references_urns_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["_NamedRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_calendar_zones_api_references_calendar_zones_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["_NamedRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_tags_api_references_tags_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagRead"][];
                 };
             };
             /** @description Validation Error */
