@@ -1393,6 +1393,7 @@ body{background:radial-gradient(circle at top left,#fff8f3 0,#f4f1ed 34%,#ece5dd
 .home-logo{width:118px;height:118px;object-fit:contain;border-radius:24px;background:white;padding:10px;border:1px solid var(--line);box-shadow:0 8px 24px #4b392614}
 .month-block{margin-bottom:18px}.month-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.month-heading{display:flex;align-items:center;gap:10px}.month-toggle{width:34px;height:34px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--brand);font-size:22px;font-weight:800;line-height:1;cursor:pointer}.month-content[hidden]{display:none}.dashboard-table-scroll{overflow-x:scroll;scrollbar-gutter:stable;padding-bottom:8px;scrollbar-color:var(--brand) #eee7e0;scrollbar-width:auto}.dashboard-table-scroll table{min-width:1650px}.dashboard-table-scroll::-webkit-scrollbar{height:13px}.dashboard-table-scroll::-webkit-scrollbar-track{background:#eee7e0;border-radius:99px}.dashboard-table-scroll::-webkit-scrollbar-thumb{background:var(--brand);border:3px solid #eee7e0;border-radius:99px}
 .tablebox.archive-tablebox{max-height:none;touch-action:auto}
+.tablebox.fatture-tablebox{max-height:none;touch-action:auto}
 .archive-row-highlight{box-shadow:0 0 0 2px var(--brand) inset,0 0 14px 2px #a7404559;transition:box-shadow 2.2s ease}
 .archive-row-highlight.archive-row-fade{box-shadow:none}
 #archiveList{visibility:hidden}#fattureLists{visibility:hidden}
@@ -13776,8 +13777,14 @@ class App(BaseHTTPRequestHandler):
         empty='<tr><td colspan="8" class="sub">Nessuna fattura trovata.</td></tr>'
         reminder_empty='<tr><td colspan="6" class="sub">Nessuna pratica da fatturare.</td></tr>'
         tipo_options=''.join(f'<option value="{value}"{" selected" if tipo==value else ""}>{label}</option>' for value,label in (("","Entrambe"),("fatturate","Fatturate"),("da_fatturare","Da fatturare")))
-        fatturate_section=f'''<section class="tablebox"><h2>Fatture emesse</h2><table><thead><tr><th>Fattura</th><th>Data</th><th>Pratica</th><th>Cliente</th><th>Animale</th><th>Circuito</th><th>Totale</th><th></th></tr></thead><tbody>{''.join(table) or empty}</tbody></table></section>''' if show_fatturate else ''
-        da_fatturare_section=f'''<section class="tablebox" style="margin-top:20px"><h2>Da fatturare</h2><table><thead><tr><th>Pratica</th><th>Creazione</th><th>Cliente</th><th>Animale</th><th>Totale</th><th></th></tr></thead><tbody>{''.join(reminder_table) or reminder_empty}</tbody></table></section>''' if show_da_fatturare else ''
+        # class "fatture-tablebox": .tablebox di base e' internamente
+        # scrollabile (max-height:min(65vh,620px);overflow:auto) - senza
+        # questo override la pagina/finestra non scrolla mai davvero, e
+        # window.scrollY/scrollTo (usati sotto per il ripristino posizione)
+        # non intercettano lo scroll reale, che avviene dentro il box.
+        # Stessa tecnica gia' usata da .archive-tablebox per lo stesso motivo.
+        fatturate_section=f'''<section class="tablebox fatture-tablebox"><h2>Fatture emesse</h2><table><thead><tr><th>Fattura</th><th>Data</th><th>Pratica</th><th>Cliente</th><th>Animale</th><th>Circuito</th><th>Totale</th><th></th></tr></thead><tbody>{''.join(table) or empty}</tbody></table></section>''' if show_fatturate else ''
+        da_fatturare_section=f'''<section class="tablebox fatture-tablebox" style="margin-top:20px"><h2>Da fatturare</h2><table><thead><tr><th>Pratica</th><th>Creazione</th><th>Cliente</th><th>Animale</th><th>Totale</th><th></th></tr></thead><tbody>{''.join(reminder_table) or reminder_empty}</tbody></table></section>''' if show_da_fatturare else ''
         # Stesso pattern gia' collaudato in Archivio (archive_restore_js
         # sopra, in archive_page): la lista parte nascosta via CSS
         # (#fattureLists{{visibility:hidden}}) e viene rivelata SOLO dopo che

@@ -1301,6 +1301,27 @@ class PetParadiseTests(unittest.TestCase):
         # Ogni riga deve portare l'id pratica, necessario per ritrovarla al
         # ritorno dalla pratica.
         self.assertIn(f'data-practice-id="{pid}"',page)
+        # LA CAUSA REALE del mancato ripristino: .tablebox di base e'
+        # internamente scrollabile (max-height:min(65vh,620px);overflow:auto,
+        # verificato dal vivo in browser) - senza la classe fatture-tablebox
+        # (che la neutralizza, stessa tecnica di .archive-tablebox) la
+        # finestra/pagina non scrolla mai davvero e window.scrollY/scrollTo
+        # restano un no-op silenzioso. Verifica sia sulla sezione "Fatture
+        # emesse" sia su "Da fatturare".
+        self.assertIn('class="tablebox fatture-tablebox"',page)
+        self.assertEqual(page.count('class="tablebox fatture-tablebox"'),2)
+
+    def test_fatture_tablebox_css_disables_internal_scroll(self):
+        # Guardia dedicata sulla regola CSS stessa: se qualcuno la rimuove
+        # senza toccare l'HTML, il test sopra (che controlla solo la classe)
+        # non se ne accorgerebbe - qui si verifica che la regola che
+        # neutralizza max-height/overflow sia realmente presente in CSS.
+        self.assertIn(".tablebox.fatture-tablebox{max-height:none;touch-action:auto}",app.CSS)
+        # La regola di Archivio resta byte-identica (test dedicato esistente
+        # test_archive_tablebox_has_no_height_cap_and_native_touch_scroll) -
+        # verificato qui che non sia stata toccata/fusa in un selettore
+        # condiviso, come richiesto esplicitamente ("non modificare l'Archivio").
+        self.assertIn(".tablebox.archive-tablebox{max-height:none;touch-action:auto}",app.CSS)
 
     def test_invoices_page_da_fatturare_respects_date_and_text_filters(self):
         with app.db() as conn:
