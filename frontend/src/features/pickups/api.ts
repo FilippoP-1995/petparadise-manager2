@@ -7,13 +7,20 @@ export type Pickup = components["schemas"]["PickupRead"];
 export type PickupCreateInput = components["schemas"]["PickupCreate"];
 export type PickupStatusValue = components["schemas"]["PickupStatus"];
 
-export function usePickups(params: { q?: string; status?: string; offset?: number }) {
+export function usePickups(params: { q?: string; status?: string; offset?: number; dateFrom?: string; dateTo?: string }) {
   return useQuery({
     queryKey: ["pickups", params],
     queryFn: async () => {
       const { data, error } = await apiClient.GET("/api/pickups", {
         params: {
-          query: { q: params.q || undefined, status: params.status || undefined, offset: params.offset, limit: 50 },
+          query: {
+            q: params.q || undefined,
+            status: params.status || undefined,
+            offset: params.offset,
+            date_from: params.dateFrom,
+            date_to: params.dateTo,
+            limit: 50,
+          },
         },
       });
       if (error) throw new Error("Impossibile caricare i ritiri");

@@ -27,7 +27,7 @@ export function ArticleListPage() {
                 className="btn"
                 disabled={order.isPending}
                 onClick={() => {
-                  if (confirm(`Inviare la richiesta per ${article.name}?`)) order.mutate(article.id);
+                  if (window.confirm(`Inviare la richiesta per ${article.name}?`)) order.mutate(article.id);
                 }}
               >
                 Ordina prodotto

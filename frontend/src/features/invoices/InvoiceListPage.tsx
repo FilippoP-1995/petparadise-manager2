@@ -1,12 +1,9 @@
 import { Link } from "react-router-dom";
 
+import { formatMoney } from "@/shared/money";
 import { useListQueryParams } from "@/shared/useListQueryParams";
 
 import { useInvoices } from "./api";
-
-function money(cents: number) {
-  return (cents / 100).toLocaleString("it-IT", { style: "currency", currency: "EUR" });
-}
 
 export function InvoiceListPage() {
   const { q, offset, setSearch, setOffset } = useListQueryParams();
@@ -59,7 +56,7 @@ export function InvoiceListPage() {
                   )}
                 </td>
                 <td>{invoice.channel}</td>
-                <td>{money(invoice.total_amount_cents)}</td>
+                <td>{formatMoney(invoice.total_amount_cents)}</td>
               </tr>
             ))}
           </tbody>

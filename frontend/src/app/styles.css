@@ -76,3 +76,58 @@ button:disabled { opacity: 0.5; cursor: default; }
 
 .login-page { display: grid; place-items: center; min-height: 100vh; }
 .login-page .card { width: 340px; }
+
+/* Fase 8 (doc12) - classi usate da ogni dominio ma mai aggiunte al
+   foglio di stile condiviso: badge di stato, box di avviso, riepiloghi
+   chiave-valore, testo secondario, cronologia movimenti, liste di
+   selezione (ClientPicker/PracticePicker), tab di categoria. */
+
+.sub { color: var(--muted); font-size: 14px; margin: 4px 0 0; }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* Stato iniziale/neutro di un flusso */
+.badge.status-ritirato, .badge.status-pianificato, .badge.status-da_confermare,
+.badge.status-non_pagata, .badge.status-inactive { background: #f1f5f9; color: #475569; }
+/* Stato intermedio/richiede attenzione */
+.badge.status-in_programma, .badge.status-da_ritirare, .badge.status-in_attesa,
+.badge.status-parziale, .badge.status-pending { background: #fef3c7; color: #92400e; }
+/* Stato positivo/completato */
+.badge.status-cremato, .badge.status-completato, .badge.status-pagata,
+.badge.status-active { background: #dcfce7; color: #166534; }
+/* Fasi successive (informativo, non ancora concluso) */
+.badge.status-da_consegnare, .badge.status-consegnato, .badge.status-smaltito { background: #dbeafe; color: #1e40af; }
+/* Stato terminale negativo / richiede intervento */
+.badge.status-annullato, .badge.status-sovrapagata { background: #fee2e2; color: #991b1b; }
+
+.flash { padding: 10px 14px; border-radius: 8px; font-size: 14px; background: #eff6ff; color: #1e40af; margin: 0; }
+.flash.warning { background: #fffbeb; color: #92400e; }
+
+.kvs { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 14px; margin: 10px 0; }
+.kv { display: flex; flex-direction: column; gap: 2px; }
+.kv small { color: var(--muted); font-size: 12px; }
+.kv b { font-size: 16px; }
+
+.timeline { display: flex; flex-direction: column; gap: 10px; }
+.timeline .event { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+
+.section { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+
+.reminders-todo-list { list-style: none; margin: 6px 0 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.reminders-todo-list li + li { border-top: 1px solid var(--line); }
+.reminders-todo-row { display: block; width: 100%; text-align: left; background: #fff; color: var(--ink); border-radius: 0; padding: 9px 12px; }
+.reminders-todo-row:hover { background: var(--bg); }
+
+.calendar-tabs { display: flex; gap: 8px; margin: 14px 0; border-bottom: 1px solid var(--line); }
+.calendar-tabs a { padding: 8px 4px; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; }
+.calendar-tabs a.active { color: var(--brand); border-bottom-color: var(--brand); font-weight: 600; }
+
+.tag-outline-orange { display: inline-flex; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; border: 1px solid #f59e0b; color: #b45309; background: #fffbeb; }

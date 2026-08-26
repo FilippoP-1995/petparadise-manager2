@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 
+import { formatMoney } from "@/shared/money";
 import { useListQueryParams } from "@/shared/useListQueryParams";
 
 import { useDeliveries } from "./api";
@@ -47,7 +48,7 @@ export function DeliveryListPage() {
                 <td>{delivery.delivery_type}</td>
                 <td>
                   {delivery.preliminary_payment_status ?? "-"}
-                  {delivery.preliminary_payment_amount != null && ` (${(delivery.preliminary_payment_amount / 100).toFixed(2)} €)`}
+                  {delivery.preliminary_payment_amount != null && ` (${formatMoney(delivery.preliminary_payment_amount)})`}
                 </td>
                 <td>{delivery.linked_practice_id ? `#${delivery.linked_practice_id}` : "-"}</td>
               </tr>

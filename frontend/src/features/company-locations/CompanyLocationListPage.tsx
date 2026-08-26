@@ -53,7 +53,7 @@ export function CompanyLocationListPage() {
                         className="btn-ghost"
                         disabled={deactivate.isPending}
                         onClick={() => {
-                          if (confirm(`Disattivare la sede "${location.name}"?`)) deactivate.mutate(location.id);
+                          if (window.confirm(`Disattivare la sede "${location.name}"?`)) deactivate.mutate(location.id);
                         }}
                       >
                         Disattiva

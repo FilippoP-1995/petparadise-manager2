@@ -6,12 +6,20 @@ import type { components } from "@/shared/api/schema";
 export type Delivery = components["schemas"]["DeliveryRead"];
 export type DeliveryCreateInput = components["schemas"]["DeliveryCreate"];
 
-export function useDeliveries(params: { q?: string; offset?: number }) {
+export function useDeliveries(params: { q?: string; offset?: number; dateFrom?: string; dateTo?: string }) {
   return useQuery({
     queryKey: ["deliveries", params],
     queryFn: async () => {
       const { data, error } = await apiClient.GET("/api/deliveries", {
-        params: { query: { q: params.q || undefined, offset: params.offset, limit: 50 } },
+        params: {
+          query: {
+            q: params.q || undefined,
+            offset: params.offset,
+            date_from: params.dateFrom,
+            date_to: params.dateTo,
+            limit: 50,
+          },
+        },
       });
       if (error) throw new Error("Impossibile caricare le riconsegne");
       return data;

@@ -1,10 +1,8 @@
 import { useNavigate, useParams } from "react-router-dom";
 
-import { useDeactivateUrn, useUrn, useUrnMovements } from "./api";
+import { formatMoney } from "@/shared/money";
 
-function money(cents: number) {
-  return (cents / 100).toLocaleString("it-IT", { style: "currency", currency: "EUR" });
-}
+import { useDeactivateUrn, useUrn, useUrnMovements } from "./api";
 
 export function UrnDetailPage() {
   const { urnId } = useParams();
@@ -37,7 +35,7 @@ export function UrnDetailPage() {
           <strong>Materiale:</strong> {urn.material || "-"}
         </p>
         <p>
-          <strong>Prezzo:</strong> {money(urn.price_cents)}
+          <strong>Prezzo:</strong> {formatMoney(urn.price_cents)}
         </p>
         <p>
           <strong>Quantita:</strong> {urn.quantity} (soglia scorte basse: {urn.low_stock_threshold})
@@ -78,7 +76,7 @@ export function UrnDetailPage() {
             className="btn-ghost"
             disabled={deactivate.isPending}
             onClick={() => {
-              if (confirm("Rimuovere questo articolo dal catalogo?")) deactivate.mutate(urn.id);
+              if (window.confirm("Rimuovere questo articolo dal catalogo?")) deactivate.mutate(urn.id);
             }}
           >
             Rimuovi dal catalogo

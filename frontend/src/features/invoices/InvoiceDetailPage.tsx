@@ -2,12 +2,9 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { useAuth } from "@/features/auth/useAuth";
+import { euroStringToCents, formatMoney } from "@/shared/money";
 
 import { useCorrectInvoiceTotal, useInvoice, useInvoiceReconciliation } from "./api";
-
-function money(cents: number) {
-  return (cents / 100).toLocaleString("it-IT", { style: "currency", currency: "EUR" });
-}
 
 const STATUS_LABELS: Record<string, string> = {
   non_pagata: "Non pagata",
@@ -33,8 +30,8 @@ function CorrectInvoiceTotalForm({ invoiceId, currentTotalCents }: { invoiceId: 
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    const amount = Number(amountEuro.replace(",", "."));
-    if (!amount || amount <= 0) {
+    const amountCents = euroStringToCents(amountEuro);
+    if (!amountCents || amountCents <= 0) {
       setError("Importo non valido.");
       return;
     }
@@ -44,7 +41,7 @@ function CorrectInvoiceTotalForm({ invoiceId, currentTotalCents }: { invoiceId: 
     }
     setError(null);
     try {
-      await correctTotal.mutateAsync({ invoiceId, totalAmountCents: Math.round(amount * 100), reason });
+      await correctTotal.mutateAsync({ invoiceId, totalAmountCents: amountCents, reason });
       setOpen(false);
       setAmountEuro("");
       setReason("");
@@ -57,7 +54,7 @@ function CorrectInvoiceTotalForm({ invoiceId, currentTotalCents }: { invoiceId: 
     <form className="field-row" onSubmit={handleSubmit}>
       <input
         inputMode="decimal"
-        placeholder={`Attuale: ${money(currentTotalCents)}`}
+        placeholder={`Attuale: ${formatMoney(currentTotalCents)}`}
         value={amountEuro}
         onChange={(e) => setAmountEuro(e.target.value)}
       />
@@ -115,20 +112,20 @@ export function InvoiceDetailPage() {
           <div className="kvs">
             <div className="kv">
               <small>Totale fattura</small>
-              <b>{money(recon.total_amount_cents)}</b>
+              <b>{formatMoney(recon.total_amount_cents)}</b>
             </div>
             <div className="kv">
               <small>Totale pagato</small>
-              <b>{money(recon.paid_cents)}</b>
+              <b>{formatMoney(recon.paid_cents)}</b>
             </div>
             <div className="kv">
               <small>Residuo</small>
-              <b>{money(recon.residual_cents)}</b>
+              <b>{formatMoney(recon.residual_cents)}</b>
             </div>
           </div>
           {recon.status === "sovrapagata" && (
             <p className="flash warning">
-              Sovrapagamento rilevato: sono stati incassati {money(recon.paid_cents - recon.total_amount_cents)} in
+              Sovrapagamento rilevato: sono stati incassati {formatMoney(recon.paid_cents - recon.total_amount_cents)} in
               piu' rispetto al documento fiscale. Non viene corretto automaticamente - verifica se serve uno storno o
               una correzione della fattura.
             </p>

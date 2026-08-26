@@ -85,3 +85,29 @@ async def test_list_urns_filters_by_category_and_active(authed_client: AsyncClie
 async def test_get_unknown_urn_returns_404(authed_client: AsyncClient):
     response = await authed_client.get("/api/urns/999999")
     assert response.status_code == 404
+
+
+async def test_list_urns_search_by_name_code_or_material(authed_client: AsyncClient):
+    await authed_client.post("/api/urns", json=_payload(name="Urna in noce", material="Legno"))
+    other = await authed_client.post("/api/urns", json=_payload(name="Urna in ottone", material="Ottone"))
+
+    by_name = await authed_client.get("/api/urns", params={"q": "noce"})
+    assert [u["name"] for u in by_name.json()] == ["Urna in noce"]
+
+    by_material = await authed_client.get("/api/urns", params={"q": "ottone"})
+    assert [u["id"] for u in by_material.json()] == [other.json()["id"]]
+
+    by_code = await authed_client.get("/api/urns", params={"q": other.json()["internal_code"]})
+    assert [u["id"] for u in by_code.json()] == [other.json()["id"]]
+
+
+async def test_list_urns_respects_limit_and_offset(authed_client: AsyncClient):
+    for i in range(3):
+        await authed_client.post("/api/urns", json=_payload(name=f"Urna paginata {i}"))
+
+    page = await authed_client.get("/api/urns", params={"limit": 2, "offset": 0})
+    assert len(page.json()) == 2
+
+    next_page = await authed_client.get("/api/urns", params={"limit": 2, "offset": 2})
+    assert len(next_page.json()) >= 1
+    assert {u["id"] for u in page.json()}.isdisjoint({u["id"] for u in next_page.json()})

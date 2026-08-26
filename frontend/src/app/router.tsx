@@ -2,6 +2,7 @@ import { createBrowserRouter, ScrollRestoration } from "react-router-dom";
 
 import { LoginPage } from "@/features/auth/LoginPage";
 import { ArticleListPage } from "@/features/articles/ArticleListPage";
+import { CalendarPage } from "@/features/calendar/CalendarPage";
 import { ClientFormPage } from "@/features/clients/ClientFormPage";
 import { ClientListPage } from "@/features/clients/ClientListPage";
 import { CompanyLocationFormPage } from "@/features/company-locations/CompanyLocationFormPage";
@@ -28,7 +29,7 @@ import { VeterinarianFormPage } from "@/features/veterinarians/VeterinarianFormP
 import { VeterinarianListPage } from "@/features/veterinarians/VeterinarianListPage";
 
 import { AppShell } from "./AppShell";
-import { RequireAuth } from "./RequireAuth";
+import { RequireAdmin, RequireAuth } from "./RequireAuth";
 
 function Root() {
   return (
@@ -52,6 +53,7 @@ export const router = createBrowserRouter([
       </RequireAuth>
     ),
     children: [
+      { path: "/calendario", element: <CalendarPage /> },
       { path: "/clienti", element: <ClientListPage /> },
       { path: "/clienti/nuovo", element: <ClientFormPage /> },
       { path: "/veterinari", element: <VeterinarianListPage /> },
@@ -69,8 +71,22 @@ export const router = createBrowserRouter([
       { path: "/cicli-cremazione/nuovo", element: <CremationCycleFormPage /> },
       { path: "/cicli-cremazione/:cycleId", element: <CremationCycleDetailPage /> },
       { path: "/sedi", element: <CompanyLocationListPage /> },
-      { path: "/sedi/nuova", element: <CompanyLocationFormPage /> },
-      { path: "/sedi/:locationId/modifica", element: <CompanyLocationFormPage /> },
+      {
+        path: "/sedi/nuova",
+        element: (
+          <RequireAdmin>
+            <CompanyLocationFormPage />
+          </RequireAdmin>
+        ),
+      },
+      {
+        path: "/sedi/:locationId/modifica",
+        element: (
+          <RequireAdmin>
+            <CompanyLocationFormPage />
+          </RequireAdmin>
+        ),
+      },
       { path: "/catalogo-urne", element: <UrnListPage /> },
       { path: "/catalogo-urne/nuova", element: <UrnFormPage /> },
       { path: "/catalogo-urne/:urnId", element: <UrnDetailPage /> },

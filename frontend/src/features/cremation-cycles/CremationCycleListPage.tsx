@@ -1,5 +1,7 @@
 import { Link, useSearchParams } from "react-router-dom";
 
+import { useListQueryParams } from "@/shared/useListQueryParams";
+
 import { useCremationCycles } from "./api";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -9,9 +11,9 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export function CremationCycleListPage() {
+  const { offset, setOffset } = useListQueryParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const status = searchParams.get("status") ?? "";
-  const offset = Number(searchParams.get("offset") ?? "0");
 
   function setStatus(value: string) {
     setSearchParams((prev) => {
@@ -19,14 +21,6 @@ export function CremationCycleListPage() {
       if (value) next.set("status", value);
       else next.delete("status");
       next.delete("offset");
-      return next;
-    });
-  }
-
-  function setOffset(value: number) {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set("offset", String(value));
       return next;
     });
   }

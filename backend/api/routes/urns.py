@@ -17,10 +17,15 @@ router = APIRouter(prefix="/api/urns", tags=["urns"])
 async def list_urns(
     category: UrnCategory | None = Query(default=None),
     active_only: bool = Query(default=True),
+    q: str | None = Query(default=None, description="Ricerca per nome, codice interno o materiale"),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_session),
     _: User = Depends(get_current_user),
 ):
-    return await UrnCatalogRepository(db).list_all(category=category, active_only=active_only)
+    return await UrnCatalogRepository(db).list_all(
+        category=category, active_only=active_only, q=q, limit=limit, offset=offset
+    )
 
 
 @router.get("/{urn_id}", response_model=UrnRead)

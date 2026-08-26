@@ -10,6 +10,7 @@ export function VeterinarianListPage() {
   const { data: veterinarians, isLoading, isError } = useVeterinarians({ q, offset });
   const deactivate = useDeactivateVeterinarian();
   const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
 
   return (
     <main className="wrap">
@@ -40,7 +41,7 @@ export function VeterinarianListPage() {
               <th>Telefono</th>
               <th>Citta'</th>
               <th>Orari</th>
-              {user?.role === "admin" && <th></th>}
+              {isAdmin && <th></th>}
             </tr>
           </thead>
           <tbody>
@@ -51,12 +52,12 @@ export function VeterinarianListPage() {
                 <td>{vet.phone ?? "-"}</td>
                 <td>{vet.city ?? "-"}</td>
                 <td>{vet.hours.length} giorni configurati</td>
-                {user?.role === "admin" && (
+                {isAdmin && (
                   <td>
                     <button
                       className="btn-ghost"
                       onClick={() => {
-                        if (confirm(`Disattivare ${vet.clinic_name ?? vet.doctor_name}?`)) {
+                        if (window.confirm(`Disattivare ${vet.clinic_name ?? vet.doctor_name}?`)) {
                           deactivate.mutate(vet.id);
                         }
                       }}

@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,6 +38,8 @@ def _domain_error_to_http(exc: Exception):
 async def list_pickups(
     q: str | None = Query(default=None),
     pickup_status: str | None = Query(default=None, alias="status"),
+    date_from: datetime | None = Query(default=None, description="Filtra i ritiri con inizio >= a questo istante"),
+    date_to: datetime | None = Query(default=None, description="Filtra i ritiri con inizio < a questo istante"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_session),
@@ -43,7 +47,13 @@ async def list_pickups(
 ):
     repo = CalendarEventRepository(db)
     return await repo.list_active(
-        event_type=CalendarEventType.ritiro, search=q, pickup_status=pickup_status, limit=limit, offset=offset
+        event_type=CalendarEventType.ritiro,
+        search=q,
+        pickup_status=pickup_status,
+        date_from=date_from,
+        date_to=date_to,
+        limit=limit,
+        offset=offset,
     )
 
 

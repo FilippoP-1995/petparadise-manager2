@@ -4,6 +4,8 @@ import { useForm } from "react-hook-form";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { z } from "zod";
 
+import { centsToEuroString, euroStringToCents, isValidEuroString } from "@/shared/money";
+
 import { useCreateUrn, useUpdateUrn, useUrn, type UrnCategoryValue } from "./api";
 
 const schema = z.object({
@@ -13,21 +15,13 @@ const schema = z.object({
   price_euro: z
     .string()
     .min(1, "Obbligatorio")
-    .refine((v) => !Number.isNaN(Number(v.replace(",", "."))) && Number(v.replace(",", ".")) >= 0, "Prezzo non valido"),
+    .refine((v) => isValidEuroString(v) && euroStringToCents(v) >= 0, "Prezzo non valido"),
   quantity: z.number().min(0, "La quantita' non puo' essere negativa"),
   low_stock_threshold: z.number().min(0),
   notes: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
-
-function centsToEuroString(cents: number): string {
-  return (cents / 100).toFixed(2);
-}
-
-function euroStringToCents(value: string): number {
-  return Math.round(Number(value.replace(",", ".")) * 100);
-}
 
 export function UrnFormPage() {
   const { urnId } = useParams();

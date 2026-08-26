@@ -140,3 +140,26 @@ async def test_list_pickups_search_and_pagination(authed_client: AsyncClient, sa
 
     filtered = await authed_client.get("/api/pickups", params={"status": "da_confermare"})
     assert all(p["pickup_status"] == "da_confermare" for p in filtered.json())
+
+
+async def test_list_pickups_filters_by_date_range(authed_client: AsyncClient, sample_client, sample_zone):
+    in_three_days = datetime.now(timezone.utc) + timedelta(days=3)
+    far_payload = _payload(
+        sample_client,
+        sample_zone,
+        start_at=in_three_days.isoformat(),
+        end_at=(in_three_days + timedelta(hours=1)).isoformat(),
+    )
+
+    near = await authed_client.post("/api/pickups", json=_payload(sample_client, sample_zone))
+    far = await authed_client.post("/api/pickups", json=far_payload)
+
+    day_before = datetime.now(timezone.utc)
+    day_after = datetime.now(timezone.utc) + timedelta(days=2)
+    response = await authed_client.get(
+        "/api/pickups",
+        params={"date_from": day_before.isoformat(), "date_to": day_after.isoformat()},
+    )
+    ids = {p["id"] for p in response.json()}
+    assert near.json()["id"] in ids
+    assert far.json()["id"] not in ids

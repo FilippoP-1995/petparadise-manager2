@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { usePractice, type Practice } from "@/features/practices/api";
 import { PracticePicker } from "@/shared/PracticePicker";
+import { euroStringToCents, isValidEuroString } from "@/shared/money";
 
 import { useCreateInvoice } from "./api";
 
@@ -15,7 +16,7 @@ const schema = z.object({
   total_euro: z
     .string()
     .min(1, "Obbligatorio")
-    .refine((v) => !Number.isNaN(Number(v.replace(",", "."))) && Number(v.replace(",", ".")) > 0, "Importo non valido"),
+    .refine((v) => isValidEuroString(v) && euroStringToCents(v) > 0, "Importo non valido"),
   channel: z.enum(["W", "D"]),
 });
 
@@ -48,7 +49,7 @@ export function InvoiceFormPage() {
         practice_id: practice.id,
         invoice_number: values.invoice_number,
         invoice_date: values.invoice_date || null,
-        total_amount_cents: Math.round(Number(values.total_euro.replace(",", ".")) * 100),
+        total_amount_cents: euroStringToCents(values.total_euro),
         channel: values.channel,
       });
       navigate(`/fatture/${invoice.id}`);

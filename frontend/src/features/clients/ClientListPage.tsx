@@ -10,6 +10,7 @@ export function ClientListPage() {
   const { data: clients, isLoading, isError } = useClients({ q, offset });
   const deactivate = useDeactivateClient();
   const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
 
   return (
     <main className="wrap">
@@ -39,7 +40,7 @@ export function ClientListPage() {
               <th>Nome</th>
               <th>Telefono</th>
               <th>Citta'</th>
-              {user?.role === "admin" && <th></th>}
+              {isAdmin && <th></th>}
             </tr>
           </thead>
           <tbody>
@@ -48,12 +49,12 @@ export function ClientListPage() {
                 <td>{[client.first_name, client.last_name].filter(Boolean).join(" ") || client.company_name}</td>
                 <td>{client.phone ?? "-"}</td>
                 <td>{client.city ?? "-"}</td>
-                {user?.role === "admin" && (
+                {isAdmin && (
                   <td>
                     <button
                       className="btn-ghost"
                       onClick={() => {
-                        if (confirm(`Disattivare ${client.first_name} ${client.last_name}?`)) {
+                        if (window.confirm(`Disattivare ${client.first_name} ${client.last_name}?`)) {
                           deactivate.mutate(client.id);
                         }
                       }}

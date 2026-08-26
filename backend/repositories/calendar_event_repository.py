@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -37,12 +39,18 @@ class CalendarEventRepository:
         pickup_status: str | None,
         limit: int,
         offset: int,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
     ) -> list[CalendarEvent]:
         stmt = select(CalendarEvent).where(CalendarEvent.deleted_at.is_(None)).options(*_EAGER_OPTIONS)
         if event_type is not None:
             stmt = stmt.where(CalendarEvent.event_type == event_type)
         if pickup_status:
             stmt = stmt.where(CalendarEvent.pickup_status == pickup_status)
+        if date_from is not None:
+            stmt = stmt.where(CalendarEvent.start_at >= date_from)
+        if date_to is not None:
+            stmt = stmt.where(CalendarEvent.start_at < date_to)
         if search:
             pattern = f"%{search.lower()}%"
             stmt = stmt.outerjoin(Client, Client.id == CalendarEvent.client_id).where(

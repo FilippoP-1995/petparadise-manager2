@@ -8,13 +8,10 @@ import {
   type Practice,
 } from "@/features/practices/api";
 import { useInvoicesForPractice, useLinkPaymentToInvoice } from "@/features/invoices/api";
+import { euroStringToCents, formatMoney } from "@/shared/money";
 
 import { useDeletePayment, usePaymentsForPractice, usePracticeReconciliation, useRegisterPayment, useReversePayment } from "./api";
 import type { PaymentCreateInput } from "./api";
-
-function money(cents: number) {
-  return (cents / 100).toLocaleString("it-IT", { style: "currency", currency: "EUR" });
-}
 
 const STATUS_LABELS: Record<string, string> = {
   non_pagata: "Non pagata",
@@ -35,8 +32,8 @@ function RegisterPaymentForm({ practiceId, onDone }: { practiceId: number; onDon
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    const amount = Number(amountEuro.replace(",", "."));
-    if (!amount || Number.isNaN(amount)) {
+    const amountCents = euroStringToCents(amountEuro);
+    if (!amountCents) {
       setError("Importo non valido.");
       return;
     }
@@ -48,7 +45,7 @@ function RegisterPaymentForm({ practiceId, onDone }: { practiceId: number; onDon
         channel,
         ledger_section: "Entrata",
         movement_type: movementType,
-        amount_cents: Math.round(amount * 100),
+        amount_cents: amountCents,
       });
       setAmountEuro("");
       onDone();
@@ -134,14 +131,14 @@ export function PracticePaymentsSection({ practice }: { practice: Practice }) {
 
   async function handleSetOverride(e: FormEvent) {
     e.preventDefault();
-    const amount = Number(overrideAmount.replace(",", "."));
-    if (!amount || !overrideReason.trim()) {
+    const amountCents = euroStringToCents(overrideAmount);
+    if (!amountCents || !overrideReason.trim()) {
       setActionError("Importo e motivo sono obbligatori.");
       return;
     }
     setActionError(null);
     try {
-      await setOverride.mutateAsync({ practiceId: practice.id, amountCents: Math.round(amount * 100), reason: overrideReason });
+      await setOverride.mutateAsync({ practiceId: practice.id, amountCents, reason: overrideReason });
       setOverrideAmount("");
       setOverrideReason("");
     } catch (err) {
@@ -184,23 +181,23 @@ export function PracticePaymentsSection({ practice }: { practice: Practice }) {
             <div className="kvs">
               <div className="kv">
                 <small>Totale effettivo</small>
-                <b>{money(recon.effective_total_cents)}</b>
+                <b>{formatMoney(recon.effective_total_cents)}</b>
               </div>
               <div className="kv">
                 <small>Pagato (W)</small>
-                <b>{money(recon.paid_w_cents)}</b>
+                <b>{formatMoney(recon.paid_w_cents)}</b>
               </div>
               <div className="kv">
                 <small>Pagato (D)</small>
-                <b>{money(recon.paid_d_cents)}</b>
+                <b>{formatMoney(recon.paid_d_cents)}</b>
               </div>
               <div className="kv">
                 <small>Pagato (Collaboratori)</small>
-                <b>{money(recon.paid_collaboratori_cents)}</b>
+                <b>{formatMoney(recon.paid_collaboratori_cents)}</b>
               </div>
               <div className="kv">
                 <small>Residuo</small>
-                <b>{money(recon.residual_cents)}</b>
+                <b>{formatMoney(recon.residual_cents)}</b>
               </div>
               <div className="kv">
                 <small>Stato</small>
@@ -209,7 +206,7 @@ export function PracticePaymentsSection({ practice }: { practice: Practice }) {
             </div>
             {recon.status === "sovrapagata" && (
               <p className="flash warning">
-                Sovrapagamento: {money(recon.paid_total_cents - recon.effective_total_cents)} incassati in piu' del
+                Sovrapagamento: {formatMoney(recon.paid_total_cents - recon.effective_total_cents)} incassati in piu' del
                 dovuto. Non corretto automaticamente - valuta uno storno.
               </p>
             )}
@@ -218,9 +215,9 @@ export function PracticePaymentsSection({ practice }: { practice: Practice }) {
 
         {hasOverride ? (
           <p className="flash warning">
-            Totale corretto manualmente a {money(practice.computed_total_override_cents ?? 0)}
+            Totale corretto manualmente a {formatMoney(practice.computed_total_override_cents ?? 0)}
             {practice.computed_total_override_reason ? ` - ${practice.computed_total_override_reason}` : ""}. Il
-            totale preventivo ({money(practice.line_items_total_cents)}) resta calcolato a fianco, mai nascosto.
+            totale preventivo ({formatMoney(practice.line_items_total_cents)}) resta calcolato a fianco, mai nascosto.
             <button
               type="button"
               className="btn-ghost"
@@ -269,7 +266,7 @@ export function PracticePaymentsSection({ practice }: { practice: Practice }) {
             {invoices.map((invoice) => (
               <li key={invoice.id}>
                 <Link to={`/fatture/${invoice.id}`}>
-                  {invoice.invoice_number} - {money(invoice.total_amount_cents)} ({invoice.channel})
+                  {invoice.invoice_number} - {formatMoney(invoice.total_amount_cents)} ({invoice.channel})
                 </Link>
               </li>
             ))}
@@ -300,7 +297,7 @@ export function PracticePaymentsSection({ practice }: { practice: Practice }) {
                   <td>{payment.movement_date}</td>
                   <td>{payment.movement_type}</td>
                   <td>{payment.channel}</td>
-                  <td>{money(payment.amount_cents)}</td>
+                  <td>{formatMoney(payment.amount_cents)}</td>
                   <td>
                     {payment.movement_type !== "Storno" && (
                       <>

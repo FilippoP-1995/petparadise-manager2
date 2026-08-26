@@ -8,12 +8,19 @@ export type UrnInput = components["schemas"]["UrnCreate"];
 export type UrnCategoryValue = components["schemas"]["UrnCategory"];
 export type UrnMovement = components["schemas"]["UrnMovementRead"];
 
-export function useUrns(params: { category?: UrnCategoryValue; activeOnly?: boolean }) {
+export function useUrns(params: { category?: UrnCategoryValue; activeOnly?: boolean; q?: string; offset?: number }) {
   return useQuery({
     queryKey: ["urns", params],
     queryFn: async () => {
       const { data, error } = await apiClient.GET("/api/urns", {
-        params: { query: { category: params.category, active_only: params.activeOnly } },
+        params: {
+          query: {
+            category: params.category,
+            active_only: params.activeOnly,
+            q: params.q || undefined,
+            offset: params.offset,
+          },
+        },
       });
       if (error) throw new Error("Impossibile caricare il catalogo urne");
       return data;

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
+import { formatMoney } from "@/shared/money";
+
 import { useDelivery, useLinkDeliveryToPractice } from "./api";
 
 export function DeliveryDetailPage() {
@@ -39,7 +41,7 @@ export function DeliveryDetailPage() {
         </p>
         <p>
           <strong>Pagamento preliminare:</strong> {delivery.preliminary_payment_status ?? "-"}
-          {delivery.preliminary_payment_amount != null && ` (${(delivery.preliminary_payment_amount / 100).toFixed(2)} €)`}
+          {delivery.preliminary_payment_amount != null && ` (${formatMoney(delivery.preliminary_payment_amount)})`}
         </p>
         <p>
           <strong>Pratica collegata:</strong> {delivery.linked_practice_id ? `#${delivery.linked_practice_id}` : "Nessuna"}

@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.urn import Urn, UrnCategory, UrnCodeCounter, UrnMovement
@@ -21,13 +21,24 @@ class UrnCatalogRepository:
     async def get_by_id(self, urn_id: int) -> Urn | None:
         return await self._session.get(Urn, urn_id)
 
-    async def list_all(self, *, category: UrnCategory | None, active_only: bool) -> list[Urn]:
+    async def list_all(
+        self,
+        *,
+        category: UrnCategory | None,
+        active_only: bool,
+        q: str | None = None,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[Urn]:
         stmt = select(Urn)
         if category is not None:
             stmt = stmt.where(Urn.category == category)
         if active_only:
             stmt = stmt.where(Urn.active.is_(True))
-        stmt = stmt.order_by(Urn.name)
+        if q:
+            like = f"%{q}%"
+            stmt = stmt.where(or_(Urn.name.ilike(like), Urn.internal_code.ilike(like), Urn.material.ilike(like)))
+        stmt = stmt.order_by(Urn.name).limit(limit).offset(offset)
         return list((await self._session.execute(stmt)).scalars().all())
 
     def add(self, urn: Urn) -> None:

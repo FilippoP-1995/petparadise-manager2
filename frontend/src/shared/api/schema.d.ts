@@ -3827,6 +3827,18 @@ export interface operations {
             query?: {
                 q?: string | null;
                 status?: string | null;
+                /**
+                 * Date From
+                 * Format: date-time
+                 * @description Filtra i ritiri con inizio >= a questo istante
+                 */
+                date_from?: string | null;
+                /**
+                 * Date To
+                 * Format: date-time
+                 * @description Filtra i ritiri con inizio < a questo istante
+                 */
+                date_to?: string | null;
                 limit?: number;
                 offset?: number;
             };
@@ -4181,6 +4193,18 @@ export interface operations {
         parameters: {
             query?: {
                 q?: string | null;
+                /**
+                 * Date From
+                 * Format: date-time
+                 * @description Filtra le riconsegne con inizio >= a questo istante
+                 */
+                date_from?: string | null;
+                /**
+                 * Date To
+                 * Format: date-time
+                 * @description Filtra le riconsegne con inizio < a questo istante
+                 */
+                date_to?: string | null;
                 limit?: number;
                 offset?: number;
             };
@@ -4943,6 +4967,10 @@ export interface operations {
             query?: {
                 category?: components["schemas"]["UrnCategory"] | null;
                 active_only?: boolean;
+                /** @description Ricerca per nome, codice interno o materiale */
+                q?: string | null;
+                limit?: number;
+                offset?: number;
             };
             header?: never;
             path?: never;

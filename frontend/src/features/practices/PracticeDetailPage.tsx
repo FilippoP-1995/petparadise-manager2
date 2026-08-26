@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { PracticePaymentsSection } from "@/features/payments/PracticePaymentsSection";
+import { formatMoney } from "@/shared/money";
 
 import { usePractice, useTransitionPractice, useTrashPractice, type PracticeStatusValue } from "./api";
 
@@ -50,7 +51,7 @@ export function PracticeDetailPage() {
   }
 
   async function handleTrash() {
-    if (!confirm(`Cestinare la pratica ${currentPractice.practice_number}?`)) return;
+    if (!window.confirm(`Cestinare la pratica ${currentPractice.practice_number}?`)) return;
     await trash.mutateAsync(id);
     navigate("/pratiche");
   }
@@ -73,7 +74,7 @@ export function PracticeDetailPage() {
           <strong>Animali:</strong> {practice.animals.map((a) => a.name ?? "-").join(", ") || "Nessuno"}
         </p>
         <p>
-          <strong>Totale preventivo:</strong> {(practice.line_items_total_cents / 100).toFixed(2)} €
+          <strong>Totale preventivo:</strong> {formatMoney(practice.line_items_total_cents)}
         </p>
         {(practice.tags ?? []).length > 0 && (
           <p>
