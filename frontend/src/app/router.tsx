@@ -1,8 +1,11 @@
 import { createBrowserRouter, ScrollRestoration } from "react-router-dom";
 
 import { LoginPage } from "@/features/auth/LoginPage";
+import { ArticleListPage } from "@/features/articles/ArticleListPage";
 import { ClientFormPage } from "@/features/clients/ClientFormPage";
 import { ClientListPage } from "@/features/clients/ClientListPage";
+import { CompanyLocationFormPage } from "@/features/company-locations/CompanyLocationFormPage";
+import { CompanyLocationListPage } from "@/features/company-locations/CompanyLocationListPage";
 import { CremationCycleDetailPage } from "@/features/cremation-cycles/CremationCycleDetailPage";
 import { CremationCycleFormPage } from "@/features/cremation-cycles/CremationCycleFormPage";
 import { CremationCycleListPage } from "@/features/cremation-cycles/CremationCycleListPage";
@@ -15,6 +18,9 @@ import { PracticeListPage } from "@/features/practices/PracticeListPage";
 import { PickupDetailPage } from "@/features/pickups/PickupDetailPage";
 import { PickupFormPage } from "@/features/pickups/PickupFormPage";
 import { PickupListPage } from "@/features/pickups/PickupListPage";
+import { UrnDetailPage } from "@/features/urns/UrnDetailPage";
+import { UrnFormPage } from "@/features/urns/UrnFormPage";
+import { UrnListPage } from "@/features/urns/UrnListPage";
 import { VeterinarianFormPage } from "@/features/veterinarians/VeterinarianFormPage";
 import { VeterinarianListPage } from "@/features/veterinarians/VeterinarianListPage";
 
@@ -59,6 +65,14 @@ export const router = createBrowserRouter([
       { path: "/cicli-cremazione", element: <CremationCycleListPage /> },
       { path: "/cicli-cremazione/nuovo", element: <CremationCycleFormPage /> },
       { path: "/cicli-cremazione/:cycleId", element: <CremationCycleDetailPage /> },
+      { path: "/sedi", element: <CompanyLocationListPage /> },
+      { path: "/sedi/nuova", element: <CompanyLocationFormPage /> },
+      { path: "/sedi/:locationId/modifica", element: <CompanyLocationFormPage /> },
+      { path: "/catalogo-urne", element: <UrnListPage /> },
+      { path: "/catalogo-urne/nuova", element: <UrnFormPage /> },
+      { path: "/catalogo-urne/:urnId", element: <UrnDetailPage /> },
+      { path: "/catalogo-urne/:urnId/modifica", element: <UrnFormPage /> },
+      { path: "/prodotti", element: <ArticleListPage /> },
       { path: "/", element: <PracticeListPage /> },
     ],
   },

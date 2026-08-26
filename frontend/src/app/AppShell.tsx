@@ -16,6 +16,9 @@ export function AppShell() {
           <Link to="/cicli-cremazione">Cicli di cremazione</Link>
           <Link to="/clienti">Clienti</Link>
           <Link to="/veterinari">Veterinari</Link>
+          <Link to="/sedi">Sedi</Link>
+          <Link to="/catalogo-urne">Catalogo Urne</Link>
+          <Link to="/prodotti">Prodotti</Link>
         </nav>
         {user && (
           <div className="user-menu">

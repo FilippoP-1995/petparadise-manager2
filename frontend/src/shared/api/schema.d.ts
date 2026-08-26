@@ -788,6 +788,185 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/company-locations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Locations
+         * @description Vista di gestione (include anche le sedi disattivate) - distinta da
+         *     GET /api/references/company-locations, che resta il picker minimale
+         *     (id+name, solo attive) gia' usato da Pratiche/Ritiri/Cicli.
+         */
+        get: operations["list_locations_api_company_locations_get"];
+        put?: never;
+        /** Create Location */
+        post: operations["create_location_api_company_locations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/company-locations/{location_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Location */
+        get: operations["get_location_api_company_locations__location_id__get"];
+        /** Update Location */
+        put: operations["update_location_api_company_locations__location_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/company-locations/{location_id}/disattiva": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Deactivate Location */
+        post: operations["deactivate_location_api_company_locations__location_id__disattiva_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/urns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Urns */
+        get: operations["list_urns_api_urns_get"];
+        put?: never;
+        /** Create Urn */
+        post: operations["create_urn_api_urns_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/urns/{urn_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Urn */
+        get: operations["get_urn_api_urns__urn_id__get"];
+        /** Update Urn */
+        put: operations["update_urn_api_urns__urn_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/urns/{urn_id}/movements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Urn Movements */
+        get: operations["list_urn_movements_api_urns__urn_id__movements_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/urns/{urn_id}/disattiva": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Deactivate Urn */
+        post: operations["deactivate_urn_api_urns__urn_id__disattiva_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/articles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Articles */
+        get: operations["list_articles_api_articles_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/articles/orders/recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Recent Orders */
+        get: operations["list_recent_orders_api_articles_orders_recent_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/articles/{article_id}/ordina": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Order Article */
+        post: operations["order_article_api_articles__article_id__ordina_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -850,6 +1029,38 @@ export interface components {
             id: number;
             /** Sort Order */
             sort_order: number;
+        };
+        /**
+         * ArticleOrderRead
+         * @description Vista arricchita (nome articolo + nome operatore), come la lista
+         *     'Ultime richieste' di V1 (articles_page) - costruita esplicitamente
+         *     dal service, non un semplice from_attributes su ArticleOrder.
+         */
+        ArticleOrderRead: {
+            /** Id */
+            id: number;
+            /** Article Id */
+            article_id: number;
+            /** Article Name */
+            article_name: string;
+            /** Ordered By */
+            ordered_by: number;
+            /** Ordered By Name */
+            ordered_by_name: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** ArticleRead */
+        ArticleRead: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Active */
+            active: boolean;
         };
         /** AssignAnimalRequest */
         AssignAnimalRequest: {
@@ -985,6 +1196,47 @@ export interface components {
          * @enum {string}
          */
         CollaboratorBillingStatus: "da_fatturare" | "fatturato";
+        /** CompanyLocationCreate */
+        CompanyLocationCreate: {
+            /** Name */
+            name: string;
+            /**
+             * Has Cremation Plant
+             * @default false
+             */
+            has_cremation_plant: boolean;
+        };
+        /** CompanyLocationRead */
+        CompanyLocationRead: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Has Cremation Plant */
+            has_cremation_plant: boolean;
+            /** Active */
+            active: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** CompanyLocationUpdate */
+        CompanyLocationUpdate: {
+            /** Name */
+            name: string;
+            /**
+             * Has Cremation Plant
+             * @default false
+             */
+            has_cremation_plant: boolean;
+        };
         /** CorrectionRequest */
         CorrectionRequest: {
             target_status: components["schemas"]["PracticeStatus"];
@@ -1866,6 +2118,124 @@ export interface components {
         TrashRequest: {
             /** Reason */
             reason?: string | null;
+        };
+        /**
+         * UrnCategory
+         * @description FACT V1 (urn_catalog_page/urn_edit_page): un solo catalogo, tre
+         *     categorie condivise (tab Urne/Accessori/Calchi), non tre tabelle
+         *     separate - preservato identico in V2.
+         * @enum {string}
+         */
+        UrnCategory: "Urna" | "Accessorio" | "Calco";
+        /** UrnCreate */
+        UrnCreate: {
+            /** @default Urna */
+            category: components["schemas"]["UrnCategory"];
+            /** Name */
+            name: string;
+            /** Material */
+            material?: string | null;
+            /**
+             * Price Cents
+             * @default 0
+             */
+            price_cents: number;
+            /**
+             * Quantity
+             * @default 0
+             */
+            quantity: number;
+            /**
+             * Low Stock Threshold
+             * @default 3
+             */
+            low_stock_threshold: number;
+            /** Notes */
+            notes?: string | null;
+        };
+        /** UrnMovementRead */
+        UrnMovementRead: {
+            /** Id */
+            id: number;
+            /** Urn Id */
+            urn_id: number;
+            /** Practice Id */
+            practice_id: number | null;
+            /** User Id */
+            user_id: number | null;
+            /** Movement Type */
+            movement_type: string;
+            /** Quantity Delta */
+            quantity_delta: number;
+            /** Old Quantity */
+            old_quantity: number;
+            /** New Quantity */
+            new_quantity: number;
+            /** Note */
+            note: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** UrnRead */
+        UrnRead: {
+            /** Id */
+            id: number;
+            category: components["schemas"]["UrnCategory"];
+            /** Name */
+            name: string;
+            /** Material */
+            material: string | null;
+            /** Internal Code */
+            internal_code: string;
+            /** Price Cents */
+            price_cents: number;
+            /** Quantity */
+            quantity: number;
+            /** Low Stock Threshold */
+            low_stock_threshold: number;
+            /** Notes */
+            notes: string | null;
+            /** Active */
+            active: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** UrnUpdate */
+        UrnUpdate: {
+            /** @default Urna */
+            category: components["schemas"]["UrnCategory"];
+            /** Name */
+            name: string;
+            /** Material */
+            material?: string | null;
+            /**
+             * Price Cents
+             * @default 0
+             */
+            price_cents: number;
+            /**
+             * Quantity
+             * @default 0
+             */
+            quantity: number;
+            /**
+             * Low Stock Threshold
+             * @default 3
+             */
+            low_stock_threshold: number;
+            /** Notes */
+            notes?: string | null;
         };
         /**
          * UserRole
@@ -3970,6 +4340,477 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CremationCycleRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_locations_api_company_locations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyLocationRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_location_api_company_locations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompanyLocationCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyLocationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_location_api_company_locations__location_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                location_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyLocationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_location_api_company_locations__location_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                location_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompanyLocationUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyLocationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    deactivate_location_api_company_locations__location_id__disattiva_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                location_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyLocationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_urns_api_urns_get: {
+        parameters: {
+            query?: {
+                category?: components["schemas"]["UrnCategory"] | null;
+                active_only?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UrnRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_urn_api_urns_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UrnCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UrnRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_urn_api_urns__urn_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                urn_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UrnRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_urn_api_urns__urn_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                urn_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UrnUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UrnRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_urn_movements_api_urns__urn_id__movements_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                urn_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UrnMovementRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    deactivate_urn_api_urns__urn_id__disattiva_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                urn_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UrnRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_articles_api_articles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArticleRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_recent_orders_api_articles_orders_recent_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArticleOrderRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    order_article_api_articles__article_id__ordina_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                article_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArticleOrderRead"];
                 };
             };
             /** @description Validation Error */

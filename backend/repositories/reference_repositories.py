@@ -25,6 +25,15 @@ class CompanyLocationRepository:
         stmt = select(CompanyLocation).where(CompanyLocation.active.is_(True)).order_by(CompanyLocation.name)
         return list((await self._session.execute(stmt)).scalars().all())
 
+    async def list_all(self) -> list[CompanyLocation]:
+        """Vista di gestione (Admin): include anche le sedi disattivate,
+        a differenza di list_active usata dai picker degli altri domini."""
+        stmt = select(CompanyLocation).order_by(CompanyLocation.name)
+        return list((await self._session.execute(stmt)).scalars().all())
+
+    def add(self, location: CompanyLocation) -> None:
+        self._session.add(location)
+
 
 class CollaboratorRepository:
     def __init__(self, session: AsyncSession):

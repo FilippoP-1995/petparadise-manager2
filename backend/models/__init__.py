@@ -1,4 +1,5 @@
 from models.animal import Animal
+from models.article import Article, ArticleOrder
 from models.audit_log import AuditLog
 from models.calendar_event import CalendarEvent, CalendarEventType, DeliveryType, PickupStatus
 from models.calendar_zone import CalendarZone
@@ -18,12 +19,14 @@ from models.practice import (
 )
 from models.session import Session
 from models.tag import PracticeTag, Tag
-from models.urn import Urn
+from models.urn import Urn, UrnCategory, UrnCodeCounter, UrnMovement
 from models.user import User
 from models.veterinarian import Veterinarian, VeterinarianHours
 
 __all__ = [
     "Animal",
+    "Article",
+    "ArticleOrder",
     "AuditLog",
     "CalendarEvent",
     "CalendarEventType",
@@ -47,6 +50,9 @@ __all__ = [
     "Session",
     "Tag",
     "Urn",
+    "UrnCategory",
+    "UrnCodeCounter",
+    "UrnMovement",
     "User",
     "Veterinarian",
     "VeterinarianHours",
