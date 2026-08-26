@@ -4,3 +4,17 @@ __pycache__/
 data/
 *.backup-*.db
 balance_legacy_repair-report-*.json
+
+# V2 backend
+backend/__pycache__/
+backend/**/__pycache__/
+backend/.venv/
+backend/.env
+backend/.pytest_cache/
+backend/uvicorn.log
+
+# V2 frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
