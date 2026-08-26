@@ -1204,6 +1204,36 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn("CR-LEGACYFATT",page)
         self.assertNotIn("CR-MOVFATT",page)
 
+    def test_invoices_page_da_fatturare_lists_all_uninvoiced_practices_except_zero_amount_vet_vouchers(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            # Nessuna fattura in nessuna delle due fonti -> deve comparire, anche senza make_invoice='Si'
+            no_flag_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,owner_first_name,animal_name)
+                                VALUES(?,?,?,?,?,?,?,?,?)""",("CR-DAFATT1","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Rosa","Micio")).lastrowid
+            # Fattura solo su movement_invoices (legacy vuoto) -> NON deve comparire
+            movement_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,owner_first_name,animal_name)
+                                VALUES(?,?,?,?,?,?,?,?,?)""",("CR-DAFATT2","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Sara","Fido")).lastrowid
+            conn.execute("INSERT INTO movement_invoices(practice_id,invoice_number,invoice_date,invoice_total,payment_method,payment_channel,created_at,created_by) VALUES(?,?,?,?,?,?,?,?)",
+                         (movement_pid,"FT-M2","2026-07-06","50.00","Pos","W",stamp,admin["id"]))
+            # Veterinario + buono usato + importo zero -> escluso esplicitamente
+            vet_zero_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,use_voucher,destination_branch,status,created_at,updated_at,created_by,owner_first_name,animal_name)
+                                VALUES(?,?,?,?,?,?,?,?,?,?)""",("CR-DAFATT3","Veterinario","Si","Livorno","Ritirato",stamp,stamp,admin["id"],"Tea","Bobby")).lastrowid
+            # Veterinario + buono usato ma importo NON zero -> deve comunque comparire
+            vet_paid_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,use_voucher,destination_branch,status,created_at,updated_at,created_by,owner_first_name,animal_name,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-DAFATT4","Veterinario","Si","Livorno","Ritirato",stamp,stamp,admin["id"],"Ugo","Rex","80","80")).lastrowid
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
+        self.handler.path="/fatture"
+        self.handler.invoices_page(admin)
+        page=rendered[-1]
+        reminders_section=page.split('Da fatturare</h2>')[1]
+        self.assertIn(f'/pratiche/{no_flag_pid}',reminders_section)
+        self.assertNotIn(f'/pratiche/{movement_pid}',reminders_section)
+        self.assertNotIn(f'/pratiche/{vet_zero_pid}',reminders_section)
+        self.assertIn(f'/pratiche/{vet_paid_pid}',reminders_section)
+        # L'elenco deve essere reso come voci di blocco (verticali), non un unico
+        # paragrafo di link inline concatenati.
+        self.assertIn('<a class="event" href="/pratiche/', reminders_section)
+
     def test_archive_circuito_filter_shows_only_matching_practices(self):
         # richiesta esplicita dell'utente: filtro circuito W/D nella
         # ricerca avanzata di Archivio, stessa regola gia' usata da
