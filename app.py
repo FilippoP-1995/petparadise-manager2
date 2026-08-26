@@ -1395,7 +1395,7 @@ body{background:radial-gradient(circle at top left,#fff8f3 0,#f4f1ed 34%,#ece5dd
 .tablebox.archive-tablebox{max-height:none;touch-action:auto}
 .archive-row-highlight{box-shadow:0 0 0 2px var(--brand) inset,0 0 14px 2px #a7404559;transition:box-shadow 2.2s ease}
 .archive-row-highlight.archive-row-fade{box-shadow:none}
-#archiveList{visibility:hidden}
+#archiveList{visibility:hidden}#fattureLists{visibility:hidden}
 .hidden{display:none!important}
 .section.collapsible>h2{cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;gap:10px}.section.collapsible>h2::after,.section.collapsible>.section-heading-row>h2::after{content:'▾';font-size:13px;color:var(--muted);transition:transform .2s ease;flex:0 0 auto}.section.collapsible>.section-heading-row{cursor:pointer;user-select:none}.section.collapsible.collapsed>h2,.section.collapsible.collapsed>.section-heading-row{margin-bottom:0}.section.collapsible.collapsed>h2::after,.section.collapsible.collapsed>.section-heading-row>h2::after{transform:rotate(-90deg)}.section.collapsible.collapsed>*:not(h2):not(.section-heading-row){display:none}
 .practice-code-cr{color:#1e88e5}.practice-code-sm{color:#111}
@@ -3775,7 +3775,6 @@ const PPM_LIST_PAGES={
   '/veterinari':{detail:/^\/veterinari\/\d+/},
   '/catalogo-urne':{detail:/^\/catalogo-urne\/\d+/,extraInputs:['urnCatalogSearch']},
   '/ordini/storico':{detail:/^\/ordini\/\d+/},
-  '/fatture':{detail:/^\/pratiche\/\d+/},
 };
 function ppmListScrollTarget(cfg){
   if(cfg.calendar){
@@ -13779,32 +13778,55 @@ class App(BaseHTTPRequestHandler):
         tipo_options=''.join(f'<option value="{value}"{" selected" if tipo==value else ""}>{label}</option>' for value,label in (("","Entrambe"),("fatturate","Fatturate"),("da_fatturare","Da fatturare")))
         fatturate_section=f'''<section class="tablebox"><h2>Fatture emesse</h2><table><thead><tr><th>Fattura</th><th>Data</th><th>Pratica</th><th>Cliente</th><th>Animale</th><th>Circuito</th><th>Totale</th><th></th></tr></thead><tbody>{''.join(table) or empty}</tbody></table></section>''' if show_fatturate else ''
         da_fatturare_section=f'''<section class="tablebox" style="margin-top:20px"><h2>Da fatturare</h2><table><thead><tr><th>Pratica</th><th>Creazione</th><th>Cliente</th><th>Animale</th><th>Totale</th><th></th></tr></thead><tbody>{''.join(reminder_table) or reminder_empty}</tbody></table></section>''' if show_da_fatturare else ''
-        # Il ripristino dello scroll usa lo stesso meccanismo generico gia'
-        # collaudato per Calendario/Clienti/Veterinari/Catalogo urne/Ordini
-        # (PPM_LIST_PAGES + setupListStateRestore, salva la posizione in
-        # continuo durante lo scroll ed e' quindi molto piu' affidabile di
-        # un salvataggio singolo al click) - "/fatture" e' stata aggiunta a
-        # quella lista. Qui resta solo la riselezione della riga aperta
-        # l'ultima volta, che quel meccanismo generico non copre.
-        row_reselect_script='''<script>(function(){
-  var ID_KEY='ppmFattureLastId';
-  document.addEventListener('click',function(e){
-    var row=e.target.closest('.tablebox .practice-row-link');
-    if(!row)return;
-    var pid=row.getAttribute('data-practice-id');
-    if(!pid)return;
-    try{sessionStorage.setItem(ID_KEY,pid);}catch(err){}
-  });
-  document.addEventListener('DOMContentLoaded',function(){
-    var savedId;
-    try{savedId=sessionStorage.getItem(ID_KEY);}catch(err){savedId=null;}
-    if(!savedId)return;
-    try{sessionStorage.removeItem(ID_KEY);}catch(err){}
-    var row=document.querySelector('.tablebox [data-practice-id="'+savedId+'"]');
-    if(row)row.classList.add('row-selected');
-  });
+        # Stesso pattern gia' collaudato in Archivio (archive_restore_js
+        # sopra, in archive_page): la lista parte nascosta via CSS
+        # (#fattureLists{{visibility:hidden}}) e viene rivelata SOLO dopo che
+        # lo scroll e' stato eventualmente riposizionato - senza questo, il
+        # browser dipinge comunque la pagina in cima per un istante prima
+        # che il JS scrolli, ed e' quel lampo a dare la sensazione di
+        # "refresh" segnalata, anche quando il ripristino poi funziona.
+        # Rilevare il ritorno da una pratica via document.referrer (non un
+        # semplice flag one-shot) evita falsi ripristini se si arriva sulla
+        # pagina da un altro punto dell'app.
+        fatture_restore_js='''<script>(function(){
+  var userKey='ppm_fatture_state:'''+str(user["id"])+'''';
+  var refPath='';
+  try{ refPath=document.referrer?new URL(document.referrer).pathname:''; }catch(e){}
+  var navEntry=(performance.getEntriesByType&&performance.getEntriesByType('navigation')[0])||null;
+  var isBack=(navEntry&&navEntry.type==='back_forward')||/^\\/pratiche\\/\\d+/.test(refPath);
+  var wrap=document.getElementById('fattureLists');
+  function reveal(){ if(wrap) wrap.style.visibility='visible'; }
+  if(isBack){
+    var state=null;
+    try{ state=JSON.parse(sessionStorage.getItem(userKey)||'null'); }catch(e){}
+    if(state && typeof state.search==='string' && state.search!==location.search){
+      location.replace(location.pathname+state.search);
+      return;
+    }
+    if(state && typeof state.scrollY==='number'){
+      window.scrollTo(0,state.scrollY);
+    }
+    var match=refPath.match(/^\\/pratiche\\/(\\d+)/);
+    if(match){
+      var row=document.querySelector('[data-practice-id="'+match[1]+'"]');
+      if(row)row.classList.add('row-selected');
+    }
+  }
+  reveal();
+  function saveNow(){
+    try{ sessionStorage.setItem(userKey,JSON.stringify({search:location.search,scrollY:window.scrollY||document.documentElement.scrollTop||0})); }catch(e){}
+  }
+  var saveTimer=null;
+  function save(){ clearTimeout(saveTimer); saveTimer=setTimeout(saveNow,200); }
+  window.addEventListener('scroll',save,{passive:true});
+  // Il salvataggio su scroll e' debounced (200ms) per non scrivere ad ogni
+  // frame - ma un click su una riga puo' arrivare prima che il debounce
+  // scatti, perdendo la posizione appena raggiunta. Qui si scrive subito,
+  // in modo sincrono, prima che la navigazione parta.
+  document.addEventListener('click',function(e){ if(e.target.closest('.tablebox .practice-row-link'))saveNow(); });
+  save();
 })();</script>'''
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Fatture</h1><p class="sub">Ogni fattura identifica e apre la pratica collegata. Una pratica con acconto e saldo fatturati separatamente compare come due righe distinte.</p></div></div><form class="section" method="get"><div class="fields"><div class="field full"><label>Numero fattura o pratica</label><input name="q" value="{esc(term)}" placeholder="Cerca per fattura, pratica, cliente o animale"></div><div class="field"><label>Tipo</label><select name="tipo">{tipo_options}</select></div><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div></div><button class="btn" style="margin-top:12px">Cerca</button></form>{fatturate_section}{da_fatturare_section}</main>{row_reselect_script}'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Fatture</h1><p class="sub">Ogni fattura identifica e apre la pratica collegata. Una pratica con acconto e saldo fatturati separatamente compare come due righe distinte.</p></div></div><form class="section" method="get"><div class="fields"><div class="field full"><label>Numero fattura o pratica</label><input name="q" value="{esc(term)}" placeholder="Cerca per fattura, pratica, cliente o animale"></div><div class="field"><label>Tipo</label><select name="tipo">{tipo_options}</select></div><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div></div><button class="btn" style="margin-top:12px">Cerca</button></form><div id="fattureLists">{fatturate_section}{da_fatturare_section}</div></main>{fatture_restore_js}'''
         self.send_html(layout("Fatture",body,user))
 
     def urn_catalog_page(self,user):

@@ -1286,16 +1286,21 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path="/fatture"
         self.handler.invoices_page(admin)
         page=rendered[-1]
-        own_script=page.split('ppmFattureLastId')[1]
-        self.assertIn("addEventListener('click'",own_script)
+        own_script=page.split('ppm_fatture_state:')[1]
+        # Stesso pattern gia' collaudato in Archivio: rileva il ritorno da
+        # una pratica via document.referrer (non un flag one-shot), scrive
+        # subito (non solo su debounce) al click di una riga, e nasconde la
+        # lista via CSS finche' lo scroll non e' stato riposizionato - senza
+        # questo la pagina si vede comunque "saltare" dalla cima, che e'
+        # esattamente la sensazione di refresh segnalata.
+        self.assertIn("document.referrer",own_script)
+        self.assertIn("saveNow",own_script)
         self.assertIn("classList.add('row-selected')",own_script)
-        # Ogni riga deve portare l'id pratica, necessario per poterla
-        # ri-evidenziare (row-selected) al ritorno dalla pratica.
+        self.assertIn("fattureLists",page)
+        self.assertIn('id="fattureLists"',page)
+        # Ogni riga deve portare l'id pratica, necessario per ritrovarla al
+        # ritorno dalla pratica.
         self.assertIn(f'data-practice-id="{pid}"',page)
-        # Il ripristino dello scroll usa il meccanismo generico condiviso
-        # (PPM_LIST_PAGES), non uno script dedicato - "/fatture" deve essere
-        # registrata li' con il pattern delle pagine pratica come "detail".
-        self.assertIn("'/fatture':{detail:/^\\/pratiche\\/\\d+/}",page)
 
     def test_invoices_page_da_fatturare_respects_date_and_text_filters(self):
         with app.db() as conn:
