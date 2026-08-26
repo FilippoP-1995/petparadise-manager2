@@ -37,7 +37,7 @@
 |---|---|---|---|---|---|
 | `[creazione]` → `ritirato` | ✅ **DECISIONE AZIENDALE CHIUSA** (aggiornamento doc 15 — vedi dettaglio sotto) — unico stato di ingresso possibile, per entrambi i percorsi di creazione | Operatore/Admin (chiunque crei una pratica) | Nessuno | — | `audit_log action='created'` |
 | `ritirato` → `in_programma` | ✅ **DECISIONE TECNICA** — coerente con l'ordine dichiarato in `STATES` e col fatto che "in programma" precede la cremazione | Operatore/Admin | Nessuno | — | `audit_log action='state_changed'` |
-| `in_programma` → `cremato` | ✅ **DECISIONE TECNICA** — completamento ciclo di cremazione (decisione utente già confermata in doc 06) | Sistema (side-effect automatico del completamento ciclo) **o** Operatore/Admin manualmente | Ciclo di cremazione collegato in stato `completato`, **oppure** azione manuale esplicita | — | `audit_log`, azione distinta se manuale vs automatica |
+| `in_programma` → `cremato` | ✅ **DECISIONE TECNICA** — completamento ciclo di cremazione (decisione utente già confermata in doc 06). Granularità: dopo il Model B (doc 06 Addendum Q), l'assegnazione al ciclo è per **animale**, non per pratica — per una pratica multi-animale questo side-effect scatta **solo quando TUTTI i suoi animali risultano in cicli `completato`**. Questa condizione è una **DECISIONE TECNICA DERIVATA** dal Model B, non un FACT V1 (V1 non tracciava correttamente il completamento parziale — vedi difetto `animal2_*`, doc 06 Addendum Q) | Sistema (side-effect automatico del completamento ciclo) **o** Operatore/Admin manualmente | Ciclo di cremazione collegato in stato `completato` **per tutti gli animali della pratica**, **oppure** azione manuale esplicita | — | `audit_log`, azione distinta se manuale vs automatica |
 | `cremato` → `da_consegnare` | ✅ **DECISIONE TECNICA** — passo operativo separato, come confermato da te in doc 06 | Operatore/Admin (azione esplicita, non automatica) | Stato corrente = `cremato` | — | `audit_log` |
 | `da_consegnare` → `consegnato` | ✅ FACT preservato | Operatore/Admin | Stato corrente = `da_consegnare` (proposta, vedi sotto) | Programma WhatsApp ringraziamento 48h; notifica push `practice_delivered` | `audit_log` |
 | `consegnato` → `smaltito` | ✅ FACT preservato, con vincolo esistente | Operatore/Admin | `service_type = 'Cremazione collettiva'` | — | `audit_log` |
@@ -153,8 +153,8 @@ L'utente ha chiuso esplicitamente il punto lasciato aperto: **entrambi i percors
 |---|---|---|---|
 | `pianificato` → `in_attesa` | ✅ DECISIONE TECNICA (FACT preservato) | Automatico: primo animale assegnato | — |
 | `in_attesa` → `pianificato` | ✅ DECISIONE TECNICA (FACT preservato) | Automatico: ultimo animale rimosso | — |
-| `in_attesa` → `completato` | ✅ DECISIONE TECNICA (FACT preservato) | Azione esplicita operatore/Admin | Pratiche collegate: `in_programma`→`cremato` (vedi §1) |
-| `completato` → `in_attesa` (ripristino) | ✅ DECISIONE TECNICA (FACT preservato, `revert_complete`) | Azione esplicita | Pratiche collegate tornano allo stato precedente noto |
+| `in_attesa` → `completato` | ✅ DECISIONE TECNICA (transizione del ciclo: FACT preservato) | Azione esplicita operatore/Admin | Pratiche collegate: `in_programma`→`cremato` **solo per le pratiche i cui animali sono TUTTI ora in cicli `completato`** (vedi §1 — condizione multi-animale: DECISIONE TECNICA DERIVATA dal Model B, non FACT V1) |
+| `completato` → `in_attesa` (ripristino) | ✅ DECISIONE TECNICA (transizione del ciclo: FACT preservato, `revert_complete`) | Azione esplicita | Pratiche collegate tornano allo stato precedente noto **solo se erano passate a `cremato` per effetto di questo ciclo** |
 | **Eliminazione del ciclo mentre `completato`** | 🔴 **CORRETTO RISPETTO A V1** — proposta: **vietata** per costruzione in V2 (un ciclo `completato` con pratiche collegate cremate non deve poter sparire lasciando pratiche "cremate senza ciclo") | — | — |
 
 ### Punti tecnici residui (non bloccanti)

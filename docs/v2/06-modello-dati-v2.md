@@ -136,6 +136,7 @@ animals(
   estimated_weight_grams INTEGER,   -- niente più TEXT libero per il peso
   microchip TEXT,
   sort_order SMALLINT NOT NULL DEFAULT 0,
+  cremation_cycle_id BIGINT REFERENCES cremation_cycles(id) ON DELETE SET NULL,  -- AGGIUNTO dopo il gate Animali↔Cicli, vedi Addendum Q
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 )
 ```
@@ -166,7 +167,7 @@ practices(
   collaborator_id BIGINT REFERENCES collaborators(id),
   veterinarian_id BIGINT REFERENCES veterinarians(id),
   origin_veterinarian_id BIGINT REFERENCES veterinarians(id),
-  cremation_cycle_id BIGINT REFERENCES cremation_cycles(id) ON DELETE SET NULL,
+  -- cremation_cycle_id RIMOSSO dopo il gate Animali↔Cicli, vedi Addendum Q — era un vincolo cross-domain temporaneo, mai usato da alcuna funzione V2
   pickup_date DATE,
   pickup_time TIME,
   pickup_address TEXT,
@@ -728,3 +729,63 @@ calendar_events(
 ## Aggiornamento — decisioni aziendali chiuse dopo l'Architecture Gate (doc 15)
 
 La sezione **C** sopra è stata riscritta integralmente: chiude la decisione aziendale sulla logica di provenienza/sede, sostituendo il precedente `origin_type` insufficiente con un modello esplicito di logistica multi-sede (affido, destinazione, cremazione, riconsegna). Aggiunta la relazione esplicita Ritiro → Pratica (`originating_pickup_event_id`). Le due voci di retention normativa (DDT/trasporto in Addendum B, disposal_batches in Addendum J) sono state riformulate come **VERIFICA NORMATIVA PENDENTE** con conservazione indefinita dichiarata esplicitamente come scelta tecnica prudenziale, non come obbligo normativo — su richiesta esplicita dell'utente, per non far passare una supposizione come un fatto accertato. Dettaglio completo delle decisioni e del loro stato in `docs/v2/15-decisioni-aziendali-aperte.md`.
+
+---
+
+## Q. Relazione Animale ↔ Ciclo di cremazione — granularità animale (Model B)
+
+**Contesto**: al gate finale prima dell'implementazione del dominio Cicli di
+Cremazione, è stato verificato che lo schema originale sopra (§ PRATICA —
+`practices.cremation_cycle_id`) non rappresentava correttamente lo scenario
+reale di una pratica con più animali i cui cicli vengono completati in
+momenti diversi (es. pratica con 3 animali, 2 assegnati e cremati in un
+ciclo, il terzo assegnato a un ciclo successivo). Il campo era stato
+introdotto come **vincolo cross-domain temporaneo** (esplicitamente
+segnalato come tale, FK mai aggiunta a livello DB), in attesa di questa
+verifica.
+
+**Decisione (Model B, confermata dall'utente)**:
+- `animals.cremation_cycle_id` (nullable, FK reale `ON DELETE SET NULL`)
+  diventa l'**unica fonte di verità** per l'assegnazione di un animale a un
+  ciclo di cremazione — sostituisce interamente `practices.cremation_cycle_id`,
+  che viene **rimosso**.
+- Un animale può essere riassegnato a un ciclo diverso **solo prima** che il
+  ciclo corrente venga completato. Una volta che il ciclo è `completato`, il
+  collegamento è **storico/immutabile** — modificabile solo tramite il
+  percorso esplicito di correzione (ripristino del ciclo), mai per
+  riassegnazione diretta. Motivo: un animale viene fisicamente cremato una
+  sola volta — "più cicli nel tempo" descrive solo la possibilità di
+  riassegnazione **prima** del completamento, non una relazione molti-a-molti
+  reale nel tempo.
+- Limite di 2 animali per ciclo (Addendum già chiuso, doc 15): applicato
+  contando `animals.cremation_cycle_id`, mai `practices` — corregge così un
+  difetto reale di V1 dove un secondo animale di una pratica "Cremazione
+  singola" (`animal2_*`) risultava invisibile al sistema di conteggio cicli
+  (verificato nel codice V1 durante questo stesso gate).
+
+**Classificazione esplicita (su richiesta dell'utente, per non presentare
+retroattivamente una determinazione tecnica come comportamento V1)**:
+- La scelta stessa del modello (FK sull'animale, non sulla pratica) è una
+  **DECISIONE AZIENDALE** — confermata esplicitamente dall'utente dopo che
+  il gate ha segnalato l'ambiguità, non dedotta automaticamente dal codice
+  V1 (che tracciava la cremazione solo a livello di pratica, in modo
+  incompleto — vedi difetto `animal2_*` sopra).
+- La regola conseguente **"una pratica multi-animale passa allo stato
+  `cremato` solo quando TUTTI i suoi animali risultano in cicli
+  `completato`"** (implementata in
+  `services/cremation_cycle_service.py::_all_animals_of_practice_are_cremated`)
+  è una **DECISIONE TECNICA DERIVATA** da questo modello — necessaria per
+  renderlo coerente, ma **non un FACT verificato nel codice V1**: V1 non
+  aveva una nozione di completamento "parziale" di una pratica multi-animale
+  (il bug `animal2_*` sopra significa che V1 non tracciava correttamente
+  nemmeno il caso semplice). Le righe corrispondenti in
+  `docs/v2/14-macchine-stati-transizioni.md` (§1 e §4) sono state
+  aggiornate per riflettere questa classificazione, rimuovendo l'etichetta
+  "FACT preservato" dove non pertinente a questo dettaglio.
+
+**Verifica end-to-end eseguita** (dal vivo, in browser, oltre ai test
+automatici dedicati): pratica con 3 animali, 2 assegnati a un primo ciclo e
+completati, la pratica resta `in_programma`; il terzo animale assegnato a
+un secondo ciclo e completato, solo a quel punto la pratica passa a
+`cremato`. Ripristino del secondo ciclo verificato riportare la pratica a
+`in_programma`.
