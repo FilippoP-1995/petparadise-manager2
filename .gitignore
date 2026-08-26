@@ -17,4 +17,5 @@ backend/uvicorn.log
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/tsconfig.tsbuildinfo
 

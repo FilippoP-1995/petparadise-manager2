@@ -1,6 +1,6 @@
 import { Link, Outlet } from "react-router-dom";
 
-import { useAuth } from "@/features/auth/AuthContext";
+import { useAuth } from "@/features/auth/useAuth";
 
 export function AppShell() {
   const { user, logout } = useAuth();

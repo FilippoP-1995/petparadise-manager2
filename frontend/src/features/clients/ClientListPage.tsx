@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 
-import { useAuth } from "@/features/auth/AuthContext";
+import { useAuth } from "@/features/auth/useAuth";
 import { useListQueryParams } from "@/shared/useListQueryParams";
 
 import { useClients, useDeactivateClient } from "./api";
