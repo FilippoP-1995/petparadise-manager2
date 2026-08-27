@@ -138,8 +138,10 @@ async def override_total(
     practice_id: int,
     payload: OverrideTotalRequest,
     db: AsyncSession = Depends(get_session),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_role(UserRole.admin)),
 ):
+    """Release hardening: correzione manuale del totale - solo Admin, stessa
+    barriera di correct-state (decisione esplicita del gate di rilascio)."""
     try:
         practice = await practice_service.set_total_override(db, practice_id, payload, actor_user_id=user.id)
     except NotFoundError as exc:
@@ -149,8 +151,10 @@ async def override_total(
 
 @router.post("/{practice_id}/clear-total-override", response_model=PracticeRead)
 async def clear_total_override(
-    practice_id: int, db: AsyncSession = Depends(get_session), user: User = Depends(get_current_user)
+    practice_id: int, db: AsyncSession = Depends(get_session), user: User = Depends(require_role(UserRole.admin))
 ):
+    """Release hardening: ripristino del calcolo automatico - solo Admin,
+    stessa barriera dell'override che annulla."""
     try:
         practice = await practice_service.clear_total_override(db, practice_id, actor_user_id=user.id)
     except NotFoundError as exc:

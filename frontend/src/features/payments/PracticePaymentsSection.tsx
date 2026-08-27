@@ -8,6 +8,7 @@ import {
   type Practice,
 } from "@/features/practices/api";
 import { useInvoicesForPractice, useLinkPaymentToInvoice } from "@/features/invoices/api";
+import { useAuth } from "@/features/auth/useAuth";
 import { euroStringToCents, formatMoney } from "@/shared/money";
 
 import { useDeletePayment, usePaymentsForPractice, usePracticeReconciliation, useRegisterPayment, useReversePayment } from "./api";
@@ -126,6 +127,8 @@ export function PracticePaymentsSection({ practice }: { practice: Practice }) {
   const [overrideAmount, setOverrideAmount] = useState("");
   const [overrideReason, setOverrideReason] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
 
   const hasOverride = practice.computed_total_override_cents != null;
 
@@ -218,17 +221,19 @@ export function PracticePaymentsSection({ practice }: { practice: Practice }) {
             Totale corretto manualmente a {formatMoney(practice.computed_total_override_cents ?? 0)}
             {practice.computed_total_override_reason ? ` - ${practice.computed_total_override_reason}` : ""}. Il
             totale preventivo ({formatMoney(practice.line_items_total_cents)}) resta calcolato a fianco, mai nascosto.
-            <button
-              type="button"
-              className="btn-ghost"
-              style={{ marginLeft: 8 }}
-              disabled={clearOverride.isPending}
-              onClick={() => clearOverride.mutate(practice.id)}
-            >
-              Ripristina calcolo automatico
-            </button>
+            {isAdmin && (
+              <button
+                type="button"
+                className="btn-ghost"
+                style={{ marginLeft: 8 }}
+                disabled={clearOverride.isPending}
+                onClick={() => clearOverride.mutate(practice.id)}
+              >
+                Ripristina calcolo automatico
+              </button>
+            )}
           </p>
-        ) : (
+        ) : isAdmin ? (
           <form className="field-row" onSubmit={handleSetOverride}>
             <input inputMode="decimal" placeholder="Importo manuale €" value={overrideAmount} onChange={(e) => setOverrideAmount(e.target.value)} />
             <input placeholder="Motivo" value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} />
@@ -236,6 +241,8 @@ export function PracticePaymentsSection({ practice }: { practice: Practice }) {
               Correggi totale manualmente
             </button>
           </form>
+        ) : (
+          <p className="sub">Solo gli amministratori possono correggere manualmente il totale di una pratica.</p>
         )}
 
         {practice.collaborator_id != null && (
@@ -304,9 +311,11 @@ export function PracticePaymentsSection({ practice }: { practice: Practice }) {
                         <button className="btn-ghost" onClick={() => handleReverse(payment.id)}>
                           Storna
                         </button>
-                        <button className="btn-ghost" onClick={() => handleDelete(payment.id)}>
-                          Elimina
-                        </button>
+                        {isAdmin && (
+                          <button className="btn-ghost" onClick={() => handleDelete(payment.id)}>
+                            Elimina
+                          </button>
+                        )}
                         <LinkToInvoiceControl paymentId={payment.id} invoices={invoices ?? []} />
                       </>
                     )}

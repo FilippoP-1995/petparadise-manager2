@@ -143,3 +143,91 @@ async def test_list_payments_for_practice(authed_client: AsyncClient, sample_cli
 async def test_get_unknown_payment_returns_404(authed_client: AsyncClient):
     response = await authed_client.get("/api/payments/999999")
     assert response.status_code == 404
+
+
+async def test_operator_cannot_delete_payment(
+    client: AsyncClient, operator_user: User, admin_user: User, sample_client, sample_location
+):
+    """Release hardening: cancellazione fisica di un pagamento - solo Admin."""
+
+    async def _as_admin():
+        return admin_user
+
+    app.dependency_overrides[get_current_user] = _as_admin
+    practice = await _create_practice(client, sample_client, sample_location)
+    payment = (await client.post("/api/payments", json=_payment_payload(practice["id"]))).json()
+
+    async def _as_operator():
+        return operator_user
+
+    app.dependency_overrides[get_current_user] = _as_operator
+    try:
+        response = await client.post(
+            f"/api/payments/{payment['id']}/elimina", json={"deletion_kind": "errore_inserimento", "reason": "test"}
+        )
+        assert response.status_code == 403
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+async def test_admin_can_delete_payment(client: AsyncClient, admin_user: User, sample_client, sample_location):
+    async def _as_admin():
+        return admin_user
+
+    app.dependency_overrides[get_current_user] = _as_admin
+    try:
+        practice = await _create_practice(client, sample_client, sample_location)
+        payment = (await client.post("/api/payments", json=_payment_payload(practice["id"]))).json()
+
+        response = await client.post(
+            f"/api/payments/{payment['id']}/elimina", json={"deletion_kind": "errore_inserimento", "reason": "test"}
+        )
+        assert response.status_code == 200
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+async def test_operator_cannot_restore_payment_deletion(
+    client: AsyncClient, operator_user: User, admin_user: User, sample_client, sample_location
+):
+    """Release hardening: ripristino di un pagamento cancellato - solo Admin."""
+
+    async def _as_admin():
+        return admin_user
+
+    app.dependency_overrides[get_current_user] = _as_admin
+    practice = await _create_practice(client, sample_client, sample_location)
+    payment = (await client.post("/api/payments", json=_payment_payload(practice["id"]))).json()
+    deletion = (
+        await client.post(f"/api/payments/{payment['id']}/elimina", json={"deletion_kind": "errore_inserimento", "reason": "test"})
+    ).json()
+
+    async def _as_operator():
+        return operator_user
+
+    app.dependency_overrides[get_current_user] = _as_operator
+    try:
+        response = await client.post(f"/api/payments/deletions/{deletion['id']}/ripristina")
+        assert response.status_code == 403
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+async def test_admin_can_restore_payment_deletion(client: AsyncClient, admin_user: User, sample_client, sample_location):
+    async def _as_admin():
+        return admin_user
+
+    app.dependency_overrides[get_current_user] = _as_admin
+    try:
+        practice = await _create_practice(client, sample_client, sample_location)
+        payment = (await client.post("/api/payments", json=_payment_payload(practice["id"]))).json()
+        deletion = (
+            await client.post(
+                f"/api/payments/{payment['id']}/elimina", json={"deletion_kind": "errore_inserimento", "reason": "test"}
+            )
+        ).json()
+
+        response = await client.post(f"/api/payments/deletions/{deletion['id']}/ripristina")
+        assert response.status_code == 200
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)

@@ -172,3 +172,83 @@ async def test_list_practices_pagination(authed_client: AsyncClient, sample_clie
     ids_page1 = {p["id"] for p in page1.json()}
     ids_page2 = {p["id"] for p in page2.json()}
     assert ids_page1.isdisjoint(ids_page2)
+
+
+async def test_operator_cannot_override_total(
+    client: AsyncClient, operator_user: User, admin_user: User, sample_client, sample_location
+):
+    """Release hardening: correzione manuale del totale - solo Admin."""
+
+    async def _as_admin():
+        return admin_user
+
+    app.dependency_overrides[get_current_user] = _as_admin
+    practice = (await client.post("/api/practices", json=_payload(sample_client, sample_location))).json()
+
+    async def _as_operator():
+        return operator_user
+
+    app.dependency_overrides[get_current_user] = _as_operator
+    try:
+        response = await client.post(
+            f"/api/practices/{practice['id']}/override-total", json={"amount_cents": 50000, "reason": "test"}
+        )
+        assert response.status_code == 403
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+async def test_admin_can_override_total(client: AsyncClient, admin_user: User, sample_client, sample_location):
+    async def _as_admin():
+        return admin_user
+
+    app.dependency_overrides[get_current_user] = _as_admin
+    try:
+        practice = (await client.post("/api/practices", json=_payload(sample_client, sample_location))).json()
+
+        response = await client.post(
+            f"/api/practices/{practice['id']}/override-total", json={"amount_cents": 50000, "reason": "test"}
+        )
+        assert response.status_code == 200
+        assert response.json()["computed_total_override_cents"] == 50000
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+async def test_operator_cannot_clear_total_override(
+    client: AsyncClient, operator_user: User, admin_user: User, sample_client, sample_location
+):
+    """Release hardening: ripristino del calcolo automatico - solo Admin."""
+
+    async def _as_admin():
+        return admin_user
+
+    app.dependency_overrides[get_current_user] = _as_admin
+    practice = (await client.post("/api/practices", json=_payload(sample_client, sample_location))).json()
+    await client.post(f"/api/practices/{practice['id']}/override-total", json={"amount_cents": 50000, "reason": "test"})
+
+    async def _as_operator():
+        return operator_user
+
+    app.dependency_overrides[get_current_user] = _as_operator
+    try:
+        response = await client.post(f"/api/practices/{practice['id']}/clear-total-override")
+        assert response.status_code == 403
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+async def test_admin_can_clear_total_override(client: AsyncClient, admin_user: User, sample_client, sample_location):
+    async def _as_admin():
+        return admin_user
+
+    app.dependency_overrides[get_current_user] = _as_admin
+    try:
+        practice = (await client.post("/api/practices", json=_payload(sample_client, sample_location))).json()
+        await client.post(f"/api/practices/{practice['id']}/override-total", json={"amount_cents": 50000, "reason": "test"})
+
+        response = await client.post(f"/api/practices/{practice['id']}/clear-total-override")
+        assert response.status_code == 200
+        assert response.json()["computed_total_override_cents"] is None
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)

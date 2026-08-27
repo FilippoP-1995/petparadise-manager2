@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.dependencies import get_current_user
+from api.dependencies import get_current_user, require_role
 from database import get_session
 from domain.errors import NotFoundError, ValidationDomainError
-from models.user import User
+from models.user import User, UserRole
 from repositories.payment_repository import PaymentDeletionRepository, PaymentRepository
 from schemas.payment import (
     DeletePaymentRequest,
@@ -74,8 +74,14 @@ async def reverse_payment(
 
 @router.post("/{payment_id}/elimina", response_model=PaymentDeletionRead)
 async def delete_payment(
-    payment_id: int, payload: DeletePaymentRequest, db: AsyncSession = Depends(get_session), user: User = Depends(get_current_user)
+    payment_id: int,
+    payload: DeletePaymentRequest,
+    db: AsyncSession = Depends(get_session),
+    user: User = Depends(require_role(UserRole.admin)),
 ):
+    """Release hardening: cancellazione fisica di un pagamento - solo Admin
+    (stessa barriera di correct_invoice_total/correct_practice_state,
+    decisione esplicita del gate di rilascio)."""
     try:
         return await payment_service.delete_payment(
             db, payment_id, payload.deletion_kind, payload.reason, actor_user_id=user.id
@@ -93,7 +99,11 @@ async def get_payment_deletion(deletion_id: int, db: AsyncSession = Depends(get_
 
 
 @router.post("/deletions/{deletion_id}/ripristina", response_model=PaymentRead)
-async def restore_payment_deletion(deletion_id: int, db: AsyncSession = Depends(get_session), user: User = Depends(get_current_user)):
+async def restore_payment_deletion(
+    deletion_id: int, db: AsyncSession = Depends(get_session), user: User = Depends(require_role(UserRole.admin))
+):
+    """Release hardening: ripristino di un pagamento cancellato - solo Admin,
+    stessa barriera dell'operazione di cancellazione che ripristina."""
     try:
         return await payment_service.restore_payment_deletion(db, deletion_id, actor_user_id=user.id)
     except (ValidationDomainError, NotFoundError) as exc:
