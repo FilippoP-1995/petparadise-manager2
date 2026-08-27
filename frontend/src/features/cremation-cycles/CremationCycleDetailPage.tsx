@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { useAuth } from "@/features/auth/useAuth";
 
@@ -31,7 +31,24 @@ export function CremationCycleDetailPage() {
   const revertCycle = useRevertCycle();
   const deleteCycle = useDeleteCremationCycle();
   const [actionError, setActionError] = useState<string | null>(null);
-  const [selectedAnimalId, setSelectedAnimalId] = useState<number | "">("");
+  // Continuità di navigazione: se l'utente seleziona un animale da
+  // assegnare, poi segue il link verso la Pratica di un animale già
+  // assegnato e torna con Indietro, la selezione deve essere ancora
+  // presente - rappresentata nell'URL, non in uno useState che uno
+  // smontaggio di route cancellerebbe.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedAnimalId = Number(searchParams.get("animale")) || "";
+  function setSelectedAnimalId(value: number | "") {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (value) next.set("animale", String(value));
+        else next.delete("animale");
+        return next;
+      },
+      { replace: true },
+    );
+  }
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
 

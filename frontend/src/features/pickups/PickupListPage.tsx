@@ -17,13 +17,16 @@ export function PickupListPage() {
   const status = searchParams.get("status") ?? "";
 
   function setStatus(value: string) {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      if (value) next.set("status", value);
-      else next.delete("status");
-      next.delete("offset");
-      return next;
-    });
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (value) next.set("status", value);
+        else next.delete("status");
+        next.delete("offset");
+        return next;
+      },
+      { replace: true },
+    );
   }
 
   const { data: pickups, isLoading, isError } = usePickups({ q, status: status || undefined, offset });

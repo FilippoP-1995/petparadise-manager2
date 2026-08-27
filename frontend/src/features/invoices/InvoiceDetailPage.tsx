@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { useAuth } from "@/features/auth/useAuth";
 import { euroStringToCents, formatMoney } from "@/shared/money";
@@ -15,7 +15,24 @@ const STATUS_LABELS: Record<string, string> = {
 
 function CorrectInvoiceTotalForm({ invoiceId, currentTotalCents }: { invoiceId: number; currentTotalCents: number }) {
   const correctTotal = useCorrectInvoiceTotal();
-  const [open, setOpen] = useState(false);
+  // Continuità di navigazione: se l'utente apre questo form, segue un
+  // link verso un'entità collegata (es. la Pratica) e torna con Indietro,
+  // il form deve ritrovarsi ancora aperto - rappresentato nell'URL
+  // (?correggi=1) invece che in uno useState locale, che uno smontaggio
+  // di route cancellerebbe sempre.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const open = searchParams.get("correggi") === "1";
+  function setOpen(value: boolean) {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (value) next.set("correggi", "1");
+        else next.delete("correggi");
+        return next;
+      },
+      { replace: true },
+    );
+  }
   const [amountEuro, setAmountEuro] = useState("");
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);

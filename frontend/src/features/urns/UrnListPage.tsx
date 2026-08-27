@@ -18,12 +18,15 @@ export function UrnListPage() {
   const showInactive = searchParams.get("tutte") === "1";
 
   function setCategory(value: UrnCategoryValue) {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set("categoria", value);
-      next.delete("offset");
-      return next;
-    });
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("categoria", value);
+        next.delete("offset");
+        return next;
+      },
+      { replace: true },
+    );
   }
 
   const { data: urns, isLoading, isError } = useUrns({ category, activeOnly: !showInactive, q, offset });
@@ -65,13 +68,16 @@ export function UrnListPage() {
           type="checkbox"
           checked={showInactive}
           onChange={(e) =>
-            setSearchParams((prev) => {
-              const next = new URLSearchParams(prev);
-              if (e.target.checked) next.set("tutte", "1");
-              else next.delete("tutte");
-              next.delete("offset");
-              return next;
-            })
+            setSearchParams(
+              (prev) => {
+                const next = new URLSearchParams(prev);
+                if (e.target.checked) next.set("tutte", "1");
+                else next.delete("tutte");
+                next.delete("offset");
+                return next;
+              },
+              { replace: true },
+            )
           }
         />
         Mostra anche gli articoli disattivati

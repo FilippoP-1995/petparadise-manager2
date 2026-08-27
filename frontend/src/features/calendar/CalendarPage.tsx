@@ -17,11 +17,18 @@ export function CalendarPage() {
   const date = searchParams.get("data") || todayIso();
 
   function setDate(value: string) {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set("data", value);
-      return next;
-    });
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("data", value);
+        return next;
+      },
+      // replace, non push: cambiare giorno e' una regolazione del
+      // contesto corrente del Calendario, non una nuova destinazione -
+      // "Indietro" deve uscire dal Calendario verso la pagina da cui si
+      // e' entrati, non ripercorrere ogni giorno visitato.
+      { replace: true },
+    );
   }
 
   const { dateFrom, dateTo } = dayBounds(date);

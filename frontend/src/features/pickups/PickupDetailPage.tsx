@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { useCompanyLocations } from "@/features/practices/api";
 
@@ -39,8 +39,41 @@ export function PickupDetailPage() {
   const createPractice = useCreatePracticeFromPickup();
   const { data: locations } = useCompanyLocations();
   const [actionError, setActionError] = useState<string | null>(null);
-  const [showCreatePracticeForm, setShowCreatePracticeForm] = useState(false);
-  const [destinationBranchId, setDestinationBranchId] = useState<number | "">("");
+  // Continuità di navigazione: se l'utente apre il form "Crea pratica",
+  // sceglie una sede e poi segue un link verso un'entità collegata
+  // tornando con Indietro, deve ritrovare il form ancora aperto e la sede
+  // ancora selezionata - rappresentati nell'URL, non in uno useState che
+  // uno smontaggio di route cancellerebbe.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const showCreatePracticeForm = searchParams.get("crea_pratica") === "1";
+  const destinationBranchId = Number(searchParams.get("sede")) || "";
+
+  function setShowCreatePracticeForm(value: boolean) {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (value) next.set("crea_pratica", "1");
+        else {
+          next.delete("crea_pratica");
+          next.delete("sede");
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  }
+
+  function setDestinationBranchId(value: number | "") {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (value) next.set("sede", String(value));
+        else next.delete("sede");
+        return next;
+      },
+      { replace: true },
+    );
+  }
 
   if (isLoading) return <p className="loading">Caricamento...</p>;
   if (isError || !pickup) return <p className="error-banner">Ritiro non trovato.</p>;

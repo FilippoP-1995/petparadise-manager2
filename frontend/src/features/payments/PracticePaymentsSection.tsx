@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import {
   useClearTotalOverride,
@@ -79,7 +79,26 @@ function RegisterPaymentForm({ practiceId, onDone }: { practiceId: number; onDon
 
 function LinkToInvoiceControl({ paymentId, invoices }: { paymentId: number; invoices: { id: number; invoice_number: string }[] }) {
   const linkPayment = useLinkPaymentToInvoice();
-  const [selected, setSelected] = useState("");
+  // Continuità di navigazione: se l'utente sceglie una fattura a cui
+  // collegare QUESTO pagamento, poi segue il link di un'altra fattura
+  // nell'elenco sopra e torna con Indietro, la scelta deve essere ancora
+  // presente - rappresentata nell'URL (chiave per paymentId, dato che
+  // ogni pagamento ha il proprio controllo indipendente), non in uno
+  // useState che uno smontaggio di route cancellerebbe.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const paramKey = `collega_fattura_${paymentId}`;
+  const selected = searchParams.get(paramKey) ?? "";
+  function setSelected(value: string) {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (value) next.set(paramKey, value);
+        else next.delete(paramKey);
+        return next;
+      },
+      { replace: true },
+    );
+  }
   const [error, setError] = useState<string | null>(null);
 
   if (invoices.length === 0) return null;
