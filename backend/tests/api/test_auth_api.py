@@ -4,6 +4,7 @@ from httpx import AsyncClient
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import settings
 from models.login_attempt import LoginAttempt
 from models.session import Session
 from models.user import User
@@ -184,6 +185,37 @@ async def test_rate_limit_recovers_after_the_window_expires(
 
     recovered = await client.post("/api/auth/login", json={"username": admin_user.username, "password": "wrong"})
     assert recovered.status_code == 401  # non piu' 429: la finestra e' scorsa
+
+
+async def test_session_cookie_is_secure_when_environment_is_production(
+    client: AsyncClient, admin_user: User, monkeypatch
+):
+    """V2 deployment foundation: ENVIRONMENT=production deve produrre un
+    cookie di sessione Secure - verificato direttamente sull'header
+    Set-Cookie reale, non assunto dal solo codice."""
+    monkeypatch.setattr(settings, "environment", "production")
+
+    response = await client.post(
+        "/api/auth/login", json={"username": admin_user.username, "password": "test-password"}
+    )
+    assert response.status_code == 200
+    set_cookie_headers = response.headers.get_list("set-cookie")
+    assert any("secure" in header.lower() for header in set_cookie_headers)
+
+
+async def test_session_cookie_is_not_secure_when_environment_is_development(
+    client: AsyncClient, admin_user: User, monkeypatch
+):
+    """Comportamento locale invariato: in sviluppo (HTTP, non HTTPS) il
+    cookie Secure impedirebbe al browser di accettarlo."""
+    monkeypatch.setattr(settings, "environment", "development")
+
+    response = await client.post(
+        "/api/auth/login", json={"username": admin_user.username, "password": "test-password"}
+    )
+    assert response.status_code == 200
+    set_cookie_headers = response.headers.get_list("set-cookie")
+    assert not any("secure" in header.lower() for header in set_cookie_headers)
 
 
 async def test_logout_does_not_affect_the_login_rate_limit_counter(

@@ -1,0 +1,67 @@
+# Configurazione di deployment per la V2 (FastAPI + React), separata e
+# indipendente da render.yaml (V1 - root app.py). Deliberatamente NON si
+# chiama "render.yaml": Render individua e applica automaticamente solo
+# un file con quel nome esatto tramite "New Blueprint" - chiamando questo
+# file diversamente si evita che possa mai essere applicato per errore
+# insieme/al posto di quello V1. Va collegato esplicitamente a un nuovo
+# servizio Render solo quando deciso (vedi DEPLOY_RENDER_V2.md).
+#
+# NESSUN valore reale (password, DATABASE_URL, credenziali) e' presente
+# in questo file. Questo file NON e' ancora collegato a nessun servizio
+# Render reale e NON crea alcun database.
+#
+# Strategia STAGED/ISOLATA (decisa esplicitamente): la V2 e' un servizio
+# Render SEPARATO dalla V1, con un Postgres SEPARATO e inizialmente
+# VUOTO. La V1 pubblica esistente non viene toccata da questa
+# configurazione in nessun modo.
+
+services:
+  - type: web
+    # Nome diverso dal servizio V1 esistente ("pet-paradise-manager" in
+    # render.yaml) - deliberato, per non generare ambiguita' nel
+    # dashboard Render tra i due servizi.
+    name: pet-paradise-manager-v2
+    runtime: python
+    plan: starter
+    branch: v2-development
+    buildCommand: >-
+      pip install -r backend/requirements.lock.txt &&
+      npm --prefix frontend ci &&
+      npm --prefix frontend run build
+    # cwd=backend/ e' richiesto: main.py e gli altri moduli backend si
+    # importano tra loro con import non qualificati (es. "from api.routes
+    # import ...", non "from backend.api.routes import ..."), quindi vanno
+    # risolti con backend/ come working directory - stesso principio gia'
+    # usato dal processo di sviluppo locale (.claude/launch.json).
+    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      # Valore letterale, non un segreto: forza secure=True sui cookie di
+      # sessione (backend/api/routes/auth.py) e disattiva qualunque
+      # comportamento "development" nell'app.
+      - key: ENVIRONMENT
+        value: production
+      # Deve puntare a un Postgres V2 dedicato, MAI al database della V1
+      # (che e' SQLite, comunque incompatibile) - da impostare manualmente
+      # nel dashboard Render dopo aver creato il Postgres V2 separato.
+      # Formato atteso: postgresql+asyncpg://... (vedi Parte 5 - se il
+      # provider fornisce postgresql:// o postgres://, il backend lo
+      # normalizza automaticamente, senza toccare credenziali/host/query).
+      - key: DATABASE_URL
+        sync: false
+      - key: SESSION_TTL_DAYS
+        value: "30"
+
+# Nessun blocco "disk": V2 non ha stato su file locali (niente SQLite,
+# niente PDF su disco) - tutto lo stato vive nel Postgres V2.
+#
+# Nessun servizio Postgres dichiarato qui deliberatamente: creare un
+# database Render va fatto come passo esplicito e verificato a parte
+# (mai come effetto collaterale automatico dell'applicare questo file),
+# per restare coerenti col vincolo "non creare un database Render reale
+# in questa fase".
+#
+# Nessun cron job V2: WhatsApp/backup/notifiche push sono funzionalita'
+# V1 senza equivalente in V2 (nessun servizio whatsapp/backup in
+# backend/services/) - i due cron job di render.yaml (V1) non vanno
+# portati qui.
