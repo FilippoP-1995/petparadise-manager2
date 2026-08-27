@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
+import { useAuth } from "@/features/auth/useAuth";
+
 import {
   useAssignAnimal,
   useCompleteCycle,
@@ -30,12 +32,15 @@ export function CremationCycleDetailPage() {
   const deleteCycle = useDeleteCremationCycle();
   const [actionError, setActionError] = useState<string | null>(null);
   const [selectedAnimalId, setSelectedAnimalId] = useState<number | "">("");
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
 
   if (isLoading) return <p className="loading">Caricamento...</p>;
   if (isError || !cycle) return <p className="error-banner">Ciclo non trovato.</p>;
 
   const isCompleted = cycle.status === "completato";
   const canAssign = !isCompleted && cycle.animals.length < 2;
+  const canDelete = isAdmin && cycle.status === "pianificato" && cycle.animals.length === 0;
 
   async function handleAssign() {
     if (!selectedAnimalId) return;
@@ -169,7 +174,7 @@ export function CremationCycleDetailPage() {
             Ripristina (correzione)
           </button>
         )}
-        {!isCompleted && (
+        {canDelete && (
           <button className="btn-ghost" disabled={deleteCycle.isPending} onClick={handleDelete}>
             Elimina ciclo
           </button>

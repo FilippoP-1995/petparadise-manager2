@@ -71,11 +71,15 @@ async def update_cycle(db: AsyncSession, cycle_id: int, data: CremationCycleUpda
 
 
 async def delete_cycle(db: AsyncSession, cycle_id: int, *, actor_user_id: int) -> None:
+    """Release hardening: lock di riga prima della verifica (stesso
+    principio gia' usato per assign_animal/remove_animal sullo stesso
+    ciclo) - senza, un'assegnazione animale concorrente potrebbe
+    intrufolarsi tra il controllo '0 animali' e la cancellazione."""
     repo = CremationCycleRepository(db)
-    cycle = await repo.get_by_id(cycle_id)
+    cycle = await repo.get_by_id_for_update(cycle_id)
     if cycle is None:
         raise NotFoundError(f"Ciclo {cycle_id} non trovato")
-    ensure_deletable(cycle.status)
+    ensure_deletable(cycle.status, len(cycle.animals))
 
     AuditRepository(db).record(entity_type=ENTITY_TYPE, entity_id=cycle.id, action="deleted", user_id=actor_user_id)
     await db.delete(cycle)

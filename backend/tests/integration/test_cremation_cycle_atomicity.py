@@ -137,3 +137,28 @@ async def test_failed_completion_leaves_no_partial_practice_transitions(
         await db_session.execute(select(AuditLog).where(AuditLog.action == "completed", AuditLog.entity_id == cycle_id))
     ).scalars().all()
     assert orphan_rows == [], "nessuna riga di audit orfana deve sopravvivere al rollback"
+
+
+async def test_failed_delete_leaves_cycle_intact(db_session, admin_user):
+    """Release hardening: se la scrittura di audit fallisce, il DELETE del
+    ciclo non deve risultare eseguito - replica manuale dei passi di
+    delete_cycle (lock, audit, delete), fallimento forzato prima del
+    commit, stessa tecnica (NOT NULL reale) degli altri test in questo
+    file."""
+    cycle = await cremation_cycle_service.create_cycle(db_session, _cycle_data(), actor_user_id=admin_user.id)
+    cycle_id = cycle.id  # catturato PRIMA del rollback: dopo il rollback l'oggetto ORM e' expired
+
+    cycle_repo = CremationCycleRepository(db_session)
+    reloaded_cycle = await cycle_repo.get_by_id_for_update(cycle_id)
+    await db_session.delete(reloaded_cycle)
+
+    # Fallimento forzato - stessa tecnica (NOT NULL) gia' usata sopra.
+    AuditRepository(db_session).record(entity_type=None, entity_id=cycle_id, action="forced_failure", user_id=admin_user.id)
+
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+    await db_session.rollback()
+
+    survived = await cycle_repo.get_by_id(cycle_id)
+    assert survived is not None, "il ciclo non deve risultare cancellato se la transazione fallisce"
+    assert survived.status == CremationCycleStatus.pianificato

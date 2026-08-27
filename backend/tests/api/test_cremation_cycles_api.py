@@ -165,6 +165,70 @@ async def test_delete_empty_cycle_returns_204(authed_client: AsyncClient):
     assert (await authed_client.get(f"/api/cremation-cycles/{cycle['id']}")).status_code == 404
 
 
+async def test_operator_cannot_delete_cycle(client: AsyncClient, operator_user: User, admin_user: User):
+    """Release hardening: DELETE ciclo - solo Admin, indipendentemente dallo
+    stato o dal contenuto del ciclo."""
+
+    async def _as_admin():
+        return admin_user
+
+    app.dependency_overrides[get_current_user] = _as_admin
+    cycle = (await client.post("/api/cremation-cycles", json=_cycle_payload())).json()
+
+    async def _as_operator():
+        return operator_user
+
+    app.dependency_overrides[get_current_user] = _as_operator
+    try:
+        response = await client.delete(f"/api/cremation-cycles/{cycle['id']}")
+        assert response.status_code == 403
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+async def test_admin_delete_pianificato_with_zero_animals_succeeds(authed_client: AsyncClient):
+    """Admin + pianificato + 0 animali -> DELETE consentito."""
+    cycle = (await authed_client.post("/api/cremation-cycles", json=_cycle_payload())).json()
+    assert cycle["status"] == "pianificato"
+    assert cycle["animals"] == []
+
+    response = await authed_client.delete(f"/api/cremation-cycles/{cycle['id']}")
+    assert response.status_code == 204
+
+
+async def test_admin_delete_in_attesa_is_rejected(authed_client: AsyncClient, sample_client, sample_location):
+    """Admin + in_attesa -> rifiutato."""
+    _, animal_id = await _create_eligible_practice_and_animal(authed_client, sample_client, sample_location)
+    cycle = (await authed_client.post("/api/cremation-cycles", json=_cycle_payload())).json()
+    assign = await authed_client.post(f"/api/cremation-cycles/{cycle['id']}/assign-animal", json={"animal_id": animal_id})
+    assert assign.json()["status"] == "in_attesa"
+
+    response = await authed_client.delete(f"/api/cremation-cycles/{cycle['id']}")
+    assert response.status_code == 422
+    # il ciclo non e' stato toccato
+    assert (await authed_client.get(f"/api/cremation-cycles/{cycle['id']}")).status_code == 200
+
+
+async def test_admin_delete_completato_is_rejected(authed_client: AsyncClient, sample_client, sample_location):
+    """Admin + completato -> rifiutato (gia' coperto sopra come 422, qui
+    verificato esplicitamente il non-Toccato per completezza della matrice)."""
+    _, animal_id = await _create_eligible_practice_and_animal(authed_client, sample_client, sample_location)
+    cycle = (await authed_client.post("/api/cremation-cycles", json=_cycle_payload())).json()
+    await authed_client.post(f"/api/cremation-cycles/{cycle['id']}/assign-animal", json={"animal_id": animal_id})
+    await authed_client.post(f"/api/cremation-cycles/{cycle['id']}/complete")
+
+    response = await authed_client.delete(f"/api/cremation-cycles/{cycle['id']}")
+    assert response.status_code == 422
+    assert (await authed_client.get(f"/api/cremation-cycles/{cycle['id']}")).status_code == 200
+
+# "pianificato + almeno un animale -> rifiutato" e' verificato direttamente
+# a livello di dominio in tests/unit/test_cremation_cycle_state_machine.py
+# (test_pianificato_cycle_with_animals_is_not_deletable): l'invariante
+# status<->conteggio mantenuto dal servizio (0 animali = pianificato, >=1 =
+# in_attesa) rende questa combinazione non producibile end-to-end via API -
+# un test qui duplicherebbe test_admin_delete_in_attesa_is_rejected sopra.
+
+
 async def test_operator_can_manage_cycles(client: AsyncClient, operator_user: User, sample_client, sample_location):
     """Nessuna restrizione Admin-only qui: Operator+Admin, come Pratiche/Ritiri."""
 

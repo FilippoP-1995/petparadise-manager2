@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.dependencies import get_current_user
+from api.dependencies import get_current_user, require_role
 from database import get_session
 from domain.errors import InvalidTransitionError, NotFoundError, ValidationDomainError
-from models.user import User
+from models.user import User, UserRole
 from repositories.cremation_cycle_repository import AnimalCycleRepository, CremationCycleRepository
 from schemas.cremation_cycle import (
     AssignAnimalRequest,
@@ -82,7 +82,11 @@ async def update_cycle(
 
 
 @router.delete("/{cycle_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_cycle(cycle_id: int, db: AsyncSession = Depends(get_session), user: User = Depends(get_current_user)):
+async def delete_cycle(
+    cycle_id: int, db: AsyncSession = Depends(get_session), user: User = Depends(require_role(UserRole.admin))
+):
+    """Release hardening: cancellazione fisica di un ciclo - solo Admin,
+    e solo se 'pianificato' con 0 animali (verificato nel service)."""
     try:
         await cremation_cycle_service.delete_cycle(db, cycle_id, actor_user_id=user.id)
     except (ValidationDomainError, NotFoundError) as exc:

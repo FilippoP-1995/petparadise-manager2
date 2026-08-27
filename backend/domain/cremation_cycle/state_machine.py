@@ -34,10 +34,23 @@ def validate_revert(current_status: CremationCycleStatus) -> None:
         )
 
 
-def ensure_deletable(status: CremationCycleStatus) -> None:
+def ensure_deletable(status: CremationCycleStatus, animal_count: int) -> None:
     """doc14 §4: 'Eliminazione del ciclo mentre completato - VIETATA per
-    costruzione' (corregge il comportamento V1, dove era permessa)."""
-    if status == CremationCycleStatus.completato:
+    costruzione' (corregge il comportamento V1, dove era permessa).
+
+    Release hardening: la cancellazione fisica e' ammessa solo per un
+    ciclo 'pianificato' con 0 animali - una programmazione/bozza vuota. Un
+    ciclo che contiene animali e' gia' un'entita' operativa con dati
+    relazionati e non deve essere distrutto fisicamente (va prima
+    svuotato esplicitamente con remove_animal). Il conteggio animali e'
+    verificato direttamente, non dedotto dallo stato - stesso principio
+    doc06 'niente viene mai dedotto', anche se lo stato 'pianificato' e'
+    gia' un invariante derivato da un conteggio a 0."""
+    if status != CremationCycleStatus.pianificato:
         raise ValidationDomainError(
-            "Un ciclo completato non puo' essere eliminato - ripristinalo esplicitamente prima, se necessario."
+            f"Un ciclo puo' essere eliminato solo se 'pianificato' (stato attuale: '{status.value}')."
+        )
+    if animal_count > 0:
+        raise ValidationDomainError(
+            "Un ciclo con animali assegnati non puo' essere eliminato - rimuovi prima tutti gli animali."
         )

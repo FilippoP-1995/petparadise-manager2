@@ -44,6 +44,23 @@ def test_revert_requires_completato():
 def test_completed_cycle_is_not_deletable():
     """doc14 §4: corregge il comportamento V1 (dove era permesso)."""
     with pytest.raises(ValidationDomainError):
-        ensure_deletable(CremationCycleStatus.completato)
-    ensure_deletable(CremationCycleStatus.pianificato)
-    ensure_deletable(CremationCycleStatus.in_attesa)
+        ensure_deletable(CremationCycleStatus.completato, 0)
+
+
+def test_in_attesa_cycle_is_not_deletable():
+    """Release hardening: solo 'pianificato' e' eliminabile, non 'in_attesa'
+    (anche se non ha ancora animali - un'incoerenza di stato che non
+    dovrebbe verificarsi, ma il controllo resta esplicito sullo stato)."""
+    with pytest.raises(ValidationDomainError):
+        ensure_deletable(CremationCycleStatus.in_attesa, 0)
+
+
+def test_pianificato_cycle_with_animals_is_not_deletable():
+    """Release hardening: un ciclo con animali assegnati e' gia' un'entita'
+    operativa - va prima svuotato con remove_animal."""
+    with pytest.raises(ValidationDomainError):
+        ensure_deletable(CremationCycleStatus.pianificato, 1)
+
+
+def test_pianificato_cycle_with_zero_animals_is_deletable():
+    ensure_deletable(CremationCycleStatus.pianificato, 0)  # non deve sollevare
