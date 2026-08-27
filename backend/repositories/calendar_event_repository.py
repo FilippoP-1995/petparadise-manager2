@@ -61,7 +61,12 @@ class CalendarEventRepository:
                     CalendarEvent.notes.ilike(pattern),
                 )
             )
-        stmt = stmt.order_by(CalendarEvent.start_at.desc()).limit(limit).offset(offset)
+        # Tiebreaker su id: senza una seconda chiave di ordinamento, due
+        # eventi con lo stesso start_at non hanno un ordine garantito da
+        # SQL (potrebbe cambiare tra due query identiche) - rilevante per
+        # il Calendario, dove piu' eventi nello stesso slot orario sono un
+        # caso reale, non ipotetico.
+        stmt = stmt.order_by(CalendarEvent.start_at.desc(), CalendarEvent.id.desc()).limit(limit).offset(offset)
         return list((await self._session.execute(stmt)).scalars().unique().all())
 
     def add(self, event: CalendarEvent) -> None:

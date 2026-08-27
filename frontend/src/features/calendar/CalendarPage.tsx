@@ -3,29 +3,14 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useDeliveries } from "@/features/deliveries/api";
 import { usePickups } from "@/features/pickups/api";
 
+import { addDays, dayBounds, todayIso } from "./calendarDate";
+
 const PICKUP_STATUS_LABELS: Record<string, string> = {
   da_confermare: "Da confermare",
   da_ritirare: "Da ritirare",
   ritirato: "Ritirato",
   annullato: "Annullato",
 };
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function addDays(dateIso: string, days: number): string {
-  const d = new Date(`${dateIso}T00:00:00`);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
-function dayBounds(dateIso: string): { dateFrom: string; dateTo: string } {
-  const start = new Date(`${dateIso}T00:00:00`);
-  const end = new Date(`${dateIso}T00:00:00`);
-  end.setDate(end.getDate() + 1);
-  return { dateFrom: start.toISOString(), dateTo: end.toISOString() };
-}
 
 export function CalendarPage() {
   const [searchParams, setSearchParams] = useSearchParams();
