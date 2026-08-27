@@ -20,3 +20,9 @@ class InvalidTransitionError(DomainError):
     """doc09 'Macchine a stati esplicite': un tentativo di transizione non
     presente nella tabella delle transizioni permesse - mai un 'non succede
     nulla' silenzioso."""
+
+
+class RateLimitedError(DomainError):
+    """Release hardening: troppi tentativi falliti su un endpoint con rate
+    limit (oggi solo /api/auth/login) - distinta da ValidationDomainError
+    perche' si traduce in 429, non in 401/422."""

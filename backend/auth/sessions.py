@@ -36,3 +36,14 @@ async def touch_session(db: AsyncSession, session: Session) -> None:
     """Rinnova last_seen_at ad ogni richiesta autenticata (doc09: TTL
     scorrevole basato sull'ultima attivita', non sulla creazione)."""
     session.last_seen_at = datetime.now(timezone.utc)
+
+
+async def delete_session(db: AsyncSession, token: str) -> None:
+    """Release hardening: invalidazione server-side al logout - senza,
+    una sessione rimane valida fino alla scadenza naturale anche dopo che
+    l'utente ha 'fatto logout' (solo il cookie veniva cancellato). Un
+    token gia' assente/scaduto e' un no-op sicuro (get non solleva)."""
+    session = await db.get(Session, token)
+    if session is not None:
+        await db.delete(session)
+        await db.commit()

@@ -8,6 +8,7 @@ from models.collaborator import Collaborator
 from models.company_location import CompanyLocation
 from models.cremation_cycle import CremationCycle, CremationCycleStatus
 from models.invoice import Invoice
+from models.login_attempt import LoginAttempt
 from models.payment import InvoicePaymentLink, LedgerSection, Payment, PaymentDeletion, PaymentSource
 from models.practice import (
     CollaboratorBillingStatus,
@@ -43,6 +44,7 @@ __all__ = [
     "Invoice",
     "InvoicePaymentLink",
     "LedgerSection",
+    "LoginAttempt",
     "OwnerNotifiedStatus",
     "Payment",
     "PaymentChannel",

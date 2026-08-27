@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import SESSION_COOKIE_NAME, get_current_user
+from auth.sessions import delete_session
 from config import settings
 from database import get_session
-from domain.errors import ValidationDomainError
+from domain.errors import RateLimitedError, ValidationDomainError
 from models.user import User, UserRole
 from services import auth_service
 
@@ -33,6 +34,8 @@ async def login(payload: LoginRequest, request: Request, response: Response, db:
             ip=request.client.host if request.client else None,
             user_agent=request.headers.get("user-agent"),
         )
+    except RateLimitedError as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
     except ValidationDomainError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
@@ -49,7 +52,17 @@ async def login(payload: LoginRequest, request: Request, response: Response, db:
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(response: Response, user: User = Depends(get_current_user)):
+async def logout(
+    response: Response,
+    db: AsyncSession = Depends(get_session),
+    _: User = Depends(get_current_user),
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+):
+    """Release hardening: invalida la sessione lato server (non solo il
+    cookie) - un riutilizzo del token dopo logout deve essere rifiutato
+    come una sessione qualsiasi scaduta/inesistente."""
+    if session_token is not None:
+        await delete_session(db, session_token)
     response.delete_cookie(SESSION_COOKIE_NAME)
 
 
