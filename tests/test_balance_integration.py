@@ -556,6 +556,54 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
         self.assertEqual((movements[0].movement_type, movements[0].amount_cents, movements[0].category), ("Incasso completo", 30000, "W"))
         self.assertEqual(practice["payment_status"], "Pagato")
 
+    def test_settlement_label_flip_from_incasso_completo_to_saldo_does_not_duplicate(self):
+        """Regressione per la pratica reale #213: un saldo registrato come
+        'Incasso completo' (nessun acconto ancora presente) e poi rieditato
+        dopo che un acconto viene aggiunto (etichetta ricalcolata come
+        'Saldo') non deve mai lasciare due righe attive in
+        balance_movements per lo stesso incasso — solo l'ultima, corretta."""
+        practice_id = self.insert_practice(number="CR-SETTLEMENT-FLIP", total_w="820")
+        with app.db() as connection:
+            practice = connection.execute("SELECT * FROM practices WHERE id=?", (practice_id,)).fetchone()
+            # 1) Saldo registrato per primo, nessun acconto ancora presente:
+            #    l'etichetta calcolata e' "Incasso completo".
+            error = self.handler.apply_payment_macroarea(
+                connection, self.admin, practice_id, practice, "saldo",
+                data_field="2026-08-16", totale_field="410", channel="W", method="Pos",
+                invoice_number="", invoice_total="", invoice_date="",
+            )
+            self.assertIsNone(error)
+
+            # 2) Un acconto viene aggiunto in seguito: da questo momento
+            #    has_acconto_row diventa vero.
+            practice = connection.execute("SELECT * FROM practices WHERE id=?", (practice_id,)).fetchone()
+            error = self.handler.apply_payment_macroarea(
+                connection, self.admin, practice_id, practice, "acconto",
+                data_field="2026-08-01", totale_field="100", channel="W", method="Pos",
+                invoice_number="", invoice_total="", invoice_date="",
+            )
+            self.assertIsNone(error)
+
+            # 3) Il saldo viene rieditato (es. correzione data): la label
+            #    ricalcolata ora e' "Saldo", diversa da quella con cui la
+            #    riga storica era stata scritta.
+            practice = connection.execute("SELECT * FROM practices WHERE id=?", (practice_id,)).fetchone()
+            error = self.handler.apply_payment_macroarea(
+                connection, self.admin, practice_id, practice, "saldo",
+                data_field="2026-08-17", totale_field="410", channel="W", method="Pos",
+                invoice_number="", invoice_total="", invoice_date="",
+            )
+            self.assertIsNone(error)
+
+            movements = [m for m in get_movements(connection) if m.practice_id == practice_id]
+
+        settlement_rows = [m for m in movements if m.movement_type in ("Saldo", "Incasso completo")]
+        self.assertEqual(
+            len(settlement_rows), 1,
+            f"atteso un solo movimento attivo di saldo/incasso, trovati: {settlement_rows}",
+        )
+        self.assertEqual(settlement_rows[0].amount_cents, 41000)
+
     def test_edit_submit_resubmitting_unchanged_macro_fields_does_not_duplicate(self):
         practice_id = self.insert_practice(number="CR-EDIT-NODUP", total_w="300")
         base_form = {

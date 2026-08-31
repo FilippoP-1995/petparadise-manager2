@@ -2025,19 +2025,26 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn(already_linked, ids)
 
     def test_cremation_schedule_shows_future_pickup_cards_non_actionable(self):
+        # Le date devono restare relative a "oggi" (rome_now) e non fisse:
+        # future_pickup_singola_rows() filtra sempre contro la data reale
+        # corrente (app.py:11983/11998), quindi date hardcoded nel passato
+        # smettono di essere "future" con il solo passare del tempo,
+        # facendo fallire il test senza nessuna regressione reale.
+        view_date = app.rome_now().date()
+        future_date = view_date + timedelta(days=1)
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
             event_id = conn.execute(
                 """INSERT INTO calendar_events(event_type,title,client_first_name,client_last_name,created_by,created_at,updated_at,event_status,start_at,end_at)
                    VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                ("Ritiro", "Ritiro futuro test", "Mario", "Bianchi", admin["id"], stamp, stamp, "Da confermare", "2026-08-05T10:30:00", "2026-08-05T11:00:00"),
+                ("Ritiro", "Ritiro futuro test", "Mario", "Bianchi", admin["id"], stamp, stamp, "Da confermare", f"{future_date.isoformat()}T10:30:00", f"{future_date.isoformat()}T11:00:00"),
             ).lastrowid
             conn.execute(
                 "INSERT INTO calendar_event_animals(event_id,name,species,weight,cremation_type,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
                 (event_id, "Rocky", "Cane", "40", "Singola", stamp, stamp),
             )
         rendered = []
-        self.handler.path = "/programma-cremazioni?data=2026-08-04"
+        self.handler.path = f"/programma-cremazioni?data={view_date.isoformat()}"
         self.handler.send_html = lambda content, *args: rendered.append(content)
         self.handler.cremation_schedule(admin)
         page = rendered[-1]
@@ -2045,7 +2052,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("40 kg", page)
         self.assertIn("Mario Bianchi", page)
         self.assertIn("Non ancora affidato", page)
-        self.assertIn("RITIRO 05/08", page)
+        self.assertIn(f"RITIRO {future_date.strftime('%d/%m')}", page)
         self.assertIn('class="cremation-add-animal-card cremation-future-pickup-card"', page)
         # nessun collegamento reale: mai un onclick di assegnazione per una
         # card "in arrivo" (non esiste una pratica da poter assegnare) —
@@ -2054,7 +2061,7 @@ class PetParadiseTests(unittest.TestCase):
         # stessa card compare due volte in pagina: nel pannello Animali e
         # nel popup Aggiungi animale).
         with app.db() as conn:
-            future_row = app.future_pickup_singola_rows(conn, "2026-08-04")[0]
+            future_row = app.future_pickup_singola_rows(conn, view_date.isoformat())[0]
         card_html = app.future_pickup_card_html(future_row)
         self.assertNotIn("onclick", card_html)
         self.assertNotIn("cremationAddAnimalConfirm", card_html)
@@ -2063,19 +2070,21 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(page.count(card_html), 2)
 
     def test_cremation_schedule_week_shows_future_pickup_row(self):
+        view_date = app.rome_now().date()
+        future_date = view_date + timedelta(days=2)
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
             event_id = conn.execute(
                 """INSERT INTO calendar_events(event_type,title,person_company,created_by,created_at,updated_at,event_status,start_at,end_at)
                    VALUES(?,?,?,?,?,?,?,?,?)""",
-                ("Ritiro in sede", "Ritiro futuro settimana", "Clinica Veterinaria Test", admin["id"], stamp, stamp, "Da ritirare", "2026-08-06T09:00:00", "2026-08-06T09:30:00"),
+                ("Ritiro in sede", "Ritiro futuro settimana", "Clinica Veterinaria Test", admin["id"], stamp, stamp, "Da ritirare", f"{future_date.isoformat()}T09:00:00", f"{future_date.isoformat()}T09:30:00"),
             ).lastrowid
             conn.execute(
                 "INSERT INTO calendar_event_animals(event_id,name,species,weight,cremation_type,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
                 (event_id, "Micia", "Gatto", "4", "Singola", stamp, stamp),
             )
         rendered = []
-        self.handler.path = "/programma-cremazioni?data=2026-08-04&vista=settimana"
+        self.handler.path = f"/programma-cremazioni?data={view_date.isoformat()}&vista=settimana"
         self.handler.send_html = lambda content, *args: rendered.append(content)
         self.handler.cremation_schedule(admin)
         page = rendered[-1]
@@ -2085,6 +2094,8 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("cremation-future-pickup-row", page)
 
     def test_api_cremation_swap_candidates_includes_future_pickups_as_non_selectable(self):
+        cycle_date = app.rome_now().date()
+        future_date = cycle_date + timedelta(days=1)
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
             pid = conn.execute(
@@ -2094,13 +2105,13 @@ class PetParadiseTests(unittest.TestCase):
             ).lastrowid
             cycle_id = conn.execute(
                 "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
-                ("2026-08-04", "in_attesa", "09:00", "10:30", stamp, stamp),
+                (cycle_date.isoformat(), "in_attesa", "09:00", "10:30", stamp, stamp),
             ).lastrowid
             conn.execute("UPDATE practices SET cremation_cycle_id=? WHERE id=?", (cycle_id, pid))
             event_id = conn.execute(
                 """INSERT INTO calendar_events(event_type,title,client_first_name,created_by,created_at,updated_at,event_status,start_at,end_at)
                    VALUES(?,?,?,?,?,?,?,?,?)""",
-                ("Ritiro", "Ritiro futuro swap", "Elena", admin["id"], stamp, stamp, "Da confermare", "2026-08-05T09:00:00", "2026-08-05T09:30:00"),
+                ("Ritiro", "Ritiro futuro swap", "Elena", admin["id"], stamp, stamp, "Da confermare", f"{future_date.isoformat()}T09:00:00", f"{future_date.isoformat()}T09:30:00"),
             ).lastrowid
             conn.execute(
                 "INSERT INTO calendar_event_animals(event_id,name,species,weight,cremation_type,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
@@ -7871,18 +7882,42 @@ class PetParadiseTests(unittest.TestCase):
         # on CR-000063: a settlement's ledger movement_type is derived live
         # from has_acconto_row ("Incasso completo" with no acconto on file,
         # "Saldo" once one exists). Registering the acconto *after* the
-        # settlement already exists flips that label, so the next
-        # correction pass can no longer find the existing ledger row by its
-        # (now different) expected movement_type and falls into the
-        # "bootstrap" branch — which used a completely fixed idempotency_key
-        # with no amount/date component, guaranteed to collide the moment a
-        # second such bootstrap ever fired with a different amount.
+        # settlement already exists flips that label. This used to make
+        # correct_balance_movement_date's lookup miss the existing ledger
+        # row and fall into a "bootstrap" branch that created a genuine
+        # SECOND active row under the new label — the same defect later
+        # found for real on practice #213 (its ledger ended up with both
+        # an active "Saldo" and an active "Incasso completo" row for the
+        # same payment, doubling its recorded total). The bootstrap's
+        # idempotency_key was later made to vary by amount/date so at
+        # least a second bootstrap wouldn't collide/raise — but the
+        # duplicate row itself was still created every time.
+        #
+        # find_active_receipt_movement (Fase 10C) now treats "Saldo" and
+        # "Incasso completo" as the same phase when SEARCHING for the
+        # existing row, so the label flip no longer creates a duplicate at
+        # all: resubmitting the same settlement finds and reuses the
+        # original row instead of bootstrapping a new one under the new
+        # label — this test now verifies that root-cause behaviour
+        # directly, instead of only the since-superseded key-collision
+        # mitigation.
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
                                 owner_first_name,service_type,payment_status,total_text)
                                 VALUES(?,?,?,?,?,?,?,?,?,?,?)""",("CR-DRIFT","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Vera","Cremazione singola","Da saldare","320")).lastrowid
         responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+
+        def active_settlement_rows():
+            with app.db() as conn:
+                return conn.execute(
+                    """SELECT movement_type,amount_cents,idempotency_key FROM balance_movements b
+                       WHERE b.practice_id=? AND b.ledger_section='Entrata' AND b.amount_cents>0
+                         AND b.movement_type IN ('Saldo','Incasso completo')
+                         AND NOT EXISTS(SELECT 1 FROM balance_movements r WHERE r.related_movement_id=b.id AND r.movement_type='Storno')""",
+                    (pid,),
+                ).fetchall()
+
         # settlement registered first, with no acconto on file yet -> ledger
         # row is labeled "Incasso completo"
         self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-21","saldo_totale":"320,00","saldo_circuito":"D","ajax":"1"}
@@ -7892,19 +7927,33 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.form=lambda:{"macroarea":"acconto","acconto_data":"2026-07-21","acconto_totale":"100,00","acconto_circuito":"D","ajax":"1"}
         self.handler.save_payment_macroarea(admin,pid)
         self.assertTrue(responses[-1][0]["ok"],responses[-1])
-        # resubmitting the unchanged saldo now expects a "Saldo"-labeled
-        # ledger row, finds none (only "Incasso completo" exists) and must
-        # bootstrap one instead of raising
+        # resubmitting the unchanged saldo now recomputes the label as
+        # "Saldo", but must find and reuse the existing "Incasso completo"
+        # row — not bootstrap a duplicate under the new label.
         self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-21","saldo_totale":"320,00","saldo_circuito":"D","ajax":"1"}
         self.handler.save_payment_macroarea(admin,pid)
         self.assertTrue(responses[-1][0]["ok"],responses[-1])
-        with app.db() as conn:
-            bootstrapped=conn.execute("SELECT idempotency_key FROM balance_movements WHERE practice_id=? AND movement_type='Saldo' AND amount_cents>0",(pid,)).fetchone()
-        self.assertIsNotNone(bootstrapped)
-        # the key must vary with amount and date, not be a fixed string —
-        # otherwise a second bootstrap with a different amount collides
-        self.assertIn("32000",bootstrapped["idempotency_key"])
-        self.assertIn("2026-07-21",bootstrapped["idempotency_key"])
+        rows=active_settlement_rows()
+        self.assertEqual(len(rows),1,rows)
+        self.assertEqual((rows[0]["movement_type"],rows[0]["amount_cents"]),("Incasso completo",32000))
+
+        # A settlement correction that genuinely changes amount AND date
+        # still goes through the normal append-only correction path
+        # (reversal + replacement for the date, then again for the
+        # amount) — still exactly one active row afterwards, and the
+        # correction keys (unrelated to the removed bootstrap path) still
+        # vary by date/amount by construction.
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-22","saldo_totale":"325,00","saldo_circuito":"D","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        rows=active_settlement_rows()
+        self.assertEqual(len(rows),1,rows)
+        self.assertEqual((rows[0]["movement_type"],rows[0]["amount_cents"]),("Incasso completo",32500))
+        # Key derived from the actual amounts involved (via
+        # correct_balance_movement_amount, reached after the date
+        # correction above) — not a fixed string, so a later correction
+        # with yet another amount cannot collide with this one.
+        self.assertIn("32500",rows[0]["idempotency_key"])
 
     def test_channel_paid_amount_ignores_legacy_payment_movements_uses_real_ledger(self):
         # CR-000063 production reality: payment_movements had accumulated

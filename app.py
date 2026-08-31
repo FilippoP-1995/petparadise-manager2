@@ -34,6 +34,7 @@ from balance_service import (
     create_manual_income as create_balance_income,
     create_movement as create_balance_movement,
     ensure_balance_schema,
+    find_active_receipt_movement as find_active_balance_receipt,
     euros_to_cents,
     get_balance_collaborators,
     get_balance_operators,
@@ -17838,18 +17839,18 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 created_by=user["id"],
             )
             if corrected is None:
-                # correct_balance_movement_date looks up the existing ledger
-                # row by movement_type ("Acconto"/"Saldo"/"Incasso completo")
-                # — a label derived from has_acconto_row, which can change
-                # over the life of a practice (e.g. an acconto gets added
-                # later, flipping a settlement's expected label from
-                # "Incasso completo" to "Saldo"). When that happens this
-                # lookup finds nothing even though a real ledger row exists
-                # under the old label, landing here. The key must still vary
-                # with amount/date — a fixed key reused across every such
-                # mismatch (regardless of amount) previously caused a real
-                # IdempotencyConflictError in production once amounts
-                # differed between attempts.
+                # A real ledger row for this settlement can no longer hide
+                # behind a stale label here: find_active_receipt_movement
+                # (used internally by correct_balance_movement_date) treats
+                # "Saldo" and "Incasso completo" as the same phase when
+                # searching, so a label flip from has_acconto_row changing
+                # between edits (e.g. an acconto added later) still finds the
+                # existing row instead of landing in this branch. This now
+                # only runs for a practice's genuinely first settlement
+                # receipt. The key must still vary with amount/date — a
+                # fixed key reused across every attempt regardless of amount
+                # previously caused a real IdempotencyConflictError in
+                # production once amounts differed between attempts.
                 create_balance_movement(
                     c,amount_cents=euros_to_cents(f"{amount:.2f}"),movement_date=data_field,category=category,
                     ledger_section="Entrata",movement_type=balance_type,
@@ -17938,18 +17939,18 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             has_acconto_row=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'acconto%' LIMIT 1",(pid,)).fetchone())
             balance_type="Acconto" if macroarea=="acconto" else ("Saldo" if has_acconto_row else "Incasso completo")
             stamp=now()
-            target=c.execute(
-                """SELECT b.* FROM balance_movements b
-                   WHERE b.practice_id=? AND b.ledger_section='Entrata' AND b.movement_type=? AND b.amount_cents>0
-                     AND NOT EXISTS(SELECT 1 FROM balance_movements r WHERE r.related_movement_id=b.id AND r.movement_type='Storno')
-                   ORDER BY b.id DESC LIMIT 1""",
-                (pid,balance_type),
-            ).fetchone()
+            # find_active_balance_receipt tratta "Saldo" e "Incasso completo"
+            # come la stessa fase economica in cerca (mai in scrittura): la
+            # riga attiva puo' essere stata creata sotto l'altra etichetta in
+            # un'edit precedente, se has_acconto_row era diverso allora - una
+            # query qui ristretta al solo balance_type odierno rischierebbe di
+            # non trovare nulla da stornare, lasciando il duplicato attivo.
+            target=find_active_balance_receipt(c,practice_id=pid,movement_type=balance_type)
             if target:
                 try:
                     create_balance_reversal(
-                        c,original_movement_id=target["id"],movement_date=stamp[:10],
-                        idempotency_key=f"payment-macroarea-remove:{pid}:{macroarea}:{target['id']}",
+                        c,original_movement_id=target.id,movement_date=stamp[:10],
+                        idempotency_key=f"payment-macroarea-remove:{pid}:{macroarea}:{target.id}",
                         description=f"Rimozione {macroarea} dalla finestra Pagamento",
                         source="manual_void",created_by=user["id"],
                     )

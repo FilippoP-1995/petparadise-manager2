@@ -14,6 +14,16 @@ LEDGER_SECTIONS: Final = ("Entrata", "Uscita")
 ADJUSTMENT_TYPE: Final = "Rettifica"
 REVERSAL_TYPE: Final = "Storno"
 _RESERVED_MOVEMENT_TYPES: Final = frozenset((ADJUSTMENT_TYPE, REVERSAL_TYPE))
+# "Saldo" e "Incasso completo" sono la stessa fase economica (il
+# settlement di una pratica): l'etichetta usata al momento della
+# scrittura dipende solo dal fatto che esista o meno un Acconto in
+# quell'istante (vedi has_acconto_row in app.py), e quella condizione
+# puo' cambiare tra una modifica e l'altra dello stesso pagamento.
+# Trattarle come intercambiabili SOLO in fase di RICERCA di un movimento
+# attivo gia' esistente (mai in scrittura, dove si usa sempre la vera
+# etichetta della riga trovata) evita di perdere un movimento storico
+# dietro l'etichetta "sbagliata" e crearne quindi uno duplicato.
+_SETTLEMENT_RECEIPT_TYPES: Final = ("Saldo", "Incasso completo")
 
 
 class BalanceError(ValueError):
@@ -937,6 +947,49 @@ def get_recent_movement_deletions(
     ).fetchall()
 
 
+def find_active_receipt_movement(
+    connection: sqlite3.Connection,
+    *,
+    practice_id: int,
+    movement_type: str,
+) -> BalanceMovement | None:
+    """Find the still-active (non-reversed) Entrata receipt for a practice.
+
+    'Saldo' and 'Incasso completo' are treated as interchangeable when
+    movement_type is one of the two (see _SETTLEMENT_RECEIPT_TYPES) - a
+    label flip between edits of the same practice (an Acconto appearing
+    or disappearing) then still finds the same historical row instead of
+    reporting "not found" and letting a caller create a duplicate.
+    'Acconto' (or any other type) has no such ambiguity and is matched
+    exactly. The row's own stored movement_type is always what callers
+    should use afterwards - this only widens the SEARCH, never implies
+    the found row should be relabeled.
+    """
+    normalized_practice_id=_normalize_optional_id(practice_id,"practice_id")
+    normalized_type=_clean_required(movement_type,"movement_type",80)
+    candidate_types=(
+        _SETTLEMENT_RECEIPT_TYPES if normalized_type in _SETTLEMENT_RECEIPT_TYPES
+        else (normalized_type,)
+    )
+    placeholders=",".join("?" for _ in candidate_types)
+    row=connection.execute(
+        f"""
+        SELECT {_MOVEMENT_COLUMNS}
+        FROM balance_movements b
+        WHERE b.practice_id=? AND b.movement_type IN ({placeholders})
+          AND b.ledger_section='Entrata' AND b.amount_cents>0
+          AND NOT EXISTS(
+            SELECT 1 FROM balance_movements reversal
+            WHERE reversal.related_movement_id=b.id
+              AND reversal.movement_type=?
+          )
+        ORDER BY b.id DESC LIMIT 1
+        """,
+        (normalized_practice_id,*candidate_types,REVERSAL_TYPE),
+    ).fetchone()
+    return _row_to_movement(row)
+
+
 def correct_movement_date(
     connection: sqlite3.Connection,
     *,
@@ -953,26 +1006,12 @@ def correct_movement_date(
     this technical pair, so the user sees one effective economic row.
     """
     normalized_practice_id=_normalize_optional_id(practice_id,"practice_id")
-    normalized_type=_clean_required(movement_type,"movement_type",80)
-    normalized_date=_normalize_date(movement_date)
-    original_row=connection.execute(
-        f"""
-        SELECT {_MOVEMENT_COLUMNS}
-        FROM balance_movements b
-        WHERE b.practice_id=? AND b.movement_type=?
-          AND b.ledger_section='Entrata'
-          AND NOT EXISTS(
-            SELECT 1 FROM balance_movements reversal
-            WHERE reversal.related_movement_id=b.id
-              AND reversal.movement_type=?
-          )
-        ORDER BY b.id DESC LIMIT 1
-        """,
-        (normalized_practice_id,normalized_type,REVERSAL_TYPE),
-    ).fetchone()
-    original=_row_to_movement(original_row)
+    original=find_active_receipt_movement(
+        connection,practice_id=normalized_practice_id,movement_type=movement_type,
+    )
     if original is None:
         return None
+    normalized_date=_normalize_date(movement_date)
     if original.movement_date==normalized_date:
         return original
     base=_clean_required(idempotency_key,"idempotency_key",170)
@@ -1194,6 +1233,15 @@ def get_movements(
             "WHEN CAST(REPLACE(COALESCE(NULLIF(p.total_text,''),'0'),',','.') AS REAL)>0 "
             "THEN 'D' ELSE 'W' END"
         )
+        # Stessa interscambiabilita' Saldo/Incasso completo di
+        # find_active_receipt_movement, riusata qui (non riscritta) per la
+        # sintesi delle righe "legacy" da payment_movements: senza questo,
+        # una riga payment_movements il cui kind_sql viene ricalcolato
+        # (es. "Saldo" dopo che e' comparso un acconto) smette di
+        # corrispondere alla riga balance_movements reale gia' scritta
+        # sotto l'altra etichetta, e viene sintetizzata una seconda riga
+        # "legacy" fantasma per lo stesso incasso.
+        settlement_types_sql="("+",".join(f"'{t}'" for t in _SETTLEMENT_RECEIPT_TYPES)+")"
         kind_sql=(
             "CASE WHEN lower(pm.payment_type) LIKE 'acconto%' THEN 'Acconto' "
             "WHEN lower(pm.payment_type) LIKE 'saldo%' AND EXISTS("
@@ -1319,8 +1367,8 @@ def get_movements(
                     AND (
                       existing.movement_type={kind_sql}
                       OR (
-                        {kind_sql}='Incasso completo'
-                        AND existing.movement_type='Saldo'
+                        {kind_sql} IN {settlement_types_sql}
+                        AND existing.movement_type IN {settlement_types_sql}
                       )
                     )
                 )
