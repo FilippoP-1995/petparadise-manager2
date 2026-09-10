@@ -12595,7 +12595,13 @@ class App(BaseHTTPRequestHandler):
             cycles_by_date[cyc["cycle_date"]].append(cyc)
 
         today_iso=today_date.isoformat()
-        board_date=today_iso if today_iso in week_dates else monday.isoformat()
+        requested_iso=view_date.isoformat()
+        # Il giorno da evidenziare all'apertura deve essere quello
+        # effettivamente richiesto (parametro "data"), non sempre "oggi":
+        # altrimenti, tornando da una settimana adiacente dopo uno swipe
+        # (vedi sentinella sotto), si perderebbe il giorno esatto da cui
+        # si era partiti e si ricadrebbe sempre su oggi/lunedi'.
+        board_date=requested_iso if requested_iso in week_dates else (today_iso if today_iso in week_dates else monday.isoformat())
         insertable_cycles_week=[]
         for d in week_dates:
             day_date_iter=date.fromisoformat(d)
@@ -12810,7 +12816,14 @@ class App(BaseHTTPRequestHandler):
         # perche' non esisteva una pagina successiva su cui "agganciarsi"
         # (bug segnalato dall'utente, identico a quello gia' risolto in
         # Calendario dato che la logica del carosello e' la stessa).
-        day_pages.append(f'<div class="cremation-day-page cremation-day-page-edge" data-href="/programma-cremazioni?vista=settimana&data={prev_week}"></div>')
+        # La sentinella iniziale punta al giorno IMMEDIATAMENTE precedente
+        # (domenica della settimana prima), non al lunedi' di quella
+        # settimana (differenza voluta rispetto a "prev_week", usato invece
+        # dal bottone esplicito ‹ piu' sotto): solo cosi' lo swipe indietro
+        # attraverso il confine settimanale riporta esattamente al giorno
+        # da cui si era partiti (stesso pattern di Calendario, che usa
+        # start-1 giorno e non start-7 giorni per la stessa sentinella).
+        day_pages.append(f'<div class="cremation-day-page cremation-day-page-edge" data-href="/programma-cremazioni?vista=settimana&data={(monday-timedelta(days=1)).isoformat()}"></div>')
         for i,d in enumerate(week_dates):
             day_cycles=cycles_by_date[d]
             day_date=date.fromisoformat(d)

@@ -5708,6 +5708,51 @@ class PetParadiseTests(unittest.TestCase):
         # realmente visibile, utile anche per un vero "indietro" successivo.
         self.assertNotIn("params.delete('open_cycle');\n  const cleanQuery=params.toString();", app.APP_JS)
 
+    def test_cremation_week_sentinel_navigation_is_reversible(self):
+        # Bug reale segnalato dall'utente dopo il round precedente: da
+        # domenica, swipe avanti (attraversa il confine settimana, arriva
+        # a lunedi' della settimana successiva) poi swipe indietro doveva
+        # riportare ESATTAMENTE alla domenica di partenza, ma riportava
+        # sempre al giorno corrente. Causa doppia: (1) la sentinella
+        # iniziale puntava a "data=lunedi' della settimana precedente"
+        # invece che al giorno immediatamente precedente (la domenica),
+        # perdendo quale giorno esatto restaurare; (2) anche quando l'URL
+        # portava la domenica giusta, il giorno evidenziato all'apertura
+        # (board_date) ignorava sempre il parametro "data" e sceglieva
+        # "oggi" ogni volta che oggi cadeva in quella settimana - come nel
+        # caso di questo test, dove "oggi" (2026-09-10, giovedi') cade
+        # proprio nella settimana 07-13 settembre.
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        # Settimana 07-13 settembre 2026 (domenica = 13), avanti attraversa
+        # a lunedi' 14 settembre (settimana successiva).
+        self.handler.path = "/programma-cremazioni?vista=settimana&data=2026-09-13"
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn('data-href="/programma-cremazioni?vista=settimana&data=2026-09-14"', page)
+        # La domenica (indice 6 della settimana Lun-Dom) deve essere il
+        # giorno iniziale, dato che e' esattamente quella richiesta.
+        self.assertIn('data-initial-day-index="6"', page)
+        rendered.clear()
+        # Dalla settimana successiva, la sentinella indietro deve puntare
+        # esattamente alla domenica di partenza (13), non al lunedi' di
+        # quella stessa settimana precedente (07, il vecchio bug).
+        self.handler.path = "/programma-cremazioni?vista=settimana&data=2026-09-14"
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn('data-href="/programma-cremazioni?vista=settimana&data=2026-09-13"', page)
+        self.assertNotIn('data-href="/programma-cremazioni?vista=settimana&data=2026-09-07"', page)
+        rendered.clear()
+        # Ricaricando esattamente l'URL a cui la sentinella indietro punta,
+        # il giorno evidenziato deve essere la domenica (indice 6), non
+        # oggi (giovedi', indice 3 in questa stessa settimana).
+        self.handler.path = "/programma-cremazioni?vista=settimana&data=2026-09-13"
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn('data-initial-day-index="6"', page)
+        self.assertNotIn('data-initial-day-index="3"', page)
+
     def test_cremation_animal_row_open_cycle_only_when_assigned_to_a_cycle(self):
         # waiting_card_html (animali in attesa, non ancora in un ciclo) non
         # deve mai portare open_cycle - non c'e' nessun ciclo da riespandere.
