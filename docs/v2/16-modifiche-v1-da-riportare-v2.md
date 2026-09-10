@@ -6,6 +6,7 @@
 |---|---|---|---|---|
 | 1 | 2026-09-10 | Ripristino sistemico dello stato di navigazione ("indietro" ripristina scroll/ricerca/filtri/giorno-settimana/elemento espanso invece di ricaricare dai default) | `cf2f5ba` (main) | **Da valutare, non da portare 1:1** |
 | 2 | 2026-09-10 | Fix Cremazioni: la gesture nativa di back su iPhone non ripristinava lo stato (giorno swipeato / ciclo espanso), perché mancava la sincronizzazione con l'URL reale del browser (a differenza di Calendario, che già la faceva) | `1e54bca` (main) | **Da valutare, non da portare 1:1** |
+| 3 | 2026-09-10 | Fix Cremazioni: lo swipe indietro oltre il confine settimana non riportava al giorno esatto di partenza (es. domenica) ma sempre al giorno corrente, per doppia causa server-side (giorno iniziale evidenziato che ignorava il parametro richiesto + sentinella che puntava al lunedì della settimana invece che al giorno immediatamente precedente) | `7beb739` (main) | **Da valutare, non da portare 1:1** |
 
 ## Dettaglio #1 — Ripristino stato di navigazione
 
@@ -26,3 +27,11 @@
 **Perché**: bug segnalato dall'utente con riproduzione precisa — il link esplicito funzionava, la gesture iPhone no; da Calendario invece funzionava anche con la gesture. Causa radice: mancava la sincronizzazione URL↔stato per la gesture nativa, non per i link.
 
 **Stato verso V2**: stesso discorso del Dettaglio #1 — non da portare 1:1 (V1 multi-page-reload vs V2 SPA React Router). Quando si riprenderà V2, verificare che React Router + `ScrollRestoration` gestiscano già nativamente il back-gesture per lo stato equivalente (giorno selezionato, ciclo espanso in Cremazioni), dato che in una SPA la cronologia del browser è gestita direttamente dal router e non richiede sync manuale via `replaceState` come in V1.
+
+## Dettaglio #3 — Fix ripristino giorno esatto dopo swipe oltre il confine settimana (Cremazioni)
+
+**Cosa è cambiato in V1** (vedi commit `7beb739` per il diff completo): nella vista settimanale di Cremazioni (`cremation_schedule_week`), il giorno inizialmente evidenziato al caricamento (`board_date`) ignorava sempre il parametro `data` della richiesta e sceglieva "oggi" ogni volta che oggi cadeva nella settimana mostrata — indipendentemente da quale giorno esatto fosse stato richiesto. In più, la sentinella del carosello raggiunta swipando indietro oltre lunedì puntava a `data=lunedì della settimana precedente` invece che al giorno immediatamente precedente (la domenica), perdendo così quale giorno esatto restaurare. Corretto seguendo esattamente lo stesso pattern già usato da Calendario per la stessa identica sentinella (`start-1 giorno`, non `start-7 giorni`).
+
+**Perché**: bug segnalato dall'utente — da domenica, swipe avanti oltre il confine settimana (arrivo a lunedì della settimana successiva) poi swipe indietro doveva riportare esattamente alla domenica di partenza, ma riportava sempre al giorno corrente.
+
+**Stato verso V2**: stesso discorso dei Dettagli #1/#2 — non da portare 1:1. Quando si riprenderà V2, verificare che l'equivalente React (giorno selezionato in una vista settimanale Cremazioni, se implementata con un carosello analogo) gestisca correttamente il caso "swipe avanti oltre il confine settimana poi indietro" tramite gli strumenti nativi di React Router/state locale, senza il bisogno di sentinelle server-side come in V1.
