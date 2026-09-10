@@ -5391,18 +5391,56 @@ function cremationOpenPendingCycle(){
   const params=new URLSearchParams(location.search);
   const cycleId=params.get('open_cycle');
   if(!cycleId)return;
-  params.delete('open_cycle');
-  const cleanQuery=params.toString();
-  history.replaceState(null,'',location.pathname+(cleanQuery?'?'+cleanQuery:'')+location.hash);
   const card=document.querySelector('[data-cycle-id="'+cycleId+'"]');
   if(!card)return;
   const page=card.closest('.cremation-day-page');
   if(page)cremationSelectDay(Number(page.dataset.dayIndex),{instant:true});
   if(!card.classList.contains('expanded')){
     const cardHead=card.querySelector('.cremation-cycle-head,.cremation-week-cycle-head');
+    // cremationToggleCycleCard sincronizza gia' da sola open_cycle nell'URL
+    // (vedi sotto): non serve piu' ripulire qui a mano, la lascia scritta
+    // cosi' un vero "indietro" del browser (gesture nativa, non il link
+    // costruito da noi) la trova comunque nella history reale.
     if(cardHead)cremationToggleCycleCard(cardHead);
   }
   requestAnimationFrame(function(){card.scrollIntoView({behavior:'smooth',block:'center'});});
+}
+// Stesso meccanismo di calendarSyncUrlToDay: senza questo l'URL reale della
+// pagina Cremazioni non riflette mai il giorno effettivamente visibile
+// durante lo swipe (solo cremationSetActiveDaybarCard, puramente visivo) -
+// una vera navigazione "indietro" del browser (gesture nativa iOS, non un
+// nostro link) torna quindi alla history reale, che aveva ancora il giorno
+// con cui la pagina era stata caricata la prima volta, non quello su cui
+// l'utente si trovava. Bug segnalato dall'utente, identico a quello gia'
+// risolto in Calendario.
+function cremationSyncUrlToDay(idx){
+  // A differenza della daybar di Calendario (data-date), qui l'attributo
+  // reale e' data-cremation-day (vedi app.py, daybar_cards.append):
+  // verificato nel markup, non per analogia - usare data-date qui non
+  // avrebbe mai funzionato (dataset.date sempre undefined).
+  const card=document.querySelector('.cremation-daybar-card[data-day-index="'+idx+'"]');
+  if(!card||!card.dataset.cremationDay)return;
+  const url=new URL(location.href);
+  url.searchParams.set('data',card.dataset.cremationDay);
+  history.replaceState(null,'',url);
+}
+// Stesso principio di cremationSyncUrlToDay, ma per l'espansione di un
+// ciclo: senza questo open_cycle esiste solo dentro il return_to del link
+// "Apri pratica" (letto da practice_url), mai nella history reale della
+// pagina Cremazioni stessa - un vero "indietro" del browser (gesture
+// nativa) ignora quel link e torna alla voce di history reale, che non ha
+// mai avuto open_cycle scritto dentro. Chiamata da cremationToggleCycleCard
+// ad ogni espandi/collassa, cosi' la history reale resta sempre coerente
+// con cosa e' effettivamente visibile, sia via click sia via gesture.
+function cremationSyncUrlToExpanded(){
+  const expanded=document.querySelector('[data-cycle-card].expanded');
+  const url=new URL(location.href);
+  if(expanded&&expanded.dataset.cycleId){
+    url.searchParams.set('open_cycle',expanded.dataset.cycleId);
+  }else{
+    url.searchParams.delete('open_cycle');
+  }
+  history.replaceState(null,'',url);
 }
 function cremationSelectDay(idx,opts){
   opts=opts||{};
@@ -5414,6 +5452,7 @@ function cremationSelectDay(idx,opts){
   const page=pages.querySelector('[data-day-index="'+idx+'"]');
   if(page)pages.scrollTo({left:page.offsetLeft,behavior:opts.instant?'auto':'smooth'});
   cremationSetActiveDaybarCard(idx,opts.instant);
+  if(!opts.instant)cremationSyncUrlToDay(idx);
 }
 function cremationSetActiveDaybarCard(idx,instant){
   document.querySelectorAll('.cremation-daybar-card').forEach(function(c){
@@ -5470,7 +5509,13 @@ function cremationInitDayPages(){
           location.href=entry.target.dataset.href;
           return;
         }
-        cremationSetActiveDaybarCard(Number(entry.target.dataset.dayIndex),false);
+        // solo evidenziazione barra + sync URL: MAI ri-scrollare qui
+        // #cremationDayPages, altrimenti si combatte con lo swipe che
+        // l'utente sta ancora facendo con il dito (stesso motivo gia'
+        // documentato in Calendario).
+        const dIdx=Number(entry.target.dataset.dayIndex);
+        cremationSetActiveDaybarCard(dIdx,false);
+        cremationSyncUrlToDay(dIdx);
       });
     },{root:pages,threshold:[0.6]});
     items.forEach(function(item){cremationDayObserver.observe(item);});
@@ -6131,6 +6176,7 @@ function cremationToggleCycleCard(headerEl){
     card.classList.remove('expanded');
     cremationCollapseBody(body);
   }
+  cremationSyncUrlToExpanded();
 }
 function reminderDismiss(event,reminderId,btn){
   // Completa/elimina un promemoria dal widget carosello: nessun badge o

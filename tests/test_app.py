@@ -5658,6 +5658,56 @@ class PetParadiseTests(unittest.TestCase):
         page = rendered[-1]
         self.assertIn('data-href="/calendario?vista=giorno&data=2026-09-13"', page)
 
+    def test_cremation_url_sync_uses_real_daybar_attribute_not_calendar_date(self):
+        # Bug reale trovato durante la verifica dal vivo: cremationSyncUrlToDay
+        # era stata scritta per analogia con calendarSyncUrlToDay usando
+        # dataset.date, ma la daybar di Cremazioni porta realmente
+        # data-cremation-day (vedi daybar_cards.append), MAI data-date - con
+        # l'attributo sbagliato la funzione usciva sempre in silenzio
+        # (dataset.date sempre undefined) e l'URL non veniva mai sincronizzato,
+        # quindi un vero "indietro" del browser (gesture nativa, non i nostri
+        # link) tornava sempre al giorno con cui la pagina era stata caricata
+        # la prima volta, mai a quello su cui l'utente si trovava dopo lo swipe.
+        sync_fn_src = app.APP_JS.split("function cremationSyncUrlToDay(idx){", 1)[1].split("\n}", 1)[0]
+        self.assertIn("card.dataset.cremationDay", sync_fn_src)
+        self.assertNotIn("card.dataset.date", sync_fn_src)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/programma-cremazioni?vista=settimana&data=2026-09-07"
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn('data-cremation-day="2026-09-07"', page)
+
+    def test_cremation_day_swipe_and_cycle_expand_sync_real_url_for_native_back_gesture(self):
+        # I due bug segnalati dall'utente dopo il primo giro di correzioni:
+        # il bottone "Indietro" funzionava ma il gesture nativo iOS no (va
+        # alla history REALE del browser, non a un nostro link costruito ad
+        # hoc), e lo swipe fra i giorni di Cremazioni non aveva alcun
+        # equivalente di calendarSyncUrlToDay - l'URL reale della pagina non
+        # rifletteva mai il giorno/ciclo effettivamente visibile. Qui si
+        # blinda che entrambe le funzioni di sincronizzazione esistono e sono
+        # cablate nei punti giusti (non solo che esistono da qualche parte).
+        self.assertIn("function cremationSyncUrlToDay(idx){", app.APP_JS)
+        self.assertIn("function cremationSyncUrlToExpanded(){", app.APP_JS)
+        # cremationSelectDay deve sincronizzare solo quando NON instant (lo
+        # stesso esatto pattern di calendarSelectDay/calendarSyncUrlToDay -
+        # instant e' usato solo al caricamento iniziale, dove sincronizzare
+        # sarebbe un no-op ma comunque una scrittura history superflua).
+        self.assertIn("if(!opts.instant)cremationSyncUrlToDay(idx);", app.APP_JS)
+        # L'IntersectionObserver dello swipe deve chiamarla ad ogni giorno che
+        # diventa visibile (non solo l'evidenziazione della daybar).
+        self.assertIn("cremationSetActiveDaybarCard(dIdx,false);\n        cremationSyncUrlToDay(dIdx);", app.APP_JS)
+        # cremationToggleCycleCard deve sincronizzare open_cycle nell'URL reale
+        # ad ogni espandi/collassa, non solo scriverlo dentro un return_to.
+        self.assertIn("cremationSyncUrlToExpanded();\n}", app.APP_JS)
+        # cremationOpenPendingCycle non deve piu' ripulire subito open_cycle
+        # dall'URL (lo faceva prima con un replaceState manuale): ora la
+        # pulizia/scrittura e' delegata interamente a cremationSyncUrlToExpanded
+        # chiamata dal toggle, cosi' l'URL resta sempre coerente con lo stato
+        # realmente visibile, utile anche per un vero "indietro" successivo.
+        self.assertNotIn("params.delete('open_cycle');\n  const cleanQuery=params.toString();", app.APP_JS)
+
     def test_cremation_animal_row_open_cycle_only_when_assigned_to_a_cycle(self):
         # waiting_card_html (animali in attesa, non ancora in un ciclo) non
         # deve mai portare open_cycle - non c'e' nessun ciclo da riespandere.
