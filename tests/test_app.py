@@ -1286,16 +1286,17 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path="/fatture"
         self.handler.invoices_page(admin)
         page=rendered[-1]
-        own_script=page.split('ppm_fatture_state:')[1]
-        # Stesso pattern gia' collaudato in Archivio: rileva il ritorno da
-        # una pratica via document.referrer (non un flag one-shot), scrive
-        # subito (non solo su debounce) al click di una riga, e nasconde la
-        # lista via CSS finche' lo scroll non e' stato riposizionato - senza
-        # questo la pagina si vede comunque "saltare" dalla cima, che e'
-        # esattamente la sensazione di refresh segnalata.
-        self.assertIn("document.referrer",own_script)
-        self.assertIn("saveNow",own_script)
-        self.assertIn("classList.add('row-selected')",own_script)
+        # Il ripristino scroll/ricerca/riga evidenziata non vive più in uno
+        # script dedicato a questa pagina: è stato consolidato nel sistema
+        # unico PPM_LIST_PAGES/setupListStateRestore (condiviso, in
+        # app.APP_JS, incluso in ogni pagina via layout()) - stessa identica
+        # logica di prima (referrer, salvataggio immediato al click riga,
+        # lista nascosta finché lo scroll non è ripristinato), solo non più
+        # duplicata. Qui si verifica che "/fatture" sia configurata con
+        # tutte le opzioni che prima erano scritte a mano solo qui.
+        self.assertIn("'/fatture':{detail:/^\\/pratiche\\/\\d+/,perUser:true,revealId:'fattureLists',rowHighlight:{className:'row-selected'},saveOnClick:'.tablebox .practice-row-link'}",app.APP_JS)
+        self.assertIn("document.referrer",app.APP_JS)
+        self.assertIn("saveNow",app.APP_JS)
         self.assertIn("fattureLists",page)
         self.assertIn('id="fattureLists"',page)
         # Ogni riga deve portare l'id pratica, necessario per ritrovarla al
@@ -2758,7 +2759,10 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.send_html = lambda content, *args: rendered.append(content)
         self.handler.cremation_schedule(admin)
         page = rendered[-1]
-        self.assertIn(f'href="/calendario/nuovo?linked_practice_id={pid}&return_to={quote(self.handler.path,safe="")}"', page)
+        # return_to porta anche open_cycle: tornando dalla pratica il ciclo
+        # di provenienza si riespande da solo (riusa cremationOpenPendingCycle,
+        # gia' esistente per "torna al ciclo appena creato").
+        self.assertIn(f'href="/calendario/nuovo?linked_practice_id={pid}&return_to={quote(self.handler.path+f"&open_cycle={cycle_id}",safe="")}"', page)
         self.assertIn('>Fissa riconsegna</span>', page)
         self.assertNotIn('>Fissa riconsegna Sam</span>', page)
 
@@ -2785,7 +2789,7 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.send_html = lambda content, *args: rendered.append(content)
         self.handler.cremation_schedule(admin)
         page = rendered[-1]
-        self.assertIn(f'href="/calendario/{event_id}?return_to={quote(self.handler.path,safe="")}"', page)
+        self.assertIn(f'href="/calendario/{event_id}?return_to={quote(self.handler.path+f"&open_cycle={cycle_id}",safe="")}"', page)
         self.assertIn('>Vedi riconsegna</span>', page)
         self.assertNotIn(f'href="/calendario/nuovo?linked_practice_id={pid}&return_to=', page)
         self.assertNotIn('>Fissa riconsegna</span>', page)
@@ -2814,8 +2818,8 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.send_html = lambda content, *args: rendered.append(content)
         self.handler.cremation_schedule(admin)
         page = rendered[-1]
-        self.assertIn(f'href="/calendario/nuovo?linked_practice_id={pid1}&return_to={quote(self.handler.path,safe="")}"', page)
-        self.assertIn(f'href="/calendario/nuovo?linked_practice_id={pid2}&return_to={quote(self.handler.path,safe="")}"', page)
+        self.assertIn(f'href="/calendario/nuovo?linked_practice_id={pid1}&return_to={quote(self.handler.path+f"&open_cycle={cycle_id}",safe="")}"', page)
+        self.assertIn(f'href="/calendario/nuovo?linked_practice_id={pid2}&return_to={quote(self.handler.path+f"&open_cycle={cycle_id}",safe="")}"', page)
         self.assertIn('>Fissa riconsegna Sam</span>', page)
         self.assertIn('>Fissa riconsegna Luna</span>', page)
 
@@ -5556,24 +5560,153 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(f'data-practice-id="{pid}"',page)
         self.assertIn('<div id="archiveList">',page)
         self.assertIn("visibility:hidden",app.CSS)
-        self.assertIn(f"ppm_archive_state:{admin['id']}",page)
-        self.assertIn("isBack",page)
-        self.assertIn("archive-row-highlight",page)
+        # Il ripristino scroll/ricerca/riga evidenziata è consolidato nel
+        # sistema unico PPM_LIST_PAGES/setupListStateRestore (condiviso, in
+        # app.APP_JS) - non più uno script dedicato scritto qui: la chiave
+        # per-utente e l'evidenziazione riga sono ora opzioni di config.
+        self.assertIn("'/archivio/pratiche':{detail:/^\\/pratiche\\/\\d+/,perUser:true,revealId:'archiveList',rowHighlight:{className:'archive-row-highlight',fadeClassName:'archive-row-fade',removeDelayMs:2600}}",app.APP_JS)
+        self.assertIn("isBack",app.APP_JS)
+        self.assertIn("archive-row-highlight",app.APP_JS)
         self.assertIn("fetch('/archivio/mese-stato'",page)
         import inspect
         self.assertIn('if path == "/archivio/mese-stato": return self.save_archive_month_state(user)',inspect.getsource(app.App._route_post))
 
     def test_list_scroll_and_filter_state_restore_is_wired_for_all_target_pages(self):
-        for path in ("/calendario", "/clienti", "/veterinari", "/catalogo-urne", "/ordini/storico"):
+        # Sistema unico consolidato (era 3 implementazioni quasi identiche:
+        # questa generica + una copia in Fatture + una in Archivio): tutte
+        # le pagine lista/vista che portano a un dettaglio e poi tornano
+        # indietro sono ora registrate in un solo posto, Archivio e Fatture
+        # incluse.
+        for path in ("/calendario", "/clienti", "/veterinari", "/collaboratori", "/catalogo-urne",
+                     "/ordini/storico", "/smaltimenti", "/programma-cremazioni", "/fatture", "/archivio/pratiche"):
             self.assertIn(f"'{path}':", app.APP_JS)
-        # Archivio ha una propria implementazione dedicata (vedi test_archive_*
-        # sotto), non usa più il sistema condiviso PPM_LIST_PAGES.
-        self.assertNotIn("'/archivio/pratiche':", app.APP_JS)
         self.assertIn("extraInputs:['urnCatalogSearch']", app.APP_JS)
+        self.assertIn("skipScrollWhenParam:'open_cycle'", app.APP_JS)
+        self.assertIn("perUser:true", app.APP_JS)
         self.assertIn("function setupListStateRestore(){", app.APP_JS)
         self.assertIn("document.addEventListener('DOMContentLoaded', setupListStateRestore);", app.APP_JS)
         self.assertIn("sessionStorage.setItem(key,JSON.stringify(state));", app.APP_JS)
         self.assertIn("location.replace(location.pathname+state.search);", app.APP_JS)
+        # open_cycle e' l'unico URL param usato per lo skip generico: se il
+        # generico non si fermasse davanti a lui, il primo confronto
+        # search-salvata-vs-corrente lo cancellerebbe con un location.replace
+        # prima che cremationOpenPendingCycle possa leggerlo (bug reale
+        # trovato e corretto durante la verifica dal vivo di questa modifica).
+        self.assertIn("const skipGenericRestore=cfg.skipScrollWhenParam && new URLSearchParams(location.search).has(cfg.skipScrollWhenParam);", app.APP_JS)
+        self.assertIn("if(isBack && !skipGenericRestore){", app.APP_JS)
+
+    def test_layout_renders_user_id_on_body_for_per_user_state_keys(self):
+        # data-user-id sul <body> e' quello che permette a perUser:true
+        # (Fatture/Archivio) di costruire una chiave sessionStorage separata
+        # per utente, letta lato client da document.body.dataset.userId.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        page = app.layout("Test", "<main></main>", admin)
+        self.assertIn(f'data-user-id="{admin["id"]}"', page)
+
+    def test_calendar_appointment_card_and_add_button_carry_dynamic_return_to(self):
+        # Prima di questa modifica nessuno dei due passava mai return_to:
+        # tornando dal dettaglio evento o annullando il wizard "Nuovo evento"
+        # si ricadeva sempre su "oggi", perdendo il giorno/settimana da cui
+        # si era partiti. return_to e' calcolato lato client (non nel markup
+        # server-side) per riflettere anche uno swipe fatto senza reload
+        # (calendarSyncUrlToDay aggiorna solo l'URL via replaceState).
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute(
+                """INSERT INTO calendar_events(event_type,title,animal_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO TEST","Fido","2026-07-20T10:00:00","2026-07-20T10:30:00","Da confermare",admin["id"],stamp,stamp),
+            ).lastrowid
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/calendario?data=2026-07-20"
+        self.handler.calendar_page(admin)
+        page = rendered[-1]
+        self.assertIn(
+            f"onclick=\"location.href='/calendario/{event_id}?return_to='+encodeURIComponent(location.pathname+location.search)\"",
+            page,
+        )
+        self.assertIn(
+            f"onclick=\"event.preventDefault();location.href=this.getAttribute('href')+'?return_to='+encodeURIComponent(location.pathname+location.search)\">Apri dettaglio</a>",
+            page,
+        )
+        self.assertIn(
+            "onclick=\"event.preventDefault();location.href=this.getAttribute('href')+'&return_to='+encodeURIComponent(location.pathname+location.search)\">"
+            + app.lucide("plus") + "<span>Aggiungi ritiro / riconsegna</span></a>",
+            page,
+        )
+
+    def test_calendar_week_sentinel_navigation_is_reversible(self):
+        # Caso esplicito segnalato dall'utente: oggi giovedi', sono sulla
+        # card di domenica, swipe avanti attraversa il confine settimana
+        # (arrivo a lunedi' della settimana successiva), swipe indietro deve
+        # riportare ESATTAMENTE alla domenica di partenza, non al giorno
+        # corrente. Lo swipe stesso e' puro client-side (mai toccato da
+        # questa modifica) - qui si blinda che la matematica server-side
+        # delle sentinelle (view_url) che lo swipe attraversa resta
+        # simmetrica: avanti-poi-indietro riporta al giorno esatto.
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.path = "/calendario?data=2026-09-13"
+        self.handler.calendar_page(admin)
+        page = rendered[-1]
+        self.assertIn('data-href="/calendario?vista=giorno&data=2026-09-14"', page)
+        rendered.clear()
+        self.handler.path = "/calendario?vista=giorno&data=2026-09-14"
+        self.handler.calendar_page(admin)
+        page = rendered[-1]
+        self.assertIn('data-href="/calendario?vista=giorno&data=2026-09-13"', page)
+
+    def test_cremation_animal_row_open_cycle_only_when_assigned_to_a_cycle(self):
+        # waiting_card_html (animali in attesa, non ancora in un ciclo) non
+        # deve mai portare open_cycle - non c'e' nessun ciclo da riespandere.
+        # animal_row_html (dentro un ciclo) invece si', sia in vista giorno
+        # che settimana (stesso practice_url, duplicato identico nelle due
+        # funzioni).
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            waiting_pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("CR-WAIT1", "Privato", "Livorno", "Ritirato", "Cremazione singola", stamp, stamp, admin["id"], "Birba"),
+            ).lastrowid
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/programma-cremazioni"
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn(f'/pratiche/{waiting_pid}?return_to=', page)
+        self.assertNotIn(f'/pratiche/{waiting_pid}?return_to=%2Fprogramma-cremazioni%3Fopen_cycle', page)
+
+    def test_disposal_batch_detail_and_history_link_preserve_period_filters(self):
+        # Prima di questa modifica "Torna a Smaltimenti" e il link "Apri"
+        # dello storico erano entrambi statici: tornando allo storico si
+        # perdevano i filtri periodo (dal/al/stato) applicati prima.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
+                   created_at,updated_at,created_by,service_type) VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("PP-BATCHRT", "Privato", "Livorno", "Ritirato", "2026-07-15", stamp, stamp, admin["id"], "Cremazione collettiva"),
+            )
+        redirects = []; self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.path = "/smaltimenti?dal=2026-07-01&al=2026-07-31"
+        self.handler.form = lambda: {"dal": "2026-07-01", "al": "2026-07-31"}
+        self.handler.disposal_confirm(admin)
+        batch_id = int(redirects[-1].rsplit("/", 1)[-1])
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/smaltimenti?dal=2026-07-01&al=2026-07-31&stato=smaltito"
+        self.handler.disposal_page(admin)
+        page = rendered[-1]
+        self.assertIn(
+            f'href="/smaltimenti/storico/{batch_id}?return_to={quote(self.handler.path,safe="")}">Apri</a>',
+            page,
+        )
+        rendered.clear()
+        self.handler.path = f"/smaltimenti/storico/{batch_id}?return_to={quote('/smaltimenti?dal=2026-07-01&al=2026-07-31&stato=smaltito',safe='')}"
+        self.handler.disposal_batch_detail(admin, batch_id)
+        page = rendered[-1]
+        self.assertIn('href="/smaltimenti?dal=2026-07-01&amp;al=2026-07-31&amp;stato=smaltito">Torna a Smaltimenti</a>', page)
 
     def test_pdf_urn_inventory_is_imported_once_with_exact_totals(self):
         with app.db() as conn:

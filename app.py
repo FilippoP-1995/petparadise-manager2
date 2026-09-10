@@ -3771,12 +3771,32 @@ function setupTableTouchScroll(){
   });
 }
 document.addEventListener('DOMContentLoaded', setupTableTouchScroll);
+// Sistema unico di ripristino stato di navigazione (scroll, ricerca/
+// filtri, riga evidenziata, elemento espanso) per ogni pagina lista/
+// vista che porta a un dettaglio e poi torna indietro. Consolida in un
+// solo posto quello che prima erano 3 implementazioni quasi identiche
+// (questa versione generica + una copia in Fatture + una copia in
+// Archivio pratiche): stessa logica di rilevamento "sto tornando da un
+// dettaglio" (referrer che combacia con `detail`, oppure vera
+// navigazione back/forward del browser, con un flag di sessionStorage
+// che sopravvive anche a un redirect intermedio quando la ricerca
+// salvata differisce da quella corrente), stesso salvataggio scroll con
+// debounce, estesa con le funzionalita' che Fatture/Archivio avevano
+// solo loro (rivelazione lista dopo il ripristino per evitare il flash,
+// evidenziazione della riga da cui si e' tornati, chiave per-utente) e
+// una nuova (skipScrollWhenParam, usata da Cremazioni per non litigare
+// con cremationOpenPendingCycle quando c'e' un ciclo da riespandere).
 const PPM_LIST_PAGES={
-  '/calendario':{detail:/^\/calendario\/\d+/,calendar:true},
+  '/calendario':{detail:/^\/calendario\/(\d+|nuovo)/,calendar:true},
   '/clienti':{detail:/^\/clienti\/\d+/},
   '/veterinari':{detail:/^\/veterinari\/\d+/},
+  '/collaboratori':{detail:/^\/collaboratori\/\d+/},
   '/catalogo-urne':{detail:/^\/catalogo-urne\/\d+/,extraInputs:['urnCatalogSearch']},
   '/ordini/storico':{detail:/^\/ordini\/\d+/},
+  '/smaltimenti':{detail:/^\/(pratiche|smaltimenti\/storico)\/\d+/},
+  '/programma-cremazioni':{detail:/^\/pratiche\/\d+/,skipScrollWhenParam:'open_cycle'},
+  '/fatture':{detail:/^\/pratiche\/\d+/,perUser:true,revealId:'fattureLists',rowHighlight:{className:'row-selected'},saveOnClick:'.tablebox .practice-row-link'},
+  '/archivio/pratiche':{detail:/^\/pratiche\/\d+/,perUser:true,revealId:'archiveList',rowHighlight:{className:'archive-row-highlight',fadeClassName:'archive-row-fade',removeDelayMs:2600}},
 };
 function ppmListScrollTarget(cfg){
   if(cfg.calendar){
@@ -3797,7 +3817,8 @@ function setupListStateRestore(){
   const path=location.pathname;
   const cfg=PPM_LIST_PAGES[path];
   if(!cfg) return;
-  const key='ppm_list_state:'+path;
+  const userId=document.body?document.body.dataset.userId:'';
+  const key='ppm_list_state:'+path+(cfg.perUser&&userId?':'+userId:'');
   const flagKey=key+':returning';
   let refPath='';
   try{ refPath=document.referrer?new URL(document.referrer).pathname:''; }catch(e){}
@@ -3805,36 +3826,57 @@ function setupListStateRestore(){
   const freshBack=(navEntry&&navEntry.type==='back_forward')||(cfg.detail&&cfg.detail.test(refPath));
   const pendingReturn=sessionStorage.getItem(flagKey)==='1';
   const isBack=freshBack||pendingReturn;
-  let redirecting=false;
-  if(isBack){
+  const revealEl=cfg.revealId?document.getElementById(cfg.revealId):null;
+  function reveal(){ if(revealEl) revealEl.style.visibility='visible'; }
+  // Quando l'URL porta gia' il parametro di cfg.skipScrollWhenParam (es.
+  // open_cycle per Cremazioni), c'e' gia' un meccanismo dedicato che sa
+  // esattamente cosa ripristinare (cremationOpenPendingCycle): il
+  // ripristino generico deve stare completamente fuori, altrimenti il
+  // confronto search-salvata-vs-corrente lo troverebbe "diverso" (la
+  // ricerca salvata non conosce open_cycle) e farebbe un location.replace
+  // che lo cancella prima ancora che l'altro meccanismo possa leggerlo.
+  const skipGenericRestore=cfg.skipScrollWhenParam && new URLSearchParams(location.search).has(cfg.skipScrollWhenParam);
+  if(isBack && !skipGenericRestore){
     if(freshBack){ try{ sessionStorage.setItem(flagKey,'1'); }catch(e){} }
     let state=null;
     try{ state=JSON.parse(sessionStorage.getItem(key)||'null'); }catch(e){}
     if(state){
       if(typeof state.search==='string' && state.search!==location.search){
-        redirecting=true;
         location.replace(location.pathname+state.search);
-      }else{
-        try{ sessionStorage.removeItem(flagKey); }catch(e){}
-        if(cfg.extraInputs){
-          cfg.extraInputs.forEach(id=>{
-            const el=document.getElementById(id);
-            if(el && state.extra && state.extra[id]!==undefined && el.value!==state.extra[id]){
-              el.value=state.extra[id];
-              el.dispatchEvent(new Event('input',{bubbles:true}));
+        return;
+      }
+      try{ sessionStorage.removeItem(flagKey); }catch(e){}
+      if(cfg.extraInputs){
+        cfg.extraInputs.forEach(id=>{
+          const el=document.getElementById(id);
+          if(el && state.extra && state.extra[id]!==undefined && el.value!==state.extra[id]){
+            el.value=state.extra[id];
+            el.dispatchEvent(new Event('input',{bubbles:true}));
+          }
+        });
+      }
+      if(typeof state.scrollY==='number'){
+        setTimeout(()=>{ ppmListScrollTo(ppmListScrollTarget(cfg),state.scrollY); },0);
+      }
+      if(cfg.rowHighlight){
+        const match=refPath.match(/^\/pratiche\/(\d+)/);
+        if(match){
+          const row=document.querySelector('[data-practice-id="'+match[1]+'"]');
+          if(row){
+            row.classList.add(cfg.rowHighlight.className);
+            if(cfg.rowHighlight.fadeClassName){
+              setTimeout(()=>{ row.classList.add(cfg.rowHighlight.fadeClassName); },300);
+              setTimeout(()=>{ row.classList.remove(cfg.rowHighlight.className,cfg.rowHighlight.fadeClassName); },cfg.rowHighlight.removeDelayMs||2600);
             }
-          });
-        }
-        if(typeof state.scrollY==='number'){
-          setTimeout(()=>{ ppmListScrollTo(ppmListScrollTarget(cfg),state.scrollY); },0);
+          }
         }
       }
     }else{
       try{ sessionStorage.removeItem(flagKey); }catch(e){}
     }
   }
-  if(redirecting) return;
-  const save=ppmDebounce(()=>{
+  reveal();
+  const saveNow=()=>{
     const target=ppmListScrollTarget(cfg);
     const state={search:location.search,scrollY:ppmListScrollValue(target)};
     if(cfg.extraInputs){
@@ -3842,12 +3884,16 @@ function setupListStateRestore(){
       cfg.extraInputs.forEach(id=>{ const el=document.getElementById(id); if(el) state.extra[id]=el.value; });
     }
     try{ sessionStorage.setItem(key,JSON.stringify(state)); }catch(e){}
-  },200);
+  };
+  const save=ppmDebounce(saveNow,200);
   window.addEventListener('scroll',save,{passive:true});
   const scrollTarget=ppmListScrollTarget(cfg);
   if(scrollTarget!==window) scrollTarget.addEventListener('scroll',save,{passive:true});
   if(cfg.extraInputs){
     cfg.extraInputs.forEach(id=>{ const el=document.getElementById(id); if(el) el.addEventListener('input',save); });
+  }
+  if(cfg.saveOnClick){
+    document.addEventListener('click',function(e){ if(e.target.closest(cfg.saveOnClick))saveNow(); });
   }
   save();
 }
@@ -8030,7 +8076,7 @@ def layout(title, body, user=None):
         reminder_badge=f'<span class="notification-badge">{open_reminders_count if open_reminders_count < 100 else "99+"}</span>' if open_reminders_count else ''
         prefs=load_preferences(user["id"])
         if prefs.get("theme")=="light": body_class=" light-theme"
-        body_attrs=f' data-has-session="1"{" data-server-theme=\"1\"" if "theme" in prefs else ""}'
+        body_attrs=f' data-has-session="1" data-user-id="{user["id"]}"{" data-server-theme=\"1\"" if "theme" in prefs else ""}'
         links=list(SIDEBAR_LINKS)
         sidebar_order=parse_preference_list(prefs.get("sidebar_order",""))
         if sidebar_order:
@@ -9827,7 +9873,7 @@ class App(BaseHTTPRequestHandler):
         menu_btn=f'''<div class="calendar-appt-menu-wrap" onclick="event.stopPropagation()">
           <button type="button" class="calendar-appt-action" aria-label="Altre azioni" onclick="calendarToggleApptMenu(this)">{lucide("more-vertical")}</button>
           <div class="calendar-appt-menu-popover" hidden>
-            <a href="/calendario/{row['id']}">Apri dettaglio</a>
+            <a href="/calendario/{row['id']}" onclick="event.preventDefault();location.href=this.getAttribute('href')+'?return_to='+encodeURIComponent(location.pathname+location.search)">Apri dettaglio</a>
             <a href="/calendario/{row['id']}/modifica">Modifica</a>
             <form method="post" action="/calendario/{row['id']}/elimina" onsubmit="return confirm('Eliminare questo evento?')"><button type="submit">Elimina</button></form>
           </div>
@@ -9838,7 +9884,7 @@ class App(BaseHTTPRequestHandler):
         if self.calendar_appointment_done(row):filter_keys.append("done")
         if not row["assigned_user_id"]:filter_keys.append("unassigned")
         operator_attr=esc((operator_name or "").lower())
-        return f'''<article class="calendar-appt-card" data-event-id="{row['id']}" data-filter="{esc(' '.join(filter_keys))}" data-operator="{operator_attr}" style="border-left-color:{hex_}" onclick="location.href='/calendario/{row['id']}'">
+        return f'''<article class="calendar-appt-card" data-event-id="{row['id']}" data-filter="{esc(' '.join(filter_keys))}" data-operator="{operator_attr}" style="border-left-color:{hex_}" onclick="location.href='/calendario/{row['id']}?return_to='+encodeURIComponent(location.pathname+location.search)">
           <div class="calendar-appt-time-col"><span class="calendar-appt-time-dot" style="background:{hex_}"></span><span class="calendar-appt-time">{esc(time_text)}</span>{f'<span class="calendar-appt-time-end">→ {esc(end_time_text)}</span>' if show_time_range else ''}</div>
           <div class="calendar-appt-main">
             <div class="calendar-appt-top"><span class="calendar-appt-type {type_cls}">{type_label}</span>{avatar}</div>
@@ -10064,7 +10110,7 @@ class App(BaseHTTPRequestHandler):
             day_pages.append(f'''<div class="calendar-day-page" data-day-index="{i}" data-date="{day.isoformat()}">
               {stats_html}
               <div class="calendar-appt-list">{list_html}</div>
-              <a class="calendar-add-appt-btn" href="/calendario/nuovo?data={day.isoformat()}">{lucide("plus")}<span>Aggiungi ritiro / riconsegna</span></a>
+              <a class="calendar-add-appt-btn" href="/calendario/nuovo?data={day.isoformat()}" onclick="event.preventDefault();location.href=this.getAttribute('href')+'&return_to='+encodeURIComponent(location.pathname+location.search)">{lucide("plus")}<span>Aggiungi ritiro / riconsegna</span></a>
             </div>''')
         day_pages.append(f'<div class="calendar-day-page calendar-day-page-edge" data-href="{view_url(start+timedelta(days=7),view)}"></div>')
         daybar_html=f'''<div id="calendarDayboard">
@@ -12098,8 +12144,19 @@ class App(BaseHTTPRequestHandler):
               {urn_line_html}
             </div>'''
 
-        def practice_url(row):
-            return f'/pratiche/{row["id"]}?return_to={quote(getattr(self,"path",""),safe="")}'
+        def practice_url(row,cycle_id=None):
+            # open_cycle riusa lo stesso meccanismo gia' esistente di
+            # cremationOpenPendingCycle (nato per "torna al ciclo appena
+            # creato"): qui lo stesso parametro fa si' che, tornando dalla
+            # pratica, il ciclo da cui si era partiti si riespanda e si
+            # riporti in vista da solo - nessuna logica nuova, solo lo
+            # stesso ingresso gia' collaudato. Va dentro il valore di
+            # return_to (fa parte dell'URL a cui si torna), non come
+            # parametro sorella di /pratiche/{id} che non lo userebbe mai.
+            own_path=getattr(self,"path","")
+            if cycle_id:
+                own_path=own_path+('&' if '?' in own_path else '?')+f'open_cycle={cycle_id}'
+            return f'/pratiche/{row["id"]}?return_to={quote(own_path,safe="")}'
 
         def quick_insert_menu_html(row):
             items=[f'<button type="button" onclick="cremationQuickAssign(this,{row["id"]},{cid})">Inserisci nel Ciclo {n}</button>' for n,cid in insertable_cycles]
@@ -12136,7 +12193,7 @@ class App(BaseHTTPRequestHandler):
               </div>
             </div>'''
 
-        def animal_row_html(row,removable=False):
+        def animal_row_html(row,removable=False,cycle_id=None):
             collab_code=collaborator_codes.get(int(row["collaborator_id"])) if "collaborator_id" in row.keys() and row["collaborator_id"] else ""
             prefix=f'{esc(collab_code)} ' if collab_code else ""
             avatar_emoji,avatar_cls=species_avatar(row["species"] if "species" in row.keys() else "")
@@ -12144,7 +12201,7 @@ class App(BaseHTTPRequestHandler):
             weight_html=f'{esc(weight)} kg' if weight else '<span class="cremation-dash">—</span>'
             code=(row["provenance"] or "").strip().upper()
             provenance_html=f'<span class="cremation-provenance-chip {provenance_color_class(code)}">{esc(code)}</span>' if code else '<span class="cremation-dash">—</span>'
-            url=practice_url(row)
+            url=practice_url(row,cycle_id)
             remove_html=f'<button type="button" class="cremation-animal-remove" onclick="event.stopPropagation();cremationRemoveFromCycle(this,{row["id"]})" aria-label="Rimuovi dal ciclo" title="Rimuovi dal ciclo">{lucide("x")}</button>' if removable else ""
             swap_html=f'<button type="button" class="cremation-animal-swap" onclick="event.stopPropagation();cremationOpenSwapModal({row["id"]},{esc(json.dumps(row["animal_name"] or "Animale"))},{esc(json.dumps(weight))})" aria-label="Scambia animale" title="Scambia con un altro animale">{lucide("repeat")}</button>' if removable else ""
             notifier_id=row["owner_notified_by"] if "owner_notified_by" in row.keys() and row["owner_notified_by"] else None
@@ -12186,7 +12243,7 @@ class App(BaseHTTPRequestHandler):
         for idx,cycle in enumerate(cycles):
             animals=cycle_practices.get(cycle["id"],[])
             status=cycle["status"]
-            animals_html=''.join(animal_row_html(row,removable=True) for row in animals) or '<p class="cremation-dash" style="padding:10px 0">Nessun animale assegnato.</p>'
+            animals_html=''.join(animal_row_html(row,removable=True,cycle_id=cycle["id"]) for row in animals) or '<p class="cremation-dash" style="padding:10px 0">Nessun animale assegnato.</p>'
             status_label,status_cls=CREMATION_STATUS_LABELS.get(status,(status.upper(),""))
             names_html=''.join(cycle_animal_preview_line(row) for row in animals) or '<div class="cremation-week-animal-line cremation-dash">Nessun animale</div>'
             remaining_html=""
@@ -12204,10 +12261,16 @@ class App(BaseHTTPRequestHandler):
                 for animal_row in animals:
                     delivery_label=f' {esc(animal_row["animal_name"])}' if len(animals)>1 and animal_row["animal_name"] else ""
                     existing_delivery_id=delivery_event_by_practice.get(animal_row["id"])
+                    # open_cycle va dentro il return_to (fa parte dell'URL a
+                    # cui si torna, non di /calendario che non lo conosce):
+                    # stesso meccanismo gia' esistente di
+                    # cremationOpenPendingCycle, riusato per riespandere il
+                    # ciclo di provenienza anche tornando da qui.
+                    cycle_return_to=quote(self.path+('&' if '?' in self.path else '?')+f'open_cycle={cycle["id"]}',safe="")
                     if existing_delivery_id:
-                        actions.append(f'<a class="cremation-action-btn cremation-action-active" href="/calendario/{existing_delivery_id}?return_to={quote(self.path,safe="")}">{lucide("truck")}<span>Vedi riconsegna{delivery_label}</span></a>')
+                        actions.append(f'<a class="cremation-action-btn cremation-action-active" href="/calendario/{existing_delivery_id}?return_to={cycle_return_to}">{lucide("truck")}<span>Vedi riconsegna{delivery_label}</span></a>')
                     else:
-                        actions.append(f'<a class="cremation-action-btn cremation-action-planned" href="/calendario/nuovo?linked_practice_id={animal_row["id"]}&return_to={quote(self.path,safe="")}">{lucide("truck")}<span>Fissa riconsegna{delivery_label}</span></a>')
+                        actions.append(f'<a class="cremation-action-btn cremation-action-planned" href="/calendario/nuovo?linked_practice_id={animal_row["id"]}&return_to={cycle_return_to}">{lucide("truck")}<span>Fissa riconsegna{delivery_label}</span></a>')
                 actions.append(f'<button type="button" class="cremation-action-btn cremation-action-planned" onclick="cremationRevertComplete({cycle["id"]})">{lucide("undo-2")}<span>Annulla completamento</span></button>')
                 actions.append(f'<button type="button" class="cremation-action-btn cremation-action-delete" onclick="cremationDeleteCycle({cycle["id"]})">{lucide("x")}<span>Elimina ciclo</span></button>')
             else:
@@ -12536,8 +12599,15 @@ class App(BaseHTTPRequestHandler):
                 name+=f' <small class="cremation-owner-hint">({esc(surname)})</small>'
             return name
 
-        def practice_url(row):
-            return f'/pratiche/{row["id"]}?return_to={quote(getattr(self,"path",""),safe="")}'
+        def practice_url(row,cycle_id=None):
+            # Stesso meccanismo della vista giorno (vedi commento li'):
+            # open_cycle dentro return_to riespande il ciclo di provenienza
+            # tornando dalla pratica, riusando cremationOpenPendingCycle
+            # gia' esistente.
+            own_path=getattr(self,"path","")
+            if cycle_id:
+                own_path=own_path+('&' if '?' in own_path else '?')+f'open_cycle={cycle_id}'
+            return f'/pratiche/{row["id"]}?return_to={quote(own_path,safe="")}'
 
         def owner_label(row):
             owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip() or row["owner_company"] or ""
@@ -12548,7 +12618,7 @@ class App(BaseHTTPRequestHandler):
         def add_animal_button_html(cycle_id):
             return f'<button type="button" class="cremation-action-btn cremation-action-add" onclick="event.stopPropagation();cremationOpenAddAnimalModal({cycle_id})">{lucide("plus")}<span>Aggiungi animale</span></button>'
 
-        def animal_row_html(row,removable=False):
+        def animal_row_html(row,removable=False,cycle_id=None):
             collab_code=collaborator_codes.get(int(row["collaborator_id"])) if "collaborator_id" in row.keys() and row["collaborator_id"] else ""
             prefix=f'{esc(collab_code)} ' if collab_code else ""
             avatar_emoji,avatar_cls=species_avatar(row["species"] if "species" in row.keys() else "")
@@ -12556,7 +12626,7 @@ class App(BaseHTTPRequestHandler):
             weight_html=f'{esc(weight)} kg' if weight else '<span class="cremation-dash">—</span>'
             code=(row["provenance"] or "").strip().upper()
             provenance_html=f'<span class="cremation-provenance-chip {provenance_color_class(code)}">{esc(code)}</span>' if code else '<span class="cremation-dash">—</span>'
-            url=practice_url(row)
+            url=practice_url(row,cycle_id)
             remove_html=f'<button type="button" class="cremation-animal-remove" onclick="event.stopPropagation();cremationRemoveFromCycle(this,{row["id"]})" aria-label="Rimuovi dal ciclo" title="Rimuovi dal ciclo">{lucide("x")}</button>' if removable else ""
             swap_html=f'<button type="button" class="cremation-animal-swap" onclick="event.stopPropagation();cremationOpenSwapModal({row["id"]},{esc(json.dumps(row["animal_name"] or "Animale"))},{esc(json.dumps(weight))})" aria-label="Scambia animale" title="Scambia con un altro animale">{lucide("repeat")}</button>' if removable else ""
             notifier_id=row["owner_notified_by"] if "owner_notified_by" in row.keys() and row["owner_notified_by"] else None
@@ -12705,7 +12775,7 @@ class App(BaseHTTPRequestHandler):
                 cycle_position[cycle["id"]]=(idx+1,day_date)
                 status_label,status_cls=CREMATION_STATUS_LABELS.get(status,(status.upper(),""))
                 lines_html=''.join(week_animal_line(row) for row in animals) or '<div class="cremation-week-animal-line cremation-dash">Nessun animale</div>'
-                animals_html=''.join(animal_row_html(row,removable=True) for row in animals) or '<p class="cremation-dash" style="padding:10px 0">Nessun animale assegnato.</p>'
+                animals_html=''.join(animal_row_html(row,removable=True,cycle_id=cycle["id"]) for row in animals) or '<p class="cremation-dash" style="padding:10px 0">Nessun animale assegnato.</p>'
                 remaining_html=""
                 if len(animals)==1:
                     animal_w=(animals[0]["estimated_weight"] or "").strip()
@@ -12721,10 +12791,11 @@ class App(BaseHTTPRequestHandler):
                     for animal_row in animals:
                         delivery_label=f' {esc(animal_row["animal_name"])}' if len(animals)>1 and animal_row["animal_name"] else ""
                         existing_delivery_id=delivery_event_by_practice.get(animal_row["id"])
+                        cycle_return_to=quote(self.path+('&' if '?' in self.path else '?')+f'open_cycle={cycle["id"]}',safe="")
                         if existing_delivery_id:
-                            actions.append(f'<a class="cremation-action-btn cremation-action-active" href="/calendario/{existing_delivery_id}?return_to={quote(self.path,safe="")}">{lucide("truck")}<span>Vedi riconsegna{delivery_label}</span></a>')
+                            actions.append(f'<a class="cremation-action-btn cremation-action-active" href="/calendario/{existing_delivery_id}?return_to={cycle_return_to}">{lucide("truck")}<span>Vedi riconsegna{delivery_label}</span></a>')
                         else:
-                            actions.append(f'<a class="cremation-action-btn cremation-action-planned" href="/calendario/nuovo?linked_practice_id={animal_row["id"]}&return_to={quote(self.path,safe="")}">{lucide("truck")}<span>Fissa riconsegna{delivery_label}</span></a>')
+                            actions.append(f'<a class="cremation-action-btn cremation-action-planned" href="/calendario/nuovo?linked_practice_id={animal_row["id"]}&return_to={cycle_return_to}">{lucide("truck")}<span>Fissa riconsegna{delivery_label}</span></a>')
                     actions.append(f'<button type="button" class="cremation-action-btn cremation-action-planned" onclick="cremationRevertComplete({cycle["id"]})">{lucide("undo-2")}<span>Annulla completamento</span></button>')
                     actions.append(f'<button type="button" class="cremation-action-btn cremation-action-delete" onclick="cremationDeleteCycle({cycle["id"]})">{lucide("x")}<span>Elimina ciclo</span></button>')
                 else:
@@ -13388,7 +13459,7 @@ class App(BaseHTTPRequestHandler):
             confirm_form='<p class="sub">Nessuna pratica da confermare nel periodo selezionato: quelle elencate sopra risultano già smaltite.</p>'
         else:
             confirm_form='<p class="sub">Nessuna pratica di cremazione collettiva da smaltire nel periodo selezionato.</p>'
-        history_rows=''.join(f'''<tr><td>{esc(date_it(b["confirmed_at"]))}</td><td>{esc(date_it(b["period_from"]))} → {esc(date_it(b["period_to"]))}</td><td><b>{b["total_count"]}</b></td><td>{esc(b["display_name"] or "-")}</td><td><a class="btn ghost" href="/smaltimenti/storico/{b["id"]}">Apri</a></td></tr>''' for b in history) or '<tr><td colspan="5" class="sub">Nessuno scarico registrato.</td></tr>'
+        history_rows=''.join(f'''<tr><td>{esc(date_it(b["confirmed_at"]))}</td><td>{esc(date_it(b["period_from"]))} → {esc(date_it(b["period_to"]))}</td><td><b>{b["total_count"]}</b></td><td>{esc(b["display_name"] or "-")}</td><td><a class="btn ghost" href="/smaltimenti/storico/{b["id"]}?return_to={quote(getattr(self,"path",""),safe="")}">Apri</a></td></tr>''' for b in history) or '<tr><td colspan="5" class="sub">Nessuno scarico registrato.</td></tr>'
         stato_options=''.join(f'<option value="{esc(value)}"{" selected" if stato_filter==value else ""}>{esc(label)}</option>' for value,label in (("","Tutte"),("da_confermare","Da confermare"),("smaltito","Già smaltite")))
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>Smaltimenti</h1><p class="sub">Conferimenti periodici delle cremazioni collettive alla ditta esterna di smaltimento.</p></div></div>{error_html}<section class="section"><h2>Periodo</h2><form method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Stato pratica</label><select name="stato">{stato_options}</select></div></div><button class="btn" style="margin-top:12px">Applica periodo</button></form></section><section class="section"><h2>Riepilogo periodo {esc(date_it(date_from))} - {esc(date_it(date_to))}</h2><div class="kvs">{breakdown_summary or '<span class="sub">Nessun dato per il periodo selezionato.</span>'}<div class="kv"><small>Totale generale</small><b>{total_count+total_already}</b><small>{total_count} da confermare · {total_already} già smaltite</small></div></div><div class="actions" style="margin-top:14px">{confirm_form}</div></section>{filter_note}{''.join(group_sections)}<section class="tablebox"><div class="section-collapse-head"><h2>Storico scarichi</h2><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><table><thead><tr><th>Data conferma</th><th>Periodo</th><th>Totale animali</th><th>Confermato da</th><th></th></tr></thead><tbody>{history_rows}</tbody></table></div></section></main>'''
         self.send_html(layout("Smaltimenti",body,user))
@@ -13420,6 +13491,8 @@ class App(BaseHTTPRequestHandler):
         self.redirect(f"/smaltimenti/storico/{batch_id}")
 
     def disposal_batch_detail(self,user,batch_id):
+        q=parse_qs(urlparse(getattr(self,"path","")).query)
+        back_url=safe_return_path((q.get("return_to") or [""])[0],"/smaltimenti")
         with db() as c:
             batch=c.execute("SELECT b.*,u.display_name FROM disposal_batches b LEFT JOIN users u ON u.id=b.confirmed_by WHERE b.id=?",(batch_id,)).fetchone()
             if not batch:return self.send_error(404)
@@ -13450,7 +13523,7 @@ class App(BaseHTTPRequestHandler):
         if practices:
             row_parts.append(f'<tr class="disposal-grand-total"><td colspan="2"><b>Totale generale</b></td><td><b>{kg_it(grand_kg)}</b></td><td colspan="3"></td></tr>')
         rows_html=''.join(row_parts) or '<tr><td colspan="6" class="sub">Nessuna pratica collegata.</td></tr>'
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Scarico del {esc(date_it(batch["confirmed_at"]))}</h1><p class="sub">Periodo {esc(date_it(batch["period_from"]))} → {esc(date_it(batch["period_to"]))} · confermato da {esc(batch["display_name"] or "-")}</p></div><a class="btn ghost" href="/smaltimenti">Torna a Smaltimenti</a></div><section class="section"><h2>Riepilogo</h2><div class="kvs">{breakdown_html}<div class="kv"><small>Totale generale</small><b>{batch["total_count"]}</b></div></div></section><section class="tablebox"><table><thead><tr><th>Sede</th><th>Animale</th><th>Peso</th><th>Proprietario/Veterinario</th><th>Data recupero</th><th>Pratica</th></tr></thead><tbody>{rows_html}</tbody></table></section></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Scarico del {esc(date_it(batch["confirmed_at"]))}</h1><p class="sub">Periodo {esc(date_it(batch["period_from"]))} → {esc(date_it(batch["period_to"]))} · confermato da {esc(batch["display_name"] or "-")}</p></div><a class="btn ghost" href="{esc(back_url)}">Torna a Smaltimenti</a></div><section class="section"><h2>Riepilogo</h2><div class="kvs">{breakdown_html}<div class="kv"><small>Totale generale</small><b>{batch["total_count"]}</b></div></div></section><section class="tablebox"><table><thead><tr><th>Sede</th><th>Animale</th><th>Peso</th><th>Proprietario/Veterinario</th><th>Data recupero</th><th>Pratica</th></tr></thead><tbody>{rows_html}</tbody></table></section></main>'''
         self.send_html(layout("Dettaglio scarico",body,user))
 
     def payment_overview_legacy(self,user,kind):
@@ -13786,55 +13859,15 @@ class App(BaseHTTPRequestHandler):
         # Stessa tecnica gia' usata da .archive-tablebox per lo stesso motivo.
         fatturate_section=f'''<section class="tablebox fatture-tablebox"><h2>Fatture emesse</h2><table><thead><tr><th>Fattura</th><th>Data</th><th>Pratica</th><th>Cliente</th><th>Animale</th><th>Circuito</th><th>Totale</th><th></th></tr></thead><tbody>{''.join(table) or empty}</tbody></table></section>''' if show_fatturate else ''
         da_fatturare_section=f'''<section class="tablebox fatture-tablebox" style="margin-top:20px"><h2>Da fatturare</h2><table><thead><tr><th>Pratica</th><th>Creazione</th><th>Cliente</th><th>Animale</th><th>Totale</th><th></th></tr></thead><tbody>{''.join(reminder_table) or reminder_empty}</tbody></table></section>''' if show_da_fatturare else ''
-        # Stesso pattern gia' collaudato in Archivio (archive_restore_js
-        # sopra, in archive_page): la lista parte nascosta via CSS
-        # (#fattureLists{{visibility:hidden}}) e viene rivelata SOLO dopo che
-        # lo scroll e' stato eventualmente riposizionato - senza questo, il
-        # browser dipinge comunque la pagina in cima per un istante prima
-        # che il JS scrolli, ed e' quel lampo a dare la sensazione di
-        # "refresh" segnalata, anche quando il ripristino poi funziona.
-        # Rilevare il ritorno da una pratica via document.referrer (non un
-        # semplice flag one-shot) evita falsi ripristini se si arriva sulla
-        # pagina da un altro punto dell'app.
-        fatture_restore_js='''<script>(function(){
-  var userKey='ppm_fatture_state:'''+str(user["id"])+'''';
-  var refPath='';
-  try{ refPath=document.referrer?new URL(document.referrer).pathname:''; }catch(e){}
-  var navEntry=(performance.getEntriesByType&&performance.getEntriesByType('navigation')[0])||null;
-  var isBack=(navEntry&&navEntry.type==='back_forward')||/^\\/pratiche\\/\\d+/.test(refPath);
-  var wrap=document.getElementById('fattureLists');
-  function reveal(){ if(wrap) wrap.style.visibility='visible'; }
-  if(isBack){
-    var state=null;
-    try{ state=JSON.parse(sessionStorage.getItem(userKey)||'null'); }catch(e){}
-    if(state && typeof state.search==='string' && state.search!==location.search){
-      location.replace(location.pathname+state.search);
-      return;
-    }
-    if(state && typeof state.scrollY==='number'){
-      window.scrollTo(0,state.scrollY);
-    }
-    var match=refPath.match(/^\\/pratiche\\/(\\d+)/);
-    if(match){
-      var row=document.querySelector('[data-practice-id="'+match[1]+'"]');
-      if(row)row.classList.add('row-selected');
-    }
-  }
-  reveal();
-  function saveNow(){
-    try{ sessionStorage.setItem(userKey,JSON.stringify({search:location.search,scrollY:window.scrollY||document.documentElement.scrollTop||0})); }catch(e){}
-  }
-  var saveTimer=null;
-  function save(){ clearTimeout(saveTimer); saveTimer=setTimeout(saveNow,200); }
-  window.addEventListener('scroll',save,{passive:true});
-  // Il salvataggio su scroll e' debounced (200ms) per non scrivere ad ogni
-  // frame - ma un click su una riga puo' arrivare prima che il debounce
-  // scatti, perdendo la posizione appena raggiunta. Qui si scrive subito,
-  // in modo sincrono, prima che la navigazione parta.
-  document.addEventListener('click',function(e){ if(e.target.closest('.tablebox .practice-row-link'))saveNow(); });
-  save();
-})();</script>'''
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Fatture</h1><p class="sub">Ogni fattura identifica e apre la pratica collegata. Una pratica con acconto e saldo fatturati separatamente compare come due righe distinte.</p></div></div><form class="section" method="get"><div class="fields"><div class="field full"><label>Numero fattura o pratica</label><input name="q" value="{esc(term)}" placeholder="Cerca per fattura, pratica, cliente o animale"></div><div class="field"><label>Tipo</label><select name="tipo">{tipo_options}</select></div><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div></div><button class="btn" style="margin-top:12px">Cerca</button></form><div id="fattureLists">{fatturate_section}{da_fatturare_section}</div></main>{fatture_restore_js}'''
+        # Ripristino scroll/ricerca/riga evidenziata al ritorno da una
+        # pratica: gestito dal sistema unico PPM_LIST_PAGES/
+        # setupListStateRestore (script condiviso, vedi APP_JS), registrato
+        # per "/fatture" con revealId:'fattureLists' (stessa tecnica anti-
+        # flash di prima: la lista parte nascosta via CSS e viene rivelata
+        # solo dopo l'eventuale ripristino) e rowHighlight/saveOnClick per
+        # preservare esattamente lo stesso comportamento che prima viveva
+        # solo qui, duplicato quasi identico anche in Archivio.
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Fatture</h1><p class="sub">Ogni fattura identifica e apre la pratica collegata. Una pratica con acconto e saldo fatturati separatamente compare come due righe distinte.</p></div></div><form class="section" method="get"><div class="fields"><div class="field full"><label>Numero fattura o pratica</label><input name="q" value="{esc(term)}" placeholder="Cerca per fattura, pratica, cliente o animale"></div><div class="field"><label>Tipo</label><select name="tipo">{tipo_options}</select></div><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div></div><button class="btn" style="margin-top:12px">Cerca</button></form><div id="fattureLists">{fatturate_section}{da_fatturare_section}</div></main>'''
         self.send_html(layout("Fatture",body,user))
 
     def urn_catalog_page(self,user):
@@ -15188,48 +15221,13 @@ class App(BaseHTTPRequestHandler):
             blocks.append(f'''<section class="month-block"><div class="month-title"><div class="month-heading"><button class="month-toggle" type="button" data-month-key="{esc(key)}" aria-expanded="{expanded_attr}" aria-label="{esc(toggle_label)}" onclick="toggleArchiveMonth(this)">{toggle_symbol}</button><h2>{esc(title)}</h2></div><span class="badge">{len(items)} pratiche</span></div><div class="month-content"{content_hidden}><div class="tablebox dashboard-table-scroll archive-tablebox"><table class="practice-list-table"><thead><tr><th>Animale</th><th>Età</th><th>Proprietario</th><th>Data recupero</th><th>Codice pratica</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Totale pagato</th><th>Fattura</th>{archive_financial_headers}<th>Stati</th><th>Azione</th></tr></thead><tbody>{self.practice_rows(items,True)}</tbody></table></div></div></section>''')
         results_html='<div id="archiveList">'+(''.join(blocks) if blocks else '<section class="section"><p class="sub">Nessuna pratica trovata.</p></section>')+'</div>'
         filters_html=f'''<section class="search-after-results"><h2>Ricerca e filtri</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Ricerca generale</label><input name="q" value="{esc(term)}" placeholder="Proprietario, telefono, microchip, pratica, DDT"></div><div class="field"><label>Nome animale</label><input name="animale" value="{esc(animal)}"></div><div class="field"><label>Tipo cremazione</label><select name="servizio">{service_opts}</select></div><div class="field"><label>Veterinario</label><input name="veterinario" value="{esc(vet)}" placeholder="Clinica o medico"></div><div class="field"><label>Collaboratore</label><input name="collaboratore" value="{esc(collaborator)}"></div><div class="field"><label>Spesa minima</label><input type="number" min="0" step="0.01" name="spesa_min" value="{esc(spesa_min)}" inputmode="decimal" placeholder="Es. 100"></div><div class="field"><label>Spesa massima</label><input type="number" min="0" step="0.01" name="spesa_max" value="{esc(spesa_max)}" inputmode="decimal" placeholder="Es. 350"></div><div class="field"><label>Periodo dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Periodo al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Stato pratica</label><select name="stato">{opts}</select></div><div class="field"><label>Pagamento</label><select name="pagamento">{pay_opts}</select></div><div class="field"><label>Circuito</label><select name="circuito">{circuit_opts}</select></div><div class="field"><label><input type="checkbox" name="senza_fattura" value="1" {"checked" if no_invoice else ""}> Senza fattura</label></div></div><button class="btn" style="margin-top:12px">Cerca</button><a class="btn ghost" style="margin-top:12px" href="/archivio/pratiche">Pulisci filtri</a></form></section>'''
-        archive_restore_js=r'''
-(function(){
-  const userKey='ppm_archive_state:__USER_ID__';
-  let refPath='';
-  try{ refPath=document.referrer?new URL(document.referrer).pathname:''; }catch(e){}
-  const navEntry=(performance.getEntriesByType&&performance.getEntriesByType('navigation')[0])||null;
-  const isBack=(navEntry&&navEntry.type==='back_forward')||/^\/pratiche\/\d+/.test(refPath);
-  const list=document.getElementById('archiveList');
-  function reveal(){ if(list) list.style.visibility='visible'; }
-  if(isBack){
-    let state=null;
-    try{ state=JSON.parse(sessionStorage.getItem(userKey)||'null'); }catch(e){}
-    if(state && typeof state.search==='string' && state.search!==location.search){
-      location.replace(location.pathname+state.search);
-      return;
-    }
-    if(state && typeof state.scrollY==='number'){
-      window.scrollTo(0,state.scrollY);
-    }
-    const match=refPath.match(/^\/pratiche\/(\d+)/);
-    if(match){
-      const row=document.querySelector('[data-practice-id="'+match[1]+'"]');
-      if(row){
-        row.classList.add('archive-row-highlight');
-        setTimeout(function(){ row.classList.add('archive-row-fade'); },300);
-        setTimeout(function(){ row.classList.remove('archive-row-highlight','archive-row-fade'); },2600);
-      }
-    }
-  }
-  reveal();
-  let saveTimer=null;
-  function save(){
-    clearTimeout(saveTimer);
-    saveTimer=setTimeout(function(){
-      try{ sessionStorage.setItem(userKey,JSON.stringify({search:location.search,scrollY:window.scrollY||document.documentElement.scrollTop||0})); }catch(e){}
-    },200);
-  }
-  window.addEventListener('scroll',save,{passive:true});
-  save();
-})();
-'''.replace('__USER_ID__',str(user["id"]))
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>ARCHIVIO</h1><div class="sub">{len(rows)} pratiche trovate{promemoria_label}</div></div></div>{results_html}{filters_html}<script>function toggleArchiveMonth(button){{const content=button.closest('.month-block').querySelector('.month-content');const closing=button.getAttribute('aria-expanded')==='true';button.setAttribute('aria-expanded',String(!closing));button.textContent=closing?'+':'-';button.setAttribute('aria-label',(closing?'Apri ':'Chiudi ')+button.closest('.month-heading').querySelector('h2').textContent);content.hidden=closing;const monthKey=button.dataset.monthKey;if(monthKey){{const payload=new URLSearchParams();payload.set('mese',monthKey);payload.set('chiuso',closing?'1':'0');fetch('/archivio/mese-stato',{{method:'POST',headers:{{'Content-Type':'application/x-www-form-urlencoded'}},body:payload.toString()}}).catch(function(){{}});}}}}{archive_restore_js}</script></main>'''
+        # Ripristino scroll/ricerca/riga evidenziata al ritorno da una
+        # pratica: gestito dal sistema unico PPM_LIST_PAGES/
+        # setupListStateRestore (script condiviso, vedi APP_JS), registrato
+        # per "/archivio/pratiche" con revealId:'archiveList' (stessa
+        # tecnica anti-flash di prima) e rowHighlight (evidenzia+dissolve
+        # la riga da cui si torna, stesso comportamento di prima).
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>ARCHIVIO</h1><div class="sub">{len(rows)} pratiche trovate{promemoria_label}</div></div></div>{results_html}{filters_html}<script>function toggleArchiveMonth(button){{const content=button.closest('.month-block').querySelector('.month-content');const closing=button.getAttribute('aria-expanded')==='true';button.setAttribute('aria-expanded',String(!closing));button.textContent=closing?'+':'-';button.setAttribute('aria-label',(closing?'Apri ':'Chiudi ')+button.closest('.month-heading').querySelector('h2').textContent);content.hidden=closing;const monthKey=button.dataset.monthKey;if(monthKey){{const payload=new URLSearchParams();payload.set('mese',monthKey);payload.set('chiuso',closing?'1':'0');fetch('/archivio/mese-stato',{{method:'POST',headers:{{'Content-Type':'application/x-www-form-urlencoded'}},body:payload.toString()}}).catch(function(){{}});}}}}</script></main>'''
         body=body.replace('<label>Servizio</label><select name="servizio">','<label>Tipo cremazione</label><select name="servizio">')
         self.send_html(layout("Archivio",body,user))
 
