@@ -6595,16 +6595,27 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(".practice-row-link.row-selected td:first-child{background:#502d40!important}",app.CSS)
         self.assertIn(".light-theme .practice-row-link.row-selected td:first-child{background:#fde3e7!important}",app.CSS)
 
-    def test_recent_practice_card_shows_light_border_highlight_when_selected(self):
-        # bug segnalato dall'utente: la card "Ultime pratiche" della Dashboard
-        # usa lo stesso meccanismo click-per-selezionare/doppio click-per-aprire
-        # delle righe tabella, ma non aveva nessuno stile per il primo click,
-        # quindi sembrava che il click non facesse nulla. La riga tabella usa
-        # un outline pesante + sfondo tinto: qui la richiesta esplicita e' un
-        # bordo leggero, non pesante.
-        self.assertIn(".recent-practice-card.row-selected{border-color:#ef405f80}",app.CSS)
-        self.assertIn(".light-theme .recent-practice-card.row-selected{border-color:#ef405f66}",app.CSS)
-        self.assertIn("document.querySelectorAll('.row-selected').forEach(other=>other.classList.remove('row-selected'));",app.APP_JS)
+    def test_recent_practice_card_opens_practice_on_a_single_click(self):
+        # Cambio intenzionale (richiesta esplicita dell'utente): le pratiche
+        # nella card "Ultime 10 pratiche" della Dashboard devono aprirsi con
+        # UN click, non con il meccanismo condiviso click-per-selezionare/
+        # secondo-click-per-aprire (row_open_attrs/practiceRowSelect) usato
+        # altrove nel gestionale (Archivio, Fatture) dove serve a non aprire
+        # per sbaglio una pratica mentre si modifica un campo inline nella
+        # riga. Questa card non ha campi inline modificabili, quindi non
+        # serve quella protezione. row_open_attrs() resta invariato per
+        # tutte le altre liste - qui si usa direttamente practiceRowOpen().
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,animal_name,species) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                                ("CR-DASHCLICK","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Gino","Fido","Cane")).lastrowid
+        rendered=[];self.handler.send_html=lambda content,*a:rendered.append(content)
+        self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        self.assertIn(f'''onclick="practiceRowOpen('/pratiche/{pid}?return_to=''',page)
+        self.assertNotIn(f'''onclick="practiceRowSelect(this,event,'/pratiche/{pid}''',page)
 
     def test_archive_page_always_shows_financial_columns(self):
         with app.db() as conn:
@@ -9010,7 +9021,11 @@ class PetParadiseTests(unittest.TestCase):
         page=rendered[-1]
         recent_start=page.index('<section class="dashboard-recent">')
         recent_section=page[recent_start:page.index('</section>',recent_start)]
-        self.assertIn(f"practiceRowSelect(this,event,'/pratiche/{pid}?return_to=%2F')",recent_section)
+        # Cambio intenzionale (richiesta esplicita dell'utente): apertura
+        # con un solo click, non piu' click-per-selezionare/secondo-click-
+        # per-aprire (vedi test_recent_practice_card_opens_practice_on_a_single_click).
+        self.assertIn(f"practiceRowOpen('/pratiche/{pid}?return_to=%2F')",recent_section)
+        self.assertNotIn("practiceRowSelect",recent_section)
         self.assertIn('class="recent-practice-chevron"',recent_section)
 
     def test_practice_list_table_css_uses_rounded_spaced_premium_rows(self):
