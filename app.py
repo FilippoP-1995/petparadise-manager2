@@ -717,6 +717,8 @@ def init_db():
             "tag_possibile_calco_nose": "TEXT",
             "tag_avvisare": "TEXT",
             "tag_da_richiamare": "TEXT",
+            "tag_pelo": "TEXT",
+            "tag_no_pelo": "TEXT",
             "price_paw_cast_2": "TEXT",
             "price_nose_cast_2": "TEXT",
             "price_nose_cast_3": "TEXT", "price_nose_cast_4": "TEXT",
@@ -2328,6 +2330,8 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-week-animal-tag .badge{font-size:10px;padding:2px 8px;white-space:nowrap}
 .cremation-week-animal-urn{display:flex;align-items:center;gap:4px;color:#cbd5e1;font-size:11px;white-space:nowrap}.cremation-week-notify-badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:800;white-space:nowrap}
 .cremation-week-animal-urn .icon{width:12px;height:12px;flex:0 0 12px}
+.cremation-week-animal-notes{display:flex;align-items:flex-start;gap:4px;flex-basis:100%;color:#94a3b8;font-size:11px;font-style:italic}
+.cremation-week-animal-notes .icon{width:12px;height:12px;flex:0 0 12px;margin-top:1px}
 .cremation-week-status-icon{display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;flex:0 0 26px}
 .cremation-week-status-icon .icon{width:14px;height:14px}
 .cremation-week-status-icon.cremation-status-planned{background:#172554;color:#93c5fd}
@@ -2341,6 +2345,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .light-theme .cremation-daybar-nav:hover{background:#f1f5f9;color:#111827}
 .light-theme .cremation-week-cycle-card{background:#fff;border-color:#e2e8f0}
 .light-theme .cremation-week-animal-line{color:#111827}
+.light-theme .cremation-week-animal-notes{color:#64748b}
 @media(max-width:620px){.cremation-week-cycle-main{flex-basis:100%}.cremation-week-status-icon{margin-left:auto}}
 .cremation-quick-menu-wrap{position:relative;display:inline-block}
 .cremation-waiting-main .cremation-quick-menu-wrap{display:block;width:100%;margin-top:6px}
@@ -7561,6 +7566,65 @@ def calculated_service_total(practice):
     return total
 
 
+# Ricavi per voce del preventivo (richiesta esplicita dell'utente): le
+# STESSE 9 voci economiche reali gia' sommate da calculated_service_total
+# sopra, qui pero' tenute separate invece che collassate in un unico
+# numero - i 6 campi prezzo piatti su practices + le 3 categorie reali
+# di practice_items (vedi PRACTICE_ITEM_CATEGORIES). Nessuna stima: solo
+# le vere voci gia' presenti nel preventivo di ogni pratica.
+REVENUE_QUOTE_CATEGORY_FIELDS = (
+    ("price_cremation", "Cremazione"),
+    ("price_pickup", "Ritiro"),
+    ("price_delivery", "Riconsegna"),
+    ("price_evening", "Serale"),
+    ("price_night", "Notturno"),
+    ("price_holiday", "Festivo"),
+)
+REVENUE_QUOTE_ITEM_CATEGORY_LABELS = {"urna": "Urne", "calco": "Calchi", "accessorio": "Accessori"}
+
+
+def revenue_by_quote_category(c, date_from, date_to):
+    """Ricavi aggregati per voce del preventivo nel periodo [date_from,date_to]
+    (stringhe ISO, entrambe opzionali = nessun limite su quel lato). Base
+    dati = preventivo/fatturazione (le vere voci economiche delle pratiche),
+    non i movimenti di cassa: balance_movements non registra a quale voce
+    del preventivo appartiene un incasso, solo l'importo totale per
+    circuito W/D (vedi commit/analisi). La data di riferimento per pratica
+    e' la stessa convenzione gia' usata altrove nel codice per il "giorno
+    reale" di una pratica: pickup_date se presente, altrimenti created_at.
+    """
+    where = ["(deleted_at IS NULL OR deleted_at='')"]
+    args = []
+    if date_from:
+        where.append("date(COALESCE(NULLIF(pickup_date,''),created_at))>=date(?)")
+        args.append(date_from)
+    if date_to:
+        where.append("date(COALESCE(NULLIF(pickup_date,''),created_at))<=date(?)")
+        args.append(date_to)
+    cols = ",".join(key for key, _ in REVENUE_QUOTE_CATEGORY_FIELDS)
+    practices = c.execute(
+        f"SELECT id,{cols} FROM practices WHERE {' AND '.join(where)}", args
+    ).fetchall()
+    totals = {label: 0.0 for _, label in REVENUE_QUOTE_CATEGORY_FIELDS}
+    for label in REVENUE_QUOTE_ITEM_CATEGORY_LABELS.values():
+        totals[label] = 0.0
+    for row in practices:
+        for key, label in REVENUE_QUOTE_CATEGORY_FIELDS:
+            totals[label] += money_value(row[key])
+    practice_ids = [row["id"] for row in practices]
+    if practice_ids:
+        marks = ",".join("?" for _ in practice_ids)
+        for irow in c.execute(
+            f"SELECT category,price FROM practice_items WHERE practice_id IN ({marks})",
+            practice_ids,
+        ):
+            label = REVENUE_QUOTE_ITEM_CATEGORY_LABELS.get(irow["category"])
+            if label:
+                totals[label] += money_value(irow["price"])
+    order = [label for _, label in REVENUE_QUOTE_CATEGORY_FIELDS] + list(REVENUE_QUOTE_ITEM_CATEGORY_LABELS.values())
+    return [(label, totals[label]) for label in order]
+
+
 def uses_total_d(practice):
     keys=practice.keys() if hasattr(practice,"keys") else practice
     return money_value(practice["total_text"] if "total_text" in keys else "") > 0
@@ -9136,6 +9200,7 @@ class App(BaseHTTPRequestHandler):
                 collaborators=get_balance_collaborators(c)
                 recent_deletions=get_recent_balance_movement_deletions(c,limit=10)
                 deleters={row["id"]:row["display_name"] for row in c.execute("SELECT id,display_name FROM users")}
+                revenue_by_category=revenue_by_quote_category(c,filters.date_from,filters.date_to)
         except sqlite3.Error:
             print("[BILANCI] Errore durante il caricamento\n"+traceback.format_exc(),flush=True)
             return self.error_page(
@@ -9417,6 +9482,27 @@ class App(BaseHTTPRequestHandler):
           <button class="btn balance-quick-btn balance-quick-income" type="button" onclick="const p=document.getElementById('balanceManualIncome');p.open=true;p.scrollIntoView({{behavior:'smooth',block:'start'}})">{lucide("arrow-down")}<span>Registra entrata</span></button>
           <button class="btn balance-quick-btn balance-quick-expense" type="button" onclick="const p=document.getElementById('balanceManualExpense');p.open=true;p.scrollIntoView({{behavior:'smooth',block:'start'}})">{lucide("arrow-up")}<span>Registra uscita</span></button>
         </div>'''
+        # Ricavi per voce del preventivo (richiesta esplicita dell'utente):
+        # stesso periodo gia' selezionato sopra dai filtri Bilanci, nessun
+        # nuovo selettore data. Base preventivo/fatturazione, non cassa -
+        # vedi commento su revenue_by_quote_category per il perche' (i
+        # movimenti di balance_movements non sanno a quale voce del
+        # preventivo appartiene un incasso).
+        revenue_total=sum(amount for _,amount in revenue_by_category)
+        # Niente <table>: Bilanci non ne usa mai (movimenti sempre come
+        # card colorate, non righe di tabella - vedi
+        # test_balances_movements_render_as_color_coded_cards_not_a_table
+        # e affini), stessa convenzione .kvs/.kv gia' usata altrove
+        # nell'app per elenchi chiave/valore compatti.
+        revenue_rows_html=''.join(
+            f'<div class="kv"><small>{esc(label)}</small><b>{money_it(amount)}</b></div>'
+            for label,amount in revenue_by_category
+        )
+        revenue_by_category_html=f'''<details class="section balance-expense" id="balanceRevenueByCategory">
+          <summary>Ricavi per voce del preventivo ({money_it(revenue_total)})</summary>
+          <p class="balance-filter-note" style="margin-top:0">{lucide("settings")}<span>Calcolati dalle voci reali del preventivo (Cremazione, Ritiro, Riconsegna, Serale, Notturno, Festivo, Urne, Calchi, Accessori) delle pratiche nel periodo filtrato sopra — non dai movimenti di cassa.</span></p>
+          <div class="kvs">{revenue_rows_html}<div class="kv"><small>Totale</small><b>{money_it(revenue_total)}</b></div></div>
+        </details>'''
         if recent_deletions:
             deletion_action=lambda row:(
                 f'<span class="badge">Ripristinato {esc(date_it(row["restored_at"][:10]))}</span>'
@@ -9438,7 +9524,7 @@ class App(BaseHTTPRequestHandler):
         primary_content=(details_html+cards_html) if explicit_view else (cards_html+details_html)
         body=f'''<main class="wrap balance-wrap">
           <div class="titlebar"><div><h1>Bilanci</h1><p class="sub">Movimenti reali e situazione delle somme ancora aperte.</p></div></div>
-          {notice}{manual_toolbar}{primary_content}{manual_html}{deletions_html}{filters_html}
+          {notice}{manual_toolbar}{primary_content}{revenue_by_category_html}{manual_html}{deletions_html}{filters_html}
         </main>'''
         self.send_html(layout("Bilanci",body,user))
 
@@ -12183,11 +12269,20 @@ class App(BaseHTTPRequestHandler):
             if assisted_cremation_label(row):
                 notified=("owner_notified_status" in row.keys() and row["owner_notified_status"]=="avvisato")
                 notify_badge=f'<span class="cremation-week-notify-badge {"cremation-notify-green" if notified else "cremation-notify-red"}">{"🟢 AVVISATO" if notified else "🔴 DA AVVISARE"}</span>'
+            # Nota della pratica visibile anche nella card compatta del
+            # ciclo, senza doverlo espandere (richiesta esplicita
+            # dell'utente): stessa fonte dati gia' usata nel corpo espanso
+            # (row["notes"], gia' selezionata da SELECT *), solo troncata
+            # piu' corta perche' qui occupa spazio sempre visibile.
+            notes_text_compact=re.sub(r"\s+"," ",str(row["notes"] or "")).strip()
+            notes_preview_compact=notes_text_compact if len(notes_text_compact)<=80 else notes_text_compact[:79].rstrip()+"…"
+            notes_line_html=f'<span class="cremation-week-animal-notes">{lucide("clipboard")}<span>{esc(notes_preview_compact)}</span></span>' if notes_preview_compact else ''
             return f'''<div class="cremation-week-animal-line" data-practice-id="{row['id']}">
               <span class="cremation-week-animal-name-group"><span class="cremation-week-animal-name">{avatar_emoji} {animal_name_html(row)}{weight_txt}</span>{provenance_html}</span>
               {notify_badge}
               {tags_line_html}
               {urn_line_html}
+              {notes_line_html}
             </div>'''
 
         def practice_url(row,cycle_id=None):
@@ -12717,11 +12812,20 @@ class App(BaseHTTPRequestHandler):
             if assisted_cremation_label(row):
                 notified=("owner_notified_status" in row.keys() and row["owner_notified_status"]=="avvisato")
                 notify_badge=f'<span class="cremation-week-notify-badge {"cremation-notify-green" if notified else "cremation-notify-red"}">{"🟢 AVVISATO" if notified else "🔴 DA AVVISARE"}</span>'
+            # Nota della pratica visibile anche nella card compatta del
+            # ciclo, senza doverlo espandere (richiesta esplicita
+            # dell'utente): stessa fonte dati gia' usata nel corpo espanso
+            # (row["notes"], gia' selezionata da SELECT *), solo troncata
+            # piu' corta perche' qui occupa spazio sempre visibile.
+            notes_text_compact=re.sub(r"\s+"," ",str(row["notes"] or "")).strip()
+            notes_preview_compact=notes_text_compact if len(notes_text_compact)<=80 else notes_text_compact[:79].rstrip()+"…"
+            notes_line_html=f'<span class="cremation-week-animal-notes">{lucide("clipboard")}<span>{esc(notes_preview_compact)}</span></span>' if notes_preview_compact else ''
             return f'''<div class="cremation-week-animal-line" data-practice-id="{row['id']}">
               <span class="cremation-week-animal-name-group"><span class="cremation-week-animal-name">{avatar_emoji} {animal_name_html(row)}{weight_txt}</span>{provenance_html}</span>
               {notify_badge}
               {tags_html}
               {urn_html}
+              {notes_line_html}
             </div>'''
 
         def animali_quick_insert_menu_html(row):
@@ -13894,6 +13998,29 @@ class App(BaseHTTPRequestHandler):
             entries.append({"sort_key":mrow["invoice_date"] or mrow["created_at"] or "","number":mrow["invoice_number"],"date":mrow["invoice_date"],"practice_number":mrow["practice_number"],"owner":owner,"animal":mrow["animal_name"] or "","total":money_value(mrow["invoice_total"]),"channel":mrow["payment_channel"] or "-","pid":mrow["practice_id"],"url":f'/pratiche/{mrow["practice_id"]}?return_to={quote(getattr(self,"path",""),safe="")}'})
         entries.sort(key=lambda e:e["sort_key"],reverse=True)
         table=[f'''<tr class="practice-row-link" data-practice-id="{e["pid"]}" {row_open_attrs(e["url"],f'Apri pratica {e["practice_number"]}')}><td><b>{esc(e["number"])}</b></td><td>{esc(date_it(e["date"]))}</td><td><a href="{e["url"]}">{esc(e["practice_number"])}</a></td><td>{esc(e["owner"])}</td><td>{esc(e["animal"])}</td><td>{esc(e["channel"])}</td><td>{money_it(e["total"])}</td><td><a class="btn ghost" href="{e["url"]}">Apri</a></td></tr>''' for e in entries]
+        # Fatture condivise tra più pratiche (es. un collaboratore fatturato
+        # una sola volta per più animali/pratiche, richiesta esplicita
+        # dell'utente): raggruppamento per numero fattura normalizzato
+        # (stesso confronto lower/trim gia' usato da
+        # practices_sharing_invoice_number), calcolato sugli stessi
+        # "entries" gia' costruiti sopra - nessuna nuova query, nessun
+        # doppio conteggio: il totale combinato è la somma degli importi
+        # gia' individuali di ciascuna pratica, mai un valore inventato.
+        # Una pratica con acconto/saldo fatturati separatamente (2 righe,
+        # stesso pid, numeri diversi) NON conta come "condivisa": lo e'
+        # solo un numero usato da piu' pratiche DIVERSE.
+        invoice_groups={}
+        for e in entries:
+            key=(e["number"] or "").strip().lower()
+            if key:invoice_groups.setdefault(key,[]).append(e)
+        shared_groups=[group for group in invoice_groups.values() if len({g["pid"] for g in group})>1]
+        shared_groups.sort(key=lambda group:max(g["sort_key"] for g in group),reverse=True)
+        shared_rows=[]
+        for group in shared_groups:
+            combined_total=sum(g["total"] for g in group)
+            practices_html=", ".join(f'<a href="{g["url"]}">{esc(g["practice_number"])}</a> ({money_it(g["total"])})' for g in sorted(group,key=lambda g:g["practice_number"] or ""))
+            shared_rows.append(f'''<tr><td><b>{esc(group[0]["number"])}</b></td><td>{len(group)} pratiche</td><td>{practices_html}</td><td>{money_it(combined_total)}</td></tr>''')
+        shared_section=f'''<section class="tablebox fatture-tablebox" style="margin-top:20px"><h2>Fatture condivise tra più pratiche</h2><p class="sub">Stesso numero fattura assegnato a più pratiche diverse: ogni pratica mantiene il proprio importo, qui il totale è la somma delle pratiche collegate.</p><table><thead><tr><th>Fattura</th><th>Pratiche</th><th>Dettaglio</th><th>Totale combinato</th></tr></thead><tbody>{''.join(shared_rows)}</tbody></table></section>''' if shared_rows else ''
         # Solo circuito W: il circuito D non deve comparire in "Da fatturare"
         # (richiesta esplicita). Escludi inoltre le pratiche di provenienza
         # Veterinario che hanno usufruito di un buono maturato e il cui
@@ -13926,7 +14053,7 @@ class App(BaseHTTPRequestHandler):
         # solo dopo l'eventuale ripristino) e rowHighlight/saveOnClick per
         # preservare esattamente lo stesso comportamento che prima viveva
         # solo qui, duplicato quasi identico anche in Archivio.
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Fatture</h1><p class="sub">Ogni fattura identifica e apre la pratica collegata. Una pratica con acconto e saldo fatturati separatamente compare come due righe distinte.</p></div></div><form class="section" method="get"><div class="fields"><div class="field full"><label>Numero fattura o pratica</label><input name="q" value="{esc(term)}" placeholder="Cerca per fattura, pratica, cliente o animale"></div><div class="field"><label>Tipo</label><select name="tipo">{tipo_options}</select></div><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div></div><button class="btn" style="margin-top:12px">Cerca</button></form><div id="fattureLists">{fatturate_section}{da_fatturare_section}</div></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Fatture</h1><p class="sub">Ogni fattura identifica e apre la pratica collegata. Una pratica con acconto e saldo fatturati separatamente compare come due righe distinte. Più pratiche possono condividere lo stesso numero fattura.</p></div></div><form class="section" method="get"><div class="fields"><div class="field full"><label>Numero fattura o pratica</label><input name="q" value="{esc(term)}" placeholder="Cerca per fattura, pratica, cliente o animale"></div><div class="field"><label>Tipo</label><select name="tipo">{tipo_options}</select></div><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div></div><button class="btn" style="margin-top:12px">Cerca</button></form><div id="fattureLists">{fatturate_section}{shared_section}{da_fatturare_section}</div></main>'''
         self.send_html(layout("Fatture",body,user))
 
     def urn_catalog_page(self,user):
@@ -14703,6 +14830,8 @@ class App(BaseHTTPRequestHandler):
             ("tag_possibile_calco_nose", "POSSIBILE CALCO NASO", "tag-yellow"),
             ("tag_avvisare", "AVVISARE", "tag-pink"),
             ("tag_da_richiamare", "DA RICHIAMARE", "tag-blue"),
+            ("tag_pelo", "PELO", "tag-green"),
+            ("tag_no_pelo", "NO PELO", "tag-outline-green"),
             ("send_catalog", "INVIARE CATALOGO", "tag-outline-orange"),
             ("catalog_sent", "CATALOGO INVIATO", "tag-outline-green"),
             ("send_estremi", "INVIARE ESTREMI", "tag-outline-orange"),
@@ -14726,6 +14855,8 @@ class App(BaseHTTPRequestHandler):
             ("tag_possibile_calco_nose", "POSSIBILE CALCO NASO", "tag-yellow"),
             ("tag_avvisare", "AVVISARE", "tag-pink"),
             ("tag_da_richiamare", "DA RICHIAMARE", "tag-blue"),
+            ("tag_pelo", "PELO", "tag-green"),
+            ("tag_no_pelo", "NO PELO", "tag-outline-green"),
         ]
         badges_html = ''.join(f'<span class="badge {cls}">{label}</span> ' for key,label,cls in other_tags if key in r.keys() and r[key])
         catalog_state = "sent" if ("catalog_sent" in r.keys() and r["catalog_sent"]=="Si") else "send" if ("send_catalog" in r.keys() and r["send_catalog"]=="Si") else ""
@@ -15775,7 +15906,7 @@ class App(BaseHTTPRequestHandler):
         <section class="section"><h2>Preventivo</h2><div class="fields"><div class="field"><label>Cremazione €</label><input name="price_cremation" value="{val('price_cremation')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Ritiro €</label><input name="price_pickup" value="{val('price_pickup')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label><input type="checkbox" name="send_catalog" value="Si" {catalog_checked} style="width:auto"> INVIARE CATALOGO</label></div><div class="field"><label>Riconsegna €</label><input name="price_delivery" value="{val('price_delivery')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label><input type="checkbox" name="delivery_at_clinic" value="Si" {delivery_clinic_checked} style="width:auto"> IN AMBULATORIO</label></div><div class="field"><label><input type="checkbox" name="delivery_at_home" value="Si" {delivery_home_checked} style="width:auto"> A CASA</label></div><div class="field full"><label>Urne</label><div class="practice-repeat-list" data-practice-list="urna"></div><input type="hidden" name="urna_items_json"><button class="btn ghost" type="button" onclick="practiceAddRow('urna')">+ Aggiungi urna</button></div><div class="field full"><label>Calco</label><div class="practice-repeat-list" data-practice-list="calco"></div><input type="hidden" name="calco_items_json"><button class="btn ghost" type="button" onclick="practiceAddRow('calco')">+ Aggiungi calco</button></div><div class="field full"><label>Accessori</label><div class="practice-repeat-list" data-practice-list="accessorio"></div><input type="hidden" name="accessorio_items_json"><button class="btn ghost" type="button" onclick="practiceAddRow('accessorio')">+ Aggiungi accessorio</button></div><div class="field"><label>Serale €</label><input name="price_evening" value="{val('price_evening')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Notturno €</label><input name="price_night" value="{val('price_night')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Festivo €</label><input name="price_holiday" value="{val('price_holiday')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Totale servizio €</label><input name="total_service" value="{val('total_service')}"></div><input type="hidden" name="total_service_manual" value="{'Si' if raw('total_service_manual')=='Si' else ''}"><div class="field"><label>Acconto €</label><input name="deposit" value="{val('deposit')}" placeholder="Numero o testo libero"></div><div class="field"><label>Rimanenza €</label><input name="remaining_balance" value="{val('remaining_balance')}" readonly></div><div class="field full"><label>TOTALE D</label><textarea name="total_text" placeholder="Testo libero per note sul totale">{val('total_text')}</textarea></div><div class="field"><label>Acconto D €</label><input name="deposit_final" value="{val('deposit_final')}" placeholder="Numero o testo libero"></div><div class="field"><label>Rimanenza D €</label><input name="remaining_final" value="{val('remaining_final')}" readonly></div><div class="field"><label><input type="checkbox" name="send_estremi" value="Si" {estremi_checked} style="width:auto"> INVIARE ESTREMI</label></div><div class="field"><label><input type="checkbox" name="use_voucher" value="Si" {use_voucher_checked} style="width:auto"> USA BUONO</label><div id="useVoucherBox" class="selected-box hidden"><span id="useVoucherStatus">Seleziona il veterinario e spunta USA BUONO.</span><select name="used_voucher_id" data-current="{val('used_voucher_id')}" class="hidden"><option value="">Seleziona buono</option></select></div></div></div></section>
         {creation_payment_fields}
         <section class="section"><h2>Note</h2><div class="fields"><div class="field full"><label>NOTE</label><textarea name="notes">{val('notes')}</textarea></div></div></section>
-        <section class="section"><h2>Etichette operative</h2><div class="fields">{tag_select('tag_assistita','ASSISTITA','tag-red')}{tag_select('tag_possibile_assistita','POSSIBILE ASSISTITA','tag-red')}{tag_select('tag_assistita_streaming','ASSISTITA STREAMING','tag-orange')}{tag_select('tag_possibile_assistita_streaming','POSSIBILE ASSISTITA STREAMING','tag-orange')}{tag_select('tag_saluto','SALUTO','tag-purple')}{tag_select('tag_calco','CALCO','tag-yellow')}{tag_select('tag_possibile_calco','POSSIBILE CALCO','tag-yellow')}{tag_select('tag_calco_urna','CALCO PER URNA','tag-yellow')}{tag_select('tag_calco_paw','CALCO POLPASTRELLO','tag-yellow')}{tag_select('tag_possibile_calco_paw','POSSIBILE CALCO POLPASTRELLO','tag-yellow')}{tag_select('tag_calco_nose','CALCO NASO','tag-yellow')}{tag_select('tag_possibile_calco_nose','POSSIBILE CALCO NASO','tag-yellow')}{tag_select('tag_avvisare','AVVISARE','tag-pink')}{tag_select('tag_da_richiamare','DA RICHIAMARE','tag-blue')}</div></section>
+        <section class="section"><h2>Etichette operative</h2><div class="fields">{tag_select('tag_assistita','ASSISTITA','tag-red')}{tag_select('tag_possibile_assistita','POSSIBILE ASSISTITA','tag-red')}{tag_select('tag_assistita_streaming','ASSISTITA STREAMING','tag-orange')}{tag_select('tag_possibile_assistita_streaming','POSSIBILE ASSISTITA STREAMING','tag-orange')}{tag_select('tag_saluto','SALUTO','tag-purple')}{tag_select('tag_calco','CALCO','tag-yellow')}{tag_select('tag_possibile_calco','POSSIBILE CALCO','tag-yellow')}{tag_select('tag_calco_urna','CALCO PER URNA','tag-yellow')}{tag_select('tag_calco_paw','CALCO POLPASTRELLO','tag-yellow')}{tag_select('tag_possibile_calco_paw','POSSIBILE CALCO POLPASTRELLO','tag-yellow')}{tag_select('tag_calco_nose','CALCO NASO','tag-yellow')}{tag_select('tag_possibile_calco_nose','POSSIBILE CALCO NASO','tag-yellow')}{tag_select('tag_avvisare','AVVISARE','tag-pink')}{tag_select('tag_da_richiamare','DA RICHIAMARE','tag-blue')}{tag_select('tag_pelo','PELO','tag-green')}{tag_select('tag_no_pelo','NO PELO','tag-outline-green')}</div></section>
         <section class="section"><h2>Firma proprietario</h2><p class="sub">Facoltativa: verrà inserita nel PDF DDT. Usa "Apri area firma": mostra solo il riquadro per firmare a schermo intero, senza gli altri dati della pratica, prima di passare il telefono o il tablet al cliente.</p><p class="sub" id="ppmSignatureStatus">{'Firma salvata.' if val('signature_data') else 'Nessuna firma.'}</p><input type="hidden" name="signature_data" id="ppmSignatureDataInput" value="{val('signature_data')}"><div class="actions" style="margin-top:12px"><button class="btn" type="button" id="ppmOpenSignaturePad">Apri area firma</button><button class="btn ghost" type="button" id="ppmRemoveSignature" {'hidden' if not val('signature_data') else ''}>Rimuovi firma</button></div>
         <div class="payment-popover" id="ppmSignatureOverlay" hidden><div class="payment-dialog" style="max-width:900px"><div class="titlebar"><div><h2>Firma proprietario</h2><p class="sub">Fai firmare qui con il dito.</p></div><button class="btn ghost" type="button" id="ppmCloseSignaturePad">Chiudi</button></div><canvas class="signature-pad" id="ppmSignaturePad" style="height:55vh"></canvas><div class="actions" style="margin-top:12px"><button class="btn" type="button" id="ppmSaveSignaturePad">Salva firma</button><button class="btn ghost" type="button" id="ppmClearSignaturePad">Cancella</button></div></div></div>
         </section>
@@ -15823,7 +15954,7 @@ class App(BaseHTTPRequestHandler):
         self.send_html(layout("Nuova pratica",body,user))
 
     def normalized_fields(self,f,items_total=0.0,has_frame_urn=False,has_urn_item=False):
-        keys=["client_id","owner_veterinarian_id","origin_veterinarian_id","operator_name","request_origin","collaborator_name","collaborator_id","destination_branch","owner_first_name","owner_last_name","owner_company","owner_phone","owner_phone_2","owner_phone_note","owner_email","owner_tax_code","owner_vat","owner_sdi","owner_notes","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","origin_first_name","origin_last_name","provenance","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","use_voucher","used_voucher_id","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_possibile_assistita_streaming","tag_saluto","tag_calco","tag_possibile_calco","tag_calco_urna","tag_calco_paw","tag_possibile_calco_paw","tag_calco_nose","tag_possibile_calco_nose","tag_avvisare","tag_da_richiamare","payment_status","payment_method","price_cremation","price_pickup","price_evening","price_urn","send_catalog","catalog_sent","send_estremi","estremi_sent","price_delivery","delivery_at_clinic","delivery_at_home","price_night","price_cast","price_paw_cast","price_nose_cast","price_holiday","price_accessories","deposit","deposit_final","remaining_balance","remaining_final","total_service","total_service_manual","total_text","invoice_number","invoice_date","invoice_total","invoice_total_manual","make_invoice","identity_document_number","identity_document_date","signing_place","signature_data"]
+        keys=["client_id","owner_veterinarian_id","origin_veterinarian_id","operator_name","request_origin","collaborator_name","collaborator_id","destination_branch","owner_first_name","owner_last_name","owner_company","owner_phone","owner_phone_2","owner_phone_note","owner_email","owner_tax_code","owner_vat","owner_sdi","owner_notes","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","origin_first_name","origin_last_name","provenance","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","use_voucher","used_voucher_id","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_possibile_assistita_streaming","tag_saluto","tag_calco","tag_possibile_calco","tag_calco_urna","tag_calco_paw","tag_possibile_calco_paw","tag_calco_nose","tag_possibile_calco_nose","tag_avvisare","tag_da_richiamare","tag_pelo","tag_no_pelo","payment_status","payment_method","price_cremation","price_pickup","price_evening","price_urn","send_catalog","catalog_sent","send_estremi","estremi_sent","price_delivery","delivery_at_clinic","delivery_at_home","price_night","price_cast","price_paw_cast","price_nose_cast","price_holiday","price_accessories","deposit","deposit_final","remaining_balance","remaining_final","total_service","total_service_manual","total_text","invoice_number","invoice_date","invoice_total","invoice_total_manual","make_invoice","identity_document_number","identity_document_date","signing_place","signature_data"]
         data = {k:f.get(k,"").strip() for k in keys}
         data["pickup_time"] = f.get("pickup_time","").strip()
         for key in MONEY_FIELDS:
@@ -15851,7 +15982,7 @@ class App(BaseHTTPRequestHandler):
         data["delivery_at_clinic"] = "Si" if data["delivery_at_clinic"] == "Si" else ""
         data["delivery_at_home"] = "Si" if data["delivery_at_home"] == "Si" else ""
         data["used_voucher_id"] = data["used_voucher_id"] or None
-        for key in ("tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_possibile_assistita_streaming","tag_saluto","tag_calco","tag_possibile_calco","tag_calco_urna","tag_calco_paw","tag_possibile_calco_paw","tag_calco_nose","tag_possibile_calco_nose","tag_avvisare","tag_da_richiamare"):
+        for key in ("tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_possibile_assistita_streaming","tag_saluto","tag_calco","tag_possibile_calco","tag_calco_urna","tag_calco_paw","tag_possibile_calco_paw","tag_calco_nose","tag_possibile_calco_nose","tag_avvisare","tag_da_richiamare","tag_pelo","tag_no_pelo"):
             data[key] = "Si" if data[key] == "Si" else ""
         if has_frame_urn:data["tag_calco_urna"]="Si"
         data["voucher_requested"] = "Si" if data["voucher_requested"] == "Si" else ""
@@ -16982,20 +17113,42 @@ class App(BaseHTTPRequestHandler):
         return cur.lastrowid
 
     def invoice_conflict(self,c,invoice_number,exclude_id=None,exclude_movement_invoice_id=None):
+        # Un numero fattura puo' legittimamente comparire su piu' pratiche
+        # diverse (es. un collaboratore che porta piu' animali, fatturati
+        # tutti insieme a fine mese con un'unica fattura: richiesta
+        # esplicita dell'utente). Il numero fattura non e' quindi piu'
+        # trattato come identificatore univoco della pratica e questo
+        # controllo non blocca piu' il salvataggio nei 9 punti che lo
+        # chiamano (create_practice, edit_submit, quick_invoice,
+        # change_state, apply_payment_macroarea, ecc. - tutti seguono lo
+        # stesso pattern "if conflict: blocca"). L'identificatore univoco
+        # della pratica resta invariato: practice_number (colonna UNIQUE
+        # NOT NULL). Per trovare le altre pratiche che condividono lo
+        # stesso numero fattura (usato dalla vista raggruppata in
+        # /fatture) vedi practices_sharing_invoice_number().
+        return None
+
+    def practices_sharing_invoice_number(self,c,invoice_number,exclude_id=None):
+        # Stessa query che invoice_conflict() usava per bloccare il riuso,
+        # ora riusata per il caso opposto: elencare (non bloccare) tutte le
+        # pratiche che condividono davvero lo stesso numero fattura, per
+        # la vista raggruppata di /fatture.
         number=(invoice_number or "").strip()
-        if not number:return None
+        if not number:return []
         sql="SELECT id,practice_number FROM practices WHERE lower(trim(invoice_number))=lower(trim(?))"
         args=[number]
         if exclude_id is not None:sql+=" AND id<>?";args.append(exclude_id)
-        row=c.execute(sql,args).fetchone()
-        if row:return row
-        sql2="""SELECT mi.id,p.practice_number FROM movement_invoices mi
+        rows=list(c.execute(sql,args).fetchall())
+        sql2="""SELECT DISTINCT p.id,p.practice_number FROM movement_invoices mi
                 JOIN practices p ON p.id=mi.practice_id
                 WHERE lower(trim(mi.invoice_number))=lower(trim(?))"""
         args2=[number]
-        if exclude_id is not None:sql2+=" AND mi.practice_id<>?";args2.append(exclude_id)
-        if exclude_movement_invoice_id is not None:sql2+=" AND mi.id<>?";args2.append(exclude_movement_invoice_id)
-        return c.execute(sql2,args2).fetchone()
+        if exclude_id is not None:sql2+=" AND p.id<>?";args2.append(exclude_id)
+        seen={row["id"] for row in rows}
+        for row in c.execute(sql2,args2).fetchall():
+            if row["id"] not in seen:
+                rows.append(row);seen.add(row["id"])
+        return rows
 
     def duplicate_client_page(self,user,d,duplicates):
         rows=''.join(f'''<tr><td>{esc(((r["first_name"] or "")+" "+(r["last_name"] or "")).strip() or r["company_name"])}</td><td>{esc(r["phone"])}</td><td>{esc(r["email"])}</td><td>{esc(r["tax_code"] or r["vat_number"])}</td><td>{esc(r["city"] or r["address"])}</td><td>ID {r["id"]}</td></tr>''' for r in duplicates)

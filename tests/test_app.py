@@ -1075,13 +1075,57 @@ class PetParadiseTests(unittest.TestCase):
         invalid=self.handler.normalized_fields({"tag_da_richiamare":"Si","price_cremation":"non numerico"})
         self.assertIn("solo numeri",self.handler.validation_error(invalid))
 
+    def test_pelo_no_pelo_tags_use_the_same_operational_tag_mechanism(self):
+        # Nuove etichette operative PELO/NO PELO (richiesta esplicita
+        # dell'utente): devono comportarsi esattamente come le altre
+        # etichette gia' esistenti - stesso meccanismo, nessun sistema
+        # parallelo. Copre: normalizzazione al salvataggio, persistenza,
+        # visualizzazione (tag_badges/tag_controls), presenza nel form.
+        data=self.handler.normalized_fields({"tag_pelo":"Si","tag_no_pelo":"bogus"})
+        self.assertEqual(data["tag_pelo"],"Si")
+        self.assertEqual(data["tag_no_pelo"],"")
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,tag_pelo,tag_no_pelo)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                                ("CR-PELOTAG","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Fido","Cremazione singola","Si","")).lastrowid
+            row=conn.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+        badges=self.handler.tag_badges(row)
+        self.assertIn('<span class="badge tag-green">PELO</span>',badges)
+        self.assertNotIn("NO PELO",badges)
+        controls=self.handler.tag_controls(row)
+        self.assertIn("PELO",controls)
+        # Modifica: passare da PELO a NO PELO deve funzionare come per
+        # qualunque altra etichetta (stesso ciclo salva/rileggi).
+        with app.db() as conn:
+            conn.execute("UPDATE practices SET tag_pelo='',tag_no_pelo='Si' WHERE id=?",(pid,))
+            row2=conn.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+        badges2=self.handler.tag_badges(row2)
+        self.assertIn('<span class="badge tag-outline-green">NO PELO</span>',badges2)
+        self.assertNotIn('<span class="badge tag-green">PELO</span>',badges2)
+        rendered=[];self.handler.send_html=lambda content,*a:rendered.append(content)
+        self.handler.path=f"/pratiche/{pid}"
+        self.handler.practice(admin,pid)
+        page=rendered[-1]
+        self.assertIn("NO PELO",page)
+        rendered.clear()
+        self.handler.path="/nuova"
+        self.handler.new_page(admin)
+        form_page=rendered[-1]
+        self.assertIn('name="tag_pelo"',form_page)
+        self.assertIn('name="tag_no_pelo"',form_page)
+
     def test_invoice_page_search_and_unique_code(self):
         with app.db() as conn:
             user=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             pid=conn.execute("""INSERT INTO practices(practice_number,invoice_number,invoice_date,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,owner_first_name)
                               VALUES(?,?,?,?,?,?,?,?,?,?,?)""",("CR-000001","FT-77","2026-07-14","Privato","Livorno","Ritirato",stamp,stamp,user["id"],"Luna","Mario")).lastrowid
-            conflict=self.handler.invoice_conflict(conn,"ft-77")
-            self.assertEqual(conflict["id"],pid)
+            # Cambio intenzionale: il numero fattura non e' piu' trattato
+            # come identificatore univoco della pratica (richiesta esplicita
+            # dell'utente - un numero puo' essere condiviso da piu'
+            # pratiche), quindi invoice_conflict() non segnala piu' nulla.
+            self.assertIsNone(self.handler.invoice_conflict(conn,"ft-77"))
         rendered=[];self.handler.send_html=lambda content:rendered.append(content);self.handler.path="/fatture?q=FT-77"
         self.handler.invoices_page(user)
         self.assertIn("FT-77",rendered[-1])
@@ -1127,11 +1171,15 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(f'action="/pratiche/{pid}/fatture-movimenti"',page)
 
     def test_invoice_conflict_does_not_flag_practices_own_movement_invoice(self):
-        # bug reale segnalato dall'utente: una fattura registrata dal
-        # popover Pagamento finisce in movement_invoices, non nella colonna
-        # legacy practices.invoice_number — senza esclusione per pratica,
-        # il controllo duplicati bloccava anche il reinserimento dello
-        # stesso numero gia' posseduto dalla STESSA pratica.
+        # Storicamente questo test verificava che invoice_conflict()
+        # bloccasse il riuso di un numero fattura da parte di una pratica
+        # DIVERSA, escludendo pero' la pratica proprietaria. Cambio
+        # intenzionale (richiesta esplicita dell'utente): il numero fattura
+        # non e' piu' un identificatore univoco della pratica - puo' essere
+        # condiviso da piu' pratiche diverse (es. un collaboratore
+        # fatturato una sola volta per piu' animali). invoice_conflict()
+        # non segnala quindi piu' nulla in nessun caso, ne' per la stessa
+        # pratica ne' per pratiche diverse.
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
@@ -1142,8 +1190,29 @@ class PetParadiseTests(unittest.TestCase):
             self.assertIsNone(self.handler.invoice_conflict(conn,"FT-SELF",exclude_id=pid))
             other_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,owner_first_name)
                                 VALUES(?,?,?,?,?,?,?,?)""",("CR-OTHERPRACTICE","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Bea")).lastrowid
-            conflict=self.handler.invoice_conflict(conn,"FT-SELF",exclude_id=other_pid)
-            self.assertEqual(conflict["practice_number"],"CR-SELFCONFLICT")
+            self.assertIsNone(self.handler.invoice_conflict(conn,"FT-SELF",exclude_id=other_pid))
+            self.assertIsNone(self.handler.invoice_conflict(conn,"FT-SELF"))
+
+    def test_practices_sharing_invoice_number_lists_every_practice_with_the_number(self):
+        # Sostituisce la vecchia funzione di blocco: usata per la vista
+        # raggruppata di /fatture, deve elencare (non bloccare) tutte le
+        # pratiche - sia dalla colonna legacy sia da movement_invoices -
+        # che condividono davvero lo stesso numero fattura.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid_a=conn.execute("""INSERT INTO practices(practice_number,invoice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,owner_first_name)
+                                VALUES(?,?,?,?,?,?,?,?,?)""",("CR-SHARE-A","FT-125/2026","Collaboratore","Livorno","Ritirato",stamp,stamp,admin["id"],"Nessuno")).lastrowid
+            pid_b=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,owner_first_name)
+                                VALUES(?,?,?,?,?,?,?,?)""",("CR-SHARE-B","Collaboratore","Livorno","Ritirato",stamp,stamp,admin["id"],"Nessuno")).lastrowid
+            conn.execute("INSERT INTO movement_invoices(practice_id,invoice_number,invoice_date,invoice_total,payment_method,payment_channel,created_at,created_by) VALUES(?,?,?,?,?,?,?,?)",
+                         (pid_b,"ft-125/2026","2026-07-02","200.00","Pos","W",stamp,admin["id"]))
+            pid_c=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,owner_first_name)
+                                VALUES(?,?,?,?,?,?,?,?)""",("CR-SHARE-C","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Altro")).lastrowid
+            sharing=self.handler.practices_sharing_invoice_number(conn,"FT-125/2026")
+            self.assertEqual({row["id"] for row in sharing},{pid_a,pid_b})
+            self.assertNotIn(pid_c,{row["id"] for row in sharing})
+            excluded=self.handler.practices_sharing_invoice_number(conn,"FT-125/2026",exclude_id=pid_a)
+            self.assertEqual({row["id"] for row in excluded},{pid_b})
 
     def test_save_invoice_accepts_number_already_registered_via_movement_invoice_same_practice(self):
         with app.db() as conn:
@@ -2793,6 +2862,65 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('>Vedi riconsegna</span>', page)
         self.assertNotIn(f'href="/calendario/nuovo?linked_practice_id={pid}&return_to=', page)
         self.assertNotIn('>Fissa riconsegna</span>', page)
+
+    def test_cremation_day_view_shows_practice_note_in_compact_card_without_expanding(self):
+        # Richiesta esplicita dell'utente: la nota della pratica deve
+        # essere visibile subito nella card compatta del ciclo, senza
+        # doverlo espandere. cremation-week-animal-notes (nuova, nella
+        # riga sempre visibile) e' diversa da cremation-animal-notes
+        # (gia' esistente, solo nel corpo espanso) - verifichiamo la
+        # prima, non solo che il testo compaia da qualche parte in pagina.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,actual_end,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                ("2026-07-20", "completato", "08:00", "09:30", stamp, stamp, stamp),
+            ).lastrowid
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id,notes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-NOTECOMPACT", "Privato", "Livorno", "Da consegnare", "Cremazione singola", "2026-07-20", stamp, stamp,
+                 admin["id"], "Birba", cycle_id, "Attenzione: proprietario molto ansioso, chiamare prima di consegnare"),
+            )
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-20"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn('class="cremation-week-animal-notes"', page)
+        self.assertIn("Attenzione: proprietario molto ansioso, chiamare prima di consegnare", page)
+
+    def test_cremation_week_view_shows_practice_note_in_compact_card_and_truncates_long_notes(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,actual_end,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                ("2026-07-20", "completato", "08:00", "09:30", stamp, stamp, stamp),
+            ).lastrowid
+            long_note = "Nota molto lunga " * 10
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id,notes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-NOTEWEEK", "Privato", "Livorno", "Da consegnare", "Cremazione singola", "2026-07-20", stamp, stamp,
+                 admin["id"], "Birba", cycle_id, long_note),
+            ).lastrowid
+        rendered = []
+        self.handler.path = "/programma-cremazioni?vista=settimana&data=2026-07-20"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn('class="cremation-week-animal-notes"', page)
+        self.assertIn("…", page)
+        self.assertNotIn(long_note.strip(), page)
+        # La nota deve riflettersi aggiornata se cambiata dalla pratica
+        # (stessa fonte dati, nessuna copia nel database).
+        with app.db() as conn:
+            conn.execute("UPDATE practices SET notes=? WHERE id=?", ("Nota aggiornata", pid))
+        rendered.clear()
+        self.handler.cremation_schedule(admin)
+        page2 = rendered[-1]
+        self.assertIn("Nota aggiornata", page2)
+        self.assertNotIn(long_note.strip(), page2)
 
     def test_cremation_week_view_shows_one_fissa_riconsegna_button_per_animal_in_combo_cycle(self):
         with app.db() as conn:
@@ -6517,9 +6645,15 @@ class PetParadiseTests(unittest.TestCase):
             self.assertEqual((row["invoice_number"],row["make_invoice"]),("FT-INLINE-1","Si"))
             other_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
                          invoice_number) VALUES(?,?,?,?,?,?,?,?)""",("CR-OTHERINV","Privato","Livorno","Ritirato",app.now(),app.now(),admin["id"],"FT-INLINE-1")).lastrowid
+        # Cambio intenzionale: un numero fattura puo' essere condiviso da
+        # piu' pratiche diverse (richiesta esplicita dell'utente), quindi
+        # il salvataggio con un numero gia' usato da un'altra pratica ora
+        # deve riuscire, non essere rifiutato.
         self.handler.form=lambda:{"invoice_number":"FT-INLINE-1","ajax":"1"};self.handler.quick_invoice(admin,other_pid)
-        self.assertEqual(responses[-1][1],400)
-        self.assertIn("già usato",responses[-1][0]["error"])
+        self.assertEqual(responses[-1],({"ok":True,"invoice_number":"FT-INLINE-1","make_invoice":"Si"},200))
+        with app.db() as conn:
+            row=conn.execute("SELECT invoice_number FROM practices WHERE id=?",(other_pid,)).fetchone()
+            self.assertEqual(row["invoice_number"],"FT-INLINE-1")
 
     def test_cremated_status_colors_only_label_and_ritirato_is_yellow(self):
         self.assertIn("Cremato",app.STATES)
@@ -7285,7 +7419,15 @@ class PetParadiseTests(unittest.TestCase):
             links=conn.execute("SELECT count(*) n FROM movement_invoice_links WHERE invoice_id=?",(invoice["id"],)).fetchone()["n"]
             self.assertEqual(links,2)
 
-    def test_invoice_conflict_blocks_duplicate_movement_invoice_number(self):
+    def test_multiple_practices_can_share_the_same_invoice_number_and_are_grouped_in_fatture(self):
+        # Cambio intenzionale (richiesta esplicita dell'utente): un numero
+        # fattura DEVE poter essere assegnato a piu' pratiche diverse (caso
+        # reale - un collaboratore porta piu' animali durante il mese,
+        # fatturati tutti insieme a fine mese con un'unica fattura).
+        # Storicamente questo salvataggio veniva rifiutato con "gia' usato";
+        # ora deve riuscire per entrambe le pratiche, ognuna mantenendo il
+        # proprio importo, e /fatture deve mostrarle raggruppate con un
+        # totale combinato pari alla SOMMA dei due importi (mai duplicato).
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             pid1=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
@@ -7293,19 +7435,29 @@ class PetParadiseTests(unittest.TestCase):
                                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-DUPINV1","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Sara","Cremazione singola","Da saldare","100","100")).lastrowid
             pid2=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
                                 owner_first_name,service_type,payment_status,price_cremation,total_service)
-                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-DUPINV2","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Piero","Cremazione singola","Da saldare","100","100")).lastrowid
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-DUPINV2","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Piero","Cremazione singola","Da saldare","150","150")).lastrowid
         responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
         self.handler.form=lambda:{"payment_status":"Pagato","payment_method":"Pos","payment_amount":"100,00","payment_channel":"W","economic_at":"2026-07-19","saldo_invoice_number":"FT-DUP","saldo_invoice_total":"100,00","ajax":"1"}
         self.handler.quick_payment(admin,pid1)
         self.assertTrue(responses[-1][0]["ok"])
-        self.handler.form=lambda:{"payment_status":"Pagato","payment_method":"Pos","payment_amount":"100,00","payment_channel":"W","economic_at":"2026-07-20","saldo_invoice_number":"FT-DUP","saldo_invoice_total":"100,00","ajax":"1"}
+        self.handler.form=lambda:{"payment_status":"Pagato","payment_method":"Pos","payment_amount":"150,00","payment_channel":"W","economic_at":"2026-07-20","saldo_invoice_number":"FT-DUP","saldo_invoice_total":"150,00","ajax":"1"}
         self.handler.quick_payment(admin,pid2)
-        self.assertFalse(responses[-1][0]["ok"])
-        self.assertIn("già usato",responses[-1][0]["error"])
-        # Re-saving pid1's own saldo with the same number must still succeed (no false self-conflict)
-        self.handler.form=lambda:{"payment_status":"Pagato","payment_method":"Pos","payment_amount":"100,00","payment_channel":"W","economic_at":"2026-07-21","saldo_invoice_number":"FT-DUP","saldo_invoice_total":"100,00","ajax":"1"}
-        self.handler.quick_payment(admin,pid1)
         self.assertTrue(responses[-1][0]["ok"])
+        # Ogni pratica mantiene il proprio importo indipendente (nessuna
+        # somma erronea sui pagamenti delle singole pratiche).
+        with app.db() as conn:
+            inv1=conn.execute("SELECT invoice_total FROM movement_invoices WHERE practice_id=?",(pid1,)).fetchone()
+            inv2=conn.execute("SELECT invoice_total FROM movement_invoices WHERE practice_id=?",(pid2,)).fetchone()
+            self.assertEqual(inv1["invoice_total"],"100.00")
+            self.assertEqual(inv2["invoice_total"],"150.00")
+        rendered=[];self.handler.send_html=lambda content,*a:rendered.append(content);self.handler.path="/fatture"
+        self.handler.invoices_page(admin)
+        page=rendered[-1]
+        self.assertIn("Fatture condivise tra più pratiche",page)
+        self.assertIn("CR-DUPINV1",page)
+        self.assertIn("CR-DUPINV2",page)
+        # Totale combinato = 100+150 = 250,00 — mai 300 (niente duplicazione).
+        self.assertIn("250,00",page)
 
     def test_practice_summary_shows_editable_metodo_dropdown_saved_via_ajax(self):
         with app.db() as conn:
@@ -9161,6 +9313,76 @@ class PetParadiseTests(unittest.TestCase):
         # overflowed the filters card by ~12px even with min-width:0 and
         # flex-wrap - only forcing them to stack vertically fixed it.
         self.assertIn(".balance-date-range{flex-direction:column;align-items:stretch}.balance-date-range input{width:100%}",app.CSS)
+
+    def test_revenue_by_quote_category_aggregates_real_quote_line_items_no_duplication(self):
+        # Ricavi per voce del preventivo: le vere voci economiche (6 campi
+        # prezzo piatti su practices + le 3 categorie reali di
+        # practice_items), mai stime. Il totale per categoria deve
+        # sommare esattamente a zero duplicazione (somma delle voci =
+        # somma dei singoli importi inseriti).
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,price_pickup,price_night,pickup_date)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                ("CR-REVCAT1","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Rino","Cremazione singola","Da saldare","100","20","15","2026-06-15")).lastrowid
+            conn.execute("INSERT INTO practice_items(practice_id,category,label,price,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",(pid,"urna","Urna base","50","0",stamp,stamp))
+            conn.execute("INSERT INTO practice_items(practice_id,category,label,price,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",(pid,"accessorio","Ciondolo","10","0",stamp,stamp))
+            totals=dict(app.revenue_by_quote_category(conn,"2026-06-01","2026-06-30"))
+        self.assertEqual(totals["Cremazione"],100.0)
+        self.assertEqual(totals["Ritiro"],20.0)
+        self.assertEqual(totals["Notturno"],15.0)
+        self.assertEqual(totals["Urne"],50.0)
+        self.assertEqual(totals["Accessori"],10.0)
+        self.assertEqual(totals["Calchi"],0.0)
+        self.assertEqual(sum(totals.values()),195.0)
+
+    def test_revenue_by_quote_category_sums_multiple_practices_and_respects_period(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                            owner_first_name,service_type,payment_status,price_cremation,pickup_date)
+                            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            ("CR-REVCAT-IN1","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"A","Cremazione singola","Da saldare","100","2026-06-05"))
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                            owner_first_name,service_type,payment_status,price_cremation,pickup_date)
+                            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            ("CR-REVCAT-IN2","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"B","Cremazione singola","Da saldare","50","2026-06-20"))
+            # Fuori periodo: non deve contribuire al totale.
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                            owner_first_name,service_type,payment_status,price_cremation,pickup_date)
+                            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            ("CR-REVCAT-OUT","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"C","Cremazione singola","Da saldare","999","2026-07-05"))
+            totals=dict(app.revenue_by_quote_category(conn,"2026-06-01","2026-06-30"))
+        self.assertEqual(totals["Cremazione"],150.0)
+
+    def test_revenue_by_quote_category_uses_created_at_fallback_for_historical_practices(self):
+        # Dati storici: una pratica senza pickup_date (creata prima che il
+        # campo esistesse, o mai valorizzato) deve comunque essere
+        # conteggiata usando created_at, non persa dall'aggregazione.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                            owner_first_name,service_type,payment_status,price_cremation,pickup_date)
+                            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            ("CR-REVCAT-HIST","Privato","Livorno","Ritirato","2026-05-10T09:00:00","2026-05-10T09:00:00",admin["id"],"D","Cremazione singola","Da saldare","75",""))
+            totals=dict(app.revenue_by_quote_category(conn,"2026-05-01","2026-05-31"))
+        self.assertEqual(totals["Cremazione"],75.0)
+
+    def test_bilanci_page_shows_revenue_by_quote_category_section(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                            owner_first_name,service_type,payment_status,price_cremation,pickup_date)
+                            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            ("CR-REVCAT-PAGE","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"E","Cremazione singola","Da saldare","240","2026-06-12"))
+        rendered=[];self.handler.send_html=lambda content,*a:rendered.append(content)
+        self.handler.path="/bilanci?data_iniziale=2026-06-01&data_finale=2026-06-30"
+        self.handler.balances_page(admin)
+        page=rendered[-1]
+        self.assertIn("Ricavi per voce del preventivo",page)
+        self.assertIn("Cremazione",page)
+        self.assertIn("240,00",page)
 
     def test_bilanci_elimina_button_really_deletes_legacy_synthesized_rows(self):
         # Practices created before the balance_movements ledger existed only
