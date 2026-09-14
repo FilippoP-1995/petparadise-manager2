@@ -7625,6 +7625,53 @@ def revenue_by_quote_category(c, date_from, date_to):
     return [(label, totals[label]) for label in order]
 
 
+def map_calendar_estimates_to_practice_prefill(estimates):
+    """Trasferisce voce per voce il preventivo di un evento calendario
+    (calendar_event_estimate_items: description+amount) nei corrispondenti
+    campi del preventivo di una pratica creata da quell'evento (richiesta
+    esplicita dell'utente - mai solo il totale). Riusa la STESSA
+    corrispondenza voce-economica/nome gia' usata da
+    revenue_by_quote_category (REVENUE_QUOTE_CATEGORY_FIELDS/
+    REVENUE_QUOTE_ITEM_CATEGORY_LABELS), cosi' le due funzioni non possono
+    mai disallinearsi sul significato di ciascuna voce.
+
+    Una voce non compilata nell'evento (senza importo, o col nome preset
+    di default mai toccato) non deve valorizzare il campo corrispondente
+    nella pratica - viene scartata qui, non solo lasciata a "0".
+
+    Una voce con un nome non riconosciuto (es. "Altro" con descrizione
+    libera, tipicamente digitata per un ritiro fuori dalle 6 voci a campo
+    piatto/3 categorie standard) non va persa: finisce come voce
+    Accessori con la sua vera descrizione originale (la categoria
+    generica gia' esistente piu' vicina a un "importo extra con etichetta
+    libera" - nessuna nuova struttura dati).
+
+    Ritorna (flat_prefill, items_by_category): flat_prefill e' un dict
+    {colonna_practices: "importo.2f"} da unire al prefill del form;
+    items_by_category e' {categoria: [righe practice_items-shaped]} da
+    usare per precompilare Urne/Calchi/Accessori.
+    """
+    flat_by_label = {label.lower(): field for field, label in REVENUE_QUOTE_CATEGORY_FIELDS}
+    item_by_label = {label.lower(): cat for cat, label in REVENUE_QUOTE_ITEM_CATEGORY_LABELS.items()}
+    item_by_label.update({"urna": "urna", "calco": "calco", "accessorio": "accessorio"})
+    flat_totals = {}
+    items_by_category = {cat: [] for cat in PRACTICE_ITEM_CATEGORIES}
+    for row in estimates:
+        description = (row["description"] or "").strip()
+        amount = money_value(row["amount"])
+        if amount <= 0 or not description:
+            continue
+        key = description.lower()
+        if key in flat_by_label:
+            field = flat_by_label[key]
+            flat_totals[field] = flat_totals.get(field, 0.0) + amount
+        else:
+            category = item_by_label.get(key, "accessorio")
+            items_by_category[category].append({"subtype": "", "urn_catalog_id": None, "label": description, "price": f"{amount:.2f}"})
+    flat_prefill = {field: f"{total:.2f}" for field, total in flat_totals.items()}
+    return flat_prefill, items_by_category
+
+
 def uses_total_d(practice):
     keys=practice.keys() if hasattr(practice,"keys") else practice
     return money_value(practice["total_text"] if "total_text" in keys else "") > 0
@@ -15863,6 +15910,15 @@ class App(BaseHTTPRequestHandler):
                         "SELECT invoice_number,invoice_date,invoice_total FROM movement_invoices WHERE practice_id=? ORDER BY id DESC LIMIT 1",
                         (p["id"],),
                     ).fetchone()
+            elif p and "_prefill_items" in p.keys():
+                # Pratica non ancora esistente (form di creazione), ma con
+                # voci Urne/Calchi/Accessori trasferite dal preventivo di
+                # un evento calendario (vedi new_page/
+                # map_calendar_estimates_to_practice_prefill) - stessa
+                # forma delle righe lette sopra da practice_items, cosi'
+                # practiceAddRow le mostra identiche a righe gia' salvate.
+                for cat in PRACTICE_ITEM_CATEGORIES:
+                    practice_items_bootstrap[cat]=list(p["_prefill_items"].get(cat,[]))
         vet_option=lambda v, selected_id: f'<option value="{v["id"]}" data-shortname="{esc(v["short_name"] or v["clinic_name"])}" data-fullname="{esc(v["clinic_name"])}" data-address="{esc(v["address"])}" data-city="{esc(v["city"])}" data-phone="{esc(v["phone"])}" data-provenance="{veterinarian_provenance(v["short_name"],v["clinic_name"])}" {"selected" if str(selected_id)==str(v["id"]) else ""}>{esc(v["short_name"] or v["clinic_name"])}{(" - "+esc(v["clinic_name"])) if v["short_name"] else ""}</option>'
         vet_options='<option value="">Nessun veterinario selezionato</option>'+''.join(vet_option(v, raw("veterinarian_id")) for v in vets)
         owner_vet_options='<option value="">Compilazione manuale</option>'+''.join(vet_option(v, raw("owner_veterinarian_id")) for v in vets)
@@ -15967,6 +16023,7 @@ class App(BaseHTTPRequestHandler):
             with db() as c:
                 event=c.execute("SELECT * FROM calendar_events WHERE id=? AND deleted_at IS NULL",(int(calendar_event_id),)).fetchone()
                 animal=c.execute("SELECT * FROM calendar_event_animals WHERE event_id=? ORDER BY id LIMIT 1",(int(calendar_event_id),)).fetchone()
+                estimates=c.execute("SELECT description,amount FROM calendar_event_estimate_items WHERE event_id=? ORDER BY sort_order,id",(int(calendar_event_id),)).fetchall()
             if event:
                 if event["linked_practice_id"]:return self.redirect(f'/pratiche/{event["linked_practice_id"]}')
                 client=None
@@ -15984,6 +16041,16 @@ class App(BaseHTTPRequestHandler):
                 if event["location_type"]=="Privato" and event["address"]:
                     prefill["origin_mode"]="Testo libero"
                     prefill["origin_text"]=event["address"]
+                # Trasferimento voce per voce del preventivo dell'evento
+                # nel preventivo della pratica (richiesta esplicita
+                # dell'utente, coerente col riepilogo evento che mostra
+                # le stesse voci) - mai solo il totale. Il form resta
+                # comunque modificabile prima del salvataggio, come ogni
+                # altro campo precompilato qui sopra.
+                flat_prefill,event_items_by_category=map_calendar_estimates_to_practice_prefill(estimates)
+                prefill.update(flat_prefill)
+                if any(event_items_by_category.values()):
+                    prefill["_prefill_items"]=event_items_by_category
         if draft is not None:prefill=draft
         hidden=(f'<input type="hidden" name="calendar_event_id" value="{calendar_event_id}"><input type="hidden" name="pickup_time" value="{event["start_at"][11:16]}">' if calendar_event_id.isdigit() and event else '')
         hidden+=f'<input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(24)}">'

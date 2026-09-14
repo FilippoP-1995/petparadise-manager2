@@ -11485,6 +11485,160 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Urna", reopened)
         self.assertIn("230,00", reopened)
 
+    def _create_event_with_estimates(self, admin, title, voci):
+        with app.db() as conn:
+            stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro",title,"Livorno","Filippo","2026-07-30T09:00:00","2026-07-30T09:30:00","Ritirato",admin["id"],stamp,stamp)).lastrowid
+            for i, (desc, amount) in enumerate(voci):
+                conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                             (event_id, desc, amount, i, stamp, stamp))
+        return event_id
+
+    def test_map_calendar_estimates_to_practice_prefill_maps_every_voice_to_its_field(self):
+        # Richiesta esplicita dell'utente: mapping deterministico voce per
+        # voce (mai solo il totale). Scenario esatto dell'esempio fornito:
+        # Cremazione 150, Urna 80, Accessori 25, Ritiro 30, Notturno 50.
+        estimates = [
+            {"description": "Cremazione", "amount": 150},
+            {"description": "Urna", "amount": 80},
+            {"description": "Accessori", "amount": 25},
+            {"description": "Ritiro", "amount": 30},
+            {"description": "Notturno", "amount": 50},
+        ]
+        flat, items = app.map_calendar_estimates_to_practice_prefill(estimates)
+        self.assertEqual(flat, {"price_cremation": "150.00", "price_pickup": "30.00", "price_night": "50.00"})
+        self.assertEqual(items["urna"], [{"subtype": "", "urn_catalog_id": None, "label": "Urna", "price": "80.00"}])
+        self.assertEqual(items["accessorio"], [{"subtype": "", "urn_catalog_id": None, "label": "Accessori", "price": "25.00"}])
+        self.assertEqual(items["calco"], [])
+
+    def test_map_calendar_estimates_to_practice_prefill_skips_uncompiled_zero_amount_voices(self):
+        # Le 4 voci preimpostate di default nel wizard (Cremazione, Ritiro,
+        # Riconsegna, Urna) vengono salvate anche se l'utente non le tocca
+        # (importo 0) - non devono valorizzare il campo corrispondente
+        # nella pratica.
+        estimates = [
+            {"description": "Cremazione", "amount": 150},
+            {"description": "Ritiro", "amount": 0},
+            {"description": "Riconsegna", "amount": 0},
+            {"description": "Urna", "amount": 0},
+        ]
+        flat, items = app.map_calendar_estimates_to_practice_prefill(estimates)
+        self.assertEqual(flat, {"price_cremation": "150.00"})
+        self.assertEqual(items["urna"], [])
+
+    def test_map_calendar_estimates_to_practice_prefill_keeps_custom_voice_as_accessorio(self):
+        # Voce personalizzata (tipicamente "Altro" col wizard, descrizione
+        # libera): non deve essere persa - finisce come Accessori con la
+        # sua vera descrizione originale.
+        estimates = [{"description": "Trasporto extra fuori zona", "amount": 45}]
+        flat, items = app.map_calendar_estimates_to_practice_prefill(estimates)
+        self.assertEqual(flat, {})
+        self.assertEqual(items["accessorio"], [{"subtype": "", "urn_catalog_id": None, "label": "Trasporto extra fuori zona", "price": "45.00"}])
+
+    def test_nuova_pratica_form_is_prefilled_with_every_event_preventivo_voice(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        event_id = self._create_event_with_estimates(admin, "RITIRO PREFILL TEST", [
+            ("Cremazione", "150"), ("Urna", "80"), ("Accessorio", "25"), ("Ritiro", "30"), ("Notturno", "50"),
+        ])
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/nuova?calendar_event_id={event_id}"
+        self.handler.new_page(admin)
+        page = rendered[-1]
+        self.assertIn('name="price_cremation" value="150.00"', page)
+        self.assertIn('name="price_pickup" value="30.00"', page)
+        self.assertIn('name="price_night" value="50.00"', page)
+        self.assertIn('name="price_delivery" value=""', page)
+        self.assertIn('name="price_evening" value=""', page)
+        self.assertIn('name="price_holiday" value=""', page)
+        self.assertIn('"urna": [{"subtype": "", "urn_catalog_id": null, "label": "Urna", "price": "80.00"}]', page)
+        self.assertIn('"accessorio": [{"subtype": "", "urn_catalog_id": null, "label": "Accessorio", "price": "25.00"}]', page)
+
+    def test_practice_created_from_event_keeps_each_voice_in_its_own_field_no_duplication(self):
+        # Criterio di completamento esplicito dell'utente: ogni voce
+        # dell'evento deve ritrovarsi nel CORRISPONDENTE campo della
+        # pratica generata, non solo un totale corretto.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        event_id = self._create_event_with_estimates(admin, "RITIRO E2E TEST", [
+            ("Cremazione", "150"), ("Urna", "80"), ("Accessorio", "25"), ("Ritiro", "30"), ("Notturno", "50"),
+        ])
+        redirects = []
+        self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.form = lambda: {
+            "calendar_event_id": str(event_id),
+            "operator_name": "FILIPPO", "request_origin": "Collaboratore", "collaborator_name": "COLLAB TEST",
+            "destination_branch": "Livorno", "animal_name": "Fido", "service_type": "Cremazione singola",
+            "price_cremation": "150.00", "price_pickup": "30.00", "price_night": "50.00",
+            "urna_items_json": json.dumps([{"subtype": "", "urn_catalog_id": "", "label": "Urna", "price": "80.00"}]),
+            "accessorio_items_json": json.dumps([{"subtype": "", "urn_catalog_id": "", "label": "Accessorio", "price": "25.00"}]),
+            "calco_items_json": "[]",
+            "balance_idempotency_key": "evt-transfer-test-1",
+        }
+        self.handler.create_practice(admin)
+        self.assertTrue(redirects, "creazione pratica fallita")
+        pid = int(redirects[-1].split("/pratiche/")[1])
+        with app.db() as conn:
+            p = conn.execute("SELECT * FROM practices WHERE id=?", (pid,)).fetchone()
+            items = {row["category"]: (row["label"], row["price"]) for row in conn.execute("SELECT category,label,price FROM practice_items WHERE practice_id=?", (pid,)).fetchall()}
+            ev = conn.execute("SELECT linked_practice_id FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+        # ogni voce nel campo corrispondente, non solo il totale
+        self.assertEqual(p["price_cremation"], "150.00")
+        self.assertEqual(p["price_pickup"], "30.00")
+        self.assertEqual(p["price_night"], "50.00")
+        self.assertEqual(p["price_delivery"], "")  # non compilata nell'evento -> vuota
+        self.assertEqual(p["price_evening"], "")
+        self.assertEqual(p["price_holiday"], "")
+        self.assertEqual(items["urna"], ("Urna", "80.00"))
+        self.assertEqual(items["accessorio"], ("Accessorio", "25.00"))
+        self.assertNotIn("calco", items)
+        # totale corretto, nessuna duplicazione
+        self.assertEqual(app.effective_total(p), 335.0)
+        self.assertEqual(ev["linked_practice_id"], pid)
+        # coerenza con i ricavi per voce gia' implementati: stessa fonte
+        # dati (practices/practice_items), nessuna sovrapposizione o
+        # duplicazione con calendar_event_estimate_items.
+        with app.db() as conn:
+            totals = dict(app.revenue_by_quote_category(conn, "2020-01-01", "2030-12-31"))
+        self.assertEqual(totals["Cremazione"], 150.0)
+        self.assertEqual(totals["Urne"], 80.0)
+        self.assertEqual(totals["Accessori"], 25.0)
+        self.assertEqual(totals["Ritiro"], 30.0)
+        self.assertEqual(totals["Notturno"], 50.0)
+        # chiusura e riapertura della pratica: le voci restano identiche
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.practice(admin, pid)
+        reopened = rendered[-1]
+        self.assertIn("150", reopened)
+
+    def test_practice_created_from_event_with_only_one_voice_leaves_others_empty(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        event_id = self._create_event_with_estimates(admin, "RITIRO SOLO CREMAZIONE TEST", [("Cremazione", "150")])
+        redirects = []
+        self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.form = lambda: {
+            "calendar_event_id": str(event_id),
+            "operator_name": "FILIPPO", "request_origin": "Collaboratore", "collaborator_name": "COLLAB TEST",
+            "destination_branch": "Livorno", "animal_name": "Fido", "service_type": "Cremazione singola",
+            "price_cremation": "150.00",
+            "balance_idempotency_key": "evt-transfer-test-2",
+        }
+        self.handler.create_practice(admin)
+        pid = int(redirects[-1].split("/pratiche/")[1])
+        with app.db() as conn:
+            p = conn.execute("SELECT * FROM practices WHERE id=?", (pid,)).fetchone()
+            items_count = conn.execute("SELECT count(*) n FROM practice_items WHERE practice_id=?", (pid,)).fetchone()["n"]
+        self.assertEqual(p["price_cremation"], "150.00")
+        for field in ("price_pickup", "price_delivery", "price_evening", "price_night", "price_holiday"):
+            self.assertEqual(p[field], "")
+        self.assertEqual(items_count, 0)
+        self.assertEqual(app.effective_total(p), 150.0)
+
     def test_calendar_created_celebration_uses_premium_particles_not_confetti(self):
         # richiesta esplicita dell'utente: sostituire l'animazione coriandoli
         # con particelle luminose eleganti che convergono a formare la
