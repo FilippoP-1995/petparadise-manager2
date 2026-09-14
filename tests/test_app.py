@@ -11368,6 +11368,123 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('calendar-icon-amber', page)
         self.assertIn('09:00 → 09:30', page)
 
+    def test_calendar_detail_riepilogo_shows_every_real_preventivo_voice_not_just_total(self):
+        # Richiesta esplicita dell'utente: il riepilogo evento (tab
+        # dettagli) deve mostrare le SINGOLE VOCI reali del preventivo
+        # compilate in creazione, non solo il totale. Scenario esatto
+        # dell'esempio fornito: Cremazione 150, Urna 80, Accessorio 25,
+        # Ritiro 30, Notturno 50 -> totale 335, nessuna voce inventata,
+        # nessuna ricostruita dal totale, nessuna duplicazione.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO VOCI TEST","Livorno","Filippo","2026-07-30T09:00:00","2026-07-30T09:30:00","Da ritirare",admin["id"],stamp,stamp)).lastrowid
+            voci = [("Cremazione","150"),("Urna","80"),("Accessorio","25"),("Ritiro","30"),("Notturno","50")]
+            for i,(desc,amount) in enumerate(voci):
+                conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                             (event_id,desc,amount,i,stamp,stamp))
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(admin, event_id)
+        page = rendered[-1]
+        for desc, amount_it in (("Cremazione","150,00"),("Urna","80,00"),("Accessorio","25,00"),("Ritiro","30,00"),("Notturno","50,00")):
+            self.assertIn(f'<span class="calendar-estimate-preset">{desc}</span><span style="margin-left:auto;font-weight:700">', page)
+            self.assertIn(amount_it, page)
+        self.assertEqual(page.count('class="calendar-estimate-row-v2"'), 5)  # nessuna duplicazione
+        self.assertIn("335,00", page)  # totale = somma reale delle voci
+        # il quick-edit a importo unico non deve piu' essere presente
+        # quando ci sono gia' voci reali (distruggerebbe i dati)
+        self.assertNotIn(f'action="/calendario/{event_id}/preventivo"', page)
+
+    def test_calendar_detail_riepilogo_preventivo_single_voice(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO UNA VOCE TEST","Livorno","Filippo","2026-07-30T09:00:00","2026-07-30T09:30:00","Da ritirare",admin["id"],stamp,stamp)).lastrowid
+            conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                         (event_id,"Cremazione","150",0,stamp,stamp))
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(admin, event_id)
+        page = rendered[-1]
+        self.assertEqual(page.count('class="calendar-estimate-row-v2"'), 1)
+        self.assertIn("Cremazione", page)
+        self.assertIn("150,00", page)
+
+    def test_calendar_detail_riepilogo_preventivo_custom_voice_shows_free_description(self):
+        # Voce personalizzata ("Altro" nel wizard): deve comparire con la
+        # sua vera descrizione libera, mai sostituita da una categoria
+        # generica.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO VOCE PERSONALIZZATA TEST","Livorno","Filippo","2026-07-30T09:00:00","2026-07-30T09:30:00","Da ritirare",admin["id"],stamp,stamp)).lastrowid
+            conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                         (event_id,"Trasporto extra fuori zona","45",0,stamp,stamp))
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(admin, event_id)
+        page = rendered[-1]
+        self.assertIn("Trasporto extra fuori zona", page)
+        self.assertIn("45,00", page)
+
+    def test_calendar_detail_riepilogo_preventivo_empty_keeps_quick_add_form(self):
+        # Nessuna voce ancora presente: il quick-add di un importo unico
+        # resta disponibile (non c'e' nulla di reale da distruggere).
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO SENZA PREVENTIVO TEST","Livorno","Filippo","2026-07-30T09:00:00","2026-07-30T09:30:00","Da ritirare",admin["id"],stamp,stamp)).lastrowid
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(admin, event_id)
+        page = rendered[-1]
+        self.assertIn(f'action="/calendario/{event_id}/preventivo"', page)
+        self.assertNotIn('class="calendar-estimate-row-v2"', page)
+
+    def test_calendar_detail_riepilogo_preventivo_reopens_correctly_after_edit_elsewhere(self):
+        # Apertura dopo salvataggio, chiusura/riapertura, modifica di
+        # un'altra parte dell'evento (operatore) e riapertura del
+        # riepilogo: le voci del preventivo devono restare identiche e
+        # correttamente recuperate ogni volta dalla stessa fonte dati.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO RIAPERTURA TEST","Livorno","Filippo","2026-07-30T09:00:00","2026-07-30T09:30:00","Da ritirare",admin["id"],stamp,stamp)).lastrowid
+            conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                         (event_id,"Cremazione","150",0,stamp,stamp))
+            conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                         (event_id,"Urna","80",1,stamp,stamp))
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(admin, event_id)
+        first_open = rendered[-1]
+        self.assertIn("Cremazione", first_open)
+        self.assertIn("Urna", first_open)
+        # modifica di un'altra parte dell'evento (non correlata al preventivo)
+        redirects = []
+        self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.headers = {"Referer": f"/calendario/{event_id}?tab=dettagli"}
+        self.handler.form = lambda: {"operator_name": "Serena"}
+        self.handler.calendar_event_action(admin, event_id, "operatore")
+        rendered.clear()
+        self.handler.calendar_event_detail(admin, event_id)
+        reopened = rendered[-1]
+        self.assertEqual(reopened.count('class="calendar-estimate-row-v2"'), 2)
+        self.assertIn("Cremazione", reopened)
+        self.assertIn("Urna", reopened)
+        self.assertIn("230,00", reopened)
+
     def test_calendar_created_celebration_uses_premium_particles_not_confetti(self):
         # richiesta esplicita dell'utente: sostituire l'animazione coriandoli
         # con particelle luminose eleganti che convergono a formare la
@@ -11686,19 +11803,19 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.calendar_event_action(admin, event_id, "data-ora")
         self.assertIn("non pu", rendered[-1])
 
-    def test_calendar_detail_quick_edit_preventivo_replaces_items_with_single_total(self):
-        # richiesta utente: anche il preventivo deve potersi salvare subito
-        # dal riepilogo con un unico importo, senza toccare la logica a voci
-        # multiple gia' usata dal wizard (parse_items/sync_children).
+    def test_calendar_detail_quick_edit_preventivo_replaces_single_total(self):
+        # Il quick-edit a importo unico dal riepilogo resta valido SOLO
+        # quando il preventivo e' gia' composto da al massimo una voce
+        # generica (caso "nessun preventivo ancora" o "un unico importo
+        # gia' inserito cosi'") - non tocca la logica a voci multiple del
+        # wizard (parse_items/sync_children).
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
             event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,location_type,address,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
                 ("Ritiro","RITIRO PREVENTIVO TEST","Livorno","Veterinario","Via Roma 45","Filippo","2026-07-29T09:30:00","2026-07-29T18:00:00","Da ritirare",admin["id"],stamp,stamp)).lastrowid
             conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",
-                         (event_id,"Cremazione","80",0,stamp,stamp))
-            conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",
-                         (event_id,"Urna","40",1,stamp,stamp))
+                         (event_id,"Preventivo","80",0,stamp,stamp))
         redirects = []
         self.handler.redirect = lambda path: redirects.append(path)
         self.handler.headers = {"Referer": f"/calendario/{event_id}?tab=dettagli"}
@@ -11710,6 +11827,36 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(rows[0]["description"], "Preventivo")
         self.assertEqual(float(rows[0]["amount"]), 150.0)
         self.assertIn("saved=preventivo", redirects[-1])
+
+    def test_calendar_detail_quick_edit_preventivo_refuses_to_overwrite_multiple_real_items(self):
+        # Cambio intenzionale (bug reale segnalato dall'utente): con piu' di
+        # una voce reale gia' presente (es. Cremazione + Urna), il
+        # quick-edit a importo unico NON deve piu' cancellarle e
+        # sostituirle con un'unica riga generica - perdita di dati. Deve
+        # rifiutare il salvataggio e lasciare le voci intatte; la modifica
+        # di un preventivo a voci multiple passa da "Modifica evento".
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,location_type,address,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO PREVENTIVO MULTI TEST","Livorno","Veterinario","Via Roma 45","Filippo","2026-07-29T09:30:00","2026-07-29T18:00:00","Da ritirare",admin["id"],stamp,stamp)).lastrowid
+            conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                         (event_id,"Cremazione","80",0,stamp,stamp))
+            conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                         (event_id,"Urna","40",1,stamp,stamp))
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.form = lambda: {"amount": "150"}
+        self.handler.calendar_event_action(admin, event_id, "preventivo")
+        with app.db() as conn:
+            rows = conn.execute("SELECT description,amount FROM calendar_event_estimate_items WHERE event_id=? ORDER BY sort_order", (event_id,)).fetchall()
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["description"], "Cremazione")
+        self.assertEqual(float(rows[0]["amount"]), 80.0)
+        self.assertEqual(rows[1]["description"], "Urna")
+        self.assertEqual(float(rows[1]["amount"]), 40.0)
+        self.assertIn("Modifica evento", rendered[-1])
 
     def test_calendar_detail_quick_edit_tipo_evento_reuses_normalize_event(self):
         # richiesta utente: anche Tipo evento deve modificarsi rapidamente

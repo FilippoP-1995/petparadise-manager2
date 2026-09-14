@@ -11446,8 +11446,35 @@ class App(BaseHTTPRequestHandler):
             cliente_form=f'''<form method="post" action="/calendario/{event_id}/cliente"><input name="client_first_name" placeholder="Nome" value="{esc(event['client_first_name'] or '')}"><input name="client_last_name" placeholder="Cognome" value="{esc(event['client_last_name'] or '')}"><input name="client_phone" placeholder="Telefono" value="{esc(event['client_phone'] or '')}"><button class="btn ghost" type="submit" style="margin-top:10px">Salva cliente</button></form>'''
             hero_rows.append(hero_row("user","blue","Cliente",esc(client_display or '-'),cliente_form))
             estimate_total_all=sum(float(i["amount"] or 0) for i in estimates)
-            estimate_form=f'''<form method="post" action="/calendario/{event_id}/preventivo"><input inputmode="decimal" name="amount" value="{f'{estimate_total_all:g}' if estimate_total_all else ''}" placeholder="Importo €"><button class="btn ghost" type="submit" style="margin-top:10px">Salva preventivo</button></form>'''
-            hero_rows.append(hero_row("receipt","pink","Preventivo",money_it(estimate_total_all),estimate_form))
+            if estimates:
+                # Richiesta esplicita dell'utente: il riepilogo deve mostrare
+                # le VERE singole voci compilate durante la creazione
+                # (calendar_event_estimate_items), non solo il totale - mai
+                # ricostruite ne' stimate. Riusa esattamente lo stesso
+                # markup/CSS gia' presente nella scheda "Preventivo" di
+                # questa stessa pagina (calendar-card-list/
+                # calendar-estimate-row-v2), nessuna grafica nuova. Diventa
+                # di sola lettura (nessun form_inner): il quick-edit a
+                # importo unico sotto distruggerebbe le voci reali con un
+                # DELETE+INSERT di una riga sola (vedi calendar_event_action,
+                # action=="preventivo") - la modifica di voci multiple resta
+                # possibile da "Modifica evento", che usa il vero editor a
+                # righe multiple (stesso identico meccanismo della creazione,
+                # nessuna seconda fonte dati parallela).
+                estimate_rows_html=''.join(f'<div class="calendar-estimate-row-v2"><span class="calendar-estimate-preset">{esc(i["description"] or "Voce")}</span><span style="margin-left:auto;font-weight:700">{money_it(i["amount"])}</span></div>' for i in estimates)
+                hero_rows.append(f'''<div class="calendar-detail-hero-meta-item">
+                  <span class="calendar-detail-hero-meta-icon calendar-icon-pink">{lucide("receipt")}</span>
+                  <div style="min-width:0;flex:1">
+                    <b>Preventivo — {money_it(estimate_total_all)}</b>
+                    <div class="calendar-card-list" style="margin-top:6px">{estimate_rows_html}</div>
+                  </div>
+                </div>''')
+            else:
+                # Nessuna voce ancora presente: il quick-add di un importo
+                # unico resta disponibile (non c'e' nulla di reale da
+                # distruggere in questo caso).
+                estimate_form=f'''<form method="post" action="/calendario/{event_id}/preventivo"><input inputmode="decimal" name="amount" value="" placeholder="Importo €"><button class="btn ghost" type="submit" style="margin-top:10px">Salva preventivo</button></form>'''
+                hero_rows.append(hero_row("receipt","pink","Preventivo",money_it(estimate_total_all),estimate_form))
             if event['payment_status']:
                 # Stato/importo salvati sull'evento sono uno scatto preso al
                 # momento della creazione/prefill: se in seguito viene
@@ -11616,6 +11643,17 @@ class App(BaseHTTPRequestHandler):
                 c.execute("UPDATE calendar_events SET updated_at=?,updated_by=? WHERE id=?",(stamp,user["id"],event_id))
                 calendar_add_history(c,event_id,user["id"],"Modifica animali",old_summary,calendar_animals_summary_text(animals),stamp)
             elif action=="preventivo":
+                # Questo endpoint accetta un SOLO importo complessivo: va bene
+                # per aggiungere un primo preventivo generico (0 voci), ma
+                # sovrascriverebbe con un'unica riga generica un preventivo
+                # gia' composto da piu' voci reali (bug segnalato
+                # dall'utente - perdita di dati). Con piu' di una voce gia'
+                # presente, va rifiutato: la modifica di voci multiple passa
+                # da "Modifica evento", il vero editor a righe multiple
+                # (stessa tabella, nessuna seconda fonte dati).
+                existing_estimate_items=c.execute("SELECT id FROM calendar_event_estimate_items WHERE event_id=?",(event_id,)).fetchall()
+                if len(existing_estimate_items)>1:
+                    return self.calendar_event_detail(user,event_id,error='Il preventivo ha già più voci: modificale da "Modifica evento".')
                 try:amount=max(0.0,float(str(form.get("amount") or "0").replace(",",".")))
                 except ValueError:return self.calendar_event_detail(user,event_id,error="Importo non valido.")
                 old_total=sum(float(i["amount"] or 0) for i in c.execute("SELECT amount FROM calendar_event_estimate_items WHERE event_id=?",(event_id,)).fetchall())
