@@ -3613,6 +3613,141 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('.cremation-daybar-card.active{background:linear-gradient(135deg,#3b82f6,#1d4ed8)', app.CSS)
         self.assertIn('.cremation-daybar-card.today{background:linear-gradient(135deg,#fb4c67,#d9284c)', app.CSS)
 
+    def test_shifts_month_view_swipes_freely_between_three_months_like_calendar(self):
+        # richiesta utente: lo swipe tra mesi in Orari deve usare la stessa
+        # tecnica "sentinella + swipe libero" di Calendario/Cremazioni -
+        # prima invece OGNI mese (anche quello corrente) portava un
+        # data-href e ricaricava la pagina al primo pixel di swipe.
+        def add_months(d, n):
+            total = (d.month - 1) + n
+            year = d.year + total // 12
+            month = total % 12 + 1
+            return date(year, month, 1)
+        selected = date.today().replace(day=15)
+        current_month_start = selected.replace(day=1)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.path = f"/turni?vista=mese&data={selected.isoformat()}"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.shifts_page(admin)
+        page = rendered[-1]
+        self.assertEqual(page.count('id="shiftMonthPages"'), 1)
+        # 2 sentinelle invisibili (solo data-href) + 3 mesi reali swipeabili
+        # senza reload (data-month-key, nessun data-href)
+        self.assertEqual(page.count('calendar-day-page-edge'), 2)
+        self.assertIn(f'data-href="/turni?vista=mese&data={add_months(current_month_start,-2).isoformat()}"', page)
+        self.assertIn(f'data-href="/turni?vista=mese&data={add_months(current_month_start,2).isoformat()}"', page)
+        for offset in (-1, 0, 1):
+            month_key = add_months(current_month_start, offset).isoformat()
+            self.assertIn(f'data-month-key="{month_key}"', page)
+        self.assertEqual(page.count('data-month-key='), 3)
+
+    def test_shifts_month_view_syncs_url_via_replacestate_never_reloads_real_pages(self):
+        js = app.APP_JS
+        self.assertIn("function shiftSyncUrlToMonth(monthKey){", js)
+        self.assertIn("url.searchParams.set('data',monthKey);", js)
+        self.assertIn("history.replaceState(null,'',url);", js)
+        month_block = js[js.index("function shiftInitMonthPages(){"):]
+        month_block = month_block[:month_block.index("\nfunction ", 10)]
+        # solo le sentinelle (data-href) ricaricano la pagina; i mesi reali
+        # (data-month-key) restano sullo swipe senza mai ricaricare
+        self.assertIn("ppmSaveScrollForNextLoad();\n          location.href=entry.target.dataset.href;", month_block)
+        self.assertIn("if(entry.target.dataset.monthKey)shiftSyncUrlToMonth(entry.target.dataset.monthKey);", month_block)
+        self.assertNotIn("ppmTurniScrollY", js)
+
+    def test_shifts_day_view_reuses_calendar_daybar_card_for_today_red_and_active_blue(self):
+        # stessa richiesta di sempre: card rossa sul giorno corrente, blu
+        # sugli altri giorni selezionati - Orari riusa .calendar-daybar-card
+        # cosi' com'e' (stesso CSS di Calendario), nessuna classe duplicata.
+        today = date.today()
+        other_monday = today - timedelta(days=today.weekday()) + timedelta(weeks=6)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.path = f"/turni?vista=giorno&data={other_monday.isoformat()}"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.shifts_page(admin)
+        page = rendered[-1]
+        self.assertNotIn(' is-today"', page)
+        self.assertIn(f'class="calendar-daybar-card active" data-day-index="0" data-date="{other_monday.isoformat()}"', page)
+        # settimana che include oggi: la card del giorno odierno porta is-today
+        rendered2 = []
+        self.handler.path = "/turni?vista=giorno"
+        self.handler.send_html = lambda content, *args: rendered2.append(content)
+        self.handler.shifts_page(admin)
+        page2 = rendered2[-1]
+        self.assertIn(' is-today"', page2)
+        self.assertIn('active is-today', page2)
+
+    def test_shifts_day_view_daybar_arrows_scroll_locally_not_reload_week(self):
+        # come Calendario/Cremazioni: le frecce ‹/› della barra giorni
+        # scorrono solo la striscia visibile (calendarDaybarNav), non
+        # cambiano piu' settimana con un reload completo della pagina.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.path = "/turni?vista=giorno"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.shifts_page(admin)
+        page = rendered[-1]
+        self.assertIn('onclick="calendarDaybarNav(-1)"', page)
+        self.assertIn('onclick="calendarDaybarNav(1)"', page)
+        self.assertNotIn("Settimana precedente", page)
+        self.assertNotIn("Settimana successiva", page)
+
+    def test_shifts_day_view_has_oggi_button_like_month_view(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.path = "/turni?vista=giorno&data=2026-01-05"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.shifts_page(admin)
+        page = rendered[-1]
+        self.assertIn('<div class="shift-month-nav-today"><a class="btn ghost" href="/turni?vista=giorno">', page)
+        self.assertIn('Oggi</a>', page)
+
+    def test_shifts_day_view_shows_back_to_month_button_only_when_arriving_from_month(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.path = "/turni?vista=giorno&data=2026-01-05&da=mese"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.shifts_page(admin)
+        page = rendered[-1]
+        self.assertIn('<a class="btn ghost calendar-back-btn" href="/turni?vista=mese&data=2026-01-05">← Torna a Mese</a>', page)
+        rendered2 = []
+        self.handler.path = "/turni?vista=giorno&data=2026-01-05"
+        self.handler.send_html = lambda content, *args: rendered2.append(content)
+        self.handler.shifts_page(admin)
+        page2 = rendered2[-1]
+        self.assertNotIn("Torna a Mese", page2)
+
+    def test_shifts_month_cell_click_carries_da_mese_for_the_back_button(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.path = "/turni?vista=mese&data=2026-01-05"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.shifts_page(admin)
+        page = rendered[-1]
+        self.assertIn('href="/turni?vista=giorno&data=2026-01-05&da=mese"', page)
+
+    def test_shifts_add_operator_link_saves_scroll_before_navigating_to_pianifica(self):
+        # stesso meccanismo condiviso di Calendario/Cremazioni per tornare
+        # allo stesso punto di scroll dopo /turni/pianifica e ritorno.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.path = "/turni?vista=giorno&data=2026-01-05"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.shifts_page(admin)
+        page = rendered[-1]
+        self.assertIn('onclick="ppmSaveScrollForNextLoad()">' + app.lucide("plus") + ' Aggiungi operatore</a>', page)
+
+    def test_shift_month_cell_today_gets_reinforced_red_ring_matching_calendar_grid(self):
+        self.assertIn('.shift-month-cell.is-today{border-color:var(--brand2);box-shadow:inset 0 0 0 2px var(--brand2)}', app.CSS)
+
     def test_day_view_collapsed_cycle_shows_the_same_animal_details_as_week_view(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()

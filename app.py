@@ -2863,7 +2863,7 @@ body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY
 .shift-month-cell{position:relative;display:flex;flex-direction:column;height:120px;padding:6px 5px;border:1px solid var(--line);border-radius:12px;background:#182334;color:var(--ink);overflow:hidden}
 .light-theme .shift-month-cell{background:#f8fafc}
 .shift-month-cell b{font-size:12px;font-weight:700;flex:0 0 auto}
-.shift-month-cell.is-today{border-color:var(--brand2)}
+.shift-month-cell.is-today{border-color:var(--brand2);box-shadow:inset 0 0 0 2px var(--brand2)}
 .shift-month-cell.is-other-month{opacity:.4}
 .shift-month-cell-branch{margin-top:4px;min-width:0;flex:0 0 auto}
 .shift-month-cell-branch.branch-livorno{color:var(--brand)}
@@ -7066,18 +7066,26 @@ function setupCalendarDraftAutosave(form){
   form.addEventListener('submit',()=>{try{localStorage.removeItem(key);}catch(error){}});
   restore();
 }
+// Stesso principio di calendarSyncUrlToDay/cremationSyncUrlToDay: senza
+// questo, tornando indietro (con qualunque modalita' di navigazione) da
+// un mese raggiunto solo con lo swipe libero (senza ricaricare, vedi
+// shiftInitMonthPages) si perderebbe quale mese esatto restaurare.
+function shiftSyncUrlToMonth(monthKey){
+  const url=new URL(location.href);
+  url.searchParams.set('data',monthKey);
+  history.replaceState(null,'',url);
+}
+var shiftMonthObserver=null;
 function shiftInitMonthPages(){
-  // Lo swipe verso il mese adiacente ricarica la pagina (nessuna
-  // paginazione infinita): senza questo la pagina "torna su" ogni volta,
-  // perdendo la posizione di scroll verticale — richiesta esplicita
-  // dell'utente di non farlo succedere.
-  try{
-    const savedScroll=sessionStorage.getItem('ppmTurniScrollY');
-    if(savedScroll!==null){
-      sessionStorage.removeItem('ppmTurniScrollY');
-      window.scrollTo(0,Number(savedScroll));
-    }
-  }catch(error){}
+  // Richiesta esplicita dell'utente: stessa identica tecnica gia' usata
+  // per lo swipe giorni di Calendario/Cremazioni (calendarInitDayPages/
+  // cremationInitDayPages) - i 3 mesi reali si scorrono liberamente senza
+  // mai ricaricare la pagina, solo le sentinelle ai bordi (nessun
+  // data-month-key, solo data-href) ricaricano quando lo swipe le
+  // raggiunge davvero. Il ripristino dello scroll verticale passa dal
+  // meccanismo condiviso ppmSaveScrollForNextLoad/ppmRestoreScrollIfPending
+  // (gia' invocato globalmente al DOMContentLoaded), non piu' da una
+  // chiave sessionStorage propria e separata.
   const pages=document.getElementById('shiftMonthPages');
   if(!pages)return;
   const items=[...pages.querySelectorAll('.calendar-day-page')];
@@ -7086,18 +7094,21 @@ function shiftInitMonthPages(){
   const initial=items[mid];
   if(initial)pages.scrollLeft=initial.offsetLeft;
   if('IntersectionObserver' in window){
-    let navigated=false;
-    const observer=new IntersectionObserver(entries=>{
+    let navigatedToAdjacentMonth=false;
+    shiftMonthObserver=new IntersectionObserver(entries=>{
       entries.forEach(entry=>{
-        if(navigated||!entry.isIntersecting||entry.intersectionRatio<0.6)return;
-        const idx=Number(entry.target.dataset.pageIndex);
-        if(idx===mid)return;
-        navigated=true;
-        try{sessionStorage.setItem('ppmTurniScrollY',String(window.scrollY));}catch(error){}
-        location.href=entry.target.dataset.href;
+        if(!entry.isIntersecting||entry.intersectionRatio<0.6)return;
+        if(entry.target.dataset.href){
+          if(navigatedToAdjacentMonth)return;
+          navigatedToAdjacentMonth=true;
+          ppmSaveScrollForNextLoad();
+          location.href=entry.target.dataset.href;
+          return;
+        }
+        if(entry.target.dataset.monthKey)shiftSyncUrlToMonth(entry.target.dataset.monthKey);
       });
     },{root:pages,threshold:[0.6]});
-    items.forEach(item=>observer.observe(item));
+    items.forEach(item=>shiftMonthObserver.observe(item));
   }
 }
 document.addEventListener('DOMContentLoaded',()=>{calendarInitLookups();calendarWizardSwipe();calendarSerialize();setupPracticeAutosave();calendarInitDateTimeSync();setupCalendarDraftAutosave(document.getElementById('calendarEventForm'));shiftInitMonthPages();renderCalendarDraftsBanner();document.addEventListener('pointerdown',event=>{if(!event.target.closest('.calendar-datetime-row')&&!event.target.closest('#cremationEditOverlay'))document.querySelectorAll('[data-time-wheel]').forEach(wheel=>wheel.hidden=true);});});
@@ -10559,6 +10570,11 @@ class App(BaseHTTPRequestHandler):
         q=parse_qs(urlparse(self.path).query)
         view=(q.get("vista") or ["mese"])[0]
         if view not in ("giorno","mese"):view="mese"
+        # "da=mese" arriva dal tap su una cella della vista Mese (stesso
+        # meccanismo di Calendario/back_view): mostra "Torna a Mese" solo in
+        # quel caso, non quando si e' arrivati alla vista Giorno altrimenti
+        # (es. cambio vista diretto, swipe, o "Oggi").
+        back_from_month=(q.get("da") or [""])[0]=="mese"
         selected=(q.get("data") or [rome_now().date().isoformat()])[0]
         try:date.fromisoformat(selected)
         except ValueError:selected=rome_now().date().isoformat()
@@ -10630,10 +10646,11 @@ class App(BaseHTTPRequestHandler):
                   <span class="calendar-daybar-count">{day_total} turni</span>
                 </button>''')
             daybar_html=f'''<div class="calendar-daybar-wrap">
-              <button type="button" class="calendar-daybar-nav" onclick="location.href='/turni?vista=giorno&data={(monday-timedelta(days=7)).isoformat()}'" aria-label="Settimana precedente">‹</button>
+              <button type="button" class="calendar-daybar-nav" onclick="calendarDaybarNav(-1)" aria-label="Barra giorni precedente">‹</button>
               <div class="calendar-daybar" id="calendarDaybar">{''.join(daybar_cards)}</div>
-              <button type="button" class="calendar-daybar-nav" onclick="location.href='/turni?vista=giorno&data={(monday+timedelta(days=7)).isoformat()}'" aria-label="Settimana successiva">›</button>
-            </div>'''
+              <button type="button" class="calendar-daybar-nav" onclick="calendarDaybarNav(1)" aria-label="Barra giorni successiva">›</button>
+            </div>
+            <div class="shift-month-nav-today"><a class="btn ghost" href="/turni?vista=giorno">{lucide("calendar")} Oggi</a></div>'''
             def sede_card_html(day,branch):
                 day_shifts=shifts_by_day.get(day.isoformat(),{}).get(branch,[])
                 branch_cls="branch-livorno" if branch=="Livorno" else "branch-empoli"
@@ -10673,7 +10690,7 @@ class App(BaseHTTPRequestHandler):
                 return f'''<section class="section shift-sede-card {branch_cls}">
                   <div class="shift-sede-head">
                     <span class="shift-sede-title {branch_cls}">{lucide("map-pin")} {esc(branch.upper())}</span>
-                    <a class="shift-add-btn {branch_cls}" href="{add_href}">{lucide("plus")} Aggiungi operatore</a>
+                    <a class="shift-add-btn {branch_cls}" href="{add_href}" onclick="ppmSaveScrollForNextLoad()">{lucide("plus")} Aggiungi operatore</a>
                   </div>
                   {body_html}
                 </section>'''
@@ -10739,7 +10756,7 @@ class App(BaseHTTPRequestHandler):
                         else:
                             names_html=f"<div>{len(branch_rows)} operatori</div>"
                         blocks.append(f'<div class="shift-month-cell-branch {branch_cls}"><div class="shift-month-cell-branch-label"><span class="shift-month-cell-dot"></span>{esc(branch[:3].upper())}</div><div class="shift-month-cell-names">{names_html}</div></div>')
-                href=f"/turni?vista=giorno&data={day_iso}"
+                href=f"/turni?vista=giorno&data={day_iso}&da=mese"
                 return f'<a class="{" ".join(classes)}" href="{href}"><b>{day.day}</b>{"".join(blocks)}</a>'
             dow_row='<div class="shift-month-dow-row">'+''.join(f'<div class="shift-month-dow">{n}</div>' for n in day_names)+'</div>'
             def vacation_bars_html(anchor_grid_start):
@@ -10779,19 +10796,27 @@ class App(BaseHTTPRequestHandler):
                 cells_html=''.join(month_cell_html(anchor_grid_start+timedelta(days=i),anchor) for i in range(42))
                 bars_html=vacation_bars_html(anchor_grid_start)
                 return f'<div class="shift-month-grid-wrap"><div class="shift-month-grid">{cells_html}</div><div class="shift-month-overlay">{bars_html}</div></div>'
-            # Carosello fluido a swipe nativo (scroll-snap) tra mese
-            # precedente/corrente/successivo, stessa tecnica dello swipe
-            # giorni: si preferisce ricaricare la pagina quando lo swipe si
-            # ferma su un mese adiacente (nessuna paginazione infinita) —
-            # il gesto di trascinamento resta comunque nativo e fluido.
-            month_pages=''.join(
-                f'<div class="calendar-day-page" data-page-index="{i}" data-href="/turni?vista=mese&data={anchor.isoformat()}">{month_grid_html(anchor,gstart)}</div>'
+            # Carosello a swipe libero tra mese precedente/corrente/
+            # successivo (richiesta esplicita dell'utente: stessa identica
+            # tecnica gia' usata per lo swipe giorni di Calendario/
+            # Cremazioni) - i 3 mesi reali si scorrono SENZA mai ricaricare
+            # la pagina; solo le due sentinelle invisibili oltre il mese
+            # precedente/successivo (nessun data-month-key, solo data-href,
+            # stesso pattern di calendar-day-page-edge) ricaricano quando
+            # lo swipe le raggiunge davvero. Prima invece OGNI mese
+            # (compreso quello corrente) portava un data-href e ricaricava
+            # al primo pixel di swipe - da qui la scattosita' segnalata.
+            month_pages_list=[f'<div class="calendar-day-page calendar-day-page-edge" data-href="/turni?vista=mese&data={add_months(current_month_start,-2).isoformat()}"></div>']
+            month_pages_list+=[
+                f'<div class="calendar-day-page" data-page-index="{i}" data-month-key="{anchor.isoformat()}">{month_grid_html(anchor,gstart)}</div>'
                 for i,(anchor,gstart) in enumerate((
                     (prev_month_start,prev_grid_start),
                     (current_month_start,grid_start),
                     (next_month_start,next_grid_start),
-                ))
-            )
+                ),start=1)
+            ]
+            month_pages_list.append(f'<div class="calendar-day-page calendar-day-page-edge" data-href="/turni?vista=mese&data={add_months(current_month_start,2).isoformat()}"></div>')
+            month_pages=''.join(month_pages_list)
             grid=f'<div class="calendar-day-pages" id="shiftMonthPages">{month_pages}</div>'
             legend_html=f'''<div class="shift-month-legend">
               <span><span class="dot" style="background:var(--brand)"></span>Livorno</span>
@@ -10814,8 +10839,9 @@ class App(BaseHTTPRequestHandler):
         # Sia la vista giorno che quella mese usano un carosello a
         # scroll-snap (swipe nativo e fluido, gestito dal browser) per
         # cambiare periodo: nessuno swipe custom via JS resta necessario.
+        back_button=f'<a class="btn ghost calendar-back-btn" href="/turni?vista=mese&data={selected}">← Torna a Mese</a>' if view=="giorno" and back_from_month else ''
         body=f'''<main class="wrap calendar-wrap">
-          <div class="titlebar calendar-main-title"><div><h1>Orari</h1><p class="sub">Pianificazione e reperibilità</p></div></div>
+          <div class="titlebar calendar-main-title"><div>{back_button}<h1>Orari</h1><p class="sub">Pianificazione e reperibilità</p></div></div>
           {oncall_banner_html}
           {switch_html}
           {content}
