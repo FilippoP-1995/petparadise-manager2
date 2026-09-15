@@ -1299,6 +1299,27 @@ def parse_preference_list(value, max_len=40):
     return [str(item) for item in data[:max_len] if isinstance(item, (str, int, float))]
 
 
+def toggle_collapsed_preference(c, user_id, pref_key, section_key, collapsed):
+    """Stesso meccanismo gia' usato da save_archive_month_state per
+    ricordare quali sezioni collassabili l'utente ha chiuso (persistenza
+    per-utente su user_preferences, sopravvive a qualunque ricarica o
+    modalita' di navigazione indietro - tasto/gesture/browser, perche' non
+    dipende dall'URL ne' dalla bfcache). Generalizzato qui per riuso da
+    altre pagine con lo stesso identico bisogno (Smaltimenti,
+    Riepilogo mensile Collaboratori), invece di duplicare la stessa
+    logica una terza/quarta volta."""
+    row = c.execute("SELECT value FROM user_preferences WHERE user_id=? AND key=?", (user_id, pref_key)).fetchone()
+    keys = set(parse_preference_list(row["value"] if row else ""))
+    if collapsed:
+        keys.add(section_key)
+    else:
+        keys.discard(section_key)
+    c.execute(
+        "INSERT INTO user_preferences(user_id,key,value) VALUES(?,?,?) ON CONFLICT(user_id,key) DO UPDATE SET value=excluded.value",
+        (user_id, pref_key, json.dumps(sorted(keys), ensure_ascii=False)),
+    )
+
+
 def reorder_by_saved(default_items, saved_keys, key_fn):
     keys_present = {key_fn(item) for item in default_items}
     ordered_keys = [k for k in saved_keys if k in keys_present]
@@ -5132,6 +5153,18 @@ function balanceToggleDetails(summaryEl){
   const collapsed=list.classList.toggle('collapsed');
   summaryEl.classList.toggle('collapsed',collapsed);
   summaryEl.setAttribute('aria-expanded',collapsed?'false':'true');
+  // Sincronizza l'URL reale con lo stato appena scelto (richiesta
+  // esplicita dell'utente: tornare indietro - tasto del gestionale,
+  // gesture/tasto del telefono o tasto del browser, indifferentemente -
+  // deve ritrovare la sezione esattamente com'era stata lasciata), stesso
+  // pattern history.replaceState gia' usato da Calendario/Cremazioni.
+  const detailsSection=document.getElementById('balanceDetails');
+  const sectionKey=detailsSection?detailsSection.dataset.selectedBalanceSection:'';
+  if(sectionKey){
+    const url=new URL(location.href);
+    if(collapsed)url.searchParams.delete('view');else url.searchParams.set('view',sectionKey);
+    history.replaceState(null,'',url);
+  }
 }
 document.addEventListener('click',function(e){
   const section=e.target.closest('.section.collapsible');
@@ -5298,6 +5331,18 @@ function toggleCollapsibleSection(button){
   body.hidden=collapsed;
   button.textContent=collapsed?'+':'−';
   button.setAttribute('aria-expanded',String(!collapsed));
+  // Persistenza opzionale per-utente (stesso meccanismo gia' usato da
+  // toggleArchiveMonth): se il bottone porta data-persist-*, lo stato
+  // aperto/chiuso sopravvive a un ritorno da un dettaglio collegato,
+  // qualunque sia la modalita' di navigazione indietro usata (tasto del
+  // gestionale, gesture/tasto del telefono, tasto del browser).
+  const persistKey=button.dataset.persistKey,persistEndpoint=button.dataset.persistEndpoint;
+  if(persistKey&&persistEndpoint){
+    const payload=new URLSearchParams();
+    payload.set(button.dataset.persistField||'sezione',persistKey);
+    payload.set('chiuso',collapsed?'1':'0');
+    fetch(persistEndpoint,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:payload.toString()}).catch(function(){});
+  }
 }
 function practiceRowSelect(row,event,url){
   if(event.target.closest('a,button,input,select,textarea,label,form'))return;
@@ -8546,6 +8591,7 @@ class App(BaseHTTPRequestHandler):
         if match: return self.balance_movement_deletion_restore(user,int(match.group(1)))
         if path == "/calendario/nuovo": return self.save_calendar_event(user)
         if path == "/archivio/mese-stato": return self.save_archive_month_state(user)
+        if path == "/smaltimenti/sezione-stato": return self.save_smaltimenti_section_state(user)
         if path == "/turni/pianifica/cella": return self.save_shift_cell(user)
         if path == "/turni/ferie": return self.save_shift_vacation(user)
         match = re.fullmatch(r"/turni/ferie/(\d+)/elimina",path)
@@ -8605,6 +8651,8 @@ class App(BaseHTTPRequestHandler):
         if match: return self.delete_collaborator(user, int(match.group(1)))
         match = re.fullmatch(r"/collaboratori/(\d+)/fattura-mese/(fatturato|incassato)", path)
         if match: return self.collaborator_mark_month(user, int(match.group(1)), match.group(2))
+        match = re.fullmatch(r"/collaboratori/(\d+)/mese-stato", path)
+        if match: return self.save_collaborator_month_state(user, int(match.group(1)))
         match = re.fullmatch(r"/collaboratori/(\d+)/listino", path)
         if match: return self.save_collaborator_price_tier(user, int(match.group(1)))
         match = re.fullmatch(r"/listino/(\d+)/modifica", path)
@@ -9326,10 +9374,19 @@ class App(BaseHTTPRequestHandler):
         current_balance_path=getattr(self,"path","/bilanci")
         if is_outstanding:
             for row,amount_cents in page_pairs:
-                url=f"/pratiche/{row.practice_id}?return_to={quote(current_balance_path,safe='')}"
+                # return_to calcolato dal vivo (location.pathname+search), non
+                # dal path statico letto al render: la sezione Entrate/Da
+                # riscuotere puo' essere stata espansa via
+                # balanceToggleDetails DOPO il caricamento della pagina
+                # (nessun reload), che sincronizza gia' l'URL reale con
+                # history.replaceState - un return_to congelato al render
+                # perderebbe quella sincronizzazione per il tasto "Torna
+                # alla pagina precedente" della pratica (stesso principio
+                # gia' usato per Calendario/Cremazioni).
+                url=f"/pratiche/{row.practice_id}"
                 animal=" - ".join(x for x in (row.species,row.animal_name) if x) or "-"
                 accent_cls,type_label,icon=outstanding_card_style(row.category)
-                row_attrs=f'''class="balance-clickable-row" tabindex="0" onclick="location.href='{url}'" onkeydown="if(event.key==='Enter')location.href='{url}'"'''
+                row_attrs=f'''class="balance-clickable-row" tabindex="0" onclick="location.href='{url}?return_to='+encodeURIComponent(location.pathname+location.search)" onkeydown="if(event.key==='Enter')location.href='{url}?return_to='+encodeURIComponent(location.pathname+location.search)"'''
                 detail_rows.append(render_balance_move_card(
                     accent_cls=accent_cls,icon=icon,type_label=type_label,
                     practice_number=row.practice_number,animal=animal,
@@ -9343,8 +9400,7 @@ class App(BaseHTTPRequestHandler):
                 practice_number=row.practice_number_snapshot or "-"
                 meta=practice_meta.get(int(row.practice_id)) if row.practice_id else None
                 practice_url=(
-                    f"/pratiche/{row.practice_id}?return_to="
-                    f"{quote(current_balance_path,safe='')}"
+                    f"/pratiche/{row.practice_id}"
                     if row.practice_id else ""
                 )
                 animal=(
@@ -9378,7 +9434,7 @@ class App(BaseHTTPRequestHandler):
                     else "-"
                 )
                 row_attrs=(
-                    f'''class="balance-clickable-row" tabindex="0" onclick="location.href='{practice_url}'" onkeydown="if(event.key==='Enter')location.href='{practice_url}'"'''
+                    f'''class="balance-clickable-row" tabindex="0" onclick="location.href='{practice_url}?return_to='+encodeURIComponent(location.pathname+location.search)" onkeydown="if(event.key==='Enter')location.href='{practice_url}?return_to='+encodeURIComponent(location.pathname+location.search)"'''
                     if practice_url else 'class="balance-clickable-row balance-move-static"'
                 )
                 accent_cls,type_label,icon=movement_card_style(row.category,row.ledger_section)
@@ -13656,6 +13712,7 @@ class App(BaseHTTPRequestHandler):
 
     def disposal_page(self,user,error=""):
         q=parse_qs(urlparse(self.path).query)
+        collapsed_sections=set(parse_preference_list(load_preferences(user["id"]).get("smaltimenti_collapsed_sections","")))
         today=rome_now().date(); default_from=today-timedelta(days=28)
         date_from=(q.get("dal") or [default_from.isoformat()])[0].strip()
         date_to=(q.get("al") or [today.isoformat()])[0].strip()
@@ -13695,7 +13752,13 @@ class App(BaseHTTPRequestHandler):
             group_total=len(data["pending"])+len(data["done"])
             group_kg=sum(money_value(r["estimated_weight"]) for r in data["pending"]+data["done"] if r["estimated_weight"])
             total_row=f'<tr class="disposal-group-total"><td><b>Totale</b></td><td><b>{kg_it(group_kg)}</b></td><td colspan="4"></td></tr>'
-            group_sections.append(f'''<section class="tablebox disposal-group"><div class="section-collapse-head"><h2>{esc(branch)} · Circuito {esc(channel)}</h2><span class="badge">{group_total} animali</span><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><table><thead><tr><th>Animale</th><th>Peso</th><th>Proprietario/Veterinario</th><th>Data recupero</th><th>Pratica</th><th>Stato</th></tr></thead><tbody>{rows_html}{total_row}</tbody></table></div></section>''')
+            # Stato aperto/chiuso ricordato per utente (stesso meccanismo
+            # di Archivio/mesi): senza questo, tornando da una pratica
+            # collegata il gruppo appena chiuso si riapriva da solo,
+            # qualunque fosse il metodo di navigazione indietro usato.
+            section_key=f"{branch}·{channel}"
+            section_closed=section_key in collapsed_sections
+            group_sections.append(f'''<section class="tablebox disposal-group"><div class="section-collapse-head"><h2>{esc(branch)} · Circuito {esc(channel)}</h2><span class="badge">{group_total} animali</span><button type="button" class="collapse-toggle" aria-expanded="{"false" if section_closed else "true"}" data-persist-key="{esc(section_key)}" data-persist-endpoint="/smaltimenti/sezione-stato" onclick="toggleCollapsibleSection(this)">{"+" if section_closed else "−"}</button></div><div class="collapsible-body"{" hidden" if section_closed else ""}><table><thead><tr><th>Animale</th><th>Peso</th><th>Proprietario/Veterinario</th><th>Data recupero</th><th>Pratica</th><th>Stato</th></tr></thead><tbody>{rows_html}{total_row}</tbody></table></div></section>''')
         filter_note='<p class="sub">Nessuna pratica corrisponde al filtro di stato selezionato per questo periodo.</p>' if not display_groups and full_groups else ''
         total_count=len(eligible)
         total_already=len(already_done)
@@ -13709,7 +13772,8 @@ class App(BaseHTTPRequestHandler):
             confirm_form='<p class="sub">Nessuna pratica di cremazione collettiva da smaltire nel periodo selezionato.</p>'
         history_rows=''.join(f'''<tr><td>{esc(date_it(b["confirmed_at"]))}</td><td>{esc(date_it(b["period_from"]))} → {esc(date_it(b["period_to"]))}</td><td><b>{b["total_count"]}</b></td><td>{esc(b["display_name"] or "-")}</td><td><a class="btn ghost" href="/smaltimenti/storico/{b["id"]}?return_to={quote(getattr(self,"path",""),safe="")}">Apri</a></td></tr>''' for b in history) or '<tr><td colspan="5" class="sub">Nessuno scarico registrato.</td></tr>'
         stato_options=''.join(f'<option value="{esc(value)}"{" selected" if stato_filter==value else ""}>{esc(label)}</option>' for value,label in (("","Tutte"),("da_confermare","Da confermare"),("smaltito","Già smaltite")))
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Smaltimenti</h1><p class="sub">Conferimenti periodici delle cremazioni collettive alla ditta esterna di smaltimento.</p></div></div>{error_html}<section class="section"><h2>Periodo</h2><form method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Stato pratica</label><select name="stato">{stato_options}</select></div></div><button class="btn" style="margin-top:12px">Applica periodo</button></form></section><section class="section"><h2>Riepilogo periodo {esc(date_it(date_from))} - {esc(date_it(date_to))}</h2><div class="kvs">{breakdown_summary or '<span class="sub">Nessun dato per il periodo selezionato.</span>'}<div class="kv"><small>Totale generale</small><b>{total_count+total_already}</b><small>{total_count} da confermare · {total_already} già smaltite</small></div></div><div class="actions" style="margin-top:14px">{confirm_form}</div></section>{filter_note}{''.join(group_sections)}<section class="tablebox"><div class="section-collapse-head"><h2>Storico scarichi</h2><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><table><thead><tr><th>Data conferma</th><th>Periodo</th><th>Totale animali</th><th>Confermato da</th><th></th></tr></thead><tbody>{history_rows}</tbody></table></div></section></main>'''
+        history_closed="storico" in collapsed_sections
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Smaltimenti</h1><p class="sub">Conferimenti periodici delle cremazioni collettive alla ditta esterna di smaltimento.</p></div></div>{error_html}<section class="section"><h2>Periodo</h2><form method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Stato pratica</label><select name="stato">{stato_options}</select></div></div><button class="btn" style="margin-top:12px">Applica periodo</button></form></section><section class="section"><h2>Riepilogo periodo {esc(date_it(date_from))} - {esc(date_it(date_to))}</h2><div class="kvs">{breakdown_summary or '<span class="sub">Nessun dato per il periodo selezionato.</span>'}<div class="kv"><small>Totale generale</small><b>{total_count+total_already}</b><small>{total_count} da confermare · {total_already} già smaltite</small></div></div><div class="actions" style="margin-top:14px">{confirm_form}</div></section>{filter_note}{''.join(group_sections)}<section class="tablebox"><div class="section-collapse-head"><h2>Storico scarichi</h2><button type="button" class="collapse-toggle" aria-expanded="{"false" if history_closed else "true"}" data-persist-key="storico" data-persist-endpoint="/smaltimenti/sezione-stato" onclick="toggleCollapsibleSection(this)">{"+" if history_closed else "−"}</button></div><div class="collapsible-body"{" hidden" if history_closed else ""}><table><thead><tr><th>Data conferma</th><th>Periodo</th><th>Totale animali</th><th>Confermato da</th><th></th></tr></thead><tbody>{history_rows}</tbody></table></div></section></main>'''
         self.send_html(layout("Smaltimenti",body,user))
 
     def disposal_confirm(self,user):
@@ -15391,6 +15455,15 @@ class App(BaseHTTPRequestHandler):
             c.execute("INSERT INTO user_preferences(user_id,key,value) VALUES(?,?,?) ON CONFLICT(user_id,key) DO UPDATE SET value=excluded.value",(user["id"],"archive_collapsed_months",json.dumps(sorted(months),ensure_ascii=False)))
         return self.send_json({"ok":True})
 
+    def save_smaltimenti_section_state(self,user):
+        form=self.form()
+        section_key=(form.get("sezione") or "").strip()[:80]
+        if not section_key:
+            return self.send_json({"ok":False,"error":"Sezione non valida."},400)
+        with db() as c:
+            toggle_collapsed_preference(c,user["id"],"smaltimenti_collapsed_sections",section_key,form.get("chiuso")=="1")
+        return self.send_json({"ok":True})
+
     def archive(self,user):
         q=parse_qs(urlparse(self.path).query)
         term=q.get("q",[""])[0].strip()
@@ -15750,6 +15823,7 @@ class App(BaseHTTPRequestHandler):
                 year,month=key.split("-");return f"{MONTH_NAMES_IT[int(month)-1]} {year}"
             except (ValueError,IndexError):return "Data non indicata"
         billing_badge_cls={"Da fatturare":"pay-yellow","Fatturato":"pay-blue","Incassato":"pay-green"}
+        collapsed_months=set(parse_preference_list(load_preferences(user["id"]).get(f"collaboratore_{collaborator_id}_collapsed_months","")))
         month_sections=[]
         for month_key in sorted(months.keys(),reverse=True):
             month_practices=months[month_key]
@@ -15763,7 +15837,12 @@ class App(BaseHTTPRequestHandler):
             if invoiced:
                 actions.append(f'<form method="post" action="/collaboratori/{collaborator_id}/fattura-mese/incassato" onsubmit="return confirm(\'Confermi di aver incassato la fattura per questo mese?\')"><input type="hidden" name="mese" value="{month_key}"><button class="btn ghost" type="submit">Segna mese come incassato ({invoiced})</button></form>')
             actions_html=''.join(actions) or '<span class="sub">Mese completamente incassato.</span>'
-            month_sections.append(f'''<section class="section collaborator-month"><div class="section-collapse-head"><h2>{esc(month_label(month_key))}</h2><span class="badge">{money_it(month_total)}</span><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><table class="premium-table"><thead><tr><th>Animale</th><th>Data</th><th>Importo</th><th>Stato fatturazione</th><th>Pratica</th></tr></thead><tbody>{animal_rows}</tbody></table><div class="actions" style="margin-top:12px">{actions_html}</div></div></section>''')
+            # Stato aperto/chiuso ricordato per utente (stesso meccanismo
+            # di Archivio/mesi e Smaltimenti): senza questo, tornando da
+            # una pratica collegata il mese appena chiuso si riapriva da
+            # solo, qualunque fosse il metodo di navigazione indietro usato.
+            month_closed=month_key in collapsed_months
+            month_sections.append(f'''<section class="section collaborator-month"><div class="section-collapse-head"><h2>{esc(month_label(month_key))}</h2><span class="badge">{money_it(month_total)}</span><button type="button" class="collapse-toggle" aria-expanded="{"false" if month_closed else "true"}" data-persist-key="{esc(month_key)}" data-persist-endpoint="/collaboratori/{collaborator_id}/mese-stato" data-persist-field="mese" onclick="toggleCollapsibleSection(this)">{"+" if month_closed else "−"}</button></div><div class="collapsible-body"{" hidden" if month_closed else ""}><table class="premium-table"><thead><tr><th>Animale</th><th>Data</th><th>Importo</th><th>Stato fatturazione</th><th>Pratica</th></tr></thead><tbody>{animal_rows}</tbody></table><div class="actions" style="margin-top:12px">{actions_html}</div></div></section>''')
         months_html=''.join(month_sections) or '<section class="section empty-state"><p>Nessuna pratica collegata a questo collaboratore.</p></section>'
         tier_rows=''.join(f'''<tr><form method="post" action="/listino/{t['id']}/modifica"><td><input name="weight_min" value="{esc(t['weight_min'])}" inputmode="decimal" style="width:80px" required></td><td><input name="weight_max" value="{esc(t['weight_max'] or '')}" inputmode="decimal" placeholder="senza limite" style="width:100px"></td><td><input name="price" value="{esc(t['price'])}" inputmode="decimal" style="width:100px" required></td><td><button class="btn ghost">Salva</button></form><form method="post" action="/listino/{t['id']}/elimina" onsubmit="return confirm('Eliminare questa fascia di peso?')"><button class="btn ghost">Elimina</button></form></td></tr>''' for t in tiers) or '<tr><td colspan="4" class="sub">Nessuna fascia di peso inserita.</td></tr>'
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>{esc(co['name'])}</h1><div class="sub">Anagrafica collaboratore</div></div><a class="btn ghost" href="/collaboratori">Torna alla lista</a></div><section class="section"><h2>Anagrafica</h2><form method="post" action="/collaboratori"><input type="hidden" name="id" value="{co['id']}"><div class="fields"><div class="field full"><label>Nome</label><input name="name" value="{esc(co['name'])}" required></div><div class="field"><label>Sigla</label><input name="code" value="{esc(co['code']) if 'code' in co.keys() else ''}" maxlength="8" placeholder="Es. CV" style="text-transform:uppercase"></div><div class="field full"><label>Indirizzo</label><input name="address" value="{esc(co['address'])}"></div><div class="field"><label>Comune</label><input name="city" value="{esc(co['city'])}"></div><div class="field"><label>Provincia</label><input name="province" value="{esc(co['province'])}" maxlength="2"></div><div class="field"><label>CAP</label><input name="zip" value="{esc(co['zip'])}"></div><div class="field"><label>Codice fiscale</label><input name="tax_code" value="{esc(co['tax_code'])}"></div><div class="field"><label>Partita IVA</label><input name="vat_number" value="{esc(co['vat_number'])}"></div><div class="field"><label>Codice SDI</label><input name="sdi_code" value="{esc(co['sdi_code'])}"></div><div class="field"><label>Telefono</label><input name="phone" value="{esc(co['phone'])}"></div><div class="field"><label>Email</label><input type="email" name="email" value="{esc(co['email'])}"></div><div class="field full"><label>Note</label><input name="notes" value="{esc(co['notes'])}"></div></div><button class="btn" style="margin-top:12px">Salva anagrafica</button></form><form method="post" action="/collaboratori/{co['id']}/elimina" onsubmit="return confirm('Eliminare questo collaboratore dalla lista?')"><button class="btn ghost" style="margin-top:12px">Elimina collaboratore</button></form></section><div style="height:14px"></div><section class="section"><h2>Listino dedicato</h2><p class="sub">Fasce di peso e prezzo: inserendo il peso dell'animale durante la creazione della pratica, il campo Cremazione del preventivo si compila automaticamente con il prezzo della fascia corrispondente. Lascia "A (kg)" vuoto per l'ultima fascia senza limite superiore.</p><div class="tablebox"><table class="premium-table"><thead><tr><th>Da (kg)</th><th>A (kg)</th><th>Prezzo €</th><th>Azione</th></tr></thead><tbody>{tier_rows}</tbody></table></div><form method="post" action="/collaboratori/{co['id']}/listino" style="margin-top:14px"><div class="fields"><div class="field"><label>Da (kg)</label><input name="weight_min" required inputmode="decimal" placeholder="Es. 0"></div><div class="field"><label>A (kg)</label><input name="weight_max" inputmode="decimal" placeholder="Vuoto = senza limite"></div><div class="field"><label>Prezzo €</label><input name="price" required inputmode="decimal" placeholder="Es. 150,00"></div></div><button class="btn" style="margin-top:12px">Aggiungi fascia</button></form></section><div style="height:14px"></div><section class="titlebar"><h2>Riepilogo mensile</h2><p class="sub">Animali portati da questo collaboratore, raggruppati per mese di recupero, con stato di fatturazione.</p></section>{months_html}</main>'''
@@ -15787,6 +15866,15 @@ class App(BaseHTTPRequestHandler):
                 c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,note,user_id,created_at) VALUES(?,?,?,?,?,?,?)",
                           (row["id"],"Fatturazione collaboratore",from_status,to_status,f"Mese {month}",user["id"],stamp))
         self.redirect(f"/collaboratori/{collaborator_id}")
+
+    def save_collaborator_month_state(self,user,collaborator_id):
+        form=self.form()
+        month_key=(form.get("mese") or "").strip()[:20]
+        if not re.fullmatch(r"\d{4}-\d{2}",month_key):
+            return self.send_json({"ok":False,"error":"Mese non valido."},400)
+        with db() as c:
+            toggle_collapsed_preference(c,user["id"],f"collaboratore_{collaborator_id}_collapsed_months",month_key,form.get("chiuso")=="1")
+        return self.send_json({"ok":True})
 
     def save_collaborator(self,user):
         f=self.form(); stamp=now()

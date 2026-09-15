@@ -5677,6 +5677,124 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.save_archive_month_state(admin)
         self.assertEqual(responses[-1],({"ok":False,"error":"Mese non valido."},400))
 
+    def test_smaltimenti_section_collapse_state_persists_per_user(self):
+        # Richiesta esplicita dell'utente: il ritorno indietro (con
+        # qualunque modalita' di navigazione) deve ritrovare la pagina
+        # esattamente come l'avevo lasciata. Gruppo/Storico di Smaltimenti
+        # si riaprivano da soli tornando da una pratica collegata - stesso
+        # meccanismo di persistenza gia' usato da Archivio/mesi.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
+                            created_at,updated_at,created_by,service_type)
+                            VALUES(?,?,?,?,?,?,?,?,?)""",
+                         ("PP-DISP-COLLAPSE","Privato","Livorno","Ritirato","2026-07-15",stamp,stamp,admin["id"],"Cremazione collettiva"))
+        rendered=[];self.handler.send_html=lambda content,*a:rendered.append(content)
+        self.handler.path="/smaltimenti?dal=2026-07-01&al=2026-07-31"
+        self.handler.disposal_page(admin)
+        page=rendered[-1]
+        # senza preferenza salvata, tutto parte aperto (comportamento invariato)
+        self.assertIn('data-persist-key="Livorno·W" data-persist-endpoint="/smaltimenti/sezione-stato" onclick="toggleCollapsibleSection(this)">−</button>',page)
+        self.assertIn('data-persist-key="storico" data-persist-endpoint="/smaltimenti/sezione-stato"',page)
+        self.assertNotIn(' hidden><table><thead><tr><th>Animale</th><th>Peso</th>',page)
+
+        responses=[];self.handler.send_json=lambda payload,status=200:responses.append((payload,status))
+        self.handler.form=lambda:{"sezione":"Livorno·W","chiuso":"1"}
+        self.handler.save_smaltimenti_section_state(admin)
+        self.assertEqual(responses[-1],({"ok":True},200))
+
+        rendered.clear()
+        self.handler.disposal_page(admin)
+        page=rendered[-1]
+        self.assertIn('data-persist-key="Livorno·W" data-persist-endpoint="/smaltimenti/sezione-stato" onclick="toggleCollapsibleSection(this)">+</button>',page)
+        # lo storico, non toccato, resta aperto
+        self.assertIn('data-persist-key="storico" data-persist-endpoint="/smaltimenti/sezione-stato" onclick="toggleCollapsibleSection(this)">−</button>',page)
+
+    def test_smaltimenti_section_state_rejects_empty_key(self):
+        responses=[];self.handler.send_json=lambda payload,status=200:responses.append((payload,status))
+        self.handler.form=lambda:{"sezione":"","chiuso":"1"}
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.save_smaltimenti_section_state(admin)
+        self.assertEqual(responses[-1],({"ok":False,"error":"Sezione non valida."},400))
+
+    def test_collaborator_month_collapse_state_persists_per_user(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            collaborator_id=conn.execute("INSERT INTO collaborators(name,active,created_at,updated_at) VALUES(?,?,?,?)",("Collab Test",1,stamp,stamp)).lastrowid
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,collaborator_id,pickup_date,created_at,updated_at,created_by,animal_name)
+                          VALUES(?,?,?,?,?,?,?,?,?,?)""",("CR-COLLABMONTH","Collaboratore","Livorno","Ritirato",collaborator_id,"2026-07-10",stamp,stamp,admin["id"],"Fido"))
+        rendered=[];self.handler.send_html=lambda content,*a:rendered.append(content)
+        self.handler.path=f"/collaboratori/{collaborator_id}"
+        self.handler.collaborator_detail(admin,collaborator_id)
+        page=rendered[-1]
+        self.assertIn(f'data-persist-key="2026-07" data-persist-endpoint="/collaboratori/{collaborator_id}/mese-stato" data-persist-field="mese" onclick="toggleCollapsibleSection(this)">−</button>',page)
+
+        responses=[];self.handler.send_json=lambda payload,status=200:responses.append((payload,status))
+        self.handler.form=lambda:{"mese":"2026-07","chiuso":"1"}
+        self.handler.save_collaborator_month_state(admin,collaborator_id)
+        self.assertEqual(responses[-1],({"ok":True},200))
+
+        rendered.clear()
+        self.handler.collaborator_detail(admin,collaborator_id)
+        page=rendered[-1]
+        self.assertIn(f'data-persist-key="2026-07" data-persist-endpoint="/collaboratori/{collaborator_id}/mese-stato" data-persist-field="mese" onclick="toggleCollapsibleSection(this)">+</button>',page)
+
+        # riaprire il mese lo rimuove dalla lista salvata (nessuna interferenza tra collaboratori diversi)
+        with app.db() as conn:
+            other_id=conn.execute("INSERT INTO collaborators(name,active,created_at,updated_at) VALUES(?,?,?,?)",("Altro Collab",1,stamp,stamp)).lastrowid
+        with app.db() as conn:
+            value=conn.execute("SELECT value FROM user_preferences WHERE user_id=? AND key=?",(admin["id"],f"collaboratore_{other_id}_collapsed_months")).fetchone()
+        self.assertIsNone(value)
+
+    def test_collaborator_month_state_rejects_invalid_month(self):
+        responses=[];self.handler.send_json=lambda payload,status=200:responses.append((payload,status))
+        self.handler.form=lambda:{"mese":"nope","chiuso":"1"}
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            collaborator_id=conn.execute("INSERT INTO collaborators(name,active,created_at,updated_at) VALUES(?,?,?,?)",("Collab Invalid",1,app.now(),app.now())).lastrowid
+        self.handler.save_collaborator_month_state(admin,collaborator_id)
+        self.assertEqual(responses[-1],({"ok":False,"error":"Mese non valido."},400))
+
+    def test_balance_toggle_details_syncs_expanded_section_into_real_url(self):
+        # Richiesta esplicita dell'utente: il ritorno indietro (con
+        # qualunque modalita' - tasto del gestionale, gesture/tasto del
+        # telefono, tasto del browser) deve ritrovare Bilanci con la
+        # sezione ancora espansa, non ricollassata. Stesso pattern
+        # history.replaceState gia' usato da Calendario/Cremazioni.
+        self.assertIn("function balanceToggleDetails(summaryEl){",app.APP_JS)
+        self.assertIn("detailsSection.dataset.selectedBalanceSection",app.APP_JS)
+        self.assertIn("if(collapsed)url.searchParams.delete('view');else url.searchParams.set('view',sectionKey);",app.APP_JS)
+        self.assertIn("history.replaceState(null,'',url);",app.APP_JS)
+
+    def test_balance_practice_rows_build_return_to_dynamically_from_current_url(self):
+        # Il return_to non deve piu' essere congelato al path/query letti
+        # al render (che non conoscerebbero un'espansione fatta via JS
+        # dopo il caricamento, senza reload): va ricalcolato al click
+        # dalla URL reale corrente, gia' sincronizzata da
+        # balanceToggleDetails.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                ("CR-BILROWDYN","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Gino","Cremazione singola","Pagato","100","100")).lastrowid
+            app.create_balance_movement(conn,amount_cents=10000,movement_date=datetime.now().date().isoformat(),category="W",ledger_section="Entrata",
+                                         movement_type="Incasso completo",payment_method="Pos",description="test",source="test",
+                                         practice_id=pid,idempotency_key="test-bilanci-dyn-1",created_by=admin["id"])
+        rendered=[];self.handler.send_html=lambda content,*a:rendered.append(content)
+        self.handler.path="/bilanci?view=entrate-w&periodo=tutto"
+        self.handler.balances_page(admin)
+        page=rendered[-1]
+        self.assertIn(f"onclick=\"location.href='/pratiche/{pid}?return_to='+encodeURIComponent(location.pathname+location.search)\"",page)
+        # la riga cliccabile stessa non deve piu' portare un return_to
+        # congelato al render (resta invece invariato per "Elimina", che
+        # e' un'azione immediata sulla stessa pagina, non un round trip
+        # lista->dettaglio->indietro).
+        row_start=page.index("balance-clickable-row")
+        row_snippet=page[row_start:row_start+400]
+        self.assertNotIn("return_to=%2Fbilanci",row_snippet)
+
     def test_archive_rows_carry_practice_id_and_flash_free_restore_script(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
