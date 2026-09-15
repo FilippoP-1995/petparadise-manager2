@@ -5443,6 +5443,176 @@ class PetParadiseTests(unittest.TestCase):
         # clamp di sicurezza: end_date non deve mai precedere start_date
         self.assertIn("form.end_date.value<form.start_date.value)form.end_date.value=form.start_date.value", fn)
 
+    def test_calendar_new_event_draft_has_no_continuous_autosave(self):
+        # Richiesta esplicita dell'utente: un evento NUOVO (mai salvato)
+        # non deve piu' autosalvarsi in bozza ad ogni digitazione senza
+        # consenso - solo alla scelta esplicita "Salva bozza". Il ramo
+        # "ppm_calendar_draft_new" deve uscire (return) PRIMA di
+        # registrare qualunque listener input/change che scriverebbe in
+        # localStorage.
+        js = app.APP_JS
+        fn_start = js.index("function setupCalendarDraftAutosave(form){")
+        fn_end = js.index("\n}", fn_start) + 2
+        fn = js[fn_start:fn_end]
+        self.assertIn("if(key==='ppm_calendar_draft_new'){", fn)
+        gate_start = fn.index("if(key==='ppm_calendar_draft_new'){")
+        gate_end = fn.index("}", gate_start) + 1
+        gate_body = fn[gate_start:gate_end]
+        self.assertIn("return;", gate_body)
+        # dopo il return della bozza nuova, la registrazione dell'autosave
+        # continuo (input/change/submit) deve restare SOLO per la modifica
+        # di un evento gia' reale (comportamento preesistente, invariato)
+        after_gate = fn[gate_end:]
+        self.assertIn("form.addEventListener('input',()=>{show('saving','Salvataggio…');save();});", after_gate)
+        self.assertIn("form.addEventListener('change',()=>{show('saving','Salvataggio…');save();});", after_gate)
+        self.assertIn("restore();", after_gate)
+
+    def test_calendar_new_event_draft_restores_only_with_explicit_marker(self):
+        # "NUOVO EVENTO" deve sempre partire pulito, anche se esiste una
+        # bozza precedente - il recupero automatico avviene SOLO passando
+        # da qui con ?bozza=1 (link dedicato nella lista bozze).
+        js = app.APP_JS
+        fn_start = js.index("function setupCalendarDraftAutosave(form){")
+        gate_start = js.index("if(key==='ppm_calendar_draft_new'){", fn_start)
+        gate_end = js.index("}", gate_start) + 1
+        gate_body = js[gate_start:gate_end]
+        self.assertIn("new URLSearchParams(location.search).get('bozza')==='1'", gate_body)
+        self.assertIn("restore();", gate_body)
+
+    def test_calendar_exit_keep_draft_saves_explicitly_only_for_new_event(self):
+        # "Salva bozza ed esci" deve essere il momento in cui, per un
+        # evento nuovo, la bozza viene VERAMENTE scritta (non prima, non
+        # per abbandono silenzioso). In modifica di un evento gia' reale
+        # l'autosave continuo ha gia' salvato tutto - nessun doppio lavoro.
+        js = app.APP_JS
+        fn_start = js.index("function calendarExitKeepDraft(){")
+        fn_end = js.index("\n}", fn_start) + 2
+        fn = js[fn_start:fn_end]
+        self.assertIn("if(key==='ppm_calendar_draft_new')calendarSaveDraftNow();", fn)
+
+    def test_calendar_exit_discard_draft_still_removes_localstorage_entry(self):
+        # "Non salvare / Esci" deve continuare a eliminare davvero
+        # l'eventuale voce (comportamento preesistente, non toccato).
+        self.assertIn(
+            "function calendarExitDiscardDraft(){const form=document.getElementById('calendarEventForm');const key=form?.dataset.draftKey;if(key){try{localStorage.removeItem(key);}catch(error){}}calendarWizardAllowExit=true;calendarExitCancel();if(calendarExitHref)location.href=calendarExitHref;}",
+            app.APP_JS,
+        )
+
+    def test_calendar_drafts_banner_links_new_event_draft_with_explicit_marker(self):
+        # Il link della bozza nella lista "N bozze salvate" e' l'UNICO modo
+        # per cui "Nuovo evento" carica automaticamente dati precedenti.
+        js = app.APP_JS
+        self.assertIn("isEdit?`/calendario/${key.slice('ppm_calendar_draft_edit_'.length)}/modifica`:'/calendario/nuovo?bozza=1'", js)
+
+    def test_calendar_global_click_listener_intercepts_dirty_exits_from_any_link(self):
+        # Richiesta esplicita dell'utente: l'uscita da un evento non
+        # ancora salvato deve essere gestita con QUALUNQUE modo la si
+        # tenti, non solo "×"/Annulla - un listener delegato su TUTTI i
+        # link (menu, bottom-nav, "Crea", link "Pratica" nel wizard, ecc.)
+        # passa dallo stesso calendarConfirmExit gia' usato da quei due.
+        js = app.APP_JS
+        self.assertIn("document.addEventListener('click',function(e){", js)
+        listener_start = js.index("document.addEventListener('click',function(e){\n  const form=document.getElementById('calendarEventForm');")
+        listener_end = js.index("});", listener_start) + 3
+        listener = js[listener_start:listener_end]
+        self.assertIn("if(!form)return;", listener)
+        self.assertIn("e.target.closest('a[href]')", listener)
+        self.assertIn("link.target==='_blank'", listener)
+        self.assertIn("href.startsWith('tel:')", listener)
+        self.assertIn("href.startsWith('mailto:')", listener)
+        self.assertIn("calendarWizardDirty(form)", listener)
+        self.assertIn("calendarConfirmExit(e,link.href);", listener)
+
+    def test_calendar_type_changed_reorders_animal_before_sede_only_for_riconsegna_in_sede(self):
+        # Richiesta esplicita dell'utente: ordine ANIMALE poi SEDE per
+        # "Riconsegna in sede" - tutte le altre combinazioni (incluso
+        # "Ritiro in sede", che non ha alcun campo Animale) restano
+        # nell'ordine originale.
+        js = app.APP_JS
+        fn_start = js.index("function calendarTypeChanged(){")
+        fn_end = js.index("\n}", fn_start) + 2
+        fn = js[fn_start:fn_end]
+        self.assertIn('data-calendar-types="Ritiro in sede|Riconsegna in sede"', fn)
+        self.assertIn('data-calendar-types="Riconsegna|Riconsegna in sede"', fn)
+        self.assertIn("if(type==='Riconsegna in sede'){", fn)
+        self.assertIn("sedeCard.parentNode.insertBefore(animaleCard,sedeCard);", fn)
+        self.assertIn("sedeCard.parentNode.insertBefore(sedeCard,animaleCard);", fn)
+        # nessun carattere di controllo residuo nella regex PROMEMORIA
+        # (corruzione preesistente trovata e corretta incidentalmente
+        # modificando questa stessa funzione)
+        self.assertIn("/^PROMEMORIA/i.test(title.value)", fn)
+        self.assertNotIn("\x08", app.APP_JS)
+
+    def test_calendar_destination_site_select_tracks_manual_edit(self):
+        # La preimpostazione della Sede deve restare SEMPRE modificabile:
+        # appena l'utente la tocca a mano, dataset.manual impedisce a
+        # future selezioni animale di sovrascriverla di nuovo.
+        self.assertEqual(app.APP_JS.count("this.dataset.manual='1';calendarAutoTitle()") , 0)  # non e' nell'APP_JS, e' nel markup HTML
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []; self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/calendario/nuovo?event_type=Riconsegna in sede"
+        self.handler.calendar_event_form(admin)
+        page = rendered[-1]
+        self.assertEqual(page.count('''<select name="destination_site" onchange="this.dataset.manual='1';calendarAutoTitle()">'''), 1)
+
+    def test_calendar_delivery_animal_lookup_presets_sede_from_provenance(self):
+        # L -> Livorno, E -> Empoli, qualunque altro valore -> nessuna
+        # preimpostazione (non deve inventare una sede). Solo se la Sede
+        # non e' gia' stata toccata manualmente dall'utente.
+        js = app.APP_JS
+        fn_start = js.index("results.onclick=e=>{const button=e.target.closest('[data-delivery-animal-index]')")
+        fn_end = js.index("};", fn_start) + 2
+        fn = js[fn_start:fn_end]
+        self.assertIn("!form.destination_site.dataset.manual", fn)
+        self.assertIn("item.provenance==='L'?'Livorno':item.provenance==='E'?'Empoli':''", fn)
+        self.assertIn("if(provenanceSede)form.destination_site.value=provenanceSede;", fn)
+
+    def test_calendar_animals_search_api_returns_provenance_code(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            for number, provenance in (("CR-PROVL", "L"), ("CR-PROVE", "E"), ("CR-PROVV", "V"), ("CR-PROVNONE", "")):
+                conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,provenance)
+                                VALUES(?,?,?,?,?,?,?,?,?)""",
+                             (number, "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], f"AnimaleProv{provenance or 'X'}", provenance))
+        responses = []; self.handler.send_json = lambda payload, status=200: responses.append(payload)
+        self.handler.path = "/api/calendario/animali/search?q=AnimaleProv"
+        self.handler.api_calendar_animals_search(admin)
+        results = {r["practice_number"]: r["provenance"] for r in responses[-1]["results"]}
+        self.assertEqual(results["CR-PROVL"], "L")
+        self.assertEqual(results["CR-PROVE"], "E")
+        self.assertEqual(results["CR-PROVV"], "V")
+        self.assertEqual(results["CR-PROVNONE"], "")
+
+    def test_calendar_new_event_from_fissa_riconsegna_presets_sede_from_provenance(self):
+        # Bug reale trovato con verifica dal vivo nel browser: il flusso
+        # "Fissa riconsegna" (da Cremazioni o dal riepilogo pratica,
+        # /calendario/nuovo?linked_practice_id=X) e' il modo piu' comune
+        # per creare una Riconsegna in sede, ma la pratica arriva gia'
+        # collegata al caricamento della pagina - non passa mai dalla
+        # ricerca-animale interattiva (calendarDeliveryAnimalLookup), che
+        # da sola non basta a coprire la preimpostazione della Sede.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pid_l = conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,provenance)
+                            VALUES(?,?,?,?,?,?,?,?,?)""",
+                            ("CR-FISSA-L", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Birba", "L")).lastrowid
+            pid_v = conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,provenance)
+                            VALUES(?,?,?,?,?,?,?,?,?)""",
+                            ("CR-FISSA-V", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Birba2", "V")).lastrowid
+        rendered = []; self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/nuovo?linked_practice_id={pid_l}"
+        self.handler.calendar_event_form(admin)
+        page_l = rendered[-1]
+        self.assertIn('<option selected>Livorno</option>', page_l)
+        rendered.clear()
+        self.handler.path = f"/calendario/nuovo?linked_practice_id={pid_v}"
+        self.handler.calendar_event_form(admin)
+        page_v = rendered[-1]
+        # provenienza diversa da Livorno/Empoli: nessuna sede preimpostata
+        self.assertNotIn('<option selected>Livorno</option>', page_v)
+        self.assertNotIn('<option selected>Empoli</option>', page_v)
+
     def test_day_view_swipe_navigation_removed(self):
         rendered = []
         self.handler.send_html = lambda html, status=200: rendered.append(html)

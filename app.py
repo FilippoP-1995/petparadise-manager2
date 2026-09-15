@@ -6550,7 +6550,23 @@ document.addEventListener('DOMContentLoaded',function(){
 });
 let calendarWizardAllowExit=false;
 function calendarAutoTitle(force=false){const form=document.getElementById('calendarEventForm');if(!form)return;const type=form.event_type?.value||'';const zone=(form.zone?.value||'').trim().toUpperCase();const site=(form.destination_site?.value||'').trim().toUpperCase();const animal=(form.animal_name?.value||form.querySelector('[data-calendar-list="animal"] [data-key="name"]')?.value||'').trim().toUpperCase();const field=form.title;if(!field)return;if(type==='Appuntamento'){return;}let title='';if(type==='Ritiro')title=`RITIRO ${zone}`;if(type==='Ritiro in sede')title=`RITIRO IN SEDE ${site}`;if(type==='Riconsegna')title=['RICONSEGNA',animal,zone].filter(Boolean).join(' ');if(type==='Riconsegna in sede')title=`RICONSEGNA ${animal} IN SEDE ${site}`;if(force||!field.dataset.manual)field.value=title.trim();}
-function calendarTypeChanged(){const form=document.getElementById('calendarEventForm');if(!form)return;const type=form.event_type.value;form.querySelectorAll('[data-calendar-types]').forEach(el=>{const hide=!el.dataset.calendarTypes.split('|').includes(type);el.hidden=hide;el.querySelectorAll('input,select,textarea').forEach(input=>input.disabled=hide);});const details=document.getElementById('calendarDetailsSection');if(details)details.hidden=!type;if(form.zone)form.zone.required=type==='Ritiro';if(form.destination_site)form.destination_site.required=['Ritiro in sede','Riconsegna in sede'].includes(type);if(form.animal_name)form.animal_name.required=['Riconsegna','Riconsegna in sede'].includes(type);const title=form.title;if(title&&type==='Appuntamento'){title.dataset.manual='1';if(!title.value||/^PROMEMORIA/i.test(title.value))title.value='';}else if(title){delete title.dataset.manual;}calendarAutoTitle(true);}
+function calendarTypeChanged(){const form=document.getElementById('calendarEventForm');if(!form)return;const type=form.event_type.value;form.querySelectorAll('[data-calendar-types]').forEach(el=>{const hide=!el.dataset.calendarTypes.split('|').includes(type);el.hidden=hide;el.querySelectorAll('input,select,textarea').forEach(input=>input.disabled=hide);});const details=document.getElementById('calendarDetailsSection');if(details)details.hidden=!type;if(form.zone)form.zone.required=type==='Ritiro';if(form.destination_site)form.destination_site.required=['Ritiro in sede','Riconsegna in sede'].includes(type);if(form.animal_name)form.animal_name.required=['Riconsegna','Riconsegna in sede'].includes(type);const title=form.title;if(title&&type==='Appuntamento'){title.dataset.manual='1';if(!title.value||/^PROMEMORIA/i.test(title.value))title.value='';}else if(title){delete title.dataset.manual;}
+  // Riconsegna in sede: ANIMALE prima di SEDE (richiesta esplicita
+  // dell'utente), tutte le altre combinazioni restano nell'ordine
+  // originale (Sede prima, quando presente). Idempotente e rieseguito
+  // a ogni cambio tipo: si autocorregge in entrambe le direzioni anche
+  // passando piu' volte da un tipo all'altro prima di salvare.
+  const sedeCard=form.querySelector('[data-calendar-types="Ritiro in sede|Riconsegna in sede"]');
+  const animaleCard=form.querySelector('[data-calendar-types="Riconsegna|Riconsegna in sede"]');
+  if(sedeCard&&animaleCard&&sedeCard.parentNode===animaleCard.parentNode){
+    if(type==='Riconsegna in sede'){
+      if(animaleCard.nextElementSibling!==sedeCard)sedeCard.parentNode.insertBefore(animaleCard,sedeCard);
+    }else if(sedeCard.nextElementSibling!==animaleCard){
+      sedeCard.parentNode.insertBefore(sedeCard,animaleCard);
+    }
+  }
+  calendarAutoTitle(true);
+}
 function calendarTypeSelected(input){const form=input.form,error=form.querySelector('[data-operator-error]');if(error)error.textContent='';calendarTypeChanged();}
 function calendarAllDayChanged(box){const form=box.form;form.querySelectorAll('[data-calendar-time]').forEach(el=>{el.hidden=box.checked;el.querySelectorAll('input').forEach(input=>input.required=!box.checked&&input.name==='start_time');});form.querySelectorAll('[data-time-wheel]').forEach(wheel=>wheel.hidden=true);}
 function calendarHtml(value){return String(value||'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));}
@@ -6780,7 +6796,18 @@ async function calendarDeliveryAnimalLookup(input,results){
     const items=data.results||[];
     results.innerHTML=items.map((item,index)=>`<button type="button" class="lookup-item" data-delivery-animal-index="${index}"><span><b>${calendarHtml(item.animal_name||'Animale senza nome')}</b><small>${calendarHtml([item.owner_name,item.species,item.pickup_date?`recupero ${calendarDateIt(item.pickup_date)}`:'',item.practice_number].filter(Boolean).join(' · '))}</small><small>${calendarHtml(item.payment_summary||'')}</small></span></button>`).join('')||'<div class="lookup-state">Nessun animale o proprietario trovato.</div>';
     ppmOpenLookupPanel(results);
-    results.onclick=e=>{const button=e.target.closest('[data-delivery-animal-index]');if(!button)return;const item=items[Number(button.dataset.deliveryAnimalIndex)],form=input.form;input.value=item.animal_name||'';form.linked_practice_id.value=item.practice_id||'';form.payment_status.value=item.calendar_payment_status||'Da pagare';form.payment_amount.value=Number(item.calendar_payment_amount||0).toFixed(2).replace('.',',');if(form.delivery_address){form.dataset.deliveryOwnerAddress=item.owner_address||'';if(form.dataset.deliveryAddressMode==='domicilio')form.delivery_address.value=item.owner_address||'';}const detail=form.querySelector('[data-delivery-payment-detail]');if(detail)detail.value=item.payment_summary||'';const money=v=>`€ ${Number(v||0).toFixed(2).replace('.',',')}`;const summary=form.querySelector('[data-delivery-practice-summary]');if(summary){summary.hidden=false;const set=(sel,val)=>{const el=summary.querySelector(sel);if(el)el.textContent=val;};set('[data-delivery-total]',money(item.total));set('[data-delivery-deposit]',money(item.deposit));set('[data-delivery-remaining]',money(item.remaining));set('[data-delivery-service]',item.service_type||'—');set('[data-delivery-urn]',item.urn_summary||'—');const channelRow=summary.querySelector('[data-delivery-channel-row]');if(channelRow){const stillDue=Number(item.remaining||0)>0;channelRow.hidden=!stillDue;if(stillDue)set('[data-delivery-channel]',item.payment_channel||'—');}}calendarAutoTitle(true);ppmCloseLookupPanel(results);results.onclick=null;};
+    results.onclick=e=>{const button=e.target.closest('[data-delivery-animal-index]');if(!button)return;const item=items[Number(button.dataset.deliveryAnimalIndex)],form=input.form;input.value=item.animal_name||'';form.linked_practice_id.value=item.practice_id||'';form.payment_status.value=item.calendar_payment_status||'Da pagare';form.payment_amount.value=Number(item.calendar_payment_amount||0).toFixed(2).replace('.',',');
+      // Preimposta la Sede in base alla Provenienza della pratica
+      // (Luogo di origine -> Provenienza: L=Livorno, E=Empoli - richiesta
+      // esplicita dell'utente). Vale SOLO per Livorno/Empoli: nessun'altra
+      // provenienza (V/F/P/vuota) inventa una sede. E' solo un default: se
+      // l'utente ha gia' toccato manualmente la Sede (dataset.manual, gia'
+      // impostato dal suo stesso onchange) non viene piu' sovrascritta.
+      if(form.destination_site&&!form.destination_site.dataset.manual){
+        const provenanceSede=item.provenance==='L'?'Livorno':item.provenance==='E'?'Empoli':'';
+        if(provenanceSede)form.destination_site.value=provenanceSede;
+      }
+      if(form.delivery_address){form.dataset.deliveryOwnerAddress=item.owner_address||'';if(form.dataset.deliveryAddressMode==='domicilio')form.delivery_address.value=item.owner_address||'';}const detail=form.querySelector('[data-delivery-payment-detail]');if(detail)detail.value=item.payment_summary||'';const money=v=>`€ ${Number(v||0).toFixed(2).replace('.',',')}`;const summary=form.querySelector('[data-delivery-practice-summary]');if(summary){summary.hidden=false;const set=(sel,val)=>{const el=summary.querySelector(sel);if(el)el.textContent=val;};set('[data-delivery-total]',money(item.total));set('[data-delivery-deposit]',money(item.deposit));set('[data-delivery-remaining]',money(item.remaining));set('[data-delivery-service]',item.service_type||'—');set('[data-delivery-urn]',item.urn_summary||'—');const channelRow=summary.querySelector('[data-delivery-channel-row]');if(channelRow){const stillDue=Number(item.remaining||0)>0;channelRow.hidden=!stillDue;if(stillDue)set('[data-delivery-channel]',item.payment_channel||'—');}}calendarAutoTitle(true);ppmCloseLookupPanel(results);results.onclick=null;};
   }catch(error){
     if(error.name==='AbortError'||fetcher.stale(token))return;
     results.innerHTML='<div class="lookup-state">Ricerca temporaneamente non disponibile.</div>';ppmOpenLookupPanel(results);
@@ -6844,8 +6871,43 @@ function calendarWizardDirty(form){return form.dataset.dirty==='1'||[...form.ele
 let calendarExitHref='';
 function calendarConfirmExit(event,href){const form=document.getElementById('calendarEventForm');const backdrop=document.getElementById('calendarExitBackdrop');if(form&&backdrop&&calendarWizardDirty(form)){event?.preventDefault();calendarExitHref=href||'';backdrop.hidden=false;return false;}calendarWizardAllowExit=true;if(href){event?.preventDefault();location.href=href;}return true;}
 function calendarExitCancel(){const backdrop=document.getElementById('calendarExitBackdrop');if(backdrop)backdrop.hidden=true;}
-function calendarExitKeepDraft(){calendarWizardAllowExit=true;calendarExitCancel();if(calendarExitHref)location.href=calendarExitHref;}
+function calendarExitKeepDraft(){
+  // Per un evento nuovo non c'e' piu' autosave continuo (vedi
+  // setupCalendarDraftAutosave): il salvataggio vero e proprio avviene
+  // qui, solo ora che l'utente ha scelto esplicitamente "Salva bozza".
+  // In modifica di un evento gia' reale l'autosave continuo ha gia'
+  // salvato tutto (comportamento preesistente, invariato) - niente da
+  // fare in piu' qui.
+  const key=document.getElementById('calendarEventForm')?.dataset.draftKey;
+  if(key==='ppm_calendar_draft_new')calendarSaveDraftNow();
+  calendarWizardAllowExit=true;calendarExitCancel();if(calendarExitHref)location.href=calendarExitHref;
+}
 function calendarExitDiscardDraft(){const form=document.getElementById('calendarEventForm');const key=form?.dataset.draftKey;if(key){try{localStorage.removeItem(key);}catch(error){}}calendarWizardAllowExit=true;calendarExitCancel();if(calendarExitHref)location.href=calendarExitHref;}
+// Richiesta esplicita dell'utente: l'uscita da un evento non ancora
+// salvato deve chiedere conferma con QUALUNQUE modo con cui la si
+// tenta, non solo il tasto "×"/Annulla (gia' collegati a
+// calendarConfirmExit direttamente). Invece di ricollegare uno per uno
+// tutti i link del menu/bottom-nav/quick-action gia' esistenti (rischio
+// di dimenticarne qualcuno, e un secondo posto da tenere aggiornato),
+// un solo listener delegato su document intercetta QUALUNQUE click su
+// un link mentre il wizard e' in pagina e passa dallo stesso identico
+// calendarConfirmExit gia' usato da "×"/Annulla - nessun sistema
+// parallelo, nessuna modifica al markup dei link esistenti. Il tasto
+// "×"/Annulla restano com'erano (la doppia chiamata a
+// calendarConfirmExit che ne risulta e' innocua: idempotente, mostra lo
+// stesso identico modal). Restano fuori i link che non navigano
+// davvero via allontanandosi dalla pagina (target="_blank", tel:,
+// mailto:, "#").
+document.addEventListener('click',function(e){
+  const form=document.getElementById('calendarEventForm');
+  if(!form)return;
+  const link=e.target.closest('a[href]');
+  if(!link||link.target==='_blank')return;
+  const href=link.getAttribute('href')||'';
+  if(!href||href==='#'||href.startsWith('tel:')||href.startsWith('mailto:'))return;
+  if(!calendarWizardDirty(form))return;
+  calendarConfirmExit(e,link.href);
+});
 function renderCalendarDraftsBanner(){
   const box=document.getElementById('calendarDraftsBanner');if(!box)return;
   const drafts=[];
@@ -6855,7 +6917,11 @@ function renderCalendarDraftsBanner(){
     let data;try{data=JSON.parse(localStorage.getItem(key));}catch(error){continue;}
     if(!data||typeof data!=='object')continue;
     const isEdit=key.startsWith('ppm_calendar_draft_edit_');
-    drafts.push({key,href:isEdit?`/calendario/${key.slice('ppm_calendar_draft_edit_'.length)}/modifica`:'/calendario/nuovo',title:data.title||data.event_type||'Bozza senza titolo',savedAt:data._savedAt||0});
+    // ?bozza=1: unico modo per cui "Nuovo evento" carica automaticamente
+    // dati precedenti (vedi setupCalendarDraftAutosave) - un normale
+    // click su "Nuovo evento" da qualunque altro punto del gestionale non
+    // lo porta mai, quindi parte sempre pulito anche se questa bozza esiste.
+    drafts.push({key,href:isEdit?`/calendario/${key.slice('ppm_calendar_draft_edit_'.length)}/modifica`:'/calendario/nuovo?bozza=1',title:data.title||data.event_type||'Bozza senza titolo',savedAt:data._savedAt||0});
   }
   box.innerHTML='';
   if(!drafts.length){box.hidden=true;return;}
@@ -6940,15 +7006,21 @@ function calendarInitDateTimeSync(){
   form.start_date.addEventListener('change',sync);
   if(form.start_time)form.start_time.addEventListener('change',sync);
 }
+function calendarDraftSkipField(form,name){const input=form.elements.namedItem(name);return !input||input.type==='password'||/token|session/i.test(name);}
+function calendarDraftFieldValue(input){return input.type==='checkbox'?(input.checked?input.value:''):input.value;}
+function calendarSerializeDraft(form){const data={};[...form.elements].forEach(el=>{if(!el.name||el.disabled||calendarDraftSkipField(form,el.name))return;if(el.type==='radio'){if(el.checked)data[el.name]=el.value;return;}data[el.name]=calendarDraftFieldValue(el);});return data;}
+function calendarSaveDraftNow(){
+  const form=document.getElementById('calendarEventForm');
+  const key=form?.dataset.draftKey;
+  if(!form||!key)return;
+  try{const data=calendarSerializeDraft(form);data._savedAt=Date.now();localStorage.setItem(key,JSON.stringify(data));}catch(error){}
+}
 function setupCalendarDraftAutosave(form){
   if(!form)return;
   const key=form.dataset.draftKey;
   if(!key)return;
   const status=document.getElementById('calendarDraftStatus'),label=status?.querySelector('[data-draft-label]');
   const show=(state,text)=>{if(!status)return;status.hidden=false;status.dataset.state=state;if(label)label.textContent=text;};
-  const skipField=name=>{const input=form.elements.namedItem(name);return !input||input.type==='password'||/token|session/i.test(name);};
-  const fieldValue=input=>input.type==='checkbox'?(input.checked?input.value:''):input.value;
-  const serialize=()=>{const data={};[...form.elements].forEach(el=>{if(!el.name||el.disabled||skipField(el.name))return;if(el.type==='radio'){if(el.checked)data[el.name]=el.value;return;}data[el.name]=fieldValue(el);});return data;};
   const restore=()=>{
     let raw;try{raw=localStorage.getItem(key);}catch(error){return;}
     if(!raw)return;
@@ -6970,10 +7042,25 @@ function setupCalendarDraftAutosave(form){
     calendarTypeChanged();calendarSerialize();
     show('saved','Bozza ripristinata');
   };
-  const save=ppmDebounce(()=>{
-    try{const data=serialize();data._savedAt=Date.now();localStorage.setItem(key,JSON.stringify(data));}catch(error){return;}
-    show('saved','Bozza salvata');
-  },1800);
+  // Richiesta esplicita dell'utente: un evento NUOVO (mai salvato prima,
+  // chiave fissa "ppm_calendar_draft_new" condivisa da ogni tentativo) non
+  // deve piu' autosalvarsi in bozza ad ogni digitazione senza consenso, ne'
+  // ripresentare automaticamente dati di un tentativo precedente abbandonato
+  // quando si riapre "Nuovo evento". Il salvataggio avviene SOLO alla scelta
+  // esplicita "Salva bozza ed esci" (calendarExitKeepDraft, sotto). Il
+  // recupero di una bozza gia' salvata esplicitamente resta possibile SOLO
+  // passando da qui con ?bozza=1 in URL - link aggiunto apposta da
+  // renderCalendarDraftsBanner, mai presente su un normale "Nuovo evento".
+  // In modifica di un evento GIA' REALE (chiave "ppm_calendar_draft_edit_
+  // <id>", univoca per quell'evento) il comportamento resta quello
+  // preesistente, invariato: autosave continuo di convenienza, non e'
+  // "abbandono di una creazione", e' un salvataggio in corso di un dato
+  // gia' esistente.
+  if(key==='ppm_calendar_draft_new'){
+    if(new URLSearchParams(location.search).get('bozza')==='1')restore();
+    return;
+  }
+  const save=ppmDebounce(()=>{calendarSaveDraftNow();show('saved','Bozza salvata');},1800);
   form.addEventListener('input',()=>{show('saving','Salvataggio…');save();});
   form.addEventListener('change',()=>{show('saving','Salvataggio…');save();});
   form.addEventListener('submit',()=>{try{localStorage.removeItem(key);}catch(error){}});
@@ -11148,6 +11235,13 @@ class App(BaseHTTPRequestHandler):
             # ripresi dalla pratica ma tutto restando modificabile — stessa
             # logica pagamento gia' usata da api_calendar_animals_search.
             payment_status,payment_amount=delivery_payment_prefill(practice_prefill)
+            # Preimposta la Sede in base alla Provenienza della pratica
+            # (Luogo di origine -> Provenienza: L=Livorno, E=Empoli,
+            # richiesta esplicita dell'utente) - solo per Livorno/Empoli,
+            # nessun'altra provenienza inventa una sede. E' solo un
+            # default: il campo Sede nel form resta un <select> libero,
+            # l'utente puo' sempre cambiarlo prima di salvare.
+            provenance_sede={"L":"Livorno","E":"Empoli"}.get((practice_prefill["provenance"] or "").strip().upper(),"")
             event={
                 "event_type":(q.get("event_type") or ["Riconsegna in sede"])[0],
                 "linked_practice_id":str(practice_prefill["id"]),
@@ -11157,6 +11251,7 @@ class App(BaseHTTPRequestHandler):
                 "client_phone":practice_prefill["owner_phone"] or "",
                 "payment_status":payment_status,
                 "payment_amount":f"{payment_amount:.2f}",
+                "destination_site":provenance_sede,
             }
         if not animals and not event_id:animals=[{}]
         val=lambda key,default="":esc(event[key] if event and key in event.keys() and event[key] not in (None,"") else default)
@@ -11205,9 +11300,9 @@ class App(BaseHTTPRequestHandler):
         if event_type in ("Ritiro","Riconsegna"):
             location_card=f'''<div class="calendar-tap-card calendar-zone-field lookup" data-calendar-types="Ritiro|Riconsegna" {"" if event_type in ("Ritiro","Riconsegna") else "hidden"}><span class="calendar-tap-card-icon calendar-icon-green">{lucide("map-pin")}</span><div class="calendar-tap-card-body"><small>Zona{' *' if event_type=='Ritiro' else ''}</small><input name="zone" value="{val('zone')}" autocomplete="off" oninput="calendarZoneInput(this)" onfocus="calendarZoneInput(this)" onblur="calendarZoneOffer(this)" placeholder="Scrivi per cercare una zona"><div class="calendar-zone-results" hidden></div><label class="calendar-tap-card-check"><input type="checkbox" name="save_zone" value="1"> Salva nei suggerimenti</label></div></div>'''
         elif event_type in ("Ritiro in sede","Riconsegna in sede"):
-            location_card=f'''<div class="calendar-tap-card" data-calendar-types="Ritiro in sede|Riconsegna in sede" {"" if event_type in ("Ritiro in sede","Riconsegna in sede") else "hidden"}><span class="calendar-tap-card-icon calendar-icon-blue">{lucide("home")}</span><div class="calendar-tap-card-body"><small>Sede *</small><select name="destination_site" onchange="calendarAutoTitle()"><option value="">Seleziona</option><option {"selected" if raw("destination_site")=="Livorno" else ""}>Livorno</option><option {"selected" if raw("destination_site")=="Empoli" else ""}>Empoli</option></select></div></div>'''
+            location_card=f'''<div class="calendar-tap-card" data-calendar-types="Ritiro in sede|Riconsegna in sede" {"" if event_type in ("Ritiro in sede","Riconsegna in sede") else "hidden"}><span class="calendar-tap-card-icon calendar-icon-blue">{lucide("home")}</span><div class="calendar-tap-card-body"><small>Sede *</small><select name="destination_site" onchange="this.dataset.manual='1';calendarAutoTitle()"><option value="">Seleziona</option><option {"selected" if raw("destination_site")=="Livorno" else ""}>Livorno</option><option {"selected" if raw("destination_site")=="Empoli" else ""}>Empoli</option></select></div></div>'''
         else:
-            location_card=f'''<div class="calendar-tap-card calendar-zone-field lookup" data-calendar-types="Ritiro|Riconsegna" hidden><span class="calendar-tap-card-icon calendar-icon-green">{lucide("map-pin")}</span><div class="calendar-tap-card-body"><small>Zona</small><input name="zone" value="{val('zone')}" autocomplete="off" oninput="calendarZoneInput(this)" onfocus="calendarZoneInput(this)" onblur="calendarZoneOffer(this)" placeholder="Scrivi per cercare una zona"><div class="calendar-zone-results" hidden></div><label class="calendar-tap-card-check"><input type="checkbox" name="save_zone" value="1"> Salva nei suggerimenti</label></div></div><div class="calendar-tap-card" data-calendar-types="Ritiro in sede|Riconsegna in sede" hidden><span class="calendar-tap-card-icon calendar-icon-blue">{lucide("home")}</span><div class="calendar-tap-card-body"><small>Sede</small><select name="destination_site" onchange="calendarAutoTitle()"><option value="">Seleziona</option><option>Livorno</option><option>Empoli</option></select></div></div>'''
+            location_card=f'''<div class="calendar-tap-card calendar-zone-field lookup" data-calendar-types="Ritiro|Riconsegna" hidden><span class="calendar-tap-card-icon calendar-icon-green">{lucide("map-pin")}</span><div class="calendar-tap-card-body"><small>Zona</small><input name="zone" value="{val('zone')}" autocomplete="off" oninput="calendarZoneInput(this)" onfocus="calendarZoneInput(this)" onblur="calendarZoneOffer(this)" placeholder="Scrivi per cercare una zona"><div class="calendar-zone-results" hidden></div><label class="calendar-tap-card-check"><input type="checkbox" name="save_zone" value="1"> Salva nei suggerimenti</label></div></div><div class="calendar-tap-card" data-calendar-types="Ritiro in sede|Riconsegna in sede" hidden><span class="calendar-tap-card-icon calendar-icon-blue">{lucide("home")}</span><div class="calendar-tap-card-body"><small>Sede</small><select name="destination_site" onchange="this.dataset.manual='1';calendarAutoTitle()"><option value="">Seleziona</option><option>Livorno</option><option>Empoli</option></select></div></div>'''
         delivery_animal_card=f'''<div class="calendar-tap-card lookup" data-calendar-types="Riconsegna|Riconsegna in sede" {"" if event_type in ("Riconsegna","Riconsegna in sede") else "hidden"}><span class="calendar-tap-card-icon calendar-icon-green">{lucide("paw")}</span><div class="calendar-tap-card-body"><small>Animale *</small><input id="calendarDeliveryAnimalSearch" name="animal_name" value="{val('animal_name')}" placeholder="Cerca pratica, animale o cliente" autocomplete="off" oninput="calendarAutoTitle()"><div id="calendarDeliveryAnimalResults" class="lookup-results hidden"></div><input type="hidden" name="linked_practice_id" value="{val('linked_practice_id')}"></div></div>'''
         operator_card=f'''<div class="calendar-tap-card"><span class="calendar-tap-card-icon calendar-icon-orange">{lucide("user")}</span><div class="calendar-tap-card-body">{operator_field}</div></div>'''
         # Per Ritiro/Ritiro in sede/Riconsegna/Riconsegna in sede il titolo
@@ -15357,7 +15452,13 @@ class App(BaseHTTPRequestHandler):
                 service_type=row["service_type"] or ""
                 service_label={"Cremazione singola":"Singola","Cremazione collettiva":"Collettiva"}.get(service_type,service_type)
                 urn_summary=", ".join(urn_labels_by_practice.get(row["id"],[])) or "Nessuna urna scelta"
-                results.append({"practice_id":row["id"],"practice_number":row["practice_number"] or "","animal_name":row["animal_name"] or "","species":row["species"] or "","owner_name":owner,"owner_address":owner_address,"pickup_date":date_it(row["pickup_date"] or ""),"payment_channel":channel,"payment_status":base_status,"total":total,"deposit":deposit,"remaining":remaining,"calendar_payment_status":calendar_status,"calendar_payment_amount":calendar_amount,"payment_summary":detail,"payment_method":row["payment_method"] or "","service_type":service_label,"destination_branch":row["destination_branch"] or "","urn_summary":urn_summary})
+                results.append({"practice_id":row["id"],"practice_number":row["practice_number"] or "","animal_name":row["animal_name"] or "","species":row["species"] or "","owner_name":owner,"owner_address":owner_address,"pickup_date":date_it(row["pickup_date"] or ""),"payment_channel":channel,"payment_status":base_status,"total":total,"deposit":deposit,"remaining":remaining,"calendar_payment_status":calendar_status,"calendar_payment_amount":calendar_amount,"payment_summary":detail,"payment_method":row["payment_method"] or "","service_type":service_label,"destination_branch":row["destination_branch"] or "","urn_summary":urn_summary,
+                    # Provenienza della pratica (Luogo di origine ->
+                    # Provenienza, colonna "provenance": codice L/E/V/F/P) -
+                    # riusata dal wizard Riconsegna in sede per preimpostare
+                    # la Sede, nessuna nuova query: la riga e' gia' stata
+                    # letta con SELECT *.
+                    "provenance":row["provenance"] or ""})
             return self.send_json({"ok":True,"query":q,"results":results})
         except Exception as exc:
             print(f"[CALENDAR_ANIMAL_SEARCH] {type(exc).__name__}: {exc}",flush=True)
