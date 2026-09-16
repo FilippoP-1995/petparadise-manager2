@@ -808,30 +808,70 @@ MAX_TOOL_ROUNDS = 6
 DEFAULT_MODEL = "claude-sonnet-5"
 
 
+# Il default della libreria (httpx2 DEFAULT_TIMEOUT: connect=5.0s, resto
+# 10 minuti) ha un timeout di CONNESSIONE molto stretto: su un'istanza
+# Render "starter" la prima connessione TCP+TLS verso api.anthropic.com
+# puo' richiedere piu' di 5s (nessun pool gia' caldo, dato che _client()
+# viene chiamata una volta per richiesta), facendo scattare un timeout che
+# la libreria segnala come APITimeoutError (sottoclasse di
+# APIConnectionError) - visibile all'utente come "impossibile raggiungere
+# l'API" anche quando la connessione avrebbe funzionato con qualche
+# secondo in piu'. 20s di connect e 60s complessivi restano ragionevoli
+# (stesso ordine di grandezza gia' usato per la chiamata esterna WhatsApp,
+# timeout=18, vedi send_whatsapp_message) senza nascondere un errore reale
+# dietro un'attesa indefinita.
+_ANTHROPIC_TIMEOUT_SECONDS = 60.0
+_ANTHROPIC_CONNECT_TIMEOUT_SECONDS = 20.0
+
+
 def _client():
     api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if not api_key:
         raise AssistantConfigError("ANTHROPIC_API_KEY non configurata sul server.")
     import anthropic
-    return anthropic.Anthropic(api_key=api_key)
+    return anthropic.Anthropic(
+        api_key=api_key,
+        timeout=anthropic.Timeout(_ANTHROPIC_TIMEOUT_SECONDS, connect=_ANTHROPIC_CONNECT_TIMEOUT_SECONDS),
+    )
 
 
 def _anthropic_tools():
     return [{"name": t["name"], "description": t["description"], "input_schema": t["input_schema"]} for t in TOOL_SPECS]
 
 
+_TIMEOUT_PHASE_IT = {
+    "ConnectTimeout": "durante l'apertura della connessione",
+    "ReadTimeout": "in attesa della risposta del modello",
+    "WriteTimeout": "durante l'invio della richiesta",
+    "PoolTimeout": "in attesa di una connessione disponibile nel pool",
+}
+
+
 def _describe_anthropic_error(exc):
     """Messaggio diagnostico sicuro (mai la chiave, mai header di richiesta)
     a partire da un'eccezione sollevata da client.messages.create — cosi'
     un errore reale di Anthropic (autenticazione, modello, rate limit,
-    richiesta non valida...) arriva all'utente/ai log in modo specifico
-    invece di sparire dietro un generico "errore tecnico"."""
+    richiesta non valida, timeout, connessione rifiutata...) arriva
+    all'utente/ai log in modo specifico invece di sparire dietro un
+    generico "errore tecnico" o un generico "errore di rete" che confonde
+    un timeout con un'impossibilita' reale di connettersi.
+
+    L'eccezione originale di httpx2 (ConnectTimeout/ReadTimeout/
+    ConnectError/...) e' sempre disponibile su exc.__cause__ - la SDK la
+    imposta esplicitamente con "raise ... from err" - ed e' cio' che
+    permette di distinguere le due situazioni senza accesso ai log del
+    processo di produzione."""
     import anthropic
     if isinstance(exc, anthropic.APIStatusError):
         detail = getattr(exc, "message", None) or str(exc)
         return f"Anthropic ha rifiutato la richiesta (HTTP {exc.status_code}): {detail}"
+    cause = exc.__cause__
+    cause_name = type(cause).__name__ if cause is not None else None
+    if isinstance(exc, anthropic.APITimeoutError):
+        fase = _TIMEOUT_PHASE_IT.get(cause_name, "")
+        return f"Timeout nella chiamata ad Anthropic{(' ' + fase) if fase else ''} (tipo: {cause_name or 'timeout'})."
     if isinstance(exc, anthropic.APIConnectionError):
-        return "Impossibile raggiungere l'API di Anthropic (errore di rete/connessione)."
+        return f"Impossibile stabilire la connessione con l'API di Anthropic (tipo: {cause_name or type(exc).__name__}): {cause or exc}."
     return f"Errore imprevisto nella chiamata al modello ({type(exc).__name__}: {exc})."
 
 

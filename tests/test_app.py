@@ -15314,7 +15314,8 @@ class AIAssistantTests(unittest.TestCase):
         # la chiave e' comunque stata passata al costruttore del client (uso
         # corretto, solo lato server) - qui verifichiamo solo che non sia
         # mai finita nell'HTTP response, non che non sia stata usata affatto.
-        mock_ctor.assert_called_once_with(api_key=secret)
+        self.assertEqual(mock_ctor.call_count, 1)
+        self.assertEqual(mock_ctor.call_args.kwargs.get("api_key"), secret)
 
     def test_chat_endpoint_never_logs_the_api_key(self):
         # Stesso principio: la chiave non deve mai comparire in nessuna
@@ -15450,6 +15451,78 @@ class AIAssistantTests(unittest.TestCase):
         self.assertIn("401", captured[-1][0]["error"])
         self.assertIn("invalid x-api-key", captured[-1][0]["error"])
         self.assertNotIn(secret, json.dumps(captured[-1][0]))
+
+    def _run_chat_with_anthropic_exception(self, exc):
+        mock_client = MagicMock()
+        mock_client.messages.create = MagicMock(side_effect=exc)
+        body = json.dumps({"messaggio": "Ciao", "cronologia": []}).encode()
+        self.handler.headers = {"Content-Length": str(len(body))}
+        self.handler.rfile = io.BytesIO(body)
+        captured = []
+        self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
+            with patch("anthropic.Anthropic", return_value=mock_client):
+                self.handler.api_ai_chat(self.admin)
+        return captured[-1]
+
+    def test_chat_endpoint_distinguishes_a_real_timeout_from_a_connection_failure(self):
+        # Richiesta esplicita: "impossibile raggiungere l'API" (mostrato
+        # all'utente) puo' nascondere due situazioni tecnicamente diverse -
+        # un timeout (la connessione poteva anche funzionare, solo troppo
+        # lenta: il default della libreria per il solo aggancio TCP/TLS e'
+        # 5s, stretto per un'istanza Render "starter" che apre una nuova
+        # connessione ad ogni richiesta) e un fallimento reale di
+        # connessione (DNS/TCP rifiutato). I due casi devono produrre
+        # messaggi visibilmente diversi, cosi' un'eventuale ricorrenza e'
+        # distinguibile dai log senza accesso alla console di Render.
+        import anthropic
+        import httpx2
+        request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+
+        connect_timeout = httpx2.ConnectTimeout("timed out")
+        timeout_error = anthropic.APITimeoutError(request=request)
+        timeout_error.__cause__ = connect_timeout
+        obj, status = self._run_chat_with_anthropic_exception(timeout_error)
+        self.assertEqual(status, 502)
+        self.assertIn("Timeout", obj["error"])
+        self.assertIn("ConnectTimeout", obj["error"])
+        self.assertNotIn("impossibile stabilire la connessione", obj["error"].lower())
+
+        connect_error = httpx2.ConnectError("Connection refused")
+        connection_error = anthropic.APIConnectionError(request=request)
+        connection_error.__cause__ = connect_error
+        obj, status = self._run_chat_with_anthropic_exception(connection_error)
+        self.assertEqual(status, 502)
+        self.assertIn("ConnectError", obj["error"])
+        self.assertNotIn("Timeout", obj["error"])
+
+    def test_chat_endpoint_distinguishes_read_timeout_from_connect_timeout(self):
+        # Un ReadTimeout (connessione riuscita, ma Anthropic non ha
+        # risposto in tempo) e' un sintomo diverso da un ConnectTimeout
+        # (la connessione stessa non si e' mai stabilita) - il messaggio
+        # deve dirlo, non limitarsi a "timeout" generico.
+        import anthropic
+        import httpx2
+        request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+        read_timeout = httpx2.ReadTimeout("timed out")
+        timeout_error = anthropic.APITimeoutError(request=request)
+        timeout_error.__cause__ = read_timeout
+        obj, status = self._run_chat_with_anthropic_exception(timeout_error)
+        self.assertEqual(status, 502)
+        self.assertIn("ReadTimeout", obj["error"])
+        self.assertIn("risposta del modello", obj["error"])
+
+    def test_anthropic_client_uses_a_more_generous_connect_timeout_than_the_library_default(self):
+        # Il default della libreria (connect=5.0s) e' stretto per
+        # un'istanza Render "starter" che apre una nuova connessione ad
+        # ogni messaggio della chat (vedi commento su _client()).
+        import anthropic
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
+            with patch("anthropic.Anthropic") as mock_ctor:
+                self.ai._client()
+        used_timeout = mock_ctor.call_args.kwargs.get("timeout")
+        self.assertIsInstance(used_timeout, anthropic.Timeout)
+        self.assertGreater(used_timeout.connect, 5.0)
 
     def test_system_prompt_tells_the_model_todays_date_so_named_months_resolve_correctly(self):
         # Senza la data odierna il modello non ha modo di sapere a quale
