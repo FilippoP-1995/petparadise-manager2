@@ -15173,6 +15173,100 @@ class AIAssistantTests(unittest.TestCase):
             result = pratiche_collab(c, self.admin, now, {"collaboratore_nome": "Onoranze"})
             self.assertEqual(result["risultati"][0]["numero_pratiche"], 1)
 
+    def test_get_configured_api_key_missing_or_empty_gives_a_clear_missing_message(self):
+        for value in ("", "   "):
+            with self.subTest(value=repr(value)):
+                with patch.dict(os.environ, {"ANTHROPIC_API_KEY": value}):
+                    with self.assertRaises(self.ai.AssistantConfigError) as ctx:
+                        self.ai.get_configured_api_key()
+                self.assertIn("non configurata", str(ctx.exception))
+
+    def test_get_configured_api_key_rejects_a_pasted_curl_command_and_similar_malformed_values(self):
+        # Causa reale osservata in produzione: ANTHROPIC_API_KEY su Render
+        # conteneva un intero comando curl incollato per errore, non la
+        # sola chiave - httpx2 rifiutava l'header risultante con
+        # "LocalProtocolError: Illegal header value". Il controllo qui non
+        # deve dipendere da un prefisso specifico (potrebbe cambiare): una
+        # vera chiave e' un singolo token senza spazi ne' caratteri di
+        # controllo.
+        malformed = {
+            "comando_curl_completo": 'curl https://api.anthropic.com/v1/messages --header "x-api-key: sk-ant-xxx" --header "anthropic-version: 2023-06-01" --data \'{"model":"x"}\'',
+            "solo_url": "https://api.anthropic.com/v1/messages",
+            "flag_header_senza_spazi_residui": "sk-ant--header",
+            "prefisso_x_api_key_senza_spazi": "x-api-key:sk-ant-realvalue",
+            "con_newline": "sk-ant-xxx\ncurl qualcosa",
+            "con_cr_lf": "sk-ant-xxx\r\nAuthorization: Bearer xxx",
+            "con_tab": "sk-ant-xxx\tsk-ant-yyy",
+            "menzione_bearer": "Bearer sk-ant-xxx",
+            "menzione_anthropic_version": "anthropic-version: 2023-06-01",
+        }
+        for label, value in malformed.items():
+            with self.subTest(label):
+                with patch.dict(os.environ, {"ANTHROPIC_API_KEY": value}):
+                    with self.assertRaises(self.ai.AssistantConfigError) as ctx:
+                        self.ai.get_configured_api_key()
+                self.assertIn("non valido", str(ctx.exception))
+                self.assertNotIn(value, str(ctx.exception))
+
+    def test_get_configured_api_key_accepts_a_clean_single_token_key(self):
+        clean = "sk-ant-api03-abcDEF123-clean-token-no-spaces_ok"
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": clean}):
+            self.assertEqual(self.ai.get_configured_api_key(), clean)
+
+    def test_chat_endpoint_rejects_a_malformed_api_key_before_ever_calling_the_sdk(self):
+        # La chiave malformata non deve mai raggiungere anthropic.Anthropic:
+        # respinta al primo controllo, prima di qualunque chiamata di rete.
+        bad_key = 'curl https://api.anthropic.com/v1/messages --header "x-api-key: sk-ant-REALSECRETVALUE123"'
+        body = json.dumps({"messaggio": "Ciao", "cronologia": []}).encode()
+        self.handler.headers = {"Content-Length": str(len(body))}
+        self.handler.rfile = io.BytesIO(body)
+        captured = []
+        self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+        printed = []
+        with patch("builtins.print", side_effect=lambda *a, **k: printed.append(" ".join(str(x) for x in a))):
+            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": bad_key}):
+                with patch("anthropic.Anthropic") as mock_ctor:
+                    self.handler.api_ai_chat(self.admin)
+        self.assertEqual(captured[-1][1], 503)
+        self.assertFalse(captured[-1][0]["ok"])
+        self.assertIn("non valido", captured[-1][0]["error"])
+        mock_ctor.assert_not_called()
+        response_text = json.dumps(captured[-1][0], ensure_ascii=False)
+        self.assertNotIn(bad_key, response_text)
+        self.assertNotIn("REALSECRETVALUE123", response_text)
+        for line in printed:
+            self.assertNotIn(bad_key, line)
+            self.assertNotIn("REALSECRETVALUE123", line)
+
+    def test_describe_anthropic_error_never_echoes_a_local_protocol_error_message(self):
+        # Difesa in profondita': anche se una chiave malformata arrivasse
+        # comunque fin qui (bypassando get_configured_api_key), il
+        # messaggio non deve mai includere str(cause)/str(exc) per un
+        # LocalProtocolError - il suo messaggio contiene il VALORE
+        # ILLEGALE STESSO (verificato qui contro la libreria httpx2
+        # realmente installata, non un mock: e' esattamente il meccanismo
+        # che ha causato il leak-risk individuato in questo intervento).
+        import anthropic
+        import httpx2
+        request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+        secret_fragment = "sk-ant-REALSECRET-should-never-leak-987"
+        real_cause = None
+        try:
+            with httpx2.Client() as client:
+                client.send(client.build_request(
+                    "POST", "https://api.anthropic.com/v1/messages",
+                    headers={"x-api-key": f"curl ... {secret_fragment}\n"},
+                ))
+        except Exception as exc:
+            real_cause = exc
+        self.assertIsNotNone(real_cause, "atteso un errore httpx2 per un header illegale")
+        self.assertIn(secret_fragment, str(real_cause))
+        connection_error = anthropic.APIConnectionError(request=request)
+        connection_error.__cause__ = real_cause
+        message = self.ai._describe_anthropic_error(connection_error)
+        self.assertNotIn(secret_fragment, message)
+        self.assertIn("header HTTP", message)
+
     def test_chat_endpoint_returns_503_when_anthropic_api_key_is_missing(self):
         with patch.dict(os.environ, {"ANTHROPIC_API_KEY": ""}):
             self.handler.path = "/api/assistente/chat"

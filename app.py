@@ -15252,8 +15252,17 @@ class App(BaseHTTPRequestHandler):
         history_in=body.get("cronologia") or []
         if not isinstance(history_in,list) or len(history_in)>60:
             return self.send_json({"ok":False,"error":"Cronologia della conversazione non valida."},400)
-        if not os.environ.get("ANTHROPIC_API_KEY","").strip():
-            return self.send_json({"ok":False,"error":"Assistente AI non configurato sul server: manca la variabile d'ambiente ANTHROPIC_API_KEY."},503)
+        try:
+            # Unica fonte di verita' per "la chiave e' utilizzabile?" (assente
+            # O evidentemente malformata, es. un comando curl incollato per
+            # errore al posto della sola chiave - causa reale gia' osservata
+            # in produzione): stessa funzione usata da ai_assistant._client(),
+            # cosi' le due verifiche non possono disallinearsi. Controllata
+            # qui prima di aprire qualunque connessione o chiamare il modello,
+            # per un fallimento rapido e diagnostico.
+            ai_assistant.get_configured_api_key()
+        except ai_assistant.AssistantConfigError as exc:
+            return self.send_json({"ok":False,"error":str(exc)},503)
         now=rome_now()
         def log(event,name,params,extra=None):
             # Solo nome strumento/parametri/esito, mai il testo libero della

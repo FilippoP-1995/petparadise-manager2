@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any, Callable
@@ -823,11 +824,61 @@ DEFAULT_MODEL = "claude-sonnet-5"
 _ANTHROPIC_TIMEOUT_SECONDS = 60.0
 _ANTHROPIC_CONNECT_TIMEOUT_SECONDS = 20.0
 
+# Causa reale osservata in produzione: ANTHROPIC_API_KEY configurata su
+# Render conteneva un intero comando curl incollato per errore ("curl
+# https://api.anthropic.com/v1/messages --header \"x-api-key: ...\" ..."),
+# non la sola chiave. httpx2 rifiutava quel valore come header HTTP
+# ("LocalProtocolError: Illegal header value") — un errore che veniva
+# classificato genericamente come "errore di rete", nascondendo la vera
+# causa (configurazione). Il controllo qui e' volutamente generico (nessun
+# formato/prefisso specifico di Anthropic, che potrebbe cambiare): una
+# vera chiave API e' un singolo token senza spazi ne' caratteri di
+# controllo, esattamente il vincolo che un header HTTP impone comunque —
+# qualunque comando curl, blocco di header o JSON incollato per errore
+# contiene spazi/newline e viene intercettato da questo solo controllo.
+# Le sottostringhe elencate sotto sono un secondo livello diagnostico per
+# i casi (rari) di un valore incollato per errore ma senza spazi (es. solo
+# "x-api-key:sk-...", o solo l'URL). Nessun tentativo di "ripararlo" o
+# estrarre una chiave dalla stringa: un valore malformato viene sempre
+# rifiutato, mai corretto in automatico.
+_API_KEY_ILLEGAL_CHARS_RE = re.compile(r"[\s\x00-\x1f\x7f]")
+_API_KEY_SUSPICIOUS_SUBSTRINGS = (
+    "curl", "https://api.anthropic.com", "--header", "x-api-key:",
+    "anthropic-version", "authorization:", "bearer ",
+)
+_INVALID_API_KEY_MESSAGE = (
+    "Configurazione Anthropic non valida: ANTHROPIC_API_KEY contiene un valore non valido "
+    "(sembra una configurazione o un comando incollato per errore, non la sola chiave API). "
+    "Verificare la Environment Variable del servizio su Render."
+)
 
-def _client():
+
+def _validate_api_key(value):
+    """Solleva AssistantConfigError (messaggio sempre sicuro, mai il
+    valore) se `value` non puo' essere una vera chiave API — mai un
+    tentativo di ripararla."""
+    if _API_KEY_ILLEGAL_CHARS_RE.search(value):
+        raise AssistantConfigError(_INVALID_API_KEY_MESSAGE)
+    lowered = value.lower()
+    if any(marker in lowered for marker in _API_KEY_SUSPICIOUS_SUBSTRINGS):
+        raise AssistantConfigError(_INVALID_API_KEY_MESSAGE)
+
+
+def get_configured_api_key():
+    """Legge e valida ANTHROPIC_API_KEY dall'ambiente — unico punto in cui
+    questo avviene (usato sia dall'endpoint per un fallimento rapido, sia
+    da _client()), cosi' le due verifiche (assente / malformata) non
+    possono disallinearsi. Ritorna la chiave valida, o solleva
+    AssistantConfigError con un messaggio diagnostico sicuro."""
     api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if not api_key:
         raise AssistantConfigError("ANTHROPIC_API_KEY non configurata sul server.")
+    _validate_api_key(api_key)
+    return api_key
+
+
+def _client():
+    api_key = get_configured_api_key()
     import anthropic
     return anthropic.Anthropic(
         api_key=api_key,
@@ -846,6 +897,15 @@ _TIMEOUT_PHASE_IT = {
     "PoolTimeout": "in attesa di una connessione disponibile nel pool",
 }
 
+# LocalProtocolError (h11/httpx2, sollevata per un header HTTP illegale -
+# es. contenente spazi/newline, il caso reale osservato con
+# ANTHROPIC_API_KEY malformata) e RemoteProtocolError includono nel
+# proprio messaggio il valore illegale stesso (verificato: str(exc) di
+# LocalProtocolError contiene il byte-string completo dell'header
+# rifiutato). Per queste, il messaggio verso utente/log non deve MAI
+# includere str(cause)/str(exc) — solo il tipo.
+_UNSAFE_TO_ECHO_CAUSE_TYPES = {"LocalProtocolError", "RemoteProtocolError"}
+
 
 def _describe_anthropic_error(exc):
     """Messaggio diagnostico sicuro (mai la chiave, mai header di richiesta)
@@ -860,7 +920,19 @@ def _describe_anthropic_error(exc):
     ConnectError/...) e' sempre disponibile su exc.__cause__ - la SDK la
     imposta esplicitamente con "raise ... from err" - ed e' cio' che
     permette di distinguere le due situazioni senza accesso ai log del
-    processo di produzione."""
+    processo di produzione.
+
+    ATTENZIONE SICUREZZA: alcune eccezioni di basso livello di httpx2/h11
+    (in particolare LocalProtocolError, sollevata per un header HTTP
+    illegale — es. contenente spazi/newline, esattamente il caso reale
+    osservato con una ANTHROPIC_API_KEY malformata) includono nel proprio
+    messaggio il VALORE ILLEGALE STESSO (confermato: str(LocalProtocolError)
+    contiene il byte-string completo dell'header rifiutato). Per queste
+    eccezioni non bisogna MAI includere str(cause)/str(exc) nel messaggio
+    restituito: la validazione di get_configured_api_key() dovrebbe gia'
+    impedire che una chiave malformata arrivi fin qui, ma questo resta un
+    secondo livello di difesa nel caso arrivi comunque (es. per un motivo
+    diverso dalla chiave)."""
     import anthropic
     if isinstance(exc, anthropic.APIStatusError):
         detail = getattr(exc, "message", None) or str(exc)
@@ -871,6 +943,12 @@ def _describe_anthropic_error(exc):
         fase = _TIMEOUT_PHASE_IT.get(cause_name, "")
         return f"Timeout nella chiamata ad Anthropic{(' ' + fase) if fase else ''} (tipo: {cause_name or 'timeout'})."
     if isinstance(exc, anthropic.APIConnectionError):
+        if cause_name in _UNSAFE_TO_ECHO_CAUSE_TYPES:
+            return (
+                "Errore di configurazione nella richiesta ad Anthropic (un header HTTP non e' valido). "
+                "Verificare che ANTHROPIC_API_KEY contenga esclusivamente la chiave API, senza spazi "
+                "ne' altri caratteri, nella Environment Variable del servizio su Render."
+            )
         return f"Impossibile stabilire la connessione con l'API di Anthropic (tipo: {cause_name or type(exc).__name__}): {cause or exc}."
     return f"Errore imprevisto nella chiamata al modello ({type(exc).__name__}: {exc})."
 
