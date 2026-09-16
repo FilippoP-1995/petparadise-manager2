@@ -53,6 +53,16 @@ class AssistantConfigError(Exception):
     nel codice, va sempre segnalata chiaramente."""
 
 
+class AssistantAPIError(Exception):
+    """Anthropic ha rifiutato o non e' riuscita a completare la richiesta
+    (autenticazione, modello, limite di utilizzo/credito, richiesta non
+    valida, problema di rete...). Il messaggio e' sempre sicuro: solo cio'
+    che Anthropic stesso restituisce nel corpo della risposta di errore, o
+    il tipo dell'eccezione di rete — MAI la chiave, MAI header di
+    richiesta. Distinta da un errore di uno strumento: qui e' la chiamata
+    al modello stessa a non essere andata a buon fine."""
+
+
 @dataclass(frozen=True)
 class Deps:
     money_value: Callable[[Any], float]
@@ -772,7 +782,9 @@ _HANDLERS_BY_NAME = {t["name"]: t["handler"] for t in TOOL_SPECS}
 # Orchestrazione LLM (Anthropic Messages API, tool use)
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """Sei l'Assistente AI interno del gestionale PetParadise Manager (V1), una software house per la gestione di un'azienda di cremazione animali.
+_SYSTEM_PROMPT_TEMPLATE = """Sei l'Assistente AI interno del gestionale PetParadise Manager (V1), una software house per la gestione di un'azienda di cremazione animali.
+
+OGGI e' {oggi} (fuso orario Europe/Rome, stesso fuso di tutti i dati del gestionale). Usa sempre questa data come riferimento: se una domanda nomina un mese per nome (es. "agosto", "settembre") senza indicare l'anno, calcola tu l'intervallo esatto di quel mese nell'anno corretto rispetto a oggi e passalo come periodo='intervallo_personalizzato' con data_da/data_a in formato AAAA-MM-GG — non chiedere mai all'utente l'anno per un mese ovvio dal contesto.
 
 REGOLA ASSOLUTA: non devi MAI inventare, stimare o dedurre statistiche, numeri, pratiche, eventi, ricavi o qualsiasi altro dato del gestionale. Ogni informazione numerica o fattuale su pratiche, cremazioni, ritiri, riconsegne, calendario, turni, ferie, reperibilita', urne, accessori, preventivi, incassi, fatture, clienti, veterinari o collaboratori DEVE provenire da una chiamata a uno degli strumenti disponibili in questa conversazione. Non hai nessuna conoscenza propria dei dati reali di questa azienda: l'unica fonte di verita' sono i risultati degli strumenti. Se una domanda successiva fa riferimento a un dato gia' ottenuto in QUESTA conversazione puoi riusarlo senza richiamare di nuovo lo stesso strumento con gli stessi parametri, ma non aggiungere mai un numero che non sia mai stato restituito da uno strumento in questa conversazione.
 
@@ -783,6 +795,14 @@ Se la domanda e' ambigua (non e' chiaro a quale dominio si riferisce, es. cremaz
 Quando rispondi con un dato ottenuto da uno strumento, sii conciso ma specifica il perimetro del dato (periodo, sede o altri filtri applicati) cosi' l'utente capisce su cosa si basa il risultato. Rispondi sempre in italiano, in modo diretto e senza dettagli tecnici (mai SQL, mai nomi di tabelle).
 
 Puoi chiamare piu' strumenti, anche piu' volte con filtri diversi, per rispondere a domande di confronto (es. confrontare due sedi chiamando lo stesso strumento due volte con sede diversa) o che richiedono piu' fonti."""
+
+_WEEKDAY_NAMES_IT = ("lunedi'", "martedi'", "mercoledi'", "giovedi'", "venerdi'", "sabato", "domenica")
+
+
+def _system_prompt(now):
+    oggi = f"{_WEEKDAY_NAMES_IT[now.weekday()]} {now.day} {DEPS.month_names_it[now.month - 1]} {now.year}"
+    return _SYSTEM_PROMPT_TEMPLATE.format(oggi=oggi)
+
 
 MAX_TOOL_ROUNDS = 6
 DEFAULT_MODEL = "claude-sonnet-5"
@@ -800,8 +820,34 @@ def _anthropic_tools():
     return [{"name": t["name"], "description": t["description"], "input_schema": t["input_schema"]} for t in TOOL_SPECS]
 
 
-def run_chat(c, user, now, history, message, log=None):
-    """history: lista di messaggi gia' nel formato Anthropic (role/content),
+def _describe_anthropic_error(exc):
+    """Messaggio diagnostico sicuro (mai la chiave, mai header di richiesta)
+    a partire da un'eccezione sollevata da client.messages.create — cosi'
+    un errore reale di Anthropic (autenticazione, modello, rate limit,
+    richiesta non valida...) arriva all'utente/ai log in modo specifico
+    invece di sparire dietro un generico "errore tecnico"."""
+    import anthropic
+    if isinstance(exc, anthropic.APIStatusError):
+        detail = getattr(exc, "message", None) or str(exc)
+        return f"Anthropic ha rifiutato la richiesta (HTTP {exc.status_code}): {detail}"
+    if isinstance(exc, anthropic.APIConnectionError):
+        return "Impossibile raggiungere l'API di Anthropic (errore di rete/connessione)."
+    return f"Errore imprevisto nella chiamata al modello ({type(exc).__name__}: {exc})."
+
+
+def run_chat(db_factory, user, now, history, message, log=None):
+    """db_factory: funzione che apre una connessione al database come
+    context manager (es. app.db) — non una connessione gia' aperta.
+    Ogni strumento apre/chiude la PROPRIA connessione di breve durata
+    subito prima/dopo la query reale: nessuna connessione resta aperta
+    durante le chiamate di rete a Anthropic (che possono richiedere piu'
+    round-trip successivi). Questo db non e' in modalita' WAL: tenere una
+    connessione aperta per l'intera conversazione bloccherebbe ogni altra
+    richiesta dell'app per tutta la sua durata — stesso bug reale gia'
+    risolto per l'invio WhatsApp (vedi send_whatsapp_message), qui evitato
+    fin dall'inizio.
+
+    history: lista di messaggi gia' nel formato Anthropic (role/content),
     cosi' come restituiti da una chiamata precedente — mantenuta lato
     client, MAI persistita lato server (vedi nota privacy nell'endpoint).
     Ritorna (testo_risposta, nuova_history)."""
@@ -811,8 +857,15 @@ def run_chat(c, user, now, history, message, log=None):
     messages = list(history) + [{"role": "user", "content": message}]
     tool_defs = _anthropic_tools()
     model = os.environ.get("AI_ASSISTANT_MODEL", DEFAULT_MODEL)
+    system_prompt = _system_prompt(now)
     for _ in range(MAX_TOOL_ROUNDS):
-        response = client.messages.create(model=model, max_tokens=1024, system=SYSTEM_PROMPT, tools=tool_defs, messages=messages)
+        try:
+            response = client.messages.create(model=model, max_tokens=1024, system=system_prompt, tools=tool_defs, messages=messages)
+        except Exception as exc:
+            description = _describe_anthropic_error(exc)
+            if log:
+                log("ai_assistant_api_error", "messages.create", {}, description)
+            raise AssistantAPIError(description) from exc
         content = [block.model_dump() for block in response.content]
         messages.append({"role": "assistant", "content": content})
         if response.stop_reason != "tool_use":
@@ -831,7 +884,8 @@ def run_chat(c, user, now, history, message, log=None):
                 tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": "Strumento sconosciuto.", "is_error": True})
                 continue
             try:
-                result = handler(c, user, now, params)
+                with db_factory() as c:
+                    result = handler(c, user, now, params)
                 tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(result, ensure_ascii=False)})
             except ToolInputError as exc:
                 tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": str(exc), "is_error": True})

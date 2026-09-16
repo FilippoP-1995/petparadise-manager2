@@ -15260,10 +15260,24 @@ class App(BaseHTTPRequestHandler):
             # domanda ne' i risultati con eventuali dati di clienti/animali.
             print(f"[AI_ASSISTANT] {event} user={user['id']} tool={name} params={params!r} {extra or ''}",flush=True)
         try:
-            with db() as c:
-                reply,new_history=ai_assistant.run_chat(c,user,now,history_in,message,log=log)
+            # db (la funzione, non una connessione gia' aperta) viene passata
+            # cosi' ai_assistant puo' aprire/chiudere una connessione breve
+            # per ogni singolo strumento invocato, invece di tenerne aperta
+            # una sola per l'intera conversazione: quest'ultima puo' comportare
+            # piu' chiamate di rete successive ad Anthropic (fino a
+            # MAX_TOOL_ROUNDS), e questo db non e' in modalita' WAL - tenere
+            # una connessione aperta per tutta quella durata bloccherebbe ogni
+            # altra richiesta dell'app, stesso bug reale gia' risolto per
+            # l'invio WhatsApp (send_whatsapp_message).
+            reply,new_history=ai_assistant.run_chat(db,user,now,history_in,message,log=log)
         except ai_assistant.AssistantConfigError as exc:
             return self.send_json({"ok":False,"error":str(exc)},503)
+        except ai_assistant.AssistantAPIError as exc:
+            # Errore diagnostico specifico e sicuro (mai la chiave) restituito
+            # da Anthropic stesso o dalla connessione di rete verso la sua API
+            # - mai il generico "errore tecnico" quando sappiamo di piu'.
+            print(f"[AI_ASSISTANT] errore Anthropic: {exc}",flush=True)
+            return self.send_json({"ok":False,"error":str(exc)},502)
         except Exception:
             print("[AI_ASSISTANT] errore imprevisto",flush=True)
             print(traceback.format_exc(),flush=True)

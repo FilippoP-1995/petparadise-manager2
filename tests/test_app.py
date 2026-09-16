@@ -15367,6 +15367,101 @@ class AIAssistantTests(unittest.TestCase):
         self.assertIn("return self.api_ai_chat(user)", source)
         self.assertIn("return self.api_ai_chat_position(user)", source)
 
+    def test_chat_does_not_hold_a_database_lock_during_anthropic_network_calls(self):
+        # Regression test (stesso bug reale gia' risolto per l'invio WhatsApp,
+        # vedi test_whatsapp_send_does_not_hold_a_database_lock_during_the_
+        # network_call): questo db non e' in modalita' WAL, quindi tenere una
+        # connessione aperta durante una chiamata di rete lenta (qui verso
+        # Anthropic, che puo' comportare piu' round-trip in sequenza per il
+        # tool-use) bloccherebbe ogni altra richiesta dell'app per tutta la
+        # sua durata. Simula una scrittura concorrente DURANTE ciascuna delle
+        # due chiamate mockate a client.messages.create (la prima chiede un
+        # tool, la seconda risponde) e verifica che vada sempre a buon fine.
+        with app.db() as c:
+            pid = self._insert_practice(c, _n=1, practice_number="CR-AI-LOCK", pickup_date="2026-09-10")
+
+        class FakeBlock:
+            def __init__(self, d):
+                self._d = d
+
+            def model_dump(self):
+                return self._d
+
+        class FakeResponse:
+            def __init__(self, content, stop_reason):
+                self.content = [FakeBlock(b) for b in content]
+                self.stop_reason = stop_reason
+
+        writes = []
+
+        def fake_create(**kwargs):
+            try:
+                conn = sqlite3.connect(app.DB_PATH, timeout=0.5)
+                conn.execute("UPDATE practices SET notes=? WHERE id=?", (f"scrittura concorrente #{len(writes) + 1}", pid))
+                conn.commit()
+                conn.close()
+                writes.append(True)
+            except sqlite3.OperationalError as exc:
+                writes.append(str(exc))
+            if len(writes) == 1:
+                return FakeResponse([{"type": "tool_use", "id": "tu1", "name": "conta_pratiche", "input": {}}], "tool_use")
+            return FakeResponse([{"type": "text", "text": "Fatto."}], "end_turn")
+
+        mock_client = MagicMock()
+        mock_client.messages.create = MagicMock(side_effect=fake_create)
+        body = json.dumps({"messaggio": "Quante pratiche abbiamo?", "cronologia": []}).encode()
+        self.handler.headers = {"Content-Length": str(len(body))}
+        self.handler.rfile = io.BytesIO(body)
+        captured = []
+        self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
+            with patch("anthropic.Anthropic", return_value=mock_client):
+                self.handler.api_ai_chat(self.admin)
+        self.assertTrue(captured[-1][0]["ok"], captured[-1])
+        self.assertEqual(len(writes), 2)
+        self.assertTrue(all(w is True for w in writes), f"scrittura concorrente bloccata: {writes}")
+        with app.db() as c:
+            self.assertEqual(c.execute("SELECT notes FROM practices WHERE id=?", (pid,)).fetchone()["notes"], "scrittura concorrente #2")
+
+    def test_chat_endpoint_surfaces_specific_anthropic_api_errors_not_a_generic_message(self):
+        # Se Anthropic stessa rifiuta la richiesta (chiave non valida,
+        # modello, rate limit, richiesta malformata...) l'utente deve vedere
+        # il motivo reale (senza segreti), non il generico "errore tecnico"
+        # che prima nascondeva qualunque causa - proprio il sintomo segnalato.
+        import anthropic
+        import httpx2
+        request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+        error_body = {"error": {"type": "authentication_error", "message": "invalid x-api-key"}}
+        response = httpx2.Response(401, request=request, content=json.dumps(error_body).encode())
+        auth_error = anthropic.AuthenticationError("invalid x-api-key", response=response, body=error_body)
+        mock_client = MagicMock()
+        mock_client.messages.create = MagicMock(side_effect=auth_error)
+        secret = "sk-ant-SECRET-should-never-leak-in-api-error-0099"
+        body = json.dumps({"messaggio": "Ciao", "cronologia": []}).encode()
+        self.handler.headers = {"Content-Length": str(len(body))}
+        self.handler.rfile = io.BytesIO(body)
+        captured = []
+        self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": secret}):
+            with patch("anthropic.Anthropic", return_value=mock_client):
+                self.handler.api_ai_chat(self.admin)
+        self.assertEqual(captured[-1][1], 502)
+        self.assertFalse(captured[-1][0]["ok"])
+        self.assertIn("401", captured[-1][0]["error"])
+        self.assertIn("invalid x-api-key", captured[-1][0]["error"])
+        self.assertNotIn(secret, json.dumps(captured[-1][0]))
+
+    def test_system_prompt_tells_the_model_todays_date_so_named_months_resolve_correctly(self):
+        # Senza la data odierna il modello non ha modo di sapere a quale
+        # anno appartiene un mese indicato per nome ("agosto", "settembre")
+        # - richiesta reale testata dall'utente ("ritiri a Empoli ad
+        # agosto", "ritiri a settembre fino ad oggi").
+        now = app.rome_now()
+        prompt = self.ai._system_prompt(now)
+        self.assertIn(str(now.year), prompt)
+        self.assertIn(self.ai.DEPS.month_names_it[now.month - 1], prompt)
+        self.assertIn("OGGI", prompt)
+
     def test_chat_position_saves_independently_per_user(self):
         with app.db() as c:
             other_id = c.execute(
