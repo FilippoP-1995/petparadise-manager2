@@ -613,6 +613,46 @@ def _tool_ferie(c, user, now, p):
     return {"ferie": result, "totale": len(result), "periodo_analizzato": label}
 
 
+def _tool_conta_turni(c, user, now, p):
+    # Stessa fonte dati di turni_operatori (shifts_for_range, gia' usata
+    # anche dalla pagina Orari/Turni per la vista mensile) - qui aggregata
+    # su un intervallo invece che su un solo giorno, per rispondere a
+    # domande come "quante volte Filippo e' stato assegnato a Empoli ad
+    # agosto" che il solo turni_operatori (un giorno alla volta) non puo'
+    # determinare senza sommare a mano, cosa che l'AI non deve mai fare da
+    # sola con dati che non ha davvero interrogato.
+    d_from, d_to, label = resolve_period(now, p.get("periodo"), p.get("data_da"), p.get("data_a"))
+    sede = p.get("sede")
+    if sede and sede not in SHIFT_BRANCHES:
+        raise ToolInputError(f"sede deve essere una tra: {', '.join(SHIFT_BRANCHES)}.")
+    operatore = p.get("operatore")
+    if operatore and operatore not in CALENDAR_OPERATORS:
+        raise ToolInputError(f"operatore deve essere uno tra: {', '.join(CALENDAR_OPERATORS)}.")
+    by_day = shifts_for_range(c, date.fromisoformat(d_from), date.fromisoformat(d_to))
+    turni = []
+    for day_iso in sorted(by_day):
+        for branch, rows in by_day[day_iso].items():
+            if sede and branch != sede:
+                continue
+            for row in rows:
+                if operatore and row["operator_name"] != operatore:
+                    continue
+                turni.append({
+                    "data": day_iso,
+                    "operatore": row["operator_name"],
+                    "sede": branch,
+                    "orario": "Tutto il giorno" if row["all_day"] else f'{row["start_time"]}–{row["end_time"]}',
+                })
+    return {
+        "totale_turni": len(turni),
+        "periodo_analizzato": label,
+        "filtri": {"sede": sede, "operatore": operatore},
+        "turni": turni[:100],
+        "troncato_a_100": len(turni) > 100,
+        "nota": "Ogni riga e' un turno assegnato (un giorno con turno nella sede/operatore indicati conta 1). Non esiste una categoria esplicita 'mattina/pomeriggio/sera' nei dati: deducila dagli orari elencati, oppure chiedi all'utente quale fascia oraria intende, se non e' chiaro.",
+    }
+
+
 def _tool_reperibilita(c, user, now, p):
     giorno = p.get("data") or now.date().isoformat()
     try:
@@ -776,9 +816,15 @@ TOOL_SPECS = [
     },
     {
         "name": "turni_operatori",
-        "description": "Chi lavora (e con quale orario/sede) in un dato giorno (default oggi). Filtro opzionale per sede.",
+        "description": "Chi lavora (e con quale orario/sede) in un dato giorno (default oggi). Filtro opzionale per sede. Per un CONTEGGIO su un periodo (es. 'quante volte in un mese') usa invece conta_turni.",
         "input_schema": _schema({"data": {"type": "string", "description": "Data ISO AAAA-MM-GG, default oggi."}, "sede": {"type": "string", "enum": list(SHIFT_BRANCHES)}}),
         "handler": _tool_turni,
+    },
+    {
+        "name": "conta_turni",
+        "description": "Conta quante volte un operatore e' stato assegnato in turno (Orari/Turni) in un periodo, con filtri opzionali per sede e operatore; restituisce anche l'elenco dei singoli turni trovati (data, sede, orario) fino a 100. Usa questo per domande come 'quante volte X e' stato a Empoli ad agosto' - turni_operatori risponde invece solo per UN giorno alla volta.",
+        "input_schema": _schema({**_PERIOD_PROPS, "sede": {"type": "string", "enum": list(SHIFT_BRANCHES)}, "operatore": {"type": "string", "enum": list(CALENDAR_OPERATORS)}}),
+        "handler": _tool_conta_turni,
     },
     {
         "name": "ferie_operatori",

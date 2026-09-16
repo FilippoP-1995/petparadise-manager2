@@ -15253,6 +15253,38 @@ class AIAssistantTests(unittest.TestCase):
         self.assertEqual(result["settimana_dal"], monday.isoformat())
         self.assertIn(result["operatore_reperibile"], (None,) + app.SHIFT_OPERATORS)
 
+    def test_conta_turni_aggregates_shifts_over_a_period_reusing_shifts_for_range(self):
+        # Richiesta reale dell'utente: "quante volte Filippo e' stato
+        # assegnato alla sede di Empoli ad agosto" - turni_operatori
+        # risponde solo per un giorno alla volta, quindi prima l'Assistente
+        # correttamente rispondeva "non posso determinarlo" invece di
+        # sommare a mano dati mai davvero interrogati. conta_turni copre
+        # questo caso riusando la STESSA funzione shifts_for_range gia'
+        # usata da turni_operatori e dalla pagina Orari per le viste a piu'
+        # giorni - nessuna nuova query duplicata.
+        with app.db() as c:
+            app.upsert_shift(c, "Filippo", "2026-08-05", "Empoli", "09:00", "13:00", False, self.admin["id"])
+            app.upsert_shift(c, "Filippo", "2026-08-12", "Empoli", "09:00", "13:00", False, self.admin["id"])
+            app.upsert_shift(c, "Filippo", "2026-08-19", "Livorno", "09:00", "13:00", False, self.admin["id"])
+            app.upsert_shift(c, "Alessio", "2026-08-06", "Livorno", "08:00", "12:00", False, self.admin["id"])
+            app.upsert_shift(c, "Filippo", "2026-09-02", "Empoli", "09:00", "13:00", False, self.admin["id"])
+        conta_turni = next(t for t in self.ai.TOOL_SPECS if t["name"] == "conta_turni")["handler"]
+        now = app.rome_now()
+        agosto = {"periodo": "intervallo_personalizzato", "data_da": "2026-08-01", "data_a": "2026-08-31"}
+        with app.db() as c:
+            result = conta_turni(c, self.admin, now, {**agosto, "sede": "Empoli", "operatore": "Filippo"})
+            self.assertEqual(result["totale_turni"], 2)
+            self.assertEqual({t["data"] for t in result["turni"]}, {"2026-08-05", "2026-08-12"})
+            # Livorno/Filippo ad agosto: un solo turno (il 19), non conta quelli di Empoli ne' quello di settembre.
+            self.assertEqual(conta_turni(c, self.admin, now, {**agosto, "sede": "Livorno", "operatore": "Filippo"})["totale_turni"], 1)
+            # Nessun filtro sede: tutti i turni di Filippo ad agosto (Empoli x2 + Livorno x1).
+            self.assertEqual(conta_turni(c, self.admin, now, {**agosto, "operatore": "Filippo"})["totale_turni"], 3)
+            # Nessun filtro operatore: tutti i turni ad agosto a Livorno (Filippo + Alessio).
+            self.assertEqual(conta_turni(c, self.admin, now, {**agosto, "sede": "Livorno"})["totale_turni"], 2)
+            # sede non valida -> errore esplicito, mai un conteggio a caso.
+            with self.assertRaises(self.ai.ToolInputError):
+                conta_turni(c, self.admin, now, {**agosto, "sede": "Marte"})
+
     def test_cerca_cliente_e_pratiche_per_veterinario_e_collaboratore(self):
         with app.db() as c:
             stamp = "2026-09-10T09:00:00"
