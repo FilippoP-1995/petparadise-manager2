@@ -71,6 +71,12 @@ class Deps:
     channel_paid_amount: Callable[[Any, int, str], float]
     channel_remaining: Callable[[Any], float]
     revenue_by_quote_category: Callable[[Any, str | None, str | None], list]
+    # Stessa identica formula SQL gia' usata dalla dashboard del gestionale
+    # per decidere "quando" una pratica e' stata ritirata/consegnata (vedi
+    # dashboard_practice_date_sql/status_event_date_sql in app.py) - iniettata
+    # qui, non riscritta, cosi' conta_ritiri/conta_riconsegne non possono MAI
+    # disallinearsi dal numero che l'utente vede gia' sulla dashboard.
+    dashboard_practice_date_sql: Callable[[str, str], str]
     states: tuple
     shift_operators: tuple
     month_names_it: tuple
@@ -209,42 +215,72 @@ def _tool_conta_cremazioni(c, user, now, p):
     return {"conteggio": n, "periodo_analizzato": label, "filtri": {"stato": stato, "sede": sede}}
 
 
-def _conta_eventi(c, now, p, allowed_types):
+# conta_ritiri/conta_riconsegne NON contano gli eventi di calendario
+# (Ritiro/Ritiro in sede/Riconsegna/Riconsegna in sede): quegli eventi sono
+# solo la fase di PROGRAMMAZIONE, includono voci pianificate/annullate mai
+# davvero avvenute, e usano zone (12 citta') invece della sede reale della
+# pratica (destination_branch, solo Livorno/Empoli) - un conteggio basato
+# su di essi non corrisponde a "quanti ritiri/riconsegne sono stati fatti"
+# come lo intende il resto del gestionale (bug reale riscontrato: la prima
+# versione di questo strumento rispondeva 42 per un mese/sede dove la
+# dashboard del gestionale ne mostrava un numero diverso).
+#
+# La fonte autorevole e' la STESSA gia' usata dalla dashboard per le card
+# "Ritirati"/"Consegnati" (dashboard_practice_date_sql/status_event_date_sql
+# in app.py, iniettate qui via Deps, mai riscritte): una pratica conta come
+# "ritirata" quando il suo stato ha raggiunto o superato Ritirato
+# (STATES e' una progressione lineare: Ritirato->Cremato->Da consegnare->
+# Consegnato->Smaltito, quindi una pratica gia' Consegnato deve continuare
+# a contare come "ritirata" nel mese in cui e' stata ritirata - per questo
+# lo stato e' un IN(...) e non un singolo valore), mentre "consegnata"
+# richiede lo stato ESATTO 'Consegnato' (una pratica poi Smaltita smette di
+# contare, esattamente come sulla dashboard - comportamento replicato
+# fedelmente, non "corretto", perche' e' quello che l'utente vede gia' nel
+# gestionale).
+def _conta_pratiche_per_fase(c, now, p, *, kind, status_where):
     d_from, d_to, label = resolve_period(now, p.get("periodo"), p.get("data_da"), p.get("data_a"))
-    tipo = p.get("tipo")
-    types = allowed_types
-    if tipo:
-        if tipo not in allowed_types:
-            raise ToolInputError(f"tipo deve essere uno tra: {', '.join(allowed_types)}.")
-        types = (tipo,)
-    sede = (p.get("sede") or "").strip()
+    sede = p.get("sede")
+    if sede and sede not in SHIFT_BRANCHES:
+        raise ToolInputError(f"sede deve essere una tra: {', '.join(SHIFT_BRANCHES)}.")
     operatore = p.get("operatore")
     if operatore and operatore not in CALENDAR_OPERATORS:
         raise ToolInputError(f"operatore deve essere uno tra: {', '.join(CALENDAR_OPERATORS)}.")
-    stato = p.get("stato")
-    marks = ",".join("?" for _ in types)
-    where = ["date(start_at)>=date(?)", "date(start_at)<=date(?)", f"event_type IN ({marks})", "(deleted_at IS NULL OR deleted_at='')"]
-    args: list = [d_from, d_to, *types]
+    date_sql = DEPS.dashboard_practice_date_sql(kind, "p")
+    where = ["(p.deleted_at IS NULL OR p.deleted_at='')", status_where, f"{date_sql} BETWEEN date(?) AND date(?)"]
+    args: list = [d_from, d_to]
     if sede:
-        where.append("zone=?")
+        where.append("p.destination_branch=?")
         args.append(sede)
     if operatore:
-        where.append("operator_name=?")
+        where.append("p.operator_name=?")
         args.append(operatore)
-    if stato:
-        where.append("event_status=?")
-        args.append(stato)
-    sql = f"SELECT COUNT(*) n FROM calendar_events WHERE {' AND '.join(where)}"
+    sql = f"SELECT COUNT(*) n FROM practices p WHERE {' AND '.join(where)}"
     n = c.execute(sql, args).fetchone()["n"]
-    return {"conteggio": n, "periodo_analizzato": label, "filtri": {"tipo": tipo or list(types), "sede": sede or None, "operatore": operatore, "stato": stato}}
+    return n, label, sede, operatore
 
 
 def _tool_conta_ritiri(c, user, now, p):
-    return _conta_eventi(c, now, p, ("Ritiro", "Ritiro in sede"))
+    n, label, sede, operatore = _conta_pratiche_per_fase(
+        c, now, p, kind="ritirati",
+        status_where="p.status IN ('Ritirato','Cremato','Da consegnare','Consegnato','Smaltito')",
+    )
+    return {
+        "conteggio": n, "periodo_analizzato": label,
+        "filtri": {"sede": sede, "operatore_nome": operatore},
+        "nota": "Conta le pratiche il cui ritiro risulta effettuato (stesso criterio della dashboard del gestionale: stato che ha raggiunto o superato 'Ritirato'), non gli eventi di calendario programmati. Non e' disponibile la distinzione tra ritiro a domicilio e in sede su una pratica gia' conclusa: quel dettaglio esiste solo nella fase di programmazione a calendario.",
+    }
 
 
 def _tool_conta_riconsegne(c, user, now, p):
-    return _conta_eventi(c, now, p, ("Riconsegna", "Riconsegna in sede"))
+    n, label, sede, operatore = _conta_pratiche_per_fase(
+        c, now, p, kind="consegnati",
+        status_where="p.status='Consegnato'",
+    )
+    return {
+        "conteggio": n, "periodo_analizzato": label,
+        "filtri": {"sede": sede, "operatore_nome": operatore},
+        "nota": "Conta le pratiche attualmente nello stato 'Consegnato' nel periodo (stesso criterio della dashboard del gestionale). Una pratica successivamente smaltita non risulta piu' qui, come sulla dashboard. Non e' disponibile la distinzione tra riconsegna a domicilio e in sede su una pratica gia' conclusa: quel dettaglio esiste solo nella fase di programmazione a calendario.",
+    }
 
 
 def _tool_eventi_calendario(c, user, now, p):
@@ -668,19 +704,19 @@ TOOL_SPECS = [
     },
     {
         "name": "conta_ritiri",
-        "description": "Conta i ritiri (a domicilio o in sede) in calendario nel periodo indicato, con filtri opzionali per tipo, sede/zona, operatore e stato.",
-        "input_schema": _schema({**_PERIOD_PROPS, "tipo": {"type": "string", "enum": ["Ritiro", "Ritiro in sede"]}, "sede": {"type": "string", "description": "Zona/città (es. Livorno, Empoli, Pisa, ...)."}, "operatore": {"type": "string", "enum": list(CALENDAR_OPERATORS)}, "stato": {"type": "string", "description": "Stato evento, es. 'Da ritirare', 'Ritirato', 'Annullato'."}}),
+        "description": "Conta i RITIRI EFFETTUATI (pratiche il cui animale e' stato realmente ritirato) nel periodo indicato, con filtri opzionali per sede e operatore. Usa lo stesso identico criterio della card 'Ritirati' della dashboard del gestionale (stato pratica che ha raggiunto o superato 'Ritirato'), non gli eventi di calendario programmati/annullati. Non supporta la distinzione tra ritiro a domicilio e in sede (non tracciata su una pratica conclusa).",
+        "input_schema": _schema({**_PERIOD_PROPS, "sede": {"type": "string", "enum": list(SHIFT_BRANCHES)}, "operatore": {"type": "string", "enum": list(CALENDAR_OPERATORS)}}),
         "handler": _tool_conta_ritiri,
     },
     {
         "name": "conta_riconsegne",
-        "description": "Conta le riconsegne (a domicilio o in sede) in calendario nel periodo indicato, con filtri opzionali per tipo, sede/zona, operatore e stato.",
-        "input_schema": _schema({**_PERIOD_PROPS, "tipo": {"type": "string", "enum": ["Riconsegna", "Riconsegna in sede"]}, "sede": {"type": "string", "description": "Zona/città (es. Livorno, Empoli, Pisa, ...)."}, "operatore": {"type": "string", "enum": list(CALENDAR_OPERATORS)}, "stato": {"type": "string", "description": "Stato evento, es. 'In programma', 'Completato'."}}),
+        "description": "Conta le RICONSEGNE EFFETTUATE (pratiche attualmente nello stato 'Consegnato') nel periodo indicato, con filtri opzionali per sede e operatore. Usa lo stesso identico criterio della card 'Consegnato' della dashboard del gestionale, non gli eventi di calendario programmati/annullati. Non supporta la distinzione tra riconsegna a domicilio e in sede (non tracciata su una pratica conclusa).",
+        "input_schema": _schema({**_PERIOD_PROPS, "sede": {"type": "string", "enum": list(SHIFT_BRANCHES)}, "operatore": {"type": "string", "enum": list(CALENDAR_OPERATORS)}}),
         "handler": _tool_conta_riconsegne,
     },
     {
         "name": "eventi_calendario",
-        "description": "Elenca (fino a 50) gli eventi di calendario nel periodo indicato — cosa e' programmato o e' successo in un giorno/periodo — con filtri opzionali per tipo evento, sede/zona e operatore.",
+        "description": "Elenca (fino a 50) gli eventi di calendario nel periodo indicato — cosa e' PROGRAMMATO (inclusi non ancora confermati/annullati) in un giorno/periodo — con filtri opzionali per tipo evento, sede/zona (zona di ritiro/riconsegna, non la sede pratica) e operatore. Per un CONTEGGIO di ritiri o riconsegne realmente effettuati usa invece conta_ritiri/conta_riconsegne, non questo strumento.",
         "input_schema": _schema({**_PERIOD_PROPS, "tipo": {"type": "string", "enum": list(EVENT_TYPES)}, "sede": {"type": "string"}, "operatore": {"type": "string", "enum": list(CALENDAR_OPERATORS)}}),
         "handler": _tool_eventi_calendario,
     },

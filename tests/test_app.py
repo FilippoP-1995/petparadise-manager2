@@ -15046,7 +15046,7 @@ class AIAssistantTests(unittest.TestCase):
             with self.assertRaises(self.ai.ToolInputError):
                 detail(c, self.admin, now, {"numero_pratica": "NON-ESISTE"})
 
-    def test_conta_cremazioni_ritiri_riconsegne_filter_by_sede_and_stato(self):
+    def test_conta_cremazioni_filters_by_sede_and_stato(self):
         with app.db() as c:
             stamp = "2026-09-10T09:00:00"
             cid = c.execute(
@@ -15054,32 +15054,142 @@ class AIAssistantTests(unittest.TestCase):
                 ("2026-09-12", "completato", "2026-09-12T08:00:00", "2026-09-12T09:00:00", stamp, stamp),
             ).lastrowid
             self._insert_practice(c, _n=1, practice_number="CR-AI-CREM", destination_branch="Livorno", cremation_cycle_id=cid, pickup_date="2026-09-10")
-            c.execute(
-                """INSERT INTO calendar_events(event_type,title,zone,start_at,end_at,all_day,event_status,operator_name,animal_name,created_by,created_at,updated_at)
-                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-                ("Ritiro", "Ritiro Fido", "Empoli", "2026-09-11T10:00:00", "2026-09-11T11:00:00", 0, "Da ritirare", "Serena", "Fido", self.admin["id"], stamp, stamp),
-            )
-            c.execute(
-                """INSERT INTO calendar_events(event_type,title,zone,start_at,end_at,all_day,event_status,operator_name,animal_name,created_by,created_at,updated_at)
-                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-                ("Riconsegna in sede", "Riconsegna Micio", "Livorno", "2026-09-13T15:00:00", "2026-09-13T15:30:00", 0, "In programma", "Alessio", "Micio", self.admin["id"], stamp, stamp),
-            )
         now = app.rome_now()
         params = {"periodo": "intervallo_personalizzato", "data_da": "2026-09-01", "data_a": "2026-09-30"}
         crem = next(t for t in self.ai.TOOL_SPECS if t["name"] == "conta_cremazioni")["handler"]
-        ritiri = next(t for t in self.ai.TOOL_SPECS if t["name"] == "conta_ritiri")["handler"]
-        riconsegne = next(t for t in self.ai.TOOL_SPECS if t["name"] == "conta_riconsegne")["handler"]
         with app.db() as c:
             self.assertEqual(crem(c, self.admin, now, params)["conteggio"], 1)
             self.assertEqual(crem(c, self.admin, now, {**params, "sede": "Livorno"})["conteggio"], 1)
             self.assertEqual(crem(c, self.admin, now, {**params, "sede": "Empoli"})["conteggio"], 0)
             self.assertEqual(crem(c, self.admin, now, {**params, "stato": "pianificato"})["conteggio"], 0)
-            self.assertEqual(ritiri(c, self.admin, now, params)["conteggio"], 1)
-            self.assertEqual(ritiri(c, self.admin, now, {**params, "sede": "Empoli"})["conteggio"], 1)
-            self.assertEqual(ritiri(c, self.admin, now, {**params, "sede": "Livorno"})["conteggio"], 0)
-            self.assertEqual(riconsegne(c, self.admin, now, params)["conteggio"], 1)
-            self.assertEqual(riconsegne(c, self.admin, now, {**params, "tipo": "Riconsegna in sede"})["conteggio"], 1)
-            self.assertEqual(riconsegne(c, self.admin, now, {**params, "tipo": "Riconsegna"})["conteggio"], 0)
+
+    def _insert_status_history(self, c, practice_id, new_value, created_at, event_type="Cambio stato rapido", old_value="In programma"):
+        c.execute(
+            "INSERT INTO practice_history(practice_id,event_type,old_value,new_value,created_at) VALUES(?,?,?,?,?)",
+            (practice_id, event_type, old_value, new_value, created_at),
+        )
+
+    def test_conta_ritiri_and_conta_riconsegne_reuse_the_dashboard_practice_lifecycle_not_calendar_events(self):
+        # Bug reale segnalato dall'utente: la prima versione di questi due
+        # strumenti contava eventi di calendario (Ritiro/Ritiro in sede,
+        # Riconsegna/Riconsegna in sede), non le pratiche realmente
+        # ritirate/consegnate - un conteggio diverso da quello che il
+        # gestionale stesso mostra (es. sulla dashboard). Qui verifichiamo
+        # che i due strumenti usino ESATTAMENTE la stessa logica della
+        # dashboard (dashboard_practice_date_sql/status_event_date_sql,
+        # iniettata via Deps, mai duplicata) e non un criterio inventato,
+        # confrontando il risultato del tool con la stessa identica query
+        # SQL che la dashboard esegue per le sue card "Ritirati"/"Consegnato".
+        with app.db() as c:
+            # 1) Ritirata ad agosto (pickup_date), poi avanzata a Cremato:
+            #    deve continuare a contare come "ritirata ad agosto" (stessa
+            #    logica "ha raggiunto o superato Ritirato" della dashboard),
+            #    esattamente come una pratica reale che prosegue nel workflow.
+            self._insert_practice(c, _n=1, practice_number="CR-RIT-1", destination_branch="Livorno", status="Cremato", pickup_date="2026-08-05")
+            # 2) Ritirata ad agosto SOLO tramite practice_history (nessun
+            #    pickup_date impostato) - il fallback che la dashboard usa
+            #    quando manca la data di ritiro esplicita.
+            pid2 = self._insert_practice(c, _n=2, practice_number="CR-RIT-2", destination_branch="Livorno", status="Consegnato", pickup_date="")
+            self._insert_status_history(c, pid2, "Ritirato", "2026-08-10T10:00:00")
+            self._insert_status_history(c, pid2, "Consegnato", "2026-08-15T10:00:00")
+            # 3) Ad Empoli, ritirata ad agosto.
+            self._insert_practice(c, _n=3, practice_number="CR-RIT-3", destination_branch="Empoli", status="Ritirato", pickup_date="2026-08-20")
+            # 4) Ritirata ma a SETTEMBRE (fuori periodo: non deve contare per agosto).
+            self._insert_practice(c, _n=4, practice_number="CR-RIT-4", destination_branch="Livorno", status="Ritirato", pickup_date="2026-09-02")
+            # 5) Ancora "In programma" (mai ritirata): non deve contare.
+            self._insert_practice(c, _n=5, practice_number="CR-RIT-5", destination_branch="Livorno", status="In programma", pickup_date="2026-08-12")
+            # 6) Consegnata poi SMALTITA: non deve piu' contare come
+            #    "riconsegna effettuata" per il periodo, esattamente come la
+            #    card "Consegnato" della dashboard (che usa status='Consegnato'
+            #    esatto, non un IN(...) che includa Smaltito).
+            pid6 = self._insert_practice(c, _n=6, practice_number="CR-RIT-6", destination_branch="Livorno", status="Smaltito", pickup_date="2026-08-01")
+            self._insert_status_history(c, pid6, "Ritirato", "2026-08-01T10:00:00")
+            self._insert_status_history(c, pid6, "Consegnato", "2026-08-03T10:00:00")
+            self._insert_status_history(c, pid6, "Smaltito", "2026-08-04T10:00:00")
+
+        d_from, d_to = "2026-08-01", "2026-08-31"
+
+        def dashboard_ritiri(c, sede=None):
+            date_sql = app.dashboard_practice_date_sql("ritirati", "p")
+            where = ["(p.deleted_at IS NULL OR p.deleted_at='')", "p.status IN ('Ritirato','Cremato','Da consegnare','Consegnato','Smaltito')", f"{date_sql} BETWEEN date(?) AND date(?)"]
+            args = [d_from, d_to]
+            if sede:
+                where.append("p.destination_branch=?"); args.append(sede)
+            return c.execute(f"SELECT count(*) n FROM practices p WHERE {' AND '.join(where)}", args).fetchone()["n"]
+
+        def dashboard_consegnati(c, sede=None):
+            date_sql = app.dashboard_practice_date_sql("consegnati", "p")
+            where = ["(p.deleted_at IS NULL OR p.deleted_at='')", "p.status='Consegnato'", f"{date_sql} BETWEEN date(?) AND date(?)"]
+            args = [d_from, d_to]
+            if sede:
+                where.append("p.destination_branch=?"); args.append(sede)
+            return c.execute(f"SELECT count(*) n FROM practices p WHERE {' AND '.join(where)}", args).fetchone()["n"]
+
+        now = app.rome_now()
+        params = {"periodo": "intervallo_personalizzato", "data_da": d_from, "data_a": d_to}
+        conta_ritiri = next(t for t in self.ai.TOOL_SPECS if t["name"] == "conta_ritiri")["handler"]
+        conta_riconsegne = next(t for t in self.ai.TOOL_SPECS if t["name"] == "conta_riconsegne")["handler"]
+
+        with app.db() as c:
+            for sede in (None, "Livorno", "Empoli"):
+                tool_params = {**params, **({"sede": sede} if sede else {})}
+                ai_ritiri = conta_ritiri(c, self.admin, now, tool_params)["conteggio"]
+                dash_ritiri = dashboard_ritiri(c, sede)
+                self.assertEqual(ai_ritiri, dash_ritiri, f"conta_ritiri diverge dalla dashboard per sede={sede}")
+                ai_riconsegne = conta_riconsegne(c, self.admin, now, tool_params)["conteggio"]
+                dash_riconsegne = dashboard_consegnati(c, sede)
+                self.assertEqual(ai_riconsegne, dash_riconsegne, f"conta_riconsegne diverge dalla dashboard per sede={sede}")
+
+            # Valori attesi espliciti (non solo "uguali alla dashboard", ma
+            # anche il numero giusto): Livorno agosto = pratiche 1, 2 e 6
+            # (tutte hanno raggiunto/superato Ritirato entro agosto, inclusa
+            # la 6 gia' Smaltita) -> 3 ritiri; nessun doppio conteggio (una
+            # sola riga per pratica, mai una per ogni cambio di stato).
+            self.assertEqual(conta_ritiri(c, self.admin, now, {**params, "sede": "Livorno"})["conteggio"], 3)
+            self.assertEqual(conta_ritiri(c, self.admin, now, {**params, "sede": "Empoli"})["conteggio"], 1)
+            self.assertEqual(conta_riconsegne(c, self.admin, now, {**params, "sede": "Livorno"})["conteggio"], 1)
+            # Mese senza alcun ritiro/riconsegna -> 0, non un errore ne' un numero indovinato.
+            empty_params = {"periodo": "intervallo_personalizzato", "data_da": "2027-01-01", "data_a": "2027-01-31"}
+            self.assertEqual(conta_ritiri(c, self.admin, now, empty_params)["conteggio"], 0)
+            self.assertEqual(conta_riconsegne(c, self.admin, now, empty_params)["conteggio"], 0)
+            # Nessuna distinzione domicilio/sede disponibile sulla pratica
+            # conclusa: lo strumento non deve piu' accettare un parametro
+            # "tipo" (rimosso dallo schema, non solo ignorato).
+            spec = next(t for t in self.ai.TOOL_SPECS if t["name"] == "conta_ritiri")
+            self.assertNotIn("tipo", spec["input_schema"]["properties"])
+            self.assertNotIn("stato", spec["input_schema"]["properties"])
+
+    def test_conta_ritiri_matches_the_real_rendered_dashboard_page_for_this_month(self):
+        # Prova end-to-end piu' diretta possibile: renderizza la VERA pagina
+        # dashboard() (non una query riscritta nel test) e confronta il
+        # numero che mostrerebbe davvero all'utente con quello dello
+        # strumento AI per lo stesso periodo (mese corrente - la dashboard
+        # non supporta un mese storico arbitrario come "agosto", solo
+        # oggi/settimana/mese relativi a oggi).
+        with app.db() as c:
+            self._insert_practice(c, _n=1, practice_number="CR-DASH-1", status="Cremato", pickup_date=app.rome_now().date().isoformat())
+            self._insert_practice(c, _n=2, practice_number="CR-DASH-2", status="In programma", pickup_date=app.rome_now().date().isoformat())
+        rendered = []
+        self.handler.path = "/"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.dashboard(self.admin)
+        page = rendered[-1]
+        # Le pagine "dashboard-period-page" si ripetono (pratiche, poi
+        # pagamenti): la prima e' quella delle pratiche - indice 2 = mese
+        # corrente (0=oggi,1=settimana,2=mese). Si prende il testo da quel
+        # div fino all'inizio del successivo, cosi' il confronto resta
+        # sulla pagina VERA renderizzata, non su una query riscritta.
+        page_divs = list(re.finditer(r'<div class="dashboard-period-page" data-period-index="\d">', page))
+        self.assertGreaterEqual(len(page_divs), 4, "struttura dashboard inattesa: non trovo abbastanza pagine periodo")
+        month_block = page[page_divs[2].start():page_divs[3].start()]
+        ritirato_match = re.search(r'data-dashboard-card="Ritirato"[^>]*data-count="(\d+)"', month_block)
+        self.assertIsNotNone(ritirato_match, "impossibile trovare la card 'Ritirato' del mese nella dashboard renderizzata")
+        dashboard_count = int(ritirato_match.group(1))
+
+        conta_ritiri = next(t for t in self.ai.TOOL_SPECS if t["name"] == "conta_ritiri")["handler"]
+        with app.db() as c:
+            ai_count = conta_ritiri(c, self.admin, app.rome_now(), {"periodo": "questo_mese"})["conteggio"]
+        self.assertEqual(ai_count, dashboard_count, "l'Assistente AI e la dashboard reale mostrano numeri diversi per 'ritiri di questo mese'")
 
     def test_ricavi_per_voce_preventivo_reuses_the_existing_bilanci_function(self):
         with app.db() as c:

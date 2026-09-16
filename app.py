@@ -19353,6 +19353,7 @@ ai_assistant.configure(ai_assistant.Deps(
     channel_paid_amount=channel_paid_amount,
     channel_remaining=channel_remaining,
     revenue_by_quote_category=revenue_by_quote_category,
+    dashboard_practice_date_sql=dashboard_practice_date_sql,
     states=tuple(STATES),
     shift_operators=SHIFT_OPERATORS,
     month_names_it=MONTH_NAMES_IT,
