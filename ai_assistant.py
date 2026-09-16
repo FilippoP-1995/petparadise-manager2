@@ -252,7 +252,14 @@ def _conta_pratiche_per_fase(c, now, p, *, kind, status_where):
         where.append("p.destination_branch=?")
         args.append(sede)
     if operatore:
-        where.append("p.operator_name=?")
+        # practices.operator_name e' salvato SEMPRE in maiuscolo (form
+        # pratiche: opzioni letterali "SERENA"/"ALESSIO"/... per l'admin,
+        # display_name.upper() forzato per un utente non-admin - vedi
+        # test esistente "operator_name" value="SERENA" in App.py), a
+        # differenza di calendar_events/shifts che usano CALENDAR_OPERATORS
+        # in maiuscolo/minuscolo naturale (es. "Serena"): un confronto
+        # esatto qui restituirebbe sempre zero per qualunque operatore.
+        where.append("UPPER(p.operator_name)=UPPER(?)")
         args.append(operatore)
     sql = f"SELECT COUNT(*) n FROM practices p WHERE {' AND '.join(where)}"
     n = c.execute(sql, args).fetchone()["n"]
@@ -313,7 +320,9 @@ def _andamento_pratiche_per_fase(c, now, p, *, kind, status_where):
         where.append("p.destination_branch=?")
         args.append(sede)
     if operatore:
-        where.append("p.operator_name=?")
+        # Stesso motivo di _conta_pratiche_per_fase: practices.operator_name
+        # e' salvato sempre in maiuscolo, a differenza di CALENDAR_OPERATORS.
+        where.append("UPPER(p.operator_name)=UPPER(?)")
         args.append(operatore)
     sql = f"SELECT {date_sql} AS giorno, COUNT(*) n FROM practices p WHERE {' AND '.join(where)} GROUP BY {date_sql}"
     counts = {r["giorno"]: r["n"] for r in c.execute(sql, args).fetchall()}
@@ -413,7 +422,10 @@ def _tool_conta_pratiche(c, user, now, p):
         args.append(f"%{animale}%")
     operatore = (p.get("operatore_nome") or "").strip()
     if operatore:
-        where.append("operator_name=?")
+        # practices.operator_name e' salvato sempre in maiuscolo (stesso
+        # motivo documentato su _conta_pratiche_per_fase): confronto
+        # case-insensitive, altrimenti "Filippo" non troverebbe mai "FILIPPO".
+        where.append("UPPER(operator_name)=UPPER(?)")
         args.append(operatore)
     veterinario = (p.get("veterinario_nome") or "").strip()
     if veterinario:

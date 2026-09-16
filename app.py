@@ -2740,7 +2740,7 @@ body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY
    e mini chat in overlay SULLA pagina corrente, mai una pagina/route
    separata. z-index piu' alto di qualunque altro overlay esistente cosi'
    resta sempre raggiungibile da ogni schermata. */
-.ai-chat-fab{position:fixed;z-index:250;width:56px;height:56px;border-radius:50%;border:0;display:grid;place-items:center;background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;box-shadow:0 10px 26px #ef405f66,0 0 0 4px #ef405f1f;cursor:grab;touch-action:none;transition:box-shadow .15s ease}
+.ai-chat-fab{position:fixed;z-index:250;width:56px;height:56px;margin:0;transform:translate(-50%,-50%);border-radius:50%;border:0;display:grid;place-items:center;background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;box-shadow:0 10px 26px #ef405f66,0 0 0 4px #ef405f1f;cursor:grab;touch-action:none;transition:box-shadow .15s ease}
 .ai-chat-fab:active{cursor:grabbing}
 .ai-chat-fab.dragging{transition:none;box-shadow:0 16px 36px #ef405f80}
 .ai-chat-fab svg{width:24px;height:24px}
@@ -2755,7 +2755,7 @@ body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY
 .ai-chat-pending{align-self:flex-start;color:#8592a6;font-size:12.5px;font-style:italic}
 .ai-chat-error .wa-bubble{background:#3a1a1f;color:#fca5a5}
 .ai-chat-input-row{display:flex;gap:8px;align-items:flex-end;padding:10px 12px;border-top:1px solid #1d2636;background:#141b28}
-.ai-chat-input-row textarea{flex:1;resize:none;max-height:120px;padding:10px 12px;border-radius:12px;border:1px solid #263246;background:#0e1622;color:#f5f7fb;font:inherit;font-size:14px}
+.ai-chat-input-row textarea{flex:1;resize:none;max-height:120px;padding:10px 12px;border-radius:12px;border:1px solid #263246;background:#0e1622;color:#f5f7fb;font:inherit;font-size:16px}
 .ai-chat-input-row button{flex:0 0 auto;width:40px;height:40px;border-radius:50%;border:0;background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;display:grid;place-items:center;cursor:pointer}
 .ai-chat-input-row button svg{width:18px;height:18px}
 .light-theme .ai-chat-panel{background:#fff;border-color:#e2e8f0}

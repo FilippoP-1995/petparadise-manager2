@@ -15191,6 +15191,39 @@ class AIAssistantTests(unittest.TestCase):
             ai_count = conta_ritiri(c, self.admin, app.rome_now(), {"periodo": "questo_mese"})["conteggio"]
         self.assertEqual(ai_count, dashboard_count, "l'Assistente AI e la dashboard reale mostrano numeri diversi per 'ritiri di questo mese'")
 
+    def test_operatore_filter_on_practices_matches_the_real_uppercase_stored_value(self):
+        # Bug reale segnalato dall'utente in produzione: "in tutte le
+        # pratiche qual e' l'operatore selezionato piu' volte" rispondeva
+        # zero per TUTTI gli operatori (Serena/Alessio/Filippo/Gianluca).
+        # Causa: il form pratiche salva operator_name SEMPRE in maiuscolo
+        # (opzioni letterali "SERENA"/"ALESSIO"/"FILIPPO"/"GIANLUCA" per
+        # l'admin, display_name.upper() forzato per un utente non-admin -
+        # vedi anche l'altro test esistente che verifica
+        # value="SERENA" nel form pratiche), mentre CALENDAR_OPERATORS
+        # (usato da calendar_events/turni ed esposto al modello) e' in
+        # maiuscolo/minuscolo naturale ("Serena"): un confronto ESATTO su
+        # practices.operator_name non trova mai nulla per nessun filtro.
+        with app.db() as c:
+            self._insert_practice(c, _n=1, practice_number="CR-OP-1", operator_name="SERENA", destination_branch="Livorno", status="Ritirato", pickup_date="2026-08-05")
+            self._insert_practice(c, _n=2, practice_number="CR-OP-2", operator_name="SERENA", destination_branch="Livorno", status="Consegnato", pickup_date="2026-08-06", created_at="2026-08-06T09:00:00")
+            self._insert_practice(c, _n=3, practice_number="CR-OP-3", operator_name="FILIPPO", destination_branch="Livorno", status="Ritirato", pickup_date="2026-08-07")
+        conta_ritiri = next(t for t in self.ai.TOOL_SPECS if t["name"] == "conta_ritiri")["handler"]
+        conta_riconsegne = next(t for t in self.ai.TOOL_SPECS if t["name"] == "conta_riconsegne")["handler"]
+        conta_pratiche = next(t for t in self.ai.TOOL_SPECS if t["name"] == "conta_pratiche")["handler"]
+        andamento = next(t for t in self.ai.TOOL_SPECS if t["name"] == "andamento_giornaliero")["handler"]
+        now = app.rome_now()
+        periodo = {"periodo": "intervallo_personalizzato", "data_da": "2026-08-01", "data_a": "2026-08-31"}
+        with app.db() as c:
+            # "Serena" (case naturale, come lo passerebbe il modello) deve
+            # trovare le pratiche salvate come "SERENA".
+            self.assertEqual(conta_ritiri(c, self.admin, now, {**periodo, "operatore": "Serena"})["conteggio"], 2)
+            self.assertEqual(conta_riconsegne(c, self.admin, now, {**periodo, "operatore": "Serena"})["conteggio"], 1)
+            self.assertEqual(conta_pratiche(c, self.admin, now, {**periodo, "operatore_nome": "Filippo"})["conteggio"], 1)
+            result = andamento(c, self.admin, now, {**periodo, "metrica": "ritiri", "operatore": "Serena"})
+            self.assertEqual(result["totale_periodo"], 2)
+            # nessun operatore selezionato per errore -> zero, non un altro numero indovinato
+            self.assertEqual(conta_pratiche(c, self.admin, now, {**periodo, "operatore_nome": "Gianluca"})["conteggio"], 0)
+
     def test_ricavi_per_voce_preventivo_reuses_the_existing_bilanci_function(self):
         with app.db() as c:
             self._insert_practice(c, _n=1, practice_number="CR-AI-VOCE", price_cremation="120", pickup_date="2026-09-10")
@@ -15933,6 +15966,28 @@ class AIAssistantTests(unittest.TestCase):
         self.assertIn("document.addEventListener('DOMContentLoaded',aiChatInit);", js)
         # riusa lo stesso linguaggio visivo (bolle) gia' usato per WhatsApp
         self.assertIn("wa-bubble-row", js)
+
+    def test_ai_chat_fab_is_centered_on_its_saved_position_and_input_never_triggers_ios_zoom(self):
+        # Bug segnalato dall'utente su iPhone: l'icona risultava "troppo
+        # laterale e non si vede per intero". Causa: aiChatApplyPos calcola
+        # x/y come il CENTRO del bottone (i margini usati sono size/2), ma
+        # senza transform:translate(-50%,-50%) il CSS posiziona left/top
+        # come angolo in alto a sinistra - il bottone finisce quindi
+        # spostato di +28px a destra/in basso rispetto al centro voluto,
+        # abbastanza da tagliare fuori schermo la meta' destra su un
+        # iPhone stretto con la posizione predefinita (x_pct=0.92, vicina
+        # al bordo destro).
+        self.assertIn("transform:translate(-50%,-50%)", app.CSS[app.CSS.index(".ai-chat-fab{"):app.CSS.index(".ai-chat-fab{")+200])
+        # Secondo bug segnalato: toccando l'icona "iPhone zoomma nascondendo
+        # il tasto di invio". Causa nota di Safari iOS: un input/textarea
+        # che riceve il focus con font-size sotto i 16px fa zoomare
+        # automaticamente la pagina - esattamente cio' che gia' succede
+        # qui, dato che aiChatOpen() mette il focus sulla textarea appena
+        # si apre il pannello. Stessa soglia gia' usata (con !important)
+        # per i campi ".field input" nel resto del gestionale.
+        input_row_css = app.CSS[app.CSS.index(".ai-chat-input-row textarea{"):app.CSS.index(".ai-chat-input-row textarea{")+250]
+        self.assertIn("font-size:16px", input_row_css)
+        self.assertNotIn("font-size:14px", input_row_css)
 
 
 if __name__ == "__main__":
