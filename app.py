@@ -19170,19 +19170,35 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         c.execute("INSERT INTO movement_invoice_links(invoice_id,payment_movement_id) VALUES(?,?)",(invoice_id,movement_id))
         return invoice_id
 
+    def apply_practice_quick_state(self,c,pid,new,user_id):
+        """Nucleo di quick_state (validazione, storico, effetti collaterali
+        WhatsApp/notifiche), estratto cosi' l'Assistente AI puo' riusarlo
+        esattamente com'e' (iniettato via Deps) invece di duplicare questa
+        logica. Comportamento invariato per la route HTTP, che continua a
+        chiamare questo stesso metodo. Ritorna (ok, error, old_row)."""
+        if new not in STATES:
+            return False,"Stato pratica non valido",None
+        old=c.execute("SELECT * FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(pid,)).fetchone()
+        if not old:
+            return False,"Pratica non trovata",None
+        if new=="Smaltito" and old["service_type"]!="Cremazione collettiva":
+            return False,"Smaltito è disponibile solo per la cremazione collettiva",old
+        if old["status"]!=new:
+            stamp=now();c.execute("UPDATE practices SET status=?,updated_at=? WHERE id=?",(new,stamp,pid))
+            c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,"Cambio stato rapido",old["status"],new,user_id,stamp))
+            if old["status"]=="Consegnato" and new!="Consegnato":self.cancel_whatsapp_scheduled(c,pid,user_id,"Pratica spostata da Consegnato")
+            elif old["status"]!="Consegnato" and new=="Consegnato":self.schedule_whatsapp_thanks(c,pid,user_id)
+            if new=="Consegnato":emit_notification(c,"practice_delivered","Pratica consegnata",old["animal_name"] or old["practice_number"],pid,user_id,db_path=DB_PATH)
+        return True,None,old
+
     def quick_state(self,user,pid):
         form=self.form(); new=form.get("status",""); ajax=form.get("ajax")=="1"
         if new not in STATES:return self.send_json({"ok":False,"error":"Stato pratica non valido"},400) if ajax else self.practice(user,pid,error="Stato pratica non valido.")
         with db() as c:
-            old=c.execute("SELECT * FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(pid,)).fetchone()
-            if not old:return self.send_json({"ok":False,"error":"Pratica non trovata"},404) if ajax else self.send_error(404)
-            if new=="Smaltito" and old["service_type"]!="Cremazione collettiva":return self.send_json({"ok":False,"error":"Smaltito è disponibile solo per la cremazione collettiva"},400) if ajax else self.practice(user,pid,error="Smaltito è disponibile solo per la cremazione collettiva.")
-            if old["status"]!=new:
-                stamp=now();c.execute("UPDATE practices SET status=?,updated_at=? WHERE id=?",(new,stamp,pid))
-                c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,user_id,created_at) VALUES(?,?,?,?,?,?)",(pid,"Cambio stato rapido",old["status"],new,user["id"],stamp))
-                if old["status"]=="Consegnato" and new!="Consegnato":self.cancel_whatsapp_scheduled(c,pid,user["id"],"Pratica spostata da Consegnato")
-                elif old["status"]!="Consegnato" and new=="Consegnato":self.schedule_whatsapp_thanks(c,pid,user["id"])
-                if new=="Consegnato":emit_notification(c,"practice_delivered","Pratica consegnata",old["animal_name"] or old["practice_number"],pid,user["id"],db_path=DB_PATH)
+            ok,error,old=self.apply_practice_quick_state(c,pid,new,user["id"])
+        if not ok:
+            if error=="Pratica non trovata":return self.send_json({"ok":False,"error":error},404) if ajax else self.send_error(404)
+            return self.send_json({"ok":False,"error":error},400) if ajax else self.practice(user,pid,error=error+".")
         if ajax:return self.send_json({"ok":True,"status":new,"practice_id":pid})
         return self.redirect(safe_return_path(form.get("return_to") or self.headers.get("Referer"),"/"))
 
@@ -19517,6 +19533,15 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         self.send_header("Content-Length",str(len(payload))); self.end_headers(); self.wfile.write(payload)
 
 
+# Istanza "vuota" (nessuna richiesta HTTP associata, stesso identico
+# meccanismo gia' usato dai test - object.__new__ salta __init__) usata
+# SOLO per esporre via Deps i metodi che richiamano metodi fratelli
+# (self.qualcosa(...)) pur non toccando mai stato di connessione HTTP:
+# un metodo di classe disaccoppiato (App.metodo) non basterebbe, perche'
+# il suo stesso corpo chiama self.altro_metodo(...), che fallirebbe con
+# self=None.
+_ai_actions_handler = object.__new__(App)
+
 ai_assistant.configure(ai_assistant.Deps(
     money_value=money_value,
     effective_total=effective_total,
@@ -19531,6 +19556,7 @@ ai_assistant.configure(ai_assistant.Deps(
     disposal_eligible_practices=App.disposal_eligible_practices,
     disposal_already_done_practices=App.disposal_already_done_practices,
     disposal_contact_for=App.disposal_contact_for,
+    apply_practice_quick_state=_ai_actions_handler.apply_practice_quick_state,
 ))
 
 if __name__ == "__main__":

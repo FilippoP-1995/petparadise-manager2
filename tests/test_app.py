@@ -16406,6 +16406,96 @@ class AIAssistantTests(unittest.TestCase):
             self.assertGreaterEqual(result["totale_anomalie_trovate"], 4)
             self.assertEqual(len(result["criteri_verificati"]), 4)
 
+    def test_dettaglio_pratica_e_cerca_pratiche_includono_un_url_per_aprirla(self):
+        # Richiesta esplicita dell'utente: chiedendo una pratica specifica
+        # deve arrivare anche un link per aprirla direttamente nel gestionale.
+        with app.db() as c:
+            pid = self._insert_practice(c, _n=1, practice_number="CR-URL-1", animal_name="Tobia", pickup_date="2026-09-10")
+        dettaglio = next(t for t in self.ai.TOOL_SPECS if t["name"] == "dettaglio_pratica")["handler"]
+        cerca = next(t for t in self.ai.TOOL_SPECS if t["name"] == "cerca_pratiche")["handler"]
+        now = app.rome_now()
+        with app.db() as c:
+            result = dettaglio(c, self.admin, now, {"numero_pratica": "CR-URL-1"})
+            self.assertEqual(result["url"], f"/pratiche/{pid}")
+            result = cerca(c, self.admin, now, {"query": "Tobia"})
+            self.assertEqual(result["risultati"][0]["url"], f"/pratiche/{pid}")
+
+    def test_cambia_stato_pratica_richiede_conferma_esplicita_e_riusa_quick_state(self):
+        # Regola obbligatoria dell'utente: la scrittura deve SEMPRE
+        # richiedere conferma esplicita PRIMA di essere eseguita, applicata
+        # lato server (mai affidata al modello) - e deve riusare la STESSA
+        # logica di quick_state (storico, effetti collaterali), non una
+        # scrittura parallela.
+        with app.db() as c:
+            pid = self._insert_practice(c, _n=1, practice_number="CR-STATO-1", animal_name="Argo", status="Ritirato", pickup_date="2026-09-10")
+        tool = next(t for t in self.ai.TOOL_SPECS if t["name"] == "cambia_stato_pratica")["handler"]
+        now = app.rome_now()
+        with app.db() as c:
+            # senza conferma=true: nessuna scrittura, solo una domanda di conferma come errore
+            with self.assertRaises(self.ai.ToolInputError) as ctx:
+                tool(c, self.admin, now, {"id": pid, "nuovo_stato": "Consegnato"})
+            self.assertIn("Conferma richiesta", str(ctx.exception))
+            self.assertIn("CR-STATO-1", str(ctx.exception))
+            status_after_no_confirm = c.execute("SELECT status FROM practices WHERE id=?", (pid,)).fetchone()["status"]
+            self.assertEqual(status_after_no_confirm, "Ritirato")
+            self.assertEqual(c.execute("SELECT COUNT(*) n FROM practice_history WHERE practice_id=?", (pid,)).fetchone()["n"], 0)
+
+            # con conferma=true: scrive davvero, riusando quick_state (storico incluso)
+            result = tool(c, self.admin, now, {"id": pid, "nuovo_stato": "Consegnato", "conferma": True})
+            self.assertEqual(result["nuovo_stato"], "Consegnato")
+            self.assertEqual(result["stato_precedente"], "Ritirato")
+            self.assertEqual(result["url"], f"/pratiche/{pid}")
+            row = c.execute("SELECT status FROM practices WHERE id=?", (pid,)).fetchone()
+            self.assertEqual(row["status"], "Consegnato")
+            history = c.execute("SELECT event_type,old_value,new_value FROM practice_history WHERE practice_id=?", (pid,)).fetchone()
+            self.assertEqual(history["event_type"], "Cambio stato rapido")
+            self.assertEqual((history["old_value"], history["new_value"]), ("Ritirato", "Consegnato"))
+
+            # stato non valido -> errore esplicito, mai un cambiamento a caso
+            with self.assertRaises(self.ai.ToolInputError):
+                tool(c, self.admin, now, {"id": pid, "nuovo_stato": "Su Marte", "conferma": True})
+            # gia' nello stato richiesto -> nessuna domanda di conferma, nessuna scrittura
+            result = tool(c, self.admin, now, {"id": pid, "nuovo_stato": "Consegnato"})
+            self.assertTrue(result["gia_impostato"])
+
+    def test_cambia_stato_pratica_smaltito_solo_per_cremazione_collettiva_come_quick_state(self):
+        # Stessa regola esatta di quick_state: 'Smaltito' e' previsto solo
+        # per la cremazione collettiva, verificato qui riusando la stessa
+        # funzione (apply_practice_quick_state), non una copia della regola.
+        with app.db() as c:
+            pid = self._insert_practice(c, _n=1, practice_number="CR-STATO-2", service_type="Cremazione individuale", status="Ritirato", pickup_date="2026-09-10")
+        tool = next(t for t in self.ai.TOOL_SPECS if t["name"] == "cambia_stato_pratica")["handler"]
+        now = app.rome_now()
+        with app.db() as c:
+            with self.assertRaises(self.ai.ToolInputError) as ctx:
+                tool(c, self.admin, now, {"id": pid, "nuovo_stato": "Smaltito", "conferma": True})
+            self.assertIn("cremazione collettiva", str(ctx.exception))
+            self.assertEqual(c.execute("SELECT status FROM practices WHERE id=?", (pid,)).fetchone()["status"], "Ritirato")
+
+    def test_cambia_stato_pratica_produces_the_same_end_state_as_the_real_quick_state_route(self):
+        # Prova di parita' piu' diretta: stesso cambiamento fatto una volta
+        # tramite l'Assistente (con conferma) e una volta tramite la vera
+        # route quick_state della UI deve produrre lo STESSO stato finale e
+        # la STESSA riga di storico (a meno dell'id pratica) - prova che non
+        # esiste una seconda logica di scrittura.
+        with app.db() as c:
+            pid_ai = self._insert_practice(c, _n=1, practice_number="CR-PARITA-AI", status="Ritirato", pickup_date="2026-09-10")
+            pid_ui = self._insert_practice(c, _n=2, practice_number="CR-PARITA-UI", status="Ritirato", pickup_date="2026-09-10")
+        tool = next(t for t in self.ai.TOOL_SPECS if t["name"] == "cambia_stato_pratica")["handler"]
+        now = app.rome_now()
+        with app.db() as c:
+            tool(c, self.admin, now, {"id": pid_ai, "nuovo_stato": "Consegnato", "conferma": True})
+        self.handler.form = lambda: {"status": "Consegnato", "ajax": "1"}
+        self.handler.send_json = lambda obj, status=200: obj
+        self.handler.quick_state(self.admin, pid_ui)
+        with app.db() as c:
+            status_ai = c.execute("SELECT status FROM practices WHERE id=?", (pid_ai,)).fetchone()["status"]
+            status_ui = c.execute("SELECT status FROM practices WHERE id=?", (pid_ui,)).fetchone()["status"]
+            event_ai = c.execute("SELECT event_type,old_value,new_value FROM practice_history WHERE practice_id=?", (pid_ai,)).fetchone()
+            event_ui = c.execute("SELECT event_type,old_value,new_value FROM practice_history WHERE practice_id=?", (pid_ui,)).fetchone()
+        self.assertEqual(status_ai, status_ui)
+        self.assertEqual((event_ai["event_type"], event_ai["old_value"], event_ai["new_value"]), (event_ui["event_type"], event_ui["old_value"], event_ui["new_value"]))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -88,6 +88,12 @@ class Deps:
     disposal_eligible_practices: Callable[[Any, Any, str, str], list]
     disposal_already_done_practices: Callable[[Any, Any, str, str], list]
     disposal_contact_for: Callable[[Any, Any], str]
+    # Nucleo di quick_state (app.py): stessa validazione, stesso storico
+    # (practice_history) e stessi effetti collaterali (WhatsApp/notifiche)
+    # di un cambio stato fatto dalla UI - riusato qui, mai riscritto, cosi'
+    # un cambio stato avviato dall'Assistente e' indistinguibile (e
+    # tracciabile allo stesso modo) di uno fatto manualmente.
+    apply_practice_quick_state: Callable[[Any, int, str, int], tuple]
 
 
 DEPS: Deps | None = None
@@ -510,7 +516,7 @@ def _tool_cerca_pratiche(c, user, now, p):
              ORDER BY created_at DESC LIMIT 20"""
     rows = c.execute(sql, (like, like, like, like, like)).fetchall()
     results = [
-        {"id": r["id"], "numero_pratica": r["practice_number"], "animale": r["animal_name"], "proprietario": f'{r["owner_first_name"] or ""} {r["owner_last_name"] or ""}'.strip(), "stato": r["status"], "sede": r["destination_branch"], "data_ritiro": r["pickup_date"]}
+        {"id": r["id"], "numero_pratica": r["practice_number"], "animale": r["animal_name"], "proprietario": f'{r["owner_first_name"] or ""} {r["owner_last_name"] or ""}'.strip(), "stato": r["status"], "sede": r["destination_branch"], "data_ritiro": r["pickup_date"], "url": f"/pratiche/{r['id']}"}
         for r in rows
     ]
     return {"risultati": results, "totale_trovati": len(results), "troncato_a_20": len(results) == 20}
@@ -538,7 +544,53 @@ def _tool_dettaglio_pratica(c, user, now, p):
         "proprietario": f'{row["owner_first_name"] or ""} {row["owner_last_name"] or ""}'.strip(),
         "data_ritiro": row["pickup_date"], "creata_il": row["created_at"],
         "circuito_economico": canale, "totale": round(total, 2), "gia_incassato": round(paid, 2), "rimanenza": round(remaining, 2),
-        "stato_pagamento": row["payment_status"], "note": row["notes"],
+        "stato_pagamento": row["payment_status"], "note": row["notes"], "url": f"/pratiche/{row['id']}",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Strumenti — azioni di scrittura (richiedono conferma esplicita)
+#
+# Regola obbligatoria (richiesta esplicita dell'utente): la LETTURA puo'
+# avvenire direttamente, la SCRITTURA deve SEMPRE richiedere conferma
+# esplicita dell'utente PRIMA dell'esecuzione, applicata lato server (mai
+# affidata al modello). Il meccanismo qui e' semplice e verificabile: senza
+# il parametro conferma=true lo strumento non scrive MAI nulla - si limita
+# a restituire un errore che descrive esattamente cosa verrebbe cambiato,
+# che il modello deve girare all'utente come domanda. Solo una chiamata
+# SUCCESSIVA con conferma=true (mai nella stessa risposta della proposta,
+# vedi istruzione nel prompt di sistema) esegue davvero la modifica -
+# riusando la STESSA logica gia' validata di quick_state (storico su
+# practice_history, effetti collaterali WhatsApp/notifiche), mai una
+# scrittura parallela reinventata qui.
+# ---------------------------------------------------------------------------
+
+def _tool_cambia_stato_pratica(c, user, now, p):
+    pid = p.get("id")
+    if not pid:
+        raise ToolInputError("Specifica l'id della pratica (usa prima cerca_pratiche o dettaglio_pratica per trovarlo).")
+    nuovo_stato = p.get("nuovo_stato")
+    if nuovo_stato not in DEPS.states:
+        raise ToolInputError(f"nuovo_stato deve essere uno tra: {', '.join(DEPS.states)}.")
+    row = c.execute("SELECT id,practice_number,animal_name,status,service_type FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')", (pid,)).fetchone()
+    if not row:
+        raise ToolInputError(f"Nessuna pratica trovata con id {pid}. Usa prima cerca_pratiche/dettaglio_pratica per trovare l'id corretto.")
+    if row["status"] == nuovo_stato:
+        return {"gia_impostato": True, "pratica": row["practice_number"], "stato": nuovo_stato, "url": f"/pratiche/{pid}"}
+    if nuovo_stato == "Smaltito" and row["service_type"] != "Cremazione collettiva":
+        raise ToolInputError("Lo stato 'Smaltito' e' previsto solo per pratiche di cremazione collettiva: questa pratica non lo e'.")
+    if p.get("conferma") is not True:
+        raise ToolInputError(
+            f"Conferma richiesta: vuoi impostare la pratica {row['practice_number']} "
+            f"({row['animal_name'] or 'animale non specificato'}) da '{row['status']}' a '{nuovo_stato}'? "
+            "Se l'utente conferma esplicitamente in un messaggio successivo, richiama questo stesso strumento con conferma=true."
+        )
+    ok, error, old = DEPS.apply_practice_quick_state(c, pid, nuovo_stato, user["id"])
+    if not ok:
+        raise ToolInputError(error)
+    return {
+        "pratica": old["practice_number"], "animale": old["animal_name"],
+        "stato_precedente": old["status"], "nuovo_stato": nuovo_stato, "url": f"/pratiche/{pid}",
     }
 
 
@@ -1260,9 +1312,15 @@ TOOL_SPECS = [
     },
     {
         "name": "dettaglio_pratica",
-        "description": "Restituisce il dettaglio completo di UNA pratica (stato, sede, animale, proprietario, totale, gia' incassato, rimanenza, circuito economico W/D) dato l'id o il numero pratica. Se non conosci l'id/numero, usa prima cerca_pratiche.",
+        "description": "Restituisce il dettaglio completo di UNA pratica (stato, sede, animale, proprietario, totale, gia' incassato, rimanenza, circuito economico W/D, url per aprirla nel gestionale) dato l'id o il numero pratica. Se non conosci l'id/numero, usa prima cerca_pratiche.",
         "input_schema": _schema({"id": {"type": "integer"}, "numero_pratica": {"type": "string"}}),
         "handler": _tool_dettaglio_pratica,
+    },
+    {
+        "name": "cambia_stato_pratica",
+        "description": "Cambia lo stato di UNA pratica (es. a 'Consegnato'), riusando la stessa validazione/storico/effetti collaterali del cambio stato rapido del gestionale. AZIONE DI SCRITTURA: la prima chiamata (senza conferma=true) non modifica nulla, restituisce solo una domanda di conferma da girare all'utente. Richiama questo stesso strumento con conferma=true SOLO nel messaggio immediatamente successivo a una conferma esplicita dell'utente, mai di tua iniziativa.",
+        "input_schema": _schema({"id": {"type": "integer"}, "nuovo_stato": {"type": "string"}, "conferma": {"type": "boolean", "description": "Deve essere true SOLO dopo una conferma esplicita dell'utente. Ometti o lascia false per la prima proposta."}}, ["id", "nuovo_stato"]),
+        "handler": _tool_cambia_stato_pratica,
     },
     {
         "name": "pratiche_saldo_aperto",
@@ -1411,11 +1469,13 @@ Se la domanda e' ambigua (non e' chiaro a quale dominio si riferisce, es. cremaz
 
 CONTINUITA' DELLA CONVERSAZIONE: quando una domanda e' un follow-up implicito di quella precedente (es. dopo "quanto abbiamo incassato ad agosto?" l'utente chiede "e a luglio?" oppure "e a Empoli?"), mantieni lo stesso strumento/metrica della domanda precedente e applica SOLO il cambiamento esplicitamente indicato (il nuovo mese, la nuova sede, ...), lasciando invariato tutto il resto del contesto precedente. Un dato esplicito nella nuova domanda ha sempre priorita' sul contesto precedente e non deve mai esserne sovrascritto. Se il follow-up e' troppo generico per capire quale metrica riusare (es. cambia argomento senza specificare cosa), chiedi un chiarimento invece di indovinare quale strumento richiamare.
 
-Quando rispondi con un dato ottenuto da uno strumento, sii conciso ma specifica il perimetro del dato (periodo, sede o altri filtri applicati) cosi' l'utente capisce su cosa si basa il risultato. Quando lo strumento restituisce l'id o il numero di una pratica/evento specifico, includilo nella risposta cosi' l'utente puo' aprirlo nel gestionale. Rispondi sempre in italiano, in modo diretto e senza dettagli tecnici (mai SQL, mai nomi di tabelle).
+Quando rispondi con un dato ottenuto da uno strumento, sii conciso ma specifica il perimetro del dato (periodo, sede o altri filtri applicati) cosi' l'utente capisce su cosa si basa il risultato. Quando lo strumento restituisce un campo 'url' per una pratica/evento specifico, includilo nella risposta (es. "Puoi aprirla qui: [url]") cosi' l'utente puo' aprirla direttamente nel gestionale. Rispondi sempre in italiano, in modo diretto e senza dettagli tecnici (mai SQL, mai nomi di tabelle).
 
 Puoi chiamare piu' strumenti, anche piu' volte con filtri diversi, per rispondere a domande di confronto (es. confrontare due sedi chiamando lo stesso strumento due volte con sede diversa) o che richiedono piu' fonti. Per una domanda semplice usa il minor numero di strumenti necessario; per "cosa devo fare oggi"/riepiloghi di giornata usa riepilogo_giornata invece di richiamare separatamente ogni singolo strumento.
 
-GRAFICI: quando un andamento nel tempo o un confronto (tra periodi, sedi, categorie, operatori, ...) sarebbe piu' chiaro con un grafico, aggiungi alla fine della risposta un blocco ```chart``` con un JSON su una riga tipo {{"titolo": "Incassi per mese", "dati": [{{"etichetta": "Luglio", "valore": 1234.5}}, {{"etichetta": "Agosto", "valore": 987.0}}]}} - "valore" deve essere sempre un numero REALMENTE restituito da uno strumento in questa conversazione, mai stimato. Il testo prima del blocco resta la spiegazione discorsiva normale; non descrivere a parole i singoli numeri gia' nel grafico se sono ripetitivi. Non tutte le risposte hanno bisogno di un grafico: un singolo numero o un confronto tra solo due valori di solito non lo richiede."""
+GRAFICI: quando un andamento nel tempo o un confronto (tra periodi, sedi, categorie, operatori, ...) sarebbe piu' chiaro con un grafico, aggiungi alla fine della risposta un blocco ```chart``` con un JSON su una riga tipo {{"titolo": "Incassi per mese", "dati": [{{"etichetta": "Luglio", "valore": 1234.5}}, {{"etichetta": "Agosto", "valore": 987.0}}]}} - "valore" deve essere sempre un numero REALMENTE restituito da uno strumento in questa conversazione, mai stimato. Il testo prima del blocco resta la spiegazione discorsiva normale; non descrivere a parole i singoli numeri gia' nel grafico se sono ripetitivi. Non tutte le risposte hanno bisogno di un grafico: un singolo numero o un confronto tra solo due valori di solito non lo richiede.
+
+AZIONI DI SCRITTURA (es. cambia_stato_pratica): la LETTURA di dati puo' avvenire sempre liberamente; la SCRITTURA/MODIFICA richiede SEMPRE una conferma esplicita dell'utente PRIMA di essere eseguita, applicata dal server stesso (lo strumento senza conferma=true non scrive mai nulla, restituisce solo la descrizione di cosa cambierebbe). Quando uno strumento di scrittura ti risponde chiedendo conferma, riporta la domanda all'utente in modo chiaro (cosa cambierebbe, su quale pratica) e FERMATI: non richiamare lo strumento con conferma=true nella STESSA risposta. Richiamalo con conferma=true solo nel messaggio immediatamente successivo, e solo se l'utente ha davvero confermato esplicitamente (es. "sì", "conferma", "procedi", "fallo") in quel messaggio - se l'utente cambia argomento, esita o non risponde chiaramente, non eseguire l'azione."""
 
 _WEEKDAY_NAMES_IT = ("lunedi'", "martedi'", "mercoledi'", "giovedi'", "venerdi'", "sabato", "domenica")
 
