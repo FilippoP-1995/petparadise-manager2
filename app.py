@@ -2740,17 +2740,20 @@ body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY
    e mini chat in overlay SULLA pagina corrente, mai una pagina/route
    separata. z-index piu' alto di qualunque altro overlay esistente cosi'
    resta sempre raggiungibile da ogni schermata. */
-.ai-chat-fab{position:fixed;z-index:250;width:56px;height:56px;margin:0;transform:translate(-50%,-50%);border-radius:50%;border:0;display:grid;place-items:center;background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;box-shadow:0 10px 26px #ef405f66,0 0 0 4px #ef405f1f;cursor:grab;touch-action:none;transition:box-shadow .15s ease}
+.ai-chat-fab{position:fixed;z-index:257;width:56px;height:56px;margin:0;transform:translate(-50%,-50%);border-radius:50%;border:0;display:grid;place-items:center;background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;box-shadow:0 10px 26px #ef405f66,0 0 0 4px #ef405f1f;cursor:grab;touch-action:none;transition:box-shadow .15s ease}
 .ai-chat-fab:active{cursor:grabbing}
 .ai-chat-fab.dragging{transition:none;box-shadow:0 16px 36px #ef405f80}
 .ai-chat-fab svg{width:24px;height:24px}
 #aiChatRoot[hidden]{display:none}
-.ai-chat-backdrop{position:fixed;inset:0;z-index:255;background:#020617aa}
-.ai-chat-panel{position:fixed;z-index:256;left:50%;bottom:calc(16px + var(--safe-bottom));transform:translateX(-50%);width:min(420px,calc(100vw - 24px));max-height:min(72vh,620px);display:flex;flex-direction:column;background:#141b28;border:1px solid #263246;border-radius:20px;box-shadow:0 30px 80px #000c;overflow:hidden}
+.ai-chat-backdrop{position:fixed;inset:0;z-index:255;background:#020617aa;opacity:0;pointer-events:none;transition:opacity .28s ease}
+#aiChatRoot.ai-chat-open .ai-chat-backdrop{opacity:1;pointer-events:auto}
+.ai-chat-panel{position:fixed;z-index:256;left:50%;bottom:calc(16px + var(--safe-bottom));transform:translateX(-50%);width:min(420px,calc(100vw - 24px));max-height:min(72vh,620px);display:flex;flex-direction:column;background:#141b28;border:1px solid #263246;border-radius:20px;box-shadow:0 30px 80px #000c;overflow:hidden;clip-path:circle(0px at var(--ai-chat-ox,90%) var(--ai-chat-oy,90%));opacity:0;transition:clip-path .32s cubic-bezier(.4,0,.2,1),opacity .22s ease}
+#aiChatRoot.ai-chat-open .ai-chat-panel{clip-path:circle(var(--ai-chat-r,150%) at var(--ai-chat-ox,90%) var(--ai-chat-oy,90%));opacity:1}
+@media(prefers-reduced-motion:reduce){.ai-chat-panel,.ai-chat-backdrop{transition:none!important}}
 .ai-chat-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #1d2636;font-weight:800}
 .ai-chat-head span{display:flex;align-items:center;gap:8px}
 .ai-chat-head svg{width:18px;height:18px}
-.ai-chat-body{flex:1;min-height:120px;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 16px;display:flex;flex-direction:column;gap:8px;background:#0d121b}
+.ai-chat-body{flex:1;min-height:120px;overflow-y:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;padding:14px 16px;display:flex;flex-direction:column;gap:8px;background:#0d121b}
 .ai-chat-empty{color:#8592a6;font-size:13px;text-align:center;margin:auto}
 .ai-chat-pending{align-self:flex-start;color:#8592a6;font-size:12.5px;font-style:italic}
 .ai-chat-error .wa-bubble{background:#3a1a1f;color:#fca5a5}
@@ -7276,17 +7279,58 @@ function aiChatToggle(){
   if(!root)return;
   if(root.hidden)aiChatOpen();else aiChatClose();
 }
+// L'apertura/chiusura e' un cerchio (clip-path) che si espande/si
+// richiude esattamente sul centro dell'icona (richiesta esplicita
+// dell'utente: "si risucchia la finestra dentro l'icona"). L'icona non
+// viene mai spostata durante l'animazione, quindi torna sempre nella
+// stessa posizione in cui si trovava - semplicemente non si e' mai
+// mossa. Il punto e il raggio sono ricalcolati ad ogni apertura/chiusura
+// (non solo alla prima) cosi' restano corretti anche se l'icona e' stata
+// trascinata altrove nel frattempo.
+function aiChatSetGenieOrigin(){
+  const panel=document.querySelector('.ai-chat-panel');
+  if(!aiChatFab||!panel)return;
+  const fabRect=aiChatFab.getBoundingClientRect();
+  const panelRect=panel.getBoundingClientRect();
+  const ox=fabRect.left+fabRect.width/2-panelRect.left;
+  const oy=fabRect.top+fabRect.height/2-panelRect.top;
+  const r=Math.hypot(panelRect.width,panelRect.height);
+  panel.style.setProperty('--ai-chat-ox',ox+'px');
+  panel.style.setProperty('--ai-chat-oy',oy+'px');
+  panel.style.setProperty('--ai-chat-r',r+'px');
+}
 function aiChatOpen(){
   const root=document.getElementById('aiChatRoot');
   if(!root)return;
   root.hidden=false;
   aiChatReposition();
+  aiChatSetGenieOrigin();
+  // Un frame per lasciare che il browser applichi lo stato "chiuso"
+  // (clip-path a raggio 0) prima di passare alla classe che avvia la
+  // transizione verso l'apertura, altrimenti le due modifiche si
+  // fondono e l'animazione non parte.
+  requestAnimationFrame(()=>root.classList.add('ai-chat-open'));
   const input=document.getElementById('aiChatInput');
   if(input)setTimeout(()=>input.focus(),50);
 }
 function aiChatClose(){
   const root=document.getElementById('aiChatRoot');
-  if(root)root.hidden=true;
+  if(!root||root.hidden)return;
+  const panel=document.querySelector('.ai-chat-panel');
+  aiChatSetGenieOrigin();
+  root.classList.remove('ai-chat-open');
+  let done=false;
+  const finish=()=>{
+    if(done)return;done=true;
+    root.hidden=true;
+    if(panel)panel.removeEventListener('transitionend',onEnd);
+  };
+  const onEnd=event=>{if(event.target===panel&&event.propertyName==='clip-path')finish();};
+  if(panel)panel.addEventListener('transitionend',onEnd);
+  // Fallback: se transitionend non arriva mai (motion ridotto, o un
+  // browser che non lo emette per clip-path) il pannello non deve
+  // restare visibile/interattivo per sempre.
+  setTimeout(finish,400);
 }
 function aiChatFabClick(){
   // Un trascinamento appena concluso non deve anche aprire la chat

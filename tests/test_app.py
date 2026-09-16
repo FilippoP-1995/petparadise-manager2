@@ -15989,6 +15989,73 @@ class AIAssistantTests(unittest.TestCase):
         self.assertIn("font-size:16px", input_row_css)
         self.assertNotIn("font-size:14px", input_row_css)
 
+    def test_ai_chat_open_close_animates_from_the_icon_and_icon_stays_visible_on_top(self):
+        # Richiesta esplicita dell'utente: aprendo la chat deve esserci
+        # un'animazione, l'icona deve restare SEMPRE visibile e cliccabile
+        # per richiudere, e chiudendo la finestra deve "risucchiarsi
+        # dentro l'icona" tornando alla posizione in cui si trovava quando
+        # e' stata aperta. L'icona non viene mai spostata durante
+        # l'apertura/chiusura (solo il trascinamento la sposta, invariato):
+        # "torna nella stessa posizione" e' quindi garantito per
+        # costruzione, non serve altro codice per quello specifico punto.
+
+        # 1) l'icona (.ai-chat-fab) deve avere uno z-index piu' alto sia
+        #    del backdrop che del pannello, altrimenti a chat aperta finisce
+        #    sotto lo sfondo scurito (comportamento originale del bug).
+        def z_index_of(selector):
+            start = app.CSS.index(selector)
+            end = app.CSS.index("}", start)
+            rule = app.CSS[start:end]
+            m = re.search(r"z-index:(\d+)", rule)
+            self.assertIsNotNone(m, f"nessun z-index trovato per {selector!r}")
+            return int(m.group(1))
+        fab_z = z_index_of(".ai-chat-fab{")
+        backdrop_z = z_index_of(".ai-chat-backdrop{")
+        panel_z = z_index_of(".ai-chat-panel{")
+        self.assertGreater(fab_z, backdrop_z, "l'icona deve restare sopra lo sfondo scurito a chat aperta")
+        self.assertGreater(fab_z, panel_z, "l'icona deve restare sopra il pannello per restare cliccabile")
+
+        # 2) l'apertura/chiusura e' un cerchio (clip-path) che parte/arriva
+        #    esattamente al centro dell'icona (variabili CSS calcolate in
+        #    JS da aiChatSetGenieOrigin), non un semplice show/hide istantaneo.
+        self.assertIn("clip-path:circle(0px at var(--ai-chat-ox", app.CSS)
+        self.assertIn("#aiChatRoot.ai-chat-open .ai-chat-panel{clip-path:circle(var(--ai-chat-r", app.CSS)
+        self.assertIn("transition:clip-path", app.CSS)
+        self.assertIn("#aiChatRoot.ai-chat-open .ai-chat-backdrop{opacity:1", app.CSS)
+        # rispetta la preferenza di sistema per il movimento ridotto, stessa
+        # convenzione gia' usata per le altre animazioni del gestionale.
+        self.assertIn("@media(prefers-reduced-motion:reduce){.ai-chat-panel,.ai-chat-backdrop{transition:none!important}}", app.CSS)
+
+        # 3) il JS calcola davvero il centro dell'icona (non un punto fisso)
+        #    e lo ricalcola ad ogni apertura/chiusura, gestendo anche il
+        #    caso in cui l'icona sia stata trascinata nel frattempo.
+        js = app.APP_JS
+        self.assertIn("function aiChatSetGenieOrigin(", js)
+        self.assertIn("aiChatFab.getBoundingClientRect()", js)
+        for fn_body_marker in ("function aiChatOpen(", "function aiChatClose("):
+            self.assertIn(fn_body_marker, js)
+        open_start = js.index("function aiChatOpen(")
+        open_end = js.index("\nfunction aiChatClose(")
+        open_body = js[open_start:open_end]
+        self.assertIn("aiChatSetGenieOrigin();", open_body)
+        self.assertIn("requestAnimationFrame(()=>root.classList.add('ai-chat-open'));", open_body)
+        self.assertLess(open_body.index("aiChatSetGenieOrigin();"), open_body.index("requestAnimationFrame("), "il punto di origine va calcolato PRIMA di avviare l'animazione di apertura")
+        self.assertIn("root.classList.remove('ai-chat-open');", js)
+        # non deve restare visibile/interattivo per sempre se transitionend
+        # non arriva mai (es. con animazioni disattivate dal sistema).
+        self.assertIn("addEventListener('transitionend',onEnd)", js)
+        self.assertIn("setTimeout(finish,400)", js)
+
+    def test_ai_chat_body_scroll_does_not_bleed_into_the_page_behind_it(self):
+        # Richiesta esplicita dell'utente: lo scroll a dito dentro la chat
+        # non deve far scorrere la schermata sottostante quando si
+        # raggiunge l'inizio/fine della lista messaggi (scroll chaining).
+        # html/body hanno gia' overscroll-behavior-y:contain a livello di
+        # documento, ma questo non basta per un contenitore INTERNO come
+        # .ai-chat-body: serve lo stesso contenimento anche li'.
+        body_css = app.CSS[app.CSS.index(".ai-chat-body{"):app.CSS.index(".ai-chat-body{")+250]
+        self.assertIn("overscroll-behavior-y:contain", body_css)
+
 
 if __name__ == "__main__":
     unittest.main()
