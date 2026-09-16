@@ -63,6 +63,7 @@ from calendar_service import (
     route_eligible_events,
 )
 import route_service
+import ai_assistant
 from backup_service import run_database_backup
 from shift_service import (
     SHIFT_BRANCHES,
@@ -2733,6 +2734,36 @@ body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY
 .route-quick-field{margin-bottom:14px}
 .route-quick-field label{display:block;margin-bottom:6px;font-size:12px;color:#8592a6;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
 .route-quick-field select{width:100%;padding:11px 12px;border-radius:11px;border:1px solid #263246;background:#0e1622;color:#f5f7fb;font-size:14.5px}
+/* Assistente AI flottante (richiesta esplicita dell'utente): icona
+   trascinabile con posizione ancorata in percentuale di viewport - mai
+   coordinate assolute, cosi' resta valida cambiando schermo/dispositivo -
+   e mini chat in overlay SULLA pagina corrente, mai una pagina/route
+   separata. z-index piu' alto di qualunque altro overlay esistente cosi'
+   resta sempre raggiungibile da ogni schermata. */
+.ai-chat-fab{position:fixed;z-index:250;width:56px;height:56px;border-radius:50%;border:0;display:grid;place-items:center;background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;box-shadow:0 10px 26px #ef405f66,0 0 0 4px #ef405f1f;cursor:grab;touch-action:none;transition:box-shadow .15s ease}
+.ai-chat-fab:active{cursor:grabbing}
+.ai-chat-fab.dragging{transition:none;box-shadow:0 16px 36px #ef405f80}
+.ai-chat-fab svg{width:24px;height:24px}
+#aiChatRoot[hidden]{display:none}
+.ai-chat-backdrop{position:fixed;inset:0;z-index:255;background:#020617aa}
+.ai-chat-panel{position:fixed;z-index:256;left:50%;bottom:calc(16px + var(--safe-bottom));transform:translateX(-50%);width:min(420px,calc(100vw - 24px));max-height:min(72vh,620px);display:flex;flex-direction:column;background:#141b28;border:1px solid #263246;border-radius:20px;box-shadow:0 30px 80px #000c;overflow:hidden}
+.ai-chat-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #1d2636;font-weight:800}
+.ai-chat-head span{display:flex;align-items:center;gap:8px}
+.ai-chat-head svg{width:18px;height:18px}
+.ai-chat-body{flex:1;min-height:120px;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 16px;display:flex;flex-direction:column;gap:8px;background:#0d121b}
+.ai-chat-empty{color:#8592a6;font-size:13px;text-align:center;margin:auto}
+.ai-chat-pending{align-self:flex-start;color:#8592a6;font-size:12.5px;font-style:italic}
+.ai-chat-error .wa-bubble{background:#3a1a1f;color:#fca5a5}
+.ai-chat-input-row{display:flex;gap:8px;align-items:flex-end;padding:10px 12px;border-top:1px solid #1d2636;background:#141b28}
+.ai-chat-input-row textarea{flex:1;resize:none;max-height:120px;padding:10px 12px;border-radius:12px;border:1px solid #263246;background:#0e1622;color:#f5f7fb;font:inherit;font-size:14px}
+.ai-chat-input-row button{flex:0 0 auto;width:40px;height:40px;border-radius:50%;border:0;background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;display:grid;place-items:center;cursor:pointer}
+.ai-chat-input-row button svg{width:18px;height:18px}
+.light-theme .ai-chat-panel{background:#fff;border-color:#e2e8f0}
+.light-theme .ai-chat-head{border-color:#eef1f5}
+.light-theme .ai-chat-body{background:#f8fafc}
+.light-theme .ai-chat-input-row{background:#fff;border-color:#eef1f5}
+.light-theme .ai-chat-input-row textarea{background:#f8fafc;color:#24312c;border-color:#e2e8f0}
+@media(max-width:480px){.ai-chat-panel{bottom:0;left:0;right:0;transform:none;width:100%;border-radius:20px 20px 0 0;max-height:min(80vh,620px)}}
 .route-quick-field-select{display:block;width:100%;margin:-6px 0 14px;padding:11px 12px;border-radius:11px;border:1px solid #263246;background:#0e1622;color:#f5f7fb;font-size:14.5px}
 .route-quick-stops{list-style:none;margin:0 0 16px;padding:0;max-height:180px;overflow-y:auto;border:1px solid #263246;border-radius:12px}
 .route-quick-stops li{padding:9px 12px;border-bottom:1px solid #263246;font-size:13.5px}
@@ -7229,6 +7260,169 @@ async function schedulePushTest(){
   try{const response=await fetch('/api/push/test',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:'{}'});const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||'Test non programmato.');pushDiagnostic('backend',data.message);alert(data.message);}
   catch(error){alert(pushError(error));}
 }
+// Assistente AI flottante (richiesta esplicita dell'utente): icona
+// trascinabile + mini chat in overlay SULLA pagina corrente. Nessun cambio
+// di route/reload: apertura/chiusura toggla solo l'attributo hidden dello
+// stesso elemento gia' presente nel DOM (stesso idioma gia' usato da
+// cremationOpenEditModal/turniOpenCellEditor), quindi lo stato della
+// pagina sottostante (scroll, filtri, giorno/settimana visualizzati) non
+// viene mai toccato. La cronologia della conversazione vive solo in una
+// variabile JS di pagina: si perde su un reload/cambio pagina, MAI salvata
+// lato server (richiesta esplicita di non accumulare dati sensibili).
+var aiChatHistory=[];
+var aiChatBusy=false;
+function aiChatToggle(){
+  const root=document.getElementById('aiChatRoot');
+  if(!root)return;
+  if(root.hidden)aiChatOpen();else aiChatClose();
+}
+function aiChatOpen(){
+  const root=document.getElementById('aiChatRoot');
+  if(!root)return;
+  root.hidden=false;
+  aiChatReposition();
+  const input=document.getElementById('aiChatInput');
+  if(input)setTimeout(()=>input.focus(),50);
+}
+function aiChatClose(){
+  const root=document.getElementById('aiChatRoot');
+  if(root)root.hidden=true;
+}
+function aiChatFabClick(){
+  // Un trascinamento appena concluso non deve anche aprire la chat
+  // (altrimenti ogni spostamento dell'icona la riaprirebbe per sbaglio).
+  if(aiChatFab&&aiChatFab._dragged){aiChatFab._dragged=false;return;}
+  aiChatToggle();
+}
+function aiChatReposition(){
+  // Su iOS Safari con tastiera aperta window.innerHeight non si riduce
+  // (solo visualViewport.height lo fa, stesso problema gia' risolto per i
+  // pannelli di ricerca — vedi ppmPositionLookupPanel): si sposta il
+  // pannello sopra la tastiera invece di lasciarlo coperto.
+  const panel=document.querySelector('.ai-chat-panel');
+  if(!panel||!window.visualViewport)return;
+  const keyboard=window.innerHeight-window.visualViewport.height-window.visualViewport.offsetTop;
+  panel.style.bottom=Math.max(0,keyboard)+'px';
+}
+if(window.visualViewport)window.visualViewport.addEventListener('resize',aiChatReposition);
+function aiChatInputKeydown(event){
+  if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();event.target.closest('form').requestSubmit();}
+}
+function aiChatAppendBubble(role,text,isError){
+  const body=document.getElementById('aiChatBody');
+  if(!body)return null;
+  const empty=body.querySelector('.ai-chat-empty');
+  if(empty)empty.remove();
+  const row=document.createElement('div');
+  row.className='wa-bubble-row '+(role==='user'?'wa-bubble-row-sent':'wa-bubble-row-received')+(isError?' ai-chat-error':'');
+  const bubble=document.createElement('div');
+  bubble.className='wa-bubble '+(role==='user'?'wa-bubble-sent':'wa-bubble-received');
+  const textEl=document.createElement('div');
+  textEl.className='wa-bubble-text';
+  textEl.textContent=text;
+  bubble.appendChild(textEl);
+  row.appendChild(bubble);
+  body.appendChild(row);
+  body.scrollTop=body.scrollHeight;
+  return row;
+}
+async function aiChatSend(event){
+  event.preventDefault();
+  if(aiChatBusy)return false;
+  const input=document.getElementById('aiChatInput');
+  const text=(input.value||'').trim();
+  if(!text)return false;
+  input.value='';
+  input.style.height='auto';
+  aiChatAppendBubble('user',text);
+  aiChatBusy=true;
+  const body=document.getElementById('aiChatBody');
+  const pending=document.createElement('div');
+  pending.className='ai-chat-pending';
+  pending.textContent='Sto verificando i dati…';
+  body.appendChild(pending);
+  body.scrollTop=body.scrollHeight;
+  try{
+    const res=await fetch('/api/assistente/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messaggio:text,cronologia:aiChatHistory})});
+    const data=await res.json();
+    pending.remove();
+    if(data.ok){
+      aiChatHistory=data.cronologia||[];
+      aiChatAppendBubble('assistant',data.risposta||'');
+    }else{
+      aiChatAppendBubble('assistant',data.error||'Si è verificato un errore.',true);
+    }
+  }catch(error){
+    pending.remove();
+    aiChatAppendBubble('assistant',"Impossibile contattare l'assistente. Riprova.",true);
+  }
+  aiChatBusy=false;
+  body.scrollTop=body.scrollHeight;
+  return false;
+}
+// Trascinamento libero dell'icona: posizione mantenuta come frazione 0..1
+// della viewport (mai coordinate assolute), cosi' resta valida passando da
+// desktop a mobile — richiesta esplicita dell'utente. Salvata per utente
+// (debounced) su /api/assistente/posizione, che scrive su user_preferences
+// esattamente come le altre preferenze gia' persistite li'.
+var aiChatFab=null;
+var aiChatSaveTimer=null;
+function aiChatClampPct(v){return Math.min(0.97,Math.max(0.03,v));}
+function aiChatSafeInset(name){return parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name))||0;}
+function aiChatApplyPos(xPct,yPct){
+  // Se la finestra ha ancora dimensioni 0 (layout non pronto, tab in
+  // background in alcuni contesti embedded) i calcoli sotto darebbero un
+  // risultato negativo che spinge l'icona fuori schermo: meglio non
+  // riposizionare affatto finche' non c'e' una viewport reale.
+  if(!aiChatFab||!window.innerWidth||!window.innerHeight)return;
+  const size=56,margin=8;
+  const minX=margin+size/2,maxX=window.innerWidth-margin-size/2;
+  const minY=margin+aiChatSafeInset('--safe-top')+size/2,maxY=window.innerHeight-margin-aiChatSafeInset('--safe-bottom')-size/2;
+  const x=Math.min(maxX,Math.max(minX,xPct*window.innerWidth));
+  const y=Math.min(maxY,Math.max(minY,yPct*window.innerHeight));
+  aiChatFab.style.left=x+'px';aiChatFab.style.top=y+'px';aiChatFab.style.right='auto';aiChatFab.style.bottom='auto';
+}
+function aiChatSavePos(xPct,yPct){
+  clearTimeout(aiChatSaveTimer);
+  aiChatSaveTimer=setTimeout(()=>{
+    fetch('/api/assistente/posizione',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({x_pct:xPct,y_pct:yPct})}).catch(()=>{});
+  },400);
+}
+function aiChatInit(){
+  aiChatFab=document.getElementById('aiChatFab');
+  if(!aiChatFab)return;
+  let xPct=parseFloat(aiChatFab.dataset.xPct)||0.92;
+  let yPct=parseFloat(aiChatFab.dataset.yPct)||0.86;
+  aiChatApplyPos(xPct,yPct);
+  window.addEventListener('resize',()=>aiChatApplyPos(xPct,yPct));
+  let dragging=false,startX=0,startY=0,moved=false;
+  aiChatFab.addEventListener('pointerdown',event=>{
+    dragging=true;moved=false;aiChatFab._dragged=false;
+    startX=event.clientX;startY=event.clientY;
+    aiChatFab.classList.add('dragging');
+    aiChatFab.setPointerCapture(event.pointerId);
+  });
+  aiChatFab.addEventListener('pointermove',event=>{
+    if(!dragging)return;
+    const dx=event.clientX-startX,dy=event.clientY-startY;
+    if(Math.abs(dx)>4||Math.abs(dy)>4)moved=true;
+    if(!moved)return;
+    const rect=aiChatFab.getBoundingClientRect();
+    xPct=aiChatClampPct((rect.left+rect.width/2+dx)/window.innerWidth);
+    yPct=aiChatClampPct((rect.top+rect.height/2+dy)/window.innerHeight);
+    aiChatApplyPos(xPct,yPct);
+    startX=event.clientX;startY=event.clientY;
+  });
+  const aiChatEndDrag=()=>{
+    if(!dragging)return;
+    dragging=false;
+    aiChatFab.classList.remove('dragging');
+    if(moved){aiChatFab._dragged=true;aiChatSavePos(xPct,yPct);}
+  };
+  aiChatFab.addEventListener('pointerup',aiChatEndDrag);
+  aiChatFab.addEventListener('pointercancel',aiChatEndDrag);
+}
+document.addEventListener('DOMContentLoaded',aiChatInit);
 </script>
 """
 
@@ -7279,6 +7473,8 @@ LUCIDE_PATHS = {
     "repeat": '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
     "map-pin": '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
     "gift": '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/>',
+    "sparkles": '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .962L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>',
+    "send": '<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/>',
 }
 
 
@@ -8394,8 +8590,36 @@ def layout(title, body, user=None):
         drawer_links=''.join(more_card(href,icon,label) for href,icon,label in links)
         drawer_order_json=esc(json.dumps([label for _,_,label in links],ensure_ascii=False))
         mobile_nav=f'''<nav class="bottom-nav" aria-label="Navigazione mobile"><a href="/">{lucide("home")}<span>Dashboard</span></a><a href="/calendario">{lucide("calendar")}<span>Calendario</span></a><button class="bottom-new" type="button" onclick="toggleCreateMenu()" aria-label="Crea">{lucide("plus")}</button><a href="/programma-cremazioni">{lucide("paw-soft")}<span>Cremazioni</span></a><button type="button" onclick="toggleMoreMenu()">{lucide("more-horizontal")}<span>Altro</span></button></nav><div class="create-sheet-backdrop" onclick="toggleCreateMenu(false)"></div><aside class="create-sheet" aria-label="Crea"><a href="/nuova" data-new-practice-link>{lucide("plus")}<span>Nuova pratica</span></a><a href="/calendario/nuovo" data-calendar-new-event>{lucide("calendar")}<span>Nuovo evento</span></a><a href="/turni/pianifica">{lucide("clock")}<span>Nuovo turno</span></a></aside><div class="more-backdrop" onclick="toggleMoreMenu(false)"></div><aside class="more-menu" aria-label="Altre funzioni"><div class="more-title"><div><b>Menu</b><small>Tutto a portata di mano</small></div><div class="more-title-actions"><button class="more-edit-btn" type="button" onclick="toggleMoreMenuEdit()" aria-label="Riordina le voci del menu"><span class="more-edit-icon more-edit-icon-pencil">{lucide("pencil")}</span><span class="more-edit-icon more-edit-icon-check">{lucide("check")}</span><span class="more-edit-label">Modifica</span></button><button class="more-close-btn" onclick="toggleMoreMenu(false)" aria-label="Chiudi">×</button></div></div><form id="moreMenuOrderForm" data-drag-group action="/il-mio-profilo/salva" method="post"><input type="hidden" name="return_to" value="/il-mio-profilo"><input type="hidden" name="sidebar_order_json" data-drag-order value="{drawer_order_json}"><div class="more-card-list" data-drag-root>{drawer_links}</div></form><button class="btn ghost install-btn" type="button" onclick="installPetParadise()">Installa App</button></aside>'''
+        # Assistente AI flottante (richiesta esplicita dell'utente): renderizzato
+        # qui, dentro il ramo "utente autenticato", cosi' compare automaticamente
+        # su OGNI pagina della V1 senza toccare i ~150 handler di pagina uno per
+        # uno. Nessuna pagina/route dedicata: e' solo un overlay (hidden finche'
+        # non aperto) sopra il contenuto gia' presente. Posizione dell'icona
+        # salvata per singolo utente su user_preferences (ai_chat_fab_pos, stesso
+        # meccanismo gia' usato per altre preferenze), come frazione 0..1 della
+        # viewport cosi' resta valida su schermi di dimensioni diverse.
+        try:
+            fab_pos=json.loads(prefs.get("ai_chat_fab_pos") or "{}")
+        except ValueError:
+            fab_pos={}
+        fab_x=fab_pos.get("x_pct",0.92) if isinstance(fab_pos,dict) else 0.92
+        fab_y=fab_pos.get("y_pct",0.86) if isinstance(fab_pos,dict) else 0.86
+        ai_chat_html=f'''<div id="aiChatRoot" hidden>
+          <div class="ai-chat-backdrop" onclick="if(event.target===this)aiChatClose()"></div>
+          <div class="ai-chat-panel" role="dialog" aria-modal="true" aria-label="Assistente AI">
+            <div class="ai-chat-head"><span>{lucide("sparkles")} Assistente AI</span><button type="button" class="icon-btn" onclick="aiChatClose()" aria-label="Chiudi">{lucide("x")}</button></div>
+            <div class="ai-chat-body" id="aiChatBody"><div class="ai-chat-empty">Chiedimi qualsiasi cosa sui dati del gestionale: pratiche, cremazioni, ritiri, riconsegne, incassi, turni, urne...</div></div>
+            <form class="ai-chat-input-row" onsubmit="return aiChatSend(event)">
+              <textarea id="aiChatInput" placeholder="Scrivi una domanda..." rows="1" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'" onkeydown="aiChatInputKeydown(event)"></textarea>
+              <button type="submit" aria-label="Invia">{lucide("send")}</button>
+            </form>
+          </div>
+        </div>
+        <button type="button" id="aiChatFab" class="ai-chat-fab" aria-label="Assistente AI" data-x-pct="{fab_x}" data-y-pct="{fab_y}" onclick="aiChatFabClick()">{lucide("sparkles")}</button>'''
+    else:
+        ai_chat_html=""
     vapid_public=esc(os.environ.get("VAPID_PUBLIC_KEY",""))
-    return f'''<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#e9475b"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="PP Manager"><meta name="application-name" content="Pet Paradise Manager"><meta name="format-detection" content="telephone=no"><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"><title>{esc(title)} - Pet Paradise Manager</title><style>{CSS}</style></head><body class="{body_class.strip()}"{body_attrs} data-vapid-public-key="{vapid_public}"><a class="skip-link" href="#main-content">Vai al contenuto</a><div class="ppm-pull-refresh" id="ppmPullRefresh" aria-hidden="true"><span class="ppm-pull-refresh-spinner"></span></div><aside class="top"><a class="brand" href="/"><img class="brand-logo brand-logo-dark" src="/assets/company_logo.png" alt="Pet Paradise"><img class="brand-logo brand-logo-light" src="/assets/company_logo_light.png" alt="Pet Paradise"><span class="brand-copy">Pet Paradise <small>MANAGER</small></span></a>{nav}</aside>{app_header}<div id="main-content">{body}</div>{mobile_nav}{APP_JS}</body></html>'''
+    return f'''<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#e9475b"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="PP Manager"><meta name="application-name" content="Pet Paradise Manager"><meta name="format-detection" content="telephone=no"><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"><title>{esc(title)} - Pet Paradise Manager</title><style>{CSS}</style></head><body class="{body_class.strip()}"{body_attrs} data-vapid-public-key="{vapid_public}"><a class="skip-link" href="#main-content">Vai al contenuto</a><div class="ppm-pull-refresh" id="ppmPullRefresh" aria-hidden="true"><span class="ppm-pull-refresh-spinner"></span></div><aside class="top"><a class="brand" href="/"><img class="brand-logo brand-logo-dark" src="/assets/company_logo.png" alt="Pet Paradise"><img class="brand-logo brand-logo-light" src="/assets/company_logo_light.png" alt="Pet Paradise"><span class="brand-copy">Pet Paradise <small>MANAGER</small></span></a>{nav}</aside>{app_header}<div id="main-content">{body}</div>{mobile_nav}{ai_chat_html}{APP_JS}</body></html>'''
 
 
 class App(BaseHTTPRequestHandler):
@@ -8679,6 +8903,8 @@ class App(BaseHTTPRequestHandler):
         if user["must_change_password"] and path != "/imposta-password" and not path.startswith("/api/"):
             return self.redirect("/imposta-password")
         if path == "/imposta-password": return self.change_password_submit(user)
+        if path == "/api/assistente/chat": return self.api_ai_chat(user)
+        if path == "/api/assistente/posizione": return self.api_ai_chat_position(user)
         if path == "/nuova": return self.create_practice(user)
         if path == "/bilanci/uscite": return self.balance_expense_submit(user)
         if path == "/bilanci/entrate": return self.balance_income_submit(user)
@@ -15005,6 +15231,69 @@ class App(BaseHTTPRequestHandler):
         size=min(int(self.headers.get("Content-Length",0)),64_000)
         return json.loads(self.rfile.read(size).decode("utf-8") or "{}")
 
+    def api_ai_chat(self,user):
+        # Livello controllato AI -> strumento autorizzato -> database reale
+        # (mai AI -> accesso libero al database): vedi ai_assistant.py. La
+        # cronologia della conversazione viaggia solo tra client e server ad
+        # ogni richiesta (il client la rimanda per intero), non viene MAI
+        # salvata su disco/DB - richiesta esplicita dell'utente di non
+        # accumulare inutilmente dati sensibili nei log/conversazioni.
+        try:
+            body=self.json_body()
+        except PermissionError as exc:
+            return self.send_json({"ok":False,"error":str(exc)},403)
+        except (ValueError,TypeError):
+            return self.send_json({"ok":False,"error":"Richiesta non valida."},400)
+        message=(body.get("messaggio") or "").strip()
+        if not message:
+            return self.send_json({"ok":False,"error":"Scrivi una domanda."},400)
+        if len(message)>2000:
+            return self.send_json({"ok":False,"error":"Domanda troppo lunga (massimo 2000 caratteri)."},400)
+        history_in=body.get("cronologia") or []
+        if not isinstance(history_in,list) or len(history_in)>60:
+            return self.send_json({"ok":False,"error":"Cronologia della conversazione non valida."},400)
+        if not os.environ.get("ANTHROPIC_API_KEY","").strip():
+            return self.send_json({"ok":False,"error":"Assistente AI non configurato sul server: manca la variabile d'ambiente ANTHROPIC_API_KEY."},503)
+        now=rome_now()
+        def log(event,name,params,extra=None):
+            # Solo nome strumento/parametri/esito, mai il testo libero della
+            # domanda ne' i risultati con eventuali dati di clienti/animali.
+            print(f"[AI_ASSISTANT] {event} user={user['id']} tool={name} params={params!r} {extra or ''}",flush=True)
+        try:
+            with db() as c:
+                reply,new_history=ai_assistant.run_chat(c,user,now,history_in,message,log=log)
+        except ai_assistant.AssistantConfigError as exc:
+            return self.send_json({"ok":False,"error":str(exc)},503)
+        except Exception:
+            print("[AI_ASSISTANT] errore imprevisto",flush=True)
+            print(traceback.format_exc(),flush=True)
+            return self.send_json({"ok":False,"error":"Errore tecnico durante l'elaborazione della domanda. Riprova."},500)
+        return self.send_json({"ok":True,"risposta":reply,"cronologia":new_history[-60:]})
+
+    def api_ai_chat_position(self,user):
+        # Posizione dell'icona flottante salvata per singolo utente (stesso
+        # meccanismo user_preferences gia' usato per altre preferenze),
+        # come frazione 0..1 della viewport - MAI coordinate assolute, cosi'
+        # resta valida passando da desktop a mobile (richiesta esplicita
+        # dell'utente).
+        try:
+            body=self.json_body()
+        except PermissionError as exc:
+            return self.send_json({"ok":False,"error":str(exc)},403)
+        except (ValueError,TypeError):
+            return self.send_json({"ok":False,"error":"Richiesta non valida."},400)
+        try:
+            x_pct=max(0.0,min(1.0,float(body.get("x_pct"))))
+            y_pct=max(0.0,min(1.0,float(body.get("y_pct"))))
+        except (TypeError,ValueError):
+            return self.send_json({"ok":False,"error":"Posizione non valida."},400)
+        with db() as c:
+            c.execute(
+                "INSERT INTO user_preferences(user_id,key,value) VALUES(?,?,?) ON CONFLICT(user_id,key) DO UPDATE SET value=excluded.value",
+                (user["id"],"ai_chat_fab_pos",json.dumps({"x_pct":x_pct,"y_pct":y_pct})),
+            )
+        return self.send_json({"ok":True})
+
     def notification_status(self,user):
         with db() as c:
             unread=c.execute("SELECT count(*) n FROM notifications WHERE user_id=? AND is_read=0",(user["id"],)).fetchone()["n"]
@@ -19034,6 +19323,17 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         self.send_header("Content-Disposition",f'{disposition}; filename="{filename or path.name}"')
         self.send_header("Content-Length",str(len(payload))); self.end_headers(); self.wfile.write(payload)
 
+
+ai_assistant.configure(ai_assistant.Deps(
+    money_value=money_value,
+    effective_total=effective_total,
+    channel_paid_amount=channel_paid_amount,
+    channel_remaining=channel_remaining,
+    revenue_by_quote_category=revenue_by_quote_category,
+    states=tuple(STATES),
+    shift_operators=SHIFT_OPERATORS,
+    month_names_it=MONTH_NAMES_IT,
+))
 
 if __name__ == "__main__":
     init_db()

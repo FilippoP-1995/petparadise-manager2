@@ -9,7 +9,7 @@ import unittest
 from contextlib import redirect_stderr
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from urllib.parse import quote
 
 import app
@@ -398,7 +398,12 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.orders_page(admin);page=rendered[-1]
         for text in ("Ordina boccioni d’acqua","Seleziona la quantità","Ordina adesso","3 boccioni","5 boccioni","10 boccioni","Modifica impostazioni","Vedi tutti gli ordini","Ultimi ordini"):
             self.assertIn(text,page)
-        self.assertNotIn('name="order_recipient_email"',page);self.assertNotIn('name="order_email_subject"',page);self.assertNotIn('<textarea',page)
+        # Verifica che il form impostazioni (email destinatario/oggetto/testo)
+        # non sia inlineato nella pagina principale ordini - controllo sui nomi
+        # specifici dei campi, non su "<textarea" in generale: quel tag compare
+        # ormai anche nel widget Assistente AI condiviso da ogni pagina tramite
+        # layout(), quindi un controllo generico darebbe un falso positivo.
+        self.assertNotIn('name="order_recipient_email"',page);self.assertNotIn('name="order_email_subject"',page);self.assertNotIn('name="order_email_template"',page)
         self.assertIn("openOrderConfirmation(this,event)",page);self.assertIn("Conferma e invia",page);self.assertIn("closeOrderConfirmation()",page)
         for token in (".water-order-card",".quantity-stepper","@media(max-width:620px)","var(--safe-bottom)","min-height:44px"):
             self.assertIn(token,app.CSS)
@@ -14943,6 +14948,400 @@ class PetParadiseTests(unittest.TestCase):
             note = conn.execute("SELECT title,text FROM notifications WHERE type='system_error' ORDER BY id DESC LIMIT 1").fetchone()
         self.assertIsNotNone(note)
         self.assertIn("rete non disponibile", note["text"])
+
+
+class AIAssistantTests(unittest.TestCase):
+    """Assistente AI del gestionale: livello di strumenti (mai un numero
+    inventato - ogni tool esegue una query reale sulla stessa base dati/
+    logica del resto della V1) + l'endpoint di chat (LLM sempre mockato nei
+    test: non deve mai partire una vera chiamata di rete) + il widget
+    flottante (icona trascinabile, posizione per utente, overlay sulla
+    pagina corrente - mai una pagina separata)."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.old = (app.DATA, app.DB_PATH, app.DDT_DIR)
+        app.DATA = Path(self.temp.name)
+        app.DB_PATH = app.DATA / "test.db"
+        app.DDT_DIR = app.DATA / "ddt"
+        app.init_db()
+        self.handler = object.__new__(app.App)
+        self.ai = app.ai_assistant
+        with app.db() as c:
+            self.admin = c.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+
+    def tearDown(self):
+        app.DATA, app.DB_PATH, app.DDT_DIR = self.old
+        self.temp.cleanup()
+
+    def _insert_practice(self, c, **overrides):
+        stamp = overrides.pop("created_at", "2026-09-10T09:00:00")
+        fields = {
+            "practice_number": overrides.pop("practice_number", f"CR-AI-{overrides.pop('_n', 1)}"),
+            "request_origin": "Privato", "destination_branch": "Livorno", "status": "Ritirato",
+            "animal_name": "Fido", "species": "Cane", "owner_first_name": "Mario", "owner_last_name": "Rossi",
+            "pickup_date": "2026-09-10", "total_service": "250", "total_service_manual": "Si", "total_text": "", "deposit": "100",
+            "remaining_balance": "150", "payment_status": "Acconto", "created_at": stamp, "updated_at": stamp,
+        }
+        fields.update(overrides)
+        cols = ",".join(fields.keys())
+        marks = ",".join("?" for _ in fields)
+        return c.execute(f"INSERT INTO practices({cols}) VALUES({marks})", list(fields.values())).lastrowid
+
+    def test_resolve_period_covers_relative_tokens_in_rome_timezone(self):
+        now = app.rome_now()
+        today = now.date()
+        d_from, d_to, _ = self.ai.resolve_period(now, "oggi")
+        self.assertEqual((d_from, d_to), (today.isoformat(), today.isoformat()))
+        d_from, d_to, _ = self.ai.resolve_period(now, "ieri")
+        self.assertEqual((d_from, d_to), ((today - timedelta(days=1)).isoformat(),) * 2)
+        d_from, d_to, _ = self.ai.resolve_period(now, "domani")
+        self.assertEqual((d_from, d_to), ((today + timedelta(days=1)).isoformat(),) * 2)
+        monday = today - timedelta(days=today.weekday())
+        d_from, d_to, _ = self.ai.resolve_period(now, "questa_settimana")
+        self.assertEqual((d_from, d_to), (monday.isoformat(), (monday + timedelta(days=6)).isoformat()))
+        d_from, d_to, _ = self.ai.resolve_period(now, "ultimi_7_giorni")
+        self.assertEqual((d_from, d_to), ((today - timedelta(days=6)).isoformat(), today.isoformat()))
+        d_from, d_to, label = self.ai.resolve_period(now, data_da="2026-09-10", data_a="2026-09-20")
+        self.assertEqual((d_from, d_to), ("2026-09-10", "2026-09-20"))
+        self.assertIn("2026", label)
+        # optional=True senza alcun periodo -> nessun filtro, non un errore
+        d_from, d_to, label = self.ai.resolve_period(now, optional=True)
+        self.assertIsNone(d_from); self.assertIsNone(d_to); self.assertIsNone(label)
+        # periodo mancante e non opzionale -> errore chiaro, mai un valore indovinato
+        with self.assertRaises(self.ai.ToolInputError):
+            self.ai.resolve_period(now)
+        with self.assertRaises(self.ai.ToolInputError):
+            self.ai.resolve_period(now, "questo_mese_che_non_esiste")
+        with self.assertRaises(self.ai.ToolInputError):
+            self.ai.resolve_period(now, data_da="2026-09-20", data_a="2026-09-10")
+
+    def test_conta_pratiche_and_cerca_pratiche_use_real_data_only(self):
+        with app.db() as c:
+            self._insert_practice(c, _n=1, practice_number="CR-AI-1", destination_branch="Livorno", animal_name="Fido", owner_first_name="Mario", owner_last_name="Rossi", pickup_date="2026-09-05")
+            self._insert_practice(c, _n=2, practice_number="CR-AI-2", destination_branch="Empoli", animal_name="Micio", owner_first_name="Anna", owner_last_name="Bianchi", pickup_date="2026-09-08")
+        tool = next(t for t in self.ai.TOOL_SPECS if t["name"] == "conta_pratiche")["handler"]
+        now = app.rome_now()
+        with app.db() as c:
+            result = tool(c, self.admin, now, {"periodo": "intervallo_personalizzato", "data_da": "2026-09-01", "data_a": "2026-09-30"})
+            self.assertEqual(result["conteggio"], 2)
+            result = tool(c, self.admin, now, {"periodo": "intervallo_personalizzato", "data_da": "2026-09-01", "data_a": "2026-09-30", "sede": "Empoli"})
+            self.assertEqual(result["conteggio"], 1)
+            result = tool(c, self.admin, now, {"periodo": "intervallo_personalizzato", "data_da": "2026-09-01", "data_a": "2026-09-30", "cliente_nome": "Bianchi"})
+            self.assertEqual(result["conteggio"], 1)
+            # una sede inesistente e' un errore esplicito, mai un conteggio a caso
+            with self.assertRaises(self.ai.ToolInputError):
+                tool(c, self.admin, now, {"periodo": "intervallo_personalizzato", "data_da": "2026-09-01", "data_a": "2026-09-30", "sede": "Marte"})
+        search = next(t for t in self.ai.TOOL_SPECS if t["name"] == "cerca_pratiche")["handler"]
+        detail = next(t for t in self.ai.TOOL_SPECS if t["name"] == "dettaglio_pratica")["handler"]
+        with app.db() as c:
+            found = search(c, self.admin, now, {"query": "Micio"})
+            self.assertEqual(found["totale_trovati"], 1)
+            self.assertEqual(found["risultati"][0]["numero_pratica"], "CR-AI-2")
+            d = detail(c, self.admin, now, {"numero_pratica": "CR-AI-1"})
+            self.assertEqual(d["sede"], "Livorno")
+            self.assertEqual(d["circuito_economico"], "W")
+            self.assertAlmostEqual(d["totale"], 250.0)
+            self.assertAlmostEqual(d["rimanenza"], 150.0)
+            with self.assertRaises(self.ai.ToolInputError):
+                detail(c, self.admin, now, {"numero_pratica": "NON-ESISTE"})
+
+    def test_conta_cremazioni_ritiri_riconsegne_filter_by_sede_and_stato(self):
+        with app.db() as c:
+            stamp = "2026-09-10T09:00:00"
+            cid = c.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-09-12", "completato", "2026-09-12T08:00:00", "2026-09-12T09:00:00", stamp, stamp),
+            ).lastrowid
+            self._insert_practice(c, _n=1, practice_number="CR-AI-CREM", destination_branch="Livorno", cremation_cycle_id=cid, pickup_date="2026-09-10")
+            c.execute(
+                """INSERT INTO calendar_events(event_type,title,zone,start_at,end_at,all_day,event_status,operator_name,animal_name,created_by,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro", "Ritiro Fido", "Empoli", "2026-09-11T10:00:00", "2026-09-11T11:00:00", 0, "Da ritirare", "Serena", "Fido", self.admin["id"], stamp, stamp),
+            )
+            c.execute(
+                """INSERT INTO calendar_events(event_type,title,zone,start_at,end_at,all_day,event_status,operator_name,animal_name,created_by,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("Riconsegna in sede", "Riconsegna Micio", "Livorno", "2026-09-13T15:00:00", "2026-09-13T15:30:00", 0, "In programma", "Alessio", "Micio", self.admin["id"], stamp, stamp),
+            )
+        now = app.rome_now()
+        params = {"periodo": "intervallo_personalizzato", "data_da": "2026-09-01", "data_a": "2026-09-30"}
+        crem = next(t for t in self.ai.TOOL_SPECS if t["name"] == "conta_cremazioni")["handler"]
+        ritiri = next(t for t in self.ai.TOOL_SPECS if t["name"] == "conta_ritiri")["handler"]
+        riconsegne = next(t for t in self.ai.TOOL_SPECS if t["name"] == "conta_riconsegne")["handler"]
+        with app.db() as c:
+            self.assertEqual(crem(c, self.admin, now, params)["conteggio"], 1)
+            self.assertEqual(crem(c, self.admin, now, {**params, "sede": "Livorno"})["conteggio"], 1)
+            self.assertEqual(crem(c, self.admin, now, {**params, "sede": "Empoli"})["conteggio"], 0)
+            self.assertEqual(crem(c, self.admin, now, {**params, "stato": "pianificato"})["conteggio"], 0)
+            self.assertEqual(ritiri(c, self.admin, now, params)["conteggio"], 1)
+            self.assertEqual(ritiri(c, self.admin, now, {**params, "sede": "Empoli"})["conteggio"], 1)
+            self.assertEqual(ritiri(c, self.admin, now, {**params, "sede": "Livorno"})["conteggio"], 0)
+            self.assertEqual(riconsegne(c, self.admin, now, params)["conteggio"], 1)
+            self.assertEqual(riconsegne(c, self.admin, now, {**params, "tipo": "Riconsegna in sede"})["conteggio"], 1)
+            self.assertEqual(riconsegne(c, self.admin, now, {**params, "tipo": "Riconsegna"})["conteggio"], 0)
+
+    def test_ricavi_per_voce_preventivo_reuses_the_existing_bilanci_function(self):
+        with app.db() as c:
+            self._insert_practice(c, _n=1, practice_number="CR-AI-VOCE", price_cremation="120", pickup_date="2026-09-10")
+        tool = next(t for t in self.ai.TOOL_SPECS if t["name"] == "ricavi_per_voce_preventivo")["handler"]
+        now = app.rome_now()
+        with app.db() as c:
+            result = tool(c, self.admin, now, {"periodo": "intervallo_personalizzato", "data_da": "2026-09-01", "data_a": "2026-09-30"})
+            cremazione = next(r for r in result["ricavi"] if r["voce"] == "Cremazione")
+            self.assertAlmostEqual(cremazione["totale"], 120.0)
+            filtered = tool(c, self.admin, now, {"periodo": "intervallo_personalizzato", "data_da": "2026-09-01", "data_a": "2026-09-30", "voce": "Cremazione"})
+            self.assertEqual(len(filtered["ricavi"]), 1)
+            with self.assertRaises(self.ai.ToolInputError):
+                tool(c, self.admin, now, {"voce": "Voce inesistente"})
+
+    def test_vendite_urne_aggregates_practice_items_by_model(self):
+        with app.db() as c:
+            stamp = "2026-09-10T09:00:00"
+            urn_id = c.execute(
+                "INSERT INTO urns(name,price,quantity,created_at,updated_at) VALUES(?,?,?,?,?)",
+                ("Classica Noce", "80", 10, stamp, stamp),
+            ).lastrowid
+            pid = self._insert_practice(c, _n=1, practice_number="CR-AI-URNA", pickup_date="2026-09-10")
+            c.execute(
+                "INSERT INTO practice_items(practice_id,category,urn_catalog_id,label,price,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                (pid, "urna", urn_id, "Classica Noce", "80", stamp, stamp),
+            )
+        tool = next(t for t in self.ai.TOOL_SPECS if t["name"] == "vendite_urne")["handler"]
+        now = app.rome_now()
+        with app.db() as c:
+            result = tool(c, self.admin, now, {"periodo": "intervallo_personalizzato", "data_da": "2026-09-01", "data_a": "2026-09-30"})
+            self.assertEqual(result["totale_unita"], 1)
+            self.assertEqual(result["vendite_per_modello"][0]["modello"], "Classica Noce")
+            self.assertAlmostEqual(result["vendite_per_modello"][0]["ricavo"], 80.0)
+
+    def test_pratiche_saldo_aperto_lists_only_practices_with_a_real_open_balance(self):
+        with app.db() as c:
+            self._insert_practice(c, _n=1, practice_number="CR-AI-APERTO", total_service="300", deposit="0", remaining_balance="300", payment_status="Da saldare", pickup_date="2026-09-10")
+            self._insert_practice(c, _n=2, practice_number="CR-AI-SALDATO", total_service="300", deposit="300", remaining_balance="0", payment_status="Pagato", pickup_date="2026-09-10")
+        tool = next(t for t in self.ai.TOOL_SPECS if t["name"] == "pratiche_saldo_aperto")["handler"]
+        now = app.rome_now()
+        with app.db() as c:
+            result = tool(c, self.admin, now, {"alla_data": "2026-09-30"})
+        numbers = [e["numero_pratica"] for e in result["esempi"]]
+        self.assertIn("CR-AI-APERTO", numbers)
+        self.assertNotIn("CR-AI-SALDATO", numbers)
+
+    def test_turni_ferie_reperibilita_use_the_real_shift_schema(self):
+        today = date.today()
+        monday = today - timedelta(days=today.weekday())
+        with app.db() as c:
+            app.upsert_shift(c, "Serena", monday.isoformat(), "Livorno", "09:00", "13:00", False, self.admin["id"])
+        turni = next(t for t in self.ai.TOOL_SPECS if t["name"] == "turni_operatori")["handler"]
+        now = app.rome_now()
+        with app.db() as c:
+            result = turni(c, self.admin, now, {"data": monday.isoformat()})
+        self.assertTrue(any(t["operatore"] == "Serena" and t["sede"] == "Livorno" for t in result["turni"]))
+        reperibilita = next(t for t in self.ai.TOOL_SPECS if t["name"] == "reperibilita_settimana")["handler"]
+        with app.db() as c:
+            result = reperibilita(c, self.admin, now, {"data": monday.isoformat()})
+        self.assertEqual(result["settimana_dal"], monday.isoformat())
+        self.assertIn(result["operatore_reperibile"], (None,) + app.SHIFT_OPERATORS)
+
+    def test_cerca_cliente_e_pratiche_per_veterinario_e_collaboratore(self):
+        with app.db() as c:
+            stamp = "2026-09-10T09:00:00"
+            client_id = c.execute(
+                "INSERT INTO clients(first_name,last_name,phone,created_at,updated_at) VALUES(?,?,?,?,?)",
+                ("Giulia", "Verdi", "3331112222", stamp, stamp),
+            ).lastrowid
+            self._insert_practice(c, _n=1, practice_number="CR-AI-CLIENTE", client_id=client_id, pickup_date="2026-09-10")
+            vet_id = c.execute(
+                "INSERT INTO veterinarians(clinic_name,active,created_at,updated_at) VALUES(?,?,?,?)",
+                ("Clinica Toscana", 1, stamp, stamp),
+            ).lastrowid
+            self._insert_practice(c, _n=2, practice_number="CR-AI-VET", veterinarian_id=vet_id, pickup_date="2026-09-10")
+            collab_id = c.execute(
+                "INSERT INTO collaborators(name,active,created_at,updated_at) VALUES(?,?,?,?)",
+                ("Onoranze Esempio", 1, stamp, stamp),
+            ).lastrowid
+            self._insert_practice(c, _n=3, practice_number="CR-AI-COLLAB", collaborator_id=collab_id, request_origin="Collaboratore", pickup_date="2026-09-10")
+        now = app.rome_now()
+        cerca_cliente = next(t for t in self.ai.TOOL_SPECS if t["name"] == "cerca_cliente")["handler"]
+        pratiche_vet = next(t for t in self.ai.TOOL_SPECS if t["name"] == "pratiche_per_veterinario")["handler"]
+        pratiche_collab = next(t for t in self.ai.TOOL_SPECS if t["name"] == "pratiche_per_collaboratore")["handler"]
+        with app.db() as c:
+            result = cerca_cliente(c, self.admin, now, {"query": "Verdi"})
+            self.assertEqual(result["clienti"][0]["numero_pratiche"], 1)
+            result = pratiche_vet(c, self.admin, now, {"veterinario_nome": "Toscana"})
+            self.assertEqual(result["risultati"][0]["numero_pratiche"], 1)
+            result = pratiche_collab(c, self.admin, now, {"collaboratore_nome": "Onoranze"})
+            self.assertEqual(result["risultati"][0]["numero_pratiche"], 1)
+
+    def test_chat_endpoint_returns_503_when_anthropic_api_key_is_missing(self):
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": ""}):
+            self.handler.path = "/api/assistente/chat"
+            self.handler.headers = {"Content-Length": "0"}
+            captured = []
+            self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+            self.handler.rfile = io.BytesIO(json.dumps({"messaggio": "Quante pratiche abbiamo?", "cronologia": []}).encode())
+            self.handler.headers = {"Content-Length": str(len(json.dumps({"messaggio": "Quante pratiche abbiamo?", "cronologia": []}).encode()))}
+            self.handler.api_ai_chat(self.admin)
+        self.assertEqual(captured[-1][1], 503)
+        self.assertFalse(captured[-1][0]["ok"])
+        self.assertIn("ANTHROPIC_API_KEY", captured[-1][0]["error"])
+
+    def test_chat_endpoint_rejects_empty_or_oversized_message(self):
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
+            for payload in ({"messaggio": "", "cronologia": []}, {"messaggio": "x" * 2001, "cronologia": []}):
+                body = json.dumps(payload).encode()
+                self.handler.headers = {"Content-Length": str(len(body))}
+                self.handler.rfile = io.BytesIO(body)
+                captured = []
+                self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+                self.handler.api_ai_chat(self.admin)
+                self.assertEqual(captured[-1][1], 400)
+                self.assertFalse(captured[-1][0]["ok"])
+
+    def test_chat_endpoint_calls_a_real_tool_and_grounds_its_answer_never_inventing_a_number(self):
+        # Il modello e' sempre mockato nei test (nessuna vera chiamata di rete):
+        # verifichiamo che l'endpoint esegua davvero lo strumento richiesto
+        # dall'LLM (query reale sul database di test) e restituisca solo il
+        # testo finale del modello - mai un numero calcolato altrove.
+        with app.db() as c:
+            self._insert_practice(c, _n=1, practice_number="CR-AI-CHAT", pickup_date="2026-09-10")
+
+        class FakeBlock:
+            def __init__(self, d):
+                self._d = d
+
+            def model_dump(self):
+                return self._d
+
+        class FakeResponse:
+            def __init__(self, content, stop_reason):
+                self.content = [FakeBlock(b) for b in content]
+                self.stop_reason = stop_reason
+
+        tool_call = FakeResponse(
+            [{"type": "tool_use", "id": "tu1", "name": "conta_pratiche", "input": {}}],
+            "tool_use",
+        )
+        final = FakeResponse([{"type": "text", "text": "Risposta di prova basata sui dati."}], "end_turn")
+        mock_create = MagicMock(side_effect=[tool_call, final])
+        mock_client = MagicMock()
+        mock_client.messages.create = mock_create
+        body = json.dumps({"messaggio": "Quante pratiche abbiamo in totale?", "cronologia": []}).encode()
+        self.handler.headers = {"Content-Length": str(len(body))}
+        self.handler.rfile = io.BytesIO(body)
+        captured = []
+        self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
+            with patch("anthropic.Anthropic", return_value=mock_client):
+                self.handler.api_ai_chat(self.admin)
+        self.assertEqual(captured[-1][1], 200)
+        result = captured[-1][0]
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["risposta"], "Risposta di prova basata sui dati.")
+        # lo strumento e' stato davvero invocato con una query sul DB di test:
+        # il messaggio con il tool_result (indice 2: domanda, tool_use, tool_result,
+        # poi la risposta finale - lo stesso list object continua a crescere dopo
+        # la chiamata mockata, quindi va indicizzato per posizione fissa, non con
+        # -1) deve contenere il conteggio reale (1), mai un numero indovinato.
+        second_call_messages = mock_create.call_args_list[1].kwargs["messages"]
+        tool_result_content = second_call_messages[2]["content"][0]["content"]
+        self.assertIn('"conteggio": 1', tool_result_content)
+        self.assertEqual(len(result["cronologia"]), 4)
+
+    def test_chat_endpoint_tool_input_error_is_reported_not_invented(self):
+        class FakeBlock:
+            def __init__(self, d):
+                self._d = d
+
+            def model_dump(self):
+                return self._d
+
+        class FakeResponse:
+            def __init__(self, content, stop_reason):
+                self.content = [FakeBlock(b) for b in content]
+                self.stop_reason = stop_reason
+
+        bad_call = FakeResponse(
+            [{"type": "tool_use", "id": "tu1", "name": "conta_pratiche", "input": {"sede": "Marte"}}],
+            "tool_use",
+        )
+        final = FakeResponse(
+            [{"type": "text", "text": "Non posso determinare questo dato dai dati attualmente disponibili."}],
+            "end_turn",
+        )
+        mock_client = MagicMock()
+        mock_client.messages.create = MagicMock(side_effect=[bad_call, final])
+        body = json.dumps({"messaggio": "Quante pratiche a Marte?", "cronologia": []}).encode()
+        self.handler.headers = {"Content-Length": str(len(body))}
+        self.handler.rfile = io.BytesIO(body)
+        captured = []
+        self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
+            with patch("anthropic.Anthropic", return_value=mock_client):
+                self.handler.api_ai_chat(self.admin)
+        self.assertIn("Non posso determinare", captured[-1][0]["risposta"])
+
+    def test_chat_position_saves_independently_per_user(self):
+        with app.db() as c:
+            other_id = c.execute(
+                "INSERT INTO users(username,password_hash,display_name,role,active,must_change_password) VALUES(?,?,?,?,?,?)",
+                ("altro_operatore", app.password_hash("x"), "Altro", "operator", 1, 0),
+            ).lastrowid
+            other_user = c.execute("SELECT * FROM users WHERE id=?", (other_id,)).fetchone()
+        for user, x, y in ((self.admin, 0.9, 0.8), (other_user, 0.1, 0.2)):
+            body = json.dumps({"x_pct": x, "y_pct": y}).encode()
+            self.handler.headers = {"Content-Length": str(len(body))}
+            self.handler.rfile = io.BytesIO(body)
+            captured = []
+            self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+            self.handler.api_ai_chat_position(user)
+            self.assertTrue(captured[-1][0]["ok"])
+        admin_pos = json.loads(app.load_preferences(self.admin["id"])["ai_chat_fab_pos"])
+        other_pos = json.loads(app.load_preferences(other_user["id"])["ai_chat_fab_pos"])
+        self.assertAlmostEqual(admin_pos["x_pct"], 0.9)
+        self.assertAlmostEqual(other_pos["x_pct"], 0.1)
+        self.assertNotEqual(admin_pos, other_pos)
+
+    def test_chat_position_clamps_out_of_range_values(self):
+        body = json.dumps({"x_pct": 5, "y_pct": -3}).encode()
+        self.handler.headers = {"Content-Length": str(len(body))}
+        self.handler.rfile = io.BytesIO(body)
+        captured = []
+        self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+        self.handler.api_ai_chat_position(self.admin)
+        pos = json.loads(app.load_preferences(self.admin["id"])["ai_chat_fab_pos"])
+        self.assertEqual(pos["x_pct"], 1.0)
+        self.assertEqual(pos["y_pct"], 0.0)
+
+    def test_floating_widget_renders_identically_on_every_page_never_a_separate_route(self):
+        # Nessuna pagina/route dedicata (richiesta esplicita dell'utente): il
+        # widget e' iniettato una sola volta dentro layout(), quindi compare
+        # automaticamente su pagine di sezioni completamente diverse.
+        html_dashboard = app.layout("Dashboard", '<main class="wrap">Dashboard</main>', self.admin)
+        html_other = app.layout("Bilanci", '<main class="wrap">Bilanci</main>', self.admin)
+        for html in (html_dashboard, html_other):
+            self.assertIn('id="aiChatFab"', html)
+            self.assertIn('id="aiChatRoot" hidden', html)
+            self.assertIn('onclick="aiChatFabClick()"', html)
+        # nessuna route dedicata registrata per una pagina della chat
+        route_source = Path(app.__file__).read_text(encoding="utf-8")
+        self.assertNotIn('"/assistente"', route_source)
+        self.assertNotIn('"/assistente-ai"', route_source)
+        # senza utente autenticato il widget (markup HTML) non deve comparire -
+        # APP_JS resta condiviso su ogni pagina anche da sloggato (contiene le
+        # definizioni delle funzioni aiChat*, innocue senza l'elemento nel DOM),
+        # quindi il controllo e' sul markup dell'elemento, non sulla sottostringa.
+        html_logged_out = app.layout("Login", "<main></main>", None)
+        self.assertNotIn('id="aiChatFab"', html_logged_out)
+        self.assertNotIn('id="aiChatRoot"', html_logged_out)
+
+    def test_floating_widget_js_is_wired_on_every_page_load(self):
+        js = app.APP_JS
+        for fn in ("function aiChatToggle(", "function aiChatOpen(", "function aiChatClose(", "function aiChatApplyPos(", "function aiChatInit(", "function aiChatSend("):
+            self.assertIn(fn, js)
+        self.assertIn("document.addEventListener('DOMContentLoaded',aiChatInit);", js)
+        # riusa lo stesso linguaggio visivo (bolle) gia' usato per WhatsApp
+        self.assertIn("wa-bubble-row", js)
 
 
 if __name__ == "__main__":
