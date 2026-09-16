@@ -33,6 +33,8 @@ services:
         sync: false
       - key: VAPID_SUBJECT
         value: mailto:assistenza@petparadise.it
+      - key: ANTHROPIC_API_KEY
+        sync: false
     disk:
       name: pet-paradise-data
       mountPath: /var/data

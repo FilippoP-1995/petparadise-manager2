@@ -15281,6 +15281,92 @@ class AIAssistantTests(unittest.TestCase):
                 self.handler.api_ai_chat(self.admin)
         self.assertIn("Non posso determinare", captured[-1][0]["risposta"])
 
+    def test_chat_endpoint_never_returns_the_api_key_in_the_http_response(self):
+        # La ANTHROPIC_API_KEY deve restare esclusivamente lato server: non
+        # deve mai comparire nella risposta HTTP dell'endpoint, in nessun
+        # campo (nemmeno dentro la cronologia restituita al client).
+        class FakeBlock:
+            def __init__(self, d):
+                self._d = d
+
+            def model_dump(self):
+                return self._d
+
+        class FakeResponse:
+            def __init__(self, content, stop_reason):
+                self.content = [FakeBlock(b) for b in content]
+                self.stop_reason = stop_reason
+
+        final = FakeResponse([{"type": "text", "text": "Ciao, come posso aiutarti?"}], "end_turn")
+        mock_client = MagicMock()
+        mock_client.messages.create = MagicMock(return_value=final)
+        secret = "sk-ant-SECRET-VALUE-should-never-leak-0099"
+        body = json.dumps({"messaggio": "Ciao", "cronologia": []}).encode()
+        self.handler.headers = {"Content-Length": str(len(body))}
+        self.handler.rfile = io.BytesIO(body)
+        captured = []
+        self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": secret}):
+            with patch("anthropic.Anthropic", return_value=mock_client) as mock_ctor:
+                self.handler.api_ai_chat(self.admin)
+        response_text = json.dumps(captured[-1][0], ensure_ascii=False)
+        self.assertNotIn(secret, response_text)
+        # la chiave e' comunque stata passata al costruttore del client (uso
+        # corretto, solo lato server) - qui verifichiamo solo che non sia
+        # mai finita nell'HTTP response, non che non sia stata usata affatto.
+        mock_ctor.assert_called_once_with(api_key=secret)
+
+    def test_chat_endpoint_never_logs_the_api_key(self):
+        # Stesso principio: la chiave non deve mai comparire in nessuna
+        # riga stampata (i log del processo finiscono nei log di Render,
+        # non devono mai portare un segreto).
+        class FakeBlock:
+            def __init__(self, d):
+                self._d = d
+
+            def model_dump(self):
+                return self._d
+
+        class FakeResponse:
+            def __init__(self, content, stop_reason):
+                self.content = [FakeBlock(b) for b in content]
+                self.stop_reason = stop_reason
+
+        tool_call = FakeResponse(
+            [{"type": "tool_use", "id": "tu1", "name": "conta_pratiche", "input": {}}],
+            "tool_use",
+        )
+        final = FakeResponse([{"type": "text", "text": "Nessuna pratica trovata."}], "end_turn")
+        mock_client = MagicMock()
+        mock_client.messages.create = MagicMock(side_effect=[tool_call, final])
+        secret = "sk-ant-SECRET-VALUE-should-never-log-0099"
+        body = json.dumps({"messaggio": "Quante pratiche abbiamo?", "cronologia": []}).encode()
+        self.handler.headers = {"Content-Length": str(len(body))}
+        self.handler.rfile = io.BytesIO(body)
+        self.handler.send_json = lambda obj, status=200: None
+        printed = []
+        with patch("builtins.print", side_effect=lambda *args, **kwargs: printed.append(" ".join(str(a) for a in args))):
+            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": secret}):
+                with patch("anthropic.Anthropic", return_value=mock_client):
+                    self.handler.api_ai_chat(self.admin)
+        self.assertTrue(printed, "ci si aspettava almeno una riga di log dallo strumento invocato")
+        for line in printed:
+            self.assertNotIn(secret, line)
+
+    def test_chat_route_is_registered_for_authenticated_post_requests(self):
+        # L'endpoint e' raggiungibile solo dopo require_user() (stesso
+        # modello di autorizzazione di ogni altra rotta V1, nessun bypass),
+        # non prima - verifica sulla posizione nel dispatcher _route_post.
+        source = Path(app.__file__).read_text(encoding="utf-8")
+        route_post_start = source.index("def _route_post(self):")
+        require_user_pos = source.index('user = self.require_user()', route_post_start)
+        chat_route_pos = source.index('if path == "/api/assistente/chat"', route_post_start)
+        position_route_pos = source.index('if path == "/api/assistente/posizione"', route_post_start)
+        self.assertGreater(chat_route_pos, require_user_pos)
+        self.assertGreater(position_route_pos, require_user_pos)
+        self.assertIn("return self.api_ai_chat(user)", source)
+        self.assertIn("return self.api_ai_chat_position(user)", source)
+
     def test_chat_position_saves_independently_per_user(self):
         with app.db() as c:
             other_id = c.execute(
