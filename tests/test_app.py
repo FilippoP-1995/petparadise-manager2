@@ -15618,6 +15618,99 @@ class AIAssistantTests(unittest.TestCase):
         self.assertIn('"conteggio": 1', tool_result_content)
         self.assertEqual(len(result["cronologia"]), 4)
 
+    def test_sanitize_history_repairs_or_discards_malformed_tool_call_pairs(self):
+        # Bug reale in produzione: dopo una conversazione lunga con molte
+        # chiamate a strumenti, una cronologia troncata/alterata a meta' di
+        # una coppia tool_use/tool_result faceva rifiutare l'INTERA
+        # richiesta successiva ad Anthropic con un errore HTTP 400 crudo
+        # mostrato in chat. _sanitize_history ripulisce prima di ogni uso.
+        ok_pair = [
+            {"role": "user", "content": "domanda"},
+            {"role": "assistant", "content": [{"type": "tool_use", "id": "a1", "name": "x", "input": {}}]},
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "a1", "content": "ok"}]},
+            {"role": "assistant", "content": [{"type": "text", "text": "risposta"}]},
+        ]
+        self.assertEqual(self.ai._sanitize_history(list(ok_pair)), ok_pair)
+        # troncata esattamente tra tool_use e tool_result (es. dal limite di
+        # 60 messaggi): il tool_result iniziale orfano va scartato, il resto
+        # (ancora strutturalmente valido) mantenuto - non l'intera storia.
+        orphaned_result_at_start = ok_pair[2:]
+        self.assertEqual(self.ai._sanitize_history(list(orphaned_result_at_start)), ok_pair[3:])
+        # tool_use senza ALCUN tool_result corrispondente: nessun modo
+        # sicuro di riparare, si scarta tutto e si riparte da zero.
+        dangling_tool_use = ok_pair[:2]
+        self.assertEqual(self.ai._sanitize_history(list(dangling_tool_use)), [])
+        # cronologia normale/vuota (nessuna chiamata a strumenti) resta invariata
+        self.assertEqual(self.ai._sanitize_history([]), [])
+        plain = [{"role": "user", "content": "ciao"}, {"role": "assistant", "content": [{"type": "text", "text": "ciao a te"}]}]
+        self.assertEqual(self.ai._sanitize_history(list(plain)), plain)
+
+    def test_run_chat_gives_up_gracefully_after_max_rounds_ending_with_a_proper_assistant_turn(self):
+        # Se il modello continua a chiedere strumenti oltre MAX_TOOL_ROUNDS,
+        # la risposta di rinuncia restava FUORI dalla cronologia restituita
+        # (messages finiva su un turno "utente" con i tool_result
+        # dell'ultimo giro): la domanda successiva si sarebbe aggiunta come
+        # SECONDO messaggio "utente" consecutivo, struttura che Anthropic
+        # rifiuta. Deve invece chiudersi con un vero turno assistente.
+        class FakeBlock:
+            def __init__(self, d):
+                self._d = d
+            def model_dump(self):
+                return self._d
+        class FakeResponse:
+            def __init__(self, content, stop_reason):
+                self.content = [FakeBlock(b) for b in content]
+                self.stop_reason = stop_reason
+        always_tool_use = FakeResponse([{"type": "tool_use", "id": "loop1", "name": "conta_pratiche", "input": {}}], "tool_use")
+        mock_client = MagicMock()
+        mock_client.messages.create = MagicMock(return_value=always_tool_use)
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
+            with patch("anthropic.Anthropic", return_value=mock_client):
+                text, messages = self.ai.run_chat(app.db, self.admin, app.rome_now(), [], "Domanda che il modello non chiude mai", log=None)
+        self.assertIn("Non sono riuscito", text)
+        self.assertEqual(messages[-1]["role"], "assistant")
+        self.assertEqual(messages[-1]["content"][0]["text"], text)
+        # la cronologia restituita deve gia' essere strutturalmente valida da sola
+        self.assertEqual(self.ai._sanitize_history(messages), messages)
+
+    def test_chat_endpoint_discards_a_malformed_incoming_history_instead_of_crashing(self):
+        class FakeBlock:
+            def __init__(self, d):
+                self._d = d
+            def model_dump(self):
+                return self._d
+        class FakeResponse:
+            def __init__(self, content, stop_reason):
+                self.content = [FakeBlock(b) for b in content]
+                self.stop_reason = stop_reason
+        final = FakeResponse([{"type": "text", "text": "Risposta comunque data."}], "end_turn")
+        mock_create = MagicMock(return_value=final)
+        mock_client = MagicMock()
+        mock_client.messages.create = mock_create
+        malformed_history = [
+            {"role": "assistant", "content": [{"type": "tool_use", "id": "orfano", "name": "conta_pratiche", "input": {}}]},
+        ]
+        body = json.dumps({"messaggio": "Ciao", "cronologia": malformed_history}).encode()
+        self.handler.headers = {"Content-Length": str(len(body))}
+        self.handler.rfile = io.BytesIO(body)
+        captured = []
+        self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
+            with patch("anthropic.Anthropic", return_value=mock_client):
+                self.handler.api_ai_chat(self.admin)
+        self.assertEqual(captured[-1][1], 200)
+        result = captured[-1][0]
+        self.assertTrue(result["ok"])
+        # la cronologia malformata non deve mai raggiungere Anthropic: il
+        # PRIMO messaggio inviato deve essere la nuova domanda, non il
+        # tool_use orfano (l'oggetto "messages" catturato da MagicMock e'
+        # lo stesso riferimento mutabile che run_chat continua a far
+        # crescere dopo la chiamata, quindi si verifica l'elemento
+        # stabile in testa, non la lunghezza finale della lista).
+        sent_messages = mock_create.call_args_list[0].kwargs["messages"]
+        self.assertEqual(sent_messages[0], {"role": "user", "content": "Ciao"})
+        self.assertNotIn("orfano", json.dumps(sent_messages[0]))
+
     def test_chat_endpoint_tool_input_error_is_reported_not_invented(self):
         class FakeBlock:
             def __init__(self, d):
@@ -16045,6 +16138,29 @@ class AIAssistantTests(unittest.TestCase):
         # non arriva mai (es. con animazioni disattivate dal sistema).
         self.assertIn("addEventListener('transitionend',onEnd)", js)
         self.assertIn("setTimeout(finish,750)", js)
+
+    def test_ai_chat_panel_shrinks_to_fit_above_the_keyboard_not_just_repositioned(self):
+        # Bug reale segnalato dall'utente su iPhone (screenshot): aprendo la
+        # tastiera per scrivere, il pannello veniva solo SPOSTATO in alto
+        # (bottom) ma non rimpicciolito - la sua altezza (min(72vh,620px) da
+        # CSS) resta calcolata sul viewport SENZA tastiera (nota
+        # particolarita' di iOS Safari sulle unita' vh), quindi restava piu'
+        # alto dello spazio davvero visibile sopra la tastiera: il risultato
+        # era che intestazione e messaggi finivano fuori schermo in alto,
+        # lasciando visibile solo il campo di input vicino alla cima dello
+        # schermo. aiChatReposition deve quindi anche restringere max-height
+        # in base a visualViewport.height (SEMPRE l'altezza dell'area
+        # davvero visibile, tastiera gia' esclusa), non solo spostare bottom.
+        js = app.APP_JS
+        reposition_body = js[js.index("function aiChatReposition("):js.index("function aiChatReposition(") + 1600]
+        self.assertIn("panel.style.bottom=", reposition_body)
+        self.assertIn("panel.style.maxHeight=", reposition_body)
+        self.assertIn("window.visualViewport.height", reposition_body)
+        # l'assegnazione di maxHeight deve venire DOPO quella di bottom nella
+        # stessa funzione, e deve dipendere da visualViewport.height, non da
+        # un valore fisso: altrimenti si torna al bug (spostato ma non
+        # rimpicciolito).
+        self.assertLess(reposition_body.index("panel.style.bottom="), reposition_body.index("panel.style.maxHeight="))
 
     def test_ai_chat_open_close_animation_is_slow_and_bubble_like(self):
         # Feedback esplicito dell'utente dopo la prima versione

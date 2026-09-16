@@ -1573,6 +1573,45 @@ def _describe_anthropic_error(exc):
     return f"Errore imprevisto nella chiamata al modello ({type(exc).__name__}: {exc})."
 
 
+def _sanitize_history(history):
+    """Garantisce che la cronologia ricevuta dal client sia strutturalmente
+    valida per l'API Anthropic PRIMA di usarla: ogni messaggio assistente
+    con blocchi tool_use deve essere seguito immediatamente da un messaggio
+    utente con i tool_result corrispondenti (stessi id), altrimenti
+    Anthropic rifiuta l'INTERA richiesta con un errore HTTP crudo (bug
+    reale osservato in produzione dopo conversazioni lunghe con molte
+    chiamate a strumenti in parallelo). Se la cronologia risulta alterata
+    o incoerente per qualunque motivo, si scarta e si riparte da una
+    conversazione vuota (l'utente puo' comunque ripetere la domanda)
+    invece di rompere la chat mostrando l'errore grezzo di Anthropic."""
+    def tool_use_ids(msg):
+        content = msg.get("content")
+        if not isinstance(content, list):
+            return set()
+        return {b.get("id") for b in content if isinstance(b, dict) and b.get("type") == "tool_use"}
+
+    def tool_result_ids(msg):
+        content = msg.get("content")
+        if not isinstance(content, list):
+            return set()
+        return {b.get("tool_use_id") for b in content if isinstance(b, dict) and b.get("type") == "tool_result"}
+
+    # Un troncamento (es. il limite di 60 messaggi lato server) puo'
+    # tagliare esattamente tra un tool_use e il suo tool_result, lasciando
+    # come primo messaggio superstite un tool_result orfano: si scartano
+    # solo questi messaggi iniziali orfani (la coppia comunque incompleta,
+    # nulla da recuperare), non l'intera cronologia ancora valida che segue.
+    while history and tool_result_ids(history[0]):
+        history = history[1:]
+    for i, msg in enumerate(history):
+        ids = tool_use_ids(msg)
+        if not ids:
+            continue
+        if i + 1 >= len(history) or not ids.issubset(tool_result_ids(history[i + 1])):
+            return []
+    return history
+
+
 def run_chat(db_factory, user, now, history, message, log=None):
     """db_factory: funzione che apre una connessione al database come
     context manager (es. app.db) — non una connessione gia' aperta.
@@ -1592,7 +1631,7 @@ def run_chat(db_factory, user, now, history, message, log=None):
     if DEPS is None:
         raise AssistantConfigError("Assistente AI non inizializzato (configure() non chiamato).")
     client = _client()
-    messages = list(history) + [{"role": "user", "content": message}]
+    messages = _sanitize_history(list(history)) + [{"role": "user", "content": message}]
     tool_defs = _anthropic_tools()
     model = os.environ.get("AI_ASSISTANT_MODEL", DEFAULT_MODEL)
     system_prompt = _system_prompt(now)
@@ -1632,4 +1671,12 @@ def run_chat(db_factory, user, now, history, message, log=None):
                     log("ai_assistant_tool_error", name, params, repr(exc))
                 tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": "Errore tecnico nell'esecuzione dello strumento.", "is_error": True})
         messages.append({"role": "user", "content": tool_results})
-    return "Non sono riuscito a completare la richiesta in un numero ragionevole di passaggi. Prova a riformulare la domanda in modo piu' specifico.", messages
+    # Il ciclo termina qui SOLO se anche l'ultimo tentativo ha richiesto
+    # strumenti (messages termina quindi con i tool_result dell'ultimo
+    # giro, un turno "utente" gia' completo): la risposta di rinuncia deve
+    # comunque diventare un turno assistente vero e proprio in messages,
+    # altrimenti la prossima domanda si aggiungerebbe come un secondo
+    # messaggio "utente" consecutivo - struttura che Anthropic rifiuta.
+    fallback_text = "Non sono riuscito a completare la richiesta in un numero ragionevole di passaggi. Prova a riformulare la domanda in modo piu' specifico."
+    messages.append({"role": "assistant", "content": [{"type": "text", "text": fallback_text}]})
+    return fallback_text, messages

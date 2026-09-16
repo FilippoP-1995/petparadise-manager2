@@ -7355,6 +7355,16 @@ function aiChatReposition(){
   if(!panel||!window.visualViewport)return;
   const keyboard=window.innerHeight-window.visualViewport.height-window.visualViewport.offsetTop;
   panel.style.bottom=Math.max(0,keyboard)+'px';
+  // Bug segnalato dall'utente: spostare SOLO "bottom" non basta - l'altezza
+  // del pannello (max-height:min(72vh,620px) da CSS) resta calcolata sul
+  // viewport SENZA tastiera (altro comportamento noto di iOS Safari sulle
+  // unita' vh), quindi puo' restare piu' alta dello spazio davvero visibile
+  // sopra la tastiera: il risultato e' che la testata/i messaggi finiscono
+  // fuori schermo in alto, lasciando visibile solo il campo di input.
+  // visualViewport.height e' invece SEMPRE l'altezza dell'area realmente
+  // visibile (tastiera gia' esclusa quando aperta): la si usa per far
+  // restringere il pannello di conseguenza, non solo per spostarlo.
+  panel.style.maxHeight=Math.max(160,Math.min(620,window.visualViewport.height-24))+'px';
 }
 if(window.visualViewport)window.visualViewport.addEventListener('resize',aiChatReposition);
 function aiChatInputKeydown(event){
