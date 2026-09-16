@@ -15315,6 +15315,107 @@ class AIAssistantTests(unittest.TestCase):
             result = pratiche_collab(c, self.admin, now, {"collaboratore_nome": "Onoranze"})
             self.assertEqual(result["risultati"][0]["numero_pratiche"], 1)
 
+    def test_pratiche_per_veterinario_e_collaboratore_restituiscono_una_classifica_se_il_nome_e_omesso(self):
+        # Bug segnalato dall'utente: "qual e' il veterinario piu' presente
+        # come luogo di origine" non era rispondibile perche' il tool
+        # richiedeva SEMPRE un nome specifico. Omettendo il nome deve
+        # restituire una classifica ordinata (non un errore, non un dato
+        # indovinato), riusando la stessa query gia' usata per il conteggio
+        # puntuale, solo senza il filtro sul nome.
+        with app.db() as c:
+            stamp = "2026-09-10T09:00:00"
+            vet_a = c.execute("INSERT INTO veterinarians(clinic_name,active,created_at,updated_at) VALUES(?,?,?,?)", ("Vet Alfa", 1, stamp, stamp)).lastrowid
+            vet_b = c.execute("INSERT INTO veterinarians(clinic_name,active,created_at,updated_at) VALUES(?,?,?,?)", ("Vet Beta", 1, stamp, stamp)).lastrowid
+            self._insert_practice(c, _n=1, practice_number="CR-RANK-1", origin_veterinarian_id=vet_a, pickup_date="2026-09-10")
+            self._insert_practice(c, _n=2, practice_number="CR-RANK-2", origin_veterinarian_id=vet_a, pickup_date="2026-09-10")
+            self._insert_practice(c, _n=3, practice_number="CR-RANK-3", origin_veterinarian_id=vet_b, pickup_date="2026-09-10")
+            collab_a = c.execute("INSERT INTO collaborators(name,active,created_at,updated_at) VALUES(?,?,?,?)", ("Collab Alfa", 1, stamp, stamp)).lastrowid
+            collab_b = c.execute("INSERT INTO collaborators(name,active,created_at,updated_at) VALUES(?,?,?,?)", ("Collab Beta", 1, stamp, stamp)).lastrowid
+            self._insert_practice(c, _n=4, practice_number="CR-RANK-4", collaborator_id=collab_a, request_origin="Collaboratore", pickup_date="2026-09-10")
+            self._insert_practice(c, _n=5, practice_number="CR-RANK-5", collaborator_id=collab_a, request_origin="Collaboratore", pickup_date="2026-09-10")
+            self._insert_practice(c, _n=6, practice_number="CR-RANK-6", collaborator_id=collab_b, request_origin="Collaboratore", pickup_date="2026-09-10")
+        pratiche_vet = next(t for t in self.ai.TOOL_SPECS if t["name"] == "pratiche_per_veterinario")["handler"]
+        pratiche_collab = next(t for t in self.ai.TOOL_SPECS if t["name"] == "pratiche_per_collaboratore")["handler"]
+        now = app.rome_now()
+        with app.db() as c:
+            result = pratiche_vet(c, self.admin, now, {"ruolo": "origine"})
+            self.assertEqual(result["risultati"][0], {"veterinario": "Vet Alfa", "numero_pratiche": 2})
+            self.assertEqual(result["risultati"][1], {"veterinario": "Vet Beta", "numero_pratiche": 1})
+            self.assertIsNotNone(result["nota"])
+            result = pratiche_collab(c, self.admin, now, {})
+            self.assertEqual(result["risultati"][0], {"collaboratore": "Collab Alfa", "numero_pratiche": 2})
+            self.assertEqual(result["risultati"][1], {"collaboratore": "Collab Beta", "numero_pratiche": 1})
+            # con un nome specifico il comportamento resta quello puntuale di prima, senza nota di classifica
+            result = pratiche_vet(c, self.admin, now, {"veterinario_nome": "Beta", "ruolo": "origine"})
+            self.assertEqual(result["risultati"], [{"veterinario": "Vet Beta", "numero_pratiche": 1}])
+            self.assertIsNone(result["nota"])
+
+    def test_buoni_veterinari_conta_maturati_e_usati_riusando_la_tabella_reale_veterinarian_vouchers(self):
+        # "Quanti buoni ha maturato ad agosto" non era rispondibile (nessuno
+        # strumento tracciava i buoni) - il tool deve riusare la tabella
+        # veterinarian_vouchers gia' usata dalla pagina Veterinari/scheda
+        # veterinario (status Maturato/Usato), non inventare un conteggio.
+        with app.db() as c:
+            stamp = "2026-09-10T09:00:00"
+            vet_id = c.execute("INSERT INTO veterinarians(clinic_name,active,created_at,updated_at) VALUES(?,?,?,?)", ("Clinica Buoni", 1, stamp, stamp)).lastrowid
+            altro_vet_id = c.execute("INSERT INTO veterinarians(clinic_name,active,created_at,updated_at) VALUES(?,?,?,?)", ("Altra Clinica", 1, stamp, stamp)).lastrowid
+            c.execute("INSERT INTO veterinarian_vouchers(veterinarian_id,practice_id,status,created_at,used_at,note) VALUES(?,?,?,?,?,?)", (vet_id, None, "Maturato", "2026-08-05T10:00:00", None, "t1"))
+            c.execute("INSERT INTO veterinarian_vouchers(veterinarian_id,practice_id,status,created_at,used_at,note) VALUES(?,?,?,?,?,?)", (vet_id, None, "Maturato", "2026-08-20T10:00:00", None, "t2"))
+            c.execute("INSERT INTO veterinarian_vouchers(veterinarian_id,practice_id,status,created_at,used_at,note) VALUES(?,?,?,?,?,?)", (vet_id, None, "Usato", "2026-07-01T10:00:00", "2026-08-15T10:00:00", "t3"))
+            c.execute("INSERT INTO veterinarian_vouchers(veterinarian_id,practice_id,status,created_at,used_at,note) VALUES(?,?,?,?,?,?)", (vet_id, None, "Maturato", "2026-09-01T10:00:00", None, "t4-fuori-periodo"))
+            c.execute("INSERT INTO veterinarian_vouchers(veterinarian_id,practice_id,status,created_at,used_at,note) VALUES(?,?,?,?,?,?)", (altro_vet_id, None, "Maturato", "2026-08-05T10:00:00", None, "altro"))
+        tool = next(t for t in self.ai.TOOL_SPECS if t["name"] == "buoni_veterinari")["handler"]
+        now = app.rome_now()
+        agosto = {"periodo": "intervallo_personalizzato", "data_da": "2026-08-01", "data_a": "2026-08-31"}
+        with app.db() as c:
+            result = tool(c, self.admin, now, {**agosto, "veterinario_nome": "Buoni", "stato": "Maturato"})
+            self.assertEqual(result["risultati"], [{"veterinario": "Clinica Buoni", "stato": "Maturato", "numero_buoni": 2}])
+            # stato=Usato filtra sulla data d'uso (agosto), non sulla data di maturazione (luglio)
+            result = tool(c, self.admin, now, {**agosto, "veterinario_nome": "Buoni", "stato": "Usato"})
+            self.assertEqual(result["risultati"], [{"veterinario": "Clinica Buoni", "stato": "Usato", "numero_buoni": 1}])
+            result = tool(c, self.admin, now, agosto)
+            totali = {(r["veterinario"], r["stato"]): r["numero_buoni"] for r in result["risultati"]}
+            self.assertEqual(totali[("Clinica Buoni", "Maturato")], 2)
+            self.assertEqual(totali[("Altra Clinica", "Maturato")], 1)
+            self.assertNotIn(("Clinica Buoni", "Usato"), totali)
+            with self.assertRaises(self.ai.ToolInputError):
+                tool(c, self.admin, now, {**agosto, "stato": "Inventato"})
+
+    def test_andamento_giornaliero_ritiri_include_i_giorni_a_zero_e_il_giorno_di_picco(self):
+        # Richiesta esplicita dell'utente: "quali sono stati i giorni con
+        # piu' ritiri" e "ci sono stati giorni con zero ritiri in una sede
+        # specifica" - riusa la stessa fonte autorevole di conta_ritiri
+        # (dashboard_practice_date_sql sulle pratiche), aggregata per giorno
+        # con ogni giorno del periodo generato esplicitamente (anche a zero),
+        # cosi' il modello non deve mai dedurre da solo i giorni mancanti.
+        with app.db() as c:
+            self._insert_practice(c, _n=1, practice_number="CR-AND-1", destination_branch="Livorno", status="Ritirato", pickup_date="2026-08-03")
+            self._insert_practice(c, _n=2, practice_number="CR-AND-2", destination_branch="Livorno", status="Ritirato", pickup_date="2026-08-03")
+            self._insert_practice(c, _n=3, practice_number="CR-AND-3", destination_branch="Livorno", status="Ritirato", pickup_date="2026-08-07")
+            self._insert_practice(c, _n=4, practice_number="CR-AND-4", destination_branch="Empoli", status="Ritirato", pickup_date="2026-08-05")
+        tool = next(t for t in self.ai.TOOL_SPECS if t["name"] == "andamento_giornaliero")["handler"]
+        now = app.rome_now()
+        periodo = {"periodo": "intervallo_personalizzato", "data_da": "2026-08-01", "data_a": "2026-08-10", "metrica": "ritiri"}
+        with app.db() as c:
+            result = tool(c, self.admin, now, {**periodo, "sede": "Livorno"})
+            self.assertEqual(result["numero_giorni_nel_periodo"], 10)
+            self.assertEqual(result["totale_periodo"], 3)
+            self.assertEqual(result["giorno_con_valore_massimo"], {"date": ["2026-08-03"], "conteggio": 2})
+            self.assertEqual(result["numero_giorni_a_zero"], 8)
+            self.assertNotIn("2026-08-03", result["date_giorni_a_zero"])
+            self.assertIn("2026-08-01", result["date_giorni_a_zero"])
+            giorni_by_date = {g["data"]: g["conteggio"] for g in result["andamento_giornaliero_dettaglio"]}
+            self.assertEqual(giorni_by_date["2026-08-03"], 2)
+            self.assertEqual(giorni_by_date["2026-08-07"], 1)
+            self.assertEqual(giorni_by_date["2026-08-02"], 0)
+            result_empoli = tool(c, self.admin, now, {**periodo, "sede": "Empoli"})
+            self.assertEqual(result_empoli["totale_periodo"], 1)
+            self.assertEqual(result_empoli["numero_giorni_a_zero"], 9)
+            with self.assertRaises(self.ai.ToolInputError):
+                tool(c, self.admin, now, {**periodo, "metrica": "boh"})
+            with self.assertRaises(self.ai.ToolInputError):
+                tool(c, self.admin, now, {"periodo": "intervallo_personalizzato", "data_da": "2020-01-01", "data_a": "2026-01-01", "metrica": "ritiri"})
+
     def test_get_configured_api_key_missing_or_empty_gives_a_clear_missing_message(self):
         for value in ("", "   "):
             with self.subTest(value=repr(value)):

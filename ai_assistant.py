@@ -283,6 +283,76 @@ def _tool_conta_riconsegne(c, user, now, p):
     }
 
 
+_FASE_CONFIG = {
+    "ritiri": ("ritirati", "p.status IN ('Ritirato','Cremato','Da consegnare','Consegnato','Smaltito')"),
+    "riconsegne": ("consegnati", "p.status='Consegnato'"),
+}
+
+
+# Stessa logica/fonte di _conta_pratiche_per_fase, ma aggregata giorno per
+# giorno invece che su un unico totale (necessario per "giorno con piu'
+# ritiri" o "giorni a zero in una sede": un totale unico non lo permette,
+# ed elencare i giorni presenti in una GROUP BY non basta per i giorni a
+# zero, che semplicemente non hanno righe - vanno generati esplicitamente
+# per l'intero intervallo, non dedotti dal modello).
+def _andamento_pratiche_per_fase(c, now, p, *, kind, status_where):
+    d_from, d_to, label = resolve_period(now, p.get("periodo"), p.get("data_da"), p.get("data_a"))
+    sede = p.get("sede")
+    if sede and sede not in SHIFT_BRANCHES:
+        raise ToolInputError(f"sede deve essere una tra: {', '.join(SHIFT_BRANCHES)}.")
+    operatore = p.get("operatore")
+    if operatore and operatore not in CALENDAR_OPERATORS:
+        raise ToolInputError(f"operatore deve essere uno tra: {', '.join(CALENDAR_OPERATORS)}.")
+    d1, d2 = date.fromisoformat(d_from), date.fromisoformat(d_to)
+    if (d2 - d1).days > 366:
+        raise ToolInputError("Il periodo per un andamento giornaliero non puo' superare un anno: restringi l'intervallo.")
+    date_sql = DEPS.dashboard_practice_date_sql(kind, "p")
+    where = ["(p.deleted_at IS NULL OR p.deleted_at='')", status_where, f"{date_sql} BETWEEN date(?) AND date(?)"]
+    args: list = [d_from, d_to]
+    if sede:
+        where.append("p.destination_branch=?")
+        args.append(sede)
+    if operatore:
+        where.append("p.operator_name=?")
+        args.append(operatore)
+    sql = f"SELECT {date_sql} AS giorno, COUNT(*) n FROM practices p WHERE {' AND '.join(where)} GROUP BY {date_sql}"
+    counts = {r["giorno"]: r["n"] for r in c.execute(sql, args).fetchall()}
+    giorni = []
+    cur = d1
+    while cur <= d2:
+        iso = cur.isoformat()
+        giorni.append({"data": iso, "conteggio": counts.get(iso, 0)})
+        cur += timedelta(days=1)
+    return giorni, label, sede, operatore
+
+
+def _tool_andamento_giornaliero(c, user, now, p):
+    metrica = p.get("metrica")
+    fase = _FASE_CONFIG.get(metrica)
+    if not fase:
+        raise ToolInputError(f"metrica deve essere una tra: {', '.join(_FASE_CONFIG)}.")
+    kind, status_where = fase
+    giorni, label, sede, operatore = _andamento_pratiche_per_fase(c, now, p, kind=kind, status_where=status_where)
+    max_n = max((g["conteggio"] for g in giorni), default=0)
+    giorni_max = [g["data"] for g in giorni if g["conteggio"] == max_n] if max_n > 0 else []
+    giorni_zero = [g["data"] for g in giorni if g["conteggio"] == 0]
+    dettaglio_omesso = len(giorni) > 62
+    return {
+        "metrica": metrica,
+        "periodo_analizzato": label,
+        "filtri": {"sede": sede, "operatore_nome": operatore},
+        "totale_periodo": sum(g["conteggio"] for g in giorni),
+        "numero_giorni_nel_periodo": len(giorni),
+        "giorno_con_valore_massimo": {"date": giorni_max, "conteggio": max_n} if giorni_max else None,
+        "numero_giorni_a_zero": len(giorni_zero),
+        "date_giorni_a_zero": giorni_zero[:100],
+        "date_giorni_a_zero_troncate": len(giorni_zero) > 100,
+        "andamento_giornaliero_dettaglio": None if dettaglio_omesso else giorni,
+        "dettaglio_giornaliero_omesso_periodo_troppo_lungo": dettaglio_omesso,
+        "nota": "Ogni giorno del periodo e' incluso anche con conteggio zero (non dedurre i giorni a zero: sono gia' calcolati qui in numero_giorni_a_zero/date_giorni_a_zero). giorno_con_valore_massimo elenca tutte le date in caso di parita'.",
+    }
+
+
 def _tool_eventi_calendario(c, user, now, p):
     d_from, d_to, label = resolve_period(now, p.get("periodo"), p.get("data_da"), p.get("data_a"))
     tipo = p.get("tipo")
@@ -689,17 +759,21 @@ def _tool_cerca_cliente(c, user, now, p):
 _VET_ROLE_COLUMNS = {"servizio": "veterinarian_id", "origine": "origin_veterinarian_id", "proprietario": "owner_veterinarian_id"}
 
 
+_RANKING_LIMIT = 15
+
+
 def _tool_pratiche_veterinario(c, user, now, p):
     nome = (p.get("veterinario_nome") or "").strip()
-    if not nome:
-        raise ToolInputError("Specifica il nome/clinica del veterinario.")
     ruolo = p.get("ruolo") or "servizio"
     col = _VET_ROLE_COLUMNS.get(ruolo)
     if not col:
         raise ToolInputError(f"ruolo deve essere uno tra: {', '.join(_VET_ROLE_COLUMNS)}.")
     d_from, d_to, label = resolve_period(now, p.get("periodo"), p.get("data_da"), p.get("data_a"), optional=True)
-    sql = f"SELECT v.id,v.clinic_name,COUNT(*) n FROM practices pr JOIN veterinarians v ON v.id=pr.{col} WHERE (pr.deleted_at IS NULL OR pr.deleted_at='') AND v.clinic_name LIKE ?"
-    args: list = [f"%{nome}%"]
+    sql = f"SELECT v.id,v.clinic_name,COUNT(*) n FROM practices pr JOIN veterinarians v ON v.id=pr.{col} WHERE (pr.deleted_at IS NULL OR pr.deleted_at='')"
+    args: list = []
+    if nome:
+        sql += " AND v.clinic_name LIKE ?"
+        args.append(f"%{nome}%")
     if d_from:
         sql += " AND date(COALESCE(NULLIF(pr.pickup_date,''),pr.created_at))>=date(?)"
         args.append(d_from)
@@ -707,18 +781,24 @@ def _tool_pratiche_veterinario(c, user, now, p):
         sql += " AND date(COALESCE(NULLIF(pr.pickup_date,''),pr.created_at))<=date(?)"
         args.append(d_to)
     sql += " GROUP BY v.id ORDER BY n DESC"
+    if not nome:
+        sql += f" LIMIT {_RANKING_LIMIT}"
     rows = c.execute(sql, args).fetchall()
     result = [{"veterinario": r["clinic_name"], "numero_pratiche": r["n"]} for r in rows]
-    return {"risultati": result, "ruolo": ruolo, "periodo_analizzato": label or "tutto il periodo disponibile"}
+    return {
+        "risultati": result, "ruolo": ruolo, "periodo_analizzato": label or "tutto il periodo disponibile",
+        "nota": f"Nessun nome specificato: classifica dei primi {_RANKING_LIMIT} veterinari per numero di pratiche (ordine gia' decrescente, il primo e' il piu' presente)." if not nome else None,
+    }
 
 
 def _tool_pratiche_collaboratore(c, user, now, p):
     nome = (p.get("collaboratore_nome") or "").strip()
-    if not nome:
-        raise ToolInputError("Specifica il nome del collaboratore.")
     d_from, d_to, label = resolve_period(now, p.get("periodo"), p.get("data_da"), p.get("data_a"), optional=True)
-    sql = "SELECT co.id,co.name,COUNT(*) n FROM practices pr JOIN collaborators co ON co.id=pr.collaborator_id WHERE (pr.deleted_at IS NULL OR pr.deleted_at='') AND co.name LIKE ?"
-    args: list = [f"%{nome}%"]
+    sql = "SELECT co.id,co.name,COUNT(*) n FROM practices pr JOIN collaborators co ON co.id=pr.collaborator_id WHERE (pr.deleted_at IS NULL OR pr.deleted_at='')"
+    args: list = []
+    if nome:
+        sql += " AND co.name LIKE ?"
+        args.append(f"%{nome}%")
     if d_from:
         sql += " AND date(COALESCE(NULLIF(pr.pickup_date,''),pr.created_at))>=date(?)"
         args.append(d_from)
@@ -726,9 +806,46 @@ def _tool_pratiche_collaboratore(c, user, now, p):
         sql += " AND date(COALESCE(NULLIF(pr.pickup_date,''),pr.created_at))<=date(?)"
         args.append(d_to)
     sql += " GROUP BY co.id ORDER BY n DESC"
+    if not nome:
+        sql += f" LIMIT {_RANKING_LIMIT}"
     rows = c.execute(sql, args).fetchall()
     result = [{"collaboratore": r["name"], "numero_pratiche": r["n"]} for r in rows]
-    return {"risultati": result, "periodo_analizzato": label or "tutto il periodo disponibile"}
+    return {
+        "risultati": result, "periodo_analizzato": label or "tutto il periodo disponibile",
+        "nota": f"Nessun nome specificato: classifica dei primi {_RANKING_LIMIT} collaboratori per numero di pratiche (ordine gia' decrescente, il primo e' il piu' presente)." if not nome else None,
+    }
+
+
+def _tool_buoni_veterinari(c, user, now, p):
+    veterinario = (p.get("veterinario_nome") or "").strip()
+    stato = p.get("stato")
+    if stato and stato not in ("Maturato", "Usato"):
+        raise ToolInputError("stato deve essere uno tra: Maturato, Usato.")
+    d_from, d_to, label = resolve_period(now, p.get("periodo"), p.get("data_da"), p.get("data_a"), optional=True)
+    where = []
+    args: list = []
+    if veterinario:
+        where.append("v.clinic_name LIKE ?")
+        args.append(f"%{veterinario}%")
+    if stato:
+        where.append("vv.status=?")
+        args.append(stato)
+    date_col = "vv.used_at" if stato == "Usato" else "vv.created_at"
+    if d_from:
+        where.append(f"date({date_col})>=date(?)")
+        args.append(d_from)
+    if d_to:
+        where.append(f"date({date_col})<=date(?)")
+        args.append(d_to)
+    where_sql = f" WHERE {' AND '.join(where)}" if where else ""
+    sql = f"SELECT v.clinic_name vet, vv.status stato, COUNT(*) n FROM veterinarian_vouchers vv JOIN veterinarians v ON v.id=vv.veterinarian_id{where_sql} GROUP BY v.id, vv.status ORDER BY n DESC"
+    rows = c.execute(sql, args).fetchall()
+    result = [{"veterinario": r["vet"], "stato": r["stato"], "numero_buoni": r["n"]} for r in rows]
+    return {
+        "risultati": result, "periodo_analizzato": label or "tutto il periodo disponibile",
+        "filtri": {"veterinario_nome": veterinario or None, "stato": stato},
+        "nota": "Maturato = buono accreditato e non ancora usato (il filtro periodo si applica alla data di maturazione); Usato = buono gia' utilizzato su una pratica (il filtro periodo, se indicato con stato=Usato, si applica alla data d'uso). Se non specifichi stato, il periodo si applica alla data di maturazione per entrambi gli stati.",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -846,15 +963,27 @@ TOOL_SPECS = [
     },
     {
         "name": "pratiche_per_veterinario",
-        "description": "Numero di pratiche collegate a un veterinario/clinica (ricerca parziale sul nome), opzionalmente filtrato per periodo e per ruolo del veterinario nella pratica (servizio di cremazione, provenienza, o proprietario abituale).",
-        "input_schema": _schema({**_PERIOD_PROPS, "veterinario_nome": {"type": "string"}, "ruolo": {"type": "string", "enum": ["servizio", "origine", "proprietario"], "description": "Default 'servizio'."}}, ["veterinario_nome"]),
+        "description": "Numero di pratiche collegate a un veterinario/clinica, opzionalmente filtrato per periodo e per ruolo del veterinario nella pratica (servizio di cremazione, provenienza, o proprietario abituale). Se specifichi veterinario_nome (ricerca parziale) restituisce il conteggio per quel veterinario; se lo OMETTI restituisce la CLASSIFICA dei veterinari piu' presenti per quel ruolo - usa questa modalita' per domande come 'qual e' il veterinario piu' presente come luogo di origine'.",
+        "input_schema": _schema({**_PERIOD_PROPS, "veterinario_nome": {"type": "string"}, "ruolo": {"type": "string", "enum": ["servizio", "origine", "proprietario"], "description": "Default 'servizio'."}}),
         "handler": _tool_pratiche_veterinario,
     },
     {
         "name": "pratiche_per_collaboratore",
-        "description": "Numero di pratiche collegate a un collaboratore/partner commerciale (ricerca parziale sul nome), opzionalmente filtrato per periodo.",
-        "input_schema": _schema({**_PERIOD_PROPS, "collaboratore_nome": {"type": "string"}}, ["collaboratore_nome"]),
+        "description": "Numero di pratiche collegate a un collaboratore/partner commerciale, opzionalmente filtrato per periodo. Se specifichi collaboratore_nome (ricerca parziale) restituisce il conteggio per quel collaboratore; se lo OMETTI restituisce la CLASSIFICA dei collaboratori piu' presenti - usa questa modalita' per domande come 'qual e' il collaboratore con piu' pratiche'.",
+        "input_schema": _schema({**_PERIOD_PROPS, "collaboratore_nome": {"type": "string"}}),
         "handler": _tool_pratiche_collaboratore,
+    },
+    {
+        "name": "buoni_veterinari",
+        "description": "Conta/elenca i buoni veterinario (accreditati per invio pratiche) per veterinario/clinica e periodo, con filtro opzionale per stato (Maturato = accreditato e non ancora usato, Usato = gia' utilizzato su una pratica). Usa questo per domande come 'quanti buoni ha maturato il veterinario X ad agosto' o 'quanti buoni sono stati usati questo mese'.",
+        "input_schema": _schema({**_PERIOD_PROPS, "veterinario_nome": {"type": "string"}, "stato": {"type": "string", "enum": ["Maturato", "Usato"]}}),
+        "handler": _tool_buoni_veterinari,
+    },
+    {
+        "name": "andamento_giornaliero",
+        "description": "Andamento giorno per giorno dei ritiri o delle riconsegne effettuati in un periodo (stessa fonte autorevole di conta_ritiri/conta_riconsegne: stato reale della pratica, non gli eventi di calendario), con ogni giorno del periodo incluso anche quando il conteggio e' zero. Usa questo per 'qual e' stato il giorno con piu' ritiri', 'ci sono stati giorni senza ritiri in una sede', andamenti e picchi nel tempo. Filtri opzionali per sede e operatore. Periodo massimo un anno.",
+        "input_schema": _schema({**_PERIOD_PROPS, "metrica": {"type": "string", "enum": list(_FASE_CONFIG)}, "sede": {"type": "string", "enum": list(SHIFT_BRANCHES)}, "operatore": {"type": "string", "enum": list(CALENDAR_OPERATORS)}}, ["metrica"]),
+        "handler": _tool_andamento_giornaliero,
     },
 ]
 
