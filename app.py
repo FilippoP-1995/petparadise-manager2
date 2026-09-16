@@ -2745,18 +2745,23 @@ body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY
 .ai-chat-fab.dragging{transition:none;box-shadow:0 16px 36px #ef405f80}
 .ai-chat-fab svg{width:24px;height:24px}
 #aiChatRoot[hidden]{display:none}
-.ai-chat-backdrop{position:fixed;inset:0;z-index:255;background:#020617aa;opacity:0;pointer-events:none;transition:opacity .28s ease}
+.ai-chat-backdrop{position:fixed;inset:0;z-index:255;background:#020617aa;opacity:0;pointer-events:none;transition:opacity .45s ease}
 #aiChatRoot.ai-chat-open .ai-chat-backdrop{opacity:1;pointer-events:auto}
-.ai-chat-panel{position:fixed;z-index:256;left:50%;bottom:calc(16px + var(--safe-bottom));transform:translateX(-50%);width:min(420px,calc(100vw - 24px));max-height:min(72vh,620px);display:flex;flex-direction:column;background:#141b28;border:1px solid #263246;border-radius:20px;box-shadow:0 30px 80px #000c;overflow:hidden;clip-path:circle(0px at var(--ai-chat-ox,90%) var(--ai-chat-oy,90%));opacity:0;transition:clip-path .32s cubic-bezier(.4,0,.2,1),opacity .22s ease}
+.ai-chat-panel{position:fixed;z-index:256;left:50%;bottom:calc(16px + var(--safe-bottom));transform:translateX(-50%);width:min(420px,calc(100vw - 24px));max-height:min(72vh,620px);display:flex;flex-direction:column;background:#141b28;border:1px solid #263246;border-radius:20px;box-shadow:0 30px 80px #000c;overflow:hidden;clip-path:circle(0px at var(--ai-chat-ox,90%) var(--ai-chat-oy,90%));opacity:0;transition:clip-path .6s cubic-bezier(.34,1.56,.64,1),opacity .5s ease}
 #aiChatRoot.ai-chat-open .ai-chat-panel{clip-path:circle(var(--ai-chat-r,150%) at var(--ai-chat-ox,90%) var(--ai-chat-oy,90%));opacity:1}
 @media(prefers-reduced-motion:reduce){.ai-chat-panel,.ai-chat-backdrop{transition:none!important}}
 .ai-chat-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #1d2636;font-weight:800}
 .ai-chat-head span{display:flex;align-items:center;gap:8px}
 .ai-chat-head svg{width:18px;height:18px}
 .ai-chat-body{flex:1;min-height:120px;overflow-y:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;padding:14px 16px;display:flex;flex-direction:column;gap:8px;background:#0d121b}
-.ai-chat-empty{color:#8592a6;font-size:13px;text-align:center;margin:auto}
+.ai-chat-empty{color:#8592a6;font-size:13px;text-align:center;margin:auto;display:flex;flex-direction:column;gap:12px;align-items:center;padding:0 4px}
+.ai-chat-suggestions{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.ai-chat-suggestion-chip{border:1px solid #263246;background:#141b28;color:#d7dee8;border-radius:999px;padding:7px 13px;font-size:12.5px;cursor:pointer;text-align:left}
+.ai-chat-suggestion-chip:active{background:#1c2536}
+.light-theme .ai-chat-suggestion-chip{background:#f8fafc;border-color:#e2e8f0;color:#334155}
 .ai-chat-pending{align-self:flex-start;color:#8592a6;font-size:12.5px;font-style:italic}
 .ai-chat-error .wa-bubble{background:#3a1a1f;color:#fca5a5}
+.ai-chat-chart{display:block;width:100%;max-width:280px;height:auto;margin-top:8px;color:#8592a6}
 .ai-chat-input-row{display:flex;gap:8px;align-items:flex-end;padding:10px 12px;border-top:1px solid #1d2636;background:#141b28}
 .ai-chat-input-row textarea{flex:1;resize:none;max-height:120px;padding:10px 12px;border-radius:12px;border:1px solid #263246;background:#0e1622;color:#f5f7fb;font:inherit;font-size:16px}
 .ai-chat-input-row button{flex:0 0 auto;width:40px;height:40px;border-radius:50%;border:0;background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;display:grid;place-items:center;cursor:pointer}
@@ -7310,6 +7315,7 @@ function aiChatOpen(){
   // transizione verso l'apertura, altrimenti le due modifiche si
   // fondono e l'animazione non parte.
   requestAnimationFrame(()=>root.classList.add('ai-chat-open'));
+  aiChatRenderSuggestions();
   const input=document.getElementById('aiChatInput');
   if(input)setTimeout(()=>input.focus(),50);
 }
@@ -7329,8 +7335,10 @@ function aiChatClose(){
   if(panel)panel.addEventListener('transitionend',onEnd);
   // Fallback: se transitionend non arriva mai (motion ridotto, o un
   // browser che non lo emette per clip-path) il pannello non deve
-  // restare visibile/interattivo per sempre.
-  setTimeout(finish,400);
+  // restare visibile/interattivo per sempre. Deve restare piu' lungo
+  // della transizione CSS reale (.6s) altrimenti taglierebbe
+  // l'animazione a meta'.
+  setTimeout(finish,750);
 }
 function aiChatFabClick(){
   // Un trascinamento appena concluso non deve anche aprire la chat
@@ -7352,6 +7360,106 @@ if(window.visualViewport)window.visualViewport.addEventListener('resize',aiChatR
 function aiChatInputKeydown(event){
   if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();event.target.closest('form').requestSubmit();}
 }
+// Suggerimenti contestuali (richiesta esplicita dell'utente): domande
+// pronte per pagina, cliccabili, mostrate solo in una conversazione
+// ancora vuota - mai testo statico non azionabile.
+var AI_CHAT_SUGGESTIONS={
+  '/': ['Cosa devo fare oggi?','Quanto abbiamo incassato questo mese?','Ci sono anomalie?','Riepilogami la situazione di oggi.'],
+  '/calendario': ['Chi lavora oggi?','Quali ritiri abbiamo oggi?','Quali riconsegne sono previste oggi?','Fammi il riepilogo della giornata.'],
+  '/programma-cremazioni': ['Quante cremazioni abbiamo questo mese?','Quali sono ancora da fare?','Quanto abbiamo incassato dalle cremazioni?'],
+  '/bilanci': ['Quanto dobbiamo ancora incassare?','Quali sono le pratiche da saldare?','Quanto abbiamo incassato questo mese?','Analizza i ricavi per voce.'],
+};
+function aiChatSuggestionsForPath(pathname){
+  if(AI_CHAT_SUGGESTIONS[pathname])return AI_CHAT_SUGGESTIONS[pathname];
+  for(const prefix in AI_CHAT_SUGGESTIONS){
+    if(prefix!=='/'&&pathname.indexOf(prefix)===0)return AI_CHAT_SUGGESTIONS[prefix];
+  }
+  return null;
+}
+function aiChatRenderSuggestions(){
+  if(aiChatHistory.length)return;
+  const empty=document.querySelector('#aiChatBody .ai-chat-empty');
+  if(!empty||empty.querySelector('.ai-chat-suggestions'))return;
+  const suggestions=aiChatSuggestionsForPath(location.pathname);
+  if(!suggestions)return;
+  const wrap=document.createElement('div');
+  wrap.className='ai-chat-suggestions';
+  suggestions.forEach(text=>{
+    const chip=document.createElement('button');
+    chip.type='button';
+    chip.className='ai-chat-suggestion-chip';
+    chip.textContent=text;
+    chip.onclick=()=>aiChatSuggestionClick(text);
+    wrap.appendChild(chip);
+  });
+  empty.appendChild(wrap);
+}
+function aiChatSuggestionClick(text){
+  const input=document.getElementById('aiChatInput');
+  if(!input)return;
+  input.value=text;
+  aiChatSend({preventDefault(){}});
+}
+// Un blocco ```chart``` nella risposta (JSON {titolo,dati:[{etichetta,valore}]})
+// viene renderizzato come un piccolo grafico a barre inline invece che come
+// testo grezzo - mai con innerHTML/stringhe interpolate, solo API DOM/SVG
+// dirette, cosi' un valore imprevisto nella risposta non puo' mai finire
+// interpretato come markup.
+function aiChatExtractChart(text){
+  const match=/```chart\s*([\s\S]*?)```/.exec(text||'');
+  if(!match)return {cleanText:text||'',chart:null};
+  let chart=null;
+  try{chart=JSON.parse(match[1]);}catch(e){chart=null;}
+  const cleanText=(text.slice(0,match.index)+text.slice(match.index+match[0].length)).trim();
+  return {cleanText,chart};
+}
+function aiChatRenderChart(bubble,chart){
+  if(!chart||!Array.isArray(chart.dati))return;
+  const dati=chart.dati.filter(d=>d&&typeof d.valore==='number'&&isFinite(d.valore)).slice(0,24);
+  if(!dati.length)return;
+  const W=280,H=150,padL=6,padR=6,padT=18,padB=26;
+  const values=dati.map(d=>d.valore);
+  const max=Math.max(0,...values),min=Math.min(0,...values);
+  const range=(max-min)||1;
+  const n=dati.length;
+  const slot=(W-padL-padR)/n;
+  const barW=Math.max(3,slot-4);
+  const svgNS='http://www.w3.org/2000/svg';
+  const svg=document.createElementNS(svgNS,'svg');
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  svg.setAttribute('class','ai-chat-chart');
+  const zeroY=padT+(H-padT-padB)*(max/range);
+  dati.forEach((d,i)=>{
+    const x=padL+i*slot+(slot-barW)/2;
+    const barH=(H-padT-padB)*(Math.abs(d.valore)/range);
+    const y=d.valore>=0?zeroY-barH:zeroY;
+    const rect=document.createElementNS(svgNS,'rect');
+    rect.setAttribute('x',x);rect.setAttribute('y',y);
+    rect.setAttribute('width',barW);rect.setAttribute('height',Math.max(1,barH));
+    rect.setAttribute('rx',2);rect.setAttribute('fill','#fb4c67');
+    const title=document.createElementNS(svgNS,'title');
+    title.textContent=`${d.etichetta||''}: ${d.valore}`;
+    rect.appendChild(title);
+    svg.appendChild(rect);
+    if(n<=8){
+      const label=document.createElementNS(svgNS,'text');
+      label.setAttribute('x',x+barW/2);label.setAttribute('y',H-10);
+      label.setAttribute('text-anchor','middle');label.setAttribute('font-size','8');
+      label.setAttribute('fill','currentColor');
+      label.textContent=(d.etichetta||'').toString().slice(0,10);
+      svg.appendChild(label);
+    }
+  });
+  if(chart.titolo){
+    const titleText=document.createElementNS(svgNS,'text');
+    titleText.setAttribute('x',W/2);titleText.setAttribute('y',11);
+    titleText.setAttribute('text-anchor','middle');titleText.setAttribute('font-size','9');
+    titleText.setAttribute('fill','currentColor');titleText.setAttribute('font-weight','700');
+    titleText.textContent=chart.titolo;
+    svg.appendChild(titleText);
+  }
+  bubble.appendChild(svg);
+}
 function aiChatAppendBubble(role,text,isError){
   const body=document.getElementById('aiChatBody');
   if(!body)return null;
@@ -7361,10 +7469,18 @@ function aiChatAppendBubble(role,text,isError){
   row.className='wa-bubble-row '+(role==='user'?'wa-bubble-row-sent':'wa-bubble-row-received')+(isError?' ai-chat-error':'');
   const bubble=document.createElement('div');
   bubble.className='wa-bubble '+(role==='user'?'wa-bubble-sent':'wa-bubble-received');
-  const textEl=document.createElement('div');
-  textEl.className='wa-bubble-text';
-  textEl.textContent=text;
-  bubble.appendChild(textEl);
+  let displayText=text,chart=null;
+  if(role==='assistant'&&!isError){
+    const extracted=aiChatExtractChart(text);
+    displayText=extracted.cleanText;chart=extracted.chart;
+  }
+  if(displayText){
+    const textEl=document.createElement('div');
+    textEl.className='wa-bubble-text';
+    textEl.textContent=displayText;
+    bubble.appendChild(textEl);
+  }
+  if(chart)aiChatRenderChart(bubble,chart);
   row.appendChild(bubble);
   body.appendChild(row);
   body.scrollTop=body.scrollHeight;

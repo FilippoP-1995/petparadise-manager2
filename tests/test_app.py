@@ -16044,7 +16044,63 @@ class AIAssistantTests(unittest.TestCase):
         # non deve restare visibile/interattivo per sempre se transitionend
         # non arriva mai (es. con animazioni disattivate dal sistema).
         self.assertIn("addEventListener('transitionend',onEnd)", js)
-        self.assertIn("setTimeout(finish,400)", js)
+        self.assertIn("setTimeout(finish,750)", js)
+
+    def test_ai_chat_open_close_animation_is_slow_and_bubble_like(self):
+        # Feedback esplicito dell'utente dopo la prima versione
+        # dell'animazione: deve essere piu' lenta e "a fumetto che si
+        # apre" (un pop con un leggero rimbalzo), non una dissolvenza
+        # rapida e lineare.
+        panel_rule = app.CSS[app.CSS.index(".ai-chat-panel{"):app.CSS.index(".ai-chat-panel{") + 600]
+        m = re.search(r"transition:clip-path ([\d.]+)s cubic-bezier\(([-\d.,]+)\)", panel_rule)
+        self.assertIsNotNone(m, "nessuna transizione clip-path con easing personalizzato trovata")
+        duration = float(m.group(1))
+        self.assertGreaterEqual(duration, 0.5, "l'animazione deve essere lenta (almeno mezzo secondo)")
+        curve = [float(x) for x in m.group(2).split(",")]
+        # un overshoot (il "pop" a fumetto) si riconosce da un secondo
+        # controllo della cubic-bezier oltre 1: la curva supera il 100% e
+        # torna indietro, invece di fermarsi esattamente al valore finale.
+        self.assertGreater(curve[1], 1.0, "l'easing deve avere un rimbalzo (overshoot), non una semplice ease-out")
+        # il fallback JS che nasconde il pannello deve restare piu' lungo
+        # della transizione reale, altrimenti taglierebbe l'animazione a meta'.
+        fallback_match = re.search(r"setTimeout\(finish,(\d+)\)", app.APP_JS)
+        self.assertIsNotNone(fallback_match)
+        self.assertGreater(int(fallback_match.group(1)), duration * 1000)
+
+    def test_ai_chat_contextual_suggestions_are_wired_per_page(self):
+        # Richiesta esplicita dell'utente: prompt suggeriti dinamici per
+        # pagina (Dashboard/Calendario/Cremazioni/Bilanci), cliccabili,
+        # mostrati solo in una conversazione ancora vuota.
+        js = app.APP_JS
+        self.assertIn("var AI_CHAT_SUGGESTIONS=", js)
+        for path in ("'/'", "'/calendario'", "'/programma-cremazioni'", "'/bilanci'"):
+            self.assertIn(path + ":", js)
+        self.assertIn("function aiChatRenderSuggestions(", js)
+        self.assertIn("function aiChatSuggestionClick(", js)
+        self.assertIn("aiChatRenderSuggestions();", js)
+        # non deve mostrare suggerimenti se la conversazione ha gia' cronologia
+        render_body = js[js.index("function aiChatRenderSuggestions("):js.index("function aiChatRenderSuggestions(") + 300]
+        self.assertIn("if(aiChatHistory.length)return;", render_body)
+        self.assertIn(".ai-chat-suggestion-chip{", app.CSS)
+
+    def test_ai_chat_renders_a_chart_block_as_inline_svg_never_as_html_string(self):
+        # Richiesta esplicita dell'utente: quando utile, l'Assistente deve
+        # poter restituire un grafico basato SOLO sui dati reali gia'
+        # restituiti dagli strumenti (mai un'immagine statica/finta).
+        js = app.APP_JS
+        self.assertIn("function aiChatExtractChart(", js)
+        self.assertIn("function aiChatRenderChart(", js)
+        # costruito con API DOM/SVG dirette (createElementNS + textContent),
+        # mai innerHTML con stringhe interpolate - un valore imprevisto in
+        # una risposta non deve mai poter essere interpretato come markup.
+        chart_fn = js[js.index("function aiChatRenderChart("):js.index("function aiChatAppendBubble(")]
+        self.assertIn("createElementNS", chart_fn)
+        self.assertNotIn("innerHTML", chart_fn)
+        self.assertIn(".ai-chat-chart{", app.CSS)
+        self.assertIn("```chart", self.ai._SYSTEM_PROMPT_TEMPLATE)
+        # il prompt deve essere valido (nessuna graffa non escapata rimasta
+        # dall'esempio JSON, altrimenti .format() esplode ad ogni domanda).
+        self.ai._system_prompt(app.rome_now())
 
     def test_ai_chat_body_scroll_does_not_bleed_into_the_page_behind_it(self):
         # Richiesta esplicita dell'utente: lo scroll a dito dentro la chat
