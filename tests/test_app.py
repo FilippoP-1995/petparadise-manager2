@@ -16056,6 +16056,184 @@ class AIAssistantTests(unittest.TestCase):
         body_css = app.CSS[app.CSS.index(".ai-chat-body{"):app.CSS.index(".ai-chat-body{")+250]
         self.assertIn("overscroll-behavior-y:contain", body_css)
 
+    def test_smaltimenti_reuses_the_real_disposal_page_eligibility(self):
+        # Stessa fonte della pagina /smaltimenti (disposal_eligible_practices/
+        # disposal_already_done_practices): una pratica di cremazione
+        # collettiva conta come "da confermare" finche' lo stato non e'
+        # esattamente 'Smaltito'.
+        with app.db() as c:
+            self._insert_practice(c, _n=1, practice_number="CR-SM-1", service_type="Cremazione collettiva", status="Ritirato", destination_branch="Livorno", pickup_date="2026-08-05")
+            self._insert_practice(c, _n=2, practice_number="CR-SM-2", service_type="Cremazione collettiva", status="Smaltito", destination_branch="Livorno", pickup_date="2026-08-06")
+            self._insert_practice(c, _n=3, practice_number="CR-SM-3", service_type="Cremazione individuale", status="Ritirato", destination_branch="Livorno", pickup_date="2026-08-05")
+        tool = next(t for t in self.ai.TOOL_SPECS if t["name"] == "smaltimenti")["handler"]
+        now = app.rome_now()
+        with app.db() as c:
+            result = tool(c, self.admin, now, {"periodo": "intervallo_personalizzato", "data_da": "2026-08-01", "data_a": "2026-08-31"})
+            self.assertEqual(result["totale_da_confermare"], 1)
+            self.assertEqual(result["totale_gia_smaltite"], 1)
+            self.assertEqual(result["esempi_da_confermare"][0]["pratica"], "CR-SM-1")
+            # una cremazione INDIVIDUALE non rientra mai nello smaltimento periodico
+            self.assertTrue(all(e["pratica"] != "CR-SM-3" for e in result["esempi_da_confermare"]))
+
+    def test_percorso_giornaliero_reads_the_persisted_route_plan(self):
+        with app.db() as c:
+            stamp = "2026-08-05T07:00:00"
+            event_id = c.execute(
+                "INSERT INTO calendar_events(event_type,title,animal_name,zone,start_at,end_at,event_status,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                ("Ritiro", "RITIRO LUNA", "Luna", "Pisa", "2026-08-05T09:00:00", "2026-08-05T09:30:00", "Da ritirare", self.admin["id"], stamp, stamp),
+            ).lastrowid
+            plan_id = c.execute(
+                "INSERT INTO route_plans(route_date,operator_name,start_location_type,end_location_type,status,optimization_mode,total_distance_meters,total_duration_seconds,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                ("2026-08-05", "Serena", "sede", "stessa_partenza", "attivo", "veloce", 12000, 1800, stamp, stamp),
+            ).lastrowid
+            c.execute(
+                "INSERT INTO route_plan_stops(route_plan_id,event_id,sequence,estimated_arrival,validation_status,is_locked,is_urgent) VALUES(?,?,?,?,?,?,?)",
+                (plan_id, event_id, 1, "2026-08-05T09:10:00", "verde", 0, 0),
+            )
+        tool = next(t for t in self.ai.TOOL_SPECS if t["name"] == "percorso_giornaliero")["handler"]
+        now = app.rome_now()
+        with app.db() as c:
+            result = tool(c, self.admin, now, {"data": "2026-08-05"})
+            self.assertEqual(result["totale_percorsi"], 1)
+            percorso = result["percorsi"][0]
+            self.assertEqual(percorso["operatore"], "Serena")
+            self.assertEqual(len(percorso["tappe"]), 1)
+            self.assertEqual(percorso["tappe"][0]["animale"], "Luna")
+            # nessun percorso salvato per un altro giorno -> lista vuota, non un errore
+            self.assertEqual(tool(c, self.admin, now, {"data": "2026-08-06"})["totale_percorsi"], 0)
+
+    def test_stock_urne_matches_the_real_catalog_page_thresholds(self):
+        # Stessa formula esatta di urn_catalog_page: esaurita quantity<=0,
+        # scorta bassa quantity<=low_stock_threshold, altrimenti disponibile;
+        # valore = quantity*prezzo.
+        # urns e' pre-popolata all'avvio (import da urn_inventory.py, ~85
+        # modelli reali, alcuni contengono gia' "Cuore" nel nome): si usa un
+        # prefisso di test univoco e il filtro modello per isolare solo le
+        # righe di questo test dal catalogo reale gia' seminato.
+        with app.db() as c:
+            stamp = "2026-08-01T00:00:00"
+            c.execute("INSERT INTO urns(name,material,category,price,quantity,low_stock_threshold,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                      ("ZZTest Bianco", "Ceramica", "Urna", "50.00", 0, 3, 1, stamp, stamp))
+            c.execute("INSERT INTO urns(name,material,category,price,quantity,low_stock_threshold,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                      ("ZZTest Nero", "Ceramica", "Urna", "60.00", 2, 3, 1, stamp, stamp))
+            c.execute("INSERT INTO urns(name,material,category,price,quantity,low_stock_threshold,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                      ("ZZTest Oro", "Ceramica", "Urna", "70.00", 10, 3, 1, stamp, stamp))
+        tool = next(t for t in self.ai.TOOL_SPECS if t["name"] == "stock_urne")["handler"]
+        now = app.rome_now()
+        with app.db() as c:
+            result = tool(c, self.admin, now, {"modello": "ZZTest"})
+            by_name = {a["modello"]: a for a in result["articoli"]}
+            self.assertEqual(by_name["ZZTest Bianco"]["stato"], "Esaurita")
+            self.assertEqual(by_name["ZZTest Nero"]["stato"], "Scorta bassa")
+            self.assertEqual(by_name["ZZTest Oro"]["stato"], "Disponibile")
+            self.assertAlmostEqual(by_name["ZZTest Oro"]["valore_magazzino"], 700.0)
+            self.assertAlmostEqual(result["valore_magazzino_totale"], 0 + 120.0 + 700.0)
+            solo_basse = tool(c, self.admin, now, {"modello": "ZZTest", "solo_scorta_bassa": True})
+            self.assertEqual({a["modello"] for a in solo_basse["articoli"]}, {"ZZTest Bianco", "ZZTest Nero"})
+
+    def test_ordini_prodotti_acqua_e_prodotti(self):
+        with app.db() as c:
+            stamp = "2026-08-10T09:00:00"
+            c.execute("INSERT INTO email_orders(order_type,quantity,notes,recipient,subject,body,status,operator_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                      ("water", 5, "", "fornitore@example.com", "Ordine", "Corpo", "Inviato", self.admin["id"], stamp, stamp))
+            c.execute("INSERT INTO email_orders(order_type,quantity,notes,recipient,subject,body,status,error_message,operator_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                      ("water", 3, "", "fornitore@example.com", "Ordine", "Corpo", "Fallito", "Timeout SMTP", self.admin["id"], stamp, stamp))
+            article_id = c.execute("INSERT INTO articles(name,active,created_at) VALUES(?,?,?)", ("Guanti nitrile", 1, stamp)).lastrowid
+            c.execute("INSERT INTO article_orders(article_id,ordered_by,created_at) VALUES(?,?,?)", (article_id, self.admin["id"], stamp))
+        tool = next(t for t in self.ai.TOOL_SPECS if t["name"] == "ordini_prodotti")["handler"]
+        now = app.rome_now()
+        agosto = {"periodo": "intervallo_personalizzato", "data_da": "2026-08-01", "data_a": "2026-08-31"}
+        with app.db() as c:
+            acqua = tool(c, self.admin, now, {**agosto, "tipo": "acqua"})
+            self.assertEqual(acqua["totale_ordini"], 2)
+            self.assertEqual(acqua["totale_boccioni"], 8)
+            self.assertEqual(acqua["ordini_falliti"], 1)
+            solo_falliti = tool(c, self.admin, now, {**agosto, "tipo": "acqua", "stato": "Fallito"})
+            self.assertEqual(solo_falliti["totale_ordini"], 1)
+            prodotti = tool(c, self.admin, now, {**agosto, "tipo": "prodotti"})
+            self.assertEqual(prodotti["totale_richieste"], 1)
+            self.assertEqual(prodotti["esempi"][0]["prodotto"], "Guanti nitrile")
+
+    def test_dettaglio_evento_calendario_assembla_animali_preventivo_commenti_storico(self):
+        with app.db() as c:
+            stamp = "2026-08-12T09:00:00"
+            event_id = c.execute(
+                "INSERT INTO calendar_events(event_type,title,animal_name,zone,start_at,end_at,event_status,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                ("Ritiro", "RITIRO MULTI", "Fido", "Livorno", "2026-08-12T10:00:00", "2026-08-12T10:30:00", "Da confermare", self.admin["id"], stamp, stamp),
+            ).lastrowid
+            c.execute("INSERT INTO calendar_event_animals(event_id,name,species,weight,created_at,updated_at) VALUES(?,?,?,?,?,?)", (event_id, "Fido", "Cane", "12", stamp, stamp))
+            c.execute("INSERT INTO calendar_event_animals(event_id,name,species,weight,created_at,updated_at) VALUES(?,?,?,?,?,?)", (event_id, "Micio", "Gatto", "4", stamp, stamp))
+            c.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)", (event_id, "Cremazione", 150.0, 1, stamp, stamp))
+            c.execute("INSERT INTO calendar_event_comments(event_id,user_id,message,created_at,updated_at) VALUES(?,?,?,?,?)", (event_id, self.admin["id"], "Cliente avvisato", stamp, stamp))
+            c.execute("INSERT INTO calendar_event_history(event_id,user_id,action,old_value,new_value,created_at) VALUES(?,?,?,?,?,?)", (event_id, self.admin["id"], "Modifica operatore", "", "Serena", stamp))
+        tool = next(t for t in self.ai.TOOL_SPECS if t["name"] == "dettaglio_evento_calendario")["handler"]
+        now = app.rome_now()
+        with app.db() as c:
+            result = tool(c, self.admin, now, {"id": event_id})
+            self.assertEqual(result["titolo"], "RITIRO MULTI")
+            self.assertEqual({a["nome"] for a in result["animali"]}, {"Fido", "Micio"})
+            self.assertEqual(result["totale_preventivo_evento"], 150.0)
+            self.assertEqual(result["commenti"][0]["testo"], "Cliente avvisato")
+            self.assertEqual(result["storico_recente"][0]["azione"], "Modifica operatore")
+            with self.assertRaises(self.ai.ToolInputError):
+                tool(c, self.admin, now, {"id": 999999})
+            with self.assertRaises(self.ai.ToolInputError):
+                tool(c, self.admin, now, {})
+        # eventi_calendario deve esporre l'id, altrimenti dettaglio_evento_calendario e' irraggiungibile in una conversazione reale
+        eventi_tool = next(t for t in self.ai.TOOL_SPECS if t["name"] == "eventi_calendario")["handler"]
+        with app.db() as c:
+            eventi = eventi_tool(c, self.admin, now, {"periodo": "intervallo_personalizzato", "data_da": "2026-08-12", "data_a": "2026-08-12"})
+            self.assertIn(event_id, [e["id"] for e in eventi["eventi"]])
+
+    def test_riepilogo_giornata_aggregates_the_existing_tools_for_one_day(self):
+        with app.db() as c:
+            stamp = "2026-08-14T09:00:00"
+            self._insert_practice(c, _n=1, practice_number="CR-RG-1", status="Ritirato", destination_branch="Livorno", pickup_date="2026-08-14")
+            app.upsert_shift(c, "Serena", "2026-08-14", "Livorno", "09:00", "13:00", False, self.admin["id"])
+            c.execute(
+                "INSERT INTO calendar_events(event_type,title,animal_name,zone,start_at,end_at,event_status,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                ("Ritiro", "RITIRO PROGRAMMATO", "Rex", "Livorno", "2026-08-14T15:00:00", "2026-08-14T15:30:00", "Da ritirare", self.admin["id"], stamp, stamp),
+            )
+            c.execute(
+                "INSERT INTO reminders(reminder_type,dedupe_key,title,url,created_at) VALUES(?,?,?,?,?)",
+                ("manual", "test-riepilogo-1", "Richiamare cliente", "/pratiche/1", stamp),
+            )
+        tool = next(t for t in self.ai.TOOL_SPECS if t["name"] == "riepilogo_giornata")["handler"]
+        now = app.rome_now()
+        with app.db() as c:
+            result = tool(c, self.admin, now, {"data": "2026-08-14", "sede": "Livorno"})
+            self.assertEqual(result["ritiri_effettuati"], 1)
+            self.assertEqual(result["totale_eventi_programmati"], 1)
+            self.assertTrue(any(t["operatore"] == "Serena" for t in result["chi_lavora"]))
+            self.assertTrue(any(r["titolo"] == "Richiamare cliente" for r in result["promemoria_aperti"]))
+
+    def test_anomalie_trova_solo_condizioni_reali_gia_definite_nel_gestionale(self):
+        with app.db() as c:
+            stamp_vecchio = "2026-06-01T09:00:00"
+            # 1) saldo aperto vecchio
+            self._insert_practice(c, _n=1, practice_number="CR-AN-1", status="Ritirato", payment_status="Da saldare", remaining_balance="120", deposit="0", created_at=stamp_vecchio, pickup_date="2026-06-01")
+            # 2) ritiro programmato nel passato mai completato
+            c.execute(
+                "INSERT INTO calendar_events(event_type,title,animal_name,zone,start_at,end_at,event_status,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                ("Ritiro", "RITIRO SCADUTO", "Birba", "Empoli", "2026-06-02T09:00:00", "2026-06-02T09:30:00", "Da confermare", self.admin["id"], stamp_vecchio, stamp_vecchio),
+            )
+            # 3) smaltimento in sospeso da tempo
+            self._insert_practice(c, _n=2, practice_number="CR-AN-2", service_type="Cremazione collettiva", status="Ritirato", pickup_date="2026-06-01", created_at=stamp_vecchio)
+            # 4) ordine fallito non archiviato
+            c.execute("INSERT INTO email_orders(order_type,quantity,notes,recipient,subject,body,status,error_message,operator_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                      ("water", 2, "", "fornitore@example.com", "Ordine", "Corpo", "Fallito", "Connessione rifiutata", self.admin["id"], stamp_vecchio, stamp_vecchio))
+        tool = next(t for t in self.ai.TOOL_SPECS if t["name"] == "anomalie")["handler"]
+        now = app.rome_now()
+        with app.db() as c:
+            result = tool(c, self.admin, now, {})
+            tipi_trovati = {a["tipo"] for a in result["anomalie"]}
+            self.assertIn("saldo_aperto_da_troppo_tempo", tipi_trovati)
+            self.assertIn("ritiro_o_riconsegna_in_ritardo", tipi_trovati)
+            self.assertIn("smaltimento_in_sospeso_da_troppo_tempo", tipi_trovati)
+            self.assertIn("ordine_fornitore_fallito", tipi_trovati)
+            self.assertGreaterEqual(result["totale_anomalie_trovate"], 4)
+            self.assertEqual(len(result["criteri_verificati"]), 4)
+
 
 if __name__ == "__main__":
     unittest.main()

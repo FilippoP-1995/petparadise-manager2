@@ -19401,6 +19401,10 @@ ai_assistant.configure(ai_assistant.Deps(
     states=tuple(STATES),
     shift_operators=SHIFT_OPERATORS,
     month_names_it=MONTH_NAMES_IT,
+    payment_channel=payment_channel,
+    disposal_eligible_practices=App.disposal_eligible_practices,
+    disposal_already_done_practices=App.disposal_already_done_practices,
+    disposal_contact_for=App.disposal_contact_for,
 ))
 
 if __name__ == "__main__":

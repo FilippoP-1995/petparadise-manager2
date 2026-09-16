@@ -80,6 +80,14 @@ class Deps:
     states: tuple
     shift_operators: tuple
     month_names_it: tuple
+    # Stessa logica gia' usata dalla pagina Smaltimenti (app.py) per decidere
+    # quali pratiche di cremazione collettiva sono da smaltire/gia' smaltite
+    # in un periodo, e come si etichetta il circuito economico di una
+    # pratica - iniettate qui, non riscritte.
+    payment_channel: Callable[[Any], str]
+    disposal_eligible_practices: Callable[[Any, Any, str, str], list]
+    disposal_already_done_practices: Callable[[Any, Any, str, str], list]
+    disposal_contact_for: Callable[[Any, Any], str]
 
 
 DEPS: Deps | None = None
@@ -380,10 +388,57 @@ def _tool_eventi_calendario(c, user, now, p):
     if operatore:
         where.append("operator_name=?")
         args.append(operatore)
-    sql = f"SELECT event_type,title,start_at,zone,operator_name,event_status,animal_name FROM calendar_events WHERE {' AND '.join(where)} ORDER BY start_at LIMIT 50"
+    sql = f"SELECT id,event_type,title,start_at,zone,operator_name,event_status,animal_name FROM calendar_events WHERE {' AND '.join(where)} ORDER BY start_at LIMIT 50"
     rows = c.execute(sql, args).fetchall()
-    result = [{"tipo": r["event_type"], "titolo": r["title"], "quando": r["start_at"], "sede": r["zone"], "operatore": r["operator_name"], "stato": r["event_status"], "animale": r["animal_name"]} for r in rows]
+    result = [{"id": r["id"], "tipo": r["event_type"], "titolo": r["title"], "quando": r["start_at"], "sede": r["zone"], "operatore": r["operator_name"], "stato": r["event_status"], "animale": r["animal_name"]} for r in rows]
     return {"eventi": result, "totale_nel_periodo": len(result), "troncato_a_50": len(result) == 50, "periodo_analizzato": label}
+
+
+def _tool_dettaglio_evento_calendario(c, user, now, p):
+    # Nessuna funzione condivisa esiste gia' per assemblare il dettaglio
+    # completo di un evento (calendar_event_detail in app.py costruisce
+    # HTML e interroga il DB nello stesso metodo, non e' riusabile cosi'
+    # com'e'): qui si leggono le stesse tabelle con query dirette e senza
+    # logica interpretativa propria (animali/preventivo/commenti/storico
+    # sono semplici elenchi per event_id, nessuna regola di business da
+    # poter disallineare), quindi non serve estrarre un service condiviso.
+    event_id = p.get("id")
+    if not event_id:
+        raise ToolInputError("Specifica l'id dell'evento (usa prima eventi_calendario per trovarlo).")
+    event = c.execute(
+        """SELECT e.*, u.display_name creator_name, au.display_name assigned_name, p.practice_number
+           FROM calendar_events e JOIN users u ON u.id=e.created_by
+           LEFT JOIN users au ON au.id=e.assigned_user_id LEFT JOIN practices p ON p.id=e.linked_practice_id
+           WHERE e.id=? AND (e.deleted_at IS NULL OR e.deleted_at='')""",
+        (event_id,),
+    ).fetchone()
+    if not event:
+        raise ToolInputError(f"Nessun evento trovato con id {event_id}.")
+    animali = c.execute("SELECT name,species,weight,cremation_type,notes FROM calendar_event_animals WHERE event_id=? ORDER BY id", (event_id,)).fetchall()
+    preventivo = c.execute("SELECT description,amount FROM calendar_event_estimate_items WHERE event_id=? ORDER BY sort_order,id", (event_id,)).fetchall()
+    commenti = c.execute(
+        "SELECT cm.message,cm.created_at,u.display_name FROM calendar_event_comments cm JOIN users u ON u.id=cm.user_id WHERE cm.event_id=? AND cm.deleted_at IS NULL ORDER BY cm.created_at",
+        (event_id,),
+    ).fetchall()
+    storico = c.execute(
+        "SELECT h.action,h.old_value,h.new_value,h.created_at,u.display_name FROM calendar_event_history h LEFT JOIN users u ON u.id=h.user_id WHERE h.event_id=? ORDER BY h.created_at DESC LIMIT 20",
+        (event_id,),
+    ).fetchall()
+    return {
+        "id": event["id"], "tipo": event["event_type"], "titolo": event["title"], "stato": event["event_status"],
+        "inizio": event["start_at"], "fine": event["end_at"], "tutto_il_giorno": bool(event["all_day"]),
+        "sede_zona": event["zone"], "operatore": event["operator_name"], "assegnato_a": event["assigned_name"],
+        "animale_principale": event["animal_name"], "note": event["notes"],
+        "veterinario_nome": event["veterinarian_name"], "cliente_telefono": event["client_phone"],
+        "pratica_collegata": event["practice_number"],
+        "creato_da": event["creator_name"], "creato_il": event["created_at"],
+        "animali": [{"nome": a["name"], "specie": a["species"], "peso": a["weight"], "tipo_cremazione": a["cremation_type"], "note": a["notes"]} for a in animali],
+        "preventivo_evento": [{"descrizione": e["description"], "importo": round(DEPS.money_value(e["amount"]), 2)} for e in preventivo],
+        "totale_preventivo_evento": round(sum(DEPS.money_value(e["amount"]) for e in preventivo), 2),
+        "commenti": [{"autore": cm["display_name"], "quando": cm["created_at"], "testo": cm["message"]} for cm in commenti],
+        "storico_recente": [{"azione": h["action"], "da": h["old_value"], "a": h["new_value"], "quando": h["created_at"], "utente": h["display_name"]} for h in storico],
+        "nota": "Se l'evento ha generato una pratica, il preventivo/le informazioni definitive vivono sulla pratica (dettaglio_pratica), non qui: questo e' il preventivo/i dati inseriti in fase di programmazione a calendario, che possono differire da quanto poi effettivamente registrato sulla pratica.",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -661,6 +716,180 @@ def _tool_fatture(c, user, now, p):
     }
 
 
+def _tool_smaltimenti(c, user, now, p):
+    # Stessa fonte autorevole della pagina Smaltimenti (disposal_eligible_
+    # practices/disposal_already_done_practices, iniettate via Deps): una
+    # pratica di cremazione collettiva e' "da smaltire" finche' il suo stato
+    # non e' esattamente 'Smaltito', "gia' smaltita" quando lo e' - stesso
+    # criterio esatto che l'utente vede su /smaltimenti, non un criterio
+    # inventato qui.
+    d_from, d_to, label = resolve_period(now, p.get("periodo"), p.get("data_da"), p.get("data_a"))
+    sede = p.get("sede")
+    if sede and sede not in SHIFT_BRANCHES:
+        raise ToolInputError(f"sede deve essere una tra: {', '.join(SHIFT_BRANCHES)}.")
+    eligible = DEPS.disposal_eligible_practices(None, c, d_from, d_to)
+    done = DEPS.disposal_already_done_practices(None, c, d_from, d_to)
+    if sede:
+        eligible = [r for r in eligible if r["destination_branch"] == sede]
+        done = [r for r in done if r["destination_branch"] == sede]
+    per_gruppo: dict = {}
+    for r in eligible:
+        key = (r["destination_branch"] or "Non indicata", DEPS.payment_channel(r))
+        per_gruppo.setdefault(key, {"da_confermare": 0, "gia_smaltite": 0})["da_confermare"] += 1
+    for r in done:
+        key = (r["destination_branch"] or "Non indicata", DEPS.payment_channel(r))
+        per_gruppo.setdefault(key, {"da_confermare": 0, "gia_smaltite": 0})["gia_smaltite"] += 1
+    esempi = [
+        {"pratica": r["practice_number"], "animale": r["animal_name"], "contatto": DEPS.disposal_contact_for(None, r), "sede": r["destination_branch"], "data_recupero": r["pickup_date"] or r["created_at"]}
+        for r in eligible[:15]
+    ]
+    return {
+        "periodo_analizzato": label,
+        "filtri": {"sede": sede},
+        "totale_da_confermare": len(eligible),
+        "totale_gia_smaltite": len(done),
+        "per_sede_e_circuito": [{"sede": k[0], "circuito": k[1], **v} for k, v in sorted(per_gruppo.items())],
+        "esempi_da_confermare": esempi,
+        "esempi_troncati": len(eligible) > 15,
+        "nota": "Riguarda esclusivamente le pratiche di cremazione collettiva (service_type='Cremazione collettiva'): e' l'unico tipo di pratica per cui esiste lo smaltimento periodico in conferimento esterno.",
+    }
+
+
+def _tool_percorso_giornaliero(c, user, now, p):
+    # Legge il piano percorsi GIA' calcolato e salvato (route_plans/
+    # route_plan_stops, generato dalla pagina "Percorso giornaliero"), non
+    # ne calcola uno nuovo: quel calcolo chiama l'API Google Routes a
+    # pagamento e riordina/pianifica le tappe, un'azione operativa che
+    # l'Assistente non deve avviare autonomamente.
+    giorno = p.get("data") or now.date().isoformat()
+    try:
+        date.fromisoformat(giorno)
+    except ValueError:
+        raise ToolInputError("data non valida (AAAA-MM-GG).")
+    operatore = p.get("operatore")
+    if operatore and operatore not in CALENDAR_OPERATORS:
+        raise ToolInputError(f"operatore deve essere uno tra: {', '.join(CALENDAR_OPERATORS)}.")
+    where = ["rp.route_date=?", "rp.status='attivo'"]
+    args: list = [giorno]
+    if operatore:
+        where.append("rp.operator_name=?")
+        args.append(operatore)
+    plans = c.execute(f"SELECT * FROM route_plans rp WHERE {' AND '.join(where)} ORDER BY rp.operator_name", args).fetchall()
+    result = []
+    for plan in plans:
+        stops = c.execute(
+            """SELECT s.*, e.title, e.event_type, e.zone, e.animal_name, e.event_status
+               FROM route_plan_stops s LEFT JOIN calendar_events e ON e.id=s.event_id
+               WHERE s.route_plan_id=? ORDER BY s.sequence""",
+            (plan["id"],),
+        ).fetchall()
+        result.append({
+            "operatore": plan["operator_name"],
+            "modalita_ottimizzazione": plan["optimization_mode"],
+            "distanza_totale_km": round((plan["total_distance_meters"] or 0) / 1000, 1),
+            "durata_totale_minuti": round((plan["total_duration_seconds"] or 0) / 60) if plan["total_duration_seconds"] else None,
+            "tappe": [
+                {
+                    "sequenza": s["sequence"], "tipo_evento": s["event_type"], "titolo": s["title"], "zona": s["zone"], "animale": s["animal_name"],
+                    "stato_evento": s["event_status"], "arrivo_stimato": s["estimated_arrival"], "stato_validazione": s["validation_status"],
+                    "bloccata": bool(s["is_locked"]), "urgente": bool(s["is_urgent"]), "esclusa_motivo": s["excluded_reason"],
+                }
+                for s in stops
+            ],
+        })
+    return {
+        "data": giorno,
+        "filtri": {"operatore": operatore},
+        "percorsi": result,
+        "totale_percorsi": len(result),
+        "nota": "Nessun percorso attivo per la data indicata" if not result else None,
+    }
+
+
+def _tool_stock_urne(c, user, now, p):
+    # Concetto DIVERSO da vendite_urne (che aggrega le vendite gia'
+    # effettuate su practice_items): qui e' la giacenza di magazzino
+    # ATTUALE (urns.quantity), stessa soglia/formula esatta della pagina
+    # Catalogo urne (quantity<=0 esaurita, quantity<=low_stock_threshold
+    # scorta bassa, altrimenti disponibile; valore=quantity*prezzo).
+    categoria = p.get("categoria") or "Urna"
+    if categoria not in ("Urna", "Accessorio", "Calco"):
+        raise ToolInputError("categoria deve essere una tra: Urna, Accessorio, Calco.")
+    solo_scorta_bassa = bool(p.get("solo_scorta_bassa"))
+    modello = (p.get("modello") or "").strip()
+    where = ["active=1", "category=?"]
+    args: list = [categoria]
+    if modello:
+        where.append("name LIKE ?")
+        args.append(f"%{modello}%")
+    rows = c.execute(f"SELECT * FROM urns WHERE {' AND '.join(where)} ORDER BY name", args).fetchall()
+    items = []
+    for r in rows:
+        qty = int(r["quantity"] or 0)
+        threshold = int(r["low_stock_threshold"] or 3)
+        stato = "Esaurita" if qty <= 0 else "Scorta bassa" if qty <= threshold else "Disponibile"
+        if solo_scorta_bassa and stato == "Disponibile":
+            continue
+        items.append({"modello": r["name"], "materiale": r["material"], "quantita": qty, "soglia_scorta_bassa": threshold, "stato": stato, "prezzo": DEPS.money_value(r["price"]), "valore_magazzino": round(qty * DEPS.money_value(r["price"]), 2)})
+    return {
+        "categoria": categoria,
+        "filtri": {"modello": modello or None, "solo_scorta_bassa": solo_scorta_bassa},
+        "articoli": items,
+        "totale_modelli": len(items),
+        "totale_pezzi": sum(i["quantita"] for i in items),
+        "valore_magazzino_totale": round(sum(i["valore_magazzino"] for i in items), 2),
+    }
+
+
+def _tool_ordini_prodotti(c, user, now, p):
+    d_from, d_to, label = resolve_period(now, p.get("periodo"), p.get("data_da"), p.get("data_a"), optional=True)
+    tipo = p.get("tipo") or "acqua"
+    if tipo not in ("acqua", "prodotti"):
+        raise ToolInputError("tipo deve essere uno tra: acqua, prodotti.")
+    stato = p.get("stato")
+    if tipo == "acqua":
+        if stato and stato not in ("Bozza", "Invio in corso", "Inviato", "Fallito"):
+            raise ToolInputError("stato deve essere uno tra: Bozza, Invio in corso, Inviato, Fallito.")
+        where = ["archived_at IS NULL"]
+        args: list = []
+        if d_from:
+            where.append("date(created_at)>=date(?)")
+            args.append(d_from)
+        if d_to:
+            where.append("date(created_at)<=date(?)")
+            args.append(d_to)
+        if stato:
+            where.append("status=?")
+            args.append(stato)
+        rows = c.execute(f"SELECT * FROM email_orders WHERE {' AND '.join(where)} ORDER BY created_at DESC", args).fetchall()
+        return {
+            "tipo": "acqua", "periodo_analizzato": label or "tutto il periodo disponibile",
+            "filtri": {"stato": stato}, "totale_ordini": len(rows), "totale_boccioni": sum(r["quantity"] for r in rows),
+            "ordini_falliti": sum(1 for r in rows if r["status"] == "Fallito"),
+            "esempi": [{"data": r["created_at"], "quantita": r["quantity"], "stato": r["status"], "errore": r["error_message"]} for r in rows[:15]],
+            "esempi_troncati": len(rows) > 15,
+        }
+    where = ["1=1"]
+    args = []
+    if d_from:
+        where.append("date(ao.created_at)>=date(?)")
+        args.append(d_from)
+    if d_to:
+        where.append("date(ao.created_at)<=date(?)")
+        args.append(d_to)
+    rows = c.execute(
+        f"SELECT ao.created_at, a.name, u.display_name FROM article_orders ao JOIN articles a ON a.id=ao.article_id JOIN users u ON u.id=ao.ordered_by WHERE {' AND '.join(where)} ORDER BY ao.created_at DESC",
+        args,
+    ).fetchall()
+    return {
+        "tipo": "prodotti", "periodo_analizzato": label or "tutto il periodo disponibile",
+        "totale_richieste": len(rows),
+        "esempi": [{"data": r["created_at"], "prodotto": r["name"], "richiesto_da": r["display_name"]} for r in rows[:15]],
+        "esempi_troncati": len(rows) > 15,
+        "nota": "Ordini prodotti (diversi dagli ordini acqua/boccioni): solo promemoria interno di riordino, nessuna email viene inviata automaticamente.",
+    }
+
+
 # ---------------------------------------------------------------------------
 # Strumenti — orari / turni / ferie / reperibilita'
 # ---------------------------------------------------------------------------
@@ -861,6 +1090,128 @@ def _tool_buoni_veterinari(c, user, now, p):
 
 
 # ---------------------------------------------------------------------------
+# Strumenti — trasversali (riepilogo operativo, anomalie)
+# ---------------------------------------------------------------------------
+
+def _tool_riepilogo_giornata(c, user, now, p):
+    # Aggregatore che chiama gli STESSI strumenti gia' definiti sopra (mai
+    # una query duplicata) per un singolo giorno, cosi' una domanda come
+    # "cosa devo fare oggi" non dipende dal modello che incatena
+    # correttamente 5-6 chiamate separate ogni volta: un'unica chiamata
+    # affidabile che riusa esattamente la stessa logica.
+    giorno = p.get("data") or now.date().isoformat()
+    try:
+        date.fromisoformat(giorno)
+    except ValueError:
+        raise ToolInputError("data non valida (AAAA-MM-GG).")
+    sede = p.get("sede")
+    if sede and sede not in SHIFT_BRANCHES:
+        raise ToolInputError(f"sede deve essere una tra: {', '.join(SHIFT_BRANCHES)}.")
+    giorno_params = {"periodo": "intervallo_personalizzato", "data_da": giorno, "data_a": giorno}
+    ritiri = _tool_conta_ritiri(c, user, now, {**giorno_params, **({"sede": sede} if sede else {})})
+    riconsegne = _tool_conta_riconsegne(c, user, now, {**giorno_params, **({"sede": sede} if sede else {})})
+    cremazioni = _tool_conta_cremazioni(c, user, now, {**giorno_params, **({"sede": sede} if sede else {})})
+    eventi = _tool_eventi_calendario(c, user, now, {**giorno_params, **({"sede": sede} if sede else {})})
+    turni = _tool_turni(c, user, now, {"data": giorno, **({"sede": sede} if sede else {})})
+    monday = week_monday(date.fromisoformat(giorno))
+    operatore_reperibile, _ = oncall_operator_for_week(c, monday, list(DEPS.shift_operators))
+    promemoria = c.execute(
+        "SELECT title,url,reminder_type FROM reminders WHERE completed_at IS NULL AND (snoozed_until IS NULL OR snoozed_until<=?) ORDER BY created_at ASC LIMIT 20",
+        (now.isoformat(),),
+    ).fetchall()
+    return {
+        "data": giorno,
+        "filtri": {"sede": sede},
+        "ritiri_effettuati": ritiri["conteggio"],
+        "riconsegne_effettuate": riconsegne["conteggio"],
+        "cremazioni": cremazioni["conteggio"],
+        "eventi_programmati": eventi["eventi"],
+        "totale_eventi_programmati": eventi["totale_nel_periodo"],
+        "chi_lavora": turni["turni"],
+        "operatore_reperibile_questa_settimana": operatore_reperibile,
+        "promemoria_aperti": [{"tipo": r["reminder_type"], "titolo": r["title"]} for r in promemoria],
+        "totale_promemoria_aperti": len(promemoria),
+        "nota": "'ritiri_effettuati'/'riconsegne_effettuate'/'cremazioni' sono conteggi di cio' che e' REALMENTE avvenuto in quel giorno (stessa logica di conta_ritiri/conta_riconsegne/conta_cremazioni); 'eventi_programmati' e' invece cio' che e' schedulato a calendario per quel giorno (inclusi eventi non ancora confermati) - sono due cose diverse, non sommarle.",
+    }
+
+
+_ANOMALY_STALE_DAYS = 14
+
+
+def _tool_anomalie(c, user, now, p):
+    # Ogni controllo qui usa una definizione gia' esistente nel gestionale
+    # (stato pratica, saldo aperto, evento non confermato, ordine fallito),
+    # non una soglia o regola inventata per l'occasione - e ogni
+    # segnalazione riporta cosa e' stato trovato e su quale pratica/evento,
+    # mai un'affermazione generica non verificabile dall'utente.
+    limite = min(int(p.get("limite") or 10), 30)
+    oggi = now.date().isoformat()
+    soglia_saldo = (now.date() - timedelta(days=_ANOMALY_STALE_DAYS)).isoformat()
+    anomalie = []
+
+    # 1) Saldo aperto da piu' di _ANOMALY_STALE_DAYS giorni (pickup_date/
+    #    creazione precedente alla soglia, stato ancora "Da saldare").
+    filters = BalanceFilters(date_to=soglia_saldo, status="Da saldare")
+    saldo_vecchio = get_outstanding_balances(c, filters=filters)
+    for r in saldo_vecchio[:limite]:
+        anomalie.append({
+            "tipo": "saldo_aperto_da_troppo_tempo",
+            "pratica": r.practice_number,
+            "descrizione": f"Saldo di {round(r.remaining_cents / 100, 2)} EUR ancora aperto, pratica antecedente al {soglia_saldo} (oltre {_ANOMALY_STALE_DAYS} giorni fa).",
+        })
+
+    # 2) Eventi Ritiro/Riconsegna il cui orario e' gia' passato ma sono
+    #    ancora in uno stato "non completato" (stessa selezione usata da
+    #    route_eligible_events per capire cosa resta da fare).
+    eventi_scaduti = c.execute(
+        """SELECT id,event_type,title,start_at,zone,animal_name FROM calendar_events
+           WHERE (deleted_at IS NULL OR deleted_at='') AND date(start_at)<date(?)
+           AND ((event_type='Ritiro' AND event_status IN ('Da confermare','Da ritirare'))
+                OR (event_type='Riconsegna' AND event_status='In programma'))
+           ORDER BY start_at LIMIT ?""",
+        (oggi, limite),
+    ).fetchall()
+    for r in eventi_scaduti:
+        anomalie.append({
+            "tipo": "ritiro_o_riconsegna_in_ritardo",
+            "evento_id": r["id"],
+            "descrizione": f"{r['event_type']} '{r['title']}' ({r['animal_name'] or 'animale non specificato'}, zona {r['zone'] or '-'}) programmato per {r['start_at']}, mai portato a termine.",
+        })
+
+    # 3) Pratiche di cremazione collettiva da smaltire da piu' di
+    #    _ANOMALY_STALE_DAYS giorni (stessa fonte di conta_smaltimenti).
+    smaltimenti_vecchi = DEPS.disposal_eligible_practices(None, c, "2000-01-01", soglia_saldo)
+    for r in smaltimenti_vecchi[:limite]:
+        anomalie.append({
+            "tipo": "smaltimento_in_sospeso_da_troppo_tempo",
+            "pratica": r["practice_number"],
+            "descrizione": f"Cremazione collettiva ancora da smaltire, ritirata il {r['pickup_date'] or r['created_at']} (oltre {_ANOMALY_STALE_DAYS} giorni fa).",
+        })
+
+    # 4) Ordini acqua/fornitore falliti non archiviati.
+    ordini_falliti = c.execute("SELECT id,created_at,quantity,error_message FROM email_orders WHERE status='Fallito' AND archived_at IS NULL ORDER BY created_at DESC LIMIT ?", (limite,)).fetchall()
+    for r in ordini_falliti:
+        anomalie.append({
+            "tipo": "ordine_fornitore_fallito",
+            "ordine_id": r["id"],
+            "descrizione": f"Ordine acqua del {r['created_at']} ({r['quantity']} pz) in stato Fallito: {r['error_message'] or 'nessun dettaglio errore'}.",
+        })
+
+    return {
+        "controllato_al": now.isoformat(),
+        "totale_anomalie_trovate": len(anomalie),
+        "anomalie": anomalie[: limite * 4],
+        "criteri_verificati": [
+            f"Pratiche con saldo ancora aperto (stato 'Da saldare') risalenti a oltre {_ANOMALY_STALE_DAYS} giorni fa.",
+            "Eventi Ritiro/Riconsegna con orario gia' passato ma mai portati a stato completato.",
+            f"Pratiche di cremazione collettiva ritirate da oltre {_ANOMALY_STALE_DAYS} giorni ma non ancora smaltite.",
+            "Ordini fornitore (acqua) in stato Fallito e non ancora archiviati.",
+        ],
+        "nota": "Solo condizioni verificabili con una definizione gia' esistente nel gestionale (nessuna soglia inventata sul momento, tranne il numero di giorni usato per distinguere 'ancora normale' da 'da troppo tempo', dichiarato sopra). Non modifica alcun dato.",
+    }
+
+
+# ---------------------------------------------------------------------------
 # Registro strumenti
 # ---------------------------------------------------------------------------
 
@@ -885,9 +1236,15 @@ TOOL_SPECS = [
     },
     {
         "name": "eventi_calendario",
-        "description": "Elenca (fino a 50) gli eventi di calendario nel periodo indicato — cosa e' PROGRAMMATO (inclusi non ancora confermati/annullati) in un giorno/periodo — con filtri opzionali per tipo evento, sede/zona (zona di ritiro/riconsegna, non la sede pratica) e operatore. Per un CONTEGGIO di ritiri o riconsegne realmente effettuati usa invece conta_ritiri/conta_riconsegne, non questo strumento.",
+        "description": "Elenca (fino a 50) gli eventi di calendario nel periodo indicato — cosa e' PROGRAMMATO (inclusi non ancora confermati/annullati) in un giorno/periodo — con filtri opzionali per tipo evento, sede/zona (zona di ritiro/riconsegna, non la sede pratica) e operatore. Ogni evento include il suo 'id': usalo con dettaglio_evento_calendario per animali/preventivo/commenti/storico completi. Per un CONTEGGIO di ritiri o riconsegne realmente effettuati usa invece conta_ritiri/conta_riconsegne, non questo strumento.",
         "input_schema": _schema({**_PERIOD_PROPS, "tipo": {"type": "string", "enum": list(EVENT_TYPES)}, "sede": {"type": "string"}, "operatore": {"type": "string", "enum": list(CALENDAR_OPERATORS)}}),
         "handler": _tool_eventi_calendario,
+    },
+    {
+        "name": "dettaglio_evento_calendario",
+        "description": "Dettaglio completo di UN evento di calendario dato il suo id (trovalo prima con eventi_calendario): animali collegati (un evento puo' averne piu' di uno), preventivo inserito in fase di programmazione, commenti e storico recente delle modifiche.",
+        "input_schema": _schema({"id": {"type": "integer"}}, ["id"]),
+        "handler": _tool_dettaglio_evento_calendario,
     },
     {
         "name": "conta_pratiche",
@@ -944,6 +1301,30 @@ TOOL_SPECS = [
         "handler": _tool_fatture,
     },
     {
+        "name": "smaltimenti",
+        "description": "Pratiche di cremazione collettiva da smaltire o gia' smaltite (conferimento esterno periodico) nel periodo indicato, con riepilogo per sede e circuito economico. Filtro opzionale per sede.",
+        "input_schema": _schema({**_PERIOD_PROPS, "sede": {"type": "string", "enum": list(SHIFT_BRANCHES)}}),
+        "handler": _tool_smaltimenti,
+    },
+    {
+        "name": "percorso_giornaliero",
+        "description": "Il percorso di ritiri/riconsegne GIA' pianificato e salvato per un operatore in un giorno (default oggi), con l'elenco delle tappe in ordine, orari stimati e stato. Non calcola un nuovo percorso (richiederebbe l'API Google Routes a pagamento): se non esiste ancora un percorso salvato per quel giorno, restituisce una lista vuota.",
+        "input_schema": _schema({"data": {"type": "string", "description": "Data ISO AAAA-MM-GG, default oggi."}, "operatore": {"type": "string", "enum": list(CALENDAR_OPERATORS)}}),
+        "handler": _tool_percorso_giornaliero,
+    },
+    {
+        "name": "stock_urne",
+        "description": "Giacenza di magazzino ATTUALE per urne/accessori/calchi (quantita' disponibile, soglia scorta bassa, valore di magazzino) - concetto diverso da vendite_urne/vendite_accessori, che riguardano invece le vendite gia' effettuate. Filtri opzionali per categoria, modello e solo articoli sotto scorta.",
+        "input_schema": _schema({"categoria": {"type": "string", "enum": ["Urna", "Accessorio", "Calco"], "description": "Default 'Urna'."}, "modello": {"type": "string"}, "solo_scorta_bassa": {"type": "boolean"}}),
+        "handler": _tool_stock_urne,
+    },
+    {
+        "name": "ordini_prodotti",
+        "description": "Ordini interni di rifornimento: 'acqua' per gli ordini d'acqua/boccioni inviati via email al fornitore (con stato Bozza/Invio in corso/Inviato/Fallito), 'prodotti' per le richieste di riordino di altri articoli (solo promemoria interno, nessuna email). Non collegati a pratiche/animali.",
+        "input_schema": _schema({**_PERIOD_PROPS, "tipo": {"type": "string", "enum": ["acqua", "prodotti"], "description": "Default 'acqua'."}, "stato": {"type": "string", "enum": ["Bozza", "Invio in corso", "Inviato", "Fallito"], "description": "Solo per tipo='acqua'."}}),
+        "handler": _tool_ordini_prodotti,
+    },
+    {
         "name": "turni_operatori",
         "description": "Chi lavora (e con quale orario/sede) in un dato giorno (default oggi). Filtro opzionale per sede. Per un CONTEGGIO su un periodo (es. 'quante volte in un mese') usa invece conta_turni.",
         "input_schema": _schema({"data": {"type": "string", "description": "Data ISO AAAA-MM-GG, default oggi."}, "sede": {"type": "string", "enum": list(SHIFT_BRANCHES)}}),
@@ -997,6 +1378,18 @@ TOOL_SPECS = [
         "input_schema": _schema({**_PERIOD_PROPS, "metrica": {"type": "string", "enum": list(_FASE_CONFIG)}, "sede": {"type": "string", "enum": list(SHIFT_BRANCHES)}, "operatore": {"type": "string", "enum": list(CALENDAR_OPERATORS)}}, ["metrica"]),
         "handler": _tool_andamento_giornaliero,
     },
+    {
+        "name": "riepilogo_giornata",
+        "description": "Riepilogo operativo di UN giorno (default oggi): ritiri/riconsegne/cremazioni realmente effettuati, eventi programmati a calendario, chi lavora e dove, chi e' reperibile quella settimana, promemoria ancora aperti. Usa questo per 'cosa devo fare oggi', 'come e' andata la giornata', invece di chiamare tanti strumenti separati per lo stesso giorno.",
+        "input_schema": _schema({"data": {"type": "string", "description": "Data ISO AAAA-MM-GG, default oggi."}, "sede": {"type": "string", "enum": list(SHIFT_BRANCHES)}}),
+        "handler": _tool_riepilogo_giornata,
+    },
+    {
+        "name": "anomalie",
+        "description": "Individua situazioni operative che richiedono attenzione, usando solo definizioni gia' esistenti nel gestionale (mai una soglia inventata sul momento): saldi aperti da troppo tempo, ritiri/riconsegne programmati ma mai completati, smaltimenti in sospeso da troppo tempo, ordini fornitore falliti. Ogni risultato indica cosa e' stato trovato e su quale pratica/evento/ordine. Non modifica alcun dato.",
+        "input_schema": _schema({"limite": {"type": "integer", "description": "Numero massimo di risultati per ciascuna categoria di anomalia, default 10, massimo 30."}}),
+        "handler": _tool_anomalie,
+    },
 ]
 
 _HANDLERS_BY_NAME = {t["name"]: t["handler"] for t in TOOL_SPECS}
@@ -1010,15 +1403,17 @@ _SYSTEM_PROMPT_TEMPLATE = """Sei l'Assistente AI interno del gestionale PetParad
 
 OGGI e' {oggi} (fuso orario Europe/Rome, stesso fuso di tutti i dati del gestionale). Usa sempre questa data come riferimento: se una domanda nomina un mese per nome (es. "agosto", "settembre") senza indicare l'anno, calcola tu l'intervallo esatto di quel mese nell'anno corretto rispetto a oggi e passalo come periodo='intervallo_personalizzato' con data_da/data_a in formato AAAA-MM-GG — non chiedere mai all'utente l'anno per un mese ovvio dal contesto.
 
-REGOLA ASSOLUTA: non devi MAI inventare, stimare o dedurre statistiche, numeri, pratiche, eventi, ricavi o qualsiasi altro dato del gestionale. Ogni informazione numerica o fattuale su pratiche, cremazioni, ritiri, riconsegne, calendario, turni, ferie, reperibilita', urne, accessori, preventivi, incassi, fatture, clienti, veterinari o collaboratori DEVE provenire da una chiamata a uno degli strumenti disponibili in questa conversazione. Non hai nessuna conoscenza propria dei dati reali di questa azienda: l'unica fonte di verita' sono i risultati degli strumenti. Se una domanda successiva fa riferimento a un dato gia' ottenuto in QUESTA conversazione puoi riusarlo senza richiamare di nuovo lo stesso strumento con gli stessi parametri, ma non aggiungere mai un numero che non sia mai stato restituito da uno strumento in questa conversazione.
+REGOLA ASSOLUTA: non devi MAI inventare, stimare o dedurre statistiche, numeri, pratiche, eventi, ricavi o qualsiasi altro dato del gestionale. Ogni informazione numerica o fattuale su pratiche, cremazioni, ritiri, riconsegne, calendario, turni, ferie, reperibilita', urne, accessori, calchi, preventivi, incassi, fatture, clienti, veterinari, collaboratori, smaltimenti, percorsi di ritiro/riconsegna, magazzino/scorte, ordini fornitore o anomalie operative DEVE provenire da una chiamata a uno degli strumenti disponibili in questa conversazione. Non hai nessuna conoscenza propria dei dati reali di questa azienda: l'unica fonte di verita' sono i risultati degli strumenti. Se una domanda successiva fa riferimento a un dato gia' ottenuto in QUESTA conversazione puoi riusarlo senza richiamare di nuovo lo stesso strumento con gli stessi parametri, ma non aggiungere mai un numero che non sia mai stato restituito da uno strumento in questa conversazione.
 
 Se uno strumento non puo' determinare il dato richiesto (errore di parametro, dominio non coperto, nessun dato disponibile) dillo chiaramente all'utente, ad esempio: "Non posso determinare questo dato dai dati attualmente disponibili." Non proporre mai una stima plausibile al suo posto.
 
 Se la domanda e' ambigua (non e' chiaro a quale dominio si riferisce, es. cremazioni/ritiri/riconsegne, oppure manca un'informazione necessaria per scegliere i parametri corretti) chiedi un chiarimento invece di scegliere arbitrariamente.
 
-Quando rispondi con un dato ottenuto da uno strumento, sii conciso ma specifica il perimetro del dato (periodo, sede o altri filtri applicati) cosi' l'utente capisce su cosa si basa il risultato. Rispondi sempre in italiano, in modo diretto e senza dettagli tecnici (mai SQL, mai nomi di tabelle).
+CONTINUITA' DELLA CONVERSAZIONE: quando una domanda e' un follow-up implicito di quella precedente (es. dopo "quanto abbiamo incassato ad agosto?" l'utente chiede "e a luglio?" oppure "e a Empoli?"), mantieni lo stesso strumento/metrica della domanda precedente e applica SOLO il cambiamento esplicitamente indicato (il nuovo mese, la nuova sede, ...), lasciando invariato tutto il resto del contesto precedente. Un dato esplicito nella nuova domanda ha sempre priorita' sul contesto precedente e non deve mai esserne sovrascritto. Se il follow-up e' troppo generico per capire quale metrica riusare (es. cambia argomento senza specificare cosa), chiedi un chiarimento invece di indovinare quale strumento richiamare.
 
-Puoi chiamare piu' strumenti, anche piu' volte con filtri diversi, per rispondere a domande di confronto (es. confrontare due sedi chiamando lo stesso strumento due volte con sede diversa) o che richiedono piu' fonti."""
+Quando rispondi con un dato ottenuto da uno strumento, sii conciso ma specifica il perimetro del dato (periodo, sede o altri filtri applicati) cosi' l'utente capisce su cosa si basa il risultato. Quando lo strumento restituisce l'id o il numero di una pratica/evento specifico, includilo nella risposta cosi' l'utente puo' aprirlo nel gestionale. Rispondi sempre in italiano, in modo diretto e senza dettagli tecnici (mai SQL, mai nomi di tabelle).
+
+Puoi chiamare piu' strumenti, anche piu' volte con filtri diversi, per rispondere a domande di confronto (es. confrontare due sedi chiamando lo stesso strumento due volte con sede diversa) o che richiedono piu' fonti. Per una domanda semplice usa il minor numero di strumenti necessario; per "cosa devo fare oggi"/riepiloghi di giornata usa riepilogo_giornata invece di richiamare separatamente ogni singolo strumento."""
 
 _WEEKDAY_NAMES_IT = ("lunedi'", "martedi'", "mercoledi'", "giovedi'", "venerdi'", "sabato", "domenica")
 
