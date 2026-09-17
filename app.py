@@ -11907,7 +11907,7 @@ class App(BaseHTTPRequestHandler):
                             upd_text=f"{upd_text}\n{status_line}" if upd_text else status_line
                     elif data["event_type"] in ("Riconsegna","Riconsegna in sede"):
                         upd_title=calendar_push_location_title(data["event_type"],data["zone"],data["destination_site"])
-                        upd_text=calendar_delivery_push_text(data["animal_name"],data["payment_status"])
+                        upd_text=calendar_delivery_push_text(data["animal_name"],data["payment_status"],data["start_at"],data["end_at"])
                     else:
                         upd_title=f"{event_type_emoji(data['event_type'])} Evento calendario aggiornato"
                         upd_text=data["title"]
@@ -11929,7 +11929,7 @@ class App(BaseHTTPRequestHandler):
                         new_text=calendar_pickup_push_text(animals,data["start_at"],data["end_at"])
                     elif data["event_type"] in ("Riconsegna","Riconsegna in sede"):
                         new_title=calendar_push_location_title(data["event_type"],data["zone"],data["destination_site"])
-                        new_text=calendar_delivery_push_text(data["animal_name"],data["payment_status"])
+                        new_text=calendar_delivery_push_text(data["animal_name"],data["payment_status"],data["start_at"],data["end_at"])
                     else:
                         new_title=f"{event_type_emoji(data['event_type'])} Nuovo evento calendario"
                         new_text=data["title"]

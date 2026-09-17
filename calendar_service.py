@@ -274,13 +274,19 @@ def calendar_delivery_push_payment_label(payment_status):
     return "SALDATO" if payment_status == "Pagato" else "DA SALDARE"
 
 
-def calendar_delivery_push_text(animal_name, payment_status):
-    """Corpo della notifica push di Riconsegna/Modifica riconsegna: nome
-    animale su una riga, stato pagamento sulla riga successiva."""
+def calendar_delivery_push_text(animal_name, payment_status, start_at="", end_at=""):
+    """Corpo della notifica push di Riconsegna/Modifica riconsegna (in sede
+    o fuori sede): nome animale, data/ora dell'evento (richiesta esplicita
+    dell'utente: mancava, a differenza del Ritiro, che la riporta gia' -
+    stessa funzione calendar_push_time_range, mai una seconda logica di
+    formattazione data), stato pagamento sull'ultima riga."""
     lines = []
     animal_name = _clean(animal_name)
     if animal_name:
         lines.append(animal_name)
+    time_range = calendar_push_time_range(start_at, end_at)
+    if time_range:
+        lines.append(time_range)
     lines.append(f"Pagamento: {calendar_delivery_push_payment_label(payment_status)}")
     return "\n".join(lines)
 

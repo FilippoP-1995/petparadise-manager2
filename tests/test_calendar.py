@@ -448,7 +448,7 @@ class OperationalCalendarTests(unittest.TestCase):
         title = mock_emit.call_args.args[2]
         text = mock_emit.call_args.args[3]
         self.assertEqual(title, "Riconsegna Zona Livorno")
-        self.assertEqual(text, "Fido\nPagamento: SALDATO")
+        self.assertEqual(text, "Fido\n15/07/2026 09:30 - 10:30\nPagamento: SALDATO")
 
     def test_new_delivery_notification_shows_da_saldare_when_not_paid(self):
         form = self.event_form("Riconsegna in sede", payment_status="Da saldare")
@@ -456,7 +456,7 @@ class OperationalCalendarTests(unittest.TestCase):
         with patch("app.emit_notification", return_value=[]) as mock_emit:
             self.handler.save_calendar_event(self.admin)
         text = mock_emit.call_args.args[3]
-        self.assertEqual(text, "Fido\nPagamento: DA SALDARE")
+        self.assertEqual(text, "Fido\n15/07/2026 09:30 - 10:30\nPagamento: DA SALDARE")
 
     def test_updated_pickup_notification_shows_new_status_only_when_it_changed(self):
         pid = self.save(self.event_form("Ritiro", event_status="Da confermare"))
