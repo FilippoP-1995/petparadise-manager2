@@ -16172,16 +16172,39 @@ class AIAssistantTests(unittest.TestCase):
         self.assertGreater(fab_z, backdrop_z, "l'icona deve restare sopra lo sfondo scurito a chat aperta")
         self.assertGreater(fab_z, panel_z, "l'icona deve restare sopra il pannello per restare cliccabile")
 
-        # 2) l'apertura/chiusura e' un cerchio (clip-path) che parte/arriva
-        #    esattamente al centro dell'icona (variabili CSS calcolate in
-        #    JS da aiChatSetGenieOrigin), non un semplice show/hide istantaneo.
-        self.assertIn("clip-path:circle(0px at var(--ai-chat-ox", app.CSS)
-        self.assertIn("#aiChatRoot.ai-chat-open .ai-chat-panel{clip-path:circle(var(--ai-chat-r", app.CSS)
-        self.assertIn("transition:clip-path", app.CSS)
+        # 2) l'apertura/chiusura e' una SCALA uniforme dell'intero pannello
+        #    (transform:scale), non un cerchio (clip-path) che si espande.
+        #    Storia: la versione a clip-path richiedeva calcolare un raggio
+        #    che coprisse l'intero pannello da un punto di origine
+        #    arbitrario (il centro dell'icona) - piu' segnalazioni reali
+        #    dell'utente di tagli/artefatti diagonali quando quel calcolo
+        #    non copriva correttamente ogni configurazione icona/pannello
+        #    hanno mostrato che l'approccio era strutturalmente fragile.
+        #    Con transform:scale non esiste alcun "quanto e' grande l'area
+        #    da rivelare" da calcolare: l'intero pannello scala insieme
+        #    come un solo elemento rigido, quindi non puo' mai mostrarsi
+        #    parzialmente tagliato.
+        self.assertNotIn("clip-path", app.CSS[app.CSS.index(".ai-chat-panel{"):app.CSS.index(".ai-chat-panel{") + 600])
+        self.assertIn("transform-origin:var(--ai-chat-ox", app.CSS)
+        self.assertIn("transform:scale(.05)", app.CSS)
+        self.assertIn("#aiChatRoot.ai-chat-open .ai-chat-panel{transform:scale(1)", app.CSS)
+        self.assertIn("transition:transform", app.CSS)
         self.assertIn("#aiChatRoot.ai-chat-open .ai-chat-backdrop{opacity:1", app.CSS)
         # rispetta la preferenza di sistema per il movimento ridotto, stessa
         # convenzione gia' usata per le altre animazioni del gestionale.
         self.assertIn("@media(prefers-reduced-motion:reduce){.ai-chat-panel,.ai-chat-backdrop{transition:none!important}}", app.CSS)
+        # "Mau AI" nell'intestazione non deve mai andare a capo (altro
+        # sintomo segnalato dall'utente insieme ai tagli): difesa esplicita
+        # indipendente dalla larghezza disponibile.
+        self.assertIn("white-space:nowrap", app.CSS[app.CSS.index(".ai-chat-head span{"):app.CSS.index(".ai-chat-head span{") + 100])
+        # il centraggio orizzontale del pannello ora usa margin-left, MAI
+        # transform:translateX: transform deve restare libero per la sola
+        # scala dell'animazione, altrimenti si tornerebbe a comporre due
+        # funzioni di trasformazione insieme (la causa originale della
+        # fragilita' del calcolo del raggio).
+        panel_rule = app.CSS[app.CSS.index(".ai-chat-panel{"):app.CSS.index(".ai-chat-panel{") + 400]
+        self.assertIn("margin-left:calc(-1 * min(210px", panel_rule)
+        self.assertNotIn("translateX", panel_rule)
 
         # 3) il JS calcola davvero il centro dell'icona (non un punto fisso)
         #    e lo ricalcola ad ogni apertura/chiusura, gestendo anche il
@@ -16189,17 +16212,6 @@ class AIAssistantTests(unittest.TestCase):
         js = app.APP_JS
         self.assertIn("function aiChatSetGenieOrigin(", js)
         self.assertIn("aiChatFab.getBoundingClientRect()", js)
-        # Bug reale segnalato dall'utente: il pannello si vedeva tagliato
-        # in diagonale quando l'icona era lontana dal pannello (es. vicino
-        # alla cima dello schermo, pannello ancorato in basso). La sola
-        # diagonale del pannello (hypot(width,height)) come raggio copre il
-        # pannello SOLO se l'origine cade al suo interno: serve la distanza
-        # massima dall'origine a uno dei 4 angoli del pannello, che copre
-        # il pannello per qualunque posizione dell'icona sullo schermo.
-        origin_body = js[js.index("function aiChatSetGenieOrigin("):js.index("function aiChatSetGenieOrigin(") + 1400]
-        self.assertIn("corners", origin_body)
-        self.assertIn("Math.max(...corners.map(", origin_body)
-        self.assertNotIn("Math.hypot(panelRect.width,panelRect.height)", origin_body)
         for fn_body_marker in ("function aiChatOpen(", "function aiChatClose("):
             self.assertIn(fn_body_marker, js)
         open_start = js.index("function aiChatOpen(")
@@ -16243,8 +16255,8 @@ class AIAssistantTests(unittest.TestCase):
         # apre" (un pop con un leggero rimbalzo), non una dissolvenza
         # rapida e lineare.
         panel_rule = app.CSS[app.CSS.index(".ai-chat-panel{"):app.CSS.index(".ai-chat-panel{") + 600]
-        m = re.search(r"transition:clip-path ([\d.]+)s cubic-bezier\(([-\d.,]+)\)", panel_rule)
-        self.assertIsNotNone(m, "nessuna transizione clip-path con easing personalizzato trovata")
+        m = re.search(r"transition:transform ([\d.]+)s cubic-bezier\(([-\d.,]+)\)", panel_rule)
+        self.assertIsNotNone(m, "nessuna transizione transform con easing personalizzato trovata")
         duration = float(m.group(1))
         self.assertGreaterEqual(duration, 0.5, "l'animazione deve essere lenta (almeno mezzo secondo)")
         curve = [float(x) for x in m.group(2).split(",")]

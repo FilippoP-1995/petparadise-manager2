@@ -2747,11 +2747,11 @@ body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY
 #aiChatRoot[hidden]{display:none}
 .ai-chat-backdrop{position:fixed;inset:0;z-index:255;background:#020617aa;opacity:0;pointer-events:none;transition:opacity .45s ease}
 #aiChatRoot.ai-chat-open .ai-chat-backdrop{opacity:1;pointer-events:auto}
-.ai-chat-panel{position:fixed;z-index:256;left:50%;bottom:calc(16px + var(--safe-bottom));transform:translateX(-50%);width:min(420px,calc(100vw - 24px));max-height:min(72vh,620px);display:flex;flex-direction:column;background:#141b28;border:1px solid #263246;border-radius:20px;box-shadow:0 30px 80px #000c;overflow:hidden;clip-path:circle(0px at var(--ai-chat-ox,90%) var(--ai-chat-oy,90%));opacity:0;transition:clip-path .6s cubic-bezier(.34,1.56,.64,1),opacity .5s ease}
-#aiChatRoot.ai-chat-open .ai-chat-panel{clip-path:circle(var(--ai-chat-r,150%) at var(--ai-chat-ox,90%) var(--ai-chat-oy,90%));opacity:1}
+.ai-chat-panel{position:fixed;z-index:256;left:50%;bottom:calc(16px + var(--safe-bottom));margin-left:calc(-1 * min(210px,calc(50vw - 12px)));width:min(420px,calc(100vw - 24px));max-height:min(72vh,620px);display:flex;flex-direction:column;background:#141b28;border:1px solid #263246;border-radius:20px;box-shadow:0 30px 80px #000c;overflow:hidden;transform-origin:var(--ai-chat-ox,90%) var(--ai-chat-oy,90%);transform:scale(.05);opacity:0;transition:transform .6s cubic-bezier(.34,1.56,.64,1),opacity .45s ease}
+#aiChatRoot.ai-chat-open .ai-chat-panel{transform:scale(1);opacity:1}
 @media(prefers-reduced-motion:reduce){.ai-chat-panel,.ai-chat-backdrop{transition:none!important}}
 .ai-chat-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #1d2636;font-weight:800}
-.ai-chat-head span{display:flex;align-items:center;gap:8px}
+.ai-chat-head span{display:flex;align-items:center;gap:8px;white-space:nowrap}
 .ai-chat-head svg{width:18px;height:18px}
 .ai-chat-body{flex:1;min-height:120px;overflow-y:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;padding:14px 16px;display:flex;flex-direction:column;gap:8px;background:#0d121b}
 .ai-chat-empty{color:#8592a6;font-size:13px;text-align:center;margin:auto;display:flex;flex-direction:column;gap:12px;align-items:center;padding:0 4px}
@@ -2771,7 +2771,7 @@ body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY
 .light-theme .ai-chat-body{background:#f8fafc}
 .light-theme .ai-chat-input-row{background:#fff;border-color:#eef1f5}
 .light-theme .ai-chat-input-row textarea{background:#f8fafc;color:#24312c;border-color:#e2e8f0}
-@media(max-width:480px){.ai-chat-panel{bottom:0;left:0;right:0;transform:none;width:100%;border-radius:20px 20px 0 0;max-height:min(80vh,620px)}}
+@media(max-width:480px){.ai-chat-panel{bottom:0;left:0;margin-left:0;width:100%;border-radius:20px 20px 0 0;max-height:min(80vh,620px)}}
 .route-quick-field-select{display:block;width:100%;margin:-6px 0 14px;padding:11px 12px;border-radius:11px;border:1px solid #263246;background:#0e1622;color:#f5f7fb;font-size:14.5px}
 .route-quick-stops{list-style:none;margin:0 0 16px;padding:0;max-height:180px;overflow-y:auto;border:1px solid #263246;border-radius:12px}
 .route-quick-stops li{padding:9px 12px;border-bottom:1px solid #263246;font-size:13.5px}
@@ -7292,6 +7292,16 @@ function aiChatToggle(){
 // mossa. Il punto e il raggio sono ricalcolati ad ogni apertura/chiusura
 // (non solo alla prima) cosi' restano corretti anche se l'icona e' stata
 // trascinata altrove nel frattempo.
+// L'apertura/chiusura era prima un cerchio (clip-path) che si espandeva
+// dal centro dell'icona: si e' rivelato fragile su schermi/posizioni
+// reali (piu' segnalazioni dell'utente di tagli/artefatti diagonali,
+// causati dal calcolo del raggio necessario a coprire l'intero
+// pannello da un punto di origine arbitrario). Sostituito con un
+// approccio strutturalmente immune a quella classe di bug: una scala
+// uniforme dell'INTERO pannello (transform:scale, stesso transform-
+// origin = centro dell'icona), che non richiede alcun calcolo di
+// "quanto e' grande" l'area da rivelare - o l'intero pannello e'
+// visibile alla scala corrente, o non lo e', mai un taglio parziale.
 function aiChatSetGenieOrigin(){
   const panel=document.querySelector('.ai-chat-panel');
   if(!aiChatFab||!panel)return;
@@ -7299,20 +7309,8 @@ function aiChatSetGenieOrigin(){
   const panelRect=panel.getBoundingClientRect();
   const ox=fabRect.left+fabRect.width/2-panelRect.left;
   const oy=fabRect.top+fabRect.height/2-panelRect.top;
-  // Bug reale segnalato dall'utente (pannello che si vedeva tagliato in
-  // diagonale): la diagonale del pannello (width/height) basta come
-  // raggio SOLO se il punto di origine cade dentro al pannello stesso.
-  // Se l'icona e' lontana dal pannello (es. vicino alla cima dello
-  // schermo mentre il pannello e' ancorato in basso, come nello
-  // screenshot), il punto di origine puo' cadere ben fuori dal riquadro
-  // del pannello: serve invece la distanza massima dal punto di origine
-  // a uno qualunque dei quattro angoli del pannello, che copre il
-  // pannello per qualunque posizione dell'icona sullo schermo.
-  const corners=[[0,0],[panelRect.width,0],[0,panelRect.height],[panelRect.width,panelRect.height]];
-  const r=Math.max(...corners.map(([cx,cy])=>Math.hypot(cx-ox,cy-oy)));
   panel.style.setProperty('--ai-chat-ox',ox+'px');
   panel.style.setProperty('--ai-chat-oy',oy+'px');
-  panel.style.setProperty('--ai-chat-r',r+'px');
 }
 function aiChatOpen(){
   const root=document.getElementById('aiChatRoot');
@@ -7321,7 +7319,7 @@ function aiChatOpen(){
   aiChatReposition();
   aiChatSetGenieOrigin();
   // Un frame per lasciare che il browser applichi lo stato "chiuso"
-  // (clip-path a raggio 0) prima di passare alla classe che avvia la
+  // (scale quasi zero) prima di passare alla classe che avvia la
   // transizione verso l'apertura, altrimenti le due modifiche si
   // fondono e l'animazione non parte.
   requestAnimationFrame(()=>root.classList.add('ai-chat-open'));
@@ -7341,10 +7339,10 @@ function aiChatClose(){
     root.hidden=true;
     if(panel)panel.removeEventListener('transitionend',onEnd);
   };
-  const onEnd=event=>{if(event.target===panel&&event.propertyName==='clip-path')finish();};
+  const onEnd=event=>{if(event.target===panel&&event.propertyName==='transform')finish();};
   if(panel)panel.addEventListener('transitionend',onEnd);
   // Fallback: se transitionend non arriva mai (motion ridotto, o un
-  // browser che non lo emette per clip-path) il pannello non deve
+  // browser che non lo emette per transform) il pannello non deve
   // restare visibile/interattivo per sempre. Deve restare piu' lungo
   // della transizione CSS reale (.6s) altrimenti taglierebbe
   // l'animazione a meta'.
