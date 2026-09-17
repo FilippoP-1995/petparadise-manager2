@@ -15046,6 +15046,65 @@ class AIAssistantTests(unittest.TestCase):
             with self.assertRaises(self.ai.ToolInputError):
                 detail(c, self.admin, now, {"numero_pratica": "NON-ESISTE"})
 
+    def test_conta_pratiche_filters_by_provenienza_e_origine_richiesta(self):
+        # Bug reale segnalato dall'utente: "quanti giorni senza nessuna
+        # pratica con provenienza Empoli o Firenze" non era rispondibile -
+        # 'provenienza' (zona di origine, campo 'Luogo di origine' del
+        # form: Livorno/Empoli/Viareggio/Firenze/Pisa) non era affatto
+        # esposta, ed e' un campo DIVERSO da 'sede' (destination_branch,
+        # solo Livorno/Empoli) - facile da confondere, quindi verificato
+        # qui che restino distinti.
+        with app.db() as c:
+            self._insert_practice(c, _n=1, practice_number="CR-PROV-1", destination_branch="Livorno", provenance="F", request_origin="Veterinario", pickup_date="2026-09-05")
+            self._insert_practice(c, _n=2, practice_number="CR-PROV-2", destination_branch="Empoli", provenance="E", request_origin="Privato", pickup_date="2026-09-06")
+            self._insert_practice(c, _n=3, practice_number="CR-PROV-3", destination_branch="Livorno", provenance="L", request_origin="Collaboratore", pickup_date="2026-09-07")
+        tool = next(t for t in self.ai.TOOL_SPECS if t["name"] == "conta_pratiche")["handler"]
+        now = app.rome_now()
+        periodo = {"periodo": "intervallo_personalizzato", "data_da": "2026-09-01", "data_a": "2026-09-30"}
+        with app.db() as c:
+            self.assertEqual(tool(c, self.admin, now, {**periodo, "provenienza": "Firenze"})["conteggio"], 1)
+            self.assertEqual(tool(c, self.admin, now, {**periodo, "provenienza": "Empoli"})["conteggio"], 1)
+            # "provenienza" e "sede" sono campi diversi: una pratica con
+            # sede Livorno puo' avere provenienza Firenze (CR-PROV-1).
+            self.assertEqual(tool(c, self.admin, now, {**periodo, "provenienza": "Firenze", "sede": "Livorno"})["conteggio"], 1)
+            self.assertEqual(tool(c, self.admin, now, {**periodo, "provenienza": "Firenze", "sede": "Empoli"})["conteggio"], 0)
+            self.assertEqual(tool(c, self.admin, now, {**periodo, "origine_richiesta": "Privato"})["conteggio"], 1)
+            self.assertEqual(tool(c, self.admin, now, {**periodo, "origine_richiesta": "Collaboratore"})["conteggio"], 1)
+            with self.assertRaises(self.ai.ToolInputError):
+                tool(c, self.admin, now, {**periodo, "provenienza": "Marte"})
+            with self.assertRaises(self.ai.ToolInputError):
+                tool(c, self.admin, now, {**periodo, "origine_richiesta": "Su Giove"})
+
+    def test_andamento_giornaliero_pratiche_conta_i_giorni_a_zero_per_qualunque_filtro(self):
+        # Stessa richiesta esplicita dell'utente: "quanti giorni senza
+        # nessuna pratica con provenienza Empoli o Firenze ci sono stati" -
+        # riusa la stessa logica/filtri di conta_pratiche, aggregata per
+        # giorno con ogni giorno del periodo generato esplicitamente.
+        with app.db() as c:
+            self._insert_practice(c, _n=1, practice_number="CR-AGP-1", provenance="F", pickup_date="2026-09-03")
+            self._insert_practice(c, _n=2, practice_number="CR-AGP-2", provenance="F", pickup_date="2026-09-03")
+            self._insert_practice(c, _n=3, practice_number="CR-AGP-3", provenance="E", pickup_date="2026-09-07")
+            self._insert_practice(c, _n=4, practice_number="CR-AGP-4", provenance="L", pickup_date="2026-09-05")
+        tool = next(t for t in self.ai.TOOL_SPECS if t["name"] == "andamento_giornaliero_pratiche")["handler"]
+        now = app.rome_now()
+        periodo = {"periodo": "intervallo_personalizzato", "data_da": "2026-09-01", "data_a": "2026-09-10"}
+        with app.db() as c:
+            result = tool(c, self.admin, now, {**periodo, "provenienza": "Firenze"})
+            self.assertEqual(result["numero_giorni_nel_periodo"], 10)
+            self.assertEqual(result["totale_periodo"], 2)
+            self.assertEqual(result["giorno_con_valore_massimo"], {"date": ["2026-09-03"], "conteggio": 2})
+            self.assertEqual(result["numero_giorni_a_zero"], 9)
+            self.assertNotIn("2026-09-03", result["date_giorni_a_zero"])
+            # provenienza Empoli+Firenze insieme non e' un singolo filtro
+            # possibile qui (un valore alla volta), ma si puo' rispondere
+            # alla domanda combinando due chiamate: verificato che ciascuna
+            # da sola sia corretta.
+            result_empoli = tool(c, self.admin, now, {**periodo, "provenienza": "Empoli"})
+            self.assertEqual(result_empoli["totale_periodo"], 1)
+            self.assertEqual(result_empoli["numero_giorni_a_zero"], 9)
+            with self.assertRaises(self.ai.ToolInputError):
+                tool(c, self.admin, now, {"periodo": "intervallo_personalizzato", "data_da": "2020-01-01", "data_a": "2026-01-01", "provenienza": "Firenze"})
+
     def test_conta_cremazioni_filters_by_sede_and_stato(self):
         with app.db() as c:
             stamp = "2026-09-10T09:00:00"

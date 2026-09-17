@@ -451,14 +451,93 @@ def _tool_dettaglio_evento_calendario(c, user, now, p):
 # Strumenti — pratiche
 # ---------------------------------------------------------------------------
 
-def _tool_conta_pratiche(c, user, now, p):
-    d_from, d_to, label = resolve_period(now, p.get("periodo"), p.get("data_da"), p.get("data_a"), optional=True)
+# Stessa mappa codice->zona della sezione "Luogo di origine" del form
+# pratica (app.py, campo provenance): L/E/V/F/P, NON le sole Livorno/
+# Empoli di destination_branch - un campo diverso, spesso confuso.
+_PROVENANCE_LABELS = {"L": "Livorno", "E": "Empoli", "V": "Viareggio", "F": "Firenze", "P": "Pisa"}
+_REQUEST_ORIGINS = ("Veterinario", "Privato", "Consegna in sede", "Collaboratore")
+
+
+def _resolve_provenance_code(value):
+    v = (value or "").strip()
+    if not v:
+        return None
+    if v.upper() in _PROVENANCE_LABELS:
+        return v.upper()
+    for code, label in _PROVENANCE_LABELS.items():
+        if label.lower() == v.lower():
+            return code
+    raise ToolInputError(f"provenienza deve essere una tra: {', '.join(_PROVENANCE_LABELS.values())} (zona di origine della pratica, campo diverso dalla sede di destinazione).")
+
+def _practice_filters_where(p):
+    """Costruisce le clausole WHERE/parametri per i filtri comuni sulle
+    pratiche (stato, sede, cliente, animale, operatore, veterinario,
+    collaboratore, provenienza, origine della richiesta) - riusata sia da
+    conta_pratiche sia da andamento_giornaliero_pratiche, cosi' i due
+    strumenti non possono mai interpretare lo stesso filtro in modo
+    diverso. Ritorna (where_clauses, args, filtri_per_il_risultato)."""
+    where: list = []
+    args: list = []
+    filtri: dict = {}
     stato = p.get("stato")
     if stato and stato not in DEPS.states:
         raise ToolInputError(f"stato deve essere uno tra: {', '.join(DEPS.states)}.")
+    if stato:
+        where.append("status=?")
+        args.append(stato)
+    filtri["stato"] = stato
     sede = p.get("sede")
     if sede and sede not in SHIFT_BRANCHES:
         raise ToolInputError(f"sede deve essere una tra: {', '.join(SHIFT_BRANCHES)}.")
+    if sede:
+        where.append("destination_branch=?")
+        args.append(sede)
+    filtri["sede"] = sede
+    cliente = (p.get("cliente_nome") or "").strip()
+    if cliente:
+        where.append("((owner_first_name||' '||owner_last_name) LIKE ? OR owner_company LIKE ?)")
+        args += [f"%{cliente}%", f"%{cliente}%"]
+    filtri["cliente_nome"] = cliente or None
+    animale = (p.get("animale_nome") or "").strip()
+    if animale:
+        where.append("animal_name LIKE ?")
+        args.append(f"%{animale}%")
+    filtri["animale_nome"] = animale or None
+    operatore = (p.get("operatore_nome") or "").strip()
+    if operatore:
+        # practices.operator_name e' salvato sempre in maiuscolo (stesso
+        # motivo documentato su _conta_pratiche_per_fase): confronto
+        # case-insensitive, altrimenti "Filippo" non troverebbe mai "FILIPPO".
+        where.append("UPPER(operator_name)=UPPER(?)")
+        args.append(operatore)
+    filtri["operatore_nome"] = operatore or None
+    veterinario = (p.get("veterinario_nome") or "").strip()
+    if veterinario:
+        where.append("id IN (SELECT pr.id FROM practices pr JOIN veterinarians v ON v.id IN (pr.veterinarian_id,pr.origin_veterinarian_id,pr.owner_veterinarian_id) WHERE v.clinic_name LIKE ?)")
+        args.append(f"%{veterinario}%")
+    filtri["veterinario_nome"] = veterinario or None
+    collaboratore = (p.get("collaboratore_nome") or "").strip()
+    if collaboratore:
+        where.append("collaborator_id IN (SELECT id FROM collaborators WHERE name LIKE ?)")
+        args.append(f"%{collaboratore}%")
+    filtri["collaboratore_nome"] = collaboratore or None
+    provenienza_code = _resolve_provenance_code(p.get("provenienza"))
+    if provenienza_code:
+        where.append("UPPER(provenance)=?")
+        args.append(provenienza_code)
+    filtri["provenienza"] = _PROVENANCE_LABELS.get(provenienza_code)
+    origine = p.get("origine_richiesta")
+    if origine and origine not in _REQUEST_ORIGINS:
+        raise ToolInputError(f"origine_richiesta deve essere una tra: {', '.join(_REQUEST_ORIGINS)}.")
+    if origine:
+        where.append("request_origin=?")
+        args.append(origine)
+    filtri["origine_richiesta"] = origine
+    return where, args, filtri
+
+
+def _tool_conta_pratiche(c, user, now, p):
+    d_from, d_to, label = resolve_period(now, p.get("periodo"), p.get("data_da"), p.get("data_a"), optional=True)
     where = ["(deleted_at IS NULL OR deleted_at='')"]
     args: list = []
     if d_from:
@@ -467,41 +546,61 @@ def _tool_conta_pratiche(c, user, now, p):
     if d_to:
         where.append("date(COALESCE(NULLIF(pickup_date,''),created_at))<=date(?)")
         args.append(d_to)
-    if stato:
-        where.append("status=?")
-        args.append(stato)
-    if sede:
-        where.append("destination_branch=?")
-        args.append(sede)
-    cliente = (p.get("cliente_nome") or "").strip()
-    if cliente:
-        where.append("((owner_first_name||' '||owner_last_name) LIKE ? OR owner_company LIKE ?)")
-        args += [f"%{cliente}%", f"%{cliente}%"]
-    animale = (p.get("animale_nome") or "").strip()
-    if animale:
-        where.append("animal_name LIKE ?")
-        args.append(f"%{animale}%")
-    operatore = (p.get("operatore_nome") or "").strip()
-    if operatore:
-        # practices.operator_name e' salvato sempre in maiuscolo (stesso
-        # motivo documentato su _conta_pratiche_per_fase): confronto
-        # case-insensitive, altrimenti "Filippo" non troverebbe mai "FILIPPO".
-        where.append("UPPER(operator_name)=UPPER(?)")
-        args.append(operatore)
-    veterinario = (p.get("veterinario_nome") or "").strip()
-    if veterinario:
-        where.append("id IN (SELECT pr.id FROM practices pr JOIN veterinarians v ON v.id IN (pr.veterinarian_id,pr.origin_veterinarian_id,pr.owner_veterinarian_id) WHERE v.clinic_name LIKE ?)")
-        args.append(f"%{veterinario}%")
-    collaboratore = (p.get("collaboratore_nome") or "").strip()
-    if collaboratore:
-        where.append("collaborator_id IN (SELECT id FROM collaborators WHERE name LIKE ?)")
-        args.append(f"%{collaboratore}%")
+    where_common, args_common, filtri = _practice_filters_where(p)
+    where += where_common
+    args += args_common
     sql = f"SELECT COUNT(*) n FROM practices WHERE {' AND '.join(where)}"
     n = c.execute(sql, args).fetchone()["n"]
     return {
         "conteggio": n,
         "periodo_analizzato": label or "tutto il periodo disponibile",
-        "filtri": {"stato": stato, "sede": sede, "cliente_nome": cliente or None, "animale_nome": animale or None, "operatore_nome": operatore or None, "veterinario_nome": veterinario or None, "collaboratore_nome": collaboratore or None},
+        "filtri": filtri,
+    }
+
+
+def _tool_andamento_giornaliero_pratiche(c, user, now, p):
+    # Come andamento_giornaliero, ma per QUALSIASI filtro tra quelli di
+    # conta_pratiche (stato, sede, cliente, animale, operatore,
+    # veterinario, collaboratore, provenienza, origine della richiesta),
+    # non solo ritiri/riconsegne: risponde a domande come "quanti giorni
+    # senza pratiche con provenienza Firenze ci sono stati", che
+    # andamento_giornaliero (legato alla sola logica ritiro/riconsegna)
+    # non puo' determinare. Stessa fonte/logica di conta_pratiche
+    # (data pickup_date o, se assente, data creazione pratica), aggregata
+    # per giorno con ogni giorno del periodo generato esplicitamente
+    # (anche a conteggio zero), mai dedotta dal modello.
+    d_from, d_to, label = resolve_period(now, p.get("periodo"), p.get("data_da"), p.get("data_a"))
+    d1, d2 = date.fromisoformat(d_from), date.fromisoformat(d_to)
+    if (d2 - d1).days > 366:
+        raise ToolInputError("Il periodo per un andamento giornaliero non puo' superare un anno: restringi l'intervallo.")
+    where_common, args_common, filtri = _practice_filters_where(p)
+    date_expr = "date(COALESCE(NULLIF(pickup_date,''),created_at))"
+    where = ["(deleted_at IS NULL OR deleted_at='')", f"{date_expr} BETWEEN date(?) AND date(?)"] + where_common
+    args = [d_from, d_to] + args_common
+    sql = f"SELECT {date_expr} AS giorno, COUNT(*) n FROM practices WHERE {' AND '.join(where)} GROUP BY {date_expr}"
+    counts = {r["giorno"]: r["n"] for r in c.execute(sql, args).fetchall()}
+    giorni = []
+    cur = d1
+    while cur <= d2:
+        iso = cur.isoformat()
+        giorni.append({"data": iso, "conteggio": counts.get(iso, 0)})
+        cur += timedelta(days=1)
+    max_n = max((g["conteggio"] for g in giorni), default=0)
+    giorni_max = [g["data"] for g in giorni if g["conteggio"] == max_n] if max_n > 0 else []
+    giorni_zero = [g["data"] for g in giorni if g["conteggio"] == 0]
+    dettaglio_omesso = len(giorni) > 62
+    return {
+        "periodo_analizzato": label,
+        "filtri": filtri,
+        "totale_periodo": sum(g["conteggio"] for g in giorni),
+        "numero_giorni_nel_periodo": len(giorni),
+        "giorno_con_valore_massimo": {"date": giorni_max, "conteggio": max_n} if giorni_max else None,
+        "numero_giorni_a_zero": len(giorni_zero),
+        "date_giorni_a_zero": giorni_zero[:100],
+        "date_giorni_a_zero_troncate": len(giorni_zero) > 100,
+        "andamento_giornaliero_dettaglio": None if dettaglio_omesso else giorni,
+        "dettaglio_giornaliero_omesso_periodo_troppo_lungo": dettaglio_omesso,
+        "nota": "Ogni giorno del periodo e' incluso anche con conteggio zero (non dedurre i giorni a zero: sono gia' calcolati qui in numero_giorni_a_zero/date_giorni_a_zero). Usa gli stessi filtri di conta_pratiche (incluse provenienza e origine_richiesta) per qualunque domanda su 'giorni senza X' o 'giorno con piu' X' relativa alle pratiche.",
     }
 
 
@@ -1300,9 +1399,15 @@ TOOL_SPECS = [
     },
     {
         "name": "conta_pratiche",
-        "description": "Conta le pratiche con i filtri indicati (periodo opzionale, stato, sede, cliente, animale, operatore che ha gestito la pratica, veterinario, collaboratore). Se non specifichi un periodo conta su tutto lo storico.",
-        "input_schema": _schema({**_PERIOD_PROPS, "stato": {"type": "string"}, "sede": {"type": "string", "enum": list(SHIFT_BRANCHES)}, "cliente_nome": {"type": "string"}, "animale_nome": {"type": "string"}, "operatore_nome": {"type": "string"}, "veterinario_nome": {"type": "string"}, "collaboratore_nome": {"type": "string"}}),
+        "description": "Conta le pratiche con i filtri indicati (periodo opzionale, stato, sede, cliente, animale, operatore che ha gestito la pratica, veterinario, collaboratore, provenienza, origine della richiesta). Se non specifichi un periodo conta su tutto lo storico. 'provenienza' (Livorno/Empoli/Viareggio/Firenze/Pisa) e' la zona di origine della pratica (campo 'Luogo di origine' del form) - un campo DIVERSO dalla sede di destinazione ('sede', solo Livorno/Empoli): non confonderli.",
+        "input_schema": _schema({**_PERIOD_PROPS, "stato": {"type": "string"}, "sede": {"type": "string", "enum": list(SHIFT_BRANCHES)}, "cliente_nome": {"type": "string"}, "animale_nome": {"type": "string"}, "operatore_nome": {"type": "string"}, "veterinario_nome": {"type": "string"}, "collaboratore_nome": {"type": "string"}, "provenienza": {"type": "string", "enum": list(_PROVENANCE_LABELS.values())}, "origine_richiesta": {"type": "string", "enum": list(_REQUEST_ORIGINS)}}),
         "handler": _tool_conta_pratiche,
+    },
+    {
+        "name": "andamento_giornaliero_pratiche",
+        "description": "Andamento giorno per giorno delle pratiche (create/con ritiro in quel giorno) nel periodo indicato, con GLI STESSI filtri di conta_pratiche (stato, sede, cliente, animale, operatore, veterinario, collaboratore, provenienza, origine_richiesta) e ogni giorno del periodo incluso anche a conteggio zero. Usa questo per 'quanti giorni senza pratiche con provenienza X ci sono stati', 'qual e' il giorno con piu' pratiche di tipo Y', o qualunque andamento/confronto giornaliero sulle pratiche che non riguardi specificamente ritiri/riconsegne (per quelli usa invece andamento_giornaliero). Periodo massimo un anno.",
+        "input_schema": _schema({**_PERIOD_PROPS, "stato": {"type": "string"}, "sede": {"type": "string", "enum": list(SHIFT_BRANCHES)}, "cliente_nome": {"type": "string"}, "animale_nome": {"type": "string"}, "operatore_nome": {"type": "string"}, "veterinario_nome": {"type": "string"}, "collaboratore_nome": {"type": "string"}, "provenienza": {"type": "string", "enum": list(_PROVENANCE_LABELS.values())}, "origine_richiesta": {"type": "string", "enum": list(_REQUEST_ORIGINS)}}),
+        "handler": _tool_andamento_giornaliero_pratiche,
     },
     {
         "name": "cerca_pratiche",
