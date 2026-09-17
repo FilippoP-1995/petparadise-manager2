@@ -16507,6 +16507,50 @@ class AIAssistantTests(unittest.TestCase):
             result = cerca(c, self.admin, now, {"query": "Tobia"})
             self.assertEqual(result["risultati"][0]["url"], f"/pratiche/{pid}")
 
+    def test_storico_pratica_legge_il_vero_registro_practice_history_anche_nel_cestino(self):
+        # Domanda reale dell'utente: "come faccio a recuperare tutto lo
+        # storico [di una pratica]? Dati segnati, modificati, eliminati
+        # ecc" - riusa practice_history, il registro GIA' scritto da ogni
+        # operazione sulla pratica nel gestionale (creazione, modifiche,
+        # cambio stato, cestino/ripristino, pagamenti, ecc.), nessuna
+        # query/logica inventata qui.
+        with app.db() as c:
+            stamp = "2026-09-10T09:00:00"
+            pid = self._insert_practice(c, _n=1, practice_number="CR-000255", animal_name="Birba", created_at=stamp)
+            c.execute(
+                "INSERT INTO practice_history(practice_id,event_type,old_value,new_value,note,user_id,created_at) VALUES(?,?,?,?,?,?,?)",
+                (pid, "Creazione pratica", None, "Pratica creata", None, self.admin["id"], "2026-09-10T09:00:00"),
+            )
+            c.execute(
+                "INSERT INTO practice_history(practice_id,event_type,old_value,new_value,note,user_id,created_at) VALUES(?,?,?,?,?,?,?)",
+                (pid, "Modifica Note", "", "Da richiamare", None, self.admin["id"], "2026-09-11T10:00:00"),
+            )
+            c.execute(
+                "INSERT INTO practice_history(practice_id,event_type,old_value,new_value,note,user_id,created_at) VALUES(?,?,?,?,?,?,?)",
+                (pid, "Cestino", "Attiva", "Cestinata", "Pratica spostata nel Cestino", self.admin["id"], "2026-09-12T11:00:00"),
+            )
+            # pratica ORA nel cestino (deleted_at valorizzato): dettaglio_pratica
+            # non la trova piu' (comportamento esistente, invariato), ma
+            # storico_pratica deve continuare a trovarla lo stesso.
+            c.execute("UPDATE practices SET deleted_at=? WHERE id=?", (stamp, pid))
+        storico = next(t for t in self.ai.TOOL_SPECS if t["name"] == "storico_pratica")["handler"]
+        dettaglio = next(t for t in self.ai.TOOL_SPECS if t["name"] == "dettaglio_pratica")["handler"]
+        now = app.rome_now()
+        with app.db() as c:
+            with self.assertRaises(self.ai.ToolInputError):
+                dettaglio(c, self.admin, now, {"numero_pratica": "CR-000255"})
+            result = storico(c, self.admin, now, {"numero_pratica": "CR-000255"})
+            self.assertEqual(result["pratica"], "CR-000255")
+            self.assertTrue(result["nel_cestino"])
+            self.assertEqual(result["totale_eventi"], 3)
+            # dal piu' recente
+            self.assertEqual(result["eventi"][0]["tipo"], "Cestino")
+            self.assertEqual(result["eventi"][0]["valore_nuovo"], "Cestinata")
+            self.assertEqual(result["eventi"][0]["utente"], self.admin["display_name"])
+            self.assertEqual(result["eventi"][-1]["tipo"], "Creazione pratica")
+            with self.assertRaises(self.ai.ToolInputError):
+                storico(c, self.admin, now, {"numero_pratica": "NON-ESISTE"})
+
     def test_cambia_stato_pratica_richiede_conferma_esplicita_e_riusa_quick_state(self):
         # Regola obbligatoria dell'utente: la scrittura deve SEMPRE
         # richiedere conferma esplicita PRIMA di essere eseguita, applicata

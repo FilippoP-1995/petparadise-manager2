@@ -647,6 +647,42 @@ def _tool_dettaglio_pratica(c, user, now, p):
     }
 
 
+def _tool_storico_pratica(c, user, now, p):
+    # practice_history e' il registro di controllo GIA' usato da ogni
+    # operazione su una pratica (creazione, modifica di ogni campo, cambio
+    # stato, cestino/ripristino, pagamenti, fatture, WhatsApp, firma, buoni
+    # veterinario, cambio numero pratica...): nessuna query/logica
+    # inventata qui, solo lettura diretta dello stesso registro. A
+    # differenza di dettaglio_pratica, la ricerca della pratica qui NON
+    # esclude quelle nel cestino (deleted_at valorizzato): lo storico di
+    # una pratica cestinata e' un caso d'uso legittimo di questo strumento.
+    pid = p.get("id")
+    numero = (p.get("numero_pratica") or "").strip()
+    row = None
+    if pid:
+        row = c.execute("SELECT id,practice_number,animal_name,deleted_at FROM practices WHERE id=?", (pid,)).fetchone()
+    elif numero:
+        row = c.execute("SELECT id,practice_number,animal_name,deleted_at FROM practices WHERE practice_number=?", (numero,)).fetchone()
+    else:
+        raise ToolInputError("Specifica id oppure numero_pratica (usa prima cerca_pratiche se non li conosci).")
+    if not row:
+        raise ToolInputError("Nessuna pratica trovata con questo id/numero. Usa prima cerca_pratiche per trovare l'id o il numero corretto.")
+    rows = c.execute(
+        "SELECT h.event_type,h.old_value,h.new_value,h.note,h.created_at,u.display_name FROM practice_history h LEFT JOIN users u ON u.id=h.user_id WHERE h.practice_id=? ORDER BY h.created_at DESC LIMIT 200",
+        (row["id"],),
+    ).fetchall()
+    return {
+        "pratica": row["practice_number"], "animale": row["animal_name"],
+        "nel_cestino": bool(row["deleted_at"]), "url": f"/pratiche/{row['id']}",
+        "eventi": [
+            {"tipo": h["event_type"], "valore_precedente": h["old_value"], "valore_nuovo": h["new_value"], "nota": h["note"], "quando": h["created_at"], "utente": h["display_name"]}
+            for h in rows
+        ],
+        "totale_eventi": len(rows),
+        "troncato_a_200": len(rows) == 200,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Strumenti — azioni di scrittura (richiedono conferma esplicita)
 #
@@ -1484,6 +1520,12 @@ TOOL_SPECS = [
         "description": "Restituisce il dettaglio completo di UNA pratica (stato, sede, animale, proprietario, totale, gia' incassato, rimanenza, circuito economico W/D, url per aprirla nel gestionale) dato l'id o il numero pratica. Se non conosci l'id/numero, usa prima cerca_pratiche.",
         "input_schema": _schema({"id": {"type": "integer"}, "numero_pratica": {"type": "string"}}),
         "handler": _tool_dettaglio_pratica,
+    },
+    {
+        "name": "storico_pratica",
+        "description": "Storico/registro di controllo completo di UNA pratica dato l'id o il numero pratica: ogni evento registrato (creazione, modifiche campo per campo, cambi di stato, spostamenti nel/dal cestino, pagamenti, fatture, WhatsApp, firma, buoni veterinario, cambio numero pratica...), con data, valore precedente/nuovo e utente che l'ha fatto, dal piu' recente. Funziona anche per una pratica attualmente nel cestino (dettaglio_pratica invece no). Usa questo per 'cosa e' cambiato/chi ha modificato/e' stata eliminata questa pratica'.",
+        "input_schema": _schema({"id": {"type": "integer"}, "numero_pratica": {"type": "string"}}),
+        "handler": _tool_storico_pratica,
     },
     {
         "name": "cambia_stato_pratica",
