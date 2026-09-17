@@ -2734,7 +2734,7 @@ body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY
 .route-quick-field{margin-bottom:14px}
 .route-quick-field label{display:block;margin-bottom:6px;font-size:12px;color:#8592a6;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
 .route-quick-field select{width:100%;padding:11px 12px;border-radius:11px;border:1px solid #263246;background:#0e1622;color:#f5f7fb;font-size:14.5px}
-/* Assistente AI flottante (richiesta esplicita dell'utente): icona
+/* Mau AI flottante (richiesta esplicita dell'utente): icona
    trascinabile con posizione ancorata in percentuale di viewport - mai
    coordinate assolute, cosi' resta valida cambiando schermo/dispositivo -
    e mini chat in overlay SULLA pagina corrente, mai una pagina/route
@@ -7268,7 +7268,7 @@ async function schedulePushTest(){
   try{const response=await fetch('/api/push/test',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:'{}'});const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||'Test non programmato.');pushDiagnostic('backend',data.message);alert(data.message);}
   catch(error){alert(pushError(error));}
 }
-// Assistente AI flottante (richiesta esplicita dell'utente): icona
+// Mau AI flottante (richiesta esplicita dell'utente): icona
 // trascinabile + mini chat in overlay SULLA pagina corrente. Nessun cambio
 // di route/reload: apertura/chiusura toggla solo l'attributo hidden dello
 // stesso elemento gia' presente nel DOM (stesso idioma gia' usato da
@@ -8776,8 +8776,8 @@ def layout(title, body, user=None):
         fab_y=fab_pos.get("y_pct",0.86) if isinstance(fab_pos,dict) else 0.86
         ai_chat_html=f'''<div id="aiChatRoot" hidden>
           <div class="ai-chat-backdrop" onclick="if(event.target===this)aiChatClose()"></div>
-          <div class="ai-chat-panel" role="dialog" aria-modal="true" aria-label="Assistente AI">
-            <div class="ai-chat-head"><span>{lucide("sparkles")} Assistente AI</span><button type="button" class="icon-btn" onclick="aiChatClose()" aria-label="Chiudi">{lucide("x")}</button></div>
+          <div class="ai-chat-panel" role="dialog" aria-modal="true" aria-label="Mau AI">
+            <div class="ai-chat-head"><span>{lucide("sparkles")} Mau AI</span><button type="button" class="icon-btn" onclick="aiChatClose()" aria-label="Chiudi">{lucide("x")}</button></div>
             <div class="ai-chat-body" id="aiChatBody"><div class="ai-chat-empty">Chiedimi qualsiasi cosa sui dati del gestionale: pratiche, cremazioni, ritiri, riconsegne, incassi, turni, urne...</div></div>
             <form class="ai-chat-input-row" onsubmit="return aiChatSend(event)">
               <textarea id="aiChatInput" placeholder="Scrivi una domanda..." rows="1" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'" onkeydown="aiChatInputKeydown(event)"></textarea>
@@ -8785,7 +8785,7 @@ def layout(title, body, user=None):
             </form>
           </div>
         </div>
-        <button type="button" id="aiChatFab" class="ai-chat-fab" aria-label="Assistente AI" data-x-pct="{fab_x}" data-y-pct="{fab_y}" onclick="aiChatFabClick()">{lucide("sparkles")}</button>'''
+        <button type="button" id="aiChatFab" class="ai-chat-fab" aria-label="Mau AI" data-x-pct="{fab_x}" data-y-pct="{fab_y}" onclick="aiChatFabClick()">{lucide("sparkles")}</button>'''
     else:
         ai_chat_html=""
     vapid_public=esc(os.environ.get("VAPID_PUBLIC_KEY",""))

@@ -16056,6 +16056,8 @@ class AIAssistantTests(unittest.TestCase):
         self.assertIn(str(now.year), prompt)
         self.assertIn(self.ai.DEPS.month_names_it[now.month - 1], prompt)
         self.assertIn("OGGI", prompt)
+        # nome scelto dall'utente per l'assistente: deve sapere come chiamarsi
+        self.assertIn("Mau AI", prompt)
 
     def test_chat_position_saves_independently_per_user(self):
         with app.db() as c:
@@ -16099,6 +16101,9 @@ class AIAssistantTests(unittest.TestCase):
             self.assertIn('id="aiChatFab"', html)
             self.assertIn('id="aiChatRoot" hidden', html)
             self.assertIn('onclick="aiChatFabClick()"', html)
+            # nome scelto dall'utente per l'assistente
+            self.assertIn('Mau AI', html)
+            self.assertNotIn('Assistente AI', html)
         # nessuna route dedicata registrata per una pagina della chat
         route_source = Path(app.__file__).read_text(encoding="utf-8")
         self.assertNotIn('"/assistente"', route_source)

@@ -1562,7 +1562,7 @@ _HANDLERS_BY_NAME = {t["name"]: t["handler"] for t in TOOL_SPECS}
 # Orchestrazione LLM (Anthropic Messages API, tool use)
 # ---------------------------------------------------------------------------
 
-_SYSTEM_PROMPT_TEMPLATE = """Sei l'Assistente AI interno del gestionale PetParadise Manager (V1), una software house per la gestione di un'azienda di cremazione animali.
+_SYSTEM_PROMPT_TEMPLATE = """Ti chiami Mau AI, l'assistente interno del gestionale PetParadise Manager (V1), una software house per la gestione di un'azienda di cremazione animali.
 
 OGGI e' {oggi} (fuso orario Europe/Rome, stesso fuso di tutti i dati del gestionale). Usa sempre questa data come riferimento: se una domanda nomina un mese per nome (es. "agosto", "settembre") senza indicare l'anno, calcola tu l'intervallo esatto di quel mese nell'anno corretto rispetto a oggi e passalo come periodo='intervallo_personalizzato' con data_da/data_a in formato AAAA-MM-GG — non chiedere mai all'utente l'anno per un mese ovvio dal contesto.
 
