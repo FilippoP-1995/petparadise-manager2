@@ -17894,10 +17894,16 @@ class App(BaseHTTPRequestHandler):
                     "prima di correggere l'importo."
                 )
             target=deposits[0];phase="deposit"
-            expected=euros_to_cents(
-                data.get("deposit_final") if uses_total_d(data)
-                else data.get("deposit")
-            )
+            # Acconto/Acconto D sono campi "Numero o testo libero" (stesso
+            # placeholder di tutte le voci di Preventivo): euros_to_cents
+            # e' pero' rigoroso (rifiuta stringa vuota o testo libero) e
+            # senza passare da money_value() qui andava in eccezione non
+            # gestita ad ogni salvataggio - bug reale segnalato dall'utente
+            # ("aggiungo un'urna, non riesce il salvataggio" per qualunque
+            # pratica in Acconto/Pagato con quel campo non puramente
+            # numerico). Stessa tolleranza gia' applicata al ramo saldo
+            # subito sotto via effective_total().
+            expected=euros_to_cents(f"{money_value(data.get('deposit_final') if uses_total_d(data) else data.get('deposit')):.2f}")
         else:
             if len(settlements)!=1:
                 return None if not settlements else (

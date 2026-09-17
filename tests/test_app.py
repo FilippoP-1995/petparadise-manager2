@@ -129,6 +129,99 @@ class PetParadiseTests(unittest.TestCase):
             row = conn.execute("SELECT total_service,invoice_total,invoice_number FROM practices WHERE id=?", (pid,)).fetchone()
             self.assertEqual((row["total_service"], row["invoice_total"], row["invoice_number"]), ("300.00", "200.00", "FT-500"))
 
+    def test_add_urn_to_existing_practice_saves_via_edit_submit(self):
+        stamp = "2026-07-15T10:00:00"
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,
+                   created_by,animal_name,owner_first_name,owner_last_name,owner_phone,owner_tax_code,owner_street,
+                   owner_city,owner_province,owner_zip,total_service,payment_status)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-URNADD1", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Buddy",
+                 "Anna", "Bianchi", "3339990000", "X", "Via Roma", "Livorno", "LI", "57100",
+                 "150.00", "Da saldare"),
+            ).lastrowid
+            conn.execute(
+                "INSERT INTO practice_items(practice_id,category,subtype,urn_catalog_id,label,price,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                (pid, "urna", None, None, "Urna esistente", "150.00", 0, stamp, stamp),
+            )
+        self.handler.redirect = lambda path: None
+        self.handler.form = lambda: {
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "animal_name": "Buddy", "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "3339990000",
+            "owner_tax_code": "X", "owner_street": "Via Roma", "owner_city": "Livorno", "owner_province": "LI",
+            "owner_zip": "57100", "total_service": "300.00", "total_service_manual": "Si", "payment_status": "Da saldare",
+            "urna_items_json": json.dumps([
+                {"label": "Urna esistente", "price": "150.00", "urn_catalog_id": None, "subtype": ""},
+                {"label": "Urna nuova aggiunta", "price": "150.00", "urn_catalog_id": None, "subtype": ""},
+            ]),
+        }
+        self.handler.edit_submit(admin, pid)
+        with app.db() as conn:
+            row = conn.execute("SELECT total_service FROM practices WHERE id=?", (pid,)).fetchone()
+            items = conn.execute("SELECT label,price FROM practice_items WHERE practice_id=? ORDER BY sort_order", (pid,)).fetchall()
+            history = conn.execute("SELECT event_type,new_value FROM practice_history WHERE practice_id=?", (pid,)).fetchall()
+        self.assertEqual(row["total_service"], "300.00")
+        self.assertEqual([i["label"] for i in items], ["Urna esistente", "Urna nuova aggiunta"])
+        self.assertIn("Modifica preventivo (urne/calchi/accessori)", [h["event_type"] for h in history])
+
+    def test_add_urn_to_practice_with_acconto_and_blank_deposit_field_does_not_crash(self):
+        # Bug reale segnalato dall'utente: "apro una pratica gia' creata per
+        # modificarla e aggiungo un'urna, non riesce il salvataggio".
+        # Riprodotto con Acconto gia' incassato e il campo "Acconto" vuoto
+        # nel form inviato (validation_error() lo ignora quando e' vuoto -
+        # controlla solo il FORMATO quando c'e' un valore, vedi
+        # "if d.get(key) and not re.fullmatch(...)" - quindi passa
+        # indisturbato): correct_practice_payment_amount lo passava pero'
+        # intatto a euros_to_cents, rigoroso e che va in eccezione non
+        # gestita su stringa vuota - un 500 ad ogni salvataggio di una
+        # pratica in Acconto/Pagato con quel campo vuoto, scatenato da
+        # QUALUNQUE modifica che cambi il Totale W (aggiungere un'urna e' il
+        # caso piu' comune). Corretto passando da money_value() come gia'
+        # avviene per il ramo saldo poco sotto nella stessa funzione (via
+        # effective_total()).
+        redirects = []
+        self.handler.redirect = lambda url: redirects.append(url)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.form = lambda: {
+            "operator_name": "SERENA", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "animal_name": "Buddy",
+            "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
+            "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
+            "urna_items_json": json.dumps([{"label": "Urna esistente", "price": "150.00", "urn_catalog_id": None, "subtype": ""}]),
+            "acconto_w_totale": "150.00", "acconto_w_data": "2026-07-20", "acconto_w_modalita": "Contanti",
+        }
+        self.handler.create_practice(admin)
+        self.assertTrue(redirects)
+        pid = int(redirects[-1].split("/pratiche/")[1])
+
+        edit_page_calls = []
+        self.handler.edit_page = lambda user, pid, draft=None, error="", error_field="": edit_page_calls.append(error)
+        self.handler.form = lambda: {
+            "operator_name": "SERENA", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "animal_name": "Buddy",
+            "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
+            "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
+            "payment_status": "Acconto", "economic_at": "2026-07-20",
+            # "deposit" volutamente assente dal form: e' lo scenario che
+            # manda in crash il codice non corretto (vuoto supera
+            # validation_error ma non euros_to_cents).
+            "urna_items_json": json.dumps([
+                {"label": "Urna esistente", "price": "150.00", "urn_catalog_id": None, "subtype": ""},
+                {"label": "Urna nuova", "price": "150.00", "urn_catalog_id": None, "subtype": ""},
+            ]),
+        }
+        self.handler.edit_submit(admin, pid)  # non deve sollevare InvalidMovementError
+        self.assertEqual(edit_page_calls, [])
+        self.assertEqual(redirects[-1], f"/pratiche/{pid}?return_to=%2Farchivio%2Fpratiche")
+        with app.db() as conn:
+            after = conn.execute("SELECT total_service FROM practices WHERE id=?", (pid,)).fetchone()
+            items = conn.execute("SELECT label FROM practice_items WHERE practice_id=? ORDER BY sort_order", (pid,)).fetchall()
+        self.assertEqual(after["total_service"], "300.00")
+        self.assertEqual([i["label"] for i in items], ["Urna esistente", "Urna nuova"])
+
     def test_reported_bug_invoice_total_realigns_via_salva_pagamento_w(self):
         # Riproduce il caso segnalato dall'utente: "Totale W" = 310 (il
         # totale reale) ma "Totale fattura" rimasto a 274, nessuna fattura
