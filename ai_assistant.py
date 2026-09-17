@@ -693,6 +693,70 @@ def _tool_cambia_stato_pratica(c, user, now, p):
     }
 
 
+# Richiesta esplicita dell'utente: l'assistente deve poter "imparare" in
+# modo STABILE (non solo per la conversazione in corso) le definizioni di
+# gergo interno che gli vengono insegnate, es. "per ritiri di Empoli si
+# intende le pratiche con provenienza Empoli o Firenze". Salvate in
+# ai_learned_definitions e ricaricate ad ogni conversazione (vedi
+# run_chat/_system_prompt), NON come dati/numeri pronti da restituire, ma
+# come regole di interpretazione: guidano quali strumenti/parametri usare
+# per rispondere, la risposta stessa continua sempre a passare da una
+# query reale. Stessa regola di conferma obbligatoria delle altre azioni
+# di scrittura.
+def _tool_impara_definizione(c, user, now, p):
+    frase = (p.get("frase") or "").strip()
+    definizione = (p.get("definizione") or "").strip()
+    if not frase or not definizione:
+        raise ToolInputError("Specifica sia 'frase' (il termine/l'espressione da imparare) sia 'definizione' (cosa significa).")
+    existing = c.execute(
+        "SELECT id,definition FROM ai_learned_definitions WHERE active=1 AND lower(trim(phrase))=lower(trim(?))", (frase,)
+    ).fetchone()
+    if p.get("conferma") is not True:
+        if existing:
+            raise ToolInputError(
+                f"Conferma richiesta: \"{frase}\" ha gia' una definizione salvata (\"{existing['definition']}\"). "
+                f"Vuoi sostituirla con \"{definizione}\"? Se l'utente conferma esplicitamente in un messaggio successivo, richiama questo stesso strumento con conferma=true."
+            )
+        raise ToolInputError(
+            f"Conferma richiesta: vuoi che io ricordi, anche nelle conversazioni future, che \"{frase}\" significa \"{definizione}\"? "
+            "Se l'utente conferma esplicitamente in un messaggio successivo, richiama questo stesso strumento con conferma=true."
+        )
+    stamp = now.isoformat()
+    if existing:
+        c.execute("UPDATE ai_learned_definitions SET active=0 WHERE id=?", (existing["id"],))
+    new_id = c.execute(
+        "INSERT INTO ai_learned_definitions(phrase,definition,created_by,created_at,active) VALUES(?,?,?,?,1)",
+        (frase, definizione, user["id"], stamp),
+    ).lastrowid
+    return {"id": new_id, "frase": frase, "definizione": definizione, "sostituiva_una_definizione_precedente": bool(existing)}
+
+
+def _tool_elenca_definizioni_apprese(c, user, now, p):
+    rows = c.execute(
+        "SELECT d.id,d.phrase,d.definition,d.created_at,u.display_name FROM ai_learned_definitions d LEFT JOIN users u ON u.id=d.created_by WHERE d.active=1 ORDER BY d.created_at DESC"
+    ).fetchall()
+    return {
+        "definizioni": [{"id": r["id"], "frase": r["phrase"], "definizione": r["definition"], "insegnata_da": r["display_name"], "quando": r["created_at"]} for r in rows],
+        "totale": len(rows),
+    }
+
+
+def _tool_dimentica_definizione(c, user, now, p):
+    def_id = p.get("id")
+    if not def_id:
+        raise ToolInputError("Specifica l'id della definizione da dimenticare (usa prima elenca_definizioni_apprese per trovarlo).")
+    row = c.execute("SELECT id,phrase,definition FROM ai_learned_definitions WHERE id=? AND active=1", (def_id,)).fetchone()
+    if not row:
+        raise ToolInputError(f"Nessuna definizione attiva trovata con id {def_id}.")
+    if p.get("conferma") is not True:
+        raise ToolInputError(
+            f"Conferma richiesta: vuoi che io dimentichi la definizione di \"{row['phrase']}\" (\"{row['definition']}\")? "
+            "Se l'utente conferma esplicitamente in un messaggio successivo, richiama questo stesso strumento con conferma=true."
+        )
+    c.execute("UPDATE ai_learned_definitions SET active=0 WHERE id=?", (def_id,))
+    return {"dimenticata": True, "frase": row["phrase"]}
+
+
 def _tool_pratiche_saldo_aperto(c, user, now, p):
     as_of = p.get("alla_data")
     if as_of:
@@ -1428,6 +1492,24 @@ TOOL_SPECS = [
         "handler": _tool_cambia_stato_pratica,
     },
     {
+        "name": "impara_definizione",
+        "description": "Memorizza IN MODO STABILE (non solo per questa conversazione) come interpretare un termine o un'espressione di gergo interno usati da questa azienda, es. frase='ritiri di Empoli', definizione='tutte le pratiche con provenienza Empoli o Firenze'. Usalo quando l'utente ti sta esplicitamente insegnando/correggendo un significato ('per X si intende Y', 'quando dico X intendo Y', 'impara che...'). La definizione guida come interpreti le domande FUTURE (quali strumenti/parametri usare), non e' mai un dato da restituire direttamente: la risposta deve comunque sempre passare da uno strumento reale. AZIONE DI SCRITTURA: la prima chiamata (senza conferma=true) non salva nulla, restituisce solo una domanda di conferma da girare all'utente (mostrandogli esattamente cosa stai per imparare, ed eventuale definizione precedente che sostituirebbe). Richiama questo stesso strumento con conferma=true SOLO nel messaggio immediatamente successivo a una conferma esplicita dell'utente.",
+        "input_schema": _schema({"frase": {"type": "string"}, "definizione": {"type": "string"}, "conferma": {"type": "boolean", "description": "Deve essere true SOLO dopo una conferma esplicita dell'utente."}}, ["frase", "definizione"]),
+        "handler": _tool_impara_definizione,
+    },
+    {
+        "name": "elenca_definizioni_apprese",
+        "description": "Elenca tutte le definizioni di gergo interno attualmente memorizzate (frase, definizione, chi l'ha insegnata, quando). Usa questo se l'utente chiede 'cosa hai imparato', 'quali definizioni ricordi', o prima di insegnare una definizione per controllare se ne esiste gia' una simile.",
+        "input_schema": _schema({}),
+        "handler": _tool_elenca_definizioni_apprese,
+    },
+    {
+        "name": "dimentica_definizione",
+        "description": "Rimuove una definizione di gergo interno memorizzata in precedenza (usa prima elenca_definizioni_apprese per trovarne l'id). AZIONE DI SCRITTURA: la prima chiamata (senza conferma=true) non rimuove nulla, restituisce solo una domanda di conferma. Richiama questo stesso strumento con conferma=true SOLO dopo una conferma esplicita dell'utente.",
+        "input_schema": _schema({"id": {"type": "integer"}, "conferma": {"type": "boolean", "description": "Deve essere true SOLO dopo una conferma esplicita dell'utente."}}, ["id"]),
+        "handler": _tool_dimentica_definizione,
+    },
+    {
         "name": "pratiche_saldo_aperto",
         "description": "Elenca le pratiche con un saldo/rimanenza ancora aperta a una certa data (default oggi), con conteggio e totale rimanenza. Filtro opzionale per sede.",
         "input_schema": _schema({"alla_data": {"type": "string", "description": "Data ISO AAAA-MM-GG, default oggi."}, "sede": {"type": "string", "enum": list(SHIFT_BRANCHES)}}),
@@ -1580,14 +1662,29 @@ Puoi chiamare piu' strumenti, anche piu' volte con filtri diversi, per risponder
 
 GRAFICI: quando un andamento nel tempo o un confronto (tra periodi, sedi, categorie, operatori, ...) sarebbe piu' chiaro con un grafico, aggiungi alla fine della risposta un blocco ```chart``` con un JSON su una riga tipo {{"titolo": "Incassi per mese", "dati": [{{"etichetta": "Luglio", "valore": 1234.5}}, {{"etichetta": "Agosto", "valore": 987.0}}]}} - "valore" deve essere sempre un numero REALMENTE restituito da uno strumento in questa conversazione, mai stimato. Il testo prima del blocco resta la spiegazione discorsiva normale; non descrivere a parole i singoli numeri gia' nel grafico se sono ripetitivi. Non tutte le risposte hanno bisogno di un grafico: un singolo numero o un confronto tra solo due valori di solito non lo richiede.
 
-AZIONI DI SCRITTURA (es. cambia_stato_pratica): la LETTURA di dati puo' avvenire sempre liberamente; la SCRITTURA/MODIFICA richiede SEMPRE una conferma esplicita dell'utente PRIMA di essere eseguita, applicata dal server stesso (lo strumento senza conferma=true non scrive mai nulla, restituisce solo la descrizione di cosa cambierebbe). Quando uno strumento di scrittura ti risponde chiedendo conferma, riporta la domanda all'utente in modo chiaro (cosa cambierebbe, su quale pratica) e FERMATI: non richiamare lo strumento con conferma=true nella STESSA risposta. Richiamalo con conferma=true solo nel messaggio immediatamente successivo, e solo se l'utente ha davvero confermato esplicitamente (es. "sì", "conferma", "procedi", "fallo") in quel messaggio - se l'utente cambia argomento, esita o non risponde chiaramente, non eseguire l'azione."""
+AZIONI DI SCRITTURA (es. cambia_stato_pratica, impara_definizione, dimentica_definizione): la LETTURA di dati puo' avvenire sempre liberamente; la SCRITTURA/MODIFICA richiede SEMPRE una conferma esplicita dell'utente PRIMA di essere eseguita, applicata dal server stesso (lo strumento senza conferma=true non scrive mai nulla, restituisce solo la descrizione di cosa cambierebbe). Quando uno strumento di scrittura ti risponde chiedendo conferma, riporta la domanda all'utente in modo chiaro (cosa cambierebbe, su quale pratica) e FERMATI: non richiamare lo strumento con conferma=true nella STESSA risposta. Richiamalo con conferma=true solo nel messaggio immediatamente successivo, e solo se l'utente ha davvero confermato esplicitamente (es. "sì", "conferma", "procedi", "fallo") in quel messaggio - se l'utente cambia argomento, esita o non risponde chiaramente, non eseguire l'azione.
+
+APPRENDIMENTO: se l'utente ti insegna esplicitamente come interpretare un termine/un'espressione di gergo interno ("per X si intende Y", "quando dico X intendo Y", "impara che...", "da adesso X vuol dire Y"), usa impara_definizione (con conferma, come ogni azione di scrittura) per ricordarlo in modo stabile anche nelle conversazioni future - non limitarti a tenerlo a mente solo per questa conversazione. Una definizione appresa e' SEMPRE e SOLO una regola di interpretazione (quali strumenti/parametri usare per una domanda futura che usa quel termine): la risposta deve comunque continuare a passare da uno strumento reale, una definizione appresa non e' mai un dato/numero da restituire direttamente. Le definizioni gia' apprese in precedenza sono elencate sotto, se presenti, e vanno applicate automaticamente senza bisogno che l'utente le ripeta ogni volta."""
 
 _WEEKDAY_NAMES_IT = ("lunedi'", "martedi'", "mercoledi'", "giovedi'", "venerdi'", "sabato", "domenica")
 
 
-def _system_prompt(now):
+def _system_prompt(now, learned_definitions=()):
     oggi = f"{_WEEKDAY_NAMES_IT[now.weekday()]} {now.day} {DEPS.month_names_it[now.month - 1]} {now.year}"
-    return _SYSTEM_PROMPT_TEMPLATE.format(oggi=oggi)
+    base = _SYSTEM_PROMPT_TEMPLATE.format(oggi=oggi)
+    if not learned_definitions:
+        return base
+    # Concatenato come stringa semplice, MAI passato attraverso .format():
+    # una definizione insegnata da un utente e' testo libero e potrebbe
+    # contenere parentesi graffe, che .format() interpreterebbe come
+    # segnaposto e romperebbe ad ogni chiamata (bug reale gia' capitato
+    # con l'esempio JSON del paragrafo GRAFICI).
+    righe = "\n".join(f'- "{d["phrase"]}" significa: {d["definition"]}' for d in learned_definitions)
+    definizioni_block = (
+        "\n\nDEFINIZIONI PERSONALIZZATE GIA' APPRESE in una conversazione precedente (salvate stabilmente, usale per interpretare termini/gergo interno di questa azienda quando scegli quali strumenti/parametri usare - non sono mai un dato numerico gia' pronto, la risposta deve comunque interrogare gli strumenti reali):\n"
+        + righe
+    )
+    return base + definizioni_block
 
 
 MAX_TOOL_ROUNDS = 6
@@ -1799,7 +1896,14 @@ def run_chat(db_factory, user, now, history, message, log=None):
     messages = _sanitize_history(list(history)) + [{"role": "user", "content": message}]
     tool_defs = _anthropic_tools()
     model = os.environ.get("AI_ASSISTANT_MODEL", DEFAULT_MODEL)
-    system_prompt = _system_prompt(now)
+    # Connessione breve, aperta e richiusa PRIMA di qualunque chiamata di
+    # rete ad Anthropic (stessa disciplina del resto del modulo): le
+    # definizioni apprese in conversazioni precedenti (vedi
+    # impara_definizione) vanno ricaricate ad ogni nuova conversazione,
+    # non solo tenute a mente per quella in corso.
+    with db_factory() as c:
+        learned_definitions = c.execute("SELECT phrase,definition FROM ai_learned_definitions WHERE active=1 ORDER BY created_at").fetchall()
+    system_prompt = _system_prompt(now, learned_definitions)
     for _ in range(MAX_TOOL_ROUNDS):
         try:
             response = client.messages.create(model=model, max_tokens=1024, system=system_prompt, tools=tool_defs, messages=messages)

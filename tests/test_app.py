@@ -16583,6 +16583,119 @@ class AIAssistantTests(unittest.TestCase):
         self.assertEqual(status_ai, status_ui)
         self.assertEqual((event_ai["event_type"], event_ai["old_value"], event_ai["new_value"]), (event_ui["event_type"], event_ui["old_value"], event_ui["new_value"]))
 
+    def test_impara_definizione_richiede_conferma_e_persiste_stabilmente(self):
+        # Richiesta esplicita dell'utente: l'assistente deve poter
+        # "imparare" definizioni di gergo interno IN MODO STABILE (non
+        # solo per la conversazione in corso) - stessa regola di conferma
+        # obbligatoria delle altre azioni di scrittura.
+        impara = next(t for t in self.ai.TOOL_SPECS if t["name"] == "impara_definizione")["handler"]
+        elenca = next(t for t in self.ai.TOOL_SPECS if t["name"] == "elenca_definizioni_apprese")["handler"]
+        dimentica = next(t for t in self.ai.TOOL_SPECS if t["name"] == "dimentica_definizione")["handler"]
+        now = app.rome_now()
+        with app.db() as c:
+            # senza conferma=true: nessuna scrittura, solo una domanda di conferma come errore
+            with self.assertRaises(self.ai.ToolInputError) as ctx:
+                impara(c, self.admin, now, {"frase": "ritiri di Empoli", "definizione": "pratiche con provenienza Empoli o Firenze"})
+            self.assertIn("ritiri di Empoli", str(ctx.exception))
+            self.assertEqual(elenca(c, self.admin, now, {})["totale"], 0)
+
+            # con conferma=true: salva davvero
+            result = impara(c, self.admin, now, {"frase": "ritiri di Empoli", "definizione": "pratiche con provenienza Empoli o Firenze", "conferma": True})
+            self.assertFalse(result["sostituiva_una_definizione_precedente"])
+            elenco = elenca(c, self.admin, now, {})
+            self.assertEqual(elenco["totale"], 1)
+            self.assertEqual(elenco["definizioni"][0]["frase"], "ritiri di Empoli")
+            self.assertEqual(elenco["definizioni"][0]["insegnata_da"], self.admin["display_name"])
+
+            # insegnare di nuovo la STESSA frase (case/spazi diversi) senza
+            # conferma deve segnalare che sostituirebbe quella esistente
+            with self.assertRaises(self.ai.ToolInputError) as ctx2:
+                impara(c, self.admin, now, {"frase": "  RITIRI DI EMPOLI  ", "definizione": "nuova versione"})
+            self.assertIn("gia' una definizione", str(ctx2.exception))
+            # confermando, la sostituisce (non si accumula un duplicato)
+            impara(c, self.admin, now, {"frase": "ritiri di Empoli", "definizione": "nuova versione", "conferma": True})
+            elenco2 = elenca(c, self.admin, now, {})
+            self.assertEqual(elenco2["totale"], 1)
+            self.assertEqual(elenco2["definizioni"][0]["definizione"], "nuova versione")
+
+            # dimentica_definizione: stessa regola di conferma
+            def_id = elenco2["definizioni"][0]["id"]
+            with self.assertRaises(self.ai.ToolInputError):
+                dimentica(c, self.admin, now, {"id": def_id})
+            self.assertEqual(elenca(c, self.admin, now, {})["totale"], 1)
+            dimentica(c, self.admin, now, {"id": def_id, "conferma": True})
+            self.assertEqual(elenca(c, self.admin, now, {})["totale"], 0)
+            with self.assertRaises(self.ai.ToolInputError):
+                dimentica(c, self.admin, now, {"id": def_id, "conferma": True})
+
+    def test_system_prompt_includes_learned_definitions_and_never_breaks_on_braces(self):
+        # Le definizioni sono testo libero scritto dall'utente: potrebbero
+        # contenere parentesi graffe, che romperebbero .format() (stesso
+        # bug reale gia' capitato una volta con l'esempio JSON del
+        # paragrafo GRAFICI) - verificato qui esplicitamente con una
+        # definizione che le contiene.
+        now = app.rome_now()
+        definitions = [
+            {"phrase": "ritiri di Empoli", "definition": "pratiche con provenienza {Empoli} o Firenze"},
+            {"phrase": "VIP", "definition": "clienti con più di 5 pratiche"},
+        ]
+        prompt = self.ai._system_prompt(now, definitions)
+        self.assertIn("ritiri di Empoli", prompt)
+        self.assertIn("pratiche con provenienza {Empoli} o Firenze", prompt)
+        self.assertIn("VIP", prompt)
+        self.assertIn("DEFINIZIONI PERSONALIZZATE", prompt)
+        # senza definizioni, nessuna sezione vuota fuorviante
+        prompt_vuoto = self.ai._system_prompt(now, [])
+        self.assertNotIn("DEFINIZIONI PERSONALIZZATE", prompt_vuoto)
+
+    def test_run_chat_loads_learned_definitions_into_the_system_prompt(self):
+        # Verifica end-to-end: una definizione salvata in una conversazione
+        # "precedente" (gia' in ai_learned_definitions) deve comparire nel
+        # prompt di sistema della chiamata successiva ad Anthropic, senza
+        # che l'utente debba ripeterla.
+        with app.db() as c:
+            c.execute(
+                "INSERT INTO ai_learned_definitions(phrase,definition,created_by,created_at,active) VALUES(?,?,?,?,1)",
+                ("ritiri di Empoli", "pratiche con provenienza Empoli o Firenze", self.admin["id"], "2026-09-01T10:00:00"),
+            )
+
+        class FakeBlock:
+            def __init__(self, d):
+                self._d = d
+            def model_dump(self):
+                return self._d
+        class FakeResponse:
+            def __init__(self, content, stop_reason):
+                self.content = [FakeBlock(b) for b in content]
+                self.stop_reason = stop_reason
+        final = FakeResponse([{"type": "text", "text": "Ok."}], "end_turn")
+        mock_create = MagicMock(return_value=final)
+        mock_client = MagicMock()
+        mock_client.messages.create = mock_create
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
+            with patch("anthropic.Anthropic", return_value=mock_client):
+                self.ai.run_chat(app.db, self.admin, app.rome_now(), [], "Quanti ritiri di Empoli ad agosto?", log=None)
+        sent_system_prompt = mock_create.call_args_list[0].kwargs["system"]
+        self.assertIn("ritiri di Empoli", sent_system_prompt)
+        self.assertIn("pratiche con provenienza Empoli o Firenze", sent_system_prompt)
+
+    def test_dimentica_definizione_is_not_found_after_soft_delete(self):
+        # dimentica_definizione disattiva (active=0), non cancella la riga:
+        # stessa filosofia gia' usata altrove nel gestionale (mai una
+        # cancellazione distruttiva silenziosa) - verificato che la riga
+        # resti in tabella ma non compaia piu' tra le attive.
+        with app.db() as c:
+            def_id = c.execute(
+                "INSERT INTO ai_learned_definitions(phrase,definition,created_by,created_at,active) VALUES(?,?,?,?,1)",
+                ("test frase", "test definizione", self.admin["id"], "2026-09-01T10:00:00"),
+            ).lastrowid
+        dimentica = next(t for t in self.ai.TOOL_SPECS if t["name"] == "dimentica_definizione")["handler"]
+        now = app.rome_now()
+        with app.db() as c:
+            dimentica(c, self.admin, now, {"id": def_id, "conferma": True})
+            row = c.execute("SELECT active FROM ai_learned_definitions WHERE id=?", (def_id,)).fetchone()
+            self.assertEqual(row["active"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

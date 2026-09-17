@@ -863,6 +863,14 @@ def init_db():
           key TEXT NOT NULL, value TEXT NOT NULL,
           PRIMARY KEY(user_id, key)
         );
+        CREATE TABLE IF NOT EXISTS ai_learned_definitions (
+          id INTEGER PRIMARY KEY,
+          phrase TEXT NOT NULL,
+          definition TEXT NOT NULL,
+          created_by INTEGER REFERENCES users(id),
+          created_at TEXT NOT NULL,
+          active INTEGER NOT NULL DEFAULT 1
+        );
         """)
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_practices_ddt_share_token ON practices(ddt_share_token)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_practices_invoice ON practices(invoice_number,invoice_date)")
