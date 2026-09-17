@@ -16313,6 +16313,31 @@ class AIAssistantTests(unittest.TestCase):
         # dall'esempio JSON, altrimenti .format() esplode ad ogni domanda).
         self.ai._system_prompt(app.rome_now())
 
+    def test_ai_chat_practice_links_are_rendered_as_real_clickable_anchors(self):
+        # Bug reale segnalato dall'utente: "I link che invia per aprire le
+        # pratiche non funzionano" - gli strumenti (dettaglio_pratica,
+        # cerca_pratiche, storico_pratica, cambia_stato_pratica)
+        # restituiscono un campo "url" (es. /pratiche/123) che il modello
+        # riporta nella risposta, ma aiChatAppendBubble inseriva il testo
+        # con .textContent (corretto per sicurezza, ma letterale): il
+        # percorso appariva come semplice testo, mai un link cliccabile.
+        js = app.APP_JS
+        self.assertIn("function aiChatLinkifyPracticeUrls(", js)
+        linkify_fn = js[js.index("function aiChatLinkifyPracticeUrls("):js.index("function aiChatAppendBubble(")]
+        # costruito solo con nodi DOM (testo o <a>), mai innerHTML/markup
+        # grezzo - un valore imprevisto nella risposta del modello non deve
+        # mai poter essere interpretato come markup arbitrario.
+        self.assertIn("createElement('a')", linkify_fn)
+        self.assertIn("createTextNode", linkify_fn)
+        self.assertNotIn("innerHTML", linkify_fn)
+        self.assertIn("pratiche", linkify_fn)
+        # deve essere usata davvero per i messaggi dell'assistente (non per
+        # quelli dell'utente, mai testo dell'utente trattato come contenente link)
+        append_start = js.index("function aiChatAppendBubble(")
+        append_body = js[append_start:append_start + 1500]
+        self.assertIn("aiChatLinkifyPracticeUrls(textEl,displayText)", append_body)
+        self.assertIn(".wa-bubble-link{", app.CSS)
+
     def test_ai_chat_body_scroll_does_not_bleed_into_the_page_behind_it(self):
         # Richiesta esplicita dell'utente: lo scroll a dito dentro la chat
         # non deve far scorrere la schermata sottostante quando si

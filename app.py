@@ -2769,6 +2769,8 @@ body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY
 .light-theme .ai-chat-suggestion-chip{background:#f8fafc;border-color:#e2e8f0;color:#334155}
 .ai-chat-pending{align-self:flex-start;color:#8592a6;font-size:12.5px;font-style:italic}
 .ai-chat-error .wa-bubble{background:#3a1a1f;color:#fca5a5}
+.wa-bubble-link{color:#ff8ba0;text-decoration:underline;font-weight:600;word-break:break-word}
+.light-theme .wa-bubble-link{color:#d9284c}
 .ai-chat-chart{display:block;width:100%;max-width:280px;height:auto;margin-top:8px;color:#8592a6}
 .ai-chat-input-row{display:flex;gap:8px;align-items:flex-end;padding:10px 12px;border-top:1px solid #1d2636;background:#141b28}
 .ai-chat-input-row textarea{flex:1;resize:none;max-height:120px;padding:10px 12px;border-radius:12px;border:1px solid #263246;background:#0e1622;color:#f5f7fb;font:inherit;font-size:16px}
@@ -7486,6 +7488,29 @@ function aiChatRenderChart(bubble,chart){
   }
   bubble.appendChild(svg);
 }
+// Bug segnalato dall'utente: i link alle pratiche restituiti dagli
+// strumenti (es. dettaglio_pratica/cerca_pratiche/storico_pratica, campo
+// "url") comparivano nella risposta come semplice testo, mai cliccabili -
+// textEl.textContent (sotto) inserisce il testo del modello in modo
+// sicuro ma letterale, senza interpretare alcun markup. Qui si riconosce
+// SOLO il pattern /pratiche/<id> (anche in stile markdown [testo](url))
+// e lo si trasforma in un vero <a> - mai con markup grezzo o stringhe
+// interpolate: si costruiscono esclusivamente nodi DOM (testo o <a>),
+// cosi' un valore imprevisto nel testo del modello non puo' mai essere
+// interpretato come markup arbitrario.
+function aiChatLinkifyPracticeUrls(container,text){
+  const pattern=/\[([^\]]+)\]\((\/pratiche\/\d+)\)|(\/pratiche\/\d+)/g;
+  let lastIndex=0,match;
+  while((match=pattern.exec(text))!==null){
+    if(match.index>lastIndex)container.appendChild(document.createTextNode(text.slice(lastIndex,match.index)));
+    const href=match[2]||match[3];
+    const a=document.createElement('a');
+    a.href=href;a.className='wa-bubble-link';a.textContent=match[1]||href;
+    container.appendChild(a);
+    lastIndex=pattern.lastIndex;
+  }
+  if(lastIndex<text.length)container.appendChild(document.createTextNode(text.slice(lastIndex)));
+}
 function aiChatAppendBubble(role,text,isError){
   const body=document.getElementById('aiChatBody');
   if(!body)return null;
@@ -7503,7 +7528,8 @@ function aiChatAppendBubble(role,text,isError){
   if(displayText){
     const textEl=document.createElement('div');
     textEl.className='wa-bubble-text';
-    textEl.textContent=displayText;
+    if(role==='assistant'&&!isError)aiChatLinkifyPracticeUrls(textEl,displayText);
+    else textEl.textContent=displayText;
     bubble.appendChild(textEl);
   }
   if(chart)aiChatRenderChart(bubble,chart);
