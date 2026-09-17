@@ -696,15 +696,38 @@ def _tool_storico_pratica(c, user, now, p):
         "SELECT h.event_type,h.old_value,h.new_value,h.note,h.created_at,u.display_name FROM practice_history h LEFT JOIN users u ON u.id=h.user_id WHERE h.practice_id=? ORDER BY h.created_at DESC LIMIT 200",
         (row["id"],),
     ).fetchall()
+    eventi = [
+        {"tipo": h["event_type"], "valore_precedente": h["old_value"], "valore_nuovo": h["new_value"], "nota": h["note"], "quando": h["created_at"], "utente": h["display_name"]}
+        for h in rows
+    ]
+    # urn_movements e' un secondo registro, gia' esistente da molto prima di
+    # questo strumento (movimenti di magazzino urna legati alla pratica),
+    # indipendente da practice_history: per le urne assegnate prima che
+    # sync_practice_items iniziasse a scrivere su practice_history (bug
+    # segnalato dall'utente, corretto in precedenza) e' l'unica fonte reale
+    # rimasta di quando l'urna e' stata assegnata/restituita.
+    urn_rows = c.execute(
+        "SELECT m.movement_type,m.quantity_delta,m.note,m.created_at,un.name AS urn_name,u.display_name FROM urn_movements m LEFT JOIN urns un ON un.id=m.urn_id LEFT JOIN users u ON u.id=m.user_id WHERE m.practice_id=? ORDER BY m.created_at DESC",
+        (row["id"],),
+    ).fetchall()
+    for m in urn_rows:
+        segno = "+" if m["quantity_delta"] >= 0 else ""
+        eventi.append({
+            "tipo": f"Movimento urna: {m['movement_type']}",
+            "valore_precedente": None,
+            "valore_nuovo": f"{m['urn_name'] or 'urna eliminata dal catalogo'} ({segno}{m['quantity_delta']})",
+            "nota": m["note"], "quando": m["created_at"], "utente": m["display_name"],
+        })
+    eventi.sort(key=lambda e: e["quando"] or "", reverse=True)
+    troncato = len(eventi) > 200
+    if troncato:
+        eventi = eventi[:200]
     return {
         "pratica": row["practice_number"], "animale": row["animal_name"],
         "nel_cestino": bool(row["deleted_at"]), "url": f"/pratiche/{row['id']}",
-        "eventi": [
-            {"tipo": h["event_type"], "valore_precedente": h["old_value"], "valore_nuovo": h["new_value"], "nota": h["note"], "quando": h["created_at"], "utente": h["display_name"]}
-            for h in rows
-        ],
-        "totale_eventi": len(rows),
-        "troncato_a_200": len(rows) == 200,
+        "eventi": eventi,
+        "totale_eventi": len(eventi),
+        "troncato_a_200": troncato,
     }
 
 
@@ -1548,7 +1571,7 @@ TOOL_SPECS = [
     },
     {
         "name": "storico_pratica",
-        "description": "Storico/registro di controllo completo di UNA pratica dato l'id o il numero pratica: ogni evento registrato (creazione, modifiche campo per campo, cambi di stato, spostamenti nel/dal cestino, pagamenti, fatture, WhatsApp, firma, buoni veterinario, cambio numero pratica...), con data, valore precedente/nuovo e utente che l'ha fatto, dal piu' recente. Funziona anche per una pratica attualmente nel cestino (dettaglio_pratica invece no). Usa questo per 'cosa e' cambiato/chi ha modificato/e' stata eliminata questa pratica'.",
+        "description": "Storico/registro di controllo completo di UNA pratica dato l'id o il numero pratica: ogni evento registrato (creazione, modifiche campo per campo, cambi di stato, spostamenti nel/dal cestino, pagamenti, fatture, WhatsApp, firma, buoni veterinario, cambio numero pratica, aggiunte/modifiche/rimozioni di urne/calchi/accessori nel preventivo, movimenti di magazzino urna legati a questa pratica...), con data, valore precedente/nuovo e utente che l'ha fatto, dal piu' recente. Funziona anche per una pratica attualmente nel cestino (dettaglio_pratica invece no). Usa questo per 'cosa e' cambiato/chi ha modificato/quando e' stata aggiunta l'urna/e' stata eliminata questa pratica'. NOTA: le urne assegnate prima che questo tracciamento esistesse potrebbero non avere un evento registrato (limite dei dati storici, non uno strumento da usare per stimare/indovinare una data).",
         "input_schema": _schema({"id": {"type": "integer"}, "numero_pratica": {"type": "string"}}),
         "handler": _tool_storico_pratica,
     },

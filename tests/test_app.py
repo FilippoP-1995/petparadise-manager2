@@ -16584,6 +16584,32 @@ class AIAssistantTests(unittest.TestCase):
             with self.assertRaises(self.ai.ToolInputError):
                 storico(c, self.admin, now, {"numero_pratica": "NON-ESISTE"})
 
+    def test_storico_pratica_include_i_movimenti_urna_anche_senza_riga_in_practice_history(self):
+        # Domanda reale dell'utente: "voglio vedere quando e' stata
+        # aggiunta l'urna nella pratica". urn_movements e' un registro
+        # separato, gia' scritto da adjust_urn_stock molto prima che
+        # sync_practice_items iniziasse a loggare su practice_history: per
+        # le pratiche piu' vecchie (assegnazione urna avvenuta prima di
+        # quella correzione) e' l'unica fonte reale rimasta della data.
+        with app.db() as c:
+            pid = self._insert_practice(c, _n=1, practice_number="CR-URNMOV-1", animal_name="Anubi")
+            stamp = "2026-09-10T09:00:00"
+            urn_id = c.execute(
+                "INSERT INTO urns(name,price,quantity,active,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("Cuore Bianco M", "120", 4, 1, stamp, stamp),
+            ).lastrowid
+            c.execute(
+                "INSERT INTO urn_movements(urn_id,practice_id,user_id,movement_type,quantity_delta,old_quantity,new_quantity,note,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                (urn_id, pid, self.admin["id"], "Utilizzata nella pratica", -1, 5, 4, "Selezione urna", "2026-08-01T12:00:00"),
+            )
+        storico = next(t for t in self.ai.TOOL_SPECS if t["name"] == "storico_pratica")["handler"]
+        with app.db() as c:
+            result = storico(c, self.admin, app.rome_now(), {"numero_pratica": "CR-URNMOV-1"})
+        movimento = next(e for e in result["eventi"] if e["tipo"] == "Movimento urna: Utilizzata nella pratica")
+        self.assertEqual(movimento["quando"], "2026-08-01T12:00:00")
+        self.assertEqual(movimento["valore_nuovo"], "Cuore Bianco M (-1)")
+        self.assertEqual(movimento["utente"], self.admin["display_name"])
+
     def test_sync_practice_items_logs_urne_calchi_accessori_changes_into_practice_history(self):
         # Bug reale segnalato dall'utente: "mi deve dire anche se e quando
         # sono state aggiunte o modificate urne, accessori, calco...".
