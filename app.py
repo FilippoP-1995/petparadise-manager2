@@ -4596,6 +4596,35 @@ async function savePracticeState(form,event){
   finally{select.disabled=false;form.dataset.saving='';}
   return false;
 }
+async function saveVoucherRow(sourceEl,event){
+  // Richiesta esplicita dell'utente: cambiare lo stato di un buono (dal
+  // menu a tendina, o cliccando Salva) non deve ricaricare la pagina -
+  // stesso pattern AJAX gia' usato da savePracticeState per lo stato
+  // rapido delle pratiche. Il form che avvolge la riga della tabella non
+  // e' HTML valido (un form non puo' essere figlio diretto di una riga
+  // di tabella): il browser lo svuota subito, spostando i campi fuori
+  // dall'albero del form (foster parenting). L'invio nativo funziona
+  // comunque - .form e FormData(form) seguono l'associazione "owner"
+  // impostata dal parser, non la posizione nell'albero - ma querySelector
+  // sul form no: la riga della tabella resta invece l'antenato comune
+  // corretto di tutti i campi per trovare select/nota di stato.
+  if(event)event.preventDefault();
+  const trigger=(event && event.submitter) || sourceEl;
+  const form=trigger.form || sourceEl.form || sourceEl;
+  if(!form || form.dataset.saving==='1')return false;
+  const row=(trigger.closest && trigger.closest('tr')) || (form.closest && form.closest('tr'));
+  const note=row ? row.querySelector('.inline-save-note') : null;
+  const select=row ? row.querySelector('select[name="status"]') : null;
+  form.dataset.saving='1';if(select)select.disabled=true;if(note){note.textContent='Salvataggio...';note.classList.remove('error');}
+  try{
+    const payload=new FormData(form);payload.set('ajax','1');if(select)payload.set('status',select.value);
+    const response=await fetch(form.action,{method:'POST',body:new URLSearchParams(payload),headers:{'Accept':'application/json'},credentials:'same-origin'});
+    const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||'Salvataggio non riuscito');
+    if(note){note.textContent='Salvato';setTimeout(()=>{note.textContent='';},1400);}
+  }catch(error){if(note){note.textContent=error.message;note.classList.add('error');}}
+  finally{form.dataset.saving='';if(select)select.disabled=false;}
+  return false;
+}
 async function saveTagState(select){
   const form=select.closest('form');
   if(!form||form.dataset.saving==='1')return;
@@ -16267,7 +16296,7 @@ class App(BaseHTTPRequestHandler):
             rows.append(f'''<tr><td><a href="/veterinari/{v['id']}"><b>{esc(v['short_name'] or v['clinic_name'])}</b></a><br><small>{esc(v['clinic_name'])}</small></td><td>{esc(v['address'])}<br><small>{esc(v['city'])}</small></td><td>{esc(v['phone'])}</td><td>{available_badge} <span class="badge tag-red">{used} usati</span></td><td><a class="btn ghost" href="/veterinari/{v['id']}">Apri</a></td></tr>''')
         rows_html=''.join(rows) or '<tr><td colspan="5" class="sub">Nessun veterinario trovato.</td></tr>'
         filter_opts=''.join(f'<option {"selected" if voucher_filter==x else ""}>{x}</option>' for x in ["","Maturati","Usati","Senza buoni"])
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Veterinari</h1><div class="sub">Anagrafiche strutture veterinarie e buoni.</div></div></div><form class="section" method="get"><div class="fields"><div class="field"><label>Ricerca veterinario</label><input name="q" value="{esc(term)}" placeholder="Nome, indirizzo, comune, telefono"></div><div class="field"><label>Filtro buoni</label><select name="buoni">{filter_opts}</select></div></div><button class="btn" style="margin-top:12px">Filtra</button></form><div style="height:14px"></div><section class="section"><h2>LISTA VETERINARI</h2><div class="tablebox"><table><thead><tr><th>Veterinario</th><th>Indirizzo</th><th>Telefono</th><th>Buoni</th><th>Azione</th></tr></thead><tbody>{rows_html}</tbody></table></div></section><div style="height:14px"></div><section class="section"><h2>Aggiungi veterinario</h2><form method="post"><div class="fields"><div class="field"><label>Nome breve</label><input name="short_name" placeholder="Es. DEL PERO"></div><div class="field"><label>Nome completo</label><input name="clinic_name"></div><div class="field full"><label>Indirizzo</label><input name="address"></div><div class="field"><label>Comune</label><input name="city"></div><div class="field"><label>Telefono</label><input name="phone"></div><div class="field"><label>Medico</label><input name="doctor_name"></div><div class="field full"><label>Note</label><input name="notes"></div></div><button class="btn" style="margin-top:12px">Aggiungi veterinario</button></form></section></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Veterinari</h1><div class="sub">Anagrafiche strutture veterinarie e buoni.</div></div></div><form class="section" method="get"><div class="fields"><div class="field"><label>Ricerca veterinario</label><input name="q" value="{esc(term)}" placeholder="Nome, indirizzo, comune, telefono"></div><div class="field"><label>Filtro buoni</label><select name="buoni">{filter_opts}</select></div></div><button class="btn" style="margin-top:12px">Filtra</button></form><div style="height:14px"></div><section class="section collapsible"><h2>LISTA VETERINARI</h2><div class="tablebox"><table><thead><tr><th>Veterinario</th><th>Indirizzo</th><th>Telefono</th><th>Buoni</th><th>Azione</th></tr></thead><tbody>{rows_html}</tbody></table></div></section><div style="height:14px"></div><section class="section collapsible collapsed"><h2>Aggiungi veterinario</h2><form method="post"><div class="fields"><div class="field"><label>Nome breve</label><input name="short_name" placeholder="Es. DEL PERO"></div><div class="field"><label>Nome completo</label><input name="clinic_name"></div><div class="field full"><label>Indirizzo</label><input name="address"></div><div class="field"><label>Comune</label><input name="city"></div><div class="field"><label>Telefono</label><input name="phone"></div><div class="field"><label>Medico</label><input name="doctor_name"></div><div class="field full"><label>Note</label><input name="notes"></div></div><button class="btn" style="margin-top:12px">Aggiungi veterinario</button></form></section></main>'''
         self.send_html(layout("Veterinari",body,user))
 
     def veterinarian_detail(self,user,vet_id):
@@ -16281,7 +16310,7 @@ class App(BaseHTTPRequestHandler):
             animal=(b['animal_name'] or (b['note'] or '').replace('Manuale:','').strip()).strip()
             species=b['species'] or ''
             status_opts=''.join(f'<option {"selected" if b["status"]==x else ""}>{x}</option>' for x in ["Maturato","Usato"])
-            rows.append(f'''<tr><form method="post" action="/buoni/{b['id']}/modifica"><td><input type="date" name="created_at" value="{esc((b['created_at'] or '')[:10])}"></td><td><input name="animal_name" value="{esc(animal)}" placeholder="Nome animale"></td><td><input name="species" value="{esc(species)}" placeholder="Specie"></td><td><select name="status">{status_opts}</select></td><td><button class="btn ghost">Salva</button></form><form method="post" action="/buoni/{b['id']}/elimina" onsubmit="return confirm('Eliminare questo buono?')"><button class="btn ghost">Elimina</button></form></td></tr>''')
+            rows.append(f'''<tr><form method="post" action="/buoni/{b['id']}/modifica" onsubmit="return saveVoucherRow(this,event)"><td><input type="date" name="created_at" value="{esc((b['created_at'] or '')[:10])}"></td><td><input name="animal_name" value="{esc(animal)}" placeholder="Nome animale"></td><td><input name="species" value="{esc(species)}" placeholder="Specie"></td><td><select name="status" onchange="saveVoucherRow(this)">{status_opts}</select></td><td><button class="btn ghost">Salva</button> <span class="inline-save-note" aria-live="polite"></span></form><form method="post" action="/buoni/{b['id']}/elimina" onsubmit="return confirm('Eliminare questo buono?')"><button class="btn ghost">Elimina</button></form></td></tr>''')
         voucher_rows=''.join(rows) or '<tr><td colspan="5" class="sub">Nessun buono presente.</td></tr>'
         day_names=("Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica")
         day_blocks=[]
@@ -16294,8 +16323,8 @@ class App(BaseHTTPRequestHandler):
         source_labels={"manuale":f"Fonte: Manuali (aggiornati il {stamp_label})","google":f"Fonte: Google Places (recuperati automaticamente il {stamp_label})","assente":"Fonte: Non disponibili (Google non ha orari pubblicati per questa struttura, oppure non è raggiungibile)"}
         hours_updated_label=source_labels.get(v["hours_source"],"Orari non ancora configurati: il Percorso giornaliero non applicherà vincoli di orario per questa struttura.")
         google_refresh_html=f'''<form method="post" action="/veterinari/{v['id']}/orari/aggiorna-google" style="margin-top:8px" {"onsubmit=\"return confirm('Gli orari attuali sono stati inseriti manualmente: sovrascriverli con quelli di Google?')\"" if v["hours_source"]=="manuale" else ""}><button class="btn ghost" type="submit">{lucide("navigation")} Aggiorna orari da Google adesso</button></form>''' if v["google_place_id"] else ''
-        hours_section=f'''<div style="height:14px"></div><section class="section"><h2>Orari di apertura</h2><p class="sub">Usati dal Percorso giornaliero per segnalare arrivi fuori orario. {hours_updated_label}</p><form method="post" action="/veterinari/{v['id']}/orari"><div class="fields"><div class="field"><label>Durata media ritiro (minuti)</label><input type="number" min="1" max="240" name="service_duration_minutes" value="{v['service_duration_minutes'] or ''}" placeholder="10"></div><div class="field full"><label>Google Place ID (facoltativo, per recupero orari automatico)</label><input name="google_place_id" value="{esc(v['google_place_id'])}" placeholder="Es. ChIJ..."></div></div><div style="height:10px"></div>{''.join(day_blocks)}<button class="btn" style="margin-top:4px">Salva orari</button></form>{google_refresh_html}</section>'''
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{esc(v['short_name'] or v['clinic_name'])}</h1><div class="sub">{esc(v['clinic_name'])}</div></div><a class="btn ghost" href="/veterinari">Torna alla lista</a></div><section class="section"><h2>Anagrafica</h2><form method="post" action="/veterinari"><input type="hidden" name="id" value="{v['id']}"><div class="fields"><div class="field"><label>Nome breve</label><input name="short_name" value="{esc(v['short_name'])}"></div><div class="field"><label>Nome completo</label><input name="clinic_name" value="{esc(v['clinic_name'])}"></div><div class="field full"><label>Indirizzo</label><input name="address" value="{esc(v['address'])}"></div><div class="field"><label>Comune</label><input name="city" value="{esc(v['city'])}"></div><div class="field"><label>Telefono</label><input name="phone" value="{esc(v['phone'])}"></div><div class="field"><label>Medico veterinario</label><input name="doctor_name" value="{esc(v['doctor_name'])}"></div><div class="field full"><label>Note</label><input name="notes" value="{esc(v['notes'])}"></div></div><button class="btn" style="margin-top:12px">Salva anagrafica</button></form><form method="post" action="/veterinari/{v['id']}/elimina" onsubmit="return confirm('Eliminare questo veterinario dalla lista?')"><button class="btn ghost" style="margin-top:12px">Elimina veterinario</button></form></section>{hours_section}<div style="height:14px"></div><section class="section"><h2>Aggiungi buono manuale</h2><form method="post" action="/veterinari/{v['id']}/buoni"><div class="fields"><div class="field"><label>Data maturazione</label><input type="date" name="created_at" value="{rome_now().strftime('%Y-%m-%d')}"></div><div class="field"><label>Nome animale</label><input name="animal_name"></div><div class="field"><label>Specie</label><input name="species"></div><div class="field"><label>Stato</label><select name="status"><option>Maturato</option><option>Usato</option></select></div></div><button class="btn" style="margin-top:12px">Aggiungi buono</button></form></section><div style="height:14px"></div><section class="section"><h2>Buoni</h2><div class="tablebox"><table><thead><tr><th>Data</th><th>Animale</th><th>Specie</th><th>Stato</th><th>Azione</th></tr></thead><tbody>{voucher_rows}</tbody></table></div></section></main>'''
+        hours_section=f'''<div style="height:14px"></div><section class="section collapsible collapsed"><h2>Orari di apertura</h2><p class="sub">Usati dal Percorso giornaliero per segnalare arrivi fuori orario. {hours_updated_label}</p><form method="post" action="/veterinari/{v['id']}/orari"><div class="fields"><div class="field"><label>Durata media ritiro (minuti)</label><input type="number" min="1" max="240" name="service_duration_minutes" value="{v['service_duration_minutes'] or ''}" placeholder="10"></div><div class="field full"><label>Google Place ID (facoltativo, per recupero orari automatico)</label><input name="google_place_id" value="{esc(v['google_place_id'])}" placeholder="Es. ChIJ..."></div></div><div style="height:10px"></div>{''.join(day_blocks)}<button class="btn" style="margin-top:4px">Salva orari</button></form>{google_refresh_html}</section>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{esc(v['short_name'] or v['clinic_name'])}</h1><div class="sub">{esc(v['clinic_name'])}</div></div><a class="btn ghost" href="/veterinari">Torna alla lista</a></div><section class="section collapsible collapsed"><h2>Anagrafica</h2><form method="post" action="/veterinari"><input type="hidden" name="id" value="{v['id']}"><div class="fields"><div class="field"><label>Nome breve</label><input name="short_name" value="{esc(v['short_name'])}"></div><div class="field"><label>Nome completo</label><input name="clinic_name" value="{esc(v['clinic_name'])}"></div><div class="field full"><label>Indirizzo</label><input name="address" value="{esc(v['address'])}"></div><div class="field"><label>Comune</label><input name="city" value="{esc(v['city'])}"></div><div class="field"><label>Telefono</label><input name="phone" value="{esc(v['phone'])}"></div><div class="field"><label>Medico veterinario</label><input name="doctor_name" value="{esc(v['doctor_name'])}"></div><div class="field full"><label>Note</label><input name="notes" value="{esc(v['notes'])}"></div></div><button class="btn" style="margin-top:12px">Salva anagrafica</button></form><form method="post" action="/veterinari/{v['id']}/elimina" onsubmit="return confirm('Eliminare questo veterinario dalla lista?')"><button class="btn ghost" style="margin-top:12px">Elimina veterinario</button></form></section>{hours_section}<div style="height:14px"></div><section class="section collapsible collapsed"><h2>Aggiungi buono manuale</h2><form method="post" action="/veterinari/{v['id']}/buoni"><div class="fields"><div class="field"><label>Data maturazione</label><input type="date" name="created_at" value="{rome_now().strftime('%Y-%m-%d')}"></div><div class="field"><label>Nome animale</label><input name="animal_name"></div><div class="field"><label>Specie</label><input name="species"></div><div class="field"><label>Stato</label><select name="status"><option>Maturato</option><option>Usato</option></select></div></div><button class="btn" style="margin-top:12px">Aggiungi buono</button></form></section><div style="height:14px"></div><section class="section collapsible collapsed"><h2>Buoni</h2><div class="tablebox"><table><thead><tr><th>Data</th><th>Animale</th><th>Specie</th><th>Stato</th><th>Azione</th></tr></thead><tbody>{voucher_rows}</tbody></table></div></section></main>'''
         self.send_html(layout("Veterinario",body,user))
 
     def save_veterinarian_hours(self,user,vet_id):
@@ -16361,15 +16390,21 @@ class App(BaseHTTPRequestHandler):
         self.redirect(f"/veterinari/{vet_id}")
 
     def edit_voucher(self,user,voucher_id):
+        # ajax=1 (impostato da saveVoucherRow): salva senza ricaricare la
+        # pagina, stesso pattern gia' usato da quick_state per lo stato
+        # rapido delle pratiche (richiesta esplicita dell'utente: cambiare
+        # lo stato di un buono non deve far ripartire la pagina dall'alto).
         f=self.form(); status=f.get("status","Maturato") if f.get("status") in ("Maturato","Usato") else "Maturato"
+        ajax=f.get("ajax")=="1"
         stamp=(f.get("created_at","").strip() or now()[:10]) + "T00:00:00"
         note="Manuale: " + " | ".join(x for x in [f.get("animal_name","").strip(), f.get("species","").strip()] if x)
         used_at=now() if status=="Usato" else None
         with db() as c:
             row=c.execute("SELECT veterinarian_id FROM veterinarian_vouchers WHERE id=?",(voucher_id,)).fetchone()
-            if not row: return self.send_error(404)
+            if not row: return self.send_json({"ok":False,"error":"Buono non trovato"},404) if ajax else self.send_error(404)
             c.execute("UPDATE veterinarian_vouchers SET status=?, created_at=?, used_at=?, note=? WHERE id=?",(status,stamp,used_at,note,voucher_id))
             vet_id=row["veterinarian_id"]
+        if ajax:return self.send_json({"ok":True,"status":status,"voucher_id":voucher_id})
         self.redirect(f"/veterinari/{vet_id}")
 
     def delete_voucher(self,user,voucher_id):

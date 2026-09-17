@@ -14155,6 +14155,55 @@ class PetParadiseTests(unittest.TestCase):
                           ("08:30", "12:30", "15:30", "19:30", "Chiuso a pranzo"))
         self.assertEqual(wednesday["closed"], 1)
 
+    def test_veterinarian_detail_sections_are_collapsible_like_practice_sections(self):
+        # Richiesta esplicita dell'utente: le sezioni dell'area veterinari
+        # devono essere apri/chiudi con un clic come quelle delle pratiche -
+        # stessa classe CSS ".section.collapsible" e stesso listener globale
+        # gia' usati da fields_html per il form pratica, nessun meccanismo
+        # nuovo introdotto qui.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            vet_id = conn.execute("INSERT INTO veterinarians(clinic_name,active,created_at,updated_at) VALUES('Vet Sezioni',1,?,?)",(stamp,stamp)).lastrowid
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.veterinarian_detail(admin, vet_id)
+        page = rendered[-1]
+        self.assertEqual(page.count('<section class="section collapsible collapsed">'), 4)
+        self.assertIn('<h2>Orari di apertura</h2>', page)
+
+    def test_edit_voucher_with_ajax_saves_without_redirect_like_quick_state(self):
+        # Bug reale segnalato dall'utente: cambiare lo stato di un buono e
+        # cliccare Salva ricaricava l'intera pagina (tornava in cima),
+        # perche' il form postava con una navigazione normale. Stesso
+        # pattern ajax=1 -> JSON gia' usato da quick_state per lo stato
+        # rapido delle pratiche (vedi saveVoucherRow in APP_JS).
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            vet_id = conn.execute("INSERT INTO veterinarians(clinic_name,active,created_at,updated_at) VALUES('Vet Buoni',1,?,?)",(stamp,stamp)).lastrowid
+            voucher_id = conn.execute(
+                "INSERT INTO veterinarian_vouchers(veterinarian_id,practice_id,status,created_at,used_at,note) VALUES(?,?,?,?,?,?)",
+                (vet_id, None, "Maturato", stamp, None, "Manuale: Fido"),
+            ).lastrowid
+        responses = []
+        redirects = []
+        self.handler.send_json = lambda obj, status=200: responses.append((obj, status))
+        self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.form = lambda: {"created_at": "2026-09-10", "animal_name": "Fido", "species": "Gatto", "status": "Usato", "ajax": "1"}
+        self.handler.edit_voucher(admin, voucher_id)
+        self.assertEqual(redirects, [])
+        self.assertEqual(responses, [({"ok": True, "status": "Usato", "voucher_id": voucher_id}, 200)])
+        with app.db() as conn:
+            voucher = conn.execute("SELECT status,used_at FROM veterinarian_vouchers WHERE id=?", (voucher_id,)).fetchone()
+        self.assertEqual(voucher["status"], "Usato")
+        self.assertIsNotNone(voucher["used_at"])
+
+        # senza ajax=1 il comportamento resta invariato (redirect, nessun body JSON)
+        responses.clear()
+        self.handler.form = lambda: {"created_at": "2026-09-10", "animal_name": "Fido", "species": "Gatto", "status": "Maturato"}
+        self.handler.edit_voucher(admin, voucher_id)
+        self.assertEqual(redirects, [f"/veterinari/{vet_id}"])
+        self.assertEqual(responses, [])
+
     def test_calendar_day_view_links_to_percorso_giornaliero_with_selected_date(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
