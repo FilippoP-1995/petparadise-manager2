@@ -17919,9 +17919,39 @@ class App(BaseHTTPRequestHandler):
             elif diff<0:
                 self.adjust_urn_stock(c,urn_id,-diff,"Restituita dalla pratica",practice_id,user_id,"Urna rimossa o sostituita")
 
+    def log_practice_items_change(self,c,practice_id,old_item_rows,items_by_category,user_id,stamp):
+        # Bug reale segnalato dall'utente: nessuna aggiunta/rimozione/
+        # modifica di una voce urna/calco/accessorio nel preventivo di una
+        # pratica risultava MAI nello storico (practice_history) - a
+        # differenza dei campi normali del form, tracciati gia' dal
+        # salvataggio automatico. Le voci vivono in practice_items,
+        # riscritte per intero (DELETE+INSERT) ad ogni salvataggio: qui si
+        # confronta l'insieme di prima con quello di dopo e si registra
+        # solo la differenza, cosi' lo storico resta utile (non un dump
+        # dell'intero preventivo ad ogni salvataggio) mentre le variazioni
+        # restano tracciate esattamente come tutte le altre.
+        old_multiset=Counter((r["category"],r["label"] or "",str(money_value(r["price"]))) for r in old_item_rows)
+        new_multiset=Counter()
+        for category in PRACTICE_ITEM_CATEGORIES:
+            for item in items_by_category.get(category,[]):
+                new_multiset[(category,item["label"] or "",str(money_value(item["price"])))]+=1
+        if old_multiset==new_multiset:
+            return
+        category_label={"urna":"Urna","calco":"Calco","accessorio":"Accessorio"}
+        parts=[]
+        for (category,label,price),n in (new_multiset-old_multiset).items():
+            for _ in range(n):
+                parts.append(f"+ {category_label.get(category,category)}: {label or 'senza etichetta'} ({money_it(money_value(price))})")
+        for (category,label,price),n in (old_multiset-new_multiset).items():
+            for _ in range(n):
+                parts.append(f"- {category_label.get(category,category)}: {label or 'senza etichetta'} ({money_it(money_value(price))})")
+        if parts:
+            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",
+                      (practice_id,"Modifica preventivo (urne/calchi/accessori)"," · ".join(parts),user_id,stamp))
+
     def sync_practice_items(self,c,practice_id,items_by_category,user_id,stamp):
-        old_urn_ids=[row["urn_catalog_id"] for row in c.execute(
-            "SELECT urn_catalog_id FROM practice_items WHERE practice_id=? AND category='urna'",(practice_id,)).fetchall() if row["urn_catalog_id"]]
+        old_item_rows=c.execute("SELECT category,label,price,urn_catalog_id FROM practice_items WHERE practice_id=?",(practice_id,)).fetchall()
+        old_urn_ids=[row["urn_catalog_id"] for row in old_item_rows if row["category"]=="urna" and row["urn_catalog_id"]]
         c.execute("DELETE FROM practice_items WHERE practice_id=?",(practice_id,))
         rows=[]
         for category in PRACTICE_ITEM_CATEGORIES:
@@ -17931,6 +17961,7 @@ class App(BaseHTTPRequestHandler):
             c.executemany("INSERT INTO practice_items(practice_id,category,subtype,urn_catalog_id,label,price,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",rows)
         new_urn_ids=[item["urn_catalog_id"] for item in items_by_category.get("urna",[]) if item["urn_catalog_id"]]
         self.sync_practice_urn_items(c,practice_id,old_urn_ids,new_urn_ids,user_id)
+        self.log_practice_items_change(c,practice_id,old_item_rows,items_by_category,user_id,stamp)
 
     def create_client_from_practice_data(self,c,d):
         stamp=now()

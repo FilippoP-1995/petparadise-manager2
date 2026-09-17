@@ -15074,6 +15074,14 @@ class AIAssistantTests(unittest.TestCase):
                 tool(c, self.admin, now, {**periodo, "provenienza": "Marte"})
             with self.assertRaises(self.ai.ToolInputError):
                 tool(c, self.admin, now, {**periodo, "origine_richiesta": "Su Giove"})
+            # Domanda reale dell'utente: una zona operativa aggregata (es.
+            # "ritiri di Empoli" = provenienza Empoli O Firenze insieme)
+            # deve essere rispondibile in UNA sola chiamata, non una per
+            # ciascun valore sommate a mano dal modello.
+            self.assertEqual(tool(c, self.admin, now, {**periodo, "provenienza": ["Empoli", "Firenze"]})["conteggio"], 2)
+            self.assertEqual(tool(c, self.admin, now, {**periodo, "provenienza": ["Livorno", "Viareggio", "Pisa"]})["conteggio"], 1)
+            multi_result = tool(c, self.admin, now, {**periodo, "provenienza": ["Empoli", "Firenze"]})
+            self.assertEqual(sorted(multi_result["filtri"]["provenienza"]), ["Empoli", "Firenze"])
 
     def test_andamento_giornaliero_pratiche_conta_i_giorni_a_zero_per_qualunque_filtro(self):
         # Stessa richiesta esplicita dell'utente: "quanti giorni senza
@@ -16550,6 +16558,48 @@ class AIAssistantTests(unittest.TestCase):
             self.assertEqual(result["eventi"][-1]["tipo"], "Creazione pratica")
             with self.assertRaises(self.ai.ToolInputError):
                 storico(c, self.admin, now, {"numero_pratica": "NON-ESISTE"})
+
+    def test_sync_practice_items_logs_urne_calchi_accessori_changes_into_practice_history(self):
+        # Bug reale segnalato dall'utente: "mi deve dire anche se e quando
+        # sono state aggiunte o modificate urne, accessori, calco...".
+        # sync_practice_items (V1, chiamata da ogni salvataggio pratica)
+        # non scriveva MAI nulla in practice_history per queste voci, a
+        # differenza degli altri campi (gia' tracciati dal salvataggio
+        # automatico) - la vera lacuna era li', non nell'Assistente: corretto
+        # alla fonte, cosi' storico_pratica la vede automaticamente senza
+        # bisogno di logica separata/duplicata.
+        with app.db() as c:
+            pid = self._insert_practice(c, _n=1, practice_number="CR-ITEMS-1", pickup_date="2026-09-10")
+        handler = self.handler
+        urna_item = {"subtype": None, "urn_catalog_id": None, "label": "Cuore Bianco M", "price": "120"}
+        accessorio_item = {"subtype": None, "urn_catalog_id": None, "label": "Collare ricordo", "price": "15"}
+        calco_item = {"subtype": None, "urn_catalog_id": None, "label": "Calco zampa", "price": "30"}
+        with app.db() as c:
+            handler.sync_practice_items(c, pid, {"urna": [urna_item], "calco": [], "accessorio": [accessorio_item]}, self.admin["id"], "2026-09-10T10:00:00")
+            history = c.execute("SELECT event_type,new_value FROM practice_history WHERE practice_id=? ORDER BY id", (pid,)).fetchall()
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]["event_type"], "Modifica preventivo (urne/calchi/accessori)")
+        self.assertIn("+ Urna: Cuore Bianco M (€ 120,00)", history[0]["new_value"])
+        self.assertIn("+ Accessorio: Collare ricordo (€ 15,00)", history[0]["new_value"])
+
+        # salvataggio identico (nessuna variazione reale): NESSUN nuovo
+        # evento, niente spam nello storico ad ogni autosalvataggio.
+        with app.db() as c:
+            handler.sync_practice_items(c, pid, {"urna": [urna_item], "calco": [], "accessorio": [accessorio_item]}, self.admin["id"], "2026-09-10T10:05:00")
+            self.assertEqual(c.execute("SELECT COUNT(*) n FROM practice_history WHERE practice_id=?", (pid,)).fetchone()["n"], 1)
+
+        # rimozione dell'accessorio + aggiunta di un calco: registrata come differenza
+        with app.db() as c:
+            handler.sync_practice_items(c, pid, {"urna": [urna_item], "calco": [calco_item], "accessorio": []}, self.admin["id"], "2026-09-10T10:10:00")
+            ultimo = c.execute("SELECT event_type,new_value FROM practice_history WHERE practice_id=? ORDER BY id DESC LIMIT 1", (pid,)).fetchone()
+        self.assertIn("+ Calco: Calco zampa (€ 30,00)", ultimo["new_value"])
+        self.assertIn("- Accessorio: Collare ricordo (€ 15,00)", ultimo["new_value"])
+
+        # storico_pratica (l'Assistente) la vede automaticamente: nessuna logica duplicata
+        storico = next(t for t in self.ai.TOOL_SPECS if t["name"] == "storico_pratica")["handler"]
+        with app.db() as c:
+            result = storico(c, self.admin, app.rome_now(), {"numero_pratica": "CR-ITEMS-1"})
+        self.assertIn("Modifica preventivo (urne/calchi/accessori)", {e["tipo"] for e in result["eventi"]})
 
     def test_cambia_stato_pratica_richiede_conferma_esplicita_e_riusa_quick_state(self):
         # Regola obbligatoria dell'utente: la scrittura deve SEMPRE

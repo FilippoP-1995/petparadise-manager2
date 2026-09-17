@@ -456,6 +456,15 @@ def _tool_dettaglio_evento_calendario(c, user, now, p):
 # Empoli di destination_branch - un campo diverso, spesso confuso.
 _PROVENANCE_LABELS = {"L": "Livorno", "E": "Empoli", "V": "Viareggio", "F": "Firenze", "P": "Pisa"}
 _REQUEST_ORIGINS = ("Veterinario", "Privato", "Consegna in sede", "Collaboratore")
+# Una o piu' zone insieme (es. per una zona operativa aggregata insegnata
+# via impara_definizione, come "ritiri di Empoli" = provenienza Empoli O
+# Firenze): un singolo valore andrebbe comunque passato come elenco di un
+# solo elemento.
+_PROVENIENZA_PROP = {
+    "type": "array",
+    "items": {"type": "string", "enum": list(_PROVENANCE_LABELS.values())},
+    "description": "Una o piu' zone di provenienza (es. [\"Empoli\",\"Firenze\"] per una zona operativa aggregata). Zona di origine della pratica, campo diverso dalla sede di destinazione.",
+}
 
 
 def _resolve_provenance_code(value):
@@ -468,6 +477,21 @@ def _resolve_provenance_code(value):
         if label.lower() == v.lower():
             return code
     raise ToolInputError(f"provenienza deve essere una tra: {', '.join(_PROVENANCE_LABELS.values())} (zona di origine della pratica, campo diverso dalla sede di destinazione).")
+
+
+def _resolve_provenance_codes(value):
+    # Domanda reale dell'utente ("ritiri di Empoli" = provenienza Empoli O
+    # Firenze insieme, una zona operativa aggregata che l'utente ha
+    # insegnato via impara_definizione): un solo valore alla volta
+    # costringeva il modello a chiamare lo strumento piu' volte e
+    # sommare a mano per rispondere a una domanda del genere, cosa che
+    # rallentava/poteva far scadere la richiesta. Accetta sia un singolo
+    # valore sia un elenco, sempre restituendo un elenco di codici (vuoto
+    # se nessun valore indicato).
+    if value is None or value == "":
+        return []
+    values = value if isinstance(value, list) else [value]
+    return [_resolve_provenance_code(v) for v in values if (v or "").strip()]
 
 def _practice_filters_where(p):
     """Costruisce le clausole WHERE/parametri per i filtri comuni sulle
@@ -521,11 +545,12 @@ def _practice_filters_where(p):
         where.append("collaborator_id IN (SELECT id FROM collaborators WHERE name LIKE ?)")
         args.append(f"%{collaboratore}%")
     filtri["collaboratore_nome"] = collaboratore or None
-    provenienza_code = _resolve_provenance_code(p.get("provenienza"))
-    if provenienza_code:
-        where.append("UPPER(provenance)=?")
-        args.append(provenienza_code)
-    filtri["provenienza"] = _PROVENANCE_LABELS.get(provenienza_code)
+    provenienza_codes = _resolve_provenance_codes(p.get("provenienza"))
+    if provenienza_codes:
+        placeholders = ",".join("?" for _ in provenienza_codes)
+        where.append(f"UPPER(provenance) IN ({placeholders})")
+        args += provenienza_codes
+    filtri["provenienza"] = [_PROVENANCE_LABELS[code] for code in provenienza_codes] or None
     origine = p.get("origine_richiesta")
     if origine and origine not in _REQUEST_ORIGINS:
         raise ToolInputError(f"origine_richiesta deve essere una tra: {', '.join(_REQUEST_ORIGINS)}.")
@@ -1499,14 +1524,14 @@ TOOL_SPECS = [
     },
     {
         "name": "conta_pratiche",
-        "description": "Conta le pratiche con i filtri indicati (periodo opzionale, stato, sede, cliente, animale, operatore che ha gestito la pratica, veterinario, collaboratore, provenienza, origine della richiesta). Se non specifichi un periodo conta su tutto lo storico. 'provenienza' (Livorno/Empoli/Viareggio/Firenze/Pisa) e' la zona di origine della pratica (campo 'Luogo di origine' del form) - un campo DIVERSO dalla sede di destinazione ('sede', solo Livorno/Empoli): non confonderli.",
-        "input_schema": _schema({**_PERIOD_PROPS, "stato": {"type": "string"}, "sede": {"type": "string", "enum": list(SHIFT_BRANCHES)}, "cliente_nome": {"type": "string"}, "animale_nome": {"type": "string"}, "operatore_nome": {"type": "string"}, "veterinario_nome": {"type": "string"}, "collaboratore_nome": {"type": "string"}, "provenienza": {"type": "string", "enum": list(_PROVENANCE_LABELS.values())}, "origine_richiesta": {"type": "string", "enum": list(_REQUEST_ORIGINS)}}),
+        "description": "Conta le pratiche con i filtri indicati (periodo opzionale, stato, sede, cliente, animale, operatore che ha gestito la pratica, veterinario, collaboratore, provenienza, origine della richiesta). Se non specifichi un periodo conta su tutto lo storico. 'provenienza' (Livorno/Empoli/Viareggio/Firenze/Pisa, un ELENCO: puoi indicare piu' zone insieme in un'unica chiamata, es. per una zona operativa aggregata) e' la zona di origine della pratica (campo 'Luogo di origine' del form) - un campo DIVERSO dalla sede di destinazione ('sede', solo Livorno/Empoli): non confonderli.",
+        "input_schema": _schema({**_PERIOD_PROPS, "stato": {"type": "string"}, "sede": {"type": "string", "enum": list(SHIFT_BRANCHES)}, "cliente_nome": {"type": "string"}, "animale_nome": {"type": "string"}, "operatore_nome": {"type": "string"}, "veterinario_nome": {"type": "string"}, "collaboratore_nome": {"type": "string"}, "provenienza": _PROVENIENZA_PROP, "origine_richiesta": {"type": "string", "enum": list(_REQUEST_ORIGINS)}}),
         "handler": _tool_conta_pratiche,
     },
     {
         "name": "andamento_giornaliero_pratiche",
         "description": "Andamento giorno per giorno delle pratiche (create/con ritiro in quel giorno) nel periodo indicato, con GLI STESSI filtri di conta_pratiche (stato, sede, cliente, animale, operatore, veterinario, collaboratore, provenienza, origine_richiesta) e ogni giorno del periodo incluso anche a conteggio zero. Usa questo per 'quanti giorni senza pratiche con provenienza X ci sono stati', 'qual e' il giorno con piu' pratiche di tipo Y', o qualunque andamento/confronto giornaliero sulle pratiche che non riguardi specificamente ritiri/riconsegne (per quelli usa invece andamento_giornaliero). Periodo massimo un anno.",
-        "input_schema": _schema({**_PERIOD_PROPS, "stato": {"type": "string"}, "sede": {"type": "string", "enum": list(SHIFT_BRANCHES)}, "cliente_nome": {"type": "string"}, "animale_nome": {"type": "string"}, "operatore_nome": {"type": "string"}, "veterinario_nome": {"type": "string"}, "collaboratore_nome": {"type": "string"}, "provenienza": {"type": "string", "enum": list(_PROVENANCE_LABELS.values())}, "origine_richiesta": {"type": "string", "enum": list(_REQUEST_ORIGINS)}}),
+        "input_schema": _schema({**_PERIOD_PROPS, "stato": {"type": "string"}, "sede": {"type": "string", "enum": list(SHIFT_BRANCHES)}, "cliente_nome": {"type": "string"}, "animale_nome": {"type": "string"}, "operatore_nome": {"type": "string"}, "veterinario_nome": {"type": "string"}, "collaboratore_nome": {"type": "string"}, "provenienza": _PROVENIENZA_PROP, "origine_richiesta": {"type": "string", "enum": list(_REQUEST_ORIGINS)}}),
         "handler": _tool_andamento_giornaliero_pratiche,
     },
     {
