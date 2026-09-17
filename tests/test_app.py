@@ -16189,6 +16189,17 @@ class AIAssistantTests(unittest.TestCase):
         js = app.APP_JS
         self.assertIn("function aiChatSetGenieOrigin(", js)
         self.assertIn("aiChatFab.getBoundingClientRect()", js)
+        # Bug reale segnalato dall'utente: il pannello si vedeva tagliato
+        # in diagonale quando l'icona era lontana dal pannello (es. vicino
+        # alla cima dello schermo, pannello ancorato in basso). La sola
+        # diagonale del pannello (hypot(width,height)) come raggio copre il
+        # pannello SOLO se l'origine cade al suo interno: serve la distanza
+        # massima dall'origine a uno dei 4 angoli del pannello, che copre
+        # il pannello per qualunque posizione dell'icona sullo schermo.
+        origin_body = js[js.index("function aiChatSetGenieOrigin("):js.index("function aiChatSetGenieOrigin(") + 1400]
+        self.assertIn("corners", origin_body)
+        self.assertIn("Math.max(...corners.map(", origin_body)
+        self.assertNotIn("Math.hypot(panelRect.width,panelRect.height)", origin_body)
         for fn_body_marker in ("function aiChatOpen(", "function aiChatClose("):
             self.assertIn(fn_body_marker, js)
         open_start = js.index("function aiChatOpen(")

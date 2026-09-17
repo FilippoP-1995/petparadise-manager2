@@ -7299,7 +7299,17 @@ function aiChatSetGenieOrigin(){
   const panelRect=panel.getBoundingClientRect();
   const ox=fabRect.left+fabRect.width/2-panelRect.left;
   const oy=fabRect.top+fabRect.height/2-panelRect.top;
-  const r=Math.hypot(panelRect.width,panelRect.height);
+  // Bug reale segnalato dall'utente (pannello che si vedeva tagliato in
+  // diagonale): la diagonale del pannello (width/height) basta come
+  // raggio SOLO se il punto di origine cade dentro al pannello stesso.
+  // Se l'icona e' lontana dal pannello (es. vicino alla cima dello
+  // schermo mentre il pannello e' ancorato in basso, come nello
+  // screenshot), il punto di origine puo' cadere ben fuori dal riquadro
+  // del pannello: serve invece la distanza massima dal punto di origine
+  // a uno qualunque dei quattro angoli del pannello, che copre il
+  // pannello per qualunque posizione dell'icona sullo schermo.
+  const corners=[[0,0],[panelRect.width,0],[0,panelRect.height],[panelRect.width,panelRect.height]];
+  const r=Math.max(...corners.map(([cx,cy])=>Math.hypot(cx-ox,cy-oy)));
   panel.style.setProperty('--ai-chat-ox',ox+'px');
   panel.style.setProperty('--ai-chat-oy',oy+'px');
   panel.style.setProperty('--ai-chat-r',r+'px');
