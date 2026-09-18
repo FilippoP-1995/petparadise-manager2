@@ -206,16 +206,17 @@ def automatic_title(event_type, zone="", animal="", site=""):
 
 def calendar_push_location_title(event_type, zone, site=""):
     """Titolo della notifica push per Ritiro/Riconsegna (richiesta esplicita
-    dell'utente): 'Ritiro in sede Livorno' / 'Ritiro Zona X' /
-    'Riconsegna in sede Empoli' / 'Riconsegna Zona X' — stessi dati
-    (event_type/zone/destination_site) gia' validati da normalize_event,
-    nessuna query aggiuntiva necessaria."""
+    dell'utente): 'Ritiro in sede Livorno' / 'Ritiro X' /
+    'Riconsegna in sede Empoli' / 'Riconsegna X' (X = la zona stessa, es.
+    'Ritiro Viareggio' — senza la parola "Zona", che l'utente non vuole piu'
+    vedere) — stessi dati (event_type/zone/destination_site) gia' validati
+    da normalize_event, nessuna query aggiuntiva necessaria."""
     base = "Ritiro" if event_type in ("Ritiro", "Ritiro in sede") else "Riconsegna"
     if event_type.endswith("in sede"):
         site = _clean(site)
         return f"{base} in sede {site}" if site else f"{base} in sede"
     zone = _clean(zone)
-    return f"{base} Zona {zone}" if zone else base
+    return f"{base} {zone}" if zone else base
 
 
 def _format_push_date(value):
@@ -245,9 +246,11 @@ def calendar_push_time_range(start_at, end_at):
 
 
 def calendar_pickup_push_text(animals, start_at, end_at):
-    """Corpo della notifica push di Ritiro/Modifica ritiro: specie e peso del
-    primo animale su una riga, orario sulla riga successiva — solo i dati
-    realmente presenti (richiesta esplicita dell'utente)."""
+    """Corpo della notifica push di Ritiro/Modifica ritiro (in sede o
+    fuori sede): specie, peso e tipo di cremazione selezionata del primo
+    animale su una riga (richiesta esplicita dell'utente: il tipo di
+    cremazione mancava), orario sulla riga successiva — solo i dati
+    realmente presenti."""
     lines = []
     if animals:
         first = animals[0]
@@ -258,6 +261,9 @@ def calendar_pickup_push_text(animals, start_at, end_at):
         weight = _clean(first.get("weight") or "")
         if weight:
             bits.append(f"{weight} kg")
+        cremation_type = _clean(first.get("cremation_type") or "")
+        if cremation_type:
+            bits.append(cremation_type)
         if bits:
             lines.append(" • ".join(bits))
     time_range = calendar_push_time_range(start_at, end_at)

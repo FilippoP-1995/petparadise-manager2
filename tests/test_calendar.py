@@ -389,8 +389,8 @@ class OperationalCalendarTests(unittest.TestCase):
         # titolo generico "Nuovo evento calendario" con solo l'emoji a
         # distinguere il tipo.
         expected_titles = {
-            "Ritiro": "Ritiro Zona Livorno", "Ritiro in sede": "Ritiro in sede Livorno",
-            "Riconsegna": "Riconsegna Zona Livorno", "Riconsegna in sede": "Riconsegna in sede Livorno",
+            "Ritiro": "Ritiro Livorno", "Ritiro in sede": "Ritiro in sede Livorno",
+            "Riconsegna": "Riconsegna Livorno", "Riconsegna in sede": "Riconsegna in sede Livorno",
             "Appuntamento": "📅 Nuovo evento calendario",
         }
         for event_type, expected_title in expected_titles.items():
@@ -440,6 +440,27 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertEqual(title, "Ritiro in sede Livorno")
         self.assertEqual(text, "Gatto • 4 kg\n15/07/2026 14:00")
 
+    def test_new_pickup_notification_body_shows_cremation_type_when_selected(self):
+        # richiesta esplicita dell'utente: nei ritiri, sia in sede che non,
+        # la notifica deve mostrare anche il tipo di cremazione selezionata.
+        form = self.event_form("Ritiro", animals_json=json.dumps([
+            {"name": "Birba", "species": "Cane", "weight": "18", "cremation_type": "Singola", "notes": ""},
+        ]))
+        self.handler.form = lambda: form
+        with patch("app.emit_notification", return_value=[]) as mock_emit:
+            self.handler.save_calendar_event(self.admin)
+        text = mock_emit.call_args.args[3]
+        self.assertEqual(text, "Cane • 18 kg • Singola\n15/07/2026 09:30 - 10:30")
+
+        form = self.event_form("Ritiro in sede", animals_json=json.dumps([
+            {"name": "Micio", "species": "Gatto", "weight": "4", "cremation_type": "Collettiva", "notes": ""},
+        ]))
+        self.handler.form = lambda: form
+        with patch("app.emit_notification", return_value=[]) as mock_emit:
+            self.handler.save_calendar_event(self.admin)
+        text = mock_emit.call_args.args[3]
+        self.assertEqual(text, "Gatto • 4 kg • Collettiva\n15/07/2026 09:30 - 10:30")
+
     def test_new_delivery_notification_shows_animal_and_payment_status(self):
         form = self.event_form("Riconsegna", payment_status="Pagato")
         self.handler.form = lambda: form
@@ -447,7 +468,7 @@ class OperationalCalendarTests(unittest.TestCase):
             self.handler.save_calendar_event(self.admin)
         title = mock_emit.call_args.args[2]
         text = mock_emit.call_args.args[3]
-        self.assertEqual(title, "Riconsegna Zona Livorno")
+        self.assertEqual(title, "Riconsegna Livorno")
         self.assertEqual(text, "Fido\n15/07/2026 09:30 - 10:30\nPagamento: SALDATO")
 
     def test_new_delivery_notification_shows_da_saldare_when_not_paid(self):
@@ -466,7 +487,7 @@ class OperationalCalendarTests(unittest.TestCase):
             self.handler.save_calendar_event(self.admin, pid)
         kind, title, text = mock_emit.call_args.args[1], mock_emit.call_args.args[2], mock_emit.call_args.args[3]
         self.assertEqual(kind, "calendar_event_updated")
-        self.assertEqual(title, "Ritiro Zona Livorno")
+        self.assertEqual(title, "Ritiro Livorno")
         self.assertIn("Stato: RITIRATO", text)
 
         # nessun cambio di stato: la riga "Stato:" non compare
