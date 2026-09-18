@@ -229,6 +229,35 @@ def _tool_conta_cremazioni(c, user, now, p):
     return {"conteggio": n, "periodo_analizzato": label, "filtri": {"stato": stato, "sede": sede}}
 
 
+def _tool_conta_animali_cremati(c, user, now, p):
+    # Distinzione insegnata esplicitamente dall'utente via impara_definizione:
+    # "animale cremato" NON e' lo stesso di "ciclo di cremazione" (che puo'
+    # contenere piu' animali/pratiche) - va contato per singola pratica
+    # assegnata a un ciclo. Stessa identica definizione gia' usata dal
+    # gestionale stesso per "animal_count" nella pagina Programma
+    # Cremazioni (COUNT(*) FROM practices WHERE cremation_cycle_id=...):
+    # nessuna logica nuova inventata qui, solo la stessa query estesa a un
+    # intervallo di date/sede invece di un singolo ciclo.
+    d_from, d_to, label = resolve_period(now, p.get("periodo"), p.get("data_da"), p.get("data_a"))
+    stato = p.get("stato") or "completato"
+    if stato not in ("pianificato", "in_attesa", "completato"):
+        raise ToolInputError("stato deve essere uno tra: pianificato, in_attesa, completato.")
+    sede = p.get("sede")
+    if sede and sede not in SHIFT_BRANCHES:
+        raise ToolInputError(f"sede deve essere una tra: {', '.join(SHIFT_BRANCHES)}.")
+    where = ["cc.cycle_date>=date(?)", "cc.cycle_date<=date(?)", "cc.status=?", "(pr.deleted_at IS NULL OR pr.deleted_at='')"]
+    args: list = [d_from, d_to, stato]
+    if sede:
+        where.append("pr.destination_branch=?")
+        args.append(sede)
+    sql = f"SELECT COUNT(*) n FROM practices pr JOIN cremation_cycles cc ON cc.id=pr.cremation_cycle_id WHERE {' AND '.join(where)}"
+    n = c.execute(sql, args).fetchone()["n"]
+    return {
+        "conteggio": n, "periodo_analizzato": label, "filtri": {"stato": stato, "sede": sede},
+        "nota": "Un animale per ogni pratica assegnata al ciclo (stessa definizione del gestionale, non il numero di cicli: usa conta_cremazioni per quello).",
+    }
+
+
 # conta_ritiri/conta_riconsegne NON contano gli eventi di calendario
 # (Ritiro/Ritiro in sede/Riconsegna/Riconsegna in sede): quegli eventi sono
 # solo la fase di PROGRAMMAZIONE, includono voci pianificate/annullate mai
@@ -1517,9 +1546,15 @@ def _tool_anomalie(c, user, now, p):
 TOOL_SPECS = [
     {
         "name": "conta_cremazioni",
-        "description": "Conta i cicli di cremazione nel periodo indicato, con filtri opzionali per stato (pianificato/in_attesa/completato) e sede (Livorno/Empoli).",
+        "description": "Conta i cicli di cremazione nel periodo indicato, con filtri opzionali per stato (pianificato/in_attesa/completato) e sede (Livorno/Empoli). Conta i CICLI, non gli animali: un ciclo puo' contenere piu' animali/pratiche - per il numero di animali usa conta_animali_cremati.",
         "input_schema": _schema({**_PERIOD_PROPS, "stato": {"type": "string", "enum": ["pianificato", "in_attesa", "completato"]}, "sede": {"type": "string", "enum": list(SHIFT_BRANCHES)}}),
         "handler": _tool_conta_cremazioni,
+    },
+    {
+        "name": "conta_animali_cremati",
+        "description": "Conta gli ANIMALI (una pratica di cremazione singola assegnata a un ciclo = un animale) nel periodo indicato, non i cicli di cremazione: un ciclo puo' contenere piu' animali/pratiche, quindi questo numero puo' essere maggiore di conta_cremazioni. Di default conta solo gli animali di cicli 'completato' (gia' effettivamente cremati); usa stato per contare invece quelli pianificati/in attesa. Filtro opzionale per sede (Livorno/Empoli). Usa questo strumento per domande come 'quanti animali sono stati cremati'.",
+        "input_schema": _schema({**_PERIOD_PROPS, "stato": {"type": "string", "enum": ["pianificato", "in_attesa", "completato"]}, "sede": {"type": "string", "enum": list(SHIFT_BRANCHES)}}),
+        "handler": _tool_conta_animali_cremati,
     },
     {
         "name": "conta_ritiri",

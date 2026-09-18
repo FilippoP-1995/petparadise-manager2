@@ -15272,6 +15272,41 @@ class AIAssistantTests(unittest.TestCase):
             self.assertEqual(crem(c, self.admin, now, {**params, "sede": "Empoli"})["conteggio"], 0)
             self.assertEqual(crem(c, self.admin, now, {**params, "stato": "pianificato"})["conteggio"], 0)
 
+    def test_conta_animali_cremati_conta_le_pratiche_non_i_cicli(self):
+        # Regola insegnata esplicitamente dall'utente via impara_definizione:
+        # "animale cremato" non corrisponde a un ciclo di cremazione (che
+        # puo' contenere piu' animali), va contato per singola pratica
+        # assegnata a un ciclo "completato". Riusa la stessa definizione
+        # gia' usata dal gestionale per "animal_count" nella pagina
+        # Programma Cremazioni.
+        with app.db() as c:
+            stamp = "2026-09-10T09:00:00"
+            cid_completo = c.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-09-12", "completato", "2026-09-12T08:00:00", "2026-09-12T09:00:00", stamp, stamp),
+            ).lastrowid
+            cid_pianificato = c.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-09-13", "pianificato", "2026-09-13T08:00:00", "2026-09-13T09:00:00", stamp, stamp),
+            ).lastrowid
+            # due pratiche nello STESSO ciclo completato: due animali, un solo ciclo
+            self._insert_practice(c, _n=1, practice_number="CR-ANIM-1", destination_branch="Livorno", cremation_cycle_id=cid_completo, pickup_date="2026-09-10")
+            self._insert_practice(c, _n=2, practice_number="CR-ANIM-2", destination_branch="Empoli", cremation_cycle_id=cid_completo, pickup_date="2026-09-10")
+            self._insert_practice(c, _n=3, practice_number="CR-ANIM-3", destination_branch="Livorno", cremation_cycle_id=cid_pianificato, pickup_date="2026-09-10")
+        now = app.rome_now()
+        params = {"periodo": "intervallo_personalizzato", "data_da": "2026-09-01", "data_a": "2026-09-30"}
+        crem = next(t for t in self.ai.TOOL_SPECS if t["name"] == "conta_cremazioni")["handler"]
+        animali = next(t for t in self.ai.TOOL_SPECS if t["name"] == "conta_animali_cremati")["handler"]
+        with app.db() as c:
+            # un solo ciclo completato, ma due animali al suo interno
+            self.assertEqual(crem(c, self.admin, now, {**params, "stato": "completato"})["conteggio"], 1)
+            self.assertEqual(animali(c, self.admin, now, params)["conteggio"], 2)
+            self.assertEqual(animali(c, self.admin, now, {**params, "sede": "Livorno"})["conteggio"], 1)
+            self.assertEqual(animali(c, self.admin, now, {**params, "sede": "Empoli"})["conteggio"], 1)
+            self.assertEqual(animali(c, self.admin, now, {**params, "stato": "pianificato"})["conteggio"], 1)
+            with self.assertRaises(self.ai.ToolInputError):
+                animali(c, self.admin, now, {**params, "stato": "non_valido"})
+
     def _insert_status_history(self, c, practice_id, new_value, created_at, event_type="Cambio stato rapido", old_value="In programma"):
         c.execute(
             "INSERT INTO practice_history(practice_id,event_type,old_value,new_value,created_at) VALUES(?,?,?,?,?)",
