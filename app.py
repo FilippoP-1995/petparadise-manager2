@@ -7975,7 +7975,7 @@ def initial_avatar(name):
     return (str(name or "").strip()[:1] or "?").upper()
 
 
-CREMATION_CYCLE_DURATION_MIN = 90
+CREMATION_CYCLE_DURATION_MIN = 60  # richiesta esplicita dell'utente: durata preimpostata di un nuovo ciclo
 CREMATION_CYCLE_GAP_MIN = 30
 CREMATION_DAY_START = "08:30"
 CREMATION_STATUS_LABELS = {
@@ -17104,6 +17104,13 @@ class App(BaseHTTPRequestHandler):
             "owner_last_name":"Cognome","owner_phone":"Telefono",
             "owner_tax_code":"Codice fiscale","owner_street":"Indirizzo",
             "owner_city":"Comune","owner_province":"Provincia","owner_zip":"CAP",
+            # Richiesta esplicita dell'utente: la provenienza (sezione Luogo
+            # di origine) e' obbligatoria. Qui d["provenance"] e' gia' il
+            # valore NORMALIZZATO (normalized_fields prova a dedurlo da
+            # veterinario collegato/di provenienza prima di arrivare qui),
+            # quindi una pratica con un veterinario riconosciuto continua a
+            # passare senza che l'operatore debba toccare il menu a tendina.
+            "provenance":"Provenienza",
         }
         if d.get("owner_veterinarian_id"):
             for key in ("owner_last_name","owner_phone","owner_tax_code","owner_street","owner_city","owner_province","owner_zip"):
@@ -17119,7 +17126,7 @@ class App(BaseHTTPRequestHandler):
         for the invalid-money case, which can span several fields at once."""
         if d.get("tag_da_richiamare")=="Si" or d.get("service_type")=="Cremazione collettiva" or d.get("request_origin")=="Collaboratore":
             return ""
-        keys=["operator_name","service_type","request_origin","owner_first_name","owner_last_name","owner_phone","owner_tax_code","owner_street","owner_city","owner_province","owner_zip"]
+        keys=["operator_name","service_type","request_origin","owner_first_name","owner_last_name","owner_phone","owner_tax_code","owner_street","owner_city","owner_province","owner_zip","provenance"]
         if d.get("owner_veterinarian_id"):
             for key in ("owner_last_name","owner_phone","owner_tax_code","owner_street","owner_city","owner_province","owner_zip"):
                 keys.remove(key)

@@ -1381,7 +1381,7 @@ class OperationalCalendarTests(unittest.TestCase):
             "calendar_event_id": str(event_id), "operator_name": "SERENA", "request_origin": "Privato",
             "destination_branch": "Livorno", "owner_first_name": "Anna", "owner_last_name": "Verdi",
             "owner_phone": "333111", "owner_tax_code": "VRDNNA80A01F205X", "owner_street": "Via Roma 10",
-            "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100", "animal_name": "Luna",
+            "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100", "provenance": "L", "animal_name": "Luna",
             "species": "Cane", "estimated_weight": "12", "service_type": "Cremazione singola",
             "pickup_date": "2026-07-15", "pickup_time": "09:30", "status": "Ritirato",
         }

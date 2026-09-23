@@ -152,6 +152,7 @@ class PetParadiseTests(unittest.TestCase):
             "animal_name": "Buddy", "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "3339990000",
             "owner_tax_code": "X", "owner_street": "Via Roma", "owner_city": "Livorno", "owner_province": "LI",
             "owner_zip": "57100", "total_service": "300.00", "total_service_manual": "Si", "payment_status": "Da saldare",
+            "provenance": "L",
             "urna_items_json": json.dumps([
                 {"label": "Urna esistente", "price": "150.00", "urn_catalog_id": None, "subtype": ""},
                 {"label": "Urna nuova aggiunta", "price": "150.00", "urn_catalog_id": None, "subtype": ""},
@@ -190,6 +191,7 @@ class PetParadiseTests(unittest.TestCase):
             "animal_name": "Buddy",
             "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
             "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
+            "provenance": "L",
             "urna_items_json": json.dumps([{"label": "Urna esistente", "price": "150.00", "urn_catalog_id": None, "subtype": ""}]),
             "acconto_w_totale": "150.00", "acconto_w_data": "2026-07-20", "acconto_w_modalita": "Contanti",
         }
@@ -204,6 +206,7 @@ class PetParadiseTests(unittest.TestCase):
             "animal_name": "Buddy",
             "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
             "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
+            "provenance": "L",
             "payment_status": "Acconto", "economic_at": "2026-07-20",
             # "deposit" volutamente assente dal form: e' lo scenario che
             # manda in crash il codice non corretto (vuoto supera
@@ -246,7 +249,7 @@ class PetParadiseTests(unittest.TestCase):
             "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "3339990000",
             "owner_tax_code": "X", "owner_street": "Via Roma", "owner_city": "Livorno", "owner_province": "LI",
             "owner_zip": "57100", "total_service": "310.00", "total_service_manual": "Si", "saldo_w_totale": "310.00",
-            "invoice_total": "274.00", "invoice_total_manual": "", "payment_status": "Da saldare",
+            "invoice_total": "274.00", "invoice_total_manual": "", "payment_status": "Da saldare", "provenance": "L",
         }
         self.handler.edit_submit(admin, pid)
         with app.db() as conn:
@@ -277,7 +280,7 @@ class PetParadiseTests(unittest.TestCase):
             "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "3339990000",
             "owner_tax_code": "X", "owner_street": "Via Roma", "owner_city": "Livorno", "owner_province": "LI",
             "owner_zip": "57100", "total_service": "310.00", "total_service_manual": "Si", "saldo_w_totale": "310.00",
-            "invoice_total": "274.00", "invoice_total_manual": "Si", "payment_status": "Da saldare",
+            "invoice_total": "274.00", "invoice_total_manual": "Si", "payment_status": "Da saldare", "provenance": "L",
         }
         self.handler.edit_submit(admin, pid)
         with app.db() as conn:
@@ -977,6 +980,7 @@ class PetParadiseTests(unittest.TestCase):
             "operator_name": "SERENA", "service_type": "Cremazione singola", "request_origin": "Privato",
             "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
             "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
+            "provenance": "L",
             "total_text": "350", "acconto_d_totale": "100,00", "acconto_d_data": "2026-07-20", "acconto_d_modalita": "",
         }
         self.handler.create_practice(admin)
@@ -2347,7 +2351,7 @@ class PetParadiseTests(unittest.TestCase):
             cycle = conn.execute("SELECT * FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()
         self.assertEqual(cycle["status"], "pianificato")
         self.assertEqual(cycle["planned_start"], "08:30")
-        self.assertEqual(cycle["planned_end"], "10:00")
+        self.assertEqual(cycle["planned_end"], "09:30")
 
         responses.clear()
         self.handler.form = lambda: {"practice_id": str(first_id)}
@@ -2386,8 +2390,8 @@ class PetParadiseTests(unittest.TestCase):
         second_cycle_id = responses[-1][0]["cycle_id"]
         with app.db() as conn:
             second_cycle = conn.execute("SELECT * FROM cremation_cycles WHERE id=?", (second_cycle_id,)).fetchone()
-        self.assertEqual(second_cycle["planned_start"], "10:30")
-        self.assertEqual(second_cycle["planned_end"], "12:00")
+        self.assertEqual(second_cycle["planned_start"], "10:00")
+        self.assertEqual(second_cycle["planned_end"], "11:00")
 
     def test_next_slot_api_suggests_8_30_for_first_cycle_of_an_empty_day(self):
         # richiesta esplicita dell'utente: il primo ciclo di una giornata
@@ -2398,7 +2402,7 @@ class PetParadiseTests(unittest.TestCase):
         responses = []
         self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
         self.handler.api_cremation_next_slot(admin)
-        self.assertEqual(responses[-1], ({"ok": True, "start": "08:30", "end": "10:00"}, 200))
+        self.assertEqual(responses[-1], ({"ok": True, "start": "08:30", "end": "09:30"}, 200))
 
     def test_next_slot_api_suggests_30_minutes_after_the_last_cycle_of_the_day(self):
         # richiesta esplicita dell'utente: un nuovo ciclo quando ce ne sono
@@ -2415,7 +2419,7 @@ class PetParadiseTests(unittest.TestCase):
         responses = []
         self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
         self.handler.api_cremation_next_slot(admin)
-        self.assertEqual(responses[-1], ({"ok": True, "start": "10:30", "end": "12:00"}, 200))
+        self.assertEqual(responses[-1], ({"ok": True, "start": "10:30", "end": "11:30"}, 200))
 
     def test_next_slot_api_rejects_an_invalid_date(self):
         with app.db() as conn:
@@ -6715,6 +6719,7 @@ class PetParadiseTests(unittest.TestCase):
             "operator_name": "SERENA", "status": "Ritirato", "service_type": "Cremazione singola", "request_origin": "Privato",
             "destination_branch": "Livorno", "owner_first_name": "Mario", "owner_last_name": "Rossi", "owner_phone": "333123456",
             "owner_tax_code": "RSSMRA80A01H501U", "owner_street": "Via Roma 1", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
+            "provenance": "L",
             "animal_name": "Fido", "species": "Cane",
             "urna_items_json": json.dumps([{"urn_catalog_id": u1}, {"urn_catalog_id": u1}, {"urn_catalog_id": u2}]),
             "calco_items_json": json.dumps([
@@ -7625,6 +7630,7 @@ class PetParadiseTests(unittest.TestCase):
             "operator_name":"FILIPPO","service_type":"Cremazione singola","request_origin":"Privato",
             "owner_first_name":"Anna","owner_last_name":"Bianchi","owner_phone":"3339990001",
             "owner_tax_code":"X","owner_street":"Via","owner_city":"Livorno","owner_province":"LI","owner_zip":"57100",
+            "provenance":"L",
             "send_catalog":"Si",
         }
         self.handler.create_practice(admin)
@@ -7639,6 +7645,7 @@ class PetParadiseTests(unittest.TestCase):
             "operator_name":"FILIPPO","service_type":"Cremazione singola","request_origin":"Privato",
             "owner_first_name":"Anna","owner_last_name":"Bianchi","owner_phone":"3339990000",
             "owner_tax_code":"X","owner_street":"Via","owner_city":"Livorno","owner_province":"LI","owner_zip":"57100",
+            "provenance":"L",
             "payment_status":"Da saldare",
         }
         self.handler.redirect=lambda path:None
@@ -8672,7 +8679,7 @@ class PetParadiseTests(unittest.TestCase):
             "operator_name":"FILIPPO","service_type":"Da decidere","request_origin":"Privato",
             "owner_first_name":"Anna","owner_last_name":"Neri","owner_phone":"3331112222",
             "owner_tax_code":"NRIANN80A01H501U","owner_street":"Via Test","owner_city":"Livorno",
-            "owner_province":"LI","owner_zip":"57100","payment_status":"Pagato","economic_at":"2026-07-21",
+            "owner_province":"LI","owner_zip":"57100","payment_status":"Pagato","economic_at":"2026-07-21","provenance":"L",
             "total_text":"280","saldo_d_totale":"250","saldo_d_totale_touched":"1","saldo_d_data":"2026-07-21",
         }
         redirects=[];self.handler.redirect=lambda url:redirects.append(url);self.handler.headers={}
@@ -8733,7 +8740,7 @@ class PetParadiseTests(unittest.TestCase):
                 "operator_name":"FILIPPO","service_type":"Da decidere","request_origin":"Privato",
                 "owner_first_name":"Elisabetta","owner_last_name":"Vitali","owner_phone":"3339998888",
                 "owner_tax_code":"VTLLBT80A01H501U","owner_street":"Via Test","owner_city":"Livorno",
-                "owner_province":"LI","owner_zip":"57100","payment_status":current["payment_status"],"economic_at":economic_at,
+                "owner_province":"LI","owner_zip":"57100","payment_status":current["payment_status"],"economic_at":economic_at,"provenance":"L",
                 "total_service":"360","total_service_manual":"Si","deposit":current["deposit"],"remaining_balance":current["remaining_balance"],
                 "deposit_final":current["deposit_final"],"remaining_final":current["remaining_final"] or "",
                 "saldo_w_totale":saldo_amount,"saldo_w_totale_touched":"1","saldo_w_data":"2026-07-31","saldo_w_modalita":"Pos",
@@ -8890,7 +8897,7 @@ class PetParadiseTests(unittest.TestCase):
             "operator_name":"FILIPPO","service_type":"Da decidere","request_origin":"Privato",
             "owner_first_name":"Anna","owner_last_name":"Neri","owner_phone":"3331112222",
             "owner_tax_code":"NRIANN80A01H501U","owner_street":"Via Test","owner_city":"Livorno",
-            "owner_province":"LI","owner_zip":"57100","payment_status":"Pagato","economic_at":"2026-07-21",
+            "owner_province":"LI","owner_zip":"57100","payment_status":"Pagato","economic_at":"2026-07-21","provenance":"L",
             "total_text":"200","deposit_final":"250",
         }
         redirects=[];self.handler.redirect=lambda url:redirects.append(url)
@@ -9054,7 +9061,7 @@ class PetParadiseTests(unittest.TestCase):
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
         self.handler.form=lambda:{"operator_name":"FILIPPO","service_type":"Da decidere","request_origin":"Privato","owner_first_name":"Anna","owner_last_name":"Neri",
                                    "owner_phone":"3331112222","owner_tax_code":"NRIANN80A01H501U","owner_street":"Via Test","owner_city":"Livorno",
-                                   "owner_province":"LI","owner_zip":"57100","saldo_w_totale":"250","saldo_w_totale_touched":"1","calendar_event_id":""}
+                                   "owner_province":"LI","owner_zip":"57100","provenance":"L","saldo_w_totale":"250","saldo_w_totale_touched":"1","calendar_event_id":""}
         pages=[];self.handler.new_page=lambda user,draft=None,error="",error_field="":pages.append(error)
         self.handler.create_practice(admin)
         self.assertIn("Indica una data valida",pages[-1])
@@ -9071,7 +9078,7 @@ class PetParadiseTests(unittest.TestCase):
                                  "Via Test","Livorno","LI","57100","Da decidere","Da saldare","250")).lastrowid
         self.handler.form=lambda:{"operator_name":"FILIPPO","service_type":"Da decidere","request_origin":"Privato","owner_first_name":"Anna","owner_last_name":"Neri",
                                    "owner_phone":"3331112222","owner_tax_code":"NRIANN80A01H501U","owner_street":"Via Test","owner_city":"Livorno",
-                                   "owner_province":"LI","owner_zip":"57100","payment_status":"Acconto"}
+                                   "owner_province":"LI","owner_zip":"57100","provenance":"L","payment_status":"Acconto"}
         edit_pages=[];self.handler.edit_page=lambda user,pid,draft=None,error="":edit_pages.append(error)
         self.handler.edit_submit(admin,pid)
         self.assertIn("data pagamento/acconto",edit_pages[-1])
@@ -11318,7 +11325,7 @@ class PetParadiseTests(unittest.TestCase):
             "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
             "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
             "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI",
-            "owner_zip": "57100", "signature_data": signature,
+            "owner_zip": "57100", "provenance": "L", "signature_data": signature,
         }
         redirects = []; self.handler.redirect = lambda url: redirects.append(url)
         self.handler.create_practice(admin)
@@ -11336,7 +11343,7 @@ class PetParadiseTests(unittest.TestCase):
             "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
             "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
             "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI",
-            "owner_zip": "57100",
+            "owner_zip": "57100", "provenance": "L",
         }
         redirects = []; self.handler.redirect = lambda url: redirects.append(url)
         self.handler.create_practice(admin)
@@ -11363,7 +11370,7 @@ class PetParadiseTests(unittest.TestCase):
             "operator_name": "FILIPPO", "service_type": "Da decidere", "request_origin": "Privato",
             "owner_first_name": "Anna", "owner_last_name": "Neri", "owner_phone": "3331112222",
             "owner_tax_code": "NRIANN80A01H501U", "owner_street": "Via Test", "owner_city": "Livorno",
-            "owner_province": "LI", "owner_zip": "57100", "signature_data": signature,
+            "owner_province": "LI", "owner_zip": "57100", "provenance": "L", "signature_data": signature,
         }
         self.handler.redirect = lambda url: None
         self.handler.edit_submit(admin, pid)
@@ -11394,7 +11401,7 @@ class PetParadiseTests(unittest.TestCase):
             "operator_name": "FILIPPO", "service_type": "Da decidere", "request_origin": "Privato",
             "owner_first_name": "Anna", "owner_last_name": "Neri", "owner_phone": "3331112222",
             "owner_tax_code": "NRIANN80A01H501U", "owner_street": "Via Test", "owner_city": "Livorno",
-            "owner_province": "LI", "owner_zip": "57100", "signature_data": signature,
+            "owner_province": "LI", "owner_zip": "57100", "provenance": "L", "signature_data": signature,
         }
         self.handler.redirect = lambda url: None
         self.handler.edit_submit(admin, pid)
@@ -11427,7 +11434,7 @@ class PetParadiseTests(unittest.TestCase):
             "operator_name": "FILIPPO", "service_type": "Da decidere", "request_origin": "Privato",
             "owner_first_name": "Anna", "owner_last_name": "Neri", "owner_phone": "3331112222",
             "owner_tax_code": "NRIANN80A01H501U", "owner_street": "Via Test", "owner_city": "Livorno",
-            "owner_province": "LI", "owner_zip": "57100", "signature_data": signature,
+            "owner_province": "LI", "owner_zip": "57100", "provenance": "L", "signature_data": signature,
         }
         self.handler.redirect = lambda url: None
         with patch("app.generate_ddt") as mocked:
