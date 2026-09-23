@@ -1179,6 +1179,29 @@ def whatsapp_now(value=None):
     return whatsapp_datetime(value).replace(tzinfo=None).isoformat(timespec="seconds")
 
 
+def adjust_whatsapp_thanks_send_time(dt):
+    """Il messaggio di ringraziamento non deve mai arrivare di domenica ne'
+    in orario notturno tra le 19:00 e le 10:00 (richiesta esplicita
+    dell'utente). Di domenica si sposta avanti di 24 ore (stessa ora, il
+    giorno dopo); in orario notturno si sposta al primo orario disponibile
+    (le 10:00 — lo stesso giorno se e' ancora notte/primo mattino, il
+    giorno dopo se e' gia' sera). Le due regole si applicano ripetutamente
+    finche' il risultato non le rispetta entrambe (es. sabato sera puo'
+    spostarsi a domenica mattina, che va spostata ancora a lunedi'). `dt`
+    e' un datetime timezone-aware (Europe/Rome, vedi whatsapp_datetime)."""
+    while True:
+        if dt.weekday() == 6:  # domenica
+            dt = dt + timedelta(hours=24)
+            continue
+        if dt.hour >= 19:
+            dt = (dt + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0)
+            continue
+        if dt.hour < 10:
+            dt = dt.replace(hour=10, minute=0, second=0, microsecond=0)
+            continue
+        return dt
+
+
 def compact_text(value):
     return re.sub(r"\s+", " ", str(value or "").strip())
 
@@ -17270,7 +17293,7 @@ class App(BaseHTTPRequestHandler):
             c.execute("UPDATE practices SET whatsapp_thanks_last_error=? WHERE id=?",(msg,pid))
             c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"WhatsApp ringraziamento",msg,user_id,now()))
             return False, msg
-        scheduled_at=whatsapp_now(whatsapp_datetime()+timedelta(hours=48))
+        scheduled_at=whatsapp_now(adjust_whatsapp_thanks_send_time(whatsapp_datetime()+timedelta(hours=48)))
         template=self.whatsapp_template_name(p)
         language=self.whatsapp_language_code()
         stamp=now()

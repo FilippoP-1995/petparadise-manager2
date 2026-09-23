@@ -7565,6 +7565,53 @@ class PetParadiseTests(unittest.TestCase):
             status=conn.execute("SELECT status FROM whatsapp_messages WHERE practice_id=? AND message_type='catalogo'",(pid,)).fetchone()["status"]
         self.assertEqual(status,"annullato")
 
+    def test_adjust_whatsapp_thanks_send_time_avoids_sunday_and_night_hours(self):
+        # Richiesta esplicita dell'utente: il messaggio di ringraziamento
+        # (48 ore dopo la consegna) non deve mai arrivare di domenica ne'
+        # tra le 19:00 e le 10:00. Di domenica si sposta avanti di 24 ore
+        # (stessa ora, il giorno dopo); in orario notturno al primo orario
+        # disponibile (le 10:00).
+        def adjusted(y, m, d, h, mi=0):
+            return app.adjust_whatsapp_thanks_send_time(datetime(y, m, d, h, mi, tzinfo=app.ROME_TZ))
+
+        # Esempio esplicito dell'utente: scade alle 21 di mercoledi' ->
+        # inviato alle 10 di giovedi'.
+        self.assertEqual(adjusted(2026, 9, 16, 21, 0), datetime(2026, 9, 17, 10, 0, tzinfo=app.ROME_TZ))
+        # Scade di domenica in pieno giorno -> stessa ora, lunedi'.
+        self.assertEqual(adjusted(2026, 9, 20, 15, 0), datetime(2026, 9, 21, 15, 0, tzinfo=app.ROME_TZ))
+        # Scade nella notte/primo mattino -> stesso giorno alle 10.
+        self.assertEqual(adjusted(2026, 9, 16, 3, 0), datetime(2026, 9, 16, 10, 0, tzinfo=app.ROME_TZ))
+        # Scade sabato sera: la fascia notturna sposterebbe a domenica alle
+        # 10, ma la domenica va evitata a sua volta -> lunedi' alle 10.
+        self.assertEqual(adjusted(2026, 9, 19, 20, 0), datetime(2026, 9, 21, 10, 0, tzinfo=app.ROME_TZ))
+        # Confini della fascia notturna: le 19:00 sono gia' bloccate, le
+        # 18:59 e le 10:00 sono invece orari validi.
+        self.assertEqual(adjusted(2026, 9, 16, 19, 0), datetime(2026, 9, 17, 10, 0, tzinfo=app.ROME_TZ))
+        self.assertEqual(adjusted(2026, 9, 16, 18, 59), datetime(2026, 9, 16, 18, 59, tzinfo=app.ROME_TZ))
+        self.assertEqual(adjusted(2026, 9, 16, 10, 0), datetime(2026, 9, 16, 10, 0, tzinfo=app.ROME_TZ))
+
+    def test_schedule_whatsapp_thanks_applies_the_quiet_hours_adjustment(self):
+        # Verifica end-to-end (non solo la funzione pura): se "adesso" e'
+        # tale che adesso+48h cade in un orario da evitare, la riga
+        # whatsapp_messages salvata riflette l'orario gia' corretto.
+        admin, pid = self._catalog_practice()
+        with app.db() as conn:
+            conn.execute("UPDATE practices SET status='Consegnato' WHERE id=?", (pid,))
+            # Lunedi' 2026-09-14 21:00 + 48h = mercoledi' 2026-09-16 21:00,
+            # in fascia notturna -> atteso giovedi' 2026-09-17 10:00.
+            # side_effect (non return_value): whatsapp_now() richiama a sua
+            # volta whatsapp_datetime(value) per riformattare il risultato
+            # gia' calcolato — solo la chiamata senza argomenti ("adesso")
+            # deve restare fissa, quella con un valore esplicito deve
+            # continuare a comportarsi normalmente.
+            fixed_now = datetime(2026, 9, 14, 21, 0, tzinfo=app.ROME_TZ)
+            real_whatsapp_datetime = app.whatsapp_datetime
+            fake_whatsapp_datetime = lambda value=None: fixed_now if value is None else real_whatsapp_datetime(value)
+            with patch("app.whatsapp_datetime", side_effect=fake_whatsapp_datetime):
+                ok, scheduled_at = self.handler.schedule_whatsapp_thanks(conn, pid, admin["id"])
+        self.assertTrue(ok)
+        self.assertEqual(scheduled_at, "2026-09-17T10:00:00")
+
     def test_thanks_and_catalog_messages_coexist_independently_for_the_same_practice(self):
         # Regression test for the message_type discriminator: before it
         # existed, scheduling a second whatsapp_messages row of a different
