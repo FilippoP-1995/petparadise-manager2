@@ -2317,7 +2317,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-completed-note{display:flex;align-items:center;gap:6px;color:#4ade80;font-size:12px;font-weight:600;white-space:nowrap}
 .cremation-completed-note .icon{width:14px;height:14px}
 .cremation-cycle-animals{display:flex;flex-direction:column}
-.cremation-animal-row{display:grid;grid-template-columns:minmax(0,1.6fr) auto auto auto auto;align-items:center;gap:16px;padding:12px 0;border-top:1px solid #263246;cursor:pointer}
+.cremation-animal-row{display:grid;grid-template-columns:minmax(0,1.6fr) auto auto auto auto auto;align-items:center;gap:16px;padding:12px 0;border-top:1px solid #263246;cursor:pointer}
 .cremation-cycle-animals .cremation-animal-row:first-child{border-top:none;padding-top:6px}
 .cremation-animal-id{display:flex;align-items:center;gap:10px;min-width:0}
 .cremation-animal-avatar{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:17px;flex:0 0 34px;background:#0f172a}
@@ -13136,9 +13136,14 @@ class App(BaseHTTPRequestHandler):
             # chiama/WhatsApp gia' presenti nel riepilogo pratica devono
             # esserci anche qui, per ogni animale del ciclo - stesso helper
             # phone_action_buttons gia' usato in practice(), nessuno stile
-            # nuovo inventato.
+            # nuovo inventato. Il nome del proprietario va insieme ad essi
+            # (richiesta esplicita dell'utente).
+            owner_name=" ".join(x for x in ((row["owner_first_name"] or "").strip(),(row["owner_last_name"] or "").strip()) if x)
             phone_html=self.phone_action_buttons(row["owner_phone"]) if "owner_phone" in row.keys() and row["owner_phone"] else ""
-            contact_html=f'<div class="cremation-animal-contact">{phone_html}</div>' if phone_html else ""
+            contact_html=f'<div class="cremation-animal-contact">{esc(owner_name)} {phone_html}</div>' if (owner_name or phone_html) else ""
+            # Data di ritiro (richiesta esplicita dell'utente), stesso
+            # formato GG/MM/AAAA gia' usato in tutto il gestionale (date_it).
+            pickup_html=esc(date_it(row["pickup_date"])) if row["pickup_date"] else '<span class="cremation-dash">—</span>'
             return f'''<div class="cremation-animal-row" data-practice-id="{row['id']}" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}>
               <div class="cremation-animal-id">
                 <span class="cremation-animal-avatar {avatar_cls}" aria-hidden="true">{avatar_emoji}</span>
@@ -13147,6 +13152,7 @@ class App(BaseHTTPRequestHandler):
               <div class="cremation-animal-col"><small>Provenienza</small>{provenance_html}</div>
               <div class="cremation-animal-col"><small>Etichette</small><div class="cremation-animal-tags">{tags_html(row)}</div></div>
               <div class="cremation-animal-col"><small>Urna</small><div class="cremation-animal-urn">{urn_html(row)}{accessory_html(row)}</div></div>
+              <div class="cremation-animal-col"><small>Ritiro</small>{pickup_html}</div>
               <div class="cremation-animal-actions"><a class="cremation-animal-open" href="{url}" onclick="event.stopPropagation()"><span>Apri pratica</span>{lucide("chevron-right")}</a>{swap_html}{remove_html}</div>
               {contact_html}
               {notes_html}
@@ -13577,9 +13583,14 @@ class App(BaseHTTPRequestHandler):
             # chiama/WhatsApp gia' presenti nel riepilogo pratica devono
             # esserci anche qui, per ogni animale del ciclo - stesso helper
             # phone_action_buttons gia' usato in practice(), nessuno stile
-            # nuovo inventato.
+            # nuovo inventato. Il nome del proprietario va insieme ad essi
+            # (richiesta esplicita dell'utente).
+            owner_name=" ".join(x for x in ((row["owner_first_name"] or "").strip(),(row["owner_last_name"] or "").strip()) if x)
             phone_html=self.phone_action_buttons(row["owner_phone"]) if "owner_phone" in row.keys() and row["owner_phone"] else ""
-            contact_html=f'<div class="cremation-animal-contact">{phone_html}</div>' if phone_html else ""
+            contact_html=f'<div class="cremation-animal-contact">{esc(owner_name)} {phone_html}</div>' if (owner_name or phone_html) else ""
+            # Data di ritiro (richiesta esplicita dell'utente), stesso
+            # formato GG/MM/AAAA gia' usato in tutto il gestionale (date_it).
+            pickup_html=esc(date_it(row["pickup_date"])) if row["pickup_date"] else '<span class="cremation-dash">—</span>'
             return f'''<div class="cremation-animal-row" data-practice-id="{row['id']}" {row_open_attrs(url,f'Apri pratica {row["practice_number"]}')}>
               <div class="cremation-animal-id">
                 <span class="cremation-animal-avatar {avatar_cls}" aria-hidden="true">{avatar_emoji}</span>
@@ -13588,6 +13599,7 @@ class App(BaseHTTPRequestHandler):
               <div class="cremation-animal-col"><small>Provenienza</small>{provenance_html}</div>
               <div class="cremation-animal-col"><small>Etichette</small><div class="cremation-animal-tags">{tags_html(row)}</div></div>
               <div class="cremation-animal-col"><small>Urna</small><div class="cremation-animal-urn">{urn_html(row)}{accessory_html(row)}</div></div>
+              <div class="cremation-animal-col"><small>Ritiro</small>{pickup_html}</div>
               <div class="cremation-animal-actions"><a class="cremation-animal-open" href="{url}" onclick="event.stopPropagation()"><span>Apri pratica</span>{lucide("chevron-right")}</a>{swap_html}{remove_html}</div>
               {contact_html}
               {notes_html}

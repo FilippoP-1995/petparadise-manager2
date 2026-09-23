@@ -6514,12 +6514,13 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(f'/pratiche/{waiting_pid}?return_to=', page)
         self.assertNotIn(f'/pratiche/{waiting_pid}?return_to=%2Fprogramma-cremazioni%3Fopen_cycle', page)
 
-    def test_cremation_animal_row_shows_call_and_whatsapp_icons_for_each_animal(self):
+    def test_cremation_animal_row_shows_call_whatsapp_owner_name_and_pickup_date(self):
         # Richiesta esplicita dell'utente: le stesse icone/collegamenti
         # chiama/WhatsApp gia' presenti nel riepilogo di una pratica devono
         # esserci anche estendendo un ciclo di cremazione, per ogni animale
         # presente nel ciclo - sia in vista giorno che settimana (stesso
-        # animal_row_html, duplicato identico nelle due funzioni).
+        # animal_row_html, duplicato identico nelle due funzioni) - insieme
+        # al nome del proprietario e alla data di ritiro.
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
             cycle_id = conn.execute(
@@ -6528,9 +6529,10 @@ class PetParadiseTests(unittest.TestCase):
             ).lastrowid
             conn.execute(
                 """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
-                   pickup_date,created_at,updated_at,created_by,animal_name,owner_phone,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-                ("CR-TELWA-1", "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-22", stamp, stamp,
-                 admin["id"], "Birba", "3331112222", cycle_id),
+                   pickup_date,created_at,updated_at,created_by,animal_name,owner_first_name,owner_last_name,
+                   owner_phone,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-TELWA-1", "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-20", stamp, stamp,
+                 admin["id"], "Birba", "Anna", "Bianchi", "3331112222", cycle_id),
             )
         rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
         self.handler.path = "/programma-cremazioni?data=2026-07-22"
@@ -6538,6 +6540,8 @@ class PetParadiseTests(unittest.TestCase):
         page = rendered[-1]
         self.assertIn('href="tel:3331112222"', page)
         self.assertIn('href="https://wa.me/393331112222"', page)
+        self.assertIn("Anna Bianchi", page)
+        self.assertIn("<small>Ritiro</small>20/07/2026", page)
 
         rendered.clear()
         self.handler.path = "/programma-cremazioni?data=2026-07-22&vista=settimana"
@@ -6545,6 +6549,8 @@ class PetParadiseTests(unittest.TestCase):
         page = rendered[-1]
         self.assertIn('href="tel:3331112222"', page)
         self.assertIn('href="https://wa.me/393331112222"', page)
+        self.assertIn("Anna Bianchi", page)
+        self.assertIn("<small>Ritiro</small>20/07/2026", page)
 
     def test_disposal_batch_detail_and_history_link_preserve_period_filters(self):
         # Prima di questa modifica "Torna a Smaltimenti" e il link "Apri"
