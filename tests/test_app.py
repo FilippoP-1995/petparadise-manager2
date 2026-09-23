@@ -3057,6 +3057,94 @@ class PetParadiseTests(unittest.TestCase):
         page = rendered[-1]
         self.assertIn("COMPLETATO", page)
 
+    def test_cremation_day_view_lists_heaviest_animal_first_in_a_shared_cycle(self):
+        # Richiesta esplicita dell'utente: nei cicli con piu' animali, il
+        # piu' pesante va mostrato per primo, indipendentemente dall'ordine
+        # di inserimento nel ciclo.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-22", "in_attesa", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+            # inserito per primo ma piu' leggero
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,estimated_weight,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-PESODAY-A", "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-22", stamp, stamp,
+                 admin["id"], "AnimaleLeggero", "4", cycle_id),
+            )
+            # inserito per secondo ma piu' pesante -> deve comparire per primo
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,estimated_weight,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-PESODAY-B", "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-22", stamp, stamp,
+                 admin["id"], "AnimalePesante", "18", cycle_id),
+            )
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-22"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn("AnimaleLeggero", page)
+        self.assertIn("AnimalePesante", page)
+        self.assertLess(page.index("AnimalePesante"), page.index("AnimaleLeggero"))
+
+    def test_cremation_week_view_lists_heaviest_animal_first_in_a_shared_cycle(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-22", "in_attesa", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,estimated_weight,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-PESOWEEK-A", "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-22", stamp, stamp,
+                 admin["id"], "AnimaleLeggeroW", "4", cycle_id),
+            )
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,estimated_weight,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-PESOWEEK-B", "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-22", stamp, stamp,
+                 admin["id"], "AnimalePesanteW", "18", cycle_id),
+            )
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-22&vista=settimana"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn("AnimaleLeggeroW", page)
+        self.assertIn("AnimalePesanteW", page)
+        self.assertLess(page.index("AnimalePesanteW"), page.index("AnimaleLeggeroW"))
+
+    def test_cremation_view_ties_on_weight_keep_insertion_order_first(self):
+        # A parita' di peso vince chi e' stato inserito per primo nel ciclo.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-22", "in_attesa", "08:00", "09:30", stamp, stamp),
+            ).lastrowid
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,estimated_weight,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-PESOTIE-A", "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-22", stamp, stamp,
+                 admin["id"], "AnimalePrimoInserito", "10", cycle_id),
+            )
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,estimated_weight,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-PESOTIE-B", "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-07-22", stamp, stamp,
+                 admin["id"], "AnimaleSecondoInserito", "10", cycle_id),
+            )
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-22"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertLess(page.index("AnimalePrimoInserito"), page.index("AnimaleSecondoInserito"))
+
     def test_cremation_complete_cycle_also_promotes_animals_stuck_at_ritirato(self):
         # regression: an animal attached to a cycle whose status was never bumped to
         # "In programma" (e.g. legacy data) must still move to "Da consegnare" on completion

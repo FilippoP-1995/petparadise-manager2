@@ -7785,6 +7785,17 @@ def money_value(value):
         return 0.0
 
 
+def cycle_animal_sort_key(row):
+    # Richiesta esplicita dell'utente: nei cicli di cremazione con piu'
+    # animali, il piu' pesante va mostrato per primo; a parita' di peso
+    # vince chi e' stato inserito per primo nel ciclo. estimated_weight e'
+    # testo libero (come i prezzi), quindi si riusa lo stesso parser
+    # tollerante di money_value; il tie-break sul peso basta sul solo peso
+    # perche' python.sort() e' stabile e le righe arrivano gia' in ordine
+    # id ASC (= ordine di inserimento) dalla query.
+    return -money_value(row["estimated_weight"])
+
+
 def money_it(value):
     return f"€ {value:,.2f}".replace(",","X").replace(".",",").replace("X",".")
 
@@ -12948,6 +12959,8 @@ class App(BaseHTTPRequestHandler):
                 assigned=c.execute(f"SELECT * FROM practices WHERE cremation_cycle_id IN ({marks}) AND (deleted_at IS NULL OR deleted_at='') ORDER BY id ASC",tuple(cycle_ids)).fetchall()
                 for row in assigned:
                     cycle_practices[row["cremation_cycle_id"]].append(row)
+                for rows in cycle_practices.values():
+                    rows.sort(key=cycle_animal_sort_key)
             all_rows=list({row["id"]:row for row in list(waiting)+list(assigned)+list(assignable)}.values())
             practice_ids={row["id"] for row in all_rows}
             urn_items_by_practice={}
@@ -13422,6 +13435,8 @@ class App(BaseHTTPRequestHandler):
                 assigned=c.execute(f"SELECT * FROM practices WHERE cremation_cycle_id IN ({marks2}) AND (deleted_at IS NULL OR deleted_at='') ORDER BY id ASC",tuple(cycle_ids)).fetchall()
                 for row in assigned:
                     cycle_practices[row["cremation_cycle_id"]].append(row)
+                for rows in cycle_practices.values():
+                    rows.sort(key=cycle_animal_sort_key)
             all_rows=list({row["id"]:row for row in list(waiting)+list(assigned)+list(assignable)}.values())
             practice_ids={row["id"] for row in all_rows}
             urn_items_by_practice={}
