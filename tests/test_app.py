@@ -11916,7 +11916,12 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn('tel:+3339990000', page)
         self.assertIn('https://wa.me/393339990000', page)
         self.assertIn('google.com/maps/dir', page)
-        self.assertIn('calendar-detail-qa-disabled', page)  # Pratica non disponibile prima del ritiro
+        # richiesta esplicita dell'utente: la pratica si puo' creare anche
+        # prima che il ritiro sia stato effettuato (qui l'evento e' ancora
+        # "Da ritirare") - il pulsante e' quindi attivo, non disabilitato.
+        self.assertNotIn('class="calendar-detail-qa calendar-detail-qa-disabled"', page)
+        self.assertIn(f'href="/nuova?calendar_event_id={event_id}"', page)
+        self.assertIn('+ Crea pratica', page)
         self.assertIn('DA RITIRARE', page)
         # richiesta utente (riepilogo evento): riga Animali con dettaglio
         # reale, riga Preventivo con il totale, form di modifica rapida per
@@ -12053,12 +12058,12 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Urna", reopened)
         self.assertIn("230,00", reopened)
 
-    def _create_event_with_estimates(self, admin, title, voci):
+    def _create_event_with_estimates(self, admin, title, voci, event_status="Ritirato"):
         with app.db() as conn:
             stamp = app.now()
             event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
                 VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                ("Ritiro",title,"Livorno","Filippo","2026-07-30T09:00:00","2026-07-30T09:30:00","Ritirato",admin["id"],stamp,stamp)).lastrowid
+                ("Ritiro",title,"Livorno","Filippo","2026-07-30T09:00:00","2026-07-30T09:30:00",event_status,admin["id"],stamp,stamp)).lastrowid
             for i, (desc, amount) in enumerate(voci):
                 conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",
                              (event_id, desc, amount, i, stamp, stamp))
@@ -12182,6 +12187,86 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.practice(admin, pid)
         reopened = rendered[-1]
         self.assertIn("150", reopened)
+
+    def test_da_ritirare_is_a_valid_practice_state_with_its_own_color(self):
+        self.assertIn("Da ritirare", app.STATES)
+        self.assertEqual(app.practice_status_class("Da ritirare"), "practice-status-purple")
+
+    def test_da_ritirare_status_string_is_no_longer_rewritten_to_ritirato_on_startup(self):
+        # Prima di questa modifica "Da ritirare" era una stringa legacy
+        # riscritta in "Ritirato" ad ogni avvio (status_migrations in
+        # init_db): ora e' un vero stato pratica e NON deve piu' essere
+        # toccato da quella migrazione.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name)
+                   VALUES(?,?,?,?,?,?,?,?)""",
+                ("PP-DARITIRARE-1", "Privato", "Livorno", "Da ritirare", stamp, stamp, admin["id"], "Fido"),
+            ).lastrowid
+        app.init_db()
+        with app.db() as conn:
+            status = conn.execute("SELECT status FROM practices WHERE id=?", (pid,)).fetchone()["status"]
+        self.assertEqual(status, "Da ritirare")
+
+    def test_practice_can_be_created_from_a_pickup_event_not_yet_ritirato(self):
+        # Richiesta esplicita dell'utente: si puo' creare la pratica anche
+        # prima che il ritiro sia stato effettuato (il cliente a volte
+        # lascia i dati in sede in anticipo) - nasce con stato "Da
+        # ritirare" invece di "Ritirato" quando l'operatore non lo cambia
+        # esplicitamente nel form.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        event_id = self._create_event_with_estimates(admin, "RITIRO ANTICIPATO TEST", [("Cremazione", "150")], event_status="Da confermare")
+        redirects = []
+        self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.form = lambda: {
+            "calendar_event_id": str(event_id),
+            "status": "Da ritirare",
+            "operator_name": "FILIPPO", "request_origin": "Collaboratore", "collaborator_name": "COLLAB TEST",
+            "destination_branch": "Livorno", "animal_name": "Fido", "service_type": "Cremazione singola",
+            "price_cremation": "150.00",
+            "balance_idempotency_key": "evt-pending-pickup-1",
+        }
+        self.handler.create_practice(admin)
+        self.assertTrue(redirects, "creazione pratica fallita per un evento non ancora ritirato")
+        pid = int(redirects[-1].split("/pratiche/")[1])
+        with app.db() as conn:
+            p = conn.execute("SELECT status FROM practices WHERE id=?", (pid,)).fetchone()
+            ev = conn.execute("SELECT linked_practice_id FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+        self.assertEqual(p["status"], "Da ritirare")
+        self.assertEqual(ev["linked_practice_id"], pid)
+
+    def test_practice_creation_still_blocked_for_a_cancelled_pickup_event(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        event_id = self._create_event_with_estimates(admin, "RITIRO ANNULLATO TEST", [("Cremazione", "150")], event_status="Annullato")
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.form = lambda: {
+            "calendar_event_id": str(event_id),
+            "operator_name": "FILIPPO", "request_origin": "Collaboratore", "collaborator_name": "COLLAB TEST",
+            "destination_branch": "Livorno", "animal_name": "Fido", "service_type": "Cremazione singola",
+            "price_cremation": "150.00",
+            "balance_idempotency_key": "evt-cancelled-1",
+        }
+        self.handler.create_practice(admin)
+        self.assertIn("Evento calendario non valido per la creazione pratica", rendered[-1])
+        with app.db() as conn:
+            n = conn.execute("SELECT count(*) n FROM practices WHERE practice_number LIKE 'CR-%' AND animal_name='Fido'").fetchone()["n"]
+        self.assertEqual(n, 0)
+
+    def test_nuova_pratica_form_defaults_to_da_ritirare_when_event_not_yet_ritirato(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        event_id = self._create_event_with_estimates(admin, "RITIRO PREFILL DA RITIRARE", [("Cremazione", "150")], event_status="Da ritirare")
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/nuova?calendar_event_id={event_id}"
+        self.handler.new_page(admin)
+        page = rendered[-1]
+        self.assertIn('<option selected>Da ritirare</option>', page)
+        self.assertIn("Il ritiro non risulta ancora effettuato", page)
 
     def test_practice_created_from_event_with_only_one_voice_leaves_others_empty(self):
         with app.db() as conn:

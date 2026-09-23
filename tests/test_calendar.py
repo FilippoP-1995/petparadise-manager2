@@ -985,17 +985,14 @@ class OperationalCalendarTests(unittest.TestCase):
             event = conn.execute("SELECT linked_practice_id FROM calendar_events WHERE id=?", (event_id,)).fetchone()
         self.assertIsNone(event["linked_practice_id"])
 
-    def test_link_practice_section_shown_only_when_ritirato_and_unlinked(self):
+    def test_link_practice_section_shown_for_pickup_events_before_ritirato_too(self):
+        # Richiesta esplicita dell'utente: si puo' collegare/creare la
+        # pratica anche prima che il ritiro sia stato effettuato - resta
+        # bloccato solo un evento annullato (vedi test successivo).
         event_id = self.save(self.event_form("Ritiro", event_status="Da confermare"))
         rendered = []
         self.handler.send_html = lambda html, status=200: rendered.append(html)
         self.handler.path = f"/calendario/{event_id}"
-        self.handler.calendar_event_detail(self.admin, event_id)
-        self.assertNotIn("Collega pratica esistente", rendered[-1])
-
-        self.handler.form = lambda: {"status": "Ritirato"}
-        with patch("app.emit_notification", return_value=[]):
-            self.handler.calendar_event_action(self.admin, event_id, "stato")
         self.handler.calendar_event_detail(self.admin, event_id)
         self.assertIn("Collega pratica esistente", rendered[-1])
         self.assertIn("calendarLinkPracticeSearch", rendered[-1])
@@ -1005,7 +1002,7 @@ class OperationalCalendarTests(unittest.TestCase):
             pid = conn.execute(
                 """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name)
                    VALUES(?,?,?,?,?,?,?,?)""",
-                ("PP-LINK-04", "Privato", "Livorno", "Ritirato", stamp, stamp, self.admin["id"], "Milo"),
+                ("PP-LINK-04", "Privato", "Livorno", "Da ritirare", stamp, stamp, self.admin["id"], "Milo"),
             ).lastrowid
         self.handler.form = lambda: {"practice_id": str(pid)}
         self.handler.calendar_event_action(self.admin, event_id, "collega-pratica")
@@ -1013,6 +1010,23 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertNotIn('id="calendarLinkPracticeSearch"', rendered[-1])
         self.assertIn("Apri pratica", rendered[-1])
         self.assertIn("PP-LINK-04", rendered[-1])
+        # promemoria: il ritiro non risulta ancora effettuato
+        self.assertIn("ricordati di aggiornare lo stato", rendered[-1])
+
+        self.handler.form = lambda: {"status": "Ritirato"}
+        with patch("app.emit_notification", return_value=[]):
+            self.handler.calendar_event_action(self.admin, event_id, "stato")
+        self.handler.calendar_event_detail(self.admin, event_id)
+        # una volta ritirato, il promemoria sparisce
+        self.assertNotIn("ricordati di aggiornare lo stato", rendered[-1])
+
+    def test_link_practice_section_hidden_for_annullato_event(self):
+        event_id = self.save(self.event_form("Ritiro", event_status="Annullato"))
+        rendered = []
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(self.admin, event_id)
+        self.assertNotIn("Collega pratica esistente", rendered[-1])
 
     def test_riconsegna_event_detail_shows_apri_pratica_when_linked(self):
         # richiesta esplicita dell'utente: da un evento Riconsegna gia'
