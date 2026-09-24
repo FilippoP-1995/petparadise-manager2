@@ -6552,6 +6552,51 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Anna Bianchi", page)
         self.assertIn("<small>Ritiro</small>20/07/2026", page)
 
+    def test_cremation_animal_row_shows_species_and_age_for_each_cycle_animal(self):
+        # Richiesta esplicita dell'utente: estendendo un ciclo di cremazione,
+        # per ogni animale del ciclo si deve vedere anche la specie animale e
+        # gli anni di eta' - sia in vista giorno che settimana (stesso
+        # animal_row_html, duplicato identico nelle due funzioni). Stessa
+        # convenzione singolare/plurale gia' usata nella pagina pratica per
+        # age_years/age_months.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-23", "in_attesa", "08:30", "09:30", stamp, stamp),
+            ).lastrowid
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name,species,age_years,age_months,
+                   cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-SPAGE-1", "Privato", "Livorno", "Ritirato", "Cremazione singola", stamp, stamp,
+                 admin["id"], "Birba", "Cane", "3", "4", cycle_id),
+            )
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name,species,age_years,age_months,
+                   cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-SPAGE-2", "Privato", "Livorno", "Ritirato", "Cremazione singola", stamp, stamp,
+                 admin["id"], "Fusa", "Gatto", "1", "1", cycle_id),
+            )
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name,cremation_cycle_id) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-SPAGE-3", "Privato", "Livorno", "Ritirato", "Cremazione singola", stamp, stamp,
+                 admin["id"], "Senza dati", cycle_id),
+            )
+        for path in ("/programma-cremazioni?data=2026-07-23", "/programma-cremazioni?data=2026-07-23&vista=settimana"):
+            rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+            self.handler.path = path
+            self.handler.cremation_schedule(admin)
+            page = rendered[-1]
+            self.assertIn("<small>Specie</small>Cane", page)
+            self.assertIn("<small>Età</small>3 anni, 4 mesi", page)
+            self.assertIn("<small>Specie</small>Gatto", page)
+            self.assertIn("<small>Età</small>1 anno, 1 mese", page)
+            self.assertIn('<small>Specie</small><span class="cremation-dash">—</span>', page)
+            self.assertIn('<small>Età</small><span class="cremation-dash">—</span>', page)
+
     def test_disposal_batch_detail_and_history_link_preserve_period_filters(self):
         # Prima di questa modifica "Torna a Smaltimenti" e il link "Apri"
         # dello storico erano entrambi statici: tornando allo storico si
