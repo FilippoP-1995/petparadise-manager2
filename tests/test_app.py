@@ -791,16 +791,35 @@ class PetParadiseTests(unittest.TestCase):
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
             pid = conn.execute(
                 """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
-                   animal_name,owner_first_name,owner_last_name,owner_street,owner_city,owner_province,owner_zip,owner_tax_code)
-                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   animal_name,owner_first_name,owner_last_name,owner_street,owner_city,owner_province,owner_zip,owner_tax_code,owner_email)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 ("CR-ADDR", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Fido",
-                 "Mario", "Rossi", "Via Roma 1", "Livorno", "LI", "57100", "RSSMRA80A01H501U"),
+                 "Mario", "Rossi", "Via Roma 1", "Livorno", "LI", "57100", "RSSMRA80A01H501U", "mario.rossi@example.com"),
             ).lastrowid
         rendered = []; self.handler.send_html = lambda content, *args: rendered.append(content)
         self.handler.practice(admin, pid)
         page = rendered[-1]
         self.assertIn("Via Roma 1, 57100 Livorno (LI)", page)
         self.assertIn("CF: RSSMRA80A01H501U", page)
+        self.assertIn("mario.rossi@example.com", page)
+
+    def test_practice_summary_speditore_omits_email_line_when_missing(self):
+        # Richiesta esplicita dell'utente: la mail va mostrata nel riepilogo
+        # Speditore solo se presente - se assente non deve comparire nessuna
+        # riga vuota (stesso pattern gia' usato per indirizzo/CF).
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   animal_name,owner_first_name,owner_last_name,owner_phone) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-NOMAIL", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Fido",
+                 "Mario", "Rossi", "3331112222"),
+            ).lastrowid
+        rendered = []; self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.practice(admin, pid)
+        page = rendered[-1]
+        speditore_block = page[page.index("<small>Speditore</small>"):page.index("<small>Animale</small>")]
+        self.assertNotIn("@", speditore_block)
 
     def test_practice_summary_shows_total_due_or_paid_matching_active_channel(self):
         with app.db() as conn:
