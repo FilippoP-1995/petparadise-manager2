@@ -2260,12 +2260,18 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn(not_pickup, ids)
         self.assertNotIn(already_linked, ids)
 
-    def test_cremation_schedule_shows_future_pickup_cards_non_actionable(self):
+    def test_cremation_schedule_shows_future_pickup_cards_actionable_only_in_add_modal(self):
         # Le date devono restare relative a "oggi" (rome_now) e non fisse:
         # future_pickup_singola_rows() filtra sempre contro la data reale
         # corrente (app.py:11983/11998), quindi date hardcoded nel passato
         # smettono di essere "future" con il solo passare del tempo,
         # facendo fallire il test senza nessuna regressione reale.
+        # Richiesta esplicita dell'utente: dev'essere possibile aggiungere
+        # al ciclo anche un animale non ancora affidato - la card diventa
+        # cliccabile (prenotazione) SOLO dentro il popup "Aggiungi animale
+        # al ciclo" (contesto con un ciclo di destinazione preciso), resta
+        # invece puramente informativa nel pannello generale "Animali in
+        # attesa" (nessun ciclo di destinazione in quel contesto).
         view_date = app.rome_now().date()
         future_date = view_date + timedelta(days=1)
         with app.db() as conn:
@@ -2290,20 +2296,17 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Non ancora affidato", page)
         self.assertIn(f"RITIRO {future_date.strftime('%d/%m')}", page)
         self.assertIn('class="cremation-add-animal-card cremation-future-pickup-card"', page)
-        # nessun collegamento reale: mai un onclick di assegnazione per una
-        # card "in arrivo" (non esiste una pratica da poter assegnare) —
-        # asserzione diretta sull'helper che genera la card, piu' robusta
-        # di uno slicing di stringa sull'HTML completo della pagina (la
-        # stessa card compare due volte in pagina: nel pannello Animali e
-        # nel popup Aggiungi animale).
         with app.db() as conn:
             future_row = app.future_pickup_singola_rows(conn, view_date.isoformat())[0]
-        card_html = app.future_pickup_card_html(future_row)
-        self.assertNotIn("onclick", card_html)
-        self.assertNotIn("cremationAddAnimalConfirm", card_html)
-        self.assertNotIn("cremationQuickAssign", card_html)
-        self.assertIn(card_html, page)
-        self.assertEqual(page.count(card_html), 2)
+        non_actionable_html = app.future_pickup_card_html(future_row)
+        actionable_html = app.future_pickup_card_html(future_row, actionable=True)
+        self.assertNotIn("onclick", non_actionable_html)
+        self.assertIn(f'onclick="cremationReserveConfirm(this,{event_id})"', actionable_html)
+        self.assertIn("Aggiungi al ciclo", actionable_html)
+        self.assertIn(non_actionable_html, page)
+        self.assertIn(actionable_html, page)
+        self.assertEqual(page.count(non_actionable_html), 1)
+        self.assertEqual(page.count(actionable_html), 1)
 
     def test_cremation_schedule_week_shows_future_pickup_row(self):
         view_date = app.rome_now().date()
@@ -2456,6 +2459,298 @@ class PetParadiseTests(unittest.TestCase):
             second_cycle = conn.execute("SELECT * FROM cremation_cycles WHERE id=?", (second_cycle_id,)).fetchone()
         self.assertEqual(second_cycle["planned_start"], "10:00")
         self.assertEqual(second_cycle["planned_end"], "11:00")
+
+    def _create_future_pickup_event(self, admin, animal_name="Fido", species="Cane", weight="10", start_at="2026-08-05T09:00:00", event_status="Da confermare"):
+        with app.db() as conn:
+            stamp = app.now()
+            event_id = conn.execute(
+                """INSERT INTO calendar_events(event_type,title,client_first_name,client_last_name,created_by,created_at,updated_at,event_status,start_at,end_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro", "Ritiro futuro test", "Mario", "Bianchi", admin["id"], stamp, stamp, event_status, start_at, start_at),
+            ).lastrowid
+            conn.execute(
+                "INSERT INTO calendar_event_animals(event_id,name,species,weight,cremation_type,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                (event_id, animal_name, species, weight, "Singola", stamp, stamp),
+            )
+        return event_id
+
+    def test_cremation_reserve_to_cycle_creates_reservation_shown_as_not_yet_affidato(self):
+        # Richiesta esplicita dell'utente: dev'essere possibile aggiungere
+        # al ciclo anche un animale non ancora affidato, riconoscibile come
+        # tale.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.form = lambda: {"data": "2026-08-05"}
+        self.handler.cremation_create_cycle(admin)
+        cycle_id = responses[-1][0]["cycle_id"]
+        event_id = self._create_future_pickup_event(admin)
+
+        responses.clear()
+        self.handler.form = lambda: {"calendar_event_id": str(event_id)}
+        self.handler.cremation_reserve_to_cycle(admin, cycle_id)
+        self.assertEqual(responses[-1], ({"ok": True}, 200))
+        with app.db() as conn:
+            reservation = conn.execute("SELECT * FROM cremation_cycle_reservations WHERE cycle_id=?", (cycle_id,)).fetchone()
+            self.assertIsNotNone(reservation)
+            self.assertEqual(reservation["calendar_event_id"], event_id)
+            # una prenotazione non fa scattare la notifica "ciclo pronto":
+            # nessun animale vero e' ancora stato affidato.
+            self.assertEqual(conn.execute("SELECT status FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()["status"], "pianificato")
+
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/programma-cremazioni?data=2026-08-05"
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn("Fido", page)
+        self.assertIn("10 kg", page)
+        self.assertIn("NON ANCORA AFFIDATO", page)
+        self.assertIn(f"cremationRemoveReservation(this,{reservation['id']})", page)
+
+        # stessa cosa in vista Settimana (chiusura duplicata, stessa dispatch
+        # va verificata separatamente).
+        rendered.clear()
+        self.handler.path = "/programma-cremazioni?data=2026-08-05&vista=settimana"
+        self.handler.cremation_schedule(admin)
+        week_page = rendered[-1]
+        self.assertIn("Fido", week_page)
+        self.assertIn("10 kg", week_page)
+        self.assertIn("NON ANCORA AFFIDATO", week_page)
+        self.assertIn(f"cremationRemoveReservation(this,{reservation['id']})", week_page)
+
+    def test_cremation_reserve_to_cycle_counts_toward_two_animal_limit_and_rejects_stale_or_completed(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            practice_id = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-RES-LIMIT", "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-08-05", stamp, stamp, admin["id"], "Argo"),
+            ).lastrowid
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.form = lambda: {"data": "2026-08-05"}
+        self.handler.cremation_create_cycle(admin)
+        cycle_id = responses[-1][0]["cycle_id"]
+
+        responses.clear()
+        self.handler.form = lambda: {"practice_id": str(practice_id)}
+        self.handler.cremation_assign_to_cycle(admin, cycle_id)
+        self.assertTrue(responses[-1][0]["ok"])
+
+        event_id = self._create_future_pickup_event(admin, animal_name="Bimba")
+        responses.clear()
+        self.handler.form = lambda: {"calendar_event_id": str(event_id)}
+        self.handler.cremation_reserve_to_cycle(admin, cycle_id)
+        self.assertTrue(responses[-1][0]["ok"])
+
+        # il ciclo ha gia' 1 pratica reale + 1 prenotazione = 2: una terza va rifiutata
+        third_event_id = self._create_future_pickup_event(admin, animal_name="Terzo")
+        responses.clear()
+        self.handler.form = lambda: {"calendar_event_id": str(third_event_id)}
+        self.handler.cremation_reserve_to_cycle(admin, cycle_id)
+        payload, status = responses[-1]
+        self.assertFalse(payload["ok"])
+        self.assertEqual(status, 409)
+
+        # un evento gia' collegato a una pratica non e' piu' prenotabile
+        with app.db() as conn:
+            linked_event_id = conn.execute(
+                """INSERT INTO calendar_events(event_type,title,created_by,created_at,updated_at,event_status,start_at,end_at,linked_practice_id)
+                   VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro", "gia' collegato", admin["id"], stamp, stamp, "Da confermare", "2026-08-05T10:00:00", "2026-08-05T10:00:00", practice_id),
+            ).lastrowid
+            other_cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-08-06", "pianificato", "08:30", "09:30", stamp, stamp),
+            ).lastrowid
+        responses.clear()
+        self.handler.form = lambda: {"calendar_event_id": str(linked_event_id)}
+        self.handler.cremation_reserve_to_cycle(admin, other_cycle_id)
+        self.assertFalse(responses[-1][0]["ok"])
+
+        # un ciclo gia' completato non accetta piu' prenotazioni
+        with app.db() as conn:
+            conn.execute("UPDATE cremation_cycles SET status='completato' WHERE id=?", (other_cycle_id,))
+        fourth_event_id = self._create_future_pickup_event(admin, animal_name="Quarto")
+        responses.clear()
+        self.handler.form = lambda: {"calendar_event_id": str(fourth_event_id)}
+        self.handler.cremation_reserve_to_cycle(admin, other_cycle_id)
+        payload, status = responses[-1]
+        self.assertFalse(payload["ok"])
+        self.assertEqual(status, 409)
+
+    def test_cremation_reserve_to_cycle_rejects_event_already_reserved_elsewhere(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_a = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-08-05", "pianificato", "08:30", "09:30", stamp, stamp),
+            ).lastrowid
+            cycle_b = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-08-05", "pianificato", "10:00", "11:00", stamp, stamp),
+            ).lastrowid
+        event_id = self._create_future_pickup_event(admin)
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.form = lambda: {"calendar_event_id": str(event_id)}
+        self.handler.cremation_reserve_to_cycle(admin, cycle_a)
+        self.assertTrue(responses[-1][0]["ok"])
+        responses.clear()
+        self.handler.cremation_reserve_to_cycle(admin, cycle_b)
+        payload, status = responses[-1]
+        self.assertFalse(payload["ok"])
+        self.assertEqual(status, 409)
+
+    def test_cremation_remove_reservation_frees_the_slot(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-08-05", "pianificato", "08:30", "09:30", stamp, stamp),
+            ).lastrowid
+        event_id = self._create_future_pickup_event(admin)
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.form = lambda: {"calendar_event_id": str(event_id)}
+        self.handler.cremation_reserve_to_cycle(admin, cycle_id)
+        with app.db() as conn:
+            reservation_id = conn.execute("SELECT id FROM cremation_cycle_reservations WHERE cycle_id=?", (cycle_id,)).fetchone()["id"]
+        responses.clear()
+        self.handler.cremation_remove_reservation(admin, reservation_id)
+        self.assertEqual(responses[-1], ({"ok": True}, 200))
+        with app.db() as conn:
+            self.assertIsNone(conn.execute("SELECT id FROM cremation_cycle_reservations WHERE id=?", (reservation_id,)).fetchone())
+        # libero: lo stesso evento e' ora di nuovo prenotabile altrove
+        responses.clear()
+        self.handler.form = lambda: {"calendar_event_id": str(event_id)}
+        self.handler.cremation_reserve_to_cycle(admin, cycle_id)
+        self.assertTrue(responses[-1][0]["ok"])
+
+    def test_cremation_complete_cycle_blocked_while_reservation_pending(self):
+        # Rischio reale individuato in analisi: cremation_complete_cycle
+        # segna ogni animale come "Da consegnare" (pronto per la
+        # riconsegna) - un animale non ancora affidato non e' mai stato
+        # davvero ritirato, quindi il completamento va bloccato finche'
+        # la prenotazione non si risolve (pratica vera) o viene rimossa.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            practice_id = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-COMPLETE-BLOCK", "Privato", "Livorno", "Ritirato", "Cremazione singola", "2026-08-05", stamp, stamp, admin["id"], "Argo"),
+            ).lastrowid
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.form = lambda: {"data": "2026-08-05"}
+        self.handler.cremation_create_cycle(admin)
+        cycle_id = responses[-1][0]["cycle_id"]
+        responses.clear()
+        self.handler.form = lambda: {"practice_id": str(practice_id)}
+        self.handler.cremation_assign_to_cycle(admin, cycle_id)
+        self.assertTrue(responses[-1][0]["ok"])
+
+        event_id = self._create_future_pickup_event(admin)
+        responses.clear()
+        self.handler.form = lambda: {"calendar_event_id": str(event_id)}
+        self.handler.cremation_reserve_to_cycle(admin, cycle_id)
+        self.assertTrue(responses[-1][0]["ok"])
+
+        responses.clear()
+        self.handler.cremation_complete_cycle(admin, cycle_id)
+        payload, status = responses[-1]
+        self.assertFalse(payload["ok"])
+        self.assertEqual(status, 409)
+        self.assertIn("non ancora affidato", payload["error"])
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT status FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()["status"], "in_attesa")
+
+        # rimossa la prenotazione, il completamento torna possibile
+        with app.db() as conn:
+            reservation_id = conn.execute("SELECT id FROM cremation_cycle_reservations WHERE cycle_id=?", (cycle_id,)).fetchone()["id"]
+        self.handler.cremation_remove_reservation(admin, reservation_id)
+        responses.clear()
+        self.handler.cremation_complete_cycle(admin, cycle_id)
+        self.assertTrue(responses[-1][0]["ok"])
+
+    def test_create_practice_from_reserved_event_takes_over_the_reserved_cycle_slot(self):
+        # Richiesta esplicita dell'utente: una volta creata ed e' collegata
+        # una pratica a quell'evento, tutti i dati relativi a quell'animale
+        # si aggiornano automaticamente nel ciclo (nessuna azione manuale).
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-08-05", "pianificato", "08:30", "09:30", stamp, stamp),
+            ).lastrowid
+        event_id = self._create_future_pickup_event(admin, animal_name="Birba")
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.form = lambda: {"calendar_event_id": str(event_id)}
+        self.handler.cremation_reserve_to_cycle(admin, cycle_id)
+        self.assertTrue(responses[-1][0]["ok"])
+
+        redirects = []
+        self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.form = lambda: {
+            "operator_name": "SERENA", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "animal_name": "Birba",
+            "owner_first_name": "Mario", "owner_last_name": "Bianchi", "owner_phone": "333",
+            "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
+            "provenance": "L", "calendar_event_id": str(event_id),
+        }
+        self.handler.create_practice(admin)
+        self.assertTrue(redirects)
+        pid = int(redirects[-1].split("/pratiche/")[1])
+        with app.db() as conn:
+            practice = conn.execute("SELECT cremation_cycle_id,status FROM practices WHERE id=?", (pid,)).fetchone()
+            self.assertEqual(practice["cremation_cycle_id"], cycle_id)
+            # Stessa transizione di cremation_assign_to_cycle (assegnazione
+            # manuale): un posto che passa da prenotazione a pratica vera
+            # dev'essere indistinguibile da un inserimento manuale.
+            self.assertEqual(practice["status"], "In programma")
+            self.assertEqual(conn.execute("SELECT status FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()["status"], "in_attesa")
+            self.assertIsNone(conn.execute("SELECT id FROM cremation_cycle_reservations WHERE cycle_id=?", (cycle_id,)).fetchone())
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/programma-cremazioni?data=2026-08-05"
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn(f'data-practice-id="{pid}"', page)
+        self.assertNotIn("NON ANCORA AFFIDATO", page)
+
+    def test_collega_pratica_to_reserved_event_takes_over_the_reserved_cycle_slot(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-08-05", "pianificato", "08:30", "09:30", stamp, stamp),
+            ).lastrowid
+            practice_id = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("CR-COLLEGA-RES", "Privato", "Livorno", "Da ritirare", "Cremazione singola", stamp, stamp, admin["id"], "Fido"),
+            ).lastrowid
+        event_id = self._create_future_pickup_event(admin)
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.form = lambda: {"calendar_event_id": str(event_id)}
+        self.handler.cremation_reserve_to_cycle(admin, cycle_id)
+        self.assertTrue(responses[-1][0]["ok"])
+
+        redirects = []
+        self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.headers = {"Referer": f"/calendario/{event_id}?tab=dettagli"}
+        self.handler.form = lambda: {"practice_id": str(practice_id)}
+        self.handler.calendar_event_action(admin, event_id, "collega-pratica")
+        with app.db() as conn:
+            practice = conn.execute("SELECT cremation_cycle_id,status FROM practices WHERE id=?", (practice_id,)).fetchone()
+            self.assertEqual(practice["cremation_cycle_id"], cycle_id)
+            self.assertEqual(practice["status"], "In programma")
+            self.assertEqual(conn.execute("SELECT status FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone()["status"], "in_attesa")
+            self.assertIsNone(conn.execute("SELECT id FROM cremation_cycle_reservations WHERE cycle_id=?", (cycle_id,)).fetchone())
 
     def test_next_slot_api_suggests_8_30_for_first_cycle_of_an_empty_day(self):
         # richiesta esplicita dell'utente: il primo ciclo di una giornata

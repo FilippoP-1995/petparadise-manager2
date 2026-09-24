@@ -2330,6 +2330,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-completed-note .icon{width:14px;height:14px}
 .cremation-cycle-animals{display:flex;flex-direction:column}
 .cremation-animal-row{display:grid;grid-template-columns:minmax(0,1.6fr) auto auto auto auto auto auto auto;align-items:center;gap:16px;padding:12px 0;border-top:1px solid #263246;cursor:pointer}
+.cremation-animal-row.cremation-animal-row-reserved{grid-template-columns:minmax(0,1.6fr) auto auto auto auto auto;cursor:default}
 .cremation-cycle-animals .cremation-animal-row:first-child{border-top:none;padding-top:6px}
 .cremation-animal-id{display:flex;align-items:center;gap:10px;min-width:0}
 .cremation-animal-avatar{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:17px;flex:0 0 34px;background:#0f172a}
@@ -6156,6 +6157,18 @@ function cremationRemoveFromCycle(el,practiceId){
       .catch(function(){cremationSoftRefreshCycle(cycleId);});
   },{title:'Rimuovi animale',confirmLabel:'Rimuovi'});
 }
+function cremationRemoveReservation(el,reservationId){
+  // Stessa idea di cremationRemoveFromCycle, per un animale "non ancora
+  // affidato" (prenotazione, nessuna pratica ancora collegata).
+  const cycleCard=el.closest('[data-cycle-id]');
+  const cycleId=cycleCard?cycleCard.dataset.cycleId:null;
+  cremationOpenConfirmModal('Rimuovere questo animale dal ciclo? Non è ancora affidato: tornerà disponibile per l\'inserimento.',function(){
+    fetch('/programma-cremazioni/prenotazioni/'+reservationId+'/rimuovi',{method:'POST',credentials:'same-origin'})
+      .then(function(res){return res.json();})
+      .then(function(data){if(!data.ok){alert(data.error||'Operazione non riuscita');return;}cremationSoftRefreshCycle(cycleId);})
+      .catch(function(){cremationSoftRefreshCycle(cycleId);});
+  },{title:'Rimuovi animale',confirmLabel:'Rimuovi'});
+}
 var cremationSwapSourceId=null,cremationSwapSourceName='';
 function cremationOpenSwapModal(practiceId,name){
   cremationSwapSourceId=practiceId;
@@ -6579,6 +6592,22 @@ function cremationAddAnimalConfirm(el,practiceId){
   const cycleId=overlay?overlay.dataset.cycleId:null;
   if(!cycleId)return;
   cremationQuickAssign(el,practiceId,cycleId);
+}
+function cremationReserveConfirm(el,calendarEventId){
+  // Richiesta esplicita dell'utente: un animale "non ancora affidato"
+  // (nessuna pratica ancora collegata all'evento) deve poter essere
+  // comunque inserito nel ciclo - stessa idea di cremationAddAnimalConfirm/
+  // cremationQuickAssign, ma prenota il posto invece di assegnare una
+  // pratica che non esiste ancora.
+  const overlay=document.getElementById('cremationAddAnimalOverlay');
+  const cycleId=overlay?overlay.dataset.cycleId:null;
+  if(!cycleId)return;
+  document.querySelectorAll('.cremation-quick-menu-popover').forEach(function(p){p.hidden=true;});
+  fetch('/programma-cremazioni/cicli/'+cycleId+'/prenota',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},credentials:'same-origin',
+    body:'calendar_event_id='+encodeURIComponent(calendarEventId)})
+    .then(function(res){return res.json();})
+    .then(function(data){if(!data.ok){alert(data.error||'Operazione non riuscita');return;}cremationReloadWithOpenCycle(cycleId);})
+    .catch(function(){cremationReloadWithOpenCycle(cycleId);});
 }
 let pendingOrderForm=null;
 function normalizeOrderQuantity(input,value){
@@ -8042,14 +8071,19 @@ def future_pickup_singola_rows(c, today_iso):
     (richiesta esplicita dell'utente, vedi create_practice), quindi non e'
     piu' garantito che questi eventi non abbiano una pratica — il filtro
     su linked_practice_id evita comunque il doppione una volta collegata.
-    Mostrati a scopo solo informativo nelle liste animali di Programma
-    Cremazioni."""
+    Esclude anche un evento gia' prenotato (occupa gia' un posto) in un
+    ciclo di cremazione - stessa logica del filtro su linked_practice_id,
+    solo uno stadio prima. Mostrati a scopo solo informativo nelle liste
+    animali di Programma Cremazioni, ed elencati anche nel popup "Aggiungi
+    animale al ciclo" (richiesta esplicita dell'utente: dev'essere
+    possibile inserirli comunque nel ciclo come prenotazione)."""
     return c.execute("""SELECT e.id AS event_id,e.start_at,e.client_first_name,e.client_last_name,
             e.person_company,e.veterinarian_name,a.name AS animal_name,a.species,a.weight
         FROM calendar_events e JOIN calendar_event_animals a ON a.event_id=e.id
         WHERE (e.deleted_at IS NULL OR e.deleted_at='') AND e.event_type IN ('Ritiro','Ritiro in sede')
           AND e.event_status IN ('Da confermare','Da ritirare') AND e.linked_practice_id IS NULL
           AND a.cremation_type='Singola' AND date(e.start_at)>=?
+          AND e.id NOT IN (SELECT calendar_event_id FROM cremation_cycle_reservations)
         ORDER BY e.start_at ASC""", (today_iso,)).fetchall()
 
 
@@ -8060,10 +8094,17 @@ def future_pickup_owner_label(row):
     return owner or row["person_company"] or row["veterinarian_name"] or ""
 
 
-def future_pickup_card_html(row):
-    """Card puramente informativa (nessun onclick verso assegna/scambia:
-    non esiste ancora una pratica da collegare) per un animale cremazione
-    singola in arrivo da un ritiro futuro/odierno non ancora effettuato."""
+def future_pickup_card_html(row,actionable=False):
+    """Card per un animale cremazione singola in arrivo da un ritiro
+    futuro/odierno non ancora effettuato. Nella lista generale "Animali in
+    attesa" resta puramente informativa (nessun ciclo di destinazione
+    definito in quel contesto - stesso comportamento di sempre). Dentro il
+    popup "Aggiungi animale al ciclo" (actionable=True, aperto per un ciclo
+    preciso) diventa invece cliccabile: richiesta esplicita dell'utente,
+    dev'essere possibile inserirlo comunque nel ciclo come prenotazione
+    (cremation_cycle_reservations - nessuna pratica creata qui, non esiste
+    ancora), restando riconoscibile come non ancora affidato finche' non
+    nascera' una pratica vera collegata a quell'evento."""
     avatar_emoji,avatar_cls=species_avatar(row["species"] or "")
     weight=(row["weight"] or "").strip()
     owner=future_pickup_owner_label(row)
@@ -8073,14 +8114,107 @@ def future_pickup_card_html(row):
     except ValueError:pickup_label=pickup_date
     meta_bits=[bit for bit in (f'{esc(weight)} kg' if weight else '',esc(owner) if owner else '') if bit]
     search_key=esc(f'{(row["animal_name"] or "").lower()} {owner.lower()}')
-    return f'''<div class="cremation-add-animal-card cremation-future-pickup-card" data-search="{search_key}">
+    tag=f'button type="button" onclick="cremationReserveConfirm(this,{row["event_id"]})"' if actionable else 'div'
+    close_tag='button' if actionable else 'div'
+    add_btn='<span class="cremation-add-animal-btn">Aggiungi al ciclo</span>' if actionable else ''
+    return f'''<{tag} class="cremation-add-animal-card cremation-future-pickup-card" data-search="{search_key}">
       <span class="cremation-animal-avatar {avatar_cls}" aria-hidden="true">{avatar_emoji}</span>
       <div class="cremation-add-animal-info">
         <div class="cremation-animal-name">{esc(row["animal_name"] or "Da inserire")}</div>
         <div class="cremation-add-animal-meta">{' · '.join(meta_bits)}</div>
         <div class="cremation-future-pickup-meta"><span class="cremation-status-badge cremation-status-waiting">RITIRO {pickup_label} · {esc(pickup_time)}</span><small>Non ancora affidato</small></div>
       </div>
+      {add_btn}
+    </{close_tag}>'''
+
+
+def cycle_reservation_rows(c, cycle_ids):
+    """Animali 'non ancora affidati' (nessuna pratica ancora collegata
+    all'evento calendario) prenotati in uno o piu' cicli - richiesta
+    esplicita dell'utente: deve essere possibile aggiungerli al ciclo e
+    deve restare riconoscibile che non sono ancora stati affidati."""
+    if not cycle_ids:return []
+    marks=','.join('?' for _ in cycle_ids)
+    return c.execute(f"""SELECT r.id AS reservation_id,r.cycle_id,e.start_at,e.client_first_name,e.client_last_name,
+            e.person_company,e.veterinarian_name,a.name AS animal_name,a.species,a.weight
+        FROM cremation_cycle_reservations r
+        JOIN calendar_events e ON e.id=r.calendar_event_id
+        JOIN calendar_event_animals a ON a.id=(SELECT id FROM calendar_event_animals WHERE event_id=e.id ORDER BY id LIMIT 1)
+        WHERE r.cycle_id IN ({marks})
+        ORDER BY r.id ASC""", tuple(cycle_ids)).fetchall()
+
+
+def reserved_cycle_animal_preview_line(row):
+    """Riga compatta (vista collassata del ciclo) per un animale 'non
+    ancora affidato' inserito nel ciclo - stessa idea di
+    cycle_animal_preview_line ma senza dati di pratica (non esiste ancora),
+    solo nome/peso dell'evento e l'etichetta di stato."""
+    avatar_emoji,avatar_cls=species_avatar(row["species"] or "")
+    weight=(row["weight"] or "").strip()
+    weight_txt=f' ({esc(weight)} kg)' if weight else ''
+    return f'''<div class="cremation-week-animal-line" data-reservation-id="{row['reservation_id']}">
+      <span class="cremation-week-animal-name-group"><span class="cremation-week-animal-name">{avatar_emoji} {esc(row["animal_name"] or "Da inserire")}{weight_txt}</span></span>
+      <span class="cremation-status-badge cremation-status-waiting">NON ANCORA AFFIDATO</span>
     </div>'''
+
+
+def reserved_cycle_animal_row_html(row):
+    """Riga espansa del ciclo per un animale 'non ancora affidato'
+    (richiesta esplicita dell'utente): mostra solo cio' che si conosce
+    davvero dall'evento calendario (nome, peso, specie, proprietario,
+    orario di ritiro) e l'etichetta di stato - nessun link ad una pratica,
+    perche' non ne esiste ancora una da aprire. Appena una pratica verra'
+    creata e collegata a quell'evento (vedi resolve_cycle_reservation),
+    questa riga sparisce e al suo posto compare la vera riga
+    (animal_row_html) con tutti i dati reali."""
+    avatar_emoji,avatar_cls=species_avatar(row["species"] or "")
+    weight=(row["weight"] or "").strip()
+    weight_html=f'{esc(weight)} kg' if weight else '<span class="cremation-dash">—</span>'
+    species_text=(row["species"] or "").strip()
+    species_html=esc(species_text) if species_text else '<span class="cremation-dash">—</span>'
+    owner=future_pickup_owner_label(row)
+    owner_html=esc(owner) if owner else '<span class="cremation-dash">—</span>'
+    pickup_date=row["start_at"][:10];pickup_time=row["start_at"][11:16]
+    pickup_html=f'{esc(date_it(pickup_date))} · {esc(pickup_time)}'
+    return f'''<div class="cremation-animal-row cremation-animal-row-reserved">
+      <div class="cremation-animal-id">
+        <span class="cremation-animal-avatar {avatar_cls}" aria-hidden="true">{avatar_emoji}</span>
+        <div class="cremation-animal-name-wrap"><span class="cremation-animal-name">{esc(row["animal_name"] or "Da inserire")}</span><span class="cremation-animal-weight">{weight_html}</span></div>
+      </div>
+      <div class="cremation-animal-col"><small>Stato</small><span class="cremation-status-badge cremation-status-waiting">NON ANCORA AFFIDATO</span></div>
+      <div class="cremation-animal-col"><small>Specie</small>{species_html}</div>
+      <div class="cremation-animal-col"><small>Proprietario</small>{owner_html}</div>
+      <div class="cremation-animal-col"><small>Ritiro</small>{pickup_html}</div>
+      <div class="cremation-animal-actions"><button type="button" class="cremation-animal-remove" onclick="event.stopPropagation();cremationRemoveReservation(this,{row["reservation_id"]})" aria-label="Rimuovi dal ciclo" title="Rimuovi dal ciclo">{lucide("x")}</button></div>
+    </div>'''
+
+
+def resolve_cycle_reservation(c, calendar_event_id, practice_id, user_id, stamp):
+    """Se l'evento calendario era prenotato in un ciclo (animale 'non
+    ancora affidato'), la pratica appena creata/collegata prende
+    automaticamente il suo posto nello stesso ciclo (richiesta esplicita
+    dell'utente: tutti i dati reali si aggiornano da soli, nessuna azione
+    manuale dell'operatore) e la prenotazione viene rimossa - a meno che il
+    ciclo nel frattempo non sia stato completato, nel qual caso la pratica
+    nasce comunque ma senza essere ri-assegnata a un ciclo gia' chiuso.
+    Stessa identica transizione di cremation_assign_to_cycle (stato pratica
+    -> In programma, ciclo pianificato -> in_attesa con notifica): per il
+    resto del sistema un posto che passa da prenotazione a pratica vera
+    dev'essere indistinguibile da un inserimento manuale."""
+    reservation=c.execute("""SELECT cr.id,cr.cycle_id,cc.status AS cycle_status,cc.cycle_date,cc.planned_start,cc.planned_end
+        FROM cremation_cycle_reservations cr JOIN cremation_cycles cc ON cc.id=cr.cycle_id WHERE cr.calendar_event_id=?""",(calendar_event_id,)).fetchone()
+    if not reservation:return
+    if reservation["cycle_status"]!="completato":
+        practice=c.execute("SELECT status FROM practices WHERE id=?",(practice_id,)).fetchone()
+        c.execute("UPDATE practices SET cremation_cycle_id=?,updated_at=? WHERE id=?",(reservation["cycle_id"],stamp,practice_id))
+        cremation_log_status_change(c,practice_id,practice["status"],"In programma",user_id,stamp)
+        full_practice=c.execute("SELECT * FROM practices WHERE id=?",(practice_id,)).fetchone()
+        if assisted_cremation_label(full_practice):
+            c.execute("UPDATE practices SET owner_notified_status='da_avvisare',owner_notified_at=NULL,owner_notified_by=NULL WHERE id=?",(practice_id,))
+        if reservation["cycle_status"]=="pianificato":
+            c.execute("UPDATE cremation_cycles SET status='in_attesa',updated_at=? WHERE id=?",(stamp,reservation["cycle_id"]))
+            cremation_notify_cycle_waiting(c,user_id,reservation["cycle_id"],reservation["cycle_date"],reservation["planned_start"],reservation["planned_end"])
+    c.execute("DELETE FROM cremation_cycle_reservations WHERE id=?",(reservation["id"],))
 # etichette operative che attivano la gestione "Comunicazione proprietario"
 # per le cremazioni assistite (ordine = priorità di visualizzazione quando
 # più di una fosse valorizzata sulla stessa pratica)
@@ -9350,6 +9484,8 @@ class App(BaseHTTPRequestHandler):
         if path == "/programma-cremazioni/riordina-cicli": return self.cremation_reorder_cycles(user)
         match = re.fullmatch(r"/programma-cremazioni/cicli/(\d+)/assegna", path)
         if match: return self.cremation_assign_to_cycle(user, int(match.group(1)))
+        match = re.fullmatch(r"/programma-cremazioni/cicli/(\d+)/prenota", path)
+        if match: return self.cremation_reserve_to_cycle(user, int(match.group(1)))
         match = re.fullmatch(r"/programma-cremazioni/cicli/(\d+)/termina", path)
         if match: return self.cremation_complete_cycle(user, int(match.group(1)))
         match = re.fullmatch(r"/programma-cremazioni/cicli/(\d+)/annulla-completamento", path)
@@ -9360,6 +9496,8 @@ class App(BaseHTTPRequestHandler):
         if match: return self.cremation_delete_cycle(user, int(match.group(1)))
         match = re.fullmatch(r"/programma-cremazioni/pratiche/(\d+)/rimuovi", path)
         if match: return self.cremation_remove_from_cycle(user, int(match.group(1)))
+        match = re.fullmatch(r"/programma-cremazioni/prenotazioni/(\d+)/rimuovi", path)
+        if match: return self.cremation_remove_reservation(user, int(match.group(1)))
         if path == "/programma-cremazioni/scambia": return self.cremation_swap_animals(user)
         match = re.fullmatch(r"/pratiche/(\d+)/comunicazione-proprietario", path)
         if match: return self.owner_notified_toggle(user, int(match.group(1)))
@@ -12586,6 +12724,7 @@ class App(BaseHTTPRequestHandler):
                 if not practice:return self.send_error(404,"Pratica non trovata")
                 c.execute("UPDATE calendar_events SET linked_practice_id=?,updated_at=?,updated_by=? WHERE id=?",(practice["id"],stamp,user["id"],event_id))
                 calendar_add_history(c,event_id,user["id"],"Collegamento pratica","",practice["practice_number"],stamp)
+                resolve_cycle_reservation(c,event_id,practice["id"],user["id"],stamp)
             elif action=="scollega-pratica":
                 if user["role"]!="admin":return self.send_error(403,"Solo un amministratore può scollegare la pratica")
                 if form.get("confirm")!="SCOLLEGA":return self.send_error(400,"Conferma mancante")
@@ -13144,6 +13283,17 @@ class App(BaseHTTPRequestHandler):
                 assigned=c.execute(f"SELECT * FROM practices WHERE cremation_cycle_id IN ({marks}) AND (deleted_at IS NULL OR deleted_at='') ORDER BY id ASC",tuple(cycle_ids)).fetchall()
                 for row in assigned:
                     cycle_practices[row["cremation_cycle_id"]].append(row)
+                # Animali "non ancora affidati" (prenotazione, nessuna
+                # pratica ancora collegata all'evento) - richiesta esplicita
+                # dell'utente: occupano comunque un posto nel ciclo,
+                # restando riconoscibili come tali finche' non nascera' una
+                # pratica vera (vedi resolve_cycle_reservation).
+                for row in cycle_reservation_rows(c,cycle_ids):
+                    cycle_practices[row["cycle_id"]].append({"reservation_id":row["reservation_id"],"start_at":row["start_at"],
+                        "client_first_name":row["client_first_name"],"client_last_name":row["client_last_name"],
+                        "person_company":row["person_company"],"veterinarian_name":row["veterinarian_name"],
+                        "animal_name":row["animal_name"],"species":row["species"],"weight":row["weight"],
+                        "estimated_weight":row["weight"]})
                 for rows in cycle_practices.values():
                     rows.sort(key=cycle_animal_sort_key)
             all_rows=list({row["id"]:row for row in list(waiting)+list(assigned)+list(assignable)}.values())
@@ -13372,9 +13522,9 @@ class App(BaseHTTPRequestHandler):
         for idx,cycle in enumerate(cycles):
             animals=cycle_practices.get(cycle["id"],[])
             status=cycle["status"]
-            animals_html=''.join(animal_row_html(row,removable=True,cycle_id=cycle["id"]) for row in animals) or '<p class="cremation-dash" style="padding:10px 0">Nessun animale assegnato.</p>'
+            animals_html=''.join((reserved_cycle_animal_row_html(row) if isinstance(row,dict) else animal_row_html(row,removable=True,cycle_id=cycle["id"])) for row in animals) or '<p class="cremation-dash" style="padding:10px 0">Nessun animale assegnato.</p>'
             status_label,status_cls=CREMATION_STATUS_LABELS.get(status,(status.upper(),""))
-            names_html=''.join(cycle_animal_preview_line(row) for row in animals) or '<div class="cremation-week-animal-line cremation-dash">Nessun animale</div>'
+            names_html=''.join((reserved_cycle_animal_preview_line(row) if isinstance(row,dict) else cycle_animal_preview_line(row)) for row in animals) or '<div class="cremation-week-animal-line cremation-dash">Nessun animale</div>'
             remaining_html=""
             if len(animals)==1:
                 animal_w=(animals[0]["estimated_weight"] or "").strip()
@@ -13566,7 +13716,7 @@ class App(BaseHTTPRequestHandler):
             </button>'''
 
         add_animal_cards_html=''.join(add_animal_card_html(row) for row in assignable)
-        add_animal_cards_html+=''.join(future_pickup_card_html(row) for row in future_pickups)
+        add_animal_cards_html+=''.join(future_pickup_card_html(row,actionable=True) for row in future_pickups)
         add_animal_suggestions=[]
         for row in assignable:
             name=(row["animal_name"] or "").strip()
@@ -13645,6 +13795,17 @@ class App(BaseHTTPRequestHandler):
                 assigned=c.execute(f"SELECT * FROM practices WHERE cremation_cycle_id IN ({marks2}) AND (deleted_at IS NULL OR deleted_at='') ORDER BY id ASC",tuple(cycle_ids)).fetchall()
                 for row in assigned:
                     cycle_practices[row["cremation_cycle_id"]].append(row)
+                # Animali "non ancora affidati" (prenotazione, nessuna
+                # pratica ancora collegata all'evento) - richiesta esplicita
+                # dell'utente: occupano comunque un posto nel ciclo,
+                # restando riconoscibili come tali finche' non nascera' una
+                # pratica vera (vedi resolve_cycle_reservation).
+                for row in cycle_reservation_rows(c,cycle_ids):
+                    cycle_practices[row["cycle_id"]].append({"reservation_id":row["reservation_id"],"start_at":row["start_at"],
+                        "client_first_name":row["client_first_name"],"client_last_name":row["client_last_name"],
+                        "person_company":row["person_company"],"veterinarian_name":row["veterinarian_name"],
+                        "animal_name":row["animal_name"],"species":row["species"],"weight":row["weight"],
+                        "estimated_weight":row["weight"]})
                 for rows in cycle_practices.values():
                     rows.sort(key=cycle_animal_sort_key)
             all_rows=list({row["id"]:row for row in list(waiting)+list(assigned)+list(assignable)}.values())
@@ -13952,8 +14113,8 @@ class App(BaseHTTPRequestHandler):
                 status=cycle["status"]
                 cycle_position[cycle["id"]]=(idx+1,day_date)
                 status_label,status_cls=CREMATION_STATUS_LABELS.get(status,(status.upper(),""))
-                lines_html=''.join(week_animal_line(row) for row in animals) or '<div class="cremation-week-animal-line cremation-dash">Nessun animale</div>'
-                animals_html=''.join(animal_row_html(row,removable=True,cycle_id=cycle["id"]) for row in animals) or '<p class="cremation-dash" style="padding:10px 0">Nessun animale assegnato.</p>'
+                lines_html=''.join((reserved_cycle_animal_preview_line(row) if isinstance(row,dict) else week_animal_line(row)) for row in animals) or '<div class="cremation-week-animal-line cremation-dash">Nessun animale</div>'
+                animals_html=''.join((reserved_cycle_animal_row_html(row) if isinstance(row,dict) else animal_row_html(row,removable=True,cycle_id=cycle["id"])) for row in animals) or '<p class="cremation-dash" style="padding:10px 0">Nessun animale assegnato.</p>'
                 remaining_html=""
                 if len(animals)==1:
                     animal_w=(animals[0]["estimated_weight"] or "").strip()
@@ -14042,7 +14203,7 @@ class App(BaseHTTPRequestHandler):
         if last_cycle:
             last_num,_=cycle_position.get(last_cycle["id"],(None,None))
             last_animals=cycle_practices.get(last_cycle["id"],[])
-            last_animals_txt=', '.join(animal_name_html(r) for r in last_animals) or '<span class="cremation-dash">Nessun animale</span>'
+            last_animals_txt=', '.join((esc(r["animal_name"] or "Da inserire") if isinstance(r,dict) else animal_name_html(r)) for r in last_animals) or '<span class="cremation-dash">Nessun animale</span>'
             try:
                 end_dt=datetime.combine(last_date,datetime.strptime(last_cycle["planned_end"],"%H:%M").time())
                 remaining_min=round((end_dt-now_dt).total_seconds()/60)
@@ -14170,7 +14331,7 @@ class App(BaseHTTPRequestHandler):
             </button>'''
 
         add_animal_cards_html=''.join(add_animal_card_html(row) for row in assignable)
-        add_animal_cards_html+=''.join(future_pickup_card_html(row) for row in future_pickups)
+        add_animal_cards_html+=''.join(future_pickup_card_html(row,actionable=True) for row in future_pickups)
         add_animal_suggestions=[]
         for row in assignable:
             name=(row["animal_name"] or "").strip()
@@ -14300,6 +14461,10 @@ class App(BaseHTTPRequestHandler):
             if cycle["status"]=="completato":
                 return self.send_json({"ok":False,"error":"Il ciclo è già completato."},409)
             count=c.execute("SELECT COUNT(*) n FROM practices WHERE cremation_cycle_id=? AND (deleted_at IS NULL OR deleted_at='')",(cycle_id,)).fetchone()["n"]
+            # Un posto occupato da un animale "non ancora affidato"
+            # (prenotazione, nessuna pratica ancora collegata) conta come
+            # gli altri ai fini del limite di 2 animali per ciclo.
+            count+=c.execute("SELECT COUNT(*) n FROM cremation_cycle_reservations WHERE cycle_id=?",(cycle_id,)).fetchone()["n"]
             if count>=2:
                 return self.send_json({"ok":False,"error":"Il ciclo contiene già 2 animali."},409)
             practice=c.execute("SELECT * FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(practice_id,)).fetchone()
@@ -14321,12 +14486,55 @@ class App(BaseHTTPRequestHandler):
             if not cycle:return self.send_json({"ok":False,"error":"Ciclo non trovato"},404)
             if cycle["status"]!="in_attesa":
                 return self.send_json({"ok":False,"error":"Il ciclo non è in attesa di completamento."},409)
+            # Un animale "non ancora affidato" (prenotazione, nessuna
+            # pratica ancora collegata) non e' mai stato davvero ritirato:
+            # completare il ciclo lo segnerebbe erroneamente come pronto
+            # per la riconsegna. Va prima completata (o rimossa) la
+            # prenotazione.
+            pending=c.execute("SELECT COUNT(*) n FROM cremation_cycle_reservations WHERE cycle_id=?",(cycle_id,)).fetchone()["n"]
+            if pending:
+                return self.send_json({"ok":False,"error":"Il ciclo contiene un animale non ancora affidato: crea la pratica o rimuovilo prima di terminare il ciclo."},409)
             c.execute("UPDATE cremation_cycles SET status='completato',actual_end=?,updated_at=? WHERE id=?",(stamp,stamp,cycle_id))
             practices=c.execute("SELECT * FROM practices WHERE cremation_cycle_id=? AND (deleted_at IS NULL OR deleted_at='')",(cycle_id,)).fetchall()
             for row in practices:
                 if row["status"]=="Da consegnare":continue
                 c.execute("UPDATE practices SET cremation_registered='Si',updated_at=? WHERE id=?",(stamp,row["id"]))
                 cremation_log_status_change(c,row["id"],row["status"] or "Ritirato","Da consegnare",user["id"],stamp)
+        return self.send_json({"ok":True})
+
+    def cremation_reserve_to_cycle(self,user,cycle_id):
+        # Controparte di cremation_assign_to_cycle per un animale "non
+        # ancora affidato" (richiesta esplicita dell'utente): nessuna
+        # pratica esiste ancora per l'evento, quindi si registra solo una
+        # prenotazione del posto nel ciclo - niente cambio di stato del
+        # ciclo (pianificato resta pianificato finche' non arriva un
+        # animale vero, altrimenti partirebbe una notifica "ciclo pronto"
+        # non veritiera).
+        f=self.form()
+        calendar_event_id=(f.get("calendar_event_id") or "").strip()
+        stamp=now()
+        with db() as c:
+            cycle=c.execute("SELECT id,status FROM cremation_cycles WHERE id=?",(cycle_id,)).fetchone()
+            if not cycle:return self.send_json({"ok":False,"error":"Ciclo non trovato"},404)
+            if cycle["status"]=="completato":
+                return self.send_json({"ok":False,"error":"Il ciclo è già completato."},409)
+            count=c.execute("SELECT COUNT(*) n FROM practices WHERE cremation_cycle_id=? AND (deleted_at IS NULL OR deleted_at='')",(cycle_id,)).fetchone()["n"]
+            count+=c.execute("SELECT COUNT(*) n FROM cremation_cycle_reservations WHERE cycle_id=?",(cycle_id,)).fetchone()["n"]
+            if count>=2:
+                return self.send_json({"ok":False,"error":"Il ciclo contiene già 2 animali."},409)
+            event=c.execute("SELECT id,linked_practice_id FROM calendar_events WHERE id=? AND (deleted_at IS NULL OR deleted_at='') AND event_type IN ('Ritiro','Ritiro in sede') AND event_status!='Annullato'",(calendar_event_id,)).fetchone()
+            if not event or event["linked_practice_id"]:
+                return self.send_json({"ok":False,"error":"Animale non più disponibile. Ricarica la pagina."},409)
+            if c.execute("SELECT 1 FROM cremation_cycle_reservations WHERE calendar_event_id=?",(calendar_event_id,)).fetchone():
+                return self.send_json({"ok":False,"error":"Animale non più disponibile. Ricarica la pagina."},409)
+            c.execute("INSERT INTO cremation_cycle_reservations(cycle_id,calendar_event_id,created_at,created_by) VALUES(?,?,?,?)",(cycle_id,calendar_event_id,stamp,user["id"]))
+        return self.send_json({"ok":True})
+
+    def cremation_remove_reservation(self,user,reservation_id):
+        with db() as c:
+            reservation=c.execute("SELECT id FROM cremation_cycle_reservations WHERE id=?",(reservation_id,)).fetchone()
+            if not reservation:return self.send_json({"ok":False,"error":"Prenotazione non trovata"},404)
+            c.execute("DELETE FROM cremation_cycle_reservations WHERE id=?",(reservation_id,))
         return self.send_json({"ok":True})
 
     def cremation_revert_complete(self,user,cycle_id):
@@ -18543,6 +18751,12 @@ class App(BaseHTTPRequestHandler):
             if calendar_event:
                 c.execute("UPDATE calendar_events SET linked_practice_id=?,updated_at=?,updated_by=? WHERE id=? AND linked_practice_id IS NULL",(pid,stamp,user["id"],calendar_event_id))
                 calendar_add_history(c,calendar_event_id,user["id"],"Creazione pratica","",number,stamp)
+                # Richiesta esplicita dell'utente: se l'evento era prenotato
+                # in un ciclo come animale "non ancora affidato", la
+                # pratica appena creata prende automaticamente il suo posto
+                # - tutti i dati reali (etichette, urna, ecc.) compaiono da
+                # soli nel ciclo, nessuna azione manuale in piu'.
+                resolve_cycle_reservation(c,calendar_event_id,pid,user["id"],stamp)
         self.redirect(f"/pratiche/{pid}")
 
     def practice_payment_diagnostics(self,user,pid):

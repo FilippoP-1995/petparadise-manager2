@@ -106,6 +106,14 @@ def ensure_calendar_schema(conn):
       id INTEGER PRIMARY KEY, name TEXT NOT NULL COLLATE NOCASE UNIQUE,
       is_default INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS cremation_cycle_reservations (
+      id INTEGER PRIMARY KEY,
+      cycle_id INTEGER NOT NULL REFERENCES cremation_cycles(id) ON DELETE CASCADE,
+      calendar_event_id INTEGER NOT NULL UNIQUE REFERENCES calendar_events(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL,
+      created_by INTEGER REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_cremation_reservations_cycle ON cremation_cycle_reservations(cycle_id);
     CREATE INDEX IF NOT EXISTS idx_calendar_events_range ON calendar_events(start_at,end_at,deleted_at);
     CREATE INDEX IF NOT EXISTS idx_calendar_events_type ON calendar_events(event_type,start_at);
     CREATE INDEX IF NOT EXISTS idx_calendar_events_status ON calendar_events(event_status,start_at);
