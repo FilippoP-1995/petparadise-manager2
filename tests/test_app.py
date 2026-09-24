@@ -12167,30 +12167,38 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path = f"/calendario/{event_id}"
         self.handler.calendar_event_detail(admin, event_id)
         page = rendered[-1]
-        for desc, amount_it in (("Cremazione","150,00"),("Urna","80,00"),("Accessorio","25,00"),("Ritiro","30,00"),("Notturno","50,00")):
-            self.assertIn(f'<span class="calendar-estimate-preset">{desc}</span><span style="margin-left:auto;font-weight:700">', page)
-            self.assertIn(amount_it, page)
-        self.assertEqual(page.count('class="calendar-estimate-row-v2"'), 5)  # nessuna duplicazione
+        for desc in ("Cremazione","Urna","Accessorio","Ritiro","Notturno"):
+            self.assertIn(f'"description": "{desc}"', page)
+        self.assertEqual(page.count("calendarAddRow('estimate',"), 5)  # nessuna duplicazione
         self.assertIn("335,00", page)  # totale = somma reale delle voci
-        # il quick-edit a importo unico non deve piu' essere presente
-        # quando ci sono gia' voci reali (distruggerebbe i dati)
+        # editor a righe multiple (richiesta esplicita dell'utente: modificabile
+        # dal riepilogo), non piu' il quick-edit a importo singolo che
+        # distruggerebbe le voci reali
+        self.assertIn(f'action="/calendario/{event_id}/preventivo-voci"', page)
         self.assertNotIn(f'action="/calendario/{event_id}/preventivo"', page)
 
     def test_calendar_detail_riepilogo_preventivo_single_voice(self):
+        # Richiesta esplicita dell'utente: il Preventivo deve essere
+        # modificabile direttamente dal riepilogo (editor a righe multiple
+        # bootstrap via calendarAddRow, come "Animali" qui sopra), non piu'
+        # una lista di sola lettura.
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
             event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
                 VALUES(?,?,?,?,?,?,?,?,?,?)""",
                 ("Ritiro","RITIRO UNA VOCE TEST","Livorno","Filippo","2026-07-30T09:00:00","2026-07-30T09:30:00","Da ritirare",admin["id"],stamp,stamp)).lastrowid
-            conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",
-                         (event_id,"Cremazione","150",0,stamp,stamp))
+            conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,preset,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                         (event_id,"Cremazione","150",0,"Cremazione",stamp,stamp))
         rendered = []
         self.handler.send_html = lambda html, *a: rendered.append(html)
         self.handler.path = f"/calendario/{event_id}"
         self.handler.calendar_event_detail(admin, event_id)
         page = rendered[-1]
-        self.assertEqual(page.count('class="calendar-estimate-row-v2"'), 1)
-        self.assertIn("Cremazione", page)
+        self.assertIn(f'action="/calendario/{event_id}/preventivo-voci"', page)
+        self.assertIn('data-calendar-list="estimate"', page)
+        self.assertIn("calendarAddRow('estimate',", page)
+        self.assertIn('"description": "Cremazione"', page)
+        self.assertIn('"preset": "Cremazione"', page)
         self.assertIn("150,00", page)
 
     def test_calendar_detail_riepilogo_preventivo_custom_voice_shows_free_description(self):
@@ -12209,12 +12217,13 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path = f"/calendario/{event_id}"
         self.handler.calendar_event_detail(admin, event_id)
         page = rendered[-1]
-        self.assertIn("Trasporto extra fuori zona", page)
+        self.assertIn('"description": "Trasporto extra fuori zona"', page)
         self.assertIn("45,00", page)
 
-    def test_calendar_detail_riepilogo_preventivo_empty_keeps_quick_add_form(self):
-        # Nessuna voce ancora presente: il quick-add di un importo unico
-        # resta disponibile (non c'e' nulla di reale da distruggere).
+    def test_calendar_detail_riepilogo_preventivo_empty_keeps_editor_with_no_rows(self):
+        # Nessuna voce ancora presente: l'editor a righe multiple resta
+        # disponibile (stesso identico form usato quando ci sono voci),
+        # semplicemente bootstrap senza righe iniziali.
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
             event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
@@ -12225,8 +12234,9 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path = f"/calendario/{event_id}"
         self.handler.calendar_event_detail(admin, event_id)
         page = rendered[-1]
-        self.assertIn(f'action="/calendario/{event_id}/preventivo"', page)
-        self.assertNotIn('class="calendar-estimate-row-v2"', page)
+        self.assertIn(f'action="/calendario/{event_id}/preventivo-voci"', page)
+        self.assertIn('data-calendar-list="estimate"', page)
+        self.assertNotIn("calendarAddRow('estimate',", page)
 
     def test_calendar_detail_riepilogo_preventivo_reopens_correctly_after_edit_elsewhere(self):
         # Apertura dopo salvataggio, chiusura/riapertura, modifica di
@@ -12258,10 +12268,108 @@ class PetParadiseTests(unittest.TestCase):
         rendered.clear()
         self.handler.calendar_event_detail(admin, event_id)
         reopened = rendered[-1]
-        self.assertEqual(reopened.count('class="calendar-estimate-row-v2"'), 2)
+        self.assertEqual(reopened.count("calendarAddRow('estimate',"), 2)
         self.assertIn("Cremazione", reopened)
         self.assertIn("Urna", reopened)
         self.assertIn("230,00", reopened)
+
+    def test_calendar_preventivo_voci_action_saves_full_list_with_urn_catalog_link(self):
+        # Richiesta esplicita dell'utente: la voce Urna deve poter essere
+        # collegata al catalogo urne (stesso meccanismo della pratica) sia
+        # in creazione che modificando dal riepilogo - qui si verifica il
+        # nuovo endpoint /preventivo-voci (controparte sicura di /animali,
+        # invia sempre la lista completa) e che preset/urn_catalog_id
+        # vengano davvero persistiti.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO PREVENTIVO VOCI TEST","Livorno","Filippo","2026-07-30T09:00:00","2026-07-30T09:30:00","Da ritirare",admin["id"],stamp,stamp)).lastrowid
+            urn_id = conn.execute("INSERT INTO urns(name,category,price,quantity,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                                   ("Urna Test Catalogo","Urna","65",5,stamp,stamp)).lastrowid
+        redirects = []
+        self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.headers = {"Referer": f"/calendario/{event_id}?tab=dettagli"}
+        self.handler.form = lambda: {"estimate_json": json.dumps([
+            {"description": "Cremazione", "amount": "150", "preset": "Cremazione"},
+            {"description": "Urna Test Catalogo", "amount": "65", "preset": "Urna", "urn_catalog_id": str(urn_id)},
+        ])}
+        self.handler.calendar_event_action(admin, event_id, "preventivo-voci")
+        self.assertIn(f"saved=preventivo-voci", redirects[-1])
+        with app.db() as conn:
+            rows = conn.execute("SELECT description,amount,preset,urn_catalog_id FROM calendar_event_estimate_items WHERE event_id=? ORDER BY sort_order", (event_id,)).fetchall()
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["description"], "Cremazione")
+        self.assertEqual(rows[0]["preset"], "Cremazione")
+        self.assertIsNone(rows[0]["urn_catalog_id"])
+        self.assertEqual(rows[1]["description"], "Urna Test Catalogo")
+        self.assertEqual(rows[1]["preset"], "Urna")
+        self.assertEqual(rows[1]["urn_catalog_id"], urn_id)
+        # riapertura del riepilogo: la riga Urna deve tornare con la ricerca
+        # a catalogo riattivata (span "lookup"), non degradata a testo libero
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(admin, event_id)
+        page = rendered[-1]
+        self.assertIn(f'"urn_catalog_id": {urn_id}', page)
+        self.assertIn('"preset": "Urna"', page)
+
+    def test_calendar_animali_action_does_not_wipe_estimate_preset_and_urn_catalog_id(self):
+        # Regressione evitata: calendar_sync_children cancella e reinserisce
+        # SEMPRE tutte le voci preventivo, anche quando si salva solo la
+        # sezione Animali dal riepilogo - senza ripassare preset/
+        # urn_catalog_id gia' salvati, l'azione "animali" cancellerebbe in
+        # silenzio il collegamento al catalogo urne di ogni voce esistente.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO ANIMALI SAFE TEST","Livorno","Filippo","2026-07-30T09:00:00","2026-07-30T09:30:00","Da ritirare",admin["id"],stamp,stamp)).lastrowid
+            urn_id = conn.execute("INSERT INTO urns(name,category,price,quantity,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                                   ("Urna Preservata","Urna","90",5,stamp,stamp)).lastrowid
+            conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,preset,urn_catalog_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+                         (event_id,"Urna Preservata","90",0,"Urna",urn_id,stamp,stamp))
+        redirects = []
+        self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.headers = {"Referer": f"/calendario/{event_id}?tab=dettagli"}
+        self.handler.form = lambda: {"animals_json": json.dumps([{"name": "Birba", "species": "Cane", "weight": "10", "cremation_type": "Singola"}])}
+        self.handler.calendar_event_action(admin, event_id, "animali")
+        with app.db() as conn:
+            row = conn.execute("SELECT description,amount,preset,urn_catalog_id FROM calendar_event_estimate_items WHERE event_id=?", (event_id,)).fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["description"], "Urna Preservata")
+        self.assertEqual(row["preset"], "Urna")
+        self.assertEqual(row["urn_catalog_id"], urn_id)
+
+    def test_calendar_event_form_wizard_restores_locked_presets_and_urn_search_on_edit(self):
+        # Richiesta esplicita dell'utente: la ricerca urna con prezzo
+        # automatico deve funzionare anche in modifica (non solo in
+        # creazione) - qui si verifica il wizard completo "Modifica evento"
+        # (calendar_event_form), non solo il riepilogo. Verifica anche che
+        # Cremazione/Ritiro/Riconsegna tornino voci fisse bloccate (stesso
+        # meccanismo, bug correlato segnalato e risolto insieme).
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO WIZARD EDIT TEST","Livorno","Filippo","2026-07-30T09:00:00","2026-07-30T09:30:00","Da ritirare",admin["id"],stamp,stamp)).lastrowid
+            urn_id = conn.execute("INSERT INTO urns(name,category,price,quantity,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                                   ("Urna Wizard","Urna","55",5,stamp,stamp)).lastrowid
+            conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,preset,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                         (event_id,"Cremazione","150",0,"Cremazione",stamp,stamp))
+            conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,preset,urn_catalog_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+                         (event_id,"Urna Wizard","55",1,"Urna",urn_id,stamp,stamp))
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}/modifica"
+        self.handler.calendar_event_form(admin, event_id)
+        page = rendered[-1]
+        self.assertIn('"preset": "Cremazione"', page)
+        self.assertIn('"preset": "Urna"', page)
+        self.assertIn(f'"urn_catalog_id": {urn_id}', page)
+        self.assertIn("window.PPM_URN_CATALOG", page)
+        self.assertIn("Urna Wizard", page)
 
     def _create_event_with_estimates(self, admin, title, voci, event_status="Ritirato"):
         with app.db() as conn:
@@ -12770,11 +12878,15 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path = f"/calendario/{event_id}"
         self.handler.calendar_event_detail(admin, event_id)
         page = rendered[-1]
-        for action in ("stato", "data-ora", "preventivo", "zona", "operatore", "note", "luogo", "cliente", "animali"):
+        for action in ("stato", "data-ora", "preventivo-voci", "zona", "operatore", "note", "luogo", "cliente", "animali"):
             self.assertIn(f'action="/calendario/{event_id}/{action}"', page)
         self.assertNotIn(f'action="/calendario/{event_id}/tipo"', page)
-        for label in ("Cliente", "Preventivo", "Zona", "Operatore", "Note"):
+        for label in ("Cliente", "Zona", "Operatore", "Note"):
             self.assertIn(f'<b>{label}</b>', page)
+        # Preventivo mostra sempre il totale accanto al titolo (richiesta
+        # esplicita dell'utente: editor a righe multiple anche a 0 voci,
+        # stessa etichetta gia' usata quando ci sono voci reali).
+        self.assertIn('<b>Preventivo —', page)
         # ogni riga e' un calendar-quickedit-card dentro la hero-meta (tap
         # per rivelare il form): per questa pratica (senza pratica collegata,
         # senza ambulatorio riconsegna, senza pagamento) sono esattamente 8.

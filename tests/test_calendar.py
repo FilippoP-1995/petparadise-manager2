@@ -1238,10 +1238,14 @@ class OperationalCalendarTests(unittest.TestCase):
         for preset in ("Cremazione","Ritiro","Riconsegna","Urna","Altro"):
             self.assertIn(preset,html)
         # Cremazione/Ritiro/Riconsegna stay fixed labels, but Urna must be a free-text
-        # field (pre-filled with "Urna" so an untouched row still saves), since the
-        # specific urn chosen varies per practice and can't be a locked preset.
+        # field with catalog search + automatic price (pre-filled with "Urna" so an
+        # untouched row still saves), since the specific urn chosen varies per
+        # practice and can't be a locked preset - richiesta esplicita dell'utente:
+        # stessa ricerca con autocomplete e prezzo automatico gia' usata in
+        # creazione pratica (setupPracticeUrnRowSearch/PPM_URN_CATALOG).
         self.assertIn("data.preset==='Urna'", app.APP_JS)
-        self.assertIn('placeholder="Nome urna o descrizione" data-key="description" value="${data.description||\'Urna\'}"', app.APP_JS)
+        self.assertIn('placeholder="Cerca urna o scrivi liberamente" data-key="description" value="${data.description||\'Urna\'}"', app.APP_JS)
+        self.assertIn("setupCalendarUrnRowSearch", app.APP_JS)
         self.assertNotIn("Persona o azienda",html)
         self.assertNotIn("Nome animale *",html)
         self.assertNotIn("Operatore assegnato",html)

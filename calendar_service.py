@@ -80,6 +80,7 @@ def ensure_calendar_schema(conn):
       id INTEGER PRIMARY KEY,
       event_id INTEGER NOT NULL REFERENCES calendar_events(id) ON DELETE CASCADE,
       description TEXT NOT NULL, amount REAL NOT NULL DEFAULT 0, sort_order INTEGER NOT NULL DEFAULT 0,
+      preset TEXT, urn_catalog_id INTEGER REFERENCES urns(id) ON DELETE SET NULL,
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS calendar_event_comments (
@@ -126,6 +127,17 @@ def ensure_calendar_schema(conn):
     }
     for name,definition in delivery_clinic_columns.items():
         if name not in columns:conn.execute(f"ALTER TABLE calendar_events ADD COLUMN {name} {definition}")
+    # Richiesta esplicita dell'utente: la voce Urna del preventivo deve
+    # avere ricerca a catalogo con prezzo automatico anche in modifica (non
+    # solo alla creazione) - serve una colonna persistita che dica quale
+    # preset e' ogni riga (Cremazione/Ritiro/Riconsegna/Urna/Altro), altrimenti
+    # al ricaricamento di un evento gia' salvato tutte le voci degradano a
+    # riga libera rimuovibile (stesso identico problema per Urna e per le
+    # altre voci fisse). urn_catalog_id (stessa colonna gia' usata da
+    # practice_items) permette il collegamento al catalogo urne.
+    estimate_item_columns={row[1] for row in conn.execute("PRAGMA table_info(calendar_event_estimate_items)")}
+    if "preset" not in estimate_item_columns:conn.execute("ALTER TABLE calendar_event_estimate_items ADD COLUMN preset TEXT")
+    if "urn_catalog_id" not in estimate_item_columns:conn.execute("ALTER TABLE calendar_event_estimate_items ADD COLUMN urn_catalog_id INTEGER REFERENCES urns(id) ON DELETE SET NULL")
     stamp=_rome_now().isoformat(timespec="seconds")
     conn.executemany("INSERT OR IGNORE INTO calendar_zones(name,is_default,created_at) VALUES(?,1,?)",((zone,stamp) for zone in DEFAULT_ZONES))
 
@@ -385,7 +397,15 @@ def parse_items(raw, kind):
             if not description:continue
             try:amount=max(0,float(str(item.get("amount") or 0).replace(",",".")))
             except ValueError:raise ValueError("Importo preventivo non valido")
-            cleaned.append({"description":description,"amount":amount})
+            # preset/urn_catalog_id (richiesta esplicita dell'utente): dicono
+            # quale voce fissa e' questa riga (Cremazione/Ritiro/Riconsegna/
+            # Urna/Altro) ed eventualmente a quale urna del catalogo e'
+            # collegata, cosi' al ricaricamento dell'evento la riga torna
+            # esattamente com'era invece di degradare a testo libero.
+            preset_raw=_clean(item.get("preset"),30)
+            preset=preset_raw if preset_raw in ("Cremazione","Ritiro","Riconsegna","Urna","Altro") else ""
+            urn_catalog_id=int(item["urn_catalog_id"]) if str(item.get("urn_catalog_id") or "").isdigit() else None
+            cleaned.append({"description":description,"amount":amount,"preset":preset,"urn_catalog_id":urn_catalog_id})
     return cleaned
 
 
@@ -425,7 +445,7 @@ def sync_children(conn,event_id,animals,estimates,stamp):
     conn.execute("DELETE FROM calendar_event_animals WHERE event_id=?",(event_id,))
     conn.execute("DELETE FROM calendar_event_estimate_items WHERE event_id=?",(event_id,))
     conn.executemany("INSERT INTO calendar_event_animals(event_id,name,species,weight,cremation_type,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",((event_id,a["name"],a["species"],a["weight"],a["cremation_type"],a["notes"],stamp,stamp) for a in animals))
-    conn.executemany("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",((event_id,i["description"],i["amount"],index,stamp,stamp) for index,i in enumerate(estimates)))
+    conn.executemany("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,preset,urn_catalog_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",((event_id,i["description"],i["amount"],index,i.get("preset") or None,i.get("urn_catalog_id"),stamp,stamp) for index,i in enumerate(estimates)))
 
 
 def schedule_event_notifications(conn,event_id,start_at,stamp):

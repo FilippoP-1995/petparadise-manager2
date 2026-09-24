@@ -6728,7 +6728,35 @@ function calendarTimeBlur(input){
 }
 function calendarOpenTimePicker(button){const native=button.parentElement.querySelector('.calendar-native-time'),text=button.parentElement.querySelector('[data-time-entry]');native.value=/^\d{2}:\d{2}$/.test(text.value)?text.value:'';native.onchange=()=>{text.value=native.value;calendarTimeInput(text);};if(native.showPicker)native.showPicker();else native.click();}
 function calendarRenumberAnimals(){document.querySelectorAll('[data-calendar-list="animal"] .calendar-repeat-row').forEach((row,index)=>{const title=row.querySelector('.calendar-animal-title');if(title){const fallback=`ANIMALE ${index+1}`;title.dataset.fallback=fallback;if(title.dataset.hasContent!=='1')title.textContent=fallback;}const remove=row.querySelector('[data-remove-animal]');if(remove)remove.hidden=index===0;});}
-function calendarAddRow(kind,data={}){const list=document.querySelector(`[data-calendar-list="${kind}"]`);if(!list)return;const row=document.createElement('div');if(kind==='animal'){row.className='calendar-repeat-row calendar-animal-card expanded';row.innerHTML=`<div class="calendar-animal-card-summary" onclick="this.closest('.calendar-animal-card').classList.toggle('expanded')"><span class="calendar-animal-card-icon" data-animal-icon>🐾</span><div class="calendar-animal-card-main"><strong class="calendar-animal-title"></strong><small data-animal-summary-line>Tocca per completare i dati</small><span class="calendar-animal-tag" data-animal-tag hidden></span></div><button class="calendar-appt-action" data-remove-animal type="button" onclick="event.stopPropagation();this.closest('.calendar-animal-card').remove();calendarSerialize()">×</button><span class="calendar-animal-card-chevron">›</span></div><div class="calendar-animal-card-body"><input data-key="species" aria-label="Specie animale" placeholder="Specie" value="${data.species||''}"><input inputmode="decimal" placeholder="Peso kg" data-key="weight" value="${data.weight||''}"><select data-key="cremation_type" aria-label="Tipo di cremazione"><option value="">Tipo di cremazione</option><option ${data.cremation_type==='Singola'?'selected':''}>Singola</option><option ${data.cremation_type==='Collettiva'?'selected':''}>Collettiva</option><option ${data.cremation_type==='Da decidere'?'selected':''}>Da decidere</option></select><input placeholder="Nome facoltativo" data-key="name" value="${data.name||''}"></div>`;}else{row.className=`calendar-repeat-row calendar-estimate-row-v2 ${kind==='estimate'?'calendar-estimate-row':''}`;if(data.preset==='Altro')row.innerHTML=`<span class="calendar-estimate-preset">Altro</span><input class="calendar-other-description" placeholder="Descrizione" data-key="description" value="${data.description||''}"><input inputmode="decimal" placeholder="Importo €" data-key="amount" value="${data.amount||''}">`;else if(data.preset==='Urna')row.innerHTML=`<span class="calendar-estimate-preset">Urna</span><input class="calendar-other-description" placeholder="Nome urna o descrizione" data-key="description" value="${data.description||'Urna'}"><input inputmode="decimal" placeholder="Importo €" data-key="amount" value="${data.amount||''}">`;else if(data.preset)row.innerHTML=`<span class="calendar-estimate-preset">${data.preset}</span><input type="hidden" data-key="description" value="${data.preset}"><input inputmode="decimal" placeholder="Importo €" data-key="amount" value="${data.amount||''}">`;else row.innerHTML=`<input class="full-mobile" placeholder="Descrizione" data-key="description" value="${data.description||''}"><input inputmode="decimal" placeholder="Importo €" data-key="amount" value="${data.amount||''}"><button class="btn ghost" type="button" onclick="this.parentElement.remove();calendarSerialize()">×</button>`;}list.append(row);row.querySelectorAll('input,select').forEach(input=>input.addEventListener('input',()=>{input.form.dataset.dirty='1';calendarSerialize();}));calendarSerialize();}
+function calendarAddRow(kind,data={}){const list=document.querySelector(`[data-calendar-list="${kind}"]`);if(!list)return;const row=document.createElement('div');if(kind==='animal'){row.className='calendar-repeat-row calendar-animal-card expanded';row.innerHTML=`<div class="calendar-animal-card-summary" onclick="this.closest('.calendar-animal-card').classList.toggle('expanded')"><span class="calendar-animal-card-icon" data-animal-icon>🐾</span><div class="calendar-animal-card-main"><strong class="calendar-animal-title"></strong><small data-animal-summary-line>Tocca per completare i dati</small><span class="calendar-animal-tag" data-animal-tag hidden></span></div><button class="calendar-appt-action" data-remove-animal type="button" onclick="event.stopPropagation();this.closest('.calendar-animal-card').remove();calendarSerialize()">×</button><span class="calendar-animal-card-chevron">›</span></div><div class="calendar-animal-card-body"><input data-key="species" aria-label="Specie animale" placeholder="Specie" value="${data.species||''}"><input inputmode="decimal" placeholder="Peso kg" data-key="weight" value="${data.weight||''}"><select data-key="cremation_type" aria-label="Tipo di cremazione"><option value="">Tipo di cremazione</option><option ${data.cremation_type==='Singola'?'selected':''}>Singola</option><option ${data.cremation_type==='Collettiva'?'selected':''}>Collettiva</option><option ${data.cremation_type==='Da decidere'?'selected':''}>Da decidere</option></select><input placeholder="Nome facoltativo" data-key="name" value="${data.name||''}"></div>`;}else{row.className=`calendar-repeat-row calendar-estimate-row-v2 ${kind==='estimate'?'calendar-estimate-row':''}`;if(data.preset==='Altro')row.innerHTML=`<span class="calendar-estimate-preset">Altro</span><input class="calendar-other-description" placeholder="Descrizione" data-key="description" value="${data.description||''}"><input type="hidden" data-key="preset" value="Altro"><input inputmode="decimal" placeholder="Importo €" data-key="amount" value="${data.amount||''}">`;else if(data.preset==='Urna')row.innerHTML=`<span class="calendar-estimate-preset">Urna</span><span class="lookup" style="position:relative;display:inline-block"><input class="calendar-other-description" autocomplete="off" placeholder="Cerca urna o scrivi liberamente" data-key="description" value="${data.description||'Urna'}"><div class="lookup-results hidden"></div></span><input type="hidden" data-key="preset" value="Urna"><input type="hidden" data-key="urn_catalog_id" value="${data.urn_catalog_id||''}"><input inputmode="decimal" placeholder="Importo €" data-key="amount" value="${data.amount||''}">`;else if(data.preset)row.innerHTML=`<span class="calendar-estimate-preset">${data.preset}</span><input type="hidden" data-key="description" value="${data.preset}"><input type="hidden" data-key="preset" value="${data.preset}"><input inputmode="decimal" placeholder="Importo €" data-key="amount" value="${data.amount||''}">`;else row.innerHTML=`<input class="full-mobile" placeholder="Descrizione" data-key="description" value="${data.description||''}"><input inputmode="decimal" placeholder="Importo €" data-key="amount" value="${data.amount||''}"><button class="btn ghost" type="button" onclick="this.parentElement.remove();calendarSerialize()">×</button>`;}list.append(row);if(kind==='estimate'&&data.preset==='Urna')setupCalendarUrnRowSearch(row);row.querySelectorAll('input,select').forEach(input=>input.addEventListener('input',()=>{input.form.dataset.dirty='1';calendarSerialize();}));calendarSerialize();}
+function setupCalendarUrnRowSearch(row){
+  const input=row.querySelector('[data-key="description"]');
+  const panel=row.querySelector('.lookup-results');
+  const hiddenId=row.querySelector('[data-key="urn_catalog_id"]');
+  const priceField=row.querySelector('[data-key="amount"]');
+  if(!input||!panel||!hiddenId)return;
+  ppmRegisterLookupPanel(input,panel);
+  function renderMatches(query){
+    const q=normalizeUrnSearch(query);
+    if(!q){ppmCloseLookupPanel(panel);return;}
+    const matches=(window.PPM_URN_CATALOG||[]).filter(u=>normalizeUrnSearch(u.name).includes(q));
+    if(!matches.length){panel.innerHTML=lookupHtmlState('Nessuna urna trovata');ppmOpenLookupPanel(panel);return;}
+    panel.innerHTML=matches.slice(0,30).map(u=>`<button type="button" class="lookup-item" data-urn-id="${u.id}"><b>${calendarHtml(u.name)}</b><small>€ ${u.price}</small></button>`).join('');
+    ppmOpenLookupPanel(panel);
+  }
+  input.addEventListener('input',function(){ hiddenId.value=''; renderMatches(input.value); });
+  panel.addEventListener('click',function(e){
+    const btn=e.target.closest('.lookup-item');
+    if(!btn||!btn.dataset.urnId)return;
+    const urn=(window.PPM_URN_CATALOG||[]).find(u=>String(u.id)===btn.dataset.urnId);
+    if(!urn)return;
+    input.value=urn.name;
+    if(priceField)priceField.value=urn.price;
+    hiddenId.value=String(urn.id);
+    ppmCloseLookupPanel(panel);
+    calendarSerialize();
+  });
+}
 function calendarUpdateAnimalCardSummary(row,item){const icon=row.querySelector('[data-animal-icon]');if(icon){icon.textContent=item.species==='Cane'?'🐶':(item.species==='Gatto'?'🐱':'🐾');icon.className='calendar-animal-card-icon '+(item.species==='Cane'?'avatar-dog':item.species==='Gatto'?'avatar-cat':'avatar-other');}const title=row.querySelector('.calendar-animal-title');if(title){const titleBits=[];if(item.species)titleBits.push(item.species.toUpperCase());if(item.weight)titleBits.push(`${item.weight} KG`);if(titleBits.length){title.textContent=titleBits.join(' · ');title.dataset.hasContent='1';}else{title.dataset.hasContent='0';title.textContent=title.dataset.fallback||'ANIMALE';}}const line=row.querySelector('[data-animal-summary-line]');if(line)line.textContent=item.name?item.name:(item.species||item.weight||item.cremation_type?'':'Tocca per completare i dati');const tag=row.querySelector('[data-animal-tag]');if(tag){if(item.cremation_type){tag.hidden=false;tag.textContent=item.cremation_type;tag.className='calendar-animal-tag '+(item.cremation_type==='Singola'?'calendar-tag-purple':'calendar-tag-blue');}else{tag.hidden=true;}}}
 function calendarSerialize(){['animal','estimate'].forEach(kind=>{const hidden=document.querySelector(`input[name="${kind==='animal'?'animals_json':'estimate_json'}"]`);const list=document.querySelector(`[data-calendar-list="${kind}"]`);if(!hidden||!list)return;const values=[...list.children].map(row=>Object.fromEntries([...row.querySelectorAll('[data-key]')].map(input=>[input.dataset.key,input.value])));hidden.value=JSON.stringify(values);if(kind==='animal')[...list.children].forEach((row,index)=>calendarUpdateAnimalCardSummary(row,values[index]||{}));if(kind==='estimate'){const total=values.reduce((sum,item)=>sum+(Number(String(item.amount||0).replace(',','.'))||0),0);const output=document.querySelector('[data-estimate-total]');if(output)output.textContent=total.toLocaleString('it-IT',{style:'currency',currency:'EUR'});}});calendarRenumberAnimals();calendarAutoTitle();}
 const PRACTICE_ITEM_ROW_CONFIG={
@@ -7951,6 +7979,15 @@ def species_avatar(species):
     if label=="cane":return "🐶","avatar-dog"
     if label=="gatto":return "🐱","avatar-cat"
     return "🐾","avatar-other"
+
+
+def urn_catalog_payload(c):
+    """JSON del catalogo urne attive (id/name/price) per window.PPM_URN_CATALOG,
+    usato dalla ricerca con autocomplete e prezzo automatico - stessa query
+    gia' usata dal form pratica, ora condivisa anche dal wizard e dal
+    riepilogo evento calendario (nessuna query duplicata)."""
+    urns=c.execute("SELECT * FROM urns WHERE active=1 AND category='Urna' ORDER BY name").fetchall()
+    return json.dumps([{"id":u["id"],"name":u["name"],"price":str(u["price"] or "0")} for u in urns],ensure_ascii=False)
 
 
 def calendar_animals_summary_text(animals):
@@ -9227,7 +9264,7 @@ class App(BaseHTTPRequestHandler):
         if match: return self.route_plan_stop_toggle(user,int(match.group(1)),int(match.group(2)),match.group(3))
         match = re.fullmatch(r"/calendario/(\d+)/modifica",path)
         if match: return self.save_calendar_event(user,int(match.group(1)))
-        match = re.fullmatch(r"/calendario/(\d+)/(stato|zona|operatore|note|data-ora|preventivo|tipo|luogo|cliente|animali|commento|elimina|ripristina|elimina-definitiva|collega-pratica|scollega-pratica)",path)
+        match = re.fullmatch(r"/calendario/(\d+)/(stato|zona|operatore|note|data-ora|preventivo|preventivo-voci|tipo|luogo|cliente|animali|commento|elimina|ripristina|elimina-definitiva|collega-pratica|scollega-pratica)",path)
         if match: return self.calendar_event_action(user,int(match.group(1)),match.group(2))
         match = re.fullmatch(r"/calendario/(\d+)/commenti/(\d+)/(modifica|elimina)",path)
         if match: return self.calendar_comment_action(user,int(match.group(1)),int(match.group(2)),match.group(3))
@@ -11845,8 +11882,14 @@ class App(BaseHTTPRequestHandler):
             event=c.execute("SELECT * FROM calendar_events WHERE id=?",(event_id,)).fetchone() if event_id else None
             if event_id and not event:return self.send_error(404)
             animals=[dict(row) for row in c.execute("SELECT name,species,weight,cremation_type,notes FROM calendar_event_animals WHERE event_id=? ORDER BY id",(event_id,))] if event_id else []
-            estimates=[dict(row) for row in c.execute("SELECT description,amount FROM calendar_event_estimate_items WHERE event_id=? ORDER BY sort_order,id",(event_id,))] if event_id else [{"preset":name,"description":name,"amount":""} for name in ("Cremazione","Ritiro","Riconsegna","Urna")]+[{"preset":"Altro","description":"","amount":""}]
+            # preset/urn_catalog_id (richiesta esplicita dell'utente): senza
+            # questi due campi, riaprendo un evento esistente ogni voce
+            # (Cremazione/Ritiro/Riconsegna/Urna/Altro) degraderebbe a riga
+            # di testo libero rimuovibile invece di restare la voce fissa
+            # com'era, e la ricerca urna con catalogo si perderebbe.
+            estimates=[dict(row) for row in c.execute("SELECT description,amount,preset,urn_catalog_id FROM calendar_event_estimate_items WHERE event_id=? ORDER BY sort_order,id",(event_id,))] if event_id else [{"preset":name,"description":name,"amount":""} for name in ("Cremazione","Ritiro","Riconsegna","Urna")]+[{"preset":"Altro","description":"","amount":""}]
             zones=c.execute("SELECT name FROM calendar_zones ORDER BY name").fetchall()
+            urn_catalog_json=urn_catalog_payload(c)
             practice_prefill=None
             if not event_id and q.get("linked_practice_id") and str(q["linked_practice_id"][0]).isdigit():
                 practice_prefill=c.execute("SELECT * FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(int(q["linked_practice_id"][0]),)).fetchone()
@@ -12020,7 +12063,7 @@ class App(BaseHTTPRequestHandler):
           {quick_actions_wizard}
           <div class="calendar-v2-actions"><button class="btn"{'' if event_id else ' id="calendarSaveBtn" onclick="ppmBtnPress(this)"'}>{lucide("save")}<span>{'Salva modifiche' if event_id else 'Salva evento'}</span></button><a class="btn ghost" href="{close_url}" onclick="return calendarConfirmExit(event,this.href)">Annulla</a></div>
         </div>
-        </form><script>window.CALENDAR_ZONES={zones_json};document.addEventListener('DOMContentLoaded',()=>{{{''.join(f"calendarAddRow('animal',{json.dumps(a,ensure_ascii=False)});" for a in animals) if event_type in ('Ritiro','Ritiro in sede','') else ''}{''.join(f"calendarAddRow('estimate',{json.dumps(i,ensure_ascii=False)});" for i in estimates) if event_type in ('Ritiro','Ritiro in sede','') else ''}calendarTypeChanged();calendarInitLookups();const allDay=document.querySelector('#calendarEventForm input[name="all_day"]');if(allDay)calendarAllDayChanged(allDay);document.querySelectorAll('[data-time-entry]').forEach(input=>{{calendarTimeInput(input);const wheel=input.closest('.calendar-datetime-row')?.querySelector('[data-time-wheel]');if(wheel)calendarInitTimeWheel(wheel);}});}});</script></main>'''
+        </form><script>window.CALENDAR_ZONES={zones_json};window.PPM_URN_CATALOG={urn_catalog_json};document.addEventListener('DOMContentLoaded',()=>{{{''.join(f"calendarAddRow('animal',{json.dumps(a,ensure_ascii=False)});" for a in animals) if event_type in ('Ritiro','Ritiro in sede','') else ''}{''.join(f"calendarAddRow('estimate',{json.dumps(i,ensure_ascii=False)});" for i in estimates) if event_type in ('Ritiro','Ritiro in sede','') else ''}calendarTypeChanged();calendarInitLookups();const allDay=document.querySelector('#calendarEventForm input[name="all_day"]');if(allDay)calendarAllDayChanged(allDay);document.querySelectorAll('[data-time-entry]').forEach(input=>{{calendarTimeInput(input);const wheel=input.closest('.calendar-datetime-row')?.querySelector('[data-time-wheel]');if(wheel)calendarInitTimeWheel(wheel);}});}});</script></main>'''
         self.send_html(layout("Modifica evento" if event_id else "Nuovo evento",body,user))
 
     def save_calendar_event(self,user,event_id=None):
@@ -12063,7 +12106,7 @@ class App(BaseHTTPRequestHandler):
                     for key,value in data.items():
                         if str(old[key] if key in old.keys() and old[key] is not None else "")!=str(value if value is not None else ""):calendar_add_history(c,event_id,user["id"],f"Modifica {key}",old[key] if key in old.keys() else "",value,stamp)
                     old_animals=[dict(row) for row in c.execute("SELECT name,species,weight,cremation_type,notes FROM calendar_event_animals WHERE event_id=? ORDER BY id",(event_id,))]
-                    old_estimates=[dict(row) for row in c.execute("SELECT description,amount FROM calendar_event_estimate_items WHERE event_id=? ORDER BY sort_order,id",(event_id,))]
+                    old_estimates=[dict(row) for row in c.execute("SELECT description,amount,preset,urn_catalog_id FROM calendar_event_estimate_items WHERE event_id=? ORDER BY sort_order,id",(event_id,))]
                     calendar_sync_children(c,event_id,animals,estimates,stamp)
                     if old_animals!=animals:calendar_add_history(c,event_id,user["id"],"Modifica animali",json.dumps(old_animals,ensure_ascii=False),json.dumps(animals,ensure_ascii=False),stamp)
                     if old_estimates!=estimates:calendar_add_history(c,event_id,user["id"],"Modifica preventivo",json.dumps(old_estimates,ensure_ascii=False),json.dumps(estimates,ensure_ascii=False),stamp)
@@ -12149,6 +12192,7 @@ class App(BaseHTTPRequestHandler):
             client_display=self.calendar_event_client_name(event,client_names,practice_owner_names)
             animals=c.execute("SELECT * FROM calendar_event_animals WHERE event_id=? ORDER BY id",(event_id,)).fetchall()
             estimates=c.execute("SELECT * FROM calendar_event_estimate_items WHERE event_id=? ORDER BY sort_order,id",(event_id,)).fetchall()
+            urn_catalog_json=urn_catalog_payload(c)
             comments=c.execute("SELECT c.*,u.display_name FROM calendar_event_comments c JOIN users u ON u.id=c.user_id WHERE event_id=? ORDER BY c.created_at",(event_id,)).fetchall()
             history=c.execute("SELECT h.*,u.display_name FROM calendar_event_history h LEFT JOIN users u ON u.id=h.user_id WHERE event_id=? ORDER BY h.created_at DESC",(event_id,)).fetchall()
         tabs=''.join(f'<a class="{"active" if tab==key else ""}" href="/calendario/{event_id}?tab={key}">{label}</a>' for key,label in (("dettagli","Dettagli"),("animali","Animali"),("preventivo","Preventivo"),("commenti","Commenti"),("storico","Storico")))
@@ -12286,35 +12330,25 @@ class App(BaseHTTPRequestHandler):
             cliente_form=f'''<form method="post" action="/calendario/{event_id}/cliente"><input name="client_first_name" placeholder="Nome" value="{esc(event['client_first_name'] or '')}"><input name="client_last_name" placeholder="Cognome" value="{esc(event['client_last_name'] or '')}"><input name="client_phone" placeholder="Telefono" value="{esc(event['client_phone'] or '')}"><button class="btn ghost" type="submit" style="margin-top:10px">Salva cliente</button></form>'''
             hero_rows.append(hero_row("user","blue","Cliente",esc(client_display or '-'),cliente_form))
             estimate_total_all=sum(float(i["amount"] or 0) for i in estimates)
-            if estimates:
-                # Richiesta esplicita dell'utente: il riepilogo deve mostrare
-                # le VERE singole voci compilate durante la creazione
-                # (calendar_event_estimate_items), non solo il totale - mai
-                # ricostruite ne' stimate. Riusa esattamente lo stesso
-                # markup/CSS gia' presente nella scheda "Preventivo" di
-                # questa stessa pagina (calendar-card-list/
-                # calendar-estimate-row-v2), nessuna grafica nuova. Diventa
-                # di sola lettura (nessun form_inner): il quick-edit a
-                # importo unico sotto distruggerebbe le voci reali con un
-                # DELETE+INSERT di una riga sola (vedi calendar_event_action,
-                # action=="preventivo") - la modifica di voci multiple resta
-                # possibile da "Modifica evento", che usa il vero editor a
-                # righe multiple (stesso identico meccanismo della creazione,
-                # nessuna seconda fonte dati parallela).
-                estimate_rows_html=''.join(f'<div class="calendar-estimate-row-v2"><span class="calendar-estimate-preset">{esc(i["description"] or "Voce")}</span><span style="margin-left:auto;font-weight:700">{money_it(i["amount"])}</span></div>' for i in estimates)
-                hero_rows.append(f'''<div class="calendar-detail-hero-meta-item">
-                  <span class="calendar-detail-hero-meta-icon calendar-icon-pink">{lucide("receipt")}</span>
-                  <div style="min-width:0;flex:1">
-                    <b>Preventivo — {money_it(estimate_total_all)}</b>
-                    <div class="calendar-card-list" style="margin-top:6px">{estimate_rows_html}</div>
-                  </div>
-                </div>''')
-            else:
-                # Nessuna voce ancora presente: il quick-add di un importo
-                # unico resta disponibile (non c'e' nulla di reale da
-                # distruggere in questo caso).
-                estimate_form=f'''<form method="post" action="/calendario/{event_id}/preventivo"><input inputmode="decimal" name="amount" value="" placeholder="Importo €"><button class="btn ghost" type="submit" style="margin-top:10px">Salva preventivo</button></form>'''
-                hero_rows.append(hero_row("receipt","pink","Preventivo",money_it(estimate_total_all),estimate_form))
+            # Richiesta esplicita dell'utente: il Preventivo deve essere
+            # modificabile direttamente dal riepilogo, non solo da "Modifica
+            # evento" - stesso editor sicuro a righe multiple gia' usato qui
+            # sopra per "Animali" (invia sempre la lista COMPLETA delle voci
+            # a calendar_sync_children tramite l'azione preventivo-voci, mai
+            # un DELETE+INSERT di una riga sola: quel rischio - segnalato in
+            # passato come perdita di dati - resta evitato). L'endpoint a
+            # importo singolo /preventivo non e' piu' usato da questa pagina
+            # ma resta invariato, senza motivo di toccarlo.
+            estimate_bootstrap=''.join(f"calendarAddRow('estimate',{json.dumps(dict(i),ensure_ascii=False)});" for i in estimates)
+            estimate_form=f'''<form method="post" action="/calendario/{event_id}/preventivo-voci" id="calendarDetailEstimateForm">
+              <div class="calendar-repeat-list" data-calendar-list="estimate"></div>
+              <input type="hidden" name="estimate_json">
+              <div class="calendar-estimate-total-bar">Totale automatico <b data-estimate-total>€ 0,00</b></div>
+              <button class="calendar-add-appt-btn" type="button" onclick="calendarAddRow('estimate')">{lucide("plus")}<span>Aggiungi voce</span></button>
+              <button class="btn ghost" type="submit" style="margin-top:10px">Salva preventivo</button>
+            </form>
+            <script>window.PPM_URN_CATALOG={urn_catalog_json};document.addEventListener('DOMContentLoaded',function(){{{estimate_bootstrap}}});</script>'''
+            hero_rows.append(hero_row("receipt","pink",f"Preventivo — {money_it(estimate_total_all)}",'',estimate_form))
             if event['payment_status']:
                 # Stato/importo salvati sull'evento sono uno scatto preso al
                 # momento della creazione/prefill: se in seguito viene
@@ -12412,7 +12446,7 @@ class App(BaseHTTPRequestHandler):
         # pratica/cliente/veterinario).
         if (q.get("nav_error") or [""])[0]=="1":
             error_html+='<div class="flash warning">Indirizzo non sufficiente per una navigazione affidabile: completa indirizzo, comune e provincia (sulla pratica, sul cliente o sul veterinario collegati) prima di riprovare.</div>'
-        saved_labels={"stato":"Stato aggiornato.","zona":"Zona aggiornata.","operatore":"Operatore aggiornato.","note":"Note aggiornate.","data-ora":"Data e ora aggiornate.","preventivo":"Preventivo aggiornato.","tipo":"Tipo evento aggiornato.","luogo":"Luogo aggiornato.","cliente":"Cliente aggiornato.","animali":"Animali aggiornati."}
+        saved_labels={"stato":"Stato aggiornato.","zona":"Zona aggiornata.","operatore":"Operatore aggiornato.","note":"Note aggiornate.","data-ora":"Data e ora aggiornate.","preventivo":"Preventivo aggiornato.","preventivo-voci":"Preventivo aggiornato.","tipo":"Tipo evento aggiornato.","luogo":"Luogo aggiornato.","cliente":"Cliente aggiornato.","animali":"Animali aggiornati."}
         saved_html=f'<div class="flash">{esc(saved_labels[saved])}</div>' if saved in saved_labels else ''
         body=f'''{created_animation}<main class="wrap calendar-wrap calendar-detail-v2">{error_html}{saved_html}{header}{quick_actions}<nav class="calendar-tabs">{tabs}</nav><div>{panel}</div></main>'''
         self.send_html(layout(re.sub(r'^APPUNTAMENTO\b','PROMEMORIA',event["title"],flags=re.I) if event["event_type"]=='Appuntamento' else event["title"],body,user))
@@ -12489,11 +12523,32 @@ class App(BaseHTTPRequestHandler):
             elif action=="animali":
                 try:animals=calendar_parse_items(form.get("animals_json"),"animal")
                 except ValueError as exc:return self.calendar_event_detail(user,event_id,error=str(exc))
-                estimates=[{"description":i["description"],"amount":i["amount"]} for i in c.execute("SELECT description,amount FROM calendar_event_estimate_items WHERE event_id=? ORDER BY sort_order,id",(event_id,)).fetchall()]
+                # description+amount NON bastano piu': calendar_sync_children
+                # cancella e reinserisce TUTTE le voci preventivo a ogni
+                # chiamata, quindi bisogna riportare anche preset/
+                # urn_catalog_id gia' salvati, altrimenti salvare solo gli
+                # animali da qui cancellerebbe silenziosamente il
+                # collegamento al catalogo urne delle voci preventivo.
+                estimates=[{"description":i["description"],"amount":i["amount"],"preset":i["preset"],"urn_catalog_id":i["urn_catalog_id"]} for i in c.execute("SELECT description,amount,preset,urn_catalog_id FROM calendar_event_estimate_items WHERE event_id=? ORDER BY sort_order,id",(event_id,)).fetchall()]
                 old_summary=calendar_animals_summary_text(c.execute("SELECT * FROM calendar_event_animals WHERE event_id=? ORDER BY id",(event_id,)).fetchall())
                 calendar_sync_children(c,event_id,animals,estimates,stamp)
                 c.execute("UPDATE calendar_events SET updated_at=?,updated_by=? WHERE id=?",(stamp,user["id"],event_id))
                 calendar_add_history(c,event_id,user["id"],"Modifica animali",old_summary,calendar_animals_summary_text(animals),stamp)
+            elif action=="preventivo-voci":
+                # Controparte sicura di "animali" qui sopra, per il
+                # Preventivo (richiesta esplicita dell'utente: editor
+                # completo a righe multiple anche dal riepilogo, non solo da
+                # "Modifica evento"). Invia sempre la lista COMPLETA delle
+                # voci a calendar_sync_children, mai un DELETE+INSERT di una
+                # riga sola (vedi action=="preventivo" qui sotto per il
+                # motivo di quella scelta).
+                try:estimates=calendar_parse_items(form.get("estimate_json"),"estimate")
+                except ValueError as exc:return self.calendar_event_detail(user,event_id,error=str(exc))
+                animals=[{"name":a["name"],"species":a["species"],"weight":a["weight"],"cremation_type":a["cremation_type"],"notes":a["notes"]} for a in c.execute("SELECT * FROM calendar_event_animals WHERE event_id=? ORDER BY id",(event_id,)).fetchall()]
+                old_total=sum(float(i["amount"] or 0) for i in c.execute("SELECT amount FROM calendar_event_estimate_items WHERE event_id=?",(event_id,)).fetchall())
+                calendar_sync_children(c,event_id,animals,estimates,stamp)
+                c.execute("UPDATE calendar_events SET updated_at=?,updated_by=? WHERE id=?",(stamp,user["id"],event_id))
+                calendar_add_history(c,event_id,user["id"],"Modifica preventivo",money_it(old_total),money_it(sum(float(i["amount"] or 0) for i in estimates)),stamp)
             elif action=="preventivo":
                 # Questo endpoint accetta un SOLO importo complessivo: va bene
                 # per aggiungere un primo preventivo generico (0 voci), ma
@@ -12537,7 +12592,7 @@ class App(BaseHTTPRequestHandler):
                 c.execute("UPDATE calendar_events SET linked_practice_id=NULL,updated_at=?,updated_by=? WHERE id=?",(stamp,user["id"],event_id))
                 calendar_add_history(c,event_id,user["id"],"Scollegamento pratica",str(event["linked_practice_id"] or ""),"",stamp)
         target=safe_return_path(form.get("return_to") or self.headers.get("Referer"),f"/calendario/{event_id}")
-        if action in ("stato","zona","operatore","note","data-ora","preventivo","tipo","luogo","cliente","animali"):
+        if action in ("stato","zona","operatore","note","data-ora","preventivo","preventivo-voci","tipo","luogo","cliente","animali"):
             target=f"{target}{'&' if '?' in target else '?'}saved={action}"
         self.redirect(target)
 
@@ -16905,7 +16960,7 @@ class App(BaseHTTPRequestHandler):
         movement_invoice_fallback=None
         with db() as c:
             vets=c.execute("SELECT * FROM veterinarians WHERE active=1 ORDER BY COALESCE(short_name, clinic_name), clinic_name").fetchall()
-            urns=c.execute("SELECT * FROM urns WHERE active=1 AND category='Urna' ORDER BY name").fetchall()
+            urn_catalog_json=urn_catalog_payload(c)
             practice_items_bootstrap={cat:[] for cat in PRACTICE_ITEM_CATEGORIES}
             if p and "id" in p.keys() and p["id"]:
                 for row in c.execute("SELECT category,subtype,urn_catalog_id,label,price FROM practice_items WHERE practice_id=? ORDER BY category,sort_order",(p["id"],)).fetchall():
@@ -16930,7 +16985,7 @@ class App(BaseHTTPRequestHandler):
         origin_vet_options='<option value="">Seleziona veterinario</option>'+''.join(vet_option(v, raw("origin_veterinarian_id")) for v in vets)
         practice_items_script=f'''<script>
 (function(){{
-  window.PPM_URN_CATALOG={json.dumps([{"id":u["id"],"name":u["name"],"price":str(u["price"] or "0")} for u in urns],ensure_ascii=False)};
+  window.PPM_URN_CATALOG={urn_catalog_json};
   var bootstrap={json.dumps(practice_items_bootstrap,ensure_ascii=False)};
   function runBootstrap(){{
     ["urna","calco","accessorio"].forEach(function(cat){{(bootstrap[cat]||[]).forEach(function(item){{practiceAddRow(cat,item);}});}});
