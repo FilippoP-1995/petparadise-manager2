@@ -1578,6 +1578,51 @@ class PetParadiseTests(unittest.TestCase):
         self.assertTrue(self.handler.whatsapp_block_reason(collective))
         self.assertTrue(self.handler.whatsapp_block_reason(veterinarian))
 
+    def test_whatsapp_is_blocked_when_owner_is_a_collaborator(self):
+        # Richiesta esplicita dell'utente: i messaggi di ringraziamento non
+        # vanno mai inviati quando il proprietario/speditore e' un
+        # collaboratore - stesso criterio gia' usato altrove
+        # (is_collaborator) per riconoscere una pratica da collaboratore,
+        # sia tramite request_origin sia tramite collaborator_id da solo
+        # (es. collaboratore riconosciuto ma origine ancora non aggiornata).
+        by_origin = {"service_type": "Cremazione singola", "owner_veterinarian_id": None, "request_origin": "Collaboratore", "collaborator_id": None}
+        by_id = {"service_type": "Cremazione singola", "owner_veterinarian_id": None, "request_origin": "Privato", "collaborator_id": 7}
+        private = {"service_type": "Cremazione singola", "owner_veterinarian_id": None, "request_origin": "Privato", "collaborator_id": None}
+        self.assertTrue(self.handler.whatsapp_block_reason(by_origin))
+        self.assertTrue(self.handler.whatsapp_block_reason(by_id))
+        self.assertFalse(self.handler.whatsapp_block_reason(private))
+
+    def test_schedule_whatsapp_thanks_skips_collaborator_and_veterinarian_owners(self):
+        # Verifica end-to-end (non solo whatsapp_block_reason in isolamento):
+        # schedule_whatsapp_thanks, il vero punto di programmazione usato
+        # alla consegna, non deve creare nessun whatsapp_messages per
+        # queste pratiche.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            collaborator_pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name,owner_first_name,owner_last_name,owner_phone)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-WACOLLAB", "Collaboratore", "Livorno", "Consegnato", "Cremazione singola", stamp, stamp,
+                 admin["id"], "Birba", "Mario", "Rossi", "3331112222"),
+            ).lastrowid
+            vet_pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name,owner_first_name,owner_last_name,owner_phone,owner_veterinarian_id)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-WAVET", "Veterinario", "Livorno", "Consegnato", "Cremazione singola", stamp, stamp,
+                 admin["id"], "Birba", "Mario", "Rossi", "3331112222", 1),
+            ).lastrowid
+        with app.db() as conn:
+            ok_collab, reason_collab = self.handler.schedule_whatsapp_thanks(conn, collaborator_pid, admin["id"])
+            ok_vet, reason_vet = self.handler.schedule_whatsapp_thanks(conn, vet_pid, admin["id"])
+        self.assertFalse(ok_collab)
+        self.assertIn("collaboratore", reason_collab.lower())
+        self.assertFalse(ok_vet)
+        self.assertIn("veterinario", reason_vet.lower())
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) n FROM whatsapp_messages WHERE practice_id IN (?,?)", (collaborator_pid, vet_pid)).fetchone()["n"], 0)
+
     def test_scheduled_notification_is_idempotent(self):
         with app.db() as conn:
             admin = conn.execute("SELECT id FROM users WHERE username='admin'").fetchone()["id"]

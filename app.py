@@ -17543,6 +17543,13 @@ class App(BaseHTTPRequestHandler):
             return "Cremazione collettiva: WhatsApp disattivato"
         if "owner_veterinarian_id" in practice.keys() and practice["owner_veterinarian_id"]:
             return "Speditore veterinario: WhatsApp disattivato"
+        # Richiesta esplicita dell'utente: il ringraziamento non va mai
+        # inviato nemmeno quando lo speditore e' un collaboratore - stesso
+        # identico criterio gia' usato altrove per riconoscere una pratica
+        # da collaboratore (classify_balance_category/is_collaborator),
+        # nessuna logica nuova inventata qui.
+        if ("request_origin" in practice.keys() and practice["request_origin"]=="Collaboratore") or ("collaborator_id" in practice.keys() and practice["collaborator_id"]):
+            return "Speditore collaboratore: WhatsApp disattivato"
         return ""
 
     def schedule_whatsapp_thanks(self,c,pid,user_id=None):
