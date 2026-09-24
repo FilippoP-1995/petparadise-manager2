@@ -10,7 +10,7 @@ from contextlib import redirect_stderr
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 import app
 import backup_service
@@ -11670,7 +11670,12 @@ class PetParadiseTests(unittest.TestCase):
         # azioni rapide: telefono, whatsapp, naviga, menu
         self.assertIn('tel:3331234567', page)
         self.assertIn('https://wa.me/393331234567', page)
-        self.assertIn('google.com/maps/dir', page)
+        # Richiesta esplicita dell'utente: la destinazione va risolta
+        # (catena evento/pratica/cliente/veterinario + geocodifica
+        # validata) solo al click, non durante il caricamento della lista
+        # - il pulsante "Naviga" punta quindi all'endpoint interno
+        # /calendario/{id}/naviga, non piu' direttamente a Google Maps.
+        self.assertIn(f'href="/calendario/{pickup_id}/naviga"', page)
         self.assertIn('calendarToggleApptMenu(this)', page)
         self.assertIn(f'/calendario/{pickup_id}/modifica', page)
         self.assertIn(f'action="/calendario/{pickup_id}/elimina"', page)
@@ -12048,7 +12053,10 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('tel:3339990000', page)
         self.assertNotIn('tel:+3339990000', page)
         self.assertIn('https://wa.me/393339990000', page)
-        self.assertIn('google.com/maps/dir', page)
+        # Richiesta esplicita dell'utente: destinazione risolta solo al
+        # click (catena evento/pratica/cliente/veterinario + geocodifica
+        # validata), non durante il caricamento della pagina.
+        self.assertIn(f'href="/calendario/{event_id}/naviga"', page)
         # richiesta esplicita dell'utente: la pratica si puo' creare anche
         # prima che il ritiro sia stato effettuato (qui l'evento e' ancora
         # "Da ritirare") - il pulsante e' quindi attivo, non disabilitato.
@@ -14031,6 +14039,367 @@ class PetParadiseTests(unittest.TestCase):
         joined = " ".join(urls)
         for stop in many:
             self.assertIn(stop, joined)
+
+    # ------------------------------------------------------------------
+    # Destinazione accurata per il pulsante "Naviga" (richiesta esplicita
+    # dell'utente): indirizzo completo (via+civico+CAP+comune+provincia),
+    # validazione del risultato del geocoding, nessuna coordinata non
+    # verificata usata come destinazione, nessuna destinazione inventata.
+    # ------------------------------------------------------------------
+
+    def test_format_destination_address_matches_user_example(self):
+        # Esempio esplicito dell'utente: "Via Roma 10, 50053 Empoli, FI,
+        # Italia" e' preferibile al solo "Via Roma 10", perche' riduce il
+        # rischio che Google Maps risolva l'indirizzo in un comune omonimo.
+        self.assertEqual(
+            route_service.format_destination_address(street="Via Roma 10", cap="50053", city="Empoli", province="FI"),
+            "Via Roma 10, 50053 Empoli, FI, Italia",
+        )
+
+    def test_format_destination_address_preserves_alphanumeric_civico(self):
+        # Il civico non va mai normalizzato in modo aggressivo: 10/A, 10B,
+        # 10-12 restano esattamente come digitati (test 3 dell'elenco).
+        for street in ("Via Roma 10/A", "Via Roma 10B", "Via Roma 10-12"):
+            result = route_service.format_destination_address(street=street, city="Empoli", province="FI")
+            self.assertIn(street, result)
+
+    def test_format_destination_address_degrades_gracefully_without_civico_cap_or_province(self):
+        # Cliente senza numero civico/CAP/provincia (test 2/5/6 dell'elenco):
+        # l'indirizzo resta comunque utilizzabile, solo meno disambiguato.
+        self.assertEqual(route_service.format_destination_address(street="Via Roma"), "Via Roma, Italia")
+        self.assertEqual(route_service.format_destination_address(street="Via Roma", city="Empoli"), "Via Roma, Empoli, Italia")
+
+    def test_format_destination_address_includes_frazione_or_localita(self):
+        # Test 18/19 dell'elenco: frazione/localita'.
+        result = route_service.format_destination_address(street="Via del Mulino 3", extra="Ponte a Elsa", city="Empoli", province="FI")
+        self.assertEqual(result, "Via del Mulino 3, Ponte a Elsa, Empoli, FI, Italia")
+
+    def test_match_geocode_location_validato_requires_city_province_and_civico(self):
+        result = {"city": "Empoli", "province": "Firenze", "precision": "civico"}
+        self.assertEqual(route_service.match_geocode_location(result, expected_city="Empoli", expected_province="FI"), "validato")
+
+    def test_match_geocode_location_ambiguo_when_city_is_a_different_comune(self):
+        # Caso esplicito dell'utente: richiesta Via Roma 15 Empoli FI, il
+        # provider restituisce Via Roma 15 Pisa PI - va rifiutato, non
+        # accettato come se fosse equivalente (test 9/11/16 dell'elenco:
+        # due comuni con la stessa via, risultato nel comune sbagliato).
+        result = {"city": "Pisa", "province": "Pisa", "precision": "civico"}
+        self.assertEqual(route_service.match_geocode_location(result, expected_city="Empoli", expected_province="FI"), "ambiguo")
+
+    def test_match_geocode_location_approssimato_when_civico_not_confirmed(self):
+        # Caso esplicito dell'utente: risultato "Via Roma / Empoli / FI"
+        # senza corrispondenza del civico - non va considerato
+        # automaticamente equivalente a un risultato preciso (test 12).
+        result = {"city": "Empoli", "province": "Firenze", "precision": "via"}
+        self.assertEqual(route_service.match_geocode_location(result, expected_city="Empoli", expected_province="FI"), "approssimato")
+
+    def test_match_geocode_location_approssimato_when_nothing_expected_to_compare(self):
+        # Dati legacy/incompleti (test 20 dell'elenco): nessun comune/
+        # provincia noti per validare - il risultato resta utilizzabile ma
+        # mai promosso a "validato" senza un confronto reale.
+        result = {"city": "Empoli", "province": "Firenze", "precision": "civico"}
+        self.assertEqual(route_service.match_geocode_location(result), "approssimato")
+
+    def test_match_geocode_location_non_trovato_when_no_result(self):
+        # Test 10/12 dell'elenco: risultati geocoding multipli/civico non
+        # trovato -> nessun risultato utilizzabile.
+        self.assertEqual(route_service.match_geocode_location(None, expected_city="Empoli"), "non_trovato")
+
+    def test_province_matches_accepts_code_or_full_name_case_insensitive(self):
+        # Test 6/17 dell'elenco: provincia, abbreviazioni.
+        self.assertTrue(route_service._province_matches("Firenze", "fi"))
+        self.assertTrue(route_service._province_matches("provincia di Firenze", "FI"))
+        self.assertFalse(route_service._province_matches("Pisa", "FI"))
+
+    def test_structured_query_components_maps_province_code_to_full_name(self):
+        components = route_service.structured_query_components(street="Via Roma 10", cap="50053", city="Empoli", province="FI")
+        self.assertEqual(components, {"street": "Via Roma 10", "city": "Empoli", "county": "Firenze", "postalcode": "50053"})
+
+    def _fake_json_response(self, payload):
+        class FakeResponse:
+            def read(self_inner): return json.dumps(payload).encode("utf-8")
+            def __enter__(self_inner): return self_inner
+            def __exit__(self_inner, *a): return False
+        return FakeResponse()
+
+    @patch("route_service.urllib.request.urlopen")
+    def test_geocode_address_detailed_uses_structured_nominatim_first(self, mock_urlopen):
+        mock_urlopen.return_value = self._fake_json_response([{
+            "lat": "43.7167", "lon": "10.9500",
+            "address": {"city": "Empoli", "county": "Firenze", "postcode": "50053", "house_number": "10"},
+            "class": "highway",
+        }])
+        result = route_service.geocode_address_detailed(
+            "Via Roma 10, 50053 Empoli, FI, Italia",
+            structured={"street": "Via Roma 10", "city": "Empoli", "county": "Firenze", "postalcode": "50053"},
+        )
+        self.assertEqual(mock_urlopen.call_count, 1)
+        self.assertEqual((result["lat"], result["lng"], result["city"], result["province"], result["precision"]),
+                          (43.7167, 10.95, "Empoli", "Firenze", "civico"))
+        self.assertIn("nominatim-strutturato", result["provider"])
+
+    @patch("route_service.urllib.request.urlopen")
+    def test_geocode_address_detailed_falls_back_to_free_text_nominatim(self, mock_urlopen):
+        mock_urlopen.return_value = self._fake_json_response([{
+            "lat": "43.7", "lon": "10.9", "address": {"town": "Empoli", "county": "Firenze"}, "class": "place",
+        }])
+        result = route_service.geocode_address_detailed("Via Roma 10, Empoli, FI, Italia")
+        self.assertEqual(mock_urlopen.call_count, 1)
+        self.assertEqual(result["city"], "Empoli")
+        self.assertEqual(result["precision"], "area")  # nessun house_number nella risposta
+
+    @patch("route_service.urllib.request.urlopen")
+    def test_geocode_address_detailed_falls_back_to_google_when_nominatim_empty(self, mock_urlopen):
+        google_payload = {"results": [{
+            "geometry": {"location": {"lat": 43.71, "lng": 10.95}, "location_type": "ROOFTOP"},
+            "address_components": [
+                {"long_name": "10", "types": ["street_number"]},
+                {"long_name": "Empoli", "types": ["locality"]},
+                {"long_name": "Firenze", "types": ["administrative_area_level_2"]},
+                {"long_name": "50053", "types": ["postal_code"]},
+            ],
+        }]}
+        mock_urlopen.side_effect = [self._fake_json_response([]), self._fake_json_response(google_payload)]
+        result = route_service.geocode_address_detailed("Via Roma 10, Empoli, FI, Italia", api_key="FAKEKEY")
+        self.assertEqual(mock_urlopen.call_count, 2)
+        self.assertEqual((result["city"], result["province"], result["precision"], result["provider"]),
+                          ("Empoli", "Firenze", "civico", "google"))
+
+    @patch("route_service.urllib.request.urlopen")
+    def test_geocode_address_detailed_returns_none_when_all_providers_fail(self, mock_urlopen):
+        # Test 12 dell'elenco: civico/indirizzo non trovato da nessun
+        # provider -> nessun risultato, mai una coordinata inventata.
+        mock_urlopen.return_value = self._fake_json_response([])
+        result = route_service.geocode_address_detailed("Indirizzo inesistente 999, Nessundove", api_key="")
+        self.assertIsNone(result)
+
+    @patch("route_service.geocode_address_detailed")
+    def test_geocode_address_backward_compatible_wrapper(self, mock_detailed):
+        mock_detailed.return_value = {"lat": 43.7, "lng": 10.9, "city": "Empoli", "province": "Firenze", "precision": "civico", "provider": "nominatim"}
+        self.assertEqual(route_service.geocode_address("Via Roma 10, Empoli"), (43.7, 10.9))
+        mock_detailed.return_value = None
+        self.assertEqual(route_service.geocode_address("Indirizzo inesistente"), (None, None))
+
+    @patch("route_service.geocode_address_detailed")
+    def test_resolve_navigation_destination_validato_uses_coordinates(self, mock_detailed):
+        mock_detailed.return_value = {"lat": 43.7167, "lng": 10.95, "city": "Empoli", "province": "Firenze", "precision": "civico", "provider": "nominatim"}
+        with app.db() as conn:
+            result = route_service.resolve_navigation_destination(conn, street="Via Roma 10", cap="50053", city="Empoli", province="FI")
+        self.assertEqual(result["status"], "validato")
+        self.assertEqual(result["maps_destination"], "43.7167,10.95")
+        self.assertEqual(result["display_address"], "Via Roma 10, 50053 Empoli, FI, Italia")
+
+    @patch("route_service.geocode_address_detailed")
+    def test_resolve_navigation_destination_ambiguo_never_uses_the_wrong_coordinate(self, mock_detailed):
+        # Scenario esplicito dell'utente: richiesta Empoli, il provider
+        # restituisce Pisa -> la coordinata NON deve essere accettata, ma
+        # resta comunque disponibile il nostro indirizzo testuale completo
+        # (mai una destinazione totalmente inventata/vuota).
+        mock_detailed.return_value = {"lat": 43.71, "lng": 10.40, "city": "Pisa", "province": "Pisa", "precision": "civico", "provider": "nominatim"}
+        with app.db() as conn:
+            result = route_service.resolve_navigation_destination(conn, street="Via Roma 15", city="Empoli", province="FI")
+        self.assertEqual(result["status"], "ambiguo")
+        self.assertIsNone(result["lat"])
+        self.assertIsNone(result["lng"])
+        self.assertEqual(result["maps_destination"], "Via Roma 15, Empoli, FI, Italia")
+        self.assertNotIn("43.71", result["maps_destination"])
+
+    @patch("route_service.geocode_address_detailed")
+    def test_resolve_navigation_destination_non_trovato_when_nothing_usable(self, mock_detailed):
+        # Nessun indirizzo disponibile in nessun campo: nessuna destinazione
+        # inventata, il chiamante deve disabilitare il pulsante.
+        with app.db() as conn:
+            result = route_service.resolve_navigation_destination(conn, street="", city="", fallback_text="")
+        self.assertEqual(result["status"], "non_trovato")
+        self.assertEqual(result["maps_destination"], "")
+        mock_detailed.assert_not_called()
+
+    @patch("route_service.geocode_address_detailed")
+    def test_resolve_navigation_destination_reuses_cached_validated_coordinates(self, mock_detailed):
+        # Coordinate gia' presenti e valide (test 14 dell'elenco): non
+        # richiama il geocoding una seconda volta per lo stesso indirizzo.
+        mock_detailed.return_value = {"lat": 43.7167, "lng": 10.95, "city": "Empoli", "province": "Firenze", "precision": "civico", "provider": "nominatim"}
+        with app.db() as conn:
+            first = route_service.resolve_navigation_destination(conn, street="Via Roma 10", cap="50053", city="Empoli", province="FI")
+            second = route_service.resolve_navigation_destination(conn, street="Via Roma 10", cap="50053", city="Empoli", province="FI")
+        self.assertEqual(first["status"], "validato")
+        self.assertEqual(second, first)
+        self.assertEqual(mock_detailed.call_count, 1)
+
+    @patch("route_service.geocode_address_detailed")
+    def test_resolve_navigation_destination_address_change_is_a_different_cache_key(self, mock_detailed):
+        # Test 15/16/17 dell'elenco: coordinate obsolete dopo modifica
+        # indirizzo/comune/provincia - poiche' la chiave di cache e'
+        # l'indirizzo completo, cambiare comune/provincia produce una
+        # chiave diversa e quindi una nuova geocodifica, mai la coordinata
+        # del vecchio indirizzo.
+        mock_detailed.side_effect = [
+            {"lat": 43.7167, "lng": 10.95, "city": "Empoli", "province": "Firenze", "precision": "civico", "provider": "nominatim"},
+            {"lat": 43.5482, "lng": 10.3106, "city": "Livorno", "province": "Livorno", "precision": "civico", "provider": "nominatim"},
+        ]
+        with app.db() as conn:
+            before = route_service.resolve_navigation_destination(conn, street="Via Roma 10", city="Empoli", province="FI")
+            after = route_service.resolve_navigation_destination(conn, street="Via Roma 10", city="Livorno", province="LI")
+        self.assertEqual(before["display_address"], "Via Roma 10, Empoli, FI, Italia")
+        self.assertEqual(after["display_address"], "Via Roma 10, Livorno, LI, Italia")
+        self.assertNotEqual(before["maps_destination"], after["maps_destination"])
+        self.assertEqual(mock_detailed.call_count, 2)
+
+    def _navigation_event_row(self, conn, **overrides):
+        stamp = app.now()
+        admin_id = conn.execute("SELECT id FROM users WHERE username='admin'").fetchone()["id"]
+        fields = {
+            "event_type": "Ritiro", "title": "RITIRO TEST", "location_type": "Privato",
+            "address": "", "zone": "", "start_at": "2026-08-10T09:00:00", "end_at": "2026-08-10T09:30:00",
+            "event_status": "Da confermare", "created_by": admin_id, "created_at": stamp, "updated_at": stamp,
+        }
+        fields.update(overrides)
+        cols = ",".join(fields.keys())
+        marks = ",".join("?" for _ in fields)
+        return conn.execute(f"INSERT INTO calendar_events({cols}) VALUES({marks})", tuple(fields.values())).lastrowid
+
+    def test_calendar_navigation_uses_linked_practice_owner_address_not_bare_street(self):
+        # Catena EVENTO -> PRATICA -> INDIRIZZO (test 21 dell'elenco).
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,
+                   created_by,owner_street,owner_city,owner_province,owner_zip) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-NAVPRAT", "Privato", "Livorno", "Ritirato", app.now(), app.now(), admin["id"],
+                 "Via Roma 10", "Empoli", "FI", "50053"),
+            ).lastrowid
+            event_id = self._navigation_event_row(conn, linked_practice_id=pid, address="indirizzo vecchio non aggiornato")
+            event = conn.execute("SELECT * FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+            street, cap, city, province, extra, fallback = self.handler.calendar_navigation_address_components(conn, event)
+        self.assertEqual((street, cap, city, province), ("Via Roma 10", "50053", "Empoli", "FI"))
+
+    def test_calendar_navigation_uses_linked_client_address_when_no_practice(self):
+        # Catena EVENTO -> CLIENTE -> INDIRIZZO (test 21 dell'elenco), senza
+        # pratica collegata.
+        with app.db() as conn:
+            client_id = conn.execute(
+                "INSERT INTO clients(first_name,last_name,street,city,province,zip,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                ("Anna", "Bianchi", "Via Verdi 4", "Viareggio", "LU", "55049", 1, app.now(), app.now()),
+            ).lastrowid
+            event_id = self._navigation_event_row(conn, client_id=client_id)
+            event = conn.execute("SELECT * FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+            street, cap, city, province, extra, fallback = self.handler.calendar_navigation_address_components(conn, event)
+        self.assertEqual((street, cap, city, province), ("Via Verdi 4", "55049", "Viareggio", "LU"))
+
+    def test_calendar_navigation_uses_veterinarian_address_for_ritiro_veterinario(self):
+        # Catena EVENTO -> VETERINARIO -> INDIRIZZO (test 22 dell'elenco).
+        with app.db() as conn:
+            vet_id = conn.execute(
+                "INSERT INTO veterinarians(clinic_name,address,city,active,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("Clinica Test", "Corso Amedeo 285", "Livorno", 1, app.now(), app.now()),
+            ).lastrowid
+            event_id = self._navigation_event_row(conn, location_type="Veterinario", veterinarian_id=vet_id,
+                                                    veterinarian_address="indirizzo copiato vecchio")
+            event = conn.execute("SELECT * FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+            street, cap, city, province, extra, fallback = self.handler.calendar_navigation_address_components(conn, event)
+        # l'indirizzo AGGIORNATO dell'anagrafica veterinario, non la copia
+        # congelata sull'evento al momento del salvataggio.
+        self.assertEqual((street, city), ("Corso Amedeo 285", "Livorno"))
+
+    def test_calendar_navigation_uses_delivery_clinic_address_for_riconsegna_veterinario(self):
+        with app.db() as conn:
+            vet_id = conn.execute(
+                "INSERT INTO veterinarians(clinic_name,address,city,active,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("Clinica Riconsegna", "Via Test 5", "Pisa", 1, app.now(), app.now()),
+            ).lastrowid
+            event_id = self._navigation_event_row(
+                conn, event_type="Riconsegna", location_type="", delivery_location_type="Veterinario",
+                delivery_clinic_id=vet_id, delivery_clinic_address="",
+            )
+            event = conn.execute("SELECT * FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+            street, cap, city, province, extra, fallback = self.handler.calendar_navigation_address_components(conn, event)
+        self.assertEqual((street, city), ("Via Test 5", "Pisa"))
+
+    def test_calendar_navigation_falls_back_to_event_address_plus_zone_when_unlinked(self):
+        # Nessuna pratica/cliente/veterinario collegato: resta il testo
+        # libero dell'evento, ma la zona operativa (localita', test 19
+        # dell'elenco) viene comunque usata per disambiguare.
+        with app.db() as conn:
+            event_id = self._navigation_event_row(conn, address="Via delle Colline 7", zone="Viareggio")
+            event = conn.execute("SELECT * FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+            street, cap, city, province, extra, fallback = self.handler.calendar_navigation_address_components(conn, event)
+        self.assertEqual(street, "Via delle Colline 7")
+        self.assertEqual(city, "Viareggio")
+
+    @patch("app.route_service.geocode_address_detailed")
+    def test_calendar_event_navigate_redirects_to_maps_with_validated_coordinates(self, mock_detailed):
+        mock_detailed.return_value = {"lat": 43.7167, "lng": 10.95, "city": "Empoli", "province": "Firenze", "precision": "civico", "provider": "nominatim"}
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,
+                   created_by,owner_street,owner_city,owner_province,owner_zip) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-NAVGO", "Privato", "Livorno", "Ritirato", app.now(), app.now(), admin["id"],
+                 "Via Roma 10", "Empoli", "FI", "50053"),
+            ).lastrowid
+            event_id = self._navigation_event_row(conn, linked_practice_id=pid)
+        redirects = []
+        self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.calendar_event_navigate(admin, event_id)
+        self.assertEqual(redirects, ["https://www.google.com/maps/dir/?api=1&destination=43.7167%2C10.95"])
+
+    def test_calendar_event_navigate_redirects_back_with_warning_when_no_address(self):
+        # Nessuna destinazione inventata: se non c'e' nessun indirizzo
+        # utilizzabile, si torna alla scheda evento con un avviso invece di
+        # aprire comunque Google Maps.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            event_id = self._navigation_event_row(conn)
+        redirects = []
+        self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.calendar_event_navigate(admin, event_id)
+        self.assertEqual(redirects, [f"/calendario/{event_id}?nav_error=1"])
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}?nav_error=1"
+        self.handler.calendar_event_detail(admin, event_id)
+        self.assertIn("Indirizzo non sufficiente", rendered[-1])
+
+    @patch("app.route_service.geocode_address_detailed")
+    def test_calendar_event_navigate_uses_text_destination_when_geocode_ambiguous(self, mock_detailed):
+        # Scenario end-to-end del bug segnalato dall'utente: il geocoding
+        # restituisce un comune diverso da quello atteso -> il pulsante
+        # "Naviga" deve comunque aprire Google Maps (mai bloccare quando
+        # abbiamo un indirizzo completo nostro), ma con il TESTO
+        # dell'indirizzo, mai con la coordinata sbagliata.
+        mock_detailed.return_value = {"lat": 43.71, "lng": 10.40, "city": "Pisa", "province": "Pisa", "precision": "civico", "provider": "nominatim"}
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,
+                   created_by,owner_street,owner_city,owner_province) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-NAVAMBIG", "Privato", "Livorno", "Ritirato", app.now(), app.now(), admin["id"],
+                 "Via Roma 15", "Empoli", "FI"),
+            ).lastrowid
+            event_id = self._navigation_event_row(conn, linked_practice_id=pid)
+        redirects = []
+        self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.calendar_event_navigate(admin, event_id)
+        self.assertEqual(len(redirects), 1)
+        destination = redirects[0].split("destination=", 1)[1]
+        self.assertEqual(unquote(destination), "Via Roma 15, Empoli, FI, Italia")
+        self.assertNotIn("43.71", redirects[0])
+
+    def test_real_seeded_veterinarian_address_resolves_through_the_chain(self):
+        # Verifica su un caso reale presente nei dati seed del gestionale
+        # (non dati di produzione, ma un'anagrafica veterinario reale gia'
+        # nel database, non inventata per il test): DEL PERO, Livorno.
+        with app.db() as conn:
+            vet = conn.execute("SELECT * FROM veterinarians WHERE short_name='DEL PERO'").fetchone()
+            self.assertIsNotNone(vet, "veterinario seed DEL PERO non trovato: verificare i dati di test")
+            event_id = self._navigation_event_row(conn, location_type="Veterinario", veterinarian_id=vet["id"])
+            event = conn.execute("SELECT * FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+            street, cap, city, province, extra, fallback = self.handler.calendar_navigation_address_components(conn, event)
+            display = route_service.format_destination_address(street=street, cap=cap, city=city, province=province, extra=extra)
+        self.assertEqual(street, vet["address"])
+        self.assertEqual(city, vet["city"])
+        self.assertIn(vet["address"], display)
+        self.assertIn(vet["city"], display)
 
     @patch("app.route_service.geocode_address", return_value=(43.55, 10.30))
     def test_route_plan_page_shows_empty_state_without_eligible_pickups(self, _mock_geocode):

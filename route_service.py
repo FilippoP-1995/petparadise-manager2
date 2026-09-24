@@ -17,6 +17,8 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -24,6 +26,32 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 ROME_TZ = ZoneInfo("Europe/Rome")
+
+# Sigla provincia (come gia' salvata in practices.owner_province/
+# clients.province) -> nome esteso, per confrontare la provincia attesa con
+# quella restituita dal geocoding (Nominatim/Google restituiscono sempre il
+# nome esteso, mai la sigla). Elenco completo delle province italiane
+# (richiesta esplicita dell'utente: la provincia va verificata quando
+# disponibile, non solo per la Toscana).
+PROVINCE_NAMES = {
+    "AG":"Agrigento","AL":"Alessandria","AN":"Ancona","AO":"Aosta","AR":"Arezzo","AP":"Ascoli Piceno",
+    "AT":"Asti","AV":"Avellino","BA":"Bari","BT":"Barletta-Andria-Trani","BL":"Belluno","BN":"Benevento",
+    "BG":"Bergamo","BI":"Biella","BO":"Bologna","BZ":"Bolzano","BS":"Brescia","BR":"Brindisi","CA":"Cagliari",
+    "CL":"Caltanissetta","CB":"Campobasso","CE":"Caserta","CT":"Catania","CZ":"Catanzaro","CH":"Chieti",
+    "CO":"Como","CS":"Cosenza","CR":"Cremona","KR":"Crotone","CN":"Cuneo","EN":"Enna","FM":"Fermo",
+    "FE":"Ferrara","FI":"Firenze","FG":"Foggia","FC":"Forli'-Cesena","FR":"Frosinone","GE":"Genova",
+    "GO":"Gorizia","GR":"Grosseto","IM":"Imperia","IS":"Isernia","SP":"La Spezia","AQ":"L'Aquila",
+    "LT":"Latina","LE":"Lecce","LC":"Lecco","LI":"Livorno","LO":"Lodi","LU":"Lucca","MC":"Macerata",
+    "MN":"Mantova","MS":"Massa-Carrara","MT":"Matera","ME":"Messina","MI":"Milano","MO":"Modena",
+    "MB":"Monza e della Brianza","NA":"Napoli","NO":"Novara","NU":"Nuoro","OR":"Oristano","PD":"Padova",
+    "PA":"Palermo","PR":"Parma","PV":"Pavia","PG":"Perugia","PU":"Pesaro e Urbino","PE":"Pescara",
+    "PC":"Piacenza","PI":"Pisa","PT":"Pistoia","PN":"Pordenone","PZ":"Potenza","PO":"Prato","RG":"Ragusa",
+    "RA":"Ravenna","RC":"Reggio Calabria","RE":"Reggio Emilia","RI":"Rieti","RN":"Rimini","RM":"Roma",
+    "RO":"Rovigo","SA":"Salerno","SS":"Sassari","SV":"Savona","SI":"Siena","SR":"Siracusa","SO":"Sondrio",
+    "SU":"Sud Sardegna","TA":"Taranto","TE":"Teramo","TR":"Terni","TO":"Torino","TP":"Trapani","TN":"Trento",
+    "TV":"Treviso","TS":"Trieste","UD":"Udine","VA":"Varese","VE":"Venezia","VB":"Verbano-Cusio-Ossola",
+    "VC":"Vercelli","VR":"Verona","VV":"Vibo Valentia","VI":"Vicenza","VT":"Viterbo",
+}
 
 # Sosta di default (minuti) per tipo di luogo quando non c'e' ne' un valore
 # specifico sul veterinario ne' una chiave in settings.
@@ -469,41 +497,222 @@ def optimize_route_with_schedule(start, destination, contexts, mode="veloce", st
     return list(contexts), None, "nessuna"
 
 
-def geocode_address(address, api_key=None):
-    """Geocodifica un indirizzo: tenta prima Nominatim/OpenStreetMap (gratuito,
-    stesso servizio gia' usato in app.py per il recupero del CAP), poi Google
-    Geocoding se una chiave e' configurata. Non solleva mai eccezioni: in
-    caso di fallimento ritorna (None, None) e la tappa resta senza
-    coordinate (nessun vincolo, mai un blocco)."""
+def _normalize_place_text(value):
+    """Confronto tollerante di comune/provincia: 'Firenze' == 'FIRENZE' ==
+    ' firenze ' == 'Provincia di Firenze'. Nominatim e Google non
+    restituiscono mai il nome nello stesso formato ne' fra loro ne' rispetto
+    a come l'operatore l'ha digitato."""
+    text = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode("ascii")
+    text = re.sub(r"^provincia di\s+", "", text.strip(), flags=re.I)
+    return re.sub(r"\s+", " ", text).strip().lower()
+
+
+def _province_matches(result_province, expected_code):
+    if not expected_code:
+        return True
+    expected_name = PROVINCE_NAMES.get(expected_code.strip().upper(), expected_code)
+    return _normalize_place_text(result_province) == _normalize_place_text(expected_name)
+
+
+def _nominatim_geocode_result(row, provider):
+    details = row.get("address") or {}
+    city = details.get("city") or details.get("town") or details.get("village") or details.get("municipality") or details.get("hamlet") or ""
+    province = details.get("county") or details.get("state_district") or ""
+    postcode = details.get("postcode") or ""
+    osm_class = row.get("class") or ""
+    precision = "civico" if details.get("house_number") else ("via" if osm_class == "highway" else "area")
+    return {
+        "lat": float(row["lat"]), "lng": float(row["lon"]),
+        "city": city, "province": province, "postcode": postcode,
+        "precision": precision, "provider": provider,
+    }
+
+
+def _google_geocode_result(result):
+    loc = result["geometry"]["location"]
+    components = result.get("address_components") or []
+
+    def find(*types):
+        for comp in components:
+            if any(t in (comp.get("types") or []) for t in types):
+                return comp.get("long_name", "")
+        return ""
+
+    city = find("locality", "administrative_area_level_3", "postal_town")
+    province = find("administrative_area_level_2")
+    postcode = find("postal_code")
+    has_house_number = bool(find("street_number"))
+    location_type = (result.get("geometry") or {}).get("location_type", "")
+    precision = "civico" if (has_house_number and location_type in ("ROOFTOP", "RANGE_INTERPOLATED")) else (
+        "via" if location_type in ("ROOFTOP", "RANGE_INTERPOLATED", "GEOMETRIC_CENTER") else "area"
+    )
+    return {
+        "lat": float(loc["lat"]), "lng": float(loc["lng"]),
+        "city": city, "province": province, "postcode": postcode,
+        "precision": precision, "provider": "google",
+    }
+
+
+def structured_query_components(street=None, cap=None, city=None, province=None):
+    """Componenti separati per una ricerca STRUTTURATA su Nominatim (street/
+    city/county/postalcode) invece di una singola stringa libera — molto
+    meno ambigua, stesso principio gia' usato da api_zip_lookup in app.py
+    per il recupero del CAP, qui esteso alla geocodifica vera e propria."""
+    components = {}
+    street = (street or "").strip()
+    if street:
+        components["street"] = street
+    city = (city or "").strip()
+    if city:
+        components["city"] = city
+    province = (province or "").strip()
+    if province:
+        components["county"] = PROVINCE_NAMES.get(province.upper(), province)
+    cap = (cap or "").strip()
+    if cap:
+        components["postalcode"] = cap
+    return components
+
+
+def geocode_address_detailed(address, structured=None, api_key=None):
+    """Geocodifica un indirizzo restituendo, oltre a lat/lng, il comune e la
+    provincia effettivamente individuati dal provider (per poterli
+    confrontare con quelli attesi, vedi match_geocode_location) e una stima
+    di precisione ("civico" quando il civico e' stato riconosciuto, "via"
+    quando solo la strada, "area" quando solo una zona generica). Tenta, in
+    ordine: ricerca STRUTTURATA su Nominatim (quando sono note via/comune/
+    provincia separati), ricerca libera su Nominatim sulla stringa
+    completa, infine Google Geocoding come ultima risorsa (se configurata
+    una GOOGLE_MAPS_API_KEY) — sempre filtrata per comune/provincia quando
+    noti, per ridurre ulteriormente l'ambiguita'. Non solleva mai eccezioni:
+    in caso di fallimento totale ritorna None (nessuna destinazione
+    inventata: spetta al chiamante decidere se bloccare la navigazione)."""
     address = (address or "").strip()
-    if not address:
-        return None, None
-    try:
-        params = urllib.parse.urlencode({"q": address, "format": "jsonv2", "limit": "1"})
-        req = urllib.request.Request(
-            f"https://nominatim.openstreetmap.org/search?{params}",
-            headers={"Accept": "application/json", "User-Agent": "PetParadiseManager/1.0 (route geocoding)"},
-            method="GET",
-        )
-        with urllib.request.urlopen(req, timeout=8) as response:
-            payload = json.loads(response.read().decode("utf-8", "replace"))
-        if payload:
-            return float(payload[0]["lat"]), float(payload[0]["lon"])
-    except Exception as exc:
-        print(f"[ROUTE] Nominatim non disponibile: {type(exc).__name__}: {exc}", flush=True)
-    api_key = api_key if api_key is not None else os.environ.get("GOOGLE_MAPS_API_KEY", "").strip()
-    if api_key:
+    if structured and structured.get("street"):
         try:
-            params = urllib.parse.urlencode({"address": address, "key": api_key})
+            params = dict(structured)
+            params.update({"format": "jsonv2", "limit": "1", "addressdetails": "1", "countrycodes": "it"})
+            query = urllib.parse.urlencode(params)
+            req = urllib.request.Request(
+                f"https://nominatim.openstreetmap.org/search?{query}",
+                headers={"Accept": "application/json", "User-Agent": "PetParadiseManager/1.0 (route geocoding)"},
+                method="GET",
+            )
+            with urllib.request.urlopen(req, timeout=8) as response:
+                payload = json.loads(response.read().decode("utf-8", "replace"))
+            if payload:
+                return _nominatim_geocode_result(payload[0], provider="nominatim-strutturato")
+        except Exception as exc:
+            print(f"[ROUTE] Nominatim strutturato non disponibile: {type(exc).__name__}: {exc}", flush=True)
+    if address:
+        try:
+            params = urllib.parse.urlencode({"q": address, "format": "jsonv2", "limit": "1", "addressdetails": "1"})
+            req = urllib.request.Request(
+                f"https://nominatim.openstreetmap.org/search?{params}",
+                headers={"Accept": "application/json", "User-Agent": "PetParadiseManager/1.0 (route geocoding)"},
+                method="GET",
+            )
+            with urllib.request.urlopen(req, timeout=8) as response:
+                payload = json.loads(response.read().decode("utf-8", "replace"))
+            if payload:
+                return _nominatim_geocode_result(payload[0], provider="nominatim")
+        except Exception as exc:
+            print(f"[ROUTE] Nominatim non disponibile: {type(exc).__name__}: {exc}", flush=True)
+    api_key = api_key if api_key is not None else os.environ.get("GOOGLE_MAPS_API_KEY", "").strip()
+    if api_key and address:
+        try:
+            google_params = {"address": address, "key": api_key, "region": "it"}
+            if structured and (structured.get("city") or structured.get("county")):
+                components = []
+                if structured.get("city"):
+                    components.append(f"locality:{structured['city']}")
+                if structured.get("county"):
+                    components.append(f"administrative_area:{structured['county']}")
+                components.append("country:IT")
+                google_params["components"] = "|".join(components)
+            params = urllib.parse.urlencode(google_params)
             req = urllib.request.Request(f"https://maps.googleapis.com/maps/api/geocode/json?{params}", method="GET")
             with urllib.request.urlopen(req, timeout=8) as response:
                 payload = json.loads(response.read().decode("utf-8", "replace"))
             results = payload.get("results") or []
             if results:
-                loc = results[0]["geometry"]["location"]
-                return float(loc["lat"]), float(loc["lng"])
+                return _google_geocode_result(results[0])
         except Exception as exc:
             print(f"[ROUTE] Google Geocoding non disponibile: {type(exc).__name__}: {exc}", flush=True)
+    return None
+
+
+def match_geocode_location(result, expected_city=None, expected_province=None):
+    """Confronta comune/provincia restituiti dal geocoding con quelli attesi
+    (gia' noti dall'anagrafica collegata all'evento: pratica/cliente/
+    veterinario) e ritorna uno stato esplicito — mai un booleano generico,
+    perche' il chiamante deve poter distinguere:
+      - "validato": comune (e provincia, se nota) combaciano E il civico e'
+        stato riconosciuto dal provider — la coordinata e' affidabile.
+      - "approssimato": un risultato esiste e comune/provincia combaciano
+        (o non erano noti per il confronto), ma senza conferma del civico —
+        o comune/provincia non erano affatto noti per un confronto.
+      - "ambiguo": il provider ha restituito un comune/provincia DIVERSO da
+        quello atteso (es. Pisa invece di Empoli) — il risultato va
+        rifiutato, mai usato come coordinata.
+      - "non_trovato": nessun risultato dal geocoding."""
+    if not result:
+        return "non_trovato"
+    city_known = bool((expected_city or "").strip())
+    province_known = bool((expected_province or "").strip())
+    if not city_known and not province_known:
+        # Nessun comune/provincia noto per un confronto reale: il
+        # risultato non puo' mai essere promosso a "validato" solo perche'
+        # nulla lo contraddice - resta un'approssimazione.
+        return "approssimato"
+    city_ok = (not city_known) or _normalize_place_text(result.get("city")) == _normalize_place_text(expected_city)
+    province_ok = (not province_known) or _province_matches(result.get("province"), expected_province)
+    if not (city_ok and province_ok):
+        return "ambiguo"
+    if result.get("precision") == "civico":
+        return "validato"
+    return "approssimato"
+
+
+def format_destination_address(street=None, cap=None, city=None, province=None, extra=None):
+    """Costruisce l'indirizzo COMPLETO da inviare a Google Maps (o da
+    geocodificare) a partire dai singoli campi gia' presenti nel gestionale.
+    Via e civico NON vengono mai separati ne' toccati (arrivano gia' come
+    un'unica stringa libera dai form di pratica/cliente/veterinario, es.
+    'Via Roma 10/A' — normalizzarli rischierebbe di alterarne il
+    significato, richiesta esplicita dell'utente): comune/provincia/CAP
+    vengono invece SEMPRE aggiunti quando disponibili, per disambiguare
+    (es. 'Via Roma 10, 50053 Empoli, FI, Italia' invece del solo 'Via Roma
+    10', che Google Maps potrebbe risolvere in un comune omonimo diverso).
+    `extra` e' per un'eventuale frazione/localita' aggiuntiva."""
+    street = (street or "").strip()
+    extra = (extra or "").strip()
+    cap = (cap or "").strip()
+    city = (city or "").strip()
+    province = (province or "").strip().upper()
+    locality = " ".join(x for x in (cap, city) if x)
+    parts = [p for p in (street, extra, locality, province) if p]
+    if not parts:
+        # Nessun componente reale: "Italia" da solo non e' un indirizzo,
+        # nessuna destinazione inventata (richiesta esplicita dell'utente).
+        return ""
+    parts.append("Italia")
+    return ", ".join(parts)
+
+
+def geocode_address(address, api_key=None):
+    """Geocodifica un indirizzo, solo lat/lng — wrapper mantenuto per i
+    chiamanti gia' esistenti (Percorso giornaliero) che non hanno bisogno di
+    validare comune/provincia. Per i nuovi utilizzi (destinazione dei
+    pulsanti "Naviga") usa invece geocode_address_detailed, che restituisce
+    anche comune/provincia/precisione per poter validare il risultato con
+    match_geocode_location, o piu' direttamente resolve_navigation_destination
+    qui sotto — nessuna seconda logica di geocodifica indipendente, questa
+    funzione e geocode_address_detailed condividono le stesse chiamate
+    HTTP."""
+    result = geocode_address_detailed(address, api_key=api_key)
+    if result:
+        return result["lat"], result["lng"]
     return None, None
 
 
@@ -561,6 +770,77 @@ def resolve_coordinates(conn, address, veterinarian_row=None, api_key=None):
             (address, lat, lng, stamp),
         )
     return lat, lng
+
+
+def resolve_navigation_destination(conn, *, street=None, extra=None, cap=None, city=None, province=None,
+                                    fallback_text=None, api_key=None):
+    """Punto UNICO per determinare la destinazione da inviare a Google Maps
+    per QUALSIASI pulsante "Naviga" del gestionale (ritiri, ritiri presso
+    veterinario, riconsegne, percorso giornaliero, o qualunque altro punto
+    futuro) — richiesta esplicita dell'utente: stessa logica ovunque,
+    nessuna geocodifica parallela. Riusa geocode_address_detailed e
+    geocode_cache, non introduce un secondo sistema.
+
+    Non inventa mai una destinazione: se i dati disponibili non bastano a
+    costruire nemmeno un indirizzo minimo, ritorna status "non_trovato" con
+    maps_destination vuoto — il chiamante deve allora disabilitare il
+    pulsante "Naviga", non mandare comunque l'operatore da qualche parte.
+
+    Non usa mai una coordinata NON validata come destinazione: le
+    coordinate finiscono nel link a Google Maps solo quando status e'
+    "validato" (comune/provincia/civico confermati dal geocoding).
+    Altrimenti ("approssimato"/"ambiguo") si invia comunque il testo
+    dell'indirizzo COMPLETO che abbiamo costruito noi stessi (via+civico+
+    CAP+comune+provincia) — resta un'informazione nostra, corretta,
+    indipendente da un geocoding che puo' aver sbagliato comune; e' sempre
+    piu' preciso di oggi (solo la via), ma senza fidarsi ciecamente di un
+    punto sulla mappa potenzialmente nel posto sbagliato.
+
+    Ritorna un dict:
+      status: "validato" | "approssimato" | "ambiguo" | "non_trovato"
+      lat, lng: presenti solo quando status=="validato"
+      display_address: indirizzo completo, per mostrarlo all'operatore
+      maps_destination: valore pronto per "...maps/dir/?api=1&destination="
+        (ancora da passare a urllib.parse.quote) — stringa vuota quando
+        status=="non_trovato"."""
+    street = (street or "").strip()
+    display_address = format_destination_address(street=street, cap=cap, city=city, province=province, extra=extra)
+    if not display_address:
+        fallback_text = (fallback_text or "").strip()
+        if not fallback_text:
+            return {"status": "non_trovato", "lat": None, "lng": None, "display_address": "", "maps_destination": ""}
+        display_address = fallback_text
+        street = street or fallback_text
+    cache_key = display_address
+    cached = conn.execute(
+        "SELECT lat,lng,matched_city,matched_province,precision FROM geocode_cache WHERE address=?", (cache_key,)
+    ).fetchone()
+    if cached and cached["lat"] is not None:
+        result = {"city": cached["matched_city"], "province": cached["matched_province"], "precision": cached["precision"]}
+        status = match_geocode_location(result, expected_city=city, expected_province=province)
+        if status == "validato":
+            return {"status": "validato", "lat": cached["lat"], "lng": cached["lng"],
+                     "display_address": display_address, "maps_destination": f'{cached["lat"]},{cached["lng"]}'}
+        return {"status": status, "lat": None, "lng": None,
+                 "display_address": display_address, "maps_destination": display_address}
+    structured = structured_query_components(street=street, cap=cap, city=city, province=province) if street else None
+    result = geocode_address_detailed(display_address, structured=structured, api_key=api_key)
+    status = match_geocode_location(result, expected_city=city, expected_province=province)
+    if result:
+        stamp = rome_now().isoformat(timespec="seconds")
+        conn.execute(
+            "INSERT INTO geocode_cache(address,lat,lng,matched_city,matched_province,precision,updated_at) "
+            "VALUES(?,?,?,?,?,?,?) ON CONFLICT(address) DO UPDATE SET "
+            "lat=excluded.lat,lng=excluded.lng,matched_city=excluded.matched_city,"
+            "matched_province=excluded.matched_province,precision=excluded.precision,updated_at=excluded.updated_at",
+            (cache_key, result["lat"], result["lng"], result.get("city", ""), result.get("province", ""),
+             result.get("precision", ""), stamp),
+        )
+    if status == "validato":
+        return {"status": "validato", "lat": result["lat"], "lng": result["lng"],
+                 "display_address": display_address, "maps_destination": f'{result["lat"]},{result["lng"]}'}
+    return {"status": status, "lat": None, "lng": None,
+             "display_address": display_address, "maps_destination": display_address}
 
 
 def fetch_place_hours_google(api_key, place_id):

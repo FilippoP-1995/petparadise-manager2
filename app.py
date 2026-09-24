@@ -470,6 +470,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS geocode_cache (
           address TEXT PRIMARY KEY,
           lat REAL, lng REAL,
+          matched_city TEXT, matched_province TEXT, precision TEXT,
           updated_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS collaborators (
@@ -800,6 +801,17 @@ def init_db():
         }.items():
             if name not in vet_existing:
                 c.execute(f"ALTER TABLE veterinarians ADD COLUMN {name} {definition}")
+        # Colonne aggiunte per validare i risultati della geocodifica
+        # (comune/provincia/precisione restituiti dal provider, per la
+        # nuova destinazione accurata dei pulsanti "Naviga" - richiesta
+        # esplicita dell'utente): la chiave (address) resta la stringa
+        # indirizzo completa gia' usata da geocode_cache, quindi cambia da
+        # sola se cambia un componente dell'indirizzo (nessuna
+        # invalidazione esplicita necessaria, e' gia' strutturale).
+        geocode_cache_existing = {row["name"] for row in c.execute("PRAGMA table_info(geocode_cache)")}
+        for name, definition in {"matched_city": "TEXT", "matched_province": "TEXT", "precision": "TEXT"}.items():
+            if name not in geocode_cache_existing:
+                c.execute(f"ALTER TABLE geocode_cache ADD COLUMN {name} {definition}")
         if not c.execute("SELECT 1 FROM company_locations LIMIT 1").fetchone():
             seed_stamp = rome_now().isoformat(timespec="seconds")
             c.executemany(
@@ -9078,6 +9090,8 @@ class App(BaseHTTPRequestHandler):
         if path == "/calendario/cestino": return self.calendar_trash(user)
         match = re.fullmatch(r"/calendario/(\d+)/modifica",path)
         if match: return self.calendar_event_form(user,int(match.group(1)))
+        match = re.fullmatch(r"/calendario/(\d+)/naviga",path)
+        if match: return self.calendar_event_navigate(user,int(match.group(1)))
         match = re.fullmatch(r"/calendario/(\d+)",path)
         if match: return self.calendar_event_detail(user,int(match.group(1)))
         if path == "/smaltimenti": return self.disposal_page(user)
@@ -10637,6 +10651,91 @@ class App(BaseHTTPRequestHandler):
     def calendar_appointment_address(self,row):
         return row["address"] or row["veterinarian_address"] or row["delivery_clinic_address"] or row["venue_name"] or ""
 
+    def calendar_navigation_address_components(self,c,row):
+        """Ricostruisce la catena EVENTO -> PRATICA/CLIENTE/VETERINARIO ->
+        INDIRIZZO per un evento di calendario, invece di limitarsi al solo
+        testo libero gia' salvato sull'evento (calendar_appointment_address)
+        - richiesta esplicita dell'utente: il pulsante "Naviga" non deve
+        basarsi solo sul nome della via, ma su TUTTE le informazioni
+        disponibili (indirizzo strutturato di pratica/cliente/veterinario
+        quando l'evento e' collegato a uno di essi). Riusata sia dal
+        pulsante "Naviga" (calendar_navigation_destination, che valida
+        anche il risultato del geocoding) sia dal Percorso giornaliero
+        (route_plan_stop_context, che ha solo bisogno di un indirizzo piu'
+        completo da passare al geocoding, non di una validazione) - nessuna
+        catena pratica/cliente/veterinario duplicata in due punti diversi.
+        Ritorna (street,cap,city,province,extra,fallback_text)."""
+        event_type=row["event_type"] if "event_type" in row.keys() else ""
+        is_delivery=event_type in ("Riconsegna","Riconsegna in sede")
+        if is_delivery:
+            location_type=(row["delivery_location_type"] if "delivery_location_type" in row.keys() else "") or ""
+            vet_id=row["delivery_clinic_id"] if "delivery_clinic_id" in row.keys() else None
+        else:
+            location_type=(row["location_type"] if "location_type" in row.keys() else "") or ""
+            vet_id=row["veterinarian_id"] if "veterinarian_id" in row.keys() else None
+        street=cap=city=province=extra=None
+        if location_type=="Veterinario" and vet_id:
+            vet=c.execute("SELECT address,city FROM veterinarians WHERE id=? AND active=1",(vet_id,)).fetchone()
+            if vet and (vet["address"] or "").strip():
+                street,city=vet["address"],vet["city"]
+        if not street and "linked_practice_id" in row.keys() and row["linked_practice_id"]:
+            practice=c.execute(
+                "SELECT owner_street,owner_city,owner_province,owner_zip FROM practices WHERE id=?",
+                (row["linked_practice_id"],),
+            ).fetchone()
+            if practice and (practice["owner_street"] or "").strip():
+                street,city,province,cap=practice["owner_street"],practice["owner_city"],practice["owner_province"],practice["owner_zip"]
+        if not street and "client_id" in row.keys() and row["client_id"]:
+            client=c.execute("SELECT street,address,city,province,zip FROM clients WHERE id=?",(row["client_id"],)).fetchone()
+            if client and ((client["street"] or "").strip() or (client["address"] or "").strip()):
+                street=client["street"] or client["address"];city,province,cap=client["city"],client["province"],client["zip"]
+        fallback_text=self.calendar_appointment_address(row)
+        if not street:
+            # Nessuna catena pratica/cliente/veterinario disponibile: resta
+            # il solo testo libero gia' sull'evento, ma la zona operativa
+            # (Livorno/Empoli/Viareggio/Firenze/Pisa), quando presente e
+            # non gia' menzionata nel testo, resta comunque un'informazione
+            # aggiuntiva utile a disambiguare (richiesta esplicita
+            # dell'utente: usare anche l'eventuale localita').
+            street=fallback_text
+            zone=(row["zone"] if "zone" in row.keys() else "") or ""
+            if zone and zone.lower() not in (street or "").lower():
+                city=city or zone
+        return street,cap,city,province,extra,fallback_text
+
+    def calendar_navigation_destination(self,c,row):
+        """Destinazione validata per il pulsante "Naviga" di un evento
+        calendario, qualunque sia il tipo (Ritiro/Ritiro in sede/
+        Riconsegna/Riconsegna in sede) - stessa logica ovunque, richiesta
+        esplicita dell'utente. Vedi calendar_navigation_address_components
+        per la ricostruzione della catena pratica/cliente/veterinario, e
+        route_service.resolve_navigation_destination per la geocodifica/
+        validazione (mai una coordinata non verificata, mai una
+        destinazione inventata)."""
+        street,cap,city,province,extra,fallback_text=self.calendar_navigation_address_components(c,row)
+        return route_service.resolve_navigation_destination(
+            c,street=street,cap=cap,city=city,province=province,extra=extra,fallback_text=fallback_text,
+        )
+
+    def calendar_event_navigate(self,user,event_id):
+        """GET /calendario/{id}/naviga: risolve la destinazione (catena
+        pratica/cliente/veterinario + geocodifica validata, vedi
+        calendar_navigation_destination) SOLO quando l'operatore preme
+        davvero il pulsante "Naviga" - mai durante il caricamento passivo
+        di una lista di eventi (che dovrebbe altrimenti geocodificare ogni
+        card visibile, un rallentamento reale ogni volta che l'indirizzo
+        non e' ancora in cache). Se non si riesce a determinare una
+        destinazione sufficientemente affidabile non si inventa nulla: si
+        torna alla scheda evento con un avviso, invece di aprire comunque
+        Google Maps."""
+        with db() as c:
+            row=c.execute("SELECT * FROM calendar_events WHERE id=? AND deleted_at IS NULL",(event_id,)).fetchone()
+            if not row:return self.send_error(404)
+            destination=self.calendar_navigation_destination(c,row)
+        if not destination["maps_destination"]:
+            return self.redirect(f"/calendario/{event_id}?nav_error=1")
+        self.redirect(f"https://www.google.com/maps/dir/?api=1&destination={quote(destination['maps_destination'])}")
+
     def calendar_appointment_card(self,row,client_names=None,practice_owner_names=None,color_settings=None,animal_names_by_event=None,cremation_type_by_event=None):
         """Card ricca usata sia dalla vista Giorno sia dalla vista Settimana
         (stesso identico markup, per restare fedeli a quanto richiesto:
@@ -10708,7 +10807,14 @@ class App(BaseHTTPRequestHandler):
         address=self.calendar_appointment_address(row)
         phone_btn=f'<a class="calendar-appt-action" href="tel:{esc(tel)}" aria-label="Chiama" onclick="event.stopPropagation()">{lucide("phone")}</a>' if tel else ''
         wa_btn=f'<a class="calendar-appt-action calendar-appt-action-wa" href="https://wa.me/{wa}" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp" onclick="event.stopPropagation()">{lucide("message")}</a>' if wa else ''
-        nav_btn=f'<a class="calendar-appt-action" href="https://www.google.com/maps/dir/?api=1&destination={quote(address)}" target="_blank" rel="noopener noreferrer" aria-label="Naviga" onclick="event.stopPropagation()">{lucide("navigation")}</a>' if address else ''
+        # Richiesta esplicita dell'utente: la destinazione deve essere la
+        # piu' accurata possibile (catena evento->pratica/cliente/
+        # veterinario->indirizzo, geocodifica validata), non il solo testo
+        # libero dell'evento - risolta pero' solo al click (endpoint
+        # /calendario/{id}/naviga, calendar_event_navigate), mai durante il
+        # caricamento passivo di questa lista: geocodificare ogni card
+        # visibile ad ogni caricamento sarebbe un rallentamento reale.
+        nav_btn=f'<a class="calendar-appt-action" href="/calendario/{row["id"]}/naviga" target="_blank" rel="noopener noreferrer" aria-label="Naviga" onclick="event.stopPropagation()">{lucide("navigation")}</a>' if address else ''
         menu_btn=f'''<div class="calendar-appt-menu-wrap" onclick="event.stopPropagation()">
           <button type="button" class="calendar-appt-action" aria-label="Altre azioni" onclick="calendarToggleApptMenu(this)">{lucide("more-vertical")}</button>
           <div class="calendar-appt-menu-popover" hidden>
@@ -12087,7 +12193,7 @@ class App(BaseHTTPRequestHandler):
         quick_actions=f'''<div class="calendar-detail-quickactions">
           {qa("phone","Chiama",f"tel:{esc(tel)}" if tel else "")}
           {qa("message","WhatsApp",f"https://wa.me/{wa}" if wa else "", ' target="_blank" rel="noopener noreferrer"' if wa else "")}
-          {qa("navigation","Naviga",f"https://www.google.com/maps/dir/?api=1&destination={quote(address)}" if address else "", ' target="_blank" rel="noopener noreferrer"' if address else "")}
+          {qa("navigation","Naviga",f"/calendario/{event_id}/naviga" if address else "", ' target="_blank" rel="noopener noreferrer"' if address else "")}
           {qa("receipt",create_practice_label or "Pratica",create_practice_url)}
           <div class="calendar-appt-menu-wrap calendar-detail-qa-menu-wrap">
             <button type="button" class="calendar-detail-qa" onclick="calendarToggleApptMenu(this)"><span class="calendar-detail-qa-icon">{lucide("more-vertical")}</span><span>Altro</span></button>
@@ -12298,6 +12404,14 @@ class App(BaseHTTPRequestHandler):
         else:panel='<section class="section timeline">'+''.join(f'<div class="event"><b>{esc(row["action"])}</b><small class="sub"> · {esc(row["display_name"] or "Sistema")} · {esc(row["created_at"].replace("T"," ")[:16])}</small><p>{esc(row["old_value"])} → {esc(row["new_value"])}</p></div>' for row in history)+'</section>'
         created_animation=created_celebration_html('ppm_calendar_created')
         error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
+        # Richiesta esplicita dell'utente: se la destinazione non puo'
+        # essere determinata in modo sufficientemente affidabile, avvisare
+        # chiaramente invece di aprire comunque Google Maps - vedi
+        # calendar_event_navigate, che rimanda qui con nav_error=1 in
+        # quel caso (nessun indirizzo utilizzabile nella catena evento/
+        # pratica/cliente/veterinario).
+        if (q.get("nav_error") or [""])[0]=="1":
+            error_html+='<div class="flash warning">Indirizzo non sufficiente per una navigazione affidabile: completa indirizzo, comune e provincia (sulla pratica, sul cliente o sul veterinario collegati) prima di riprovare.</div>'
         saved_labels={"stato":"Stato aggiornato.","zona":"Zona aggiornata.","operatore":"Operatore aggiornato.","note":"Note aggiornate.","data-ora":"Data e ora aggiornate.","preventivo":"Preventivo aggiornato.","tipo":"Tipo evento aggiornato.","luogo":"Luogo aggiornato.","cliente":"Cliente aggiornato.","animali":"Animali aggiornati."}
         saved_html=f'<div class="flash">{esc(saved_labels[saved])}</div>' if saved in saved_labels else ''
         body=f'''{created_animation}<main class="wrap calendar-wrap calendar-detail-v2">{error_html}{saved_html}{header}{quick_actions}<nav class="calendar-tabs">{tabs}</nav><div>{panel}</div></main>'''
@@ -12429,10 +12543,16 @@ class App(BaseHTTPRequestHandler):
 
     def route_plan_stop_context(self,c,event_row):
         """Indirizzo, coordinate (con cache), tipo luogo, durata di sosta e
-        finestra oraria per una tappa — riusa calendar_appointment_address
-        (stessa risoluzione gia' usata dal quick action "Naviga"), non
-        duplica alcuna logica di calendario."""
-        address=self.calendar_appointment_address(event_row).strip()
+        finestra oraria per una tappa — riusa
+        calendar_navigation_address_components (stessa ricostruzione della
+        catena evento->pratica/cliente/veterinario gia' usata dal quick
+        action "Naviga"), non duplica alcuna logica di calendario. Un
+        indirizzo completo (via+civico+CAP+comune+provincia, non solo la
+        via) riduce anche qui il rischio di una geocodifica nel comune
+        sbagliato - richiesta esplicita dell'utente, stessa accuratezza
+        ovunque, non solo sul pulsante "Naviga" singolo."""
+        street,cap,city,province,extra,fallback_text=self.calendar_navigation_address_components(c,event_row)
+        address=(route_service.format_destination_address(street=street,cap=cap,city=city,province=province,extra=extra) or fallback_text).strip()
         vet_row=None
         if event_row["veterinarian_id"]:
             vet_row=c.execute("SELECT * FROM veterinarians WHERE id=?",(event_row["veterinarian_id"],)).fetchone()
@@ -12527,7 +12647,9 @@ class App(BaseHTTPRequestHandler):
             if plan:
                 stop_rows=c.execute("""SELECT s.*,e.title,e.event_type,e.client_first_name,e.client_last_name,
                   e.veterinarian_name,e.venue_name,e.location_type,e.address,e.event_status,e.start_at,e.end_at,
-                  e.veterinarian_address,e.delivery_clinic_address
+                  e.veterinarian_address,e.delivery_clinic_address,
+                  e.linked_practice_id,e.client_id,e.veterinarian_id,e.delivery_clinic_id,
+                  e.delivery_location_type,e.zone
                   FROM route_plan_stops s LEFT JOIN calendar_events e ON e.id=s.event_id
                   WHERE s.route_plan_id=? ORDER BY s.sequence""",(plan["id"],)).fetchall()
         resolved,da_correggere=[],[]
@@ -12616,7 +12738,7 @@ class App(BaseHTTPRequestHandler):
                     <small class="calendar-tap-card-sub">Sosta {stop['service_duration_minutes']} min</small>
                   </div>
                   <div class="route-stop-actions">
-                    <a class="calendar-tap-card-icon calendar-icon-blue" title="Naviga" href="https://www.google.com/maps/dir/?api=1&destination={quote(self.calendar_appointment_address(stop))}" target="_blank" rel="noopener noreferrer">{lucide("navigation")}</a>
+                    <a class="calendar-tap-card-icon calendar-icon-blue" title="Naviga" href="{f'/calendario/{stop["event_id"]}/naviga' if stop["event_id"] else f'https://www.google.com/maps/dir/?api=1&destination={quote(self.calendar_appointment_address(stop))}'}" target="_blank" rel="noopener noreferrer">{lucide("navigation")}</a>
                     <div class="route-stop-menu-wrap">
                       <button type="button" class="route-stop-menu-btn" onclick="routeToggleStopMenu(this)" aria-label="Altre azioni tappa">{lucide("more-vertical")}</button>
                       <div class="route-stop-menu-popover" hidden>
@@ -12627,7 +12749,15 @@ class App(BaseHTTPRequestHandler):
                   </div>
                 </div>''')
                 if stop["event_id"]:
-                    maps_urls.append(self.calendar_appointment_address(stop))
+                    # Testo piu' completo (via+CAP+comune+provincia quando
+                    # noti dalla catena pratica/cliente/veterinario), non
+                    # solo la via - nessuna chiamata di geocodifica qui,
+                    # solo composizione di testo gia' disponibile. Nuova
+                    # connessione: qui siamo fuori dal "with db()" usato
+                    # sopra per il resto della pagina.
+                    with db() as stop_conn:
+                        stop_street,stop_cap,stop_city,stop_province,stop_extra,stop_fallback=self.calendar_navigation_address_components(stop_conn,stop)
+                    maps_urls.append(route_service.format_destination_address(street=stop_street,cap=stop_cap,city=stop_city,province=stop_province,extra=stop_extra) or stop_fallback)
             stops_html=f'''<div class="route-tappe-header"><h3>Tappe ({len(stop_rows)})</h3>
                 <form method="post" action="/percorso-giornaliero/{plan['id']}/ripristina" style="display:contents">
                   <button type="submit" class="route-restore-link">↻ Ripristina ordine</button>
