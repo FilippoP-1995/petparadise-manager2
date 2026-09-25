@@ -114,6 +114,7 @@ from notification_service import (
     push_bullets,
 )
 from urn_inventory import DEFAULT_URNS
+from certificate_service import CertificateDataError, build_certificate, certificate_data, certificate_filename
 
 
 ROOT = Path(__file__).resolve().parent
@@ -2358,6 +2359,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .light-theme .cremation-animali-toolbar{background:#fff;border-color:#e2e8f0}
 .light-theme .cremation-animali-toolbar select{background:#fff;border-color:#e2e8f0;color:#111827}
 .cremation-animal-open{display:flex;align-items:center;gap:3px;color:#fb7185;font-size:12px;font-weight:700;white-space:nowrap}
+.cremation-animal-certrow{grid-column:1/-1;display:flex;margin-top:4px;cursor:default}.cremation-animal-cert{display:inline-flex;align-items:center;justify-content:center;padding:6px 12px;border:1px solid #fb718566;border-radius:8px;color:#fb7185;font-size:12px;font-weight:700;white-space:nowrap;text-decoration:none}.cremation-animal-cert:hover{background:#fb718522}@media(max-width:620px){.cremation-animal-cert{flex:1 1 auto;padding:9px 12px;font-size:13px}}
 .cremation-animal-remove{width:24px;height:24px;flex:0 0 24px;display:flex;align-items:center;justify-content:center;border-radius:7px;border:1px solid #334155;background:transparent;color:#94a3b8;cursor:pointer}
 .cremation-animal-remove:hover{border-color:#fb7185;color:#fb7185}
 .cremation-animal-swap{width:24px;height:24px;flex:0 0 24px;display:flex;align-items:center;justify-content:center;border-radius:7px;border:1px solid #334155;background:transparent;color:#94a3b8;cursor:pointer}
@@ -9341,6 +9343,8 @@ class App(BaseHTTPRequestHandler):
         if match: return self.draft_ddt(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/ddt-bozza-download\.pdf", path)
         if match: return self.draft_ddt(user, int(match.group(1)), attachment=True)
+        match = re.fullmatch(r"/pratiche/(\d+)/certificato-cremazione", path)
+        if match: return self.cremation_certificate(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/firma", path)
         if match: return self.signature_page(user, int(match.group(1)))
         match = re.fullmatch(r"/pratiche/(\d+)/whatsapp-conferma", path)
@@ -13500,6 +13504,7 @@ class App(BaseHTTPRequestHandler):
               <div class="cremation-animal-col"><small>Specie</small>{species_html}</div>
               <div class="cremation-animal-col"><small>Età</small>{age_html}</div>
               <div class="cremation-animal-actions"><a class="cremation-animal-open" href="{url}" onclick="event.stopPropagation()"><span>Apri pratica</span>{lucide("chevron-right")}</a>{swap_html}{remove_html}</div>
+              <div class="cremation-animal-certrow" onclick="event.stopPropagation()"><a class="cremation-animal-cert" href="/pratiche/{row['id']}/certificato-cremazione" title="Genera il certificato di cremazione in Word per {esc(row['animal_name'] or 'questo animale')}">📄 Crea certificato</a></div>
               {contact_html}
               {notes_html}
               {notify_html}
@@ -13969,6 +13974,7 @@ class App(BaseHTTPRequestHandler):
               <div class="cremation-animal-col"><small>Specie</small>{species_html}</div>
               <div class="cremation-animal-col"><small>Età</small>{age_html}</div>
               <div class="cremation-animal-actions"><a class="cremation-animal-open" href="{url}" onclick="event.stopPropagation()"><span>Apri pratica</span>{lucide("chevron-right")}</a>{swap_html}{remove_html}</div>
+              <div class="cremation-animal-certrow" onclick="event.stopPropagation()"><a class="cremation-animal-cert" href="/pratiche/{row['id']}/certificato-cremazione" title="Genera il certificato di cremazione in Word per {esc(row['animal_name'] or 'questo animale')}">📄 Crea certificato</a></div>
               {contact_html}
               {notes_html}
               {notify_html}
@@ -20171,6 +20177,28 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         except Exception as exc:
             return self.pdf_error_page(exc, f"/pratiche/{pid}")
         return self.send_pdf(path, safe_pdf_filename((p["animal_name"] or p["practice_number"]) + "_BOZZA", "bozza"), attachment=attachment)
+
+    def cremation_certificate(self,user,pid):
+        """Certificato di garanzia di avvenuta cremazione singola (DOCX).
+
+        Solo lettura: nessuna modifica a pratica, ciclo, pagamenti o eventi. La
+        data del certificato e' quella di GENERAZIONE (oggi, fuso Europe/Rome,
+        calcolata qui a ogni richiesta), mai quella della cremazione."""
+        with db() as c:
+            p=c.execute("SELECT * FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(pid,)).fetchone()
+        if not p:return self.send_error(404)
+        try:
+            data=certificate_data(p,rome_now().date(),BRANCHES)
+        except CertificateDataError as exc:
+            items=''.join(f'<li>{esc(message)}</li>' for message in exc.missing)
+            body=f'''<main class="wrap"><section class="section"><h1>Certificato non generato</h1><div class="flash warning"><ul style="margin:0;padding-left:18px">{items}</ul></div><p class="sub">Correggi la pratica e genera di nuovo il certificato: nessun dato viene inventato.</p><div class="actions" style="margin-top:18px"><a class="btn" href="/pratiche/{pid}">Apri pratica</a><a class="btn ghost" href="/programma-cremazioni">Torna ai cicli</a></div></section></main>'''
+            return self.send_html(layout("Certificato non generato",body,user),422)
+        payload=build_certificate(data)
+        self.send_response(200)
+        self.send_header("Content-Type","application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        self.send_header("Content-Disposition",f'attachment; filename="{certificate_filename(p)}"')
+        self.send_header("Cache-Control","no-store")
+        self.send_header("Content-Length",str(len(payload)));self.end_headers();self.wfile.write(payload)
 
     def send_pdf(self,path, filename=None, attachment=False):
         payload=path.read_bytes()
