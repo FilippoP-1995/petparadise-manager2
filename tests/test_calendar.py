@@ -440,6 +440,65 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertEqual(title, "Ritiro in sede Livorno")
         self.assertEqual(text, "Gatto • 4 kg\n15/07/2026 14:00")
 
+    def test_promemoria_notifications_show_date_and_time_like_other_events(self):
+        # richiesta esplicita dell'utente: nelle notifiche di un promemoria
+        # (evento "Appuntamento") deve esserci data e ora, come nelle altre
+        # notifiche di evento - stessa funzione calendar_push_time_range.
+        self.handler.form = lambda: self.event_form("Appuntamento", title="RIUNIONE FORNITORE")
+        with patch("app.emit_notification", return_value=[]) as mock_emit:
+            self.handler.save_calendar_event(self.admin)
+        kind, title, text = mock_emit.call_args.args[1], mock_emit.call_args.args[2], mock_emit.call_args.args[3]
+        self.assertEqual(kind, "calendar_event_created")
+        self.assertEqual(title, "📅 Nuovo evento calendario")
+        self.assertEqual(text, "RIUNIONE FORNITORE\n15/07/2026 09:30 - 10:30")
+        event_id = int(self.redirected.rsplit("/", 1)[-1])
+
+        # modifica: stesso formato, con la data/ora nuove
+        self.handler.form = lambda: self.event_form("Appuntamento", title="RIUNIONE FORNITORE", start_date="2026-07-16", end_date="2026-07-16", start_time="14:00", end_time="14:00")
+        with patch("app.emit_notification", return_value=[]) as mock_emit:
+            self.handler.save_calendar_event(self.admin, event_id)
+        kind, title, text = mock_emit.call_args.args[1], mock_emit.call_args.args[2], mock_emit.call_args.args[3]
+        self.assertEqual(kind, "calendar_event_updated")
+        self.assertEqual(title, "📅 Evento calendario aggiornato")
+        self.assertEqual(text, "RIUNIONE FORNITORE\n16/07/2026 14:00")
+
+    def test_promemoria_all_day_notification_says_tutto_il_giorno_not_a_fake_time(self):
+        self.handler.form = lambda: self.event_form("Appuntamento", title="FERIE", all_day="1", start_date="2026-07-15", end_date="2026-07-15")
+        with patch("app.emit_notification", return_value=[]) as mock_emit:
+            self.handler.save_calendar_event(self.admin)
+        text = mock_emit.call_args.args[3]
+        self.assertEqual(text, "FERIE\n15/07/2026 · Tutto il giorno")
+        self.assertNotIn("00:00", text)
+        self.assertNotIn("23:59", text)
+        self.handler.form = lambda: self.event_form("Appuntamento", title="FERIE", all_day="1", start_date="2026-07-15", end_date="2026-07-18")
+        with patch("app.emit_notification", return_value=[]) as mock_emit:
+            self.handler.save_calendar_event(self.admin)
+        self.assertEqual(mock_emit.call_args.args[3], "FERIE\n15/07/2026 → 18/07/2026 · Tutto il giorno")
+
+    def test_promemoria_notification_is_really_stored_with_date_and_time(self):
+        # senza mock: la notifica realmente salvata (quella che vede
+        # l'utente) contiene titolo + data e ora, come un ritiro.
+        self.handler.form = lambda: self.event_form("Appuntamento", title="CHIAMARE FORNITORE")
+        self.handler.save_calendar_event(self.admin)
+        with app.db() as conn:
+            rows = conn.execute("SELECT text FROM notification_group_items WHERE title LIKE '%Nuovo evento calendario%' ORDER BY id").fetchall()
+        self.assertTrue(rows)
+        self.assertEqual(rows[-1]["text"], "CHIAMARE FORNITORE\n15/07/2026 09:30 - 10:30")
+
+    def test_appointment_push_text_uses_the_shared_date_time_formatter(self):
+        from calendar_service import calendar_appointment_push_text, calendar_push_time_range
+        start, end = "2026-07-15T09:30:00", "2026-07-15T10:30:00"
+        self.assertEqual(calendar_appointment_push_text("X", start, end), f"X\n{calendar_push_time_range(start, end)}")
+        self.assertEqual(calendar_appointment_push_text("", start, end), "15/07/2026 09:30 - 10:30")
+        self.assertEqual(calendar_appointment_push_text("X", "", ""), "X")
+
+    def test_pickup_and_delivery_notification_bodies_are_unchanged_by_promemoria_change(self):
+        form = self.event_form("Riconsegna")
+        self.handler.form = lambda: form
+        with patch("app.emit_notification", return_value=[]) as mock_emit:
+            self.handler.save_calendar_event(self.admin)
+        self.assertEqual(mock_emit.call_args.args[3], "Fido\n15/07/2026 09:30 - 10:30\nPagamento: DA SALDARE")
+
     def test_new_pickup_notification_body_shows_cremation_type_when_selected(self):
         # richiesta esplicita dell'utente: nei ritiri, sia in sede che non,
         # la notifica deve mostrare anche il tipo di cremazione selezionata.

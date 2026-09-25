@@ -56,7 +56,7 @@ from balance_repair import repair_duplicate_balance_movements
 from calendar_service import (
     EVENT_TYPES, PICKUP_STATUSES, DELIVERY_STATUSES, PAYMENT_STATUSES, CALENDAR_OPERATORS,
     add_history as calendar_add_history,
-    calendar_push_location_title, calendar_pickup_push_text, calendar_delivery_push_text,
+    calendar_push_location_title, calendar_pickup_push_text, calendar_delivery_push_text, calendar_appointment_push_text,
     ensure_calendar_schema, event_color_class, event_type_dot_class, event_type_emoji, normalize_event, overlap_rows,
     parse_items as calendar_parse_items, period_bounds as calendar_period_bounds,
     schedule_event_notifications, sync_children as calendar_sync_children,
@@ -12269,7 +12269,7 @@ class App(BaseHTTPRequestHandler):
                         upd_text=calendar_delivery_push_text(data["animal_name"],data["payment_status"],data["start_at"],data["end_at"])
                     else:
                         upd_title=f"{event_type_emoji(data['event_type'])} Evento calendario aggiornato"
-                        upd_text=data["title"]
+                        upd_text=calendar_appointment_push_text(data["title"],data["start_at"],data["end_at"],data["all_day"])
                     emit_notification(c,kind,upd_title,upd_text,actor_user_id=user["id"],payload={"url":f"/calendario/{event_id}"},db_path=DB_PATH)
                 else:
                     created_now=True
@@ -12281,8 +12281,9 @@ class App(BaseHTTPRequestHandler):
                     # dell'utente): per Ritiro tipo/zona + specie/peso +
                     # orario, per Riconsegna tipo/zona + nome animale + stato
                     # pagamento, cosi' l'operatore capisce tutto senza aprire
-                    # il gestionale. Gli altri tipi (Appuntamento) restano
-                    # col titolo generico di prima.
+                    # il gestionale. Il Promemoria (Appuntamento) ha titolo
+                    # generico ma corpo con titolo + data e ora, come gli
+                    # altri tipi (richiesta esplicita dell'utente).
                     if data["event_type"] in ("Ritiro","Ritiro in sede"):
                         new_title=calendar_push_location_title(data["event_type"],data["zone"],data["destination_site"])
                         new_text=calendar_pickup_push_text(animals,data["start_at"],data["end_at"])
@@ -12291,7 +12292,7 @@ class App(BaseHTTPRequestHandler):
                         new_text=calendar_delivery_push_text(data["animal_name"],data["payment_status"],data["start_at"],data["end_at"])
                     else:
                         new_title=f"{event_type_emoji(data['event_type'])} Nuovo evento calendario"
-                        new_text=data["title"]
+                        new_text=calendar_appointment_push_text(data["title"],data["start_at"],data["end_at"],data["all_day"])
                     emit_notification(c,"calendar_event_created",new_title,new_text,actor_user_id=user["id"],payload={"url":f"/calendario/{event_id}"},db_path=DB_PATH)
                 if linked_practice_id and data["event_type"] in ("Riconsegna","Riconsegna in sede"):
                     c.execute("UPDATE calendar_events SET linked_practice_id=? WHERE id=?",(linked_practice_id,event_id))

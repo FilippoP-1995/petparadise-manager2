@@ -292,6 +292,31 @@ def calendar_pickup_push_text(animals, start_at, end_at):
     return "\n".join(lines)
 
 
+def calendar_appointment_push_text(title, start_at, end_at, all_day=False):
+    """Corpo della notifica push di Promemoria (evento "Appuntamento") creato/
+    modificato/annullato: titolo + data e ora, come gia' fanno Ritiro e
+    Riconsegna (richiesta esplicita dell'utente: nel promemoria mancavano) -
+    stessa funzione calendar_push_time_range, mai una seconda logica di
+    formattazione data. Un promemoria "Tutto il giorno" non ha un orario
+    vero (normalize_event salva 00:00-23:59): si scrive "Tutto il giorno",
+    come nel riepilogo evento, invece di un orario che l'operatore non ha
+    mai inserito."""
+    lines = []
+    title = _clean(title)
+    if title:
+        lines.append(title)
+    if all_day:
+        start_date = _format_push_date(start_at)
+        end_date = _format_push_date(end_at)
+        when = f"{start_date} → {end_date}" if end_date and end_date != start_date else start_date
+        when = f"{when} · Tutto il giorno" if when else "Tutto il giorno"
+    else:
+        when = calendar_push_time_range(start_at, end_at)
+    if when:
+        lines.append(when)
+    return "\n".join(lines)
+
+
 def calendar_delivery_push_payment_label(payment_status):
     """Etichetta stato pagamento per il banner di Riconsegna: SALDATO solo
     quando davvero pagato, altrimenti DA SALDARE — vocabolario dedicato al
