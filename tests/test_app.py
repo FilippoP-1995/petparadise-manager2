@@ -18169,5 +18169,335 @@ class AIAssistantTests(unittest.TestCase):
             self.assertEqual(row["active"], 0)
 
 
+    # ------------------------------------------------------------------
+    # interroga_pratiche / campi_pratiche: accesso a OGNI campo/sezione
+    # delle pratiche. Bug reale segnalato dall'utente: "quante singole o
+    # collettive in un determinato periodo" non era rispondibile perche'
+    # il campo 'Servizio' non aveva alcun filtro dedicato.
+    # ------------------------------------------------------------------
+
+    def _pq(self, c, **params):
+        tool = next(t for t in self.ai.TOOL_SPECS if t["name"] == "interroga_pratiche")["handler"]
+        return tool(c, self.admin, app.rome_now(), params)
+
+    def _pq_seed(self, c):
+        ids = {}
+        ids["s1"] = self._insert_practice(c, _n=1, practice_number="Q-1", service_type="Cremazione singola", status="Ritirato", pickup_date="2026-09-21", destination_branch="Livorno", species="Cane", estimated_weight="30", total_service="300", deposit="100", remaining_balance="200", payment_status="Acconto", animal_name="Rex")
+        ids["s2"] = self._insert_practice(c, _n=2, practice_number="Q-2", service_type="Cremazione singola", status="Cremato", pickup_date="2026-09-22", destination_branch="Empoli", species="Gatto", estimated_weight="4,5", total_service="150", deposit="150", remaining_balance="0", payment_status="Pagato", animal_name="Micio")
+        ids["s3"] = self._insert_practice(c, _n=3, practice_number="Q-3", service_type="Cremazione singola", status="Consegnato", pickup_date="2026-09-24", destination_branch="Livorno", species="Cane", estimated_weight="12", total_service="250", payment_status="Da saldare", animal_name="Luna")
+        ids["c1"] = self._insert_practice(c, _n=4, practice_number="Q-4", service_type="Cremazione collettiva", status="Ritirato", pickup_date="2026-09-22", destination_branch="Livorno", species="Coniglio", estimated_weight="2", total_service="80", payment_status="Pagato", animal_name="Bunny")
+        ids["c2"] = self._insert_practice(c, _n=5, practice_number="Q-5", service_type="Cremazione collettiva", status="Da consegnare", pickup_date="2026-09-25", destination_branch="Empoli", species="Cane", estimated_weight="8", total_service="90", payment_status="Pagato", animal_name="Toby")
+        ids["dd"] = self._insert_practice(c, _n=6, practice_number="Q-6", service_type="Da decidere", status="Da ritirare", pickup_date="2026-09-23", destination_branch="Livorno", species="Cane", total_service="120", animal_name="Nuvola")
+        ids["out"] = self._insert_practice(c, _n=7, practice_number="Q-7", service_type="Cremazione singola", status="Ritirato", pickup_date="2026-08-01", destination_branch="Livorno", species="Cane", animal_name="Fuori")
+        ids["del"] = self._insert_practice(c, _n=8, practice_number="Q-8", service_type="Cremazione singola", status="Ritirato", pickup_date="2026-09-22", destination_branch="Livorno", animal_name="Cestinata", deleted_at="2026-09-23T10:00:00")
+        return ids
+
+    PQ_PERIODO = {"periodo": "intervallo_personalizzato", "data_da": "2026-09-21", "data_a": "2026-09-25"}
+
+    def test_interroga_pratiche_singole_e_collettive_nel_periodo_come_conta_ritiri(self):
+        with app.db() as c:
+            self._pq_seed(c)
+            # La domanda esatta dell'utente: quante singole/collettive tra i ritiri del periodo.
+            res = self._pq(c, **self.PQ_PERIODO, fase="ritirati", output="raggruppa", raggruppa_per=["servizio"])
+            per = {g["valori"]["servizio"]: g["conteggio"] for g in res["gruppi"]}
+            self.assertEqual(per, {"Cremazione singola": 3, "Cremazione collettiva": 2})
+            self.assertEqual(res["totale_pratiche"], 5)
+            # Coerente col numero di conta_ritiri (stessa definizione della dashboard).
+            conta = next(t for t in self.ai.TOOL_SPECS if t["name"] == "conta_ritiri")["handler"]
+            self.assertEqual(conta(c, self.admin, app.rome_now(), self.PQ_PERIODO)["conteggio"], res["totale_pratiche"])
+            # Riconsegne: coerente con conta_riconsegne.
+            riconsegne = self._pq(c, **self.PQ_PERIODO, fase="riconsegnati")
+            conta_r = next(t for t in self.ai.TOOL_SPECS if t["name"] == "conta_riconsegne")["handler"]
+            self.assertEqual(riconsegne["conteggio"], conta_r(c, self.admin, app.rome_now(), self.PQ_PERIODO)["conteggio"])
+            # Solo singole, alias 'singola', conteggio semplice; la pratica cestinata e quella fuori periodo non contano.
+            res = self._pq(c, **self.PQ_PERIODO, filtri=[{"campo": "servizio", "valore": "singola"}])
+            self.assertEqual(res["conteggio"], 3)
+            res = self._pq(c, **self.PQ_PERIODO, filtri=[{"campo": "Servizio", "operatore": "uguale", "valore": "COLLETTIVA"}])
+            self.assertEqual(res["conteggio"], 2)
+            # Senza periodo: tutte le singole non cestinate (incluse quella di agosto).
+            self.assertEqual(self._pq(c, filtri=[{"campo": "servizio", "valore": "singola"}])["conteggio"], 4)
+            self.assertIn("periodo_analizzato", res)
+
+    def test_interroga_pratiche_operatori_su_testo_e_combinazioni(self):
+        with app.db() as c:
+            self._pq_seed(c)
+            f = lambda *filtri, **kw: self._pq(c, **self.PQ_PERIODO, filtri=list(filtri), **kw)["conteggio"]
+            self.assertEqual(f({"campo": "sede", "valore": "empoli"}), 2)  # maiuscole/minuscole indifferenti
+            self.assertEqual(f({"campo": "sede", "operatore": "diverso", "valore": "Empoli"}), 4)
+            self.assertEqual(f({"campo": "specie", "operatore": "in", "valori": ["Cane", "Gatto"]}), 5)
+            self.assertEqual(f({"campo": "specie", "operatore": "non_in", "valori": ["Cane", "Gatto"]}), 1)
+            self.assertEqual(f({"campo": "specie", "operatore": "contiene", "valore": "GLI"}), 1)  # Coniglio
+            self.assertEqual(f({"campo": "animale", "operatore": "contiene", "valore": "un"}), 2)  # Luna, Nuvola
+            self.assertEqual(f({"campo": "animale", "operatore": "non_contiene", "valore": "u"}), 3)  # Rex, Micio, Toby
+            # Piu' filtri in AND: singole a Livorno di specie Cane.
+            self.assertEqual(f({"campo": "servizio", "valore": "singola"}, {"campo": "sede", "valore": "Livorno"}, {"campo": "specie", "valore": "Cane"}), 2)
+            # Elenco con operatore singolare e valori multipli = appartenenza all'insieme.
+            self.assertEqual(f({"campo": "stato", "valore": ["Ritirato", "Cremato"]}), 3)
+            # Provenienza per nome esteso e per codice.
+            self._insert_practice(c, _n=20, practice_number="Q-20", provenance="F", pickup_date="2026-09-22")
+            self.assertEqual(f({"campo": "provenienza", "valore": "Firenze"}), 1)
+            self.assertEqual(f({"campo": "provenienza", "operatore": "in", "valori": ["F", "Empoli"]}), 1)
+            # vuoto / non_vuoto
+            self.assertEqual(f({"campo": "provenienza", "operatore": "vuoto"}), 6)
+            self.assertEqual(f({"campo": "provenienza", "operatore": "non_vuoto"}), 1)
+
+    def test_interroga_pratiche_raggruppa_a_due_livelli_e_valori_distinti(self):
+        with app.db() as c:
+            self._pq_seed(c)
+            res = self._pq(c, **self.PQ_PERIODO, output="raggruppa", raggruppa_per=["servizio", "sede"])
+            per = {(g["valori"]["servizio"], g["valori"]["sede"]): g["conteggio"] for g in res["gruppi"]}
+            self.assertEqual(per[("Cremazione singola", "Livorno")], 2)
+            self.assertEqual(per[("Cremazione singola", "Empoli")], 1)
+            self.assertEqual(per[("Cremazione collettiva", "Livorno")], 1)
+            self.assertEqual(per[("Cremazione collettiva", "Empoli")], 1)
+            self.assertEqual(per[("Da decidere", "Livorno")], 1)
+            self.assertEqual(res["totale_pratiche"], 6)
+            self.assertEqual(sum(g["conteggio"] for g in res["gruppi"]), 6)
+            # Ordinati per conteggio decrescente
+            counts = [g["conteggio"] for g in res["gruppi"]]
+            self.assertEqual(counts, sorted(counts, reverse=True))
+            # Valori distinti di un campo qualsiasi (modo per scoprire cosa c'e')
+            res = self._pq(c, output="raggruppa", raggruppa_per=["specie"])
+            self.assertEqual({g["valori"]["specie"]: g["conteggio"] for g in res["gruppi"]}["Cane"], 5)
+            # Raggruppamento per data con granularita' mensile
+            res = self._pq(c, output="raggruppa", raggruppa_per=["data_ritiro"], granularita_data="mese")
+            per_mese = {g["valori"]["data_ritiro"]: g["conteggio"] for g in res["gruppi"]}
+            self.assertEqual(per_mese, {"2026-09": 6, "2026-08": 1})
+            # Il limite tronca i gruppi ma il totale resta esatto
+            res = self._pq(c, output="raggruppa", raggruppa_per=["specie"], limite=1)
+            self.assertEqual(len(res["gruppi"]), 1)
+            self.assertTrue(res["gruppi_troncati"])
+            self.assertEqual(res["totale_pratiche"], 7)
+
+    def test_interroga_pratiche_campi_numerici_monetari_e_calcolati(self):
+        with app.db() as c:
+            self._pq_seed(c)
+            f = lambda *filtri: self._pq(c, **self.PQ_PERIODO, filtri=list(filtri))["conteggio"]
+            # peso e' testo libero ("4,5"): confronto numerico reale, non alfabetico
+            self.assertEqual(f({"campo": "peso", "operatore": "maggiore", "valore": 10}), 2)  # 30, 12
+            self.assertEqual(f({"campo": "peso", "operatore": "tra", "valori": [2, 5]}), 2)  # 4,5 e 2
+            self.assertEqual(f({"campo": "totale_servizio", "operatore": "maggiore_uguale", "valore": "250"}), 2)
+            self.assertEqual(f({"campo": "totale_servizio", "operatore": "minore", "valore": 100}), 2)
+            # campo calcolato: totale/rimanenza come nella scheda pratica
+            self.assertEqual(f({"campo": "totale_pratica", "operatore": "maggiore", "valore": 200}), 2)
+            self.assertEqual(f({"campo": "rimanenza", "operatore": "maggiore", "valore": 0}) >= 1, True)
+            # Aggregazioni: somma/media sul totale e per gruppo
+            res = self._pq(c, **self.PQ_PERIODO, output="raggruppa", raggruppa_per=["servizio"], aggregazioni=[{"funzione": "somma", "campo": "totale_servizio"}, {"funzione": "media", "campo": "peso"}])
+            per = {g["valori"]["servizio"]: {a["funzione"]: a["valore"] for a in g["aggregazioni"]} for g in res["gruppi"]}
+            self.assertEqual(per["Cremazione singola"]["somma"], 700.0)
+            self.assertEqual(per["Cremazione collettiva"]["somma"], 170.0)
+            self.assertAlmostEqual(per["Cremazione singola"]["media"], round((30 + 4.5 + 12) / 3, 2))
+            res = self._pq(c, **self.PQ_PERIODO, aggregazioni=[{"funzione": "somma", "campo": "totale_pratica"}, {"funzione": "massimo", "campo": "totale_servizio"}])
+            self.assertEqual(res["conteggio"], 6)
+            agg = {a["funzione"]: a["valore"] for a in res["aggregazioni"]}
+            self.assertEqual(agg["massimo"], 300.0)
+            self.assertEqual(agg["somma"], sum(app.effective_total(r) for r in c.execute("SELECT * FROM practices WHERE pickup_date BETWEEN '2026-09-21' AND '2026-09-25' AND deleted_at IS NULL").fetchall()))
+            # un campo non numerico non e' aggregabile: errore chiaro
+            with self.assertRaises(self.ai.ToolInputError):
+                self._pq(c, aggregazioni=[{"funzione": "somma", "campo": "animale"}])
+            # valore non numerico su un campo numerico: errore, mai zero silenzioso
+            with self.assertRaises(self.ai.ToolInputError):
+                f({"campo": "peso", "operatore": "maggiore", "valore": "tanto"})
+
+    def test_interroga_pratiche_sezioni_collegate_urne_ciclo_calendario_whatsapp(self):
+        with app.db() as c:
+            ids = self._pq_seed(c)
+            stamp = "2026-09-20T10:00:00"
+
+            def item(pid, cat, label, price, n=0):
+                c.execute("INSERT INTO practice_items(practice_id,category,subtype,urn_catalog_id,label,price,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)", (pid, cat, "", None, label, price, n, stamp, stamp))
+
+            item(ids["s1"], "urna", "Urna Legno Noce", "80", 0)
+            item(ids["s1"], "urna", "Urna Marmo", "120", 1)
+            item(ids["s1"], "calco", "Calco zampa", "40", 2)
+            item(ids["s2"], "urna", "Urna Marmo", "120", 0)
+            item(ids["s3"], "accessorio", "Ciondolo", "30", 0)
+            cycle = c.execute("INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES('2026-09-23','completato','09:00','11:00',?,?)", (stamp, stamp)).lastrowid
+            c.execute("UPDATE practices SET cremation_cycle_id=? WHERE id=?", (cycle, ids["s2"]))
+            c.execute("INSERT INTO calendar_events(event_type,title,created_by,created_at,updated_at,event_status,start_at,end_at,linked_practice_id) VALUES('Ritiro','t',?,?,?,'Confermato','2026-09-21T10:00:00','2026-09-21T11:00:00',?)", (self.admin["id"], stamp, stamp, ids["s1"]))
+            c.execute("INSERT INTO whatsapp_messages(practice_id,scheduled_at,status,template_name,recipient_phone,manual,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)", (ids["s3"], stamp, "fallito", "x", "1", 0, stamp, stamp))
+            f = lambda *filtri: self._pq(c, **self.PQ_PERIODO, filtri=list(filtri))["conteggio"]
+            self.assertEqual(f({"campo": "urna", "operatore": "contiene", "valore": "marmo"}), 2)
+            self.assertEqual(f({"campo": "urna", "valore": "Urna Legno Noce"}), 1)
+            self.assertEqual(f({"campo": "urna", "operatore": "non_vuoto"}), 2)
+            self.assertEqual(f({"campo": "urna", "operatore": "vuoto"}), 4)
+            self.assertEqual(f({"campo": "urna", "operatore": "non_contiene", "valore": "marmo"}), 4)
+            self.assertEqual(f({"campo": "calco", "operatore": "non_vuoto"}), 1)
+            self.assertEqual(f({"campo": "accessorio", "valore": "Ciondolo"}), 1)
+            self.assertEqual(f({"campo": "numero_urne", "operatore": "maggiore_uguale", "valore": 2}), 1)
+            self.assertEqual(f({"campo": "ricavo_urne", "operatore": "maggiore", "valore": 100}), 2)
+            self.assertEqual(f({"campo": "in_ciclo", "valore": True}), 1)
+            self.assertEqual(f({"campo": "ciclo_stato", "valore": "completato"}), 1)
+            self.assertEqual(f({"campo": "ciclo_data", "valore": "2026-09-23"}), 1)
+            self.assertEqual(f({"campo": "evento_calendario_collegato", "valore": True}), 1)
+            self.assertEqual(f({"campo": "tipo_evento_calendario", "valore": "Ritiro"}), 1)
+            self.assertEqual(f({"campo": "whatsapp_stato", "valore": "fallito"}), 1)
+            self.assertEqual(f({"campo": "numero_messaggi_whatsapp", "operatore": "maggiore", "valore": 0}), 1)
+            # Raggruppa per una voce con piu' valori: la pratica compare in ogni suo gruppo (segnalato nella nota)
+            res = self._pq(c, **self.PQ_PERIODO, filtri=[{"campo": "urna", "operatore": "non_vuoto"}], output="raggruppa", raggruppa_per=["urna"])
+            per = {g["valori"]["urna"]: g["conteggio"] for g in res["gruppi"]}
+            self.assertEqual(per, {"Urna Marmo": 2, "Urna Legno Noce": 1})
+            self.assertEqual(res["totale_pratiche"], 2)
+            self.assertIn("nota", res)
+
+    def test_interroga_pratiche_veterinario_collaboratore_flag_e_date(self):
+        with app.db() as c:
+            ids = self._pq_seed(c)
+            vet = c.execute("INSERT INTO veterinarians(clinic_name,created_at,updated_at) VALUES('Clinica Aurora','2026-01-01','2026-01-01')").lastrowid
+            collab = c.execute("INSERT INTO collaborators(name,created_at,updated_at) VALUES('Agenzia Sole','2026-01-01','2026-01-01')").lastrowid
+            c.execute("UPDATE practices SET origin_veterinarian_id=? WHERE id=?", (vet, ids["s1"]))
+            c.execute("UPDATE practices SET veterinarian_id=? WHERE id=?", (vet, ids["c1"]))
+            c.execute("UPDATE practices SET collaborator_id=?, tag_assistita='Si', invoice_number='F-9', invoice_date='2026-09-24' WHERE id=?", (collab, ids["s2"]))
+            f = lambda *filtri: self._pq(c, **self.PQ_PERIODO, filtri=list(filtri))["conteggio"]
+            self.assertEqual(f({"campo": "veterinario", "operatore": "contiene", "valore": "aurora"}), 2)
+            self.assertEqual(f({"campo": "veterinario_origine", "valore": "Clinica Aurora"}), 1)
+            self.assertEqual(f({"campo": "collaboratore", "operatore": "contiene", "valore": "sole"}), 1)
+            self.assertEqual(f({"campo": "tag_assistita", "valore": True}), 1)
+            self.assertEqual(f({"campo": "tag_assistita", "valore": False}), 5)
+            self.assertEqual(f({"campo": "numero_fattura", "operatore": "non_vuoto"}), 1)
+            self.assertEqual(f({"campo": "data_fattura", "operatore": "tra", "valori": ["2026-09-24", "2026-09-30"]}), 1)
+            self.assertEqual(f({"campo": "data_fattura", "operatore": "diverso", "valore": "2026-09-24"}), 5)
+            self.assertEqual(f({"campo": "data_fattura", "operatore": "vuoto"}), 5)
+            self.assertEqual(f({"campo": "data_ritiro", "operatore": "maggiore", "valore": "2026-09-23"}), 2)
+            # campo_data alternativo per il periodo: data di creazione (tutte a 2026-09-10 per default -> nessuna nel periodo 21-25)
+            self.assertEqual(self._pq(c, **self.PQ_PERIODO, campo_data="data_creazione")["conteggio"], 0)
+            self.assertEqual(self._pq(c, periodo="intervallo_personalizzato", data_da="2026-09-10", data_a="2026-09-10", campo_data="data_creazione")["conteggio"], 7)
+
+    def test_interroga_pratiche_elenco_campi_ordinamento_limite_e_firma_mai_esposta(self):
+        with app.db() as c:
+            ids = self._pq_seed(c)
+            c.execute("UPDATE practices SET signature_data='data:image/png;base64,SEGRETO', ddt_share_token='TOKENSEGRETO' WHERE id=?", (ids["s1"],))
+            res = self._pq(c, **self.PQ_PERIODO, output="elenco", filtri=[{"campo": "servizio", "valore": "singola"}], campi=["numero_pratica", "animale", "peso", "servizio"], ordina_per="data_ritiro", ordine="asc")
+            self.assertEqual(res["totale_corrispondenti"], 3)
+            self.assertEqual([r["numero_pratica"] for r in res["elenco"]], ["Q-1", "Q-2", "Q-3"])
+            self.assertTrue(all(r["url"].startswith("/pratiche/") for r in res["elenco"]))
+            res = self._pq(c, **self.PQ_PERIODO, output="elenco", ordina_per="totale_pratica", ordine="desc", limite=2, campi=["numero_pratica", "totale_pratica"])
+            self.assertEqual(len(res["elenco"]), 2)
+            self.assertTrue(res["elenco_troncato"])
+            self.assertEqual(res["totale_corrispondenti"], 6)
+            self.assertEqual(res["elenco"][0]["numero_pratica"], "Q-1")  # 300
+            # default: campi principali
+            res = self._pq(c, **self.PQ_PERIODO, output="elenco", limite=1)
+            self.assertIn("servizio", res["elenco"][0]); self.assertIn("proprietario", res["elenco"][0])
+            # 'tutti' i campi: mai firma/token, e la firma risulta solo come presente/assente
+            res = self._pq(c, filtri=[{"campo": "numero_pratica", "valore": "Q-1"}], output="elenco", campi=["tutti"])
+            row = res["elenco"][0]
+            self.assertNotIn("signature_data", row); self.assertNotIn("ddt_share_token", row)
+            self.assertNotIn("SEGRETO", json.dumps(row)); self.assertNotIn("TOKENSEGRETO", json.dumps(res))
+            self.assertIs(row["firma_presente"], True)
+            self.assertEqual(row["servizio"], "Cremazione singola")
+            # limite non valido
+            with self.assertRaises(self.ai.ToolInputError):
+                self._pq(c, output="elenco", limite=0)
+
+    def test_interroga_pratiche_cestino_e_testo_libero(self):
+        with app.db() as c:
+            self._pq_seed(c)
+            c.execute("UPDATE practices SET notes='cliente molto gentile, urgente' WHERE practice_number='Q-2'")
+            self.assertEqual(self._pq(c, **self.PQ_PERIODO, filtri=[{"campo": "servizio", "valore": "singola"}])["conteggio"], 3)
+            self.assertEqual(self._pq(c, **self.PQ_PERIODO, filtri=[{"campo": "servizio", "valore": "singola"}], cestino="includi")["conteggio"], 4)
+            self.assertEqual(self._pq(c, **self.PQ_PERIODO, cestino="solo")["conteggio"], 1)
+            self.assertEqual(self._pq(c, filtri=[{"campo": "nel_cestino", "valore": True}], cestino="includi")["conteggio"], 1)
+            self.assertEqual(self._pq(c, testo_libero="URGENTE")["conteggio"], 1)
+            self.assertEqual(self._pq(c, testo_libero="gentile", filtri=[{"campo": "servizio", "valore": "collettiva"}])["conteggio"], 0)
+            self.assertEqual(self._pq(c, testo_libero="q-5")["conteggio"], 1)
+            # metacaratteri LIKE nel testo cercato trattati come testo letterale
+            self.assertEqual(self._pq(c, testo_libero="%")["conteggio"], 0)
+            with self.assertRaises(self.ai.ToolInputError):
+                self._pq(c, cestino="forse")
+
+    def test_interroga_pratiche_errori_chiari_e_nessuna_iniezione_sql(self):
+        with app.db() as c:
+            self._pq_seed(c)
+            before = c.execute("SELECT COUNT(*) n FROM practices").fetchone()["n"]
+            # campo inesistente: errore con suggerimenti, mai un conteggio a caso
+            with self.assertRaises(self.ai.ToolInputError) as ctx:
+                self._pq(c, filtri=[{"campo": "servisio", "valore": "x"}])
+            self.assertIn("servizio", str(ctx.exception))
+            # nome di campo con SQL: rifiutato (non e' nel catalogo)
+            for bad in ("id; DROP TABLE practices", "1=1 OR status", "practices.id) --", "status) OR (1=1"):
+                with self.assertRaises(self.ai.ToolInputError):
+                    self._pq(c, filtri=[{"campo": bad, "valore": "x"}])
+            with self.assertRaises(self.ai.ToolInputError):
+                self._pq(c, output="raggruppa", raggruppa_per=["id; DROP TABLE practices"])
+            with self.assertRaises(self.ai.ToolInputError):
+                self._pq(c, campo_data="animale")
+            # operatore inesistente / non applicabile al tipo
+            with self.assertRaises(self.ai.ToolInputError):
+                self._pq(c, filtri=[{"campo": "servizio", "operatore": "somiglia", "valore": "x"}])
+            with self.assertRaises(self.ai.ToolInputError):
+                self._pq(c, filtri=[{"campo": "animale", "operatore": "maggiore", "valore": "x"}])
+            with self.assertRaises(self.ai.ToolInputError):
+                self._pq(c, filtri=[{"campo": "data_ritiro", "operatore": "uguale", "valore": "ieri-forse"}])
+            # valore fuori dai valori ammessi di un campo a elenco chiuso
+            with self.assertRaises(self.ai.ToolInputError) as ctx:
+                self._pq(c, filtri=[{"campo": "servizio", "valore": "Cremazione doppia"}])
+            self.assertIn("Cremazione singola", str(ctx.exception))
+            with self.assertRaises(self.ai.ToolInputError):
+                self._pq(c, filtri=[{"campo": "stato", "valore": "Inesistente"}])
+            with self.assertRaises(self.ai.ToolInputError):
+                self._pq(c, filtri=[{"campo": "peso", "operatore": "tra", "valori": [1]}])
+            with self.assertRaises(self.ai.ToolInputError):
+                self._pq(c, output="raggruppa")
+            with self.assertRaises(self.ai.ToolInputError):
+                self._pq(c, output="raggruppa", raggruppa_per=["a", "b", "c"])
+            with self.assertRaises(self.ai.ToolInputError):
+                self._pq(c, output="boh")
+            with self.assertRaises(self.ai.ToolInputError):
+                self._pq(c, filtri="tutte")
+            # un valore malevolo e' solo un valore: nessun risultato, tabella intatta
+            res = self._pq(c, filtri=[{"campo": "animale", "valore": "x'; DROP TABLE practices; --"}])
+            self.assertEqual(res["conteggio"], 0)
+            res = self._pq(c, filtri=[{"campo": "animale", "operatore": "contiene", "valore": "' OR '1'='1"}])
+            self.assertEqual(res["conteggio"], 0)
+            self.assertEqual(c.execute("SELECT COUNT(*) n FROM practices").fetchone()["n"], before)
+            # sola lettura: nessuna pratica modificata dalle query
+            self.assertEqual(c.execute("SELECT COUNT(*) n FROM practices WHERE service_type='Cremazione singola'").fetchone()["n"], 5)  # incl. quella nel cestino
+
+    def test_campi_pratiche_copre_ogni_colonna_e_dettaglio_pratica_espone_tutto(self):
+        with app.db() as c:
+            ids = self._pq_seed(c)
+            tool = next(t for t in self.ai.TOOL_SPECS if t["name"] == "campi_pratiche")["handler"]
+            res = tool(c, self.admin, app.rome_now(), {})
+            names = {x["campo"] for x in res["campi"]}
+            # ogni colonna reale di practices (tranne firma/token) e' raggiungibile per nome tecnico o italiano
+            reg = self.ai._pq_registry(c)
+            cols = [r["name"] for r in c.execute("PRAGMA table_info(practices)").fetchall() if r["name"] not in ("signature_data", "ddt_share_token")]
+            covered = {f.get("column") for f in reg.values() if f.get("column")}
+            self.assertEqual(set(cols) - covered, set())
+            for col in cols:
+                self.assertEqual(self._pq(c, filtri=[{"campo": col, "operatore": "non_vuoto"}], cestino="includi")["conteggio"] >= 0, True)
+            for needed in ("servizio", "stato", "sede", "provenienza", "urna", "calco", "accessorio", "veterinario", "collaboratore", "totale_pratica", "incassato", "rimanenza", "ciclo_stato", "evento_calendario_collegato", "whatsapp_stato", "data_ritiro"):
+                self.assertIn(needed, names)
+            self.assertNotIn("signature_data", names); self.assertNotIn("ddt_share_token", names)
+            serv = next(x for x in res["campi"] if x["campo"] == "servizio")
+            self.assertIn("Cremazione singola", serv["valori_ammessi"])
+            self.assertLess(len(tool(c, self.admin, app.rome_now(), {"cerca": "urna"})["campi"]), len(res["campi"]))
+            self.assertTrue(any(x["campo"] == "urna" for x in tool(c, self.admin, app.rome_now(), {"cerca": "urna"})["campi"]))
+            # dettaglio_pratica ora restituisce anche OGNI campo della pratica
+            dettaglio = next(t for t in self.ai.TOOL_SPECS if t["name"] == "dettaglio_pratica")["handler"]
+            d = dettaglio(c, self.admin, app.rome_now(), {"numero_pratica": "Q-1"})
+            self.assertEqual(d["tutti_i_campi"]["servizio"], "Cremazione singola")
+            self.assertEqual(d["tutti_i_campi"]["peso"], "30")
+            self.assertNotIn("signature_data", d["tutti_i_campi"])
+
+    def test_interroga_pratiche_registrato_nel_prompt_e_negli_strumenti_anthropic(self):
+        names = [t["name"] for t in self.ai.TOOL_SPECS]
+        self.assertEqual(len(names), len(set(names)))
+        self.assertIn("interroga_pratiche", names); self.assertIn("campi_pratiche", names)
+        anth = {t["name"]: t for t in self.ai._anthropic_tools()}
+        self.assertIn("interroga_pratiche", anth)
+        schema = anth["interroga_pratiche"]["input_schema"]
+        self.assertEqual(schema["type"], "object")
+        json.dumps(anth["interroga_pratiche"])  # serializzabile per l'API
+        self.assertIn("filtri", schema["properties"]); self.assertIn("raggruppa_per", schema["properties"])
+        prompt = self.ai._system_prompt(app.rome_now())
+        self.assertIn("interroga_pratiche", prompt)
+        self.assertIn("campi_pratiche", prompt)
+        # gli strumenti pre-esistenti restano invariati e disponibili
+        for old in ("conta_pratiche", "andamento_giornaliero_pratiche", "cerca_pratiche", "dettaglio_pratica", "conta_ritiri"):
+            self.assertIn(old, names)
+
+
 if __name__ == "__main__":
     unittest.main()

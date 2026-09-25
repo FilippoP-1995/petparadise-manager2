@@ -698,6 +698,11 @@ def _tool_dettaglio_pratica(c, user, now, p):
         "data_ritiro": row["pickup_date"], "creata_il": row["created_at"],
         "circuito_economico": canale, "totale": round(total, 2), "gia_incassato": round(paid, 2), "rimanenza": round(remaining, 2),
         "stato_pagamento": row["payment_status"], "note": row["notes"], "url": f"/pratiche/{row['id']}",
+        # Ogni altro campo/sezione della pratica (anagrafica completa, prezzi,
+        # voci urna/calco/accessorio, ciclo, calendario, WhatsApp, veterinario,
+        # collaboratore, fatturazione, etichette...), con gli stessi nomi di
+        # campo usati da interroga_pratiche. Mai la firma.
+        "tutti_i_campi": _tool_interroga_pratiche(c, user, now, {"filtri": [{"campo": "id", "valore": row["id"]}], "output": "elenco", "campi": ["tutti"], "limite": 1})["elenco"][0],
     }
 
 
@@ -1543,6 +1548,811 @@ def _tool_anomalie(c, user, now, p):
 # Registro strumenti
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Interrogazione GENERICA delle pratiche (qualunque campo, qualunque sezione)
+#
+# Richiesta esplicita dell'utente: l'Assistente deve poter filtrare, contare,
+# raggruppare, elencare e sommare le pratiche su OGNI campo/voce/sezione
+# ("quante singole o collettive in un periodo", "quante con urna X", "quante
+# con saldo aperto oltre 100 euro"...), senza doversi fermare a "non ho uno
+# strumento per questo campo". Il catalogo dei campi (_pq_registry) e' ricavato
+# dalle colonne REALI della tabella practices (PRAGMA table_info) piu' i campi
+# derivati dalle altre sezioni (voci urna/calco/accessorio, ciclo di cremazione,
+# calendario, WhatsApp, veterinario/collaboratore, economia): un campo nuovo
+# aggiunto alla pratica e' quindi interrogabile senza toccare questo codice.
+#
+# SICUREZZA: nessun SQL scritto dal modello. Il modello indica solo NOMI di
+# campo (verificati contro il catalogo), OPERATORI (whitelist) e VALORI (sempre
+# parametri ?). Sola lettura. Campi sensibili (firma, token di condivisione)
+# esclusi dal catalogo. Le colonne di prezzi/pesi/eta' sono testo libero:
+# i confronti numerici passano da funzioni SQLite registrate su money_value
+# (stesso parser del gestionale), MAI da CAST approssimativi.
+# ---------------------------------------------------------------------------
+
+_PQ_MAX_ROWS = 50000
+_PQ_SENSITIVE_COLUMNS = {"signature_data", "ddt_share_token"}
+_PQ_MULTI_SEP = "\x1f"
+_PQ_SERVICES = ("Cremazione singola", "Cremazione collettiva", "Da decidere")
+_PQ_ALIASES = {
+    "servizio": {
+        "singola": "Cremazione singola", "singole": "Cremazione singola", "cremazione singola": "Cremazione singola",
+        "collettiva": "Cremazione collettiva", "collettive": "Cremazione collettiva", "cremazione collettiva": "Cremazione collettiva",
+    },
+}
+_PQ_TRUE = ("si", "sì", "1", "on", "true", "yes", "x")
+_PQ_TEXT_OPS = ("uguale", "diverso", "contiene", "non_contiene", "in", "non_in", "vuoto", "non_vuoto")
+_PQ_NUM_OPS = ("uguale", "diverso", "maggiore", "maggiore_uguale", "minore", "minore_uguale", "tra", "in", "non_in", "vuoto", "non_vuoto")
+_PQ_DATE_OPS = _PQ_NUM_OPS
+_PQ_FLAG_OPS = ("uguale", "diverso", "vuoto", "non_vuoto")
+_PQ_BOOL_OPS = ("uguale", "diverso")
+_PQ_OPS_BY_KIND = {
+    "text": _PQ_TEXT_OPS, "num": _PQ_NUM_OPS, "money": _PQ_NUM_OPS, "int": _PQ_NUM_OPS,
+    "date": _PQ_DATE_OPS, "flag": _PQ_FLAG_OPS, "bool": _PQ_BOOL_OPS,
+}
+_PQ_ALL_OPS = tuple(dict.fromkeys(op for ops in _PQ_OPS_BY_KIND.values() for op in ops))
+_PQ_NEGATIVE = {"diverso": "uguale", "non_contiene": "contiene", "non_in": "in", "non_vuoto": "vuoto"}
+_PQ_NUMERIC_KINDS = ("num", "money", "int")
+_PQ_COMPUTED = {
+    "totale_pratica": ("money", "Totale effettivo della pratica (totale definitivo se presente, altrimenti somma delle voci): stesso valore mostrato nella scheda pratica."),
+    "incassato": ("money", "Importo realmente incassato sul circuito della pratica (dal registro Bilanci, non dai campi denormalizzati)."),
+    "rimanenza": ("money", "Rimanenza ancora da incassare sul circuito della pratica."),
+    "circuito_economico": ("text", "Circuito economico della pratica: 'W' oppure 'D'."),
+}
+
+# (chiave italiana, colonna, tipo, descrizione)
+_PQ_CURATED = [
+    ("numero_pratica", "practice_number", "text", "Numero della pratica"),
+    ("stato", "status", "text", "Stato della pratica (Da ritirare, Ritirato, In programma, Cremato, Da consegnare, Consegnato, Smaltito)"),
+    ("sede", "destination_branch", "text", "Sede di destinazione (Livorno/Empoli)"),
+    ("servizio", "service_type", "text", "Servizio: Cremazione singola / Cremazione collettiva / Da decidere"),
+    ("origine_richiesta", "request_origin", "text", "Origine della richiesta: Veterinario, Privato, Consegna in sede, Collaboratore"),
+    ("provenienza", "provenance", "text", "Zona di provenienza (Livorno, Empoli, Viareggio, Firenze, Pisa)"),
+    ("dati_completi", "data_complete", "flag", "Dati della pratica completi"),
+    ("data_ritiro", "pickup_date", "date", "Data di ritiro programmata/effettiva scritta sulla pratica"),
+    ("ora_ritiro", "pickup_time", "text", "Ora di ritiro"),
+    ("indirizzo_ritiro", "pickup_address", "text", "Indirizzo di ritiro"),
+    ("data_creazione", "created_at", "date", "Data di creazione della pratica"),
+    ("data_ultima_modifica", "updated_at", "date", "Data ultima modifica"),
+    ("operatore", "operator_name", "text", "Operatore assegnato alla pratica"),
+    ("proprietario_nome", "owner_first_name", "text", "Nome del proprietario"),
+    ("proprietario_cognome", "owner_last_name", "text", "Cognome del proprietario"),
+    ("telefono", "owner_phone", "text", "Telefono del proprietario"),
+    ("telefono_2", "owner_phone_2", "text", "Secondo telefono"),
+    ("email", "owner_email", "text", "Email del proprietario"),
+    ("codice_fiscale", "owner_tax_code", "text", "Codice fiscale del proprietario"),
+    ("indirizzo_proprietario", "owner_address", "text", "Indirizzo del proprietario"),
+    ("azienda", "owner_company", "text", "Azienda/ragione sociale del proprietario"),
+    ("partita_iva", "owner_vat", "text", "Partita IVA del proprietario"),
+    ("codice_sdi", "owner_sdi", "text", "Codice SDI"),
+    ("citta", "owner_city", "text", "Citta' del proprietario"),
+    ("provincia", "owner_province", "text", "Provincia del proprietario"),
+    ("cap", "owner_zip", "text", "CAP del proprietario"),
+    ("note_proprietario", "owner_notes", "text", "Note sul proprietario"),
+    ("animale", "animal_name", "text", "Nome dell'animale"),
+    ("specie", "species", "text", "Specie dell'animale"),
+    ("razza", "breed", "text", "Razza dell'animale"),
+    ("eta_anni", "age_years", "num", "Eta' in anni"),
+    ("eta_mesi", "age_months", "num", "Eta' in mesi"),
+    ("peso", "estimated_weight", "num", "Peso stimato (kg)"),
+    ("microchip", "microchip", "text", "Microchip"),
+    ("animale2_nome", "animal2_name", "text", "Secondo animale: nome"),
+    ("animale2_specie", "animal2_species", "text", "Secondo animale: specie"),
+    ("animale2_razza", "animal2_breed", "text", "Secondo animale: razza"),
+    ("animale2_peso", "animal2_weight", "num", "Secondo animale: peso"),
+    ("clinica", "clinic_name", "text", "Nome clinica scritto sulla pratica"),
+    ("veterinario_nome_libero", "veterinarian_name", "text", "Nome veterinario scritto liberamente sulla pratica"),
+    ("note", "notes", "text", "Note della pratica"),
+    ("ddt_numero", "ddt_number", "num", "Numero DDT"),
+    ("ddt_data", "ddt_date", "date", "Data DDT"),
+    ("metodo_trasporto", "transport_method", "text", "Metodo di trasporto"),
+    ("targa_veicolo", "vehicle_plate", "text", "Targa del veicolo"),
+    ("numero_colli", "package_count", "num", "Numero colli"),
+    ("lotto", "lot_number", "text", "Lotto"),
+    ("prezzo_cremazione", "price_cremation", "money", "Prezzo cremazione"),
+    ("prezzo_ritiro", "price_pickup", "money", "Prezzo ritiro"),
+    ("prezzo_serale", "price_evening", "money", "Supplemento serale"),
+    ("prezzo_notturno", "price_night", "money", "Supplemento notturno"),
+    ("prezzo_festivo", "price_holiday", "money", "Supplemento festivo"),
+    ("prezzo_consegna", "price_delivery", "money", "Prezzo consegna"),
+    ("prezzo_urna", "price_urn", "money", "Prezzo urna (campo storico; le voci vere sono nel campo 'urna')"),
+    ("prezzo_calco", "price_cast", "money", "Prezzo calco (campo storico)"),
+    ("prezzo_accessori", "price_accessories", "money", "Prezzo accessori (campo storico)"),
+    ("consegna_in_clinica", "delivery_at_clinic", "text", "Consegna in clinica"),
+    ("consegna_a_domicilio", "delivery_at_home", "text", "Consegna a domicilio"),
+    ("acconto", "deposit", "money", "Acconto (circuito W)"),
+    ("acconto_finale", "deposit_final", "money", "Acconto (circuito D)"),
+    ("rimanenza_salvata", "remaining_balance", "money", "Rimanenza memorizzata (circuito W)"),
+    ("rimanenza_finale_salvata", "remaining_final", "money", "Rimanenza memorizzata (circuito D)"),
+    ("totale_servizio", "total_service", "money", "Totale servizio memorizzato"),
+    ("totale_definitivo", "total_text", "money", "Totale definitivo (circuito D)"),
+    ("importo_pagamento", "payment_amount", "money", "Importo pagamento"),
+    ("stato_pagamento", "payment_status", "text", "Stato pagamento (Da saldare/Acconto/Pagato)"),
+    ("metodo_pagamento", "payment_method", "text", "Metodo di pagamento (Pos/Contanti/Bonifico/Altro)"),
+    ("data_acconto", "deposit_paid_at", "date", "Data pagamento acconto"),
+    ("data_saldo", "paid_at", "date", "Data pagamento saldo"),
+    ("numero_fattura", "invoice_number", "text", "Numero fattura"),
+    ("data_fattura", "invoice_date", "date", "Data fattura"),
+    ("totale_fattura", "invoice_total", "money", "Totale fattura"),
+    ("fattura_richiesta", "make_invoice", "flag", "Fattura richiesta"),
+    ("stato_fatturazione", "billing_status", "text", "Stato fatturazione (Da fatturare/Fatturato/Incassato)"),
+    ("data_fatturazione", "billing_invoiced_at", "date", "Data di fatturazione"),
+    ("note_urna", "urn_notes", "text", "Note urna 1"),
+    ("note_urna_2", "urn_notes_2", "text", "Note urna 2"),
+    ("tipo_accessorio", "accessory_type", "text", "Tipo accessorio 1 (campo storico)"),
+    ("tipo_accessorio_2", "accessory_type_2", "text", "Tipo accessorio 2 (campo storico)"),
+    ("catalogo_da_inviare", "send_catalog", "flag", "Catalogo da inviare"),
+    ("catalogo_inviato", "catalog_sent", "flag", "Catalogo inviato"),
+    ("estremi_da_inviare", "send_estremi", "flag", "Estremi da inviare"),
+    ("estremi_inviati", "estremi_sent", "flag", "Estremi inviati"),
+    ("buono_richiesto", "voucher_requested", "flag", "Buono veterinario richiesto"),
+    ("buono_usato", "use_voucher", "flag", "Usa un buono"),
+    ("ringraziamento_whatsapp_inviato_il", "whatsapp_thanks_sent_at", "date", "Data invio WhatsApp di ringraziamento"),
+    ("non_inviare_whatsapp", "no_whatsapp_message", "flag", "Non inviare messaggi WhatsApp"),
+    ("cestinata_il", "deleted_at", "date", "Data in cui la pratica e' finita nel cestino"),
+    ("cremazione_registrata", "cremation_registered", "flag", "Cremazione registrata"),
+    ("cremazione_in_coda", "cremation_queued", "flag", "Cremazione in coda"),
+    ("ciclo_id", "cremation_cycle_id", "int", "ID del ciclo di cremazione assegnato"),
+    ("proprietario_notificato_stato", "owner_notified_status", "text", "Stato notifica al proprietario"),
+    ("proprietario_notificato_il", "owner_notified_at", "date", "Data notifica al proprietario"),
+    ("collaboratore_nome_libero", "collaborator_name", "text", "Nome collaboratore scritto sulla pratica"),
+    ("numero_pratica_originale", "original_practice_number", "text", "Numero pratica originale"),
+    ("id", "id", "int", "ID interno della pratica"),
+]
+
+
+def _pq_norm(value):
+    return str(value if value is not None else "").strip().casefold()
+
+
+def _pq_guess_kind(name, decl_type):
+    if name.startswith("tag_"):
+        return "flag"
+    if name.endswith("_at") or name.endswith("_date"):
+        return "date"
+    if (decl_type or "").upper() == "INTEGER":
+        return "int"
+    if name.startswith("price_"):
+        return "money"
+    return "text"
+
+
+def _pq_registry(c):
+    """Catalogo completo dei campi interrogabili di una pratica:
+    {chiave: {kind, sql|multi|computed, desc}}. Le colonne reali di
+    practices provengono da PRAGMA table_info (quindi ogni colonna esistente
+    e' coperta, anche se non ha un nome italiano curato: in quel caso e'
+    esposta col nome tecnico)."""
+    existing = {r["name"]: (r["type"] or "") for r in c.execute("PRAGMA table_info(practices)").fetchall()}
+    reg: dict = {}
+    used = set()
+    for key, column, kind, desc in _PQ_CURATED:
+        if column in existing and column not in _PQ_SENSITIVE_COLUMNS:
+            reg[key] = {"kind": kind, "sql": f"practices.{column}", "desc": desc, "column": column}
+            used.add(column)
+    for column, decl in existing.items():
+        if column in used or column in _PQ_SENSITIVE_COLUMNS or column in reg:
+            continue
+        reg[column] = {"kind": _pq_guess_kind(column, decl), "sql": f"practices.{column}", "desc": f"Campo '{column}' della pratica", "column": column, "tecnico": True}
+    items = "practice_items pi WHERE pi.practice_id=practices.id"
+
+    def scalar(kind, sql, desc):
+        return {"kind": kind, "sql": sql, "desc": desc}
+
+    def multi(sql_from, expr, desc):
+        return {"kind": "text", "multi": {"from": sql_from, "expr": expr}, "desc": desc}
+
+    reg["proprietario"] = scalar("text", "TRIM(COALESCE(practices.owner_first_name,'')||' '||COALESCE(practices.owner_last_name,''))", "Nome e cognome del proprietario insieme")
+    reg["data_pratica"] = scalar("date", "COALESCE(NULLIF(practices.pickup_date,''),practices.created_at)", "Data di riferimento della pratica: data di ritiro se presente, altrimenti data di creazione (stessa usata da conta_pratiche)")
+    reg["data_ritiro_effettiva"] = scalar("date", DEPS.dashboard_practice_date_sql("ritirati", "practices"), "Data in cui la pratica risulta ritirata secondo la dashboard (stessa usata da conta_ritiri)")
+    reg["data_consegna_effettiva"] = scalar("date", DEPS.dashboard_practice_date_sql("consegnati", "practices"), "Data in cui la pratica risulta consegnata secondo la dashboard (stessa usata da conta_riconsegne)")
+    reg["ritiro_effettuato"] = scalar("bool", "CASE WHEN practices.status IN ('Ritirato','Cremato','Da consegnare','Consegnato','Smaltito') THEN 1 ELSE 0 END", "Vero se lo stato ha raggiunto o superato 'Ritirato' (criterio della card Ritirati della dashboard)")
+    reg["nel_cestino"] = scalar("bool", "CASE WHEN COALESCE(practices.deleted_at,'')<>'' THEN 1 ELSE 0 END", "Vero se la pratica e' nel cestino")
+    reg["firma_presente"] = scalar("bool", "CASE WHEN COALESCE(practices.signature_data,'')<>'' THEN 1 ELSE 0 END", "Vero se la pratica e' stata firmata (il contenuto della firma non e' mai esposto)")
+    reg["veterinario"] = multi("veterinarians v WHERE (v.id=practices.veterinarian_id OR v.id=practices.origin_veterinarian_id OR v.id=practices.owner_veterinarian_id)", "v.clinic_name", "Veterinario/clinica collegati alla pratica in QUALSIASI ruolo (servizio, origine, proprietario)")
+    reg["veterinario_servizio"] = scalar("text", "(SELECT clinic_name FROM veterinarians WHERE id=practices.veterinarian_id)", "Veterinario/clinica del servizio")
+    reg["veterinario_origine"] = scalar("text", "(SELECT clinic_name FROM veterinarians WHERE id=practices.origin_veterinarian_id)", "Veterinario/clinica di origine (da cui proviene l'animale)")
+    reg["veterinario_proprietario"] = scalar("text", "(SELECT clinic_name FROM veterinarians WHERE id=practices.owner_veterinarian_id)", "Veterinario/clinica proprietario dell'animale")
+    reg["collaboratore"] = scalar("text", "COALESCE((SELECT name FROM collaborators WHERE id=practices.collaborator_id),NULLIF(practices.collaborator_name,''))", "Collaboratore collegato alla pratica")
+    reg["urna"] = multi(items + " AND pi.category='urna'", "pi.label", "Modelli di urna presenti nelle voci della pratica (piu' urne = piu' valori)")
+    reg["calco"] = multi(items + " AND pi.category='calco'", "pi.label", "Calchi presenti nelle voci della pratica")
+    reg["accessorio"] = multi(items + " AND pi.category='accessorio'", "pi.label", "Accessori presenti nelle voci della pratica")
+    reg["voce"] = multi(items, "pi.label", "Qualsiasi voce (urna, calco o accessorio) della pratica")
+    for key, cat, label in (("numero_urne", "urna", "urne"), ("numero_calchi", "calco", "calchi"), ("numero_accessori", "accessorio", "accessori")):
+        reg[key] = scalar("num", f"(SELECT COUNT(*) FROM practice_items pi WHERE pi.practice_id=practices.id AND pi.category='{cat}')", f"Numero di {label} nelle voci della pratica")
+    for key, cat, label in (("ricavo_urne", "urna", "urne"), ("ricavo_calchi", "calco", "calchi"), ("ricavo_accessori", "accessorio", "accessori")):
+        reg[key] = scalar("money", f"(SELECT COALESCE(SUM(PPM_MONEY(pi.price)),0) FROM practice_items pi WHERE pi.practice_id=practices.id AND pi.category='{cat}')", f"Somma dei prezzi delle voci {label} della pratica")
+    reg["in_ciclo"] = scalar("bool", "CASE WHEN practices.cremation_cycle_id IS NOT NULL THEN 1 ELSE 0 END", "Vero se la pratica e' assegnata a un ciclo di cremazione")
+    reg["ciclo_data"] = scalar("date", "(SELECT cycle_date FROM cremation_cycles WHERE id=practices.cremation_cycle_id)", "Data del ciclo di cremazione assegnato")
+    reg["ciclo_stato"] = scalar("text", "(SELECT status FROM cremation_cycles WHERE id=practices.cremation_cycle_id)", "Stato del ciclo di cremazione assegnato (pianificato/in_attesa/completato)")
+    reg["evento_calendario_collegato"] = scalar("bool", "CASE WHEN EXISTS(SELECT 1 FROM calendar_events e WHERE e.linked_practice_id=practices.id) THEN 1 ELSE 0 END", "Vero se c'e' almeno un evento di calendario collegato alla pratica")
+    reg["numero_eventi_calendario"] = scalar("num", "(SELECT COUNT(*) FROM calendar_events e WHERE e.linked_practice_id=practices.id)", "Numero di eventi di calendario collegati")
+    reg["tipo_evento_calendario"] = multi("calendar_events e WHERE e.linked_practice_id=practices.id", "e.event_type", "Tipi degli eventi di calendario collegati (Ritiro, Riconsegna, ...)")
+    reg["whatsapp_stato"] = multi("whatsapp_messages w WHERE w.practice_id=practices.id", "w.status", "Stati dei messaggi WhatsApp collegati alla pratica")
+    reg["whatsapp_tipo"] = multi("whatsapp_messages w WHERE w.practice_id=practices.id", "w.message_type", "Tipi dei messaggi WhatsApp collegati alla pratica")
+    reg["numero_messaggi_whatsapp"] = scalar("num", "(SELECT COUNT(*) FROM whatsapp_messages w WHERE w.practice_id=practices.id)", "Numero di messaggi WhatsApp collegati")
+    reg["numero_pagamenti"] = scalar("num", "(SELECT COUNT(*) FROM payment_movements m WHERE m.practice_id=practices.id)", "Numero di movimenti di pagamento registrati")
+    for key, (kind, desc) in _PQ_COMPUTED.items():
+        reg[key] = {"kind": kind, "computed": key, "desc": desc}
+    return reg
+
+
+def _pq_field(reg, name):
+    key = re.sub(r"\s+", "_", str(name or "").strip().lower())
+    if not key:
+        raise ToolInputError("Indica il nome di un campo (usa campi_pratiche per l'elenco completo).")
+    if key in reg:
+        return key, reg[key]
+    for k, f in reg.items():
+        if f.get("column") == key:
+            return k, f
+    import difflib
+    close = difflib.get_close_matches(key, list(reg), n=6, cutoff=0.5)
+    hint = f" Forse intendevi: {', '.join(close)}." if close else ""
+    raise ToolInputError(f"Campo '{name}' non esistente.{hint} Usa lo strumento campi_pratiche (parametro 'cerca') per vedere tutti i campi disponibili.")
+
+
+def _pq_register_functions(c):
+    c.create_function("PPM_NORM", 1, _pq_norm, deterministic=True)
+    c.create_function("PPM_MONEY", 1, lambda v: float(DEPS.money_value(v)), deterministic=True)
+
+
+def _pq_enum(key):
+    if key == "stato":
+        return list(DEPS.states)
+    if key == "sede":
+        return list(SHIFT_BRANCHES)
+    if key == "servizio":
+        return list(_PQ_SERVICES)
+    if key == "origine_richiesta":
+        return list(_REQUEST_ORIGINS)
+    return None
+
+
+def _pq_text_value(key, raw):
+    if isinstance(raw, (dict, list, bool)) or raw is None:
+        raise ToolInputError(f"Il valore per il campo {key} deve essere un testo o un numero.")
+    if key == "provenienza":
+        code = _resolve_provenance_code(str(raw))
+        if not code:
+            raise ToolInputError("Il valore per provenienza non puo' essere vuoto (usa l'operatore 'vuoto').")
+        return code.casefold()
+    v = _pq_norm(raw)
+    enum = _pq_enum(key)
+    if enum is not None:
+        for e in enum:
+            if e.casefold() == v:
+                return v
+        alias = _PQ_ALIASES.get(key, {}).get(v)
+        if alias:
+            return alias.casefold()
+        raise ToolInputError(f"Valore '{raw}' non valido per il campo {key}. Valori ammessi: {', '.join(enum)}.")
+    return v
+
+
+def _pq_num_value(key, raw):
+    if isinstance(raw, bool) or raw is None or isinstance(raw, (dict, list)):
+        raise ToolInputError(f"Il valore per il campo {key} deve essere un numero.")
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    if not re.search(r"\d", str(raw)):
+        raise ToolInputError(f"Il valore '{raw}' per il campo {key} non e' un numero.")
+    return float(DEPS.money_value(raw))
+
+
+def _pq_date_value(key, raw):
+    try:
+        return date.fromisoformat(str(raw).strip()[:10]).isoformat()
+    except (ValueError, TypeError):
+        raise ToolInputError(f"Il valore '{raw}' per il campo {key} non e' una data valida (formato AAAA-MM-GG).")
+
+
+def _pq_flag_value(key, raw):
+    v = _pq_norm(raw)
+    if raw is True or v in _PQ_TRUE or v in ("vero",):
+        return True
+    if raw is False or v in ("no", "0", "false", "off", "falso", ""):
+        return False
+    raise ToolInputError(f"Il valore per il campo {key} deve essere vero/falso (es. true, 'si', 'no').")
+
+
+def _pq_values_list(f_op, key, filt):
+    values = filt.get("valori")
+    if values is None:
+        values = filt.get("valore")
+    if values is not None and not isinstance(values, list):
+        values = [values]
+    if not isinstance(values, list) or not values:
+        raise ToolInputError(f"L'operatore '{f_op}' sul campo {key} richiede 'valori' come elenco non vuoto.")
+    return values
+
+
+def _pq_scalar_predicate(key, f, op, filt):
+    """Condizione SQL (positiva) per un campo scalare; la negazione e' gestita
+    dal chiamante. Ritorna (sql, args)."""
+    kind = f["kind"]
+    expr = f["sql"]
+    empty = f"TRIM(COALESCE(CAST({expr} AS TEXT),''))=''"
+    if op == "vuoto":
+        return empty, []
+    if kind == "text":
+        e = f"PPM_NORM({expr})"
+        if op == "uguale":
+            return f"{e}=?", [_pq_text_value(key, filt.get("valore"))]
+        if op == "contiene":
+            v = _pq_norm(filt.get("valore"))
+            if not v:
+                raise ToolInputError(f"L'operatore 'contiene' sul campo {key} richiede un valore non vuoto.")
+            return f"{e} LIKE ? ESCAPE '\\'", ["%" + v.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"]
+        vals = [_pq_text_value(key, x) for x in _pq_values_list(op, key, filt)]
+        return f"{e} IN ({','.join('?' for _ in vals)})", vals
+    if kind in _PQ_NUMERIC_KINDS:
+        e = f"PPM_MONEY({expr})"
+        return _pq_ordered_predicate(key, e, op, filt, lambda x: _pq_num_value(key, x))
+    if kind == "date":
+        e = f"date({expr})"
+        return _pq_ordered_predicate(key, e, op, filt, lambda x: _pq_date_value(key, x))
+    if kind == "flag":
+        truthy = f"PPM_NORM({expr}) IN ({','.join('?' for _ in _PQ_TRUE)})"
+        want = _pq_flag_value(key, filt.get("valore"))
+        return (truthy if want else f"NOT ({truthy})"), list(_PQ_TRUE)
+    if kind == "bool":
+        want = _pq_flag_value(key, filt.get("valore"))
+        return f"{expr}=?", [1 if want else 0]
+    raise ToolInputError(f"Tipo di campo non gestito per {key}.")
+
+
+def _pq_ordered_predicate(key, e, op, filt, conv):
+    if op == "uguale":
+        return f"{e}=?", [conv(filt.get("valore"))]
+    if op in ("maggiore", "maggiore_uguale", "minore", "minore_uguale"):
+        sym = {"maggiore": ">", "maggiore_uguale": ">=", "minore": "<", "minore_uguale": "<="}[op]
+        return f"{e}{sym}?", [conv(filt.get("valore"))]
+    if op == "tra":
+        vals = filt.get("valori")
+        if not isinstance(vals, list) or len(vals) != 2:
+            raise ToolInputError(f"L'operatore 'tra' sul campo {key} richiede 'valori' con esattamente due elementi [minimo, massimo].")
+        lo, hi = conv(vals[0]), conv(vals[1])
+        if lo > hi:
+            raise ToolInputError(f"Per 'tra' sul campo {key} il primo valore e' maggiore del secondo.")
+        return f"{e} BETWEEN ? AND ?", [lo, hi]
+    if op == "in":
+        vals = [conv(x) for x in _pq_values_list(op, key, filt)]
+        return f"{e} IN ({','.join('?' for _ in vals)})", vals
+    raise ToolInputError(f"Operatore '{op}' non gestito per il campo {key}.")
+
+
+def _pq_compile_filter(reg, filt):
+    """Ritorna (sql, args, descrizione, test_python): test_python e' None per
+    i campi SQL, una funzione per i campi calcolati ("computed"), valutati in
+    Python dopo la query."""
+    if not isinstance(filt, dict):
+        raise ToolInputError("Ogni filtro deve essere un oggetto {campo, operatore, valore/valori}.")
+    key, f = _pq_field(reg, filt.get("campo"))
+    op = str(filt.get("operatore") or "uguale").strip().lower()
+    if op not in _PQ_ALL_OPS:
+        raise ToolInputError(f"Operatore '{op}' non riconosciuto. Operatori ammessi: {', '.join(_PQ_ALL_OPS)}.")
+    filt = dict(filt)
+    valore = filt.get("valore")
+    if isinstance(valore, list) and op in ("uguale", "diverso"):
+        # un elenco con l'operatore singolare: un solo elemento = quel valore,
+        # piu' elementi = appartenenza all'insieme (in / non_in).
+        if len(valore) == 1:
+            filt["valore"] = valore[0]
+        elif len(valore) > 1 and f["kind"] in ("text",) + _PQ_NUMERIC_KINDS + ("date",):
+            op = "in" if op == "uguale" else "non_in"
+    allowed = _PQ_OPS_BY_KIND[f["kind"]]
+    if op not in allowed:
+        raise ToolInputError(f"Operatore '{op}' non applicabile al campo {key} (tipo {f['kind']}). Per questo campo usa: {', '.join(allowed)}.")
+    desc = {"campo": key, "operatore": op}
+    for k in ("valore", "valori"):
+        if filt.get(k) is not None:
+            desc[k] = filt[k]
+    if f.get("computed"):
+        return None, None, desc, _pq_computed_test(key, f, op, filt)
+    base = _PQ_NEGATIVE.get(op, op)
+    negate = op in _PQ_NEGATIVE
+    multi = f.get("multi")
+    if multi:
+        expr = multi["expr"]
+        sub_from = multi["from"]
+        if base == "vuoto":
+            inner = f"EXISTS(SELECT 1 FROM {sub_from} AND TRIM(COALESCE({expr},''))<>'')"
+            # vuoto = nessun valore; non_vuoto = almeno un valore
+            return (inner if negate else f"NOT {inner}"), [], desc, None
+        pred, args = _pq_scalar_predicate(key, {"kind": "text", "sql": expr}, base, filt)
+        # validazione enum/valore gia' fatta con la chiave del campo multi
+        inner = f"EXISTS(SELECT 1 FROM {sub_from} AND ({pred}))"
+        return (f"NOT {inner}" if negate else inner), args, desc, None
+    pred, args = _pq_scalar_predicate(key, f, base, filt)
+    if negate:
+        return f"NOT COALESCE(({pred}),0)", args, desc, None
+    return pred, args, desc, None
+
+
+def _pq_computed_test(key, f, op, filt):
+    kind = f["kind"]
+    base = _PQ_NEGATIVE.get(op, op)
+    negate = op in _PQ_NEGATIVE
+    if kind == "text":
+        if base == "vuoto":
+            test = lambda v: not str(v or "").strip()
+        elif base == "uguale":
+            want = _pq_norm(filt.get("valore"))
+            test = lambda v: _pq_norm(v) == want
+        elif base == "contiene":
+            want = _pq_norm(filt.get("valore"))
+            test = lambda v: want in _pq_norm(v)
+        else:
+            wants = {_pq_norm(x) for x in _pq_values_list(op, key, filt)}
+            test = lambda v: _pq_norm(v) in wants
+    else:
+        if base == "vuoto":
+            test = lambda v: v is None
+        elif base == "uguale":
+            want = _pq_num_value(key, filt.get("valore"))
+            test = lambda v: v is not None and abs(v - want) < 0.005
+        elif base in ("maggiore", "maggiore_uguale", "minore", "minore_uguale"):
+            want = _pq_num_value(key, filt.get("valore"))
+            fn = {"maggiore": lambda v: v > want + 1e-9, "maggiore_uguale": lambda v: v >= want - 1e-9,
+                  "minore": lambda v: v < want - 1e-9, "minore_uguale": lambda v: v <= want + 1e-9}[base]
+            test = lambda v: v is not None and fn(v)
+        elif base == "tra":
+            vals = filt.get("valori")
+            if not isinstance(vals, list) or len(vals) != 2:
+                raise ToolInputError(f"L'operatore 'tra' sul campo {key} richiede 'valori' con esattamente due elementi.")
+            lo, hi = _pq_num_value(key, vals[0]), _pq_num_value(key, vals[1])
+            test = lambda v: v is not None and lo - 1e-9 <= v <= hi + 1e-9
+        else:
+            wants = [_pq_num_value(key, x) for x in _pq_values_list(op, key, filt)]
+            test = lambda v: v is not None and any(abs(v - w) < 0.005 for w in wants)
+    return (lambda v: not test(v)) if negate else test
+
+
+def _pq_computed_values(c, row):
+    canale = DEPS.payment_channel(row)
+    return {
+        "totale_pratica": round(DEPS.effective_total(row), 2),
+        "incassato": round(DEPS.channel_paid_amount(c, row["id"], canale), 2),
+        "rimanenza": round(DEPS.channel_remaining(row), 2),
+        "circuito_economico": canale,
+    }
+
+
+_PQ_DEFAULT_LIST_FIELDS = ("numero_pratica", "animale", "specie", "proprietario", "stato", "sede", "servizio", "data_ritiro")
+_PQ_EMPTY_LABEL = "(vuoto)"
+
+
+def _pq_display(key, f, raw):
+    """Valore leggibile per un campo (usato in elenchi e gruppi)."""
+    if f.get("multi"):
+        vals = [x for x in str(raw).split(_PQ_MULTI_SEP) if x.strip()] if raw not in (None, "") else []
+        return vals
+    kind = f["kind"]
+    if key == "provenienza":
+        return _PROVENANCE_LABELS.get(str(raw or "").strip().upper(), raw if raw not in (None, "") else None)
+    if kind == "bool":
+        return bool(raw)
+    if kind == "flag":
+        return _pq_norm(raw) in _PQ_TRUE
+    if kind == "date":
+        return str(raw)[:10] if raw not in (None, "") else None
+    if raw is None or raw == "":
+        return None
+    return raw
+
+
+def _pq_group_key(key, f, raw, granularity):
+    v = _pq_display(key, f, raw)
+    if f["kind"] == "date" and v:
+        v = {"anno": v[:4], "mese": v[:7]}.get(granularity, v[:10])
+    if isinstance(v, bool):
+        return "si" if v else "no"
+    return v
+
+
+def _pq_num_of(f, value):
+    """Valore numerico di un campo per le aggregazioni; None se vuoto."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    return float(DEPS.money_value(value))
+
+
+def _pq_aggregate(specs, rows_values):
+    """specs: [(funzione, chiave)], rows_values: {chiave: [valori numerici o None]}."""
+    out = []
+    for fn, key in specs:
+        vals = [v for v in rows_values.get(key, []) if v is not None]
+        if fn == "conteggio_valorizzati":
+            res = len(vals)
+        elif not vals:
+            res = None
+        elif fn == "somma":
+            res = round(sum(vals), 2)
+        elif fn == "media":
+            res = round(sum(vals) / len(vals), 2)
+        elif fn == "minimo":
+            res = round(min(vals), 2)
+        else:
+            res = round(max(vals), 2)
+        out.append({"funzione": fn, "campo": key, "valore": res, "valori_considerati": len(vals)})
+    return out
+
+
+_PQ_AGG_FUNCS = ("somma", "media", "minimo", "massimo", "conteggio_valorizzati")
+_PQ_OUTPUTS = ("conteggio", "elenco", "raggruppa")
+
+
+def _tool_interroga_pratiche(c, user, now, p):
+    _pq_register_functions(c)
+    reg = _pq_registry(c)
+    output = (p.get("output") or "conteggio").strip().lower()
+    if output not in _PQ_OUTPUTS:
+        raise ToolInputError(f"output deve essere uno tra: {', '.join(_PQ_OUTPUTS)}.")
+
+    # --- filtri -------------------------------------------------------------
+    filtri_in = p.get("filtri") or []
+    if not isinstance(filtri_in, list):
+        raise ToolInputError("'filtri' deve essere un elenco di oggetti {campo, operatore, valore/valori}.")
+    if len(filtri_in) > 30:
+        raise ToolInputError("Troppi filtri (massimo 30).")
+    where: list = []
+    args: list = []
+    py_tests: list = []
+    filtri_desc: list = []
+    for filt in filtri_in:
+        sql, a, desc, py = _pq_compile_filter(reg, filt)
+        filtri_desc.append(desc)
+        if py is not None:
+            py_tests.append((desc["campo"], py))
+        else:
+            where.append(sql)
+            args += a
+
+    testo = (p.get("testo_libero") or "").strip()
+    if testo:
+        cols = [f["sql"] for f in reg.values() if f.get("column") and f["kind"] in ("text", "date", "num", "money") and not f.get("multi")]
+        blob = "||char(31)||".join(f"COALESCE(CAST({s} AS TEXT),'')" for s in cols)
+        where.append(f"PPM_NORM({blob}) LIKE ? ESCAPE '\\'")
+        args.append("%" + _pq_norm(testo).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
+        filtri_desc.append({"campo": "testo_libero", "operatore": "contiene", "valore": testo})
+
+    # --- fase (stessa definizione di conta_ritiri / conta_riconsegne) --------
+    fase = p.get("fase")
+    campo_data = p.get("campo_data")
+    if fase:
+        if fase == "ritirati":
+            where.append("practices.status IN ('Ritirato','Cremato','Da consegnare','Consegnato','Smaltito')")
+            campo_data = campo_data or "data_ritiro_effettiva"
+        elif fase == "riconsegnati":
+            where.append("practices.status='Consegnato'")
+            campo_data = campo_data or "data_consegna_effettiva"
+        else:
+            raise ToolInputError("fase deve essere una tra: ritirati, riconsegnati.")
+        filtri_desc.append({"fase": fase})
+
+    # --- periodo ------------------------------------------------------------
+    d_from, d_to, label = resolve_period(now, p.get("periodo"), p.get("data_da"), p.get("data_a"), optional=True)
+    date_key, date_field = _pq_field(reg, campo_data or "data_pratica")
+    if date_field["kind"] != "date" or date_field.get("multi") or date_field.get("computed"):
+        raise ToolInputError(f"campo_data deve essere un campo di tipo data (es. data_pratica, data_ritiro, data_creazione, data_ritiro_effettiva, data_consegna_effettiva, ciclo_data): '{date_key}' non lo e'.")
+    if d_from:
+        where.append(f"date({date_field['sql']})>=date(?)")
+        args.append(d_from)
+    if d_to:
+        where.append(f"date({date_field['sql']})<=date(?)")
+        args.append(d_to)
+
+    # --- cestino ------------------------------------------------------------
+    cestino = (p.get("cestino") or "escludi").strip().lower()
+    if cestino == "escludi":
+        where.append("(practices.deleted_at IS NULL OR practices.deleted_at='')")
+    elif cestino == "solo":
+        where.append("COALESCE(practices.deleted_at,'')<>''")
+    elif cestino != "includi":
+        raise ToolInputError("cestino deve essere uno tra: escludi (default), includi, solo.")
+    where_sql = " AND ".join(f"({w})" for w in where) or "1=1"
+
+    # --- aggregazioni -------------------------------------------------------
+    agg_specs: list = []
+    for a in (p.get("aggregazioni") or []):
+        if not isinstance(a, dict):
+            raise ToolInputError("Ogni aggregazione deve essere {funzione, campo}.")
+        fn = str(a.get("funzione") or "").strip().lower()
+        if fn not in _PQ_AGG_FUNCS:
+            raise ToolInputError(f"funzione di aggregazione deve essere una tra: {', '.join(_PQ_AGG_FUNCS)}.")
+        akey, af = _pq_field(reg, a.get("campo"))
+        if af["kind"] not in _PQ_NUMERIC_KINDS or af.get("multi"):
+            raise ToolInputError(f"Il campo '{akey}' non e' numerico/monetario: non si puo' aggregare. Campi aggregabili: {', '.join(k for k, v in reg.items() if v['kind'] in _PQ_NUMERIC_KINDS and not v.get('multi'))}.")
+        agg_specs.append((fn, akey))
+
+    # --- campi richiesti dall'output ----------------------------------------
+    group_keys: list = []
+    if output == "raggruppa":
+        rg = p.get("raggruppa_per")
+        if isinstance(rg, str):
+            rg = [rg]
+        if not isinstance(rg, list) or not 1 <= len(rg) <= 2:
+            raise ToolInputError("Per output='raggruppa' indica 'raggruppa_per' con 1 o 2 campi.")
+        group_keys = [_pq_field(reg, x)[0] for x in rg]
+    list_keys: list = []
+    sort_key = None
+    sort_desc = True
+    if output == "elenco":
+        campi = p.get("campi") or list(_PQ_DEFAULT_LIST_FIELDS)
+        if isinstance(campi, str):
+            campi = [campi]
+        if [str(x).strip().lower() for x in campi] == ["tutti"]:
+            list_keys = [k for k in reg]
+        else:
+            list_keys = [_pq_field(reg, x)[0] for x in campi]
+        sort_key = _pq_field(reg, p.get("ordina_per") or "data_pratica")[0]
+        sort_desc = (p.get("ordine") or "desc").strip().lower() != "asc"
+    granularity = (p.get("granularita_data") or "giorno").strip().lower()
+    if granularity not in ("giorno", "mese", "anno"):
+        raise ToolInputError("granularita_data deve essere una tra: giorno, mese, anno.")
+
+    needed = list(dict.fromkeys(group_keys + list_keys + ([sort_key] if sort_key else []) + [k for _, k in agg_specs] + [k for k, _ in py_tests]))
+    need_row = any(reg[k].get("computed") for k in needed)
+    limite_default = 25 if output == "elenco" else 50
+    limite = p.get("limite", limite_default)
+    if not isinstance(limite, int) or isinstance(limite, bool) or limite < 1:
+        raise ToolInputError("limite deve essere un intero positivo.")
+    limite = min(limite, 200 if output == "raggruppa" else (20 if list_keys and len(list_keys) > 30 else 100))
+
+    base = {
+        "periodo_analizzato": label or "tutto il periodo disponibile",
+        "campo_data_periodo": date_key if (d_from or d_to) else None,
+        "filtri_applicati": filtri_desc,
+        "pratiche_nel_cestino": {"escludi": "escluse", "includi": "incluse", "solo": "solo quelle nel cestino"}[cestino],
+    }
+
+    # Conteggio puro: tutto in SQL, nessuna riga trasferita.
+    if output == "conteggio" and not py_tests and not agg_specs:
+        n = c.execute(f"SELECT COUNT(*) n FROM practices WHERE {where_sql}", args).fetchone()["n"]
+        return {"conteggio": n, **base}
+
+    # Selezione delle colonne necessarie (id + espressioni; riga intera solo se
+    # servono campi calcolati).
+    select = ["practices.id AS _id"]
+    if need_row:
+        select.append("practices.*")
+    aliases: dict = {}
+    for i, k in enumerate(needed):
+        f = reg[k]
+        if f.get("computed"):
+            continue
+        alias = f"_f{i}"
+        aliases[k] = alias
+        if f.get("multi"):
+            m = f["multi"]
+            select.append(f"(SELECT GROUP_CONCAT({m['expr']}, char(31)) FROM {m['from']}) AS {alias}")
+        else:
+            select.append(f"{f['sql']} AS {alias}")
+    cur = c.execute(f"SELECT {', '.join(select)} FROM practices WHERE {where_sql}", args)
+    rows = cur.fetchmany(_PQ_MAX_ROWS + 1)
+    if len(rows) > _PQ_MAX_ROWS:
+        raise ToolInputError(f"Troppe pratiche corrispondenti (oltre {_PQ_MAX_ROWS}): restringi con un periodo o altri filtri.")
+
+    records = []
+    for r in rows:
+        comp = _pq_computed_values(c, r) if need_row else {}
+        vals = {}
+        for k in needed:
+            vals[k] = comp[k] if reg[k].get("computed") else r[aliases[k]]
+        if not all(test(comp[k]) for k, test in py_tests):
+            continue
+        records.append((r["_id"], vals))
+
+    def numeric_columns(recs):
+        cols: dict = {}
+        for _, v in recs:
+            for _, k in agg_specs:
+                cols.setdefault(k, []).append(_pq_num_of(reg[k], v[k]))
+        return cols
+
+    if output == "conteggio":
+        result = {"conteggio": len(records), **base}
+        if agg_specs:
+            result["aggregazioni"] = _pq_aggregate(agg_specs, numeric_columns(records))
+        return result
+
+    if output == "raggruppa":
+        groups: dict = {}
+        for pid, v in records:
+            per_field = []
+            for k in group_keys:
+                gv = _pq_group_key(k, reg[k], v[k], granularity)
+                if isinstance(gv, list):
+                    gv = gv or [None]
+                else:
+                    gv = [gv]
+                per_field.append([_PQ_EMPTY_LABEL if x in (None, "") else x for x in gv])
+            combos = [()]
+            for options in per_field:
+                combos = [cmb + (o,) for cmb in combos for o in dict.fromkeys(options)]
+            for cmb in combos:
+                groups.setdefault(cmb, []).append((pid, v))
+        order = (p.get("ordina_gruppi_per") or "conteggio").strip().lower()
+        if order not in ("conteggio", "chiave"):
+            raise ToolInputError("ordina_gruppi_per deve essere uno tra: conteggio, chiave.")
+        items = sorted(groups.items(), key=(lambda kv: (-len(kv[1]), [str(x) for x in kv[0]])) if order == "conteggio" else (lambda kv: [str(x) for x in kv[0]]))
+        gruppi = []
+        for cmb, recs in items[:limite]:
+            g = {"valori": dict(zip(group_keys, cmb)), "conteggio": len(recs)}
+            if agg_specs:
+                g["aggregazioni"] = _pq_aggregate(agg_specs, numeric_columns(recs))
+            gruppi.append(g)
+        result = {
+            "raggruppato_per": group_keys, "totale_pratiche": len(records), "numero_gruppi": len(items),
+            "gruppi": gruppi, "gruppi_troncati": len(items) > limite, **base,
+        }
+        if any(reg[k].get("multi") for k in group_keys):
+            result["nota"] = "Un campo con piu' valori per pratica (es. piu' urne): una pratica compare in ogni gruppo dei suoi valori, quindi la somma dei gruppi puo' superare totale_pratiche."
+        if agg_specs:
+            result["aggregazioni_totali"] = _pq_aggregate(agg_specs, numeric_columns(records))
+        return result
+
+    # elenco
+    def sort_value(rec):
+        v = _pq_display(sort_key, reg[sort_key], rec[1][sort_key])
+        if isinstance(v, list):
+            v = v[0] if v else None
+        if v is None:
+            return None
+        kind = reg[sort_key]["kind"]
+        if kind in _PQ_NUMERIC_KINDS:
+            return _pq_num_of(reg[sort_key], rec[1][sort_key])
+        if isinstance(v, bool):
+            return int(v)
+        return str(v).casefold()
+
+    present = [r for r in records if sort_value(r) is not None]
+    missing = [r for r in records if sort_value(r) is None]
+    present.sort(key=lambda r: (sort_value(r), r[0]), reverse=sort_desc)
+    ordered = present + missing
+    shown = ordered[:limite]
+    # Per l'elenco servono i valori dei campi richiesti anche se non erano
+    # stati selezionati (list_keys e' gia' dentro needed): costruzione output.
+    elenco = []
+    for pid, v in shown:
+        item = {"id": pid, "url": f"/pratiche/{pid}"}
+        for k in list_keys:
+            item[k] = _pq_display(k, reg[k], v[k])
+        elenco.append(item)
+    return {
+        "totale_corrispondenti": len(records), "elenco": elenco,
+        "elenco_troncato": len(records) > limite, "limite_applicato": limite,
+        "ordinato_per": sort_key, "ordine": "decrescente" if sort_desc else "crescente", **base,
+    }
+
+
+def _tool_campi_pratiche(c, user, now, p):
+    reg = _pq_registry(c)
+    cerca = _pq_norm(p.get("cerca"))
+    campi = []
+    for key, f in reg.items():
+        if cerca and cerca not in key.lower() and cerca not in _pq_norm(f["desc"]):
+            continue
+        entry = {"campo": key, "tipo": f["kind"], "descrizione": f["desc"]}
+        enum = _pq_enum(key)
+        if enum:
+            entry["valori_ammessi"] = enum
+        if key == "provenienza":
+            entry["valori_ammessi"] = list(_PROVENANCE_LABELS.values())
+        if f.get("multi"):
+            entry["nota"] = "campo con piu' valori per pratica"
+        if f.get("computed"):
+            entry["nota"] = "calcolato per ogni pratica (piu' lento su molte pratiche)"
+        campi.append(entry)
+    return {
+        "campi": campi, "numero_campi": len(campi),
+        "operatori_per_tipo": {k: list(v) for k, v in _PQ_OPS_BY_KIND.items()},
+        "nota": "Tipi: text=testo (confronto senza distinzione maiuscole/minuscole), num/money/int=numeri (campo vuoto = 0 nei confronti; usa vuoto/non_vuoto per distinguerlo), date=date AAAA-MM-GG, flag=si/no, bool=vero/falso. Per scoprire i valori realmente presenti in un campo usa interroga_pratiche con output='raggruppa' e raggruppa_per=[campo].",
+    }
+
+
 TOOL_SPECS = [
     {
         "name": "conta_cremazioni",
@@ -1581,6 +2391,51 @@ TOOL_SPECS = [
         "handler": _tool_dettaglio_evento_calendario,
     },
     {
+        "name": "campi_pratiche",
+        "description": "Elenca TUTTI i campi di una pratica che si possono filtrare, contare, raggruppare, sommare o elencare con interroga_pratiche (ogni campo delle schede pratica: anagrafica, animale, servizio singola/collettiva, sede, stato, prezzi, pagamenti, fatture, voci urna/calco/accessorio, ciclo di cremazione, calendario, WhatsApp, veterinario, collaboratore, etichette...), con tipo, descrizione e valori ammessi. Usalo quando non sei sicuro del nome di un campo (parametro 'cerca' per restringere, es. 'urna', 'fattura'). PRIMA di dire all'utente che un dato delle pratiche non e' filtrabile controlla qui: quasi certamente lo e'.",
+        "input_schema": _schema({"cerca": {"type": "string", "description": "Testo da cercare nel nome o nella descrizione dei campi (es. 'urna', 'pagamento', 'data'). Omesso = tutti i campi."}}),
+        "handler": _tool_campi_pratiche,
+    },
+    {
+        "name": "interroga_pratiche",
+        "description": "Strumento UNIVERSALE sulle pratiche: conta, elenca, raggruppa o somma le pratiche filtrando su QUALSIASI campo/sezione (servizio singola/collettiva, stato, sede, provenienza, specie, razza, urna/calco/accessorio, veterinario, collaboratore, importi, date, ciclo, calendario, WhatsApp, note, ...) in QUALSIASI periodo. Usalo per ogni domanda sulle pratiche che combina filtri o chiede una suddivisione: 'quante singole e quante collettive nel periodo' = output='raggruppa', raggruppa_per=['servizio'] con il periodo; 'quante singole a Empoli' = output='conteggio' con filtri; 'elenca le pratiche con urna X' = output='elenco'; 'incasso medio per servizio' = raggruppa + aggregazioni. Per i 'ritiri effettuati' / 'riconsegne' di un periodo usa fase='ritirati'/'riconsegnati' (stessa definizione di conta_ritiri/conta_riconsegne, quindi i numeri coincidono). Filtri: lista di {campo, operatore, valore | valori}; operatori: uguale, diverso, contiene, non_contiene, in, non_in, maggiore, maggiore_uguale, minore, minore_uguale, tra, vuoto, non_vuoto (i testi si confrontano senza distinguere maiuscole/minuscole; per i servizi valgono anche 'singola'/'collettiva'). Campi principali: servizio, stato, sede, provenienza, origine_richiesta, operatore, proprietario, animale, specie, razza, peso, eta_anni, data_ritiro, data_creazione, urna, calco, accessorio, veterinario, collaboratore, totale_pratica, incassato, rimanenza, stato_pagamento, ciclo_stato, in_ciclo, numero_fattura... ma OGNI campo e' disponibile: usa campi_pratiche per l'elenco completo. Non dire mai all'utente che non puoi filtrare per un campo delle pratiche senza aver controllato campi_pratiche.",
+        "input_schema": _schema({
+            **_PERIOD_PROPS,
+            "campo_data": {"type": "string", "description": "Campo data a cui applicare il periodo. Default data_pratica (data di ritiro, o di creazione se assente: come conta_pratiche). Altri: data_ritiro, data_creazione, data_ritiro_effettiva, data_consegna_effettiva, ciclo_data, data_fattura, data_saldo, ..."},
+            "fase": {"type": "string", "enum": ["ritirati", "riconsegnati"], "description": "Restringe alle pratiche con ritiro effettuato / riconsegna effettuata e usa la data corrispondente per il periodo (stessi criteri di conta_ritiri/conta_riconsegne e della dashboard)."},
+            "filtri": {
+                "type": "array",
+                "description": "Filtri combinati in AND.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "campo": {"type": "string", "description": "Nome del campo (vedi campi_pratiche)."},
+                        "operatore": {"type": "string", "enum": list(_PQ_ALL_OPS), "description": "Default 'uguale'."},
+                        "valore": {"description": "Valore singolo (testo, numero, data AAAA-MM-GG, true/false)."},
+                        "valori": {"type": "array", "items": {}, "description": "Per in/non_in (elenco) e tra ([minimo, massimo])."},
+                    },
+                    "required": ["campo"],
+                },
+            },
+            "testo_libero": {"type": "string", "description": "Cerca un testo in TUTTI i campi di testo della pratica (note, nomi, indirizzi, ...)."},
+            "cestino": {"type": "string", "enum": ["escludi", "includi", "solo"], "description": "Pratiche nel cestino: escluse di default."},
+            "output": {"type": "string", "enum": list(_PQ_OUTPUTS), "description": "conteggio (default), elenco, raggruppa (conteggio per valore di uno o due campi: e' anche il modo per scoprire i valori realmente presenti in un campo)."},
+            "raggruppa_per": {"type": "array", "items": {"type": "string"}, "description": "Con output='raggruppa': 1 o 2 campi (es. ['servizio'], ['servizio','sede'], ['data_ritiro'])."},
+            "granularita_data": {"type": "string", "enum": ["giorno", "mese", "anno"], "description": "Se si raggruppa per un campo data: granularita' (default giorno)."},
+            "ordina_gruppi_per": {"type": "string", "enum": ["conteggio", "chiave"]},
+            "aggregazioni": {
+                "type": "array",
+                "description": "Somme/medie su campi numerici o monetari (es. totale_pratica, incassato, rimanenza, prezzo_urna, peso), sul totale e per gruppo.",
+                "items": {"type": "object", "properties": {"funzione": {"type": "string", "enum": list(_PQ_AGG_FUNCS)}, "campo": {"type": "string"}}, "required": ["funzione", "campo"]},
+            },
+            "campi": {"type": "array", "items": {"type": "string"}, "description": "Con output='elenco': campi da mostrare (default: numero_pratica, animale, specie, proprietario, stato, sede, servizio, data_ritiro). ['tutti'] = ogni campo (max 20 righe)."},
+            "ordina_per": {"type": "string", "description": "Con output='elenco': campo di ordinamento (default data_pratica)."},
+            "ordine": {"type": "string", "enum": ["asc", "desc"]},
+            "limite": {"type": "integer", "description": "Massimo righe/gruppi restituiti (elenco default 25, max 100; gruppi default 50, max 200)."},
+        }),
+        "handler": _tool_interroga_pratiche,
+    },
+    {
         "name": "conta_pratiche",
         "description": "Conta le pratiche con i filtri indicati (periodo opzionale, stato, sede, cliente, animale, operatore che ha gestito la pratica, veterinario, collaboratore, provenienza, origine della richiesta). Se non specifichi un periodo conta su tutto lo storico. 'provenienza' (Livorno/Empoli/Viareggio/Firenze/Pisa, un ELENCO: puoi indicare piu' zone insieme in un'unica chiamata, es. per una zona operativa aggregata) e' la zona di origine della pratica (campo 'Luogo di origine' del form) - un campo DIVERSO dalla sede di destinazione ('sede', solo Livorno/Empoli): non confonderli.",
         "input_schema": _schema({**_PERIOD_PROPS, "stato": {"type": "string"}, "sede": {"type": "string", "enum": list(SHIFT_BRANCHES)}, "cliente_nome": {"type": "string"}, "animale_nome": {"type": "string"}, "operatore_nome": {"type": "string"}, "veterinario_nome": {"type": "string"}, "collaboratore_nome": {"type": "string"}, "provenienza": _PROVENIENZA_PROP, "origine_richiesta": {"type": "string", "enum": list(_REQUEST_ORIGINS)}}),
@@ -1600,7 +2455,7 @@ TOOL_SPECS = [
     },
     {
         "name": "dettaglio_pratica",
-        "description": "Restituisce il dettaglio completo di UNA pratica (stato, sede, animale, proprietario, totale, gia' incassato, rimanenza, circuito economico W/D, url per aprirla nel gestionale) dato l'id o il numero pratica. Se non conosci l'id/numero, usa prima cerca_pratiche.",
+        "description": "Restituisce il dettaglio completo di UNA pratica (stato, sede, animale, proprietario, totale, gia' incassato, rimanenza, circuito economico W/D, url per aprirla nel gestionale, piu' 'tutti_i_campi': OGNI campo e sezione della pratica - anagrafica, prezzi, voci urna/calco/accessorio, ciclo, calendario, WhatsApp, veterinario, collaboratore, fatturazione, etichette) dato l'id o il numero pratica. Se non conosci l'id/numero, usa prima cerca_pratiche.",
         "input_schema": _schema({"id": {"type": "integer"}, "numero_pratica": {"type": "string"}}),
         "handler": _tool_dettaglio_pratica,
     },
@@ -1782,6 +2637,8 @@ Se la domanda e' ambigua (non e' chiaro a quale dominio si riferisce, es. cremaz
 CONTINUITA' DELLA CONVERSAZIONE: quando una domanda e' un follow-up implicito di quella precedente (es. dopo "quanto abbiamo incassato ad agosto?" l'utente chiede "e a luglio?" oppure "e a Empoli?"), mantieni lo stesso strumento/metrica della domanda precedente e applica SOLO il cambiamento esplicitamente indicato (il nuovo mese, la nuova sede, ...), lasciando invariato tutto il resto del contesto precedente. Un dato esplicito nella nuova domanda ha sempre priorita' sul contesto precedente e non deve mai esserne sovrascritto. Se il follow-up e' troppo generico per capire quale metrica riusare (es. cambia argomento senza specificare cosa), chiedi un chiarimento invece di indovinare quale strumento richiamare.
 
 Quando rispondi con un dato ottenuto da uno strumento, sii conciso ma specifica il perimetro del dato (periodo, sede o altri filtri applicati) cosi' l'utente capisce su cosa si basa il risultato. Quando lo strumento restituisce un campo 'url' per una pratica/evento specifico, includilo nella risposta (es. "Puoi aprirla qui: [url]") cosi' l'utente puo' aprirla direttamente nel gestionale. Rispondi sempre in italiano, in modo diretto e senza dettagli tecnici (mai SQL, mai nomi di tabelle).
+
+PRATICHE - ACCESSO COMPLETO: hai accesso a TUTTI i campi, le voci e le sezioni delle pratiche tramite interroga_pratiche (filtra/conta/raggruppa/somma/elenca su qualsiasi campo e periodo) e campi_pratiche (elenco dei campi). Per qualunque domanda che riguarda pratiche filtrate o suddivise per un campo (singole/collettive, sede, provenienza, specie, urna, veterinario, importi, stato pagamento, ciclo, ...) usa interroga_pratiche: non rispondere MAI "non ho uno strumento per filtrare quel campo" senza aver prima controllato campi_pratiche, e non dire mai che un dato delle pratiche non e' accessibile se puo' essere ottenuto con un filtro, un raggruppamento o un elenco. Se un valore filtrato da' zero risultati inattesi, verifica i valori realmente presenti con output='raggruppa' sul campo. I conteggi restano sempre quelli restituiti dallo strumento.
 
 Puoi chiamare piu' strumenti, anche piu' volte con filtri diversi, per rispondere a domande di confronto (es. confrontare due sedi chiamando lo stesso strumento due volte con sede diversa) o che richiedono piu' fonti. Per una domanda semplice usa il minor numero di strumenti necessario; per "cosa devo fare oggi"/riepiloghi di giornata usa riepilogo_giornata invece di richiamare separatamente ogni singolo strumento.
 
