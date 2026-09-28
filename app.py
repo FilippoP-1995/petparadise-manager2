@@ -2348,6 +2348,11 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-animal-urn{display:flex;align-items:center;flex-wrap:wrap;gap:5px;font-size:12px;color:#cbd5e1}
 .cremation-animal-accessory{display:flex;align-items:center;gap:4px}
 .cremation-animal-urn .icon{width:13px;height:13px}
+.cremation-animal-urn-item{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap}
+.cremation-urn-view-btn{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border:1px solid #60a5fa66;border-radius:999px;color:#60a5fa;font-size:10.5px;font-weight:700;white-space:nowrap;text-decoration:none}
+.cremation-urn-view-btn:hover{background:#60a5fa22}
+.cremation-urn-view-btn .icon{width:11px;height:11px}
+@media(max-width:620px){.cremation-urn-view-btn{padding:5px 10px;font-size:12px}}
 .cremation-animal-actions{display:flex;align-items:center;gap:8px;margin-left:auto}.cremation-animal-notes{grid-column:1/-1;display:flex;align-items:flex-start;gap:8px;margin-top:6px;padding:8px 10px;border-radius:10px;background:#0f172a;border:1px solid #263246;color:#cbd5e1;font-size:13px;cursor:default}.cremation-animal-notes .icon{width:14px;height:14px;flex:0 0 14px;margin-top:2px;color:#94a3b8}.light-theme .cremation-animal-notes{background:#f8fafc;border-color:#e2e8f0;color:#334155}.cremation-animal-contact{grid-column:1/-1;display:flex;align-items:center;gap:8px;margin-top:6px;font-size:13px;color:#cbd5e1}.light-theme .cremation-animal-contact{color:#334155}.cremation-notify{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin-top:8px;padding:10px 12px;border-radius:12px;background:#0f172a;border:1px solid #263246;cursor:default}.cremation-notify-head{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.03em}.cremation-notify-head .icon{width:14px;height:14px}.cremation-notify-body{display:flex;flex-wrap:wrap;align-items:center;gap:10px}.cremation-notify-badge{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:999px;font-size:13px;font-weight:800;letter-spacing:.02em}.cremation-notify-red{background:#450a0a;color:#fca5a5;box-shadow:0 0 0 1px #ef444450 inset}.cremation-notify-green{background:#052e16;color:#86efac;box-shadow:0 0 0 1px #22c55e50 inset}.cremation-notify-detail{display:flex;gap:8px;font-size:12px;color:#94a3b8}.cremation-notify-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-left:auto}.cremation-notify-toggle{padding:7px 14px;border-radius:9px;border:1px solid #ef444470;background:#7f1d1d;color:#fecaca;font-weight:700;font-size:12.5px;cursor:pointer;white-space:nowrap}.cremation-notify-toggle:hover{background:#991b1b}.cremation-notify-toggle-undo{background:transparent;border-color:#334155;color:#94a3b8}.cremation-notify-toggle-undo:hover{background:#1f2937}.cremation-notify-wa{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:9px;background:#052e16;color:#25d366;font-weight:700;font-size:12.5px;text-decoration:none;white-space:nowrap}.cremation-notify-wa:hover{background:#064e26}.cremation-notify-wa .icon{width:15px;height:15px}.cremation-notify-wa-disabled{opacity:.4;cursor:not-allowed;pointer-events:none}.light-theme .cremation-notify{background:#f8fafc;border-color:#e2e8f0}.light-theme .cremation-notify-head{color:#64748b}.light-theme .cremation-notify-detail{color:#64748b}.light-theme .cremation-notify-toggle-undo{border-color:#cbd5e1;color:#64748b}@media(max-width:620px){.cremation-notify-actions{margin-left:0;width:100%}.cremation-notify-toggle,.cremation-notify-wa{flex:1 1 auto;justify-content:center}}
 .cremation-waiting-row-wide{display:flex;flex-wrap:wrap;align-items:center;gap:16px;padding:12px 0;border-top:1px solid #263246;cursor:pointer}
 .cremation-waiting-list .cremation-waiting-row-wide:first-child{border-top:none;padding-top:6px}
@@ -13307,8 +13312,15 @@ class App(BaseHTTPRequestHandler):
             accessory_items_by_practice={}
             if practice_ids:
                 marks=','.join('?' for _ in practice_ids)
-                for irow in c.execute(f"SELECT practice_id,label FROM practice_items WHERE practice_id IN ({marks}) AND category='urna' ORDER BY practice_id,sort_order",tuple(practice_ids)):
-                    urn_items_by_practice.setdefault(irow["practice_id"],[]).append(irow["label"])
+                # urn_catalog_id (LEFT JOIN, solo se l'urna e' ancora attiva
+                # nel catalogo) serve al tasto "Vedi urna" di ogni voce -
+                # richiesta esplicita dell'utente: mai un link a una scheda
+                # rimossa dal catalogo (soft-delete, active=0), in quel caso
+                # nessun tasto, solo l'etichetta come prima.
+                for irow in c.execute(f"""SELECT pi.practice_id,pi.label,u.id AS urn_catalog_id FROM practice_items pi
+                                          LEFT JOIN urns u ON u.id=pi.urn_catalog_id AND u.active=1
+                                          WHERE pi.practice_id IN ({marks}) AND pi.category='urna' ORDER BY pi.practice_id,pi.sort_order""",tuple(practice_ids)):
+                    urn_items_by_practice.setdefault(irow["practice_id"],[]).append({"label":irow["label"],"urn_catalog_id":irow["urn_catalog_id"]})
                 for irow in c.execute(f"SELECT practice_id,label FROM practice_items WHERE practice_id IN ({marks}) AND category='accessorio' ORDER BY practice_id,sort_order",tuple(practice_ids)):
                     accessory_items_by_practice.setdefault(irow["practice_id"],[]).append(irow["label"])
             collaborator_ids={int(row["collaborator_id"]) for row in all_rows if "collaborator_id" in row.keys() and row["collaborator_id"]}
@@ -13334,14 +13346,28 @@ class App(BaseHTTPRequestHandler):
 
         def urn_value(row):
             labels=[]
-            for label in urn_items_by_practice.get(row["id"],[]):
-                label=compact_text(label)
+            for item in urn_items_by_practice.get(row["id"],[]):
+                label=compact_text(item["label"])
                 if label:labels.append(label)
             return " / ".join(labels)
 
         def urn_html(row):
-            value=urn_value(row)
-            if value:return f'{lucide("archive")}<span>{esc(value)}</span>'
+            items=[(label,item["urn_catalog_id"]) for item in urn_items_by_practice.get(row["id"],[]) for label in [compact_text(item["label"])] if label]
+            if items:
+                # Un tasto "Vedi urna" per OGNI urna della pratica (richiesta
+                # esplicita dell'utente), verso la sua scheda nel catalogo
+                # urne - solo se l'urna e' ancora presente e attiva nel
+                # catalogo (urn_catalog_id gia' filtrato su active=1 nella
+                # query che popola urn_items_by_practice): un'urna scritta a
+                # mano o rimossa dal catalogo mostra solo l'etichetta, mai
+                # un tasto che porterebbe a una scheda inesistente.
+                parts=''.join(
+                    f'<span class="cremation-animal-urn-item"><span>{esc(label)}</span>'
+                    + (f'<a class="cremation-urn-view-btn" href="/catalogo-urne/{urn_id}" onclick="event.stopPropagation()" title="Vedi {esc(label)} nel catalogo urne">{lucide("eye")}<span>Vedi urna</span></a>' if urn_id else '')
+                    + '</span>'
+                    for label,urn_id in items
+                )
+                return f'{lucide("archive")}{parts}'
             if row["send_catalog"]=="Si":return '<span class="badge tag-outline-orange">INVIARE CATALOGO</span>'
             return '<span class="cremation-dash">—</span>'
 
@@ -13820,8 +13846,15 @@ class App(BaseHTTPRequestHandler):
             accessory_items_by_practice={}
             if practice_ids:
                 marks3=','.join('?' for _ in practice_ids)
-                for irow in c.execute(f"SELECT practice_id,label FROM practice_items WHERE practice_id IN ({marks3}) AND category='urna' ORDER BY practice_id,sort_order",tuple(practice_ids)):
-                    urn_items_by_practice.setdefault(irow["practice_id"],[]).append(irow["label"])
+                # urn_catalog_id (LEFT JOIN, solo se l'urna e' ancora attiva
+                # nel catalogo) serve al tasto "Vedi urna" di ogni voce -
+                # richiesta esplicita dell'utente: mai un link a una scheda
+                # rimossa dal catalogo (soft-delete, active=0), in quel caso
+                # nessun tasto, solo l'etichetta come prima.
+                for irow in c.execute(f"""SELECT pi.practice_id,pi.label,u.id AS urn_catalog_id FROM practice_items pi
+                                          LEFT JOIN urns u ON u.id=pi.urn_catalog_id AND u.active=1
+                                          WHERE pi.practice_id IN ({marks3}) AND pi.category='urna' ORDER BY pi.practice_id,pi.sort_order""",tuple(practice_ids)):
+                    urn_items_by_practice.setdefault(irow["practice_id"],[]).append({"label":irow["label"],"urn_catalog_id":irow["urn_catalog_id"]})
                 for irow in c.execute(f"SELECT practice_id,label FROM practice_items WHERE practice_id IN ({marks3}) AND category='accessorio' ORDER BY practice_id,sort_order",tuple(practice_ids)):
                     accessory_items_by_practice.setdefault(irow["practice_id"],[]).append(irow["label"])
             collaborator_ids={int(row["collaborator_id"]) for row in all_rows if "collaborator_id" in row.keys() and row["collaborator_id"]}
@@ -13869,14 +13902,31 @@ class App(BaseHTTPRequestHandler):
 
         def urn_value(row):
             labels=[]
-            for label in urn_items_by_practice.get(row["id"],[]):
-                label=compact_text(label)
+            for item in urn_items_by_practice.get(row["id"],[]):
+                label=compact_text(item["label"])
                 if label:labels.append(label)
             return " / ".join(labels)
 
         def urn_html(row):
-            value=urn_value(row)
-            if value:return f'{lucide("archive")}<span>{esc(value)}</span>'
+            items=[(label,item["urn_catalog_id"]) for item in urn_items_by_practice.get(row["id"],[]) for label in [compact_text(item["label"])] if label]
+            if items:
+                # Un tasto "Vedi urna" per OGNI urna della pratica (richiesta
+                # esplicita dell'utente), verso la sua scheda nel catalogo
+                # urne - solo se l'urna e' ancora presente e attiva nel
+                # catalogo (urn_catalog_id gia' filtrato su active=1 nella
+                # query che popola urn_items_by_practice): un'urna scritta a
+                # mano o rimossa dal catalogo mostra solo l'etichetta, mai
+                # un tasto che porterebbe a una scheda inesistente. Stessa
+                # funzione condivisa anche dal pannello "Gestisci animali"
+                # (animali in attesa, non ancora in un ciclo): stesso tasto
+                # anche li', richiesta esplicita dell'utente.
+                parts=''.join(
+                    f'<span class="cremation-animal-urn-item"><span>{esc(label)}</span>'
+                    + (f'<a class="cremation-urn-view-btn" href="/catalogo-urne/{urn_id}" onclick="event.stopPropagation()" title="Vedi {esc(label)} nel catalogo urne">{lucide("eye")}<span>Vedi urna</span></a>' if urn_id else '')
+                    + '</span>'
+                    for label,urn_id in items
+                )
+                return f'{lucide("archive")}{parts}'
             if row["send_catalog"]=="Si":return '<span class="badge tag-outline-orange">INVIARE CATALOGO</span>'
             return '<span class="cremation-dash">—</span>'
 
