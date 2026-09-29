@@ -2534,7 +2534,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .light-theme .cremation-animal-name{color:#0f172a}
 .light-theme .cremation-week-animal-name{color:#0f172a}
 @media(max-width:1100px){.cremation-summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media(max-width:620px){.cremation-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.cremation-header{flex-direction:column}.cremation-header-nav{align-items:flex-start;width:100%}.cremation-date-nav{width:100%;justify-content:space-between}.cremation-view-tabs{width:100%;justify-content:center}.cremation-progress{flex-wrap:wrap}.cremation-animal-row{grid-template-columns:1fr;gap:6px}.cremation-animal-actions{margin-left:0;margin-top:4px}.cremation-timeline-item{grid-template-columns:36px minmax(0,1fr);gap:8px}.cremation-timeline-time{font-size:9px}}
+@media(max-width:620px){.cremation-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.cremation-header{flex-direction:column}.cremation-header-nav{align-items:flex-start;width:100%}.cremation-date-nav{width:100%;justify-content:space-between}.cremation-view-tabs{width:100%;justify-content:center}.cremation-progress{flex-wrap:wrap}.cremation-animal-row{grid-template-columns:1fr;gap:6px}.cremation-animal-row.cremation-animal-row-reserved{grid-template-columns:1fr}.cremation-animal-actions{margin-left:0;margin-top:4px}.cremation-timeline-item{grid-template-columns:36px minmax(0,1fr);gap:8px}.cremation-timeline-time{font-size:9px}}
 /* Wizard evento + dettaglio evento: redesign premium dark, coerente con Programma Cremazioni */
 .calendar-form-v2 #calendarEventForm>.section{background:transparent;border:0;box-shadow:none;padding:18px 2px}
 .calendar-form-v2 h2{font-size:19px;margin:0 0 4px}

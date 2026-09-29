@@ -2520,6 +2520,29 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("NON ANCORA AFFIDATO", week_page)
         self.assertIn(f"cremationRemoveReservation(this,{reservation['id']})", week_page)
 
+        # Bug segnalato dall'utente (screenshot da mobile): la riga espansa
+        # dell'animale "non ancora affidato" mostrava stato/specie/
+        # proprietario/ritiro tutti affiancati e sovrapposti su schermo
+        # stretto, invece di impilarsi come fa la riga di un animale vero
+        # (animal_row_html). Causa: .cremation-animal-row-reserved usa due
+        # classi (specificita' piu' alta) e la regola mobile che collassa
+        # la griglia a 1 colonna usava una sola classe, quindi perdeva e
+        # restava la griglia desktop a 6 colonne anche su mobile.
+        self.assertIn('class="cremation-animal-row cremation-animal-row-reserved"', page)
+        mobile_rule = ".cremation-animal-row.cremation-animal-row-reserved{grid-template-columns:1fr}"
+        self.assertIn(mobile_rule, app.CSS)
+        # dentro il blocco @media(max-width:620px) che collassa anche la
+        # riga normale, non una regola isolata altrove nel foglio di stile.
+        collapse_block_start = app.CSS.index(".cremation-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}")
+        collapse_block_end = app.CSS.index("}", app.CSS.index(".cremation-timeline-time{font-size:9px}", collapse_block_start)) + 1
+        self.assertIn(mobile_rule, app.CSS[collapse_block_start:collapse_block_end])
+        # la regola desktop (griglia a 6 colonne) resta intatta: la
+        # correzione mobile non deve rompere la vista desktop.
+        self.assertIn(
+            ".cremation-animal-row.cremation-animal-row-reserved{grid-template-columns:minmax(0,1.6fr) auto auto auto auto auto;cursor:default}",
+            app.CSS,
+        )
+
     def test_cremation_reserve_to_cycle_counts_toward_two_animal_limit_and_rejects_stale_or_completed(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
