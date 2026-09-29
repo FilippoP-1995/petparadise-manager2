@@ -1075,6 +1075,56 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.archive(admin)
         self.assertIn("Milù", rendered[-1])
 
+    def test_header_search_finds_by_owner_phone_and_email(self):
+        # Richiesta esplicita dell'utente: la barra di ricerca in alto deve
+        # trovare una pratica anche per telefono o email del proprietario,
+        # sia nel menu a tendina live (mentre si digita) sia inviando il
+        # form (Invio/fallback senza JS, parametro 'rapida').
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                         owner_first_name,owner_last_name,owner_phone,owner_phone_2,owner_email,animal_name,payment_status)
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                         ("CR-PHONE1", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"],
+                          "Giulia", "Neri", "333 1234567", "0586998877", "giulia.neri@example.com", "Bracco", "Da saldare"))
+        # menu a tendina live: /api/calendario/pratiche/search?q=...
+        # (il numero e' salvato come "333 1234567": la ricerca per
+        # sottostringa esatta trova sia una porzione del numero sia il
+        # secondo telefono senza spazi sia l'email, stessa logica gia'
+        # usata dalla ricerca avanzata "q" per il telefono)
+        for q in ("1234567", "0586998877", "giulia.neri@example.com", "giulia.neri"):
+            self.handler.path = f"/api/calendario/pratiche/search?q={q}"
+            payload = []
+            self.handler.send_json = lambda obj, status=200: payload.append(obj)
+            self.handler.api_calendar_practices_search(None)
+            results = payload[0]["results"]
+            self.assertTrue(any(r["animal_name"] == "Bracco" for r in results), f"nessun risultato per '{q}'")
+        # invio del form / fallback senza JS: /archivio/pratiche?rapida=...
+        for q in ("1234567", "0586998877", "giulia.neri@example.com"):
+            rendered = []
+            self.handler.path = f"/archivio/pratiche?rapida={q}"
+            self.handler.send_html = lambda html, *args: rendered.append(html)
+            self.handler.archive(admin)
+            self.assertIn("CR-PHONE1", rendered[-1], f"nessun risultato per '{q}'")
+        # un numero/email che non corrisponde a nessuna pratica non deve
+        # restituire risultati inventati.
+        self.handler.path = "/api/calendario/pratiche/search?q=0000000000"
+        payload = []
+        self.handler.send_json = lambda obj, status=200: payload.append(obj)
+        self.handler.api_calendar_practices_search(None)
+        self.assertEqual(payload[0]["results"], [])
+
+    def test_header_search_placeholder_and_label_mention_phone_and_email(self):
+        rendered = []
+        self.handler.path = "/"
+        self.handler.send_html = lambda html, *args: rendered.append(html)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.dashboard(admin)
+        page = rendered[-1]
+        self.assertIn('placeholder="Animale, proprietario, telefono o email..."', page)
+        self.assertIn('Ricerca rapida per animale, proprietario, telefono o email', page)
+
     def test_header_search_result_field_order(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()

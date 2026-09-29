@@ -9050,7 +9050,7 @@ def layout(title, body, user=None):
         nav_links=''.join(f'<a href="{href}" class="{"nav-notification" if href in ("/notifiche","/") else ""}">{lucide(icon)}<span>{label}</span>{unread_badge if href=="/notifiche" else (reminder_badge if href=="/" else "")}</a>' for href,icon,label in links)
         nav=f'''<nav class="nav" aria-label="Menu principale">{nav_links}<button class="btn ghost install-btn" type="button" onclick="installPetParadise()">{lucide("plus")}<span>Installa App</span></button><a class="logout" href="/logout">{lucide("menu")}<span>Esci</span></a></nav>'''
         today=rome_now(); date_label=today.strftime("%d/%m/%Y"); weekday=["Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica"][today.weekday()]
-        app_header=f'''<header class="app-header"><div class="header-actions"><form class="header-search lookup" action="/archivio/pratiche" method="get" role="search">{lucide("search")}<label class="sr-only" for="globalSearch">Ricerca rapida per animale o proprietario</label><input id="globalSearch" name="rapida" placeholder="Animale o proprietario..." autocomplete="off"><div id="globalSearchResults" class="lookup-results hidden"></div></form><a class="icon-btn nav-notification" href="/notifiche" aria-label="Notifiche, {unread} non lette">{lucide("bell")}{unread_badge}</a><button class="icon-btn" type="button" onclick="toggleTheme()" aria-label="Cambia tema">{lucide("sun")}</button><button class="btn header-new" type="button" onclick="toggleCreateMenu()" aria-label="Crea pratica o evento">{lucide("plus")}<span>Crea</span></button><time datetime="{today.date().isoformat()}">{date_label}<small>{weekday}</small></time></div></header>'''
+        app_header=f'''<header class="app-header"><div class="header-actions"><form class="header-search lookup" action="/archivio/pratiche" method="get" role="search">{lucide("search")}<label class="sr-only" for="globalSearch">Ricerca rapida per animale, proprietario, telefono o email</label><input id="globalSearch" name="rapida" placeholder="Animale, proprietario, telefono o email..." autocomplete="off"><div id="globalSearchResults" class="lookup-results hidden"></div></form><a class="icon-btn nav-notification" href="/notifiche" aria-label="Notifiche, {unread} non lette">{lucide("bell")}{unread_badge}</a><button class="icon-btn" type="button" onclick="toggleTheme()" aria-label="Cambia tema">{lucide("sun")}</button><button class="btn header-new" type="button" onclick="toggleCreateMenu()" aria-label="Crea pratica o evento">{lucide("plus")}<span>Crea</span></button><time datetime="{today.date().isoformat()}">{date_label}<small>{weekday}</small></time></div></header>'''
         def more_card(href,icon,label):
             color,subtitle=MENU_CARD_META.get(label,("gray",""))
             accent=MENU_ACCENT_COLORS.get(color,"#64748b")
@@ -16598,7 +16598,10 @@ class App(BaseHTTPRequestHandler):
         q=(parse_qs(urlparse(self.path).query).get("q",[""])[0] or "").strip()
         if len(q)<2:return self.send_json({"ok":True,"query":q,"too_short":True,"results":[]})
         tokens=[token for token in re.split(r"\s+",q) if len(token)>=2][:5]
-        searchable="COALESCE(animal_name,'')||' '||COALESCE(owner_first_name,'')||' '||COALESCE(owner_last_name,'')||' '||COALESCE(clinic_name,'')||' '||COALESCE(veterinarian_name,'')||' '||COALESCE(practice_number,'')"
+        # Richiesta esplicita dell'utente: la ricerca rapida in alto deve
+        # trovare una pratica anche per telefono o email del proprietario,
+        # non solo animale/proprietario/veterinario/numero pratica.
+        searchable="COALESCE(animal_name,'')||' '||COALESCE(owner_first_name,'')||' '||COALESCE(owner_last_name,'')||' '||COALESCE(clinic_name,'')||' '||COALESCE(veterinarian_name,'')||' '||COALESCE(practice_number,'')||' '||COALESCE(owner_phone,'')||' '||COALESCE(owner_phone_2,'')||' '||COALESCE(owner_email,'')"
         where=[];args=[]
         for token in tokens:
             where.append(f"UNACCENT({searchable}) LIKE ?");args.append(like_term(token))
@@ -16726,8 +16729,11 @@ class App(BaseHTTPRequestHandler):
             args += [like]*10
         if quick:
             like=like_term(quick)
-            sql+=" AND (UNACCENT(animal_name) LIKE ? OR UNACCENT(owner_first_name) LIKE ? OR UNACCENT(owner_last_name) LIKE ? OR UNACCENT(owner_first_name||' '||owner_last_name) LIKE ?)"
-            args += [like]*4
+            # Richiesta esplicita dell'utente: la ricerca rapida in alto
+            # deve trovare una pratica anche per telefono o email del
+            # proprietario, non solo animale/proprietario.
+            sql+=" AND (UNACCENT(animal_name) LIKE ? OR UNACCENT(owner_first_name) LIKE ? OR UNACCENT(owner_last_name) LIKE ? OR UNACCENT(owner_first_name||' '||owner_last_name) LIKE ? OR UNACCENT(owner_phone) LIKE ? OR UNACCENT(owner_phone_2) LIKE ? OR UNACCENT(owner_email) LIKE ?)"
+            args += [like]*7
         if animal:
             sql += " AND UNACCENT(animal_name) LIKE ?"; args.append(like_term(animal))
         if service:
