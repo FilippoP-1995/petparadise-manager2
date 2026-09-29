@@ -802,6 +802,13 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Via Roma 1, 57100 Livorno (LI)", page)
         self.assertIn("CF: RSSMRA80A01H501U", page)
         self.assertIn("mario.rossi@example.com", page)
+        # Richiesta esplicita dell'utente: nel riepilogo Speditore l'email
+        # deve stare dopo il codice fiscale, quindi come ultimo dato
+        # (dopo indirizzo e CF, non piu' tra telefono e indirizzo).
+        speditore_block = page[page.index("<small>Speditore</small>"):page.index("</div><div class=\"kv\"><small>Animale</small>")]
+        self.assertLess(speditore_block.index("CF: RSSMRA80A01H501U"), speditore_block.index("mario.rossi@example.com"))
+        self.assertLess(speditore_block.index("Via Roma 1"), speditore_block.index("CF: RSSMRA80A01H501U"))
+        self.assertTrue(speditore_block.rstrip().endswith("mario.rossi@example.com"), "l'email deve essere l'ultimo dato dello Speditore")
 
     def test_practice_summary_speditore_omits_email_line_when_missing(self):
         # Richiesta esplicita dell'utente: la mail va mostrata nel riepilogo
