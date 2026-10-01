@@ -7766,6 +7766,34 @@ function aiChatInit(){
   aiChatFab.addEventListener('pointercancel',aiChatEndDrag);
 }
 document.addEventListener('DOMContentLoaded',aiChatInit);
+// Richiesta esplicita dell'utente: le notifiche proattive di Mau AI (es.
+// controllo anomalie quotidiano) devono essere "interattive", non solo un
+// testo statico - aprendo il link della notifica (?mau_ai_chiedi=<domanda>,
+// vedi process_daily_anomalies in notification_service.py) la chat si apre
+// da sola e pone subito la stessa identica domanda che un utente
+// scriverebbe a mano, con la risposta reale dello strumento gia' in corso.
+// Stesso meccanismo di cremationOpenPendingCycle per il parametro URL
+// (letto una volta al caricamento, poi ripulito dalla barra indirizzi).
+function aiChatOpenPendingQuestion(){
+  const params=new URLSearchParams(location.search);
+  const domanda=params.get('mau_ai_chiedi');
+  if(!domanda)return;
+  const url=new URL(location.href);
+  url.searchParams.delete('mau_ai_chiedi');
+  history.replaceState(null,'',url);
+  const input=document.getElementById('aiChatInput');
+  const form=document.querySelector('.ai-chat-input-row');
+  if(!input||!form)return;
+  aiChatOpen();
+  // Un piccolo ritardo lascia che l'animazione di apertura sia visibile
+  // prima che il messaggio parta, invece di apparire gia' inviato a
+  // pannello ancora chiuso.
+  setTimeout(function(){
+    input.value=domanda;
+    form.requestSubmit();
+  },350);
+}
+document.addEventListener('DOMContentLoaded',aiChatOpenPendingQuestion);
 </script>
 """
 
@@ -16030,7 +16058,11 @@ class App(BaseHTTPRequestHandler):
         dashboard_sections_json=esc(json.dumps([sid for sid,_ in ordered_sections],ensure_ascii=False))
         daily_summary_enabled=prefs.get("daily_summary_enabled")=="1"
         daily_summary_time=prefs.get("daily_summary_time") or "08:00"
-        daily_anomalies_enabled=prefs.get("daily_anomalies_enabled")=="1"
+        # Attivo di default per ogni utente (richiesta esplicita dell'utente):
+        # a differenza di daily_summary, qui assente = attivo, solo "0"
+        # esplicito lo disattiva - stessa convenzione gia' applicata in
+        # process_daily_anomalies (notification_service.py).
+        daily_anomalies_enabled=prefs.get("daily_anomalies_enabled")!="0"
         daily_anomalies_time=prefs.get("daily_anomalies_time") or "08:00"
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>Il mio profilo</h1><div class="sub">Preferenze personali di {esc(user['display_name'])}. Non modificano i permessi del tuo account.</div></div></div>{f'<div class="flash warning">{esc(error)}</div>' if error else ''}
         <section class="section"><h2>Password</h2><p class="sub">Cambia la tua password personale in qualsiasi momento.</p><a class="btn ghost" href="/imposta-password?return_to=/il-mio-profilo">Cambia password</a></section>
@@ -16040,7 +16072,7 @@ class App(BaseHTTPRequestHandler):
         <div class="payment-popover" id="ppmSidebarOrderOverlay" hidden><div class="payment-dialog" style="max-width:520px"><div class="titlebar"><div><h2>Ordine della sidebar</h2><p class="sub">Trascina per riordinare le voci del menu.</p></div><button class="btn ghost" type="button" id="ppmCloseSidebarOrder">Chiudi</button></div><form method="post" action="/il-mio-profilo/salva" data-drag-group><input type="hidden" name="return_to" value="/il-mio-profilo"><input type="hidden" name="sidebar_order_json" data-drag-order value="{sidebar_order_json}"><ul class="drag-list drag-list-scrollable" data-drag-root>{sidebar_items}</ul><button class="btn" style="margin-top:12px">Salva ordine sidebar</button></form></div></div>
         <section class="section" style="margin-top:16px"><h2>Dashboard</h2><p class="sub">Trascina per riordinare i pannelli; la spunta decide quali mostrare.</p><form method="post" action="/il-mio-profilo/salva" data-drag-group><input type="hidden" name="return_to" value="/il-mio-profilo"><input type="hidden" name="dashboard_sections_json" data-drag-order value="{dashboard_sections_json}"><ul class="drag-list" data-drag-root>{dashboard_items}</ul><button class="btn" style="margin-top:12px">Salva dashboard</button></form></section>
         <section class="section" style="margin-top:16px"><h2>Riepilogo del giorno</h2><p class="sub">Una notifica push con i numeri chiave della giornata, all'orario che preferisci (utile perché i widget della schermata home non sono disponibili per le PWA).</p><form method="post" action="/il-mio-profilo/salva"><input type="hidden" name="return_to" value="/il-mio-profilo"><input type="hidden" name="daily_summary_section" value="1"><div class="fields"><div class="field"><label class="modern-check"><span>Attiva riepilogo del giorno</span><input type="checkbox" name="daily_summary_enabled" value="1" {'checked' if daily_summary_enabled else ''}></label></div><div class="field"><label>Orario</label><input type="time" name="daily_summary_time" value="{esc(daily_summary_time)}"></div></div><button class="btn" style="margin-top:12px">Salva riepilogo del giorno</button></form></section>
-        <section class="section" style="margin-top:16px"><h2>Controllo anomalie di Mau AI</h2><p class="sub">Una notifica push, all'orario che preferisci, con lo stesso controllo che oggi puoi chiedere in chat a Mau AI (strumento "anomalie"): saldi aperti da troppo tempo, ritiri/riconsegne in ritardo, smaltimenti in sospeso, ordini fornitore falliti.</p><form method="post" action="/il-mio-profilo/salva"><input type="hidden" name="return_to" value="/il-mio-profilo"><input type="hidden" name="daily_anomalies_section" value="1"><div class="fields"><div class="field"><label class="modern-check"><span>Attiva controllo anomalie</span><input type="checkbox" name="daily_anomalies_enabled" value="1" {'checked' if daily_anomalies_enabled else ''}></label></div><div class="field"><label>Orario</label><input type="time" name="daily_anomalies_time" value="{esc(daily_anomalies_time)}"></div></div><button class="btn" style="margin-top:12px">Salva controllo anomalie</button></form></section>
+        <section class="section" style="margin-top:16px"><h2>Controllo anomalie di Mau AI</h2><p class="sub">Attivo per tutti di default: una notifica push, all'orario che preferisci, con lo stesso controllo che oggi puoi chiedere in chat a Mau AI (strumento "anomalie"): saldi aperti da troppo tempo, ritiri/riconsegne in ritardo, smaltimenti in sospeso, ordini fornitore falliti. Aprendola, la chat di Mau AI si apre gia' con la domanda posta e la risposta pronta.</p><form method="post" action="/il-mio-profilo/salva"><input type="hidden" name="return_to" value="/il-mio-profilo"><input type="hidden" name="daily_anomalies_section" value="1"><div class="fields"><div class="field"><label class="modern-check"><span>Attiva controllo anomalie</span><input type="checkbox" name="daily_anomalies_enabled" value="1" {'checked' if daily_anomalies_enabled else ''}></label></div><div class="field"><label>Orario</label><input type="time" name="daily_anomalies_time" value="{esc(daily_anomalies_time)}"></div></div><button class="btn" style="margin-top:12px">Salva controllo anomalie</button></form></section>
         <section class="section" style="margin-top:16px"><h2>Notifiche</h2><p class="sub">Dispositivi collegati: <b data-push-device-count>{subscriptions}</b>. Su iPhone la PWA deve essere installata dalla schermata Home.</p><div id="pushVisibleError" class="flash warning hidden"></div><div class="actions" style="margin-bottom:16px"><button class="btn" type="button" onclick="enablePushNotifications()">Abilita notifiche</button><button class="btn ghost" type="button" onclick="schedulePushTest()">Test con PWA chiusa (10 secondi)</button></div><details class="section" open><summary><b>Diagnostica notifiche</b></summary><div class="kvs" style="margin-top:12px"><div class="kv"><small>Notification.permission</small><b data-push-diagnostic="permission">verifica…</b></div><div class="kv"><small>Service worker registrato</small><b data-push-diagnostic="registered">verifica…</b></div><div class="kv"><small>Service worker attivo</small><b data-push-diagnostic="active">verifica…</b></div><div class="kv"><small>Subscription presente</small><b data-push-diagnostic="subscription">verifica…</b></div><div class="kv"><small>Endpoint</small><b data-push-diagnostic="endpoint">—</b></div><div class="kv"><small>Risposta backend</small><b data-push-diagnostic="backend">verifica…</b></div><div class="kv"><small>Ultimo errore</small><b data-push-diagnostic="lastError">nessuno</b></div><div class="kv"><small>Dispositivi registrati</small><b data-push-diagnostic="devices">{subscriptions}</b></div></div></details><p class="sub">Scegli quali tipi di notifica ricevere: quelle ad alta priorità suonano/vibrano quando il dispositivo lo consente, le altre restano silenziose e visibili solo qui e nel badge.</p><form method="post" action="/impostazioni/notifiche"><input type="hidden" name="return_to" value="/il-mio-profilo"><div class="notif-type-list">{notif_rows}</div><button class="btn" style="margin-top:16px">Salva preferenze</button></form></section></main>'''
         self.send_html(layout("Il mio profilo",body,user))
 

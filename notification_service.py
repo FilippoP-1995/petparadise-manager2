@@ -9,6 +9,7 @@ import sqlite3
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from calendar_service import event_type_emoji
@@ -615,32 +616,49 @@ def _format_daily_anomalies(anomalie: list) -> str:
     return push_bullets(*parts) if parts else "Nessuna anomalia trovata"
 
 
+_DAILY_ANOMALIES_DEFAULT_TIME = "08:00"
+# Domanda posta automaticamente a Mau AI quando si apre la notifica
+# (richiesta esplicita dell'utente: "piu' interattivo, non solo la
+# classica notifica giornaliera") - stessa frase che un utente scriverebbe
+# a mano in chat, nessuna scorciatoia che aggiri lo strumento reale.
+DAILY_ANOMALIES_CHAT_QUESTION = "Mostrami le anomalie di oggi"
+
+
 def process_daily_anomalies(conn, db_path, current=None) -> int:
-    """Invia a ciascun utente che lo ha attivato in Personalizza il
-    riepilogo giornaliero delle anomalie gia' rilevate dallo strumento
-    'anomalie' di Mau AI (ai_assistant._tool_anomalie - stessi 4 controlli,
-    stessa soglia, nessun criterio nuovo inventato qui), una sola volta al
-    giorno, all'orario configurato - stesso identico meccanismo di
-    process_daily_summaries (preferenze dedicate, finestra di 10 minuti,
-    idempotenza via scheduled_notification_events). Richiesta esplicita
-    dell'utente: rendere Mau AI "da reattivo a proattivo" sulle anomalie
-    che oggi vanno chieste a voce in chat."""
+    """Invia a ciascun utente ATTIVO il riepilogo giornaliero delle anomalie
+    gia' rilevate dallo strumento 'anomalie' di Mau AI
+    (ai_assistant._tool_anomalie - stessi 4 controlli, stessa soglia,
+    nessun criterio nuovo inventato qui), una sola volta al giorno,
+    all'orario configurato - stesso meccanismo di process_daily_summaries
+    (finestra di 10 minuti, idempotenza via scheduled_notification_events).
+
+    A differenza di process_daily_summaries, attivo PER DEFAULT per ogni
+    utente (richiesta esplicita dell'utente: nessuna azione richiesta per
+    iniziare a riceverlo) - un utente che non ha mai toccato "Il mio
+    profilo" lo riceve comunque, all'orario di default
+    _DAILY_ANOMALIES_DEFAULT_TIME; disattivarlo o cambiare orario resta
+    possibile li', esattamente come il riepilogo del giorno. Aprendo la
+    notifica (url con 'mau_ai_chiedi', letto lato client in APP_JS) la chat
+    di Mau AI si apre gia' con la domanda posta e la risposta in corso -
+    richiesta esplicita dell'utente di renderlo "piu' interattivo", non
+    solo un testo statico."""
     current = current or _rome_now()
     today = current.date().isoformat()
     rows = conn.execute(
-        """SELECT user_id,
-                  MAX(CASE WHEN key='daily_anomalies_enabled' THEN value END) enabled,
-                  MAX(CASE WHEN key='daily_anomalies_time' THEN value END) time_value
-           FROM user_preferences
-           WHERE key IN ('daily_anomalies_enabled','daily_anomalies_time')
-           GROUP BY user_id""",
+        """SELECT u.id AS user_id,
+                  MAX(CASE WHEN up.key='daily_anomalies_enabled' THEN up.value END) enabled,
+                  MAX(CASE WHEN up.key='daily_anomalies_time' THEN up.value END) time_value
+           FROM users u
+           LEFT JOIN user_preferences up ON up.user_id=u.id AND up.key IN ('daily_anomalies_enabled','daily_anomalies_time')
+           WHERE u.active=1
+           GROUP BY u.id""",
     ).fetchall()
     created = 0
     risultato = None
     for row in rows:
-        if row["enabled"] != "1":
+        if row["enabled"] == "0":  # esplicitamente disattivato - default e' attivo
             continue
-        time_value = (row["time_value"] or "").strip()
+        time_value = (row["time_value"] or _DAILY_ANOMALIES_DEFAULT_TIME).strip()
         if not TIME_HHMM_RE.match(time_value):
             continue
         try:
@@ -664,7 +682,9 @@ def process_daily_anomalies(conn, db_path, current=None) -> int:
         text = _format_daily_anomalies(risultato["anomalie"])
         emit_notification(
             conn, "daily_anomalies", "Controllo anomalie di Mau AI", text,
-            target_user_ids=[row["user_id"]], payload={"url": "/"}, db_path=db_path,
+            target_user_ids=[row["user_id"]],
+            payload={"url": f"/?mau_ai_chiedi={quote(DAILY_ANOMALIES_CHAT_QUESTION)}"},
+            db_path=db_path,
         )
         created += 1
     return created

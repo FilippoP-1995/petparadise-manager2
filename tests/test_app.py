@@ -13975,6 +13975,19 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('name="daily_anomalies_enabled" value="1" checked', page)
         self.assertIn('name="daily_anomalies_time" value="08:30"', page)
 
+    def test_profile_page_daily_anomalies_checkbox_is_checked_by_default(self):
+        # Richiesta esplicita dell'utente: attivo di default per ogni
+        # utente - un utente che non ha MAI salvato nulla deve vedere la
+        # spunta gia' attiva, non da spuntare lui.
+        with app.db() as conn:
+            gianluca = conn.execute("SELECT * FROM users WHERE username='gianluca'").fetchone()
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.profile_page(gianluca)
+        page = rendered[-1]
+        self.assertIn('name="daily_anomalies_enabled" value="1" checked', page)
+        self.assertIn('name="daily_anomalies_time" value="08:00"', page)
+
     def test_save_preferences_gates_daily_anomalies_by_marker(self):
         with app.db() as conn:
             serena = conn.execute("SELECT * FROM users WHERE username='serena'").fetchone()
@@ -14030,6 +14043,22 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("addEventListener('pointerdown'", app.APP_JS)
         self.assertIn("function syncDragOrder(root)", app.APP_JS)
         self.assertIn("root.scrollTop", app.APP_JS)
+
+    def test_proactive_notification_opens_ai_chat_with_the_question_already_asked(self):
+        # Richiesta esplicita dell'utente: le notifiche proattive di Mau AI
+        # devono essere "interattive, non solo la classica notifica" -
+        # aprendo il link (?mau_ai_chiedi=<domanda>, vedi
+        # notification_service.process_daily_anomalies) la chat si apre da
+        # sola e pone subito la domanda, invece di limitarsi a navigare a
+        # una pagina muta.
+        js_block = app.APP_JS[app.APP_JS.index("function aiChatOpenPendingQuestion()"):]
+        js_block = js_block[:js_block.index("\n}", js_block.index("function aiChatOpenPendingQuestion()")) + 2]
+        self.assertIn("params.get('mau_ai_chiedi')", js_block)
+        self.assertIn("aiChatOpen()", js_block)
+        self.assertIn("input.value=domanda", js_block)
+        self.assertIn("form.requestSubmit()", js_block)
+        self.assertIn("history.replaceState", js_block)  # non deve restare nell'URL dopo l'uso
+        self.assertIn("document.addEventListener('DOMContentLoaded',aiChatOpenPendingQuestion)", app.APP_JS)
 
     def test_drag_reorder_suppresses_text_selection_during_the_gesture(self):
         # regression: dragging a row by its handle was instead selecting the
@@ -14556,20 +14585,18 @@ class PetParadiseTests(unittest.TestCase):
             self.assertEqual(created_again, 0)
             self.assertEqual(conn.execute("SELECT count(*) n FROM notifications WHERE user_id=? AND type='daily_summary'", (admin,)).fetchone()["n"], 1)
 
-    def test_process_daily_anomalies_respects_opt_in_and_time_window_once_per_day(self):
-        # Stesso identico meccanismo di process_daily_summaries (richiesta
-        # esplicita dell'utente: riuso del pattern gia' collaudato), qui
-        # senza alcuna anomalia reale nel database: deve comunque inviare
-        # UNA notifica (che dice "nessuna anomalia"), non restare silente -
-        # l'utente deve poter contare sul fatto che il controllo e' girato.
+    def test_process_daily_anomalies_respects_custom_time_window_once_per_day(self):
+        # Stesso identico meccanismo di process_daily_summaries (riuso del
+        # pattern gia' collaudato) quando l'utente sceglie un orario
+        # diverso da quello di default - qui senza alcuna anomalia reale
+        # nel database: deve comunque inviare UNA notifica (che dice
+        # "nessuna anomalia"), non restare silente - l'utente deve poter
+        # contare sul fatto che il controllo e' girato.
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()["id"]
             today = "2026-07-20"
             outside_window = datetime.fromisoformat(f"{today}T06:50:00")
             in_window = datetime.fromisoformat(f"{today}T07:03:00")
-            created = process_daily_anomalies(conn, str(app.DB_PATH), current=in_window)
-            self.assertEqual(created, 0)
-            conn.execute("INSERT INTO user_preferences(user_id,key,value) VALUES(?,?,?)", (admin, "daily_anomalies_enabled", "1"))
             conn.execute("INSERT INTO user_preferences(user_id,key,value) VALUES(?,?,?)", (admin, "daily_anomalies_time", "07:00"))
             created = process_daily_anomalies(conn, str(app.DB_PATH), current=outside_window)
             self.assertEqual(created, 0)
@@ -14581,6 +14608,37 @@ class PetParadiseTests(unittest.TestCase):
             created_again = process_daily_anomalies(conn, str(app.DB_PATH), current=in_window + timedelta(minutes=4))
             self.assertEqual(created_again, 0)
             self.assertEqual(conn.execute("SELECT count(*) n FROM notifications WHERE user_id=? AND type='daily_anomalies'", (admin,)).fetchone()["n"], 1)
+
+    def test_process_daily_anomalies_is_active_by_default_for_every_active_user(self):
+        # Richiesta esplicita dell'utente: attivo di default per ogni
+        # utente, nessuna azione richiesta - un utente che non ha MAI
+        # toccato "Il mio profilo" (nessuna riga in user_preferences) deve
+        # comunque riceverlo, all'orario di default (08:00). Disattivarlo
+        # esplicitamente (valore "0") deve pero' funzionare, e un utente
+        # disattivato (active=0) non deve mai riceverlo nonostante il
+        # default.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()["id"]
+            serena = conn.execute("SELECT * FROM users WHERE username='serena'").fetchone()["id"]
+            conn.execute("UPDATE users SET active=0 WHERE id=?", (serena,))
+            today = "2026-07-20"
+            outside_default_window = datetime.fromisoformat(f"{today}T07:50:00")
+            in_default_window = datetime.fromisoformat(f"{today}T08:04:00")
+            created = process_daily_anomalies(conn, str(app.DB_PATH), current=outside_default_window)
+            self.assertEqual(created, 0)
+            active_users = conn.execute("SELECT count(*) n FROM users WHERE active=1").fetchone()["n"]
+            created = process_daily_anomalies(conn, str(app.DB_PATH), current=in_default_window)
+            self.assertEqual(created, active_users)  # tutti gli utenti attivi, admin incluso, serena no
+            self.assertEqual(conn.execute("SELECT count(*) n FROM notifications WHERE user_id=? AND type='daily_anomalies'", (admin,)).fetchone()["n"], 1)
+            self.assertEqual(conn.execute("SELECT count(*) n FROM notifications WHERE user_id=? AND type='daily_anomalies'", (serena,)).fetchone()["n"], 0)
+            # disattivazione esplicita dell'admin: da domani in poi nessuna
+            # notifica per lui, ma gli altri utenti attivi (default-on,
+            # mai toccato) continuano a riceverla regolarmente.
+            conn.execute("INSERT INTO user_preferences(user_id,key,value) VALUES(?,?,?)", (admin, "daily_anomalies_enabled", "0"))
+            tomorrow_in_window = datetime.fromisoformat("2026-07-21T08:04:00")
+            created = process_daily_anomalies(conn, str(app.DB_PATH), current=tomorrow_in_window)
+            self.assertEqual(created, active_users - 1)
+            self.assertEqual(conn.execute("SELECT count(*) n FROM notifications WHERE user_id=? AND type='daily_anomalies'", (admin,)).fetchone()["n"], 1)  # invariato, non e' salito a 2
 
     def test_process_daily_anomalies_reuses_the_real_anomalie_tool_detection(self):
         # Correttezza end-to-end: un'anomalia reale (stesso identico
@@ -14598,8 +14656,13 @@ class PetParadiseTests(unittest.TestCase):
             current = datetime.fromisoformat("2026-07-20T07:02:00")
             created = process_daily_anomalies(conn, str(app.DB_PATH), current=current)
             self.assertEqual(created, 1)
-            row = conn.execute("SELECT text FROM notifications WHERE user_id=? AND type='daily_anomalies'", (admin,)).fetchone()
+            row = conn.execute("SELECT text,payload FROM notifications WHERE user_id=? AND type='daily_anomalies'", (admin,)).fetchone()
             self.assertEqual(row["text"], "1 ordine fornitore fallito")
+            # Richiesta esplicita dell'utente ("piu' interattivo"): l'url
+            # della notifica porta a Mau AI con la domanda gia' posta, non
+            # a una pagina muta.
+            payload = json.loads(row["payload"])
+            self.assertEqual(payload["url"], f"/?mau_ai_chiedi={quote(notification_service.DAILY_ANOMALIES_CHAT_QUESTION)}")
 
     def test_format_daily_anomalies_pluralizes_orders_and_separates_categories_with_bullet(self):
         fmt = notification_service._format_daily_anomalies
