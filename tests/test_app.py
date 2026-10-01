@@ -20,7 +20,7 @@ import route_service
 from notification_service import (
     emit_notification, process_scheduled_notifications,
     process_calendar_notifications,
-    process_daily_summaries, archive_old_notifications, notification_priority,
+    process_daily_summaries, process_daily_anomalies, archive_old_notifications, notification_priority,
 )
 from pypdf import PdfReader
 
@@ -13958,6 +13958,44 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("Priorità normale", page)
         self.assertIn('class="notif-type-icon"', page)
 
+    def test_profile_page_renders_daily_anomalies_controls(self):
+        # Richiesta esplicita dell'utente: Mau AI "da reattivo a proattivo"
+        # sulle anomalie - stesso identico pattern UI del riepilogo del
+        # giorno (attiva/orario), sezione dedicata e separata.
+        with app.db() as conn:
+            serena = conn.execute("SELECT * FROM users WHERE username='serena'").fetchone()
+            conn.execute("INSERT INTO user_preferences(user_id,key,value) VALUES(?,?,?)", (serena["id"], "daily_anomalies_enabled", "1"))
+            conn.execute("INSERT INTO user_preferences(user_id,key,value) VALUES(?,?,?)", (serena["id"], "daily_anomalies_time", "08:30"))
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.profile_page(serena)
+        page = rendered[-1]
+        self.assertIn("Controllo anomalie di Mau AI", page)
+        self.assertIn('name="daily_anomalies_section" value="1"', page)
+        self.assertIn('name="daily_anomalies_enabled" value="1" checked', page)
+        self.assertIn('name="daily_anomalies_time" value="08:30"', page)
+
+    def test_save_preferences_gates_daily_anomalies_by_marker(self):
+        with app.db() as conn:
+            serena = conn.execute("SELECT * FROM users WHERE username='serena'").fetchone()
+        self.handler.redirect = lambda url: None
+        self.handler.form = lambda: {"return_to": "/il-mio-profilo", "theme": "light"}
+        self.handler.save_preferences(serena)
+        with app.db() as conn:
+            saved = {row["key"]: row["value"] for row in conn.execute("SELECT key,value FROM user_preferences WHERE user_id=?", (serena["id"],))}
+        self.assertNotIn("daily_anomalies_enabled", saved)  # un salvataggio non correlato non lo tocca
+        self.handler.form = lambda: {
+            "return_to": "/il-mio-profilo",
+            "daily_anomalies_section": "1",
+            "daily_anomalies_enabled": "1",
+            "daily_anomalies_time": "07:15",
+        }
+        self.handler.save_preferences(serena)
+        with app.db() as conn:
+            saved = {row["key"]: row["value"] for row in conn.execute("SELECT key,value FROM user_preferences WHERE user_id=?", (serena["id"],))}
+        self.assertEqual(saved["daily_anomalies_enabled"], "1")
+        self.assertEqual(saved["daily_anomalies_time"], "07:15")
+
     def test_save_preferences_parses_drag_order_json_and_gates_daily_summary_by_marker(self):
         with app.db() as conn:
             serena = conn.execute("SELECT * FROM users WHERE username='serena'").fetchone()
@@ -14363,6 +14401,13 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("daily_summary", app.NOTIFICATION_TYPES)
         self.assertEqual(app.NOTIFICATION_TYPES["daily_summary"][0], "Riepilogo del giorno")
 
+    def test_daily_anomalies_notification_type_is_registered_and_normal_priority(self):
+        self.assertIn("daily_anomalies", app.NOTIFICATION_TYPES)
+        self.assertEqual(app.NOTIFICATION_TYPES["daily_anomalies"][0], "Controllo anomalie di Mau AI")
+        # Riepilogo giornaliero, non un evento singolo urgente: stessa
+        # priorita' normale di daily_summary, mai suono/vibrazione forzati.
+        self.assertEqual(notification_priority("daily_anomalies"), "normale")
+
     def test_notification_priority_classifies_high_and_normal_types(self):
         self.assertEqual(notification_priority("payment_due"), "alta")
         self.assertEqual(notification_priority("system_error"), "alta")
@@ -14510,6 +14555,67 @@ class PetParadiseTests(unittest.TestCase):
             created_again = process_daily_summaries(conn, str(app.DB_PATH), current=in_window + timedelta(minutes=4))
             self.assertEqual(created_again, 0)
             self.assertEqual(conn.execute("SELECT count(*) n FROM notifications WHERE user_id=? AND type='daily_summary'", (admin,)).fetchone()["n"], 1)
+
+    def test_process_daily_anomalies_respects_opt_in_and_time_window_once_per_day(self):
+        # Stesso identico meccanismo di process_daily_summaries (richiesta
+        # esplicita dell'utente: riuso del pattern gia' collaudato), qui
+        # senza alcuna anomalia reale nel database: deve comunque inviare
+        # UNA notifica (che dice "nessuna anomalia"), non restare silente -
+        # l'utente deve poter contare sul fatto che il controllo e' girato.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()["id"]
+            today = "2026-07-20"
+            outside_window = datetime.fromisoformat(f"{today}T06:50:00")
+            in_window = datetime.fromisoformat(f"{today}T07:03:00")
+            created = process_daily_anomalies(conn, str(app.DB_PATH), current=in_window)
+            self.assertEqual(created, 0)
+            conn.execute("INSERT INTO user_preferences(user_id,key,value) VALUES(?,?,?)", (admin, "daily_anomalies_enabled", "1"))
+            conn.execute("INSERT INTO user_preferences(user_id,key,value) VALUES(?,?,?)", (admin, "daily_anomalies_time", "07:00"))
+            created = process_daily_anomalies(conn, str(app.DB_PATH), current=outside_window)
+            self.assertEqual(created, 0)
+            created = process_daily_anomalies(conn, str(app.DB_PATH), current=in_window)
+            self.assertEqual(created, 1)
+            row = conn.execute("SELECT * FROM notifications WHERE user_id=? AND type='daily_anomalies'", (admin,)).fetchone()
+            self.assertEqual(row["title"], "Controllo anomalie di Mau AI")
+            self.assertEqual(row["text"], "Nessuna anomalia trovata")
+            created_again = process_daily_anomalies(conn, str(app.DB_PATH), current=in_window + timedelta(minutes=4))
+            self.assertEqual(created_again, 0)
+            self.assertEqual(conn.execute("SELECT count(*) n FROM notifications WHERE user_id=? AND type='daily_anomalies'", (admin,)).fetchone()["n"], 1)
+
+    def test_process_daily_anomalies_reuses_the_real_anomalie_tool_detection(self):
+        # Correttezza end-to-end: un'anomalia reale (stesso identico
+        # controllo gia' verificato per ai_assistant._tool_anomalie - un
+        # ordine fornitore in stato Fallito non archiviato) deve comparire
+        # nel testo della notifica, con l'etichetta corretta.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()["id"]
+            stamp = app.now()
+            conn.execute("""INSERT INTO email_orders(order_type,quantity,recipient,subject,body,status,error_message,operator_id,created_at,updated_at)
+                            VALUES('water',5,'fornitore@example.com','Ordine','Corpo','Fallito','Timeout SMTP',?,?,?)""",
+                         (admin, stamp, stamp))
+            conn.execute("INSERT INTO user_preferences(user_id,key,value) VALUES(?,?,?)", (admin, "daily_anomalies_enabled", "1"))
+            conn.execute("INSERT INTO user_preferences(user_id,key,value) VALUES(?,?,?)", (admin, "daily_anomalies_time", "07:00"))
+            current = datetime.fromisoformat("2026-07-20T07:02:00")
+            created = process_daily_anomalies(conn, str(app.DB_PATH), current=current)
+            self.assertEqual(created, 1)
+            row = conn.execute("SELECT text FROM notifications WHERE user_id=? AND type='daily_anomalies'", (admin,)).fetchone()
+            self.assertEqual(row["text"], "1 ordine fornitore fallito")
+
+    def test_format_daily_anomalies_pluralizes_orders_and_separates_categories_with_bullet(self):
+        fmt = notification_service._format_daily_anomalies
+        self.assertEqual(fmt([]), "Nessuna anomalia trovata")
+        self.assertEqual(
+            fmt([{"tipo": "saldo_aperto_da_troppo_tempo"}, {"tipo": "ordine_fornitore_fallito"}, {"tipo": "ordine_fornitore_fallito"}]),
+            "1 saldo aperto da troppo tempo • 2 ordini fornitore falliti",
+        )
+        # ordine fisso: segue l'ordine dei 4 controlli di _tool_anomalie,
+        # non l'ordine in cui compaiono nella lista di input.
+        self.assertEqual(
+            fmt([{"tipo": "ordine_fornitore_fallito"}, {"tipo": "ritiro_o_riconsegna_in_ritardo"}]),
+            "1 ritiro/riconsegna in ritardo • 1 ordine fornitore fallito",
+        )
+        # un 'tipo' non riconosciuto non sparisce silenziosamente.
+        self.assertEqual(fmt([{"tipo": "qualcosa_di_nuovo"}]), "1 altra anomalia")
 
     def test_daily_summary_lists_only_nonzero_categories_separated_by_bullet(self):
         # mockup del riepilogo push: "1 pratica da completare • 3 promemoria"

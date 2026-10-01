@@ -12,6 +12,13 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from calendar_service import event_type_emoji
+# Riuso dello strumento 'anomalie' di Mau AI (stessi 4 controlli, stessa
+# soglia _ANOMALY_STALE_DAYS, nessuna logica duplicata) per il riepilogo
+# proattivo quotidiano - vedi process_daily_anomalies. Non e' un'importazione
+# circolare: ai_assistant.py non importa (ne' direttamente ne'
+# indirettamente, tramite calendar_service/shift_service/balance_service)
+# questo modulo.
+import ai_assistant
 
 ROME_TZ = ZoneInfo("Europe/Rome")
 
@@ -52,6 +59,7 @@ NOTIFICATION_TYPES = {
     "calendar_daily_summary": ("Riepilogo calendario giornaliero", "OGGI"),
     "calendar_comment": ("Nuovo commento calendario", "MSG"),
     "daily_summary": ("Riepilogo del giorno", "☀️"),
+    "daily_anomalies": ("Controllo anomalie di Mau AI", "🔎"),
     "cremation_cycle_waiting": ("Ciclo cremazione in attesa", "🔥"),
 }
 
@@ -66,6 +74,7 @@ NOTIFICATION_TYPES = {
 # categorie esplicitamente richieste, tutte le altre restano invariate.
 NOTIFICATION_TITLE_SYMBOLS = {
     "daily_summary": "🔔",
+    "daily_anomalies": "🔔",
     "calendar_daily_summary": "🔔",
     "appointment_reminder": "🔔",
     "calendar_reminder_30m": "🔔",
@@ -566,6 +575,95 @@ def process_daily_summaries(conn, db_path, current=None) -> int:
         text = _format_daily_summary(ritiri, consegne, incomplete, other_reminders)
         emit_notification(
             conn, "daily_summary", "Riepilogo di oggi", text,
+            target_user_ids=[row["user_id"]], payload={"url": "/"}, db_path=db_path,
+        )
+        created += 1
+    return created
+
+
+# Etichette (singolare, plurale) per i 4 "tipo" prodotti da
+# ai_assistant._tool_anomalie - mai una descrizione/soglia diversa da
+# quella gia' verificata li' (vedi _ANOMALY_STALE_DAYS in ai_assistant.py):
+# qui solo la forma compatta per il corpo di una notifica push.
+_DAILY_ANOMALY_LABELS = {
+    "saldo_aperto_da_troppo_tempo": ("saldo aperto da troppo tempo", "saldi aperti da troppo tempo"),
+    "ritiro_o_riconsegna_in_ritardo": ("ritiro/riconsegna in ritardo", "ritiri/riconsegne in ritardo"),
+    "smaltimento_in_sospeso_da_troppo_tempo": ("smaltimento in sospeso", "smaltimenti in sospeso"),
+    "ordine_fornitore_fallito": ("ordine fornitore fallito", "ordini fornitore falliti"),
+}
+
+
+def _format_daily_anomalies(anomalie: list) -> str:
+    """Corpo sintetico per la notifica push, stesso stile di
+    _format_daily_summary: solo le categorie con almeno un elemento,
+    separate da '•'. Un tipo imprevisto (nessuna modifica futura a
+    _tool_anomalie aggiunta qui per errore) viene comunque contato in una
+    voce generica, mai perso silenziosamente."""
+    def plural(n, singular, plural_form):
+        return f"{n} {singular if n == 1 else plural_form}"
+    counts: dict = {}
+    altro = 0
+    for a in anomalie:
+        tipo = a.get("tipo")
+        if tipo in _DAILY_ANOMALY_LABELS:
+            counts[tipo] = counts.get(tipo, 0) + 1
+        else:
+            altro += 1
+    parts = [plural(counts[t], *_DAILY_ANOMALY_LABELS[t]) for t in _DAILY_ANOMALY_LABELS if counts.get(t)]
+    if altro:
+        parts.append(plural(altro, "altra anomalia", "altre anomalie"))
+    return push_bullets(*parts) if parts else "Nessuna anomalia trovata"
+
+
+def process_daily_anomalies(conn, db_path, current=None) -> int:
+    """Invia a ciascun utente che lo ha attivato in Personalizza il
+    riepilogo giornaliero delle anomalie gia' rilevate dallo strumento
+    'anomalie' di Mau AI (ai_assistant._tool_anomalie - stessi 4 controlli,
+    stessa soglia, nessun criterio nuovo inventato qui), una sola volta al
+    giorno, all'orario configurato - stesso identico meccanismo di
+    process_daily_summaries (preferenze dedicate, finestra di 10 minuti,
+    idempotenza via scheduled_notification_events). Richiesta esplicita
+    dell'utente: rendere Mau AI "da reattivo a proattivo" sulle anomalie
+    che oggi vanno chieste a voce in chat."""
+    current = current or _rome_now()
+    today = current.date().isoformat()
+    rows = conn.execute(
+        """SELECT user_id,
+                  MAX(CASE WHEN key='daily_anomalies_enabled' THEN value END) enabled,
+                  MAX(CASE WHEN key='daily_anomalies_time' THEN value END) time_value
+           FROM user_preferences
+           WHERE key IN ('daily_anomalies_enabled','daily_anomalies_time')
+           GROUP BY user_id""",
+    ).fetchall()
+    created = 0
+    risultato = None
+    for row in rows:
+        if row["enabled"] != "1":
+            continue
+        time_value = (row["time_value"] or "").strip()
+        if not TIME_HHMM_RE.match(time_value):
+            continue
+        try:
+            configured = datetime.fromisoformat(f"{today}T{time_value}:00")
+        except ValueError:
+            continue
+        if not (configured <= current < configured + timedelta(minutes=10)):
+            continue
+        key = f"daily-anomalies-{row['user_id']}-{today}"
+        if conn.execute("SELECT 1 FROM scheduled_notification_events WHERE event_key=?", (key,)).fetchone():
+            continue
+        conn.execute(
+            "INSERT INTO scheduled_notification_events(event_key,created_at) VALUES(?,?)",
+            (key, current.isoformat(timespec="seconds")),
+        )
+        if risultato is None:
+            # Stesso controllo per tutti gli utenti di questo stesso giro
+            # di cron (stesso istante): calcolato una volta sola, non
+            # ricalcolato per ogni destinatario con lo stesso orario.
+            risultato = ai_assistant._tool_anomalie(conn, None, current, {"limite": 10})
+        text = _format_daily_anomalies(risultato["anomalie"])
+        emit_notification(
+            conn, "daily_anomalies", "Controllo anomalie di Mau AI", text,
             target_user_ids=[row["user_id"]], payload={"url": "/"}, db_path=db_path,
         )
         created += 1
