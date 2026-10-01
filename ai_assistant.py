@@ -69,6 +69,12 @@ class Deps:
     money_value: Callable[[Any], float]
     effective_total: Callable[[Any], float]
     channel_paid_amount: Callable[[Any, int, str], float]
+    # Stessa identica somma di channel_paid_amount, per molte pratiche in
+    # una sola query invece di una query per pratica - usata da
+    # interroga_pratiche per evitare un pattern N+1 su molte righe (audit
+    # RAM, richiesta esplicita dell'utente). Ritorna
+    # {(practice_id, circuito): importo}.
+    channel_paid_amounts_batch: Callable[[Any, list], dict]
     channel_remaining: Callable[[Any], float]
     revenue_by_quote_category: Callable[[Any, str | None, str | None], list]
     # Stessa identica formula SQL gia' usata dalla dashboard del gestionale
@@ -1569,7 +1575,24 @@ def _tool_anomalie(c, user, now, p):
 # (stesso parser del gestionale), MAI da CAST approssimativi.
 # ---------------------------------------------------------------------------
 
-_PQ_MAX_ROWS = 50000
+# Due tetti distinti (audit RAM, richiesta esplicita dell'utente):
+# - _PQ_MAX_ROWS: percorso "leggero" (nessun campo calcolato tra quelli
+#   richiesti) - seleziona gia' solo le colonne realmente necessarie, mai
+#   "practices.*", quindi tollera piu' righe.
+# - _PQ_MAX_ROWS_FULL_ROW: percorso "pesante" (totale_pratica/incassato/
+#   rimanenza/circuito_economico, vedi _PQ_COMPUTED_ROW_COLUMNS) - anche
+#   con le sole 13 colonne economiche (non piu' tutte le 165), resta il
+#   percorso piu' costoso per riga, quindi un tetto piu' basso.
+# Valori scelti sulla base del benchmark sintetico dell'audit (schema
+# reale a 165 colonne, MAI dati di produzione): 10.000 righe a 165 colonne
+# ~32 MB, 50.000 righe ~160 MB - con le 13 colonne di
+# _PQ_COMPUTED_ROW_COLUMNS lo stesso numero di righe pesa una frazione di
+# quei valori (vedi benchmark ripetuto dopo questa modifica). Restando
+# comunque un servizio concorrente (altre richieste possono arrivare nello
+# stesso momento), i tetti restano nell'ordine di poche migliaia di righe
+# per il percorso pesante, non decine di migliaia.
+_PQ_MAX_ROWS = 20000
+_PQ_MAX_ROWS_FULL_ROW = 5000
 _PQ_SENSITIVE_COLUMNS = {"signature_data", "ddt_share_token"}
 _PQ_MULTI_SEP = "\x1f"
 _PQ_SERVICES = ("Cremazione singola", "Cremazione collettiva", "Da decidere")
@@ -2008,11 +2031,32 @@ def _pq_computed_test(key, f, op, filt):
     return (lambda v: not test(v)) if negate else test
 
 
-def _pq_computed_values(c, row):
+# Colonne REALMENTE lette, in cascata, da effective_total/channel_remaining/
+# payment_channel (vedi Deps/app.py: effective_total -> received_amount/
+# calculated_service_total/uses_total_d, channel_remaining -> remaining_*/
+# outstanding_amount) per i 4 campi calcolati sotto - MAI "practices.*"
+# (audit RAM, richiesta esplicita dell'utente: con tutte le 165 colonne il
+# benchmark misurava ~160 MB su 50.000 pratiche). Se una di quelle
+# funzioni in app.py inizia a leggere un campo diverso, questo elenco va
+# aggiornato di conseguenza - isolato qui come unica fonte.
+_PQ_COMPUTED_ROW_COLUMNS = (
+    "id", "total_text", "total_service_manual", "total_service",
+    "price_cremation", "price_pickup", "price_delivery", "price_evening",
+    "price_night", "price_holiday", "payment_status", "deposit", "deposit_final",
+    "remaining_balance", "remaining_final",
+)
+
+
+def _pq_computed_values(row, paid_amounts):
+    """paid_amounts: {(practice_id, circuito): importo}, precalcolato UNA
+    SOLA VOLTA per tutte le pratiche coinvolte da
+    DEPS.channel_paid_amounts_batch (audit RAM: prima una query SQL per
+    OGNI pratica, pattern N+1) - stessa identica somma di
+    DEPS.channel_paid_amount(c, id, canale), mai una formula diversa."""
     canale = DEPS.payment_channel(row)
     return {
         "totale_pratica": round(DEPS.effective_total(row), 2),
-        "incassato": round(DEPS.channel_paid_amount(c, row["id"], canale), 2),
+        "incassato": round(paid_amounts.get((row["id"], canale), 0.0), 2),
         "rimanenza": round(DEPS.channel_remaining(row), 2),
         "circuito_economico": canale,
     }
@@ -2081,6 +2125,11 @@ def _pq_aggregate(specs, rows_values):
 
 
 _PQ_AGG_FUNCS = ("somma", "media", "minimo", "massimo", "conteggio_valorizzati")
+# Funzione SQLite equivalente di ciascuna funzione sopra, usata dal percorso
+# di aggregazione lato SQL (vedi _tool_interroga_pratiche) per i soli campi
+# NON calcolati - stessa semantica di _pq_aggregate (un valore vuoto non
+# conta ne' nella somma ne' nel divisore), mai una formula diversa.
+_PQ_SQL_AGG_FUNC = {"somma": "SUM", "media": "AVG", "minimo": "MIN", "massimo": "MAX", "conteggio_valorizzati": "COUNT"}
 _PQ_OUTPUTS = ("conteggio", "elenco", "raggruppa")
 
 
@@ -2213,11 +2262,47 @@ def _tool_interroga_pratiche(c, user, now, p):
         n = c.execute(f"SELECT COUNT(*) n FROM practices WHERE {where_sql}", args).fetchone()["n"]
         return {"conteggio": n, **base}
 
-    # Selezione delle colonne necessarie (id + espressioni; riga intera solo se
-    # servono campi calcolati).
+    # Conteggio + aggregazioni su campi NON calcolati (es. "quanto pesano in
+    # totale le pratiche di agosto", prezzo_urna, eta_anni, peso...): somma/
+    # media/minimo/massimo direttamente in SQL (stessa funzione PPM_MONEY =
+    # DEPS.money_value gia' usata ovunque in questo modulo, MAI una formula
+    # nuova), invece di portare ogni riga in Python per poi sommarla li' -
+    # audit RAM, richiesta esplicita dell'utente ("se l'aggregazione puo'
+    # essere spostata lato SQL senza cambiare la logica economica, valuta la
+    # possibilita'"). Esclusi i campi CALCOLATI (totale_pratica/incassato/
+    # rimanenza/circuito_economico): dipendono da funzioni Python
+    # (effective_total/channel_paid_amount/channel_remaining in app.py) non
+    # riproducibili fedelmente in SQL senza rischio - per quelli si resta
+    # sul percorso Python sotto, ora pero' con colonne ridotte e senza N+1
+    # (vedi _PQ_COMPUTED_ROW_COLUMNS/channel_paid_amounts_batch).
+    if output == "conteggio" and not py_tests and agg_specs and not any(reg[k].get("computed") or reg[k].get("multi") for _, k in agg_specs):
+        agg_cols = []
+        for i, (fn, k) in enumerate(agg_specs):
+            expr = reg[k]["sql"]
+            # NULL (non 0) quando il campo e' vuoto, cosi' SUM/AVG/MIN/MAX/
+            # COUNT di SQLite ignorano quella riga esattamente come fa oggi
+            # _pq_num_of/_pq_aggregate in Python (un campo vuoto non conta
+            # ne' nella somma ne' nel divisore della media) - mai un risultato
+            # diverso da quello che il percorso Python avrebbe prodotto.
+            safe = f"(CASE WHEN TRIM(COALESCE(CAST({expr} AS TEXT),''))='' THEN NULL ELSE PPM_MONEY({expr}) END)"
+            agg_cols.append(f"{_PQ_SQL_AGG_FUNC[fn]}({safe}) AS _a{i}")
+            agg_cols.append(f"COUNT({safe}) AS _c{i}")
+        row_agg = c.execute(f"SELECT COUNT(*) n, {', '.join(agg_cols)} FROM practices WHERE {where_sql}", args).fetchone()
+        aggregazioni = []
+        for i, (fn, k) in enumerate(agg_specs):
+            val = row_agg[f"_a{i}"]
+            aggregazioni.append({"funzione": fn, "campo": k, "valore": round(val, 2) if val is not None else None, "valori_considerati": row_agg[f"_c{i}"]})
+        return {"conteggio": row_agg["n"], "aggregazioni": aggregazioni, **base}
+
+    # Selezione delle colonne necessarie (id + espressioni; le colonne
+    # economiche di _PQ_COMPUTED_ROW_COLUMNS, mai "practices.*", solo se
+    # servono campi calcolati - audit RAM, vedi commento su quella costante).
     select = ["practices.id AS _id"]
     if need_row:
-        select.append("practices.*")
+        # "id" incluso anche col suo nome nativo (oltre all'alias _id sopra):
+        # _pq_computed_values legge row["id"] (stesso nome letto ovunque
+        # altrove in questo modulo/app.py per le funzioni economiche).
+        select += [f"practices.{col}" for col in _PQ_COMPUTED_ROW_COLUMNS]
     aliases: dict = {}
     for i, k in enumerate(needed):
         f = reg[k]
@@ -2230,14 +2315,32 @@ def _tool_interroga_pratiche(c, user, now, p):
             select.append(f"(SELECT GROUP_CONCAT({m['expr']}, char(31)) FROM {m['from']}) AS {alias}")
         else:
             select.append(f"{f['sql']} AS {alias}")
+    # Tetto differenziato (vedi commento su _PQ_MAX_ROWS/_PQ_MAX_ROWS_FULL_ROW
+    # piu' sopra): piu' basso sul percorso "pesante" (campi calcolati), che
+    # anche a colonne ridotte resta il piu' costoso per riga.
+    max_rows = _PQ_MAX_ROWS_FULL_ROW if need_row else _PQ_MAX_ROWS
     cur = c.execute(f"SELECT {', '.join(select)} FROM practices WHERE {where_sql}", args)
-    rows = cur.fetchmany(_PQ_MAX_ROWS + 1)
-    if len(rows) > _PQ_MAX_ROWS:
-        raise ToolInputError(f"Troppe pratiche corrispondenti (oltre {_PQ_MAX_ROWS}): restringi con un periodo o altri filtri.")
+    rows = cur.fetchmany(max_rows + 1)
+    if len(rows) > max_rows:
+        # Mai materializzare comunque tutto, mai un crash: un errore
+        # strutturato che l'Assistente puo' rigirare all'utente chiedendo di
+        # restringere con un filtro pertinente (audit RAM, richiesta
+        # esplicita dell'utente) - elenco di dimensioni suggerite, non solo
+        # "un periodo o altri filtri" generico.
+        raise ToolInputError(
+            f"Troppe pratiche corrispondenti (oltre {max_rows}) per rispondere in un'unica query: "
+            "restringi la domanda con almeno uno di questi filtri: periodo, sede, cliente, veterinario, "
+            "collaboratore, specie, stato, provenienza, servizio (singola/collettiva)."
+        )
+
+    # Per i campi calcolati, 'incassato' viene dal ledger Bilanci: UNA sola
+    # query per TUTTE le pratiche di questa pagina di risultati (mai una
+    # query per riga - audit RAM, pattern N+1 eliminato).
+    paid_amounts = DEPS.channel_paid_amounts_batch(c, [r["_id"] for r in rows]) if need_row else {}
 
     records = []
     for r in rows:
-        comp = _pq_computed_values(c, r) if need_row else {}
+        comp = _pq_computed_values(r, paid_amounts) if need_row else {}
         vals = {}
         for k in needed:
             vals[k] = comp[k] if reg[k].get("computed") else r[aliases[k]]
@@ -2245,10 +2348,18 @@ def _tool_interroga_pratiche(c, user, now, p):
             continue
         records.append((r["_id"], vals))
 
+    # Campi UNICI tra gli agg_specs (bug reale trovato scrivendo il test di
+    # equivalenza col nuovo percorso SQL: se lo stesso campo viene
+    # aggregato con piu' funzioni insieme, es. somma+media+minimo sullo
+    # stesso campo, il valore di ogni riga andava aggiunto una volta sola,
+    # non una volta per OGNI funzione che lo usa - altrimenti la somma
+    # risultava moltiplicata per quante funzioni condividono quel campo).
+    agg_fields = list(dict.fromkeys(k for _, k in agg_specs))
+
     def numeric_columns(recs):
         cols: dict = {}
         for _, v in recs:
-            for _, k in agg_specs:
+            for k in agg_fields:
                 cols.setdefault(k, []).append(_pq_num_of(reg[k], v[k]))
         return cols
 
@@ -2398,7 +2509,7 @@ TOOL_SPECS = [
     },
     {
         "name": "interroga_pratiche",
-        "description": "Strumento UNIVERSALE sulle pratiche: conta, elenca, raggruppa o somma le pratiche filtrando su QUALSIASI campo/sezione (servizio singola/collettiva, stato, sede, provenienza, specie, razza, urna/calco/accessorio, veterinario, collaboratore, importi, date, ciclo, calendario, WhatsApp, note, ...) in QUALSIASI periodo. Usalo per ogni domanda sulle pratiche che combina filtri o chiede una suddivisione: 'quante singole e quante collettive nel periodo' = output='raggruppa', raggruppa_per=['servizio'] con il periodo; 'quante singole a Empoli' = output='conteggio' con filtri; 'elenca le pratiche con urna X' = output='elenco'; 'incasso medio per servizio' = raggruppa + aggregazioni. Per i 'ritiri effettuati' / 'riconsegne' di un periodo usa fase='ritirati'/'riconsegnati' (stessa definizione di conta_ritiri/conta_riconsegne, quindi i numeri coincidono). Filtri: lista di {campo, operatore, valore | valori}; operatori: uguale, diverso, contiene, non_contiene, in, non_in, maggiore, maggiore_uguale, minore, minore_uguale, tra, vuoto, non_vuoto (i testi si confrontano senza distinguere maiuscole/minuscole; per i servizi valgono anche 'singola'/'collettiva'). Campi principali: servizio, stato, sede, provenienza, origine_richiesta, operatore, proprietario, animale, specie, razza, peso, eta_anni, data_ritiro, data_creazione, urna, calco, accessorio, veterinario, collaboratore, totale_pratica, incassato, rimanenza, stato_pagamento, ciclo_stato, in_ciclo, numero_fattura... ma OGNI campo e' disponibile: usa campi_pratiche per l'elenco completo. Non dire mai all'utente che non puoi filtrare per un campo delle pratiche senza aver controllato campi_pratiche.",
+        "description": "Strumento UNIVERSALE sulle pratiche: conta, elenca, raggruppa o somma le pratiche filtrando su QUALSIASI campo/sezione (servizio singola/collettiva, stato, sede, provenienza, specie, razza, urna/calco/accessorio, veterinario, collaboratore, importi, date, ciclo, calendario, WhatsApp, note, ...) in QUALSIASI periodo. Per una domanda che chiede un NUMERO o una STATISTICA (quante, quanto, quale totale/media/minimo/massimo) usa SEMPRE output='conteggio' (da solo o con 'aggregazioni') o output='raggruppa': mai output='elenco' per rispondere a una domanda numerica, anche se devi prima capire quante pratiche corrispondono - l'elenco serve solo quando l'utente vuole vedere QUALI pratiche, non quante/quanto. Se la combinazione di filtri scelta e' troppo ampia (es. nessun periodo su un archivio storico) lo strumento risponde con un errore che indica quale filtro aggiungere (periodo, sede, cliente, veterinario, specie, stato...): riproponilo all'utente in modo naturale, non riprovare da solo con parametri a caso. Usalo per ogni domanda sulle pratiche che combina filtri o chiede una suddivisione: 'quante singole e quante collettive nel periodo' = output='raggruppa', raggruppa_per=['servizio'] con il periodo; 'quante singole a Empoli' = output='conteggio' con filtri; 'elenca le pratiche con urna X' = output='elenco'; 'incasso medio per servizio' = raggruppa + aggregazioni. Per i 'ritiri effettuati' / 'riconsegne' di un periodo usa fase='ritirati'/'riconsegnati' (stessa definizione di conta_ritiri/conta_riconsegne, quindi i numeri coincidono). Filtri: lista di {campo, operatore, valore | valori}; operatori: uguale, diverso, contiene, non_contiene, in, non_in, maggiore, maggiore_uguale, minore, minore_uguale, tra, vuoto, non_vuoto (i testi si confrontano senza distinguere maiuscole/minuscole; per i servizi valgono anche 'singola'/'collettiva'). Campi principali: servizio, stato, sede, provenienza, origine_richiesta, operatore, proprietario, animale, specie, razza, peso, eta_anni, data_ritiro, data_creazione, urna, calco, accessorio, veterinario, collaboratore, totale_pratica, incassato, rimanenza, stato_pagamento, ciclo_stato, in_ciclo, numero_fattura... ma OGNI campo e' disponibile: usa campi_pratiche per l'elenco completo. Non dire mai all'utente che non puoi filtrare per un campo delle pratiche senza aver controllato campi_pratiche.",
         "input_schema": _schema({
             **_PERIOD_PROPS,
             "campo_data": {"type": "string", "description": "Campo data a cui applicare il periodo. Default data_pratica (data di ritiro, o di creazione se assente: come conta_pratiche). Altri: data_ritiro, data_creazione, data_ritiro_effettiva, data_consegna_effettiva, ciclo_data, data_fattura, data_saldo, ..."},
@@ -2638,7 +2749,7 @@ CONTINUITA' DELLA CONVERSAZIONE: quando una domanda e' un follow-up implicito di
 
 Quando rispondi con un dato ottenuto da uno strumento, sii conciso ma specifica il perimetro del dato (periodo, sede o altri filtri applicati) cosi' l'utente capisce su cosa si basa il risultato. Quando lo strumento restituisce un campo 'url' per una pratica/evento specifico, includilo nella risposta (es. "Puoi aprirla qui: [url]") cosi' l'utente puo' aprirla direttamente nel gestionale. Rispondi sempre in italiano, in modo diretto e senza dettagli tecnici (mai SQL, mai nomi di tabelle).
 
-PRATICHE - ACCESSO COMPLETO: hai accesso a TUTTI i campi, le voci e le sezioni delle pratiche tramite interroga_pratiche (filtra/conta/raggruppa/somma/elenca su qualsiasi campo e periodo) e campi_pratiche (elenco dei campi). Per qualunque domanda che riguarda pratiche filtrate o suddivise per un campo (singole/collettive, sede, provenienza, specie, urna, veterinario, importi, stato pagamento, ciclo, ...) usa interroga_pratiche: non rispondere MAI "non ho uno strumento per filtrare quel campo" senza aver prima controllato campi_pratiche, e non dire mai che un dato delle pratiche non e' accessibile se puo' essere ottenuto con un filtro, un raggruppamento o un elenco. Se un valore filtrato da' zero risultati inattesi, verifica i valori realmente presenti con output='raggruppa' sul campo. I conteggi restano sempre quelli restituiti dallo strumento.
+PRATICHE - ACCESSO COMPLETO: hai accesso a TUTTI i campi, le voci e le sezioni delle pratiche tramite interroga_pratiche (filtra/conta/raggruppa/somma/elenca su qualsiasi campo e periodo) e campi_pratiche (elenco dei campi). Per qualunque domanda che riguarda pratiche filtrate o suddivise per un campo (singole/collettive, sede, provenienza, specie, urna, veterinario, importi, stato pagamento, ciclo, ...) usa interroga_pratiche: non rispondere MAI "non ho uno strumento per filtrare quel campo" senza aver prima controllato campi_pratiche, e non dire mai che un dato delle pratiche non e' accessibile se puo' essere ottenuto con un filtro, un raggruppamento o un elenco. Se un valore filtrato da' zero risultati inattesi, verifica i valori realmente presenti con output='raggruppa' sul campo. I conteggi restano sempre quelli restituiti dallo strumento. Per un NUMERO o una STATISTICA (quante pratiche, quanto abbiamo incassato/fatturato, media/totale/minimo/massimo di un campo) usa SEMPRE output='conteggio' (con 'aggregazioni' se serve un totale/media) o output='raggruppa' per una suddivisione: non chiedere MAI un output='elenco' solo per contare le righe restituite a mano. Se interroga_pratiche risponde con un errore che chiede di restringere la domanda (troppe pratiche corrispondenti), non riprovare da solo con un limite diverso: chiedi all'utente quale filtro aggiungere (periodo, sede, cliente, veterinario, specie, stato...), in modo naturale.
 
 Puoi chiamare piu' strumenti, anche piu' volte con filtri diversi, per rispondere a domande di confronto (es. confrontare due sedi chiamando lo stesso strumento due volte con sede diversa) o che richiedono piu' fonti. Per una domanda semplice usa il minor numero di strumenti necessario; per "cosa devo fare oggi"/riepiloghi di giornata usa riepilogo_giornata invece di richiamare separatamente ogni singolo strumento.
 

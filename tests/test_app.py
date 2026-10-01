@@ -1695,6 +1695,51 @@ class PetParadiseTests(unittest.TestCase):
             self.assertEqual(second, 0)
             self.assertEqual(conn.execute("SELECT count(*) n FROM notifications WHERE type='pickup_today'").fetchone()["n"], 0)
 
+    def test_scheduled_notifications_no_longer_select_star_and_cover_every_unpaid_practice_once(self):
+        # Audit RAM (richiesta esplicita dell'utente): process_scheduled_notifications
+        # non deve piu' leggere "SELECT *" (tutte le 165 colonne) per ogni
+        # pratica "Consegnato + Da saldare" - verifica strutturale (il
+        # codice sorgente della funzione non contiene piu' quel pattern) +
+        # comportamentale (stesso identico insieme di notifiche, nessuna
+        # pratica saltata ne' duplicata, stesso testo).
+        import inspect
+        import notification_service as ns
+        source = inspect.getsource(ns.process_scheduled_notifications)
+        self.assertNotIn("SELECT * FROM practices", source)
+        with app.db() as conn:
+            admin = conn.execute("SELECT id FROM users WHERE username='admin'").fetchone()["id"]
+            stamp = app.now()
+            ids = []
+            for n, branch in enumerate(("Livorno", "Empoli", "Livorno"), start=1):
+                pid = conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,payment_status,
+                             animal_name,created_at,updated_at,created_by) VALUES(?,?,?,?,?,?,?,?,?)""",
+                             (f"PP-UNPAID-{n}", "Privato", branch, "Consegnato", "Da saldare", f"Animale{n}", stamp, stamp, admin)).lastrowid
+                ids.append(pid)
+            # Pratica consegnata ma GIA' pagata: non deve generare notifica.
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,payment_status,
+                         animal_name,created_at,updated_at,created_by) VALUES(?,?,?,?,?,?,?,?,?)""",
+                         ("PP-PAID", "Privato", "Livorno", "Consegnato", "Pagato", "Pagata", stamp, stamp, admin))
+            created = process_scheduled_notifications(conn, app.DB_PATH)
+            # created somma i risultati di _scheduled_once (gia' idempotente
+            # per chiave "payment-due-{id}-{day}"): 3 = esattamente una
+            # pianificazione per OGNI pratica non pagata, nessuna saltata,
+            # nessuna duplicata - indipendente da come le notifiche vengono
+            # poi raggruppate/visualizzate (emit_notification puo' unire
+            # notifiche dello stesso tipo in una sola riga compatta).
+            self.assertEqual(created, 3)
+            # scheduled_notification_events e' la fonte non raggruppata/non
+            # riassunta (emit_notification puo' condensare piu' notifiche
+            # dello stesso tipo in una sola riga visibile - qui invece
+            # verifichiamo la pianificazione vera, una chiave per pratica).
+            today = app.rome_now().date().isoformat()
+            keys = {r["event_key"] for r in conn.execute("SELECT event_key FROM scheduled_notification_events WHERE event_key LIKE 'payment-due-%'").fetchall()}
+            self.assertEqual(keys, {f"payment-due-{pid}-{today}" for pid in ids})
+            # La pratica gia' pagata non genera alcuna pianificazione.
+            paid_id = conn.execute("SELECT id FROM practices WHERE practice_number='PP-PAID'").fetchone()["id"]
+            self.assertNotIn(f"payment-due-{paid_id}-{today}", keys)
+            # Riesecuzione: idempotente, nessuna nuova pianificazione per le stesse pratiche.
+            self.assertEqual(process_scheduled_notifications(conn, app.DB_PATH), 0)
+
     def test_opening_notification_center_clears_unread_badge(self):
         with app.db() as conn:
             user = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
@@ -9693,6 +9738,46 @@ class PetParadiseTests(unittest.TestCase):
         # every payment_movements row including the legacy ones
         self.assertEqual((practice["deposit_final"],practice["remaining_final"]),("320.00","0.00"))
 
+    def test_channel_paid_amounts_batch_matches_channel_paid_amount_per_practice(self):
+        # Audit RAM (richiesta esplicita dell'utente): interroga_pratiche
+        # (Mau AI) ora calcola "incassato" per molte pratiche con UNA sola
+        # query (channel_paid_amounts_batch) invece di una query per
+        # pratica (channel_paid_amount) - questo test verifica che il
+        # risultato della versione in blocco sia IDENTICO, pratica per
+        # pratica e circuito per circuito, a quello della funzione
+        # originale, inclusa l'esclusione degli storni.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            ids={}
+            for key,branch in (("w1","Livorno"),("w2","Empoli"),("d1","Livorno")):
+                ids[key]=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                        service_type,payment_status) VALUES(?,?,?,?,?,?,?,?,?)""",
+                                      (f"CR-BATCH-{key.upper()}","Privato",branch,"Ritirato",stamp,stamp,admin["id"],"Cremazione singola","Da saldare")).lastrowid
+            def movement(pid,category,cents,movement_type="Saldo",uuid_suffix="",related_movement_id=None):
+                return conn.execute("""INSERT INTO balance_movements(movement_uuid,practice_id,practice_number_snapshot,movement_date,category,ledger_section,movement_type,amount_cents,idempotency_key,related_movement_id,created_at)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                             (f"batch-{pid}-{category}-{movement_type}{uuid_suffix}",pid,f"CR-{pid}","2026-07-20",category,"Entrata",movement_type,cents,f"batch-key-{pid}-{category}{uuid_suffix}",related_movement_id,stamp)).lastrowid
+            movement(ids["w1"],"W",10000)
+            movement(ids["w1"],"W",5000,uuid_suffix="-2")  # due movimenti sullo stesso circuito: devono sommarsi
+            movement(ids["w2"],"W",7500)
+            reversed_id=movement(ids["d1"],"D",32000)
+            # Uno storno: il movimento stornato NON deve contare, ne' nella
+            # versione originale ne' in quella in blocco.
+            movement(ids["d1"],"D",-32000,movement_type="Storno",uuid_suffix="-storno",related_movement_id=reversed_id)
+            conn.commit()
+            practice_ids=[ids["w1"],ids["w2"],ids["d1"]]
+            batch=app.channel_paid_amounts_batch(conn,practice_ids)
+            for pid,channel in ((ids["w1"],"W"),(ids["w2"],"W"),(ids["d1"],"D"),(ids["w1"],"D"),(ids["d1"],"W")):
+                original=app.channel_paid_amount(conn,pid,channel)
+                self.assertEqual(batch.get((pid,channel),0.0),original,f"pratica {pid} circuito {channel}")
+            self.assertEqual(batch[(ids["w1"],"W")],150.0)
+            self.assertEqual(batch[(ids["w2"],"W")],75.0)
+            # Il circuito D della pratica d1 e' interamente stornato -> 0,
+            # non presente nel dict (coerente con 0.0 di default).
+            self.assertEqual(batch.get((ids["d1"],"D"),0.0),0.0)
+            # lista vuota -> dict vuoto, nessuna query eseguita a vuoto
+            self.assertEqual(app.channel_paid_amounts_batch(conn,[]),{})
+
     def test_acconto_and_saldo_keep_their_own_movement_dates(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
@@ -10215,6 +10300,42 @@ class PetParadiseTests(unittest.TestCase):
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content)
         self.handler.path="/?pagamenti_periodo=oggi";self.handler.dashboard(admin)
         self.assertIn('data-dashboard-payment="Acconto" data-count="1" data-amount="90.00"',rendered[-1])
+
+    def test_dashboard_open_balance_query_uses_narrow_columns_and_matches_previous_result(self):
+        # Audit RAM (richiesta esplicita dell'utente): la query "Da saldare"
+        # della dashboard non deve piu' leggere "SELECT p.*" (165 colonne)
+        # - verifica strutturale (il codice sorgente non contiene piu'
+        # quel pattern, DASHBOARD_OPEN_BALANCE_COLUMNS include le colonne
+        # attese) + comportamentale, con un mix di pratiche a totale
+        # MANUALE (total_text) e CALCOLATO dai prezzi (price_*), esattamente
+        # i due percorsi che outstanding_amount/effective_total usano.
+        import inspect
+        source = inspect.getsource(app.App.dashboard)
+        self.assertNotIn("SELECT p.* FROM practices", source)
+        self.assertEqual(
+            set(app.DASHBOARD_OPEN_BALANCE_COLUMNS),
+            {"id", "created_at", "total_text", "total_service_manual", "total_service",
+             "price_cremation", "price_pickup", "price_delivery", "price_evening",
+             "price_night", "price_holiday", "payment_status", "deposit", "deposit_final"},
+        )
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            # Totale MANUALE (total_text, circuito D): saldo aperto 320-100=220.
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                         animal_name,payment_status,total_text,deposit_final) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                         ("PP-OPEN-D", "Privato", "Livorno", "Consegnato", stamp, stamp, admin["id"], "Birba", "Acconto", "320", "100"))
+            # Totale CALCOLATO dai prezzi (circuito W, nessun total_text): saldo aperto 250-50=200.
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                         animal_name,payment_status,price_cremation,deposit) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                         ("PP-OPEN-W", "Privato", "Empoli", "Consegnato", stamp, stamp, admin["id"], "Toby", "Acconto", "250", "50"))
+            # Gia' pagata: non deve contare nel saldo aperto.
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                         animal_name,payment_status,total_text) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                         ("PP-OPEN-PAID", "Privato", "Livorno", "Consegnato", stamp, stamp, admin["id"], "Nina", "Pagato", "150"))
+        rendered = []; self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.path = "/"; self.handler.dashboard(admin)
+        page = rendered[-1]
+        self.assertIn('data-dashboard-payment="Da saldare" data-count="2" data-amount="420.00"', page)
 
     def test_dashboard_totale_incassato_equals_w_plus_d_subtotals(self):
         # scenari 16,17,18: sottototali W/D e la loro somma = Totale incassato
@@ -18619,6 +18740,103 @@ class AIAssistantTests(unittest.TestCase):
             self.assertEqual(self._pq(c, testo_libero="%")["conteggio"], 0)
             with self.assertRaises(self.ai.ToolInputError):
                 self._pq(c, cestino="forse")
+
+    def test_interroga_pratiche_aggregazione_sql_su_campo_non_calcolato_coincide_col_percorso_python(self):
+        # Audit RAM (richiesta esplicita dell'utente): somma/media/minimo/
+        # massimo/conteggio_valorizzati su un campo NON calcolato (qui
+        # totale_servizio) ora vengono calcolati direttamente in SQL
+        # (SUM/AVG/MIN/MAX/COUNT), senza materializzare le righe in Python -
+        # il risultato deve essere IDENTICO a quello che il percorso Python
+        # (forzato qui aggiungendo anche un filtro su un campo calcolato,
+        # che impedisce la scorciatoia SQL) avrebbe prodotto.
+        with app.db() as c:
+            self._pq_seed(c)
+            sql_path = self._pq(c, **self.PQ_PERIODO, aggregazioni=[
+                {"funzione": "somma", "campo": "totale_servizio"},
+                {"funzione": "media", "campo": "totale_servizio"},
+                {"funzione": "minimo", "campo": "totale_servizio"},
+                {"funzione": "massimo", "campo": "totale_servizio"},
+                {"funzione": "conteggio_valorizzati", "campo": "totale_servizio"},
+            ])
+            # Stesso filtro/periodo ma con anche un campo calcolato tra i
+            # 'filtri' (vuoto/non_vuoto su totale_pratica): forza need_row,
+            # quindi il percorso Python di materializzazione (non la
+            # scorciatoia SQL, che si applica solo se NESSUN campo
+            # calcolato e' coinvolto).
+            python_path = self._pq(c, **self.PQ_PERIODO, filtri=[{"campo": "totale_pratica", "operatore": "non_vuoto"}], aggregazioni=[
+                {"funzione": "somma", "campo": "totale_servizio"},
+                {"funzione": "media", "campo": "totale_servizio"},
+                {"funzione": "minimo", "campo": "totale_servizio"},
+                {"funzione": "massimo", "campo": "totale_servizio"},
+                {"funzione": "conteggio_valorizzati", "campo": "totale_servizio"},
+            ])
+            self.assertEqual(sql_path["conteggio"], python_path["conteggio"])
+            for sql_agg, py_agg in zip(sql_path["aggregazioni"], python_path["aggregazioni"]):
+                self.assertEqual(sql_agg["funzione"], py_agg["funzione"])
+                self.assertEqual(sql_agg["valore"], py_agg["valore"], sql_agg["funzione"])
+                self.assertEqual(sql_agg["valori_considerati"], py_agg["valori_considerati"], sql_agg["funzione"])
+            # Un campo senza alcun valore valorizzato: somma/media/min/max
+            # None (non 0), coerente col percorso Python (nessun risultato
+            # inventato).
+            empty = self._pq(c, filtri=[{"campo": "numero_pratica", "valore": "NON-ESISTE"}], aggregazioni=[{"funzione": "somma", "campo": "totale_servizio"}])
+            self.assertEqual(empty["conteggio"], 0)
+            self.assertIsNone(empty["aggregazioni"][0]["valore"])
+
+    def test_interroga_pratiche_stesso_campo_aggregato_con_piu_funzioni_non_moltiplica_la_somma(self):
+        # Bug reale trovato scrivendo il test sopra (percorso Python di
+        # materializzazione, usato per i campi calcolati come
+        # totale_pratica): chiedere somma+media+minimo+massimo sullo
+        # STESSO campo in un'unica chiamata faceva contare ogni riga una
+        # volta per ciascuna funzione che la usa, moltiplicando la somma
+        # per il numero di funzioni (qui x4) invece di sommare ogni
+        # pratica una volta sola.
+        with app.db() as c:
+            self._pq_seed(c)
+            res = self._pq(c, **self.PQ_PERIODO, aggregazioni=[
+                {"funzione": "somma", "campo": "totale_pratica"},
+                {"funzione": "media", "campo": "totale_pratica"},
+                {"funzione": "minimo", "campo": "totale_pratica"},
+                {"funzione": "massimo", "campo": "totale_pratica"},
+            ])
+            somma = next(a for a in res["aggregazioni"] if a["funzione"] == "somma")["valore"]
+            self.assertEqual(somma, 990.0)  # 300+150+250+80+90+120, mai 4x
+
+    def test_interroga_pratiche_tetto_differenziato_percorso_pesante_vs_leggero(self):
+        # Audit RAM (richiesta esplicita dell'utente): tetto piu' basso sul
+        # percorso "pesante" (campo calcolato, colonne economiche) che sul
+        # percorso "leggero" (nessun campo calcolato). Soglie abbassate qui
+        # via patch (non serve inserire migliaia di pratiche reali per
+        # verificare la soglia) - il comportamento sopra soglia e' lo
+        # stesso identico codice usato in produzione.
+        original_full_row = self.ai._PQ_MAX_ROWS_FULL_ROW
+        original_light = self.ai._PQ_MAX_ROWS
+        self.ai._PQ_MAX_ROWS_FULL_ROW = 2
+        self.ai._PQ_MAX_ROWS = 3
+        try:
+            with app.db() as c:
+                self._pq_seed(c)  # 8 pratiche totali
+                # Percorso leggero (nessun campo calcolato): soglia 3, 8
+                # pratiche totali -> deve rifiutarsi.
+                with self.assertRaises(self.ai.ToolInputError) as ctx:
+                    self._pq(c, output="raggruppa", raggruppa_per=["stato"])
+                msg = str(ctx.exception)
+                self.assertIn("periodo", msg); self.assertIn("sede", msg); self.assertIn("veterinario", msg)
+                # Stesso filtro ma ristretto a <=3 pratiche: deve funzionare
+                # normalmente (nessun campo calcolato coinvolto).
+                res = self._pq(c, filtri=[{"campo": "servizio", "valore": "collettiva"}], output="raggruppa", raggruppa_per=["sede"])
+                self.assertEqual(res["totale_pratiche"], 2)
+                # Percorso pesante (campo calcolato): soglia 2, anche solo 3
+                # pratiche nel periodo (PQ_PERIODO) superano gia' la soglia
+                # piu' bassa del percorso pesante.
+                with self.assertRaises(self.ai.ToolInputError):
+                    self._pq(c, **self.PQ_PERIODO, aggregazioni=[{"funzione": "somma", "campo": "totale_pratica"}])
+                # Ristretto a <=2 pratiche con campo calcolato: deve
+                # funzionare normalmente.
+                res = self._pq(c, filtri=[{"campo": "numero_pratica", "operatore": "in", "valori": ["Q-1", "Q-2"]}], aggregazioni=[{"funzione": "somma", "campo": "totale_pratica"}])
+                self.assertEqual(res["conteggio"], 2)
+        finally:
+            self.ai._PQ_MAX_ROWS_FULL_ROW = original_full_row
+            self.ai._PQ_MAX_ROWS = original_light
 
     def test_interroga_pratiche_errori_chiari_e_nessuna_iniezione_sql(self):
         with app.db() as c:

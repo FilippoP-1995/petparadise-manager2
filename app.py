@@ -8549,6 +8549,40 @@ def channel_paid_amount(c, practice_id, channel):
     return cents / 100.0
 
 
+def channel_paid_amounts_batch(c, practice_ids):
+    """Stessa IDENTICA logica/filtro di channel_paid_amount sopra (somma
+    REALE dei movimenti Entrata non stornati sul ledger Bilanci), calcolata
+    con UNA query per TUTTE le pratiche passate invece di una query per
+    pratica - usata da interroga_pratiche (Assistente AI, vedi audit RAM)
+    quando deve calcolare 'incassato' per molte pratiche insieme, per
+    evitare un pattern N+1 (una query extra per ogni riga). Ritorna
+    {(practice_id, circuito): importo}; una coppia assente nel dict
+    equivale a 0.0 (nessun movimento trovato), esattamente come
+    channel_paid_amount quando la somma e' 0. Non raggruppa per nient'altro
+    che non sia gia' nel WHERE di channel_paid_amount: nessuna nuova
+    condizione, nessuna condizione rimossa."""
+    ids = [pid for pid in dict.fromkeys(practice_ids)]
+    if not ids:
+        return {}
+    result = {}
+    # IN(...) a blocchi: alcune build di SQLite limitano il numero di
+    # parametri per query (SQLITE_MAX_VARIABLE_NUMBER) - 500 resta ben
+    # sotto qualunque limite noto, anche per migliaia di pratiche insieme.
+    for i in range(0, len(ids), 500):
+        chunk = ids[i:i + 500]
+        marks = ",".join("?" for _ in chunk)
+        rows = c.execute(
+            f"""SELECT b.practice_id, b.category, COALESCE(SUM(b.amount_cents),0) cents FROM balance_movements b
+               WHERE b.practice_id IN ({marks}) AND b.ledger_section='Entrata' AND b.amount_cents>0
+                 AND NOT EXISTS(SELECT 1 FROM balance_movements r WHERE r.related_movement_id=b.id AND r.movement_type='Storno')
+               GROUP BY b.practice_id, b.category""",
+            chunk,
+        ).fetchall()
+        for row in rows:
+            result[(row["practice_id"], row["category"])] = row["cents"] / 100.0
+    return result
+
+
 def recompute_practice_channel_balances(c, pid, practice):
     """(deposit, remaining_balance, deposit_final, remaining_final) — Gia'
     pagato e Rimanenza per W e per D, indipendenti, ricalcolati dalla somma
@@ -8799,6 +8833,23 @@ def received_amount(practice):
 
 def outstanding_amount(practice):
     return max(0.0, effective_total(practice)-received_amount(practice))
+
+
+# Colonne REALMENTE lette per ogni pratica con saldo aperto in dashboard():
+# "id"/economiche in cascata da outstanding_amount -> effective_total/
+# received_amount -> calculated_service_total/uses_total_d (vedi le
+# funzioni sopra), "created_at" per lo sparkline "Da saldare" (conta per
+# giorno di creazione, vedi dashboard()) - MAI "SELECT p.*": un audit RAM
+# (richiesta esplicita dell'utente) ha trovato la dashboard caricare tutte
+# le 165 colonne di ogni pratica con saldo aperto solo per questi usi. Se
+# una di quelle funzioni/lo sparkline inizia a leggere un campo diverso,
+# questo elenco va aggiornato di conseguenza - isolato qui come unica
+# fonte, non ripetuto al punto d'uso in dashboard().
+DASHBOARD_OPEN_BALANCE_COLUMNS = (
+    "id", "created_at", "total_text", "total_service_manual", "total_service",
+    "price_cremation", "price_pickup", "price_delivery", "price_evening",
+    "price_night", "price_holiday", "payment_status", "deposit", "deposit_final",
+)
 
 
 def dashboard_period_bounds(period, today=None):
@@ -9623,7 +9674,13 @@ class App(BaseHTTPRequestHandler):
             period_bounds={p:dashboard_period_bounds(p,today)[1:] for p in ("oggi","settimana","mese")}
             counts_by_period={p:compute_counts(*bounds) for p,bounds in period_bounds.items()}
             counts=counts_by_period[practice_period]
-            open_rows=c.execute(f"SELECT p.* FROM practices p WHERE ({active}) AND COALESCE(p.payment_status,'Da saldare')!='Pagato'").fetchall()
+            # SELECT ristretto alle sole colonne che outstanding_amount usa
+            # davvero (DASHBOARD_OPEN_BALANCE_COLUMNS, vedi sopra) invece di
+            # "p.*" (tutte le 165 colonne di ogni pratica con saldo aperto):
+            # stessa identica logica economica, stesso WHERE, stesso
+            # risultato - solo meno dati trasferiti per riga (audit RAM).
+            open_cols=",".join(f"p.{col}" for col in DASHBOARD_OPEN_BALANCE_COLUMNS)
+            open_rows=c.execute(f"SELECT {open_cols} FROM practices p WHERE ({active}) AND COALESCE(p.payment_status,'Da saldare')!='Pagato'").fetchall()
             # Le card Pagamenti (Acconti/Pagati/Totale incassato) e le pagine
             # di dettaglio aperte dalle card leggono tutte dalla STESSA
             # query — dashboard_payment_movements, il ledger Bilanci
@@ -20278,6 +20335,7 @@ ai_assistant.configure(ai_assistant.Deps(
     money_value=money_value,
     effective_total=effective_total,
     channel_paid_amount=channel_paid_amount,
+    channel_paid_amounts_batch=channel_paid_amounts_batch,
     channel_remaining=channel_remaining,
     revenue_by_quote_category=revenue_by_quote_category,
     dashboard_practice_date_sql=dashboard_practice_date_sql,

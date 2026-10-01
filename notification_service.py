@@ -405,7 +405,11 @@ def process_scheduled_notifications(conn, db_path) -> int:
     """Crea una sola volta i promemoria imminenti e i saldi attualmente dovuti."""
     current = _rome_now()
     today = current.date().isoformat()
-    rows = conn.execute("""SELECT * FROM practices
+    # SELECT ristretto alle sole colonne lette nel corpo sottostante (mai
+    # "SELECT *"): audit RAM (richiesta esplicita dell'utente), stessa
+    # identica condizione/risultato, solo meno dati trasferiti per riga.
+    rows = conn.execute("""SELECT id,owner_first_name,owner_last_name,animal_name,practice_number,
+                                  destination_branch,pickup_time FROM practices
                            WHERE (deleted_at IS NULL OR deleted_at='') AND pickup_date=?""", (today,)).fetchall()
     created = 0
     for row in rows:
@@ -420,7 +424,11 @@ def process_scheduled_notifications(conn, db_path) -> int:
                                                "Ritiro tra 30 minuti", base, row["id"])
             except ValueError:
                 pass
-    unpaid = conn.execute("""SELECT * FROM practices WHERE (deleted_at IS NULL OR deleted_at='')
+    # Stesso principio: solo id/numero pratica/sede servono per il corpo
+    # della notifica "Pratica urgente" sotto - mai importi/dati economici
+    # (quella notifica non mostra ne' calcola alcun importo).
+    unpaid = conn.execute("""SELECT id,practice_number,destination_branch FROM practices
+                             WHERE (deleted_at IS NULL OR deleted_at='')
                              AND status='Consegnato' AND COALESCE(payment_status,'Da saldare')='Da saldare'""").fetchall()
     for row in unpaid:
         day = current.date().isoformat()
