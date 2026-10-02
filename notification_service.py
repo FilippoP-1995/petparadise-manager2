@@ -53,6 +53,9 @@ NOTIFICATION_TYPES = {
     "push_test": ("Test notifiche push", "🔔"),
     "catalog_sent": ("Catalogo inviato", "📖"),
     "article_ordered": ("Articolo da ordinare", "📦"),
+    "partner_request_created": ("Nuova richiesta dal portale partner", "🩺"),
+    "partner_request_urgent": ("Richiesta URGENTE dal portale partner", "🚨"),
+    "partner_request_cancelled": ("Richiesta portale annullata dalla clinica", "🚫"),
     "calendar_event_created": ("Evento calendario creato", "CAL"),
     "calendar_event_updated": ("Evento calendario modificato", "MOD"),
     "calendar_event_cancelled": ("Evento calendario annullato", "ANN"),
@@ -106,6 +109,7 @@ HIGH_PRIORITY_NOTIFICATION_TYPES = frozenset({
     "whatsapp_error",
     "whatsapp_cron_error",
     "calendar_event_created",
+    "partner_request_urgent",
 })
 
 
@@ -131,6 +135,9 @@ GROUP_WINDOW_MINUTES = 5
 # eventi diversi dentro un'unica notifica riassuntiva con i testi concatenati,
 # rendendo poco chiaro quanti e quali eventi fossero davvero arrivati.
 NON_GROUPABLE_NOTIFICATION_TYPES = frozenset({
+    "partner_request_created",
+    "partner_request_urgent",
+    "partner_request_cancelled",
     "calendar_event_created",
     "calendar_event_updated",
     "calendar_event_cancelled",

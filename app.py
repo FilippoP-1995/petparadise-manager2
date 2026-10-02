@@ -114,6 +114,7 @@ from notification_service import (
     push_bullets,
 )
 from urn_inventory import DEFAULT_URNS
+import partner_service
 from certificate_service import CertificateDataError, build_certificate, certificate_data, certificate_filename
 
 
@@ -1158,6 +1159,7 @@ def init_db():
         ensure_notification_schema(c)
         ensure_calendar_schema(c)
         ensure_shift_schema(c)
+        partner_service.ensure_partner_schema(c)
 
 
 def esc(value):
@@ -9432,6 +9434,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/cestino": return self.trash_page(user)
         if path == "/database-mesi": return self.redirect("/pratiche")
         if path == "/veterinari": return self.veterinarians_page(user)
+        if path == "/portale-partner": return self.portal_partner_page(user)
         if path == "/clienti": return self.clients_page(user)
         match = re.fullmatch(r"/clienti/(\d+)", path)
         if match: return self.client_detail(user, int(match.group(1)))
@@ -9556,6 +9559,15 @@ class App(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/catalogo-urne/(\d+)/elimina", path)
         if match: return self.delete_urn(user, int(match.group(1)))
         if path == "/veterinari": return self.save_veterinarian(user)
+        if path == "/portale-partner/clinica": return self.portal_partner_action(user,"create_clinic")
+        match = re.fullmatch(r"/portale-partner/clinica/(\d+)", path)
+        if match: return self.portal_partner_action(user,"update_clinic",int(match.group(1)))
+        match = re.fullmatch(r"/portale-partner/clinica/(\d+)/utente", path)
+        if match: return self.portal_partner_action(user,"add_user",int(match.group(1)))
+        match = re.fullmatch(r"/portale-partner/utente/(\d+)/stato", path)
+        if match: return self.portal_partner_action(user,"toggle_user",int(match.group(1)))
+        match = re.fullmatch(r"/portale-partner/clinica/(\d+)/congelatore", path)
+        if match: return self.portal_partner_action(user,"plan_freezer",int(match.group(1)))
         match = re.fullmatch(r"/veterinari/(\d+)/elimina", path)
         if match: return self.delete_veterinarian(user, int(match.group(1)))
         if path == "/clienti": return self.save_client(user)
@@ -17009,6 +17021,99 @@ class App(BaseHTTPRequestHandler):
         body=body.replace('<label>Servizio</label><select name="servizio">','<label>Tipo cremazione</label><select name="servizio">')
         self.send_html(layout("Archivio",body,user))
 
+    def portal_partner_page(self,user,error=""):
+        if user["role"]!="admin":return self.send_error(403,"Solo gli amministratori possono gestire il portale partner.")
+        query=parse_qs(urlparse(getattr(self,"path","")).query)
+        notice="Operazione completata." if (query.get("ok") or [""])[0]=="1" else ""
+        with db() as c:
+            clinics=partner_service.clinics_overview(c)
+            free_vets=c.execute("""SELECT id,clinic_name,short_name,city FROM veterinarians WHERE active=1
+                                   AND id NOT IN (SELECT veterinarian_id FROM partner_clinics)
+                                   ORDER BY COALESCE(NULLIF(short_name,''),clinic_name)""").fetchall()
+            users_by_clinic={}
+            for u in c.execute("SELECT * FROM partner_users ORDER BY clinic_id,id"):users_by_clinic.setdefault(u["clinic_id"],[]).append(u)
+            freezer_by_clinic={cl["id"]:partner_service.pending_freezer_requests(c,cl["id"]) for cl in clinics if cl["has_freezer"]}
+            recent=partner_service.recent_requests(c,limit=30)
+        operator_options=''.join(f'<option>{esc(name)}</option>' for name in CALENDAR_OPERATORS)
+        vet_options='<option value="">Seleziona il veterinario</option>'+''.join(
+            f'<option value="{v["id"]}">{esc(v["short_name"] or v["clinic_name"])}{" · "+esc(v["city"]) if v["city"] else ""}</option>' for v in free_vets)
+        checked=lambda value:"checked" if value else ""
+        clinic_blocks=[]
+        for cl in clinics:
+            name=esc(cl["short_name"] or cl["clinic_name"])
+            user_rows=''.join(
+                f'''<tr><td>{esc(u["email"])}</td><td>{esc(u["display_name"] or "-")}</td><td>{esc(u["role"])}</td><td>{"Attivo" if u["active"] else "Disattivato"}</td>
+                <td><form method="post" action="/portale-partner/utente/{u["id"]}/stato"><input type="hidden" name="active" value="{0 if u["active"] else 1}"><button class="btn ghost">{"Disattiva" if u["active"] else "Riattiva"}</button></form></td></tr>'''
+                for u in users_by_clinic.get(cl["id"],[])) or '<tr><td colspan="5" class="sub">Nessun utente.</td></tr>'
+            freezer_html=""
+            if cl["has_freezer"]:
+                pending=freezer_by_clinic.get(cl["id"],[])
+                animals=''.join(f'<li>{esc(r["request_code"])} · {esc(r["animal_name"] or r["species"])} ({esc(r["species"])}, {esc(r["weight_text"])})</li>' for r in pending)
+                plan_form=(f'''<form method="post" action="/portale-partner/clinica/{cl["id"]}/congelatore"><div class="fields">
+                  <div class="field"><label>Data ritiro</label><input type="date" name="start_date" required></div>
+                  <div class="field"><label>Dalle</label><input type="time" name="start_time" value="09:00" required></div>
+                  <div class="field"><label>Alle</label><input type="time" name="end_time" value="12:00" required></div>
+                  <div class="field"><label>Operatore</label><select name="operator_name">{operator_options}</select></div>
+                  </div><button class="btn" style="margin-top:10px">Pianifica svuotamento</button></form>''' if pending else "")
+                freezer_html=f'<h3>Congelatore: {len(pending)} in attesa</h3>'+(f'<ul>{animals}</ul>{plan_form}' if pending else '<p class="sub">Nessun animale in congelatore.</p>')
+            clinic_blocks.append(f'''<section class="section"><h2>{name} <small class="sub">{esc(cl["city"] or "")}</small></h2>
+              <p class="sub">Utenti attivi: {cl["users_count"]} · Richieste aperte: {cl["open_requests"]} · Buoni maturati: {cl["vouchers_matured"]}</p>
+              <form method="post" action="/portale-partner/clinica/{cl["id"]}"><div class="fields">
+                <label class="modern-check"><input type="checkbox" name="active" value="1" {checked(cl["active"])}> Portale attivo</label>
+                <label class="modern-check"><input type="checkbox" name="has_freezer" value="1" {checked(cl["has_freezer"])}> Ha il congelatore</label>
+                <label class="modern-check"><input type="checkbox" name="vouchers_enabled" value="1" {checked(cl["vouchers_enabled"])}> Buoni attivi (convenzione)</label>
+                <div class="field"><label>Email notifiche clinica</label><input name="notify_email" value="{esc(cl["notify_email"])}" type="email"></div>
+              </div><button class="btn" style="margin-top:10px">Salva</button></form>
+              <h3>Utenti del portale</h3>
+              <div class="tablebox"><table><thead><tr><th>Email</th><th>Nome</th><th>Ruolo</th><th>Stato</th><th></th></tr></thead><tbody>{user_rows}</tbody></table></div>
+              <form method="post" action="/portale-partner/clinica/{cl["id"]}/utente"><div class="fields">
+                <div class="field"><label>Email</label><input name="email" type="email" required></div>
+                <div class="field"><label>Nome</label><input name="display_name"></div>
+                <div class="field"><label>Ruolo</label><select name="role"><option value="titolare">Titolare</option><option value="staff" selected>Staff</option></select></div>
+              </div><button class="btn" style="margin-top:10px">Aggiungi utente</button></form>
+              {freezer_html}</section>''')
+        recent_rows=''.join(
+            f'''<tr><td>{esc(r["request_code"])}</td><td>{esc(r["clinic_label"])}</td><td>{esc(partner_service.MODES.get(r["mode"],r["mode"]))}</td>
+            <td>{esc(r["animal_name"] or r["species"])}{" · <b>URGENTE</b>" if r["urgent"] else ""}</td>
+            <td>{esc(partner_service.public_status_label(r["public_status"],r["mode"]))}</td>
+            <td>{f'<a href="/calendario/{r["calendar_event_id"]}">Evento</a>' if r["calendar_event_id"] else "-"}{f' · <a href="/pratiche/{r["practice_id"]}">Pratica</a>' if r["practice_id"] else ""}</td></tr>'''
+            for r in recent) or '<tr><td colspan="6" class="sub">Nessuna richiesta.</td></tr>'
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Portale partner</h1><div class="sub">Attivazione cliniche, congelatori e richieste ricevute.</div></div><a class="btn ghost" href="/veterinari">Veterinari</a></div>
+          {f'<div class="flash warning">{esc(error)}</div>' if error else ''}{f'<div class="flash">{esc(notice)}</div>' if notice else ''}
+          <section class="section"><h2>Attiva una clinica</h2><form method="post" action="/portale-partner/clinica"><div class="fields">
+            <div class="field full"><label>Veterinario in anagrafica</label><select name="veterinarian_id" required>{vet_options}</select></div>
+            <label class="modern-check"><input type="checkbox" name="has_freezer" value="1"> Ha il congelatore</label>
+            <label class="modern-check"><input type="checkbox" name="vouchers_enabled" value="1"> Buoni attivi (convenzione)</label>
+            <div class="field"><label>Email notifiche clinica</label><input name="notify_email" type="email"></div>
+          </div><button class="btn" style="margin-top:10px">Attiva</button></form></section>
+          {''.join(clinic_blocks) or '<section class="section"><p class="sub">Nessuna clinica attivata.</p></section>'}
+          <section class="tablebox"><h2>Ultime richieste</h2><table><thead><tr><th>Codice</th><th>Clinica</th><th>Modalità</th><th>Animale</th><th>Stato</th><th></th></tr></thead><tbody>{recent_rows}</tbody></table></section></main>'''
+        self.send_html(layout("Portale partner",body,user))
+
+    def portal_partner_action(self,user,action,target_id=None):
+        if user["role"]!="admin":return self.send_error(403,"Solo gli amministratori possono gestire il portale partner.")
+        f=self.form()
+        flag=lambda name:f.get(name)=="1"
+        try:
+            with db() as c:
+                if action=="create_clinic":
+                    vet_raw=(f.get("veterinarian_id") or "").strip()
+                    partner_service.create_clinic(c,veterinarian_id=int(vet_raw) if vet_raw.isdigit() else 0,has_freezer=flag("has_freezer"),
+                                                  vouchers_enabled=flag("vouchers_enabled"),notify_email=f.get("notify_email",""))
+                elif action=="update_clinic":
+                    partner_service.update_clinic(c,target_id,active=flag("active"),has_freezer=flag("has_freezer"),
+                                                  vouchers_enabled=flag("vouchers_enabled"),notify_email=f.get("notify_email",""))
+                elif action=="add_user":
+                    partner_service.add_partner_user(c,clinic_id=target_id,email=f.get("email",""),display_name=f.get("display_name",""),role=f.get("role","staff"))
+                elif action=="toggle_user":
+                    partner_service.set_partner_user_active(c,target_id,flag("active"))
+                elif action=="plan_freezer":
+                    partner_service.plan_freezer_pickup(c,clinic_id=target_id,start_date=f.get("start_date",""),start_time=f.get("start_time",""),
+                                                        end_time=f.get("end_time",""),operator_name=f.get("operator_name",""),staff_user_id=user["id"],db_path=DB_PATH)
+        except partner_service.PartnerError as exc:
+            return self.portal_partner_page(user,error=str(exc))
+        self.redirect("/portale-partner?ok=1")
+
     def veterinarians_page(self,user):
         q=parse_qs(urlparse(self.path).query)
         term=q.get("q",[""])[0].strip()
@@ -17037,7 +17142,7 @@ class App(BaseHTTPRequestHandler):
             rows.append(f'''<tr><td><a href="/veterinari/{v['id']}"><b>{esc(v['short_name'] or v['clinic_name'])}</b></a><br><small>{esc(v['clinic_name'])}</small></td><td>{esc(v['address'])}<br><small>{esc(v['city'])}</small></td><td>{esc(v['phone'])}</td><td>{available_badge} <span class="badge tag-red">{used} usati</span></td><td><a class="btn ghost" href="/veterinari/{v['id']}">Apri</a></td></tr>''')
         rows_html=''.join(rows) or '<tr><td colspan="5" class="sub">Nessun veterinario trovato.</td></tr>'
         filter_opts=''.join(f'<option {"selected" if voucher_filter==x else ""}>{x}</option>' for x in ["","Maturati","Usati","Senza buoni"])
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Veterinari</h1><div class="sub">Anagrafiche strutture veterinarie e buoni.</div></div></div><form class="section" method="get"><div class="fields"><div class="field"><label>Ricerca veterinario</label><input name="q" value="{esc(term)}" placeholder="Nome, indirizzo, comune, telefono"></div><div class="field"><label>Filtro buoni</label><select name="buoni">{filter_opts}</select></div></div><button class="btn" style="margin-top:12px">Filtra</button></form><div style="height:14px"></div><section class="section collapsible"><h2>LISTA VETERINARI</h2><div class="tablebox"><table><thead><tr><th>Veterinario</th><th>Indirizzo</th><th>Telefono</th><th>Buoni</th><th>Azione</th></tr></thead><tbody>{rows_html}</tbody></table></div></section><div style="height:14px"></div><section class="section collapsible collapsed"><h2>Aggiungi veterinario</h2><form method="post"><div class="fields"><div class="field"><label>Nome breve</label><input name="short_name" placeholder="Es. DEL PERO"></div><div class="field"><label>Nome completo</label><input name="clinic_name"></div><div class="field full"><label>Indirizzo</label><input name="address"></div><div class="field"><label>Comune</label><input name="city"></div><div class="field"><label>Telefono</label><input name="phone"></div><div class="field"><label>Medico</label><input name="doctor_name"></div><div class="field full"><label>Note</label><input name="notes"></div></div><button class="btn" style="margin-top:12px">Aggiungi veterinario</button></form></section></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Veterinari</h1><div class="sub">Anagrafiche strutture veterinarie e buoni.</div></div>{'<a class="btn ghost" href="/portale-partner">Portale partner</a>' if user["role"]=="admin" else ""}</div><form class="section" method="get"><div class="fields"><div class="field"><label>Ricerca veterinario</label><input name="q" value="{esc(term)}" placeholder="Nome, indirizzo, comune, telefono"></div><div class="field"><label>Filtro buoni</label><select name="buoni">{filter_opts}</select></div></div><button class="btn" style="margin-top:12px">Filtra</button></form><div style="height:14px"></div><section class="section collapsible"><h2>LISTA VETERINARI</h2><div class="tablebox"><table><thead><tr><th>Veterinario</th><th>Indirizzo</th><th>Telefono</th><th>Buoni</th><th>Azione</th></tr></thead><tbody>{rows_html}</tbody></table></div></section><div style="height:14px"></div><section class="section collapsible collapsed"><h2>Aggiungi veterinario</h2><form method="post"><div class="fields"><div class="field"><label>Nome breve</label><input name="short_name" placeholder="Es. DEL PERO"></div><div class="field"><label>Nome completo</label><input name="clinic_name"></div><div class="field full"><label>Indirizzo</label><input name="address"></div><div class="field"><label>Comune</label><input name="city"></div><div class="field"><label>Telefono</label><input name="phone"></div><div class="field"><label>Medico</label><input name="doctor_name"></div><div class="field full"><label>Note</label><input name="notes"></div></div><button class="btn" style="margin-top:12px">Aggiungi veterinario</button></form></section></main>'''
         self.send_html(layout("Veterinari",body,user))
 
     def veterinarian_detail(self,user,vet_id):
@@ -17571,6 +17676,11 @@ class App(BaseHTTPRequestHandler):
                 # altro campo precompilato qui sopra.
                 flat_prefill,event_items_by_category=map_calendar_estimates_to_practice_prefill(estimates)
                 prefill.update(flat_prefill)
+                # Evento creato dal portale partner: buono per le singole delle
+                # cliniche in convenzione / buono riservato per le collettive
+                # (lo staff puo' comunque modificare prima di salvare).
+                with db() as c:
+                    prefill.update(partner_service.prefill_for_event(c,event["id"]))
                 if any(event_items_by_category.values()):
                     prefill["_prefill_items"]=event_items_by_category
         if draft is not None:prefill=draft

@@ -53,3 +53,18 @@
 - PELO/NO PELO: aggiungere le due nuove etichette allo schema/enum tag di V2 (verificare come V2 modella le etichette operative — probabilmente diverso dal pattern a colonne piatte di V1).
 - Fatture condivise: verificare/rimuovere l'equivalente vincolo di unicità in V2 (se presente) e implementare la vista raggruppata.
 - Note in Cremazioni: aggiungere la preview nota al componente card compatta del ciclo in V2 (probabilmente più semplice in React, dato che i dati della pratica sono già in memoria/state, nessun problema di query aggiuntiva).
+
+
+## Dettaglio #5 — Portale Pet Paradise Partners: base dati e collegamento al calendario (2026-10-02)
+
+**Cosa è cambiato in V1**: nuovo modulo isolato `partner_service.py` (nessuna dipendenza da `app.py`, funzioni che ricevono una connessione) con tabelle `partner_clinics`, `partner_users`, `partner_requests`, `partner_events` (append-only), `partner_outbox`, la vista `partner_request_status` (stato pubblico derivato) e i trigger SQLite che alimentano la timeline. Pagina interna admin `/portale-partner` (attivazione cliniche, utenti, congelatore, ultime richieste). Tre nuovi tipi di notifica interna (`partner_request_created/urgent/cancelled`). Il form "Nuova pratica da evento" precompila il buono (singole delle cliniche in convenzione, collettive con buono riservato). NON ancora fatto: rotte `/partner/v1`, login con codice email, PWA, invio effettivo delle email dalla coda.
+
+**Decisioni di dominio (da mantenere in V2)**:
+- Una richiesta del veterinario NON è una pratica: crea un evento Ritiro / Ritiro in sede in stato "Da confermare"; la pratica nasce dal flusso "Ritiro → Pratica" (coerente con doc 15).
+- Stati pubblici (7): ricevuta, in_congelatore, programmato, ritirato, in_lavorazione (include "Cremato"), pronto_riconsegna, completata, + annullata. Derivati, mai salvati due volte.
+- La clinica propone data + fascia + flag urgente (salvati sulla richiesta, separati dall'orario reale dell'evento); lo staff conferma dal calendario.
+- Congelatore (solo cliniche abilitate, solo collettive, ritiro in clinica): nessun evento finché lo staff non pianifica lo svuotamento (un evento per animale, perché una pratica si collega a un solo evento).
+- Buoni: valgono solo per le cliniche "in convenzione"; matura alla creazione della pratica (come già in V1 con la spunta BUONO); la richiesta di una collettiva può riservare un buono (rilasciato su annullo o alla creazione della pratica).
+- Idempotenza: `UNIQUE(clinic_id, client_request_id)`; isolamento: ogni lettura filtrata per `clinic_id`.
+
+**Stato verso V2**: la modellazione corrisponde all'architettura V2 prevista (modulo partners, eventi append-only, outbox). In V2 i trigger SQLite diventano trigger PostgreSQL o, meglio, eventi di dominio emessi dai servizi di transizione di stato (doc 14), con la mappa stati→stato pubblico in un solo punto.
