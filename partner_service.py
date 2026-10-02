@@ -23,10 +23,11 @@ Principi di progetto
 
 from __future__ import annotations
 
+import hashlib
 import re
 import secrets
 import sqlite3
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import calendar_service as cal
@@ -105,7 +106,8 @@ CREATE TABLE IF NOT EXISTS partner_clinics (
   vouchers_enabled INTEGER NOT NULL DEFAULT 0 CHECK(vouchers_enabled IN (0,1)),
   notify_email TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  is_demo INTEGER NOT NULL DEFAULT 0 CHECK(is_demo IN (0,1))
 );
 CREATE TABLE IF NOT EXISTS partner_users (
   id INTEGER PRIMARY KEY,
@@ -115,9 +117,26 @@ CREATE TABLE IF NOT EXISTS partner_users (
   role TEXT NOT NULL CHECK(role IN ('titolare','staff')),
   active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
   created_at TEXT NOT NULL,
-  last_login_at TEXT
+  last_login_at TEXT,
+  username TEXT,
+  password_hash TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_partner_users_clinic ON partner_users(clinic_id);
+CREATE TABLE IF NOT EXISTS partner_sessions (
+  token_hash TEXT PRIMARY KEY,
+  partner_user_id INTEGER NOT NULL REFERENCES partner_users(id),
+  created_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_partner_sessions_user ON partner_sessions(partner_user_id);
+CREATE TABLE IF NOT EXISTS partner_login_attempts (
+  id INTEGER PRIMARY KEY,
+  username TEXT NOT NULL,
+  ip TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_partner_login_attempts ON partner_login_attempts(created_at);
 CREATE TABLE IF NOT EXISTS partner_requests (
   id INTEGER PRIMARY KEY,
   clinic_id INTEGER NOT NULL REFERENCES partner_clinics(id),
@@ -294,6 +313,16 @@ def ensure_partner_schema(conn: sqlite3.Connection) -> None:
     avvio cosi' una modifica alla mappa degli stati arriva con il deploy.
     Richiede che le tabelle calendar_events e practices esistano gia'."""
     conn.executescript(_SCHEMA)
+    # Database creati dalla fase 1 (senza login/demo): aggiunge le colonne mancanti.
+    for table, column, ddl in (
+        ("partner_clinics", "is_demo", "INTEGER NOT NULL DEFAULT 0"),
+        ("partner_users", "username", "TEXT"),
+        ("partner_users", "password_hash", "TEXT NOT NULL DEFAULT ''"),
+    ):
+        if column not in {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_partner_users_username "
+                 "ON partner_users(lower(username)) WHERE username IS NOT NULL AND username<>''")
     conn.execute("DROP VIEW IF EXISTS partner_request_status")
     for name in _TRIGGERS:
         conn.execute(f"DROP TRIGGER IF EXISTS {name}")
@@ -428,6 +457,25 @@ def _valid_time(value: str) -> bool:
     return bool(re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", value or ""))
 
 
+def _normalize_window(p_date, p_from, p_to, urgent):
+    """Valida data + fascia proposte dalla clinica (urgente: data/fascia facoltative)."""
+    today = _rome_today()
+    if not p_date and urgent:
+        p_date = today.isoformat()
+    try:
+        d = date.fromisoformat(p_date)
+    except ValueError:
+        raise PartnerError("Indica la data proposta per il ritiro.") from None
+    if d < today:
+        raise PartnerError("La data proposta non puo' essere nel passato.")
+    if p_from or p_to:
+        if not (_valid_time(p_from) and _valid_time(p_to)) or p_from >= p_to:
+            raise PartnerError("Indica una fascia oraria valida (dalle ... alle ...).")
+    elif not urgent:
+        raise PartnerError("Indica la fascia oraria proposta per il ritiro.")
+    return p_date, p_from, p_to
+
+
 def _window_text(date_text, time_from, time_to, urgent) -> str:
     parts = []
     if date_text:
@@ -437,6 +485,16 @@ def _window_text(date_text, time_from, time_to, urgent) -> str:
         parts.append(f"{time_from}-{time_to}")
     text = " ".join(parts)
     return ("URGENTE " + text).strip() if urgent else text
+
+
+def _split_weight(weight_text: str):
+    """Il calendario/pratica vogliono il peso numerico (e aggiungono "kg" da soli):
+    "12 kg" -> ("12", ""); una taglia a parole ("media") finisce nelle note."""
+    text = _clean(weight_text, 30)
+    match = re.fullmatch(r"(\d+(?:[.,]\d+)?)\s*(?:kg|chili|chilogrammi)?", text, re.IGNORECASE)
+    if match:
+        return match.group(1).replace(",", "."), ""
+    return "", f"Taglia: {text}" if text else ""
 
 
 def _insert_pickup_event(conn, *, request, clinic, created_by, status, start_date, start_time, end_time,
@@ -449,7 +507,8 @@ def _insert_pickup_event(conn, *, request, clinic, created_by, status, start_dat
     clinic_label = clinic["short_name"] or clinic["clinic_name"]
     animal_label = request["animal_name"] or request["species"]
     title = " · ".join(part for part in (
-        "PORTALE", "URGENTE" if request["urgent"] else "", clinic_label, animal_label) if part)
+        "PORTALE (PROVA)" if clinic["is_demo"] else "PORTALE", "URGENTE" if request["urgent"] else "",
+        clinic_label, animal_label) if part)
     window = _window_text(request["proposed_date"], request["proposed_from"], request["proposed_to"], request["urgent"])
     notes = " | ".join(part for part in (
         f"Richiesta portale {request['request_code']}",
@@ -491,10 +550,11 @@ def _insert_pickup_event(conn, *, request, clinic, created_by, status, start_dat
         tuple(columns.values()),
     )
     event_id = cur.lastrowid
+    weight, size_note = _split_weight(request["weight_text"])
     cal.sync_children(conn, event_id, [{
-        "name": request["animal_name"], "species": request["species"], "weight": request["weight_text"],
+        "name": request["animal_name"], "species": request["species"], "weight": weight,
         "cremation_type": "Collettiva" if request["service_type"] == "Cremazione collettiva" else "Singola",
-        "notes": "",
+        "notes": size_note,
     }], [], stamp)
     cal.add_history(conn, event_id, created_by, "Creazione evento", "", title, stamp)
     return event_id
@@ -561,20 +621,7 @@ def create_request(conn, *, clinic_id, user_id, client_request_id, mode, service
             raise PartnerError("Un animale in congelatore non puo' essere urgente.")
         p_date = p_from = p_to = ""
     else:
-        today = _rome_today()
-        if not p_date and urgent:
-            p_date = today.isoformat()
-        try:
-            d = date.fromisoformat(p_date)
-        except ValueError:
-            raise PartnerError("Indica la data proposta per il ritiro.") from None
-        if d < today:
-            raise PartnerError("La data proposta non puo' essere nel passato.")
-        if p_from or p_to:
-            if not (_valid_time(p_from) and _valid_time(p_to)) or p_from >= p_to:
-                raise PartnerError("Indica una fascia oraria valida (dalle ... alle ...).")
-        elif not urgent:
-            raise PartnerError("Indica la fascia oraria proposta per il ritiro.")
+        p_date, p_from, p_to = _normalize_window(p_date, p_from, p_to, urgent)
 
     voucher_id = None
     if use_voucher:
@@ -797,3 +844,170 @@ def clinics_overview(conn):
 def recent_requests(conn, *, limit=30):
     """Ultime richieste di tutte le cliniche (solo per la pagina interna dello staff)."""
     return conn.execute(_REQUEST_SELECT + " ORDER BY r.id DESC LIMIT ?", (max(1, min(int(limit), 200)),)).fetchall()
+
+
+# ---------------------------------------------------------------------------
+# Svuotamento congelatore richiesto dalla clinica
+# ---------------------------------------------------------------------------
+
+def request_freezer_pickup(conn, *, clinic_id, user_id, proposed_date, proposed_from="", proposed_to="",
+                           urgent=False, db_path=None):
+    """La clinica ha il congelatore pieno: tutti gli animali in attesa diventano
+    richieste di ritiro normali ("Da confermare") con la fascia proposta."""
+    clinic = get_clinic(conn, clinic_id)
+    if not clinic or not clinic["active"]:
+        raise PartnerError("Clinica non attiva.")
+    if user_id is not None and not conn.execute(
+            "SELECT 1 FROM partner_users WHERE id=? AND clinic_id=? AND active=1", (user_id, clinic_id)).fetchone():
+        raise PartnerError("Utente non abilitato per questa clinica.")
+    pending = pending_freezer_requests(conn, clinic_id)
+    if not pending:
+        raise PartnerError("Nessun animale in congelatore da ritirare.")
+    p_date, p_from, p_to = _normalize_window(
+        _clean(proposed_date, 10), _clean(proposed_from, 5), _clean(proposed_to, 5), bool(urgent))
+    stamp = _utc_now()
+    system_user = _system_user_id(conn)
+    event_ids = []
+    for old in pending:
+        conn.execute(
+            "UPDATE partner_requests SET proposed_date=?,proposed_from=?,proposed_to=?,urgent=?,updated_at=? WHERE id=?",
+            (p_date, p_from, p_to, 1 if urgent else 0, stamp, old["id"]))
+        request = conn.execute("SELECT * FROM partner_requests WHERE id=?", (old["id"],)).fetchone()
+        event_id = _insert_pickup_event(
+            conn, request=request, clinic=clinic, created_by=system_user, status="Da confermare",
+            start_date=p_date, start_time=p_from, end_time=p_to, stamp=_rome_stamp())
+        conn.execute("UPDATE partner_requests SET calendar_event_id=?,updated_at=? WHERE id=?",
+                     (event_id, _utc_now(), old["id"]))
+        event_ids.append(event_id)
+    emit_notification(
+        conn, "partner_request_urgent" if urgent else "partner_request_created",
+        "Portale: congelatore pieno, richiesta di ritiro",
+        push_bullets(clinic["short_name"] or clinic["clinic_name"], f"{len(event_ids)} animali",
+                     _window_text(p_date, p_from, p_to, False)),
+        payload={"url": f"/calendario/{event_ids[0]}"}, db_path=db_path)
+    return event_ids
+
+
+# ---------------------------------------------------------------------------
+# Accesso al portale (sessioni lunghe, tentativi limitati)
+# ---------------------------------------------------------------------------
+
+SESSION_DAYS = 180
+DEMO_SESSION_HOURS = 12
+MAX_FAILED_PER_USERNAME = 8
+MAX_FAILED_PER_IP = 30
+FAILED_WINDOW_MINUTES = 15
+
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _utc_plus(**delta) -> str:
+    return (datetime.now(ZoneInfo("UTC")) + timedelta(**delta)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def login_blocked(conn, username, ip) -> bool:
+    since = _utc_plus(minutes=-FAILED_WINDOW_MINUTES)
+    by_user = conn.execute(
+        "SELECT COUNT(*) FROM partner_login_attempts WHERE username=? AND created_at>=?",
+        (_clean(username, 100).lower(), since)).fetchone()[0]
+    by_ip = conn.execute(
+        "SELECT COUNT(*) FROM partner_login_attempts WHERE ip=? AND created_at>=?",
+        (_clean(ip, 64), since)).fetchone()[0] if ip else 0
+    return by_user >= MAX_FAILED_PER_USERNAME or by_ip >= MAX_FAILED_PER_IP
+
+
+def authenticate(conn, *, username, password, ip, verify_password, allow_demo=False):
+    """Accesso con utente + password. Restituisce (utente, "") oppure (None, messaggio).
+    Un account demo funziona solo se ``allow_demo`` (cioe' da un browser con
+    sessione staff valida). Messaggi sempre generici: non rivela se l'utente
+    esiste. Non solleva eccezioni: il tentativo fallito deve restare registrato
+    anche se il chiamante e' dentro una transazione."""
+    name = _clean(username, 100).lower()
+    if login_blocked(conn, name, ip):
+        return None, "Troppi tentativi di accesso. Riprova tra qualche minuto."
+    user = conn.execute(
+        """SELECT u.*, pc.is_demo FROM partner_users u JOIN partner_clinics pc ON pc.id=u.clinic_id
+           WHERE lower(u.username)=? AND u.active=1 AND pc.active=1""", (name,)).fetchone() if name else None
+    ok = bool(user and user["password_hash"] and verify_password(str(password or ""), user["password_hash"])
+              and (allow_demo or not user["is_demo"]))
+    if not ok:
+        conn.execute("INSERT INTO partner_login_attempts(username,ip,created_at) VALUES(?,?,?)",
+                     (name, _clean(ip, 64), _utc_now()))
+        return None, "Credenziali non valide."
+    conn.execute("DELETE FROM partner_login_attempts WHERE username=?", (name,))
+    conn.execute("UPDATE partner_users SET last_login_at=? WHERE id=?", (_utc_now(), user["id"]))
+    return user, ""
+
+
+def create_session(conn, partner_user_id, *, demo=False) -> str:
+    token = secrets.token_urlsafe(32)
+    now = _utc_now()
+    expires = _utc_plus(hours=DEMO_SESSION_HOURS) if demo else _utc_plus(days=SESSION_DAYS)
+    conn.execute(
+        "INSERT INTO partner_sessions(token_hash,partner_user_id,created_at,last_seen_at,expires_at) VALUES(?,?,?,?,?)",
+        (_hash_token(token), partner_user_id, now, now, expires))
+    conn.execute("DELETE FROM partner_sessions WHERE expires_at<?", (now,))
+    return token
+
+
+def session_user(conn, token):
+    """Utente + clinica della sessione (None se scaduta/disattivata)."""
+    if not token:
+        return None
+    return conn.execute(
+        """SELECT u.id AS user_id, u.clinic_id, u.email, u.display_name, u.role, u.username,
+                  pc.veterinarian_id, pc.has_freezer, pc.vouchers_enabled, pc.is_demo,
+                  COALESCE(NULLIF(v.short_name,''), v.clinic_name) AS clinic_label,
+                  v.clinic_name, v.city
+           FROM partner_sessions s
+           JOIN partner_users u ON u.id=s.partner_user_id
+           JOIN partner_clinics pc ON pc.id=u.clinic_id
+           JOIN veterinarians v ON v.id=pc.veterinarian_id
+           WHERE s.token_hash=? AND s.expires_at>? AND u.active=1 AND pc.active=1""",
+        (_hash_token(token), _utc_now())).fetchone()
+
+
+def delete_session(conn, token) -> None:
+    if token:
+        conn.execute("DELETE FROM partner_sessions WHERE token_hash=?", (_hash_token(token),))
+
+
+# ---------------------------------------------------------------------------
+# Clinica di prova (anteprima per lo staff)
+# ---------------------------------------------------------------------------
+
+DEMO_USERNAME = "provavet"
+DEMO_PASSWORD = "prova.vet1"
+
+
+def ensure_demo_clinic(conn, hash_password):
+    """Crea UNA volta la clinica di prova con l'utente ``provavet``: congelatore
+    e buoni attivi, due buoni di esempio. Se l'hai gia' creata (o eliminata) non
+    la ricrea. Restituisce l'id clinica creata o None."""
+    flag = conn.execute("SELECT value FROM settings WHERE key='partner_demo_seeded'").fetchone()
+    if flag and flag["value"] == "1":
+        return None
+    if conn.execute("SELECT 1 FROM partner_users WHERE lower(username)=?", (DEMO_USERNAME,)).fetchone():
+        conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('partner_demo_seeded','1')")
+        return None
+    stamp = _rome_stamp()
+    vet_id = conn.execute(
+        """INSERT INTO veterinarians(clinic_name,short_name,doctor_name,phone,address,city,notes,active,created_at,updated_at)
+           VALUES(?,?,?,?,?,?,?,1,?,?)""",
+        ("PROVA VET - Clinica di prova", "PROVA VET", "Dott. Prova", "", "Via di Prova 1", "Livorno",
+         "Clinica di prova del Portale Veterinari: puoi eliminarla quando non serve piu'.", stamp, stamp)).lastrowid
+    clinic_id = create_clinic(conn, veterinarian_id=vet_id, has_freezer=True, vouchers_enabled=True)
+    conn.execute("UPDATE partner_clinics SET is_demo=1 WHERE id=?", (clinic_id,))
+    conn.execute(
+        """INSERT INTO partner_users(clinic_id,email,display_name,role,active,created_at,username,password_hash)
+           VALUES(?,?,?,?,1,?,?,?)""",
+        (clinic_id, "provavet@prova.petparadise.invalid", "Dott. Prova", "titolare", _utc_now(),
+         DEMO_USERNAME, hash_password(DEMO_PASSWORD)))
+    for i in range(2):
+        conn.execute(
+            "INSERT INTO veterinarian_vouchers(veterinarian_id,status,created_at,note) VALUES(?,?,?,?)",
+            (vet_id, "Maturato", stamp, "Buono di prova (portale veterinari)"))
+    conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('partner_demo_seeded','1')")
+    return clinic_id

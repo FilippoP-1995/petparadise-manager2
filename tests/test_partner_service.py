@@ -209,7 +209,7 @@ class PartnerRequestTests(PartnerBase):
             animal = c.execute("SELECT * FROM calendar_event_animals WHERE event_id=?", (ev["id"],)).fetchone()
             sys_user = c.execute("SELECT * FROM users WHERE username=?", (ps.SYSTEM_USERNAME,)).fetchone()
             hist = c.execute("SELECT action FROM calendar_event_history WHERE event_id=?", (ev["id"],)).fetchone()
-        self.assertEqual((animal["name"], animal["species"], animal["weight"], animal["cremation_type"]), ("Fido", "Cane", "20 kg", "Singola"))
+        self.assertEqual((animal["name"], animal["species"], animal["weight"], animal["cremation_type"]), ("Fido", "Cane", "20", "Singola"))
         self.assertEqual((sys_user["active"], ev["created_by"]), (0, sys_user["id"]))
         self.assertEqual(hist["action"], "Creazione evento")
 
@@ -333,6 +333,53 @@ class PartnerRequestTests(PartnerBase):
             c.execute("UPDATE calendar_events SET event_status='Da ritirare' WHERE id=?", (req2["calendar_event_id"],))
             with self.assertRaises(ps.PartnerError):
                 ps.cancel_request(c, clinic_id=self.clinic_a, request_id=req2["id"], user_id=self.user_a)
+
+
+class PartnerWeightAndDemoTests(PartnerBase):
+    def test_weight_is_stored_numeric_for_the_calendar_and_taglia_goes_to_notes(self):
+        for text, weight, note in (("12 kg", "12", ""), ("12,5kg", "12.5", ""), ("8", "8", ""), ("20 KG", "20", ""),
+                                   ("media", "", "Taglia: media"), ("taglia piccola 5kg", "", "Taglia: taglia piccola 5kg")):
+            with self.subTest(text=text):
+                self.assertEqual(ps._split_weight(text), (weight, note))
+        req, _ = self.make(weight="media")
+        with app.db() as c:
+            animal = c.execute("SELECT * FROM calendar_event_animals WHERE event_id=?", (req["calendar_event_id"],)).fetchone()
+        self.assertEqual((animal["weight"], animal["notes"]), ("", "Taglia: media"))
+        self.assertEqual(req["weight_text"], "media")  # il testo scritto dal veterinario resta com'e'
+
+    def test_demo_clinic_events_are_marked_as_trial(self):
+        with app.db() as c:
+            ps.update_clinic(c, self.clinic_b)  # no-op
+            c.execute("UPDATE partner_clinics SET is_demo=1 WHERE id=?", (self.clinic_b,))
+        demo, _ = self.make(clinic_id=self.clinic_b)
+        real, _ = self.make(clinic_id=self.clinic_a)
+        self.assertTrue(self.event_of(demo)["title"].startswith("PORTALE (PROVA)"))
+        self.assertTrue(self.event_of(real)["title"].startswith("PORTALE ·"))
+
+    def test_request_freezer_pickup_service_rules(self):
+        freezer_kw = dict(service_type="Cremazione collettiva", freezer=True, proposed_date="", proposed_from="", proposed_to="")
+        a, _ = self.make(**freezer_kw)
+        b, _ = self.make(**freezer_kw)
+        with app.db() as c:
+            with self.assertRaises(ps.PartnerError):  # data nel passato
+                ps.request_freezer_pickup(c, clinic_id=self.clinic_a, user_id=self.user_a, proposed_date="2020-01-01",
+                                          proposed_from="09:00", proposed_to="13:00")
+            with self.assertRaises(ps.PartnerError):  # utente di un'altra clinica
+                ps.request_freezer_pickup(c, clinic_id=self.clinic_a, user_id=self.user_b, proposed_date=tomorrow(),
+                                          proposed_from="09:00", proposed_to="13:00")
+            ids = ps.request_freezer_pickup(c, clinic_id=self.clinic_a, user_id=self.user_a, proposed_date=tomorrow(),
+                                            proposed_from="14:00", proposed_to="18:00", urgent=True)
+            with self.assertRaises(ps.PartnerError):  # piu' nulla in attesa
+                ps.request_freezer_pickup(c, clinic_id=self.clinic_a, user_id=self.user_a, proposed_date=tomorrow(),
+                                          proposed_from="14:00", proposed_to="18:00")
+            rows = [ps.get_request(c, self.clinic_a, r["id"]) for r in (a, b)]
+            kinds = [r["type"] for r in c.execute("SELECT type FROM notifications WHERE user_id=? ORDER BY id", (self.admin["id"],))]
+        self.assertEqual(len(ids), 2)
+        for row in rows:
+            self.assertEqual((row["public_status"], row["urgent"], row["proposed_from"], row["event_status"]),
+                             ("ricevuta", 1, "14:00", "Da confermare"))
+        self.assertEqual(self.events(a["id"]), [("stato", "in_congelatore"), ("stato", "ricevuta")])
+        self.assertEqual(kinds[-1], "partner_request_urgent")
 
 
 class PartnerIsolationTests(PartnerBase):

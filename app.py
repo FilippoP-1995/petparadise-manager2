@@ -115,6 +115,7 @@ from notification_service import (
 )
 from urn_inventory import DEFAULT_URNS
 import partner_service
+import partner_portal
 from certificate_service import CertificateDataError, build_certificate, certificate_data, certificate_filename
 
 
@@ -9050,7 +9051,7 @@ def collapse_advanced_search(body):
 
 SIDEBAR_LINKS=[
     ("/","home","Dashboard"),("/calendario","calendar","Calendario"),("/bilanci","chart","Bilanci"),("/programma-cremazioni","paw","Programma Cremazioni"),("/notifiche","bell","Notifiche"),("/pratiche","archive","Archivio"),
-    ("/catalogo-urne","archive","Catalogo Urne"),("/smaltimenti","archive","Smaltimenti"),("/conversazioni-whatsapp","message","Conversazioni WhatsApp"),("/turni","clock","Orari"),("/veterinari","stethoscope","Veterinari"),
+    ("/catalogo-urne","archive","Catalogo Urne"),("/smaltimenti","archive","Smaltimenti"),("/conversazioni-whatsapp","message","Conversazioni WhatsApp"),("/turni","clock","Orari"),("/veterinari","stethoscope","Veterinari"),("/partner","stethoscope","Portale Veterinari"),
     ("/collaboratori","briefcase","Collaboratori"),
     ("/prodotti","clipboard","Prodotti"),("/ordini","receipt","Ordini"),
     ("/archivio/pratiche","clipboard","Gestionale"),("/clienti","users","Clienti"),
@@ -9068,7 +9069,7 @@ MENU_CARD_META={
     "Bilanci":("green","Entrate, uscite e statistiche"),"Programma Cremazioni":("lilac","Gestisci i cicli di cremazione"),
     "Notifiche":("red","Avvisi e promemoria"),"Archivio":("blue","Pratiche e documenti storici"),
     "Catalogo Urne":("amber","Gestione urne e prodotti"),"Smaltimenti":("cyan","Gestione smaltimenti"),
-    "Conversazioni WhatsApp":("green","Chat e comunicazioni"),"Veterinari":("purple","Anagrafica veterinari"),
+    "Conversazioni WhatsApp":("green","Chat e comunicazioni"),"Veterinari":("purple","Anagrafica veterinari"),"Portale Veterinari":("teal","Anteprima del portale per le cliniche"),
     "Collaboratori":("yellow","Gestione collaboratori"),"Prodotti":("blue","Gestione prodotti e servizi"),
     "Ordini":("blue","Ordini fornitori"),"Gestionale":("purple","Pratiche e documenti"),
     "Clienti":("green","Anagrafica clienti"),"Animali":("lilac","Anagrafica animali"),
@@ -9358,6 +9359,7 @@ class App(BaseHTTPRequestHandler):
         if path in static_assets and (ASSETS / static_assets[path]).exists(): return self.send_static(ASSETS / static_assets[path],"image/png")
         match = re.fullmatch(r"/pubblici/ddt/([A-Za-z0-9_-]+)\.pdf", path)
         if match: return self.public_ddt(match.group(1))
+        if path == "/partner" or path.startswith("/partner/"): return self.partner_portal_route("GET",path)
         if path == "/login": return self.login_page()
         if path == "/logout": return self.logout()
         user = self.require_user()
@@ -9491,6 +9493,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/cron/whatsapp": return self.whatsapp_cron()
         if path == "/cron/backup": return self.backup_cron()
         if path == "/webhook/whatsapp": return self.whatsapp_webhook_receive()
+        if path == "/partner" or path.startswith("/partner/"): return self.partner_portal_route("POST",path)
         if path == "/login": return self.login_submit()
         user = self.require_user()
         if not user: return
@@ -17021,6 +17024,10 @@ class App(BaseHTTPRequestHandler):
         body=body.replace('<label>Servizio</label><select name="servizio">','<label>Tipo cremazione</label><select name="servizio">')
         self.send_html(layout("Archivio",body,user))
 
+    def partner_portal_route(self,method,path):
+        """Portale Veterinari (/partner): sessione propria, indipendente da quella dello staff."""
+        return partner_portal.dispatch(self,method,path,db=db,password_ok=password_ok,staff_user=self.user,db_path=DB_PATH)
+
     def portal_partner_page(self,user,error=""):
         if user["role"]!="admin":return self.send_error(403,"Solo gli amministratori possono gestire il portale partner.")
         query=parse_qs(urlparse(getattr(self,"path","")).query)
@@ -20589,5 +20596,7 @@ ai_assistant.configure(ai_assistant.Deps(
 
 if __name__ == "__main__":
     init_db()
+    with db() as _c:
+        partner_service.ensure_demo_clinic(_c,password_hash)
     print(f"Pet Paradise Manager: http://{HOST}:{PORT}")
     ThreadingHTTPServer((HOST, PORT), App).serve_forever()
