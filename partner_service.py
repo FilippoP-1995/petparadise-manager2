@@ -31,7 +31,7 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import calendar_service as cal
-from notification_service import emit_notification, push_bullets
+from notification_service import PORTAL_BRAND, emit_notification, push_bullets
 
 ROME_TZ = ZoneInfo("Europe/Rome")
 
@@ -673,13 +673,13 @@ def create_request(conn, *, clinic_id, user_id, client_request_id, mode, service
     animal_label = request["animal_name"] or request["species"]
     if freezer:
         emit_notification(
-            conn, "partner_request_created", "Portale: animale in congelatore",
+            conn, "partner_freezer_update", f"{PORTAL_BRAND} · Animale in congelatore",
             push_bullets(clinic_label, animal_label, "Collettiva", "nessuna fretta"),
             payload={"url": "/portale-partner"}, db_path=db_path)
     else:
         emit_notification(
             conn, "partner_request_urgent" if urgent else "partner_request_created",
-            "Portale: richiesta URGENTE" if urgent else "Portale: nuova richiesta di ritiro",
+            f"{PORTAL_BRAND} · RICHIESTA URGENTE" if urgent else f"{PORTAL_BRAND} · Nuova richiesta di ritiro",
             push_bullets(clinic_label, animal_label, MODES[mode],
                          _window_text(p_date, p_from, p_to, False)),
             payload={"url": f"/calendario/{event_id}"}, db_path=db_path)
@@ -703,7 +703,7 @@ def cancel_request(conn, *, clinic_id, request_id, user_id, db_path=None):
                         "Annullato dalla clinica (portale)", "", request["request_code"], _rome_stamp())
     conn.execute("UPDATE partner_requests SET cancelled_at=?,updated_at=? WHERE id=?", (stamp, stamp, request_id))
     emit_notification(
-        conn, "partner_request_cancelled", "Portale: richiesta annullata dalla clinica",
+        conn, "partner_request_cancelled", f"{PORTAL_BRAND} · Richiesta annullata dalla clinica",
         push_bullets(request["clinic_label"], request["animal_name"] or request["species"], request["request_code"]),
         payload={"url": f"/calendario/{request['calendar_event_id']}" if request["calendar_event_id"] else "/portale-partner"},
         db_path=db_path)
@@ -747,7 +747,7 @@ def plan_freezer_pickup(conn, *, clinic_id, start_date, start_time, end_time, op
                      (event_id, _utc_now(), request["id"]))
         event_ids.append(event_id)
     emit_notification(
-        conn, "partner_request_created", "Portale: svuotamento congelatore pianificato",
+        conn, "partner_freezer_update", f"{PORTAL_BRAND} · Svuotamento congelatore pianificato",
         push_bullets(clinic["short_name"] or clinic["clinic_name"], f"{len(event_ids)} animali", start_date),
         payload={"url": f"/calendario/{event_ids[0]}"}, db_path=db_path)
     return event_ids
@@ -881,7 +881,7 @@ def request_freezer_pickup(conn, *, clinic_id, user_id, proposed_date, proposed_
         event_ids.append(event_id)
     emit_notification(
         conn, "partner_request_urgent" if urgent else "partner_request_created",
-        "Portale: congelatore pieno, richiesta di ritiro",
+        f"{PORTAL_BRAND} · Congelatore pieno: richiesta di ritiro",
         push_bullets(clinic["short_name"] or clinic["clinic_name"], f"{len(event_ids)} animali",
                      _window_text(p_date, p_from, p_to, False)),
         payload={"url": f"/calendario/{event_ids[0]}"}, db_path=db_path)
@@ -1011,3 +1011,35 @@ def ensure_demo_clinic(conn, hash_password):
             (vet_id, "Maturato", stamp, "Buono di prova (portale veterinari)"))
     conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('partner_demo_seeded','1')")
     return clinic_id
+
+
+# ---------------------------------------------------------------------------
+# Richieste da confermare (avvisi per lo staff)
+# ---------------------------------------------------------------------------
+
+PENDING_RECENT_DAYS = 90
+
+
+def pending_requests(conn, *, limit=100):
+    """Richieste ancora "da confermare" (stato pubblico 'ricevuta'): urgenti per prime, poi le piu' vecchie."""
+    return conn.execute(
+        _REQUEST_SELECT + " WHERE v.public_status='ricevuta' ORDER BY r.urgent DESC, r.id LIMIT ?",
+        (max(1, min(int(limit), 500)),)).fetchall()
+
+
+def pending_summary(conn) -> dict:
+    """Conteggi per il banner sempre visibile: {"pending", "urgent", "newest_id"}."""
+    since = (datetime.now(ROME_TZ) - timedelta(days=PENDING_RECENT_DAYS)).astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ")
+    row = conn.execute(
+        """SELECT COUNT(*) AS n, COALESCE(SUM(r.urgent),0) AS u, COALESCE(MAX(r.id),0) AS newest
+           FROM partner_requests r JOIN partner_request_status v ON v.request_id=r.id
+           WHERE r.cancelled_at IS NULL AND r.created_at>=? AND v.public_status='ricevuta'""", (since,)).fetchone()
+    return {"pending": row["n"], "urgent": row["u"], "newest_id": row["newest"]}
+
+
+def age_minutes(created_at: str) -> int:
+    try:
+        born = datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=ZoneInfo("UTC"))
+    except ValueError:
+        return 0
+    return max(0, int((datetime.now(ZoneInfo("UTC")) - born).total_seconds() // 60))

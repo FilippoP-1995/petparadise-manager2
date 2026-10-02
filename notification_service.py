@@ -53,9 +53,11 @@ NOTIFICATION_TYPES = {
     "push_test": ("Test notifiche push", "🔔"),
     "catalog_sent": ("Catalogo inviato", "📖"),
     "article_ordered": ("Articolo da ordinare", "📦"),
-    "partner_request_created": ("Nuova richiesta dal portale partner", "🩺"),
-    "partner_request_urgent": ("Richiesta URGENTE dal portale partner", "🚨"),
-    "partner_request_cancelled": ("Richiesta portale annullata dalla clinica", "🚫"),
+    "partner_request_created": ("PORTALE VETERINARI · Nuova richiesta", "🩺"),
+    "partner_request_urgent": ("PORTALE VETERINARI · Richiesta URGENTE", "🚨"),
+    "partner_request_reminder": ("PORTALE VETERINARI · Ancora da confermare", "⏰"),
+    "partner_request_cancelled": ("PORTALE VETERINARI · Richiesta annullata", "🚫"),
+    "partner_freezer_update": ("PORTALE VETERINARI · Congelatore", "❄️"),
     "calendar_event_created": ("Evento calendario creato", "CAL"),
     "calendar_event_updated": ("Evento calendario modificato", "MOD"),
     "calendar_event_cancelled": ("Evento calendario annullato", "ANN"),
@@ -87,6 +89,11 @@ NOTIFICATION_TITLE_SYMBOLS = {
     "practice_delivered": "📦",
     "delivery_scheduled": "📦",
     "pickup_30m": "🚚",
+    "partner_request_created": "🩺",
+    "partner_request_urgent": "🚨🩺",
+    "partner_request_reminder": "⏰🩺",
+    "partner_request_cancelled": "🚫🩺",
+    "partner_freezer_update": "❄️🩺",
 }
 
 
@@ -109,11 +116,26 @@ HIGH_PRIORITY_NOTIFICATION_TYPES = frozenset({
     "whatsapp_error",
     "whatsapp_cron_error",
     "calendar_event_created",
-    "partner_request_urgent",
+    "partner_freezer_update",
 })
 
 
+# Richieste dei veterinari dal portale: NON devono mai passare inosservate.
+# Priorita' "critica" = piu' forte di "alta": il push resta a schermo finche'
+# qualcuno non lo tocca, vibra a lungo e ha un titolo inconfondibile. Questi
+# tipi non si possono disattivare dalle preferenze personali.
+PORTAL_BRAND = "PORTALE VETERINARI"
+CRITICAL_NOTIFICATION_TYPES = frozenset({
+    "partner_request_created",
+    "partner_request_urgent",
+    "partner_request_reminder",
+})
+MANDATORY_NOTIFICATION_TYPES = CRITICAL_NOTIFICATION_TYPES | frozenset({"partner_request_cancelled", "partner_freezer_update"})
+
+
 def notification_priority(notification_type: str) -> str:
+    if notification_type in CRITICAL_NOTIFICATION_TYPES:
+        return "critica"
     return "alta" if notification_type in HIGH_PRIORITY_NOTIFICATION_TYPES else "normale"
 
 
@@ -137,7 +159,9 @@ GROUP_WINDOW_MINUTES = 5
 NON_GROUPABLE_NOTIFICATION_TYPES = frozenset({
     "partner_request_created",
     "partner_request_urgent",
+    "partner_request_reminder",
     "partner_request_cancelled",
+    "partner_freezer_update",
     "calendar_event_created",
     "calendar_event_updated",
     "calendar_event_cancelled",
@@ -249,6 +273,8 @@ def ensure_notification_schema(conn: sqlite3.Connection) -> None:
 
 
 def preference_enabled(conn: sqlite3.Connection, user_id: int, notification_type: str) -> bool:
+    if notification_type in MANDATORY_NOTIFICATION_TYPES:
+        return True  # richieste dal portale: mai disattivabili, per nessun utente
     row = conn.execute(
         "SELECT enabled FROM notification_preferences WHERE user_id=? AND type=?",
         (user_id, notification_type),
@@ -352,7 +378,7 @@ def emit_notification(
         push_data = {"title": notification_push_title(notification_type, title), "body": push_text, "icon": "/assets/pwa-192.png", **payload,
                      "badge": "/assets/favicon-32.png", "tag": f"ppm-group-{notification_id}",
                      "type": notification_type, "notification_id": notification_id,
-                     "priority": priority,
+                     "priority": priority, "sticky": priority == "critica",
                      "url": f"/notifiche/{notification_id}/apri"}
         if group_count == 1 and action_url and action_label:
             push_data["action_url"] = action_url
@@ -629,6 +655,59 @@ _DAILY_ANOMALIES_DEFAULT_TIME = "08:00"
 # classica notifica giornaliera") - stessa frase che un utente scriverebbe
 # a mano in chat, nessuna scorciatoia che aggiri lo strumento reale.
 DAILY_ANOMALIES_CHAT_QUESTION = "Mostrami le anomalie di oggi"
+
+
+def process_partner_pending(conn, db_path, current=None) -> int:
+    """Promemoria ripetuti per le richieste del portale ancora "da confermare".
+
+    Urgenti: dopo 15 minuti e poi ogni 15 minuti (ogni 30 dopo le prime 2 ore),
+    a qualunque ora. Normali: dopo 30 minuti e poi ogni ora (ogni 3 ore dopo
+    le prime 6), solo dalle 07:00 alle 21:00. Ogni scadenza genera una sola
+    notifica (chiave univoca); se la richiesta viene confermata o annullata i
+    promemoria si fermano da soli."""
+    current = current or _rome_now()
+    objects = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type IN ('table','view')")}
+    if "partner_request_status" not in objects or "scheduled_notification_events" not in objects:
+        return 0
+    rows = conn.execute(
+        """SELECT r.id,r.urgent,r.created_at,r.animal_name,r.species,
+                  COALESCE(NULLIF(v.short_name,''),v.clinic_name) AS clinic
+           FROM partner_requests r
+           JOIN partner_request_status s ON s.request_id=r.id
+           JOIN partner_clinics pc ON pc.id=r.clinic_id
+           JOIN veterinarians v ON v.id=pc.veterinarian_id
+           WHERE s.public_status='ricevuta'""").fetchall()
+    created = 0
+    for row in rows:
+        try:
+            born = datetime.strptime(row["created_at"], "%Y-%m-%dT%H:%M:%SZ").replace(
+                tzinfo=ZoneInfo("UTC")).astimezone(ROME_TZ).replace(tzinfo=None)
+        except ValueError:
+            continue
+        age = (current - born).total_seconds() / 60
+        urgent = bool(row["urgent"])
+        if urgent:
+            if age < 15:
+                continue
+            bucket = 1 + int((age - 15) // 15) if age < 120 else 100 + int((age - 120) // 30)
+        else:
+            if age < 30 or not (7 <= current.hour < 21):
+                continue
+            bucket = 1 + int((age - 30) // 60) if age < 360 else 100 + int((age - 360) // 180)
+        key = f"partner-pending-{row['id']}-{bucket}"
+        if conn.execute("SELECT 1 FROM scheduled_notification_events WHERE event_key=?", (key,)).fetchone():
+            continue
+        conn.execute("INSERT INTO scheduled_notification_events(event_key,created_at) VALUES(?,?)",
+                     (key, current.isoformat(timespec="seconds")))
+        minutes = int(age)
+        waiting = f"{minutes} min" if minutes < 120 else f"{minutes // 60} h"
+        emit_notification(
+            conn, "partner_request_reminder", f"{PORTAL_BRAND} · ANCORA DA CONFERMARE",
+            push_bullets(row["clinic"], row["animal_name"] or row["species"], f"in attesa da {waiting}",
+                         "URGENTE" if urgent else None),
+            payload={"url": "/richieste-portale"}, db_path=db_path)
+        created += 1
+    return created
 
 
 def process_daily_anomalies(conn, db_path, current=None) -> int:

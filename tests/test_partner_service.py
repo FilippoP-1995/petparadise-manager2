@@ -314,8 +314,8 @@ class PartnerRequestTests(PartnerBase):
                 "SELECT type FROM notifications WHERE user_id=? ORDER BY id", (self.admin["id"],))]
         self.assertEqual(kinds, ["partner_request_created", "partner_request_urgent"])
         import notification_service as ns
-        self.assertEqual(ns.notification_priority("partner_request_urgent"), "alta")
-        self.assertEqual(ns.notification_priority("partner_request_created"), "normale")
+        self.assertEqual(ns.notification_priority("partner_request_urgent"), "critica")
+        self.assertEqual(ns.notification_priority("partner_request_created"), "critica")
         self.assertIn("partner_request_created", ns.NON_GROUPABLE_NOTIFICATION_TYPES)
 
     def test_cancel_only_before_taken_in_charge_and_only_by_own_clinic(self):

@@ -47,7 +47,8 @@ self.addEventListener('push', event => {
   const title = data.title || 'Pet Paradise Manager';
   // priorità "normale" resta silenziosa (visibile solo nel Centro notifiche
   // e nel badge): solo "alta" (guasti, pagamenti da saldare...) suona/vibra.
-  const isHighPriority = data.priority === 'alta';
+  const isCritical = data.priority === 'critica';
+  const isHighPriority = data.priority === 'alta' || isCritical;
   const actions = [{action: 'open', title: 'Apri'}];
   if (data.action_url && data.action_label) {
     actions.push({action: 'quick', title: data.action_label});
@@ -58,8 +59,11 @@ self.addEventListener('push', event => {
     badge: data.badge || '/assets/favicon-32.png',
     tag: data.tag || `ppm-${Date.now()}`,
     renotify: true,
+    // "critica" (richieste dal portale veterinari): resta a schermo finche'
+    // qualcuno non la tocca e vibra a lungo, per non passare mai inosservata.
+    requireInteraction: isCritical,
     silent: !isHighPriority,
-    vibrate: isHighPriority ? [200, 100, 200] : undefined,
+    vibrate: isCritical ? [500, 200, 500, 200, 500, 200, 500] : (isHighPriority ? [200, 100, 200] : undefined),
     data: {
       url: data.url || '/notifiche',
       notificationId: data.notification_id || null,

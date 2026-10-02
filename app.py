@@ -110,7 +110,8 @@ from notification_service import (
     emit_notification,
     ensure_notification_schema,
     process_scheduled_notifications, process_calendar_notifications,
-    process_daily_summaries, process_daily_anomalies, archive_old_notifications, notification_priority,
+    process_daily_summaries, process_daily_anomalies, process_partner_pending, archive_old_notifications, notification_priority,
+    CRITICAL_NOTIFICATION_TYPES, MANDATORY_NOTIFICATION_TYPES,
     push_bullets,
 )
 from urn_inventory import DEFAULT_URNS
@@ -1785,7 +1786,32 @@ tr.avatar-other td:first-child{border-left:3px solid #c084fc}
 .light-theme .practice-list-table tbody tr{background:#fff}
 .light-theme .practice-list-table tbody tr:hover td{background:#f8fafc}
 .light-theme .practice-list-table tbody td{border-color:#e2e8f0}.inline-statuses{display:grid;gap:8px;min-width:170px}.inline-state-select{min-height:38px;padding:7px 32px 7px 10px;border-width:2px;font-weight:800}button.inline-state-select{border:0;border-radius:9px;font:inherit;cursor:pointer;text-align:center;padding:7px 14px}.inline-tag-form{display:flex;flex-direction:column;gap:2px}.invoice-inline-cell{display:grid;gap:4px;min-width:130px}.invoice-inline-input{min-height:34px;padding:6px 9px;font-size:12px}.invoice-inline-input.input-error{border-color:#ef4444}.payment-popover{position:fixed;inset:0;z-index:180;display:grid;place-items:center;padding:18px;background:#020617b8}.payment-popover[hidden]{display:none}
-.field[data-manual-income-method][hidden]{display:none!important}.payment-dialog{width:min(620px,100%);max-height:90dvh;overflow:auto;touch-action:pan-y;padding:20px;border:1px solid #475569;border-radius:16px;background:#172033;box-shadow:0 28px 90px #000c}.payment-dialog h2{margin-bottom:6px}.payment-dialog .fields{margin-top:16px}.payment-macroarea{margin-top:20px;padding-top:18px;border-top:1px solid #334155}.payment-macroarea:first-of-type{margin-top:16px;padding-top:0;border-top:0}.payment-macroarea h3{margin:0 0 10px;font-size:16px}.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.payment-macroarea-channel{padding:14px;border:1px solid #334155;border-radius:12px;background:#182334;margin-bottom:16px}.light-theme .payment-macroarea-channel{background:#f8fafc;border-color:#cbd5e1}#paymentTotaleWRow .field label,#paymentTotaleDRow .field label,.payment-macroarea-channel .fields .field:first-child label{font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.03em}.payment-macroarea-channel .fields .field:not(:first-child) label{font-size:11px;font-weight:600;color:var(--muted)}
+.field[data-manual-income-method][hidden]{display:none!important}
+.partner-alert{display:flex;align-items:center;gap:14px;margin:0 0 18px;padding:14px 16px;border-radius:18px;color:#fff;background:linear-gradient(135deg,#0f766e,#14b8a6);border:2px solid #5eead4;box-shadow:0 10px 28px rgba(20,184,166,.35)}
+.partner-alert .pa-ico{font-size:30px;line-height:1}.partner-alert .pa-body{flex:1;min-width:0}
+.partner-alert .pa-body b{display:block;font-size:16px;letter-spacing:.01em}
+.partner-alert .pa-body span{display:block;font-size:13.5px;opacity:.92;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.partner-alert .pa-btn{background:#fff;color:#0f766e;font-weight:800;border-radius:12px;padding:10px 18px;white-space:nowrap}
+.partner-alert.urgent{background:linear-gradient(135deg,#b91c1c,#ef4444);border-color:#fecaca;box-shadow:0 10px 28px rgba(239,68,68,.45);animation:pa-pulse 1.3s ease-in-out infinite}
+.partner-alert.urgent .pa-btn{color:#b91c1c}
+@keyframes pa-pulse{0%,100%{box-shadow:0 10px 28px rgba(239,68,68,.45)}50%{box-shadow:0 0 0 6px rgba(239,68,68,.3),0 10px 34px rgba(239,68,68,.6)}}
+.partner-pill{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(94px + var(--safe-bottom,0px));z-index:70;background:#0f766e;color:#fff;font-weight:800;border-radius:999px;padding:11px 18px;box-shadow:0 8px 24px rgba(0,0,0,.4);border:2px solid #5eead4;white-space:nowrap;font-size:14px}
+.partner-pill.urgent{background:#b91c1c;border-color:#fecaca;animation:pa-pulse 1.3s ease-in-out infinite}
+@media(min-width:901px){.partner-pill{left:calc(50% + 106px);bottom:22px}}
+.partner-toast{position:fixed;top:84px;left:50%;transform:translateX(-50%);z-index:95;background:#0f766e;color:#fff;font-weight:700;border-radius:16px;padding:14px 18px;box-shadow:0 12px 34px rgba(0,0,0,.45);border:2px solid #5eead4;max-width:min(520px,92vw)}
+.notification-item.partner{border-left:6px solid #14b8a6;background:linear-gradient(90deg,rgba(20,184,166,.20),transparent 60%)}
+.notification-item.partner.critical{border-left-color:#ef4444;background:linear-gradient(90deg,rgba(239,68,68,.18),rgba(20,184,166,.10) 60%,transparent)}
+.notification-brand{display:inline-block;background:#14b8a6;color:#04332f;font-weight:900;font-size:11px;letter-spacing:.08em;border-radius:6px;padding:2px 8px;margin-left:8px}
+.notification-brand.hot{background:#ef4444;color:#fff}
+.notification-badge.partner-badge{background:#14b8a6;color:#04332f}
+.portal-h2{display:flex;align-items:center;gap:10px;margin:24px 0 10px}.portal-count{background:#14b8a6;color:#04332f;font-weight:900;border-radius:999px;padding:1px 12px;font-size:15px}
+.portal-card{border:2px solid #14b8a6;border-radius:18px;padding:16px;margin:12px 0;background:linear-gradient(90deg,rgba(20,184,166,.14),transparent 70%)}
+.portal-card.urgent{border-color:#ef4444;background:linear-gradient(90deg,rgba(239,68,68,.16),transparent 70%)}
+.portal-card h3{margin:8px 0 4px;font-size:19px}.portal-card h3 small{font-weight:500;opacity:.75}.portal-card p{margin:3px 0}
+.pc-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.pc-brand{background:#14b8a6;color:#04332f;font-weight:900;font-size:11px;letter-spacing:.08em;border-radius:6px;padding:3px 9px}
+.pc-urgent{background:#ef4444;color:#fff;font-weight:900;font-size:11px;letter-spacing:.08em;border-radius:6px;padding:3px 9px;animation:pa-pulse 1.3s ease-in-out infinite}
+.pc-age{margin-left:auto;font-weight:700;opacity:.85}.pc-foot{display:flex;justify-content:space-between;gap:8px;margin-top:8px;font-size:13px;opacity:.85}.pc-code{font-family:ui-monospace,Menlo,monospace;letter-spacing:.06em}
+.pc-tag{border:1px solid currentColor;border-radius:6px;padding:1px 7px;margin-left:4px;font-size:12px}.payment-dialog{width:min(620px,100%);max-height:90dvh;overflow:auto;touch-action:pan-y;padding:20px;border:1px solid #475569;border-radius:16px;background:#172033;box-shadow:0 28px 90px #000c}.payment-dialog h2{margin-bottom:6px}.payment-dialog .fields{margin-top:16px}.payment-macroarea{margin-top:20px;padding-top:18px;border-top:1px solid #334155}.payment-macroarea:first-of-type{margin-top:16px;padding-top:0;border-top:0}.payment-macroarea h3{margin:0 0 10px;font-size:16px}.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.payment-macroarea-channel{padding:14px;border:1px solid #334155;border-radius:12px;background:#182334;margin-bottom:16px}.light-theme .payment-macroarea-channel{background:#f8fafc;border-color:#cbd5e1}#paymentTotaleWRow .field label,#paymentTotaleDRow .field label,.payment-macroarea-channel .fields .field:first-child label{font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.03em}.payment-macroarea-channel .fields .field:not(:first-child) label{font-size:11px;font-weight:600;color:var(--muted)}
 @media(max-width:520px){.payment-popover{padding:6px}.payment-dialog{padding:12px 10px;max-height:97dvh}.payment-dialog .titlebar{position:sticky;top:-12px;margin:-12px -10px 6px;padding:12px 10px 6px;background:#172033;z-index:1;gap:8px}.payment-dialog h2{font-size:15px;margin-bottom:0}.payment-dialog .sub{display:none}.payment-dialog .fields{gap:6px;margin-top:6px}.payment-dialog .field{gap:2px}.payment-dialog label{font-size:10.5px}.payment-dialog input,.payment-dialog select{padding:7px 8px;font-size:14px}.payment-macroarea{margin-top:8px;padding-top:8px}.payment-macroarea:first-of-type{margin-top:6px}.payment-macroarea h3{margin:0 0 4px;font-size:13px}.payment-macroarea-channel{padding:7px;margin-bottom:7px}.payment-invoice-section{margin-top:7px;padding-top:7px}.payment-dialog .btn{padding:8px 12px;margin-top:6px!important}.payment-dialog .btn.ghost{margin-left:4px!important}}
 .field-error input,.field-error select,.field-error textarea{border-color:#ef4444}.field-error-text{display:block;margin-top:4px;color:#ef4444;font-size:12px;font-weight:600}.payment-invoice-section{margin-top:18px;padding-top:16px;border-top:1px solid #334155}.payment-invoice-section h3{margin:0 0 4px;font-size:14px}.payment-invoice-section .fields{margin-top:10px}.payment-acconto-summary{margin:10px 0 0}.light-theme .payment-dialog{background:#fff;color:#111827}.light-theme .payment-dialog .titlebar{background:#fff}.light-theme .payment-macroarea{border-color:#e2e8f0}.light-theme .payment-invoice-section{border-color:#e2e8f0}
 @media(max-width:620px){.practice-list-table th:first-child,.practice-list-table td:first-child{box-sizing:border-box;width:132px;min-width:132px;max-width:132px;padding-left:12px;padding-right:10px;white-space:normal!important}}
@@ -4604,6 +4630,66 @@ document.addEventListener('DOMContentLoaded',function(){
     ppmSyncManualIncomeInvoice(form);
   });
 });
+// Richieste dal Portale Veterinari: avviso sempre visibile + allarme in-app quando ne arriva una nuova.
+(function(){
+  if(document.body.getAttribute('data-has-session')!=='1')return;
+  var lastNewest=parseInt(document.body.getAttribute('data-portal-newest')||'0',10)||0;
+  var baseTitle=document.title;
+  function el(tag,cls,text){var e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e}
+  function render(d){
+    var n=d.pending||0,u=d.urgent||0;
+    var banner=document.getElementById('partnerAlert'),pill=document.getElementById('partnerPill');
+    document.title=(n>0?'🩺 ('+n+') ':'')+baseTitle;
+    if(n<=0){if(banner)banner.remove();if(pill)pill.remove();return}
+    var names=(d.items||[]).map(function(i){return i.clinic+(i.animal?' · '+i.animal:'')}).join(' | ');
+    var title='PORTALE VETERINARI · '+n+(n===1?' richiesta da confermare':' richieste da confermare')+(u?' · '+u+(u===1?' URGENTE':' URGENTI'):'');
+    if(!banner){
+      banner=el('div','partner-alert');banner.id='partnerAlert';banner.setAttribute('role','alert');
+      var body=el('div','pa-body'),a=el('a','pa-btn','Apri');a.href='/richieste-portale';
+      body.appendChild(el('b'));body.appendChild(el('span'));
+      banner.appendChild(el('div','pa-ico','🩺'));banner.appendChild(body);banner.appendChild(a);
+      var host=document.querySelector('#main-content .wrap')||document.getElementById('main-content');
+      if(host)host.insertBefore(banner,host.firstChild);
+    }
+    banner.classList.toggle('urgent',u>0);
+    banner.querySelector('b').textContent=title;banner.querySelector('span').textContent=names;
+    if(!pill){pill=el('a','partner-pill');pill.id='partnerPill';pill.href='/richieste-portale';document.body.appendChild(pill)}
+    pill.classList.toggle('urgent',u>0);
+    pill.textContent='🩺 '+n+' da confermare'+(u?' · '+u+(u===1?' URGENTE':' URGENTI'):'');
+  }
+  function beep(){
+    try{
+      var C=window.AudioContext||window.webkitAudioContext;if(!C)return;var ctx=new C();
+      [0,0.24,0.48].forEach(function(t,i){
+        var o=ctx.createOscillator(),g=ctx.createGain();o.frequency.value=i%2?988:740;o.connect(g);g.connect(ctx.destination);
+        g.gain.setValueAtTime(0.0001,ctx.currentTime+t);g.gain.exponentialRampToValueAtTime(0.4,ctx.currentTime+t+0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+t+0.2);o.start(ctx.currentTime+t);o.stop(ctx.currentTime+t+0.22);
+      });
+    }catch(e){}
+  }
+  function announce(d){
+    beep();
+    if(navigator.vibrate)navigator.vibrate([300,120,300,120,300]);
+    var first=(d.items&&d.items[0])||{};
+    var t=el('a','partner-toast','🩺 Nuova richiesta dal portale: '+(first.clinic||'')+(first.animal?' · '+first.animal:''));
+    t.href='/richieste-portale';document.body.appendChild(t);setTimeout(function(){t.remove()},15000);
+  }
+  function poll(){
+    if(document.hidden)return;
+    fetch('/api/richieste-portale/stato',{credentials:'same-origin',headers:{'Accept':'application/json'}})
+      .then(function(r){return r.ok?r.json():null})
+      .then(function(d){
+        if(!d)return;
+        if(d.newest_id>lastNewest){announce(d)}
+        if(d.newest_id>lastNewest||lastNewest===0)lastNewest=d.newest_id;
+        render(d);
+      }).catch(function(){});
+  }
+  var existing=document.getElementById('partnerAlert');
+  if(existing){document.title='🩺 ('+(existing.getAttribute('data-count')||'')+') '+baseTitle}
+  setInterval(poll,20000);
+  document.addEventListener('visibilitychange',function(){if(!document.hidden)poll()});
+})();
 function ppmLocalDateValue(){
   const today=new Date(),offset=today.getTimezoneOffset()*60000;
   return new Date(today.getTime()-offset).toISOString().slice(0,10);
@@ -9059,7 +9145,7 @@ def collapse_advanced_search(body):
 
 SIDEBAR_LINKS=[
     ("/","home","Dashboard"),("/calendario","calendar","Calendario"),("/bilanci","chart","Bilanci"),("/programma-cremazioni","paw","Programma Cremazioni"),("/notifiche","bell","Notifiche"),("/pratiche","archive","Archivio"),
-    ("/catalogo-urne","archive","Catalogo Urne"),("/smaltimenti","archive","Smaltimenti"),("/conversazioni-whatsapp","message","Conversazioni WhatsApp"),("/turni","clock","Orari"),("/veterinari","stethoscope","Veterinari"),("/partner","stethoscope","Portale Veterinari"),
+    ("/catalogo-urne","archive","Catalogo Urne"),("/smaltimenti","archive","Smaltimenti"),("/conversazioni-whatsapp","message","Conversazioni WhatsApp"),("/turni","clock","Orari"),("/veterinari","stethoscope","Veterinari"),("/richieste-portale","stethoscope","Richieste portale"),("/partner","stethoscope","Portale Veterinari"),
     ("/collaboratori","briefcase","Collaboratori"),
     ("/prodotti","clipboard","Prodotti"),("/ordini","receipt","Ordini"),
     ("/archivio/pratiche","clipboard","Gestionale"),("/clienti","users","Clienti"),
@@ -9077,7 +9163,7 @@ MENU_CARD_META={
     "Bilanci":("green","Entrate, uscite e statistiche"),"Programma Cremazioni":("lilac","Gestisci i cicli di cremazione"),
     "Notifiche":("red","Avvisi e promemoria"),"Archivio":("blue","Pratiche e documenti storici"),
     "Catalogo Urne":("amber","Gestione urne e prodotti"),"Smaltimenti":("cyan","Gestione smaltimenti"),
-    "Conversazioni WhatsApp":("green","Chat e comunicazioni"),"Veterinari":("purple","Anagrafica veterinari"),"Portale Veterinari":("teal","Anteprima del portale per le cliniche"),
+    "Conversazioni WhatsApp":("green","Chat e comunicazioni"),"Veterinari":("purple","Anagrafica veterinari"),"Portale Veterinari":("teal","Anteprima del portale per le cliniche"),"Richieste portale":("teal","Richieste dei veterinari da confermare"),
     "Collaboratori":("yellow","Gestione collaboratori"),"Prodotti":("blue","Gestione prodotti e servizi"),
     "Ordini":("blue","Ordini fornitori"),"Gestionale":("purple","Pratiche e documenti"),
     "Clienti":("green","Anagrafica clienti"),"Animali":("lilac","Anagrafica animali"),
@@ -9158,32 +9244,65 @@ REMINDER_PRIORITY_DEFAULT=9
 
 
 
+def partner_alert_html(summary,items):
+    """Banner a tutta larghezza in cima a OGNI pagina del gestionale finche' ci sono
+    richieste del Portale Veterinari da confermare (richiesta esplicita: non
+    devono mai passare inosservate)."""
+    n,urgent=summary["pending"],summary["urgent"]
+    if n<=0:return ""
+    title=f'PORTALE VETERINARI · {n} {"richiesta" if n==1 else "richieste"} da confermare'+(f' · {urgent} URGENTE' if urgent==1 else (f' · {urgent} URGENTI' if urgent>1 else ""))
+    names=' | '.join(esc(r["clinic_label"])+(" · "+esc(r["animal_name"] or r["species"]) if (r["animal_name"] or r["species"]) else "") for r in items)
+    return f'<div id="partnerAlert" class="partner-alert{" urgent" if urgent else ""}" role="alert" data-count="{n}"><div class="pa-ico">🩺</div><div class="pa-body"><b>{title}</b><span>{names}</span></div><a class="pa-btn" href="/richieste-portale">Apri</a></div>'
+
+
+def insert_partner_alert(body,alert):
+    """Mette il banner dentro il contenitore principale della pagina (<main class="wrap">), cosi' rispetta
+    margini e barra superiore fissa; se la pagina non ha quel contenitore va in cima."""
+    if not alert:return body
+    match=re.search(r'<main[^>]*class="(?:[^"]*\s)?wrap(?:\s[^"]*)?"[^>]*>',body)
+    if not match:return alert+body
+    return body[:match.end()]+alert+body[match.end():]
+
+
+def partner_pill_html(summary):
+    """Pillola fissa (sempre a schermo, anche scorrendo) con il numero di richieste da confermare."""
+    n,urgent=summary["pending"],summary["urgent"]
+    if n<=0:return ""
+    suffix=f' · {urgent} URGENTE' if urgent==1 else (f' · {urgent} URGENTI' if urgent>1 else "")
+    return f'<a id="partnerPill" class="partner-pill{" urgent" if urgent else ""}" href="/richieste-portale">🩺 {n} da confermare{suffix}</a>'
+
+
 def layout(title, body, user=None):
     body=body.replace("<th>Veterinario</th><th>Sede</th>","<th>Veterinario</th><th>Provenienza</th><th>Sede</th>")
     body=collapse_advanced_search(body)
-    nav = ""; app_header=""; mobile_nav=""; body_class=""; body_attrs=""
+    nav = ""; app_header=""; mobile_nav=""; body_class=""; body_attrs=""; partner_pill=""
     if user:
         with db() as conn:
             unread=conn.execute("SELECT count(*) n FROM notifications WHERE user_id=? AND is_read=0",(user["id"],)).fetchone()["n"]
             open_reminders_count=conn.execute("SELECT count(*) n FROM reminders WHERE completed_at IS NULL AND read_at IS NULL AND (snoozed_until IS NULL OR snoozed_until<=?)",(now(),)).fetchone()["n"]
+            portal_summary=partner_service.pending_summary(conn)
+            portal_items=partner_service.pending_requests(conn,limit=3) if portal_summary["pending"] else []
+        portal_badge=f'<span class="notification-badge partner-badge">{portal_summary["pending"] if portal_summary["pending"]<100 else "99+"}</span>' if portal_summary["pending"] else ''
+        body=insert_partner_alert(body,partner_alert_html(portal_summary,portal_items))
+        partner_pill=partner_pill_html(portal_summary)
         unread_badge=f'<span class="notification-badge">{unread if unread < 100 else "99+"}</span>' if unread else ''
         reminder_badge=f'<span class="notification-badge">{open_reminders_count if open_reminders_count < 100 else "99+"}</span>' if open_reminders_count else ''
         prefs=load_preferences(user["id"])
         if prefs.get("theme")=="light": body_class=" light-theme"
-        body_attrs=f' data-has-session="1" data-user-id="{user["id"]}"{" data-server-theme=\"1\"" if "theme" in prefs else ""}'
+        body_attrs=f' data-has-session="1" data-user-id="{user["id"]}" data-portal-newest="{portal_summary["newest_id"]}"{" data-server-theme=\"1\"" if "theme" in prefs else ""}'
         links=list(SIDEBAR_LINKS)
         sidebar_order=parse_preference_list(prefs.get("sidebar_order",""))
         if sidebar_order:
             links=reorder_by_saved(links,sidebar_order,lambda item:item[2])
-        nav_links=''.join(f'<a href="{href}" class="{"nav-notification" if href in ("/notifiche","/") else ""}">{lucide(icon)}<span>{label}</span>{unread_badge if href=="/notifiche" else (reminder_badge if href=="/" else "")}</a>' for href,icon,label in links)
+        nav_links=''.join(f'<a href="{href}" class="{"nav-notification" if href in ("/notifiche","/","/richieste-portale") else ""}">{lucide(icon)}<span>{label}</span>{unread_badge if href=="/notifiche" else (reminder_badge if href=="/" else (portal_badge if href=="/richieste-portale" else ""))}</a>' for href,icon,label in links)
         nav=f'''<nav class="nav" aria-label="Menu principale">{nav_links}<button class="btn ghost install-btn" type="button" onclick="installPetParadise()">{lucide("plus")}<span>Installa App</span></button><a class="logout" href="/logout">{lucide("menu")}<span>Esci</span></a></nav>'''
         today=rome_now(); date_label=today.strftime("%d/%m/%Y"); weekday=["Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica"][today.weekday()]
         app_header=f'''<header class="app-header"><div class="header-actions"><form class="header-search lookup" action="/archivio/pratiche" method="get" role="search">{lucide("search")}<label class="sr-only" for="globalSearch">Ricerca rapida per animale, proprietario, telefono o email</label><input id="globalSearch" name="rapida" placeholder="Animale, proprietario, telefono o email..." autocomplete="off"><div id="globalSearchResults" class="lookup-results hidden"></div></form><a class="icon-btn nav-notification" href="/notifiche" aria-label="Notifiche, {unread} non lette">{lucide("bell")}{unread_badge}</a><button class="icon-btn" type="button" onclick="toggleTheme()" aria-label="Cambia tema">{lucide("sun")}</button><button class="btn header-new" type="button" onclick="toggleCreateMenu()" aria-label="Crea pratica o evento">{lucide("plus")}<span>Crea</span></button><time datetime="{today.date().isoformat()}">{date_label}<small>{weekday}</small></time></div></header>'''
         def more_card(href,icon,label):
             color,subtitle=MENU_CARD_META.get(label,("gray",""))
             accent=MENU_ACCENT_COLORS.get(color,"#64748b")
-            badge=unread_badge if href=="/notifiche" else (reminder_badge if href=="/" else "")
-            notif_cls=" nav-notification" if href in ("/notifiche","/") else ""
+            badge=unread_badge if href=="/notifiche" else (reminder_badge if href=="/" else (portal_badge if href=="/richieste-portale" else ""))
+            notif_cls=" nav-notification" if href in ("/notifiche","/","/richieste-portale") else ""
             return f'''<a href="{href}" class="more-card drag-item{notif_cls}" data-drag-key="{esc(label)}" draggable="false" style="--accent:{accent}"><span class="drag-handle" aria-label="Trascina per riordinare {esc(label)}">::</span><span class="more-card-icon">{lucide(icon)}</span><span class="more-card-copy"><b>{esc(label)}</b>{f"<small>{esc(subtitle)}</small>" if subtitle else ""}</span>{badge}<span class="more-card-chevron">{lucide("chevron-right")}</span></a>'''
         drawer_links=''.join(more_card(href,icon,label) for href,icon,label in links)
         drawer_order_json=esc(json.dumps([label for _,_,label in links],ensure_ascii=False))
@@ -9217,7 +9336,7 @@ def layout(title, body, user=None):
     else:
         ai_chat_html=""
     vapid_public=esc(os.environ.get("VAPID_PUBLIC_KEY",""))
-    return f'''<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#e9475b"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="PP Manager"><meta name="application-name" content="Pet Paradise Manager"><meta name="format-detection" content="telephone=no"><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"><title>{esc(title)} - Pet Paradise Manager</title><style>{CSS}</style></head><body class="{body_class.strip()}"{body_attrs} data-vapid-public-key="{vapid_public}"><a class="skip-link" href="#main-content">Vai al contenuto</a><div class="ppm-pull-refresh" id="ppmPullRefresh" aria-hidden="true"><span class="ppm-pull-refresh-spinner"></span></div><aside class="top"><a class="brand" href="/"><img class="brand-logo brand-logo-dark" src="/assets/company_logo.png" alt="Pet Paradise"><img class="brand-logo brand-logo-light" src="/assets/company_logo_light.png" alt="Pet Paradise"><span class="brand-copy">Pet Paradise <small>MANAGER</small></span></a>{nav}</aside>{app_header}<div id="main-content">{body}</div>{mobile_nav}{ai_chat_html}{APP_JS}</body></html>'''
+    return f'''<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#e9475b"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="PP Manager"><meta name="application-name" content="Pet Paradise Manager"><meta name="format-detection" content="telephone=no"><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"><title>{esc(title)} - Pet Paradise Manager</title><style>{CSS}</style></head><body class="{body_class.strip()}"{body_attrs} data-vapid-public-key="{vapid_public}"><a class="skip-link" href="#main-content">Vai al contenuto</a><div class="ppm-pull-refresh" id="ppmPullRefresh" aria-hidden="true"><span class="ppm-pull-refresh-spinner"></span></div><aside class="top"><a class="brand" href="/"><img class="brand-logo brand-logo-dark" src="/assets/company_logo.png" alt="Pet Paradise"><img class="brand-logo brand-logo-light" src="/assets/company_logo_light.png" alt="Pet Paradise"><span class="brand-copy">Pet Paradise <small>MANAGER</small></span></a>{nav}</aside>{app_header}<div id="main-content">{body}</div>{mobile_nav}{partner_pill}{ai_chat_html}{APP_JS}</body></html>'''
 
 
 class App(BaseHTTPRequestHandler):
@@ -9438,6 +9557,8 @@ class App(BaseHTTPRequestHandler):
         if path == "/api/programma-cremazioni/prossimo-slot": return self.api_cremation_next_slot(user)
         if path == "/api/programma-cremazioni/scambio-candidati": return self.api_cremation_swap_candidates(user)
         if path == "/api/notifiche/stato": return self.notification_status(user)
+        if path == "/api/richieste-portale/stato": return self.portal_inbox_status(user)
+        if path == "/richieste-portale": return self.portal_inbox_page(user)
         match = re.fullmatch(r"/api/veterinari/(\d+)/buoni", path)
         if match: return self.api_veterinarian_vouchers(user, int(match.group(1)))
         if path == "/nuova": return self.new_page(user)
@@ -16118,13 +16239,16 @@ class App(BaseHTTPRequestHandler):
         for row in rows:
             icon=NOTIFICATION_TYPES.get(row["type"],("","🔔"))[1]
             priority=notification_priority(row["type"])
-            priority_tag=f'<span class="notification-priority">Alta priorità</span>' if priority=="alta" else ''
+            priority_tag=('' if priority=="critica" else ('<span class="notification-priority">Alta priorità</span>' if priority=="alta" else ''))
+            portal_critical=row["type"] in CRITICAL_NOTIFICATION_TYPES
+            portal_cls=("partner critical" if portal_critical else ("partner" if row["type"].startswith("partner_") else ""))
+            portal_tag=('<span class="notification-brand hot">DA GESTIRE</span>' if portal_critical else ('<span class="notification-brand">PORTALE</span>' if portal_cls else ''))
             group_items=group_items_by_notification.get(row["id"],[])
             expand_html=''
             if row["group_count"]>1 and group_items:
                 item_rows=''.join(f'<li>{esc((item["created_at"] or "").replace("T"," ")[:16])} · {esc(item["title"])} — {esc(item["text"])}</li>' for item in group_items)
                 expand_html=f'<details class="notification-group-expand"><summary>Vedi i {len(group_items)} singoli elementi</summary><ul>{item_rows}</ul></details>'
-            cards.append(f'''<article class="notification-item {'unread' if not row['is_read'] else ''} {'priority-alta' if priority=='alta' else ''}"><span class="notification-icon">{icon}</span><div class="notification-copy"><b>{esc(row['title'])}</b>{priority_tag}<p>{esc(row['text'])}</p><small>{esc((row['created_at'] or '').replace('T',' ')[:16])} · {esc(row['actor_name'] or 'Sistema')} · {esc(row['practice_number'] or 'Generale')} · {'Letta' if row['is_read'] else 'Non letta'}{' · Archiviata' if row['archived_at'] else ''}</small>{expand_html}</div><div class="notification-actions"><a class="btn ghost" href="/notifiche/{row['id']}/apri">Apri</a></div></article>''')
+            cards.append(f'''<article class="notification-item {'unread' if not row['is_read'] else ''} {'priority-alta' if priority in ('alta','critica') else ''} {portal_cls}"><span class="notification-icon">{icon}</span><div class="notification-copy"><b>{esc(row['title'])}</b>{priority_tag}{portal_tag}<p>{esc(row['text'])}</p><small>{esc((row['created_at'] or '').replace('T',' ')[:16])} · {esc(row['actor_name'] or 'Sistema')} · {esc(row['practice_number'] or 'Generale')} · {'Letta' if row['is_read'] else 'Non letta'}{' · Archiviata' if row['archived_at'] else ''}</small>{expand_html}</div><div class="notification-actions"><a class="btn ghost" href="/notifiche/{row['id']}/apri">Apri</a></div></article>''')
         results=''.join(cards) or '<section class="section empty-state">Nessuna notifica trovata. Lo storico resterà disponibile qui.</section>'
         type_options='<option value="">Tutte le tipologie</option>'+''.join(f'<option value="{key}" {"selected" if kind==key else ""}>{icon} {esc(label)}</option>' for key,(label,icon) in NOTIFICATION_TYPES.items())
         state_options=''.join(f'<option value="{value}" {"selected" if state==value else ""}>{label}</option>' for value,label in (("","Lette e non lette"),("non_lette","Non lette"),("lette","Lette")))
@@ -16154,7 +16278,7 @@ class App(BaseHTTPRequestHandler):
             subscriptions=c.execute("SELECT count(*) n FROM push_subscriptions WHERE user_id=?",(user["id"],)).fetchone()["n"]
         prefs=load_preferences(user["id"])
         notif_rows=''.join(
-            f'''<label class="modern-check notif-type-row"><span class="notif-type-icon">{icon}</span><span class="notif-type-copy"><b>{esc(label)}</b><small>{"Alta priorità" if notification_priority(key)=="alta" else "Priorità normale"}</small></span><input type="checkbox" name="{key}" value="1" {'checked' if saved.get(key,True) else ''}></label>'''
+            f'''<label class="modern-check notif-type-row"><span class="notif-type-icon">{icon}</span><span class="notif-type-copy"><b>{esc(label)}</b><small>{"Obbligatoria · da gestire subito" if key in MANDATORY_NOTIFICATION_TYPES else ("Alta priorità" if notification_priority(key)=="alta" else "Priorità normale")}</small></span><input type="checkbox" name="{key}" value="1" {'checked' if (saved.get(key,True) or key in MANDATORY_NOTIFICATION_TYPES) else ''} {'onclick="return false" data-locked="1" title="Non si può disattivare"' if key in MANDATORY_NOTIFICATION_TYPES else ''}></label>'''
             for key,(label,icon) in NOTIFICATION_TYPES.items()
         )
         theme=prefs.get("theme","dark")
@@ -16372,7 +16496,7 @@ class App(BaseHTTPRequestHandler):
             for kind in NOTIFICATION_TYPES:
                 c.execute("""INSERT INTO notification_preferences(user_id,type,enabled) VALUES(?,?,?)
                              ON CONFLICT(user_id,type) DO UPDATE SET enabled=excluded.enabled""",
-                          (user["id"],kind,1 if form.get(kind)=="1" else 0))
+                          (user["id"],kind,1 if (form.get(kind)=="1" or kind in MANDATORY_NOTIFICATION_TYPES) else 0))
         return self.redirect(safe_return_path(form.get("return_to"),"/il-mio-profilo"))
 
     def save_order_settings(self,user):
@@ -17044,6 +17168,69 @@ class App(BaseHTTPRequestHandler):
     def partner_portal_route(self,method,path):
         """Portale Veterinari (/partner): sessione propria, indipendente da quella dello staff."""
         return partner_portal.dispatch(self,method,path,db=db,password_ok=password_ok,staff_user=self.user,db_path=DB_PATH)
+
+    def portal_inbox_page(self,user):
+        """Richieste arrivate dal Portale Veterinari: visibile a tutto lo staff."""
+        with db() as c:
+            pending=partner_service.pending_requests(c)
+            freezer=c.execute("""SELECT pc.id AS clinic_id,COALESCE(NULLIF(v.short_name,''),v.clinic_name) AS clinic,COUNT(*) AS n
+                                 FROM partner_requests r JOIN partner_clinics pc ON pc.id=r.clinic_id
+                                 JOIN veterinarians v ON v.id=pc.veterinarian_id
+                                 WHERE r.freezer=1 AND r.calendar_event_id IS NULL AND r.cancelled_at IS NULL
+                                 GROUP BY pc.id ORDER BY clinic""").fetchall()
+            recent=c.execute(partner_service._REQUEST_SELECT+" WHERE v.public_status<>'ricevuta' ORDER BY r.id DESC LIMIT 25").fetchall()
+        def age_text(created_at):
+            minutes=partner_service.age_minutes(created_at)
+            if minutes<1:return "adesso"
+            if minutes<60:return f"da {minutes} min"
+            if minutes<2880:return f"da {minutes//60} h {minutes%60:02d} min"
+            return f"da {minutes//1440} giorni"
+        def window(r):
+            if r["freezer"] and not r["calendar_event_id"]:return "Quando il congelatore è pieno"
+            if not r["proposed_date"]:return ""
+            day=date_it(r["proposed_date"])
+            return f'{day} {r["proposed_from"]}-{r["proposed_to"]}' if r["proposed_from"] and r["proposed_to"] else f"{day}, il prima possibile"
+        def card(r):
+            who=" ".join(x for x in (r["owner_first_name"],r["owner_last_name"]) if x)
+            phone=re.sub(r"[^\d+]","",r["owner_phone"] or "")
+            event=r["calendar_event_id"]
+            urgent_chip='<span class="pc-urgent">URGENTE</span>' if r["urgent"] else ""
+            tags=''.join((
+                '<span class="pc-tag">Congelatore</span>' if r["freezer"] else "",
+                '<span class="pc-tag">Usa un buono</span>' if r["reserved_voucher_id"] else "",
+                f'<span class="pc-tag">{esc(r["destination_site"])}</span>' if r["destination_site"] else "",
+            ))
+            actions=(f'<a class="btn" href="/calendario/{event}/modifica">Conferma ritiro</a><a class="btn ghost" href="/calendario/{event}">Apri evento</a>'
+                     if event else "")
+            return f'''<article class="portal-card {"urgent" if r["urgent"] else ""}"><div class="pc-head"><span class="pc-brand">PORTALE VETERINARI</span>{urgent_chip}<span class="pc-age">{esc(age_text(r["created_at"]))}</span></div>
+              <h3>{esc(r["animal_name"] or r["species"])} <small>{esc(r["species"])}{", "+esc(r["weight_text"]) if r["weight_text"] else ""}</small></h3>
+              <p><b>{esc(r["clinic_label"])}</b> · {esc(partner_service.MODES.get(r["mode"],""))} · {esc(r["service_type"])}</p>
+              <p>{esc(who)}{f' · <a href="tel:{esc(phone)}">{esc(r["owner_phone"])}</a>' if phone else ""}</p>
+              {f'<p>Fascia proposta: <b>{esc(window(r))}</b></p>' if window(r) else ""}
+              {f'<p>Indirizzo: {esc(r["pickup_address"])}</p>' if r["pickup_address"] else ""}
+              {f'<p>Note: {esc(r["notes"])}</p>' if r["notes"] else ""}
+              <div class="pc-foot"><span class="pc-code">{esc(r["request_code"])}</span><span>{tags}</span></div>
+              <div class="actions" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">{actions}</div></article>'''
+        pending_html=''.join(card(r) for r in pending) or '<section class="section empty-state">Nessuna richiesta da confermare. Quando un veterinario ne invia una la trovi qui.</section>'
+        freezer_html=''.join(
+            f'<li><b>{esc(row["clinic"])}</b>: {row["n"]} animal{"e" if row["n"]==1 else "i"} in congelatore (nessuna fretta){' · <a href="/portale-partner">pianifica lo svuotamento</a>' if user["role"]=="admin" else ""}</li>' for row in freezer)
+        recent_rows=''.join(
+            f'<tr><td>{esc(r["request_code"])}</td><td>{esc(r["clinic_label"])}</td><td>{esc(r["animal_name"] or r["species"])}{" · <b>URGENTE</b>" if r["urgent"] else ""}</td><td>{esc(partner_service.public_status_label(r["public_status"],r["mode"]))}</td><td>{f'<a href="/calendario/{r["calendar_event_id"]}">Evento</a>' if r["calendar_event_id"] else "-"}{f' · <a href="/pratiche/{r["practice_id"]}">Pratica</a>' if r["practice_id"] else ""}</td></tr>'
+            for r in recent) or '<tr><td colspan="5" class="sub">Nessuna richiesta.</td></tr>'
+        admin_link='<a class="btn ghost" href="/portale-partner">Gestione portale</a>' if user["role"]=="admin" else ""
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Richieste dal portale</h1><p class="sub">Richieste dei veterinari da confermare. Si aggiorna da sola e ti avvisa quando ne arriva una nuova.</p></div>{admin_link}</div>
+          <h2 class="portal-h2">Da confermare <span class="portal-count">{len(pending)}</span></h2>{pending_html}
+          {f'<h2 class="portal-h2">In congelatore</h2><section class="section"><ul>{freezer_html}</ul></section>' if freezer_html else ''}
+          <section class="tablebox" style="margin-top:22px"><h2>Ultime richieste gestite</h2><table><thead><tr><th>Codice</th><th>Clinica</th><th>Animale</th><th>Stato</th><th></th></tr></thead><tbody>{recent_rows}</tbody></table></section></main>'''
+        self.send_html(layout("Richieste dal portale",body,user))
+
+    def portal_inbox_status(self,user):
+        with db() as c:
+            summary=partner_service.pending_summary(c)
+            items=[{"id":r["id"],"clinic":r["clinic_label"],"animal":r["animal_name"] or r["species"],"urgent":bool(r["urgent"]),
+                    "age":partner_service.age_minutes(r["created_at"]),"url":f"/calendario/{r['calendar_event_id']}" if r["calendar_event_id"] else "/richieste-portale"}
+                   for r in partner_service.pending_requests(c,limit=3)]
+        self.send_json({**summary,"items":items})
 
     def portal_partner_page(self,user,error=""):
         if user["role"]!="admin":return self.send_error(403,"Solo gli amministratori possono gestire il portale partner.")
@@ -18486,6 +18673,7 @@ class App(BaseHTTPRequestHandler):
                 scheduled_created+=process_calendar_notifications(c,DB_PATH)
                 scheduled_created+=process_daily_summaries(c,DB_PATH)
                 scheduled_created+=process_daily_anomalies(c,DB_PATH)
+                scheduled_created+=process_partner_pending(c,DB_PATH)
                 archive_old_notifications(c)
         except Exception as exc:
             error=f"{type(exc).__name__}: {exc}"
