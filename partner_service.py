@@ -1012,38 +1012,76 @@ def delete_session(conn, token) -> None:
 # Clinica di prova (anteprima per lo staff)
 # ---------------------------------------------------------------------------
 
-DEMO_USERNAME = "provavet"
-DEMO_PASSWORD = "prova.vet1"
+DEMO_USERNAME = "villadeipini"
+DEMO_PASSWORD = "pini.vet26"
+# Identita' della clinica dimostrativa: nome e dati verosimili (sono inventati), cosi' mostrando
+# il portale a un veterinario sembra una clinica vera. L'email usa un dominio riservato
+# (.example): nessun messaggio potra' mai arrivare a una persona reale.
+DEMO_CLINIC = {
+    "clinic_name": "Clinica Veterinaria Villa dei Pini", "short_name": "Villa dei Pini",
+    "doctor_name": "Dott.ssa Giulia Ferretti", "address": "Via dei Pini 14", "city": "Livorno", "phone": "",
+    "notes": "Clinica fittizia di dimostrazione del Portale Veterinari: puoi eliminarla quando non serve piu'.",
+}
+DEMO_EMAIL = "segreteria@villadeipini.example"
+DEMO_DISPLAY_NAME = "Dott.ssa Giulia Ferretti"
+DEMO_IDENTITY_VERSION = "2"
+_OLD_DEMO_USERNAMES = ("provavet",)
+
+
+def _upgrade_demo_identity(conn, hash_password):
+    """La clinica di prova creata con il nome provvisorio ("PROVA VET", utente provavet)
+    prende la nuova identita' realistica, mantenendo richieste, buoni e storico."""
+    names = (DEMO_USERNAME,) + _OLD_DEMO_USERNAMES
+    user = conn.execute(
+        f"""SELECT u.id, u.clinic_id FROM partner_users u JOIN partner_clinics pc ON pc.id=u.clinic_id
+            WHERE pc.is_demo=1 AND lower(u.username) IN ({','.join('?' for _ in names)}) ORDER BY u.id LIMIT 1""", names).fetchone()
+    if user:
+        vet_id = conn.execute("SELECT veterinarian_id FROM partner_clinics WHERE id=?", (user["clinic_id"],)).fetchone()[0]
+        clinic = DEMO_CLINIC
+        conn.execute(
+            "UPDATE veterinarians SET clinic_name=?,short_name=?,doctor_name=?,phone=?,address=?,city=?,notes=?,updated_at=? WHERE id=?",
+            (clinic["clinic_name"], clinic["short_name"], clinic["doctor_name"], clinic["phone"], clinic["address"],
+             clinic["city"], clinic["notes"], _rome_stamp(), vet_id))
+        conn.execute("UPDATE partner_users SET username=?,password_hash=?,email=?,display_name=? WHERE id=?",
+                     (DEMO_USERNAME, hash_password(DEMO_PASSWORD), DEMO_EMAIL, DEMO_DISPLAY_NAME, user["id"]))
+        conn.execute("DELETE FROM partner_sessions WHERE partner_user_id=?", (user["id"],))
+    conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('partner_demo_version',?)", (DEMO_IDENTITY_VERSION,))
 
 
 def ensure_demo_clinic(conn, hash_password):
-    """Crea UNA volta la clinica di prova con l'utente ``provavet``: congelatore
-    e buoni attivi, due buoni di esempio. Se l'hai gia' creata (o eliminata) non
-    la ricrea. Restituisce l'id clinica creata o None."""
+    """Crea UNA volta la clinica dimostrativa (nome realistico, utente ``villadeipini``):
+    congelatore e buoni attivi, due buoni di esempio. Se l'hai gia' creata (o eliminata)
+    non la ricrea; una clinica creata con il vecchio nome provvisorio viene aggiornata
+    all'identita' attuale. Restituisce l'id clinica creata o None."""
     flag = conn.execute("SELECT value FROM settings WHERE key='partner_demo_seeded'").fetchone()
     if flag and flag["value"] == "1":
+        version = conn.execute("SELECT value FROM settings WHERE key='partner_demo_version'").fetchone()
+        if not version or version["value"] != DEMO_IDENTITY_VERSION:
+            _upgrade_demo_identity(conn, hash_password)
         return None
     if conn.execute("SELECT 1 FROM partner_users WHERE lower(username)=?", (DEMO_USERNAME,)).fetchone():
         conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('partner_demo_seeded','1')")
+        conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('partner_demo_version',?)", (DEMO_IDENTITY_VERSION,))
         return None
     stamp = _rome_stamp()
+    clinic = DEMO_CLINIC
     vet_id = conn.execute(
         """INSERT INTO veterinarians(clinic_name,short_name,doctor_name,phone,address,city,notes,active,created_at,updated_at)
            VALUES(?,?,?,?,?,?,?,1,?,?)""",
-        ("PROVA VET - Clinica di prova", "PROVA VET", "Dott. Prova", "", "Via di Prova 1", "Livorno",
-         "Clinica di prova del Portale Veterinari: puoi eliminarla quando non serve piu'.", stamp, stamp)).lastrowid
+        (clinic["clinic_name"], clinic["short_name"], clinic["doctor_name"], clinic["phone"], clinic["address"],
+         clinic["city"], clinic["notes"], stamp, stamp)).lastrowid
     clinic_id = create_clinic(conn, veterinarian_id=vet_id, has_freezer=True, vouchers_enabled=True)
     conn.execute("UPDATE partner_clinics SET is_demo=1 WHERE id=?", (clinic_id,))
     conn.execute(
         """INSERT INTO partner_users(clinic_id,email,display_name,role,active,created_at,username,password_hash)
            VALUES(?,?,?,?,1,?,?,?)""",
-        (clinic_id, "provavet@prova.petparadise.invalid", "Dott. Prova", "titolare", _utc_now(),
-         DEMO_USERNAME, hash_password(DEMO_PASSWORD)))
+        (clinic_id, DEMO_EMAIL, DEMO_DISPLAY_NAME, "titolare", _utc_now(), DEMO_USERNAME, hash_password(DEMO_PASSWORD)))
     for i in range(2):
         conn.execute(
             "INSERT INTO veterinarian_vouchers(veterinarian_id,status,created_at,note) VALUES(?,?,?,?)",
-            (vet_id, "Maturato", stamp, "Buono di prova (portale veterinari)"))
+            (vet_id, "Maturato", stamp, "Buono di esempio (clinica di dimostrazione)"))
     conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('partner_demo_seeded','1')")
+    conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('partner_demo_version',?)", (DEMO_IDENTITY_VERSION,))
     return clinic_id
 
 

@@ -62,7 +62,7 @@ class PortalBase(unittest.TestCase):
         app.init_db()
         with app.db() as c:
             self.demo_clinic = ps.ensure_demo_clinic(c, app.password_hash)
-            self.demo_user = c.execute("SELECT id FROM partner_users WHERE username='provavet'").fetchone()["id"]
+            self.demo_user = c.execute("SELECT id FROM partner_users WHERE username='villadeipini'").fetchone()["id"]
             stamp = "2026-01-01T00:00:00"
             vet = c.execute(
                 """INSERT INTO veterinarians(clinic_name,short_name,doctor_name,phone,address,city,active,created_at,updated_at)
@@ -83,7 +83,7 @@ class PortalBase(unittest.TestCase):
                     staff_user=lambda: self.admin if staff else None, db_path=app.DB_PATH)
         return h
 
-    def login(self, username="provavet", password="prova.vet1", staff=True):
+    def login(self, username="villadeipini", password="pini.vet26", staff=True):
         h = self.call("POST", "/partner/accedi", {"username": username, "password": password}, staff=staff)
         raw = h.header("Set-Cookie")
         return h, (raw.split(";")[0] if raw else "")
@@ -126,12 +126,12 @@ class PortalAccessTests(PortalBase):
 
     def test_login_page_shows_demo_hint_and_banner_only_to_staff(self):
         staff_page = self.call("GET", "/partner/accedi", staff=True).html
-        self.assertIn("provavet", staff_page)
-        self.assertIn("prova.vet1", staff_page)
+        self.assertIn("villadeipini", staff_page)
+        self.assertIn("pini.vet26", staff_page)
         self.assertIn("Anteprima staff", staff_page)
         self.assertIn("Gestionale</a>", staff_page)
         public_page = self.call("GET", "/partner/accedi").html
-        self.assertNotIn("prova.vet1", public_page)
+        self.assertNotIn("pini.vet26", public_page)
         self.assertNotIn("Anteprima staff", public_page)
         self.assertIn("Portale Veterinari", public_page)
         self.assertIn('name="password"', public_page)
@@ -145,16 +145,16 @@ class PortalAccessTests(PortalBase):
         self.assertIn(f"Max-Age={ps.DEMO_SESSION_HOURS * 3600}", raw)
         home = self.call("GET", "/partner", cookie=cookie, staff=True)
         self.assertEqual(home.status, 200)
-        self.assertIn("Dott. Prova", home.html)
+        self.assertIn("Giulia Ferretti", home.html)
         self.assertRegex(home.html, r"Buongiorno|Buon pomeriggio|Buonasera")
         # senza sessione staff le stesse credenziali non funzionano (e il messaggio e' generico)
         h2, cookie2 = self.login(staff=False)
         self.assertEqual(cookie2, "")
         self.assertIn("Credenziali non valide", h2.html)
-        self.assertNotIn("prova.vet1", h2.html)  # nessun suggerimento a chi non e' staff
+        self.assertNotIn("pini.vet26", h2.html)  # nessun suggerimento a chi non e' staff
 
     def test_wrong_credentials_and_secure_cookie_behind_https(self):
-        for user, pwd in (("provavet", "sbagliata"), ("nonesiste", "prova.vet1"), ("", ""), ("provavet", "")):
+        for user, pwd in (("villadeipini", "sbagliata"), ("nonesiste", "pini.vet26"), ("", ""), ("villadeipini", "")):
             with self.subTest(user=user):
                 h, cookie = self.login(user, pwd)
                 self.assertEqual(cookie, "")
@@ -179,7 +179,7 @@ class PortalAccessTests(PortalBase):
         self.assertEqual(cookie, "")
         self.assertIn("Troppi tentativi", h.html)
         # un altro utente non e' bloccato
-        h2, cookie2 = self.login("provavet", "prova.vet1", staff=True)
+        h2, cookie2 = self.login("villadeipini", "pini.vet26", staff=True)
         self.assertTrue(cookie2)
 
     def test_logout_session_expiry_and_deactivation(self):
@@ -422,7 +422,7 @@ class PortalRequestFlowTests(PortalBase):
         self.assertIn(pp.CONTACT_EMAIL, page)
         account = self.call("GET", "/partner/account", cookie=self.cookie).html
         self.assertIn("Esci", account)
-        self.assertIn("provavet@prova.petparadise.invalid", account)
+        self.assertIn("segreteria@villadeipini.example", account)
 
 
 class PortalIsolationAndLiveTests(PortalBase):
@@ -808,7 +808,7 @@ class NavigationAndZoomTests(PortalBase):
     def test_account_page_has_the_account_and_logout_and_vouchers(self):
         page = self.call("GET", "/partner/account", cookie=self.cookie)
         self.assertEqual(page.status, 200)
-        for text in ("Il tuo account", "Esci", "provavet@prova.petparadise.invalid", "I tuoi buoni", "2</b>"):
+        for text in ("Il tuo account", "Esci", "segreteria@villadeipini.example", "I tuoi buoni", "2</b>"):
             self.assertIn(text, page.html)
         self.assertEqual(self.call("GET", "/partner/account").header("Location"), "/partner/accedi")
         info = self.call("GET", "/partner/info", cookie=self.cookie).html
@@ -829,6 +829,108 @@ class NavigationAndZoomTests(PortalBase):
         page = self.call("GET", "/partner/nuova", cookie=self.cookie).html
         self.assertIn("width=device-width,initial-scale=1,viewport-fit=cover", page)
         self.assertNotIn("user-scalable=no", page)  # lo zoom manuale resta possibile
+
+
+class DemoIdentityTests(PortalBase):
+    def test_new_demo_clinic_looks_like_a_real_one(self):
+        self.assertEqual((ps.DEMO_USERNAME, ps.DEMO_PASSWORD), ("villadeipini", "pini.vet26"))
+        with app.db() as c:
+            row = c.execute(
+                """SELECT v.*, u.email, u.display_name, u.username FROM partner_clinics pc
+                   JOIN veterinarians v ON v.id=pc.veterinarian_id JOIN partner_users u ON u.clinic_id=pc.id
+                   WHERE pc.is_demo=1""").fetchone()
+        self.assertEqual((row["clinic_name"], row["short_name"], row["city"]),
+                         ("Clinica Veterinaria Villa dei Pini", "Villa dei Pini", "Livorno"))
+        self.assertEqual((row["display_name"], row["address"]), ("Dott.ssa Giulia Ferretti", "Via dei Pini 14"))
+        self.assertEqual(row["phone"], "")  # nessun numero che qualcuno possa chiamare per errore
+        for text in (row["clinic_name"], row["short_name"], row["display_name"], row["email"], row["username"]):
+            self.assertNotRegex(text, r"(?i)prova|demo|test")
+        self.assertTrue(row["email"].endswith(".example"))  # dominio riservato: nessuna email reale
+
+    def test_portal_pages_never_say_prova_to_the_vet(self):
+        import re
+        _, cookie = self.login()
+        self.call("POST", "/partner/nuova", {
+            "token": "dm1", "mode": "ritiro_clinica", "service_type": "Cremazione singola", "species": "Cane",
+            "weight": "12", "proposed_date": tomorrow(), "fascia": "mattina"}, cookie)
+        for path in ("/partner", "/partner/nuova", "/partner/preventivo", "/partner/info", "/partner/account",
+                     "/partner/richieste/1"):
+            with self.subTest(path=path):
+                html = self.call("GET", path, cookie=cookie).html
+                text = re.sub(r"<style>.*?</style>|<script>.*?</script>", "", html, flags=re.S)
+                text = re.sub(r"<[^>]+>", " ", text)
+                self.assertNotRegex(text, r"(?i)\bprova\b")
+                self.assertIn("Villa dei Pini", html)
+        # nel calendario dello staff resta ben riconoscibile come richiesta di dimostrazione
+        with app.db() as c:
+            title = c.execute("SELECT title FROM calendar_events ORDER BY id DESC").fetchone()["title"]
+        self.assertTrue(title.startswith("PORTALE (PROVA)"))
+
+    def test_login_page_shows_the_credentials_and_says_it_is_a_test_account(self):
+        staff_page = self.call("GET", "/partner/accedi", staff=True).html
+        for text in ("Anteprima staff · account di prova", "villadeipini", "pini.vet26", "Villa dei Pini",
+                     "arrivano davvero sul calendario"):
+            self.assertIn(text, staff_page)
+        public = self.call("GET", "/partner/accedi").html
+        for text in ("villadeipini", "pini.vet26", "account di prova"):
+            self.assertNotIn(text, public)  # il suggerimento resta visibile solo a chi e' staff
+
+    def test_old_credentials_stop_working_and_new_ones_work(self):
+        for user, pwd in (("provavet", "prova.vet1"), ("villadeipini", "prova.vet1"), ("provavet", "pini.vet26")):
+            h, cookie = self.login(user, pwd)
+            self.assertEqual(cookie, "", (user, pwd))
+        _, cookie = self.login("villadeipini", "pini.vet26")
+        self.assertTrue(cookie)
+
+    def test_clinic_created_with_the_old_temporary_name_is_upgraded_keeping_its_data(self):
+        _, cookie = self.login()
+        self.call("POST", "/partner/nuova", {
+            "token": "up1", "mode": "ritiro_clinica", "service_type": "Cremazione collettiva", "use_voucher": "1",
+            "species": "Cane", "weight": "12", "proposed_date": tomorrow(), "fascia": "mattina"}, cookie)
+        old_hash = app.password_hash("prova.vet1")
+        with app.db() as c:
+            vet_id = c.execute("SELECT veterinarian_id FROM partner_clinics WHERE is_demo=1").fetchone()[0]
+            c.execute("UPDATE veterinarians SET clinic_name='PROVA VET - Clinica di prova',short_name='PROVA VET',"
+                      "doctor_name='Dott. Prova',address='Via di Prova 1' WHERE id=?", (vet_id,))
+            c.execute("UPDATE partner_users SET username='provavet',email='provavet@prova.petparadise.invalid',"
+                      "display_name='Dott. Prova',password_hash=? WHERE username='villadeipini'", (old_hash,))
+            c.execute("DELETE FROM settings WHERE key='partner_demo_version'")
+            requests_before = c.execute("SELECT COUNT(*) FROM partner_requests").fetchone()[0]
+            events_before = c.execute("SELECT COUNT(*) FROM partner_events").fetchone()[0]
+            vouchers_before = c.execute("SELECT COUNT(*) FROM veterinarian_vouchers WHERE veterinarian_id=?", (vet_id,)).fetchone()[0]
+        h, old_cookie = self.login("provavet", "prova.vet1")
+        self.assertTrue(old_cookie)  # prima dell'aggiornamento funziona ancora il vecchio accesso
+        with app.db() as c:
+            self.assertIsNone(ps.ensure_demo_clinic(c, app.password_hash))
+        with app.db() as c:
+            vet = c.execute("SELECT * FROM veterinarians WHERE id=?", (vet_id,)).fetchone()
+            user = c.execute("SELECT * FROM partner_users WHERE username='villadeipini'").fetchone()
+            self.assertEqual((vet["clinic_name"], vet["short_name"], vet["doctor_name"]),
+                             ("Clinica Veterinaria Villa dei Pini", "Villa dei Pini", "Dott.ssa Giulia Ferretti"))
+            self.assertEqual((user["email"], user["display_name"]), ("segreteria@villadeipini.example", "Dott.ssa Giulia Ferretti"))
+            self.assertEqual(c.execute("SELECT value FROM settings WHERE key='partner_demo_version'").fetchone()[0], "2")
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM partner_requests").fetchone()[0], requests_before)
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM partner_events").fetchone()[0], events_before)
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM veterinarian_vouchers WHERE veterinarian_id=?", (vet_id,)).fetchone()[0], vouchers_before)
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM partner_clinics WHERE is_demo=1").fetchone()[0], 1)
+        # sessioni del vecchio accesso chiuse, vecchie credenziali rifiutate, nuove accettate
+        self.assertEqual(self.call("GET", "/partner", cookie=old_cookie).header("Location"), "/partner/accedi")
+        self.assertEqual(self.login("provavet", "prova.vet1")[1], "")
+        self.assertTrue(self.login("villadeipini", "pini.vet26")[1])
+        # idempotente
+        with app.db() as c:
+            self.assertIsNone(ps.ensure_demo_clinic(c, app.password_hash))
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM partner_users WHERE username='villadeipini'").fetchone()[0], 1)
+
+    def test_upgrade_does_nothing_if_the_demo_clinic_was_deleted(self):
+        with app.db() as c:
+            c.execute("DELETE FROM partner_sessions")
+            c.execute("DELETE FROM partner_users WHERE username='villadeipini'")
+            c.execute("DELETE FROM partner_clinics WHERE is_demo=1")
+            c.execute("DELETE FROM settings WHERE key='partner_demo_version'")
+            self.assertIsNone(ps.ensure_demo_clinic(c, app.password_hash))
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM partner_clinics WHERE is_demo=1").fetchone()[0], 0)
+            self.assertEqual(c.execute("SELECT value FROM settings WHERE key='partner_demo_version'").fetchone()[0], "2")
 
 
 class StaffEntryPointTests(PortalBase):
@@ -864,17 +966,17 @@ class DemoSeedAndMigrationTests(PortalBase):
             clinic = c.execute("SELECT * FROM partner_clinics WHERE id=?", (self.demo_clinic,)).fetchone()
             vouchers = c.execute("SELECT COUNT(*) FROM veterinarian_vouchers WHERE veterinarian_id=? AND status='Maturato'",
                                  (clinic["veterinarian_id"],)).fetchone()[0]
-            user = c.execute("SELECT * FROM partner_users WHERE username='provavet'").fetchone()
+            user = c.execute("SELECT * FROM partner_users WHERE username='villadeipini'").fetchone()
             vet = c.execute("SELECT * FROM veterinarians WHERE id=?", (clinic["veterinarian_id"],)).fetchone()
         self.assertEqual((clinic["is_demo"], clinic["has_freezer"], clinic["vouchers_enabled"]), (1, 1, 1))
         self.assertEqual(vouchers, 2)
-        self.assertTrue(app.password_ok("prova.vet1", user["password_hash"]))
-        self.assertNotIn("prova.vet1", user["password_hash"])
-        self.assertEqual(vet["short_name"], "PROVA VET")
+        self.assertTrue(app.password_ok("pini.vet26", user["password_hash"]))
+        self.assertNotIn("pini.vet26", user["password_hash"])
+        self.assertEqual(vet["short_name"], "Villa dei Pini")
         # eliminata la clinica di prova, non viene ricreata ai riavvii
         with app.db() as c:
             c.execute("DELETE FROM partner_sessions")
-            c.execute("DELETE FROM partner_users WHERE username='provavet'")
+            c.execute("DELETE FROM partner_users WHERE username='villadeipini'")
             c.execute("DELETE FROM partner_clinics WHERE id=?", (self.demo_clinic,))
         app.init_db()
         with app.db() as c:

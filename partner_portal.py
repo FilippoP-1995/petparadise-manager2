@@ -496,9 +496,9 @@ def _tags(r):
 
 
 def login_page(*, error="", staff=False, username=""):
-    hint = (f'<div class="hint"><b>Anteprima staff</b><br>Utente: <b>{e(ps.DEMO_USERNAME)}</b> · '
-            f'Password: <b>{e(ps.DEMO_PASSWORD)}</b><br>Entri come se fossi una clinica: le richieste che crei '
-            f'arrivano davvero sul calendario.</div>' if staff else "")
+    hint = (f'<div class="hint"><b>Anteprima staff · account di prova</b><br>Utente: <b>{e(ps.DEMO_USERNAME)}</b> · '
+            f'Password: <b>{e(ps.DEMO_PASSWORD)}</b><br>Entri come se fossi la clinica "{e(ps.DEMO_CLINIC["short_name"])}": '
+            f'le richieste che crei arrivano davvero sul calendario.</div>' if staff else "")
     body = f'''<div class="login-hero"><div class="login-logo"><img src="/assets/company_logo_light.png" alt="Pet Paradise"></div>
 <h1>Portale Veterinari</h1><p>Invia e segui le richieste di ritiro in tempo reale.</p></div>
 <form class="card login-card" method="post" action="/partner/accedi" autocomplete="on">
