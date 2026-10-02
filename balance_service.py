@@ -1579,8 +1579,12 @@ def create_manual_income(
     idempotency_key: str,
     collaborator_id: int | None = None,
     created_by: int | None = None,
+    metadata: dict | None = None,
 ) -> BalanceMovement:
-    """Append a manual receipt without requiring a linked practice."""
+    """Append a manual receipt without requiring a linked practice.
+
+    ``metadata`` (e.g. the W invoice data) is stored in the ledger row's
+    ``metadata_json`` and therefore survives delete/undo snapshots."""
     normalized_category=_clean_required(category,"category",30)
     if normalized_category not in BALANCE_CATEGORIES:
         raise InvalidMovementError(
@@ -1611,6 +1615,7 @@ def create_manual_income(
         source="manual_income",
         collaborator_id=normalized_collaborator,
         created_by=created_by,
+        metadata=metadata,
     )
 
 

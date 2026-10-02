@@ -4577,6 +4577,22 @@ function ppmSyncMacroareaInvoiceSection(select){
 document.addEventListener('DOMContentLoaded',function(){
   document.querySelectorAll('select[name$="_circuito"]').forEach(ppmSyncMacroareaInvoiceSection);
 });
+function ppmSyncManualIncomeInvoice(form){
+  if(!form)return;
+  const category=form.querySelector('select[name="category"]');
+  const section=form.querySelector('[data-manual-income-invoice]');
+  if(section&&category)section.hidden=category.value!=='W';
+  const amount=form.querySelector('input[name="amount"]');
+  const total=form.querySelector('input[name="invoice_total"]');
+  if(amount&&total&&total.dataset.touched!=='1')total.value=amount.value;
+}
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('form[data-manual-income-form]').forEach(function(form){
+    const total=form.querySelector('input[name="invoice_total"]');
+    if(total&&total.value&&total.value!==(form.querySelector('input[name="amount"]')||{}).value)total.dataset.touched='1';
+    ppmSyncManualIncomeInvoice(form);
+  });
+});
 function ppmLocalDateValue(){
   const today=new Date(),offset=today.getTimezoneOffset()*60000;
   return new Date(today.getTime()-offset).toISOString().slice(0,10);
@@ -7900,6 +7916,28 @@ def cycle_animal_sort_key(row):
     return -money_value(row["estimated_weight"])
 
 
+def manual_income_invoice(metadata_json):
+    """Dati fattura salvati nel metadata_json di un'entrata manuale W
+    (numero/data/importo), oppure None se l'entrata non ha fattura."""
+    if not metadata_json:
+        return None
+    try:
+        data=json.loads(metadata_json)
+    except (TypeError,ValueError):
+        return None
+    invoice=data.get("invoice") if isinstance(data,dict) else None
+    if not isinstance(invoice,dict):
+        return None
+    number=str(invoice.get("number") or "").strip()
+    if not number:
+        return None
+    return {
+        "number":number,
+        "date":str(invoice.get("date") or "").strip(),
+        "total":str(invoice.get("total") or "").strip(),
+    }
+
+
 def money_it(value):
     return f"€ {value:,.2f}".replace(",","X").replace(".",",").replace("X",".")
 
@@ -10325,9 +10363,16 @@ class App(BaseHTTPRequestHandler):
                     if practice_url else 'class="balance-clickable-row balance-move-static"'
                 )
                 accent_cls,type_label,icon=movement_card_style(row.category,row.ledger_section)
+                income_invoice=manual_income_invoice(getattr(row,"metadata_json","")) if getattr(row,"source","")=="manual_income" else None
+                invoice_badge=(
+                    f'<small class="sub">Fattura {esc(income_invoice["number"])}'
+                    +(f' · {esc(date_it(income_invoice["date"]))}' if income_invoice["date"] else "")
+                    +(f' · {money_it(money_value(income_invoice["total"]))}' if income_invoice["total"] else "")
+                    +'</small>'
+                ) if income_invoice else ""
                 extra_line=(
-                    f'<div class="balance-move-description">{esc(row.description)}{audit_badge}</div>'
-                    if row.description or audit_badge else ""
+                    f'<div class="balance-move-description">{esc(row.description)}{invoice_badge}{audit_badge}</div>'
+                    if row.description or audit_badge or invoice_badge else ""
                 )
                 detail_rows.append(render_balance_move_card(
                     accent_cls=accent_cls,icon=icon,type_label=type_label,
@@ -10443,17 +10488,23 @@ class App(BaseHTTPRequestHandler):
         </form>'''
         manual_html=f'''<div class="grid cols-2 balance-manual-panels">
           <details id="balanceManualIncome" class="section balance-expense"><summary>Registra entrata manuale</summary>
-            <form method="post" action="{income_action}" onsubmit="const b=this.querySelector('button');b.disabled=true;b.textContent='Registrazione…'">
+            <form method="post" action="{income_action}" data-manual-income-form onsubmit="const b=this.querySelector('button');b.disabled=true;b.textContent='Registrazione…'">
               <input type="hidden" name="entry_type" value="income"><input type="hidden" name="return_to" value="{esc(return_to)}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(24)}">
               <div class="fields">
                 <div class="field"><label>Data</label><input type="date" name="movement_date" value="{esc(income.get('movement_date') or today.isoformat())}" required></div>
-                <div class="field"><label>Importo €</label><input name="amount" value="{esc(income.get('amount') or '')}" inputmode="decimal" required></div>
-                <div class="field"><label>Categoria</label><select name="category"><option>W</option><option {"selected" if income.get("category")=="D" else ""}>D</option><option {"selected" if income.get("category")=="Collaboratori" else ""}>Collaboratori</option></select></div>
+                <div class="field"><label>Importo €</label><input name="amount" value="{esc(income.get('amount') or '')}" inputmode="decimal" required oninput="ppmSyncManualIncomeInvoice(this.form)"></div>
+                <div class="field"><label>Categoria</label><select name="category" onchange="ppmSyncManualIncomeInvoice(this.form)"><option>W</option><option {"selected" if income.get("category")=="D" else ""}>D</option><option {"selected" if income.get("category")=="Collaboratori" else ""}>Collaboratori</option></select></div>
                 <div class="field"><label>Metodo pagamento</label><select name="payment_method">{''.join(f'<option value="{esc(method)}">{esc(method or "Seleziona metodo")}</option>' for method in PAYMENT_METHODS)}</select></div>
                 <div class="field"><label>Collaboratore</label><select name="collaborator_id">{collaborator_options}</select></div>
                 <div class="field"><label>Descrizione</label><input name="description" value="{esc(income.get('description') or '')}" required></div>
                 <div class="field full"><label>Note facoltative</label><textarea name="notes">{esc(income.get('notes') or '')}</textarea></div>
-              </div><button class="btn" style="margin-top:14px">Registra entrata</button>
+              </div>
+              <div class="payment-invoice-section" data-manual-income-invoice {"" if (income.get("category") or "W")=="W" else "hidden"}><div class="fields">
+                <div class="field"><label>Importo fattura €</label><input name="invoice_total" value="{esc(income.get('invoice_total') or '')}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00" oninput="this.dataset.touched=this.value?'1':''"></div>
+                <div class="field"><label>Data fattura</label><input type="date" name="invoice_date" value="{esc(income.get('invoice_date') or '')}"></div>
+                <div class="field full"><label>Numero fattura</label><input name="invoice_number" value="{esc(income.get('invoice_number') or '')}"></div>
+              </div></div>
+              <button class="btn" style="margin-top:14px">Registra entrata</button>
             </form>
           </details>
           <details id="balanceManualExpense" class="section balance-expense"><summary>Registra uscita manuale</summary>
@@ -10560,6 +10611,30 @@ class App(BaseHTTPRequestHandler):
             description=form.get("description","").strip()
             notes=form.get("notes","").strip()
             full_description=description+(f" · {notes}" if notes else "")
+            metadata=None
+            if category=="W":
+                invoice_number=form.get("invoice_number","").strip()
+                invoice_date=form.get("invoice_date","").strip()
+                if invoice_number:
+                    invoice_total=normalize_money_text(form.get("invoice_total",""))
+                    if not invoice_total:
+                        # Come per i pagamenti sulle pratiche: importo fattura
+                        # vuoto = importo dell'entrata inserita.
+                        invoice_total=f"{amount_cents/100:.2f}"
+                    elif not re.fullmatch(r"\d+(?:\.\d{1,2})?",invoice_total) or float(invoice_total)<=0:
+                        raise BalanceError("Importo fattura non valido.")
+                    else:
+                        invoice_total=f"{float(invoice_total):.2f}"
+                    if invoice_date:
+                        try:
+                            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",invoice_date):
+                                raise ValueError(invoice_date)
+                            date.fromisoformat(invoice_date)
+                        except ValueError:
+                            raise BalanceError("Data fattura non valida.")
+                    metadata={"invoice":{"number":invoice_number,"date":invoice_date,"total":invoice_total}}
+                elif invoice_date:
+                    raise BalanceError("Indica anche il numero fattura, oppure svuota la data fattura.")
             with db() as c:
                 create_balance_income(
                     c,
@@ -10571,6 +10646,7 @@ class App(BaseHTTPRequestHandler):
                     idempotency_key=f"manual-income:{token}",
                     collaborator_id=collaborator_id,
                     created_by=user["id"],
+                    metadata=metadata,
                 )
         except BalanceError as exc:
             return self.balances_page(user,error=str(exc),expense_draft=form)
@@ -15361,7 +15437,18 @@ class App(BaseHTTPRequestHandler):
                                         FROM movement_invoices mi JOIN practices p ON p.id=mi.practice_id
                                         WHERE {' AND '.join(where_mi)}""",args_mi).fetchall() if show_fatturate else []
             reminders=c.execute(f"SELECT * FROM practices WHERE {' AND '.join(where_rem)} ORDER BY created_at DESC",args_rem).fetchall() if show_da_fatturare else []
+            income_invoice_rows=c.execute("""SELECT id,movement_date,description,metadata_json,created_at FROM balance_movements
+                                             WHERE source='manual_income' AND metadata_json LIKE '%"invoice"%'""").fetchall() if show_fatturate else []
         entries=[]
+        # Fatture registrate su un'entrata manuale W di Bilanci (nessuna
+        # pratica collegata): stessi filtri testo/data delle altre fatture.
+        for irow in income_invoice_rows:
+            inv=manual_income_invoice(irow["metadata_json"])
+            if not inv:continue
+            if term and unaccent(term) not in unaccent(" ".join((inv["number"],irow["description"] or "","entrata manuale"))):continue
+            if re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_from) and not (inv["date"] and inv["date"]>=date_from):continue
+            if re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_to) and not (inv["date"] and inv["date"]<=date_to):continue
+            entries.append({"sort_key":inv["date"] or irow["created_at"] or "","number":inv["number"],"date":inv["date"],"practice_number":"Entrata manuale","owner":irow["description"] or "","animal":"","total":money_value(inv["total"]),"channel":"W","pid":f'm{irow["id"]}',"manual":True,"url":f'/bilanci?{urlencode({"periodo":"personalizzato","data_iniziale":irow["movement_date"],"data_finale":irow["movement_date"],"view":"entrate-w"})}#balanceDetails'})
         for row in rows:
             owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip()
             invoice_total=money_value(row["invoice_total"]) if "invoice_total" in row.keys() and row["invoice_total"] else money_value(row["total_service"])
@@ -15370,7 +15457,7 @@ class App(BaseHTTPRequestHandler):
             owner=((mrow["owner_first_name"] or "")+" "+(mrow["owner_last_name"] or "")).strip()
             entries.append({"sort_key":mrow["invoice_date"] or mrow["created_at"] or "","number":mrow["invoice_number"],"date":mrow["invoice_date"],"practice_number":mrow["practice_number"],"owner":owner,"animal":mrow["animal_name"] or "","total":money_value(mrow["invoice_total"]),"channel":mrow["payment_channel"] or "-","pid":mrow["practice_id"],"url":f'/pratiche/{mrow["practice_id"]}?return_to={quote(getattr(self,"path",""),safe="")}'})
         entries.sort(key=lambda e:e["sort_key"],reverse=True)
-        table=[f'''<tr class="practice-row-link" data-practice-id="{e["pid"]}" {row_open_attrs(e["url"],f'Apri pratica {e["practice_number"]}')}><td><b>{esc(e["number"])}</b></td><td>{esc(date_it(e["date"]))}</td><td><a href="{e["url"]}">{esc(e["practice_number"])}</a></td><td>{esc(e["owner"])}</td><td>{esc(e["animal"])}</td><td>{esc(e["channel"])}</td><td>{money_it(e["total"])}</td><td><a class="btn ghost" href="{e["url"]}">Apri</a></td></tr>''' for e in entries]
+        table=[f'''<tr class="practice-row-link" data-practice-id="{e["pid"]}" {row_open_attrs(e["url"],"Apri Bilanci" if e.get("manual") else f'Apri pratica {e["practice_number"]}')}><td><b>{esc(e["number"])}</b></td><td>{esc(date_it(e["date"]))}</td><td><a href="{e["url"]}">{esc(e["practice_number"])}</a></td><td>{esc(e["owner"])}</td><td>{esc(e["animal"])}</td><td>{esc(e["channel"])}</td><td>{money_it(e["total"])}</td><td><a class="btn ghost" href="{e["url"]}">Apri</a></td></tr>''' for e in entries]
         # Fatture condivise tra più pratiche (es. un collaboratore fatturato
         # una sola volta per più animali/pratiche, richiesta esplicita
         # dell'utente): raggruppamento per numero fattura normalizzato
@@ -15392,7 +15479,7 @@ class App(BaseHTTPRequestHandler):
         for group in shared_groups:
             combined_total=sum(g["total"] for g in group)
             practices_html=", ".join(f'<a href="{g["url"]}">{esc(g["practice_number"])}</a> ({money_it(g["total"])})' for g in sorted(group,key=lambda g:g["practice_number"] or ""))
-            shared_rows.append(f'''<tr><td><b>{esc(group[0]["number"])}</b></td><td>{len(group)} pratiche</td><td>{practices_html}</td><td>{money_it(combined_total)}</td></tr>''')
+            shared_rows.append(f'''<tr><td><b>{esc(group[0]["number"])}</b></td><td>{len(group)} {"voci" if any(g.get("manual") for g in group) else "pratiche"}</td><td>{practices_html}</td><td>{money_it(combined_total)}</td></tr>''')
         shared_section=f'''<section class="tablebox fatture-tablebox" style="margin-top:20px"><h2>Fatture condivise tra più pratiche</h2><p class="sub">Stesso numero fattura assegnato a più pratiche diverse: ogni pratica mantiene il proprio importo, qui il totale è la somma delle pratiche collegate.</p><table><thead><tr><th>Fattura</th><th>Pratiche</th><th>Dettaglio</th><th>Totale combinato</th></tr></thead><tbody>{''.join(shared_rows)}</tbody></table></section>''' if shared_rows else ''
         # Solo circuito W: il circuito D non deve comparire in "Da fatturare"
         # (richiesta esplicita). Escludi inoltre le pratiche di provenienza

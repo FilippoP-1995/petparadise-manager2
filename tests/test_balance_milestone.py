@@ -308,5 +308,163 @@ class BalanceMilestoneOneTests(unittest.TestCase):
         self.assertIn("Entrata sportello",rows[0]["description"])
 
 
+    # ------------------------------------------------------------------
+    # Entrata manuale W con dati fattura
+    # ------------------------------------------------------------------
+    def post_income(self,**overrides):
+        form={
+            "entry_type":"income","return_to":"/bilanci",
+            "balance_idempotency_key":overrides.pop("key","inv-key"),
+            "movement_date":"2026-07-19","amount":"120,00","category":"W",
+            "payment_method":"Pos","description":"Vendita sportello",
+        }
+        form.update(overrides)
+        self.handler.form=lambda:form
+        self.handler.redirect=lambda url:None
+        errors=[]
+        self.handler.balances_page=lambda user,error="",expense_draft=None:errors.append(error)
+        self.handler.balance_income_submit(self.admin)
+        return errors
+
+    def income_row(self,key="inv-key"):
+        with app.db() as connection:
+            return connection.execute(
+                "SELECT * FROM balance_movements WHERE idempotency_key=?",
+                (f"manual-income:{key}",),
+            ).fetchone()
+
+    def test_manual_income_w_saves_invoice_with_explicit_values(self):
+        errors=self.post_income(invoice_number="FT-77/2026",invoice_date="2026-07-18",invoice_total="100,50")
+        self.assertEqual(errors,[])
+        row=self.income_row()
+        invoice=app.manual_income_invoice(row["metadata_json"])
+        self.assertEqual(invoice,{"number":"FT-77/2026","date":"2026-07-18","total":"100.50"})
+
+    def test_manual_income_w_invoice_total_defaults_to_entry_amount(self):
+        errors=self.post_income(invoice_number="FT-1",invoice_date="2026-07-19",invoice_total="")
+        self.assertEqual(errors,[])
+        invoice=app.manual_income_invoice(self.income_row()["metadata_json"])
+        self.assertEqual(invoice["total"],"120.00")
+
+    def test_manual_income_w_invoice_date_may_stay_blank(self):
+        errors=self.post_income(invoice_number="FT-NODATE",invoice_total="")
+        self.assertEqual(errors,[])
+        invoice=app.manual_income_invoice(self.income_row()["metadata_json"])
+        self.assertEqual((invoice["number"],invoice["date"]),("FT-NODATE",""))
+
+    def test_manual_income_invalid_invoice_fields_are_rejected_without_saving(self):
+        for key,extra,message in (
+            ("bad-total",{"invoice_number":"FT-9","invoice_total":"12abc"},"Importo fattura non valido"),
+            ("zero-total",{"invoice_number":"FT-9","invoice_total":"0"},"Importo fattura non valido"),
+            ("bad-date",{"invoice_number":"FT-9","invoice_date":"19/07/2026"},"Data fattura non valida"),
+            ("impossible-date",{"invoice_number":"FT-9","invoice_date":"2026-02-31"},"Data fattura non valida"),
+            ("date-no-number",{"invoice_date":"2026-07-19"},"numero fattura"),
+        ):
+            with self.subTest(key=key):
+                errors=self.post_income(key=key,**extra)
+                self.assertEqual(len(errors),1)
+                self.assertIn(message,errors[0])
+                self.assertIsNone(self.income_row(key))
+
+    def test_manual_income_without_invoice_number_or_non_w_has_no_invoice(self):
+        self.assertEqual(self.post_income(key="no-num",invoice_total="120,00"),[])
+        self.assertEqual(self.income_row("no-num")["metadata_json"],"")
+        self.assertEqual(self.post_income(key="cat-d",category="D",invoice_number="FT-D",invoice_date="2026-07-19",invoice_total="120,00"),[])
+        self.assertEqual(self.income_row("cat-d")["metadata_json"],"")
+        self.assertIsNone(app.manual_income_invoice(self.income_row("cat-d")["metadata_json"]))
+
+    def test_manual_income_form_has_invoice_section_only_visible_for_w(self):
+        pages=[]
+        self.handler.send_html=lambda content,*args:pages.append(content)
+        self.handler.path="/bilanci"
+        self.handler.balances_page(self.admin)
+        html=pages[-1]
+        for name in ('name="invoice_number"','name="invoice_date"','name="invoice_total"'):
+            self.assertIn(name,html)
+        self.assertIn("Numero fattura",html)
+        self.assertIn("Importo fattura €",html)
+        self.assertIn("Data fattura",html)
+        section=html[html.index("data-manual-income-invoice"):][:80]
+        self.assertNotIn("hidden",section)
+        self.assertIn("ppmSyncManualIncomeInvoice(this.form)",html)
+        # bozza dopo errore con categoria D: sezione nascosta, valori ripopolati
+        pages.clear()
+        self.handler.balances_page(self.admin,error="x",expense_draft={
+            "entry_type":"income","category":"D","amount":"5","invoice_number":"FT-KEEP",
+        })
+        html=pages[-1]
+        self.assertIn("hidden",html[html.index("data-manual-income-invoice"):][:80])
+        self.assertIn('value="FT-KEEP"',html)
+
+    def test_manual_income_invoice_is_shown_in_balance_movements_and_survives_delete_restore(self):
+        self.post_income(invoice_number="FT-BIL-5",invoice_date="2026-07-18",invoice_total="100,50",
+                         description="Entrata con fattura bilancio")
+        self.handler.__dict__.pop("balances_page",None)
+        pages=[]
+        self.handler.send_html=lambda content,*args:pages.append(content)
+        self.handler.path="/bilanci?periodo=personalizzato&data_iniziale=2026-07-01&data_finale=2026-07-31&view=entrate-w"
+        self.handler.balances_page(self.admin)
+        self.assertIn("Fattura FT-BIL-5",pages[-1])
+        self.assertIn("18/07/2026",pages[-1])
+        self.assertIn("100,50",pages[-1])
+        movement_id=self.income_row()["id"]
+        redirects=[];self.handler.redirect=redirects.append
+        self.handler.form=lambda:{"return_to":"/bilanci"}
+        self.handler.balance_movement_delete(self.admin,movement_id)
+        self.assertIsNone(self.income_row())
+        with app.db() as connection:
+            deletion_id=connection.execute("SELECT id FROM balance_movement_deletions ORDER BY id DESC LIMIT 1").fetchone()["id"]
+        self.handler.balance_movement_deletion_restore(self.admin,deletion_id)
+        restored=self.income_row()
+        self.assertIsNotNone(restored)
+        self.assertEqual(app.manual_income_invoice(restored["metadata_json"])["number"],"FT-BIL-5")
+
+    def fatture_html(self,query=""):
+        pages=[]
+        self.handler.send_html=lambda content,*args:pages.append(content)
+        self.handler.path="/fatture"+query
+        self.handler.invoices_page(self.admin)
+        return pages[-1]
+
+    def test_manual_income_invoice_listed_in_fatture_with_filters(self):
+        self.post_income(key="f1",invoice_number="FT-LIST-1",invoice_date="2026-07-18",invoice_total="100,50",
+                         description="Cliente Banco Rossi")
+        self.post_income(key="f2",invoice_number="FT-LIST-2",invoice_date="2026-09-02",invoice_total="",
+                         amount="80,00",description="Altro incasso")
+        html=self.fatture_html()
+        self.assertIn("FT-LIST-1",html)
+        self.assertIn("FT-LIST-2",html)
+        self.assertIn("Entrata manuale",html)
+        self.assertIn("Cliente Banco Rossi",html)
+        self.assertIn("€ 100,50",html)
+        self.assertIn("€ 80,00",html)  # importo fattura vuoto = importo entrata
+        self.assertIn("/bilanci?",html)
+        # filtro testo (anche senza accenti/maiuscole)
+        html=self.fatture_html("?q=banco")
+        self.assertIn("FT-LIST-1",html);self.assertNotIn("FT-LIST-2",html)
+        html=self.fatture_html("?q=ft-list-2")
+        self.assertIn("FT-LIST-2",html);self.assertNotIn("FT-LIST-1",html)
+        # filtro date sulla data fattura
+        html=self.fatture_html("?dal=2026-08-01")
+        self.assertIn("FT-LIST-2",html);self.assertNotIn("FT-LIST-1",html)
+        html=self.fatture_html("?al=2026-07-31")
+        self.assertIn("FT-LIST-1",html);self.assertNotIn("FT-LIST-2",html)
+        # "Da fatturare" non mostra le entrate manuali fatturate
+        html=self.fatture_html("?tipo=da_fatturare")
+        self.assertNotIn("FT-LIST-1",html)
+
+    def test_manual_income_invoice_shares_number_with_practice_invoice_group(self):
+        with app.db() as connection:
+            connection.execute(
+                "UPDATE practices SET invoice_number='FT-SHARED',invoice_date='2026-07-10',invoice_total='50' WHERE id=?",
+                (self.w_id,),
+            )
+        self.post_income(invoice_number="ft-shared",invoice_date="2026-07-19",invoice_total="70,00")
+        html=self.fatture_html()
+        self.assertIn("Fatture condivise tra più pratiche",html)
+        self.assertIn("2 voci",html)
+        self.assertIn("€ 120,00",html)  # 50 + 70
+
+
 if __name__=="__main__":
     unittest.main()
