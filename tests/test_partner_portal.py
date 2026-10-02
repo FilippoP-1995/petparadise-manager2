@@ -933,6 +933,201 @@ class DemoIdentityTests(PortalBase):
             self.assertEqual(c.execute("SELECT value FROM settings WHERE key='partner_demo_version'").fetchone()[0], "2")
 
 
+class ThemeTests(PortalBase):
+    def theme_of(self, html):
+        import re
+        return re.search(r'<html lang="it" data-theme="([^"]*)"', html).group(1)
+
+    def post_theme(self, value, cookie="", accept="application/json", headers=None):
+        h = FakeHandler("/partner/tema", cookie, {"tema": value}, {"Accept": accept, **(headers or {})})
+        pp.dispatch(h, "POST", "/partner/tema", db=app.db, password_ok=app.password_ok,
+                    staff_user=lambda: None, db_path=app.DB_PATH)
+        return h
+
+    def test_default_is_light_everywhere(self):
+        self.assertEqual(self.theme_of(self.call("GET", "/partner/accedi").html), "light")
+        _, cookie = self.login()
+        for path in ("/partner", "/partner/nuova", "/partner/preventivo", "/partner/info", "/partner/account"):
+            self.assertEqual(self.theme_of(self.call("GET", path, cookie=cookie).html), "light", path)
+
+    def test_user_choice_is_saved_on_the_account_and_survives_a_new_login_without_cookies(self):
+        _, cookie = self.login()
+        h = self.post_theme("dark", cookie)
+        self.assertEqual(h.status, 200)
+        self.assertEqual(json.loads(h.wfile.getvalue()), {"ok": True, "theme": "dark"})
+        with app.db() as c:
+            self.assertEqual(c.execute("SELECT theme FROM partner_users WHERE id=?", (self.demo_user,)).fetchone()[0], "dark")
+            self.assertEqual(c.execute("SELECT theme FROM partner_users WHERE id=?", (self.other_user,)).fetchone()[0], "")
+        for path in ("/partner", "/partner/nuova", "/partner/info", "/partner/account", "/partner/preventivo"):
+            self.assertEqual(self.theme_of(self.call("GET", path, cookie=cookie).html), "dark", path)
+        # altro dispositivo: nuova sessione, nessun cookie del tema -> il tema segue l'utente
+        _, cookie2 = self.login()
+        self.assertEqual(self.theme_of(self.call("GET", "/partner", cookie=cookie2).html), "dark")
+        # l'altra clinica non e' toccata
+        _, other = self.login("altravet", "altra.pass1", staff=False)
+        self.assertEqual(self.theme_of(self.call("GET", "/partner", cookie=other).html), "light")
+
+    def test_all_three_choices_and_account_selector(self):
+        _, cookie = self.login()
+        for choice in ("auto", "dark", "light"):
+            self.post_theme(choice, cookie)
+            html = self.call("GET", "/partner/account", cookie=cookie).html
+            self.assertEqual(self.theme_of(html), choice)
+            for key in ("auto", "dark", "light"):
+                pressed = "true" if key == choice else "false"
+                self.assertIn(f'name="tema" value="{key}" data-theme-choice="{key}" aria-pressed="{pressed}"', html)
+        html = self.call("GET", "/partner/account", cookie=cookie).html
+        for text in ("Aspetto", "Automatico", "Chiaro", "Scuro", "segue le impostazioni del tuo telefono"):
+            self.assertIn(text, html)
+
+    def test_invalid_values_are_rejected_and_change_nothing(self):
+        _, cookie = self.login()
+        for bad in ("", "nero", "<script>", "DARK", "dark;x"):
+            h = self.post_theme(bad, cookie)
+            self.assertEqual(h.status, 400, bad)
+        with app.db() as c:
+            self.assertEqual(c.execute("SELECT theme FROM partner_users WHERE id=?", (self.demo_user,)).fetchone()[0], "")
+        with self.assertRaises(ps.PartnerError):
+            with app.db() as c:
+                ps.set_user_theme(c, self.demo_user, "viola")
+
+    def test_cookie_covers_the_login_page_and_has_safe_flags(self):
+        h = self.post_theme("dark")  # senza sessione
+        raw = h.header("Set-Cookie")
+        for flag in ("pp_theme=dark", "SameSite=Lax", "Path=/partner", "Max-Age=31536000"):
+            self.assertIn(flag, raw)
+        self.assertNotIn("HttpOnly", raw)  # lo legge anche la pagina
+        self.assertIn("Secure", self.post_theme("dark", headers={"X-Forwarded-Proto": "https"}).header("Set-Cookie"))
+        self.assertEqual(self.theme_of(self.call("GET", "/partner/accedi", cookie="pp_theme=dark").html), "dark")
+        self.assertEqual(self.theme_of(self.call("GET", "/partner/accedi", cookie="pp_theme=auto").html), "auto")
+        self.assertEqual(self.theme_of(self.call("GET", "/partner/accedi", cookie="pp_theme=viola").html), "light")
+        with app.db() as c:  # senza sessione non si scrive nulla nel database
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM partner_users WHERE theme<>''").fetchone()[0], 0)
+
+    def test_saved_choice_wins_over_the_cookie(self):
+        _, cookie = self.login()
+        self.post_theme("light", cookie)
+        both = f"{cookie}; pp_theme=dark"
+        self.assertEqual(self.theme_of(self.call("GET", "/partner", cookie=both).html), "light")
+
+    def test_form_without_javascript_redirects_back(self):
+        _, cookie = self.login()
+        h = self.post_theme("dark", cookie, accept="text/html")
+        self.assertEqual((h.status, h.header("Location")), (303, "/partner/account"))
+        self.assertIn("pp_theme=dark", h.header("Set-Cookie"))
+        anonymous = self.post_theme("dark", accept="text/html")
+        self.assertEqual(anonymous.header("Location"), "/partner/accedi")
+
+    def test_toggle_buttons_and_client_script(self):
+        _, cookie = self.login()
+        home = self.call("GET", "/partner", cookie=cookie).html
+        self.assertIn('class="themebtn" data-theme-toggle', home)
+        login = self.call("GET", "/partner/accedi").html
+        self.assertIn('class="themebtn float" data-theme-toggle', login)
+        for text in ("fetch('/partner/tema'", "prefers-color-scheme: dark", "data-theme-choice", "data-theme-toggle"):
+            self.assertIn(text, home)
+
+    def test_dark_palette_exists_for_dark_and_for_automatic_mode(self):
+        import re
+        css = pp.CSS
+        self.assertIn(':root[data-theme="dark"]{--brand:', css)
+        self.assertIn('@media(prefers-color-scheme:dark){\n:root[data-theme="auto"]{--brand:', css)
+        self.assertEqual(css.count(";color-scheme:dark}"), 2)
+        for selector in (".st-wait", ".st-done", ".tag.urgent", ".flash.err", ".hint", ".ticket", ".code", ".prog.ice"):
+            self.assertIn(f':root[data-theme="dark"] {selector}{{', css)
+            self.assertIn(f':root[data-theme="auto"] {selector}{{', css)
+        # i componenti principali usano variabili: nessun bianco fisso che resterebbe chiaro nel tema scuro
+        for rule in (r"\.chip span,\.pill\{[^}]*\}", r"\.mode>div\{[^}]*\}", r"\.check\{[^}]*\}", r"input,select,textarea\{width[^}]*\}",
+                     r"\.tabbar\{[^}]*\}", r"\.top\{[^}]*\}", r"\.btn\.ghost\{[^}]*\}"):
+            block = re.search(rule, css).group(0)
+            self.assertNotRegex(block, r"background:#(?:fff|fcfbfa)\b", rule)
+        self.assertIn(".hero .btn.light{background:#fff}", css)  # il pulsante bianco della home resta bianco
+
+    def test_no_inline_light_only_colors_left_in_pages(self):
+        _, cookie = self.login()
+        for path in ("/partner", "/partner/account", "/partner/preventivo?peso=10"):
+            html = self.call("GET", path, cookie=cookie).html
+            self.assertNotIn('style="background:#e3f2fc', html)
+            self.assertNotIn('style="background:#fdf0d3', html)
+
+    def test_schema_upgrade_adds_the_theme_column(self):
+        with app.db() as c:
+            c.execute("ALTER TABLE partner_users DROP COLUMN theme")
+        app.init_db()
+        with app.db() as c:
+            self.assertIn("theme", {r[1] for r in c.execute("PRAGMA table_info(partner_users)")})
+            self.assertEqual(c.execute("SELECT theme FROM partner_users LIMIT 1").fetchone()[0], "")
+
+
+class InstallTests(PortalBase):
+    def setUp(self):
+        super().setUp()
+        _, self.cookie = self.login()
+
+    def test_account_page_explains_how_to_install_on_every_device(self):
+        html = self.call("GET", "/partner/account", cookie=self.cookie).html
+        for text in ('id="installa"', "Installa l'app", "iPhone o iPad (Safari)", "Condividi", "Aggiungi alla schermata Home",
+                     "Android (Chrome)", "Installa app", "Computer (Chrome o Edge)", "icona", "Aggiungi al Dock",
+                     'id="installBtn"', 'id="installDone"', 'data-os="ios"', 'data-os="android"', 'data-os="desktop"'):
+            self.assertIn(text, html)
+
+    def test_home_has_a_dismissible_install_hint(self):
+        html = self.call("GET", "/partner", cookie=self.cookie).html
+        self.assertIn('id="installBar"', html)
+        self.assertIn('class="card installbar hidden"', html)  # nascosto finche' il browser non dice che serve
+        for text in ("data-install-go", "data-install-dismiss", "Più tardi", "beforeinstallprompt", "appinstalled",
+                     "display-mode: standalone", "pp_install_dismissed", "/partner/account#installa"):
+            self.assertIn(text, html)
+
+    def test_service_worker_is_served_publicly_with_the_right_scope(self):
+        h = self.call("GET", "/partner/sw.js")  # senza sessione: lo scarica il browser prima di accedere
+        self.assertEqual(h.status, 200)
+        self.assertEqual(h.header("Service-Worker-Allowed"), "/partner")
+        self.assertEqual(h.header("Cache-Control"), "no-cache")
+        self.assertIn("javascript", h.header("Content-Type"))
+        source = h.wfile.getvalue().decode("utf-8")
+        for text in ("addEventListener('fetch'", "event.request.method !== 'GET'", "Sei offline", "skipWaiting", "clients.claim",
+                     "pp-partner-shell-v1", "mode === 'navigate'"):
+            self.assertIn(text, source)
+        self.assertNotIn("cache.put", source)  # le pagine con dati non vengono mai conservate
+
+    def test_pages_register_the_portal_service_worker_and_have_install_metadata(self):
+        html = self.call("GET", "/partner", cookie=self.cookie).html
+        self.assertIn("serviceWorker.register('/partner/sw.js',{scope:'/partner'})", html)
+        self.assertIn('<link rel="manifest" href="/partner/manifest.json">', html)
+        self.assertIn('<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">', html)
+        self.assertIn('name="apple-mobile-web-app-capable" content="yes"', html)
+        self.assertIn('name="mobile-web-app-capable" content="yes"', html)
+        self.assertIn('name="apple-mobile-web-app-title" content="PP Partners"', html)
+
+    def test_manifest_is_installable_and_has_shortcuts(self):
+        manifest = json.loads(self.call("GET", "/partner/manifest.json").wfile.getvalue())
+        self.assertEqual((manifest["start_url"], manifest["scope"], manifest["display"]), ("/partner", "/partner", "standalone"))
+        sizes = {icon["sizes"]: icon for icon in manifest["icons"]}
+        self.assertEqual(set(sizes), {"192x192", "512x512"})
+        for icon in manifest["icons"]:
+            self.assertTrue((app.ASSETS / icon["src"].rsplit("/", 1)[1]).exists(), icon["src"])
+            self.assertEqual(icon["type"], "image/png")
+        self.assertEqual([s["url"] for s in manifest["shortcuts"]], ["/partner/nuova", "/partner/preventivo"])
+        self.assertTrue(manifest["name"] and manifest["short_name"] and manifest["theme_color"] and manifest["background_color"])
+
+    def test_staff_get_a_ready_to_send_link_and_instructions(self):
+        with app.db() as c:
+            c.execute("UPDATE users SET must_change_password=0")
+            admin = c.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        handler = object.__new__(app.App)
+        handler.headers = {}
+        handler.path = "/portale-partner"
+        pages = []
+        handler.send_html = lambda content, *a: pages.append(content)
+        handler.portal_partner_page(admin)
+        html = pages[-1]
+        for text in ("Link del portale da dare ai veterinari", "Copia link", "Copia messaggio con istruzioni", "Apri il portale",
+                     "location.origin+'/partner'", "Safari", "Aggiungi alla schermata Home", "Installa app", "WhatsApp"):
+            self.assertIn(text, html)
+        self.assertNotIn("pini.vet26", html.split("Link del portale")[1].split("Attiva una clinica")[0])  # nessuna password nel messaggio
+
+
 class StaffEntryPointTests(PortalBase):
     def test_sidebar_link_is_visible_to_every_user(self):
         self.assertIn(("/partner", "stethoscope", "Portale Veterinari"), app.SIDEBAR_LINKS)

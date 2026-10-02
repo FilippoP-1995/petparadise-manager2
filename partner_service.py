@@ -121,7 +121,8 @@ CREATE TABLE IF NOT EXISTS partner_users (
   created_at TEXT NOT NULL,
   last_login_at TEXT,
   username TEXT,
-  password_hash TEXT NOT NULL DEFAULT ''
+  password_hash TEXT NOT NULL DEFAULT '',
+  theme TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_partner_users_clinic ON partner_users(clinic_id);
 CREATE TABLE IF NOT EXISTS partner_sessions (
@@ -349,6 +350,7 @@ def ensure_partner_schema(conn: sqlite3.Connection) -> None:
         ("partner_clinics", "is_demo", "INTEGER NOT NULL DEFAULT 0"),
         ("partner_users", "username", "TEXT"),
         ("partner_users", "password_hash", "TEXT NOT NULL DEFAULT ''"),
+        ("partner_users", "theme", "TEXT NOT NULL DEFAULT ''"),
     ):
         if column not in {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
@@ -991,7 +993,7 @@ def session_user(conn, token):
     if not token:
         return None
     return conn.execute(
-        """SELECT u.id AS user_id, u.clinic_id, u.email, u.display_name, u.role, u.username,
+        """SELECT u.id AS user_id, u.clinic_id, u.email, u.display_name, u.role, u.username, u.theme,
                   pc.veterinarian_id, pc.has_freezer, pc.vouchers_enabled, pc.is_demo,
                   COALESCE(NULLIF(v.short_name,''), v.clinic_name) AS clinic_label,
                   v.clinic_name, v.city
@@ -1001,6 +1003,16 @@ def session_user(conn, token):
            JOIN veterinarians v ON v.id=pc.veterinarian_id
            WHERE s.token_hash=? AND s.expires_at>? AND u.active=1 AND pc.active=1""",
         (_hash_token(token), _utc_now())).fetchone()
+
+
+THEMES = ("light", "dark", "auto")
+
+
+def set_user_theme(conn, partner_user_id, theme) -> None:
+    """Tema scelto dall'utente del portale: chiaro, scuro o automatico (segue il telefono/PC)."""
+    if theme not in THEMES:
+        raise PartnerError("Tema non valido.")
+    conn.execute("UPDATE partner_users SET theme=? WHERE id=?", (theme, partner_user_id))
 
 
 def delete_session(conn, token) -> None:

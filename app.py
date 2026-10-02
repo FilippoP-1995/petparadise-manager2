@@ -9244,6 +9244,27 @@ REMINDER_PRIORITY_DEFAULT=9
 
 
 
+PARTNER_LINK_CARD = r'''<section class="section" id="partnerLinkCard"><h2>Link del portale da dare ai veterinari</h2>
+<p class="sub">Invia questo indirizzo: il veterinario lo apre dal telefono o dal computer e lo aggiunge alla schermata Home come un'app. Nell'area "Account" del portale trova le istruzioni passo passo.</p>
+<div class="fields"><div class="field full"><input id="partnerLinkField" readonly value="" onclick="this.select()" aria-label="Indirizzo del portale"></div></div>
+<div class="actions" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px"><button type="button" class="btn" onclick="ppmCopyPartnerLink(false)">Copia link</button>
+<button type="button" class="btn ghost" onclick="ppmCopyPartnerLink(true)">Copia messaggio con istruzioni</button>
+<a class="btn ghost" href="/partner" target="_blank" rel="noopener">Apri il portale</a></div>
+<p class="sub" id="partnerLinkMsg" style="margin-top:8px"></p>
+<script>(function(){
+  var url=location.origin+'/partner';
+  var field=document.getElementById('partnerLinkField');if(field)field.value=url;
+  window.ppmCopyPartnerLink=function(full){
+    var text=url;
+    if(full){text="Ciao! Ecco il portale di Pet Paradise per richiedere i ritiri e seguire le pratiche in tempo reale: "+url+"\n\nPer averlo sempre a portata di mano come un'app:\n• iPhone: apri il link con Safari, tocca Condividi e poi «Aggiungi alla schermata Home»\n• Android: apri il link con Chrome, tocca ⋮ e poi «Installa app»\n• Computer: con Chrome o Edge clicca l'icona Installa nella barra dell'indirizzo"}
+    var msg=document.getElementById('partnerLinkMsg');
+    var done=function(){if(msg)msg.textContent=full?'Messaggio copiato: incollalo su WhatsApp o in una mail.':'Link copiato.'};
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done,function(){if(msg)msg.textContent='Copia non riuscita: selezionalo e copialo a mano.'})}
+    else{var t=document.createElement('textarea');t.value=text;document.body.appendChild(t);t.select();try{document.execCommand('copy');done()}catch(e){}t.remove()}
+  };
+})();</script></section>'''
+
+
 def partner_alert_html(summary,items):
     """Banner a tutta larghezza in cima a OGNI pagina del gestionale finche' ci sono
     richieste del Portale Veterinari da confermare (richiesta esplicita: non
@@ -17292,6 +17313,7 @@ class App(BaseHTTPRequestHandler):
             for r in recent) or '<tr><td colspan="6" class="sub">Nessuna richiesta.</td></tr>'
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>Portale partner</h1><div class="sub">Attivazione cliniche, congelatori e richieste ricevute.</div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn ghost" href="/portale-partner/listino">Listino preventivi</a><a class="btn ghost" href="/veterinari">Veterinari</a></div></div>
           {f'<div class="flash warning">{esc(error)}</div>' if error else ''}{f'<div class="flash">{esc(notice)}</div>' if notice else ''}
+          {PARTNER_LINK_CARD}
           <section class="section"><h2>Attiva una clinica</h2><form method="post" action="/portale-partner/clinica"><div class="fields">
             <div class="field full"><label>Veterinario in anagrafica</label><select name="veterinarian_id" required>{vet_options}</select></div>
             <label class="modern-check"><input type="checkbox" name="has_freezer" value="1"> Ha il congelatore</label>
