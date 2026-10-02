@@ -40,7 +40,9 @@ MODES = {
     "ritiro_domicilio": "Ritiro a domicilio",
     "invio_in_sede": "Cliente inviato in sede",
 }
-SERVICES = ("Cremazione singola", "Cremazione collettiva")
+SERVICES = ("Cremazione singola", "Cremazione collettiva", "Cremazione da decidere")
+# Fascia "tutto il giorno": evento calendario "tutto il giorno".
+ALL_DAY = ("00:00", "23:59")
 # Stesse sedi accettate da calendar_service.normalize_event per "Ritiro in sede".
 BRANCHES = ("Livorno", "Empoli")
 ROLES = ("titolare", "staff")
@@ -144,7 +146,7 @@ CREATE TABLE IF NOT EXISTS partner_requests (
   client_request_id TEXT NOT NULL,
   request_code TEXT NOT NULL UNIQUE,
   mode TEXT NOT NULL CHECK(mode IN ('ritiro_clinica','ritiro_domicilio','invio_in_sede')),
-  service_type TEXT NOT NULL CHECK(service_type IN ('Cremazione singola','Cremazione collettiva')),
+  service_type TEXT NOT NULL CHECK(service_type IN ('Cremazione singola','Cremazione collettiva','Cremazione da decidere')),
   owner_first_name TEXT NOT NULL DEFAULT '',
   owner_last_name TEXT NOT NULL DEFAULT '',
   owner_phone TEXT NOT NULL DEFAULT '',
@@ -308,6 +310,35 @@ _TRIGGERS = {
 }
 
 
+def _requests_table_ddl(name: str) -> str:
+    match = re.search(r"CREATE TABLE IF NOT EXISTS partner_requests \((.*?)\n\);", _SCHEMA, re.S)
+    return f"CREATE TABLE {name} ({match.group(1)}\n)"
+
+
+def _migrate_requests_table(conn: sqlite3.Connection) -> None:
+    """I database creati prima di "Cremazione da decidere" hanno un CHECK piu' stretto
+    su service_type: SQLite non lo modifica con ALTER, quindi si ricostruisce la
+    tabella (procedura ufficiale: nuova tabella, copia, drop, rename) conservando
+    righe, id e collegamenti. Eventi, coda e vincoli esterni restano intatti."""
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='partner_requests'").fetchone()
+    if not row or "Cremazione da decidere" in (row[0] or ""):
+        return
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys=OFF")
+    try:
+        conn.execute("DROP VIEW IF EXISTS partner_request_status")
+        for name in _TRIGGERS:
+            conn.execute(f"DROP TRIGGER IF EXISTS {name}")
+        conn.execute(_requests_table_ddl("partner_requests_new"))
+        conn.execute("INSERT INTO partner_requests_new SELECT * FROM partner_requests")
+        conn.execute("DROP TABLE partner_requests")
+        conn.execute("ALTER TABLE partner_requests_new RENAME TO partner_requests")
+        conn.commit()
+        conn.executescript(_SCHEMA)  # ricrea gli indici della tabella ricostruita
+    finally:
+        conn.execute("PRAGMA foreign_keys=ON")
+
+
 def ensure_partner_schema(conn: sqlite3.Connection) -> None:
     """Crea tabelle, vista e trigger. Vista e trigger vengono ricreati a ogni
     avvio cosi' una modifica alla mappa degli stati arriva con il deploy.
@@ -321,6 +352,7 @@ def ensure_partner_schema(conn: sqlite3.Connection) -> None:
     ):
         if column not in {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+    _migrate_requests_table(conn)
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_partner_users_username "
                  "ON partner_users(lower(username)) WHERE username IS NOT NULL AND username<>''")
     conn.execute("DROP VIEW IF EXISTS partner_request_status")
@@ -481,7 +513,9 @@ def _window_text(date_text, time_from, time_to, urgent) -> str:
     if date_text:
         d = date.fromisoformat(date_text)
         parts.append(d.strftime("%d/%m/%Y"))
-    if time_from and time_to:
+    if (time_from, time_to) == ALL_DAY:
+        parts.append("tutto il giorno")
+    elif time_from and time_to:
         parts.append(f"{time_from}-{time_to}")
     text = " ".join(parts)
     return ("URGENTE " + text).strip() if urgent else text
@@ -501,7 +535,7 @@ def _insert_pickup_event(conn, *, request, clinic, created_by, status, start_dat
                          operator_name="", stamp):
     """Crea l'evento calendario del ritiro (+ animale + storico)."""
     in_sede = request["mode"] == "invio_in_sede"
-    all_day = 0 if (start_time and end_time) else 1
+    all_day = 1 if (not (start_time and end_time) or (start_time, end_time) == ALL_DAY) else 0
     start_at = f"{start_date}T{start_time or '00:00'}:00"
     end_at = f"{start_date}T{end_time or '23:59'}:59"
     clinic_label = clinic["short_name"] or clinic["clinic_name"]
@@ -514,6 +548,7 @@ def _insert_pickup_event(conn, *, request, clinic, created_by, status, start_dat
         f"Richiesta portale {request['request_code']}",
         f"Fascia proposta dalla clinica: {window}" if window else "",
         "In congelatore presso la clinica (non urgente)" if request["freezer"] else "",
+        "Tipo di cremazione: da decidere" if request["service_type"] == "Cremazione da decidere" else "",
         f"Note: {request['notes']}" if request["notes"] else "",
     ) if part)
     columns = {
@@ -553,7 +588,7 @@ def _insert_pickup_event(conn, *, request, clinic, created_by, status, start_dat
     weight, size_note = _split_weight(request["weight_text"])
     cal.sync_children(conn, event_id, [{
         "name": request["animal_name"], "species": request["species"], "weight": weight,
-        "cremation_type": "Collettiva" if request["service_type"] == "Cremazione collettiva" else "Singola",
+        "cremation_type": {"Cremazione collettiva": "Collettiva", "Cremazione singola": "Singola"}.get(request["service_type"], ""),
         "notes": size_note,
     }], [], stamp)
     cal.add_history(conn, event_id, created_by, "Creazione evento", "", title, stamp)
@@ -561,7 +596,7 @@ def _insert_pickup_event(conn, *, request, clinic, created_by, status, start_dat
 
 
 def create_request(conn, *, clinic_id, user_id, client_request_id, mode, service_type,
-                   owner_first_name, owner_last_name, owner_phone, species, weight,
+                   species, weight, owner_first_name="", owner_last_name="", owner_phone="",
                    animal_name="", notes="", pickup_address="", destination_site="",
                    proposed_date="", proposed_from="", proposed_to="",
                    urgent=False, freezer=False, use_voucher=False, db_path=None):
@@ -586,15 +621,14 @@ def create_request(conn, *, clinic_id, user_id, client_request_id, mode, service
         return existing, False
 
     if mode not in MODES:
-        raise PartnerError("Seleziona la modalita' della richiesta.")
+        raise PartnerError("Seleziona il tipo di servizio (ritiro in clinica, a domicilio o cliente in sede).")
     if service_type not in SERVICES:
-        raise PartnerError("Seleziona il servizio.")
+        raise PartnerError("Seleziona il tipo di cremazione (anche \"da decidere\").")
+    # Dati del proprietario facoltativi: se il telefono e' scritto deve pero' essere un numero.
     first, last = _clean(owner_first_name, 100), _clean(owner_last_name, 100)
-    if not (first or last):
-        raise PartnerError("Indica il nome del proprietario.")
     phone = _clean(owner_phone, 50)
-    if len(re.sub(r"\D", "", phone)) < 6:
-        raise PartnerError("Indica un numero di telefono valido del proprietario.")
+    if phone and len(re.sub(r"\D", "", phone)) < 6:
+        raise PartnerError("Il numero di telefono del proprietario non sembra valido (lascialo vuoto se non lo hai).")
     species = _clean(species, 100)
     if not species:
         raise PartnerError("Indica la specie dell'animale.")

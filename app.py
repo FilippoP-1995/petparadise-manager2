@@ -17189,6 +17189,7 @@ class App(BaseHTTPRequestHandler):
             if r["freezer"] and not r["calendar_event_id"]:return "Quando il congelatore è pieno"
             if not r["proposed_date"]:return ""
             day=date_it(r["proposed_date"])
+            if (r["proposed_from"],r["proposed_to"])==partner_service.ALL_DAY:return f"{day}, tutto il giorno"
             return f'{day} {r["proposed_from"]}-{r["proposed_to"]}' if r["proposed_from"] and r["proposed_to"] else f"{day}, il prima possibile"
         def card(r):
             who=" ".join(x for x in (r["owner_first_name"],r["owner_last_name"]) if x)
@@ -17205,7 +17206,7 @@ class App(BaseHTTPRequestHandler):
             return f'''<article class="portal-card {"urgent" if r["urgent"] else ""}"><div class="pc-head"><span class="pc-brand">PORTALE VETERINARI</span>{urgent_chip}<span class="pc-age">{esc(age_text(r["created_at"]))}</span></div>
               <h3>{esc(r["animal_name"] or r["species"])} <small>{esc(r["species"])}{", "+esc(r["weight_text"]) if r["weight_text"] else ""}</small></h3>
               <p><b>{esc(r["clinic_label"])}</b> · {esc(partner_service.MODES.get(r["mode"],""))} · {esc(r["service_type"])}</p>
-              <p>{esc(who)}{f' · <a href="tel:{esc(phone)}">{esc(r["owner_phone"])}</a>' if phone else ""}</p>
+              <p>{esc(who) if who else '<i>Proprietario non indicato</i>'}{f' · <a href="tel:{esc(phone)}">{esc(r["owner_phone"])}</a>' if phone else ""}</p>
               {f'<p>Fascia proposta: <b>{esc(window(r))}</b></p>' if window(r) else ""}
               {f'<p>Indirizzo: {esc(r["pickup_address"])}</p>' if r["pickup_address"] else ""}
               {f'<p>Note: {esc(r["notes"])}</p>' if r["notes"] else ""}

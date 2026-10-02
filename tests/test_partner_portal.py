@@ -413,15 +413,16 @@ class PortalRequestFlowTests(PortalBase):
         # annullando si libera il buono e il saldo risale
         self.call("POST", f"/partner/richieste/{rid}/annulla", cookie=self.cookie)
         self.assertRegex(self.call("GET", "/partner", cookie=self.cookie).html, r"<b>1</b><span>Buoni disponibili")
-        self.assertIn("1</b> disponibile", self.call("GET", "/partner/info", cookie=self.cookie).html)
+        self.assertIn("1</b> disponibile", self.call("GET", "/partner/account", cookie=self.cookie).html)
 
     def test_info_page_lists_branches_and_contact(self):
         page = self.call("GET", "/partner/info", cookie=self.cookie).html
         self.assertIn("Livorno", page)
         self.assertIn("Empoli", page)
         self.assertIn(pp.CONTACT_EMAIL, page)
-        self.assertIn("Esci", page)
-        self.assertIn("provavet@prova.petparadise.invalid", page)
+        account = self.call("GET", "/partner/account", cookie=self.cookie).html
+        self.assertIn("Esci", account)
+        self.assertIn("provavet@prova.petparadise.invalid", account)
 
 
 class PortalIsolationAndLiveTests(PortalBase):
@@ -637,6 +638,197 @@ def qs_get(connection):
 def qs_save(connection, pricelist):
     import quote_service
     return quote_service.save_pricelist(connection, pricelist, updated_by="test", updated_at="2026-10-02T10:00:00")
+
+
+class RequestFormTests(PortalBase):
+    def setUp(self):
+        super().setUp()
+        _, self.cookie = self.login()
+
+    def form_page(self, **kw):
+        return self.call("GET", "/partner/nuova", cookie=self.cookie).html
+
+    def test_required_fields_are_marked_and_the_legend_explains_it(self):
+        page = self.form_page()
+        self.assertIn("Campo obbligatorio. Proprietario, nome dell&#x27;animale e note sono facoltativi."
+                      if "&#x27;" in page else "Campo obbligatorio. Proprietario, nome dell'animale e note sono facoltativi.", page)
+        for heading in ("Tipo di servizio", "Tipo di cremazione", "Quando"):
+            index = page.index(f"</span>{heading}")
+            self.assertIn('class="req"', page[index:index + 140], heading)
+        for label in ("<label>Specie", "<label>Peso o taglia", "<label>Fascia oraria", "<label>Sede", "<label>Indirizzo del ritiro"):
+            index = page.index(label)
+            self.assertIn('class="req"', page[index:index + 140], label)
+        for heading in ("Proprietario", "Note"):
+            index = page.index(f"</span>{heading} ")
+            self.assertIn('<span class="opt">(facoltativ', page[index:index + 80], heading)
+        self.assertIn("Nome <span class=\"opt\">(facoltativo)</span>", page)
+
+    def test_required_inputs_have_the_native_required_attribute_and_nothing_is_preselected(self):
+        import re
+        page = self.form_page()
+        for name in ("mode", "service_type"):
+            radios = re.findall(rf'<input type="radio" name="{name}"[^>]*>', page)
+            self.assertGreaterEqual(len(radios), 3, name)
+            for radio in radios:
+                self.assertIn(" required", radio)
+                self.assertNotIn("checked", radio)  # scelta consapevole, niente valori di default
+        for radio in re.findall(r'<input type="radio" name="fascia"[^>]*>', page):
+            self.assertNotIn("checked", radio)
+        self.assertRegex(page, r'name="species"[^>]*required')
+        self.assertRegex(page, r'name="weight"[^>]*required')
+        for name in ("owner_first_name", "owner_last_name", "owner_phone", "animal_name", "notes"):
+            tag = re.search(rf'<(?:input|textarea)[^>]*name="{name}"[^>]*>', page).group(0)
+            self.assertNotIn("required", tag, name)
+        self.assertIn("q('[name=\"pickup_address\"]').required=(mode==='ritiro_domicilio')", page)
+
+    def test_sections_start_with_the_required_ones(self):
+        page = self.form_page()
+        order = [page.index(x) for x in ("</span>Tipo di servizio", "</span>Tipo di cremazione", "</span>Animale",
+                                         "</span>Quando", "</span>Proprietario", "</span>Note")]
+        self.assertEqual(order, sorted(order))
+
+    def test_cremation_options_and_all_day_chip(self):
+        page = self.form_page()
+        for value, label in (("Cremazione singola", "Singola"), ("Cremazione collettiva", "Collettiva"),
+                             ("Cremazione da decidere", "Da decidere")):
+            self.assertIn(f'value="{value}"', page)
+            self.assertIn(f"<span>{label}</span>", page)
+        for text in ("Mattina 9-13", "Pomeriggio 14-18", "Tutto il giorno", "Orario preciso", 'value="tutto_giorno"',
+                     "Scegli \"Da decidere\" se il cliente non ha ancora scelto."):
+            self.assertIn(text, page)
+
+    def test_request_without_owner_and_with_decide_later(self):
+        h = self.call("POST", "/partner/nuova", {
+            "token": "o1", "mode": "ritiro_clinica", "service_type": "Cremazione da decidere", "species": "Gatto",
+            "weight": "4", "proposed_date": tomorrow(), "fascia": "mattina"}, self.cookie)
+        self.assertEqual(h.status, 303)
+        rid = int(h.header("Location").split("/partner/richieste/")[1].split("?")[0])
+        detail = self.call("GET", f"/partner/richieste/{rid}", cookie=self.cookie).html
+        self.assertNotIn("<dt>Proprietario</dt>", detail)
+        self.assertIn("<dt>Cremazione</dt><dd>Da decidere</dd>", detail)
+        self.assertIn("<dt>Tipo di servizio</dt>", detail)
+        card = self.call("GET", "/partner", cookie=self.cookie).html
+        self.assertIn("Ritiro in clinica</div>", card)  # nessun " · " finale senza proprietario
+        with app.db() as c:
+            req = c.execute("SELECT * FROM partner_requests WHERE id=?", (rid,)).fetchone()
+        self.assertEqual((req["owner_first_name"], req["owner_phone"], req["animal_name"]), ("", "", ""))
+
+    def test_missing_required_choices_show_clear_messages_and_keep_the_form(self):
+        base = {"token": "m1", "mode": "ritiro_clinica", "service_type": "Cremazione singola", "species": "Cane",
+                "weight": "10", "proposed_date": tomorrow(), "fascia": "mattina", "animal_name": "Fido"}
+        cases = [({"mode": ""}, "tipo di servizio"), ({"service_type": ""}, "tipo di cremazione"),
+                 ({"species": ""}, "specie"), ({"weight": ""}, "peso"), ({"fascia": ""}, "fascia oraria"),
+                 ({"proposed_date": ""}, "data")]
+        for override, fragment in cases:
+            with self.subTest(override=override):
+                h = self.call("POST", "/partner/nuova", {**base, **override}, self.cookie)
+                self.assertEqual(h.status, 200)
+                self.assertIn(fragment, h.html.lower())
+                self.assertIn('value="Fido"', h.html)
+        with app.db() as c:
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM partner_requests").fetchone()[0], 0)
+
+    def test_all_day_option_through_the_portal(self):
+        h = self.call("POST", "/partner/nuova", {
+            "token": "ad1", "mode": "ritiro_clinica", "service_type": "Cremazione singola", "species": "Cane",
+            "weight": "10", "proposed_date": tomorrow(), "fascia": "tutto_giorno"}, self.cookie)
+        rid = int(h.header("Location").split("/partner/richieste/")[1].split("?")[0])
+        with app.db() as c:
+            req = c.execute("SELECT * FROM partner_requests WHERE id=?", (rid,)).fetchone()
+            ev = c.execute("SELECT * FROM calendar_events WHERE id=?", (req["calendar_event_id"],)).fetchone()
+        self.assertEqual((req["proposed_from"], req["proposed_to"]), ("00:00", "23:59"))
+        self.assertEqual((ev["all_day"], ev["start_at"][11:16], ev["end_at"][11:16]), (1, "00:00", "23:59"))
+        detail = self.call("GET", f"/partner/richieste/{rid}", cookie=self.cookie).html
+        self.assertIn("tutto il giorno", detail)
+        self.assertNotIn("00:00-23:59", detail)
+        self.assertIn("tutto il giorno", self.call("GET", "/partner", cookie=self.cookie).html)
+
+    def test_freezer_pickup_form_has_the_all_day_choice(self):
+        self.call("POST", "/partner/nuova", {
+            "token": "fz1", "mode": "ritiro_clinica", "service_type": "Cremazione collettiva", "freezer": "1",
+            "species": "Gatto", "weight": "4"}, self.cookie)
+        page = self.call("GET", "/partner", cookie=self.cookie).html
+        self.assertIn('name="fascia" value="tutto_giorno"', page)
+        self.call("POST", "/partner/congelatore", {"proposed_date": tomorrow(), "fascia": "tutto_giorno"}, self.cookie)
+        with app.db() as c:
+            ev = c.execute("SELECT * FROM calendar_events ORDER BY id DESC").fetchone()
+        self.assertEqual(ev["all_day"], 1)
+
+    def test_staff_inbox_handles_missing_owner_and_all_day(self):
+        self.call("POST", "/partner/nuova", {
+            "token": "si1", "mode": "ritiro_clinica", "service_type": "Cremazione da decidere", "species": "Cane",
+            "weight": "10", "proposed_date": tomorrow(), "fascia": "tutto_giorno"}, self.cookie)
+        handler = object.__new__(app.App)
+        handler.headers = {}
+        handler.path = "/richieste-portale"
+        with app.db() as c:
+            c.execute("UPDATE users SET must_change_password=0")
+            admin = c.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        handler.user = lambda: admin
+        pages = []
+        handler.send_html = lambda content, status=200: pages.append(content)
+        handler.redirect = lambda url: pages.append("REDIRECT " + url)
+        handler._route_get()
+        self.assertIn("Proprietario non indicato", pages[-1])
+        self.assertIn("tutto il giorno", pages[-1])
+        self.assertIn("Cremazione da decidere", pages[-1])
+
+
+class NavigationAndZoomTests(PortalBase):
+    def setUp(self):
+        super().setUp()
+        _, self.cookie = self.login()
+
+    def test_tab_bar_has_the_plus_exactly_in_the_middle(self):
+        import re
+        html = self.call("GET", "/partner", cookie=self.cookie).html
+        bar = html[html.index('<nav class="tabbar"'):html.index("</nav>", html.index('<nav class="tabbar"'))]
+        links = re.findall(r'<a href="([^"]+)" class="([^"]*)">', bar)
+        self.assertEqual([href for href, _ in links],
+                         ["/partner", "/partner/preventivo", "/partner/nuova", "/partner/info", "/partner/account"])
+        self.assertEqual(len(links), 5)
+        self.assertIn("plus", links[2][1])  # terza di cinque = al centro
+        self.assertEqual(sum("plus" in cls for _, cls in links), 1)
+        self.assertIn("grid-template-columns:repeat(5,1fr)", pp.CSS)
+        self.assertIn(".tabbar a.plus .pbtn", pp.CSS)
+
+    def test_desktop_nav_has_all_sections(self):
+        html = self.call("GET", "/partner", cookie=self.cookie).html
+        top = html[html.index('<nav class="topnav"'):html.index("</nav>", html.index('<nav class="topnav"'))]
+        for href in ("/partner", "/partner/preventivo", "/partner/info", "/partner/account", "/partner/nuova"):
+            self.assertIn(f'href="{href}"', top)
+
+    def test_new_request_button_is_visible_on_every_page(self):
+        for path in ("/partner", "/partner/preventivo", "/partner/info", "/partner/account", "/partner/nuova"):
+            with self.subTest(path=path):
+                html = self.call("GET", path, cookie=self.cookie).html
+                self.assertIn('class="plus', html)
+                self.assertIn('href="/partner/nuova"', html)
+
+    def test_account_page_has_the_account_and_logout_and_vouchers(self):
+        page = self.call("GET", "/partner/account", cookie=self.cookie)
+        self.assertEqual(page.status, 200)
+        for text in ("Il tuo account", "Esci", "provavet@prova.petparadise.invalid", "I tuoi buoni", "2</b>"):
+            self.assertIn(text, page.html)
+        self.assertEqual(self.call("GET", "/partner/account").header("Location"), "/partner/accedi")
+        info = self.call("GET", "/partner/info", cookie=self.cookie).html
+        self.assertNotIn("Esci", info.split("</main>")[0])
+        self.assertIn(pp.CONTACT_EMAIL, info)
+
+    def test_no_zoom_on_focus_inputs_are_at_least_16px(self):
+        import re
+        # il vecchio "font:16px inherit" era una dichiarazione non valida: i campi restavano a 13px e iOS zoomava
+        self.assertIsNone(re.search(r"font:\s*[\d.]+px[^;}]*\binherit", pp.CSS))
+        rule = re.search(r"input,select,textarea\{[^}]*\}", pp.CSS).group(0)
+        self.assertIn("font-size:16px", rule)
+        self.assertIn("font-family:inherit", rule)
+        self.assertIn("input,select,textarea{font-size:max(16px,1em)}", pp.CSS)
+        self.assertIn("-webkit-text-size-adjust:100%", pp.CSS)
+        self.assertIn("touch-action:manipulation", pp.CSS)
+        self.assertIn("font-size:16px;line-height:1;font-family:inherit", pp.CSS)  # anche i pulsanti
+        page = self.call("GET", "/partner/nuova", cookie=self.cookie).html
+        self.assertIn("width=device-width,initial-scale=1,viewport-fit=cover", page)
+        self.assertNotIn("user-scalable=no", page)  # lo zoom manuale resta possibile
 
 
 class StaffEntryPointTests(PortalBase):

@@ -39,7 +39,7 @@ MODE_SHORT = {
     "ritiro_domicilio": "Ritiro a domicilio",
     "invio_in_sede": "Cliente in sede",
 }
-FASCE = {"mattina": ("09:00", "13:00"), "pomeriggio": ("14:00", "18:00")}
+FASCE = {"mattina": ("09:00", "13:00"), "pomeriggio": ("14:00", "18:00"), "tutto_giorno": ("00:00", "23:59")}
 
 
 def e(value) -> str:
@@ -114,6 +114,8 @@ def _fmt_window(start_at: str, end_at: str) -> str:
 def _fmt_proposed(r) -> str:
     if not r["proposed_date"]:
         return ""
+    if (r["proposed_from"], r["proposed_to"]) == ps.ALL_DAY:
+        return f"{_fmt_date(r['proposed_date'])}, tutto il giorno"
     if r["proposed_from"] and r["proposed_to"]:
         return f"{_fmt_date(r['proposed_date'])}, {r['proposed_from']}-{r['proposed_to']}"
     return f"{_fmt_date(r['proposed_date'])}, il prima possibile"
@@ -153,7 +155,8 @@ CSS = """
 --ok:#2f7d65;--safe-b:env(safe-area-inset-bottom,0px);--safe-t:env(safe-area-inset-top,0px);--r:20px;
 --sh1:0 1px 2px rgba(31,42,38,.05),0 4px 14px rgba(31,42,38,.05);--sh2:0 2px 4px rgba(31,42,38,.06),0 12px 32px rgba(31,42,38,.10);color-scheme:light}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html{overscroll-behavior-y:contain;scroll-behavior:smooth}
+html{overscroll-behavior-y:contain;scroll-behavior:smooth;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body,input,select,textarea,button{touch-action:manipulation}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI Variable","Segoe UI",Roboto,Inter,sans-serif;min-height:100vh;
 -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
 a{color:inherit;text-decoration:none}
@@ -198,7 +201,7 @@ background:radial-gradient(120% 140% at 100% 0%,#c95a60 0,rgba(201,90,96,0) 55%)
 .tile b{display:block;font-size:26px;line-height:1.05;font-weight:800;letter-spacing:-.02em}.tile span{font-size:12px;opacity:.9;line-height:1.2;display:block;margin-top:2px}
 
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:52px;padding:0 22px;border:0;border-radius:16px;background:linear-gradient(180deg,#b34a50,#a74045);color:#fff;
-font:700 16px/1 inherit;font-family:inherit;cursor:pointer;width:100%;box-shadow:0 6px 16px rgba(167,64,69,.32);transition:transform .12s,box-shadow .12s,background .12s;letter-spacing:.005em}
+font-weight:700;font-size:16px;line-height:1;font-family:inherit;cursor:pointer;width:100%;box-shadow:0 6px 16px rgba(167,64,69,.32);transition:transform .12s,box-shadow .12s,background .12s;letter-spacing:.005em}
 .btn:hover{box-shadow:0 8px 20px rgba(167,64,69,.4)}.btn:active{transform:scale(.985);background:var(--brand2)}.btn[disabled]{opacity:.6;pointer-events:none}
 .btn.light{background:#fff;color:var(--brand);box-shadow:0 6px 18px rgba(0,0,0,.18)}.btn.light:active{background:#f7ecec}
 .btn.ghost{background:#fff;color:var(--brand);border:1.5px solid #e2c3c5;box-shadow:none}.btn.ghost:hover{background:var(--brand-soft)}
@@ -229,8 +232,11 @@ box-shadow:var(--sh1);position:relative;transition:transform .12s,box-shadow .15
 .rc-foot{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding-top:12px;border-top:1px dashed var(--line)}
 .rc-code{font:600 12.5px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);letter-spacing:.06em}
 
+.req{color:var(--brand);font-weight:800;margin-left:3px}
+.opt{font-size:13px;font-weight:600;color:var(--muted);margin-left:4px}
+.legend{margin:10px 2px 4px;font-size:14px;color:var(--ink2)}
 label{display:block;font-weight:650;font-size:14px;margin:14px 0 6px;color:var(--ink2)}
-input,select,textarea{width:100%;min-height:50px;border:1.5px solid var(--line);border-radius:14px;padding:11px 14px;font:16px inherit;font-family:inherit;background:#fcfbfa;color:var(--ink);transition:border-color .12s,box-shadow .12s,background .12s}
+input,select,textarea{width:100%;min-height:50px;border:1.5px solid var(--line);border-radius:14px;padding:11px 14px;font-size:16px;line-height:1.35;font-family:inherit;background:#fcfbfa;color:var(--ink);transition:border-color .12s,box-shadow .12s,background .12s}
 textarea{min-height:90px;resize:vertical}
 input:hover,select:hover,textarea:hover{border-color:#d7cfc6}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 4px rgba(167,64,69,.14);background:#fff}
@@ -279,7 +285,7 @@ input::placeholder,textarea::placeholder{color:#a9b1ad}
 .ticket{position:relative;margin-top:18px;border:2px dashed #d9c9c2;border-radius:18px;padding:14px;text-align:center;background:linear-gradient(180deg,#fffaf7,#fbf2ed)}
 .ticket small{display:block;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.1em;font-weight:700}
 .code{font:800 30px/1.15 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.12em;color:var(--brand2);margin:4px 0 8px}
-.copy{background:#fff;border:1.5px solid #e2c3c5;color:var(--brand);border-radius:999px;padding:7px 14px;font:700 13px inherit;font-family:inherit;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.copy{background:#fff;border:1.5px solid #e2c3c5;color:var(--brand);border-radius:999px;padding:7px 14px;font-weight:700;font-size:13px;font-family:inherit;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
 .timeline{list-style:none;margin:6px 0 0;padding:0}
 .timeline li{position:relative;padding:0 0 20px 34px}
 .timeline li:before{content:"";position:absolute;left:11px;top:22px;bottom:-2px;width:2px;background:var(--line)}
@@ -289,8 +295,8 @@ input::placeholder,textarea::placeholder{color:#a9b1ad}
 .timeline b{display:block;font-size:15px;line-height:1.3}.timeline small{color:var(--muted);font-size:13.5px}
 
 .tabbar{position:fixed;left:12px;right:12px;bottom:calc(10px + var(--safe-b));z-index:30;background:rgba(255,255,255,.94);backdrop-filter:saturate(1.6) blur(14px);-webkit-backdrop-filter:saturate(1.6) blur(14px);
-border:1px solid var(--line);border-radius:24px;display:grid;grid-template-columns:repeat(4,1fr);padding:6px 8px;box-shadow:0 10px 30px rgba(31,42,38,.18);max-width:520px;margin:0 auto}
-.tabbar a{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:12px;color:var(--muted);padding:7px 0;font-weight:600;border-radius:16px}
+border:1px solid var(--line);border-radius:24px;display:grid;grid-template-columns:repeat(5,1fr);padding:6px 4px;box-shadow:0 10px 30px rgba(31,42,38,.18);max-width:520px;margin:0 auto}
+.tabbar a{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11.5px;letter-spacing:-.01em;color:var(--muted);padding:7px 0;font-weight:600;border-radius:16px}
 .tabbar a.on{color:var(--brand)}.tabbar a.on .ic{stroke-width:2.3}
 .tabbar a.plus .pbtn{width:54px;height:54px;border-radius:50%;background:linear-gradient(180deg,#b84e54,#a74045);color:#fff;display:flex;align-items:center;justify-content:center;margin-top:-26px;
 box-shadow:0 8px 20px rgba(167,64,69,.5),0 0 0 5px #fff}
@@ -320,6 +326,7 @@ box-shadow:0 8px 20px rgba(167,64,69,.5),0 0 0 5px #fff}
 .hint{background:#fff8e6;border:1px dashed #e3c66f;border-radius:14px;padding:12px 14px;font-size:13.5px;margin-top:14px;color:#6b5200;line-height:1.5}
 .login-foot{text-align:center;margin-top:20px;color:var(--muted);font-size:13.5px}
 
+input,select,textarea{font-size:max(16px,1em)}
 @media(min-width:860px){
 .wrap{padding-top:28px;padding-bottom:60px;max-width:760px}.topnav{display:flex}.tabbar{display:none}.toast{bottom:28px}
 .hero{padding:30px 28px 24px}.hero h1{font-size:32px}
@@ -373,6 +380,12 @@ JS = """
       q('#timeBox').classList.toggle('hidden',val('fascia')!=='preciso');
       if(!coll){var u=q('[name="use_voucher"]');if(u)u.checked=false}
       if(!canFreezer&&frz)frz.checked=false;
+      var urgentBox=q('[name="urgent"]'),needWhen=!inFreezer&&!(urgentBox&&urgentBox.checked);
+      q('[name="proposed_date"]').required=needWhen;
+      form.querySelectorAll('[name="fascia"]').forEach(function(r){r.required=needWhen});
+      var precise=needWhen&&val('fascia')==='preciso';
+      q('[name="proposed_from"]').required=precise;q('[name="proposed_to"]').required=precise;
+      q('[name="pickup_address"]').required=(mode==='ritiro_domicilio');
     }
     form.addEventListener('change',sync);sync();
     var dateInput=q('[name="proposed_date"]');
@@ -438,7 +451,7 @@ def page(title, body, *, user=None, active="", staff=False, cursor=None, wrap_cl
             return f'<a href="{href}" class="{cls}{" on" if active == key else ""}">{icon(name, 18)}<span>{label}</span></a>'
         top = (f'<header class="top"><div class="top-in"><div class="brand"><img src="/assets/pwa-192.png" alt="" width="42" height="42">'
                f'<div style="min-width:0"><b>{e(user["clinic_label"])}</b><small>Portale Veterinari · Pet Paradise</small></div></div>'
-               f'<nav class="topnav" aria-label="Menu">{nav("/partner", "home", "list", "Richieste")}{nav("/partner/preventivo", "quote", "calc", "Preventivo")}{nav("/partner/info", "info", "info", "Info")}'
+               f'<nav class="topnav" aria-label="Menu">{nav("/partner", "home", "list", "Richieste")}{nav("/partner/preventivo", "quote", "calc", "Preventivo")}{nav("/partner/info", "info", "info", "Info")}{nav("/partner/account", "account", "user", "Account")}'
                f'{nav("/partner/nuova", "new", "plus", "Nuova richiesta", "cta")}</nav></div></header>')
 
         def tab(href, key, name, label, cls=""):
@@ -448,7 +461,8 @@ def page(title, body, *, user=None, active="", staff=False, cursor=None, wrap_cl
                 + tab("/partner", "home", "list", "Richieste")
                 + tab("/partner/preventivo", "quote", "calc", "Preventivo")
                 + tab("/partner/nuova", "new", "plus", "Nuova", "plus")
-                + tab("/partner/info", "info", "info", "Info") + "</nav>")
+                + tab("/partner/info", "info", "info", "Info")
+                + tab("/partner/account", "account", "user", "Account") + "</nav>")
     live = f' data-live data-cursor="{int(cursor)}"' if cursor is not None else ""
     classes = ("login " if user is None else "") + wrap_class
     return f'''<!doctype html><html lang="it"><head><meta charset="utf-8">
@@ -506,7 +520,7 @@ def request_card(r):
     return f'''<a class="rcard {acc}" href="/partner/richieste/{r["id"]}">
 <div class="rc-ico">{icon(MODE_ICON_NAMES.get(r["mode"], "paw"), 24)}</div>
 <div class="rc-main"><div class="rc-title">{e(r["animal_name"] or r["species"])} <span class="sub">· {species}</span></div>
-<div class="rc-sub">{e(MODE_SHORT.get(r["mode"], ""))} · {e(who)}</div>
+<div class="rc-sub">{e(MODE_SHORT.get(r["mode"], ""))}{" · " + e(who) if who else ""}</div>
 <div class="rc-meta">{badge(r["public_status"], r["mode"])}{when_html}</div></div>
 <div class="rc-foot"><div class="tags">{_tags(r)}</div><span class="rc-code">{e(r["request_code"])}</span></div></a>'''
 
@@ -540,7 +554,8 @@ def home_page(user, *, requests, pending_freezer, vouchers, cursor, query, staff
 <input type="date" name="proposed_date" min="{today.isoformat()}" required>
 <label>Fascia</label><div class="chips">
 <label class="chip"><input type="radio" name="fascia" value="mattina" checked><span>Mattina 9-13</span></label>
-<label class="chip"><input type="radio" name="fascia" value="pomeriggio"><span>Pomeriggio 14-18</span></label></div>
+<label class="chip"><input type="radio" name="fascia" value="pomeriggio"><span>Pomeriggio 14-18</span></label>
+<label class="chip"><input type="radio" name="fascia" value="tutto_giorno"><span>Tutto il giorno</span></label></div>
 <div style="margin-top:16px"><button class="btn" type="submit">Richiedi il ritiro</button></div></form></details>'''
     open_html = "".join(request_card(r) for r in open_reqs) or (
         f'<div class="card empty"><div class="eico">{icon("paw", 30)}</div><b>Nessuna richiesta in corso</b>'
@@ -556,9 +571,10 @@ def home_page(user, *, requests, pending_freezer, vouchers, cursor, query, staff
 
 def new_page(user, *, draft, error, token, sites, vouchers, staff, today):
     d = draft or {}
-    ck = lambda name, value, default=False: ("checked" if (d.get(name, "") == value or (default and not d.get(name))) else "")
+    ck = lambda name, value: ("checked" if d.get(name, "") == value else "")
+    req = '<span class="req" title="Obbligatorio" aria-hidden="true">*</span>'
     modes = "".join(
-        f'''<label class="mode"><input type="radio" name="mode" value="{key}" {ck("mode", key, key == "ritiro_clinica")}><div><span class="mi">{icon(MODE_ICON_NAMES[key], 24)}</span><span><b>{title}</b><small>{sub}</small></span></div></label>'''
+        f'''<label class="mode"><input type="radio" name="mode" value="{key}" required {ck("mode", key)}><div><span class="mi">{icon(MODE_ICON_NAMES[key], 24)}</span><span><b>{title}</b><small>{sub}</small></span></div></label>'''
         for key, title, sub in (
             ("ritiro_clinica", "Ritiro in clinica", "Passiamo noi dalla tua clinica"),
             ("ritiro_domicilio", "Ritiro a domicilio", "Presso il cliente"),
@@ -573,35 +589,40 @@ def new_page(user, *, draft, error, token, sites, vouchers, staff, today):
     site_opts = "".join(f'<option value="{e(s)}" {"selected" if d.get("destination_site") == s else ""}>{e(s)}</option>' for s in sites)
     species_list = "".join(f"<option>{s}</option>" for s in ("Cane", "Gatto", "Coniglio", "Furetto", "Uccello", "Criceto", "Altro"))
     body = f'''<h1>Nuova richiesta</h1><p class="sub" style="margin:0 2px">Ci vuole meno di un minuto.</p>
+<p class="legend">{req} Campo obbligatorio. Proprietario, nome dell'animale e note sono facoltativi.</p>
 {f'<div class="flash err">{icon("alert", 20)}<span>{e(error)}</span></div>' if error else ""}
 <form id="reqForm" method="post" action="/partner/nuova"><input type="hidden" name="token" value="{e(token)}">
-<section class="fsec"><h2><span class="num">1</span>Cosa serve?</h2><div class="modes">{modes}</div>
+<section class="fsec"><h2><span class="num">1</span>Tipo di servizio {req}</h2><div class="modes">{modes}</div>
 <div id="siteHelp" class="sub hidden" style="margin-top:10px">Riceverai un codice da presentare in sede insieme all'animale.</div>
-<div id="siteBox" class="hidden"><label>Sede</label><select name="destination_site">{site_opts}</select></div>
-<div id="addressBox" class="hidden"><label>Indirizzo del ritiro</label><input name="pickup_address" value="{e(d.get("pickup_address", ""))}" placeholder="Via, numero, comune" autocomplete="street-address"></div></section>
-<section class="fsec"><h2><span class="num">2</span>Servizio</h2><div class="chips" style="margin-top:12px">
-<label class="chip"><input type="radio" name="service_type" value="Cremazione singola" {ck("service_type", "Cremazione singola", True)}><span>Cremazione singola</span></label>
-<label class="chip"><input type="radio" name="service_type" value="Cremazione collettiva" {ck("service_type", "Cremazione collettiva")}><span>Cremazione collettiva</span></label></div>
+<div id="siteBox" class="hidden"><label>Sede {req}</label><select name="destination_site">{site_opts}</select></div>
+<div id="addressBox" class="hidden"><label>Indirizzo del ritiro {req}</label><input name="pickup_address" value="{e(d.get("pickup_address", ""))}" placeholder="Via, numero, comune" autocomplete="street-address"></div></section>
+<section class="fsec"><h2><span class="num">2</span>Tipo di cremazione {req}</h2><div class="chips" style="margin-top:12px">
+<label class="chip"><input type="radio" name="service_type" value="Cremazione singola" required {ck("service_type", "Cremazione singola")}><span>Singola</span></label>
+<label class="chip"><input type="radio" name="service_type" value="Cremazione collettiva" required {ck("service_type", "Cremazione collettiva")}><span>Collettiva</span></label>
+<label class="chip"><input type="radio" name="service_type" value="Cremazione da decidere" required {ck("service_type", "Cremazione da decidere")}><span>Da decidere</span></label></div>
+<p class="sub" style="margin:8px 0 0">Scegli "Da decidere" se il cliente non ha ancora scelto.</p>
 {freezer_box}{voucher_box}</section>
-<section class="fsec"><h2><span class="num">3</span>Proprietario</h2><div class="grid2"><div><label>Nome</label><input name="owner_first_name" value="{e(d.get("owner_first_name", ""))}" autocomplete="off"></div>
-<div><label>Cognome</label><input name="owner_last_name" value="{e(d.get("owner_last_name", ""))}" autocomplete="off"></div></div>
-<label>Telefono</label><input name="owner_phone" type="tel" inputmode="tel" value="{e(d.get("owner_phone", ""))}" autocomplete="off" placeholder="333 1234567"></section>
-<section class="fsec"><h2><span class="num">4</span>Animale</h2><div class="grid2"><div><label>Specie</label><input name="species" list="speciesList" value="{e(d.get("species", ""))}" autocomplete="off"><datalist id="speciesList">{species_list}</datalist></div>
-<div><label>Nome (facoltativo)</label><input name="animal_name" value="{e(d.get("animal_name", ""))}" autocomplete="off"></div></div>
-<label>Peso o taglia</label><input name="weight" value="{e(d.get("weight", ""))}" placeholder="es. 12 kg, oppure taglia media" autocomplete="off"></section>
-<section class="fsec" id="whenBox"><h2><span class="num">5</span>Quando?</h2>
+<section class="fsec"><h2><span class="num">3</span>Animale</h2><div class="grid2"><div><label>Specie {req}</label><input name="species" list="speciesList" value="{e(d.get("species", ""))}" autocomplete="off" required><datalist id="speciesList">{species_list}</datalist></div>
+<div><label>Nome <span class="opt">(facoltativo)</span></label><input name="animal_name" value="{e(d.get("animal_name", ""))}" autocomplete="off"></div></div>
+<label>Peso o taglia {req}</label><input name="weight" value="{e(d.get("weight", ""))}" placeholder="es. 12 kg, oppure taglia media" autocomplete="off" required></section>
+<section class="fsec" id="whenBox"><h2><span class="num">4</span>Quando {req}</h2>
+<p class="sub" style="margin:0 0 4px">Data e fascia oraria sono obbligatorie, a meno che la richiesta sia urgente.</p>
 <div class="chips" style="margin:12px 0 10px">{chips_date}</div>
 <input type="date" name="proposed_date" min="{today.isoformat()}" value="{e(d.get("proposed_date", ""))}">
-<label>Fascia oraria</label><div class="chips">
-<label class="chip"><input type="radio" name="fascia" value="mattina" {ck("fascia", "mattina", True)}><span>Mattina 9-13</span></label>
+<label>Fascia oraria {req}</label><div class="chips">
+<label class="chip"><input type="radio" name="fascia" value="mattina" {ck("fascia", "mattina")}><span>Mattina 9-13</span></label>
 <label class="chip"><input type="radio" name="fascia" value="pomeriggio" {ck("fascia", "pomeriggio")}><span>Pomeriggio 14-18</span></label>
+<label class="chip"><input type="radio" name="fascia" value="tutto_giorno" {ck("fascia", "tutto_giorno")}><span>Tutto il giorno</span></label>
 <label class="chip"><input type="radio" name="fascia" value="preciso" {ck("fascia", "preciso")}><span>Orario preciso</span></label></div>
-<div id="timeBox" class="grid2 hidden"><div><label>Dalle</label><input type="time" name="proposed_from" value="{e(d.get("proposed_from", ""))}"></div>
-<div><label>Alle</label><input type="time" name="proposed_to" value="{e(d.get("proposed_to", ""))}"></div></div>
+<div id="timeBox" class="grid2 hidden"><div><label>Dalle {req}</label><input type="time" name="proposed_from" value="{e(d.get("proposed_from", ""))}"></div>
+<div><label>Alle {req}</label><input type="time" name="proposed_to" value="{e(d.get("proposed_to", ""))}"></div></div>
 <label class="check urgent" id="urgentBox"><input type="checkbox" name="urgent" value="1" {"checked" if d.get("urgent") else ""}>
 <span class="ci">{icon("alert", 20)}</span><span><b>Urgente</b><small>Ritiro il prima possibile.</small></span></label></section>
-<section class="fsec"><h2><span class="num">6</span>Note</h2><label style="margin-top:10px">Facoltative</label>
-<textarea name="notes" placeholder="Accessi, citofono, indicazioni utili…">{e(d.get("notes", ""))}</textarea></section>
+<section class="fsec"><h2><span class="num">5</span>Proprietario <span class="opt">(facoltativo)</span></h2><div class="grid2"><div><label>Nome</label><input name="owner_first_name" value="{e(d.get("owner_first_name", ""))}" autocomplete="off"></div>
+<div><label>Cognome</label><input name="owner_last_name" value="{e(d.get("owner_last_name", ""))}" autocomplete="off"></div></div>
+<label>Telefono</label><input name="owner_phone" type="tel" inputmode="tel" value="{e(d.get("owner_phone", ""))}" autocomplete="off" placeholder="333 1234567"></section>
+<section class="fsec"><h2><span class="num">6</span>Note <span class="opt">(facoltative)</span></h2>
+<textarea name="notes" style="margin-top:12px" placeholder="Accessi, citofono, indicazioni utili…">{e(d.get("notes", ""))}</textarea></section>
 <div class="submitbar"><button class="btn" type="submit">{icon("send", 19)} Invia richiesta</button></div></form>'''
     return page("Nuova richiesta", body, user=user, active="new", staff=staff)
 
@@ -623,11 +644,12 @@ def detail_page(user, r, timeline, *, cursor, query, staff):
     label, when = _when_text(r)
     who = " ".join(x for x in (r["owner_first_name"], r["owner_last_name"]) if x)
     rows = [
-        ("Animale", f'{r["animal_name"] or "-"} ({r["species"]}{", " + r["weight_text"] if r["weight_text"] else ""})'),
-        ("Proprietario", f'{who} · {r["owner_phone"]}'),
-        ("Servizio", r["service_type"]),
-        ("Modalità", ps.MODES.get(r["mode"], "")),
+        ("Animale", (f'{r["animal_name"]} (' if r["animal_name"] else "") + r["species"] + (", " + r["weight_text"] if r["weight_text"] else "") + (")" if r["animal_name"] else "")),
+        ("Cremazione", r["service_type"].replace("Cremazione ", "").capitalize()),
+        ("Tipo di servizio", ps.MODES.get(r["mode"], "")),
     ]
+    if who or r["owner_phone"]:
+        rows.insert(1, ("Proprietario", " · ".join(x for x in (who, r["owner_phone"]) if x)))
     if r["pickup_address"]:
         rows.append(("Indirizzo", r["pickup_address"]))
     if r["destination_site"]:
@@ -667,25 +689,30 @@ def detail_page(user, r, timeline, *, cursor, query, staff):
     return page("Dettaglio richiesta", body, user=user, active="home", staff=staff, cursor=cursor)
 
 
-def info_page(user, *, locations, vouchers, staff, query):
+def info_page(user, *, locations, staff, query):
     sedi = "".join(
         f'<div class="card"><div class="infocard"><div class="ii">{icon("pin", 22)}</div><div><b>{e(loc["name"])}</b>'
         f'<div class="sub">{e(loc["address"])}</div>'
         f'<p style="margin:10px 0 0"><a class="btn ghost small" target="_blank" rel="noopener" '
         f'href="https://www.google.com/maps/search/?api=1&query={quote(loc["address"])}">Apri in Maps</a></p></div></div></div>'
         for loc in locations) or '<div class="card sub">Informazioni sulle sedi in arrivo.</div>'
+    body = f'''{_flash(query)}<h1>Info e contatti</h1><h2>Le nostre sedi</h2>{sedi}
+<h2>Contatti</h2><div class="card"><div class="infocard"><div class="ii">{icon("mail", 22)}</div><div><b>Scrivici</b>
+<span class="sub">Per qualsiasi necessità: <a href="mailto:{CONTACT_EMAIL}" style="color:var(--brand)"><u>{CONTACT_EMAIL}</u></a></span></div></div></div>'''
+    return page("Info", body, user=user, active="info", staff=staff)
+
+
+def account_page(user, *, vouchers, staff, query):
     voucher_card = (f'<div class="card"><div class="infocard"><div class="ii" style="background:#fdf0d3;color:#8a5a00">{icon("ticket", 22)}</div>'
                     f'<div><b>I tuoi buoni</b><span class="sub"><b style="display:inline;color:var(--ink)">{vouchers}</b> '
                     f'disponibil{"e" if vouchers == 1 else "i"} per le cremazioni collettive.</span></div></div></div>'
                     if user["vouchers_enabled"] else "")
-    body = f'''{_flash(query)}<h1>Info e contatti</h1><h2>Le nostre sedi</h2>{sedi}
-<h2>Contatti</h2><div class="card"><div class="infocard"><div class="ii">{icon("mail", 22)}</div><div><b>Scrivici</b>
-<span class="sub">Per qualsiasi necessità: <a href="mailto:{CONTACT_EMAIL}" style="color:var(--brand)"><u>{CONTACT_EMAIL}</u></a></span></div></div></div>
+    body = f'''{_flash(query)}<h1>Il tuo account</h1>
+<div class="card"><div class="infocard"><div class="ii">{icon("user", 22)}</div><div><b>{e(user["display_name"] or user["username"] or "")}</b>
+<span class="sub">{e(user["clinic_name"])} · {e(user["email"])}</span></div></div></div>
 {voucher_card}
-<h2>Il tuo account</h2><div class="card"><div class="infocard"><div class="ii">{icon("user", 22)}</div><div><b>{e(user["display_name"] or user["username"] or "")}</b>
-<span class="sub">{e(user["clinic_name"])} · {e(user["email"])}</span></div></div>
-<form method="post" action="/partner/esci" style="margin-top:14px"><button class="btn ghost" type="submit">{icon("logout", 18)} Esci</button></form></div>'''
-    return page("Info", body, user=user, active="info", staff=staff)
+<form method="post" action="/partner/esci" style="margin-top:14px"><button class="btn ghost" type="submit">{icon("logout", 18)} Esci</button></form>'''
+    return page("Account", body, user=user, active="account", staff=staff)
 
 
 def _comune_options(pricelist, selected="", *, first_label="Seleziona il comune", same_label=""):
@@ -1009,8 +1036,13 @@ def dispatch(h, method, path, *, db, password_ok, staff_user, db_path=None):
     if method == "GET" and path == "/partner/info":
         with db() as c:
             locations = c.execute("SELECT name,address FROM company_locations WHERE active=1 ORDER BY name").fetchall()
+        h.send_html(info_page(user, locations=locations, staff=staff, query=query))
+        return True
+
+    if method == "GET" and path == "/partner/account":
+        with db() as c:
             vouchers = len(ps.available_vouchers(c, cid)) if user["vouchers_enabled"] else 0
-        h.send_html(info_page(user, locations=locations, vouchers=vouchers, staff=staff, query=query))
+        h.send_html(account_page(user, vouchers=vouchers, staff=staff, query=query))
         return True
 
     h.send_html(not_found_page(user, staff), 404)

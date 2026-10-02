@@ -229,9 +229,8 @@ class PartnerRequestTests(PartnerBase):
 
     def test_required_fields_are_validated_with_nothing_saved(self):
         bad = [
-            ({"mode": "x"}, "modalita"),
-            ({"service_type": "Altro"}, "servizio"),
-            ({"owner_first_name": "", "owner_last_name": ""}, "nome"),
+            ({"mode": "x"}, "tipo di servizio"),
+            ({"service_type": "Altro"}, "tipo di cremazione"),
             ({"owner_phone": "12"}, "telefono"),
             ({"species": ""}, "specie"),
             ({"weight": ""}, "peso"),
@@ -380,6 +379,120 @@ class PartnerWeightAndDemoTests(PartnerBase):
                              ("ricevuta", 1, "14:00", "Da confermare"))
         self.assertEqual(self.events(a["id"]), [("stato", "in_congelatore"), ("stato", "ricevuta")])
         self.assertEqual(kinds[-1], "partner_request_urgent")
+
+
+class PartnerOptionalOwnerAndServiceTests(PartnerBase):
+    def test_owner_data_is_optional(self):
+        req, created = self.make(owner_first_name="", owner_last_name="", owner_phone="")
+        self.assertTrue(created)
+        ev = self.event_of(req)
+        self.assertEqual((ev["client_first_name"], ev["client_last_name"], ev["client_phone"], ev["phone"]), ("", "", "", ""))
+        self.assertEqual((req["owner_first_name"], req["owner_last_name"], req["owner_phone"]), ("", "", ""))
+        self.assertEqual(ev["event_status"], "Da confermare")
+        # solo un cognome, solo un telefono: va bene
+        self.assertTrue(self.make(owner_first_name="", owner_last_name="Rossi", owner_phone="")[1])
+        self.assertTrue(self.make(owner_first_name="", owner_last_name="", owner_phone="333 1234567")[1])
+
+    def test_a_phone_that_is_written_must_still_be_a_number(self):
+        with self.assertRaises(ps.PartnerError) as ctx:
+            self.make(owner_phone="12")
+        self.assertIn("telefono", str(ctx.exception))
+        with app.db() as c:
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM partner_requests").fetchone()[0], 0)
+
+    def test_the_four_required_fields_are_still_required(self):
+        cases = [({"service_type": ""}, "tipo di cremazione"), ({"service_type": "Altro"}, "tipo di cremazione"),
+                 ({"mode": ""}, "tipo di servizio"), ({"species": ""}, "specie"), ({"weight": ""}, "peso")]
+        for overrides, fragment in cases:
+            with self.subTest(overrides=overrides):
+                with self.assertRaises(ps.PartnerError) as ctx:
+                    self.make(**overrides)
+                self.assertIn(fragment, str(ctx.exception).lower())
+
+    def test_cremation_type_can_be_decided_later(self):
+        req, _ = self.make(service_type="Cremazione da decidere")
+        self.assertEqual(req["service_type"], "Cremazione da decidere")
+        ev = self.event_of(req)
+        with app.db() as c:
+            animal = c.execute("SELECT * FROM calendar_event_animals WHERE event_id=?", (ev["id"],)).fetchone()
+            self.assertEqual(ps.prefill_for_event(c, ev["id"]), {})  # nessun buono finche' non si decide
+        self.assertEqual(animal["cremation_type"], "")
+        self.assertIn("da decidere", ev["notes"].lower())
+        # tutte e tre le modalita' accettano "da decidere"
+        self.assertTrue(self.make(service_type="Cremazione da decidere", mode="ritiro_domicilio", pickup_address="Via X 1")[1])
+        self.assertTrue(self.make(service_type="Cremazione da decidere", mode="invio_in_sede", destination_site="Empoli")[1])
+
+    def test_decide_later_cannot_use_freezer_or_voucher(self):
+        self.add_voucher(self.vet_a, 1)
+        with self.assertRaises(ps.PartnerError) as ctx:
+            self.make(service_type="Cremazione da decidere", freezer=True, proposed_date="", proposed_from="", proposed_to="")
+        self.assertIn("collettive", str(ctx.exception))
+        with self.assertRaises(ps.PartnerError) as ctx:
+            self.make(service_type="Cremazione da decidere", use_voucher=True)
+        self.assertIn("collettive", str(ctx.exception))
+
+    def test_all_day_window(self):
+        req, _ = self.make(proposed_from="00:00", proposed_to="23:59")
+        ev = self.event_of(req)
+        self.assertEqual((ev["all_day"], ev["start_at"], ev["end_at"]),
+                         (1, f"{tomorrow()}T00:00:00", f"{tomorrow()}T23:59:59"))
+        self.assertIn("tutto il giorno", ev["notes"])
+        with app.db() as c:
+            text = c.execute("SELECT text FROM notifications WHERE type='partner_request_created' ORDER BY id DESC").fetchone()["text"]
+        self.assertIn("tutto il giorno", text)
+        self.assertNotIn("23:59", text)
+        # una fascia normale resta "a orario"
+        timed = self.event_of(self.make()[0])
+        self.assertEqual(timed["all_day"], 0)
+
+    def test_old_database_with_the_narrow_check_is_rebuilt_without_losing_anything(self):
+        first, _ = self.make()
+        second, _ = self.make(urgent=True)
+        with app.db() as c:
+            c.execute("UPDATE calendar_events SET event_status='Da ritirare' WHERE id=?", (first["calendar_event_id"],))
+            before = [dict(r) for r in c.execute("SELECT * FROM partner_requests ORDER BY id")]
+            events_before = c.execute("SELECT COUNT(*) FROM partner_events").fetchone()[0]
+            outbox_before = c.execute("SELECT COUNT(*) FROM partner_outbox").fetchone()[0]
+        self.assertGreaterEqual(events_before, 3)
+        # simula il vecchio schema (solo singola/collettiva) con gli stessi dati
+        with app.db() as c:
+            c.commit()
+            c.execute("PRAGMA foreign_keys=OFF")
+            c.execute("DROP VIEW IF EXISTS partner_request_status")
+            for name in ps._TRIGGERS:
+                c.execute(f"DROP TRIGGER IF EXISTS {name}")
+            old_ddl = ps._requests_table_ddl("partner_requests_old").replace(",'Cremazione da decidere'", "")
+            c.execute(old_ddl)
+            c.execute("INSERT INTO partner_requests_old SELECT * FROM partner_requests")
+            c.execute("DROP TABLE partner_requests")
+            c.execute("ALTER TABLE partner_requests_old RENAME TO partner_requests")
+            c.commit()
+            c.execute("PRAGMA foreign_keys=ON")
+            old_sql = c.execute("SELECT sql FROM sqlite_master WHERE name='partner_requests'").fetchone()[0]
+            with self.assertRaises(sqlite3.IntegrityError):
+                c.execute("UPDATE partner_requests SET service_type='Cremazione da decidere' WHERE id=?", (first["id"],))
+        self.assertNotIn("da decidere", old_sql)
+        app.init_db()  # all'avvio la migrazione ricostruisce la tabella
+        with app.db() as c:
+            after = [dict(r) for r in c.execute("SELECT * FROM partner_requests ORDER BY id")]
+            self.assertIn("Cremazione da decidere", c.execute("SELECT sql FROM sqlite_master WHERE name='partner_requests'").fetchone()[0])
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM partner_events").fetchone()[0], events_before)
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM partner_outbox").fetchone()[0], outbox_before)
+            self.assertEqual(c.execute("PRAGMA foreign_key_check").fetchall(), [])
+            names = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type IN ('trigger','view','index')")}
+        self.assertEqual(before, after)
+        for expected in ("partner_request_status", "partner_event_status", "partner_request_inserted",
+                         "idx_partner_requests_clinic", "idx_partner_requests_voucher_active"):
+            self.assertIn(expected, names)
+        # dopo la migrazione: nuovi valori accettati e i trigger funzionano ancora
+        new, _ = self.make(service_type="Cremazione da decidere")
+        self.assertEqual(self.events(new["id"]), [("stato", "ricevuta")])
+        with app.db() as c:
+            c.execute("UPDATE calendar_events SET event_status='Da ritirare' WHERE id=?", (new["calendar_event_id"],))
+        self.assertEqual(self.events(new["id"])[-1], ("stato", "programmato"))
+        app.init_db()  # idempotente
+        with app.db() as c:
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM partner_requests").fetchone()[0], 3)
 
 
 class PartnerIsolationTests(PartnerBase):
