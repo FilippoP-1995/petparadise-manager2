@@ -1598,7 +1598,13 @@ def create_manual_income(
             "collaborator_id is required for Collaboratori income"
         )
     normalized_description=_clean_required(description,"description",2000)
-    normalized_method=_clean_required(payment_method,"payment_method",80)
+    # Il circuito D (non fatturato) non ha una modalita' di pagamento, come
+    # nelle sezioni pagamento delle pratiche: obbligatoria solo per W e
+    # Collaboratori.
+    normalized_method=(
+        _clean_optional(payment_method,80) if normalized_category=="D"
+        else _clean_required(payment_method,"payment_method",80)
+    )
     amount=_validate_amount(amount_cents)
     if amount<0:
         raise InvalidMovementError("manual income amount must be positive")

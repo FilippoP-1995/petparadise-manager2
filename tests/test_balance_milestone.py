@@ -465,6 +465,81 @@ class BalanceMilestoneOneTests(unittest.TestCase):
         self.assertIn("2 voci",html)
         self.assertIn("€ 120,00",html)  # 50 + 70
 
+    # ------------------------------------------------------------------
+    # Entrata manuale D: nessun metodo di pagamento obbligatorio
+    # ------------------------------------------------------------------
+    def test_manual_income_d_does_not_require_payment_method(self):
+        errors=self.post_income(key="d-nomethod",category="D",payment_method="",description="Entrata D senza metodo")
+        self.assertEqual(errors,[])
+        row=self.income_row("d-nomethod")
+        self.assertIsNotNone(row)
+        self.assertEqual((row["category"],row["payment_method"],row["amount_cents"]),("D","",12000))
+        # con un metodo scelto resta salvato com'e'
+        self.assertEqual(self.post_income(key="d-method",category="D",payment_method="Contanti"),[])
+        self.assertEqual(self.income_row("d-method")["payment_method"],"Contanti")
+
+    def test_manual_income_w_and_collaboratori_still_need_a_method_with_clear_message(self):
+        errors=self.post_income(key="w-nomethod",category="W",payment_method="")
+        self.assertEqual(errors,["Seleziona il metodo di pagamento."])
+        self.assertIsNone(self.income_row("w-nomethod"))
+        errors=self.post_income(key="c-nomethod",category="Collaboratori",payment_method="")
+        self.assertEqual(errors,["Seleziona il metodo di pagamento."])
+        errors=self.post_income(key="c-nocollab",category="Collaboratori",payment_method="Pos",collaborator_id="")
+        self.assertEqual(errors,["Seleziona il collaboratore."])
+        self.assertIsNone(self.income_row("c-nocollab"))
+
+    def test_service_level_method_rule(self):
+        with app.db() as connection:
+            movement=create_manual_income(
+                connection,amount_cents=500,movement_date="2026-07-19",category="D",payment_method="",
+                description="D senza metodo",idempotency_key="svc-d",created_by=self.admin["id"],
+            )
+            self.assertEqual(movement.payment_method,"")
+            with self.assertRaises(Exception):
+                create_manual_income(
+                    connection,amount_cents=500,movement_date="2026-07-19",category="W",payment_method="",
+                    description="W senza metodo",idempotency_key="svc-w",created_by=self.admin["id"],
+                )
+
+    def test_d_income_without_method_is_listed_in_balances(self):
+        self.post_income(key="d-list",category="D",payment_method="",description="Entrata D visibile")
+        self.handler.__dict__.pop("balances_page",None)
+        pages=[]
+        self.handler.send_html=lambda content,*args:pages.append(content)
+        self.handler.path="/bilanci?periodo=personalizzato&data_iniziale=2026-07-01&data_finale=2026-07-31&view=entrate-d"
+        self.handler.balances_page(self.admin)
+        self.assertIn("Entrata D visibile",pages[-1])
+
+    def test_method_field_is_hidden_for_d_in_the_form(self):
+        self.handler.__dict__.pop("balances_page",None)
+        pages=[]
+        self.handler.send_html=lambda content,*args:pages.append(content)
+        self.handler.path="/bilanci"
+        self.handler.balances_page(self.admin)
+        self.assertIn('<div class="field" data-manual-income-method',pages[-1])
+        self.assertIn("methodField.hidden=category.value==='D'",pages[-1])
+        pages.clear()
+        self.handler.balances_page(self.admin,error="x",expense_draft={"entry_type":"income","category":"D","amount":"5"})
+        field=pages[-1][pages[-1].index('<div class="field" data-manual-income-method'):][:60]
+        self.assertIn("hidden",field)
+        pages.clear()
+        self.handler.balances_page(self.admin,error="x",expense_draft={"entry_type":"income","category":"W","payment_method":"Pos"})
+        field=pages[-1][pages[-1].index('<div class="field" data-manual-income-method'):][:60]
+        self.assertNotIn("hidden",field)
+        self.assertIn('<option value="Pos" selected>',pages[-1])
+
+    def test_reloading_after_a_rejected_income_or_expense_does_not_404(self):
+        for path in ("/bilanci/entrate","/bilanci/uscite","/bilanci/entrate?periodo=mese"):
+            with self.subTest(path=path):
+                handler=object.__new__(app.App)
+                handler.headers={}
+                handler.path=path
+                handler.user=lambda:self.admin
+                redirects=[]
+                handler.redirect=redirects.append
+                handler._route_get()
+                self.assertEqual(redirects,["/bilanci"])
+
 
 if __name__=="__main__":
     unittest.main()

@@ -1783,7 +1783,8 @@ tr.avatar-cat td:first-child{border-left:3px solid #4ade80}
 tr.avatar-other td:first-child{border-left:3px solid #c084fc}
 .light-theme .practice-list-table tbody tr{background:#fff}
 .light-theme .practice-list-table tbody tr:hover td{background:#f8fafc}
-.light-theme .practice-list-table tbody td{border-color:#e2e8f0}.inline-statuses{display:grid;gap:8px;min-width:170px}.inline-state-select{min-height:38px;padding:7px 32px 7px 10px;border-width:2px;font-weight:800}button.inline-state-select{border:0;border-radius:9px;font:inherit;cursor:pointer;text-align:center;padding:7px 14px}.inline-tag-form{display:flex;flex-direction:column;gap:2px}.invoice-inline-cell{display:grid;gap:4px;min-width:130px}.invoice-inline-input{min-height:34px;padding:6px 9px;font-size:12px}.invoice-inline-input.input-error{border-color:#ef4444}.payment-popover{position:fixed;inset:0;z-index:180;display:grid;place-items:center;padding:18px;background:#020617b8}.payment-popover[hidden]{display:none}.payment-dialog{width:min(620px,100%);max-height:90dvh;overflow:auto;touch-action:pan-y;padding:20px;border:1px solid #475569;border-radius:16px;background:#172033;box-shadow:0 28px 90px #000c}.payment-dialog h2{margin-bottom:6px}.payment-dialog .fields{margin-top:16px}.payment-macroarea{margin-top:20px;padding-top:18px;border-top:1px solid #334155}.payment-macroarea:first-of-type{margin-top:16px;padding-top:0;border-top:0}.payment-macroarea h3{margin:0 0 10px;font-size:16px}.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.payment-macroarea-channel{padding:14px;border:1px solid #334155;border-radius:12px;background:#182334;margin-bottom:16px}.light-theme .payment-macroarea-channel{background:#f8fafc;border-color:#cbd5e1}#paymentTotaleWRow .field label,#paymentTotaleDRow .field label,.payment-macroarea-channel .fields .field:first-child label{font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.03em}.payment-macroarea-channel .fields .field:not(:first-child) label{font-size:11px;font-weight:600;color:var(--muted)}
+.light-theme .practice-list-table tbody td{border-color:#e2e8f0}.inline-statuses{display:grid;gap:8px;min-width:170px}.inline-state-select{min-height:38px;padding:7px 32px 7px 10px;border-width:2px;font-weight:800}button.inline-state-select{border:0;border-radius:9px;font:inherit;cursor:pointer;text-align:center;padding:7px 14px}.inline-tag-form{display:flex;flex-direction:column;gap:2px}.invoice-inline-cell{display:grid;gap:4px;min-width:130px}.invoice-inline-input{min-height:34px;padding:6px 9px;font-size:12px}.invoice-inline-input.input-error{border-color:#ef4444}.payment-popover{position:fixed;inset:0;z-index:180;display:grid;place-items:center;padding:18px;background:#020617b8}.payment-popover[hidden]{display:none}
+.field[data-manual-income-method][hidden]{display:none!important}.payment-dialog{width:min(620px,100%);max-height:90dvh;overflow:auto;touch-action:pan-y;padding:20px;border:1px solid #475569;border-radius:16px;background:#172033;box-shadow:0 28px 90px #000c}.payment-dialog h2{margin-bottom:6px}.payment-dialog .fields{margin-top:16px}.payment-macroarea{margin-top:20px;padding-top:18px;border-top:1px solid #334155}.payment-macroarea:first-of-type{margin-top:16px;padding-top:0;border-top:0}.payment-macroarea h3{margin:0 0 10px;font-size:16px}.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.payment-macroarea-channel{padding:14px;border:1px solid #334155;border-radius:12px;background:#182334;margin-bottom:16px}.light-theme .payment-macroarea-channel{background:#f8fafc;border-color:#cbd5e1}#paymentTotaleWRow .field label,#paymentTotaleDRow .field label,.payment-macroarea-channel .fields .field:first-child label{font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.03em}.payment-macroarea-channel .fields .field:not(:first-child) label{font-size:11px;font-weight:600;color:var(--muted)}
 @media(max-width:520px){.payment-popover{padding:6px}.payment-dialog{padding:12px 10px;max-height:97dvh}.payment-dialog .titlebar{position:sticky;top:-12px;margin:-12px -10px 6px;padding:12px 10px 6px;background:#172033;z-index:1;gap:8px}.payment-dialog h2{font-size:15px;margin-bottom:0}.payment-dialog .sub{display:none}.payment-dialog .fields{gap:6px;margin-top:6px}.payment-dialog .field{gap:2px}.payment-dialog label{font-size:10.5px}.payment-dialog input,.payment-dialog select{padding:7px 8px;font-size:14px}.payment-macroarea{margin-top:8px;padding-top:8px}.payment-macroarea:first-of-type{margin-top:6px}.payment-macroarea h3{margin:0 0 4px;font-size:13px}.payment-macroarea-channel{padding:7px;margin-bottom:7px}.payment-invoice-section{margin-top:7px;padding-top:7px}.payment-dialog .btn{padding:8px 12px;margin-top:6px!important}.payment-dialog .btn.ghost{margin-left:4px!important}}
 .field-error input,.field-error select,.field-error textarea{border-color:#ef4444}.field-error-text{display:block;margin-top:4px;color:#ef4444;font-size:12px;font-weight:600}.payment-invoice-section{margin-top:18px;padding-top:16px;border-top:1px solid #334155}.payment-invoice-section h3{margin:0 0 4px;font-size:14px}.payment-invoice-section .fields{margin-top:10px}.payment-acconto-summary{margin:10px 0 0}.light-theme .payment-dialog{background:#fff;color:#111827}.light-theme .payment-dialog .titlebar{background:#fff}.light-theme .payment-macroarea{border-color:#e2e8f0}.light-theme .payment-invoice-section{border-color:#e2e8f0}
 @media(max-width:620px){.practice-list-table th:first-child,.practice-list-table td:first-child{box-sizing:border-box;width:132px;min-width:132px;max-width:132px;padding-left:12px;padding-right:10px;white-space:normal!important}}
@@ -4585,6 +4586,12 @@ function ppmSyncManualIncomeInvoice(form){
   const category=form.querySelector('select[name="category"]');
   const section=form.querySelector('[data-manual-income-invoice]');
   if(section&&category)section.hidden=category.value!=='W';
+  const methodField=form.querySelector('[data-manual-income-method]');
+  if(methodField&&category){
+    methodField.hidden=category.value==='D';
+    const methodSelect=methodField.querySelector('select');
+    if(methodSelect&&category.value==='D')methodSelect.value='';
+  }
   const amount=form.querySelector('input[name="amount"]');
   const total=form.querySelector('input[name="invoice_total"]');
   if(amount&&total&&total.dataset.touched!=='1')total.value=amount.value;
@@ -9381,6 +9388,9 @@ class App(BaseHTTPRequestHandler):
         if path == "/turni/ferie": return self.shifts_vacations_page(user)
         if path == "/turni/reperibilita": return self.shifts_oncall_page(user)
         if path == "/bilanci": return self.balances_page(user)
+        # Dopo un errore di registrazione la pagina e' mostrata all'indirizzo
+        # del POST: ricaricarla (GET) non deve dare 404.
+        if path in ("/bilanci/entrate","/bilanci/uscite"): return self.redirect("/bilanci")
         match = re.fullmatch(r"/bilanci/movimenti/(\d+)/elimina",path)
         if match: return self.confirm_balance_movement_delete(user,int(match.group(1)))
         if path == "/bilanci/movimenti/elimina-storico": return self.confirm_balance_legacy_movement_delete(user)
@@ -10509,7 +10519,7 @@ class App(BaseHTTPRequestHandler):
                 <div class="field"><label>Data</label><input type="date" name="movement_date" value="{esc(income.get('movement_date') or today.isoformat())}" required></div>
                 <div class="field"><label>Importo €</label><input name="amount" value="{esc(income.get('amount') or '')}" inputmode="decimal" required oninput="ppmSyncManualIncomeInvoice(this.form)"></div>
                 <div class="field"><label>Categoria</label><select name="category" onchange="ppmSyncManualIncomeInvoice(this.form)"><option>W</option><option {"selected" if income.get("category")=="D" else ""}>D</option><option {"selected" if income.get("category")=="Collaboratori" else ""}>Collaboratori</option></select></div>
-                <div class="field"><label>Metodo pagamento</label><select name="payment_method">{''.join(f'<option value="{esc(method)}">{esc(method or "Seleziona metodo")}</option>' for method in PAYMENT_METHODS)}</select></div>
+                <div class="field" data-manual-income-method {"hidden" if income.get("category")=="D" else ""}><label>Metodo pagamento</label><select name="payment_method">{''.join(f'<option value="{esc(method)}" {"selected" if method and income.get("payment_method")==method else ""}>{esc(method or "Seleziona metodo")}</option>' for method in PAYMENT_METHODS)}</select></div>
                 <div class="field"><label>Collaboratore</label><select name="collaborator_id">{collaborator_options}</select></div>
                 <div class="field"><label>Descrizione</label><input name="description" value="{esc(income.get('description') or '')}" required></div>
                 <div class="field full"><label>Note facoltative</label><textarea name="notes">{esc(income.get('notes') or '')}</textarea></div>
@@ -10623,6 +10633,10 @@ class App(BaseHTTPRequestHandler):
                 int(collaborator_raw)
                 if collaborator_raw.isdigit() and int(collaborator_raw)>0 else None
             )
+            if category!="D" and not form.get("payment_method","").strip():
+                raise BalanceError("Seleziona il metodo di pagamento.")
+            if category=="Collaboratori" and collaborator_id is None:
+                raise BalanceError("Seleziona il collaboratore.")
             description=form.get("description","").strip()
             notes=form.get("notes","").strip()
             full_description=description+(f" · {notes}" if notes else "")
