@@ -129,7 +129,7 @@ class PortalAccessTests(PortalBase):
         self.assertIn("provavet", staff_page)
         self.assertIn("prova.vet1", staff_page)
         self.assertIn("Anteprima staff", staff_page)
-        self.assertIn("← Gestionale", staff_page)
+        self.assertIn("Gestionale</a>", staff_page)
         public_page = self.call("GET", "/partner/accedi").html
         self.assertNotIn("prova.vet1", public_page)
         self.assertNotIn("Anteprima staff", public_page)
@@ -145,7 +145,8 @@ class PortalAccessTests(PortalBase):
         self.assertIn(f"Max-Age={ps.DEMO_SESSION_HOURS * 3600}", raw)
         home = self.call("GET", "/partner", cookie=cookie, staff=True)
         self.assertEqual(home.status, 200)
-        self.assertIn("Ciao, Dott. Prova", home.html)
+        self.assertIn("Dott. Prova", home.html)
+        self.assertRegex(home.html, r"Buongiorno|Buon pomeriggio|Buonasera")
         # senza sessione staff le stesse credenziali non funzionano (e il messaggio e' generico)
         h2, cookie2 = self.login(staff=False)
         self.assertEqual(cookie2, "")

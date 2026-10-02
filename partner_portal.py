@@ -31,7 +31,8 @@ STATUS_CLASS = {
     "in_lavorazione": "st-work", "pronto_riconsegna": "st-ready", "completata": "st-done", "annullata": "st-off",
 }
 OPEN_STATUSES = ("ricevuta", "in_congelatore", "programmato", "ritirato", "in_lavorazione", "pronto_riconsegna")
-MODE_ICONS = {"ritiro_clinica": "🏥", "ritiro_domicilio": "🏠", "invio_in_sede": "🚗"}
+PROGRESS_STEPS = ("ricevuta", "programmato", "ritirato", "in_lavorazione", "pronto_riconsegna", "completata")
+MODE_ICON_NAMES = {"ritiro_clinica": "hospital", "ritiro_domicilio": "home", "invio_in_sede": "car"}
 MODE_SHORT = {
     "ritiro_clinica": "Ritiro in clinica",
     "ritiro_domicilio": "Ritiro a domicilio",
@@ -42,6 +43,46 @@ FASCE = {"mattina": ("09:00", "13:00"), "pomeriggio": ("14:00", "18:00")}
 
 def e(value) -> str:
     return html.escape(str(value if value is not None else ""), quote=True)
+
+
+# ---------------------------------------------------------------------------
+# Icone (stile linea, inline: nessuna dipendenza esterna, funzionano offline)
+# ---------------------------------------------------------------------------
+
+_ICONS = {
+    "paw": '<circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="20" cy="16" r="2"/>'
+           '<path d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.045Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z"/>',
+    "list": '<rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>'
+            '<path d="M12 11h4M12 16h4M8 11h.01M8 16h.01"/>',
+    "plus": '<path d="M5 12h14M12 5v14"/>',
+    "info": '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
+    "hospital": '<path d="M12 6v4M14 14h-4M14 18h-4M14 8h-4"/><path d="M18 12h2a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2h2"/>'
+                '<path d="M18 22V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v18"/>',
+    "home": '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/>'
+            '<path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+    "car": '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/>'
+           '<circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>',
+    "snow": '<path d="m10 20-1.25-2.5L6 18M10 4 8.75 6.5 6 6M14 20l1.25-2.5L18 18M14 4l1.25 2.5L18 6M17 21l-3-6h-4M17 3l-3 6 1.5 3M2 12h6.5L10 9M20 10l-1.5 2 1.5 2M22 12h-6.5L14 15M4 10l1.5 2L4 14M7 21l3-6-1.5-3M7 3l3 6h4"/>',
+    "ticket": '<path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2M13 17v2M13 11v2"/>',
+    "alert": '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/>',
+    "calendar": '<path d="M8 2v4M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
+    "clock": '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+    "pin": '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+    "mail": '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
+    "logout": '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/>',
+    "check": '<path d="M20 6 9 17l-5-5"/>',
+    "back": '<path d="m12 19-7-7 7-7M19 12H5"/>',
+    "eye": '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
+    "user": '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+    "copy": '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+    "send": '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+    "phone": '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>',
+}
+
+
+def icon(name: str, size: int = 20, cls: str = "") -> str:
+    return (f'<svg class="ic {cls}" viewBox="0 0 24 24" width="{size}" height="{size}" fill="none" stroke="currentColor" '
+            f'stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{_ICONS[name]}</svg>')
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +128,7 @@ def _when_text(r) -> tuple[str, str]:
     """(etichetta, testo) per 'quando' di una richiesta."""
     status = r["public_status"]
     if status == "in_congelatore":
-        return "Ritiro", "Quando il congelatore e' pieno: nessuna fretta"
+        return "Ritiro", "quando il congelatore è pieno, nessuna fretta"
     if status in ("programmato", "ritirato", "in_lavorazione", "pronto_riconsegna", "completata") and r["event_start"]:
         label = "Ritiro confermato" if status == "programmato" else "Ritiro"
         return label, _fmt_window(r["event_start"], r["event_end"])
@@ -95,84 +136,187 @@ def _when_text(r) -> tuple[str, str]:
     return ("Orario proposto", proposed) if proposed else ("", "")
 
 
+def _greeting() -> str:
+    hour = datetime.now(ROME).hour
+    return "Buongiorno" if hour < 13 else "Buon pomeriggio" if hour < 18 else "Buonasera"
+
+
 # ---------------------------------------------------------------------------
 # Stile e script
 # ---------------------------------------------------------------------------
 
 CSS = """
-:root{--brand:#a74045;--brand2:#7f3035;--ink:#24312c;--muted:#6e7b75;--line:#e4ded7;--bg:#f4f1ed;--card:#fff;--green:#39745b;
---safe-b:env(safe-area-inset-bottom,0px);--safe-t:env(safe-area-inset-top,0px);color-scheme:light}
+:root{--brand:#a74045;--brand2:#7f3035;--brand-soft:#fbeeee;--ink:#1f2a26;--ink2:#3b4944;--muted:#6f7c76;--line:#e7e1da;--bg:#f6f2ee;--card:#fff;
+--ok:#2f7d65;--safe-b:env(safe-area-inset-bottom,0px);--safe-t:env(safe-area-inset-top,0px);--r:20px;
+--sh1:0 1px 2px rgba(31,42,38,.05),0 4px 14px rgba(31,42,38,.05);--sh2:0 2px 4px rgba(31,42,38,.06),0 12px 32px rgba(31,42,38,.10);color-scheme:light}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html{overscroll-behavior-y:contain}
-body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;min-height:100vh}
+html{overscroll-behavior-y:contain;scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI Variable","Segoe UI",Roboto,Inter,sans-serif;min-height:100vh;
+-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
 a{color:inherit;text-decoration:none}
-.wrap{max-width:640px;margin:0 auto;padding:14px 16px calc(96px + var(--safe-b))}
-.wrap.login{display:flex;flex-direction:column;justify-content:center;min-height:100vh;padding-bottom:32px}
-.staffbar{background:#24312c;color:#fff;font-size:13px;padding:8px 16px;display:flex;gap:10px;align-items:center;justify-content:space-between;padding-top:calc(8px + var(--safe-t))}
-.staffbar a{background:rgba(255,255,255,.16);border-radius:999px;padding:4px 12px;white-space:nowrap}
-.top{position:sticky;top:0;z-index:5;background:#fff;border-bottom:1px solid var(--line);padding:10px 16px;padding-top:calc(10px + var(--safe-t));display:flex;align-items:center;gap:12px}
-.top img{width:40px;height:40px;object-fit:cover;border-radius:10px}
-.top b{display:block;font-size:16px;line-height:1.2}.top small{color:var(--muted);font-size:12.5px}
-h1{font-size:24px;line-height:1.2;margin:6px 0 4px}h2{font-size:17px;margin:22px 0 10px}h3{font-size:15px;margin:0 0 6px}
+.ic{flex:none;vertical-align:middle}
+.wrap{max-width:680px;margin:0 auto;padding:18px 16px calc(104px + var(--safe-b));animation:fadein .22s ease both}
+.wrap.login{display:flex;flex-direction:column;justify-content:flex-start;min-height:100vh;padding-top:0;padding-bottom:32px}
+@keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}html{scroll-behavior:auto}}
+
+.staffbar{background:#1f2a26;color:#e9efec;font-size:13px;padding:8px 16px;padding-top:calc(8px + var(--safe-t));display:flex;gap:12px;align-items:center;justify-content:space-between}
+.staffbar span{display:flex;gap:8px;align-items:center}
+.staffbar a{display:inline-flex;gap:6px;align-items:center;background:rgba(255,255,255,.14);border-radius:999px;padding:5px 12px;white-space:nowrap;font-weight:600}
+
+.top{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.92);backdrop-filter:saturate(1.6) blur(14px);-webkit-backdrop-filter:saturate(1.6) blur(14px);border-bottom:1px solid var(--line)}
+.top-in{max-width:880px;margin:0 auto;padding:10px 16px;padding-top:calc(10px + var(--safe-t));display:flex;align-items:center;gap:12px}
+.top .brand{display:flex;align-items:center;gap:12px;min-width:0;flex:1}
+.top img{width:42px;height:42px;border-radius:12px;box-shadow:0 2px 8px rgba(127,48,53,.35);flex:none}
+.top b{display:block;font-size:16px;line-height:1.2;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top small{color:var(--muted);font-size:12.5px}
+.topnav{display:none;gap:4px}
+.topnav a{display:flex;align-items:center;gap:8px;padding:9px 14px;border-radius:12px;font-weight:600;font-size:15px;color:var(--ink2)}
+.topnav a:hover{background:#f3eee9}.topnav a.on{background:var(--brand-soft);color:var(--brand)}
+.topnav a.cta{background:var(--brand);color:#fff}.topnav a.cta:hover{background:var(--brand2)}
+
+h1{font-size:26px;line-height:1.15;margin:4px 0 6px;letter-spacing:-.02em}
+h2{font-size:13px;margin:28px 2px 10px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:700;display:flex;align-items:center;gap:8px}
+h2 .count{background:#ebe5de;color:var(--ink2);border-radius:999px;padding:1px 9px;font-size:12px;letter-spacing:0}
+h3{font-size:15px;margin:0 0 10px;display:flex;align-items:center;gap:8px}
 .sub{color:var(--muted);font-size:14px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;margin:12px 0;box-shadow:0 1px 2px rgba(36,49,44,.04)}
-a.card{display:block}a.card:active{transform:scale(.99)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px;margin:12px 0;box-shadow:var(--sh1)}
 .row{display:flex;gap:10px;align-items:center;justify-content:space-between}
-.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}
-.tile{background:#fff;border:1px solid var(--line);border-radius:16px;padding:12px;text-align:center}
-.tile b{display:block;font-size:24px;line-height:1.1}.tile span{font-size:12.5px;color:var(--muted)}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:0 20px;border:0;border-radius:14px;background:var(--brand);color:#fff;font:600 16px system-ui,sans-serif;cursor:pointer;width:100%}
-.btn:active{background:var(--brand2)}.btn[disabled]{opacity:.6}
-.btn.ghost{background:#fff;color:var(--brand);border:1.5px solid var(--brand)}
-.btn.small{min-height:38px;font-size:14px;width:auto;padding:0 14px}
-.btn.danger{background:#fff;color:#a23030;border:1.5px solid #d9a5a5}
-.badge{display:inline-block;border-radius:999px;padding:3px 11px;font-size:12.5px;font-weight:700;white-space:nowrap}
-.st-wait{background:#fff0c9;color:#7a5200}.st-ice{background:#dff0fb;color:#17598a}.st-plan{background:#e6ecff;color:#2a45a0}
-.st-pick{background:#d8f1ea;color:#1b6753}.st-work{background:#eee3fb;color:#63399e}.st-ready{background:#dcf4de;color:#21682b}
-.st-done{background:#e7ebe8;color:#46544d}.st-off{background:#eee;color:#777}
-.tag{display:inline-block;font-size:12px;font-weight:700;border-radius:8px;padding:2px 8px;margin-right:4px;background:#f1ece5;color:#5a4a3b}
-.tag.urgent{background:#fde1e1;color:#a02323}
-label{display:block;font-weight:600;font-size:14px;margin:12px 0 5px}
-input,select,textarea{width:100%;min-height:48px;border:1.5px solid var(--line);border-radius:12px;padding:10px 12px;font:16px system-ui,sans-serif;background:#fff;color:var(--ink)}
-textarea{min-height:84px;resize:vertical}
-input:focus,select:focus,textarea:focus{outline:2px solid rgba(167,64,69,.35);border-color:var(--brand)}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+.hero{position:relative;overflow:hidden;border-radius:26px;padding:22px 20px 18px;color:#fff;margin-bottom:6px;
+background:radial-gradient(120% 140% at 100% 0%,#c95a60 0,rgba(201,90,96,0) 55%),linear-gradient(145deg,#a74045 0,#6f2a2f 100%);box-shadow:0 14px 34px rgba(127,48,53,.35)}
+.hero:before{content:"";position:absolute;right:-30px;top:-30px;width:170px;height:170px;border-radius:50%;background:rgba(255,255,255,.07)}
+.hero:after{content:"";position:absolute;right:46px;bottom:-60px;width:140px;height:140px;border-radius:50%;background:rgba(255,255,255,.05)}
+.hero small{opacity:.85;font-size:14px;display:block}
+.hero h1{margin:2px 0 2px;font-size:27px}.hero p{margin:0 0 16px;opacity:.85;font-size:14.5px}
+.hero .btn{position:relative;z-index:1}
+.stats{position:relative;z-index:1;display:grid;gap:10px;margin-top:16px}
+.tile{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2);border-radius:16px;padding:12px 8px;text-align:center;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.tile b{display:block;font-size:26px;line-height:1.05;font-weight:800;letter-spacing:-.02em}.tile span{font-size:12px;opacity:.9;line-height:1.2;display:block;margin-top:2px}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:52px;padding:0 22px;border:0;border-radius:16px;background:linear-gradient(180deg,#b34a50,#a74045);color:#fff;
+font:700 16px/1 inherit;font-family:inherit;cursor:pointer;width:100%;box-shadow:0 6px 16px rgba(167,64,69,.32);transition:transform .12s,box-shadow .12s,background .12s;letter-spacing:.005em}
+.btn:hover{box-shadow:0 8px 20px rgba(167,64,69,.4)}.btn:active{transform:scale(.985);background:var(--brand2)}.btn[disabled]{opacity:.6;pointer-events:none}
+.btn.light{background:#fff;color:var(--brand);box-shadow:0 6px 18px rgba(0,0,0,.18)}.btn.light:active{background:#f7ecec}
+.btn.ghost{background:#fff;color:var(--brand);border:1.5px solid #e2c3c5;box-shadow:none}.btn.ghost:hover{background:var(--brand-soft)}
+.btn.small{min-height:40px;font-size:14px;width:auto;padding:0 16px;border-radius:12px}
+.btn.danger{background:#fff;color:#a23030;border:1.5px solid #e3b9b9;box-shadow:none}
+:focus-visible{outline:3px solid rgba(167,64,69,.4);outline-offset:2px}
+
+.badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:5px 12px;font-size:12.5px;font-weight:700;white-space:nowrap;line-height:1.1}
+.badge:before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.st-wait{background:#fff1cf;color:#8a5a00}.st-ice{background:#ddf0fc;color:#165e8f}.st-plan{background:#e4eaff;color:#2a45a0}
+.st-pick{background:#d6f1e9;color:#17695a}.st-work{background:#ede2fb;color:#62389c}.st-ready{background:#d9f3dc;color:#1f6a2a}
+.st-done{background:#e6ebe8;color:#46544d}.st-off{background:#eee;color:#777}
+.tag{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;border-radius:8px;padding:3px 9px;background:#f3eee8;color:#5a4a3b}
+.tag.urgent{background:#fde1e1;color:#a02323}.tag.ice{background:#e3f2fc;color:#165e8f}.tag.voucher{background:#fdf0d3;color:#8a5a00}
+.tags{display:flex;gap:6px;flex-wrap:wrap}
+
+.rcard{display:grid;grid-template-columns:46px 1fr;gap:4px 14px;align-items:start;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin:12px 0;
+box-shadow:var(--sh1);position:relative;transition:transform .12s,box-shadow .15s}
+.rcard:hover{box-shadow:var(--sh2);transform:translateY(-1px)}.rcard:active{transform:scale(.99)}
+.rcard:before{content:"";position:absolute;left:0;top:16px;bottom:16px;width:4px;border-radius:0 4px 4px 0;background:var(--accent,#d8d0c7)}
+.rcard.acc-wait{--accent:#e0a92b}.rcard.acc-ice{--accent:#4aa3da}.rcard.acc-plan{--accent:#4a62d1}.rcard.acc-pick{--accent:#2f9a82}
+.rcard.acc-work{--accent:#8a5cd0}.rcard.acc-ready{--accent:#3aa24a}.rcard.acc-done{--accent:#aab4af}.rcard.acc-off{--accent:#c7c7c7}
+.rc-ico{width:46px;height:46px;border-radius:14px;background:var(--brand-soft);color:var(--brand);display:flex;align-items:center;justify-content:center}
+.rc-main{min-width:0}.rc-title{font-size:17px;font-weight:750;letter-spacing:-.01em;line-height:1.25}.rc-title span{font-weight:500}
+.rc-sub{color:var(--muted);font-size:14px;margin-top:2px}
+.rc-meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-top:10px}
+.rc-when{display:flex;align-items:center;gap:7px;font-size:14.5px;color:var(--ink2)}.rc-when .ic{color:var(--muted)}
+.rc-foot{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding-top:12px;border-top:1px dashed var(--line)}
+.rc-code{font:600 12.5px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);letter-spacing:.06em}
+
+label{display:block;font-weight:650;font-size:14px;margin:14px 0 6px;color:var(--ink2)}
+input,select,textarea{width:100%;min-height:50px;border:1.5px solid var(--line);border-radius:14px;padding:11px 14px;font:16px inherit;font-family:inherit;background:#fcfbfa;color:var(--ink);transition:border-color .12s,box-shadow .12s,background .12s}
+textarea{min-height:90px;resize:vertical}
+input:hover,select:hover,textarea:hover{border-color:#d7cfc6}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 4px rgba(167,64,69,.14);background:#fff}
+input::placeholder,textarea::placeholder{color:#a9b1ad}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.fsec{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:6px 18px 18px;margin:14px 0;box-shadow:var(--sh1)}
+.fsec>h2{margin:16px 0 4px;color:var(--ink);text-transform:none;letter-spacing:-.01em;font-size:17px;font-weight:750}
+.fsec>h2 .num{width:26px;height:26px;border-radius:50%;background:var(--brand);color:#fff;font-size:13px;font-weight:800;display:inline-flex;align-items:center;justify-content:center}
+.fsec>.sub{margin:0 0 4px}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
-.chip{position:relative}.chip input{position:absolute;opacity:0;inset:0;width:100%;height:100%;min-height:0;cursor:pointer}
-.chip span{display:block;border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:10px 16px;font-weight:600;font-size:15px}
-.chip input:checked+span{background:var(--brand);border-color:var(--brand);color:#fff}
-.modes{display:grid;gap:10px}
-.mode{position:relative}.mode input{position:absolute;opacity:0;inset:0;width:100%;height:100%;min-height:0;cursor:pointer}
-.mode div{display:flex;gap:14px;align-items:center;border:1.5px solid var(--line);background:#fff;border-radius:16px;padding:14px}
-.mode i{font-style:normal;font-size:28px}.mode b{display:block}.mode small{color:var(--muted)}
-.mode input:checked+div{border-color:var(--brand);background:#fbf1f1;box-shadow:0 0 0 2px rgba(167,64,69,.18)}
-.check{display:flex;gap:12px;align-items:flex-start;border:1.5px solid var(--line);background:#fff;border-radius:14px;padding:12px 14px;margin:10px 0}
-.check input{width:22px;height:22px;min-height:0;margin-top:2px;accent-color:var(--brand);flex:none}
-.check b{display:block;font-size:15px}.check small{color:var(--muted)}
-.check.urgent{border-color:#e8b4b4;background:#fff7f7}
-.flash{border-radius:14px;padding:12px 14px;margin:12px 0;font-size:15px}
-.flash.ok{background:#e1f5e3;color:#1f5f2a}.flash.err{background:#fde8e8;color:#8f2020}
+.chip{position:relative;margin:0;font-weight:inherit}.chip input{position:absolute;opacity:0;inset:0;width:100%;height:100%;min-height:0;cursor:pointer;margin:0}
+.chip span,.pill{display:inline-flex;align-items:center;gap:7px;border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:11px 17px;font-weight:650;font-size:15px;color:var(--ink2);transition:all .12s;cursor:pointer;font-family:inherit}
+.chip:hover span,.pill:hover{border-color:#d3b5b7}
+.chip input:checked+span,.pill.on{background:var(--brand);border-color:var(--brand);color:#fff;box-shadow:0 4px 12px rgba(167,64,69,.28)}
+.chip input:focus-visible+span{outline:3px solid rgba(167,64,69,.4);outline-offset:2px}
+.modes{display:grid;gap:10px;margin-top:12px}
+.mode{position:relative;margin:0;font-weight:inherit}.mode input{position:absolute;opacity:0;inset:0;width:100%;height:100%;min-height:0;cursor:pointer;margin:0;z-index:2}
+.mode>div{display:flex;gap:14px;align-items:center;border:1.5px solid var(--line);background:#fff;border-radius:16px;padding:14px 16px;transition:all .12s}
+.mode .mi{width:46px;height:46px;border-radius:14px;background:#f4efe9;color:var(--ink2);display:flex;align-items:center;justify-content:center;flex:none;transition:all .12s}
+.mode b{display:block;font-size:16px}.mode small{color:var(--muted);font-size:13.5px}
+.mode:hover>div{border-color:#d3b5b7}
+.mode input:checked+div{border-color:var(--brand);background:var(--brand-soft);box-shadow:0 0 0 3px rgba(167,64,69,.14)}
+.mode input:checked+div .mi{background:var(--brand);color:#fff}
+.mode input:focus-visible+div{outline:3px solid rgba(167,64,69,.4);outline-offset:2px}
+.check{display:flex;gap:13px;align-items:flex-start;border:1.5px solid var(--line);background:#fff;border-radius:16px;padding:13px 15px;margin:12px 0 0;cursor:pointer;transition:all .12s}
+.check input{width:22px;height:22px;min-height:0;margin:2px 0 0;accent-color:var(--brand);flex:none;padding:0;box-shadow:none}
+.check .ci{width:36px;height:36px;border-radius:11px;background:#f4efe9;color:var(--ink2);display:flex;align-items:center;justify-content:center;flex:none}
+.check b{display:block;font-size:15px}.check small{color:var(--muted);font-size:13.5px;line-height:1.35;display:block}
+.check:hover{border-color:#d3b5b7}.check:has(input:checked){border-color:var(--brand);background:var(--brand-soft)}
+.check.urgent .ci{background:#fde4e4;color:#b02a2a}.check.urgent:has(input:checked){border-color:#d34a4a;background:#fff3f3}
+.check.ice .ci{background:#e3f2fc;color:#165e8f}.check.voucher .ci{background:#fdf0d3;color:#8a5a00}
+.submitbar{margin:18px 0 6px}
+.flash{display:flex;gap:10px;align-items:flex-start;border-radius:16px;padding:13px 15px;margin:12px 0;font-size:15px}
+.flash.ok{background:#e0f4e6;color:#1f5f2a}.flash.err{background:#fde8e8;color:#8f2020}
 .hidden{display:none!important}
-.kv{display:grid;grid-template-columns:116px 1fr;gap:6px 10px;font-size:15px}.kv dt{color:var(--muted)}.kv dd{margin:0;font-weight:600;word-break:break-word}
-.code{font:700 26px/1.1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em;background:#f6efe7;border-radius:12px;padding:12px;text-align:center;margin:10px 0}
-.timeline{list-style:none;margin:0;padding:0 0 0 6px}
-.timeline li{position:relative;padding:0 0 18px 22px;border-left:2px solid var(--line);margin-left:6px}
-.timeline li:last-child{border-left-color:transparent;padding-bottom:0}
-.timeline li:before{content:"";position:absolute;left:-7px;top:3px;width:12px;height:12px;border-radius:50%;background:#cfc7bd}
-.timeline li:first-child:before{background:var(--brand)}
-.timeline b{display:block;font-size:15px}.timeline small{color:var(--muted)}
-.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:6;background:#fff;border-top:1px solid var(--line);display:grid;grid-template-columns:1fr 1fr 1fr;padding:6px 8px calc(6px + var(--safe-b));max-width:none}
-.tabbar a,.tabbar button{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:12px;color:var(--muted);padding:6px 0;background:none;border:0;font-family:inherit;cursor:pointer}
-.tabbar span.ico{font-size:22px;line-height:1}
-.tabbar a.on{color:var(--brand);font-weight:700}
-.tabbar a.plus .ico{background:var(--brand);color:#fff;width:50px;height:50px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:28px;margin-top:-22px;box-shadow:0 4px 12px rgba(167,64,69,.45)}
+
+.kv{display:grid;grid-template-columns:118px 1fr;gap:10px 12px;font-size:15px;margin:0}.kv dt{color:var(--muted)}.kv dd{margin:0;font-weight:600;word-break:break-word}
+.hero-d{display:flex;gap:14px;align-items:center}
+.avatar{width:54px;height:54px;border-radius:18px;background:linear-gradient(145deg,#b34a50,#7f3035);color:#fff;display:flex;align-items:center;justify-content:center;flex:none;box-shadow:0 6px 14px rgba(127,48,53,.3)}
+.hero-d b.n{font-size:21px;letter-spacing:-.01em;line-height:1.2;display:block}
+.prog{margin-top:18px}.prog .bar{display:grid;grid-template-columns:repeat(6,1fr);gap:5px}
+.prog .bar i{height:7px;border-radius:99px;background:#e9e3dc}.prog .bar i.done{background:var(--ok)}.prog .bar i.now{background:var(--brand);box-shadow:0 0 0 3px rgba(167,64,69,.16)}
+.plabel{display:flex;justify-content:space-between;align-items:baseline;margin-top:9px;font-size:13.5px}.plabel b{font-size:15px}.plabel span{color:var(--muted)}
+.prog.off,.prog.ice{display:flex;gap:10px;align-items:center;background:#f4f1ee;border-radius:14px;padding:12px 14px;font-size:14.5px}
+.prog.ice{background:#e8f4fc;color:#165e8f}
+.ticket{position:relative;margin-top:18px;border:2px dashed #d9c9c2;border-radius:18px;padding:14px;text-align:center;background:linear-gradient(180deg,#fffaf7,#fbf2ed)}
+.ticket small{display:block;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.1em;font-weight:700}
+.code{font:800 30px/1.15 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.12em;color:var(--brand2);margin:4px 0 8px}
+.copy{background:#fff;border:1.5px solid #e2c3c5;color:var(--brand);border-radius:999px;padding:7px 14px;font:700 13px inherit;font-family:inherit;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.timeline{list-style:none;margin:6px 0 0;padding:0}
+.timeline li{position:relative;padding:0 0 20px 34px}
+.timeline li:before{content:"";position:absolute;left:11px;top:22px;bottom:-2px;width:2px;background:var(--line)}
+.timeline li:last-child:before{display:none}.timeline li:last-child{padding-bottom:0}
+.timeline li i{position:absolute;left:0;top:1px;width:24px;height:24px;border-radius:50%;background:#ece6df;color:#8c8279;display:flex;align-items:center;justify-content:center}
+.timeline li:first-child i{background:var(--brand);color:#fff;box-shadow:0 0 0 4px rgba(167,64,69,.16)}
+.timeline b{display:block;font-size:15px;line-height:1.3}.timeline small{color:var(--muted);font-size:13.5px}
+
+.tabbar{position:fixed;left:12px;right:12px;bottom:calc(10px + var(--safe-b));z-index:30;background:rgba(255,255,255,.94);backdrop-filter:saturate(1.6) blur(14px);-webkit-backdrop-filter:saturate(1.6) blur(14px);
+border:1px solid var(--line);border-radius:24px;display:grid;grid-template-columns:1fr 1fr 1fr;padding:6px 8px;box-shadow:0 10px 30px rgba(31,42,38,.18);max-width:520px;margin:0 auto}
+.tabbar a{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:12px;color:var(--muted);padding:7px 0;font-weight:600;border-radius:16px}
+.tabbar a.on{color:var(--brand)}.tabbar a.on .ic{stroke-width:2.3}
+.tabbar a.plus .pbtn{width:54px;height:54px;border-radius:50%;background:linear-gradient(180deg,#b84e54,#a74045);color:#fff;display:flex;align-items:center;justify-content:center;margin-top:-26px;
+box-shadow:0 8px 20px rgba(167,64,69,.5),0 0 0 5px #fff}
 .tabbar a.plus{color:var(--brand);font-weight:700}
-.empty{text-align:center;color:var(--muted);padding:26px 10px}
-.loginlogo{width:210px;max-width:60%;margin:0 auto 10px;display:block}
+.empty{text-align:center;color:var(--muted);padding:34px 16px}
+.empty .eico{width:64px;height:64px;border-radius:50%;background:var(--brand-soft);color:var(--brand);display:flex;align-items:center;justify-content:center;margin:0 auto 12px}
+.empty b{color:var(--ink);display:block;font-size:17px;margin-bottom:2px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(98px + var(--safe-b));background:#1f2a26;color:#fff;border-radius:999px;padding:11px 18px;font-size:14px;z-index:40;box-shadow:0 8px 24px rgba(0,0,0,.25);display:flex;gap:8px;align-items:center;animation:fadein .25s both}
 .center{text-align:center}
-.hint{background:#fff8e1;border:1px dashed #e0c36a;border-radius:12px;padding:10px 12px;font-size:13.5px;margin-top:14px;color:#6b5200}
-.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(92px + var(--safe-b));background:#24312c;color:#fff;border-radius:999px;padding:10px 18px;font-size:14px;z-index:9}
-@media(min-width:700px){.wrap{padding-top:24px}.tabbar{left:50%;right:auto;transform:translateX(-50%);width:640px;border-radius:18px 18px 0 0;border:1px solid var(--line)}}
+.infocard{display:flex;gap:14px;align-items:flex-start}
+.infocard .ii{width:42px;height:42px;border-radius:13px;background:var(--brand-soft);color:var(--brand);display:flex;align-items:center;justify-content:center;flex:none}
+.infocard b{display:block;font-size:16px}
+
+.login-hero{margin:0 -16px;padding:calc(34px + var(--safe-t)) 16px 92px;background:radial-gradient(120% 140% at 100% 0%,#c95a60 0,rgba(201,90,96,0) 55%),linear-gradient(145deg,#a74045,#6f2a2f);border-radius:0 0 34px 34px;color:#fff;text-align:center}
+.login-hero h1{color:#fff;margin:14px 0 4px}.login-hero p{margin:0;opacity:.88;font-size:15px}
+.login-logo{width:132px;height:132px;border-radius:34px;background:#fff;margin:0 auto;display:flex;align-items:center;justify-content:center;box-shadow:0 14px 34px rgba(0,0,0,.28)}
+.login-logo img{width:112px;height:auto}
+.login-card{margin-top:-58px;position:relative}
+.hint{background:#fff8e6;border:1px dashed #e3c66f;border-radius:14px;padding:12px 14px;font-size:13.5px;margin-top:14px;color:#6b5200;line-height:1.5}
+.login-foot{text-align:center;margin-top:20px;color:var(--muted);font-size:13.5px}
+
+@media(min-width:860px){
+.wrap{padding-top:28px;padding-bottom:60px;max-width:760px}.topnav{display:flex}.tabbar{display:none}.toast{bottom:28px}
+.hero{padding:30px 28px 24px}.hero h1{font-size:32px}
+.rcard:hover{transform:translateY(-2px)}
+.fsec{padding:6px 24px 22px}
+.login-hero{border-radius:0 0 44px 44px}
+.wrap.login{max-width:480px}
+}
 """
 
 JS = """
@@ -181,7 +325,7 @@ JS = """
   if(live){
     var cursor=parseInt(live.getAttribute('data-cursor')||'0',10);
     var busy=false;
-    function showToast(msg){var t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(function(){t.remove()},2600)}
+    function showToast(msg){var t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(function(){t.remove()},2800)}
     function poll(){
       if(document.hidden||busy)return; busy=true;
       fetch('/partner/v1/eventi?dopo='+cursor,{credentials:'same-origin',headers:{'Accept':'application/json'}})
@@ -220,14 +364,23 @@ JS = """
       if(!canFreezer&&frz)frz.checked=false;
     }
     form.addEventListener('change',sync);sync();
-    form.querySelectorAll('[data-date]').forEach(function(b){b.addEventListener('click',function(){q('[name="proposed_date"]').value=b.getAttribute('data-date');
-      form.querySelectorAll('[data-date]').forEach(function(x){x.classList.toggle('on',x===b)})})});
+    var dateInput=q('[name="proposed_date"]');
+    function markDate(){form.querySelectorAll('[data-date]').forEach(function(x){x.classList.toggle('on',!!dateInput&&x.getAttribute('data-date')===dateInput.value)})}
+    form.querySelectorAll('[data-date]').forEach(function(b){b.addEventListener('click',function(){dateInput.value=b.getAttribute('data-date');markDate()})});
+    if(dateInput){dateInput.addEventListener('input',markDate);markDate()}
     form.addEventListener('submit',function(){var b=q('button[type=submit]');if(b){b.disabled=true;b.textContent='Invio in corso…'}});
   }
   document.querySelectorAll('[data-freezer-date]').forEach(function(b){b.addEventListener('click',function(){
-    var f=b.closest('form');f.querySelector('[name="proposed_date"]').value=b.getAttribute('data-freezer-date')})});
+    var f=b.closest('form');var i=f.querySelector('[name="proposed_date"]');i.value=b.getAttribute('data-freezer-date');
+    f.querySelectorAll('[data-freezer-date]').forEach(function(x){x.classList.toggle('on',x===b)})})});
   document.querySelectorAll('form[data-once]').forEach(function(f){f.addEventListener('submit',function(){
     var b=f.querySelector('button[type=submit]');if(b){b.disabled=true}})});
+  document.addEventListener('click',function(ev){
+    var b=ev.target.closest('[data-copy]');if(!b)return;
+    var text=b.getAttribute('data-copy');
+    var done=function(){var old=b.innerHTML;b.textContent='Copiato!';setTimeout(function(){b.innerHTML=old},1600)};
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done,function(){})}
+  });
 })();
 """
 
@@ -236,22 +389,29 @@ JS = """
 # Impaginazione
 # ---------------------------------------------------------------------------
 
-def page(title, body, *, user=None, active="", staff=False, cursor=None):
+def page(title, body, *, user=None, active="", staff=False, cursor=None, wrap_class=""):
     staffbar = (
-        '<div class="staffbar"><span>👁 Anteprima staff: le richieste create qui arrivano davvero nel calendario.</span>'
-        '<a href="/">← Gestionale</a></div>' if staff else "")
+        f'<div class="staffbar"><span>{icon("eye", 16)} Anteprima staff: le richieste create qui arrivano davvero nel calendario.</span>'
+        f'<a href="/">{icon("back", 14)} Gestionale</a></div>' if staff else "")
     top = ""
     tabs = ""
     if user is not None:
-        top = (f'<header class="top"><img src="/assets/pwa-192.png" alt="" width="40" height="40">'
-               f'<div><b>{e(user["clinic_label"])}</b><small>Portale Veterinari · Pet Paradise</small></div></header>')
-        def tab(href, key, ico, label, cls=""):
-            return f'<a href="{href}" class="{cls}{" on" if active == key else ""}"><span class="ico">{ico}</span>{label}</a>'
+        def nav(href, key, name, label, cls=""):
+            return f'<a href="{href}" class="{cls}{" on" if active == key else ""}">{icon(name, 18)}<span>{label}</span></a>'
+        top = (f'<header class="top"><div class="top-in"><div class="brand"><img src="/assets/pwa-192.png" alt="" width="42" height="42">'
+               f'<div style="min-width:0"><b>{e(user["clinic_label"])}</b><small>Portale Veterinari · Pet Paradise</small></div></div>'
+               f'<nav class="topnav" aria-label="Menu">{nav("/partner", "home", "list", "Richieste")}{nav("/partner/info", "info", "info", "Info")}'
+               f'{nav("/partner/nuova", "new", "plus", "Nuova richiesta", "cta")}</nav></div></header>')
+
+        def tab(href, key, name, label, cls=""):
+            inner = f'<span class="pbtn">{icon(name, 26)}</span>' if cls == "plus" else icon(name, 23)
+            return f'<a href="{href}" class="{cls}{" on" if active == key else ""}">{inner}<span>{label}</span></a>'
         tabs = ('<nav class="tabbar" aria-label="Menu">'
-                + tab("/partner", "home", "📋", "Richieste")
-                + tab("/partner/nuova", "new", "+", "Nuova", "plus")
-                + tab("/partner/info", "info", "ℹ️", "Info") + "</nav>")
+                + tab("/partner", "home", "list", "Richieste")
+                + tab("/partner/nuova", "new", "plus", "Nuova", "plus")
+                + tab("/partner/info", "info", "info", "Info") + "</nav>")
     live = f' data-live data-cursor="{int(cursor)}"' if cursor is not None else ""
+    classes = ("login " if user is None else "") + wrap_class
     return f'''<!doctype html><html lang="it"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>{e(title)} · Pet Paradise Partners</title>
@@ -259,15 +419,15 @@ def page(title, body, *, user=None, active="", staff=False, cursor=None):
 <meta name="apple-mobile-web-app-title" content="PP Partners"><meta name="mobile-web-app-capable" content="yes">
 <link rel="manifest" href="/partner/manifest.json"><link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
 <link rel="icon" href="/assets/favicon-32.png"><style>{CSS}</style></head>
-<body>{staffbar}{top}<main class="wrap{" login" if user is None else ""}"{live}>{body}</main>{tabs}<script>{JS}</script></body></html>'''
+<body>{staffbar}{top}<main class="wrap {classes}"{live}>{body}</main>{tabs}<script>{JS}</script></body></html>'''
 
 
 def _flash(query):
     out = ""
     if query.get("ok"):
-        out += f'<div class="flash ok">{e(query["ok"][-1])}</div>'
+        out += f'<div class="flash ok">{icon("check", 20)}<span>{e(query["ok"][-1])}</span></div>'
     if query.get("err"):
-        out += f'<div class="flash err">{e(query["err"][-1])}</div>'
+        out += f'<div class="flash err">{icon("alert", 20)}<span>{e(query["err"][-1])}</span></div>'
     return out
 
 
@@ -275,32 +435,41 @@ def badge(status, mode=""):
     return f'<span class="badge {STATUS_CLASS.get(status, "st-off")}">{e(ps.public_status_label(status, mode))}</span>'
 
 
+def _tags(r):
+    return ("".join((
+        f'<span class="tag urgent">{icon("alert", 13)}URGENTE</span>' if r["urgent"] else "",
+        f'<span class="tag ice">{icon("snow", 13)}Congelatore</span>' if r["freezer"] else "",
+        f'<span class="tag voucher">{icon("ticket", 13)}Usa un buono</span>' if r["reserved_voucher_id"] else "")))
+
+
 def login_page(*, error="", staff=False, username=""):
     hint = (f'<div class="hint"><b>Anteprima staff</b><br>Utente: <b>{e(ps.DEMO_USERNAME)}</b> · '
             f'Password: <b>{e(ps.DEMO_PASSWORD)}</b><br>Entri come se fossi una clinica: le richieste che crei '
             f'arrivano davvero sul calendario.</div>' if staff else "")
-    body = f'''<div class="center"><img class="loginlogo" src="/assets/company_logo_light.png" alt="Pet Paradise">
-<h1>Portale Veterinari</h1><p class="sub">Accedi per inviare e seguire le tue richieste di ritiro.</p></div>
-<form class="card" method="post" action="/partner/accedi" autocomplete="on">
-{f'<div class="flash err">{e(error)}</div>' if error else ""}
-<label for="u">Utente</label><input id="u" name="username" value="{e(username)}" autocomplete="username" autocapitalize="none" autocorrect="off" required>
+    body = f'''<div class="login-hero"><div class="login-logo"><img src="/assets/company_logo_light.png" alt="Pet Paradise"></div>
+<h1>Portale Veterinari</h1><p>Invia e segui le richieste di ritiro in tempo reale.</p></div>
+<form class="card login-card" method="post" action="/partner/accedi" autocomplete="on">
+{f'<div class="flash err">{icon("alert", 20)}<span>{e(error)}</span></div>' if error else ""}
+<label for="u" style="margin-top:4px">Utente</label><input id="u" name="username" value="{e(username)}" autocomplete="username" autocapitalize="none" autocorrect="off" required>
 <label for="p">Password</label><input id="p" name="password" type="password" autocomplete="current-password" required>
-<div style="margin-top:16px"><button class="btn" type="submit">Accedi</button></div></form>{hint}
-<p class="sub center" style="margin-top:18px">Problemi di accesso? Scrivi a <a href="mailto:{CONTACT_EMAIL}"><u>{CONTACT_EMAIL}</u></a></p>'''
+<div style="margin-top:18px"><button class="btn" type="submit">Accedi</button></div>{hint}</form>
+<p class="login-foot">Problemi di accesso? Scrivi a <a href="mailto:{CONTACT_EMAIL}"><u>{CONTACT_EMAIL}</u></a></p>'''
     return page("Accesso", body, staff=staff)
 
 
 def request_card(r):
     label, when = _when_text(r)
     who = " ".join(x for x in (r["owner_first_name"], r["owner_last_name"]) if x)
-    tags = ('<span class="tag urgent">URGENTE</span>' if r["urgent"] else "") + (
-        '<span class="tag">Congelatore</span>' if r["freezer"] else "") + (
-        '<span class="tag">Buono</span>' if r["reserved_voucher_id"] else "")
-    return f'''<a class="card" href="/partner/richieste/{r["id"]}"><div class="row"><div>
-<b>{e(r["animal_name"] or r["species"])}</b> <span class="sub">· {e(r["species"])}{", " + e(r["weight_text"]) if r["weight_text"] else ""}</span>
-<div class="sub">{MODE_ICONS.get(r["mode"], "")} {e(MODE_SHORT.get(r["mode"], ""))} · {e(who)}</div></div>{badge(r["public_status"], r["mode"])}</div>
-{f'<div style="margin-top:8px;font-size:14.5px"><span class="sub">{e(label)}:</span> <b>{e(when)}</b></div>' if when else ""}
-<div style="margin-top:8px">{tags}<span class="sub" style="float:right">{e(r["request_code"])}</span></div></a>'''
+    species = f'{e(r["species"])}{", " + e(r["weight_text"]) if r["weight_text"] else ""}'
+    when_html = (f'<div class="rc-when">{icon("clock" if r["public_status"] == "in_congelatore" else "calendar", 16)}'
+                 f'<span>{e(label)}: <b>{e(when)}</b></span></div>' if when else "")
+    acc = STATUS_CLASS.get(r["public_status"], "st-off").replace("st-", "acc-")
+    return f'''<a class="rcard {acc}" href="/partner/richieste/{r["id"]}">
+<div class="rc-ico">{icon(MODE_ICON_NAMES.get(r["mode"], "paw"), 24)}</div>
+<div class="rc-main"><div class="rc-title">{e(r["animal_name"] or r["species"])} <span class="sub">· {species}</span></div>
+<div class="rc-sub">{e(MODE_SHORT.get(r["mode"], ""))} · {e(who)}</div>
+<div class="rc-meta">{badge(r["public_status"], r["mode"])}{when_html}</div></div>
+<div class="rc-foot"><div class="tags">{_tags(r)}</div><span class="rc-code">{e(r["request_code"])}</span></div></a>'''
 
 
 def _date_chips(today):
@@ -320,27 +489,29 @@ def home_page(user, *, requests, pending_freezer, vouchers, cursor, query, staff
     if user["has_freezer"]:
         tiles += f'<div class="tile"><b>{len(pending_freezer)}</b><span>In congelatore</span></div>'
     tile_count = 1 + (1 if user["vouchers_enabled"] else 0) + (1 if user["has_freezer"] else 0)
-    tiles = f'<div class="tiles" style="grid-template-columns:repeat({tile_count},1fr)">{tiles}</div>'
     freezer_card = ""
     if user["has_freezer"] and pending_freezer:
-        chips = "".join(f'<button type="button" class="btn ghost small" data-freezer-date="{iso}">{name}</button> '
+        chips = "".join(f'<button type="button" class="pill" data-freezer-date="{iso}">{name}</button>'
                         for name, iso in _date_chips(today))
-        freezer_card = f'''<details class="card"><summary><b>❄️ {len(pending_freezer)} animal{"e" if len(pending_freezer) == 1 else "i"} in congelatore</b>
-<span class="sub"> · nessuna fretta. Congelatore pieno? Chiedi il ritiro.</span></summary>
+        freezer_card = f'''<details class="card"><summary style="cursor:pointer;list-style:none"><div class="infocard"><div class="ii" style="background:#e3f2fc;color:#165e8f">{icon("snow", 22)}</div>
+<div><b>{len(pending_freezer)} animal{"e" if len(pending_freezer) == 1 else "i"} in congelatore</b>
+<span class="sub">Nessuna fretta. Congelatore pieno? Tocca qui per chiedere il ritiro.</span></div></div></summary>
 <form method="post" action="/partner/congelatore" data-once><label>Quando possiamo passare?</label>
-<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">{chips}</div>
+<div class="chips" style="margin-bottom:10px">{chips}</div>
 <input type="date" name="proposed_date" min="{today.isoformat()}" required>
 <label>Fascia</label><div class="chips">
 <label class="chip"><input type="radio" name="fascia" value="mattina" checked><span>Mattina 9-13</span></label>
 <label class="chip"><input type="radio" name="fascia" value="pomeriggio"><span>Pomeriggio 14-18</span></label></div>
-<div style="margin-top:14px"><button class="btn" type="submit">Richiedi il ritiro</button></div></form></details>'''
+<div style="margin-top:16px"><button class="btn" type="submit">Richiedi il ritiro</button></div></form></details>'''
     open_html = "".join(request_card(r) for r in open_reqs) or (
-        '<div class="empty card">Nessuna richiesta in corso.<br>Tocca <b>+</b> per crearne una.</div>')
-    done_html = (f'<h2>Concluse</h2>{"".join(request_card(r) for r in done)}' if done else "")
-    body = f'''{_flash(query)}<h1>Ciao, {e(user["display_name"] or user["clinic_label"])}</h1>
-<p class="sub">Qui segui i ritiri della tua clinica in tempo reale.</p>
-<a class="btn" href="/partner/nuova" style="margin-top:6px">+ Nuova richiesta</a>
-<div data-live-inner>{tiles}{freezer_card}<h2>In corso</h2>{open_html}{done_html}</div>'''
+        f'<div class="card empty"><div class="eico">{icon("paw", 30)}</div><b>Nessuna richiesta in corso</b>'
+        f'Quando ne crei una la trovi qui, con tutti gli aggiornamenti.</div>')
+    done_html = (f'<h2>Concluse <span class="count">{len(done)}</span></h2>{"".join(request_card(r) for r in done)}' if done else "")
+    body = f'''{_flash(query)}<section class="hero"><small>{_greeting()},</small><h1>{e(user["display_name"] or user["clinic_label"])}</h1>
+<p>{e(user["clinic_label"])} · segui i ritiri in tempo reale</p>
+<a class="btn light" href="/partner/nuova">{icon("plus", 20)} Nuova richiesta</a>
+<div class="stats" style="grid-template-columns:repeat({tile_count},1fr)">{tiles}</div></section>
+{freezer_card}<h2>In corso <span class="count">{len(open_reqs)}</span></h2>{open_html}{done_html}'''
     return page("Richieste", body, user=user, active="home", staff=staff, cursor=cursor)
 
 
@@ -348,40 +519,39 @@ def new_page(user, *, draft, error, token, sites, vouchers, staff, today):
     d = draft or {}
     ck = lambda name, value, default=False: ("checked" if (d.get(name, "") == value or (default and not d.get(name))) else "")
     modes = "".join(
-        f'''<label class="mode"><input type="radio" name="mode" value="{key}" {ck("mode", key, key == "ritiro_clinica")}><div><i>{MODE_ICONS[key]}</i><span><b>{title}</b><small>{sub}</small></span></div></label>'''
+        f'''<label class="mode"><input type="radio" name="mode" value="{key}" {ck("mode", key, key == "ritiro_clinica")}><div><span class="mi">{icon(MODE_ICON_NAMES[key], 24)}</span><span><b>{title}</b><small>{sub}</small></span></div></label>'''
         for key, title, sub in (
             ("ritiro_clinica", "Ritiro in clinica", "Passiamo noi dalla tua clinica"),
             ("ritiro_domicilio", "Ritiro a domicilio", "Presso il cliente"),
             ("invio_in_sede", "Cliente in sede", "Il cliente porta l'animale da noi")))
-    chips_date = "".join(f'<button type="button" class="btn ghost small" data-date="{iso}">{name}</button> '
-                         for name, iso in _date_chips(today))
-    freezer_box = (f'''<label class="check" id="freezerBox"><input type="checkbox" name="freezer" value="1" {"checked" if d.get("freezer") else ""}>
-<span><b>❄️ Ce l'ho nel congelatore</b><small>Nessuna fretta: lo ritirate quando il congelatore è pieno.</small></span></label>'''
+    chips_date = "".join(f'<button type="button" class="pill" data-date="{iso}">{name}</button>' for name, iso in _date_chips(today))
+    freezer_box = (f'''<label class="check ice" id="freezerBox"><input type="checkbox" name="freezer" value="1" {"checked" if d.get("freezer") else ""}>
+<span class="ci">{icon("snow", 20)}</span><span><b>Ce l'ho nel congelatore</b><small>Nessuna fretta: lo ritirate quando il congelatore è pieno.</small></span></label>'''
                    if user["has_freezer"] else "")
-    voucher_box = (f'''<label class="check" id="voucherBox"><input type="checkbox" name="use_voucher" value="1" {"checked" if d.get("use_voucher") else ""}>
-<span><b>🎟️ Usa un buono</b><small>{vouchers} disponibil{"e" if vouchers == 1 else "i"}.</small></span></label>'''
+    voucher_box = (f'''<label class="check voucher" id="voucherBox"><input type="checkbox" name="use_voucher" value="1" {"checked" if d.get("use_voucher") else ""}>
+<span class="ci">{icon("ticket", 20)}</span><span><b>Usa un buono</b><small>{vouchers} disponibil{"e" if vouchers == 1 else "i"}.</small></span></label>'''
                    if user["vouchers_enabled"] and vouchers > 0 else "")
     site_opts = "".join(f'<option value="{e(s)}" {"selected" if d.get("destination_site") == s else ""}>{e(s)}</option>' for s in sites)
     species_list = "".join(f"<option>{s}</option>" for s in ("Cane", "Gatto", "Coniglio", "Furetto", "Uccello", "Criceto", "Altro"))
-    body = f'''<h1>Nuova richiesta</h1><p class="sub">Ci vuole meno di un minuto.</p>
-{f'<div class="flash err">{e(error)}</div>' if error else ""}
+    body = f'''<h1>Nuova richiesta</h1><p class="sub" style="margin:0 2px">Ci vuole meno di un minuto.</p>
+{f'<div class="flash err">{icon("alert", 20)}<span>{e(error)}</span></div>' if error else ""}
 <form id="reqForm" method="post" action="/partner/nuova"><input type="hidden" name="token" value="{e(token)}">
-<h2>Cosa serve?</h2><div class="modes">{modes}</div>
-<div id="siteHelp" class="sub hidden" style="margin-top:8px">Riceverai un codice da presentare in sede insieme all'animale.</div>
+<section class="fsec"><h2><span class="num">1</span>Cosa serve?</h2><div class="modes">{modes}</div>
+<div id="siteHelp" class="sub hidden" style="margin-top:10px">Riceverai un codice da presentare in sede insieme all'animale.</div>
 <div id="siteBox" class="hidden"><label>Sede</label><select name="destination_site">{site_opts}</select></div>
-<div id="addressBox" class="hidden"><label>Indirizzo del ritiro</label><input name="pickup_address" value="{e(d.get("pickup_address", ""))}" placeholder="Via, numero, comune" autocomplete="street-address"></div>
-<h2>Servizio</h2><div class="chips">
+<div id="addressBox" class="hidden"><label>Indirizzo del ritiro</label><input name="pickup_address" value="{e(d.get("pickup_address", ""))}" placeholder="Via, numero, comune" autocomplete="street-address"></div></section>
+<section class="fsec"><h2><span class="num">2</span>Servizio</h2><div class="chips" style="margin-top:12px">
 <label class="chip"><input type="radio" name="service_type" value="Cremazione singola" {ck("service_type", "Cremazione singola", True)}><span>Cremazione singola</span></label>
 <label class="chip"><input type="radio" name="service_type" value="Cremazione collettiva" {ck("service_type", "Cremazione collettiva")}><span>Cremazione collettiva</span></label></div>
-{freezer_box}{voucher_box}
-<h2>Proprietario</h2><div class="grid2"><div><label>Nome</label><input name="owner_first_name" value="{e(d.get("owner_first_name", ""))}" autocomplete="off"></div>
+{freezer_box}{voucher_box}</section>
+<section class="fsec"><h2><span class="num">3</span>Proprietario</h2><div class="grid2"><div><label>Nome</label><input name="owner_first_name" value="{e(d.get("owner_first_name", ""))}" autocomplete="off"></div>
 <div><label>Cognome</label><input name="owner_last_name" value="{e(d.get("owner_last_name", ""))}" autocomplete="off"></div></div>
-<label>Telefono</label><input name="owner_phone" type="tel" inputmode="tel" value="{e(d.get("owner_phone", ""))}" autocomplete="off" placeholder="333 1234567">
-<h2>Animale</h2><div class="grid2"><div><label>Specie</label><input name="species" list="speciesList" value="{e(d.get("species", ""))}" autocomplete="off"><datalist id="speciesList">{species_list}</datalist></div>
+<label>Telefono</label><input name="owner_phone" type="tel" inputmode="tel" value="{e(d.get("owner_phone", ""))}" autocomplete="off" placeholder="333 1234567"></section>
+<section class="fsec"><h2><span class="num">4</span>Animale</h2><div class="grid2"><div><label>Specie</label><input name="species" list="speciesList" value="{e(d.get("species", ""))}" autocomplete="off"><datalist id="speciesList">{species_list}</datalist></div>
 <div><label>Nome (facoltativo)</label><input name="animal_name" value="{e(d.get("animal_name", ""))}" autocomplete="off"></div></div>
-<label>Peso o taglia</label><input name="weight" value="{e(d.get("weight", ""))}" placeholder="es. 12 kg, oppure taglia media" autocomplete="off">
-<div id="whenBox"><h2>Quando?</h2>
-<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">{chips_date}</div>
+<label>Peso o taglia</label><input name="weight" value="{e(d.get("weight", ""))}" placeholder="es. 12 kg, oppure taglia media" autocomplete="off"></section>
+<section class="fsec" id="whenBox"><h2><span class="num">5</span>Quando?</h2>
+<div class="chips" style="margin:12px 0 10px">{chips_date}</div>
 <input type="date" name="proposed_date" min="{today.isoformat()}" value="{e(d.get("proposed_date", ""))}">
 <label>Fascia oraria</label><div class="chips">
 <label class="chip"><input type="radio" name="fascia" value="mattina" {ck("fascia", "mattina", True)}><span>Mattina 9-13</span></label>
@@ -390,10 +560,24 @@ def new_page(user, *, draft, error, token, sites, vouchers, staff, today):
 <div id="timeBox" class="grid2 hidden"><div><label>Dalle</label><input type="time" name="proposed_from" value="{e(d.get("proposed_from", ""))}"></div>
 <div><label>Alle</label><input type="time" name="proposed_to" value="{e(d.get("proposed_to", ""))}"></div></div>
 <label class="check urgent" id="urgentBox"><input type="checkbox" name="urgent" value="1" {"checked" if d.get("urgent") else ""}>
-<span><b>🚨 Urgente</b><small>Ritiro il prima possibile.</small></span></label></div>
-<label>Note (facoltative)</label><textarea name="notes" placeholder="Accessi, citofono, indicazioni utili…">{e(d.get("notes", ""))}</textarea>
-<div style="margin-top:18px"><button class="btn" type="submit">Invia richiesta</button></div></form>'''
+<span class="ci">{icon("alert", 20)}</span><span><b>Urgente</b><small>Ritiro il prima possibile.</small></span></label></section>
+<section class="fsec"><h2><span class="num">6</span>Note</h2><label style="margin-top:10px">Facoltative</label>
+<textarea name="notes" placeholder="Accessi, citofono, indicazioni utili…">{e(d.get("notes", ""))}</textarea></section>
+<div class="submitbar"><button class="btn" type="submit">{icon("send", 19)} Invia richiesta</button></div></form>'''
     return page("Nuova richiesta", body, user=user, active="new", staff=staff)
+
+
+def _progress(r):
+    status = r["public_status"]
+    if status == "annullata":
+        return f'<div class="prog off">{icon("alert", 20)}<span>Richiesta annullata</span></div>'
+    if status == "in_congelatore":
+        return (f'<div class="prog ice">{icon("snow", 20)}<span><b>In congelatore.</b> Lo ritiriamo quando il congelatore è pieno, '
+                f'nessuna fretta.</span></div>')
+    idx = PROGRESS_STEPS.index(status) if status in PROGRESS_STEPS else 0
+    segs = "".join(f'<i class="{"done" if k < idx else "now" if k == idx else ""}"></i>' for k in range(len(PROGRESS_STEPS)))
+    return (f'<div class="prog"><div class="bar">{segs}</div><div class="plabel"><b>{e(ps.public_status_label(status, r["mode"]))}</b>'
+            f'<span>Passo {idx + 1} di {len(PROGRESS_STEPS)}</span></div></div>')
 
 
 def detail_page(user, r, timeline, *, cursor, query, staff):
@@ -403,7 +587,7 @@ def detail_page(user, r, timeline, *, cursor, query, staff):
         ("Animale", f'{r["animal_name"] or "-"} ({r["species"]}{", " + r["weight_text"] if r["weight_text"] else ""})'),
         ("Proprietario", f'{who} · {r["owner_phone"]}'),
         ("Servizio", r["service_type"]),
-        ("Modalità", f'{MODE_ICONS.get(r["mode"], "")} {ps.MODES.get(r["mode"], "")}'),
+        ("Modalità", ps.MODES.get(r["mode"], "")),
     ]
     if r["pickup_address"]:
         rows.append(("Indirizzo", r["pickup_address"]))
@@ -414,54 +598,61 @@ def detail_page(user, r, timeline, *, cursor, query, staff):
     if r["notes"]:
         rows.append(("Note", r["notes"]))
     kv = "".join(f"<dt>{e(k)}</dt><dd>{e(v)}</dd>" for k, v in rows)
-    tags = ('<span class="tag urgent">URGENTE</span>' if r["urgent"] else "") + (
-        '<span class="tag">Congelatore</span>' if r["freezer"] else "") + (
-        '<span class="tag">Usa un buono</span>' if r["reserved_voucher_id"] else "")
+    tags = _tags(r)
     items = []
     for ev in reversed(timeline):
         text = "Ritiro riprogrammato" if ev["kind"] == "riprogrammato" else ps.public_status_label(ev["public_status"], r["mode"])
         extra = f' · {_fmt_window(ev["scheduled_start"], ev["scheduled_end"])}' if ev["scheduled_start"] else ""
-        items.append(f'<li><b>{e(text)}</b><small>{e(_fmt_utc(ev["created_at"]))}{e(extra)}</small></li>')
-    sede_note = ('<p class="sub center">Presenta questo codice in sede insieme all\'animale.</p>'
+        mark = icon("clock", 13) if ev["kind"] == "riprogrammato" else icon("check", 14)
+        items.append(f'<li><i>{mark}</i><b>{e(text)}</b><small>{e(_fmt_utc(ev["created_at"]))}{e(extra)}</small></li>')
+    sede_note = ('<p class="sub center" style="margin:0">Presenta questo codice in sede insieme all\'animale.</p>'
                  if r["mode"] == "invio_in_sede" and r["public_status"] not in ("annullata", "completata") else "")
     cancel = ""
     if r["public_status"] in ("ricevuta", "in_congelatore"):
-        cancel = (f'<form method="post" action="/partner/richieste/{r["id"]}/annulla" data-once '
+        cancel = (f'<form method="post" action="/partner/richieste/{r["id"]}/annulla" data-once style="margin-top:6px" '
                   f'onsubmit="return confirm(\'Annullare questa richiesta?\')"><button class="btn danger" type="submit">Annulla richiesta</button></form>')
     elif r["public_status"] not in ("annullata", "completata"):
         cancel = '<p class="sub center">Per modificare o annullare ora contatta Pet Paradise.</p>'
-    ok_new = ('<div class="flash ok">Richiesta inviata! Ti aggiorniamo qui a ogni passaggio.</div>'
+    ok_new = (f'<div class="flash ok">{icon("check", 20)}<span>Richiesta inviata! Ti aggiorniamo qui a ogni passaggio.</span></div>'
               if query.get("nuova") else "")
     body = f'''{ok_new}{_flash({k: v for k, v in query.items() if k in ("ok", "err")})}
-<div data-live-inner><div class="card"><div class="row"><div><b style="font-size:19px">{e(r["animal_name"] or r["species"])}</b>
-<div class="sub">{e(who)}</div></div>{badge(r["public_status"], r["mode"])}</div>
-<div style="margin-top:8px">{tags}</div><div class="code">{e(r["request_code"])}</div>{sede_note}</div>
-<div class="card"><h3>Dettagli</h3><dl class="kv">{kv}</dl></div>
-<div class="card"><h3>Cronologia</h3><ul class="timeline">{"".join(items)}</ul></div>{cancel}</div>
-<p style="margin-top:14px"><a class="btn ghost" href="/partner">← Tutte le richieste</a></p>'''
+<div class="card"><div class="hero-d"><div class="avatar">{icon(MODE_ICON_NAMES.get(r["mode"], "paw"), 28)}</div>
+<div style="flex:1;min-width:0"><b class="n">{e(r["animal_name"] or r["species"])}</b><span class="sub">{e(who)}</span></div>{badge(r["public_status"], r["mode"])}</div>
+{f'<div class="tags" style="margin-top:12px">{tags}</div>' if tags else ""}
+{_progress(r)}
+<div class="ticket"><small>Codice richiesta</small><div class="code">{e(r["request_code"])}</div>{sede_note}
+<button type="button" class="copy" data-copy="{e(r["request_code"])}">{icon("copy", 15)} Copia codice</button></div></div>
+<div class="card"><h3>{icon("list", 18)} Dettagli</h3><dl class="kv">{kv}</dl></div>
+<div class="card"><h3>{icon("clock", 18)} Cronologia</h3><ul class="timeline">{"".join(items)}</ul></div>{cancel}
+<p style="margin-top:16px"><a class="btn ghost" href="/partner">{icon("back", 18)} Tutte le richieste</a></p>'''
     return page("Dettaglio richiesta", body, user=user, active="home", staff=staff, cursor=cursor)
 
 
 def info_page(user, *, locations, vouchers, staff, query):
     sedi = "".join(
-        f'<div class="card"><b>{e(loc["name"])}</b><div class="sub">{e(loc["address"])}</div>'
-        f'<p style="margin:8px 0 0"><a class="btn ghost small" target="_blank" rel="noopener" '
-        f'href="https://www.google.com/maps/search/?api=1&query={quote(loc["address"])}">Apri in Maps</a></p></div>'
+        f'<div class="card"><div class="infocard"><div class="ii">{icon("pin", 22)}</div><div><b>{e(loc["name"])}</b>'
+        f'<div class="sub">{e(loc["address"])}</div>'
+        f'<p style="margin:10px 0 0"><a class="btn ghost small" target="_blank" rel="noopener" '
+        f'href="https://www.google.com/maps/search/?api=1&query={quote(loc["address"])}">Apri in Maps</a></p></div></div></div>'
         for loc in locations) or '<div class="card sub">Informazioni sulle sedi in arrivo.</div>'
-    voucher_card = (f'<div class="card"><h3>🎟️ I tuoi buoni</h3><p style="margin:0"><b>{vouchers}</b> '
-                    f'disponibil{"e" if vouchers == 1 else "i"} per le cremazioni collettive.</p></div>'
+    voucher_card = (f'<div class="card"><div class="infocard"><div class="ii" style="background:#fdf0d3;color:#8a5a00">{icon("ticket", 22)}</div>'
+                    f'<div><b>I tuoi buoni</b><span class="sub"><b style="display:inline;color:var(--ink)">{vouchers}</b> '
+                    f'disponibil{"e" if vouchers == 1 else "i"} per le cremazioni collettive.</span></div></div></div>'
                     if user["vouchers_enabled"] else "")
     body = f'''{_flash(query)}<h1>Info e contatti</h1><h2>Le nostre sedi</h2>{sedi}
-<div class="card"><h3>Contatti</h3><p style="margin:0">Per qualsiasi necessità: <a href="mailto:{CONTACT_EMAIL}"><u>{CONTACT_EMAIL}</u></a></p></div>
+<h2>Contatti</h2><div class="card"><div class="infocard"><div class="ii">{icon("mail", 22)}</div><div><b>Scrivici</b>
+<span class="sub">Per qualsiasi necessità: <a href="mailto:{CONTACT_EMAIL}" style="color:var(--brand)"><u>{CONTACT_EMAIL}</u></a></span></div></div></div>
 {voucher_card}
-<h2>Il tuo account</h2><div class="card"><b>{e(user["display_name"] or user["username"] or "")}</b>
-<div class="sub">{e(user["clinic_name"])} · {e(user["email"])}</div>
-<form method="post" action="/partner/esci" style="margin-top:12px"><button class="btn ghost" type="submit">Esci</button></form></div>'''
+<h2>Il tuo account</h2><div class="card"><div class="infocard"><div class="ii">{icon("user", 22)}</div><div><b>{e(user["display_name"] or user["username"] or "")}</b>
+<span class="sub">{e(user["clinic_name"])} · {e(user["email"])}</span></div></div>
+<form method="post" action="/partner/esci" style="margin-top:14px"><button class="btn ghost" type="submit">{icon("logout", 18)} Esci</button></form></div>'''
     return page("Info", body, user=user, active="info", staff=staff)
 
 
 def not_found_page(user=None, staff=False):
-    return page("Pagina non trovata", '<div class="empty card">Pagina non trovata.<br><br><a class="btn" href="/partner">Torna alle richieste</a></div>',
+    return page("Pagina non trovata",
+                f'<div class="card empty"><div class="eico">{icon("paw", 30)}</div><b>Pagina non trovata</b>'
+                f'<p style="margin:0 0 16px">Il collegamento non è valido o è scaduto.</p><a class="btn" href="/partner">Torna alle richieste</a></div>',
                 user=user, staff=staff)
 
 
