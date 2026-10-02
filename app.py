@@ -116,6 +116,7 @@ from notification_service import (
 from urn_inventory import DEFAULT_URNS
 import partner_service
 import partner_portal
+import quote_service
 from certificate_service import CertificateDataError, build_certificate, certificate_data, certificate_filename
 
 
@@ -9447,6 +9448,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/database-mesi": return self.redirect("/pratiche")
         if path == "/veterinari": return self.veterinarians_page(user)
         if path == "/portale-partner": return self.portal_partner_page(user)
+        if path == "/portale-partner/listino": return self.portal_quote_pricelist_page(user)
         if path == "/clienti": return self.clients_page(user)
         match = re.fullmatch(r"/clienti/(\d+)", path)
         if match: return self.client_detail(user, int(match.group(1)))
@@ -9573,6 +9575,7 @@ class App(BaseHTTPRequestHandler):
         if match: return self.delete_urn(user, int(match.group(1)))
         if path == "/veterinari": return self.save_veterinarian(user)
         if path == "/portale-partner/clinica": return self.portal_partner_action(user,"create_clinic")
+        if path == "/portale-partner/listino": return self.portal_quote_pricelist_save(user)
         match = re.fullmatch(r"/portale-partner/clinica/(\d+)", path)
         if match: return self.portal_partner_action(user,"update_clinic",int(match.group(1)))
         match = re.fullmatch(r"/portale-partner/clinica/(\d+)/utente", path)
@@ -17099,7 +17102,7 @@ class App(BaseHTTPRequestHandler):
             <td>{esc(partner_service.public_status_label(r["public_status"],r["mode"]))}</td>
             <td>{f'<a href="/calendario/{r["calendar_event_id"]}">Evento</a>' if r["calendar_event_id"] else "-"}{f' · <a href="/pratiche/{r["practice_id"]}">Pratica</a>' if r["practice_id"] else ""}</td></tr>'''
             for r in recent) or '<tr><td colspan="6" class="sub">Nessuna richiesta.</td></tr>'
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Portale partner</h1><div class="sub">Attivazione cliniche, congelatori e richieste ricevute.</div></div><a class="btn ghost" href="/veterinari">Veterinari</a></div>
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Portale partner</h1><div class="sub">Attivazione cliniche, congelatori e richieste ricevute.</div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn ghost" href="/portale-partner/listino">Listino preventivi</a><a class="btn ghost" href="/veterinari">Veterinari</a></div></div>
           {f'<div class="flash warning">{esc(error)}</div>' if error else ''}{f'<div class="flash">{esc(notice)}</div>' if notice else ''}
           <section class="section"><h2>Attiva una clinica</h2><form method="post" action="/portale-partner/clinica"><div class="fields">
             <div class="field full"><label>Veterinario in anagrafica</label><select name="veterinarian_id" required>{vet_options}</select></div>
@@ -17110,6 +17113,71 @@ class App(BaseHTTPRequestHandler):
           {''.join(clinic_blocks) or '<section class="section"><p class="sub">Nessuna clinica attivata.</p></section>'}
           <section class="tablebox"><h2>Ultime richieste</h2><table><thead><tr><th>Codice</th><th>Clinica</th><th>Modalità</th><th>Animale</th><th>Stato</th><th></th></tr></thead><tbody>{recent_rows}</tbody></table></section></main>'''
         self.send_html(layout("Portale partner",body,user))
+
+    def portal_quote_pricelist_page(self,user,error="",form=None):
+        if user["role"]!="admin":return self.send_error(403,"Solo gli amministratori possono modificare il listino.")
+        query=parse_qs(urlparse(getattr(self,"path","")).query)
+        notice="Listino salvato." if (query.get("ok") or [""])[0]=="1" else ("Listino ripristinato ai prezzi di partenza." if (query.get("ok") or [""])[0]=="2" else "")
+        with db() as c:
+            pricelist=quote_service.get_pricelist(c)
+            meta=quote_service.get_pricelist_meta(c)
+        def num(value):
+            return str(value).replace(".",",") if value is not None else ""
+        def v(name,default):
+            return esc(form[name]) if form is not None and name in form else esc(num(default))
+        def money(name,default,width=84):
+            return f'<input name="{name}" value="{v(name,default)}" inputmode="decimal" style="width:{width}px;min-width:0;text-align:right" required>'
+        cr_rows=[]
+        count=len(pricelist["cremation"])
+        for i,row in enumerate(pricelist["cremation"]):
+            if i==count-1:
+                limit=f'oltre {esc(num(pricelist["cremation"][i-1]["max_kg"]))} kg'
+            else:
+                limit=f'fino a {money(f"cr_max_{i}",row["max_kg"],70)} kg'
+            cr_rows.append(f'<tr><td>{limit}</td><td>€ {money(f"cr_price_{i}",row["price"])}</td></tr>')
+        bands=pricelist["pickup"]["bands"]
+        head=''.join(f'<th>fino a {money(f"pk_band_{i}",b,60)} kg</th>' for i,b in enumerate(bands))+f'<th>oltre {esc(num(bands[-1]))} kg</th>'
+        pk_rows=''.join(
+            f'<tr><td>{esc(quote_service.PICKUP_TARIFF_LABELS[t])}</td>'+''.join(f'<td>€ {money(f"pk_{t}_{j}",price,70)}</td>' for j,price in enumerate(pricelist["pickup"]["prices"][t]))+'</tr>'
+            for t in quote_service.PICKUP_TARIFFS)
+        circ=''.join(
+            f'<div class="field full"><label>{esc(item["name"])} (un comune per riga)</label><textarea name="circ_{i}" rows="{min(12,len(item["comuni"])+1)}">'
+            +(esc(form[f"circ_{i}"]) if form is not None and f"circ_{i}" in form else esc("\n".join(item["comuni"])))+'</textarea></div>'
+            for i,item in enumerate(pricelist["circondari"]))
+        sup=pricelist["supplements"]
+        updated=f'Ultima modifica: {esc(meta.get("updated_at","")[:16].replace("T"," "))} · {esc(meta.get("updated_by",""))}' if meta.get("updated_at") else "Listino di partenza (nessuna modifica fatta)."
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Listino preventivi</h1><div class="sub">Prezzi usati dal calcolatore del Portale Veterinari (IVA inclusa). {updated}</div></div><a class="btn ghost" href="/portale-partner">Portale partner</a></div>
+          {f'<div class="flash warning">{esc(error)}</div>' if error else ''}{f'<div class="flash">{esc(notice)}</div>' if notice else ''}
+          <form method="post" action="/portale-partner/listino">
+          <section class="section"><h2>Cremazione singola</h2><div class="tablebox" style="max-height:none;overflow:visible"><table><thead><tr><th>Fascia di peso</th><th>Prezzo</th></tr></thead><tbody>{''.join(cr_rows)}</tbody></table></div></section>
+          <section class="section"><h2>Ritiro</h2><div class="tablebox" style="max-height:none;overflow:visible"><table><thead><tr><th>Luogo</th>{head}</tr></thead><tbody>{pk_rows}</tbody></table></div>
+            <div class="fields" style="margin-top:12px"><div class="field"><label>Supplemento ritiro fuori circondario (€)</label>{money("pk_outside",pricelist["pickup"]["outside_surcharge"],120)}</div></div></section>
+          <section class="section"><h2>Riconsegna</h2><div class="fields">
+            <div class="field"><label>Nel circondario (€)</label>{money("dl_inside",pricelist["delivery"]["inside"],120)}</div>
+            <div class="field"><label>Fuori circondario (€)</label>{money("dl_outside",pricelist["delivery"]["outside"],120)}</div></div></section>
+          <section class="section"><h2>Servizio H24</h2><div class="fields">
+            <div class="field"><label>Festivo: domeniche e festività nazionali (€)</label>{money("sp_festivo",sup["festivo"],120)}</div>
+            <div class="field"><label>Serale 19:00-21:00 (€)</label>{money("sp_serale",sup["serale"],120)}</div>
+            <div class="field"><label>Notturno 21:00-07:00 (€)</label>{money("sp_notturno",sup["notturno"],120)}</div></div></section>
+          <section class="section"><h2>Urna</h2><div class="fields"><div class="field"><label>Urna standard a partire da (€) — non inclusa nel preventivo</label>{money("urn_from",pricelist["urn"]["from_price"],120)}</div></div></section>
+          <section class="section"><h2>Circondario</h2><p class="sub">Comuni dove il ritiro e la riconsegna sono "nel circondario". Gli altri comuni sono "fuori circondario".</p><div class="fields">{circ}</div></section>
+          <div class="actions" style="display:flex;gap:10px;margin:18px 0"><button class="btn" type="submit">Salva listino</button>
+          <button class="btn ghost" type="submit" name="reset" value="1" formnovalidate onclick="return confirm('Ripristinare i prezzi di partenza? Le modifiche fatte andranno perse.')">Ripristina prezzi di partenza</button></div></form></main>'''
+        self.send_html(layout("Listino preventivi",body,user))
+
+    def portal_quote_pricelist_save(self,user):
+        if user["role"]!="admin":return self.send_error(403,"Solo gli amministratori possono modificare il listino.")
+        form=self.form()
+        if form.get("reset")=="1":
+            with db() as c:c.execute("DELETE FROM settings WHERE key=?",(quote_service.SETTINGS_KEY,))
+            return self.redirect("/portale-partner/listino?ok=2")
+        try:
+            pricelist=quote_service.pricelist_from_form(form)
+            with db() as c:
+                quote_service.save_pricelist(c,pricelist,updated_by=user["display_name"],updated_at=now())
+        except quote_service.QuoteError as exc:
+            return self.portal_quote_pricelist_page(user,error=str(exc),form=form)
+        self.redirect("/portale-partner/listino?ok=1")
 
     def portal_partner_action(self,user,action,target_id=None):
         if user["role"]!="admin":return self.send_error(403,"Solo gli amministratori possono gestire il portale partner.")

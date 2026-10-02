@@ -488,6 +488,157 @@ class PortalIsolationAndLiveTests(PortalBase):
         self.assertIn('data-cursor="1"', page)
 
 
+class QuotePortalTests(PortalBase):
+    def setUp(self):
+        super().setUp()
+        _, self.cookie = self.login()
+
+    def quote(self, query="", cookie=None, frag=False):
+        suffix = ("&" if query else "") + "frag=1" if frag else ""
+        return self.call("GET", f"/partner/preventivo?{query}{suffix}" if (query or frag) else "/partner/preventivo",
+                         cookie=self.cookie if cookie is None else cookie)
+
+    def total_of(self, html):
+        import re
+        match = re.search(r'class="qtotal">([^<]+)<', html)
+        return match.group(1) if match else None
+
+    def test_requires_a_portal_session(self):
+        for path in ("/partner/preventivo", "/partner/preventivo?peso=5&frag=1"):
+            h = self.call("GET", path)
+            self.assertEqual((h.status, h.header("Location")), (303, "/partner/accedi"))
+
+    def test_empty_page_has_the_form_and_a_prompt(self):
+        page = self.quote().html
+        self.assertIn("Inserisci il peso", page)
+        for name in ('name="peso"', 'name="ritiro"', 'name="luogo"', 'name="comune"', 'name="riconsegna"',
+                     'name="comune_riconsegna"', 'name="data"', 'name="ora"'):
+            self.assertIn(name, page)
+        for text in ("Ambulatorio / clinica", "Domicilio, piano terra", "Domicilio, piano con ascensore",
+                     "Domicilio, 1° o 2° piano senza ascensore", "Domicilio, 3° piano o oltre senza ascensore",
+                     "Stesso comune del ritiro", "Altro comune (fuori circondario)", "Circondario Empolese Valdelsa",
+                     "Montelupo Fiorentino", 'optgroup label="Livorno"', "Serve il ritiro", "Serve la riconsegna"):
+            self.assertIn(text, page)
+        self.assertRegex(page, r'name="ritiro" value="1" checked')  # prima apertura: ritiro attivo
+        self.assertIn("Preventivo indicativo: il prezzo definitivo", page)
+
+    def test_navigation_has_the_quote_entry_on_phone_and_desktop(self):
+        page = self.quote().html
+        self.assertEqual(page.count('href="/partner/preventivo"'), 2)  # barra in alto (desktop) + barra in basso (telefono)
+        home = self.call("GET", "/partner", cookie=self.cookie).html
+        self.assertEqual(home.count('href="/partner/preventivo"'), 2)
+
+    def test_agreed_examples_through_the_page(self):
+        cases = [
+            ("peso=22&ritiro=1&luogo=piano12&comune=Livorno", "€ 380,00"),
+            ("peso=22&ritiro=1&luogo=piano12&comune=__altro__", "€ 390,00"),
+            ("peso=4&ritiro=1&luogo=ambulatorio&comune=Empoli", "€ 260,00"),
+            ("peso=22&ritiro=1&luogo=piano12&comune=__altro__&riconsegna=1&comune_riconsegna=__altro__", "€ 440,00"),
+            ("peso=22&ritiro=1&luogo=piano12&comune=Livorno&riconsegna=1&comune_riconsegna=__stesso__", "€ 420,00"),
+            ("peso=12,5", "€ 270,00"),
+            ("peso=80&riconsegna=1&comune_riconsegna=Vinci", "€ 660,00"),
+        ]
+        for query, expected in cases:
+            with self.subTest(query=query):
+                self.assertEqual(self.total_of(self.quote(query).html), expected)
+
+    def test_result_shows_breakdown_urn_note_and_vat(self):
+        page = self.quote("peso=22&ritiro=1&luogo=piano12&comune=__altro__&riconsegna=1&comune_riconsegna=Livorno").html
+        for text in ("Preventivo indicativo", "IVA inclusa · urna esclusa", "Cremazione singola", "20,1-25 kg",
+                     "Ritiro: Domicilio, 1° o 2° piano senza ascensore", "10,1-30 kg", "Ritiro fuori circondario",
+                     "Riconsegna", "nel circondario", "€ 310,00", "€ 70,00", "€ 10,00", "€ 40,00", "Totale",
+                     "L&#x27;urna non è inclusa nel preventivo", "€ 20,00", "modello standard"):
+            self.assertIn(text, page)
+
+    def test_fragment_mode_returns_only_the_result_blocks(self):
+        h = self.quote("peso=22&ritiro=1&luogo=terra&comune=Livorno", frag=True)
+        self.assertEqual(h.status, 200)
+        self.assertNotIn("<html", h.html)
+        self.assertIn("qtotal", h.html)
+        self.assertEqual(self.total_of(h.html), "€ 370,00")
+        empty = self.quote("", frag=True)
+        self.assertIn("Inserisci il peso", empty.html)
+        self.assertNotIn("<form", empty.html)
+
+    def test_incomplete_or_invalid_input_shows_a_friendly_message(self):
+        cases = [
+            ("peso=22&ritiro=1&comune=Livorno", "Seleziona il luogo del ritiro"),
+            ("peso=22&ritiro=1&luogo=terra", "Seleziona il comune"),
+            ("peso=22&ritiro=1", "Seleziona il luogo del ritiro"),
+            ("peso=22&ritiro=1&luogo=terra&comune=Atlantide", "Comune non valido"),
+            ("peso=abc", "Peso: numero non valido"),
+            ("peso=0", "maggiore di zero"),
+            ("peso=999", "non sembra corretto"),
+            ("peso=22&riconsegna=1", "Seleziona il comune della riconsegna"),
+            ("peso=22&data=31/12/2026", "Data non valida"),
+            ("peso=22&data=2026-10-05&ora=25:99", "Ora non valida"),
+        ]
+        for query, message in cases:
+            with self.subTest(query=query):
+                h = self.quote(query)
+                self.assertEqual(h.status, 200)
+                self.assertIn(message, h.html)
+                self.assertIsNone(self.total_of(h.html))
+
+    def test_pickup_unchecked_ignores_the_pickup_fields(self):
+        h = self.quote("peso=22&luogo=piano3&comune=Atlantide")  # ritiro non spuntato: il cliente porta l'animale
+        self.assertEqual(self.total_of(h.html), "€ 310,00")
+
+    def test_supplements_through_the_page(self):
+        sunday_night = "peso=5&ritiro=1&luogo=terra&comune=Livorno&data=2026-10-04&ora=22:30"
+        h = self.quote(sunday_night)
+        self.assertEqual(self.total_of(h.html), "€ 460,00")  # 210 + 50 + 80 festivo + 120 notturno
+        self.assertIn("Servizio festivo", h.html)
+        self.assertIn("Servizio notturno", h.html)
+        evening = self.quote("peso=5&ritiro=1&luogo=terra&comune=Livorno&data=2026-10-05&ora=19:30")
+        self.assertEqual(self.total_of(evening.html), "€ 310,00")
+        self.assertIn("Servizio serale", evening.html)
+        no_time = self.quote("peso=5&ritiro=1&luogo=terra&comune=Livorno&data=2026-10-05")
+        self.assertEqual(self.total_of(no_time.html), "€ 260,00")
+        self.assertIn("Indica anche l&#x27;ora", no_time.html)
+        # senza ritiro ne' riconsegna nessun supplemento
+        self.assertEqual(self.total_of(self.quote("peso=5&data=2026-10-04&ora=22:30").html), "€ 210,00")
+
+    def test_changed_price_list_is_reflected(self):
+        with app.db() as c:
+            pricelist = qs_get(c)
+            pricelist["cremation"][4]["price"] = 333
+            pricelist["delivery"]["inside"] = 45
+            qs_save(c, pricelist)
+        self.assertEqual(self.total_of(self.quote("peso=22").html), "€ 333,00")
+        self.assertEqual(self.total_of(self.quote("peso=22&riconsegna=1&comune_riconsegna=Livorno").html), "€ 378,00")
+
+    def test_user_input_is_escaped(self):
+        h = self.quote("peso=%3Cscript%3Ealert(1)%3C/script%3E")
+        self.assertNotIn("<script>alert(1)", h.html)
+        page = self.quote("peso=22&comune=%22%3E%3Cimg%20src%3Dx%3E&ritiro=1&luogo=terra").html
+        self.assertNotIn('"><img src=x>', page)
+
+    def test_available_to_every_clinic_and_in_the_staff_preview(self):
+        _, other = self.login("altravet", "altra.pass1", staff=False)
+        self.assertEqual(self.total_of(self.quote("peso=22", cookie=other).html), "€ 310,00")
+        staff_page = self.call("GET", "/partner/preventivo?peso=22", cookie=self.cookie, staff=True).html
+        self.assertIn("Anteprima staff", staff_page)
+
+    def test_page_updates_live_through_the_fragment_endpoint(self):
+        page = self.quote().html
+        self.assertIn('id="quoteForm"', page)
+        self.assertIn('id="quoteResult"', page)
+        self.assertIn("/partner/preventivo?", page)
+        self.assertIn("p.set('frag','1')", page)
+        self.assertIn("qchip", page)
+
+
+def qs_get(connection):
+    import quote_service
+    return quote_service.get_pricelist(connection)
+
+
+def qs_save(connection, pricelist):
+    import quote_service
+    return quote_service.save_pricelist(connection, pricelist, updated_by="test", updated_at="2026-10-02T10:00:00")
+
+
 class StaffEntryPointTests(PortalBase):
     def test_sidebar_link_is_visible_to_every_user(self):
         self.assertIn(("/partner", "stethoscope", "Portale Veterinari"), app.SIDEBAR_LINKS)

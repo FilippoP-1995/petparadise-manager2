@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, quote, urlparse
 from zoneinfo import ZoneInfo
 
 import partner_service as ps
+import quote_service as qs
 
 COOKIE = "pp_partner_session"
 ROME = ZoneInfo("Europe/Rome")
@@ -76,6 +77,8 @@ _ICONS = {
     "user": '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
     "copy": '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
     "send": '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+    "calc": '<rect width="16" height="20" x="4" y="2" rx="2"/><path d="M8 6h8M16 14v4M16 10h.01M12 10h.01M8 10h.01M12 14h.01M8 14h.01M12 18h.01M8 18h.01"/>',
+    "urn": '<path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/>',
     "phone": '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>',
 }
 
@@ -286,7 +289,7 @@ input::placeholder,textarea::placeholder{color:#a9b1ad}
 .timeline b{display:block;font-size:15px;line-height:1.3}.timeline small{color:var(--muted);font-size:13.5px}
 
 .tabbar{position:fixed;left:12px;right:12px;bottom:calc(10px + var(--safe-b));z-index:30;background:rgba(255,255,255,.94);backdrop-filter:saturate(1.6) blur(14px);-webkit-backdrop-filter:saturate(1.6) blur(14px);
-border:1px solid var(--line);border-radius:24px;display:grid;grid-template-columns:1fr 1fr 1fr;padding:6px 8px;box-shadow:0 10px 30px rgba(31,42,38,.18);max-width:520px;margin:0 auto}
+border:1px solid var(--line);border-radius:24px;display:grid;grid-template-columns:repeat(4,1fr);padding:6px 8px;box-shadow:0 10px 30px rgba(31,42,38,.18);max-width:520px;margin:0 auto}
 .tabbar a{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:12px;color:var(--muted);padding:7px 0;font-weight:600;border-radius:16px}
 .tabbar a.on{color:var(--brand)}.tabbar a.on .ic{stroke-width:2.3}
 .tabbar a.plus .pbtn{width:54px;height:54px;border-radius:50%;background:linear-gradient(180deg,#b84e54,#a74045);color:#fff;display:flex;align-items:center;justify-content:center;margin-top:-26px;
@@ -301,6 +304,14 @@ box-shadow:0 8px 20px rgba(167,64,69,.5),0 0 0 5px #fff}
 .infocard .ii{width:42px;height:42px;border-radius:13px;background:var(--brand-soft);color:var(--brand);display:flex;align-items:center;justify-content:center;flex:none}
 .infocard b{display:block;font-size:16px}
 
+.qhero{border-radius:24px;padding:20px;color:#fff;text-align:center;margin:0 0 4px;background:radial-gradient(120% 140% at 100% 0%,#c95a60 0,rgba(201,90,96,0) 55%),linear-gradient(145deg,#a74045 0,#6f2a2f 100%);box-shadow:0 14px 34px rgba(127,48,53,.3)}
+.qhero small{display:block;opacity:.88;font-size:13.5px;letter-spacing:.04em;text-transform:uppercase;font-weight:700}
+.qtotal{font-size:44px;font-weight:800;letter-spacing:-.03em;line-height:1.1;margin:4px 0}.qhero span{opacity:.85;font-size:13.5px}
+.qchip{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(96px + var(--safe-b));z-index:35;background:#1f2a26;color:#fff;border-radius:999px;padding:10px 18px;font-size:14px;box-shadow:0 8px 24px rgba(0,0,0,.28);white-space:nowrap}
+.qchip b{font-size:16px;margin-left:4px}#quoteResult{scroll-margin-top:96px}
+.qline{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:11px 0;border-bottom:1px dashed var(--line)}
+.qline:last-child{border-bottom:0}.qline b{display:block;font-size:15px;line-height:1.3}.qline small{color:var(--muted);font-size:13px}
+.qline>span{font-weight:750;white-space:nowrap}.qsum{border-top:2px solid var(--ink);border-bottom:0;margin-top:4px;padding-top:12px;font-size:17px}
 .login-hero{margin:0 -16px;padding:calc(34px + var(--safe-t)) 16px 92px;background:radial-gradient(120% 140% at 100% 0%,#c95a60 0,rgba(201,90,96,0) 55%),linear-gradient(145deg,#a74045,#6f2a2f);border-radius:0 0 34px 34px;color:#fff;text-align:center}
 .login-hero h1{color:#fff;margin:14px 0 4px}.login-hero p{margin:0;opacity:.88;font-size:15px}
 .login-logo{width:132px;height:132px;border-radius:34px;background:#fff;margin:0 auto;display:flex;align-items:center;justify-content:center;box-shadow:0 14px 34px rgba(0,0,0,.28)}
@@ -370,6 +381,33 @@ JS = """
     if(dateInput){dateInput.addEventListener('input',markDate);markDate()}
     form.addEventListener('submit',function(){var b=q('button[type=submit]');if(b){b.disabled=true;b.textContent='Invio in corso…'}});
   }
+  var qf=document.getElementById('quoteForm');
+  if(qf){
+    var qbox=document.getElementById('quoteResult'),qtimer=null;
+    var qsubmit=document.getElementById('quoteSubmit');if(qsubmit)qsubmit.classList.add('hidden');
+    function qsync(){
+      document.getElementById('pickupBox').classList.toggle('hidden',!qf.querySelector('[name=ritiro]').checked);
+      document.getElementById('deliveryBox').classList.toggle('hidden',!qf.querySelector('[name=riconsegna]').checked);
+    }
+    function qrun(){
+      var p=new URLSearchParams(new FormData(qf));p.set('frag','1');
+      fetch('/partner/preventivo?'+p.toString(),{credentials:'same-origin'}).then(function(r){
+        if(r.status===401||r.redirected){location.href='/partner/accedi';return null}return r.text()
+      }).then(function(h){if(h!==null&&h!==undefined){qbox.innerHTML=h;qchip()}}).catch(function(){});
+    }
+    var chip=document.createElement('a');chip.className='qchip hidden';chip.href='#quoteResult';document.body.appendChild(chip);
+    function qchip(){
+      var tot=qbox.querySelector('.qtotal');
+      if(!tot){chip.classList.add('hidden');return}
+      chip.innerHTML='Totale <b>'+tot.textContent+'</b> ↑';
+      chip.classList.toggle('hidden',qbox.getBoundingClientRect().bottom>90);
+    }
+    window.addEventListener('scroll',qchip,{passive:true});
+    function qschedule(){clearTimeout(qtimer);qtimer=setTimeout(qrun,220)}
+    qf.addEventListener('input',function(){qsync();qschedule()});qf.addEventListener('change',function(){qsync();qschedule()});
+    qf.addEventListener('submit',function(ev){ev.preventDefault();qrun()});
+    qsync();
+  }
   document.querySelectorAll('[data-freezer-date]').forEach(function(b){b.addEventListener('click',function(){
     var f=b.closest('form');var i=f.querySelector('[name="proposed_date"]');i.value=b.getAttribute('data-freezer-date');
     f.querySelectorAll('[data-freezer-date]').forEach(function(x){x.classList.toggle('on',x===b)})})});
@@ -400,7 +438,7 @@ def page(title, body, *, user=None, active="", staff=False, cursor=None, wrap_cl
             return f'<a href="{href}" class="{cls}{" on" if active == key else ""}">{icon(name, 18)}<span>{label}</span></a>'
         top = (f'<header class="top"><div class="top-in"><div class="brand"><img src="/assets/pwa-192.png" alt="" width="42" height="42">'
                f'<div style="min-width:0"><b>{e(user["clinic_label"])}</b><small>Portale Veterinari · Pet Paradise</small></div></div>'
-               f'<nav class="topnav" aria-label="Menu">{nav("/partner", "home", "list", "Richieste")}{nav("/partner/info", "info", "info", "Info")}'
+               f'<nav class="topnav" aria-label="Menu">{nav("/partner", "home", "list", "Richieste")}{nav("/partner/preventivo", "quote", "calc", "Preventivo")}{nav("/partner/info", "info", "info", "Info")}'
                f'{nav("/partner/nuova", "new", "plus", "Nuova richiesta", "cta")}</nav></div></header>')
 
         def tab(href, key, name, label, cls=""):
@@ -408,6 +446,7 @@ def page(title, body, *, user=None, active="", staff=False, cursor=None, wrap_cl
             return f'<a href="{href}" class="{cls}{" on" if active == key else ""}">{inner}<span>{label}</span></a>'
         tabs = ('<nav class="tabbar" aria-label="Menu">'
                 + tab("/partner", "home", "list", "Richieste")
+                + tab("/partner/preventivo", "quote", "calc", "Preventivo")
                 + tab("/partner/nuova", "new", "plus", "Nuova", "plus")
                 + tab("/partner/info", "info", "info", "Info") + "</nav>")
     live = f' data-live data-cursor="{int(cursor)}"' if cursor is not None else ""
@@ -649,6 +688,90 @@ def info_page(user, *, locations, vouchers, staff, query):
     return page("Info", body, user=user, active="info", staff=staff)
 
 
+def _comune_options(pricelist, selected="", *, first_label="Seleziona il comune", same_label=""):
+    groups = "".join(
+        f'<optgroup label="{e(item["name"])}">' + "".join(
+            f'<option value="{e(c)}" {"selected" if selected == c else ""}>{e(c)}</option>' for c in item["comuni"]) + "</optgroup>"
+        for item in pricelist["circondari"])
+    same = (f'<option value="{qs.SAME_COMUNE}" {"selected" if selected in ("", qs.SAME_COMUNE) else ""}>{e(same_label)}</option>'
+            if same_label else f'<option value="">{e(first_label)}</option>')
+    other = f'<option value="{qs.OTHER_COMUNE}" {"selected" if selected == qs.OTHER_COMUNE else ""}>Altro comune (fuori circondario)</option>'
+    return same + groups + other
+
+
+def quote_result_html(pricelist, values) -> str:
+    """Blocco risultato del preventivo (anche come frammento per l'aggiornamento live)."""
+    if not (values.get("peso") or "").strip():
+        return (f'<div class="card empty"><div class="eico">{icon("calc", 28)}</div><b>Inserisci il peso</b>'
+                f'Il preventivo si aggiorna mentre compili i campi.</div>')
+    when, time_known = None, True
+    try:
+        if values.get("data"):
+            try:
+                day = datetime.strptime(values["data"], "%Y-%m-%d").date()
+            except ValueError:
+                raise qs.QuoteError("Data non valida.") from None
+            hour = (values.get("ora") or "").strip()
+            if hour:
+                if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", hour):
+                    raise qs.QuoteError("Ora non valida.")
+                when = datetime.combine(day, datetime.strptime(hour, "%H:%M").time())
+            else:
+                when, time_known = datetime.combine(day, datetime.min.time().replace(hour=12)), False
+        pickup = values.get("ritiro") == "1"
+        if pickup and not values.get("luogo"):
+            raise qs.QuoteIncomplete("Seleziona il luogo del ritiro.")
+        result = qs.calculate_quote(
+            pricelist, weight=values.get("peso"),
+            pickup_place=values.get("luogo", "") if pickup else "", pickup_comune=values.get("comune", "") if pickup else "",
+            delivery=values.get("riconsegna") == "1", delivery_comune=values.get("comune_riconsegna", ""),
+            when=when, time_known=time_known)
+    except qs.QuoteIncomplete as exc:
+        return f'<div class="flash">{icon("info", 20)}<span>{e(exc)} Il preventivo compare appena hai scelto tutto.</span></div>'
+    except qs.QuoteError as exc:
+        return f'<div class="flash err">{icon("alert", 20)}<span>{e(exc)}</span></div>'
+    rows = ""
+    for line in result["lines"]:
+        detail = f'<small>{e(line["detail"])}</small>' if line["detail"] else ""
+        rows += (f'<div class="qline"><div><b>{e(line["label"])}</b>{detail}</div>'
+                 f'<span>{e(qs.fmt_eur(line["amount"]))}</span></div>')
+    hints = "".join(f'<div class="flash"><span>{e(h)}</span></div>' for h in result["hints"])
+    return (f'<div class="qhero"><small>Preventivo indicativo</small><div class="qtotal">{e(qs.fmt_eur(result["total"]))}</div>'
+            f'<span>IVA inclusa · urna esclusa</span></div>'
+            f'<div class="card"><h3>{icon("list", 18)} Dettaglio</h3>{rows}'
+            f'<div class="qline qsum"><div><b>Totale</b></div><span>{e(qs.fmt_eur(result["total"]))}</span></div></div>'
+            f'<div class="card"><div class="infocard"><div class="ii" style="background:#fdf0d3;color:#8a5a00">{icon("urn", 22)}</div>'
+            f'<div><b>Urna</b><span class="sub">{e(result["urn_note"])}</span></div></div></div>{hints}')
+
+
+def quote_page(user, pricelist, values, *, staff):
+    v = values
+    luoghi = "".join(
+        f'<option value="{key}" {"selected" if v.get("luogo") == key else ""}>{e(label)}</option>'
+        for key, (label, _tariff) in qs.PICKUP_PLACES.items())
+    body = f'''<h1>Preventivo</h1><p class="sub" style="margin:0 2px">Cremazione singola con ritiro e riconsegna: un'indicazione di prezzo da dare al cliente.</p>
+<div id="quoteResult" style="margin-top:14px">{quote_result_html(pricelist, v)}</div>
+<form id="quoteForm" method="get" action="/partner/preventivo" autocomplete="off">
+<section class="fsec"><h2><span class="num">1</span>Animale</h2><label>Peso (kg)</label>
+<input name="peso" inputmode="decimal" placeholder="es. 12,5" value="{e(v.get("peso", ""))}"></section>
+<section class="fsec"><h2><span class="num">2</span>Ritiro</h2>
+<label class="check"><input type="checkbox" name="ritiro" value="1" {"checked" if v.get("ritiro", "1") == "1" else ""}><span class="ci">{icon("home", 20)}</span>
+<span><b>Serve il ritiro</b><small>Lascia spento se il cliente porta l'animale in sede.</small></span></label>
+<div id="pickupBox"><label>Dove si ritira?</label><select name="luogo"><option value="">Seleziona il luogo</option>{luoghi}</select>
+<label>Comune del ritiro</label><select name="comune">{_comune_options(pricelist, v.get("comune", ""))}</select></div></section>
+<section class="fsec"><h2><span class="num">3</span>Riconsegna</h2>
+<label class="check"><input type="checkbox" name="riconsegna" value="1" {"checked" if v.get("riconsegna") == "1" else ""}><span class="ci">{icon("car", 20)}</span>
+<span><b>Serve la riconsegna</b><small>Nel circondario o fuori: cambia il prezzo.</small></span></label>
+<div id="deliveryBox"><label>Comune della riconsegna</label><select name="comune_riconsegna">{_comune_options(pricelist, v.get("comune_riconsegna", ""), same_label="Stesso comune del ritiro")}</select></div></section>
+<section class="fsec"><h2><span class="num">4</span>Quando <small class="sub" style="font-weight:500;text-transform:none;letter-spacing:0">(facoltativo)</small></h2>
+<p class="sub" style="margin:2px 0 0">Serve per i supplementi festivo, serale e notturno.</p>
+<div class="grid2"><div><label>Data</label><input type="date" name="data" value="{e(v.get("data", ""))}"></div>
+<div><label>Ora</label><input type="time" name="ora" value="{e(v.get("ora", ""))}"></div></div></section>
+<div class="submitbar" id="quoteSubmit"><button class="btn" type="submit">{icon("calc", 19)} Calcola preventivo</button></div></form>
+<p class="sub center" style="margin:14px 8px 0">Preventivo indicativo: il prezzo definitivo viene confermato da Pet Paradise.</p>'''
+    return page("Preventivo", body, user=user, active="quote", staff=staff)
+
+
 def not_found_page(user=None, staff=False):
     return page("Pagina non trovata",
                 f'<div class="card empty"><div class="eico">{icon("paw", 30)}</div><b>Pagina non trovata</b>'
@@ -868,6 +991,19 @@ def dispatch(h, method, path, *, db, password_ok, staff_user, db_path=None):
             _redirect(h, "/partner" + _to_query("err", str(exc)))
             return True
         _redirect(h, "/partner" + _to_query("ok", "Richiesta di ritiro inviata: ti confermiamo l'orario qui."))
+        return True
+
+    if method == "GET" and path == "/partner/preventivo":
+        with db() as c:
+            pricelist = qs.get_pricelist(c)
+        values = {k: (query.get(k) or [""])[-1].strip() for k in
+                  ("peso", "ritiro", "luogo", "comune", "riconsegna", "comune_riconsegna", "data", "ora")}
+        if not query:
+            values["ritiro"] = "1"  # prima apertura: il caso piu' comune
+        if query.get("frag"):
+            h.send_html(quote_result_html(pricelist, values))
+        else:
+            h.send_html(quote_page(user, pricelist, values, staff=staff))
         return True
 
     if method == "GET" and path == "/partner/info":
