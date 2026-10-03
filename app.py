@@ -15972,7 +15972,7 @@ class App(BaseHTTPRequestHandler):
                     MAX(CASE WHEN wm.status IN ('accettato_da_meta','consegnato','letto','fallito') THEN COALESCE(NULLIF(wm.sent_at,''),NULLIF(wm.failed_at,''),NULLIF(wm.last_attempt_at,''),wm.created_at) END) last_real_out,
                     MAX(CASE WHEN wm.status IN ('programmato','in_invio') THEN wm.scheduled_at END) next_pending
                 FROM whatsapp_messages wm JOIN practices p ON p.id=wm.practice_id
-                WHERE wm.manual=0{where_extra}
+                WHERE 1=1{where_extra}
                 GROUP BY wm.practice_id""",args).fetchall()
             in_summary=c.execute(f"""SELECT im.practice_id, MAX(im.received_at) last_in
                 FROM whatsapp_inbound_messages im JOIN practices p ON p.id=im.practice_id
@@ -16001,7 +16001,7 @@ class App(BaseHTTPRequestHandler):
             inbound_by_practice={}
             if ordered_pids:
                 marks=','.join('?' for _ in ordered_pids)
-                for row in c.execute(f"""SELECT * FROM whatsapp_messages WHERE manual=0 AND practice_id IN ({marks})
+                for row in c.execute(f"""SELECT * FROM whatsapp_messages WHERE practice_id IN ({marks})
                         AND (status IN ('programmato','in_invio','accettato_da_meta','consegnato','letto','fallito'))
                         ORDER BY practice_id,COALESCE(NULLIF(sent_at,''),NULLIF(failed_at,''),NULLIF(last_attempt_at,''),scheduled_at,created_at)""",ordered_pids).fetchall():
                     outbound_by_practice.setdefault(row["practice_id"],[]).append(row)

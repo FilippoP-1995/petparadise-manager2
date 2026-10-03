@@ -8191,6 +8191,23 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn("è terminata", page)
         self.assertNotIn("tipo di consegna", page)
 
+    def test_manual_resends_appear_in_the_conversation_history(self):
+        # reinvio manuale (manual=1) di ringraziamento e catalogo: deve comparire
+        # nello storico come qualsiasi altro invio, sia riuscito sia fallito.
+        admin,pid=self._catalog_practice(send_catalog="Si")
+        stamp="2026-10-03T10:00:00"
+        with app.db() as conn:
+            conn.execute("""INSERT INTO whatsapp_messages(practice_id,scheduled_at,status,sent_at,template_name,recipient_phone,manual,message_type,created_at,updated_at)
+                            VALUES(?,?,?,?,?,?,?,?,?,?)""",(pid,stamp,"accettato_da_meta",stamp,"catalogo_urne","393339990000",1,"catalogo",stamp,stamp))
+            conn.execute("""INSERT INTO whatsapp_messages(practice_id,scheduled_at,status,failed_at,last_error,template_name,recipient_phone,manual,message_type,created_at,updated_at)
+                            VALUES(?,?,?,?,?,?,?,?,?,?,?)""",(pid,"2026-10-03T11:00:00","fallito","2026-10-03T11:00:00","errore di prova","ringraziamento_livorno","393339990000",1,"ringraziamento",stamp,stamp))
+        rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/conversazioni-whatsapp"
+        self.handler.whatsapp_conversations(admin)
+        html=rendered[-1]
+        self.assertIn("Non recapitato: errore di prova",html)
+        self.assertIn("Fallito",html)
+        self.assertIn("Catalogo urne inviato",html)
+
     def test_conversations_list_has_filter_pills_and_search_reset_button(self):
         admin,_,_=self._whatsapp_record("2026-07-15T15:00:00")
         rendered=[];self.handler.send_html=lambda content,*args:rendered.append(content);self.handler.path="/conversazioni-whatsapp"
