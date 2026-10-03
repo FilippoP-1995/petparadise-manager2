@@ -627,7 +627,7 @@ JS = """
 def page(title, body, *, user=None, active="", staff=False, cursor=None, wrap_class=""):
     staffbar = (
         f'<div class="staffbar"><span>{icon("eye", 16)} Anteprima staff: le richieste create qui arrivano davvero nel calendario.</span>'
-        f'<span class="staffbar-links"><a href="/richieste-portale#partnerLinkCard">{icon("share", 14)} Link per i veterinari</a>'
+        f'<span class="staffbar-links"><a href="/portale-veterinari#partnerLinkCard">{icon("share", 14)} Link per i veterinari</a>'
         f'<a href="/">{icon("back", 14)} Gestionale</a></span></div>' if staff else "")
     top = ""
     tabs = ""

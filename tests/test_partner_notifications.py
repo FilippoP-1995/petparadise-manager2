@@ -402,11 +402,11 @@ class InboxTests(NotificationBase):
         admin_html = self.get("/richieste-portale", self.admin)["html"]
         self.assertIn("1 animale in congelatore (nessuna fretta)", admin_html)
         self.assertIn("pianifica lo svuotamento", admin_html)
-        self.assertIn("Gestione portale", admin_html)
+        self.assertIn('href="/portale-partner">Cliniche e listino', admin_html)  # scheda di gestione, solo admin
         operator_html = self.get("/richieste-portale", self.serena)["html"]
         self.assertIn("1 animale in congelatore", operator_html)
         self.assertNotIn("pianifica lo svuotamento", operator_html)
-        self.assertNotIn("Gestione portale", operator_html)
+        self.assertNotIn("Cliniche e listino", operator_html)
 
     def test_handled_requests_move_to_the_history_table(self):
         req = self.make(animal_name="Gestito")
@@ -435,34 +435,156 @@ class InboxTests(NotificationBase):
         self.assertEqual(data["items"][0]["url"], f'/calendario/{b["calendar_event_id"]}')
         self.assertEqual(data["items"][0]["clinic"], "ALFA")
 
-    def test_link_for_the_vets_is_visible_to_every_staff_member_on_the_inbox(self):
+    def test_link_for_the_vets_is_on_the_portal_page_for_every_staff_member(self):
         for user in (self.admin, self.serena):
-            html = self.get("/richieste-portale", user)["html"]
+            html = self.get("/portale-veterinari", user)["html"]
             for text in ("Link del portale da dare ai veterinari", 'id="partnerLinkCard"', "Copia link",
-                         "Copia messaggio con istruzioni", "location.origin+'/partner'", 'href="#partnerLinkCard">Link per i veterinari'):
+                         "Copia messaggio con istruzioni", "location.origin+'/partner'"):
                 self.assertIn(text, html, (user["username"], text))
             self.assertNotIn("pini.vet26", html.split("Link del portale")[1].split("</section>")[0])
-        self.assertEqual(html.count('id="partnerLinkCard"'), 1)
-        for text in ("navigator.clipboard.writeText(text).then(done,legacy)", "document.execCommand('copy')", 'id="partnerLinkText"',
-                     "premi Ctrl+C"):
-            self.assertIn(text, html)  # se il browser nega la copia automatica, il testo viene selezionato
-        # accanto all'elenco delle richieste da confermare, non in fondo alla pagina
-        self.assertLess(html.index("Da confermare"), html.index("Link del portale"))
-        self.assertLess(html.index("Link del portale"), html.index("Ultime richieste gestite"))
+            self.assertEqual(html.count('id="partnerLinkCard"'), 1)
+            for text in ("navigator.clipboard.writeText(text).then(done,legacy)", "document.execCommand('copy')",
+                         'id="partnerLinkText"', "premi Ctrl+C"):
+                self.assertIn(text, html)  # se il browser nega la copia automatica, il testo viene selezionato
+        # la pagina delle richieste non la duplica: ha solo il pulsante che porta li'
+        inbox = self.get("/richieste-portale", self.serena)["html"]
+        self.assertNotIn('id="partnerLinkCard"', inbox)
+        self.assertIn('href="/portale-veterinari#partnerLinkCard">Link per i veterinari', inbox)
 
     def test_portal_preview_bar_links_to_the_link_card(self):
         import partner_portal as pp
         page = pp.page("Prova", "<p>x</p>", staff=True)
-        self.assertIn('href="/richieste-portale#partnerLinkCard"', page)
+        self.assertIn('href="/portale-veterinari#partnerLinkCard"', page)
         self.assertIn("Link per i veterinari", page)
         self.assertNotIn("Link per i veterinari", pp.page("Prova", "<p>x</p>", staff=False))  # il veterinario non lo vede
 
     def test_sidebar_entry_exists_for_everyone(self):
-        self.assertIn(("/richieste-portale", "stethoscope", "Richieste portale"), app.SIDEBAR_LINKS)
-        self.assertIn("Richieste portale", app.MENU_CARD_META)
+        self.assertIn(("/richieste-portale", "message", "Portale veterinari"), app.SIDEBAR_LINKS)
+        self.assertIn("Portale veterinari", app.MENU_CARD_META)
         for user in (self.admin, self.serena):
             html = self.layout_html(user)
-            self.assertIn('<span>Richieste portale</span>', html)
+            self.assertIn('<span>Portale veterinari</span>', html)
+
+
+class UnifiedMenuTests(NotificationBase):
+    def get(self, path, user=None, anonymous=False):
+        handler = object.__new__(app.App)
+        handler.headers = {}
+        handler.path = path
+        handler.user = lambda: None if anonymous else (user or self.admin)
+        out = {"html": None, "redirect": None, "status": None}
+        handler.send_html = lambda content, status=200: out.update(html=content, status=status)
+        handler.send_error = lambda code, *a: out.update(status=code)
+        handler.redirect = lambda url: out.update(redirect=url)
+        handler._route_get()
+        return out
+
+    def tabs(self, html):
+        import re
+        nav = re.search(r'<nav class="portal-tabs"[^>]*>(.*?)</nav>', html, re.S)
+        self.assertIsNotNone(nav, "schede mancanti")
+        items = re.findall(r'<a class="([^"]*)" href="([^"]+)">([^<]*)', nav.group(1))
+        return [(href, label.strip(), cls.strip() == "on") for cls, href, label in items]
+
+    def test_the_menu_has_one_portal_entry_and_the_vets_registry(self):
+        labels = [label for _href, _icon, label in app.SIDEBAR_LINKS]
+        hrefs = [href for href, _icon, _label in app.SIDEBAR_LINKS]
+        self.assertEqual(labels.count("Portale veterinari"), 1)
+        self.assertEqual(labels.count("Veterinari"), 1)  # l'anagrafica resta a parte
+        for old in ("Portale Veterinari", "Richieste portale"):
+            self.assertNotIn(old, labels)
+            self.assertNotIn(old, app.MENU_CARD_META)
+        self.assertNotIn("/partner", hrefs)
+        self.assertEqual(hrefs.count("/richieste-portale"), 1)
+        self.assertEqual(sum(1 for label in labels if "ortale" in label), 1)
+
+    def test_sidebar_and_drawer_show_the_single_entry_to_everyone_with_the_pending_badge(self):
+        self.make()
+        self.make(urgent=True)
+        for user in (self.admin, self.serena):
+            html = self.layout_html(user)
+            self.assertEqual(html.count("<span>Portale veterinari</span>"), 1)
+            self.assertNotIn("<span>Richieste portale</span>", html)
+            self.assertNotIn("<span>Portale Veterinari</span>", html)
+            self.assertIn('href="/richieste-portale" class="nav-notification">', html)
+            self.assertIn('class="notification-badge partner-badge">2<', html)
+            self.assertIn('<b>Portale veterinari</b>', html)  # anche nel menu "Altro" del telefono
+
+    def test_old_saved_menu_orders_do_not_resurrect_the_old_entries(self):
+        with app.db() as c:
+            c.execute("INSERT INTO user_preferences(user_id,key,value) VALUES(?,?,?)",
+                      (self.serena["id"], "sidebar_order",
+                       json.dumps(["Dashboard", "Portale Veterinari", "Veterinari", "Richieste portale", "Calendario"])))
+        html = self.layout_html(self.serena)
+        self.assertEqual(html.count("<span>Portale veterinari</span>"), 1)
+        self.assertNotIn("<span>Richieste portale</span>", html)
+        self.assertNotIn("<span>Portale Veterinari</span>", html)
+        self.assertEqual(html.count("<span>Veterinari</span>"), 1)
+
+    def test_tabs_connect_requests_portal_and_management(self):
+        self.make()
+        operator = {
+            "/richieste-portale": [("/richieste-portale", "Richieste", True), ("/portale-veterinari", "Il portale", False)],
+            "/portale-veterinari": [("/richieste-portale", "Richieste", False), ("/portale-veterinari", "Il portale", True)],
+        }
+        for path, expected in operator.items():
+            tabs = self.tabs(self.get(path, self.serena)["html"])
+            self.assertEqual([(h, l.split(" ")[0] if l.startswith("Richieste") else l, on) for h, l, on in tabs],
+                             [(h, l, on) for h, l, on in expected], path)
+        admin_tabs = {
+            "/richieste-portale": 0, "/portale-veterinari": 1, "/portale-partner": 2, "/portale-partner/listino": 2,
+        }
+        for path, active in admin_tabs.items():
+            tabs = self.tabs(self.get(path, self.admin)["html"])
+            self.assertEqual([h for h, _l, _o in tabs], ["/richieste-portale", "/portale-veterinari", "/portale-partner"], path)
+            self.assertEqual([i for i, (_h, _l, on) in enumerate(tabs) if on], [active], path)
+            self.assertEqual(tabs[2][1], "Cliniche e listino")
+        # il numero delle richieste da confermare e' sulla scheda "Richieste"
+        self.assertIn('Richieste <span class="portal-count">1</span>', self.get("/portale-veterinari", self.serena)["html"])
+
+    def test_management_stays_admin_only(self):
+        for path in ("/portale-partner", "/portale-partner/listino"):
+            self.assertEqual(self.get(path, self.serena)["status"], 403, path)
+        for path in ("/richieste-portale", "/portale-veterinari"):
+            self.assertNotIn("Cliniche e listino", self.get(path, self.serena)["html"])
+
+    def test_portal_page_has_preview_credentials_stats_and_admin_shortcuts(self):
+        with app.db() as c:
+            ps.ensure_demo_clinic(c, app.password_hash)
+        self.make()
+        self.make(service_type="Cremazione collettiva", freezer=True, proposed_date="", proposed_from="", proposed_to="")
+        admin_html = self.get("/portale-veterinari", self.admin)["html"]
+        for text in ("Il portale dei veterinari", 'href="/partner" target="_blank" rel="noopener">Apri il portale',
+                     "villadeipini", "pini.vet26", "Villa dei Pini", "PORTALE (PROVA)",
+                     'href="/portale-partner">Cliniche e utenti', 'href="/portale-partner/listino">Listino preventivi',
+                     "Link del portale da dare ai veterinari"):
+            self.assertIn(text, admin_html)
+        stats = dict((label, value) for value, label in __import__("re").findall(
+            r'<div class="portal-stat"><b>(\d+)</b><span>([^<]+)</span>', admin_html))
+        self.assertEqual(stats, {"Cliniche attive": "1", "Richieste da confermare": "1", "Animali in congelatore": "1"})
+        operator_html = self.get("/portale-veterinari", self.serena)["html"]
+        self.assertIn('href="/partner" target="_blank"', operator_html)
+        self.assertIn("pini.vet26", operator_html)  # anche lo staff non admin puo' provare il portale
+        self.assertNotIn("Cliniche e utenti", operator_html)
+        self.assertNotIn("Listino preventivi", operator_html)
+
+    def test_portal_page_without_demo_clinic_and_login_required(self):
+        out = self.get("/portale-veterinari", self.admin)
+        self.assertEqual(out["status"], 200)
+        self.assertNotIn("pini.vet26", out["html"].split("Link del portale")[0])
+        self.assertEqual(self.get("/portale-veterinari", anonymous=True)["redirect"], "/login")
+
+    def test_admin_pages_no_longer_duplicate_the_link_card(self):
+        self.assertNotIn('id="partnerLinkCard"', self.get("/portale-partner", self.admin)["html"])
+        self.assertNotIn('id="partnerLinkCard"', self.get("/richieste-portale", self.admin)["html"])
+        self.assertEqual(self.get("/portale-veterinari", self.admin)["html"].count('id="partnerLinkCard"'), 1)
+
+    def test_notifications_and_banner_still_open_the_requests_tab(self):
+        self.make()
+        html = self.layout_html(self.admin)
+        self.assertIn('class="pa-btn" href="/richieste-portale"', html)
+        self.assertIn('id="partnerPill"', html)
+        self.assertIn('payload={"url": "/richieste-portale"}', inspect.getsource(ns.process_partner_pending))  # solleciti -> Richieste
 
 
 class NotificationCenterTests(NotificationBase):

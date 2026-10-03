@@ -1117,28 +1117,27 @@ class InstallTests(PortalBase):
             admin = c.execute("SELECT * FROM users WHERE username='admin'").fetchone()
         handler = object.__new__(app.App)
         handler.headers = {}
-        handler.path = "/portale-partner"
+        handler.path = "/portale-veterinari"
         pages = []
         handler.send_html = lambda content, *a: pages.append(content)
-        handler.portal_partner_page(admin)
+        handler.portal_hub_page(admin)
         html = pages[-1]
         for text in ("Link del portale da dare ai veterinari", "Copia link", "Copia messaggio con istruzioni", "Apri il portale",
                      "location.origin+'/partner'", "Safari", "Aggiungi alla schermata Home", "Installa app", "WhatsApp"):
             self.assertIn(text, html)
-        self.assertNotIn("pini.vet26", html.split("Link del portale")[1].split("Attiva una clinica")[0])  # nessuna password nel messaggio
+        self.assertNotIn("pini.vet26", html.split("Link del portale")[1].split("</section>")[0])  # nessuna password nel messaggio
 
 
 class StaffEntryPointTests(PortalBase):
     def test_sidebar_link_is_visible_to_every_user(self):
-        self.assertIn(("/partner", "stethoscope", "Portale Veterinari"), app.SIDEBAR_LINKS)
-        self.assertIn("Portale Veterinari", app.MENU_CARD_META)
-        handler = object.__new__(app.App)
+        self.assertIn(("/richieste-portale", "message", "Portale veterinari"), app.SIDEBAR_LINKS)
+        self.assertIn("Portale veterinari", app.MENU_CARD_META)
         with app.db() as c:
             operator = c.execute("SELECT * FROM users WHERE username='serena'").fetchone()
         for user in (self.admin, operator):
             html = app.layout("Prova", "<main></main>", user)
-            self.assertIn('href="/partner"', html)
-            self.assertIn("Portale Veterinari", html)
+            self.assertIn('href="/richieste-portale"', html)
+            self.assertIn("Portale veterinari", html)
 
     def test_partner_routes_do_not_need_a_staff_login(self):
         handler = object.__new__(app.App)

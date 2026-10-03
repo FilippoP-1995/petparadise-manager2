@@ -1804,6 +1804,12 @@ tr.avatar-other td:first-child{border-left:3px solid #c084fc}
 .notification-brand{display:inline-block;background:#14b8a6;color:#04332f;font-weight:900;font-size:11px;letter-spacing:.08em;border-radius:6px;padding:2px 8px;margin-left:8px}
 .notification-brand.hot{background:#ef4444;color:#fff}
 .notification-badge.partner-badge{background:#14b8a6;color:#04332f}
+.portal-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 18px;padding-bottom:12px;border-bottom:1px solid #263246}
+.portal-tabs a{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:999px;border:1px solid #2f3b50;font-weight:700;font-size:14.5px}
+.portal-tabs a:hover{border-color:#14b8a6}.portal-tabs a.on{background:#14b8a6;border-color:#14b8a6;color:#04332f}
+.portal-tabs a.on .portal-count{background:#04332f;color:#5eead4}
+.portal-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:0 0 16px}
+.portal-stat{border:1px solid #2f3b50;border-radius:16px;padding:14px;text-align:center}.portal-stat b{display:block;font-size:26px;line-height:1.1}.portal-stat span{font-size:13px;opacity:.8}
 .portal-h2{display:flex;align-items:center;gap:10px;margin:24px 0 10px}.portal-count{background:#14b8a6;color:#04332f;font-weight:900;border-radius:999px;padding:1px 12px;font-size:15px}
 .portal-card{border:2px solid #14b8a6;border-radius:18px;padding:16px;margin:12px 0;background:linear-gradient(90deg,rgba(20,184,166,.14),transparent 70%)}
 .portal-card.urgent{border-color:#ef4444;background:linear-gradient(90deg,rgba(239,68,68,.16),transparent 70%)}
@@ -9145,7 +9151,7 @@ def collapse_advanced_search(body):
 
 SIDEBAR_LINKS=[
     ("/","home","Dashboard"),("/calendario","calendar","Calendario"),("/bilanci","chart","Bilanci"),("/programma-cremazioni","paw","Programma Cremazioni"),("/notifiche","bell","Notifiche"),("/pratiche","archive","Archivio"),
-    ("/catalogo-urne","archive","Catalogo Urne"),("/smaltimenti","archive","Smaltimenti"),("/conversazioni-whatsapp","message","Conversazioni WhatsApp"),("/turni","clock","Orari"),("/veterinari","stethoscope","Veterinari"),("/richieste-portale","stethoscope","Richieste portale"),("/partner","stethoscope","Portale Veterinari"),
+    ("/catalogo-urne","archive","Catalogo Urne"),("/smaltimenti","archive","Smaltimenti"),("/conversazioni-whatsapp","message","Conversazioni WhatsApp"),("/turni","clock","Orari"),("/veterinari","stethoscope","Veterinari"),("/richieste-portale","message","Portale veterinari"),
     ("/collaboratori","briefcase","Collaboratori"),
     ("/prodotti","clipboard","Prodotti"),("/ordini","receipt","Ordini"),
     ("/archivio/pratiche","clipboard","Gestionale"),("/clienti","users","Clienti"),
@@ -9163,7 +9169,7 @@ MENU_CARD_META={
     "Bilanci":("green","Entrate, uscite e statistiche"),"Programma Cremazioni":("lilac","Gestisci i cicli di cremazione"),
     "Notifiche":("red","Avvisi e promemoria"),"Archivio":("blue","Pratiche e documenti storici"),
     "Catalogo Urne":("amber","Gestione urne e prodotti"),"Smaltimenti":("cyan","Gestione smaltimenti"),
-    "Conversazioni WhatsApp":("green","Chat e comunicazioni"),"Veterinari":("purple","Anagrafica veterinari"),"Portale Veterinari":("teal","Anteprima del portale per le cliniche"),"Richieste portale":("teal","Richieste dei veterinari da confermare"),
+    "Conversazioni WhatsApp":("green","Chat e comunicazioni"),"Veterinari":("purple","Anagrafica veterinari"),"Portale veterinari":("teal","Richieste e portale per le cliniche"),
     "Collaboratori":("yellow","Gestione collaboratori"),"Prodotti":("blue","Gestione prodotti e servizi"),
     "Ordini":("blue","Ordini fornitori"),"Gestionale":("purple","Pratiche e documenti"),
     "Clienti":("green","Anagrafica clienti"),"Animali":("lilac","Anagrafica animali"),
@@ -9271,6 +9277,17 @@ PARTNER_LINK_CARD = r'''<section class="section" id="partnerLinkCard"><h2>Link d
     if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done,legacy)}else{legacy()}
   };
 })();</script></section>'''
+
+
+def portal_tabs_html(active,pending,is_admin):
+    """Schede interne della sezione "Portale veterinari" (una sola voce nel menu):
+    Richieste | Il portale | Cliniche e listino (solo admin)."""
+    def tab(key,href,label,extra=""):
+        return f'<a class="{"on" if active==key else ""}" href="{href}">{label}{extra}</a>'
+    count=f' <span class="portal-count">{pending}</span>' if pending else ""
+    tabs=tab("richieste","/richieste-portale","Richieste",count)+tab("portale","/portale-veterinari","Il portale")
+    if is_admin:tabs+=tab("gestione","/portale-partner","Cliniche e listino")
+    return f'<nav class="portal-tabs" aria-label="Sezioni del portale veterinari">{tabs}</nav>'
 
 
 def partner_alert_html(summary,items):
@@ -9588,6 +9605,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/api/notifiche/stato": return self.notification_status(user)
         if path == "/api/richieste-portale/stato": return self.portal_inbox_status(user)
         if path == "/richieste-portale": return self.portal_inbox_page(user)
+        if path == "/portale-veterinari": return self.portal_hub_page(user)
         match = re.fullmatch(r"/api/veterinari/(\d+)/buoni", path)
         if match: return self.api_veterinarian_vouchers(user, int(match.group(1)))
         if path == "/nuova": return self.new_page(user)
@@ -17247,13 +17265,35 @@ class App(BaseHTTPRequestHandler):
         recent_rows=''.join(
             f'<tr><td>{esc(r["request_code"])}</td><td>{esc(r["clinic_label"])}</td><td>{esc(r["animal_name"] or r["species"])}{" · <b>URGENTE</b>" if r["urgent"] else ""}</td><td>{esc(partner_service.public_status_label(r["public_status"],r["mode"]))}</td><td>{f'<a href="/calendario/{r["calendar_event_id"]}">Evento</a>' if r["calendar_event_id"] else "-"}{f' · <a href="/pratiche/{r["practice_id"]}">Pratica</a>' if r["practice_id"] else ""}</td></tr>'
             for r in recent) or '<tr><td colspan="5" class="sub">Nessuna richiesta.</td></tr>'
-        admin_link='<div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn ghost" href="#partnerLinkCard">Link per i veterinari</a>'+('<a class="btn ghost" href="/portale-partner">Gestione portale</a>' if user["role"]=="admin" else "")+'</div>'
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Richieste dal portale</h1><p class="sub">Richieste dei veterinari da confermare. Si aggiorna da sola e ti avvisa quando ne arriva una nuova.</p></div>{admin_link}</div>
+        admin_link='<a class="btn ghost" href="/portale-veterinari#partnerLinkCard">Link per i veterinari</a>'
+        body=f'''<main class="wrap">{portal_tabs_html("richieste",len(pending),user["role"]=="admin")}<div class="titlebar"><div><h1>Richieste dal portale</h1><p class="sub">Richieste dei veterinari da confermare. Si aggiorna da sola e ti avvisa quando ne arriva una nuova.</p></div>{admin_link}</div>
           <h2 class="portal-h2">Da confermare <span class="portal-count">{len(pending)}</span></h2>{pending_html}
-          {PARTNER_LINK_CARD}
           {f'<h2 class="portal-h2">In congelatore</h2><section class="section"><ul>{freezer_html}</ul></section>' if freezer_html else ''}
           <section class="tablebox" style="margin-top:22px"><h2>Ultime richieste gestite</h2><table><thead><tr><th>Codice</th><th>Clinica</th><th>Animale</th><th>Stato</th><th></th></tr></thead><tbody>{recent_rows}</tbody></table></section></main>'''
         self.send_html(layout("Richieste dal portale",body,user))
+
+    def portal_hub_page(self,user):
+        """"Il portale": anteprima come lo vede il veterinario + link da inviare + scorciatoie di gestione."""
+        with db() as c:
+            summary=partner_service.pending_summary(c)
+            real_clinics=c.execute("SELECT COUNT(*) FROM partner_clinics WHERE active=1 AND is_demo=0").fetchone()[0]
+            has_demo=c.execute("SELECT 1 FROM partner_clinics WHERE active=1 AND is_demo=1").fetchone() is not None
+            freezer=c.execute("SELECT COUNT(*) FROM partner_requests WHERE freezer=1 AND calendar_event_id IS NULL AND cancelled_at IS NULL").fetchone()[0]
+        demo_html=(f'''<p class="sub" style="margin:12px 0 0">Per entrare usa l'account di prova della clinica «{esc(partner_service.DEMO_CLINIC["short_name"])}»:
+            utente <b>{esc(partner_service.DEMO_USERNAME)}</b> · password <b>{esc(partner_service.DEMO_PASSWORD)}</b>.
+            Le richieste che crei da lì arrivano davvero sul calendario (con la scritta PORTALE (PROVA)).</p>''' if has_demo else "")
+        admin_actions=('<div class="actions" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px"><a class="btn ghost" href="/portale-partner">Cliniche e utenti</a><a class="btn ghost" href="/portale-partner/listino">Listino preventivi</a></div>'
+                       if user["role"]=="admin" else "")
+        stats=''.join(f'<div class="portal-stat"><b>{value}</b><span>{label}</span></div>' for value,label in (
+            (real_clinics,"Cliniche attive"),(summary["pending"],"Richieste da confermare"),(freezer,"Animali in congelatore")))
+        body=f'''<main class="wrap">{portal_tabs_html("portale",summary["pending"],user["role"]=="admin")}
+          <div class="titlebar"><div><h1>Il portale dei veterinari</h1><p class="sub">Quello che vedono le cliniche partner: richieste di ritiro, stati in tempo reale, preventivo.</p></div></div>
+          <div class="portal-stats">{stats}</div>
+          <section class="section"><h2>Guardalo come lo vede il veterinario</h2>
+            <p class="sub">Si apre in una nuova scheda, con la pagina di accesso dei veterinari.</p>
+            <div class="actions" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px"><a class="btn" href="/partner" target="_blank" rel="noopener">Apri il portale</a></div>{demo_html}{admin_actions}</section>
+          {PARTNER_LINK_CARD}</main>'''
+        self.send_html(layout("Il portale dei veterinari",body,user))
 
     def portal_inbox_status(self,user):
         with db() as c:
@@ -17276,6 +17316,7 @@ class App(BaseHTTPRequestHandler):
             for u in c.execute("SELECT * FROM partner_users ORDER BY clinic_id,id"):users_by_clinic.setdefault(u["clinic_id"],[]).append(u)
             freezer_by_clinic={cl["id"]:partner_service.pending_freezer_requests(c,cl["id"]) for cl in clinics if cl["has_freezer"]}
             recent=partner_service.recent_requests(c,limit=30)
+            pending_count=partner_service.pending_summary(c)["pending"]
         operator_options=''.join(f'<option>{esc(name)}</option>' for name in CALENDAR_OPERATORS)
         vet_options='<option value="">Seleziona il veterinario</option>'+''.join(
             f'<option value="{v["id"]}">{esc(v["short_name"] or v["clinic_name"])}{" · "+esc(v["city"]) if v["city"] else ""}</option>' for v in free_vets)
@@ -17320,9 +17361,8 @@ class App(BaseHTTPRequestHandler):
             <td>{esc(partner_service.public_status_label(r["public_status"],r["mode"]))}</td>
             <td>{f'<a href="/calendario/{r["calendar_event_id"]}">Evento</a>' if r["calendar_event_id"] else "-"}{f' · <a href="/pratiche/{r["practice_id"]}">Pratica</a>' if r["practice_id"] else ""}</td></tr>'''
             for r in recent) or '<tr><td colspan="6" class="sub">Nessuna richiesta.</td></tr>'
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Portale partner</h1><div class="sub">Attivazione cliniche, congelatori e richieste ricevute.</div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn ghost" href="/portale-partner/listino">Listino preventivi</a><a class="btn ghost" href="/veterinari">Veterinari</a></div></div>
+        body=f'''<main class="wrap">{portal_tabs_html("gestione",pending_count,True)}<div class="titlebar"><div><h1>Portale partner</h1><div class="sub">Attivazione cliniche, congelatori e richieste ricevute.</div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn ghost" href="/portale-partner/listino">Listino preventivi</a><a class="btn ghost" href="/veterinari">Veterinari</a></div></div>
           {f'<div class="flash warning">{esc(error)}</div>' if error else ''}{f'<div class="flash">{esc(notice)}</div>' if notice else ''}
-          {PARTNER_LINK_CARD}
           <section class="section"><h2>Attiva una clinica</h2><form method="post" action="/portale-partner/clinica"><div class="fields">
             <div class="field full"><label>Veterinario in anagrafica</label><select name="veterinarian_id" required>{vet_options}</select></div>
             <label class="modern-check"><input type="checkbox" name="has_freezer" value="1"> Ha il congelatore</label>
@@ -17340,6 +17380,7 @@ class App(BaseHTTPRequestHandler):
         with db() as c:
             pricelist=quote_service.get_pricelist(c)
             meta=quote_service.get_pricelist_meta(c)
+            pending_count=partner_service.pending_summary(c)["pending"]
         def num(value):
             return str(value).replace(".",",") if value is not None else ""
         def v(name,default):
@@ -17365,7 +17406,7 @@ class App(BaseHTTPRequestHandler):
             for i,item in enumerate(pricelist["circondari"]))
         sup=pricelist["supplements"]
         updated=f'Ultima modifica: {esc(meta.get("updated_at","")[:16].replace("T"," "))} · {esc(meta.get("updated_by",""))}' if meta.get("updated_at") else "Listino di partenza (nessuna modifica fatta)."
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Listino preventivi</h1><div class="sub">Prezzi usati dal calcolatore del Portale Veterinari (IVA inclusa). {updated}</div></div><a class="btn ghost" href="/portale-partner">Portale partner</a></div>
+        body=f'''<main class="wrap">{portal_tabs_html("gestione",pending_count,True)}<div class="titlebar"><div><h1>Listino preventivi</h1><div class="sub">Prezzi usati dal calcolatore del Portale Veterinari (IVA inclusa). {updated}</div></div><a class="btn ghost" href="/portale-partner">Portale partner</a></div>
           {f'<div class="flash warning">{esc(error)}</div>' if error else ''}{f'<div class="flash">{esc(notice)}</div>' if notice else ''}
           <form method="post" action="/portale-partner/listino">
           <section class="section"><h2>Cremazione singola</h2><div class="tablebox" style="max-height:none;overflow:visible"><table><thead><tr><th>Fascia di peso</th><th>Prezzo</th></tr></thead><tbody>{''.join(cr_rows)}</tbody></table></div></section>
