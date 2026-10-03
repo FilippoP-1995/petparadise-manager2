@@ -220,7 +220,7 @@ a{color:inherit;text-decoration:none}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}html{scroll-behavior:auto}}
 
 .staffbar{background:#1f2a26;color:#e9efec;font-size:13px;padding:8px 16px;padding-top:calc(8px + var(--safe-t));display:flex;gap:12px;align-items:center;justify-content:space-between}
-.staffbar span{display:flex;gap:8px;align-items:center}
+.staffbar span{display:flex;gap:8px;align-items:center}.staffbar .staffbar-links{flex-wrap:wrap;justify-content:flex-end}
 .staffbar a{display:inline-flex;gap:6px;align-items:center;background:rgba(255,255,255,.14);border-radius:999px;padding:5px 12px;white-space:nowrap;font-weight:600}
 
 .top{position:sticky;top:0;z-index:20;background:var(--glass);backdrop-filter:saturate(1.6) blur(14px);-webkit-backdrop-filter:saturate(1.6) blur(14px);border-bottom:1px solid var(--line)}
@@ -627,7 +627,8 @@ JS = """
 def page(title, body, *, user=None, active="", staff=False, cursor=None, wrap_class=""):
     staffbar = (
         f'<div class="staffbar"><span>{icon("eye", 16)} Anteprima staff: le richieste create qui arrivano davvero nel calendario.</span>'
-        f'<a href="/">{icon("back", 14)} Gestionale</a></div>' if staff else "")
+        f'<span class="staffbar-links"><a href="/richieste-portale#partnerLinkCard">{icon("share", 14)} Link per i veterinari</a>'
+        f'<a href="/">{icon("back", 14)} Gestionale</a></span></div>' if staff else "")
     top = ""
     tabs = ""
     if user is not None:

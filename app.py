@@ -9251,6 +9251,7 @@ PARTNER_LINK_CARD = r'''<section class="section" id="partnerLinkCard"><h2>Link d
 <button type="button" class="btn ghost" onclick="ppmCopyPartnerLink(true)">Copia messaggio con istruzioni</button>
 <a class="btn ghost" href="/partner" target="_blank" rel="noopener">Apri il portale</a></div>
 <p class="sub" id="partnerLinkMsg" style="margin-top:8px"></p>
+<textarea id="partnerLinkText" class="hidden" readonly rows="8" style="width:100%;margin-top:10px" aria-label="Messaggio con le istruzioni"></textarea>
 <script>(function(){
   var url=location.origin+'/partner';
   var field=document.getElementById('partnerLinkField');if(field)field.value=url;
@@ -9259,8 +9260,15 @@ PARTNER_LINK_CARD = r'''<section class="section" id="partnerLinkCard"><h2>Link d
     if(full){text="Ciao! Ecco il portale di Pet Paradise per richiedere i ritiri e seguire le pratiche in tempo reale: "+url+"\n\nPer averlo sempre a portata di mano come un'app:\n• iPhone: apri il link con Safari, tocca Condividi e poi «Aggiungi alla schermata Home»\n• Android: apri il link con Chrome, tocca ⋮ e poi «Installa app»\n• Computer: con Chrome o Edge clicca l'icona Installa nella barra dell'indirizzo"}
     var msg=document.getElementById('partnerLinkMsg');
     var done=function(){if(msg)msg.textContent=full?'Messaggio copiato: incollalo su WhatsApp o in una mail.':'Link copiato.'};
-    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done,function(){if(msg)msg.textContent='Copia non riuscita: selezionalo e copialo a mano.'})}
-    else{var t=document.createElement('textarea');t.value=text;document.body.appendChild(t);t.select();try{document.execCommand('copy');done()}catch(e){}t.remove()}
+    var legacy=function(){
+      var t=document.createElement('textarea');t.value=text;t.setAttribute('readonly','');t.style.position='fixed';t.style.opacity='0';
+      document.body.appendChild(t);t.select();var ok=false;try{ok=document.execCommand('copy')}catch(e){}t.remove();
+      if(ok){done();return}
+      var box=document.getElementById('partnerLinkText');
+      if(full&&box){box.value=text;box.classList.remove('hidden');box.focus();box.select()}else if(field){field.value=url;field.focus();field.select()}
+      if(msg)msg.textContent='Selezionato: premi Ctrl+C (o tieni premuto e scegli Copia).';
+    };
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done,legacy)}else{legacy()}
   };
 })();</script></section>'''
 
@@ -17239,9 +17247,10 @@ class App(BaseHTTPRequestHandler):
         recent_rows=''.join(
             f'<tr><td>{esc(r["request_code"])}</td><td>{esc(r["clinic_label"])}</td><td>{esc(r["animal_name"] or r["species"])}{" · <b>URGENTE</b>" if r["urgent"] else ""}</td><td>{esc(partner_service.public_status_label(r["public_status"],r["mode"]))}</td><td>{f'<a href="/calendario/{r["calendar_event_id"]}">Evento</a>' if r["calendar_event_id"] else "-"}{f' · <a href="/pratiche/{r["practice_id"]}">Pratica</a>' if r["practice_id"] else ""}</td></tr>'
             for r in recent) or '<tr><td colspan="5" class="sub">Nessuna richiesta.</td></tr>'
-        admin_link='<a class="btn ghost" href="/portale-partner">Gestione portale</a>' if user["role"]=="admin" else ""
+        admin_link='<div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn ghost" href="#partnerLinkCard">Link per i veterinari</a>'+('<a class="btn ghost" href="/portale-partner">Gestione portale</a>' if user["role"]=="admin" else "")+'</div>'
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>Richieste dal portale</h1><p class="sub">Richieste dei veterinari da confermare. Si aggiorna da sola e ti avvisa quando ne arriva una nuova.</p></div>{admin_link}</div>
           <h2 class="portal-h2">Da confermare <span class="portal-count">{len(pending)}</span></h2>{pending_html}
+          {PARTNER_LINK_CARD}
           {f'<h2 class="portal-h2">In congelatore</h2><section class="section"><ul>{freezer_html}</ul></section>' if freezer_html else ''}
           <section class="tablebox" style="margin-top:22px"><h2>Ultime richieste gestite</h2><table><thead><tr><th>Codice</th><th>Clinica</th><th>Animale</th><th>Stato</th><th></th></tr></thead><tbody>{recent_rows}</tbody></table></section></main>'''
         self.send_html(layout("Richieste dal portale",body,user))

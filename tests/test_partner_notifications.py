@@ -435,6 +435,28 @@ class InboxTests(NotificationBase):
         self.assertEqual(data["items"][0]["url"], f'/calendario/{b["calendar_event_id"]}')
         self.assertEqual(data["items"][0]["clinic"], "ALFA")
 
+    def test_link_for_the_vets_is_visible_to_every_staff_member_on_the_inbox(self):
+        for user in (self.admin, self.serena):
+            html = self.get("/richieste-portale", user)["html"]
+            for text in ("Link del portale da dare ai veterinari", 'id="partnerLinkCard"', "Copia link",
+                         "Copia messaggio con istruzioni", "location.origin+'/partner'", 'href="#partnerLinkCard">Link per i veterinari'):
+                self.assertIn(text, html, (user["username"], text))
+            self.assertNotIn("pini.vet26", html.split("Link del portale")[1].split("</section>")[0])
+        self.assertEqual(html.count('id="partnerLinkCard"'), 1)
+        for text in ("navigator.clipboard.writeText(text).then(done,legacy)", "document.execCommand('copy')", 'id="partnerLinkText"',
+                     "premi Ctrl+C"):
+            self.assertIn(text, html)  # se il browser nega la copia automatica, il testo viene selezionato
+        # accanto all'elenco delle richieste da confermare, non in fondo alla pagina
+        self.assertLess(html.index("Da confermare"), html.index("Link del portale"))
+        self.assertLess(html.index("Link del portale"), html.index("Ultime richieste gestite"))
+
+    def test_portal_preview_bar_links_to_the_link_card(self):
+        import partner_portal as pp
+        page = pp.page("Prova", "<p>x</p>", staff=True)
+        self.assertIn('href="/richieste-portale#partnerLinkCard"', page)
+        self.assertIn("Link per i veterinari", page)
+        self.assertNotIn("Link per i veterinari", pp.page("Prova", "<p>x</p>", staff=False))  # il veterinario non lo vede
+
     def test_sidebar_entry_exists_for_everyone(self):
         self.assertIn(("/richieste-portale", "stethoscope", "Richieste portale"), app.SIDEBAR_LINKS)
         self.assertIn("Richieste portale", app.MENU_CARD_META)
