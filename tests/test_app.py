@@ -8458,7 +8458,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(status,"annullato")
 
     def test_resend_whatsapp_thanks_ignores_a_pending_catalog_message_for_the_same_practice(self):
-        # resend_whatsapp/whatsapp_confirm_page are ringraziamento-only admin
+        # resend_whatsapp/whatsapp_confirm_page are ringraziamento-only
         # actions: a pending/sent catalog row for the same practice must not
         # be picked up as "the" active/latest whatsapp_messages row.
         admin,pid=self._catalog_practice(send_catalog="Si")
@@ -8473,6 +8473,32 @@ class PetParadiseTests(unittest.TestCase):
         with app.db() as conn:
             message_type=conn.execute("SELECT message_type FROM whatsapp_messages WHERE id=?",(sent_msg_id,)).fetchone()["message_type"]
         self.assertEqual(message_type,"ringraziamento")
+
+    def test_resend_whatsapp_thanks_is_allowed_to_non_admin_staff(self):
+        admin,pid=self._catalog_practice(send_catalog="Si")
+        with app.db() as conn:
+            operator=conn.execute("SELECT * FROM users WHERE role!='admin' LIMIT 1").fetchone()
+            if operator is None:
+                conn.execute("INSERT INTO users(username,password_hash,role,must_change_password,created_at) VALUES('operatore_wa','x','operator',0,?)",(app.now(),))
+                operator=conn.execute("SELECT * FROM users WHERE username='operatore_wa'").fetchone()
+            conn.execute("UPDATE practices SET status='Consegnato' WHERE id=?",(pid,))
+        pages=[];errors=[]
+        self.handler.send_html=lambda content,*a:pages.append(content)
+        self.handler.send_error=lambda code,*a:errors.append(code)
+        self.handler.whatsapp_confirm_page(operator,pid)
+        self.assertEqual(errors,[])
+        self.assertIn("Conferma invio template WhatsApp",pages[-1])
+        self.handler.form=lambda:{"confirm_send":"SI"}
+        self.handler.redirect=lambda path:None
+        with patch.object(self.handler,"send_whatsapp_message",return_value=(True,"ok")) as send:
+            self.handler.resend_whatsapp(operator,pid)
+        self.assertEqual(errors,[])
+        self.assertTrue(send.called)
+        # senza conferma esplicita non parte nulla, anche per lo staff
+        self.handler.form=lambda:{}
+        with patch.object(self.handler,"send_whatsapp_message") as send2:
+            self.handler.resend_whatsapp(operator,pid)
+        self.assertFalse(send2.called)
 
     def test_practice_page_shows_resend_catalog_button_only_once_catalog_sent(self):
         admin,pid=self._catalog_practice(catalog_sent="Si")

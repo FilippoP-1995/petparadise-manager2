@@ -20558,8 +20558,6 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         return self.redirect(safe_return_path(form.get("return_to") or self.headers.get("Referer"),"/"))
 
     def resend_whatsapp(self,user,pid):
-        if user["role"] != "admin":
-            return self.send_error(403)
         f=self.form()
         if f.get("confirm_send") != "SI":
             return self.whatsapp_confirm_page(user,pid,error="Devi confermare l'invio prima di procedere.")
@@ -20647,8 +20645,6 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         self.redirect(return_to)
 
     def whatsapp_confirm_page(self,user,pid,error=""):
-        if user["role"] != "admin":
-            return self.send_error(403)
         with db() as c:
             p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
             latest=c.execute("SELECT * FROM whatsapp_messages WHERE practice_id=? AND message_type='ringraziamento' AND status IN ('accettato_da_meta','consegnato','letto') ORDER BY COALESCE(sent_at,created_at) DESC LIMIT 1",(pid,)).fetchone()
