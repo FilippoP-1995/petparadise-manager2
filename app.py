@@ -18558,7 +18558,7 @@ class App(BaseHTTPRequestHandler):
             print(f"[WHATSAPP] pratica={pid} esito=ANNULLATO righe={rows} motivo={reason}", flush=True)
         return rows
 
-    def send_whatsapp_message(self,msg_id,manual=False,user_id=None,attempt_recorded=False):
+    def send_whatsapp_message(self,msg_id,manual=False,user_id=None,attempt_recorded=False,overrides=None):
         """Send one WhatsApp message. Manages its own short-lived database
         connections in stages (read/pre-checks, then the network call with
         NO connection open, then write the result) instead of holding a
@@ -18595,6 +18595,7 @@ class App(BaseHTTPRequestHandler):
                 return False, "NO MESSAGGIO attivo"
             token, phone_id, version, endpoint = self.whatsapp_meta_config()
             payload_obj=self.whatsapp_catalog_payload_for_practice(p) if is_catalog else self.whatsapp_payload_for_practice(p)
+            self.apply_whatsapp_overrides(payload_obj,overrides)
             phone=payload_obj["to"]
             template=payload_obj["template"]["name"]
             language=payload_obj["template"]["language"]["code"]
@@ -20560,10 +20561,13 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
     def resend_whatsapp(self,user,pid):
         f=self.form()
         if f.get("confirm_send") != "SI":
-            return self.whatsapp_confirm_page(user,pid,error="Devi confermare l'invio prima di procedere.")
+            return self.whatsapp_confirm_page(user,pid,error="Devi confermare l'invio prima di procedere.",values=f)
         with db() as c:
             p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
             if not p: return self.send_error(404)
+            overrides,override_error=self.whatsapp_form_overrides(f,self.whatsapp_payload_for_practice(p))
+            if override_error:
+                return self.whatsapp_confirm_page(user,pid,error=override_error,values=f)
             active=c.execute("SELECT * FROM whatsapp_messages WHERE practice_id=? AND message_type='ringraziamento' AND status IN ('programmato','in_invio') ORDER BY created_at DESC LIMIT 1",(pid,)).fetchone()
             if active:
                 msg_id=active["id"]
@@ -20576,18 +20580,21 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 msg_id=cur.lastrowid
         # connection released before the network call, same reason as in
         # process_whatsapp_queue: never hold a database lock during it.
-        ok,msg=self.send_whatsapp_message(msg_id,manual=True,user_id=user["id"])
+        ok,msg=self.send_whatsapp_message(msg_id,manual=True,user_id=user["id"],overrides=overrides)
         with db() as c:
-            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"Invio WhatsApp manuale",msg,user["id"],now()))
+            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"Invio WhatsApp manuale",msg+self.whatsapp_overrides_note(overrides),user["id"],now()))
         self.redirect(f"/pratiche/{pid}")
 
     def resend_whatsapp_catalog(self,user,pid):
         f=self.form()
         if f.get("confirm_send") != "SI":
-            return self.catalog_whatsapp_confirm_page(user,pid,error="Devi confermare l'invio prima di procedere.")
+            return self.catalog_whatsapp_confirm_page(user,pid,error="Devi confermare l'invio prima di procedere.",values=f)
         with db() as c:
             p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
             if not p: return self.send_error(404)
+            overrides,override_error=self.whatsapp_form_overrides(f,self.whatsapp_catalog_payload_for_practice(p))
+            if override_error:
+                return self.catalog_whatsapp_confirm_page(user,pid,error=override_error,values=f)
             active=c.execute("SELECT * FROM whatsapp_messages WHERE practice_id=? AND message_type='catalogo' AND status IN ('programmato','in_invio') ORDER BY created_at DESC LIMIT 1",(pid,)).fetchone()
             if active:
                 msg_id=active["id"]
@@ -20600,9 +20607,9 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 msg_id=cur.lastrowid
         # connection released before the network call, same reason as in
         # process_whatsapp_queue: never hold a database lock during it.
-        ok,msg=self.send_whatsapp_message(msg_id,manual=True,user_id=user["id"])
+        ok,msg=self.send_whatsapp_message(msg_id,manual=True,user_id=user["id"],overrides=overrides)
         with db() as c:
-            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"Reinvio catalogo WhatsApp",msg,user["id"],now()))
+            c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"Reinvio catalogo WhatsApp",msg+self.whatsapp_overrides_note(overrides),user["id"],now()))
         self.redirect(f"/pratiche/{pid}")
 
     def cancel_whatsapp_manual(self,user,pid):
@@ -20644,35 +20651,89 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             self.send_whatsapp_message(retry_msg_id,manual=False,user_id=user["id"],attempt_recorded=True)
         self.redirect(return_to)
 
-    def whatsapp_confirm_page(self,user,pid,error=""):
+    WHATSAPP_OVERRIDE_LABELS={"phone":"numero","client":"nome cliente","animal":"nome animale"}
+
+    def whatsapp_form_overrides(self,f,payload):
+        """Legge i campi modificabili della pagina di conferma reinvio.
+        Ritorna (overrides, errore): overrides contiene solo i campi diversi dal
+        valore che il gestionale avrebbe usato, quindi un invio senza modifiche
+        resta identico a prima. I dati valgono per questo invio, la pratica non cambia."""
+        params=payload["template"]["components"][0]["parameters"]
+        defaults={"phone":payload["to"],"client":params[0]["text"],"animal":params[1]["text"]}
+        overrides={}
+        if "wa_phone" in f:
+            raw=(f.get("wa_phone") or "").strip()
+            digits=re.sub(r"\D+","",raw)
+            if raw.startswith("+") or digits.startswith("00"):
+                digits=digits[2:] if digits.startswith("00") else digits  # prefisso internazionale esplicito: nessun +39 automatico
+            else:
+                digits=self.wa_digits(raw)
+            if not (9<=len(digits)<=15):
+                return None,"Numero di telefono non valido: controlla le cifre e il prefisso internazionale."
+            if digits!=defaults["phone"]:overrides["phone"]=digits
+        for key,field,label in (("client","wa_client","nome cliente"),("animal","wa_animal","nome animale")):
+            if field not in f:continue
+            value=" ".join((f.get(field) or "").split())
+            if not value:
+                return None,f"Il campo {label} non può essere vuoto."
+            if len(value)>60:
+                return None,f"Il campo {label} è troppo lungo (massimo 60 caratteri)."
+            if value!=defaults[key]:overrides[key]=value
+        return overrides,""
+
+    def apply_whatsapp_overrides(self,payload,overrides):
+        if not overrides:return payload
+        params=payload["template"]["components"][0]["parameters"]
+        if "phone" in overrides:payload["to"]=overrides["phone"]
+        if "client" in overrides:params[0]["text"]=overrides["client"]
+        if "animal" in overrides:params[1]["text"]=overrides["animal"]
+        return payload
+
+    def whatsapp_overrides_note(self,overrides):
+        if not overrides:return ""
+        return " - dati modificati per questo invio: "+", ".join(
+            f"{self.WHATSAPP_OVERRIDE_LABELS[k]} {('+'+v) if k=='phone' else v}" for k,v in overrides.items())
+
+    def whatsapp_confirm_form(self,pid,payload,button,action,values=None):
+        params=payload["template"]["components"][0]["parameters"]
+        values=values or {}
+        phone=values.get("wa_phone") if "wa_phone" in values else (("+"+payload["to"]) if payload["to"] else "")
+        client=values.get("wa_client") if "wa_client" in values else params[0]["text"]
+        animal=values.get("wa_animal") if "wa_animal" in values else params[1]["text"]
+        return f'''<section class="section"><h2>Dati invio</h2>
+          <p class="sub" style="margin:0 0 12px">Puoi correggere numero e nomi prima di inviare. Le modifiche valgono solo per questo invio: la pratica resta com'è.</p>
+          <form method="post" action="{action}" onsubmit="return confirm('Confermi invio WhatsApp a '+this.wa_phone.value+' con template {esc(payload['template']['name'])}?')">
+          <input type="hidden" name="confirm_send" value="SI">
+          <div class="kvs">
+            <div class="kv"><label for="waPhone"><small>Destinatario (numero)</small></label><input id="waPhone" name="wa_phone" type="tel" inputmode="tel" autocomplete="off" value="{esc(phone)}" placeholder="+39 333 1234567" style="font-size:16px;width:100%"></div>
+            <div class="kv"><small>Template</small><b>{esc(payload['template']['name'])}</b></div>
+            <div class="kv"><small>Lingua</small><b>{esc(payload['template']['language']['code'])}</b></div>
+            <div class="kv"><label for="waClient"><small>Nome cliente</small></label><input id="waClient" name="wa_client" type="text" maxlength="60" value="{esc(client)}" style="font-size:16px;width:100%"></div>
+            <div class="kv"><label for="waAnimal"><small>Nome animale</small></label><input id="waAnimal" name="wa_animal" type="text" maxlength="60" value="{esc(animal)}" style="font-size:16px;width:100%"></div>
+          </div>
+          <button class="btn" style="margin-top:18px">{button}</button></form></section>'''
+
+    def whatsapp_confirm_page(self,user,pid,error="",values=None):
         with db() as c:
             p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
             latest=c.execute("SELECT * FROM whatsapp_messages WHERE practice_id=? AND message_type='ringraziamento' AND status IN ('accettato_da_meta','consegnato','letto') ORDER BY COALESCE(sent_at,created_at) DESC LIMIT 1",(pid,)).fetchone()
         if not p: return self.send_error(404)
         payload=self.whatsapp_payload_for_practice(p)
-        phone=payload["to"] or "Telefono mancante"
-        template=payload["template"]["name"]
-        nome_cliente=payload["template"]["components"][0]["parameters"][0]["text"]
-        nome_animale=payload["template"]["components"][0]["parameters"][1]["text"]
         already = latest is not None
         warning = '<div class="flash warning"><b>Attenzione:</b> questo cliente ha già ricevuto o potrebbe aver già ricevuto il messaggio. Conferma solo se vuoi reinviarlo.</div>' if already else ''
         btn = "REINVIA WHATSAPP" if already else "INVIA WHATSAPP SUBITO"
         error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{btn}</h1><div class="sub">Conferma invio template WhatsApp per la pratica {esc(p['practice_number'])}</div></div><a class="btn ghost" href="/pratiche/{pid}">Torna alla pratica</a></div>{error_html}{warning}<section class="section"><h2>Dati invio</h2><div class="kvs"><div class="kv"><small>Destinatario</small><b>+{esc(phone)}</b></div><div class="kv"><small>Template</small><b>{esc(template)}</b></div><div class="kv"><small>Lingua</small><b>{esc(payload['template']['language']['code'])}</b></div><div class="kv"><small>Nome cliente</small><b>{esc(nome_cliente)}</b></div><div class="kv"><small>Nome animale</small><b>{esc(nome_animale)}</b></div></div><form method="post" action="/pratiche/{pid}/whatsapp" onsubmit="return confirm('Confermi invio WhatsApp a +{esc(phone)} con template {esc(template)}?')"><input type="hidden" name="confirm_send" value="SI"><button class="btn" style="margin-top:18px">{btn}</button></form></section></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{btn}</h1><div class="sub">Conferma invio template WhatsApp per la pratica {esc(p['practice_number'])}</div></div><a class="btn ghost" href="/pratiche/{pid}">Torna alla pratica</a></div>{error_html}{warning}{self.whatsapp_confirm_form(pid,payload,btn,f"/pratiche/{pid}/whatsapp",values)}</main>'''
         self.send_html(layout("Conferma WhatsApp",body,user))
 
-    def catalog_whatsapp_confirm_page(self,user,pid,error=""):
+    def catalog_whatsapp_confirm_page(self,user,pid,error="",values=None):
         with db() as c:
             p=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
         if not p: return self.send_error(404)
         payload=self.whatsapp_catalog_payload_for_practice(p)
-        phone=payload["to"] or "Telefono mancante"
-        template=payload["template"]["name"]
-        nome_cliente=payload["template"]["components"][0]["parameters"][0]["text"]
-        nome_animale=payload["template"]["components"][0]["parameters"][1]["text"]
         warning = '<div class="flash warning"><b>Attenzione:</b> il catalogo risulta già inviato a questo cliente. Conferma solo se vuoi reinviarlo.</div>' if p["catalog_sent"]=="Si" else ''
         error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>REINVIA CATALOGO</h1><div class="sub">Conferma invio template WhatsApp del catalogo per la pratica {esc(p['practice_number'])}</div></div><a class="btn ghost" href="/pratiche/{pid}">Torna alla pratica</a></div>{error_html}{warning}<section class="section"><h2>Dati invio</h2><div class="kvs"><div class="kv"><small>Destinatario</small><b>+{esc(phone)}</b></div><div class="kv"><small>Template</small><b>{esc(template)}</b></div><div class="kv"><small>Lingua</small><b>{esc(payload['template']['language']['code'])}</b></div><div class="kv"><small>Nome cliente</small><b>{esc(nome_cliente)}</b></div><div class="kv"><small>Nome animale</small><b>{esc(nome_animale)}</b></div></div><form method="post" action="/pratiche/{pid}/catalogo-whatsapp" onsubmit="return confirm('Confermi invio del catalogo a +{esc(phone)}?')"><input type="hidden" name="confirm_send" value="SI"><button class="btn" style="margin-top:18px">REINVIA CATALOGO</button></form></section></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>REINVIA CATALOGO</h1><div class="sub">Conferma invio template WhatsApp del catalogo per la pratica {esc(p['practice_number'])}</div></div><a class="btn ghost" href="/pratiche/{pid}">Torna alla pratica</a></div>{error_html}{warning}{self.whatsapp_confirm_form(pid,payload,"REINVIA CATALOGO",f"/pratiche/{pid}/catalogo-whatsapp",values)}</main>'''
         self.send_html(layout("Conferma invio catalogo",body,user))
 
     def public_ddt(self,token):

@@ -8517,6 +8517,96 @@ class PetParadiseTests(unittest.TestCase):
             self.handler.resend_whatsapp(operator,pid)
         self.assertFalse(send2.called)
 
+    def _resend_env(self):
+        class MetaResponse:
+            status=200
+            def __enter__(self):return self
+            def __exit__(self,*args):pass
+            def read(self):return b'{"messages":[{"id":"wamid.resend"}]}'
+        env={"WHATSAPP_ACCESS_TOKEN":"token-test","WHATSAPP_PHONE_NUMBER_ID":"phone-test"}
+        return patch.dict(os.environ,env),patch("app.urllib.request.urlopen",return_value=MetaResponse())
+
+    def _confirm_page_html(self,method,user,pid,**kwargs):
+        rendered=[];self.handler.send_html=lambda content,*a:rendered.append(content)
+        getattr(self.handler,method)(user,pid,**kwargs)
+        return rendered[-1]
+
+    def test_resend_confirm_pages_let_the_user_edit_number_and_names(self):
+        admin,pid=self._catalog_practice(send_catalog="Si")
+        for method,action in (("whatsapp_confirm_page",f"/pratiche/{pid}/whatsapp"),("catalog_whatsapp_confirm_page",f"/pratiche/{pid}/catalogo-whatsapp")):
+            html=self._confirm_page_html(method,admin,pid)
+            self.assertIn(f'action="{action}"',html)
+            self.assertIn('name="wa_phone" type="tel"',html);self.assertIn('value="+393339990000"',html)
+            self.assertIn('name="wa_client" type="text"',html);self.assertIn('value="Anna"',html)
+            self.assertIn('name="wa_animal" type="text"',html);self.assertIn('value="Luna"',html)
+            self.assertIn("valgono solo per questo invio",html)
+            self.assertIn('name="confirm_send" value="SI"',html)
+            self.assertIn("font-size:16px",html)
+
+    def test_resend_thanks_with_edited_number_and_names_sends_them_and_leaves_the_practice_untouched(self):
+        admin,pid=self._catalog_practice()
+        self.handler.form=lambda:{"confirm_send":"SI","wa_phone":"+39 347 111 2233","wa_client":"  Anna   Maria ","wa_animal":"Luna Bella"}
+        self.handler.redirect=lambda path:None
+        env,urlopen=self._resend_env()
+        with env,urlopen as post:
+            self.handler.resend_whatsapp(admin,pid)
+        sent=json.loads(post.call_args[0][0].data.decode("utf-8"))
+        self.assertEqual(sent["to"],"393471112233")
+        self.assertEqual([x["text"] for x in sent["template"]["components"][0]["parameters"]],["Anna Maria","Luna Bella"])
+        with app.db() as conn:
+            row=conn.execute("SELECT status,recipient_phone,payload_json FROM whatsapp_messages WHERE practice_id=? AND message_type='ringraziamento'",(pid,)).fetchone()
+            practice=conn.execute("SELECT owner_phone,owner_first_name,animal_name FROM practices WHERE id=?",(pid,)).fetchone()
+            history=conn.execute("SELECT new_value FROM practice_history WHERE practice_id=? AND event_type='Invio WhatsApp manuale'",(pid,)).fetchone()["new_value"]
+        self.assertEqual((row["status"],row["recipient_phone"]),("accettato_da_meta","393471112233"))
+        self.assertEqual(json.loads(row["payload_json"])["to"],"393471112233")
+        self.assertEqual((practice["owner_phone"],practice["owner_first_name"],practice["animal_name"]),("3339990000","Anna","Luna"))
+        for text in ("dati modificati per questo invio","numero +393471112233","nome cliente Anna Maria","nome animale Luna Bella"):
+            self.assertIn(text,history)
+
+    def test_resend_catalog_with_edited_data_and_unchanged_resend_stays_identical(self):
+        admin,pid=self._catalog_practice(catalog_sent="Si")
+        self.handler.redirect=lambda path:None
+        env,urlopen=self._resend_env()
+        with env,urlopen as post:
+            self.handler.form=lambda:{"confirm_send":"SI","wa_phone":"+393339990000","wa_client":"Anna","wa_animal":"Luna"}
+            self.handler.resend_whatsapp_catalog(admin,pid)  # nessuna modifica: come prima
+            unchanged=json.loads(post.call_args[0][0].data.decode("utf-8"))
+            self.handler.form=lambda:{"confirm_send":"SI","wa_phone":"3281234567","wa_client":"Giulia","wa_animal":"Micio"}
+            self.handler.resend_whatsapp_catalog(admin,pid)
+            edited=json.loads(post.call_args[0][0].data.decode("utf-8"))
+        self.assertEqual(unchanged["to"],"393339990000")
+        self.assertEqual([x["text"] for x in unchanged["template"]["components"][0]["parameters"]],["Anna","Luna"])
+        self.assertEqual(edited["to"],"393281234567")
+        self.assertEqual([x["text"] for x in edited["template"]["components"][0]["parameters"]],["Giulia","Micio"])
+        with app.db() as conn:
+            history=[r["new_value"] for r in conn.execute("SELECT new_value FROM practice_history WHERE practice_id=? AND event_type='Reinvio catalogo WhatsApp' ORDER BY id",(pid,))]
+        self.assertNotIn("dati modificati",history[0]);self.assertIn("dati modificati per questo invio",history[1])
+
+    def test_resend_with_foreign_prefix_keeps_it_and_invalid_data_is_rejected_without_sending(self):
+        admin,pid=self._catalog_practice()
+        self.handler.redirect=lambda path:None
+        env,urlopen=self._resend_env()
+        with env,urlopen as post:
+            self.handler.form=lambda:{"confirm_send":"SI","wa_phone":"+44 7700 900123","wa_client":"Anna","wa_animal":"Luna"}
+            self.handler.resend_whatsapp(admin,pid)
+            self.assertEqual(json.loads(post.call_args[0][0].data.decode("utf-8"))["to"],"447700900123")
+        rendered=[];self.handler.send_html=lambda content,*a:rendered.append(content)
+        bad_cases=[({"wa_phone":"12","wa_client":"Anna","wa_animal":"Luna"},"Numero di telefono non valido"),
+                   ({"wa_phone":"3339990000","wa_client":"   ","wa_animal":"Luna"},"nome cliente non può essere vuoto"),
+                   ({"wa_phone":"3339990000","wa_client":"Anna","wa_animal":"L"*61},"nome animale è troppo lungo")]
+        for form,message in bad_cases:
+            rendered.clear()
+            self.handler.form=lambda form=form:dict(form,confirm_send="SI")
+            env2,urlopen2=self._resend_env()
+            with env2,urlopen2 as post:
+                self.handler.resend_whatsapp(admin,pid)
+                self.assertFalse(post.called)
+            self.assertIn(message,rendered[-1])
+            self.assertIn(f'value="{form["wa_phone"]}"',rendered[-1])  # i dati digitati non si perdono
+        with app.db() as conn:
+            count=conn.execute("SELECT count(*) n FROM whatsapp_messages WHERE practice_id=?",(pid,)).fetchone()["n"]
+        self.assertEqual(count,1)  # solo l'invio valido di prima
+
     def test_practice_page_shows_resend_catalog_button_only_once_catalog_sent(self):
         admin,pid=self._catalog_practice(catalog_sent="Si")
         rendered=[];self.handler.send_html=lambda content,*a:rendered.append(content)
