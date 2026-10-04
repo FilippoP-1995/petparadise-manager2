@@ -15048,6 +15048,10 @@ class App(BaseHTTPRequestHandler):
                 c.execute("UPDATE practices SET cremation_cycle_id=NULL,updated_at=? WHERE id=?",(stamp,p["id"]))
                 if p["status"]=="In programma":
                     cremation_log_status_change(c,p["id"],"In programma","Ritirato",user["id"],stamp)
+            # anche le pratiche nel Cestino puntano ancora al ciclo (FK su
+            # practices.cremation_cycle_id): senza scollegarle il DELETE falliva
+            # e il ciclo "senza animali" non si poteva eliminare.
+            c.execute("UPDATE practices SET cremation_cycle_id=NULL WHERE cremation_cycle_id=?",(cycle_id,))
             c.execute("DELETE FROM cremation_cycles WHERE id=?",(cycle_id,))
         return self.send_json({"ok":True})
 

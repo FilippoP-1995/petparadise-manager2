@@ -3924,6 +3924,33 @@ class PetParadiseTests(unittest.TestCase):
                 ).fetchone()
                 self.assertEqual((history["old_value"], history["new_value"]), ("In programma", "Ritirato"))
 
+    def test_cremation_delete_cycle_works_when_a_trashed_practice_still_points_to_it(self):
+        # una pratica nel Cestino conserva cremation_cycle_id: il ciclo appare
+        # "senza animali" ma l'eliminazione falliva per la chiave esterna.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,actual_end,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                ("2026-07-20", "completato", "16:00", "17:00", stamp, stamp, stamp),
+            ).lastrowid
+            trashed = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id,deleted_at,deleted_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-TRASH", "Privato", "Livorno", "In programma", "Cremazione singola", "2026-07-15", stamp, stamp,
+                 admin["id"], "Cestinato", cycle_id, stamp, admin["id"]),
+            ).lastrowid
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.cremation_delete_cycle(admin, cycle_id)
+        self.assertEqual(responses[-1], ({"ok": True}, 200))
+        with app.db() as conn:
+            self.assertIsNone(conn.execute("SELECT id FROM cremation_cycles WHERE id=?", (cycle_id,)).fetchone())
+            practice = conn.execute("SELECT status,cremation_cycle_id,deleted_at FROM practices WHERE id=?", (trashed,)).fetchone()
+        self.assertIsNone(practice["cremation_cycle_id"])
+        self.assertTrue(practice["deleted_at"])  # resta nel Cestino
+        self.assertEqual(practice["status"], "In programma")  # nessun cambio di stato su una pratica cestinata
+
     def test_cremation_delete_cycle_works_even_when_completato(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
