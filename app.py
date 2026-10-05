@@ -8071,8 +8071,10 @@ def parse_practice_items(raw, category):
             subtype = "Altro"
         if not label and not urn_catalog_id and money_value(price) <= 0:
             continue
+        # price_blank: il prezzo non e' stato scritto (campo vuoto), a differenza di
+        # un prezzo digitato a mano — anche "0" — che va sempre rispettato.
         cleaned.append({"category": category, "subtype": subtype, "urn_catalog_id": urn_catalog_id,
-                         "label": label, "price": price or "0"})
+                         "label": label, "price": price or "0", "price_blank": not price})
     return cleaned
 
 
@@ -8088,9 +8090,12 @@ def practice_has_real_urn_item(items):
 
 
 def resolve_practice_items(items_by_category):
-    """Snapshot the catalog name/price onto every 'urna' item that references
-    a catalog urn (mirrors the old urn_id/urn_id_2 lookup), and report whether
-    any of them is a "doppia cornice" frame urn (auto-sets tag_calco_urna)."""
+    """Snapshot the catalog name onto every 'urna' item that references a
+    catalog urn (mirrors the old urn_id/urn_id_2 lookup), and report whether
+    any of them is a "doppia cornice" frame urn (auto-sets tag_calco_urna).
+    Il prezzo del catalogo e' solo il valore proposto: se l'operatore ha
+    scritto o modificato il prezzo della riga, quello resta (anche 0); si usa
+    il prezzo di catalogo soltanto quando il campo e' vuoto."""
     urna_items=items_by_category.get("urna",[])
     ids=[item["urn_catalog_id"] for item in urna_items if item["urn_catalog_id"]]
     if ids:
@@ -8103,7 +8108,8 @@ def resolve_practice_items(items_by_category):
             row=catalog.get(item["urn_catalog_id"])
             if row:
                 item["label"]=row["name"]
-                item["price"]=row["price"]
+                if item.get("price_blank",True):
+                    item["price"]=row["price"]
             else:
                 item["urn_catalog_id"]=None
     return any("doppia cornice" in (item["label"] or "").lower() for item in urna_items)

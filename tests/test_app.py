@@ -8036,6 +8036,59 @@ class PetParadiseTests(unittest.TestCase):
         data=self.handler.normalized_fields({"service_type":"Cremazione singola"},has_frame_urn=has_frame_urn)
         self.assertEqual(data["tag_calco_urna"],"Si")
 
+    def test_edited_price_of_a_catalog_urn_row_is_kept_on_save(self):
+        # il prezzo di catalogo e' solo la proposta: se l'operatore lo modifica
+        # (anche a 0) deve restare cosi' nella pratica, non tornare al listino.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            stamp = app.now()
+            urn_id = conn.execute("INSERT INTO urns(name,price,quantity,active,category,created_at,updated_at) VALUES(?,?,?,?,?,?,?)", ("Urna Prezzo", "50", 9, 1, "Urna", stamp, stamp)).lastrowid
+        items = {"urna": app.parse_practice_items(json.dumps([
+            {"urn_catalog_id": urn_id, "label": "x", "price": "35,50"},
+            {"urn_catalog_id": urn_id, "price": "0"},
+            {"urn_catalog_id": urn_id, "price": ""},
+            {"urn_catalog_id": urn_id},
+        ]), "urna"), "calco": [], "accessorio": []}
+        app.resolve_practice_items(items)
+        self.assertEqual([i["price"] for i in items["urna"]], ["35.50", "0", "50", "50"])
+        self.assertEqual({i["label"] for i in items["urna"]}, {"Urna Prezzo"})
+
+        base_form = {
+            "operator_name": "SERENA", "status": "Ritirato", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "destination_branch": "Livorno", "owner_first_name": "Mario", "owner_last_name": "Rossi", "owner_phone": "333123456",
+            "owner_tax_code": "RSSMRA80A01H501U", "owner_street": "Via Roma 1", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
+            "provenance": "L", "animal_name": "Fido", "species": "Cane",
+            "urna_items_json": json.dumps([{"urn_catalog_id": urn_id, "price": "35,50"}]),
+            "balance_idempotency_key": "keep-edited-price-1",
+        }
+        self.handler.form = lambda: base_form
+        redirected = []
+        self.handler.redirect = lambda path: redirected.append(path)
+        self.handler.create_practice(admin)
+        pid = int(redirected[0].split("/")[-1].split("?")[0])
+        with app.db() as conn:
+            row = conn.execute("SELECT price,urn_catalog_id FROM practice_items WHERE practice_id=? AND category='urna'", (pid,)).fetchone()
+            total = conn.execute("SELECT total_service FROM practices WHERE id=?", (pid,)).fetchone()["total_service"]
+        self.assertEqual((row["price"], row["urn_catalog_id"]), ("35.50", urn_id))
+        self.assertEqual(total, "35.50")
+        # modifica completa e salvataggio automatico: il prezzo scritto resta, anche se cambia
+        edit_form = dict(base_form, balance_idempotency_key="keep-edited-price-2",
+                         urna_items_json=json.dumps([{"urn_catalog_id": urn_id, "price": "42,00"}]))
+        self.handler.form = lambda: edit_form
+        self.handler.edit_submit(admin, pid)
+        with app.db() as conn:
+            row = conn.execute("SELECT price FROM practice_items WHERE practice_id=? AND category='urna'", (pid,)).fetchone()
+            updated_at = conn.execute("SELECT updated_at FROM practices WHERE id=?", (pid,)).fetchone()["updated_at"]
+        self.assertEqual(row["price"], "42.00")
+        captured = []
+        self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+        self.handler.form = lambda: {"updated_at": updated_at, "changes_json": json.dumps({"urna_items_json": json.dumps([{"urn_catalog_id": urn_id, "price": "30"}])})}
+        self.handler.practice_autosave(admin, pid)
+        self.assertEqual(captured[-1][1], 200)
+        with app.db() as conn:
+            row = conn.execute("SELECT price FROM practice_items WHERE practice_id=? AND category='urna'", (pid,)).fetchone()
+        self.assertEqual(row["price"], "30")
+
     def test_quick_state_ajax_saves_without_redirect(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
