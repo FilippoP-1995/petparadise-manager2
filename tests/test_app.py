@@ -8089,6 +8089,33 @@ class PetParadiseTests(unittest.TestCase):
             row = conn.execute("SELECT price FROM practice_items WHERE practice_id=? AND category='urna'", (pid,)).fetchone()
         self.assertEqual(row["price"], "30")
 
+    def test_new_practice_draft_is_local_opt_in_and_never_preloaded(self):
+        # Bozza automatica della nuova pratica: salvata solo nel browser, mai
+        # caricata da sola (solo con ?bozza=1 dal promemoria), scartabile.
+        js = app.APP_JS
+        for text in ("function setupPracticeDraft()", "function ppmPdRenderBanner()", "function practiceDraftCancel(event)",
+                     "params.get('bozza')==='1'", "localStorage.setItem(key,JSON.stringify(", "PPM_PD_TTL=7*24*3600*1000",
+                     "ppm_practice_draft_pending", "setTimeout(setupPracticeDraft,0)"):
+            self.assertIn(text, js)
+        # niente dati sensibili/tecnici nella bozza: chiave di idempotenza e firma esclusi
+        self.assertIn("'balance_idempotency_key'", js);self.assertIn("'signature_data'", js)
+        # il ripristino avviene solo dentro il ramo ?bozza=1
+        setup = js[js.index("function setupPracticeDraft()"):]
+        self.assertLess(setup.index("params.get('bozza')==='1'"), setup.index("ppmPdRestore(form,draft);"))
+        self.assertEqual(js.count("ppmPdRestore(form,draft);"), 1)
+        # la bozza si cancella solo dopo la creazione vera (pagina /pratiche/<id>)
+        self.assertIn("localStorage.removeItem(key); // pratica creata davvero", js)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.path = "/nuova?return_to=/pratiche"
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.new_page(admin)
+        page = rendered[-1]
+        self.assertIn('onclick="return practiceDraftCancel(event)">Annulla</a>', page)
+        self.assertIn('href="/pratiche"', page.split("practiceDraftCancel")[0].rsplit("<a ", 1)[1])
+        self.assertIn('id="practiceForm"', page)
+
     def test_quick_state_ajax_saves_without_redirect(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()

@@ -7242,7 +7242,178 @@ function renderCalendarDraftsBanner(){
 function calendarDiscardDraftKey(key){try{localStorage.removeItem(key);}catch(error){}renderCalendarDraftsBanner();}
 function calendarSubmit(form){calendarSerialize();form.querySelectorAll('[aria-invalid="true"]').forEach(el=>el.removeAttribute('aria-invalid'));const invalid=[...form.elements].find(input=>!input.disabled&&!input.checkValidity());if(invalid){invalid.setAttribute('aria-invalid','true');invalid.reportValidity();return false;}try{if(new URL(form.action,location.href).pathname==='/calendario/nuovo')sessionStorage.setItem('ppm_calendar_created','1');}catch(error){}calendarWizardAllowExit=true;return true;}
 function ppmBtnPress(btn){if(!btn)return;btn.classList.add('ppm-btn-press');setTimeout(()=>btn.classList.remove('ppm-btn-press'),110);}
-function ppmPracticeCreateSubmit(form){try{sessionStorage.setItem('ppm_practice_created','1');}catch(error){}return true;}
+function ppmPracticeCreateSubmit(form){try{sessionStorage.setItem('ppm_practice_created','1');}catch(error){}try{sessionStorage.setItem('ppm_practice_draft_pending',ppmPdKey(form));}catch(error){}return true;}
+// Bozza automatica della NUOVA pratica (richiesta esplicita dell'utente):
+// mentre si compila il form "Nuova pratica" i dati vengono tenuti in
+// localStorage (solo su questo browser), cosi' una chiusura accidentale della
+// scheda non fa perdere il lavoro. Regole volute:
+//  - aprire "Nuova pratica" parte SEMPRE da un form pulito: la bozza non viene
+//    mai caricata da sola, solo con "Riprendi" (?bozza=1);
+//  - una pratica lasciata a meta' compare solo come promemoria su Dashboard e
+//    Pratiche (Riprendi / Scarta), non nel form;
+//  - "Annulla" nel form scarta la bozza; dopo il salvataggio della pratica la
+//    bozza viene cancellata; una bozza non ripresa scade dopo 7 giorni.
+const PPM_PD_PREFIX='ppm_practice_draft:';
+const PPM_PD_TTL=7*24*3600*1000;
+const PPM_PD_SKIP=new Set(['balance_idempotency_key','calendar_event_id','pickup_time','return_to','save_and_return','signature_data']);
+const PPM_PD_IDENTITY=['owner_first_name','owner_last_name','owner_company','owner_phone','animal_name'];
+function ppmPdUser(){return document.body&&document.body.dataset.userId?document.body.dataset.userId:'';}
+function ppmPdKey(form){const ev=form&&form.elements.calendar_event_id?form.elements.calendar_event_id.value:'';return PPM_PD_PREFIX+ppmPdUser()+':'+(ev||'new');}
+function ppmPdSerialize(form){
+  const fields={},checks={};
+  [...form.elements].forEach(function(el){
+    if(!el.name||el.disabled||PPM_PD_SKIP.has(el.name))return;
+    const type=el.type;
+    if(type==='file'||type==='submit'||type==='button'||type==='reset')return;
+    if(type==='checkbox'||type==='radio'){checks[el.name+'='+el.value]=el.checked;return;}
+    if(String(el.value).length>20000)return;
+    fields[el.name]=el.value;
+  });
+  return {fields:fields,checks:checks};
+}
+function ppmPdSave(form,key){
+  const state=ppmPdSerialize(form);
+  const meaningful=PPM_PD_IDENTITY.some(function(name){return String(state.fields[name]||'').trim()!=='';});
+  try{
+    if(!meaningful){localStorage.removeItem(key);return;}
+    localStorage.setItem(key,JSON.stringify({v:1,savedAt:Date.now(),fields:state.fields,checks:state.checks}));
+  }catch(error){}
+}
+function ppmPdRestore(form,draft){
+  const fields=draft.fields||{},checks=draft.checks||{};
+  const apply=function(){
+    const changed=[];
+    [...form.elements].forEach(function(el){
+      if(!el.name||PPM_PD_SKIP.has(el.name)||el.type==='file'||el.type==='submit'||el.type==='button')return;
+      if(el.type==='checkbox'||el.type==='radio'){
+        const k=el.name+'='+el.value;
+        if(k in checks&&el.checked!==checks[k]){el.checked=checks[k];changed.push(el);}
+        return;
+      }
+      if(/_items_json$/.test(el.name))return;
+      if(el.name in fields&&el.value!==fields[el.name]){el.value=fields[el.name];changed.push(el);}
+    });
+    return changed;
+  };
+  const changed=apply();
+  ['urna','calco','accessorio'].forEach(function(cat){
+    const raw=fields[cat+'_items_json'];
+    if(raw===undefined||typeof practiceAddRow!=='function')return;
+    let rows=[];try{rows=JSON.parse(raw)||[];}catch(error){}
+    const list=document.querySelector('[data-practice-list="'+cat+'"]');
+    if(!list)return;
+    list.innerHTML='';
+    rows.forEach(function(row){practiceAddRow(cat,row);});
+  });
+  if(typeof practiceSerializeItems==='function')practiceSerializeItems();
+  // Solo le scelte (menu, spunte) aggiornano il resto del form (sezioni che si
+  // mostrano/nascondono ecc.). I campi di testo NON ricevono eventi: i loro
+  // gestori segnano totali e saldi come "scritti a mano" e il form non
+  // sarebbe piu' quello salvato. Poi i valori vengono riapplicati per annullare
+  // gli effetti collaterali dei gestori.
+  changed.forEach(function(el){
+    if(el.tagName==='SELECT'||el.type==='checkbox'||el.type==='radio')el.dispatchEvent(new Event('change',{bubbles:true}));
+  });
+  apply();
+}
+function ppmPdFinalize(){
+  let key=null;
+  try{key=sessionStorage.getItem('ppm_practice_draft_pending');}catch(error){}
+  if(!key)return;
+  const path=location.pathname;
+  if(path==='/nuova')return; // il tentativo e' ancora in corso (errore o conferma duplicato): la bozza resta
+  try{
+    sessionStorage.removeItem('ppm_practice_draft_pending');
+    if(/^[/]pratiche[/][0-9]+/.test(path))localStorage.removeItem(key); // pratica creata davvero
+  }catch(error){}
+}
+function ppmPdRenderBanner(){
+  const path=location.pathname;
+  if(path!=='/'&&path!=='/pratiche')return;
+  const old=document.getElementById('practiceDraftBanner');
+  if(old)old.remove();
+  const uid=ppmPdUser();
+  const main=document.querySelector('main.wrap, main');
+  if(!uid||!main)return;
+  const prefix=PPM_PD_PREFIX+uid+':';
+  const keys=[];
+  try{for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(key&&key.indexOf(prefix)===0)keys.push(key);}}catch(error){return;}
+  const drafts=[];
+  keys.forEach(function(key){
+    let data=null;try{data=JSON.parse(localStorage.getItem(key));}catch(error){}
+    if(!data||!data.fields||!data.savedAt||Date.now()-data.savedAt>PPM_PD_TTL){try{localStorage.removeItem(key);}catch(error){}return;}
+    drafts.push({key:key,data:data});
+  });
+  if(!drafts.length)return;
+  drafts.sort(function(a,b){return b.data.savedAt-a.data.savedAt;});
+  const box=document.createElement('div');
+  box.id='practiceDraftBanner';
+  box.className='section';
+  box.style.cssText='border-left:4px solid var(--brand);margin-bottom:16px';
+  const title=document.createElement('h2');
+  title.textContent=drafts.length===1?'Pratica lasciata a metà':drafts.length+' pratiche lasciate a metà';
+  box.appendChild(title);
+  drafts.forEach(function(item){
+    const f=item.data.fields;
+    const owner=[f.owner_first_name,f.owner_last_name].filter(Boolean).join(' ')||f.owner_company||'';
+    const label=[f.animal_name||'Animale senza nome',owner].filter(Boolean).join(' · ');
+    const when=new Date(item.data.savedAt).toLocaleString('it-IT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+    const eventId=item.key.slice(item.key.lastIndexOf(':')+1);
+    const href=eventId&&eventId!=='new'?'/nuova?calendar_event_id='+encodeURIComponent(eventId)+'&bozza=1':'/nuova?bozza=1';
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:8px 0';
+    const text=document.createElement('span');
+    text.textContent=label+' — salvata il '+when;
+    const actions=document.createElement('span');
+    actions.style.cssText='display:flex;gap:8px';
+    const resume=document.createElement('a');
+    resume.className='btn';
+    resume.href=href;
+    resume.textContent='Riprendi';
+    const discard=document.createElement('button');
+    discard.type='button';
+    discard.className='btn ghost';
+    discard.textContent='Scarta';
+    discard.onclick=function(){try{localStorage.removeItem(item.key);}catch(error){}ppmPdRenderBanner();};
+    actions.appendChild(resume);actions.appendChild(discard);
+    row.appendChild(text);row.appendChild(actions);
+    box.appendChild(row);
+  });
+  main.insertBefore(box,main.firstChild);
+}
+function practiceDraftCancel(event){
+  const form=document.getElementById('practiceForm');
+  if(!form)return true;
+  if(form.dataset.ppmPdTouched==='1'){
+    if(!confirm('Annullare la nuova pratica? I dati inseriti andranno persi.')){event.preventDefault();return false;}
+    try{localStorage.removeItem(ppmPdKey(form));}catch(error){}
+    form.dataset.ppmPdTouched='0'; // l'uscita dalla pagina non deve risalvare la bozza appena scartata
+  }
+  return true;
+}
+function setupPracticeDraft(){
+  ppmPdFinalize();
+  ppmPdRenderBanner();
+  const form=document.getElementById('practiceForm');
+  if(!form||form.dataset.autosaveUrl||location.pathname!=='/nuova'||!ppmPdUser())return;
+  const key=ppmPdKey(form);
+  const params=new URLSearchParams(location.search);
+  if(params.get('bozza')==='1'){
+    let draft=null;try{draft=JSON.parse(localStorage.getItem(key)||'null');}catch(error){}
+    if(draft&&draft.fields){ppmPdRestore(form,draft);form.dataset.ppmPdTouched='1';}
+    params.delete('bozza');
+    const qs=params.toString();
+    try{history.replaceState(null,'',location.pathname+(qs?'?'+qs:''));}catch(error){}
+  }
+  let timer=null;
+  const flush=function(){clearTimeout(timer);timer=null;if(form.dataset.ppmPdTouched==='1')ppmPdSave(form,key);};
+  const schedule=function(){form.dataset.ppmPdTouched='1';clearTimeout(timer);timer=setTimeout(flush,1000);};
+  form.addEventListener('input',schedule);
+  form.addEventListener('change',schedule);
+  window.addEventListener('pagehide',flush);
+  document.addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden')flush();});
+}
+
 function calendarWizardSwipe(){const form=document.getElementById('calendarEventForm');if(!form)return;form.querySelectorAll('input,select,textarea').forEach(input=>{input.dataset.initialValue=input.value;input.addEventListener('change',()=>form.dataset.dirty='1');input.addEventListener('input',()=>form.dataset.dirty='1');});window.addEventListener('beforeunload',e=>{if(!calendarWizardAllowExit&&calendarWizardDirty(form)){e.preventDefault();e.returnValue='';}});}
 function setupPracticeAutosave(){const form=document.getElementById('practiceForm');if(!form?.dataset.autosaveUrl)return;const status=document.getElementById('practiceAutosaveStatus'),label=status?.querySelector('[data-autosave-label]'),time=status?.querySelector('[data-autosave-time]'),retry=status?.querySelector('[data-autosave-retry]');let timer=null,inflight=false,queued=false,failed=false,allowExit=false,version=form.dataset.updatedAt||'';const ignored=new Set(['return_to','save_and_return','status']);const value=input=>input.type==='checkbox'?(input.checked?input.value:''):input.value;const baseline=new Map([...form.elements].filter(i=>i.name&&!ignored.has(i.name)&&i.type!=='file').map(i=>[i.name,value(i)]));const changed=()=>Object.fromEntries([...form.elements].filter(i=>i.name&&!ignored.has(i.name)&&i.type!=='file'&&baseline.get(i.name)!==value(i)).map(i=>[i.name,value(i)]));const show=(state,text)=>{if(!status)return;status.dataset.state=state;label.textContent=text;retry.hidden=state!=='error';};const save=async()=>{if(inflight){queued=true;return;}const changes=changed();if(!Object.keys(changes).length){failed=false;show('saved','Salvato');return;}inflight=true;failed=false;show('saving','Salvataggio automatico…');try{const response=await fetch(form.dataset.autosaveUrl,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8','Accept':'application/json'},body:new URLSearchParams({updated_at:version,changes_json:JSON.stringify(changes)})});const data=await response.json();if(!response.ok)throw Object.assign(new Error(data.error||'Salvataggio non riuscito'),{conflict:response.status===409});Object.entries(changes).forEach(([key,sent])=>{const input=form.elements.namedItem(key);if(input&&value(input)===sent)baseline.set(key,sent);});version=data.updated_at||version;form.dataset.updatedAt=version;show('saved','Salvato');time.textContent=`Ultimo salvataggio: ${data.saved_at||new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}`;}catch(error){failed=true;show(error.conflict?'conflict':'error',error.conflict?'Conflitto: la pratica è stata modificata altrove. Ricarica la pagina.':'Errore di salvataggio');}finally{inflight=false;if(queued){queued=false;save();}}};const schedule=()=>{clearTimeout(timer);show('dirty','Modifiche non salvate');timer=setTimeout(save,1800);};form.addEventListener('input',schedule);form.addEventListener('change',schedule);form.addEventListener('submit',()=>{allowExit=true;clearTimeout(timer)});retry?.addEventListener('click',save);window.addEventListener('beforeunload',e=>{if(!allowExit&&(inflight||failed||Object.keys(changed()).length)){e.preventDefault();e.returnValue='';}});}
 function toggleCreateMenu(force){
@@ -7410,7 +7581,7 @@ function shiftInitMonthPages(){
     items.forEach(item=>shiftMonthObserver.observe(item));
   }
 }
-document.addEventListener('DOMContentLoaded',()=>{calendarInitLookups();calendarWizardSwipe();calendarSerialize();setupPracticeAutosave();calendarInitDateTimeSync();setupCalendarDraftAutosave(document.getElementById('calendarEventForm'));shiftInitMonthPages();renderCalendarDraftsBanner();document.addEventListener('pointerdown',event=>{if(!event.target.closest('.calendar-datetime-row')&&!event.target.closest('#cremationEditOverlay'))document.querySelectorAll('[data-time-wheel]').forEach(wheel=>wheel.hidden=true);});});
+document.addEventListener('DOMContentLoaded',()=>{calendarInitLookups();calendarWizardSwipe();calendarSerialize();setupPracticeAutosave();setTimeout(setupPracticeDraft,0);calendarInitDateTimeSync();setupCalendarDraftAutosave(document.getElementById('calendarEventForm'));shiftInitMonthPages();renderCalendarDraftsBanner();document.addEventListener('pointerdown',event=>{if(!event.target.closest('.calendar-datetime-row')&&!event.target.closest('#cremationEditOverlay'))document.querySelectorAll('[data-time-wheel]').forEach(wheel=>wheel.hidden=true);});});
 function showSwUpdateBanner(onConfirm){
   if(document.querySelector('.sw-update-banner'))return;
   const bar=document.createElement('div');bar.className='sw-update-banner';
@@ -18061,7 +18232,7 @@ class App(BaseHTTPRequestHandler):
         # deve poter scattare piu' avanti su un caricamento successivo.
         error_html+='<script>try{sessionStorage.removeItem("ppm_practice_created")}catch(error){}</script>' if error else ''
         error_target=f'<input type="hidden" id="formErrorField" value="{esc(error_field)}"><input type="hidden" id="formErrorMessage" value="{esc(error)}">' if (error and error_field) else ''
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Nuova pratica</h1><div class="sub">Inserisci subito i dati disponibili; potrai completarli in seguito.</div></div><div class="actions"><button class="btn ppm-press-btn" form="practiceForm" onclick="ppmBtnPress(this)">Crea pratica</button></div></div>{error_html}<form method="post" id="practiceForm" onsubmit="return ppmPracticeCreateSubmit(this)">{hidden}{error_target}<div class="grid form-grid">{self.fields_html(prefill,user)}</div><div class="actions" style="margin-top:18px"><button class="btn ppm-press-btn" onclick="ppmBtnPress(this)">Crea pratica</button><a class="btn ghost" href="{esc(back_url)}">Annulla</a></div></form></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Nuova pratica</h1><div class="sub">Inserisci subito i dati disponibili; potrai completarli in seguito.</div></div><div class="actions"><a class="btn ghost" href="{esc(back_url)}" onclick="return practiceDraftCancel(event)">Annulla</a><button class="btn ppm-press-btn" form="practiceForm" onclick="ppmBtnPress(this)">Crea pratica</button></div></div>{error_html}<form method="post" id="practiceForm" onsubmit="return ppmPracticeCreateSubmit(this)">{hidden}{error_target}<div class="grid form-grid">{self.fields_html(prefill,user)}</div><div class="actions" style="margin-top:18px"><button class="btn ppm-press-btn" onclick="ppmBtnPress(this)">Crea pratica</button><a class="btn ghost" href="{esc(back_url)}">Annulla</a></div></form></main>'''
         self.send_html(layout("Nuova pratica",body,user))
 
     def normalized_fields(self,f,items_total=0.0,has_frame_urn=False,has_urn_item=False):
