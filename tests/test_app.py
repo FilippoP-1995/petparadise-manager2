@@ -7022,6 +7022,42 @@ class PetParadiseTests(unittest.TestCase):
             page,
         )
 
+    def test_calendar_card_and_detail_list_each_animal_not_the_total_weight(self):
+        # Piu' animali nello stesso evento: il riepilogo elenca ogni animale
+        # (specie, peso, tipo, nome) e non mostra il peso complessivo (9+9=18 kg).
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute(
+                """INSERT INTO calendar_events(event_type,title,start_at,end_at,event_status,created_by,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO PISA","2026-07-20T09:00:00","2026-07-20T13:00:00","Da ritirare",admin["id"],stamp,stamp),
+            ).lastrowid
+            single_id = conn.execute(
+                """INSERT INTO calendar_events(event_type,title,start_at,end_at,event_status,created_by,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO VIAREGGIO","2026-07-20T09:00:00","2026-07-20T13:00:00","Da ritirare",admin["id"],stamp,stamp),
+            ).lastrowid
+            for ev,name,species,weight,ctype in ((event_id,"","Cane","9","Singola"),(event_id,"Sophie","Cane","9","Singola"),(single_id,"Luna","Gatto","4","Singola")):
+                conn.execute("INSERT INTO calendar_event_animals(event_id,name,species,weight,cremation_type,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",(ev,name,species,weight,ctype,stamp,stamp))
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/calendario?data=2026-07-20"
+        self.handler.calendar_page(admin)
+        page = rendered[-1]
+        card = page.split(f'data-event-id="{event_id}"')[1].split("</article>")[0]
+        name_html = card.split('class="calendar-appt-name">')[1].split("</div>")[0]
+        self.assertEqual(name_html, "🐶 Cane · 9 kg · Singola<br>🐶 Cane · 9 kg · Singola · Sophie")
+        self.assertNotIn("18 kg", card)
+        # un solo animale: formato di sempre
+        single = page.split(f'data-event-id="{single_id}"')[1].split("</article>")[0]
+        self.assertIn('class="calendar-appt-name">🐱 Gatto · 4 kg · Singola · Luna</div>', single)
+        # dettaglio evento: elenco di ciascun animale, non solo il primo con "+N altri"
+        rendered.clear(); self.handler.calendar_event_detail(admin, event_id)
+        detail = rendered[-1]
+        self.assertIn("2 animali", detail)
+        self.assertIn("Cane · 9 kg · Singola<br>Cane · 9 kg · Singola · Sophie", detail)
+        self.assertNotIn("altri", detail.split("2 animali")[1][:300])
+        self.assertNotIn("18 kg", detail)
+
     def test_calendar_week_sentinel_navigation_is_reversible(self):
         # Caso esplicito segnalato dall'utente: oggi giovedi', sono sulla
         # card di domenica, swipe avanti attraversa il confine settimana

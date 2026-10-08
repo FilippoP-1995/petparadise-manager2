@@ -8388,6 +8388,24 @@ def calendar_animals_summary_text(animals):
     return f"{shown} +{extra}" if extra>0 else shown
 
 
+def calendar_animal_lines(animals):
+    """Una riga per ogni animale dell'evento (specie, peso, tipo di
+    cremazione, nome), mai un peso complessivo: con piu' animali il riepilogo
+    deve elencare ciascuno. Ritorna lista di (specie, testo)."""
+    lines=[]
+    for a in animals or []:
+        species=str(a["species"] or "").strip()
+        weight=str(a["weight"] or "").strip()
+        bits=[b for b in (species,f"{weight} kg" if weight else "",str(a["cremation_type"] or "").strip(),str(a["name"] or "").strip()) if b]
+        lines.append((species," · ".join(bits) if bits else "Animale"))
+    return lines
+
+
+def calendar_species_emoji(species):
+    lowered=str(species or "").strip().lower()
+    return "🐶" if lowered=="cane" else ("🐱" if lowered=="gatto" else "🐾")
+
+
 PROVENANCE_CHIP_COLORS = 8
 
 
@@ -11458,7 +11476,7 @@ class App(BaseHTTPRequestHandler):
             return self.redirect(f"/calendario/{event_id}?nav_error=1")
         self.redirect(f"https://www.google.com/maps/dir/?api=1&destination={quote(destination['maps_destination'])}")
 
-    def calendar_appointment_card(self,row,client_names=None,practice_owner_names=None,color_settings=None,animal_names_by_event=None,cremation_type_by_event=None):
+    def calendar_appointment_card(self,row,client_names=None,practice_owner_names=None,color_settings=None,animal_names_by_event=None,cremation_type_by_event=None,animals_by_event=None):
         """Card ricca usata sia dalla vista Giorno sia dalla vista Settimana
         (stesso identico markup, per restare fedeli a quanto richiesto:
         'Le card devono essere praticamente identiche alla vista Giorno').
@@ -11495,6 +11513,11 @@ class App(BaseHTTPRequestHandler):
         if cremation_types:animal_bits.append(cremation_types)
         if names:animal_bits.append(names)
         name_line=f'{avatar_emoji} {esc(" · ".join(animal_bits))}' if animal_bits else ''
+        # Piu' animali nello stesso evento: una riga per ciascuno (specie, peso,
+        # tipo, nome), non specie/peso/nomi aggregati in un'unica riga.
+        event_animals=(animals_by_event or {}).get(row["id"],[])
+        if len(event_animals)>1:
+            name_line='<br>'.join(f'{calendar_species_emoji(species)} {esc(text)}' for species,text in calendar_animal_lines(event_animals))
         client_display=self.calendar_event_client_name(row,client_names,practice_owner_names)
         client_phone=row["client_phone"] or row["phone"] or ""
         client_line=f'{esc(client_display)}{" · "+esc(client_phone) if client_phone else ""}' if client_display else ''
@@ -11656,9 +11679,11 @@ class App(BaseHTTPRequestHandler):
         with db() as c:
             rows=overlap_rows(c,start.isoformat(),end.isoformat(),filters)
             event_ids=[row["id"] for row in rows]
-            species_by_event={};animal_names_by_event={};cremation_type_by_event={}
+            species_by_event={};animal_names_by_event={};cremation_type_by_event={};animals_by_event={}
             if event_ids:
                 placeholders=','.join('?' for _ in event_ids)
+                for animal_row in c.execute(f"SELECT event_id,name,species,weight,cremation_type FROM calendar_event_animals WHERE event_id IN ({placeholders}) ORDER BY event_id,id",event_ids):
+                    animals_by_event.setdefault(animal_row["event_id"],[]).append(animal_row)
                 for species_row in c.execute(f"SELECT event_id,group_concat(DISTINCT species) species FROM calendar_event_animals WHERE event_id IN ({placeholders}) AND trim(COALESCE(species,''))<>'' GROUP BY event_id",event_ids):
                     species_by_event[species_row["event_id"]]=species_row["species"] or ""
                 for name_row in c.execute(f"SELECT event_id,group_concat(name,', ') names FROM calendar_event_animals WHERE event_id IN ({placeholders}) AND trim(COALESCE(name,''))<>'' GROUP BY event_id",event_ids):
@@ -11773,7 +11798,7 @@ class App(BaseHTTPRequestHandler):
               <div class="calendar-appt-stat calendar-appt-stat-done calendar-appt-stat-clickable" data-filter-value="done" onclick="calendarSetFilter(this)"><span class="calendar-appt-stat-icon">{lucide("check-circle")}</span><b>{done}</b><small>Completati</small></div>
             </div>'''
             sorted_rows=sorted(day_rows,key=week_day_sort_key)
-            list_html=''.join(self.calendar_appointment_card(row,client_names=client_names,practice_owner_names=practice_owner_names,color_settings=color_settings,animal_names_by_event=animal_names_by_event,cremation_type_by_event=cremation_type_by_event) for row in sorted_rows) or '<p class="calendar-appt-empty">Nessun appuntamento in programma.</p>'
+            list_html=''.join(self.calendar_appointment_card(row,client_names=client_names,practice_owner_names=practice_owner_names,color_settings=color_settings,animal_names_by_event=animal_names_by_event,animals_by_event=animals_by_event,cremation_type_by_event=cremation_type_by_event) for row in sorted_rows) or '<p class="calendar-appt-empty">Nessun appuntamento in programma.</p>'
             day_pages.append(f'''<div class="calendar-day-page" data-day-index="{i}" data-date="{day.isoformat()}">
               {stats_html}
               <div class="calendar-appt-list">{list_html}</div>
@@ -12963,7 +12988,11 @@ class App(BaseHTTPRequestHandler):
         hero_animal_name=(animals[0]["name"] if animals and animals[0]["name"] else "") or event["animal_name"] or ""
         hero_animal_main=hero_animal_name or (hero_animal_bits[0] if hero_animal_bits else "")
         hero_animal_sub=" · ".join(hero_animal_bits if hero_animal_name else hero_animal_bits[1:])
-        if len(animals)>1:hero_animal_sub=(hero_animal_sub+f" · +{len(animals)-1} altri").strip(" ·")
+        hero_animal_sub_html=esc(hero_animal_sub)
+        if len(animals)>1:
+            # piu' animali: elenco di ciascuno, non solo il primo con "+N altri"
+            hero_animal_main=f"{len(animals)} animali"
+            hero_animal_sub_html='<br>'.join(esc(text) for _species,text in calendar_animal_lines(animals))
         # Tutte le voci del riepilogo (prima card grandi separate sotto le
         # tab, da Data e ora a Note) sono ora righe compatte dentro la
         # stessa hero card, della stessa dimensione delle righe gia'
@@ -13012,7 +13041,7 @@ class App(BaseHTTPRequestHandler):
               <button class="btn ghost" type="submit" style="margin-top:10px">Salva animali</button>
             </form>
             <script>document.addEventListener('DOMContentLoaded',function(){{{animals_bootstrap}}});</script>'''
-            hero_rows.append(hero_row("paw","amber",esc(hero_animal_main) or "Animali",esc(hero_animal_sub) or esc(animals_summary),animali_form))
+            hero_rows.append(hero_row("paw","amber",esc(hero_animal_main) or "Animali",hero_animal_sub_html or esc(animals_summary),animali_form))
             cliente_form=f'''<form method="post" action="/calendario/{event_id}/cliente"><input name="client_first_name" placeholder="Nome" value="{esc(event['client_first_name'] or '')}"><input name="client_last_name" placeholder="Cognome" value="{esc(event['client_last_name'] or '')}"><input name="client_phone" placeholder="Telefono" value="{esc(event['client_phone'] or '')}"><button class="btn ghost" type="submit" style="margin-top:10px">Salva cliente</button></form>'''
             hero_rows.append(hero_row("user","blue","Cliente",esc(client_display or '-'),cliente_form))
             estimate_total_all=sum(float(i["amount"] or 0) for i in estimates)
