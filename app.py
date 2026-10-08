@@ -7248,11 +7248,16 @@ function ppmBtnPress(btn){if(!btn)return;btn.classList.add('ppm-btn-press');setT
 // numero del cliente e il testo gia' compilato. L'operatore controlla e preme
 // Invia: nulla viene inviato dal gestionale ne' registrato.
 function ppmQwaClose(){const overlay=document.getElementById('ppmQwaOverlay');if(overlay)overlay.remove();}
+function ppmQwaNeedsPractice(text){return /[{]costo_[a-z_]+[}]/.test(String(text||''));}
 function ppmQwaFill(text,vars){
-  const out=String(text||'').replace(/[{]([a-z_]+)[}]/g,function(match,key){
+  // una riga che contiene una voce di costo mancante nella pratica sparisce per intero
+  const lines=String(text||'').split('\n').filter(function(line){
+    return (line.match(/[{]costo_[a-z_]+[}]/g)||[]).every(function(token){return String((vars||{})[token.slice(1,-1)]||'')!=='';});
+  });
+  const out=lines.join('\n').replace(/[{]([a-z_]+)[}]/g,function(match,key){
     return Object.prototype.hasOwnProperty.call(vars||{},key)?String(vars[key]||''):match;
   });
-  return out.replace(/[ \t]+([,.;:!?])/g,'$1').replace(/[ \t]{2,}/g,' ').replace(/[ \t]+\n/g,'\n').trim();
+  return out.replace(/[ \t]+([,.;:!?])/g,'$1').replace(/[ \t]{2,}/g,' ').replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
 }
 function ppmQuickWa(button){
   let data={};
@@ -7292,16 +7297,15 @@ function ppmQuickWa(button){
     .then(function(payload){
       list.textContent='';
       (payload.templates||[]).forEach(function(template){
-        const vars=Object.assign({},data.vars||{});
-        if(!vars.operatore)vars.operatore=payload.operator||'';
-        const text=ppmQwaFill(template.body,vars);
+        const needsPractice=ppmQwaNeedsPractice(template.body)&&!data.practice;
+        const text=needsPractice?'':ppmQwaFill(template.body,data.vars||{});
         const item=document.createElement(text?'a':'div');
         item.style.cssText='display:block;padding:12px 14px;border:1px solid #334155;border-radius:14px;text-decoration:none;color:inherit'+(text?'':';opacity:.55');
         const name=document.createElement('b');
         name.textContent=template.title;
         const preview=document.createElement('small');
         preview.style.cssText='display:block;margin-top:4px;opacity:.75;white-space:pre-line;max-height:3.6em;overflow:hidden';
-        preview.textContent=text||'Testo da compilare';
+        preview.textContent=text||(needsPractice?'Disponibile solo con una pratica collegata':'Testo da compilare');
         item.appendChild(name);item.appendChild(preview);
         if(text){
           item.href='https://wa.me/'+encodeURIComponent(data.phone||'')+'?text='+encodeURIComponent(text);
@@ -7311,13 +7315,11 @@ function ppmQuickWa(button){
         }
         list.appendChild(item);
       });
-      if(payload.admin){
-        const edit=document.createElement('a');
-        edit.href='/impostazioni/messaggi-whatsapp';
-        edit.textContent='Modifica i testi';
-        edit.style.cssText='font-size:14px;text-decoration:underline';
-        footer.appendChild(edit);
-      }
+      const edit=document.createElement('a');
+      edit.href='/impostazioni/messaggi-whatsapp';
+      edit.textContent='Modifica i testi';
+      edit.style.cssText='font-size:14px;text-decoration:underline';
+      footer.appendChild(edit);
     })
     .catch(function(){list.textContent='Impossibile caricare i messaggi. Riprova.';});
 }
@@ -8479,7 +8481,22 @@ WA_QUICK_DEFAULTS = (
      "Ciao {nome_cliente}, scriviamo dallo staff di Pet Paradise Cremazione Animali. Abbiamo provato a contattarvi per avvisarvi "
      "che la cremazione di {nome_animale} è terminata e volevamo quindi prendere un appuntamento per la riconsegna dell’urna. "
      "Attendiamo un vostro riscontro, grazie☺️🐾🌈"),
-    ("estremi_bancari", "Estremi bancari", ""),
+    ("estremi_bancari", "Estremi bancari",
+     "Ciao {nome_cliente}, scriviamo dallo staff di Pet Paradise Cremazione Animali.\n"
+     "Come da accordi inviamo di seguito gli estremi bancari per effettuare il bonifico per il servizio di cremazione di {nome_animale}.\n"
+     "\n"
+     "Cremazione singola: {costo_cremazione}\n"
+     "Ritiro spoglia: {costo_ritiro}\n"
+     "Riconsegna in ambulatorio: {costo_riconsegna}\n"
+     "Urna: {costo_urna}€\n"
+     "\n"
+     "Totale servizio: {costo_totale} €\n"
+     "\n"
+     "Causale: Saldo cremazione {nome_animale}\n"
+     "\n"
+     "IBAN: IT45P0892270400000000839662\n"
+     "Intestato a: Pet Paradise Cremazioni Animali di Piccolo Filippo e C. SNC\n"
+     "Banca Alta Toscana Società Cooperativa S.C."),
 )
 # titoli usati in una versione precedente: se salvati cosi' si passa ai nuovi
 WA_QUICK_LEGACY_TITLES = {"Mancata risposta presa in carico": "Presa in carico",
@@ -8487,8 +8504,14 @@ WA_QUICK_LEGACY_TITLES = {"Mancata risposta presa in carico": "Presa in carico",
 WA_QUICK_PLACEHOLDERS = (
     ("nome_cliente", "nome del cliente"),
     ("nome_animale", "nome dell'animale (se sono più animali: «Luna e Micio»)"),
-    ("sede", "sede (Livorno o Empoli)"),
-    ("operatore", "nome di chi invia il messaggio"),
+    ("costo_cremazione", "costo della cremazione (se non c'è nella pratica la riga sparisce)"),
+    ("costo_ritiro", "costo del ritiro (idem)"),
+    ("costo_riconsegna", "costo della riconsegna (idem)"),
+    ("costo_urna", "costo delle urne inserite nella pratica (idem)"),
+    ("costo_calchi", "costo dei calchi inseriti nella pratica (idem)"),
+    ("costo_totale", "totale del servizio (idem)"),
+    ("costo_acconto", "acconto versato (idem)"),
+    ("costo_saldo", "saldo ancora da pagare (idem)"),
 )
 WA_QUICK_MAX_BODY = 1000
 
@@ -16657,7 +16680,7 @@ class App(BaseHTTPRequestHandler):
         data_ok = DATA.exists()
         ddt_ok = DDT_DIR.exists()
         writable = os.access(DATA, os.W_OK) if data_ok else False
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Impostazioni</h1><div class="sub">Diagnostica del gestionale. Per le preferenze personali vai su <a href="/il-mio-profilo">Il mio profilo</a>.</div></div></div>{'<section class="section"><h2>Messaggi WhatsApp rapidi</h2><p class="sub">I testi preimpostati che gli operatori possono aprire in WhatsApp con un tocco.</p><a class="btn ghost" href="/impostazioni/messaggi-whatsapp">Modifica i messaggi</a></section>' if user["role"]=="admin" else ""}<section class="section"><h2>Modelli PDF</h2><div class="tablebox"><table><thead><tr><th>File</th><th>Stato</th><th>Dimensione</th></tr></thead><tbody>{''.join(asset_rows)}</tbody></table></div></section><section class="section" style="margin-top:16px"><h2>Cartelle dati</h2><p><b>Assets:</b> {esc(ASSETS)}</p><p><b>DATA:</b> {esc(DATA)} - {'OK' if data_ok else 'MANCANTE'} - scrittura {'OK' if writable else 'NO'}</p><p><b>DDT:</b> {esc(DDT_DIR)} - {'OK' if ddt_ok else 'MANCANTE'}</p></section></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Impostazioni</h1><div class="sub">Diagnostica del gestionale. Per le preferenze personali vai su <a href="/il-mio-profilo">Il mio profilo</a>.</div></div></div><section class="section"><h2>Messaggi WhatsApp rapidi</h2><p class="sub">I testi preimpostati che si possono aprire in WhatsApp con un tocco.</p><a class="btn ghost" href="/impostazioni/messaggi-whatsapp">Modifica i messaggi</a></section><section class="section"><h2>Modelli PDF</h2><div class="tablebox"><table><thead><tr><th>File</th><th>Stato</th><th>Dimensione</th></tr></thead><tbody>{''.join(asset_rows)}</tbody></table></div></section><section class="section" style="margin-top:16px"><h2>Cartelle dati</h2><p><b>Assets:</b> {esc(ASSETS)}</p><p><b>DATA:</b> {esc(DATA)} - {'OK' if data_ok else 'MANCANTE'} - scrittura {'OK' if writable else 'NO'}</p><p><b>DDT:</b> {esc(DDT_DIR)} - {'OK' if ddt_ok else 'MANCANTE'}</p></section></main>'''
         self.send_html(layout("Impostazioni",body,user))
 
     diagnostics=settings_page
@@ -17994,7 +18017,8 @@ class App(BaseHTTPRequestHandler):
         if not cl: return self.send_error(404)
         name=" ".join(x for x in (cl["first_name"],cl["last_name"]) if x).strip() or cl["company_name"] or "Cliente senza nome"
         rows=''.join(f'''<tr><td><a href="/pratiche/{p['id']}">{esc(p['practice_number'])}</a></td><td>{esc(p['animal_name'])}</td><td>{esc(p['status'])}</td><td>{esc(date_it(p['pickup_date']) if p['pickup_date'] else '')}</td></tr>''' for p in practices) or '<tr><td colspan="4" class="sub">Nessuna pratica collegata.</td></tr>'
-        client_qwa=self.wa_quick_button(cl["phone"] or cl["phone_2"],self.wa_quick_vars(user,cl["first_name"]),"btn",label="Messaggio WhatsApp")
+        last_animal=next((str(pr["animal_name"]).strip() for pr in practices if pr["animal_name"] and str(pr["animal_name"]).strip()),"")  # ultima pratica del cliente
+        client_qwa=self.wa_quick_button(cl["phone"] or cl["phone_2"],self.wa_quick_vars(cl["first_name"],last_animal),"btn",label="Messaggio WhatsApp")
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>{esc(name)}</h1><div class="sub">Anagrafica cliente</div></div><div class="actions" style="display:flex;gap:8px;flex-wrap:wrap">{client_qwa}<a class="btn ghost" href="/clienti">Torna alla lista</a></div></div><section class="section"><h2>Anagrafica</h2><form method="post" action="/clienti"><input type="hidden" name="id" value="{cl['id']}"><div class="fields"><div class="field"><label>Nome</label><input name="first_name" value="{esc(cl['first_name'])}"></div><div class="field"><label>Cognome</label><input name="last_name" value="{esc(cl['last_name'])}"></div><div class="field"><label>Ragione sociale</label><input name="company_name" value="{esc(cl['company_name'])}"></div><div class="field"><label>Telefono</label><input name="phone" value="{esc(cl['phone'])}"></div><div class="field"><label>Secondo telefono</label><input name="phone_2" value="{esc(cl['phone_2'])}"></div><div class="field"><label>Email</label><input type="email" name="email" value="{esc(cl['email'])}"></div><div class="field"><label>Codice fiscale</label><input name="tax_code" value="{esc(cl['tax_code'])}"></div><div class="field"><label>Partita IVA</label><input name="vat_number" value="{esc(cl['vat_number'])}"></div><div class="field full"><label>Indirizzo</label><input name="street" value="{esc(cl['street'])}"></div><div class="field"><label>Comune</label><input name="city" value="{esc(cl['city'])}"></div><div class="field"><label>Provincia</label><input name="province" value="{esc(cl['province'])}" maxlength="2"></div><div class="field"><label>CAP</label><input name="zip" value="{esc(cl['zip'])}"></div><div class="field full"><label>Note</label><input name="notes" value="{esc(cl['notes'])}"></div></div><button class="btn" style="margin-top:12px">Salva anagrafica</button></form><form method="post" action="/clienti/{cl['id']}/elimina" onsubmit="return confirm('Eliminare questo cliente dalla lista?')"><button class="btn ghost" style="margin-top:12px">Elimina cliente</button></form></section><div style="height:14px"></div><section class="section"><h2>Pratiche collegate</h2><div class="tablebox"><table class="premium-table"><thead><tr><th>Pratica</th><th>Animale</th><th>Stato</th><th>Recupero</th></tr></thead><tbody>{rows}</tbody></table></div></section></main>'''
         self.send_html(layout("Cliente",body,user))
 
@@ -18681,21 +18705,37 @@ class App(BaseHTTPRequestHandler):
                 return row["id"]
         return None
 
-    def wa_quick_vars(self,user,first="",animals="",site=""):
-        """Valori dei segnaposto dei messaggi WhatsApp rapidi per il contesto corrente."""
-        operator=""
-        if user is not None:
-            try:operator=user["display_name"] or ""
-            except (KeyError,IndexError):operator=""
-        return {"nome_cliente":(first or "").strip(),"nome_animale":(animals or "").strip(),
-                "sede":(site or "").strip(),"operatore":operator}
+    def wa_quick_vars(self,first="",animals="",practice=None):
+        """Valori dei segnaposto dei messaggi WhatsApp rapidi. I costi ci sono
+        solo se c'e' una pratica: senza pratica restano assenti e i messaggi che
+        li usano non sono disponibili."""
+        out={"nome_cliente":(first or "").strip(),"nome_animale":(animals or "").strip()}
+        if practice is not None:out.update(self.wa_cost_vars(practice))
+        return out
+
+    def wa_cost_vars(self,p):
+        """Voci di costo della pratica nel formato dei messaggi (210,00); una voce
+        a zero o mancante e' vuota, cosi' la riga che la contiene sparisce."""
+        def money(value):
+            try:value=float(value)
+            except (TypeError,ValueError):return ""
+            if value<=0:return ""
+            whole,cents=divmod(int(round(value*100)),100)
+            return f"{whole:,}".replace(",",".")+f",{cents:02d}"
+        with db() as c:
+            rows=c.execute("SELECT category,price FROM practice_items WHERE practice_id=?",(p["id"],)).fetchall()
+        def items(category):return sum(money_value(r["price"]) for r in rows if r["category"]==category)
+        return {"costo_cremazione":money(money_value(p["price_cremation"])),"costo_ritiro":money(money_value(p["price_pickup"])),
+                "costo_riconsegna":money(money_value(p["price_delivery"])),"costo_urna":money(items("urna")),
+                "costo_calchi":money(items("calco")),"costo_totale":money(effective_total(p)),
+                "costo_acconto":money(channel_deposit(p)),"costo_saldo":money(outstanding_amount(p))}
 
     def wa_quick_button(self,phone,qvars,kind="icon",label="Messaggio"):
         """Pulsante che apre l'elenco dei messaggi rapidi (JS ppmQuickWa). Senza
         numero di telefono valido non c'e' nulla da aprire: nessun pulsante."""
         digits=self.wa_digits(phone) if phone else ""
         if not digits:return ""
-        payload=esc(json.dumps({"phone":digits,"vars":qvars},ensure_ascii=False))
+        payload=esc(json.dumps({"phone":digits,"vars":qvars,"practice":"costo_totale" in qvars},ensure_ascii=False))
         attrs=f'type="button" data-qwa="{payload}" onclick="event.stopPropagation();ppmQuickWa(this)"'
         if kind=="icon":
             return f'<button {attrs} class="icon-btn phone-action-btn" aria-label="Messaggio WhatsApp rapido" title="Messaggio WhatsApp rapido">{lucide("send")}</button>'
@@ -18706,33 +18746,31 @@ class App(BaseHTTPRequestHandler):
         return f'<button {attrs} class="btn ghost">{lucide("send")} {esc(label)}</button>'
 
     def practice_qwa_vars(self,user,p):
-        """Segnaposto per una pratica."""
+        """Segnaposto per una pratica (con i suoi costi)."""
         keys=p.keys()
         animals=" e ".join(x.strip() for x in (p["animal_name"] or "",(p["animal2_name"] if "animal2_name" in keys else "") or "") if x and x.strip())
-        return self.wa_quick_vars(user,p["owner_first_name"],animals,p["destination_branch"])
+        return self.wa_quick_vars(p["owner_first_name"],animals,p)
 
     def event_qwa_vars(self,user,event,animals,client_display=None):
-        """Segnaposto per un evento del calendario (animali dell'evento, cliente
-        dell'evento o, se manca, proprietario della pratica collegata)."""
+        """Segnaposto per un evento del calendario: animali e cliente dell'evento;
+        i costi solo se l'evento ha una pratica collegata (quella)."""
         keys=event.keys()
         first=((event["client_first_name"] if "client_first_name" in keys else "") or "").strip()
         linked=event["linked_practice_id"] if "linked_practice_id" in keys else None
-        if not first and linked:
+        practice=None
+        if linked:
             with db() as c:
-                practice=c.execute("SELECT owner_first_name FROM practices WHERE id=?",(linked,)).fetchone()
-            if practice:first=practice["owner_first_name"] or ""
+                practice=c.execute("SELECT * FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(linked,)).fetchone()
+            if practice and not first:first=practice["owner_first_name"] or ""
         names=" e ".join(str(a["name"]).strip() for a in animals if a["name"] and str(a["name"]).strip())
-        site=(event["destination_site"] if "destination_site" in keys else "") or ""
-        return self.wa_quick_vars(user,first,names,site)
+        return self.wa_quick_vars(first,names,practice)
 
     def wa_quick_templates_api(self,user):
         with db() as c:
             templates=wa_quick_templates(c)
-        return self.send_json({"ok":True,"templates":templates,"admin":user["role"]=="admin","operator":user["display_name"] or ""})
+        return self.send_json({"ok":True,"templates":templates})
 
     def wa_quick_admin_page(self,user,error="",values=None):
-        if user["role"]!="admin":
-            return self.send_error(403)
         values=values or {}
         with db() as c:
             templates=wa_quick_templates(c)
@@ -18748,8 +18786,6 @@ class App(BaseHTTPRequestHandler):
         self.send_html(layout("Messaggi WhatsApp rapidi",body,user),422 if error else 200)
 
     def save_wa_quick_templates(self,user):
-        if user["role"]!="admin":
-            return self.send_error(403)
         form=self.form()
         allowed={key for key,_text in WA_QUICK_PLACEHOLDERS}
         with db() as c:

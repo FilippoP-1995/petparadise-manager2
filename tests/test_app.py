@@ -7076,9 +7076,16 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("abbiamo preso in carico {nome_animale}.", presa);self.assertTrue(presa.endswith("possibile☺️🐾🌈"))
         self.assertIn("la cremazione di {nome_animale} è terminata", riconsegna);self.assertIn("riconsegna dell’urna.", riconsegna)
         self.assertTrue(riconsegna.endswith("grazie☺️🐾🌈"))
-        self.assertEqual(by_id["estremi_bancari"]["body"], "")  # testo ancora da fornire
-        # nessun segnaposto per appuntamenti, cognome o numero pratica
-        self.assertEqual([k for k, _ in app.WA_QUICK_PLACEHOLDERS], ["nome_cliente", "nome_animale", "sede", "operatore"])
+        estremi = by_id["estremi_bancari"]["body"]
+        self.assertTrue(estremi.startswith("Ciao {nome_cliente}, scriviamo dallo staff di Pet Paradise Cremazione Animali.\nCome da accordi"))
+        for line in ("Cremazione singola: {costo_cremazione}\n", "Ritiro spoglia: {costo_ritiro}\n", "Riconsegna in ambulatorio: {costo_riconsegna}\n",
+                     "Urna: {costo_urna}€\n", "\nTotale servizio: {costo_totale} €\n", "Causale: Saldo cremazione {nome_animale}\n",
+                     "IBAN: IT45P0892270400000000839662\n", "Intestato a: Pet Paradise Cremazioni Animali di Piccolo Filippo e C. SNC\n"):
+            self.assertIn(line, estremi)
+        self.assertTrue(estremi.endswith("Banca Alta Toscana Società Cooperativa S.C."))
+        # nessun segnaposto per operatore, sede, appuntamenti, cognome o numero pratica
+        self.assertEqual([k for k, _ in app.WA_QUICK_PLACEHOLDERS], ["nome_cliente", "nome_animale", "costo_cremazione", "costo_ritiro",
+                         "costo_riconsegna", "costo_urna", "costo_calchi", "costo_totale", "costo_acconto", "costo_saldo"])
         # titoli di una versione precedente salvati: passano ai nuovi
         with app.db() as conn:
             conn.execute("INSERT INTO settings(key,value) VALUES(?,?)", (app.WA_QUICK_SETTING, json.dumps([
@@ -7091,12 +7098,12 @@ class PetParadiseTests(unittest.TestCase):
         sent = []
         self.handler.send_json = lambda obj, status=200: sent.append(obj)
         self.handler.wa_quick_templates_api(admin)
-        self.assertTrue(sent[-1]["admin"]);self.assertEqual(len(sent[-1]["templates"]), 3)
-        self.assertEqual(sent[-1]["operator"], admin["display_name"])
+        self.assertEqual(len(sent[-1]["templates"]), 3);self.assertNotIn("admin", sent[-1])
+        self.assertNotIn("operator", sent[-1])
         if operator:
             self.handler.wa_quick_templates_api(operator)
-            self.assertFalse(sent[-1]["admin"])
-        # salvataggio: solo admin, segnaposto validati, testo troppo lungo rifiutato
+            self.assertEqual(len(sent[-1]["templates"]), 3)
+        # salvataggio: aperto a tutti gli utenti, segnaposto validati, testo troppo lungo rifiutato
         redirects = [];pages = [];errors = []
         self.handler.redirect = lambda url: redirects.append(url)
         self.handler.send_html = lambda content, status=200: pages.append((content, status))
@@ -7104,8 +7111,19 @@ class PetParadiseTests(unittest.TestCase):
         good = {"title_estremi_bancari": "Estremi bancari", "body_estremi_bancari": "IBAN: XX00 0000\nCausale: {nome_animale}",
                 "body_mancata_risposta_presa_in_carico": ""}
         self.handler.form = lambda: dict(good)
-        if operator:
-            self.handler.save_wa_quick_templates(operator);self.assertEqual(errors[-1], 403)
+        if operator is None:
+            with app.db() as conn:
+                conn.execute("INSERT INTO users(username,password_hash,display_name,role,active) VALUES('operatore_qwa','x','Operatore Prova','operator',1)")
+                operator = conn.execute("SELECT * FROM users WHERE username='operatore_qwa'").fetchone()
+        # un utente non admin puo' modificare i testi, come l'amministratore
+        self.handler.form = lambda: {"body_estremi_bancari": "Testo dell'operatore {nome_animale}"}
+        self.handler.save_wa_quick_templates(operator)
+        self.assertEqual(redirects[-1], "/impostazioni/messaggi-whatsapp?salvato=1");self.assertEqual(errors, [])
+        with app.db() as conn:
+            self.assertEqual({t["id"]: t for t in app.wa_quick_templates(conn)}["estremi_bancari"]["body"], "Testo dell'operatore {nome_animale}")
+        pages.clear();self.handler.path = "/impostazioni/messaggi-whatsapp";self.handler.wa_quick_admin_page(operator)
+        self.assertEqual(pages[-1][1], 200);self.assertIn('name="body_estremi_bancari"', pages[-1][0]);self.assertEqual(errors, [])
+        self.handler.form = lambda: dict(good)
         self.handler.save_wa_quick_templates(admin)
         self.assertEqual(redirects[-1], "/impostazioni/messaggi-whatsapp?salvato=1")
         with app.db() as conn:
@@ -7126,13 +7144,14 @@ class PetParadiseTests(unittest.TestCase):
         pages.clear();self.handler.wa_quick_admin_page(admin)
         for text in ("Messaggi WhatsApp rapidi", "{nome_cliente}", "{nome_animale}", 'name="body_estremi_bancari"'):
             self.assertIn(text, pages[-1][0])
-        for text in ("{cognome_cliente}", "{numero_pratica}", "{data}", "{ora}", "Conferma presa in carico"):
+        self.assertIn("{costo_totale}", pages[-1][0])
+        for text in ("{cognome_cliente}", "{numero_pratica}", "{data}", "{ora}", "{sede}", "{operatore}", "Conferma presa in carico"):
             self.assertNotIn(text, pages[-1][0])
-        if operator:
-            self.handler.wa_quick_admin_page(operator);self.assertEqual(errors[-1], 403)
-        # il link per l'admin e' nelle Impostazioni
-        pages.clear();self.handler.settings_page(admin)
-        self.assertIn('href="/impostazioni/messaggi-whatsapp"', pages[-1][0])
+        # il link e' nelle Impostazioni per tutti
+        for user in (admin, operator):
+            pages.clear();self.handler.settings_page(user)
+            self.assertIn('href="/impostazioni/messaggi-whatsapp"', pages[-1][0])
+        self.assertNotIn('payload.admin', app.APP_JS)
 
     def test_wa_quick_button_appears_on_practice_calendar_and_client_with_context(self):
         admin, pid = self._catalog_practice(phone="3339990000")
@@ -7148,28 +7167,52 @@ class PetParadiseTests(unittest.TestCase):
             for name in ("Luna", "Micio"):
                 conn.execute("INSERT INTO calendar_event_animals(event_id,name,species,weight,cremation_type,created_at,updated_at) VALUES(?,?,?,?,?,?,?)", (event_id, name, "Cane", "5", "Singola", stamp, stamp))
         rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
-        only_context = {"nome_cliente", "nome_animale", "sede", "operatore"}
+        only_context = {"nome_cliente", "nome_animale"}
+        cost_keys = {"costo_cremazione", "costo_ritiro", "costo_riconsegna", "costo_urna", "costo_calchi", "costo_totale", "costo_acconto", "costo_saldo"}
+        with app.db() as conn:
+            conn.execute("UPDATE practices SET price_cremation='1210', price_pickup='60', price_delivery='', deposit='' WHERE id=?", (pid,))
+            conn.execute("INSERT INTO practice_items(practice_id,category,subtype,label,price,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)", (pid, "urna", "", "Urna legno", "20", 0, app.now(), app.now()))
         # pratica
         self.handler.practice(admin, pid)
         data = self._qwa_payload(rendered[-1])
         self.assertEqual(data["phone"], "393339990000")
-        self.assertEqual(set(data["vars"]), only_context)  # niente cognome, numero pratica, data, ora
-        self.assertEqual((data["vars"]["nome_cliente"], data["vars"]["nome_animale"], data["vars"]["sede"]), ("Anna", "Luna e Micio", "Livorno"))
+        self.assertEqual(set(data["vars"]), only_context | cost_keys)  # niente cognome, numero pratica, data, ora, sede, operatore
+        self.assertTrue(data["practice"])
+        self.assertEqual((data["vars"]["nome_cliente"], data["vars"]["nome_animale"]), ("Anna", "Luna e Micio"))
+        # costi nel formato dei messaggi; voce mancante = vuota (la riga sparisce)
+        self.assertEqual((data["vars"]["costo_cremazione"], data["vars"]["costo_ritiro"], data["vars"]["costo_urna"], data["vars"]["costo_totale"]),
+                         ("1.210,00", "60,00", "20,00", "1.290,00"))
+        self.assertEqual((data["vars"]["costo_riconsegna"], data["vars"]["costo_calchi"], data["vars"]["costo_acconto"]), ("", "", ""))
+        self.assertEqual(data["vars"]["costo_saldo"], "1.290,00")
         self.assertIn('onclick="event.stopPropagation();ppmQuickWa(this)"', rendered[-1])
         # dettaglio evento
         rendered.clear();self.handler.path = f"/calendario/{event_id}";self.handler.calendar_event_detail(admin, event_id)
         data = self._qwa_payload(rendered[-1])
-        self.assertEqual(set(data["vars"]), only_context)
-        self.assertEqual((data["vars"]["nome_animale"], data["vars"]["sede"]), ("Luna e Micio", "Empoli"))
+        self.assertEqual(set(data["vars"]), only_context | cost_keys)  # evento con pratica collegata: costi della pratica
+        self.assertEqual(data["vars"]["nome_animale"], "Luna e Micio");self.assertEqual(data["vars"]["costo_totale"], "1.290,00")
+        self.assertTrue(data["practice"])
         self.assertIn("<span>Messaggi</span>", rendered[-1])
         # card del calendario (menu)
         rendered.clear();self.handler.path = "/calendario?data=2026-07-20";self.handler.calendar_page(admin)
         card = rendered[-1].split(f'data-event-id="{event_id}"')[1].split("</article>")[0]
         self.assertIn(">Messaggio WhatsApp</button>", card)
         self.assertEqual(self._qwa_payload(card)["vars"]["nome_cliente"], "Anna")
+        # evento senza pratica collegata e cliente: nessun costo, messaggi con i costi non disponibili
+        with app.db() as conn:
+            loose_id = conn.execute(
+                """INSERT INTO calendar_events(event_type,title,start_at,end_at,event_status,created_by,created_at,updated_at,client_first_name,client_phone)
+                   VALUES(?,?,?,?,?,?,?,?,?,?)""", ("Ritiro","RITIRO","2026-07-20T12:00:00","2026-07-20T13:00:00","Da ritirare",admin["id"],app.now(),app.now(),"Luca","3331112222")).lastrowid
+        rendered.clear();self.handler.path = f"/calendario/{loose_id}";self.handler.calendar_event_detail(admin, loose_id)
+        loose = self._qwa_payload(rendered[-1])
+        self.assertEqual(set(loose["vars"]), only_context);self.assertFalse(loose["practice"])
         # cliente
         rendered.clear();self.handler.client_detail(admin, client_id)
-        self.assertEqual(self._qwa_payload(rendered[-1])["vars"]["nome_cliente"], "Anna")
+        self.assertEqual(self._qwa_payload(rendered[-1])["vars"], {"nome_cliente": "Anna", "nome_animale": ""})  # senza pratiche
+        self.assertFalse(self._qwa_payload(rendered[-1])["practice"])
+        with app.db() as conn:
+            conn.execute("UPDATE practices SET client_id=? WHERE id=?", (client_id, pid))
+        rendered.clear();self.handler.client_detail(admin, client_id)
+        self.assertEqual(self._qwa_payload(rendered[-1])["vars"]["nome_animale"], "Luna")  # animale dell'ultima pratica del cliente
         self.assertIn("Messaggio WhatsApp</button>", rendered[-1])
         # senza telefono nessun pulsante
         rendered.clear();self.handler.client_detail(admin, no_phone_client)
@@ -7177,7 +7220,8 @@ class PetParadiseTests(unittest.TestCase):
         # JS: apre solo wa.me con il testo compilato, nessun invio dal server
         js = app.APP_JS
         for text in ("function ppmQuickWa(button)", "'https://wa.me/'+encodeURIComponent(data.phone||'')+'?text='+encodeURIComponent(text)",
-                     "Testo da compilare", "fetch('/api/messaggi-whatsapp'"):
+                     "Testo da compilare", "Disponibile solo con una pratica collegata", "ppmQwaNeedsPractice",
+                     "fetch('/api/messaggi-whatsapp'"):
             self.assertIn(text, js)
 
     def test_calendar_week_sentinel_navigation_is_reversible(self):
