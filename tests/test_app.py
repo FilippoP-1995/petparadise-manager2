@@ -7262,6 +7262,74 @@ class PetParadiseTests(unittest.TestCase):
             self.assertIn(chrome, js[js.index("const PPM_OVERLAY_CHROME"):js.index("function ppmOverlayOf")])
         self.assertIn("overscroll-behavior:contain", app.CSS)
 
+    def test_wa_quick_button_in_expanded_cremation_cycles(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-07-20", "in_attesa", "08:00", "09:30", stamp, stamp)).lastrowid
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,pickup_date,created_at,updated_at,created_by,
+                   owner_first_name,owner_last_name,owner_phone,animal_name,cremation_cycle_id,price_cremation,price_pickup)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-CICLO-QWA", "Privato", "Livorno", "In programma", "Cremazione singola", "2026-07-15", stamp, stamp, admin["id"],
+                 "Giulia", "Neri", "3335556677", "Birba", cycle_id, "250", "50")).lastrowid
+        for path in ("/programma-cremazioni?data=2026-07-20", "/programma-cremazioni?vista=settimana&data=2026-07-20"):
+            rendered = []
+            self.handler.path = path
+            self.handler.send_html = lambda content, *a: rendered.append(content)
+            (self.handler.cremation_schedule_week(admin, date(2026, 7, 20)) if "settimana" in path else self.handler.cremation_schedule(admin))
+            page = rendered[-1]
+            contact = page.split('cremation-animal-contact">')[1].split("</div>")[0]
+            self.assertIn("Giulia Neri", contact)
+            data = self._qwa_payload(contact)
+            self.assertEqual(data["phone"], "393335556677")
+            self.assertEqual((data["vars"]["nome_cliente"], data["vars"]["nome_animale"]), ("Giulia", "Birba"))
+            self.assertTrue(data["practice"]);self.assertEqual(data["vars"]["costo_totale"], "300,00")  # estremi bancari con i costi della pratica
+            self.assertIn('onclick="event.stopPropagation();ppmQuickWa(this)"', contact)
+
+    def test_zero_urn_price_with_payments_keeps_urn_and_autosave_explains_manual_save(self):
+        # urna regalata: prezzo a 0, scelta dell'urna mantenuta, totale ridotto; con pagamenti gia' registrati il
+        # salvataggio automatico rimanda a "Salva modifiche" con un messaggio chiaro (non un errore generico).
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            urn_id = conn.execute("SELECT id FROM urns WHERE name='Standard Grande'").fetchone()["id"]
+        base = {"operator_name": "SERENA", "service_type": "Cremazione singola", "request_origin": "Privato", "destination_branch": "Livorno",
+                "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333", "owner_tax_code": "X", "owner_street": "Via",
+                "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100", "provenance": "L", "animal_name": "Kira", "species": "Cane",
+                "price_cremation": "300", "urna_items_json": json.dumps([{"urn_catalog_id": urn_id}]),
+                "acconto_w_totale": "100", "acconto_w_data": "2026-07-20", "acconto_w_modalita": "Contanti", "balance_idempotency_key": "zero-urn-1"}
+        redirects = []
+        self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.form = lambda: dict(base)
+        self.handler.create_practice(admin)
+        pid = int(redirects[-1].split("/pratiche/")[1].split("?")[0])
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT price FROM practice_items WHERE practice_id=?", (pid,)).fetchone()["price"], "20")  # proposta di catalogo
+            previous = conn.execute("SELECT * FROM practices WHERE id=?", (pid,)).fetchone()
+        zero_items = json.dumps([{"urn_catalog_id": urn_id, "price": "0"}])
+        # salvataggio automatico con importi gia' registrati: messaggio esplicito che rimanda a "Salva modifiche"
+        captured = []
+        self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+        self.handler.form = lambda: {"updated_at": previous["updated_at"], "changes_json": json.dumps({"urna_items_json": zero_items})}
+        self.handler.practice_autosave(admin, pid)
+        self.assertEqual(captured[-1][1], 422);self.assertIn("Salva modifiche", captured[-1][0]["error"])
+        self.assertIn("Importo cambiato: premi «Salva modifiche» per registrarlo", app.APP_JS)
+        self.assertIn("needsManualSave", app.APP_JS)
+        # "Salva modifiche": urna a zero, scelta mantenuta, totale 300, nessun errore
+        edit_errors = []
+        self.handler.edit_page = lambda user, pid, draft=None, error="", error_field="": edit_errors.append(error)
+        edit_form = dict(base, urna_items_json=zero_items, payment_status="Acconto", economic_at="2026-07-20", balance_idempotency_key="zero-urn-2")
+        edit_form.pop("acconto_w_totale");edit_form.pop("acconto_w_data");edit_form.pop("acconto_w_modalita")
+        self.handler.form = lambda: edit_form
+        self.handler.edit_submit(admin, pid)
+        self.assertEqual(edit_errors, [])
+        with app.db() as conn:
+            item = conn.execute("SELECT price,urn_catalog_id,label FROM practice_items WHERE practice_id=? AND category='urna'", (pid,)).fetchone()
+            total = conn.execute("SELECT total_service FROM practices WHERE id=?", (pid,)).fetchone()["total_service"]
+        self.assertEqual((item["price"], item["urn_catalog_id"], item["label"]), ("0", urn_id, "Standard Grande"))
+        self.assertEqual(total, "300.00")
+
     def test_calendar_week_sentinel_navigation_is_reversible(self):
         # Caso esplicito segnalato dall'utente: oggi giovedi', sono sulla
         # card di domenica, swipe avanti attraversa il confine settimana
