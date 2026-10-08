@@ -8468,24 +8468,34 @@ def calendar_animals_summary_text(animals):
 
 
 WA_QUICK_SETTING = "wa_quick_templates"
+# (id, titolo, testo iniziale). Gli id restano quelli storici per non perdere
+# eventuali testi gia' salvati; "Conferma presa in carico" e' stato eliminato.
 WA_QUICK_DEFAULTS = (
-    ("presa_in_carico", "Conferma presa in carico"),
-    ("mancata_risposta_riconsegna", "Mancata risposta appuntamento riconsegna"),
-    ("estremi_bancari", "Estremi bancari"),
-    ("mancata_risposta_presa_in_carico", "Mancata risposta presa in carico"),
+    ("mancata_risposta_presa_in_carico", "Presa in carico",
+     "Ciao {nome_cliente}, scriviamo dallo staff di Pet Paradise Cremazione Animali. Abbiamo provato a contattarvi per avvisarvi "
+     "che abbiamo preso in carico {nome_animale}. Avremmo bisogno di alcuni dati per cui aspettiamo un vostro riscontro "
+     "non appena vi è possibile☺️🐾🌈"),
+    ("mancata_risposta_riconsegna", "Appuntamento riconsegna",
+     "Ciao {nome_cliente}, scriviamo dallo staff di Pet Paradise Cremazione Animali. Abbiamo provato a contattarvi per avvisarvi "
+     "che la cremazione di {nome_animale} è terminata e volevamo quindi prendere un appuntamento per la riconsegna dell’urna. "
+     "Attendiamo un vostro riscontro, grazie☺️🐾🌈"),
+    ("estremi_bancari", "Estremi bancari", ""),
 )
+# titoli usati in una versione precedente: se salvati cosi' si passa ai nuovi
+WA_QUICK_LEGACY_TITLES = {"Mancata risposta presa in carico": "Presa in carico",
+                          "Mancata risposta appuntamento riconsegna": "Appuntamento riconsegna"}
 WA_QUICK_PLACEHOLDERS = (
-    ("nome_cliente", "nome del cliente"), ("cognome_cliente", "cognome del cliente"),
-    ("nome_animale", "nome dell'animale (o degli animali)"), ("numero_pratica", "numero della pratica"),
-    ("data", "data dell'appuntamento"), ("ora", "ora dell'appuntamento"), ("sede", "sede (Livorno o Empoli)"),
-    ("operatore", "nome di chi invia"),
+    ("nome_cliente", "nome del cliente"),
+    ("nome_animale", "nome dell'animale (se sono più animali: «Luna e Micio»)"),
+    ("sede", "sede (Livorno o Empoli)"),
+    ("operatore", "nome di chi invia il messaggio"),
 )
 WA_QUICK_MAX_BODY = 1000
 
 
 def wa_quick_templates(c):
-    """I messaggi WhatsApp rapidi: sempre i 4 titoli previsti, con il testo
-    salvato dall'amministratore (vuoto finche' non viene compilato)."""
+    """I messaggi WhatsApp rapidi: sempre quelli previsti, con il testo salvato
+    dall'amministratore oppure, se non ce n'e', il testo iniziale."""
     row = c.execute("SELECT value FROM settings WHERE key=?", (WA_QUICK_SETTING,)).fetchone()
     try:
         saved = json.loads(row["value"]) if row and row["value"] else []
@@ -8493,11 +8503,12 @@ def wa_quick_templates(c):
         saved = []
     by_id = {item.get("id"): item for item in saved if isinstance(item, dict)}
     out = []
-    for template_id, default_title in WA_QUICK_DEFAULTS:
+    for template_id, default_title, default_body in WA_QUICK_DEFAULTS:
         item = by_id.get(template_id) or {}
-        out.append({"id": template_id,
-                    "title": " ".join(str(item.get("title") or default_title).split())[:80] or default_title,
-                    "body": str(item.get("body") or "").strip()[:WA_QUICK_MAX_BODY]})
+        title = " ".join(str(item.get("title") or default_title).split())[:80] or default_title
+        title = WA_QUICK_LEGACY_TITLES.get(title, title)
+        body = str(item.get("body") or "").strip()[:WA_QUICK_MAX_BODY] or default_body
+        out.append({"id": template_id, "title": title, "body": body})
     return out
 
 
@@ -17983,7 +17994,7 @@ class App(BaseHTTPRequestHandler):
         if not cl: return self.send_error(404)
         name=" ".join(x for x in (cl["first_name"],cl["last_name"]) if x).strip() or cl["company_name"] or "Cliente senza nome"
         rows=''.join(f'''<tr><td><a href="/pratiche/{p['id']}">{esc(p['practice_number'])}</a></td><td>{esc(p['animal_name'])}</td><td>{esc(p['status'])}</td><td>{esc(date_it(p['pickup_date']) if p['pickup_date'] else '')}</td></tr>''' for p in practices) or '<tr><td colspan="4" class="sub">Nessuna pratica collegata.</td></tr>'
-        client_qwa=self.wa_quick_button(cl["phone"] or cl["phone_2"],self.wa_quick_vars(user,cl["first_name"],cl["last_name"]),"btn",label="Messaggio WhatsApp")
+        client_qwa=self.wa_quick_button(cl["phone"] or cl["phone_2"],self.wa_quick_vars(user,cl["first_name"]),"btn",label="Messaggio WhatsApp")
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>{esc(name)}</h1><div class="sub">Anagrafica cliente</div></div><div class="actions" style="display:flex;gap:8px;flex-wrap:wrap">{client_qwa}<a class="btn ghost" href="/clienti">Torna alla lista</a></div></div><section class="section"><h2>Anagrafica</h2><form method="post" action="/clienti"><input type="hidden" name="id" value="{cl['id']}"><div class="fields"><div class="field"><label>Nome</label><input name="first_name" value="{esc(cl['first_name'])}"></div><div class="field"><label>Cognome</label><input name="last_name" value="{esc(cl['last_name'])}"></div><div class="field"><label>Ragione sociale</label><input name="company_name" value="{esc(cl['company_name'])}"></div><div class="field"><label>Telefono</label><input name="phone" value="{esc(cl['phone'])}"></div><div class="field"><label>Secondo telefono</label><input name="phone_2" value="{esc(cl['phone_2'])}"></div><div class="field"><label>Email</label><input type="email" name="email" value="{esc(cl['email'])}"></div><div class="field"><label>Codice fiscale</label><input name="tax_code" value="{esc(cl['tax_code'])}"></div><div class="field"><label>Partita IVA</label><input name="vat_number" value="{esc(cl['vat_number'])}"></div><div class="field full"><label>Indirizzo</label><input name="street" value="{esc(cl['street'])}"></div><div class="field"><label>Comune</label><input name="city" value="{esc(cl['city'])}"></div><div class="field"><label>Provincia</label><input name="province" value="{esc(cl['province'])}" maxlength="2"></div><div class="field"><label>CAP</label><input name="zip" value="{esc(cl['zip'])}"></div><div class="field full"><label>Note</label><input name="notes" value="{esc(cl['notes'])}"></div></div><button class="btn" style="margin-top:12px">Salva anagrafica</button></form><form method="post" action="/clienti/{cl['id']}/elimina" onsubmit="return confirm('Eliminare questo cliente dalla lista?')"><button class="btn ghost" style="margin-top:12px">Elimina cliente</button></form></section><div style="height:14px"></div><section class="section"><h2>Pratiche collegate</h2><div class="tablebox"><table class="premium-table"><thead><tr><th>Pratica</th><th>Animale</th><th>Stato</th><th>Recupero</th></tr></thead><tbody>{rows}</tbody></table></div></section></main>'''
         self.send_html(layout("Cliente",body,user))
 
@@ -18670,15 +18681,13 @@ class App(BaseHTTPRequestHandler):
                 return row["id"]
         return None
 
-    def wa_quick_vars(self,user,first="",last="",animals="",number="",date_iso="",time_text="",site=""):
+    def wa_quick_vars(self,user,first="",animals="",site=""):
         """Valori dei segnaposto dei messaggi WhatsApp rapidi per il contesto corrente."""
         operator=""
         if user is not None:
             try:operator=user["display_name"] or ""
             except (KeyError,IndexError):operator=""
-        return {"nome_cliente":(first or "").strip(),"cognome_cliente":(last or "").strip(),
-                "nome_animale":(animals or "").strip(),"numero_pratica":(number or "").strip(),
-                "data":date_it(date_iso) if date_iso else "","ora":(time_text or "")[:5],
+        return {"nome_cliente":(first or "").strip(),"nome_animale":(animals or "").strip(),
                 "sede":(site or "").strip(),"operatore":operator}
 
     def wa_quick_button(self,phone,qvars,kind="icon",label="Messaggio"):
@@ -18697,33 +18706,24 @@ class App(BaseHTTPRequestHandler):
         return f'<button {attrs} class="btn ghost">{lucide("send")} {esc(label)}</button>'
 
     def practice_qwa_vars(self,user,p):
-        """Segnaposto per una pratica; data/ora dall'appuntamento collegato
-        (la riconsegna se c'e', altrimenti il ritiro)."""
+        """Segnaposto per una pratica."""
         keys=p.keys()
-        with db() as c:
-            ev=c.execute("""SELECT start_at FROM calendar_events WHERE linked_practice_id=? AND (deleted_at IS NULL OR deleted_at='')
-                            ORDER BY CASE WHEN event_type LIKE 'Riconsegna%' THEN 0 ELSE 1 END, start_at DESC LIMIT 1""",(p["id"],)).fetchone()
         animals=" e ".join(x.strip() for x in (p["animal_name"] or "",(p["animal2_name"] if "animal2_name" in keys else "") or "") if x and x.strip())
-        start=(ev["start_at"] if ev else "") or ""
-        return self.wa_quick_vars(user,p["owner_first_name"],p["owner_last_name"],animals,p["practice_number"],start[:10],start[11:16],p["destination_branch"])
+        return self.wa_quick_vars(user,p["owner_first_name"],animals,p["destination_branch"])
 
     def event_qwa_vars(self,user,event,animals,client_display=None):
         """Segnaposto per un evento del calendario (animali dell'evento, cliente
         dell'evento o, se manca, proprietario della pratica collegata)."""
         keys=event.keys()
-        first=(event["client_first_name"] if "client_first_name" in keys else "") or ""
-        last=(event["client_last_name"] if "client_last_name" in keys else "") or ""
-        number="";linked=event["linked_practice_id"] if "linked_practice_id" in keys else None
-        if linked:
+        first=((event["client_first_name"] if "client_first_name" in keys else "") or "").strip()
+        linked=event["linked_practice_id"] if "linked_practice_id" in keys else None
+        if not first and linked:
             with db() as c:
-                practice=c.execute("SELECT practice_number,owner_first_name,owner_last_name FROM practices WHERE id=?",(linked,)).fetchone()
-            if practice:
-                number=practice["practice_number"] or ""
-                if not (first or last):first,last=practice["owner_first_name"] or "",practice["owner_last_name"] or ""
+                practice=c.execute("SELECT owner_first_name FROM practices WHERE id=?",(linked,)).fetchone()
+            if practice:first=practice["owner_first_name"] or ""
         names=" e ".join(str(a["name"]).strip() for a in animals if a["name"] and str(a["name"]).strip())
-        start=(event["start_at"] if "start_at" in keys else "") or ""
         site=(event["destination_site"] if "destination_site" in keys else "") or ""
-        return self.wa_quick_vars(user,first,last,names,number,start[:10],"" if ("all_day" in keys and event["all_day"]) else start[11:16],site)
+        return self.wa_quick_vars(user,first,names,site)
 
     def wa_quick_templates_api(self,user):
         with db() as c:
@@ -18739,7 +18739,7 @@ class App(BaseHTTPRequestHandler):
         saved_flag=(parse_qs(urlparse(getattr(self,"path","")).query).get("salvato") or [""])[0]=="1"
         blocks=''.join(f'''<section class="section"><h2>{esc(values.get("title_"+t["id"],t["title"]))}</h2>
           <div class="fields"><div class="field full"><label for="title_{t["id"]}">Titolo</label><input id="title_{t["id"]}" name="title_{t["id"]}" maxlength="80" value="{esc(values.get("title_"+t["id"],t["title"]))}" style="font-size:16px"></div>
-          <div class="field full"><label for="body_{t["id"]}">Testo del messaggio</label><textarea id="body_{t["id"]}" name="body_{t["id"]}" rows="6" maxlength="{WA_QUICK_MAX_BODY}" placeholder="Scrivi qui il testo. Lascialo vuoto se non vuoi ancora usarlo." style="font-size:16px">{esc(values.get("body_"+t["id"],t["body"]))}</textarea></div></div></section>''' for t in templates)
+          <div class="field full"><label for="body_{t["id"]}">Testo del messaggio</label><textarea id="body_{t["id"]}" name="body_{t["id"]}" rows="6" maxlength="{WA_QUICK_MAX_BODY}" placeholder="Scrivi qui il testo del messaggio." style="font-size:16px">{esc(values.get("body_"+t["id"],t["body"]))}</textarea></div></div></section>''' for t in templates)
         legend=''.join(f'<li><code>{{{key}}}</code> — {esc(text)}</li>' for key,text in WA_QUICK_PLACEHOLDERS)
         flash=(f'<div class="flash warning">{esc(error)}</div>' if error else ('<div class="flash">Messaggi salvati.</div>' if saved_flag else ''))
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>Messaggi WhatsApp rapidi</h1><div class="sub">Testi preimpostati: chi lavora li apre con un tocco da pratica, calendario o cliente e WhatsApp si apre già con il messaggio scritto. Poi preme Invia.</div></div><a class="btn ghost" href="/impostazioni">Impostazioni</a></div>{flash}

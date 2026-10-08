@@ -7063,18 +7063,35 @@ class PetParadiseTests(unittest.TestCase):
         raw = html_text.split(marker, 1)[1].split('"', 1)[0]
         return json.loads(html_lib.unescape(raw))
 
-    def test_wa_quick_templates_default_titles_and_admin_editing(self):
+    def test_wa_quick_templates_default_titles_texts_and_admin_editing(self):
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
             operator = conn.execute("SELECT * FROM users WHERE role!='admin' LIMIT 1").fetchone()
             templates = app.wa_quick_templates(conn)
-        self.assertEqual([t["title"] for t in templates], ["Conferma presa in carico", "Mancata risposta appuntamento riconsegna",
-                                                           "Estremi bancari", "Mancata risposta presa in carico"])
-        self.assertTrue(all(t["body"] == "" for t in templates))  # nessun testo inventato: i contenuti arrivano dall'utente
+        # "Conferma presa in carico" eliminato; titoli rinominati
+        self.assertEqual([t["title"] for t in templates], ["Presa in carico", "Appuntamento riconsegna", "Estremi bancari"])
+        by_id = {t["id"]: t for t in templates}
+        presa = by_id["mancata_risposta_presa_in_carico"]["body"];riconsegna = by_id["mancata_risposta_riconsegna"]["body"]
+        self.assertTrue(presa.startswith("Ciao {nome_cliente}, scriviamo dallo staff di Pet Paradise Cremazione Animali."))
+        self.assertIn("abbiamo preso in carico {nome_animale}.", presa);self.assertTrue(presa.endswith("possibile☺️🐾🌈"))
+        self.assertIn("la cremazione di {nome_animale} è terminata", riconsegna);self.assertIn("riconsegna dell’urna.", riconsegna)
+        self.assertTrue(riconsegna.endswith("grazie☺️🐾🌈"))
+        self.assertEqual(by_id["estremi_bancari"]["body"], "")  # testo ancora da fornire
+        # nessun segnaposto per appuntamenti, cognome o numero pratica
+        self.assertEqual([k for k, _ in app.WA_QUICK_PLACEHOLDERS], ["nome_cliente", "nome_animale", "sede", "operatore"])
+        # titoli di una versione precedente salvati: passano ai nuovi
+        with app.db() as conn:
+            conn.execute("INSERT INTO settings(key,value) VALUES(?,?)", (app.WA_QUICK_SETTING, json.dumps([
+                {"id": "mancata_risposta_presa_in_carico", "title": "Mancata risposta presa in carico", "body": ""},
+                {"id": "presa_in_carico", "title": "Conferma presa in carico", "body": "vecchio"}])))
+            migrated = app.wa_quick_templates(conn)
+            conn.execute("DELETE FROM settings WHERE key=?", (app.WA_QUICK_SETTING,))
+        self.assertEqual([t["title"] for t in migrated], ["Presa in carico", "Appuntamento riconsegna", "Estremi bancari"])
+        self.assertNotIn("vecchio", json.dumps(migrated))
         sent = []
         self.handler.send_json = lambda obj, status=200: sent.append(obj)
         self.handler.wa_quick_templates_api(admin)
-        self.assertTrue(sent[-1]["admin"]);self.assertEqual(len(sent[-1]["templates"]), 4)
+        self.assertTrue(sent[-1]["admin"]);self.assertEqual(len(sent[-1]["templates"]), 3)
         self.assertEqual(sent[-1]["operator"], admin["display_name"])
         if operator:
             self.handler.wa_quick_templates_api(operator)
@@ -7084,8 +7101,8 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.redirect = lambda url: redirects.append(url)
         self.handler.send_html = lambda content, status=200: pages.append((content, status))
         self.handler.send_error = lambda code, *a: errors.append(code)
-        good = {"title_presa_in_carico": "Presa in carico", "body_presa_in_carico": "Buongiorno {nome_cliente}, abbiamo preso in carico {nome_animale}.",
-                "body_estremi_bancari": "IBAN: XX00 0000\nCausale: {numero_pratica}"}
+        good = {"title_estremi_bancari": "Estremi bancari", "body_estremi_bancari": "IBAN: XX00 0000\nCausale: {nome_animale}",
+                "body_mancata_risposta_presa_in_carico": ""}
         self.handler.form = lambda: dict(good)
         if operator:
             self.handler.save_wa_quick_templates(operator);self.assertEqual(errors[-1], 403)
@@ -7093,24 +7110,26 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(redirects[-1], "/impostazioni/messaggi-whatsapp?salvato=1")
         with app.db() as conn:
             templates = {t["id"]: t for t in app.wa_quick_templates(conn)}
-        self.assertEqual(templates["presa_in_carico"]["title"], "Presa in carico")
-        self.assertEqual(templates["estremi_bancari"]["body"], "IBAN: XX00 0000\nCausale: {numero_pratica}")
-        self.assertEqual(templates["mancata_risposta_riconsegna"]["body"], "")
-        for bad_form, text in (({"body_presa_in_carico": "Ciao {nome}"}, "segnaposto non valido {nome}"),
-                               ({"body_presa_in_carico": "x" * 1001}, "troppo lungo")):
+        self.assertEqual(templates["estremi_bancari"]["body"], "IBAN: XX00 0000\nCausale: {nome_animale}")
+        self.assertIn("abbiamo preso in carico {nome_animale}", templates["mancata_risposta_presa_in_carico"]["body"])  # vuoto = testo iniziale
+        for bad_form, text in (({"body_estremi_bancari": "Ciao {nome}"}, "segnaposto non valido {nome}"),
+                               ({"body_estremi_bancari": "Pratica {numero_pratica}"}, "segnaposto non valido {numero_pratica}"),
+                               ({"body_estremi_bancari": "x" * 1001}, "troppo lungo")):
             self.handler.form = lambda bad_form=bad_form: dict(bad_form)
             self.handler.path = "/impostazioni/messaggi-whatsapp"
             self.handler.save_wa_quick_templates(admin)
             content, status = pages[-1]
             self.assertEqual(status, 422);self.assertIn(text, content)
         with app.db() as conn:  # i salvataggi respinti non hanno cambiato nulla
-            self.assertEqual({t["id"]: t for t in app.wa_quick_templates(conn)}["presa_in_carico"]["title"], "Presa in carico")
+            self.assertEqual({t["id"]: t for t in app.wa_quick_templates(conn)}["estremi_bancari"]["body"], "IBAN: XX00 0000\nCausale: {nome_animale}")
         self.handler.path = "/impostazioni/messaggi-whatsapp"
         pages.clear();self.handler.wa_quick_admin_page(admin)
-        for text in ("Messaggi WhatsApp rapidi", "{nome_cliente}", "{numero_pratica}", 'name="body_estremi_bancari"'):
+        for text in ("Messaggi WhatsApp rapidi", "{nome_cliente}", "{nome_animale}", 'name="body_estremi_bancari"'):
             self.assertIn(text, pages[-1][0])
-        self.handler.wa_quick_admin_page(operator or admin) if operator else None
-        if operator:self.assertEqual(errors[-1], 403)
+        for text in ("{cognome_cliente}", "{numero_pratica}", "{data}", "{ora}", "Conferma presa in carico"):
+            self.assertNotIn(text, pages[-1][0])
+        if operator:
+            self.handler.wa_quick_admin_page(operator);self.assertEqual(errors[-1], 403)
         # il link per l'admin e' nelle Impostazioni
         pages.clear();self.handler.settings_page(admin)
         self.assertIn('href="/impostazioni/messaggi-whatsapp"', pages[-1][0])
@@ -7129,20 +7148,19 @@ class PetParadiseTests(unittest.TestCase):
             for name in ("Luna", "Micio"):
                 conn.execute("INSERT INTO calendar_event_animals(event_id,name,species,weight,cremation_type,created_at,updated_at) VALUES(?,?,?,?,?,?,?)", (event_id, name, "Cane", "5", "Singola", stamp, stamp))
         rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        only_context = {"nome_cliente", "nome_animale", "sede", "operatore"}
         # pratica
         self.handler.practice(admin, pid)
         data = self._qwa_payload(rendered[-1])
         self.assertEqual(data["phone"], "393339990000")
-        self.assertEqual(data["vars"]["nome_cliente"], "Anna");self.assertEqual(data["vars"]["cognome_cliente"], "Bianchi")
-        self.assertEqual(data["vars"]["nome_animale"], "Luna e Micio")
-        self.assertEqual((data["vars"]["data"], data["vars"]["ora"], data["vars"]["sede"]), ("20/07/2026", "10:00", "Livorno"))
-        self.assertTrue(data["vars"]["numero_pratica"].startswith("CR-"))
+        self.assertEqual(set(data["vars"]), only_context)  # niente cognome, numero pratica, data, ora
+        self.assertEqual((data["vars"]["nome_cliente"], data["vars"]["nome_animale"], data["vars"]["sede"]), ("Anna", "Luna e Micio", "Livorno"))
         self.assertIn('onclick="event.stopPropagation();ppmQuickWa(this)"', rendered[-1])
         # dettaglio evento
         rendered.clear();self.handler.path = f"/calendario/{event_id}";self.handler.calendar_event_detail(admin, event_id)
         data = self._qwa_payload(rendered[-1])
-        self.assertEqual(data["vars"]["nome_animale"], "Luna e Micio");self.assertEqual(data["vars"]["sede"], "Empoli")
-        self.assertEqual((data["vars"]["data"], data["vars"]["ora"]), ("20/07/2026", "10:00"))
+        self.assertEqual(set(data["vars"]), only_context)
+        self.assertEqual((data["vars"]["nome_animale"], data["vars"]["sede"]), ("Luna e Micio", "Empoli"))
         self.assertIn("<span>Messaggi</span>", rendered[-1])
         # card del calendario (menu)
         rendered.clear();self.handler.path = "/calendario?data=2026-07-20";self.handler.calendar_page(admin)
