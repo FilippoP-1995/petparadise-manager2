@@ -7058,6 +7058,110 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn("altri", detail.split("2 animali")[1][:300])
         self.assertNotIn("18 kg", detail)
 
+    def _qwa_payload(self, html_text, marker='data-qwa="'):
+        import html as html_lib
+        raw = html_text.split(marker, 1)[1].split('"', 1)[0]
+        return json.loads(html_lib.unescape(raw))
+
+    def test_wa_quick_templates_default_titles_and_admin_editing(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            operator = conn.execute("SELECT * FROM users WHERE role!='admin' LIMIT 1").fetchone()
+            templates = app.wa_quick_templates(conn)
+        self.assertEqual([t["title"] for t in templates], ["Conferma presa in carico", "Mancata risposta appuntamento riconsegna",
+                                                           "Estremi bancari", "Mancata risposta presa in carico"])
+        self.assertTrue(all(t["body"] == "" for t in templates))  # nessun testo inventato: i contenuti arrivano dall'utente
+        sent = []
+        self.handler.send_json = lambda obj, status=200: sent.append(obj)
+        self.handler.wa_quick_templates_api(admin)
+        self.assertTrue(sent[-1]["admin"]);self.assertEqual(len(sent[-1]["templates"]), 4)
+        self.assertEqual(sent[-1]["operator"], admin["display_name"])
+        if operator:
+            self.handler.wa_quick_templates_api(operator)
+            self.assertFalse(sent[-1]["admin"])
+        # salvataggio: solo admin, segnaposto validati, testo troppo lungo rifiutato
+        redirects = [];pages = [];errors = []
+        self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.send_html = lambda content, status=200: pages.append((content, status))
+        self.handler.send_error = lambda code, *a: errors.append(code)
+        good = {"title_presa_in_carico": "Presa in carico", "body_presa_in_carico": "Buongiorno {nome_cliente}, abbiamo preso in carico {nome_animale}.",
+                "body_estremi_bancari": "IBAN: XX00 0000\nCausale: {numero_pratica}"}
+        self.handler.form = lambda: dict(good)
+        if operator:
+            self.handler.save_wa_quick_templates(operator);self.assertEqual(errors[-1], 403)
+        self.handler.save_wa_quick_templates(admin)
+        self.assertEqual(redirects[-1], "/impostazioni/messaggi-whatsapp?salvato=1")
+        with app.db() as conn:
+            templates = {t["id"]: t for t in app.wa_quick_templates(conn)}
+        self.assertEqual(templates["presa_in_carico"]["title"], "Presa in carico")
+        self.assertEqual(templates["estremi_bancari"]["body"], "IBAN: XX00 0000\nCausale: {numero_pratica}")
+        self.assertEqual(templates["mancata_risposta_riconsegna"]["body"], "")
+        for bad_form, text in (({"body_presa_in_carico": "Ciao {nome}"}, "segnaposto non valido {nome}"),
+                               ({"body_presa_in_carico": "x" * 1001}, "troppo lungo")):
+            self.handler.form = lambda bad_form=bad_form: dict(bad_form)
+            self.handler.path = "/impostazioni/messaggi-whatsapp"
+            self.handler.save_wa_quick_templates(admin)
+            content, status = pages[-1]
+            self.assertEqual(status, 422);self.assertIn(text, content)
+        with app.db() as conn:  # i salvataggi respinti non hanno cambiato nulla
+            self.assertEqual({t["id"]: t for t in app.wa_quick_templates(conn)}["presa_in_carico"]["title"], "Presa in carico")
+        self.handler.path = "/impostazioni/messaggi-whatsapp"
+        pages.clear();self.handler.wa_quick_admin_page(admin)
+        for text in ("Messaggi WhatsApp rapidi", "{nome_cliente}", "{numero_pratica}", 'name="body_estremi_bancari"'):
+            self.assertIn(text, pages[-1][0])
+        self.handler.wa_quick_admin_page(operator or admin) if operator else None
+        if operator:self.assertEqual(errors[-1], 403)
+        # il link per l'admin e' nelle Impostazioni
+        pages.clear();self.handler.settings_page(admin)
+        self.assertIn('href="/impostazioni/messaggi-whatsapp"', pages[-1][0])
+
+    def test_wa_quick_button_appears_on_practice_calendar_and_client_with_context(self):
+        admin, pid = self._catalog_practice(phone="3339990000")
+        with app.db() as conn:
+            stamp = app.now()
+            conn.execute("UPDATE practices SET animal2_name='Micio' WHERE id=?", (pid,))
+            client_id = conn.execute("INSERT INTO clients(first_name,last_name,phone,active,created_at,updated_at) VALUES('Anna','Bianchi','3339990000',1,?,?)", (stamp, stamp)).lastrowid
+            no_phone_client = conn.execute("INSERT INTO clients(first_name,last_name,phone,active,created_at,updated_at) VALUES('Senza','Telefono','',1,?,?)", (stamp, stamp)).lastrowid
+            event_id = conn.execute(
+                """INSERT INTO calendar_events(event_type,title,start_at,end_at,event_status,created_by,created_at,updated_at,client_first_name,client_last_name,client_phone,linked_practice_id,destination_site)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("Riconsegna","RICONSEGNA","2026-07-20T10:00:00","2026-07-20T11:00:00","Da confermare",admin["id"],stamp,stamp,"Anna","Bianchi","3339990000",pid,"Empoli")).lastrowid
+            for name in ("Luna", "Micio"):
+                conn.execute("INSERT INTO calendar_event_animals(event_id,name,species,weight,cremation_type,created_at,updated_at) VALUES(?,?,?,?,?,?,?)", (event_id, name, "Cane", "5", "Singola", stamp, stamp))
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        # pratica
+        self.handler.practice(admin, pid)
+        data = self._qwa_payload(rendered[-1])
+        self.assertEqual(data["phone"], "393339990000")
+        self.assertEqual(data["vars"]["nome_cliente"], "Anna");self.assertEqual(data["vars"]["cognome_cliente"], "Bianchi")
+        self.assertEqual(data["vars"]["nome_animale"], "Luna e Micio")
+        self.assertEqual((data["vars"]["data"], data["vars"]["ora"], data["vars"]["sede"]), ("20/07/2026", "10:00", "Livorno"))
+        self.assertTrue(data["vars"]["numero_pratica"].startswith("CR-"))
+        self.assertIn('onclick="event.stopPropagation();ppmQuickWa(this)"', rendered[-1])
+        # dettaglio evento
+        rendered.clear();self.handler.path = f"/calendario/{event_id}";self.handler.calendar_event_detail(admin, event_id)
+        data = self._qwa_payload(rendered[-1])
+        self.assertEqual(data["vars"]["nome_animale"], "Luna e Micio");self.assertEqual(data["vars"]["sede"], "Empoli")
+        self.assertEqual((data["vars"]["data"], data["vars"]["ora"]), ("20/07/2026", "10:00"))
+        self.assertIn("<span>Messaggi</span>", rendered[-1])
+        # card del calendario (menu)
+        rendered.clear();self.handler.path = "/calendario?data=2026-07-20";self.handler.calendar_page(admin)
+        card = rendered[-1].split(f'data-event-id="{event_id}"')[1].split("</article>")[0]
+        self.assertIn(">Messaggio WhatsApp</button>", card)
+        self.assertEqual(self._qwa_payload(card)["vars"]["nome_cliente"], "Anna")
+        # cliente
+        rendered.clear();self.handler.client_detail(admin, client_id)
+        self.assertEqual(self._qwa_payload(rendered[-1])["vars"]["nome_cliente"], "Anna")
+        self.assertIn("Messaggio WhatsApp</button>", rendered[-1])
+        # senza telefono nessun pulsante
+        rendered.clear();self.handler.client_detail(admin, no_phone_client)
+        self.assertNotIn("ppmQuickWa(this)", rendered[-1])
+        # JS: apre solo wa.me con il testo compilato, nessun invio dal server
+        js = app.APP_JS
+        for text in ("function ppmQuickWa(button)", "'https://wa.me/'+encodeURIComponent(data.phone||'')+'?text='+encodeURIComponent(text)",
+                     "Testo da compilare", "fetch('/api/messaggi-whatsapp'"):
+            self.assertIn(text, js)
+
     def test_calendar_week_sentinel_navigation_is_reversible(self):
         # Caso esplicito segnalato dall'utente: oggi giovedi', sono sulla
         # card di domenica, swipe avanti attraversa il confine settimana

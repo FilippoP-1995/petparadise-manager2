@@ -2692,7 +2692,7 @@ button.calendar-tap-card:active,a.calendar-tap-card:active{transform:scale(.985)
 .calendar-detail-header-meta span{display:inline-flex;align-items:center;gap:6px}
 .calendar-detail-header-meta .icon{width:15px;height:15px}
 .calendar-detail-status-badge{display:inline-flex;padding:4px 10px;border-radius:99px;background:#202c3d;font-weight:800;font-size:11.5px;text-transform:uppercase;letter-spacing:.03em}
-.calendar-detail-quickactions{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:16px}
+.calendar-detail-quickactions{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:16px}
 .calendar-detail-qa{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;min-height:68px;padding:10px 4px;border:1px solid #ffffff12;border-radius:18px;background:linear-gradient(160deg,#1c2635d9,#141b27d9);backdrop-filter:blur(16px);box-shadow:0 8px 18px #05070f30;color:#e2e8f0;font-size:11.5px;font-weight:700;text-align:center;transition:transform .15s cubic-bezier(.34,1.4,.64,1),border-color .18s ease}
 .calendar-detail-qa:active{transform:scale(.94)}
 .calendar-detail-qa-icon{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;background:#202c3d;color:#9ca7b8}
@@ -2706,7 +2706,7 @@ button.calendar-tap-card:active,a.calendar-tap-card:active{transform:scale(.985)
 .calendar-detail-qa-menu-wrap .calendar-appt-menu-popover{left:auto;right:0;bottom:calc(100% + 6px)}
 .light-theme .calendar-detail-status-badge{background:#f1f5f9}
 .light-theme .calendar-detail-qa{background:#fff;border-color:#e2e8f0;color:#111827}
-@media(max-width:560px){.calendar-detail-quickactions{grid-template-columns:repeat(5,minmax(0,1fr))}.calendar-detail-qa{min-height:64px;font-size:10.5px}.calendar-detail-header-top{flex-wrap:wrap}}
+@media(max-width:560px){.calendar-detail-quickactions{grid-template-columns:repeat(6,minmax(0,1fr))}.calendar-detail-qa{min-height:64px;font-size:10.5px}.calendar-detail-header-top{flex-wrap:wrap}}
 .calendar-detail-topbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
 .calendar-detail-back{display:inline-flex;align-items:center;gap:4px;color:#dfe4eb;font-weight:600;font-size:14.5px}
 .calendar-detail-back-arrow{display:inline-flex;transform:scaleX(-1)}
@@ -7242,6 +7242,85 @@ function renderCalendarDraftsBanner(){
 function calendarDiscardDraftKey(key){try{localStorage.removeItem(key);}catch(error){}renderCalendarDraftsBanner();}
 function calendarSubmit(form){calendarSerialize();form.querySelectorAll('[aria-invalid="true"]').forEach(el=>el.removeAttribute('aria-invalid'));const invalid=[...form.elements].find(input=>!input.disabled&&!input.checkValidity());if(invalid){invalid.setAttribute('aria-invalid','true');invalid.reportValidity();return false;}try{if(new URL(form.action,location.href).pathname==='/calendario/nuovo')sessionStorage.setItem('ppm_calendar_created','1');}catch(error){}calendarWizardAllowExit=true;return true;}
 function ppmBtnPress(btn){if(!btn)return;btn.classList.add('ppm-btn-press');setTimeout(()=>btn.classList.remove('ppm-btn-press'),110);}
+// Messaggi WhatsApp rapidi (funzione semi-automatica, senza WhatsApp Business a
+// pagamento): il pulsante apre un elenco di testi preimpostati; scegliendone
+// uno si apre WhatsApp (link wa.me) sul dispositivo di chi ha cliccato, con il
+// numero del cliente e il testo gia' compilato. L'operatore controlla e preme
+// Invia: nulla viene inviato dal gestionale ne' registrato.
+function ppmQwaClose(){const overlay=document.getElementById('ppmQwaOverlay');if(overlay)overlay.remove();}
+function ppmQwaFill(text,vars){
+  const out=String(text||'').replace(/[{]([a-z_]+)[}]/g,function(match,key){
+    return Object.prototype.hasOwnProperty.call(vars||{},key)?String(vars[key]||''):match;
+  });
+  return out.replace(/[ \t]+([,.;:!?])/g,'$1').replace(/[ \t]{2,}/g,' ').replace(/[ \t]+\n/g,'\n').trim();
+}
+function ppmQuickWa(button){
+  let data={};
+  try{data=JSON.parse(button.dataset.qwa||'{}');}catch(error){}
+  ppmQwaClose();
+  const overlay=document.createElement('div');
+  overlay.id='ppmQwaOverlay';
+  overlay.className='payment-popover';
+  overlay.addEventListener('click',function(event){if(event.target===overlay)ppmQwaClose();});
+  const dialog=document.createElement('div');
+  dialog.className='payment-dialog';
+  dialog.style.maxWidth='520px';
+  const title=document.createElement('h2');
+  title.textContent='Messaggio WhatsApp';
+  const hint=document.createElement('p');
+  hint.className='sub';
+  hint.textContent="Scegli il testo: si apre WhatsApp con il messaggio già scritto, tu controlli e premi Invia.";
+  const list=document.createElement('div');
+  list.style.cssText='display:flex;flex-direction:column;gap:10px;margin:14px 0';
+  list.textContent='Caricamento…';
+  const footer=document.createElement('div');
+  footer.style.cssText='display:flex;gap:10px;justify-content:space-between;flex-wrap:wrap;align-items:center';
+  const close=document.createElement('button');
+  close.type='button';
+  close.className='btn ghost';
+  close.textContent='Chiudi';
+  close.onclick=ppmQwaClose;
+  footer.appendChild(close);
+  dialog.appendChild(title);dialog.appendChild(hint);dialog.appendChild(list);dialog.appendChild(footer);
+  overlay.appendChild(dialog);
+  document.body.appendChild(overlay);
+  document.addEventListener('keydown',function onKey(event){
+    if(event.key==='Escape'){ppmQwaClose();document.removeEventListener('keydown',onKey);}
+  });
+  fetch('/api/messaggi-whatsapp',{credentials:'same-origin'})
+    .then(function(res){return res.json();})
+    .then(function(payload){
+      list.textContent='';
+      (payload.templates||[]).forEach(function(template){
+        const vars=Object.assign({},data.vars||{});
+        if(!vars.operatore)vars.operatore=payload.operator||'';
+        const text=ppmQwaFill(template.body,vars);
+        const item=document.createElement(text?'a':'div');
+        item.style.cssText='display:block;padding:12px 14px;border:1px solid #334155;border-radius:14px;text-decoration:none;color:inherit'+(text?'':';opacity:.55');
+        const name=document.createElement('b');
+        name.textContent=template.title;
+        const preview=document.createElement('small');
+        preview.style.cssText='display:block;margin-top:4px;opacity:.75;white-space:pre-line;max-height:3.6em;overflow:hidden';
+        preview.textContent=text||'Testo da compilare';
+        item.appendChild(name);item.appendChild(preview);
+        if(text){
+          item.href='https://wa.me/'+encodeURIComponent(data.phone||'')+'?text='+encodeURIComponent(text);
+          item.target='_blank';
+          item.rel='noopener noreferrer';
+          item.addEventListener('click',function(){setTimeout(ppmQwaClose,300);});
+        }
+        list.appendChild(item);
+      });
+      if(payload.admin){
+        const edit=document.createElement('a');
+        edit.href='/impostazioni/messaggi-whatsapp';
+        edit.textContent='Modifica i testi';
+        edit.style.cssText='font-size:14px;text-decoration:underline';
+        footer.appendChild(edit);
+      }
+    })
+    .catch(function(){list.textContent='Impossibile caricare i messaggi. Riprova.';});
+}
 function ppmPracticeCreateSubmit(form){try{sessionStorage.setItem('ppm_practice_created','1');}catch(error){}try{sessionStorage.setItem('ppm_practice_draft_pending',ppmPdKey(form));}catch(error){}return true;}
 // Bozza automatica della NUOVA pratica (richiesta esplicita dell'utente):
 // mentre si compila il form "Nuova pratica" i dati vengono tenuti in
@@ -8386,6 +8465,40 @@ def calendar_animals_summary_text(animals):
     shown=", ".join(short_bit(a) for a in animals[:2])
     extra=len(animals)-2
     return f"{shown} +{extra}" if extra>0 else shown
+
+
+WA_QUICK_SETTING = "wa_quick_templates"
+WA_QUICK_DEFAULTS = (
+    ("presa_in_carico", "Conferma presa in carico"),
+    ("mancata_risposta_riconsegna", "Mancata risposta appuntamento riconsegna"),
+    ("estremi_bancari", "Estremi bancari"),
+    ("mancata_risposta_presa_in_carico", "Mancata risposta presa in carico"),
+)
+WA_QUICK_PLACEHOLDERS = (
+    ("nome_cliente", "nome del cliente"), ("cognome_cliente", "cognome del cliente"),
+    ("nome_animale", "nome dell'animale (o degli animali)"), ("numero_pratica", "numero della pratica"),
+    ("data", "data dell'appuntamento"), ("ora", "ora dell'appuntamento"), ("sede", "sede (Livorno o Empoli)"),
+    ("operatore", "nome di chi invia"),
+)
+WA_QUICK_MAX_BODY = 1000
+
+
+def wa_quick_templates(c):
+    """I messaggi WhatsApp rapidi: sempre i 4 titoli previsti, con il testo
+    salvato dall'amministratore (vuoto finche' non viene compilato)."""
+    row = c.execute("SELECT value FROM settings WHERE key=?", (WA_QUICK_SETTING,)).fetchone()
+    try:
+        saved = json.loads(row["value"]) if row and row["value"] else []
+    except (ValueError, TypeError):
+        saved = []
+    by_id = {item.get("id"): item for item in saved if isinstance(item, dict)}
+    out = []
+    for template_id, default_title in WA_QUICK_DEFAULTS:
+        item = by_id.get(template_id) or {}
+        out.append({"id": template_id,
+                    "title": " ".join(str(item.get("title") or default_title).split())[:80] or default_title,
+                    "body": str(item.get("body") or "").strip()[:WA_QUICK_MAX_BODY]})
+    return out
 
 
 def calendar_animal_lines(animals):
@@ -9789,6 +9902,8 @@ class App(BaseHTTPRequestHandler):
         if path in ("/diagnostica","/impostazioni"): return self.settings_page(user)
         if path == "/il-mio-profilo": return self.profile_page(user)
         if path == "/whatsapp-diagnostica": return self.whatsapp_diagnostics(user)
+        if path == "/api/messaggi-whatsapp": return self.wa_quick_templates_api(user)
+        if path == "/impostazioni/messaggi-whatsapp": return self.wa_quick_admin_page(user)
         if path == "/api/clienti/search": return self.api_clients_search(user)
         if path == "/api/cap": return self.api_zip_lookup(user)
         if path == "/api/geocode/indirizzo": return self.api_address_suggestions(user)
@@ -9915,6 +10030,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/api/push/test": return self.push_test(user)
         if path == "/impostazioni/notifiche": return self.save_notification_preferences(user)
         if path == "/il-mio-profilo/salva": return self.save_preferences(user)
+        if path == "/impostazioni/messaggi-whatsapp": return self.save_wa_quick_templates(user)
         if path in ("/impostazioni/ordini","/ordini/impostazioni"): return self.save_order_settings(user)
         if path == "/calendario/impostazioni": return self.save_calendar_colors(user)
         if path == "/ordini/invia": return self.send_water_order(user)
@@ -11560,11 +11676,13 @@ class App(BaseHTTPRequestHandler):
         # caricamento passivo di questa lista: geocodificare ogni card
         # visibile ad ogni caricamento sarebbe un rallentamento reale.
         nav_btn=f'<a class="calendar-appt-action" href="/calendario/{row["id"]}/naviga" target="_blank" rel="noopener noreferrer" aria-label="Naviga" onclick="event.stopPropagation()">{lucide("navigation")}</a>' if address else ''
+        card_qwa=self.wa_quick_button(phone,self.event_qwa_vars(None,row,(animals_by_event or {}).get(row["id"],[]),client_display=client_display),"menu") if phone else ""
         menu_btn=f'''<div class="calendar-appt-menu-wrap" onclick="event.stopPropagation()">
           <button type="button" class="calendar-appt-action" aria-label="Altre azioni" onclick="calendarToggleApptMenu(this)">{lucide("more-vertical")}</button>
           <div class="calendar-appt-menu-popover" hidden>
             <a href="/calendario/{row['id']}" onclick="event.preventDefault();location.href=this.getAttribute('href')+'?return_to='+encodeURIComponent(location.pathname+location.search)">Apri dettaglio</a>
             <a href="/calendario/{row['id']}/modifica">Modifica</a>
+            {card_qwa}
             <form method="post" action="/calendario/{row['id']}/elimina" onsubmit="return confirm('Eliminare questo evento?')"><button type="submit">Elimina</button></form>
           </div>
         </div>'''
@@ -12945,9 +13063,13 @@ class App(BaseHTTPRequestHandler):
         def qa(icon,label,href,extra=""):
             if href:return f'<a class="calendar-detail-qa" href="{href}"{extra}><span class="calendar-detail-qa-icon">{lucide(icon)}</span><span>{label}</span></a>'
             return f'<span class="calendar-detail-qa calendar-detail-qa-disabled"><span class="calendar-detail-qa-icon">{lucide(icon)}</span><span>{label}</span></span>'
+        qwa_html=self.wa_quick_button(phone,self.event_qwa_vars(user,event,animals),"qa") if phone else ""
+        if not qwa_html:
+            qwa_html='<span class="calendar-detail-qa calendar-detail-qa-disabled"><span class="calendar-detail-qa-icon">'+lucide("send")+'</span><span>Messaggi</span></span>'
         quick_actions=f'''<div class="calendar-detail-quickactions">
           {qa("phone","Chiama",f"tel:{esc(tel)}" if tel else "")}
           {qa("message","WhatsApp",f"https://wa.me/{wa}" if wa else "", ' target="_blank" rel="noopener noreferrer"' if wa else "")}
+          {qwa_html}
           {qa("navigation","Naviga",f"/calendario/{event_id}/naviga" if address else "", ' target="_blank" rel="noopener noreferrer"' if address else "")}
           {qa("receipt",create_practice_label or "Pratica",create_practice_url)}
           <div class="calendar-appt-menu-wrap calendar-detail-qa-menu-wrap">
@@ -16524,7 +16646,7 @@ class App(BaseHTTPRequestHandler):
         data_ok = DATA.exists()
         ddt_ok = DDT_DIR.exists()
         writable = os.access(DATA, os.W_OK) if data_ok else False
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Impostazioni</h1><div class="sub">Diagnostica del gestionale. Per le preferenze personali vai su <a href="/il-mio-profilo">Il mio profilo</a>.</div></div></div><section class="section"><h2>Modelli PDF</h2><div class="tablebox"><table><thead><tr><th>File</th><th>Stato</th><th>Dimensione</th></tr></thead><tbody>{''.join(asset_rows)}</tbody></table></div></section><section class="section" style="margin-top:16px"><h2>Cartelle dati</h2><p><b>Assets:</b> {esc(ASSETS)}</p><p><b>DATA:</b> {esc(DATA)} - {'OK' if data_ok else 'MANCANTE'} - scrittura {'OK' if writable else 'NO'}</p><p><b>DDT:</b> {esc(DDT_DIR)} - {'OK' if ddt_ok else 'MANCANTE'}</p></section></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Impostazioni</h1><div class="sub">Diagnostica del gestionale. Per le preferenze personali vai su <a href="/il-mio-profilo">Il mio profilo</a>.</div></div></div>{'<section class="section"><h2>Messaggi WhatsApp rapidi</h2><p class="sub">I testi preimpostati che gli operatori possono aprire in WhatsApp con un tocco.</p><a class="btn ghost" href="/impostazioni/messaggi-whatsapp">Modifica i messaggi</a></section>' if user["role"]=="admin" else ""}<section class="section"><h2>Modelli PDF</h2><div class="tablebox"><table><thead><tr><th>File</th><th>Stato</th><th>Dimensione</th></tr></thead><tbody>{''.join(asset_rows)}</tbody></table></div></section><section class="section" style="margin-top:16px"><h2>Cartelle dati</h2><p><b>Assets:</b> {esc(ASSETS)}</p><p><b>DATA:</b> {esc(DATA)} - {'OK' if data_ok else 'MANCANTE'} - scrittura {'OK' if writable else 'NO'}</p><p><b>DDT:</b> {esc(DDT_DIR)} - {'OK' if ddt_ok else 'MANCANTE'}</p></section></main>'''
         self.send_html(layout("Impostazioni",body,user))
 
     diagnostics=settings_page
@@ -17861,7 +17983,8 @@ class App(BaseHTTPRequestHandler):
         if not cl: return self.send_error(404)
         name=" ".join(x for x in (cl["first_name"],cl["last_name"]) if x).strip() or cl["company_name"] or "Cliente senza nome"
         rows=''.join(f'''<tr><td><a href="/pratiche/{p['id']}">{esc(p['practice_number'])}</a></td><td>{esc(p['animal_name'])}</td><td>{esc(p['status'])}</td><td>{esc(date_it(p['pickup_date']) if p['pickup_date'] else '')}</td></tr>''' for p in practices) or '<tr><td colspan="4" class="sub">Nessuna pratica collegata.</td></tr>'
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{esc(name)}</h1><div class="sub">Anagrafica cliente</div></div><a class="btn ghost" href="/clienti">Torna alla lista</a></div><section class="section"><h2>Anagrafica</h2><form method="post" action="/clienti"><input type="hidden" name="id" value="{cl['id']}"><div class="fields"><div class="field"><label>Nome</label><input name="first_name" value="{esc(cl['first_name'])}"></div><div class="field"><label>Cognome</label><input name="last_name" value="{esc(cl['last_name'])}"></div><div class="field"><label>Ragione sociale</label><input name="company_name" value="{esc(cl['company_name'])}"></div><div class="field"><label>Telefono</label><input name="phone" value="{esc(cl['phone'])}"></div><div class="field"><label>Secondo telefono</label><input name="phone_2" value="{esc(cl['phone_2'])}"></div><div class="field"><label>Email</label><input type="email" name="email" value="{esc(cl['email'])}"></div><div class="field"><label>Codice fiscale</label><input name="tax_code" value="{esc(cl['tax_code'])}"></div><div class="field"><label>Partita IVA</label><input name="vat_number" value="{esc(cl['vat_number'])}"></div><div class="field full"><label>Indirizzo</label><input name="street" value="{esc(cl['street'])}"></div><div class="field"><label>Comune</label><input name="city" value="{esc(cl['city'])}"></div><div class="field"><label>Provincia</label><input name="province" value="{esc(cl['province'])}" maxlength="2"></div><div class="field"><label>CAP</label><input name="zip" value="{esc(cl['zip'])}"></div><div class="field full"><label>Note</label><input name="notes" value="{esc(cl['notes'])}"></div></div><button class="btn" style="margin-top:12px">Salva anagrafica</button></form><form method="post" action="/clienti/{cl['id']}/elimina" onsubmit="return confirm('Eliminare questo cliente dalla lista?')"><button class="btn ghost" style="margin-top:12px">Elimina cliente</button></form></section><div style="height:14px"></div><section class="section"><h2>Pratiche collegate</h2><div class="tablebox"><table class="premium-table"><thead><tr><th>Pratica</th><th>Animale</th><th>Stato</th><th>Recupero</th></tr></thead><tbody>{rows}</tbody></table></div></section></main>'''
+        client_qwa=self.wa_quick_button(cl["phone"] or cl["phone_2"],self.wa_quick_vars(user,cl["first_name"],cl["last_name"]),"btn",label="Messaggio WhatsApp")
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{esc(name)}</h1><div class="sub">Anagrafica cliente</div></div><div class="actions" style="display:flex;gap:8px;flex-wrap:wrap">{client_qwa}<a class="btn ghost" href="/clienti">Torna alla lista</a></div></div><section class="section"><h2>Anagrafica</h2><form method="post" action="/clienti"><input type="hidden" name="id" value="{cl['id']}"><div class="fields"><div class="field"><label>Nome</label><input name="first_name" value="{esc(cl['first_name'])}"></div><div class="field"><label>Cognome</label><input name="last_name" value="{esc(cl['last_name'])}"></div><div class="field"><label>Ragione sociale</label><input name="company_name" value="{esc(cl['company_name'])}"></div><div class="field"><label>Telefono</label><input name="phone" value="{esc(cl['phone'])}"></div><div class="field"><label>Secondo telefono</label><input name="phone_2" value="{esc(cl['phone_2'])}"></div><div class="field"><label>Email</label><input type="email" name="email" value="{esc(cl['email'])}"></div><div class="field"><label>Codice fiscale</label><input name="tax_code" value="{esc(cl['tax_code'])}"></div><div class="field"><label>Partita IVA</label><input name="vat_number" value="{esc(cl['vat_number'])}"></div><div class="field full"><label>Indirizzo</label><input name="street" value="{esc(cl['street'])}"></div><div class="field"><label>Comune</label><input name="city" value="{esc(cl['city'])}"></div><div class="field"><label>Provincia</label><input name="province" value="{esc(cl['province'])}" maxlength="2"></div><div class="field"><label>CAP</label><input name="zip" value="{esc(cl['zip'])}"></div><div class="field full"><label>Note</label><input name="notes" value="{esc(cl['notes'])}"></div></div><button class="btn" style="margin-top:12px">Salva anagrafica</button></form><form method="post" action="/clienti/{cl['id']}/elimina" onsubmit="return confirm('Eliminare questo cliente dalla lista?')"><button class="btn ghost" style="margin-top:12px">Elimina cliente</button></form></section><div style="height:14px"></div><section class="section"><h2>Pratiche collegate</h2><div class="tablebox"><table class="premium-table"><thead><tr><th>Pratica</th><th>Animale</th><th>Stato</th><th>Recupero</th></tr></thead><tbody>{rows}</tbody></table></div></section></main>'''
         self.send_html(layout("Cliente",body,user))
 
     def save_client(self,user):
@@ -18547,13 +18670,112 @@ class App(BaseHTTPRequestHandler):
                 return row["id"]
         return None
 
-    def phone_action_buttons(self, phone):
+    def wa_quick_vars(self,user,first="",last="",animals="",number="",date_iso="",time_text="",site=""):
+        """Valori dei segnaposto dei messaggi WhatsApp rapidi per il contesto corrente."""
+        operator=""
+        if user is not None:
+            try:operator=user["display_name"] or ""
+            except (KeyError,IndexError):operator=""
+        return {"nome_cliente":(first or "").strip(),"cognome_cliente":(last or "").strip(),
+                "nome_animale":(animals or "").strip(),"numero_pratica":(number or "").strip(),
+                "data":date_it(date_iso) if date_iso else "","ora":(time_text or "")[:5],
+                "sede":(site or "").strip(),"operatore":operator}
+
+    def wa_quick_button(self,phone,qvars,kind="icon",label="Messaggio"):
+        """Pulsante che apre l'elenco dei messaggi rapidi (JS ppmQuickWa). Senza
+        numero di telefono valido non c'e' nulla da aprire: nessun pulsante."""
+        digits=self.wa_digits(phone) if phone else ""
+        if not digits:return ""
+        payload=esc(json.dumps({"phone":digits,"vars":qvars},ensure_ascii=False))
+        attrs=f'type="button" data-qwa="{payload}" onclick="event.stopPropagation();ppmQuickWa(this)"'
+        if kind=="icon":
+            return f'<button {attrs} class="icon-btn phone-action-btn" aria-label="Messaggio WhatsApp rapido" title="Messaggio WhatsApp rapido">{lucide("send")}</button>'
+        if kind=="qa":
+            return f'<button {attrs} class="calendar-detail-qa"><span class="calendar-detail-qa-icon">{lucide("send")}</span><span>Messaggi</span></button>'
+        if kind=="menu":
+            return f'<button {attrs}>Messaggio WhatsApp</button>'
+        return f'<button {attrs} class="btn ghost">{lucide("send")} {esc(label)}</button>'
+
+    def practice_qwa_vars(self,user,p):
+        """Segnaposto per una pratica; data/ora dall'appuntamento collegato
+        (la riconsegna se c'e', altrimenti il ritiro)."""
+        keys=p.keys()
+        with db() as c:
+            ev=c.execute("""SELECT start_at FROM calendar_events WHERE linked_practice_id=? AND (deleted_at IS NULL OR deleted_at='')
+                            ORDER BY CASE WHEN event_type LIKE 'Riconsegna%' THEN 0 ELSE 1 END, start_at DESC LIMIT 1""",(p["id"],)).fetchone()
+        animals=" e ".join(x.strip() for x in (p["animal_name"] or "",(p["animal2_name"] if "animal2_name" in keys else "") or "") if x and x.strip())
+        start=(ev["start_at"] if ev else "") or ""
+        return self.wa_quick_vars(user,p["owner_first_name"],p["owner_last_name"],animals,p["practice_number"],start[:10],start[11:16],p["destination_branch"])
+
+    def event_qwa_vars(self,user,event,animals,client_display=None):
+        """Segnaposto per un evento del calendario (animali dell'evento, cliente
+        dell'evento o, se manca, proprietario della pratica collegata)."""
+        keys=event.keys()
+        first=(event["client_first_name"] if "client_first_name" in keys else "") or ""
+        last=(event["client_last_name"] if "client_last_name" in keys else "") or ""
+        number="";linked=event["linked_practice_id"] if "linked_practice_id" in keys else None
+        if linked:
+            with db() as c:
+                practice=c.execute("SELECT practice_number,owner_first_name,owner_last_name FROM practices WHERE id=?",(linked,)).fetchone()
+            if practice:
+                number=practice["practice_number"] or ""
+                if not (first or last):first,last=practice["owner_first_name"] or "",practice["owner_last_name"] or ""
+        names=" e ".join(str(a["name"]).strip() for a in animals if a["name"] and str(a["name"]).strip())
+        start=(event["start_at"] if "start_at" in keys else "") or ""
+        site=(event["destination_site"] if "destination_site" in keys else "") or ""
+        return self.wa_quick_vars(user,first,last,names,number,start[:10],"" if ("all_day" in keys and event["all_day"]) else start[11:16],site)
+
+    def wa_quick_templates_api(self,user):
+        with db() as c:
+            templates=wa_quick_templates(c)
+        return self.send_json({"ok":True,"templates":templates,"admin":user["role"]=="admin","operator":user["display_name"] or ""})
+
+    def wa_quick_admin_page(self,user,error="",values=None):
+        if user["role"]!="admin":
+            return self.send_error(403)
+        values=values or {}
+        with db() as c:
+            templates=wa_quick_templates(c)
+        saved_flag=(parse_qs(urlparse(getattr(self,"path","")).query).get("salvato") or [""])[0]=="1"
+        blocks=''.join(f'''<section class="section"><h2>{esc(values.get("title_"+t["id"],t["title"]))}</h2>
+          <div class="fields"><div class="field full"><label for="title_{t["id"]}">Titolo</label><input id="title_{t["id"]}" name="title_{t["id"]}" maxlength="80" value="{esc(values.get("title_"+t["id"],t["title"]))}" style="font-size:16px"></div>
+          <div class="field full"><label for="body_{t["id"]}">Testo del messaggio</label><textarea id="body_{t["id"]}" name="body_{t["id"]}" rows="6" maxlength="{WA_QUICK_MAX_BODY}" placeholder="Scrivi qui il testo. Lascialo vuoto se non vuoi ancora usarlo." style="font-size:16px">{esc(values.get("body_"+t["id"],t["body"]))}</textarea></div></div></section>''' for t in templates)
+        legend=''.join(f'<li><code>{{{key}}}</code> — {esc(text)}</li>' for key,text in WA_QUICK_PLACEHOLDERS)
+        flash=(f'<div class="flash warning">{esc(error)}</div>' if error else ('<div class="flash">Messaggi salvati.</div>' if saved_flag else ''))
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Messaggi WhatsApp rapidi</h1><div class="sub">Testi preimpostati: chi lavora li apre con un tocco da pratica, calendario o cliente e WhatsApp si apre già con il messaggio scritto. Poi preme Invia.</div></div><a class="btn ghost" href="/impostazioni">Impostazioni</a></div>{flash}
+          <section class="section"><h2>Segnaposto</h2><p class="sub">Scrivili tra parentesi graffe: il gestionale li sostituisce con i dati del cliente e della pratica.</p><ul>{legend}</ul></section>
+          <form method="post" action="/impostazioni/messaggi-whatsapp">{blocks}<button class="btn" style="margin-top:6px">Salva messaggi</button></form></main>'''
+        self.send_html(layout("Messaggi WhatsApp rapidi",body,user),422 if error else 200)
+
+    def save_wa_quick_templates(self,user):
+        if user["role"]!="admin":
+            return self.send_error(403)
+        form=self.form()
+        allowed={key for key,_text in WA_QUICK_PLACEHOLDERS}
+        with db() as c:
+            current=wa_quick_templates(c)
+        out=[]
+        for t in current:
+            title=" ".join((form.get("title_"+t["id"]) or "").split())[:80] or t["title"]
+            body=(form.get("body_"+t["id"]) or "").replace("\r\n","\n").replace("\r","\n").strip()
+            if len(body)>WA_QUICK_MAX_BODY:
+                return self.wa_quick_admin_page(user,f"«{title}»: il testo è troppo lungo (massimo {WA_QUICK_MAX_BODY} caratteri).",form)
+            unknown=sorted(set(re.findall(r"[{]([^{}]*)[}]",body))-allowed)
+            if unknown:
+                return self.wa_quick_admin_page(user,f"«{title}»: segnaposto non valido {', '.join('{'+u+'}' for u in unknown)}. Controlla l'elenco qui sotto.",form)
+            out.append({"id":t["id"],"title":title,"body":body})
+        with db() as c:
+            c.execute("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(WA_QUICK_SETTING,json.dumps(out,ensure_ascii=False)))
+        return self.redirect("/impostazioni/messaggi-whatsapp?salvato=1")
+
+    def phone_action_buttons(self, phone, qwa=None):
         phone=(phone or "").strip()
         if not phone: return ""
         tel=re.sub(r"[^0-9+]","",phone)
         wa=self.wa_digits(phone)
         wa_btn=f'<a class="icon-btn phone-action-btn whatsapp-btn" href="https://wa.me/{wa}" target="_blank" rel="noopener noreferrer" aria-label="Apri chat WhatsApp">{lucide("message")}</a>' if wa else ""
-        return f'{esc(phone)} <a class="icon-btn phone-action-btn call-btn" href="tel:{esc(tel)}" aria-label="Chiama">{lucide("phone")}</a> {wa_btn}'
+        quick_btn=(" "+self.wa_quick_button(phone,qwa,"icon")) if qwa is not None else ""
+        return f'{esc(phone)} <a class="icon-btn phone-action-btn call-btn" href="tel:{esc(tel)}" aria-label="Chiama">{lucide("phone")}</a> {wa_btn}{quick_btn}'
 
     def whatsapp_payload_for_practice(self, p):
         template=self.whatsapp_template_name(p)
@@ -19833,7 +20055,7 @@ class App(BaseHTTPRequestHandler):
           {'' if p['data_complete'] else '<div class="flash warning">Questa pratica contiene ancora dati da completare.</div>'}
           <section class="grid practice-layout">
             <div class="grid">
-              <div class="section"><h2>Riepilogo</h2><div class="kvs"><div class="kv"><small>Stato</small>{self.status_badges(p)}{tag_badges_html}</div><div class="kv"><small>{"Totale pagato" if payment_value=="Pagato" else "Totale da pagare"} {payment_channel(p)}</small><b>{money_it(paid_total if payment_value=="Pagato" else due_total)}</b></div><div class="kv"><small>Speditore</small>{esc((p['owner_first_name'] or '')+' '+(p['owner_last_name'] or ''))}<br>{self.phone_action_buttons(p['owner_phone'])}{('<br>'+self.phone_action_buttons(p['owner_phone_2'])) if 'owner_phone_2' in p.keys() and p['owner_phone_2'] else ''}{f'<br>{esc(owner_address_display)}' if owner_address_display else ''}{f'<br>CF: {esc(p["owner_tax_code"])}' if p['owner_tax_code'] else ''}{f'<br>{esc(p["owner_email"])}' if p['owner_email'] else ''}</div><div class="kv"><small>Animale</small>{esc(p['species'])} - {esc(p['breed'])}<br>{esc(p['estimated_weight'])} kg{animal_age}</div>{animal2_block}<div class="kv"><small>Sede</small><b>{esc(p['destination_branch'])}</b></div><div class="kv"><small>Origine</small><b>{esc(p['request_origin'])}</b></div><div class="kv"><small>Veterinario</small>{esc(p['clinic_name'])}<br>{esc(p['veterinarian_name'])}</div><div class="kv"><small>Catalogo urna</small><b>{esc(catalog_value)}</b></div></div></div>
+              <div class="section"><h2>Riepilogo</h2><div class="kvs"><div class="kv"><small>Stato</small>{self.status_badges(p)}{tag_badges_html}</div><div class="kv"><small>{"Totale pagato" if payment_value=="Pagato" else "Totale da pagare"} {payment_channel(p)}</small><b>{money_it(paid_total if payment_value=="Pagato" else due_total)}</b></div><div class="kv"><small>Speditore</small>{esc((p['owner_first_name'] or '')+' '+(p['owner_last_name'] or ''))}<br>{self.phone_action_buttons(p['owner_phone'],qwa=self.practice_qwa_vars(user,p))}{('<br>'+self.phone_action_buttons(p['owner_phone_2'],qwa=self.practice_qwa_vars(user,p))) if 'owner_phone_2' in p.keys() and p['owner_phone_2'] else ''}{f'<br>{esc(owner_address_display)}' if owner_address_display else ''}{f'<br>CF: {esc(p["owner_tax_code"])}' if p['owner_tax_code'] else ''}{f'<br>{esc(p["owner_email"])}' if p['owner_email'] else ''}</div><div class="kv"><small>Animale</small>{esc(p['species'])} - {esc(p['breed'])}<br>{esc(p['estimated_weight'])} kg{animal_age}</div>{animal2_block}<div class="kv"><small>Sede</small><b>{esc(p['destination_branch'])}</b></div><div class="kv"><small>Origine</small><b>{esc(p['request_origin'])}</b></div><div class="kv"><small>Veterinario</small>{esc(p['clinic_name'])}<br>{esc(p['veterinarian_name'])}</div><div class="kv"><small>Catalogo urna</small><b>{esc(catalog_value)}</b></div></div></div>
               <div class="section"><h2>Note</h2><p>{esc(p['notes']) or '<span class="sub">Nessuna nota.</span>'}</p></div>
               {economic_block}
               {movement_invoice_section}
