@@ -8318,6 +8318,7 @@ LUCIDE_PATHS = {
     "map-pin": '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
     "gift": '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/>',
     "sparkles": '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .962L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>',
+    "scroll-text": '<path d="M15 12h-5"/><path d="M15 8h-5"/><path d="M19 17V5a2 2 0 0 0-2-2H4"/><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3"/>',
     "send": '<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/>',
 }
 
@@ -13205,7 +13206,7 @@ class App(BaseHTTPRequestHandler):
             return f'<span class="calendar-detail-qa calendar-detail-qa-disabled"><span class="calendar-detail-qa-icon">{lucide(icon)}</span><span>{label}</span></span>'
         qwa_html=self.wa_quick_button(phone,self.event_qwa_vars(user,event,animals),"qa") if phone else ""
         if not qwa_html:
-            qwa_html='<span class="calendar-detail-qa calendar-detail-qa-disabled"><span class="calendar-detail-qa-icon">'+lucide("send")+'</span><span>Messaggi</span></span>'
+            qwa_html='<span class="calendar-detail-qa calendar-detail-qa-disabled"><span class="calendar-detail-qa-icon">'+lucide("scroll-text")+'</span><span>Messaggi</span></span>'
         quick_actions=f'''<div class="calendar-detail-quickactions">
           {qa("phone","Chiama",f"tel:{esc(tel)}" if tel else "")}
           {qa("message","WhatsApp",f"https://wa.me/{wa}" if wa else "", ' target="_blank" rel="noopener noreferrer"' if wa else "")}
@@ -18844,12 +18845,12 @@ class App(BaseHTTPRequestHandler):
         payload=esc(json.dumps({"phone":digits,"vars":qvars,"practice":"costo_totale" in qvars},ensure_ascii=False))
         attrs=f'type="button" data-qwa="{payload}" onclick="event.stopPropagation();ppmQuickWa(this)"'
         if kind=="icon":
-            return f'<button {attrs} class="icon-btn phone-action-btn" aria-label="Messaggio WhatsApp rapido" title="Messaggio WhatsApp rapido">{lucide("send")}</button>'
+            return f'<button {attrs} class="icon-btn phone-action-btn" aria-label="Messaggio WhatsApp rapido" title="Messaggio WhatsApp rapido">{lucide("scroll-text")}</button>'
         if kind=="qa":
-            return f'<button {attrs} class="calendar-detail-qa"><span class="calendar-detail-qa-icon">{lucide("send")}</span><span>Messaggi</span></button>'
+            return f'<button {attrs} class="calendar-detail-qa"><span class="calendar-detail-qa-icon">{lucide("scroll-text")}</span><span>Messaggi</span></button>'
         if kind=="menu":
             return f'<button {attrs}>Messaggio WhatsApp</button>'
-        return f'<button {attrs} class="btn ghost">{lucide("send")} {esc(label)}</button>'
+        return f'<button {attrs} class="btn ghost">{lucide("scroll-text")} {esc(label)}</button>'
 
     def practice_qwa_vars(self,user,p):
         """Segnaposto per una pratica (con i suoi costi)."""

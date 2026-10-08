@@ -7204,6 +7204,10 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(data["vars"]["nome_animale"], "Luna e Micio");self.assertEqual(data["vars"]["costo_totale"], "1.290,00")
         self.assertTrue(data["practice"])
         self.assertIn("<span>Messaggi</span>", rendered[-1])
+        quick = rendered[-1].split('data-qwa="')[1].split("</button>")[0]
+        self.assertIn(app.lucide("scroll-text"), quick)
+        self.assertNotIn(app.LUCIDE_PATHS["message"], quick);self.assertNotIn(app.LUCIDE_PATHS["navigation"], quick);self.assertNotIn(app.LUCIDE_PATHS["send"], quick)
+        self.assertNotEqual(app.LUCIDE_PATHS["scroll-text"], app.LUCIDE_PATHS["message"])
         # card del calendario (menu)
         rendered.clear();self.handler.path = "/calendario?data=2026-07-20";self.handler.calendar_page(admin)
         card = rendered[-1].split(f'data-event-id="{event_id}"')[1].split("</article>")[0]
