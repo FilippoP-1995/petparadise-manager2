@@ -7078,10 +7078,22 @@ class PetParadiseTests(unittest.TestCase):
         self.assertTrue(riconsegna.endswith("grazie☺️🐾🌈"))
         estremi = by_id["estremi_bancari"]["body"]
         self.assertTrue(estremi.startswith("Ciao {nome_cliente}, scriviamo dallo staff di Pet Paradise Cremazione Animali.\nCome da accordi"))
-        for line in ("Cremazione singola: {costo_cremazione}\n", "Ritiro spoglia: {costo_ritiro}\n", "Riconsegna in ambulatorio: {costo_riconsegna}\n",
-                     "Urna: {costo_urna}€\n", "\nTotale servizio: {costo_totale} €\n", "Causale: Saldo cremazione {nome_animale}\n",
-                     "IBAN: IT45P0892270400000000839662\n", "Intestato a: Pet Paradise Cremazioni Animali di Piccolo Filippo e C. SNC\n"):
+        # formattazione WhatsApp: voci in grassetto (*..*), totale in grassetto corsivo, causale in grassetto, IBAN e intestatario in grassetto corsivo
+        for line in ("\n*Cremazione singola: {costo_cremazione}*\n", "\n*Ritiro spoglia: {costo_ritiro}*\n", "\n*Riconsegna in ambulatorio: {costo_riconsegna}*\n",
+                     "\n*Urna: {costo_urna}€*\n", "\n*_Totale servizio: {costo_totale} €_*\n", "\n*Causale: Saldo cremazione {nome_animale}*\n",
+                     "\n*_IBAN: IT45P0892270400000000839662_*\n", "\n*_Intestato a: Pet Paradise Cremazioni Animali di Piccolo Filippo e C. SNC_*\n"):
             self.assertIn(line, estremi)
+        self.assertNotIn("~", estremi)  # WhatsApp non ha la sottolineatura: nessun marcatore inventato
+        # il testo predefinito precedente (senza formattazione), se mai modificato a mano, passa a quello nuovo
+        with app.db() as conn:
+            conn.execute("INSERT INTO settings(key,value) VALUES(?,?)", (app.WA_QUICK_SETTING, json.dumps([
+                {"id": "estremi_bancari", "title": "Estremi bancari", "body": app.WA_QUICK_LEGACY_BODIES["estremi_bancari"][0]}])))
+            upgraded = {x["id"]: x for x in app.wa_quick_templates(conn)}["estremi_bancari"]["body"]
+            conn.execute("UPDATE settings SET value=? WHERE key=?", (json.dumps([{"id": "estremi_bancari", "title": "Estremi bancari", "body": "Testo scelto da me"}]), app.WA_QUICK_SETTING))
+            custom = {x["id"]: x for x in app.wa_quick_templates(conn)}["estremi_bancari"]["body"]
+            conn.execute("DELETE FROM settings WHERE key=?", (app.WA_QUICK_SETTING,))
+        self.assertEqual(upgraded, estremi);self.assertEqual(custom, "Testo scelto da me")
+        self.assertNotIn("*", app.WA_QUICK_LEGACY_BODIES["estremi_bancari"][0])
         self.assertTrue(estremi.endswith("Banca Alta Toscana Società Cooperativa S.C."))
         # nessun segnaposto per operatore, sede, appuntamenti, cognome o numero pratica
         self.assertEqual([k for k, _ in app.WA_QUICK_PLACEHOLDERS], ["nome_cliente", "nome_animale", "costo_cremazione", "costo_ritiro",

@@ -8587,20 +8587,22 @@ WA_QUICK_DEFAULTS = (
      "Ciao {nome_cliente}, scriviamo dallo staff di Pet Paradise Cremazione Animali.\n"
      "Come da accordi inviamo di seguito gli estremi bancari per effettuare il bonifico per il servizio di cremazione di {nome_animale}.\n"
      "\n"
-     "Cremazione singola: {costo_cremazione}\n"
-     "Ritiro spoglia: {costo_ritiro}\n"
-     "Riconsegna in ambulatorio: {costo_riconsegna}\n"
-     "Urna: {costo_urna}€\n"
+     "*Cremazione singola: {costo_cremazione}*\n"
+     "*Ritiro spoglia: {costo_ritiro}*\n"
+     "*Riconsegna in ambulatorio: {costo_riconsegna}*\n"
+     "*Urna: {costo_urna}€*\n"
      "\n"
-     "Totale servizio: {costo_totale} €\n"
+     "*_Totale servizio: {costo_totale} €_*\n"
      "\n"
-     "Causale: Saldo cremazione {nome_animale}\n"
+     "*Causale: Saldo cremazione {nome_animale}*\n"
      "\n"
-     "IBAN: IT45P0892270400000000839662\n"
-     "Intestato a: Pet Paradise Cremazioni Animali di Piccolo Filippo e C. SNC\n"
+     "*_IBAN: IT45P0892270400000000839662_*\n"
+     "*_Intestato a: Pet Paradise Cremazioni Animali di Piccolo Filippo e C. SNC_*\n"
      "Banca Alta Toscana Società Cooperativa S.C."),
 )
 # titoli usati in una versione precedente: se salvati cosi' si passa ai nuovi
+# testi predefiniti precedenti: se e' ancora salvato uno di questi (cioe' mai modificato a mano) si passa al nuovo
+WA_QUICK_LEGACY_BODIES = {"estremi_bancari": ('Ciao {nome_cliente}, scriviamo dallo staff di Pet Paradise Cremazione Animali.\nCome da accordi inviamo di seguito gli estremi bancari per effettuare il bonifico per il servizio di cremazione di {nome_animale}.\n\nCremazione singola: {costo_cremazione}\nRitiro spoglia: {costo_ritiro}\nRiconsegna in ambulatorio: {costo_riconsegna}\nUrna: {costo_urna}€\n\nTotale servizio: {costo_totale} €\n\nCausale: Saldo cremazione {nome_animale}\n\nIBAN: IT45P0892270400000000839662\nIntestato a: Pet Paradise Cremazioni Animali di Piccolo Filippo e C. SNC\nBanca Alta Toscana Società Cooperativa S.C.',)}
 WA_QUICK_LEGACY_TITLES = {"Mancata risposta presa in carico": "Presa in carico",
                           "Mancata risposta appuntamento riconsegna": "Appuntamento riconsegna"}
 WA_QUICK_PLACEHOLDERS = (
@@ -8633,6 +8635,8 @@ def wa_quick_templates(c):
         title = " ".join(str(item.get("title") or default_title).split())[:80] or default_title
         title = WA_QUICK_LEGACY_TITLES.get(title, title)
         body = str(item.get("body") or "").strip()[:WA_QUICK_MAX_BODY] or default_body
+        if body in WA_QUICK_LEGACY_BODIES.get(template_id, ()):
+            body = default_body
         out.append({"id": template_id, "title": title, "body": body})
     return out
 
