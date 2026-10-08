@@ -1786,6 +1786,10 @@ tr.avatar-other td:first-child{border-left:3px solid #c084fc}
 .light-theme .practice-list-table tbody tr{background:#fff}
 .light-theme .practice-list-table tbody tr:hover td{background:#f8fafc}
 .light-theme .practice-list-table tbody td{border-color:#e2e8f0}.inline-statuses{display:grid;gap:8px;min-width:170px}.inline-state-select{min-height:38px;padding:7px 32px 7px 10px;border-width:2px;font-weight:800}button.inline-state-select{border:0;border-radius:9px;font:inherit;cursor:pointer;text-align:center;padding:7px 14px}.inline-tag-form{display:flex;flex-direction:column;gap:2px}.invoice-inline-cell{display:grid;gap:4px;min-width:130px}.invoice-inline-input{min-height:34px;padding:6px 9px;font-size:12px}.invoice-inline-input.input-error{border-color:#ef4444}.payment-popover{position:fixed;inset:0;z-index:180;display:grid;place-items:center;padding:18px;background:#020617b8}.payment-popover[hidden]{display:none}
+.calendar-daybar.is-carousel,.cremation-daybar.is-carousel{overflow:hidden;scroll-behavior:auto;touch-action:pan-y;-webkit-user-select:none;user-select:none;cursor:grab}
+.calendar-daybar.is-carousel.is-dragging,.cremation-daybar.is-carousel.is-dragging{cursor:grabbing}
+.ppm-daybar-track{display:flex;gap:9px;flex:0 0 auto;will-change:transform;transform:translate3d(0,0,0)}
+.calendar-daybar.is-carousel .calendar-daybar-card,.cremation-daybar.is-carousel .cremation-daybar-card{-webkit-user-drag:none;-webkit-touch-callout:none}
 .ai-chat-backdrop,.ai-chat-panel,.create-sheet,.create-sheet-backdrop,.cremation-modal-overlay,.more-menu,.more-backdrop,.order-modal,.payment-popover,.payment-dialog,.route-quick-backdrop,.route-sheet,.route-sheet-backdrop,.shift-cell-editor-backdrop,.wa-modal-overlay,.permission-prompt,[role="dialog"],[aria-modal="true"]{overscroll-behavior:contain}
 .field[data-manual-income-method][hidden]{display:none!important}
 .partner-alert{display:flex;align-items:center;gap:14px;margin:0 0 18px;padding:14px 16px;border-radius:18px;color:#fff;background:linear-gradient(135deg,#0f766e,#14b8a6);border:2px solid #5eead4;box-shadow:0 10px 28px rgba(20,184,166,.35)}
@@ -5738,6 +5742,7 @@ function cremationSyncUrlToExpanded(){
 }
 function cremationSelectDay(idx,opts){
   opts=opts||{};
+  if(ppmDayCarousels.cremation)ppmDayCarousels.cremation.release();
   // scrollTo scoped to #cremationDayPages only: mai scrollIntoView, che puo'
   // trascinare con se' anche lo scroll verticale della pagina — l'utente deve
   // restare esattamente dove si trovava, cambia solo il giorno mostrato.
@@ -5749,9 +5754,11 @@ function cremationSelectDay(idx,opts){
   if(!opts.instant)cremationSyncUrlToDay(idx);
 }
 function cremationSetActiveDaybarCard(idx,instant){
+  if(ppmDayCarousels.cremation&&ppmDayCarousels.cremation.locked(idx))return;
   document.querySelectorAll('.cremation-daybar-card').forEach(function(c){
     c.classList.toggle('active',Number(c.dataset.dayIndex)===Number(idx));
   });
+  if(ppmDayCarousels.cremation){ppmDayCarousels.cremation.moveTo(idx,instant);return;} // carousel: la pista segue la card attiva
   const bar=document.getElementById('cremationDaybar');
   const active=document.querySelector('.cremation-daybar-card[data-day-index="'+idx+'"]');
   if(bar&&active){
@@ -5760,6 +5767,7 @@ function cremationSetActiveDaybarCard(idx,instant){
   }
 }
 function cremationDaybarNav(dir){
+  if(ppmDayCarousels.cremation){ppmDayCarousels.cremation.step(dir);return;} // frecce: giorno precedente/successivo
   const bar=document.getElementById('cremationDaybar');
   if(bar)bar.scrollBy({left:dir*90,behavior:'smooth'});
 }
@@ -5781,52 +5789,217 @@ function ppmRestoreScrollIfPending(){
   requestAnimationFrame(function(){window.scrollTo(0,y);});
 }
 document.addEventListener('DOMContentLoaded',ppmRestoreScrollIfPending);
-// Swipe sulla barra dei giorni (Calendario e Cremazioni): passa alla settimana
-// successiva/precedente restando sullo stesso giorno della settimana, senza
-// dover prima arrivare a domenica/lunedi' e fare swipe sull'area degli eventi.
-// Riusa le pagine sentinella gia' presenti (data-href): stessa navigazione e
-// stesso ripristino dello scroll verticale. Le frecce ‹ › continuano a
-// scorrere la barra.
-function ppmDaybarGoWeek(pages,cardSelector,dateAttr,dir){
-  const edges=pages.querySelectorAll('[data-href]');
-  const edge=dir>0?edges[edges.length-1]:edges[0];
-  if(!edge)return;
-  const active=document.querySelector(cardSelector+'.active')||document.querySelector(cardSelector);
-  const current=active&&active.dataset[dateAttr];
-  const url=new URL(edge.dataset.href,location.href);
-  if(current){
-    const parts=current.split('-').map(Number);
-    const day=new Date(parts[0],parts[1]-1,parts[2]+7*dir);
-    const pad=function(n){return String(n).padStart(2,'0');};
-    url.searchParams.set('data',day.getFullYear()+'-'+pad(day.getMonth()+1)+'-'+pad(day.getDate()));
+// Carousel delle card giornaliere (comportamento unico e riusabile): vale per ogni
+// fascia di card che rappresenta una sequenza orizzontale di giorni navigabili
+// (Calendario, Programma Cremazioni, Orari). Solo presentazione/interazione:
+// ogni sezione mantiene dati, filtri, stato e funzioni proprie, che il carousel
+// richiama invece di sostituire (cfg.selectDay).
+// Le card (settimana precedente, corrente e successiva) stanno in una "pista"
+// che segue il dito in tempo reale (translate3d). Al rilascio la pista prosegue
+// dal punto e dalla velocita' del gesto con una molla fino alla card scelta,
+// oppure torna alla corrente se il gesto e' troppo corto/lento. Scegliere un
+// giorno gia' caricato usa la logica esistente della sezione (cfg.selectDay);
+// un giorno di un'altra settimana usa la stessa navigazione delle pagine
+// sentinella (data-href).
+var ppmDayCarousels={};
+function ppmInitDayCarousel(cfg){
+  const bar=document.getElementById(cfg.barId);
+  const pages=document.getElementById(cfg.pagesId);
+  if(!bar||!pages||!pages.querySelector('[data-href]'))return null;
+  const cards=[...bar.querySelectorAll(cfg.cardSelector)];
+  if(cards.length<2)return null;
+  const track=document.createElement('div');
+  track.className='ppm-daybar-track';
+  cards.forEach(function(card){track.appendChild(card);});
+  bar.appendChild(track);
+  bar.classList.add('is-carousel');
+  bar.scrollLeft=0;
+  let centers=[],pitch=71,x=0,vel=0,raf=0,animTarget=null,selected=0,drag=null,suppressClick=false,pendingNav=null,lock=null;
+  const SPRING_K=230,SPRING_C=2*Math.sqrt(SPRING_K)*0.93;
+  function measure(){
+    centers=cards.map(function(card){return card.offsetLeft+card.offsetWidth/2;});
+    pitch=centers.length>1?(centers[centers.length-1]-centers[0])/(centers.length-1):71;
   }
-  ppmSaveScrollForNextLoad();
-  location.href=url.pathname+url.search;
+  function viewCenter(){return bar.clientWidth/2;}
+  function xFor(index){return viewCenter()-track.offsetLeft-centers[index];} // la pista parte dopo il padding della barra
+  function setX(value){x=value;track.style.transform='translate3d('+value+'px,0,0)';}
+  function clampSoft(value){
+    const max=xFor(0),min=xFor(cards.length-1);
+    if(value>max)return max+(value-max)*0.35;
+    if(value<min)return min+(value-min)*0.35;
+    return value;
+  }
+  function activeIndex(){
+    const index=cards.findIndex(function(card){return card.classList.contains('active');});
+    return index<0?selected:index;
+  }
+  function stopAnimation(){if(raf){cancelAnimationFrame(raf);raf=0;}animTarget=null;}
+  function animateTo(index,initialVelocity){
+    stopAnimation();
+    animTarget=index;
+    const target=xFor(index);
+    vel=(initialVelocity||0)*1000;
+    let last=performance.now();
+    function step(now){
+      const dt=Math.min(0.034,(now-last)/1000);
+      last=now;
+      const sub=Math.max(1,Math.ceil(dt/0.008)),h=dt/sub;
+      for(let i=0;i<sub;i++){
+        const acceleration=-SPRING_K*(x-target)-SPRING_C*vel;
+        vel+=acceleration*h;
+        x+=vel*h;
+      }
+      setX(x);
+      if(Math.abs(x-target)<0.35&&Math.abs(vel)<6){
+        setX(target);vel=0;raf=0;animTarget=null;settled(index);
+        return;
+      }
+      raf=requestAnimationFrame(step);
+    }
+    raf=requestAnimationFrame(step);
+  }
+  function snapTo(index){stopAnimation();vel=0;setX(xFor(index));selected=index;}
+  function settled(index){
+    selected=index;
+    if(pendingNav&&pendingNav.index===index){
+      const card=pendingNav.card;
+      pendingNav=null;
+      ppmSaveScrollForNextLoad();
+      location.href=card.dataset.href;
+    }
+  }
+  function commit(index){
+    const card=cards[index];
+    selected=index;
+    pendingNav=null;
+    if(Number(card.dataset.dayIndex)>=0){
+      cfg.selectDay(Number(card.dataset.dayIndex));
+      // lo scorrimento animato della pagina dei contenuti segnala anche i giorni intermedi: finche' non
+      // arriva il giorno scelto (o scade il tempo) la pista li ignora, cosi' non tentenna all'indietro
+      lock={dayIndex:Number(card.dataset.dayIndex),until:performance.now()+1200};
+    }else{
+      cards.forEach(function(item){item.classList.toggle('active',item===card);});
+      pendingNav={index:index,card:card};
+      if(!raf&&animTarget===null)settled(index);
+    }
+  }
+  function goToIndex(index,initialVelocity){
+    index=Math.max(0,Math.min(cards.length-1,index));
+    const before=activeIndex();
+    animateTo(index,initialVelocity);
+    if(index!==before)commit(index);
+  }
+  bar.addEventListener('pointerdown',function(event){
+    if(event.pointerType==='mouse'&&event.button!==0)return;
+    if(!event.isPrimary)return;
+    stopAnimation();
+    pendingNav=null;
+    drag={id:event.pointerId,startX:event.clientX,startY:event.clientY,startOffset:x,moving:false,samples:[{x:event.clientX,t:event.timeStamp}]};
+  });
+  bar.addEventListener('pointermove',function(event){
+    if(!drag||event.pointerId!==drag.id)return;
+    const dx=event.clientX-drag.startX,dy=event.clientY-drag.startY;
+    if(!drag.moving){
+      if(Math.abs(dx)<6&&Math.abs(dy)<6)return;
+      if(Math.abs(dy)>Math.abs(dx)){drag=null;return;} // gesto verticale: appartiene alla pagina
+      drag.moving=true;
+      try{bar.setPointerCapture(event.pointerId);}catch(error){}
+      bar.classList.add('is-dragging');
+    }
+    drag.samples.push({x:event.clientX,t:event.timeStamp});
+    while(drag.samples.length>2&&event.timeStamp-drag.samples[0].t>120)drag.samples.shift();
+    setX(clampSoft(drag.startOffset+dx));
+  });
+  function releaseDrag(event,cancelled){
+    if(!drag||event.pointerId!==drag.id)return;
+    const gesture=drag;
+    drag=null;
+    if(!gesture.moving)return; // semplice tocco: il click della card fa il resto
+    bar.classList.remove('is-dragging');
+    try{bar.releasePointerCapture(event.pointerId);}catch(error){}
+    suppressClick=true;
+    setTimeout(function(){suppressClick=false;},250);
+    const samples=gesture.samples;
+    const first=samples[0],last=samples[samples.length-1];
+    let velocity=0;
+    if(last.t-first.t>0&&event.timeStamp-last.t<80)velocity=(last.x-first.x)/(last.t-first.t); // px/ms, >0 verso destra
+    const dx=x-gesture.startOffset;
+    const current=activeIndex();
+    let steps=0;
+    if(!cancelled){
+      const farEnough=Math.abs(dx)>=0.33*pitch;
+      const fastEnough=Math.abs(velocity)>=0.4&&Math.abs(dx)>=8;
+      const opposite=Math.abs(velocity)>0.3&&dx*velocity<0; // il dito e' tornato indietro prima di rilasciare
+      if((farEnough||fastEnough)&&!opposite){
+        steps=Math.max(1,Math.abs(Math.round(dx/pitch)));
+        if(Math.abs(velocity)>1.1)steps+=1;
+        steps=Math.min(steps,5);
+        if(dx>0)steps=-steps; // trascinare verso destra mostra i giorni precedenti
+      }
+    }
+    goToIndex(current+steps,velocity);
+  }
+  bar.addEventListener('pointerup',function(event){releaseDrag(event,false);});
+  bar.addEventListener('pointercancel',function(event){releaseDrag(event,true);});
+  bar.addEventListener('click',function(event){
+    if(suppressClick){event.stopPropagation();event.preventDefault();suppressClick=false;}
+  },true);
+  let resizeTimer=0;
+  function onResize(){
+    if(!bar.isConnected){window.removeEventListener('resize',onResize);return;}
+    clearTimeout(resizeTimer);
+    resizeTimer=setTimeout(function(){measure();snapTo(activeIndex());},120);
+  }
+  window.addEventListener('resize',onResize);
+  measure();
+  selected=Math.max(0,activeIndex());
+  setX(xFor(selected));
+  if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){if(bar.isConnected&&!drag&&!raf){measure();snapTo(activeIndex());}});
+  const api={
+    // chiamato dalla sezione quando cambia la card attiva (frecce, tocco, swipe nell'area contenuti): la pista segue
+    moveTo:function(dayIndex,instant){
+      const index=cards.findIndex(function(card){return Number(card.dataset.dayIndex)===Number(dayIndex);});
+      if(index<0)return;
+      selected=index;
+      if(instant){snapTo(index);return;}
+      if(animTarget===index||(drag&&drag.moving))return;
+      animateTo(index,vel/1000);
+    },
+    release:function(){lock=null;}, // una scelta esplicita (tocco, frecce, nuovo swipe) annulla il blocco
+    locked:function(dayIndex){
+      if(!lock)return false;
+      if(performance.now()>lock.until){lock=null;return false;}
+      if(Number(dayIndex)===lock.dayIndex){lock=null;return false;}
+      return true;
+    },
+    step:function(direction){goToIndex(activeIndex()+direction,0);},
+    tapNeighbor:function(card){
+      const index=cards.indexOf(card);
+      if(index>=0)goToIndex(index,0);
+    }
+  };
+  bar._ppmCarousel=api;
+  ppmDayCarousels[cfg.name]=api;
+  return api;
 }
-function ppmInitDaybarWeekSwipe(barId,pagesId,cardSelector,dateAttr){
-  const bar=document.getElementById(barId);
-  const pages=document.getElementById(pagesId);
-  if(!bar||!pages||!pages.querySelector('[data-href]'))return;
-  bar.style.touchAction='pan-y';
-  let startX=0,startY=0,tracking=false;
-  bar.addEventListener('touchstart',function(event){
-    if(event.touches.length!==1){tracking=false;return;}
-    startX=event.touches[0].clientX;startY=event.touches[0].clientY;tracking=true;
-  },{passive:true});
-  bar.addEventListener('touchend',function(event){
-    if(!tracking)return;
-    tracking=false;
-    const touch=event.changedTouches[0];
-    const dx=touch.clientX-startX,dy=touch.clientY-startY;
-    if(Math.abs(dx)<45||Math.abs(dx)<Math.abs(dy)*1.5)return;
-    ppmDaybarGoWeek(pages,cardSelector,dateAttr,dx<0?1:-1);
-  },{passive:true});
-  bar.addEventListener('touchcancel',function(){tracking=false;},{passive:true});
+function ppmDayCarouselTap(card){
+  const bar=card.closest('.calendar-daybar,.cremation-daybar');
+  if(bar&&bar._ppmCarousel)bar._ppmCarousel.tapNeighbor(card);
+  else if(card.dataset.href)location.href=card.dataset.href;
 }
-document.addEventListener('DOMContentLoaded',function(){
-  ppmInitDaybarWeekSwipe('calendarDaybar','calendarDayPages','.calendar-daybar-card','date');
-  ppmInitDaybarWeekSwipe('cremationDaybar','cremationDayPages','.cremation-daybar-card','cremationDay');
-});
+// Calendario e Orari condividono la stessa barra (calendarDaybar / calendarSelectDay)
+function ppmInitDayCarousels(){
+  ppmInitDayCarousel({name:'calendar',barId:'calendarDaybar',pagesId:'calendarDayPages',cardSelector:'.calendar-daybar-card',
+    selectDay:function(index){calendarSelectDay(index);}});
+  ppmInitDayCarousel({name:'cremation',barId:'cremationDaybar',pagesId:'cremationDayPages',cardSelector:'.cremation-daybar-card',
+    selectDay:function(index){cremationSelectDay(index);}});
+  // allineamento iniziale sulla card selezionata (le init delle pagine partono dopo e usano ancora la barra scorrevole)
+  [['calendar','.calendar-daybar-card.active'],['cremation','.cremation-daybar-card.active']].forEach(function(pair){
+    const active=document.querySelector(pair[1]);
+    if(ppmDayCarousels[pair[0]]&&active)ppmDayCarousels[pair[0]].moveTo(active.dataset.dayIndex,true);
+  });
+}
+document.addEventListener('DOMContentLoaded',ppmInitDayCarousels);
 // Pop-up e pagina di sfondo (richiesta esplicita dell'utente): scorrendo dentro
 // un pop-up/foglio/finestra, anche arrivati in cima o in fondo, la pagina
 // dietro non deve MAI muoversi. Vale per qualunque pop-up: quelli noti (elenco
@@ -5971,6 +6144,7 @@ function calendarSyncUrlToDay(idx){
 }
 function calendarSelectDay(idx,opts){
   opts=opts||{};
+  if(ppmDayCarousels.calendar)ppmDayCarousels.calendar.release();
   const pages=document.getElementById('calendarDayPages');
   if(!pages)return;
   const page=pages.querySelector('[data-day-index="'+idx+'"]');
@@ -5979,9 +6153,11 @@ function calendarSelectDay(idx,opts){
   if(!opts.instant)calendarSyncUrlToDay(idx);
 }
 function calendarSetActiveDaybarCard(idx,instant){
+  if(ppmDayCarousels.calendar&&ppmDayCarousels.calendar.locked(idx))return;
   document.querySelectorAll('.calendar-daybar-card').forEach(function(c){
     c.classList.toggle('active',Number(c.dataset.dayIndex)===Number(idx));
   });
+  if(ppmDayCarousels.calendar){ppmDayCarousels.calendar.moveTo(idx,instant);return;} // carousel: la pista segue la card attiva
   const bar=document.getElementById('calendarDaybar');
   const active=document.querySelector('.calendar-daybar-card[data-day-index="'+idx+'"]');
   if(bar&&active){
@@ -5990,6 +6166,7 @@ function calendarSetActiveDaybarCard(idx,instant){
   }
 }
 function calendarDaybarNav(dir){
+  if(ppmDayCarousels.calendar){ppmDayCarousels.calendar.step(dir);return;} // frecce: giorno precedente/successivo
   const bar=document.getElementById('calendarDaybar');
   if(bar)bar.scrollBy({left:dir*90,behavior:'smooth'});
 }
@@ -6092,6 +6269,7 @@ function cremationSoftRefreshCycle(cycleId){
       const newMain=doc.getElementById('main-content');
       if(!newMain)throw new Error('main-content mancante nella risposta');
       main.innerHTML=newMain.innerHTML;
+      ppmInitDayCarousels();
       cremationInitDayPages();
       if(dayIndex!==null)cremationSelectDay(dayIndex,{instant:true});
       const card=document.querySelector('[data-cycle-id="'+cycleId+'"]');
@@ -12064,6 +12242,25 @@ class App(BaseHTTPRequestHandler):
               <a class="calendar-add-appt-btn" href="/calendario/nuovo?data={day.isoformat()}" onclick="event.preventDefault();location.href=this.getAttribute('href')+'&return_to='+encodeURIComponent(location.pathname+location.search)">{lucide("plus")}<span>Aggiungi ritiro / riconsegna</span></a>
             </div>''')
         day_pages.append(f'<div class="calendar-day-page calendar-day-page-edge" data-href="{view_url(start+timedelta(days=7),view)}"></div>')
+        # Carousel continuo: oltre ai 7 giorni caricati, la barra mostra anche la
+        # settimana precedente e la successiva (solo la card: giorno, numero,
+        # appuntamenti). Sceglierne una porta a quella settimana con la stessa
+        # navigazione delle pagine sentinella (data-href).
+        if view in ("giorno","settimana","mista_settimana"):
+            neighbor_counts={}
+            with db() as c:
+                for n_from,n_to in ((start-timedelta(days=7),start-timedelta(days=1)),(end+timedelta(days=1),end+timedelta(days=7))):
+                    for n_row in overlap_rows(c,n_from.isoformat(),n_to.isoformat(),filters):
+                        n_cursor=max(n_from,date.fromisoformat(n_row["start_at"][:10]));n_last=min(n_to,date.fromisoformat(n_row["end_at"][:10]))
+                        while n_cursor<=n_last:
+                            neighbor_counts[n_cursor.isoformat()]=neighbor_counts.get(n_cursor.isoformat(),0)+1;n_cursor+=timedelta(days=1)
+            def neighbor_card(day):
+                return f'''<button type="button" class="calendar-daybar-card{" is-today" if day==today_date else ""}" data-day-index="-1" data-date="{day.isoformat()}" data-href="{view_url(day,view)}" onclick="ppmDayCarouselTap(this)">
+              <span class="calendar-daybar-dow">{day_names[day.weekday()].upper()}</span>
+              <span class="calendar-daybar-num">{day.day:02d}</span>
+              <span class="calendar-daybar-count">{neighbor_counts.get(day.isoformat(),0)} app.</span>
+            </button>'''
+            daybar_cards=[neighbor_card(start-timedelta(days=7-k)) for k in range(7)]+daybar_cards+[neighbor_card(end+timedelta(days=1+k)) for k in range(7)]
         daybar_html=f'''<div id="calendarDayboard">
           <div class="calendar-daybar-wrap">
             <button type="button" class="calendar-daybar-nav" onclick="calendarDaybarNav(-1)" aria-label="Barra giorni precedente">‹</button>
@@ -12263,6 +12460,19 @@ class App(BaseHTTPRequestHandler):
                   <span class="calendar-daybar-num">{day.day:02d}</span>
                   <span class="calendar-daybar-count">{day_total} turni</span>
                 </button>''')
+            # Carousel continuo (stesso comportamento di Calendario): anche le card della settimana precedente e successiva
+            with db() as c:
+                neighbor_shifts={}
+                for n_from,n_to in ((monday-timedelta(days=7),monday-timedelta(days=1)),(monday+timedelta(days=7),monday+timedelta(days=13))):
+                    neighbor_shifts.update(shifts_for_range(c,n_from,n_to))
+            def neighbor_card(day):
+                total=sum(len(rows) for rows in neighbor_shifts.get(day.isoformat(),{}).values())
+                return f'''<button type="button" class="calendar-daybar-card{" is-today" if day==today_date else ""}" data-day-index="-1" data-date="{day.isoformat()}" data-href="/turni?vista=giorno&data={day.isoformat()}" onclick="ppmDayCarouselTap(this)">
+                  <span class="calendar-daybar-dow">{day_names[day.weekday()].upper()}</span>
+                  <span class="calendar-daybar-num">{day.day:02d}</span>
+                  <span class="calendar-daybar-count">{total} turni</span>
+                </button>'''
+            daybar_cards=[neighbor_card(monday-timedelta(days=7-k)) for k in range(7)]+daybar_cards+[neighbor_card(monday+timedelta(days=7+k)) for k in range(7)]
             daybar_html=f'''<div class="calendar-daybar-wrap">
               <button type="button" class="calendar-daybar-nav" onclick="calendarDaybarNav(-1)" aria-label="Barra giorni precedente">‹</button>
               <div class="calendar-daybar" id="calendarDaybar">{''.join(daybar_cards)}</div>
@@ -15081,6 +15291,19 @@ class App(BaseHTTPRequestHandler):
               <div class="cremation-day-page-inner">{day_body}</div>
             </div>''')
         day_pages.append(f'<div class="cremation-day-page cremation-day-page-edge" data-href="/programma-cremazioni?vista=settimana&data={next_week}"></div>')
+        # Carousel continuo (stesso comportamento di Calendario): anche le card della settimana precedente e successiva
+        with db() as c:
+            neighbor_cycle_counts={row["cycle_date"]:row["n"] for row in c.execute(
+                "SELECT cycle_date,COUNT(*) n FROM cremation_cycles WHERE cycle_date BETWEEN ? AND ? GROUP BY cycle_date",
+                ((monday-timedelta(days=7)).isoformat(),(sunday+timedelta(days=7)).isoformat()))}
+        def neighbor_card(day):
+            iso=day.isoformat();n=neighbor_cycle_counts.get(iso,0)
+            return f'''<button type="button" class="cremation-daybar-card{" today" if iso==today_iso else ""}" data-day-index="-1" data-cremation-day="{iso}" data-href="/programma-cremazioni?vista=settimana&data={iso}" onclick="ppmDayCarouselTap(this)">
+              <span class="cremation-daybar-dow">{weekday_short[day.weekday()].upper()}</span>
+              <span class="cremation-daybar-num">{day.day:02d}</span>
+              <span class="cremation-daybar-count">{n} {"ciclo" if n==1 else "cicli"}</span>
+            </button>'''
+        daybar_cards=[neighbor_card(monday-timedelta(days=7-k)) for k in range(7)]+daybar_cards+[neighbor_card(sunday+timedelta(days=1+k)) for k in range(7)]
 
         if monday.month==sunday.month:
             week_label=f"{monday.day} – {sunday.day} {MONTH_NAMES_IT[sunday.month-1]} {sunday.year}"

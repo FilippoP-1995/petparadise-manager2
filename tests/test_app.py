@@ -4396,7 +4396,8 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.cremation_schedule(admin)
         page = rendered[-1]
         # la barra dei giorni: 7 card con giorno abbreviato, numero, conteggio cicli
-        self.assertEqual(page.count('class="cremation-daybar-card'), 7)
+        self.assertEqual(len(__import__("re").findall(r'class="cremation-daybar-card[^"]*" data-day-index="\d+"', page)), 7)  # i 7 giorni caricati
+        self.assertEqual(page.count('class="cremation-daybar-card'), 21)  # + settimana precedente e successiva (carousel continuo)
         self.assertIn(f'data-initial-day-index="{today_index}"', page)
         self.assertIn(f'class="cremation-daybar-card active today" data-day-index="{today_index}" data-cremation-day="{today.isoformat()}"', page)
         # 7 pagine swipeabili, una per giorno, con scroll-snap
@@ -7242,15 +7243,8 @@ class PetParadiseTests(unittest.TestCase):
 
     def test_daybar_swipe_changes_week_and_popups_never_scroll_the_page_behind(self):
         js = app.APP_JS
-        # swipe sulla barra dei giorni di Calendario e Cremazioni: settimana successiva/precedente, stesso giorno della settimana
-        for text in ("function ppmDaybarGoWeek(pages,cardSelector,dateAttr,dir)", "function ppmInitDaybarWeekSwipe(barId,pagesId,cardSelector,dateAttr)",
-                     "ppmInitDaybarWeekSwipe('calendarDaybar','calendarDayPages','.calendar-daybar-card','date')",
-                     "ppmInitDaybarWeekSwipe('cremationDaybar','cremationDayPages','.cremation-daybar-card','cremationDay')",
-                     "day=new Date(parts[0],parts[1]-1,parts[2]+7*dir)", "url.searchParams.set('data',",
-                     "bar.style.touchAction='pan-y'", "ppmSaveScrollForNextLoad();"):
-            self.assertIn(text, js)
-        swipe = js[js.index("function ppmInitDaybarWeekSwipe"):]
-        self.assertIn("Math.abs(dx)<45||Math.abs(dx)<Math.abs(dy)*1.5", swipe)  # un gesto verticale non cambia settimana
+        # lo swipe sulla barra giorni e' ora il carousel condiviso (test dedicato): niente piu' scorciatoia "a settimana"
+        self.assertNotIn("ppmInitDaybarWeekSwipe", js);self.assertNotIn("ppmDaybarGoWeek", js)
         # le pagine sentinella da cui si ricava l'indirizzo esistono in entrambe le viste
         self.assertIn("calendar-day-page calendar-day-page-edge", __import__("inspect").getsource(app.App.calendar_page))
         self.assertIn("cremation-day-page cremation-day-page-edge", __import__("inspect").getsource(app.App.cremation_schedule_week))
@@ -7333,6 +7327,90 @@ class PetParadiseTests(unittest.TestCase):
             total = conn.execute("SELECT total_service FROM practices WHERE id=?", (pid,)).fetchone()["total_service"]
         self.assertEqual((item["price"], item["urn_catalog_id"], item["label"]), ("0", urn_id, "Standard Grande"))
         self.assertEqual(total, "300.00")
+
+    def test_calendar_daybar_is_a_continuous_carousel_with_adjacent_weeks(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            for day, title in (("2026-10-02", "PRIMA"), ("2026-10-12", "DOPO"), ("2026-10-12", "DOPO2"), ("2026-10-09", "QUESTA")):
+                conn.execute("""INSERT INTO calendar_events(event_type,title,start_at,end_at,event_status,created_by,created_at,updated_at)
+                                VALUES('Ritiro',?,?,?,'Da ritirare',?,?,?)""", (title, day + "T10:00:00", day + "T11:00:00", admin["id"], stamp, stamp))
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/calendario?vista=giorno&data=2026-10-08"
+        self.handler.calendar_page(admin)
+        page = rendered[-1]
+        bar = page.split('id="calendarDaybar">')[1].split('id="calendarDayPages"')[0]
+        import re
+        cards = re.findall(r'<button type="button" class="calendar-daybar-card[^"]*"([^>]*)>', bar)
+        self.assertEqual(len(cards), 21)  # settimana precedente + corrente + successiva
+        dates = [re.search(r'data-date="([^"]+)"', c).group(1) for c in cards]
+        self.assertEqual(dates[0], "2026-09-28");self.assertEqual(dates[7], "2026-10-05");self.assertEqual(dates[-1], "2026-10-18")
+        indexes = [int(re.search(r'data-day-index="(-?\d+)"', c).group(1)) for c in cards]
+        self.assertEqual(indexes, [-1] * 7 + list(range(7)) + [-1] * 7)  # le card gia' esistenti restano con il loro indice e onclick
+        self.assertIn('onclick="calendarSelectDay(3)"', cards[10])
+        for neighbor in cards[:7] + cards[14:]:
+            self.assertIn('onclick="ppmDayCarouselTap(this)"', neighbor);self.assertIn('data-href="/calendario?vista=giorno&data=', neighbor)
+        # numero di appuntamenti reali anche sulle card delle settimane adiacenti
+        counts = {date: re.search(r'<span class="calendar-daybar-count">(\d+) app\.', bar.split(f'data-date="{date}"')[1]).group(1) for date in ("2026-10-02", "2026-10-09", "2026-10-12", "2026-10-13")}
+        self.assertEqual(counts, {"2026-10-02": "1", "2026-10-09": "1", "2026-10-12": "2", "2026-10-13": "0"})
+        # il resto della pagina (pagine giorno e sentinelle) non cambia: 7 giorni + 2 sentinelle
+        self.assertEqual(page.count('class="calendar-day-page" data-day-index='), 7)
+        self.assertEqual(page.count("calendar-day-page-edge"), 2)
+        js = app.APP_JS
+        for text in ("function ppmInitDayCarousel(cfg)", "track.style.transform='translate3d('+value+'px,0,0)'",
+                     "bar.addEventListener('pointerdown'", "bar.addEventListener('pointermove'", "bar.addEventListener('pointerup'",
+                     "bar.addEventListener('pointercancel'", "bar.setPointerCapture(event.pointerId)",
+                     "const SPRING_K=230", "requestAnimationFrame(step)",
+                     "cfg.selectDay(Number(card.dataset.dayIndex))",               # la scelta riusa la logica esistente della sezione
+                     "selectDay:function(index){calendarSelectDay(index);}", "selectDay:function(index){cremationSelectDay(index);}",
+                     "location.href=card.dataset.href",                             # settimane adiacenti: stessa navigazione delle sentinelle
+                     "if(Math.abs(dy)>Math.abs(dx)){drag=null;return;}",            # gesto verticale: lascia la pagina
+                     "Math.abs(velocity)>=0.4", "Math.abs(dx)>=0.33*pitch",           # distanza e velocita'
+                     "if(ppmDayCarousels.calendar){ppmDayCarousels.calendar.step(dir);return;}",      # frecce Calendario
+                     "if(ppmDayCarousels.cremation){ppmDayCarousels.cremation.step(dir);return;}",    # frecce Cremazioni
+                     "if(ppmDayCarousels.calendar&&ppmDayCarousels.calendar.locked(idx))return;",
+                     "if(ppmDayCarousels.cremation&&ppmDayCarousels.cremation.locked(idx))return;",
+                     "ppmDayCarousels.calendar.release()", "ppmDayCarousels.cremation.release()",   # una scelta esplicita annulla il blocco
+                     "ppmInitDayCarousels();\n      cremationInitDayPages();"):  # dopo il rinfresco "soft" dei cicli
+            self.assertIn(text, js)
+        for css in (".calendar-daybar.is-carousel,.cremation-daybar.is-carousel{overflow:hidden", "touch-action:pan-y", ".ppm-daybar-track{display:flex"):
+            self.assertIn(css, app.CSS)
+        # il carousel si attiva solo dove ci sono le pagine sentinella (fasce di giorni navigabili)
+        self.assertIn("!pages.querySelector('[data-href]'))return null;", js[js.index("function ppmInitDayCarousel"):js.index("function ppmInitDayCarousel") + 400])
+
+    def test_cremation_and_shifts_daybars_get_the_same_carousel(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            for day in ("2026-10-02", "2026-10-09", "2026-10-09", "2026-10-13"):
+                conn.execute("INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                             (day, "pianificato", "08:00", "09:30", stamp, stamp))
+        import re
+        # Programma Cremazioni
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/programma-cremazioni?vista=settimana&data=2026-10-08"
+        self.handler.cremation_schedule_week(admin, date(2026, 10, 8))
+        page = rendered[-1]
+        bar = page.split('id="cremationDaybar">')[1].split('id="cremationDayPages"')[0]
+        cards = re.findall(r'<button type="button" class="cremation-daybar-card[^"]*"([^>]*)>', bar)
+        self.assertEqual(len(cards), 21)
+        self.assertEqual([int(re.search(r'data-day-index="(-?\d+)"', c).group(1)) for c in cards], [-1] * 7 + list(range(7)) + [-1] * 7)
+        self.assertIn('onclick="cremationSelectDay(3)"', cards[10])  # le card gia' esistenti restano invariate
+        self.assertIn('data-href="/programma-cremazioni?vista=settimana&data=2026-09-28"', cards[0])
+        self.assertIn('onclick="ppmDayCarouselTap(this)"', cards[0])
+        labels = {d: re.search(r'<span class="cremation-daybar-count">([^<]+)</span>', bar.split(f'data-cremation-day="{d}"')[1]).group(1)
+                  for d in ("2026-10-02", "2026-10-09", "2026-10-13", "2026-10-14")}
+        self.assertEqual(labels, {"2026-10-02": "1 ciclo", "2026-10-09": "2 cicli", "2026-10-13": "1 ciclo", "2026-10-14": "0 cicli"})
+        self.assertEqual(page.count('class="cremation-day-page" data-day-index='), 7);self.assertEqual(page.count("cremation-day-page-edge"), 2)
+        # Orari
+        rendered.clear()
+        self.handler.path = "/turni?vista=giorno&data=2026-10-08"
+        self.handler.shifts_page(admin)
+        page = rendered[-1]
+        bar = page.split('id="calendarDaybar">')[1].split('id="calendarDayPages"')[0]
+        cards = re.findall(r'<button type="button" class="calendar-daybar-card[^"]*"([^>]*)>', bar)
+        self.assertEqual(len(cards), 21)
+        self.assertEqual([int(re.search(r'data-day-index="(-?\d+)"', c).group(1)) for c in cards], [-1] * 7 + list(range(7)) + [-1] * 7)
+        self.assertIn('data-href="/turni?vista=giorno&data=2026-09-28"', cards[0]);self.assertIn('onclick="ppmDayCarouselTap(this)"', cards[20])
+        self.assertIn(" turni</span>", bar)
 
     def test_calendar_week_sentinel_navigation_is_reversible(self):
         # Caso esplicito segnalato dall'utente: oggi giovedi', sono sulla
@@ -7440,7 +7518,9 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.cremation_schedule(admin)
         page = rendered[-1]
         self.assertIn('data-href="/programma-cremazioni?vista=settimana&data=2026-09-13"', page)
-        self.assertNotIn('data-href="/programma-cremazioni?vista=settimana&data=2026-09-07"', page)
+        # (la card del 07 esiste ora come giorno della settimana adiacente del carousel: il controllo riguarda la sentinella)
+        self.assertIn('cremation-day-page-edge" data-href="/programma-cremazioni?vista=settimana&data=2026-09-13"', page)
+        self.assertNotIn('cremation-day-page-edge" data-href="/programma-cremazioni?vista=settimana&data=2026-09-07"', page)
         rendered.clear()
         # Ricaricando esattamente l'URL a cui la sentinella indietro punta,
         # il giorno evidenziato deve essere la domenica (indice 6), non
@@ -12933,7 +13013,8 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.calendar_page(admin)
         page = rendered[-1]
         # barra dei 7 giorni della settimana, sempre presente, con conteggio appuntamenti
-        self.assertEqual(page.count('class="calendar-daybar-card'), 7)
+        self.assertEqual(len(__import__("re").findall(r'class="calendar-daybar-card[^"]*" data-day-index="\d+"', page)), 7)  # i 7 giorni caricati
+        self.assertEqual(page.count('class="calendar-daybar-card'), 21)  # + settimana precedente e successiva (carousel continuo)
         self.assertIn('data-initial-day-index="', page)
         self.assertIn('scroll-snap-type:x mandatory', app.CSS)
         # filtri rapidi + card riepilogo
