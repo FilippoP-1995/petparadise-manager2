@@ -1786,6 +1786,7 @@ tr.avatar-other td:first-child{border-left:3px solid #c084fc}
 .light-theme .practice-list-table tbody tr{background:#fff}
 .light-theme .practice-list-table tbody tr:hover td{background:#f8fafc}
 .light-theme .practice-list-table tbody td{border-color:#e2e8f0}.inline-statuses{display:grid;gap:8px;min-width:170px}.inline-state-select{min-height:38px;padding:7px 32px 7px 10px;border-width:2px;font-weight:800}button.inline-state-select{border:0;border-radius:9px;font:inherit;cursor:pointer;text-align:center;padding:7px 14px}.inline-tag-form{display:flex;flex-direction:column;gap:2px}.invoice-inline-cell{display:grid;gap:4px;min-width:130px}.invoice-inline-input{min-height:34px;padding:6px 9px;font-size:12px}.invoice-inline-input.input-error{border-color:#ef4444}.payment-popover{position:fixed;inset:0;z-index:180;display:grid;place-items:center;padding:18px;background:#020617b8}.payment-popover[hidden]{display:none}
+.ai-chat-backdrop,.ai-chat-panel,.create-sheet,.create-sheet-backdrop,.cremation-modal-overlay,.more-menu,.more-backdrop,.order-modal,.payment-popover,.payment-dialog,.route-quick-backdrop,.route-sheet,.route-sheet-backdrop,.shift-cell-editor-backdrop,.wa-modal-overlay,.permission-prompt,[role="dialog"],[aria-modal="true"]{overscroll-behavior:contain}
 .field[data-manual-income-method][hidden]{display:none!important}
 .partner-alert{display:flex;align-items:center;gap:14px;margin:0 0 18px;padding:14px 16px;border-radius:18px;color:#fff;background:linear-gradient(135deg,#0f766e,#14b8a6);border:2px solid #5eead4;box-shadow:0 10px 28px rgba(20,184,166,.35)}
 .partner-alert .pa-ico{font-size:30px;line-height:1}.partner-alert .pa-body{flex:1;min-width:0}
@@ -5780,6 +5781,107 @@ function ppmRestoreScrollIfPending(){
   requestAnimationFrame(function(){window.scrollTo(0,y);});
 }
 document.addEventListener('DOMContentLoaded',ppmRestoreScrollIfPending);
+// Swipe sulla barra dei giorni (Calendario e Cremazioni): passa alla settimana
+// successiva/precedente restando sullo stesso giorno della settimana, senza
+// dover prima arrivare a domenica/lunedi' e fare swipe sull'area degli eventi.
+// Riusa le pagine sentinella gia' presenti (data-href): stessa navigazione e
+// stesso ripristino dello scroll verticale. Le frecce ‹ › continuano a
+// scorrere la barra.
+function ppmDaybarGoWeek(pages,cardSelector,dateAttr,dir){
+  const edges=pages.querySelectorAll('[data-href]');
+  const edge=dir>0?edges[edges.length-1]:edges[0];
+  if(!edge)return;
+  const active=document.querySelector(cardSelector+'.active')||document.querySelector(cardSelector);
+  const current=active&&active.dataset[dateAttr];
+  const url=new URL(edge.dataset.href,location.href);
+  if(current){
+    const parts=current.split('-').map(Number);
+    const day=new Date(parts[0],parts[1]-1,parts[2]+7*dir);
+    const pad=function(n){return String(n).padStart(2,'0');};
+    url.searchParams.set('data',day.getFullYear()+'-'+pad(day.getMonth()+1)+'-'+pad(day.getDate()));
+  }
+  ppmSaveScrollForNextLoad();
+  location.href=url.pathname+url.search;
+}
+function ppmInitDaybarWeekSwipe(barId,pagesId,cardSelector,dateAttr){
+  const bar=document.getElementById(barId);
+  const pages=document.getElementById(pagesId);
+  if(!bar||!pages||!pages.querySelector('[data-href]'))return;
+  bar.style.touchAction='pan-y';
+  let startX=0,startY=0,tracking=false;
+  bar.addEventListener('touchstart',function(event){
+    if(event.touches.length!==1){tracking=false;return;}
+    startX=event.touches[0].clientX;startY=event.touches[0].clientY;tracking=true;
+  },{passive:true});
+  bar.addEventListener('touchend',function(event){
+    if(!tracking)return;
+    tracking=false;
+    const touch=event.changedTouches[0];
+    const dx=touch.clientX-startX,dy=touch.clientY-startY;
+    if(Math.abs(dx)<45||Math.abs(dx)<Math.abs(dy)*1.5)return;
+    ppmDaybarGoWeek(pages,cardSelector,dateAttr,dx<0?1:-1);
+  },{passive:true});
+  bar.addEventListener('touchcancel',function(){tracking=false;},{passive:true});
+}
+document.addEventListener('DOMContentLoaded',function(){
+  ppmInitDaybarWeekSwipe('calendarDaybar','calendarDayPages','.calendar-daybar-card','date');
+  ppmInitDaybarWeekSwipe('cremationDaybar','cremationDayPages','.cremation-daybar-card','cremationDay');
+});
+// Pop-up e pagina di sfondo (richiesta esplicita dell'utente): scorrendo dentro
+// un pop-up/foglio/finestra, anche arrivati in cima o in fondo, la pagina
+// dietro non deve MAI muoversi. Vale per qualunque pop-up: quelli noti (elenco
+// qui sotto) e ogni elemento fisso a tutto schermo con z-index alto aggiunto
+// in futuro. Se dentro al pop-up c'e' ancora spazio per scorrere nella
+// direzione del gesto si scorre normalmente; altrimenti il gesto viene fermato.
+const PPM_OVERLAY_SELECTOR='.ai-chat-backdrop,.ai-chat-panel,.create-sheet,.create-sheet-backdrop,.cremation-modal-overlay,.more-menu,.more-backdrop,.order-modal,.payment-popover,.route-quick-backdrop,.route-sheet,.route-sheet-backdrop,.shift-cell-editor-backdrop,.wa-modal-overlay,.permission-prompt,[role="dialog"],[aria-modal="true"]';
+const PPM_OVERLAY_CHROME='.bottom-nav,.top,.app-header,.calendar-fab,.partner-toast,.cremation-toast,.sw-update-banner,.install-hint,.partner-pill,.ppm-pull-refresh,.ai-chat-fab,.skip-link';
+function ppmOverlayOf(target){
+  if(!target||!target.closest)return null;
+  const known=target.closest(PPM_OVERLAY_SELECTOR);
+  if(known)return known;
+  for(let node=target;node&&node!==document.body&&node.nodeType===1;node=node.parentElement){
+    if(node.matches(PPM_OVERLAY_CHROME))return null;
+    const style=getComputedStyle(node);
+    if(style.position==='fixed'){
+      const rect=node.getBoundingClientRect();
+      if((parseInt(style.zIndex,10)||0)>=100&&rect.width>=window.innerWidth*0.9&&rect.height>=window.innerHeight*0.3)return node;
+    }
+  }
+  return null;
+}
+function ppmCanScrollWithin(target,overlay,direction){
+  for(let node=target;node&&node.nodeType===1;node=node.parentElement){
+    const style=getComputedStyle(node);
+    if(/(auto|scroll|overlay)/.test(style.overflowY)&&node.scrollHeight>node.clientHeight+1){
+      if(direction>0&&node.scrollTop+node.clientHeight<node.scrollHeight-1)return true;
+      if(direction<0&&node.scrollTop>0)return true;
+    }
+    if(node===overlay)break;
+  }
+  return false;
+}
+var ppmOverlayTouch=null;
+document.addEventListener('touchstart',function(event){
+  if(event.touches.length!==1){ppmOverlayTouch=null;return;}
+  const overlay=ppmOverlayOf(event.target);
+  ppmOverlayTouch=overlay?{overlay:overlay,y:event.touches[0].clientY,x:event.touches[0].clientX}:null;
+},{passive:true});
+document.addEventListener('touchmove',function(event){
+  if(!ppmOverlayTouch||event.touches.length!==1||!event.cancelable)return;
+  const touch=event.touches[0];
+  const dx=touch.clientX-ppmOverlayTouch.x,dy=touch.clientY-ppmOverlayTouch.y;
+  ppmOverlayTouch.x=touch.clientX;ppmOverlayTouch.y=touch.clientY;
+  if(dy===0||Math.abs(dy)<Math.abs(dx))return;
+  if(!ppmCanScrollWithin(event.target,ppmOverlayTouch.overlay,dy<0?1:-1))event.preventDefault();
+},{passive:false});
+document.addEventListener('touchend',function(){ppmOverlayTouch=null;},{passive:true});
+document.addEventListener('touchcancel',function(){ppmOverlayTouch=null;},{passive:true});
+document.addEventListener('wheel',function(event){
+  if(event.ctrlKey||!event.cancelable||Math.abs(event.deltaY)<=Math.abs(event.deltaX))return;
+  const overlay=ppmOverlayOf(event.target);
+  if(!overlay)return;
+  if(!ppmCanScrollWithin(event.target,overlay,event.deltaY>0?1:-1))event.preventDefault();
+},{passive:false});
 var cremationDayObserver=null;
 function cremationInitDayPages(){
   const pages=document.getElementById('cremationDayPages');

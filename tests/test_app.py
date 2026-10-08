@@ -7224,6 +7224,32 @@ class PetParadiseTests(unittest.TestCase):
                      "fetch('/api/messaggi-whatsapp'"):
             self.assertIn(text, js)
 
+    def test_daybar_swipe_changes_week_and_popups_never_scroll_the_page_behind(self):
+        js = app.APP_JS
+        # swipe sulla barra dei giorni di Calendario e Cremazioni: settimana successiva/precedente, stesso giorno della settimana
+        for text in ("function ppmDaybarGoWeek(pages,cardSelector,dateAttr,dir)", "function ppmInitDaybarWeekSwipe(barId,pagesId,cardSelector,dateAttr)",
+                     "ppmInitDaybarWeekSwipe('calendarDaybar','calendarDayPages','.calendar-daybar-card','date')",
+                     "ppmInitDaybarWeekSwipe('cremationDaybar','cremationDayPages','.cremation-daybar-card','cremationDay')",
+                     "day=new Date(parts[0],parts[1]-1,parts[2]+7*dir)", "url.searchParams.set('data',",
+                     "bar.style.touchAction='pan-y'", "ppmSaveScrollForNextLoad();"):
+            self.assertIn(text, js)
+        swipe = js[js.index("function ppmInitDaybarWeekSwipe"):]
+        self.assertIn("Math.abs(dx)<45||Math.abs(dx)<Math.abs(dy)*1.5", swipe)  # un gesto verticale non cambia settimana
+        # le pagine sentinella da cui si ricava l'indirizzo esistono in entrambe le viste
+        self.assertIn("calendar-day-page calendar-day-page-edge", __import__("inspect").getsource(app.App.calendar_page))
+        self.assertIn("cremation-day-page cremation-day-page-edge", __import__("inspect").getsource(app.App.cremation_schedule_week))
+        # pop-up: la pagina di sfondo non scorre mai (gesto fermato ai limiti, anche sullo sfondo del pop-up)
+        for text in ("function ppmOverlayOf(target)", "function ppmCanScrollWithin(target,overlay,direction)",
+                     "document.addEventListener('touchmove',function(event){", "},{passive:false});",
+                     "document.addEventListener('wheel',function(event){", "event.preventDefault();"):
+            self.assertIn(text, js)
+        for selector in (".payment-popover", ".wa-modal-overlay", ".cremation-modal-overlay", ".route-sheet", ".create-sheet", ".more-menu",
+                         ".order-modal", ".shift-cell-editor-backdrop", ".ai-chat-panel", '[role="dialog"]'):
+            self.assertIn(selector, js[js.index("const PPM_OVERLAY_SELECTOR"):js.index("const PPM_OVERLAY_CHROME")])
+        for chrome in (".bottom-nav", ".app-header", ".top", ".calendar-fab"):  # la barra in basso e l'intestazione non sono pop-up
+            self.assertIn(chrome, js[js.index("const PPM_OVERLAY_CHROME"):js.index("function ppmOverlayOf")])
+        self.assertIn("overscroll-behavior:contain", app.CSS)
+
     def test_calendar_week_sentinel_navigation_is_reversible(self):
         # Caso esplicito segnalato dall'utente: oggi giovedi', sono sulla
         # card di domenica, swipe avanti attraversa il confine settimana
