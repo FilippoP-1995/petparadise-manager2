@@ -8767,6 +8767,9 @@ WA_QUICK_DEFAULTS = (
      "Ciao {nome_cliente}, scriviamo dallo staff di Pet Paradise Cremazione Animali. Abbiamo provato a contattarvi per avvisarvi "
      "che la cremazione di {nome_animale} è terminata e volevamo quindi prendere un appuntamento per la riconsegna dell’urna. "
      "Attendiamo un vostro riscontro, grazie☺️🐾🌈"),
+    ("riconsegna_ambulatorio", "Riconsegna effettuata in ambulatorio",
+     "Ciao {nome_cliente}, scriviamo dallo staff di Pet Paradise Cremazione Animali. Vi informiamo che abbiamo appena affidato "
+     "l’urna di {nome_animale} alla clinica. Grazie mille ancora per esservi affidati a noi☺️🐾🌈"),
     ("estremi_bancari", "Estremi bancari",
      "Ciao {nome_cliente}, scriviamo dallo staff di Pet Paradise Cremazione Animali.\n"
      "Come da accordi inviamo di seguito gli estremi bancari per effettuare il bonifico per il servizio di cremazione di {nome_animale}.\n"

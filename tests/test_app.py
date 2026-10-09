@@ -7070,7 +7070,7 @@ class PetParadiseTests(unittest.TestCase):
             operator = conn.execute("SELECT * FROM users WHERE role!='admin' LIMIT 1").fetchone()
             templates = app.wa_quick_templates(conn)
         # "Conferma presa in carico" eliminato; titoli rinominati
-        self.assertEqual([t["title"] for t in templates], ["Presa in carico", "Appuntamento riconsegna", "Estremi bancari"])
+        self.assertEqual([t["title"] for t in templates], ["Presa in carico", "Appuntamento riconsegna", "Riconsegna effettuata in ambulatorio", "Estremi bancari"])
         by_id = {t["id"]: t for t in templates}
         presa = by_id["mancata_risposta_presa_in_carico"]["body"];riconsegna = by_id["mancata_risposta_riconsegna"]["body"]
         self.assertTrue(presa.startswith("Ciao {nome_cliente}, scriviamo dallo staff di Pet Paradise Cremazione Animali."))
@@ -7097,6 +7097,9 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn("*", app.WA_QUICK_LEGACY_BODIES["estremi_bancari"][0])
         self.assertTrue(estremi.endswith("Banca Alta Toscana Società Cooperativa S.C."))
         # nessun segnaposto per operatore, sede, appuntamenti, cognome o numero pratica
+        ambulatorio = by_id["riconsegna_ambulatorio"]["body"]
+        self.assertEqual(ambulatorio, "Ciao {nome_cliente}, scriviamo dallo staff di Pet Paradise Cremazione Animali. Vi informiamo che abbiamo appena "
+                                      "affidato l’urna di {nome_animale} alla clinica. Grazie mille ancora per esservi affidati a noi☺️🐾🌈")
         self.assertEqual([k for k, _ in app.WA_QUICK_PLACEHOLDERS], ["nome_cliente", "nome_animale", "costo_cremazione", "costo_ritiro",
                          "costo_riconsegna", "costo_urna", "costo_calchi", "costo_totale", "costo_acconto", "costo_saldo"])
         # titoli di una versione precedente salvati: passano ai nuovi
@@ -7106,16 +7109,16 @@ class PetParadiseTests(unittest.TestCase):
                 {"id": "presa_in_carico", "title": "Conferma presa in carico", "body": "vecchio"}])))
             migrated = app.wa_quick_templates(conn)
             conn.execute("DELETE FROM settings WHERE key=?", (app.WA_QUICK_SETTING,))
-        self.assertEqual([t["title"] for t in migrated], ["Presa in carico", "Appuntamento riconsegna", "Estremi bancari"])
+        self.assertEqual([t["title"] for t in migrated], ["Presa in carico", "Appuntamento riconsegna", "Riconsegna effettuata in ambulatorio", "Estremi bancari"])
         self.assertNotIn("vecchio", json.dumps(migrated))
         sent = []
         self.handler.send_json = lambda obj, status=200: sent.append(obj)
         self.handler.wa_quick_templates_api(admin)
-        self.assertEqual(len(sent[-1]["templates"]), 3);self.assertNotIn("admin", sent[-1])
+        self.assertEqual(len(sent[-1]["templates"]), 4);self.assertNotIn("admin", sent[-1])
         self.assertNotIn("operator", sent[-1])
         if operator:
             self.handler.wa_quick_templates_api(operator)
-            self.assertEqual(len(sent[-1]["templates"]), 3)
+            self.assertEqual(len(sent[-1]["templates"]), 4)
         # salvataggio: aperto a tutti gli utenti, segnaposto validati, testo troppo lungo rifiutato
         redirects = [];pages = [];errors = []
         self.handler.redirect = lambda url: redirects.append(url)
