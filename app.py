@@ -1786,6 +1786,11 @@ tr.avatar-other td:first-child{border-left:3px solid #c084fc}
 .light-theme .practice-list-table tbody tr{background:#fff}
 .light-theme .practice-list-table tbody tr:hover td{background:#f8fafc}
 .light-theme .practice-list-table tbody td{border-color:#e2e8f0}.inline-statuses{display:grid;gap:8px;min-width:170px}.inline-state-select{min-height:38px;padding:7px 32px 7px 10px;border-width:2px;font-weight:800}button.inline-state-select{border:0;border-radius:9px;font:inherit;cursor:pointer;text-align:center;padding:7px 14px}.inline-tag-form{display:flex;flex-direction:column;gap:2px}.invoice-inline-cell{display:grid;gap:4px;min-width:130px}.invoice-inline-input{min-height:34px;padding:6px 9px;font-size:12px}.invoice-inline-input.input-error{border-color:#ef4444}.payment-popover{position:fixed;inset:0;z-index:180;display:grid;place-items:center;padding:18px;background:#020617b8}.payment-popover[hidden]{display:none}
+.phone-action-btn.qwa-btn{background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff;border-color:transparent}
+.phone-action-btn.qwa-btn:hover{color:#fff;border-color:transparent;filter:brightness(1.1)}
+.calendar-detail-quickactions .calendar-detail-qa .calendar-detail-qa-icon.qwa-icon{background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff;box-shadow:0 0 12px #3b82f638}
+.qwa-badge{display:inline-grid;place-items:center;width:24px;height:24px;margin-right:8px;border-radius:8px;background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff;vertical-align:middle}
+.qwa-badge .icon{width:14px;height:14px}
 .calendar-daybar.is-carousel,.cremation-daybar.is-carousel{overflow:hidden;scroll-behavior:auto;touch-action:pan-y;-webkit-user-select:none;user-select:none;cursor:grab}
 .calendar-daybar.is-carousel.is-dragging,.cremation-daybar.is-carousel.is-dragging{cursor:grabbing}
 .ppm-daybar-track{display:flex;gap:9px;flex:0 0 auto;will-change:transform;transform:translate3d(0,0,0)}
@@ -19068,12 +19073,12 @@ class App(BaseHTTPRequestHandler):
         payload=esc(json.dumps({"phone":digits,"vars":qvars,"practice":"costo_totale" in qvars},ensure_ascii=False))
         attrs=f'type="button" data-qwa="{payload}" onclick="event.stopPropagation();ppmQuickWa(this)"'
         if kind=="icon":
-            return f'<button {attrs} class="icon-btn phone-action-btn" aria-label="Messaggio WhatsApp rapido" title="Messaggio WhatsApp rapido">{lucide("scroll-text")}</button>'
+            return f'<button {attrs} class="icon-btn phone-action-btn qwa-btn" aria-label="Messaggio WhatsApp rapido" title="Messaggio WhatsApp rapido">{lucide("scroll-text")}</button>'
         if kind=="qa":
-            return f'<button {attrs} class="calendar-detail-qa"><span class="calendar-detail-qa-icon">{lucide("scroll-text")}</span><span>Messaggi</span></button>'
+            return f'<button {attrs} class="calendar-detail-qa"><span class="calendar-detail-qa-icon qwa-icon">{lucide("scroll-text")}</span><span>Messaggi</span></button>'
         if kind=="menu":
             return f'<button {attrs}>Messaggio WhatsApp</button>'
-        return f'<button {attrs} class="btn ghost">{lucide("scroll-text")} {esc(label)}</button>'
+        return f'<button {attrs} class="btn ghost"><span class="qwa-badge">{lucide("scroll-text")}</span>{esc(label)}</button>'
 
     def practice_qwa_vars(self,user,p):
         """Segnaposto per una pratica (con i suoi costi)."""

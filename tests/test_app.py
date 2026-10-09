@@ -7207,6 +7207,14 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("<span>Messaggi</span>", rendered[-1])
         quick = rendered[-1].split('data-qwa="')[1].split("</button>")[0]
         self.assertIn(app.lucide("scroll-text"), quick)
+        # icona blu a riempimento con linee bianche, come telefono (rosso) e WhatsApp (verde)
+        self.assertIn('calendar-detail-qa-icon qwa-icon', quick)
+        for css in (".phone-action-btn.qwa-btn{background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff",
+                    ".calendar-detail-quickactions .calendar-detail-qa .calendar-detail-qa-icon.qwa-icon{background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff",
+                    ".qwa-badge{display:inline-grid;place-items:center;width:24px;height:24px;margin-right:8px;border-radius:8px;background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff"):
+            self.assertIn(css, app.CSS)
+        self.assertIn('class="icon-btn phone-action-btn qwa-btn"', app.App.wa_quick_button.__code__.co_consts.__str__() + __import__("inspect").getsource(app.App.wa_quick_button))
+        self.assertIn('<span class="qwa-badge">', __import__("inspect").getsource(app.App.wa_quick_button))
         self.assertNotIn(app.LUCIDE_PATHS["message"], quick);self.assertNotIn(app.LUCIDE_PATHS["navigation"], quick);self.assertNotIn(app.LUCIDE_PATHS["send"], quick)
         self.assertNotEqual(app.LUCIDE_PATHS["scroll-text"], app.LUCIDE_PATHS["message"])
         # card del calendario (menu)
