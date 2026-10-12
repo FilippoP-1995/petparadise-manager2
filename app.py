@@ -7533,6 +7533,18 @@ function ppmBtnPress(btn){if(!btn)return;btn.classList.add('ppm-btn-press');setT
 // numero del cliente e il testo gia' compilato. L'operatore controlla e preme
 // Invia: nulla viene inviato dal gestionale ne' registrato.
 function ppmQwaClose(){const overlay=document.getElementById('ppmQwaOverlay');if(overlay)overlay.remove();}
+// copia il testo gia' compilato (alternativa al link: si incolla nella chat, emoji comprese, senza passare dall'indirizzo)
+function ppmQwaCopy(text,button){
+  const done=function(){const label=button.dataset.label||button.textContent;button.dataset.label=label;button.textContent='Copiato ✓';setTimeout(function(){button.textContent=label;},1600);};
+  const legacy=function(){
+    const area=document.createElement('textarea');
+    area.value=text;area.style.cssText='position:fixed;left:0;top:0;opacity:0;font-size:16px';
+    document.body.appendChild(area);area.focus();area.select();
+    try{document.execCommand('copy');done();}catch(error){}
+    area.remove();
+  };
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(text).then(done,legacy);else legacy();
+}
 function ppmQwaNeedsPractice(text){return /[{]costo_[a-z_]+[}]/.test(String(text||''));}
 function ppmQwaFill(text,vars){
   // una riga che contiene una voce di costo mancante nella pratica sparisce per intero
@@ -7598,7 +7610,19 @@ function ppmQuickWa(button){
           item.rel='noopener noreferrer';
           item.addEventListener('click',function(){setTimeout(ppmQwaClose,300);});
         }
-        list.appendChild(item);
+        if(text){
+          const row=document.createElement('div');
+          row.style.cssText='display:flex;gap:8px;align-items:stretch';
+          item.style.flex='1 1 auto';
+          const copy=document.createElement('button');
+          copy.type='button';
+          copy.className='btn ghost';
+          copy.textContent='Copia';
+          copy.setAttribute('aria-label','Copia il testo di '+template.title);
+          copy.addEventListener('click',function(event){event.stopPropagation();ppmQwaCopy(text,copy);});
+          row.appendChild(item);row.appendChild(copy);
+          list.appendChild(row);
+        }else list.appendChild(item);
       });
       const edit=document.createElement('a');
       edit.href='/impostazioni/messaggi-whatsapp';

@@ -7249,6 +7249,7 @@ class PetParadiseTests(unittest.TestCase):
         js = app.APP_JS
         for text in ("function ppmQuickWa(button)", "'https://wa.me/'+encodeURIComponent(data.phone||'')+'?text='+encodeURIComponent(text)",
                      "Testo da compilare", "Disponibile solo con una pratica collegata", "ppmQwaNeedsPractice",
+                     "function ppmQwaCopy(text,button)", "navigator.clipboard.writeText(text).then(done,legacy)", "copy.textContent='Copia'",
                      "fetch('/api/messaggi-whatsapp'"):
             self.assertIn(text, js)
 
