@@ -7671,7 +7671,7 @@ function ppmPdSave(form,key,initial){
   });
   try{
     if(!meaningful){localStorage.removeItem(key);return;}
-    localStorage.setItem(key,JSON.stringify({v:1,savedAt:Date.now(),fields:state.fields,checks:state.checks}));
+    localStorage.setItem(key,JSON.stringify({v:2,savedAt:Date.now(),fields:state.fields,checks:state.checks}));
   }catch(error){}
 }
 function ppmPdRestore(form,draft){
@@ -7737,6 +7737,9 @@ function ppmPdRenderBanner(){
   keys.forEach(function(key){
     let data=null;try{data=JSON.parse(localStorage.getItem(key));}catch(error){}
     if(!data||!data.fields||!data.savedAt||Date.now()-data.savedAt>PPM_PD_TTL){try{localStorage.removeItem(key);}catch(error){}return;}
+    // bozze create dalla prima versione (v1): salvavano anche pratiche solo aperte con dati precompilati (es. telefono
+    // del veterinario). Non si distinguono da quelle vere, quindi si eliminano tutte una volta sola.
+    if(!(data.v>=2)){try{localStorage.removeItem(key);}catch(error){}return;}
     const typed=['owner_first_name','owner_last_name','owner_phone','animal_name'].some(function(name){return String(data.fields[name]||'').trim()!=='';});
     if(!typed){try{localStorage.removeItem(key);}catch(error){}return;} // bozza vuota (solo dati precompilati): non e' lavoro da riprendere
     drafts.push({key:key,data:data});

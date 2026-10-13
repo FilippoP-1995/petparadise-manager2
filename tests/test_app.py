@@ -8505,6 +8505,8 @@ class PetParadiseTests(unittest.TestCase):
         for text in ("event&&event.isTrusted===false)return;", "function(name){return String(data.fields[name]||'').trim()!=='';}",
                      "value!==String((initial&&initial[name])||'').trim()", "bozza vuota (solo dati precompilati)"):
             self.assertIn(text, js)
+        self.assertIn("JSON.stringify({v:2,savedAt:Date.now()", js)  # bozze di versione 2
+        self.assertIn("if(!(data.v>=2)){try{localStorage.removeItem(key);}catch(error){}return;}", js)  # quelle della v1 si eliminano
         # niente dati sensibili/tecnici nella bozza: chiave di idempotenza e firma esclusi
         self.assertIn("'balance_idempotency_key'", js);self.assertIn("'signature_data'", js)
         # il ripristino avviene solo dentro il ramo ?bozza=1
