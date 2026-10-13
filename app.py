@@ -7661,9 +7661,14 @@ function ppmPdSerialize(form){
   });
   return {fields:fields,checks:checks};
 }
-function ppmPdSave(form,key){
+function ppmPdSave(form,key,initial){
   const state=ppmPdSerialize(form);
-  const meaningful=PPM_PD_IDENTITY.some(function(name){return String(state.fields[name]||'').trim()!=='';});
+  // una bozza esiste solo se chi compila ha scritto qualcosa di suo: un dato identificativo non vuoto e
+  // diverso da quello che il form aveva gia' all'apertura (es. il veterinario precompilato da un evento)
+  const meaningful=PPM_PD_IDENTITY.some(function(name){
+    const value=String(state.fields[name]||'').trim();
+    return value!==''&&value!==String((initial&&initial[name])||'').trim();
+  });
   try{
     if(!meaningful){localStorage.removeItem(key);return;}
     localStorage.setItem(key,JSON.stringify({v:1,savedAt:Date.now(),fields:state.fields,checks:state.checks}));
@@ -7732,6 +7737,8 @@ function ppmPdRenderBanner(){
   keys.forEach(function(key){
     let data=null;try{data=JSON.parse(localStorage.getItem(key));}catch(error){}
     if(!data||!data.fields||!data.savedAt||Date.now()-data.savedAt>PPM_PD_TTL){try{localStorage.removeItem(key);}catch(error){}return;}
+    const typed=['owner_first_name','owner_last_name','owner_phone','animal_name'].some(function(name){return String(data.fields[name]||'').trim()!=='';});
+    if(!typed){try{localStorage.removeItem(key);}catch(error){}return;} // bozza vuota (solo dati precompilati): non e' lavoro da riprendere
     drafts.push({key:key,data:data});
   });
   if(!drafts.length)return;
@@ -7788,16 +7795,18 @@ function setupPracticeDraft(){
   if(!form||form.dataset.autosaveUrl||location.pathname!=='/nuova'||!ppmPdUser())return;
   const key=ppmPdKey(form);
   const params=new URLSearchParams(location.search);
+  let initial=ppmPdSerialize(form).fields; // valori con cui il form si e' aperto (anche quelli precompilati)
   if(params.get('bozza')==='1'){
     let draft=null;try{draft=JSON.parse(localStorage.getItem(key)||'null');}catch(error){}
-    if(draft&&draft.fields){ppmPdRestore(form,draft);form.dataset.ppmPdTouched='1';}
+    if(draft&&draft.fields){ppmPdRestore(form,draft);form.dataset.ppmPdTouched='1';initial={};}
     params.delete('bozza');
     const qs=params.toString();
     try{history.replaceState(null,'',location.pathname+(qs?'?'+qs:''));}catch(error){}
   }
   let timer=null;
-  const flush=function(){clearTimeout(timer);timer=null;if(form.dataset.ppmPdTouched==='1')ppmPdSave(form,key);};
-  const schedule=function(){form.dataset.ppmPdTouched='1';clearTimeout(timer);timer=setTimeout(flush,1000);};
+  const flush=function(){clearTimeout(timer);timer=null;if(form.dataset.ppmPdTouched==='1')ppmPdSave(form,key,initial);};
+  // solo le azioni vere dell'utente contano: gli eventi lanciati dagli script della pagina (precompilazione, ricerche) no
+  const schedule=function(event){if(event&&event.isTrusted===false)return;form.dataset.ppmPdTouched='1';clearTimeout(timer);timer=setTimeout(flush,1000);};
   form.addEventListener('input',schedule);
   form.addEventListener('change',schedule);
   window.addEventListener('pagehide',flush);

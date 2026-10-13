@@ -8501,6 +8501,10 @@ class PetParadiseTests(unittest.TestCase):
                      "params.get('bozza')==='1'", "localStorage.setItem(key,JSON.stringify(", "PPM_PD_TTL=7*24*3600*1000",
                      "ppm_practice_draft_pending", "setTimeout(setupPracticeDraft,0)"):
             self.assertIn(text, js)
+        # una pratica solo aperta (precompilata da un evento) non e' una bozza: contano le azioni vere dell'utente
+        for text in ("event&&event.isTrusted===false)return;", "function(name){return String(data.fields[name]||'').trim()!=='';}",
+                     "value!==String((initial&&initial[name])||'').trim()", "bozza vuota (solo dati precompilati)"):
+            self.assertIn(text, js)
         # niente dati sensibili/tecnici nella bozza: chiave di idempotenza e firma esclusi
         self.assertIn("'balance_idempotency_key'", js);self.assertIn("'signature_data'", js)
         # il ripristino avviene solo dentro il ramo ?bozza=1
