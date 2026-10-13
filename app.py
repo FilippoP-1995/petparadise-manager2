@@ -1786,11 +1786,10 @@ tr.avatar-other td:first-child{border-left:3px solid #c084fc}
 .light-theme .practice-list-table tbody tr{background:#fff}
 .light-theme .practice-list-table tbody tr:hover td{background:#f8fafc}
 .light-theme .practice-list-table tbody td{border-color:#e2e8f0}.inline-statuses{display:grid;gap:8px;min-width:170px}.inline-state-select{min-height:38px;padding:7px 32px 7px 10px;border-width:2px;font-weight:800}button.inline-state-select{border:0;border-radius:9px;font:inherit;cursor:pointer;text-align:center;padding:7px 14px}.inline-tag-form{display:flex;flex-direction:column;gap:2px}.invoice-inline-cell{display:grid;gap:4px;min-width:130px}.invoice-inline-input{min-height:34px;padding:6px 9px;font-size:12px}.invoice-inline-input.input-error{border-color:#ef4444}.payment-popover{position:fixed;inset:0;z-index:180;display:grid;place-items:center;padding:18px;background:#020617b8}.payment-popover[hidden]{display:none}
-.calendar-appt-deliver{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;border:1px solid #22c55e66;background:#22c55e1f;color:#4ade80;font-weight:800;font-size:12px;cursor:pointer}
-.calendar-appt-deliver .icon{width:14px;height:14px}
+.calendar-appt-deliver{display:inline-flex;align-items:center;min-height:0!important;height:auto;width:auto;padding:4px 10px;border-radius:99px;border:1px solid #22c55e66;background:transparent;color:#4ade80;font-size:10.5px;font-weight:800;letter-spacing:.02em;line-height:1.3;text-transform:uppercase;white-space:nowrap;cursor:pointer}
+.calendar-appt-deliver:active{background:#22c55e22}
 .calendar-appt-deliver:disabled{opacity:.6}
 .calendar-appt-delivered{display:inline-flex;align-items:center;gap:5px;background:#22c55e22;color:#4ade80}
-.calendar-appt-delivered .icon{width:13px;height:13px}
 .calendar-detail-status-quickedit .calendar-appt-deliver{margin-top:2px}
 .phone-action-btn.qwa-btn{background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff;border-color:transparent}
 .phone-action-btn.qwa-btn:hover{color:#fff;border-color:transparent;filter:brightness(1.1)}
@@ -12057,7 +12056,7 @@ class App(BaseHTTPRequestHandler):
             if row["practice_status"]=="Consegnato":
                 deliver_html=f'<span class="calendar-appt-status calendar-appt-delivered">✓ CONSEGNATA</span>'
             else:
-                deliver_html=f'<button type="button" class="calendar-appt-deliver" data-practice-id="{row["linked_practice_id"]}" onclick="event.stopPropagation();calendarMarkDelivered(this)">{lucide("check-circle")}<span>Segna consegnata</span></button>'
+                deliver_html=f'<button type="button" class="calendar-appt-deliver" data-practice-id="{row["linked_practice_id"]}" onclick="event.stopPropagation();calendarMarkDelivered(this)">Segna consegnata</button>'
         phone=self.calendar_appointment_phone(row)
         tel=re.sub(r"[^0-9+]","",phone) if phone else ""
         wa=self.wa_digits(phone) if phone else ""
@@ -13530,7 +13529,7 @@ class App(BaseHTTPRequestHandler):
                 if linked_practice["status"]=="Consegnato":
                     status_badge=f'<div class="calendar-detail-status-quickedit"><span class="calendar-detail-status-badge calendar-appt-delivered">✓ PRATICA CONSEGNATA</span></div>'
                 else:
-                    status_badge=f'<div class="calendar-detail-status-quickedit"><button type="button" class="calendar-appt-deliver calendar-detail-deliver" data-practice-id="{linked_practice["id"]}" onclick="calendarMarkDelivered(this)">{lucide("check-circle")}<span>Segna pratica consegnata</span></button></div>'
+                    status_badge=f'<div class="calendar-detail-status-quickedit"><button type="button" class="calendar-appt-deliver calendar-detail-deliver" data-practice-id="{linked_practice["id"]}" onclick="calendarMarkDelivered(this)">Segna pratica consegnata</button></div>'
         hero_operator_name=event['operator_name'] or event['assigned_name'] or ''
         hero_avatar=self.calendar_operator_avatar(hero_operator_name,"md")
         hero_time="Tutto il giorno" if event['all_day'] else (f"{start_time_part} → {end_time_part}" if end_time_part and end_time_part!=start_time_part else start_time_part)
