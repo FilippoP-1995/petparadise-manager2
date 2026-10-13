@@ -1786,6 +1786,12 @@ tr.avatar-other td:first-child{border-left:3px solid #c084fc}
 .light-theme .practice-list-table tbody tr{background:#fff}
 .light-theme .practice-list-table tbody tr:hover td{background:#f8fafc}
 .light-theme .practice-list-table tbody td{border-color:#e2e8f0}.inline-statuses{display:grid;gap:8px;min-width:170px}.inline-state-select{min-height:38px;padding:7px 32px 7px 10px;border-width:2px;font-weight:800}button.inline-state-select{border:0;border-radius:9px;font:inherit;cursor:pointer;text-align:center;padding:7px 14px}.inline-tag-form{display:flex;flex-direction:column;gap:2px}.invoice-inline-cell{display:grid;gap:4px;min-width:130px}.invoice-inline-input{min-height:34px;padding:6px 9px;font-size:12px}.invoice-inline-input.input-error{border-color:#ef4444}.payment-popover{position:fixed;inset:0;z-index:180;display:grid;place-items:center;padding:18px;background:#020617b8}.payment-popover[hidden]{display:none}
+.calendar-appt-deliver{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;border:1px solid #22c55e66;background:#22c55e1f;color:#4ade80;font-weight:800;font-size:12px;cursor:pointer}
+.calendar-appt-deliver .icon{width:14px;height:14px}
+.calendar-appt-deliver:disabled{opacity:.6}
+.calendar-appt-delivered{display:inline-flex;align-items:center;gap:5px;background:#22c55e22;color:#4ade80}
+.calendar-appt-delivered .icon{width:13px;height:13px}
+.calendar-detail-status-quickedit .calendar-appt-deliver{margin-top:2px}
 .phone-action-btn.qwa-btn{background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff;border-color:transparent}
 .phone-action-btn.qwa-btn:hover{color:#fff;border-color:transparent;filter:brightness(1.1)}
 .calendar-detail-quickactions .calendar-detail-qa .calendar-detail-qa-icon.qwa-icon{background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff;box-shadow:0 0 12px #3b82f638}
@@ -6230,6 +6236,25 @@ function calendarApplyFilters(){
     const operatorMatch=!operator||card.dataset.operator===operator;
     card.style.display=(filterMatch&&operatorMatch)?'':'none';
   });
+}
+function calendarMarkDelivered(button){
+  const practiceId=button.dataset.practiceId;
+  if(!practiceId||button.disabled)return;
+  if(!confirm('Segnare la pratica come consegnata?'))return;
+  button.disabled=true;
+  fetch('/pratiche/'+practiceId+'/stato-rapido',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'status=Consegnato&ajax=1'})
+    .then(function(res){return res.json().then(function(data){return {ok:res.ok&&data.ok,data:data};});})
+    .then(function(result){
+      if(!result.ok){button.disabled=false;alert((result.data&&result.data.error)||'Operazione non riuscita');return;}
+      // ogni pulsante della stessa pratica nella pagina diventa il badge "Consegnata"
+      document.querySelectorAll('.calendar-appt-deliver[data-practice-id="'+practiceId+'"]').forEach(function(item){
+        const badge=document.createElement('span');
+        badge.className='calendar-appt-status calendar-appt-delivered';
+        badge.textContent=item.classList.contains('calendar-detail-deliver')?'✓ PRATICA CONSEGNATA':'✓ CONSEGNATA';
+        item.replaceWith(badge);
+      });
+    })
+    .catch(function(){button.disabled=false;alert('Operazione non riuscita. Riprova.');});
 }
 function calendarToggleApptMenu(btn){
   const wrap=btn.closest('.calendar-appt-menu-wrap');
@@ -12025,6 +12050,14 @@ class App(BaseHTTPRequestHandler):
         # cosa contenga event_status.
         status_text=row["event_status"] or "" if is_pickup else ""
         status_html=f'<span class="calendar-appt-status" style="background:{hex_}22;color:{hex_}">{esc(status_text.upper())}</span>' if status_text else ''
+        # Riconsegna con pratica collegata: si puo' segnare la pratica come Consegnata da qui (stesso stato
+        # della pratica, quindi lo vedono tutte le altre sezioni); gia' consegnata -> solo il badge.
+        deliver_html=""
+        if is_delivery and row.get("linked_practice_id") and row.get("practice_status"):
+            if row["practice_status"]=="Consegnato":
+                deliver_html=f'<span class="calendar-appt-status calendar-appt-delivered">✓ CONSEGNATA</span>'
+            else:
+                deliver_html=f'<button type="button" class="calendar-appt-deliver" data-practice-id="{row["linked_practice_id"]}" onclick="event.stopPropagation();calendarMarkDelivered(this)">{lucide("check-circle")}<span>Segna consegnata</span></button>'
         phone=self.calendar_appointment_phone(row)
         tel=re.sub(r"[^0-9+]","",phone) if phone else ""
         wa=self.wa_digits(phone) if phone else ""
@@ -12065,7 +12098,7 @@ class App(BaseHTTPRequestHandler):
             {f'<div class="calendar-appt-location">{location_line}</div>' if location_line else ''}
             {f'<div class="calendar-appt-payment {payment_cls}">{payment_line}</div>' if payment_line else ''}
             {f'<div class="calendar-appt-notes">{notes_line}</div>' if notes_line else ''}
-            <div class="calendar-appt-bottom">{status_html}<div class="calendar-appt-actions">{phone_btn}{wa_btn}{nav_btn}{menu_btn}</div></div>
+            <div class="calendar-appt-bottom">{status_html}{deliver_html}<div class="calendar-appt-actions">{phone_btn}{wa_btn}{nav_btn}{menu_btn}</div></div>
           </div>
         </article>'''
 
@@ -12172,11 +12205,12 @@ class App(BaseHTTPRequestHandler):
                 for ctype_row in c.execute(f"SELECT event_id,group_concat(DISTINCT cremation_type) ctypes FROM calendar_event_animals WHERE event_id IN ({placeholders}) AND trim(COALESCE(cremation_type,''))<>'' GROUP BY event_id",event_ids):
                     cremation_type_by_event[ctype_row["event_id"]]=ctype_row["ctypes"] or ""
             linked_ids={int(row["linked_practice_id"]) for row in rows if row["linked_practice_id"]}
-            payment_channels={};practice_owner_names={};practice_payment_live={}
+            payment_channels={};practice_owner_names={};practice_payment_live={};practice_status_by_id={}
             if linked_ids:
                 linked_marks=','.join('?' for _ in linked_ids)
                 for practice_row in c.execute(f"SELECT * FROM practices WHERE id IN ({linked_marks})",tuple(linked_ids)):
                     payment_channels[practice_row["id"]]=payment_channel(practice_row)
+                    if not practice_row["deleted_at"]:practice_status_by_id[practice_row["id"]]=practice_row["status"]  # per "Segna consegnata" sulle riconsegne
                     owner=" ".join(x for x in (practice_row["owner_first_name"],practice_row["owner_last_name"]) if x).strip() or practice_row["owner_company"] or ""
                     if owner:practice_owner_names[practice_row["id"]]=owner
                     # Stato/importo salvati sull'evento sono uno scatto preso
@@ -12196,7 +12230,7 @@ class App(BaseHTTPRequestHandler):
                     name=" ".join(x for x in (client_row["first_name"],client_row["last_name"]) if x).strip() or client_row["company_name"] or ""
                     if name:client_names[client_row["id"]]=name
             def _merge_calendar_row(row):
-                merged=dict(row,animal_species=species_by_event.get(row["id"],""),payment_channel=payment_channels.get(row["linked_practice_id"],""))
+                merged=dict(row,animal_species=species_by_event.get(row["id"],""),payment_channel=payment_channels.get(row["linked_practice_id"],""),practice_status=practice_status_by_id.get(row["linked_practice_id"],""))
                 # Se l'evento e' gia' segnato "Pagato" a mano, resta cosi'
                 # com'e': e' una conferma esplicita dell'operatore, non uno
                 # scatto da correggere. Il ricalcolo dal vivo serve solo
@@ -13488,9 +13522,15 @@ class App(BaseHTTPRequestHandler):
               <div class="calendar-quickedit-form" onclick="event.stopPropagation()">{status_form}</div>
             </div>'''
         else:
-            # Le riconsegne non hanno uno stato gestibile dall'utente
-            # (richiesta esplicita): nessuna badge di stato nel riepilogo.
+            # Le riconsegne non hanno uno stato gestibile dall'utente (richiesta
+            # esplicita): nessuna badge di stato dell'evento. Con una pratica collegata si puo' pero'
+            # segnarla Consegnata (stesso stato della pratica in tutto il gestionale).
             status_badge=''
+            if event["event_type"] in ("Riconsegna","Riconsegna in sede") and linked_practice and not linked_practice["deleted_at"]:
+                if linked_practice["status"]=="Consegnato":
+                    status_badge=f'<div class="calendar-detail-status-quickedit"><span class="calendar-detail-status-badge calendar-appt-delivered">✓ PRATICA CONSEGNATA</span></div>'
+                else:
+                    status_badge=f'<div class="calendar-detail-status-quickedit"><button type="button" class="calendar-appt-deliver calendar-detail-deliver" data-practice-id="{linked_practice["id"]}" onclick="calendarMarkDelivered(this)">{lucide("check-circle")}<span>Segna pratica consegnata</span></button></div>'
         hero_operator_name=event['operator_name'] or event['assigned_name'] or ''
         hero_avatar=self.calendar_operator_avatar(hero_operator_name,"md")
         hero_time="Tutto il giorno" if event['all_day'] else (f"{start_time_part} → {end_time_part}" if end_time_part and end_time_part!=start_time_part else start_time_part)

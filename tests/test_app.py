@@ -7424,6 +7424,63 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('data-href="/turni?vista=giorno&data=2026-09-28"', cards[0]);self.assertIn('onclick="ppmDayCarouselTap(this)"', cards[20])
         self.assertIn(" turni</span>", bar)
 
+    def test_delivery_event_card_can_mark_the_linked_practice_as_delivered_everywhere(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            def practice(number, status="Da consegnare", deleted=False):
+                return conn.execute(
+                    """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,owner_first_name,owner_last_name,
+                       owner_phone,animal_name,service_type,deleted_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (number, "Privato", "Livorno", status, stamp, stamp, admin["id"], "Anna", "Bianchi", "3339990000", "Luna", "Cremazione singola", stamp if deleted else None)).lastrowid
+            def event(event_type, practice_id, title):
+                return conn.execute(
+                    """INSERT INTO calendar_events(event_type,title,start_at,end_at,event_status,created_by,created_at,updated_at,linked_practice_id)
+                       VALUES(?,?,?,?,?,?,?,?,?)""", (event_type, title, "2026-07-20T10:00:00", "2026-07-20T11:00:00", "Da confermare", admin["id"], stamp, stamp, practice_id)).lastrowid
+            pid = practice("CR-CONS-1")
+            done_pid = practice("CR-CONS-2", status="Consegnato")
+            trashed_pid = practice("CR-CONS-3", deleted=True)
+            ev = event("Riconsegna", pid, "RICONSEGNA DA SEGNARE")
+            ev_done = event("Riconsegna", done_pid, "RICONSEGNA GIA FATTA")
+            ev_trashed = event("Riconsegna", trashed_pid, "RICONSEGNA CESTINATA")
+            ev_free = event("Riconsegna", None, "RICONSEGNA LIBERA")
+            ev_pickup = event("Ritiro", pid, "RITIRO")
+        def card(page, event_id):
+            return page.split(f'data-event-id="{event_id}"')[1].split("</article>")[0]
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/calendario?data=2026-07-20"
+        self.handler.calendar_page(admin)
+        page = rendered[-1]
+        todo = card(page, ev)
+        self.assertIn(f'class="calendar-appt-deliver" data-practice-id="{pid}" onclick="event.stopPropagation();calendarMarkDelivered(this)"', todo)
+        self.assertIn("Segna consegnata", todo)
+        self.assertIn("CONSEGNATA</span>", card(page, ev_done));self.assertNotIn("calendar-appt-deliver\"", card(page, ev_done))
+        for other in (ev_trashed, ev_free, ev_pickup):  # niente pratica (o cestinata) e i ritiri: nessun pulsante
+            self.assertNotIn("calendarMarkDelivered", card(page, other))
+        # dettaglio evento
+        rendered.clear(); self.handler.path = f"/calendario/{ev}"; self.handler.calendar_event_detail(admin, ev)
+        self.assertIn(f'calendar-detail-deliver" data-practice-id="{pid}"', rendered[-1]);self.assertIn("Segna pratica consegnata", rendered[-1])
+        rendered.clear(); self.handler.path = f"/calendario/{ev_done}"; self.handler.calendar_event_detail(admin, ev_done)
+        self.assertIn("PRATICA CONSEGNATA", rendered[-1]);self.assertNotIn("calendarMarkDelivered(this)", rendered[-1])
+        # il pulsante usa lo stesso cambio stato rapido della pratica (storico, WhatsApp di ringraziamento, notifica)
+        js = app.APP_JS
+        for text in ("function calendarMarkDelivered(button)", "fetch('/pratiche/'+practiceId+'/stato-rapido'", "body:'status=Consegnato&ajax=1'"):
+            self.assertIn(text, js)
+        sent = []
+        self.handler.send_json = lambda obj, status=200: sent.append((obj, status))
+        self.handler.form = lambda: {"status": "Consegnato", "ajax": "1"}
+        self.handler.quick_state(admin, pid)
+        self.assertEqual(sent[-1], ({"ok": True, "status": "Consegnato", "practice_id": pid}, 200))
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT status FROM practices WHERE id=?", (pid,)).fetchone()["status"], "Consegnato")
+            history = conn.execute("SELECT old_value,new_value FROM practice_history WHERE practice_id=? AND event_type='Cambio stato rapido'", (pid,)).fetchone()
+            self.assertEqual((history["old_value"], history["new_value"]), ("Da consegnare", "Consegnato"))
+            self.assertGreaterEqual(conn.execute("SELECT count(*) n FROM notifications WHERE type='practice_delivered'").fetchone()["n"], 1)  # una per utente
+        # lo stesso stato e' ora quello di tutto il gestionale: calendario (badge), pagina della pratica, archivio/cicli leggono practices.status
+        rendered.clear(); self.handler.path = "/calendario?data=2026-07-20"; self.handler.calendar_page(admin)
+        self.assertIn("CONSEGNATA</span>", card(rendered[-1], ev));self.assertNotIn("calendarMarkDelivered", card(rendered[-1], ev))
+        rendered.clear(); self.handler.practice(admin, pid)
+        self.assertIn("Consegnato", rendered[-1])
+
     def test_calendar_week_sentinel_navigation_is_reversible(self):
         # Caso esplicito segnalato dall'utente: oggi giovedi', sono sulla
         # card di domenica, swipe avanti attraversa il confine settimana
