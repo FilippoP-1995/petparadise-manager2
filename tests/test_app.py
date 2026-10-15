@@ -7481,6 +7481,75 @@ class PetParadiseTests(unittest.TestCase):
         rendered.clear(); self.handler.practice(admin, pid)
         self.assertIn("Consegnato", rendered[-1])
 
+    def test_extra_payment_that_does_not_close_the_total_keeps_the_practice_in_acconto(self):
+        # caso segnalato (CR-000341): totale D 540, acconto D 300, poi un pagamento extra D da 140 -> restano 100:
+        # lo stato deve restare Acconto (prima diventava Pagato e "Totale pagato" mostrava 540).
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        redirects = []
+        self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.headers = {}
+        self.handler.form = lambda: {
+            "operator_name": "SERENA", "service_type": "Cremazione singola", "request_origin": "Privato", "destination_branch": "Livorno",
+            "owner_first_name": "Filippo", "owner_last_name": "Sivieri", "owner_phone": "3406422969", "owner_tax_code": "SVRFPP74C23G702X",
+            "owner_street": "Via dei Mughetti 6", "owner_city": "Tirrenia", "owner_province": "PI", "owner_zip": "56128", "provenance": "L",
+            "animal_name": "Penelope", "species": "Cane", "price_cremation": "540", "total_text": "540",
+            "acconto_d_totale": "300", "acconto_d_data": "2026-10-11", "balance_idempotency_key": "extra-case-1"}
+        self.handler.create_practice(admin)
+        pid = int(redirects[-1].split("/pratiche/")[1].split("?")[0])
+        def state():
+            with app.db() as conn:
+                row = conn.execute("SELECT payment_status,deposit_final,remaining_final FROM practices WHERE id=?", (pid,)).fetchone()
+                full = conn.execute("SELECT * FROM practices WHERE id=?", (pid,)).fetchone()
+            return row["payment_status"], row["deposit_final"], row["remaining_final"], app.received_amount(full), app.outstanding_amount(full)
+        self.assertEqual(state(), ("Acconto", "300.00", "240.00", 300.0, 240.0))
+        def extra(amount, day, key):
+            self.handler.form = lambda: {"extra_data": day, "extra_totale": amount, "extra_circuito": "D", "extra_modalita": "Contanti", "balance_idempotency_key": key}
+            self.handler.save_payment_extra(admin, pid)
+        extra("140", "2026-10-15", "extra-case-2")
+        self.assertEqual(state(), ("Acconto", "440.00", "100.00", 440.0, 100.0))  # non Pagato: restano 100
+        with app.db() as conn:
+            history = [r["new_value"] for r in conn.execute("SELECT new_value FROM practice_history WHERE practice_id=? AND event_type='Pagamento'", (pid,))]
+        self.assertFalse(any(v.startswith("Pagato") for v in history))
+        # un secondo extra che chiude il totale -> Pagato
+        extra("100", "2026-10-16", "extra-case-3")
+        self.assertEqual(state(), ("Pagato", "540.00", "0.00", 540.0, 0.0))
+        # rimuovendo l'extra che chiudeva il totale si torna ad Acconto
+        with app.db() as conn:
+            last_extra = conn.execute("SELECT id FROM payment_movements WHERE practice_id=? AND is_extra=1 ORDER BY id DESC", (pid,)).fetchone()["id"]
+        self.handler.form = lambda: {}
+        self.handler.remove_payment_extra(admin, pid, last_extra)
+        self.assertEqual(state()[0], "Acconto")
+
+    def test_startup_repair_fixes_paid_status_caused_by_extra_payments_only(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            def practice(number, status, paid_rows):
+                pid = conn.execute(
+                    """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,owner_first_name,owner_last_name,
+                       animal_name,service_type,payment_status,total_text,price_cremation) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (number, "Privato", "Livorno", "Consegnato", stamp, stamp, admin["id"], "Anna", "Bianchi", "Luna", "Cremazione singola", status, "540", "540")).lastrowid
+                for payment_type, amount, is_extra in paid_rows:
+                    conn.execute("INSERT INTO payment_movements(practice_id,payment_type,payment_channel,movement_category,amount,paid_at,created_at,is_extra) VALUES(?,?,?,?,?,?,?,?)",
+                                 (pid, payment_type, "D", "D", amount, "2026-10-11", stamp, is_extra))
+                    app.create_balance_movement(
+                        conn, amount_cents=int(amount * 100), movement_date="2026-10-11", category="D", ledger_section="Entrata",
+                        movement_type="Acconto" if payment_type == "acconto" else "Saldo", idempotency_key=f"repair-{number}-{payment_type}-{amount}-{is_extra}",
+                        practice_id=pid, practice_number_snapshot=number, payment_method="", description="x", source="practice_payment_macroarea", created_by=admin["id"])
+                return pid
+            wrong = practice("CR-REP-1", "Pagato", [("acconto", 300.0, 0), ("saldo", 140.0, 1)])           # il caso segnalato: 440 su 540
+            closed = practice("CR-REP-2", "Pagato", [("acconto", 300.0, 0), ("saldo", 240.0, 1)])          # extra che chiude il totale: resta Pagato
+            real_saldo = practice("CR-REP-3", "Pagato", [("acconto", 300.0, 0), ("saldo", 100.0, 0)])      # saldo vero: non si tocca
+            repaired = app.repair_paid_status_from_extra_payments(conn)
+            statuses = {n: conn.execute("SELECT payment_status FROM practices WHERE id=?", (i,)).fetchone()["payment_status"]
+                        for n, i in (("wrong", wrong), ("closed", closed), ("real", real_saldo))}
+            history = conn.execute("SELECT event_type,old_value,new_value FROM practice_history WHERE practice_id=?", (wrong,)).fetchall()
+        self.assertEqual(statuses, {"wrong": "Acconto", "closed": "Pagato", "real": "Pagato"})
+        self.assertEqual([tuple(h) for h in history], [("Correzione stato pagamento", "Pagato", "Acconto · incassi extra senza saldo")])
+        with app.db() as conn:  # idempotente
+            app.repair_paid_status_from_extra_payments(conn)
+            self.assertEqual(conn.execute("SELECT count(*) n FROM practice_history WHERE practice_id=?", (wrong,)).fetchone()["n"], 1)
+
     def test_calendar_week_sentinel_navigation_is_reversible(self):
         # Caso esplicito segnalato dall'utente: oggi giovedi', sono sulla
         # card di domenica, swipe avanti attraversa il confine settimana

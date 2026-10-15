@@ -1105,6 +1105,7 @@ def init_db():
                                  VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                               (pcli["owner_first_name"],pcli["owner_last_name"],pcli["owner_company"],pcli["owner_phone"],pcli["owner_phone_2"],pcli["owner_email"],pcli["owner_tax_code"],pcli["owner_vat"],pcli["owner_street"],pcli["owner_city"],pcli["owner_province"],pcli["owner_zip"],pcli["owner_address"],pcli["owner_notes"],stamp,stamp))
                 c.execute("UPDATE practices SET client_id=? WHERE id=?",(cur.lastrowid,pcli["id"]))
+        repair_paid_status_from_extra_payments(c)
         for collab_name, collab in COLLABORATORS.items():
             existing_collab=c.execute("SELECT id FROM collaborators WHERE UPPER(name)=UPPER(?)",(collab_name,)).fetchone()
             if existing_collab:
@@ -9487,6 +9488,44 @@ def latest_movement_and_invoice(c, practice_id, type_prefix):
     return movement, invoice
 
 
+def derive_payment_status(c, pid, practice):
+    """Stato pagamento ricavato dai movimenti reali della pratica.
+    - un saldo vero (non extra) -> Pagato;
+    - solo incassi extra (registrati con etichetta "saldo" ma NON un saldo): Pagato soltanto se hanno
+      chiuso il totale del circuito della pratica, altrimenti Acconto (prima bastava un extra per
+      segnare Pagato una pratica con ancora una rimanenza da incassare);
+    - solo acconto -> Acconto; nessun movimento -> Da saldare."""
+    def exists(where):
+        return bool(c.execute(f"SELECT 1 FROM payment_movements WHERE practice_id=? AND {where} LIMIT 1", (pid,)).fetchone())
+    if exists("payment_type LIKE 'saldo%' AND is_extra=0"):
+        return "Pagato"
+    if exists("is_extra=1"):
+        _deposit, remaining_w, _deposit_final, remaining_d = recompute_practice_channel_balances(c, pid, practice)
+        raw = remaining_d if uses_total_d(practice) else remaining_w
+        try:
+            remaining = float(raw) if str(raw).strip() != "" else 0.0
+        except ValueError:
+            remaining = 0.0
+        return "Pagato" if remaining <= 0.005 else "Acconto"
+    return "Acconto" if exists("payment_type LIKE 'acconto%'") else "Da saldare"
+
+
+def repair_paid_status_from_extra_payments(c):
+    """Una tantum (idempotente, all'avvio): pratiche segnate Pagato solo perche' un incasso extra e'
+    stato scambiato per un saldo, pur avendo ancora una rimanenza -> tornano Acconto, con nota nello storico."""
+    rows = c.execute("""SELECT * FROM practices WHERE payment_status='Pagato' AND (deleted_at IS NULL OR deleted_at='')
+                        AND EXISTS(SELECT 1 FROM payment_movements m WHERE m.practice_id=practices.id AND m.is_extra=1)
+                        AND NOT EXISTS(SELECT 1 FROM payment_movements m WHERE m.practice_id=practices.id AND m.payment_type LIKE 'saldo%' AND m.is_extra=0)""").fetchall()
+    for practice in rows:
+        status = derive_payment_status(c, practice["id"], practice)
+        if status != "Pagato":
+            stamp = now()
+            c.execute("UPDATE practices SET payment_status=?,updated_at=? WHERE id=?", (status, stamp, practice["id"]))
+            c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,created_at) VALUES(?,?,?,?,?)",
+                      (practice["id"], "Correzione stato pagamento", "Pagato", f"{status} · incassi extra senza saldo", stamp))
+            print(f"[PAGAMENTI] pratica {practice['practice_number']}: Pagato -> {status} (restava una rimanenza)", flush=True)
+
+
 DISMISS_SNOOZE_HOURS=48
 
 
@@ -11693,9 +11732,7 @@ class App(BaseHTTPRequestHandler):
         if not practice:
             return snapshot
         old_status=practice["payment_status"] or "Da saldare"
-        has_acconto=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'acconto%' LIMIT 1",(pid,)).fetchone())
-        has_saldo=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'saldo%' LIMIT 1",(pid,)).fetchone())
-        new_status="Pagato" if has_saldo else ("Acconto" if has_acconto else "Da saldare")
+        new_status=derive_payment_status(c,pid,practice)
         deposit,remaining_balance,deposit_final,remaining_final=recompute_practice_channel_balances(c,pid,practice)
         stamp=now()
         c.execute(
@@ -17427,8 +17464,8 @@ class App(BaseHTTPRequestHandler):
             acconto_movement,acconto_invoice=latest_movement_and_invoice(c,r["id"],"acconto")
             saldo_movement,saldo_invoice=latest_movement_and_invoice(c,r["id"],"saldo")
             extra_payments=c.execute("SELECT * FROM payment_movements WHERE practice_id=? AND is_extra=1 ORDER BY paid_at,id",(r["id"],)).fetchall()
-            saldo_w_exists=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'saldo%' AND payment_channel='W' LIMIT 1",(r["id"],)).fetchone())
-            saldo_d_exists=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'saldo%' AND payment_channel='D' LIMIT 1",(r["id"],)).fetchone())
+            saldo_w_exists=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'saldo%' AND is_extra=0 AND payment_channel='W' LIMIT 1",(r["id"],)).fetchone())
+            saldo_d_exists=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'saldo%' AND is_extra=0 AND payment_channel='D' LIMIT 1",(r["id"],)).fetchone())
         def macroarea_section(kind,label,movement,invoice,default_amount):
             date_value=str(movement["paid_at"] or "")[:10] if movement else ""
             amount_value=f'{money_value(movement["amount"]):.2f}' if movement else default_amount
@@ -21153,9 +21190,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         if channel=="W" and movement_id:
             self.save_movement_invoice(c,pid,movement_id,invoice_number,invoice_date,invoice_total or f"{amount:.2f}",method,channel,user["id"])
         old_status=practice["payment_status"] or "Da saldare"
-        has_acconto=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'acconto%' LIMIT 1",(pid,)).fetchone())
-        has_saldo=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'saldo%' LIMIT 1",(pid,)).fetchone())
-        new_status="Pagato" if has_saldo else ("Acconto" if has_acconto else "Da saldare")
+        new_status=derive_payment_status(c,pid,practice)
         deposit,remaining_balance,deposit_final,remaining_final=recompute_practice_channel_balances(c,pid,practice)
         date_field="deposit_paid_at" if macroarea=="acconto" else "paid_at"
         c.execute(
@@ -21221,9 +21256,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 if remaining_links==0:
                     c.execute("DELETE FROM movement_invoices WHERE id=?",(invoice_link["invoice_id"],))
             c.execute("DELETE FROM payment_movements WHERE id=?",(existing_movement["id"],))
-            has_acconto=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'acconto%' LIMIT 1",(pid,)).fetchone())
-            has_saldo=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'saldo%' LIMIT 1",(pid,)).fetchone())
-            new_status="Pagato" if has_saldo else ("Acconto" if has_acconto else "Da saldare")
+            new_status=derive_payment_status(c,pid,practice)
             deposit,remaining_balance,deposit_final,remaining_final=recompute_practice_channel_balances(c,pid,practice)
             date_field="deposit_paid_at" if macroarea=="acconto" else "paid_at"
             c.execute(
@@ -21315,9 +21348,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 if remaining_links==0:
                     c.execute("DELETE FROM movement_invoices WHERE id=?",(invoice_link["invoice_id"],))
             c.execute("DELETE FROM payment_movements WHERE id=?",(existing_movement["id"],))
-            has_acconto=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'acconto%' LIMIT 1",(pid,)).fetchone())
-            has_saldo=bool(c.execute("SELECT 1 FROM payment_movements WHERE practice_id=? AND payment_type LIKE 'saldo%' LIMIT 1",(pid,)).fetchone())
-            new_status="Pagato" if has_saldo else ("Acconto" if has_acconto else "Da saldare")
+            new_status=derive_payment_status(c,pid,practice)
             deposit,remaining_balance,deposit_final,remaining_final=recompute_practice_channel_balances(c,pid,practice)
             c.execute(
                 "UPDATE practices SET payment_status=?,deposit=?,remaining_balance=?,deposit_final=?,remaining_final=?,updated_at=? WHERE id=?",
