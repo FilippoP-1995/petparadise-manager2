@@ -1106,6 +1106,7 @@ def init_db():
                               (pcli["owner_first_name"],pcli["owner_last_name"],pcli["owner_company"],pcli["owner_phone"],pcli["owner_phone_2"],pcli["owner_email"],pcli["owner_tax_code"],pcli["owner_vat"],pcli["owner_street"],pcli["owner_city"],pcli["owner_province"],pcli["owner_zip"],pcli["owner_address"],pcli["owner_notes"],stamp,stamp))
                 c.execute("UPDATE practices SET client_id=? WHERE id=?",(cur.lastrowid,pcli["id"]))
         repair_paid_status_from_extra_payments(c)
+        remove_emoji_from_saved_wa_templates(c)
         for collab_name, collab in COLLABORATORS.items():
             existing_collab=c.execute("SELECT id FROM collaborators WHERE UPPER(name)=UPPER(?)",(collab_name,)).fetchone()
             if existing_collab:
@@ -8823,14 +8824,14 @@ WA_QUICK_DEFAULTS = (
     ("mancata_risposta_presa_in_carico", "Presa in carico",
      "Ciao {nome_cliente}, scriviamo dallo staff di Pet Paradise Cremazione Animali. Abbiamo provato a contattarvi per avvisarvi "
      "che abbiamo preso in carico {nome_animale}. Avremmo bisogno di alcuni dati per cui aspettiamo un vostro riscontro "
-     "non appena vi è possibile☺️🐾🌈"),
+     "non appena vi è possibile"),
     ("mancata_risposta_riconsegna", "Appuntamento riconsegna",
      "Ciao {nome_cliente}, scriviamo dallo staff di Pet Paradise Cremazione Animali. Abbiamo provato a contattarvi per avvisarvi "
      "che la cremazione di {nome_animale} è terminata e volevamo quindi prendere un appuntamento per la riconsegna dell’urna. "
-     "Attendiamo un vostro riscontro, grazie☺️🐾🌈"),
+     "Attendiamo un vostro riscontro, grazie"),
     ("riconsegna_ambulatorio", "Riconsegna effettuata in ambulatorio",
      "Ciao {nome_cliente}, scriviamo dallo staff di Pet Paradise Cremazione Animali. Vi informiamo che abbiamo appena affidato "
-     "l’urna di {nome_animale} alla clinica. Grazie mille ancora per esservi affidati a noi☺️🐾🌈"),
+     "l’urna di {nome_animale} alla clinica. Grazie mille ancora per esservi affidati a noi"),
     ("estremi_bancari", "Estremi bancari",
      "Ciao {nome_cliente}, scriviamo dallo staff di Pet Paradise Cremazione Animali.\n"
      "Come da accordi inviamo di seguito gli estremi bancari per effettuare il bonifico per il servizio di cremazione di {nome_animale}.\n"
@@ -8866,6 +8867,31 @@ WA_QUICK_PLACEHOLDERS = (
     ("costo_saldo", "saldo ancora da pagare (idem)"),
 )
 WA_QUICK_MAX_BODY = 1000
+# Le emoji nei messaggi rapidi arrivavano come "�" in WhatsApp sul telefono degli operatori (link wa.me): tolte dai
+# testi (richiesta esplicita dell'utente), anche da quelli gia' salvati, una sola volta all'avvio.
+WA_EMOJI_RE = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\uFE0F\u200D]+")
+
+
+def wa_strip_emoji(text):
+    return re.sub(r"[ \t]+$", "", WA_EMOJI_RE.sub("", str(text or "")), flags=re.M).strip()
+
+
+def remove_emoji_from_saved_wa_templates(c):
+    if c.execute("SELECT 1 FROM settings WHERE key='wa_quick_emoji_removed'").fetchone():
+        return
+    row = c.execute("SELECT value FROM settings WHERE key=?", (WA_QUICK_SETTING,)).fetchone()
+    if row and row["value"]:
+        try:
+            items = json.loads(row["value"])
+        except (ValueError, TypeError):
+            items = None
+        if isinstance(items, list):
+            for item in items:
+                if isinstance(item, dict):
+                    item["body"] = wa_strip_emoji(item.get("body"))
+                    item["title"] = wa_strip_emoji(item.get("title")) or item.get("title") or ""
+            c.execute("UPDATE settings SET value=? WHERE key=?", (json.dumps(items, ensure_ascii=False), WA_QUICK_SETTING))
+    c.execute("INSERT INTO settings(key,value) VALUES('wa_quick_emoji_removed','1')")
 
 
 def wa_quick_templates(c):

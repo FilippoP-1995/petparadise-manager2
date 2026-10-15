@@ -7074,9 +7074,9 @@ class PetParadiseTests(unittest.TestCase):
         by_id = {t["id"]: t for t in templates}
         presa = by_id["mancata_risposta_presa_in_carico"]["body"];riconsegna = by_id["mancata_risposta_riconsegna"]["body"]
         self.assertTrue(presa.startswith("Ciao {nome_cliente}, scriviamo dallo staff di Pet Paradise Cremazione Animali."))
-        self.assertIn("abbiamo preso in carico {nome_animale}.", presa);self.assertTrue(presa.endswith("possibile☺️🐾🌈"))
+        self.assertIn("abbiamo preso in carico {nome_animale}.", presa);self.assertTrue(presa.endswith("non appena vi è possibile"))
         self.assertIn("la cremazione di {nome_animale} è terminata", riconsegna);self.assertIn("riconsegna dell’urna.", riconsegna)
-        self.assertTrue(riconsegna.endswith("grazie☺️🐾🌈"))
+        self.assertTrue(riconsegna.endswith("riscontro, grazie"))
         estremi = by_id["estremi_bancari"]["body"]
         self.assertTrue(estremi.startswith("Ciao {nome_cliente}, scriviamo dallo staff di Pet Paradise Cremazione Animali.\nCome da accordi"))
         # formattazione WhatsApp: voci in grassetto (*..*), totale in grassetto corsivo, causale in grassetto, IBAN e intestatario in grassetto corsivo
@@ -7099,7 +7099,26 @@ class PetParadiseTests(unittest.TestCase):
         # nessun segnaposto per operatore, sede, appuntamenti, cognome o numero pratica
         ambulatorio = by_id["riconsegna_ambulatorio"]["body"]
         self.assertEqual(ambulatorio, "Ciao {nome_cliente}, scriviamo dallo staff di Pet Paradise Cremazione Animali. Vi informiamo che abbiamo appena "
-                                      "affidato l’urna di {nome_animale} alla clinica. Grazie mille ancora per esservi affidati a noi☺️🐾🌈")
+                                      "affidato l’urna di {nome_animale} alla clinica. Grazie mille ancora per esservi affidati a noi")
+        # nessuna emoji nei testi predefiniti (in WhatsApp arrivavano come "�")
+        for template in templates:
+            self.assertEqual(app.WA_EMOJI_RE.findall(template["body"]), [], template["id"])
+        # i testi gia' salvati con emoji vengono ripuliti una sola volta all'avvio
+        with app.db() as conn:
+            conn.execute("INSERT INTO settings(key,value) VALUES(?,?)", (app.WA_QUICK_SETTING, json.dumps([
+                {"id": "mancata_risposta_riconsegna", "title": "Appuntamento riconsegna", "body": "Ciao {nome_cliente}, grazie☺️🐾🌈"},
+                {"id": "estremi_bancari", "title": "Estremi bancari", "body": "Riga uno ☺️\nRiga due 🌈 fine"}])))
+            conn.execute("DELETE FROM settings WHERE key='wa_quick_emoji_removed'")  # nel test il database parte gia' ripulito
+            app.remove_emoji_from_saved_wa_templates(conn)
+            cleaned = {x["id"]: x["body"] for x in app.wa_quick_templates(conn)}
+            self.assertEqual(cleaned["mancata_risposta_riconsegna"], "Ciao {nome_cliente}, grazie")
+            self.assertEqual(cleaned["estremi_bancari"], "Riga uno\nRiga due  fine")
+            self.assertTrue(conn.execute("SELECT 1 FROM settings WHERE key='wa_quick_emoji_removed'").fetchone())
+            # una sola volta: se in futuro si rimettono le emoji, restano
+            conn.execute("UPDATE settings SET value=? WHERE key=?", (json.dumps([{"id": "estremi_bancari", "title": "Estremi bancari", "body": "Di nuovo 🐾"}]), app.WA_QUICK_SETTING))
+            app.remove_emoji_from_saved_wa_templates(conn)
+            self.assertEqual({x["id"]: x["body"] for x in app.wa_quick_templates(conn)}["estremi_bancari"], "Di nuovo 🐾")
+            conn.execute("DELETE FROM settings WHERE key IN (?,?)", (app.WA_QUICK_SETTING, "wa_quick_emoji_removed"))
         self.assertEqual([k for k, _ in app.WA_QUICK_PLACEHOLDERS], ["nome_cliente", "nome_animale", "costo_cremazione", "costo_ritiro",
                          "costo_riconsegna", "costo_urna", "costo_calchi", "costo_totale", "costo_acconto", "costo_saldo"])
         # titoli di una versione precedente salvati: passano ai nuovi
