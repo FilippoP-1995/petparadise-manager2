@@ -7569,6 +7569,57 @@ class PetParadiseTests(unittest.TestCase):
             app.repair_paid_status_from_extra_payments(conn)
             self.assertEqual(conn.execute("SELECT count(*) n FROM practice_history WHERE practice_id=?", (wrong,)).fetchone()["n"], 1)
 
+    def test_veterinarian_chosen_as_sender_is_always_the_same_client(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            vet_id = conn.execute("INSERT INTO veterinarians(clinic_name,short_name,phone,active,created_at,updated_at) VALUES(?,?,?,1,?,?)",
+                                  ("Ambulatorio Veterinario Varignano Di Vera Careri", "Varignano", "0584371241", stamp, stamp)).lastrowid
+            # anagrafiche identiche create dalle pratiche precedenti (una per pratica), non ancora collegate al veterinario
+            old_ids = [conn.execute("INSERT INTO clients(first_name,company_name,phone,active,created_at,updated_at) VALUES(?,?,?,1,?,?)",
+                                    ("Ambulatorio Veterinario Varignano Di Vera Careri", "Ambulatorio Veterinario Varignano Di Vera Careri", "0584371241", stamp, stamp)).lastrowid
+                       for _ in range(3)]
+            before = conn.execute("SELECT count(*) n FROM clients").fetchone()["n"]
+        self.handler.headers = {}
+        redirects = []; pages = []
+        self.handler.redirect = lambda url: redirects.append(url)
+        self.handler.send_html = lambda content, *a: pages.append(content)
+        def create(key, **extra):
+            form = {"operator_name": "SERENA", "service_type": "Cremazione singola", "request_origin": "Veterinario", "destination_branch": "Livorno",
+                    "owner_veterinarian_id": str(vet_id), "owner_first_name": "Ambulatorio Veterinario Varignano Di Vera Careri",
+                    "owner_company": "Ambulatorio Veterinario Varignano Di Vera Careri", "owner_phone": "0584371241", "provenance": "L",
+                    "animal_name": "Fido", "species": "Cane", "balance_idempotency_key": key}
+            form.update(extra)
+            self.handler.form = lambda: dict(form)
+            redirects.clear();pages.clear()
+            self.handler.create_practice(admin)
+            self.assertFalse(pages and "Possibile cliente già presente" in pages[-1], "il veterinario non deve generare l'avviso di duplicati")
+            return int(redirects[-1].split("/pratiche/")[1].split("?")[0])
+        first = create("vet-client-1");second = create("vet-client-2")
+        with app.db() as conn:
+            clients = [conn.execute("SELECT client_id FROM practices WHERE id=?", (pid,)).fetchone()["client_id"] for pid in (first, second)]
+            after = conn.execute("SELECT count(*) n FROM clients").fetchone()["n"]
+            linked = conn.execute("SELECT id FROM clients WHERE veterinarian_id=?", (vet_id,)).fetchall()
+        self.assertEqual(clients, [old_ids[0], old_ids[0]])  # il piu' vecchio dei duplicati, riusato
+        self.assertEqual(after, before)                      # nessun nuovo cliente
+        self.assertEqual([r["id"] for r in linked], [old_ids[0]])
+        # un veterinario senza anagrafica precedente: ne viene creata una sola, collegata, poi riusata
+        with app.db() as conn:
+            vet2 = conn.execute("INSERT INTO veterinarians(clinic_name,short_name,phone,active,created_at,updated_at) VALUES(?,?,?,1,?,?)",
+                                ("Clinica Nuova", "Nuova", "0586111222", stamp := app.now(), stamp)).lastrowid
+            count = conn.execute("SELECT count(*) n FROM clients").fetchone()["n"]
+        a = create("vet-client-3", owner_veterinarian_id=str(vet2), owner_first_name="Clinica Nuova", owner_company="Clinica Nuova", owner_phone="0586111222")
+        b = create("vet-client-4", owner_veterinarian_id=str(vet2), owner_first_name="Clinica Nuova", owner_company="Clinica Nuova", owner_phone="0586111222")
+        with app.db() as conn:
+            ca, cb = (conn.execute("SELECT client_id FROM practices WHERE id=?", (x,)).fetchone()["client_id"] for x in (a, b))
+            self.assertEqual(ca, cb);self.assertEqual(conn.execute("SELECT count(*) n FROM clients").fetchone()["n"], count + 1)
+            self.assertEqual(conn.execute("SELECT veterinarian_id FROM clients WHERE id=?", (ca,)).fetchone()["veterinarian_id"], vet2)
+        # speditore modificato a mano (il vero proprietario e' un'altra persona): non si usa il cliente del veterinario
+        real = create("vet-client-5", owner_first_name="Mario", owner_last_name="Rossi", owner_company="", owner_phone="3331234567")
+        with app.db() as conn:
+            owner_client = conn.execute("SELECT client_id FROM practices WHERE id=?", (real,)).fetchone()["client_id"]
+            row = conn.execute("SELECT first_name,last_name,veterinarian_id FROM clients WHERE id=?", (owner_client,)).fetchone()
+        self.assertEqual((row["first_name"], row["last_name"], row["veterinarian_id"]), ("Mario", "Rossi", None))
+
     def test_calendar_week_sentinel_navigation_is_reversible(self):
         # Caso esplicito segnalato dall'utente: oggi giovedi', sono sulla
         # card di domenica, swipe avanti attraversa il confine settimana

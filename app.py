@@ -841,6 +841,8 @@ def init_db():
         client_existing = {row["name"] for row in c.execute("PRAGMA table_info(clients)")}
         if "active" not in client_existing:
             c.execute("ALTER TABLE clients ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
+        if "veterinarian_id" not in client_existing:
+            c.execute("ALTER TABLE clients ADD COLUMN veterinarian_id INTEGER")  # cliente che corrisponde a un veterinario usato come speditore
         collaborator_existing = {row["name"] for row in c.execute("PRAGMA table_info(collaborators)")}
         if "code" not in collaborator_existing:
             c.execute("ALTER TABLE collaborators ADD COLUMN code TEXT")
@@ -20204,6 +20206,31 @@ class App(BaseHTTPRequestHandler):
         self.sync_practice_urn_items(c,practice_id,old_urn_ids,new_urn_ids,user_id)
         self.log_practice_items_change(c,practice_id,old_item_rows,items_by_category,user_id,stamp)
 
+    def client_for_veterinarian(self,c,d):
+        """Cliente (anagrafica) che corrisponde al veterinario scelto come speditore: quello gia' collegato a
+        quel veterinario; altrimenti il piu' vecchio cliente con lo stesso nome (creati dalle pratiche
+        precedenti, che finora ne generavano uno nuovo ogni volta) che viene collegato; altrimenti ne crea
+        uno collegato. Se i dati dello speditore sono stati modificati a mano (es. per indicare il vero
+        proprietario) non si usa il veterinario e ritorna None: vale il comportamento di sempre."""
+        try:vet_id=int(d.get("owner_veterinarian_id"))
+        except (TypeError,ValueError):return None
+        vet=c.execute("SELECT * FROM veterinarians WHERE id=?",(vet_id,)).fetchone()
+        if not vet:return None
+        def norm(value):return " ".join(str(value or "").upper().split())
+        names={norm(vet["clinic_name"]),norm(vet["short_name"] if "short_name" in vet.keys() else "")}-{""}
+        typed=norm(d.get("owner_company") or d.get("owner_first_name"))
+        if typed not in names or d.get("owner_last_name"):return None
+        linked=c.execute("SELECT id FROM clients WHERE veterinarian_id=? AND active=1 ORDER BY id LIMIT 1",(vet_id,)).fetchone()
+        if linked:return linked["id"]
+        for row in c.execute("""SELECT id,first_name,last_name,company_name FROM clients WHERE active=1 AND veterinarian_id IS NULL
+                                AND TRIM(COALESCE(last_name,''))='' ORDER BY id"""):
+            if norm(row["company_name"]) in names or norm(row["first_name"]) in names:
+                c.execute("UPDATE clients SET veterinarian_id=? WHERE id=?",(vet_id,row["id"]))
+                return row["id"]
+        client_id=self.create_client_from_practice_data(c,d)
+        c.execute("UPDATE clients SET veterinarian_id=? WHERE id=?",(vet_id,client_id))
+        return client_id
+
     def create_client_from_practice_data(self,c,d):
         stamp=now()
         cur=c.execute("""INSERT INTO clients(first_name,last_name,company_name,phone,phone_2,email,tax_code,vat_number,street,city,province,zip,address,notes,created_at,updated_at)
@@ -20366,6 +20393,10 @@ class App(BaseHTTPRequestHandler):
                 exists=c.execute("SELECT id FROM clients WHERE id=?",(d["client_id"],)).fetchone()
                 if not exists:
                     d["client_id"]=None
+            if not d.get("client_id") and d.get("owner_veterinarian_id"):
+                # Veterinario scelto come speditore: vale anche come cliente, sempre lo stesso (nessun nuovo cliente
+                # ogni volta, nessun avviso di duplicati).
+                d["client_id"]=self.client_for_veterinarian(c,d)
             if not d.get("client_id"):
                 has_client_data=any(d.get(key) for key in ("owner_first_name","owner_last_name","owner_company","owner_phone","owner_email","owner_tax_code","owner_vat"))
                 if has_client_data:
