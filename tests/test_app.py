@@ -7620,6 +7620,56 @@ class PetParadiseTests(unittest.TestCase):
             row = conn.execute("SELECT first_name,last_name,veterinarian_id FROM clients WHERE id=?", (owner_client,)).fetchone()
         self.assertEqual((row["first_name"], row["last_name"], row["veterinarian_id"]), ("Mario", "Rossi", None))
 
+    def test_archive_builds_only_recent_months_and_loads_older_ones_on_demand(self):
+        import re
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            serial = 0
+            for month in ("2026-01", "2026-02", "2026-03", "2026-04"):
+                for i in range(40):
+                    serial += 1
+                    conn.execute(
+                        """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,
+                           owner_first_name,owner_last_name,service_type,pickup_date,signature_data) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (f"CR-ARC-{month}-{i:02d}", "Privato", "Livorno", "Ritirato" if i % 4 == 0 else "Consegnato", stamp, stamp, admin["id"], f"Pet{serial}",
+                         "Anna", "Bianchi", "Cremazione singola", f"{month}-{1 + i % 27:02d}", "data:image/png;base64," + "A" * 5000))
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/archivio/pratiche"
+        self.handler.archive(admin)
+        page = rendered[-1]
+        blocks = page.split('<section class="month-block">')[1:]  # (le sezioni dei popup interni non permettono una regex su </section>)
+        self.assertEqual(len(blocks), 4)
+        self.assertIn("160 pratiche trovate", page)
+        titles = [re.search(r"<h2>([^<]+)</h2>", b).group(1) for b in blocks]
+        self.assertEqual(titles, ["Aprile 2026", "Marzo 2026", "Febbraio 2026", "Gennaio 2026"])
+        for index, block in enumerate(blocks):
+            self.assertIn("40 pratiche</span>", block)  # i conteggi ci sono per tutti i mesi
+            if index < 2:  # ultimi due mesi: righe subito, mese aperto
+                self.assertEqual(block.count('<tr class="practice-row-link'), 40);self.assertNotIn("data-lazy-month", block);self.assertIn('aria-expanded="true"', block)
+            else:          # gli altri: solo il segnaposto, chiusi, nessuna riga costruita
+                self.assertEqual(block.count('<tr class="practice-row-link'), 0)
+                self.assertIn('data-lazy-month="2026-0%d"' % (2 if index == 2 else 1), block);self.assertIn('aria-expanded="false"', block)
+        self.assertEqual(page.count("CR-ARC-2026-01-"), 0)
+        self.assertNotIn("AAAAAAAAAA", page)  # le firme dei clienti non vengono lette per l'elenco
+        self.assertNotIn("signature_data", app.practice_list_columns())
+        # al tocco su "+": solo quel mese (frammento senza pagina), con la stessa tabella e le stesse righe
+        rendered.clear();self.handler.path = "/archivio/pratiche?arch_mese=2026-01&arch_frammento=1";self.handler.archive(admin)
+        fragment = rendered[-1]
+        self.assertFalse(fragment.startswith("<!doctype") or "<html" in fragment)
+        self.assertEqual(fragment.count('<tr class="practice-row-link'), 40)
+        self.assertEqual(len(set(re.findall(r"CR-ARC-2026-01-\d\d", fragment))), 40);self.assertNotIn("CR-ARC-2026-02-", fragment)
+        # i filtri valgono anche per il frammento
+        rendered.clear();self.handler.path = "/archivio/pratiche?stato=Ritirato&arch_mese=2026-01&arch_frammento=1";self.handler.archive(admin)
+        self.assertEqual(rendered[-1].count('<tr class="practice-row-link'), 10)
+        # con pochi risultati (ricerca/filtri) nessun caricamento differito
+        rendered.clear();self.handler.path = "/archivio/pratiche?stato=Ritirato";self.handler.archive(admin)
+        small = rendered[-1]
+        self.assertIn("40 pratiche trovate", small);self.assertNotIn("data-lazy-month", small)
+        self.assertEqual(small.count('<tr class="practice-row-link'), 40)
+        # il JavaScript carica il mese una sola volta
+        for text in ("content.dataset.lazyMonth&&!content.dataset.loaded", "params.set('arch_frammento','1')", "Impossibile caricare le pratiche"):
+            self.assertIn(text, small)
+
     def test_calendar_week_sentinel_navigation_is_reversible(self):
         # Caso esplicito segnalato dall'utente: oggi giovedi', sono sulla
         # card di domenica, swipe avanti attraversa il confine settimana

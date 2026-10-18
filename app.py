@@ -9554,6 +9554,23 @@ def repair_paid_status_from_extra_payments(c):
             print(f"[PAGAMENTI] pratica {practice['practice_number']}: Pagato -> {status} (restava una rimanenza)", flush=True)
 
 
+# Archivio pratiche: con tanti risultati si costruiscono subito solo gli ultimi mesi, gli altri si caricano
+# al tocco su "+" (frammento HTML del singolo mese). Con pochi risultati (ricerche, filtri) e' tutto subito.
+ARCHIVE_EAGER_MONTHS = 2
+ARCHIVE_EAGER_ROWS = 150
+_PRACTICE_LIST_COLUMNS = None
+
+
+def practice_list_columns():
+    """Colonne di practices per gli elenchi: tutte tranne i campi pesanti (firma del cliente in base64)."""
+    global _PRACTICE_LIST_COLUMNS
+    if _PRACTICE_LIST_COLUMNS is None:
+        with db() as c:
+            names = [row["name"] for row in c.execute("PRAGMA table_info(practices)")]
+        _PRACTICE_LIST_COLUMNS = ", ".join(f"practices.{name}" for name in names if name != "signature_data")
+    return _PRACTICE_LIST_COLUMNS
+
+
 DISMISS_SNOOZE_HOURS=48
 
 
@@ -17953,7 +17970,7 @@ class App(BaseHTTPRequestHandler):
         promemoria=q.get("promemoria",[""])[0].strip()
         event_date_sql=dashboard_practice_date_sql(dashboard_event,"practices") if dashboard_event and dashboard_event!="da_consegnare" else ""
         event_select=f", {event_date_sql} AS dashboard_event_date" if event_date_sql else ""
-        sql=f"SELECT practices.*{event_select} FROM practices WHERE (deleted_at IS NULL OR deleted_at='')"; args=[]
+        sql="FROM practices WHERE (deleted_at IS NULL OR deleted_at='')"; args=[]
         if term:
             like=like_term(term)
             sql+=" AND (UNACCENT(practice_number) LIKE ? OR UNACCENT(animal_name) LIKE ? OR UNACCENT(owner_first_name||' '||owner_last_name) LIKE ? OR UNACCENT(owner_phone) LIKE ? OR UNACCENT(owner_phone_2) LIKE ? OR UNACCENT(microchip) LIKE ? OR UNACCENT(clinic_name) LIKE ? OR UNACCENT(veterinarian_name) LIKE ? OR UNACCENT(collaborator_name) LIKE ? OR UNACCENT(CAST(ddt_number AS TEXT)) LIKE ?)"
@@ -18013,9 +18030,27 @@ class App(BaseHTTPRequestHandler):
             sql += " AND send_catalog='Si' AND status!='Consegnato'"
         if promemoria == "estremi":
             sql += " AND send_estremi='Si' AND status!='Consegnato'"
-        sql += f" ORDER BY {event_date_sql} DESC, id DESC" if event_date_sql else " ORDER BY date(COALESCE(NULLIF(pickup_date,''), created_at)) DESC, id DESC"
+        order_sql=f" ORDER BY {event_date_sql} DESC, id DESC" if event_date_sql else " ORDER BY date(COALESCE(NULLIF(pickup_date,''), created_at)) DESC, id DESC"
+        # 1) query leggera: solo id e mese di ogni pratica trovata (conteggi di tutti i mesi, ordine invariato)
+        month_expr="substr(COALESCE("+(f"NULLIF({event_date_sql},''),"if event_date_sql else "")+"NULLIF(practices.pickup_date,''),NULLIF(practices.created_at,''),''),1,7)"
+        fragment_key=q.get("arch_mese",[""])[0].strip() if q.get("arch_frammento",[""])[0]=="1" else None
         with db() as c:
-            rows=c.execute(sql,args).fetchall()
+            ordered=c.execute(f"SELECT practices.id AS id, {month_expr} AS month_key {sql}{order_sql}",args).fetchall()
+            ids_by_month={}
+            for light in ordered:
+                ids_by_month.setdefault(light["month_key"] or "Senza data",[]).append(light["id"])
+            total_rows=len(ordered)
+            if fragment_key is not None:eager={fragment_key}
+            elif total_rows<=ARCHIVE_EAGER_ROWS:eager=set(ids_by_month)
+            else:eager=set(list(ids_by_month)[:ARCHIVE_EAGER_MONTHS])
+            # 2) righe complete (senza firme) solo per i mesi da mostrare subito
+            rows_by_id={}
+            wanted=[pid for key in eager for pid in ids_by_month.get(key,[])]
+            for start in range(0,len(wanted),500):
+                chunk=wanted[start:start+500]
+                marks=','.join('?' for _ in chunk)
+                for full in c.execute(f"SELECT {practice_list_columns()}{event_select} FROM practices WHERE practices.id IN ({marks})",chunk):
+                    rows_by_id[full["id"]]=full
         opts='<option value="">Tutti gli stati</option>'+''.join(f'<option {"selected" if state==s else ""}>{esc(s)}</option>' for s in STATES)
         pay_opts='<option value="">Tutti i pagamenti</option>'+''.join(f'<option {"selected" if payment==s else ""}>{esc(s)}</option>' for s in PAYMENT_STATES)
         circuit_opts='<option value="">Tutti i circuiti</option>'+''.join(f'<option value="{c}" {"selected" if circuit==c else ""}>{c}</option>' for c in ("W","D"))
@@ -18023,13 +18058,13 @@ class App(BaseHTTPRequestHandler):
         period_names={"oggi":"Oggi","settimana":"Settimana in corso","mese":"Mese corrente"}
         promemoria_label = f" - {period_names.get(dashboard_period,dashboard_period)}" if dashboard_event else f" - Ricerca rapida: {esc(quick)}" if quick else " - Pratiche con acconto" if with_deposit else " - Promemoria catalogo" if promemoria=="catalogo" else " - Promemoria estremi" if promemoria=="estremi" else ""
         month_names=["","Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno","Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"]
-        groups={}
-        for r in rows:
-            grouping_date=(r["dashboard_event_date"] if "dashboard_event_date" in r.keys() else "") or r["pickup_date"] or r["created_at"] or ""
-            key=(grouping_date[:7]) or "Senza data"
-            groups.setdefault(key,[]).append(r)
+        groups={key:[rows_by_id[pid] for pid in ids if pid in rows_by_id] for key,ids in ids_by_month.items()}
         blocks=[]
         archive_financial_headers='<th>Totale W</th><th>Totale D</th><th>Acconto</th><th>Rimanenza</th>'
+        def month_table_html(month_items):
+            return f'''<div class="tablebox dashboard-table-scroll archive-tablebox"><table class="practice-list-table"><thead><tr><th>Animale</th><th>Età</th><th>Proprietario</th><th>Data recupero</th><th>Codice pratica</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Totale pagato</th><th>Fattura</th>{archive_financial_headers}<th>Stati</th><th>Azione</th></tr></thead><tbody>{self.practice_rows(month_items,True)}</tbody></table></div>'''
+        if fragment_key is not None:
+            return self.send_html(month_table_html(groups.get(fragment_key,[])))
         collapsed_months=set(parse_preference_list(load_preferences(user["id"]).get("archive_collapsed_months","")))
         for key,items in groups.items():
             title=key
@@ -18038,12 +18073,13 @@ class App(BaseHTTPRequestHandler):
                     y,m=key.split("-"); title=f"{month_names[int(m)]} {y}"
                 except Exception:
                     pass
-            is_closed=key in collapsed_months
+            is_loaded=key in eager
+            is_closed=(key in collapsed_months) or not is_loaded  # mesi non caricati: chiusi finche' non si tocca "+"
             expanded_attr="false" if is_closed else "true"
             toggle_symbol="+" if is_closed else "-"
             toggle_label=("Apri " if is_closed else "Chiudi ")+title
             content_hidden=" hidden" if is_closed else ""
-            blocks.append(f'''<section class="month-block"><div class="month-title"><div class="month-heading"><button class="month-toggle" type="button" data-month-key="{esc(key)}" aria-expanded="{expanded_attr}" aria-label="{esc(toggle_label)}" onclick="toggleArchiveMonth(this)">{toggle_symbol}</button><h2>{esc(title)}</h2></div><span class="badge">{len(items)} pratiche</span></div><div class="month-content"{content_hidden}><div class="tablebox dashboard-table-scroll archive-tablebox"><table class="practice-list-table"><thead><tr><th>Animale</th><th>Età</th><th>Proprietario</th><th>Data recupero</th><th>Codice pratica</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Totale pagato</th><th>Fattura</th>{archive_financial_headers}<th>Stati</th><th>Azione</th></tr></thead><tbody>{self.practice_rows(items,True)}</tbody></table></div></div></section>''')
+            blocks.append(f'''<section class="month-block"><div class="month-title"><div class="month-heading"><button class="month-toggle" type="button" data-month-key="{esc(key)}" aria-expanded="{expanded_attr}" aria-label="{esc(toggle_label)}" onclick="toggleArchiveMonth(this)">{toggle_symbol}</button><h2>{esc(title)}</h2></div><span class="badge">{len(ids_by_month[key])} pratiche</span></div><div class="month-content"{content_hidden}{"" if is_loaded else f' data-lazy-month="{esc(key)}"'}>{month_table_html(items) if is_loaded else '<p class="sub">Tocca + per caricare le pratiche del mese.</p>'}</div></section>''')
         results_html='<div id="archiveList">'+(''.join(blocks) if blocks else '<section class="section"><p class="sub">Nessuna pratica trovata.</p></section>')+'</div>'
         filters_html=f'''<section class="search-after-results"><h2>Ricerca e filtri</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Ricerca generale</label><input name="q" value="{esc(term)}" placeholder="Proprietario, telefono, microchip, pratica, DDT"></div><div class="field"><label>Nome animale</label><input name="animale" value="{esc(animal)}"></div><div class="field"><label>Tipo cremazione</label><select name="servizio">{service_opts}</select></div><div class="field"><label>Veterinario</label><input name="veterinario" value="{esc(vet)}" placeholder="Clinica o medico"></div><div class="field"><label>Collaboratore</label><input name="collaboratore" value="{esc(collaborator)}"></div><div class="field"><label>Spesa minima</label><input type="number" min="0" step="0.01" name="spesa_min" value="{esc(spesa_min)}" inputmode="decimal" placeholder="Es. 100"></div><div class="field"><label>Spesa massima</label><input type="number" min="0" step="0.01" name="spesa_max" value="{esc(spesa_max)}" inputmode="decimal" placeholder="Es. 350"></div><div class="field"><label>Periodo dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Periodo al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Stato pratica</label><select name="stato">{opts}</select></div><div class="field"><label>Pagamento</label><select name="pagamento">{pay_opts}</select></div><div class="field"><label>Circuito</label><select name="circuito">{circuit_opts}</select></div><div class="field"><label><input type="checkbox" name="senza_fattura" value="1" {"checked" if no_invoice else ""}> Senza fattura</label></div></div><button class="btn" style="margin-top:12px">Cerca</button><a class="btn ghost" style="margin-top:12px" href="/archivio/pratiche">Pulisci filtri</a></form></section>'''
         # Ripristino scroll/ricerca/riga evidenziata al ritorno da una
@@ -18052,7 +18088,7 @@ class App(BaseHTTPRequestHandler):
         # per "/archivio/pratiche" con revealId:'archiveList' (stessa
         # tecnica anti-flash di prima) e rowHighlight (evidenzia+dissolve
         # la riga da cui si torna, stesso comportamento di prima).
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>ARCHIVIO</h1><div class="sub">{len(rows)} pratiche trovate{promemoria_label}</div></div></div>{results_html}{filters_html}<script>function toggleArchiveMonth(button){{const content=button.closest('.month-block').querySelector('.month-content');const closing=button.getAttribute('aria-expanded')==='true';button.setAttribute('aria-expanded',String(!closing));button.textContent=closing?'+':'-';button.setAttribute('aria-label',(closing?'Apri ':'Chiudi ')+button.closest('.month-heading').querySelector('h2').textContent);content.hidden=closing;const monthKey=button.dataset.monthKey;if(monthKey){{const payload=new URLSearchParams();payload.set('mese',monthKey);payload.set('chiuso',closing?'1':'0');fetch('/archivio/mese-stato',{{method:'POST',headers:{{'Content-Type':'application/x-www-form-urlencoded'}},body:payload.toString()}}).catch(function(){{}});}}}}</script></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>ARCHIVIO</h1><div class="sub">{total_rows} pratiche trovate{promemoria_label}</div></div></div>{results_html}{filters_html}<script>function toggleArchiveMonth(button){{const content=button.closest('.month-block').querySelector('.month-content');const closing=button.getAttribute('aria-expanded')==='true';button.setAttribute('aria-expanded',String(!closing));button.textContent=closing?'+':'-';button.setAttribute('aria-label',(closing?'Apri ':'Chiudi ')+button.closest('.month-heading').querySelector('h2').textContent);content.hidden=closing;if(!closing&&content.dataset.lazyMonth&&!content.dataset.loaded){{content.dataset.loaded='1';content.innerHTML='<p class="sub">Caricamento…</p>';const params=new URLSearchParams(location.search);params.set('arch_mese',content.dataset.lazyMonth);params.set('arch_frammento','1');fetch('/archivio/pratiche?'+params.toString(),{{credentials:'same-origin'}}).then(function(res){{if(!res.ok)throw new Error('http');return res.text();}}).then(function(html){{content.innerHTML=html;}}).catch(function(){{content.dataset.loaded='';content.innerHTML='<p class="sub">Impossibile caricare le pratiche. Tocca di nuovo +.</p>';}});}}const monthKey=button.dataset.monthKey;if(monthKey){{const payload=new URLSearchParams();payload.set('mese',monthKey);payload.set('chiuso',closing?'1':'0');fetch('/archivio/mese-stato',{{method:'POST',headers:{{'Content-Type':'application/x-www-form-urlencoded'}},body:payload.toString()}}).catch(function(){{}});}}}}</script></main>'''
         body=body.replace('<label>Servizio</label><select name="servizio">','<label>Tipo cremazione</label><select name="servizio">')
         self.send_html(layout("Archivio",body,user))
 
