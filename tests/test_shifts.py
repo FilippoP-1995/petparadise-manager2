@@ -403,7 +403,11 @@ class ShiftsModuleTests(unittest.TestCase):
         self.assertNotIn("Gianluca", app.SHIFT_OPERATORS)
 
     def test_save_shift_oncall_persists_manual_override_and_page_reflects_it(self):
-        self.handler.form = lambda: {"settimana": "2026-08-10", "operator_name": "Alessio"}
+        # La pagina mostra solo le 8 settimane a partire da quella corrente:
+        # una settimana fissa (prima 2026-08-10) usciva dalla pagina col
+        # passare del tempo e il test falliva senza alcun difetto dell'app.
+        current_week = week_monday(app.rome_now().date()).isoformat()
+        self.handler.form = lambda: {"settimana": current_week, "operator_name": "Alessio"}
         self.handler.save_shift_oncall(self.admin)
         self.assertEqual(self.redirected, "/turni/reperibilita")
         rendered = []
