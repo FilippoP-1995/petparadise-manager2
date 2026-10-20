@@ -1,6 +1,9 @@
 __pycache__/
 *.pyc
-.claude/
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+.venv/
 data/
 *.backup-*.db
 balance_legacy_repair-report-*.json

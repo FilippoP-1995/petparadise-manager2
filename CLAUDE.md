@@ -49,6 +49,8 @@ urn_inventory.py        magazzino urne
 email_service.py        invio email SMTP
 backup_service.py       backup su S3 compatibile
 cron_whatsapp.py, cron_backup.py   entry point dei cron Render (chiamano il web service via HTTP)
+seed_dev_data.py        dati finti per lo sviluppo (si rifiuta di girare su produzione o su un DB gia' pieno)
+.claude/                avvio automatico delle sessioni cloud (settings.json + hooks/session-start.sh)
 assets/                 logo, icone PWA, manifest, service worker (sw.js), modelli DCS/certificato
 tests/                  suite unittest (test_app.py è la principale)
 docs/v2/                documentazione V2 e registro modifiche V1 da riportare
@@ -61,6 +63,8 @@ Su `v2-development` esistono in più `backend/` (FastAPI, alembic, test pytest),
 
 ## Avvio e test
 
+**Sessioni Claude Code nel cloud**: all'avvio parte da solo `.claude/hooks/session-start.sh` (registrato in `.claude/settings.json`, attivo solo con `CLAUDE_CODE_REMOTE=true`). Crea `.venv` con Python 3.12 (come `runtime.txt`), installa `requirements.txt`, mette `.venv/bin` in testa al `PATH` (quindi `python` = Python 3.12 del progetto) e imposta `TZ=Europe/Rome` come su Render. Il fuso conta: con l'orologio in UTC il test `test_dismissed_reminder_reopens_after_48_hours_if_still_unresolved` fallisce (2 ore di scarto tra l'ora italiana salvata dall'app e l'orologio del sistema usato dal test). Fuori dal cloud lanciare i test con `TZ=Europe/Rome`. Il container non ha `sqlite3` da riga di comando: usare `python -c "import sqlite3 ..."`.
+
 Avvio locale (dati in `data/`, ignorata da git; il DB nuovo viene creato al primo avvio):
 
 ```bash
@@ -68,14 +72,24 @@ python app.py                      # http://127.0.0.1:8080  (utente iniziale: ve
 PPM_DATA_DIR=/percorso/scratch PPM_PORT=8090 PPM_HOST=127.0.0.1 python app.py   # dati isolati e porta diversa
 ```
 
+Dati finti per provare l'interfaccia (cartella nuova, mai `/var/data`; nessun dato reale, nessun WhatsApp in coda, email solo `@example.com`):
+
+```bash
+PPM_DATA_DIR=/percorso/scratch/devdata python seed_dev_data.py   # ~45 pratiche in tutti gli stati e pagamenti, clienti, cicli, 3 cliniche partner con richieste in ogni stato
+PPM_DATA_DIR=/percorso/scratch/devdata PPM_PORT=8090 python app.py
+```
+
+Accessi di prova: gestionale `admin` (password del README); portale `/partner/accedi` con `prova.faro`, `prova.sangiorgio`, `prova.dune` (password stampata dallo script, costante `PARTNER_PASSWORD`). Lo script si ferma se `PPM_DATA_DIR` manca, punta a `/var/data`, gira su Render o il database contiene gia' pratiche.
+
 Health check: `GET /health`. Per provare l'interfaccia in un browser automatizzato serve una sessione valida: crearla nel DB scratch e passare il cookie `ppm_session`.
 
 Test (unittest; ogni test usa un DB temporaneo, **non toccano mai** `data/` né la produzione):
 
 ```bash
-python -m unittest tests.test_app          # suite principale, ~860 test, ~13 minuti: DEVE essere tutta OK
+python -m unittest tests.test_app          # suite principale, ~860 test, ~10-13 minuti: DEVE essere tutta OK (con TZ=Europe/Rome)
 python -m unittest tests.test_partner_portal tests.test_partner_service tests.test_partner_notifications
 python -m unittest tests.test_calendar     # baseline nota: 20 FAIL + 1 ERROR (preesistenti)
+python -m unittest tests.test_seed_dev_data   # script dei dati finti
 python -m unittest discover -s tests       # tutti i moduli
 ```
 
@@ -108,7 +122,7 @@ Solo i nomi: **mai** scrivere valori, token o password in chat, commit o documen
 1. **Processo per ogni modifica non banale a V1**: ANALISI (leggere il codice davvero coinvolto, tracciare UI → endpoint → DB → calcoli derivati) → IMPATTO (altre funzioni che usano gli stessi dati) → CONFERMA (se la richiesta implica modifiche correlate, elencarle nel formato *MODIFICA RICHIESTA / IMPATTO RILEVATO / MODIFICA CORRELATA CONSIGLIATA / CONSEGUENZA SE NON LA FACCIAMO* e attendere il via) → IMPLEMENTAZIONE → VERIFICA → REPORT (cosa è cambiato, funzioni coinvolte, test eseguiti, problemi residui, modifiche correlate non fatte).
 2. Niente refactor non richiesti né interpretazioni creative; se la richiesta è ambigua, chiedere. Pagamenti, saldi, fatture, stati e dati storici: massima cautela, mai modifiche distruttive ai dati reali senza autorizzazione esplicita.
 3. **Completezza**: una modifica è finita solo quando ogni pagina/scenario/esempio nominato dall'utente è implementato **e verificato** (Calendario, Programma Cremazioni, Orari, ecc.), cercando anche le altre implementazioni dello stesso comportamento. Gli esempi dell'utente sono criteri di accettazione da provare esattamente come descritti. Il report mostra criterio / test / risultato.
-4. **Test prima del push**: almeno `tests.test_app` completa (deve essere tutta OK) più i moduli pertinenti; per ogni comportamento nuovo aggiungere un test.
+4. **Test**: durante lo sviluppo eseguire solo i test dell'area toccata (i moduli pertinenti, oppure in `tests.test_app` i singoli test o le classi dell'area, es. `python -m unittest tests.test_app -k nome`); per ogni comportamento nuovo aggiungere un test. La **suite completa** (`tests.test_app` tutta OK + gli altri moduli confrontati con la baseline) va eseguita **prima di ogni deploy**. Poiche' il deploy lo fa l'utente partendo da `main`, il report finale dice sempre se la suite completa e' stata eseguita sull'ultimo commit di `main`; se no, lo segnala chiaramente come passo da fare prima del deploy.
 5. **Lavorare in un worktree isolato** creato da `origin/main` (`git worktree add ../nome --detach origin/main`), non nella cartella principale se contiene lavoro non committato; push con `git push origin HEAD:main` dopo `git fetch` ed eventuale rebase. Non fare mai rebase, checkout o modifiche in una cartella dove una suite di test è ancora in esecuzione.
 6. Messaggi di commit in italiano, descrittivi, con la riga Co-Authored-By.
 7. Dopo ogni modifica V1 aggiungere una riga/sezione in `docs/v2/16-modifiche-v1-da-riportare-v2.md` (cosa, perché, commit, stato verso V2: da riportare / non 1:1 / solo V1).
