@@ -68,6 +68,35 @@ class OperationalCalendarTests(unittest.TestCase):
             self.handler.save_calendar_event(self.admin)
         return int(self.redirected.rsplit("/", 1)[-1])
 
+    # --- Calendario ridisegnato (28/07): Giorno e Settimana mostrano la barra
+    # dei giorni con una pagina per ciascun giorno della settimana (stesse card
+    # in entrambe le viste); il Mese mostra solo i conteggi. Questi aiuti
+    # isolano la pagina di un giorno e la card di un evento.
+    def render_calendar(self, view, day):
+        rendered = []
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.path = f"/calendario?vista={view}&data={day}"
+        self.handler.calendar_page(self.admin)
+        return rendered[-1]
+
+    @staticmethod
+    def day_page(page, day):
+        match = re.search(rf'<div class="calendar-day-page" data-day-index="\d+" data-date="{day}">', page)
+        rest = page[match.end():]
+        end = rest.find('<div class="calendar-day-page')
+        return rest if end < 0 else rest[:end]
+
+    @staticmethod
+    def card(html, event_id):
+        start = html.index(f'data-event-id="{event_id}"')
+        return html[start:html.index("</article>", start)]
+
+    @staticmethod
+    def card_times(card):
+        start = re.search(r'<span class="calendar-appt-time">([^<]*)</span>', card).group(1)
+        end = re.search(r'<span class="calendar-appt-time-end">→ ([^<]*)</span>', card)
+        return start, end.group(1) if end else None
+
     def test_additive_schema_tables_indexes_and_default_zones(self):
         expected = {
             "calendar_events", "calendar_event_animals", "calendar_event_estimate_items",
@@ -601,22 +630,19 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertEqual(event["delivery_clinic_name"], "Ambulatorio Riconsegna")
         self.assertEqual(event["delivery_clinic_phone"], "0586999999")
 
-        card = self.handler.calendar_event_card(dict(event, animal_species="", animal_weight_total=0, cremation_types="", estimate_total=0, payment_channel="", operator_name="Serena", assigned_name="", creator_name=""))
-        self.assertIn("Livorno", card)
-        self.assertIn("Ambulatorio Riconsegna", card)
-        self.assertEqual(card.count("<p>"), 2)  # details line + operator line only, no extra row added per detail
-        # The whole colored card must be a single link, not just the icon/text sub-area,
-        # so tapping anywhere on the card (not only its text) opens the event.
-        self.assertTrue(card.startswith(f'<a class="calendar-event'))
-        self.assertIn(f'href="/calendario/{event_id}"', card)
-        self.assertNotIn('<a class="calendar-event-main"', card)
+        card = self.card(self.day_page(self.render_calendar("giorno", "2026-07-15"), "2026-07-15"), event_id)
+        # Sulla card il luogo e' l'ambulatorio di riconsegna (una sola riga),
+        # e tutta la card apre il dettaglio dell'evento.
+        self.assertIn('<div class="calendar-appt-location">Ambulatorio Riconsegna</div>', card)
+        self.assertEqual(card.count('class="calendar-appt-location"'), 1)
+        self.assertIn(f"location.href='/calendario/{event_id}?return_to='", card)
 
         pages = []
         self.handler.send_html = lambda html, status=200: pages.append(html)
         self.handler.path = f"/calendario/{event_id}"
         self.handler.calendar_event_detail(self.admin, event_id)
         self.assertIn("Ambulatorio Riconsegna", pages[-1])
-        self.assertIn(">Zona<", pages[-1])
+        self.assertIn("Livorno", pages[-1])
 
     def test_delivery_clinic_optional_and_ambulatorio_field_present_in_wizard(self):
         event_id = self.save(self.event_form("Riconsegna"))
@@ -650,45 +676,37 @@ class OperationalCalendarTests(unittest.TestCase):
     def test_calendar_pages_render_all_views_navigation_filters_and_mobile_hooks(self):
         self.save(self.event_form("Ritiro", event_status="Da ritirare",animals_json=json.dumps([{"name":"Luna","species":"Cane","weight":"18","cremation_type":"Singola","notes":""}])))
         self.save(self.event_form("Appuntamento", title="APPUNTAMENTO FORNITORE", end_time="10:00"))
-        pages = {}
-        self.handler.send_html = lambda html, status=200: pages.update(current=html, status=status)
-        for view in ("giorno", "settimana", "mese", "mista_settimana", "mista_mese", "compatto"):
-            self.handler.path = f"/calendario?vista={view}&data=2026-07-15"
-            self.handler.calendar_page(self.admin)
-            pages[view] = pages["current"]
-        self.assertIn("Calendario operativo", pages["giorno"])
-        self.assertNotIn("data-calendar-swipe", pages["giorno"])
+        pages = {view: self.render_calendar(view, "2026-07-15")
+                 for view in ("giorno", "settimana", "mese", "mista_settimana", "mista_mese", "compatto")}
+        for view, page in pages.items():
+            self.assertIn("Calendario operativo", page, view)
+            self.assertEqual(page.count('data-calendar-view="'), 3, view)
+            for label in ("Giorno", "Settimana", "Mese"):
+                self.assertIn(f">{label}</a>", page, view)
+            self.assertIn(">OGGI<", page, view)
+            self.assertIn("create-sheet", page, view)
+            self.assertIn("create-sheet-backdrop", page, view)
+        # Giorno e Settimana: barra dei giorni e card ricche con l'animale.
+        for view in ("giorno", "settimana", "mista_settimana"):
+            self.assertIn('id="calendarDaybar"', pages[view], view)
+            self.assertIn('class="calendar-appt-card"', pages[view], view)
+            self.assertIn("18 kg", pages[view], view)
+            self.assertIn("Singola", pages[view], view)
+            self.assertNotIn("data-calendar-swipe", pages[view], view)
+        self.assertIn("15 Luglio 2026", pages["giorno"])
+        # Mese: griglia con i soli conteggi (ritiri/riconsegne), niente card.
+        for view in ("mese", "mista_mese", "compatto"):
+            self.assertIn('class="calendar-month-v2-grid"', pages[view], view)
+            self.assertIn('calendar-month-v2-count-pickup">1<', pages[view], view)
+            self.assertNotIn('class="calendar-appt-card"', pages[view], view)
         self.assertNotIn("data-calendar-swipe", app.APP_JS)
-        self.assertIn("calendar-week-scroll", pages["settimana"])
-        self.assertNotIn('calendar-week-scroll" data-calendar-swipe', pages["settimana"])
-        self.assertIn("calendar-week-time-column", pages["settimana"])
-        self.assertIn("calendar-week-grid-line", pages["settimana"])
-        self.assertIn(".calendar-week-scroll{max-height:calc(100dvh - 210px);overflow:auto", app.CSS)
-        self.assertIn(".calendar-week-time-column>header,.calendar-day-column>header{top:0;z-index:8", app.CSS)
-        self.assertIn("calendar-month", pages["mese"])
-        self.assertIn("calendar-dot-red", pages["mese"])
-        self.assertIn("calendar-event-icon", pages["giorno"])
-        self.assertIn('class="calendar-day-hours" id="calendarDayHours"', pages["giorno"])
-        self.assertEqual(pages["giorno"].count('class="calendar-day-hour-row" data-hour="'), 24)
-        self.assertIn('data-hour="7"', pages["giorno"])
-        self.assertNotIn('<div class="calendar-day-timeline"', pages["giorno"])
-        self.assertEqual(pages["giorno"].count('data-calendar-view="'), 3)
-        for label in ("Giorno", "Settimana", "Mese"):
-            self.assertIn(f">{label}</a>", pages["giorno"])
-        self.assertIn("18 kg", pages["giorno"])
-        self.assertIn("Singola", pages["settimana"])
-        self.assertIn("calendar-mixed", pages["mista_settimana"])
-        self.assertIn("calendar-dots", pages["compatto"])
-        self.assertIn("Ricerca e filtri", pages["giorno"])
         self.assertIn("safe-bottom", app.CSS)
-        self.assertIn("15 Luglio 2026",pages["giorno"])
-        self.assertIn(">OGGI<",pages["giorno"])
-        self.assertIn("create-sheet",pages["giorno"])
-        self.assertIn("grid-template-columns:repeat(2,minmax(0,1fr))",app.CSS)
-        self.assertIn("min-height:46px",app.CSS)
-        self.assertIn("linear-gradient(135deg,#fb4c67,#d9284c)",app.CSS)
-        self.assertIn("create-sheet-backdrop",pages["giorno"])
+        # Oggi evidenziato sia nella barra dei giorni sia nella griglia del mese.
+        today = datetime.now().date().isoformat()
+        self.assertRegex(self.render_calendar("giorno", today), rf'class="calendar-daybar-card[^"]*is-today[^"]*" data-day-index="\d+" data-date="{today}"')
+        self.assertIn("calendar-month-v2-cell is-today", self.render_calendar("mese", today))
         self.handler.path = "/"
+        self.handler.send_html = lambda html, status=200: pages.update(current=html)
         self.handler.dashboard(self.admin)
         self.assertNotIn("+ Nuova pratica", pages["current"])
         self.assertNotIn("+ Nuovo evento", pages["current"])
@@ -745,89 +763,33 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("Da pagare € 330,00 D", page)
 
     def test_day_view_shows_status_badges_and_colors_but_no_legend(self):
-        self.save(self.event_form("Ritiro", title="RITIRO FIDO", event_status="Da confermare", start_time="08:30", end_time="09:00"))
-        self.save(self.event_form("Ritiro", title="RITIRO LUNA", event_status="Da ritirare", start_time="09:30", end_time="10:00"))
-        self.save(self.event_form("Ritiro", title="RITIRO BELLA", event_status="Ritirato", start_time="10:30", end_time="11:00"))
-        self.save(self.event_form("Ritiro", title="RITIRO ARGO", event_status="Annullato", start_time="11:30", end_time="12:00"))
-        self.save(self.event_form("Riconsegna", title="RICONSEGNA REX", start_time="13:00", end_time="13:30"))
-        self.save(self.event_form("Appuntamento", title="APPUNTAMENTO FORNITORE", start_time="14:00", end_time="14:30"))
-        rendered = []
-        self.handler.send_html = lambda html, status=200: rendered.append(html)
-        self.handler.path = "/calendario?vista=giorno&data=2026-07-15"
-        self.handler.calendar_page(self.admin)
-        page = rendered[-1]
-        self.assertIn('calendar-event calendar-day-event calendar-yellow', page)
-        self.assertIn('calendar-event calendar-day-event calendar-red', page)
-        self.assertIn('calendar-event calendar-day-event calendar-green', page)
-        self.assertIn('calendar-event calendar-day-event calendar-dark', page)
-        self.assertIn('calendar-event calendar-day-event calendar-blue', page)
-        self.assertIn('calendar-event calendar-day-event calendar-purple', page)
-        self.assertIn('<span class="calendar-day-status-badge">Da confermare</span>', page)
-        self.assertIn('<span class="calendar-day-status-badge">Da ritirare</span>', page)
-        self.assertIn('<span class="calendar-day-status-badge">Ritirato</span>', page)
-        self.assertIn('<span class="calendar-day-status-badge">Annullato</span>', page)
-        self.assertNotIn("calendar-day-free-note", page)
-        self.assertIn(".calendar-day-event{display:flex", app.CSS)
-        # Color/operator legends no longer render on any calendar view -- only in
-        # Calendar Settings (checking the *actual HTML element*, not just the CSS
-        # rule text, which would still contain the class name in <style>).
-        self.assertNotIn('<section class="calendar-legend-section">', page)
-        self.assertNotIn('<div class="calendar-operator-legend">', page)
-        self.assertNotIn('<div class="calendar-day-legend">', page)
-
-        # week view has its own distinct compact card, not the day-only markup,
-        # and also shows no legend.
-        self.handler.path = "/calendario?vista=settimana&data=2026-07-15"
-        self.handler.calendar_page(self.admin)
-        week_page = rendered[-1]
-        self.assertNotIn('class="calendar-event calendar-day-event', week_page)
-        self.assertIn('calendar-week-v2-event calendar-red', week_page)
-        self.assertNotIn('<section class="calendar-legend-section">', week_page)
-        self.assertNotIn('<div class="calendar-operator-legend">', week_page)
-
-    def test_week_view_shows_compact_cards_operator_avatar_no_swipe_hook_and_today_highlight(self):
-        today = datetime.now().date()
-        self.save(self.event_form("Ritiro", title="RITIRO FIDO", event_status="Ritirato", operator_name="Alessio",
-                                   start_date=today.isoformat(), end_date=today.isoformat()))
-        rendered = []
-        self.handler.send_html = lambda html, status=200: rendered.append(html)
-        self.handler.path = f"/calendario?vista=settimana&data={today.isoformat()}"
-        self.handler.calendar_page(self.admin)
-        page = rendered[-1]
-        self.assertIn('class="calendar-week-v2-scroll">', page)
-        self.assertNotIn("data-calendar-swipe", page)
-        self.assertIn("calendar-week-v2-day is-today", page)
-        self.assertIn("calendar-week-v2-event calendar-green", page)
-        self.assertIn("calendar-avatar calendar-avatar-xs calendar-avatar-alessio", page)
-        self.assertIn("Nessun evento", page)
-        # No legend on the view itself (only in Calendar Settings).
-        self.assertNotIn('<div class="calendar-operator-legend">', page)
-        # Clicking anywhere on the day column -- today's cell included -- opens the
-        # Day view for that date, not an individual event's detail page.
-        self.assertIn(f'<a class="calendar-week-v2-day is-today" href="/calendario?vista=giorno&data={today.isoformat()}&da=settimana">', page)
-        self.assertNotIn('<a class="calendar-week-v2-event', page)
-
-    def test_month_view_shows_pill_overflow_link_and_today_highlight(self):
-        today = datetime.now().date()
-        for i in range(5):
-            self.save(self.event_form("Ritiro", title=f"RITIRO ANIMALE {i}",
-                                       start_date=today.isoformat(), end_date=today.isoformat()))
-        rendered = []
-        self.handler.send_html = lambda html, status=200: rendered.append(html)
-        self.handler.path = f"/calendario?vista=mese&data={today.isoformat()}"
-        self.handler.calendar_page(self.admin)
-        page = rendered[-1]
-        self.assertIn("calendar-month-v2-cell is-today", page)
-        self.assertIn("+2 altri", page)
-        self.assertIn("calendar-month-v2-dow", page)
-        self.assertEqual(page.count('class="calendar-month-v2-pill '), 3)
-        # No legend on the view itself (only in Calendar Settings).
-        self.assertNotIn('<div class="calendar-operator-legend">', page)
-        self.assertNotIn('<section class="calendar-legend-section">', page)
-        # Clicking anywhere on the day cell -- pills included -- opens the Day view
-        # for that date, not an individual event's detail page.
-        self.assertIn(f'href="/calendario?vista=giorno&data={today.isoformat()}&da=mese"', page)
-        self.assertNotIn('<a class="calendar-month-v2-pill', page)
+        ids = {
+            "Da confermare": self.save(self.event_form("Ritiro", title="RITIRO FIDO", event_status="Da confermare", start_time="08:30", end_time="09:00")),
+            "Da ritirare": self.save(self.event_form("Ritiro", title="RITIRO LUNA", event_status="Da ritirare", start_time="09:30", end_time="10:00")),
+            "Ritirato": self.save(self.event_form("Ritiro", title="RITIRO BELLA", event_status="Ritirato", start_time="10:30", end_time="11:00")),
+            "Annullato": self.save(self.event_form("Ritiro", title="RITIRO ARGO", event_status="Annullato", start_time="11:30", end_time="12:00")),
+        }
+        delivery_id = self.save(self.event_form("Riconsegna", title="RICONSEGNA REX", start_time="13:00", end_time="13:30"))
+        reminder_id = self.save(self.event_form("Appuntamento", title="APPUNTAMENTO FORNITORE", start_time="14:00", end_time="14:30"))
+        for view in ("giorno", "settimana"):
+            page = self.render_calendar(view, "2026-07-15")
+            day = self.day_page(page, "2026-07-15")
+            colors = {}
+            for status, event_id in ids.items():
+                card = self.card(day, event_id)
+                color = app.DEFAULT_CALENDAR_COLOR_SETTINGS["types"][status]
+                # Badge di stato (solo per i ritiri) e colore dello stato sulla card.
+                self.assertIn(f'>{status.upper()}</span>', card)
+                self.assertIn(f'style="border-left-color:{color}"', card)
+                colors[status] = color
+            self.assertEqual(len(set(colors.values())), 4)
+            # Riconsegne e promemoria: nessuna badge di stato.
+            for event_id in (delivery_id, reminder_id):
+                self.assertNotIn('class="calendar-appt-status"', self.card(day, event_id))
+            # Legende colori/operatori solo nelle Impostazioni del calendario.
+            body = page.split("</style>", 1)[1]
+            for legend in ('<section class="calendar-legend-section">', '<div class="calendar-operator-legend">', '<div class="calendar-day-legend">'):
+                self.assertNotIn(legend, body)
 
     def test_day_view_lists_events_in_chronological_order_without_grid_or_lanes(self):
         self.save(self.event_form("Ritiro", event_status="Da ritirare"))
@@ -849,81 +811,66 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertLess(fornitore_pos, isolato_pos)
 
     def test_day_view_same_row_structure_for_short_long_and_multiday_events(self):
-        self.save(self.event_form("Appuntamento", title="EVENTO BREVE", start_time="08:10", end_time="08:20"))
-        self.save(self.event_form("Appuntamento", title="EVENTO STESSO GIORNO", start_time="09:00", end_time="17:00"))
-        self.save(self.event_form("Appuntamento", title="EVENTO MULTI GIORNO",
-                                   start_date="2026-07-15", start_time="09:30", end_date="2026-07-17", end_time="10:30"))
-        rendered = []
-        self.handler.send_html = lambda html, status=200: rendered.append(html)
-        self.handler.path = "/calendario?vista=giorno&data=2026-07-15"
-        self.handler.calendar_page(self.admin)
-        page = rendered[-1]
-        # No per-event height/lane math survives: every row is the same plain card,
-        # stacked in a simple chronological list (no hourly grid behind it).
-        self.assertNotIn('style="--event-height', page)
-        self.assertNotIn('style="--event-lane', page)
-        self.assertNotIn('<div class="calendar-timeline-event"', page)
-        self.assertNotIn('<div class="calendar-day-timeline"', page)
-        self.assertEqual(page.count('class="calendar-event calendar-day-event'), 3)
-        self.assertIn("08:10", page)
-        self.assertIn("08:20", page)
-        self.assertIn("09:00", page)
-        self.assertIn("17:00", page)
-        # On the day it starts, a multi-day event shows its real start time paired
-        # with midnight (the boundary of that day), not the whole date range.
-        self.assertIn('<b>09:30</b><small>00:00</small>', page)
-        # The full 00:00-24:00 hour timeline is always rendered; each event lands in
-        # the hour row matching its start time.
-        hour8_pos = page.index('data-hour="8"')
-        hour9_pos = page.index('data-hour="9"')
-        breve_pos = page.index("EVENTO BREVE")
-        stesso_pos = page.index("EVENTO STESSO GIORNO")
-        multi_pos = page.index("EVENTO MULTI GIORNO")
-        self.assertLess(hour8_pos, breve_pos)
-        self.assertLess(breve_pos, hour9_pos)
-        self.assertLess(hour9_pos, stesso_pos)
-        self.assertLess(stesso_pos, multi_pos)
+        short_id = self.save(self.event_form("Appuntamento", title="EVENTO BREVE", start_time="08:10", end_time="08:20"))
+        long_id = self.save(self.event_form("Appuntamento", title="EVENTO STESSO GIORNO", start_time="09:00", end_time="17:00"))
+        multi_id = self.save(self.event_form("Appuntamento", title="EVENTO MULTI GIORNO",
+                                             start_date="2026-07-15", start_time="09:30", end_date="2026-07-17", end_time="10:30"))
+        day = self.day_page(self.render_calendar("giorno", "2026-07-15"), "2026-07-15")
+        # Stessa card semplice per tutti, in ordine di orario d'inizio.
+        self.assertEqual(day.count('class="calendar-appt-card"'), 3)
+        self.assertNotIn('style="--event-height', day)
+        positions = [day.index(f'data-event-id="{event_id}"') for event_id in (short_id, long_id, multi_id)]
+        self.assertEqual(positions, sorted(positions))
+        self.assertEqual(self.card_times(self.card(day, short_id)), ("08:10", "08:20"))
+        self.assertEqual(self.card_times(self.card(day, long_id)), ("09:00", "17:00"))
+        # Il giorno in cui inizia, l'evento su piu' giorni mostra l'inizio reale
+        # fino a mezzanotte, non l'orario di fine di un altro giorno.
+        self.assertEqual(self.card_times(self.card(day, multi_id)), ("09:30", "00:00"))
 
     def test_day_view_shows_per_day_time_window_for_multiday_event_not_date_range(self):
-        # A pickup starting 11:00 on 2026-07-22 and ending 18:00 on 2026-07-23: each
-        # day's view must show the boundary time that applies to that specific day.
-        self.save(self.event_form("Ritiro", title="RITIRO FIRENZE",
-                                   start_date="2026-07-22", start_time="11:00",
-                                   end_date="2026-07-23", end_time="18:00"))
-        rendered = []
-        self.handler.send_html = lambda html, status=200: rendered.append(html)
-        self.handler.path = "/calendario?vista=giorno&data=2026-07-22"
-        self.handler.calendar_page(self.admin)
-        first_day_page = rendered[-1]
-        self.assertIn('<b>11:00</b><small>00:00</small>', first_day_page)
-        self.assertNotIn("2026-07-22 → 2026-07-23", first_day_page)
-        self.handler.path = "/calendario?vista=giorno&data=2026-07-23"
-        self.handler.calendar_page(self.admin)
-        second_day_page = rendered[-1]
-        self.assertIn('<b>00:00</b><small>18:00</small>', second_day_page)
-        self.assertNotIn("2026-07-22 → 2026-07-23", second_day_page)
+        # Ritiro dalle 11:00 del 22/07 alle 18:00 del 23/07: ogni giorno mostra
+        # l'orario che vale in quel giorno (richiesta esplicita dell'utente,
+        # 22/07, ripristinata dopo il ridisegno del calendario).
+        event_id = self.save(self.event_form("Ritiro", title="RITIRO FIRENZE",
+                                             start_date="2026-07-22", start_time="11:00",
+                                             end_date="2026-07-23", end_time="18:00"))
+        for view in ("giorno", "settimana"):
+            for selected in ("2026-07-22", "2026-07-23"):
+                page = self.render_calendar(view, selected)
+                first = self.card(self.day_page(page, "2026-07-22"), event_id)
+                last = self.card(self.day_page(page, "2026-07-23"), event_id)
+                self.assertEqual(self.card_times(first), ("11:00", "00:00"), (view, selected))
+                self.assertEqual(self.card_times(last), ("00:00", "18:00"), (view, selected))
+                self.assertNotIn("2026-07-22 → 2026-07-23", page)
+        # Un evento di un giorno solo resta com'era.
+        same_day_id = self.save(self.event_form("Ritiro", title="RITIRO PISA", start_date="2026-07-22", start_time="15:00",
+                                                end_date="2026-07-22", end_time="16:00"))
+        day = self.day_page(self.render_calendar("giorno", "2026-07-22"), "2026-07-22")
+        self.assertEqual(self.card_times(self.card(day, same_day_id)), ("15:00", "16:00"))
 
     def test_day_view_shows_midnight_to_midnight_on_middle_day_of_multiday_event(self):
-        self.save(self.event_form("Riconsegna", title="RICONSEGNA LUNGA",
-                                   start_date="2026-07-10", start_time="08:00",
-                                   end_date="2026-07-13", end_time="16:00"))
-        rendered = []
-        self.handler.send_html = lambda html, status=200: rendered.append(html)
-        self.handler.path = "/calendario?vista=giorno&data=2026-07-11"
-        self.handler.calendar_page(self.admin)
-        page = rendered[-1]
-        self.assertIn('<b>00:00</b><small>00:00</small>', page)
+        event_id = self.save(self.event_form("Riconsegna", title="RICONSEGNA LUNGA",
+                                             start_date="2026-07-10", start_time="08:00",
+                                             end_date="2026-07-13", end_time="16:00"))
+        # 10/07 e' venerdi', 13/07 lunedi': due settimane diverse.
+        first_week = self.render_calendar("giorno", "2026-07-11")
+        self.assertEqual(self.card_times(self.card(self.day_page(first_week, "2026-07-10"), event_id)), ("08:00", "00:00"))
+        for middle in ("2026-07-11", "2026-07-12"):
+            self.assertEqual(self.card_times(self.card(self.day_page(first_week, middle), event_id)), ("00:00", "00:00"))
+        second_week = self.render_calendar("giorno", "2026-07-13")
+        self.assertEqual(self.card_times(self.card(self.day_page(second_week, "2026-07-13"), event_id)), ("00:00", "16:00"))
+        # Un evento di tutto il giorno su piu' giorni resta "Tutto il giorno".
+        allday_id = self.save(self.event_form("Appuntamento", title="FERIE", all_day="1",
+                                              start_date="2026-07-10", end_date="2026-07-12"))
+        card = self.card(self.day_page(self.render_calendar("giorno", "2026-07-11"), "2026-07-11"), allday_id)
+        self.assertIn('<span class="calendar-appt-time">Tutto il giorno</span>', card)
+        self.assertNotIn("calendar-appt-time-end", card)
 
     def test_calendar_css_touch_targets_alignment_colors_and_opacity_fixes(self):
         self.assertIn(".calendar-date-nav .btn{min-width:44px;min-height:44px;padding:0;font-size:19px}", app.CSS)
-        self.assertIn(".calendar-date-nav{grid-template-columns:44px minmax(0,1fr) 44px}.calendar-day-timeline{padding-left:38px}", app.CSS)
-        self.assertIn(".calendar-day-event{flex-wrap:wrap;align-items:center;gap:2px 8px}", app.CSS)
+        self.assertIn(".calendar-date-nav{grid-template-columns:44px minmax(0,1fr) 44px}", app.CSS)
         self.assertIn("background:color-mix(in srgb,currentColor 24%,#15202f)", app.CSS)
         self.assertIn("color-mix(in srgb,currentColor 18%,#fff)", app.CSS)
-        self.assertIn("background:color-mix(in srgb,currentColor 26%,#15202f)", app.CSS)
-        self.assertIn("background:color-mix(in srgb,currentColor 38%,transparent)", app.CSS)
-        self.assertNotIn(".calendar-week-v2-event-title{flex:1;min-width:0;font-size:11.5px;font-weight:650;color:#e7ecf3", app.CSS)
-        self.assertNotIn(".calendar-month-v2-pill{display:block;padding:2px 6px;border-radius:5px;background:color-mix(in srgb,currentColor 20%,transparent);color:inherit", app.CSS)
 
     def test_calendar_draft_autosave_has_separate_keys_and_excludes_sensitive_fields(self):
         rendered = []
@@ -1516,43 +1463,6 @@ class OperationalCalendarTests(unittest.TestCase):
             after = {table: conn.execute(f"SELECT count(*) n FROM {table}").fetchone()["n"] for table in before}
         self.assertEqual(before, after)
 
-    def test_day_view_single_event_does_not_stretch_to_fill_list_min_height(self):
-        # calendar-day-list used to keep a leftover min-height:260px from the old
-        # hourly timeline layout; with just one event in the day, that single grid
-        # row stretched to fill the whole 260px instead of staying compact.
-        self.save(self.event_form("Appuntamento", title="EVENTO UNICO", start_time="10:00", end_time="10:30"))
-        rendered = []
-        self.handler.send_html = lambda html, status=200: rendered.append(html)
-        self.handler.path = "/calendario?vista=giorno&data=2026-07-15"
-        self.handler.calendar_page(self.admin)
-        page = rendered[-1]
-        self.assertEqual(page.count('class="calendar-event calendar-day-event'), 1)
-        self.assertIn(".calendar-day-list{display:grid;gap:10px;min-height:0;align-content:start}", app.CSS)
-        self.assertNotIn(".calendar-day-list{display:grid;gap:10px;min-height:260px}", app.CSS)
-
-    def test_week_and_day_blocks_are_as_compact_as_month_pill(self):
-        self.assertIn(".calendar-week-v2-event{display:flex;align-items:center;gap:4px;padding:2px 6px;", app.CSS)
-        self.assertIn(".calendar-week-v2-event-title{flex:1;min-width:0;font-size:9px;", app.CSS)
-        self.assertIn(".calendar-month-v2-pill{display:block;padding:2px 6px;border-radius:5px;background:color-mix(in srgb,currentColor 38%,transparent);font-size:9px;", app.CSS)
-        self.assertIn(".calendar-day-event{display:flex;align-items:center;gap:6px;padding:2px 8px;min-height:0}", app.CSS)
-        self.assertIn(".calendar-day-event h3{font-size:9px", app.CSS)
-        # The day list must not force a tall min-height on its own: with a single
-        # event this used to stretch that one row to fill 260px (a leftover from
-        # the old hourly timeline layout), making the lone event look huge.
-        self.assertIn(".calendar-day-list{display:grid;gap:10px;min-height:0;align-content:start}", app.CSS)
-
-    def test_month_agenda_uses_event_color_class_consistently(self):
-        # calendar_event_card (month agenda list) used to compute its own divergent
-        # color mapping that dropped the "Da confermare"->yellow bucket for Ritiro;
-        # it must now match event_color_class exactly, like the other two card types.
-        self.save(self.event_form("Ritiro", title="RITIRO GIALLO", event_status="Da confermare"))
-        rendered = []
-        self.handler.send_html = lambda html, status=200: rendered.append(html)
-        self.handler.path = "/calendario?vista=mese&data=2026-07-15"
-        self.handler.calendar_page(self.admin)
-        page = rendered[-1]
-        self.assertIn('class="calendar-event calendar-yellow"', page)
-
     def test_calendar_color_settings_defaults_and_persist_custom_choice(self):
         with app.db() as conn:
             defaults = app.calendar_color_settings(conn)
@@ -1605,14 +1515,14 @@ class OperationalCalendarTests(unittest.TestCase):
         with app.db() as conn:
             conn.execute("INSERT INTO settings(key,value) VALUES('calendar_colors',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                          (json.dumps({"operators": {"Serena": "#22d3ee"}, "types": {"Da confermare": "#fb923c"}}),))
-        self.save(self.event_form("Ritiro", title="RITIRO CUSTOM", event_status="Da confermare", operator_name="Serena"))
-        rendered = []
-        self.handler.send_html = lambda html, status=200: rendered.append(html)
-        self.handler.path = "/calendario?vista=giorno&data=2026-07-15"
-        self.handler.calendar_page(self.admin)
-        page = rendered[-1]
-        self.assertIn('style="color:#fb923c"', page)
-        self.assertIn('style="background:#22d3ee"', page)
+        event_id = self.save(self.event_form("Ritiro", title="RITIRO CUSTOM", event_status="Da confermare", operator_name="Serena"))
+        card = self.card(self.day_page(self.render_calendar("giorno", "2026-07-15"), "2026-07-15"), event_id)
+        # Colore personalizzato dello stato sul bordo, sul pallino e sulla badge;
+        # colore personalizzato dell'operatore sul suo avatar.
+        self.assertIn('style="border-left-color:#fb923c"', card)
+        self.assertIn('class="calendar-appt-time-dot" style="background:#fb923c"', card)
+        self.assertIn('style="background:#fb923c22;color:#fb923c"', card)
+        self.assertIn('calendar-avatar-serena" style="background:#22d3ee"', card)
 
     def test_calendar_settings_shows_color_section_only_for_admin(self):
         with app.db() as conn:
@@ -1644,70 +1554,45 @@ class OperationalCalendarTests(unittest.TestCase):
             self.assertIn("Colore fisso = altri tipi", page)
 
     def test_day_view_pins_allday_and_multiday_carryover_events_above_hours(self):
-        self.save(self.event_form("Appuntamento", title="EVENTO TUTTO IL GIORNO", all_day="1"))
-        self.save(self.event_form("Riconsegna", title="RICONSEGNA IN CORSO",
-                                   start_date="2026-07-13", start_time="09:00", end_date="2026-07-16", end_time="10:00"))
-        self.save(self.event_form("Appuntamento", title="EVENTO ORARIO", start_time="11:00", end_time="11:30"))
-        rendered = []
-        self.handler.send_html = lambda html, status=200: rendered.append(html)
-        self.handler.path = "/calendario?vista=giorno&data=2026-07-15"
-        self.handler.calendar_page(self.admin)
-        page = rendered[-1]
-        self.assertIn('<div class="calendar-day-allday">', page)
-        self.assertIn('<span class="calendar-day-allday-label">Tutto il giorno</span>', page)
-        allday_pos = page.index('<div class="calendar-day-allday">')
-        hours_pos = page.index('<div class="calendar-day-hours"')
-        tutto_pos = page.index("EVENTO TUTTO IL GIORNO")
-        ricorso_pos = page.index("RICONSEGNA IN CORSO")
-        orario_pos = page.index("EVENTO ORARIO")
-        # Both the flagged all-day event and the event that started on an earlier
-        # day (carried over into today) are pinned above the hour grid, not lost
-        # inside one of the hour rows.
-        self.assertLess(allday_pos, tutto_pos)
-        self.assertLess(tutto_pos, hours_pos)
-        self.assertLess(allday_pos, ricorso_pos)
-        self.assertLess(ricorso_pos, hours_pos)
-        self.assertLess(hours_pos, orario_pos)
+        allday_id = self.save(self.event_form("Appuntamento", title="EVENTO TUTTO IL GIORNO", all_day="1"))
+        carry_id = self.save(self.event_form("Riconsegna", title="RICONSEGNA IN CORSO",
+                                             start_date="2026-07-13", start_time="09:00", end_date="2026-07-16", end_time="10:00"))
+        timed_id = self.save(self.event_form("Appuntamento", title="EVENTO ORARIO", start_time="11:00", end_time="11:30"))
+        day = self.day_page(self.render_calendar("giorno", "2026-07-15"), "2026-07-15")
+        # Prima l'evento di tutto il giorno, poi quello iniziato in un giorno
+        # precedente (in corso), poi quelli con orario: niente si perde.
+        positions = [day.index(f'data-event-id="{event_id}"') for event_id in (allday_id, carry_id, timed_id)]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn('<span class="calendar-appt-time">Tutto il giorno</span>', self.card(day, allday_id))
+        # Il 15 e' un giorno intermedio della riconsegna (13 -> 16): mezzanotte-mezzanotte.
+        self.assertEqual(self.card_times(self.card(day, carry_id)), ("00:00", "00:00"))
+        self.assertEqual(self.card_times(self.card(day, timed_id)), ("11:00", "11:30"))
 
-    def test_day_view_always_renders_full_timeline_and_scrolls_to_seven_by_default(self):
-        rendered = []
-        self.handler.send_html = lambda html, status=200: rendered.append(html)
-        # Even a day with zero events must still show the full 00:00-24:00 timeline,
-        # not just an empty-state message replacing it.
-        self.handler.path = "/calendario?vista=giorno&data=2026-07-15"
-        self.handler.calendar_page(self.admin)
-        page = rendered[-1]
-        self.assertIn("Nessun evento", page)
-        self.assertIn('id="calendarDayHours"', page)
-        self.assertEqual(page.count('class="calendar-day-hour-row" data-hour="'), 24)
-        self.assertIn('data-hour="0"', page)
-        self.assertIn('data-hour="23"', page)
-        # Defaults to a 7:00-22:00 window by scrolling the container to hour 7 on load.
-        self.assertIn('document.getElementById("calendarDayHours")', page)
-        self.assertIn('querySelector(\'[data-hour="7"]\')', page)
-        self.assertIn("c.scrollTop=r.offsetTop", page)
+    def test_day_view_without_events_shows_empty_message_and_zero_counters(self):
+        # La griglia oraria 00-24 non esiste piu' (lista di card): un giorno
+        # senza eventi mostra il messaggio vuoto e i contatori a zero, non una
+        # pagina bianca.
+        day = self.day_page(self.render_calendar("giorno", "2026-07-15"), "2026-07-15")
+        self.assertIn("Nessun appuntamento in programma.", day)
+        self.assertNotIn('class="calendar-appt-card"', day)
+        self.assertIn('<b>0</b><small>Da effettuare</small>', day)
+        self.assertIn('<b>0</b><small>Completati</small>', day)
 
     def test_week_and_month_empty_day_cells_still_link_to_day_view(self):
-        rendered = []
-        self.handler.send_html = lambda html, status=200: rendered.append(html)
-        # Week: a single click on any day column -- empty or not -- opens Day view directly.
-        self.handler.path = "/calendario?vista=settimana&data=2026-07-15"
-        self.handler.calendar_page(self.admin)
-        week_page = rendered[-1]
-        self.assertIn('<a class="calendar-week-v2-day" href="/calendario?vista=giorno&data=2026-07-13&da=settimana">', week_page)
-        # Month: the first click on a not-yet-selected day only selects it (stays on
-        # month view, updates data=), even if the day is empty.
-        self.handler.path = "/calendario?vista=mese&data=2026-07-15"
-        self.handler.calendar_page(self.admin)
-        month_page = rendered[-1]
+        # Settimana: ogni giorno, anche vuoto, ha la sua card nella barra (con
+        # il conteggio) e la sua pagina, selezionabile con un tocco.
+        week_page = self.render_calendar("settimana", "2026-07-15")
+        self.assertIn('data-date="2026-07-13" onclick="calendarSelectDay(0)">', week_page)
+        self.assertRegex(week_page, r'data-date="2026-07-13" onclick="calendarSelectDay\(0\)">\s*<span class="calendar-daybar-dow">LUN</span>\s*<span class="calendar-daybar-num">13</span>\s*<span class="calendar-daybar-count">0 app.</span>')
+        self.assertIn("Nessun appuntamento in programma.", self.day_page(week_page, "2026-07-13"))
+        # Mese: il primo tocco su un giorno non ancora selezionato lo seleziona
+        # soltanto (resta sul mese), anche se e' vuoto.
+        month_page = self.render_calendar("mese", "2026-07-15")
         self.assertIn('<a class="calendar-month-v2-cell" href="/calendario?vista=mese&data=2026-07-02">', month_page)
         self.assertNotIn('<a class="calendar-month-v2-cell" href="/calendario?vista=giorno&data=2026-07-02', month_page)
-        # A second click -- now that 2026-07-02 is the selected day -- opens Day view.
-        self.handler.path = "/calendario?vista=mese&data=2026-07-02"
-        self.handler.calendar_page(self.admin)
-        month_page = rendered[-1]
+        # Il secondo tocco, ora che il 02/07 e' selezionato, apre la vista Giorno.
+        month_page = self.render_calendar("mese", "2026-07-02")
         self.assertIn('<a class="calendar-month-v2-cell selected" href="/calendario?vista=giorno&data=2026-07-02&da=mese">', month_page)
-
 
 if __name__ == "__main__":
     unittest.main()
