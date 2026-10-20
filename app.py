@@ -13615,6 +13615,10 @@ class App(BaseHTTPRequestHandler):
         hero_operator_name=event['operator_name'] or event['assigned_name'] or ''
         hero_avatar=self.calendar_operator_avatar(hero_operator_name,"md")
         hero_time="Tutto il giorno" if event['all_day'] else (f"{start_time_part} → {end_time_part}" if end_time_part and end_time_part!=start_time_part else start_time_part)
+        # Evento su piu' giorni: sotto l'orario anche la data di fine,
+        # altrimenti "11:00 → 18:00" sotto "22/07" sembrava tutto lo stesso
+        # giorno (la data di fine si era persa col ridisegno della scheda).
+        hero_date=date_it(start_date_part)+(f" → {date_it(end_date_part)}" if end_date_part and end_date_part!=start_date_part else "")
         hero_place_primary=event['zone'] or event['venue_name'] or event['location_type'] or '-'
         hero_place_secondary=event['venue_name'] if event['zone'] and event['venue_name'] and event['venue_name']!=hero_place_primary else ''
         hero_animal_bits=[]
@@ -13659,7 +13663,7 @@ class App(BaseHTTPRequestHandler):
               </div>
               <button class="btn ghost" type="submit" style="margin-top:10px">Salva data e ora</button>
             </form>'''
-            hero_rows.append(hero_row("clock","purple",esc(hero_time),esc(date_it(start_date_part)),datetime_form))
+            hero_rows.append(hero_row("clock","purple",esc(hero_time),esc(hero_date),datetime_form))
             luogo_form=f'''<form method="post" action="/calendario/{event_id}/luogo">
               <select name="location_type"><option value="">Tipo luogo</option><option value="Privato" {"selected" if event['location_type']=='Privato' else ''}>Privato</option><option value="Veterinario" {"selected" if event['location_type']=='Veterinario' else ''}>Veterinario</option></select>
               <input name="venue_name" placeholder="Nome struttura" value="{esc(event['venue_name'] or '')}">
@@ -13737,7 +13741,7 @@ class App(BaseHTTPRequestHandler):
                     link_practice_card=f'''<div class="calendar-tap-card"><span class="calendar-tap-card-icon">{lucide("receipt")}</span><div class="calendar-tap-card-body"><small>Pratica collegata</small><p>{esc(event["practice_number"])}</p>{pending_pickup_reminder}<a class="btn ghost" style="margin-top:8px" href="/pratiche/{event['linked_practice_id']}">Apri pratica</a>{unlink}</div></div>'''
                 else:
                     link_practice_card=f'''<div class="calendar-tap-card lookup"><span class="calendar-tap-card-icon">{lucide("receipt")}</span><div class="calendar-tap-card-body"><small>Collega pratica esistente</small><input id="calendarLinkPracticeSearch" data-event-id="{event_id}" autocomplete="off" placeholder="Cerca per animale, proprietario, veterinario o numero pratica"><div id="calendarLinkPracticeResults" class="lookup-results hidden"></div></div></div>'''
-        hero_rows_html=''.join(hero_rows) if hero_rows else f'''<div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-purple">{lucide("clock")}</span><div><b>{esc(hero_time)}</b><small>{esc(date_it(start_date_part))}</small></div></div><div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-teal">{lucide("home")}</span><div><b>{esc(hero_place_primary)}</b>{f'<small>{esc(hero_place_secondary)}</small>' if hero_place_secondary else ''}</div></div>{f'<div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-amber">{lucide("paw")}</span><div><b>{esc(hero_animal_main)}</b>{f"<small>{esc(hero_animal_sub)}</small>" if hero_animal_sub else ""}</div></div>' if hero_animal_main else ''}{f'<div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-purple">{lucide("user")}</span><div><b>{esc(client_display)}</b><small>Cliente</small></div></div>' if client_display else ''}'''
+        hero_rows_html=''.join(hero_rows) if hero_rows else f'''<div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-purple">{lucide("clock")}</span><div><b>{esc(hero_time)}</b><small>{esc(hero_date)}</small></div></div><div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-teal">{lucide("home")}</span><div><b>{esc(hero_place_primary)}</b>{f'<small>{esc(hero_place_secondary)}</small>' if hero_place_secondary else ''}</div></div>{f'<div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-amber">{lucide("paw")}</span><div><b>{esc(hero_animal_main)}</b>{f"<small>{esc(hero_animal_sub)}</small>" if hero_animal_sub else ""}</div></div>' if hero_animal_main else ''}{f'<div class="calendar-detail-hero-meta-item"><span class="calendar-detail-hero-meta-icon calendar-icon-purple">{lucide("user")}</span><div><b>{esc(client_display)}</b><small>Cliente</small></div></div>' if client_display else ''}'''
         header=f'''<div class="calendar-detail-topbar">
           <a class="calendar-detail-back" href="{esc(back_url)}"><span class="calendar-detail-back-arrow">{lucide("chevron-right")}</span><span>Indietro</span></a>
           <h2 class="calendar-detail-topbar-title">Riepilogo evento</h2>
