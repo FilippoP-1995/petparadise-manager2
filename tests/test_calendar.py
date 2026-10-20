@@ -155,8 +155,14 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("calendarAddRow('animal',{})",rendered[-1])
         self.assertIn("function calendarPickupClientLookup(",app.APP_JS)
         self.assertNotIn("Veterinario/Ambulatorio",app.APP_JS)
-        self.assertIn("history.back()",app.APP_JS)
-        self.assertIn("Le modifiche non salvate andranno perse",app.APP_JS)
+        # Uscita dal modulo: non piu' l'avviso generico con history.back(),
+        # ma la scelta esplicita sulla bozza (Salva bozza ed esci / Elimina
+        # ed esci / Annulla), introdotta il 31/07.
+        self.assertIn('id="calendarExitBackdrop"',rendered[-1])
+        for label,handler in (("Salva bozza ed esci","calendarExitKeepDraft("),("Elimina ed esci","calendarExitDiscardDraft("),("Annulla","calendarExitCancel(")):
+            self.assertIn(label,rendered[-1])
+            self.assertIn(f'onclick="{handler}',rendered[-1])
+            self.assertIn(f"function {handler}",app.APP_JS)
 
     def test_manual_time_normalization_and_quarter_hour_suggestions(self):
         self.assertEqual(normalize_time("9"), "09:00")
@@ -1120,7 +1126,10 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("Richiamare il cliente prima delle 18", page)
         # There is no more a standalone "Note" tab link.
         self.assertNotIn(f'href="/calendario/{event_id}?tab=note"', page)
-        self.assertEqual(page.count('<h2>Note</h2>'), 1)
+        # Dopo il ridisegno della scheda la nota e' una riga del riquadro
+        # principale (titolo "Note" + testo), presente una volta sola.
+        self.assertEqual(page.count('<b>Note</b>'), 1)
+        self.assertIn("<b>Note</b><small>Richiamare il cliente prima delle 18</small>", page)
 
         # Fetching the old tab=note URL falls back to the (now merged) Dettagli tab
         # rather than a blank/broken panel.
@@ -1288,7 +1297,9 @@ class OperationalCalendarTests(unittest.TestCase):
         self.handler.send_html = lambda html, status=200: captured.append(html)
         self.handler.calendar_event_form(self.admin)
         html = captured[0]
-        for text in ("Tipo evento", "Data e titolo", "Cerca veterinario", "Cerca cliente", "+ Aggiungi animale", "Preventivo previsto", "Tutto il giorno"):
+        # Modulo ridisegnato (28/07-01/08): una sola pagina a schede invece
+        # della procedura guidata a passi.
+        for text in ("Che tipo di evento vuoi creare?", "Dettagli evento", "Cerca veterinario", "Cerca cliente", "<span>Aggiungi animale</span>", "Preventivo</h2>", "Tutto il giorno"):
             self.assertIn(text, html)
         for hook in ("calendarZoneOffer", "/api/clienti/search", "/api/veterinari/search"):
             self.assertIn(hook, html if hook == "calendarZoneOffer" else app.APP_JS + html)
@@ -1313,14 +1324,16 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("calendarTimeInput",app.APP_JS)
         self.assertIn("calendarSyncTimeWheel",app.APP_JS)
         self.assertIn("calendarInitTimeWheel",app.APP_JS)
-        self.assertIn('class="calendar-datetime-stack"',html)
+        self.assertIn('class="calendar-datetime-row"',html)
         self.assertIn('class="calendar-time-wheel"',html)
         self.assertIn('data-wheel-part="hour"',html)
         self.assertIn('data-wheel-part="minute"',html)
         self.assertIn('onfocus="calendarTimeFocus(this)"',html)
         self.assertLess(html.index('name="start_date"'),html.index('name="start_time"'))
         self.assertIn("calendar-zone-results",html)
-        self.assertEqual(html.count('class="calendar-event-type-icon"'),5)
+        self.assertEqual(html.count("calendarTypeSelected(this)"),5)
+        for event_type in ("Ritiro","Ritiro in sede","Riconsegna","Riconsegna in sede","Appuntamento"):
+            self.assertIn(f'name="event_type" value="{event_type}"',html)
         self.assertIn(".calendar-form [data-calendar-types][hidden]",app.CSS)
         self.assertIn("padding:calc(88px + var(--safe-top))",app.CSS)
         self.assertIn("@media(max-width:900px)", app.CSS)
@@ -1404,13 +1417,20 @@ class OperationalCalendarTests(unittest.TestCase):
             second = process_calendar_notifications(conn, None, moment)
             reminder = conn.execute("SELECT * FROM calendar_event_notifications WHERE event_id=?", (event_id,)).fetchone()
             count = conn.execute("SELECT count(*) n FROM notifications WHERE type='calendar_reminder_30m'").fetchone()["n"]
+            per_user = conn.execute("SELECT count(DISTINCT user_id) n FROM notifications WHERE type='calendar_reminder_30m'").fetchone()["n"]
+            active_users = conn.execute("SELECT count(*) n FROM users WHERE active=1").fetchone()["n"]
             summary_first = process_calendar_notifications(conn, None, moment.replace(minute=45))
             summary_second = process_calendar_notifications(conn, None, moment.replace(minute=50))
             summaries = conn.execute("SELECT count(*) n FROM notifications WHERE type='calendar_daily_summary'").fetchone()["n"]
-        self.assertEqual((first, second, count), (2, 0, 1))
+            summary_users = conn.execute("SELECT count(DISTINCT user_id) n FROM notifications WHERE type='calendar_daily_summary'").fetchone()["n"]
+        # Le notifiche raggiungono tutto lo staff attivo (richiesta esplicita
+        # dell'utente, 04/08): un solo promemoria per utente, e il secondo
+        # passaggio non ne crea altri.
+        self.assertEqual((first, second), (2, 0))
+        self.assertEqual((count, per_user), (active_users, active_users))
         self.assertEqual(reminder["status"], "inviato")
         self.assertTrue(reminder["sent_at"])
-        self.assertEqual((summary_first, summary_second, summaries), (0, 0, 1))
+        self.assertEqual((summary_first, summary_second, summaries, summary_users), (0, 0, active_users, active_users))
 
     def test_cancelled_and_deleted_events_never_emit_pending_reminders(self):
         future_date = (datetime.now() + timedelta(days=1)).date()
