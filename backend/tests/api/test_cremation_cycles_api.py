@@ -256,3 +256,23 @@ async def test_list_cycles_filters_by_status_and_paginates(authed_client: AsyncC
 
     filtered = await authed_client.get("/api/cremation-cycles", params={"status": "pianificato"})
     assert all(c["status"] == "pianificato" for c in filtered.json())
+
+
+async def test_list_cycles_filters_by_cycle_date(authed_client: AsyncClient):
+    """Board giornaliera V2 (CremationCycleListPage): filtra i cicli per
+    cycle_date=YYYY-MM-DD - prima di questo test il parametro veniva
+    confrontato come stringa contro una colonna `date` reale (Postgres,
+    non SQLite), fallendo con un 500 (UndefinedFunctionError: operator
+    does not exist: date = character varying) ogni volta che la board
+    veniva aperta con una data valorizzata."""
+    await authed_client.post("/api/cremation-cycles", json=_cycle_payload(cycle_date="2026-09-10"))
+    await authed_client.post("/api/cremation-cycles", json=_cycle_payload(cycle_date="2026-09-11"))
+
+    response = await authed_client.get("/api/cremation-cycles", params={"cycle_date": "2026-09-10"})
+    assert response.status_code == 200
+    assert all(c["cycle_date"] == "2026-09-10" for c in response.json())
+    assert len(response.json()) >= 1
+
+    empty = await authed_client.get("/api/cremation-cycles", params={"cycle_date": "2026-01-01"})
+    assert empty.status_code == 200
+    assert empty.json() == []

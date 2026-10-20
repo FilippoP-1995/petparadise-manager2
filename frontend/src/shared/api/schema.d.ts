@@ -30,7 +30,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Logout */
+        /**
+         * Logout
+         * @description Release hardening: invalida la sessione lato server (non solo il
+         *     cookie) - un riutilizzo del token dopo logout deve essere rifiutato
+         *     come una sessione qualsiasi scaduta/inesistente.
+         */
         post: operations["logout_api_auth_logout_post"];
         delete?: never;
         options?: never;
@@ -179,6 +184,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/practices/trashed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Trashed Practices
+         * @description V1 (trash_page, app.py:18307-18309): Cestino - stesso filtro
+         *     (deleted_at NOT NULL). Dichiarata prima di /{practice_id} perche' un
+         *     path statico deve vincere sul segmento dinamico, non per una vera
+         *     ambiguita' di dati.
+         */
+        get: operations["list_trashed_practices_api_practices_trashed_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/practices/{practice_id}": {
         parameters: {
             query?: never;
@@ -190,6 +218,26 @@ export interface paths {
         get: operations["get_practice_api_practices__practice_id__get"];
         /** Update Practice */
         put: operations["update_practice_api_practices__practice_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/practices/{practice_id}/cronologia": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Practice History
+         * @description V1 (dettaglio pratica: sidebar 'Cronologia modifiche').
+         */
+        get: operations["get_practice_history_api_practices__practice_id__cronologia_get"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -280,7 +328,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Override Total */
+        /**
+         * Override Total
+         * @description Release hardening: correzione manuale del totale - solo Admin, stessa
+         *     barriera di correct-state (decisione esplicita del gate di rilascio).
+         */
         post: operations["override_total_api_practices__practice_id__override_total_post"];
         delete?: never;
         options?: never;
@@ -297,7 +349,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Clear Total Override */
+        /**
+         * Clear Total Override
+         * @description Release hardening: ripristino del calcolo automatico - solo Admin,
+         *     stessa barriera dell'override che annulla.
+         */
         post: operations["clear_total_override_api_practices__practice_id__clear_total_override_post"];
         delete?: never;
         options?: never;
@@ -713,7 +769,11 @@ export interface paths {
         /** Update Cycle */
         put: operations["update_cycle_api_cremation_cycles__cycle_id__put"];
         post?: never;
-        /** Delete Cycle */
+        /**
+         * Delete Cycle
+         * @description Release hardening: cancellazione fisica di un ciclo - solo Admin,
+         *     e solo se 'pianificato' con 0 animali (verificato nel service).
+         */
         delete: operations["delete_cycle_api_cremation_cycles__cycle_id__delete"];
         options?: never;
         head?: never;
@@ -858,6 +918,28 @@ export interface paths {
         put?: never;
         /** Create Urn */
         post: operations["create_urn_api_urns_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/urns/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Urn Category Stats
+         * @description V1 (urn_catalog_page): barra Modelli/Pezzi disponibili/Esaurite/
+         *     Scorte basse/Valore magazzino sopra la griglia - dichiarata prima di
+         *     /{urn_id} per non farla intercettare dal path param.
+         */
+        get: operations["get_urn_category_stats_api_urns_stats_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1075,6 +1157,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/payments/practice-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Practices Payments Summary
+         * @description Bulk, sola lettura, per liste (V2 parita' visiva - Lista Pratiche):
+         *     2 query totali per l'intera pagina invece di N chiamate alla
+         *     riconciliazione per-pratica. Non sostituisce
+         *     /practice/{id}/riconciliazione, che resta la fonte per il dettaglio.
+         */
+        get: operations["get_practices_payments_summary_api_payments_practice_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/payments/practice/{practice_id}/riconciliazione": {
         parameters: {
             query?: never;
@@ -1135,7 +1240,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Delete Payment */
+        /**
+         * Delete Payment
+         * @description Release hardening: cancellazione fisica di un pagamento - solo Admin
+         *     (stessa barriera di correct_invoice_total/correct_practice_state,
+         *     decisione esplicita del gate di rilascio).
+         */
         post: operations["delete_payment_api_payments__payment_id__elimina_post"];
         delete?: never;
         options?: never;
@@ -1169,8 +1279,29 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Restore Payment Deletion */
+        /**
+         * Restore Payment Deletion
+         * @description Release hardening: ripristino di un pagamento cancellato - solo Admin,
+         *     stessa barriera dell'operazione di cancellazione che ripristina.
+         */
         post: operations["restore_payment_deletion_api_payments_deletions__deletion_id__ripristina_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dashboard/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dashboard Summary */
+        get: operations["dashboard_summary_api_dashboard_summary_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1186,6 +1317,23 @@ export interface paths {
         };
         /** Health */
         get: operations["health_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/{full_path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Serve Frontend */
+        get: operations["serve_frontend__full_path__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1588,6 +1736,189 @@ export interface components {
             /** Practice Id */
             practice_id: number | null;
         };
+        /** DashboardDailyCount */
+        DashboardDailyCount: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Count */
+            count: number;
+        };
+        /** DashboardDailyIncasso */
+        DashboardDailyIncasso: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Amount Cents */
+            amount_cents: number;
+        };
+        /**
+         * DashboardPaymentReminder
+         * @description Non e' un sistema di notifiche/promemoria (nessun nuovo dominio,
+         *     nessuna tabella nuova): sono le pratiche 'non_pagata'/'parziale' piu'
+         *     vecchie, calcolate dagli stessi dati gia' aggregati per
+         *     payment_status_counts - un elenco 'da seguire', non un vero sistema
+         *     di notifiche push.
+         */
+        DashboardPaymentReminder: {
+            /** Practice Id */
+            practice_id: number;
+            /** Practice Number */
+            practice_number: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Due Cents */
+            due_cents: number;
+            /** Paid Cents */
+            paid_cents: number;
+            /** Residual Cents */
+            residual_cents: number;
+        };
+        /**
+         * DashboardPaymentStatusCounts
+         * @description Stessi 4 stati di domain.invoice.rules.classify_payment_status,
+         *     riusata as-is (mai una seconda formula) per classificare ogni pratica
+         *     attiva in base al suo effective_total_cents (override o somma
+         *     line_items) contro quanto risulta realmente pagato sul ledger.
+         */
+        DashboardPaymentStatusCounts: {
+            /**
+             * Non Pagata
+             * @default 0
+             */
+            non_pagata: number;
+            /**
+             * Parziale
+             * @default 0
+             */
+            parziale: number;
+            /**
+             * Pagata
+             * @default 0
+             */
+            pagata: number;
+            /**
+             * Sovrapagata
+             * @default 0
+             */
+            sovrapagata: number;
+        };
+        /**
+         * DashboardPracticeStatusCounts
+         * @description Stessi 6 stati di PracticeStatus (models/practice.py) - snapshot
+         *     corrente (non filtrato per periodo), pratiche attive (deleted_at
+         *     nullo).
+         */
+        DashboardPracticeStatusCounts: {
+            /**
+             * Ritirato
+             * @default 0
+             */
+            ritirato: number;
+            /**
+             * In Programma
+             * @default 0
+             */
+            in_programma: number;
+            /**
+             * Cremato
+             * @default 0
+             */
+            cremato: number;
+            /**
+             * Da Consegnare
+             * @default 0
+             */
+            da_consegnare: number;
+            /**
+             * Consegnato
+             * @default 0
+             */
+            consegnato: number;
+            /**
+             * Smaltito
+             * @default 0
+             */
+            smaltito: number;
+        };
+        /** DashboardRecentPractice */
+        DashboardRecentPractice: {
+            /** Id */
+            id: number;
+            /** Practice Number */
+            practice_number: string;
+            /** Status */
+            status: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Owner Display Name */
+            owner_display_name: string;
+            /** Animal Names */
+            animal_names: string;
+            /** Primary Species */
+            primary_species?: string | null;
+        };
+        /** DashboardSummaryRead */
+        DashboardSummaryRead: {
+            /** Period */
+            period: string;
+            practice_status_counts: components["schemas"]["DashboardPracticeStatusCounts"];
+            payment_status_counts: components["schemas"]["DashboardPaymentStatusCounts"];
+            /** Incasso Periodo Cents */
+            incasso_periodo_cents: number;
+            /** Incasso Oggi Cents */
+            incasso_oggi_cents: number;
+            /** Nuove Pratiche Oggi */
+            nuove_pratiche_oggi: number;
+            /** Daily Incassi */
+            daily_incassi: components["schemas"]["DashboardDailyIncasso"][];
+            /** Recent Practices */
+            recent_practices: components["schemas"]["DashboardRecentPractice"][];
+            /** Payment Reminders */
+            payment_reminders: components["schemas"]["DashboardPaymentReminder"][];
+            /** Incasso Precedenti 7 Giorni Cents */
+            incasso_precedenti_7_giorni_cents: number;
+            /** Incasso Ieri Cents */
+            incasso_ieri_cents: number;
+            /** Nuove Pratiche Ieri */
+            nuove_pratiche_ieri: number;
+            /** Pratiche Ritirato Oggi */
+            pratiche_ritirato_oggi: number;
+            /** Pratiche Ritirato Ieri */
+            pratiche_ritirato_ieri: number;
+            /** Pratiche Da Saldare Oggi */
+            pratiche_da_saldare_oggi: number;
+            /** Pratiche Da Saldare Ieri */
+            pratiche_da_saldare_ieri: number;
+            /** Daily Ritirato */
+            daily_ritirato: components["schemas"]["DashboardDailyCount"][];
+            /** Daily Nuove */
+            daily_nuove: components["schemas"]["DashboardDailyCount"][];
+            /** Daily Da Saldare Proxy */
+            daily_da_saldare_proxy: components["schemas"]["DashboardDailyCount"][];
+            /** Pagamenti Da Saldare Count */
+            pagamenti_da_saldare_count: number;
+            /** Pagamenti Da Saldare Totale Cents */
+            pagamenti_da_saldare_totale_cents: number;
+            /** Pagamenti Acconto Count Periodo */
+            pagamenti_acconto_count_periodo: number;
+            /** Pagamenti Acconto Totale Cents Periodo */
+            pagamenti_acconto_totale_cents_periodo: number;
+            /** Pagamenti Pagato Count Periodo */
+            pagamenti_pagato_count_periodo: number;
+            /** Pagamenti Pagato Totale Cents Periodo */
+            pagamenti_pagato_totale_cents_periodo: number;
+        };
         /** DeletePaymentRequest */
         DeletePaymentRequest: {
             /** Deletion Kind */
@@ -1672,6 +2003,10 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            /** Client Name */
+            client_name?: string | null;
+            /** Client Phone */
+            client_phone?: string | null;
         };
         /**
          * DeliveryType
@@ -1753,6 +2088,10 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Owner Name */
+            owner_name?: string | null;
+            /** Animal Names */
+            animal_names?: string | null;
         };
         /**
          * InvoiceReconciliationRead
@@ -1886,6 +2225,8 @@ export interface components {
             description?: string | null;
             /** Collaborator Id */
             collaborator_id?: number | null;
+            /** Idempotency Key */
+            idempotency_key?: string | null;
         };
         /** PaymentDeletionRead */
         PaymentDeletionRead: {
@@ -2040,6 +2381,10 @@ export interface components {
             updated_at: string;
             /** Animals */
             animals: components["schemas"]["AnimalRead"][];
+            /** Client Name */
+            client_name?: string | null;
+            /** Client Phone */
+            client_phone?: string | null;
         };
         /**
          * PickupStatus
@@ -2199,6 +2544,59 @@ export interface components {
             tag_ids?: number[];
             /** Client Id */
             client_id: number;
+        };
+        /**
+         * PracticeHistoryEntry
+         * @description V1 (dettaglio pratica: sidebar 'Cronologia modifiche', practice_
+         *     history) - stessa cronologia, letta qui dall'unico audit_log unificato
+         *     (doc06) invece che da una tabella practice_history dedicata.
+         */
+        PracticeHistoryEntry: {
+            /** Id */
+            id: number;
+            /** Action */
+            action: string;
+            /** Field Name */
+            field_name: string | null;
+            /** Old Value */
+            old_value: string | null;
+            /** New Value */
+            new_value: string | null;
+            /** Reason */
+            reason: string | null;
+            /** Actor Display Name */
+            actor_display_name: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** PracticeInvoiceSummary */
+        PracticeInvoiceSummary: {
+            /** Invoice Number */
+            invoice_number: string;
+            /** Total Amount Cents */
+            total_amount_cents: number;
+            channel: components["schemas"]["PaymentChannel"];
+        };
+        /**
+         * PracticePaymentsSummaryRead
+         * @description Fase 'parita' visiva V2' (Lista Pratiche, colonne Totale pagato/
+         *     Fattura): riepilogo di sola lettura per un elenco di pratiche, in UNA
+         *     query bulk per campo invece di N - NON e' la riconciliazione
+         *     (PracticeReconciliationRead resta l'unica fonte per il dettaglio
+         *     pagamenti di una pratica, invariata).
+         */
+        PracticePaymentsSummaryRead: {
+            /** Practice Id */
+            practice_id: number;
+            /** Paid Total Cents */
+            paid_total_cents: number;
+            /** Acconto Total Cents */
+            acconto_total_cents: number;
+            /** Invoices */
+            invoices: components["schemas"]["PracticeInvoiceSummary"][];
         };
         /** PracticeRead */
         PracticeRead: {
@@ -2543,6 +2941,23 @@ export interface components {
          * @enum {string}
          */
         UrnCategory: "Urna" | "Accessorio" | "Calco";
+        /**
+         * UrnCategoryStats
+         * @description V1 (urn_catalog_page): barra statistiche sopra la griglia, sull'intera
+         *     categoria attiva (non sulla sola pagina/filtro correnti).
+         */
+        UrnCategoryStats: {
+            /** Models */
+            models: number;
+            /** Quantity */
+            quantity: number;
+            /** Out */
+            out: number;
+            /** Low */
+            low: number;
+            /** Value Cents */
+            value_cents: number;
+        };
         /** UrnCreate */
         UrnCreate: {
             /** @default Urna */
@@ -3251,6 +3666,7 @@ export interface operations {
             query?: {
                 q?: string | null;
                 status?: string | null;
+                client_id?: number | null;
                 limit?: number;
                 offset?: number;
             };
@@ -3304,6 +3720,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PracticeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_trashed_practices_api_practices_trashed_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeRead"][];
                 };
             };
             /** @description Validation Error */
@@ -3374,6 +3821,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PracticeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_practice_history_api_practices__practice_id__cronologia_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                practice_id: number;
+            };
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeHistoryEntry"][];
                 };
             };
             /** @description Validation Error */
@@ -3827,17 +4307,9 @@ export interface operations {
             query?: {
                 q?: string | null;
                 status?: string | null;
-                /**
-                 * Date From
-                 * Format: date-time
-                 * @description Filtra i ritiri con inizio >= a questo istante
-                 */
+                /** @description Filtra i ritiri con inizio >= a questo istante */
                 date_from?: string | null;
-                /**
-                 * Date To
-                 * Format: date-time
-                 * @description Filtra i ritiri con inizio < a questo istante
-                 */
+                /** @description Filtra i ritiri con inizio < a questo istante */
                 date_to?: string | null;
                 limit?: number;
                 offset?: number;
@@ -4193,17 +4665,9 @@ export interface operations {
         parameters: {
             query?: {
                 q?: string | null;
-                /**
-                 * Date From
-                 * Format: date-time
-                 * @description Filtra le riconsegne con inizio >= a questo istante
-                 */
+                /** @description Filtra le riconsegne con inizio >= a questo istante */
                 date_from?: string | null;
-                /**
-                 * Date To
-                 * Format: date-time
-                 * @description Filtra le riconsegne con inizio < a questo istante
-                 */
+                /** @description Filtra le riconsegne con inizio < a questo istante */
                 date_to?: string | null;
                 limit?: number;
                 offset?: number;
@@ -5035,6 +5499,39 @@ export interface operations {
             };
         };
     };
+    get_urn_category_stats_api_urns_stats_get: {
+        parameters: {
+            query: {
+                category: components["schemas"]["UrnCategory"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UrnCategoryStats"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_urn_api_urns__urn_id__get: {
         parameters: {
             query?: never;
@@ -5548,6 +6045,39 @@ export interface operations {
             };
         };
     };
+    get_practices_payments_summary_api_payments_practice_summary_get: {
+        parameters: {
+            query: {
+                practice_ids: number[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticePaymentsSummaryRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_practice_reconciliation_api_payments_practice__practice_id__riconciliazione_get: {
         parameters: {
             query?: never;
@@ -5754,6 +6284,39 @@ export interface operations {
             };
         };
     };
+    dashboard_summary_api_dashboard_summary_get: {
+        parameters: {
+            query?: {
+                period?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: {
+                ppm_v2_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DashboardSummaryRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     health_health_get: {
         parameters: {
             query?: never;
@@ -5770,6 +6333,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    serve_frontend__full_path__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                full_path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -34,13 +34,32 @@
   --shadow-card-hover: 0 20px 48px #0006, 0 0 0 1px #e9475b12;
   --shadow-btn: 0 8px 24px #e9475b30;
 
-  --sidebar-width: 220px;
+  --sidebar-width: 212px;
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
 
   font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 * { box-sizing: border-box; }
 
+/* V1: html{color-scheme:dark} - senza questo i controlli nativi (select,
+   date/time picker, scrollbar) su iOS/Safari e altri browser vengono
+   renderizzati con lo schema CHIARO di sistema anche se la pagina attorno
+   e' scura (select con sfondo bianco su iPhone), un difetto visibile che
+   "tradisce" subito l'app come diversa da V1. */
+html { color-scheme: dark; overscroll-behavior-y: contain; }
+select { color-scheme: dark; }
+
+/* V1 (app.py, CSS base): body{overscroll-behavior-y:contain} - senza
+   questo lo scroll di un elemento fixed a schermo intero (es. .more-menu,
+   che ha il proprio overflow-y:auto) "incatena" a fondo corsa nello
+   scroll del body sottostante su iOS Safari (scroll chaining) - la stessa
+   ragione per cui V1 disabilita anche il pull-to-refresh nativo e ne
+   ricostruisce uno proprio via touch events. */
 body {
   margin: 0;
   min-height: 100vh;
@@ -51,113 +70,349 @@ body {
     radial-gradient(circle at 78% -10%, #31121e 0, transparent 32%),
     linear-gradient(135deg, #090d14, #0d121b 55%, #090d14);
   background-attachment: fixed;
+  overscroll-behavior-y: contain;
 }
 
+/* V1 (app.py, CSS base): "a{color:inherit;text-decoration:none}" - senza
+   questo reset ogni <a>/<Link> senza classe propria (es. i link "numero
+   pratica" nelle tabelle, le voci di "Da seguire"/"Ultime pratiche")
+   eredita lo stile blu-sottolineato di default del browser, mai presente
+   in V1. */
+a { color: inherit; text-decoration: none; }
+
 h1 { margin: 0; font-size: 30px; letter-spacing: -0.035em; }
-h2 { margin: 0 0 15px; font-size: 18px; color: #eef1f6; }
+h2 { margin: 0 0 15px; font-size: 18px; font-weight: 600; color: #eef1f6; }
 label { font-weight: 650; font-size: 13px; }
 
-/* ===== App shell: sidebar (desktop) + bottom-nav (mobile) ===== */
+/* ===== App shell: sidebar (.top) + header (.app-header) + bottom-nav =====
+   Valori trasferiti 1:1 dal CSS reale V1 (app.py, cascata effettiva
+   "Cleaner, lighter dark theme" che vince su tutte le dichiarazioni
+   precedenti) - stessa struttura, stessi selettori concettuali, stessi
+   colori/misure, non una reinterpretazione. Un solo header (.app-header)
+   usato sia su desktop che su mobile, come in V1: cambia solo il CSS
+   responsive, mai il markup. */
 
 .app-shell { min-height: 100vh; }
 
-.sidebar {
+.top {
   position: fixed;
-  top: 0;
   left: 0;
+  top: 0;
   bottom: 0;
   width: var(--sidebar-width);
   display: flex;
   flex-direction: column;
-  padding: 22px 16px;
-  background: #0d121bf2;
-  border-right: 1px solid var(--line);
-  backdrop-filter: blur(16px);
-  z-index: 40;
+  align-items: stretch;
+  padding: 20px 14px;
+  background: #111a29;
+  border-right: 1px solid #344156;
+  backdrop-filter: blur(18px);
+  box-shadow: 16px 0 50px #0003;
+  z-index: 41;
 }
-.sidebar-brand { font-weight: 700; color: var(--ink); font-size: 15px; padding: 0 10px 20px; letter-spacing: -0.01em; }
-.sidebar-nav { display: flex; flex-direction: column; gap: 2px; flex: 1; overflow-y: auto; }
-.sidebar-nav a {
+.brand { display: flex; align-items: center; gap: 11px; padding: 0 8px 20px; text-decoration: none; }
+.brand-logo { width: 50px; height: 50px; flex: none; object-fit: contain; }
+.brand-copy { font-weight: 800; font-size: 17px; color: #ff6678; line-height: 1.1; }
+.brand-copy small { display: block; margin-top: 2px; color: #c1c8d3; font-size: 10px; letter-spacing: 1.5px; }
+
+.nav { margin: 8px 0 0; display: flex; flex: 1; flex-direction: column; width: 100%; gap: 3px; overflow-y: auto; padding-right: 3px; }
+.nav a, .nav button.logout {
   display: flex;
   align-items: center;
   gap: 11px;
-  padding: 10px 12px;
-  border-radius: var(--radius-sm);
-  color: var(--muted);
+  min-height: 42px;
+  padding: 9px 11px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: #c5ccd7;
   text-decoration: none;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 650;
+  width: 100%;
+  text-align: left;
 }
-.sidebar-nav a svg { flex: none; opacity: 0.85; }
-.sidebar-nav a:hover { color: var(--ink); background: #171f2b; }
-.sidebar-nav a.active { color: var(--ink); background: #1c2433; }
-.sidebar-nav a.active svg { color: var(--brand); opacity: 1; }
+.nav a svg { flex: none; opacity: 0.9; }
+.nav a:hover { color: #fff; background: #181f2b; border-color: #2d3645; }
+.nav a:first-child { color: #ff697b; background: linear-gradient(90deg, #4a1826, #241523); border-color: #642239; }
+.nav a.active:not(:first-child) { color: #fff; background: #181f2b; border-color: #2d3645; }
+.nav button.logout { margin-top: auto; cursor: pointer; font: inherit; }
 
-.sidebar-user { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 10px; display: flex; flex-direction: column; gap: 10px; }
-.sidebar-user .who { font-size: 13px; color: var(--muted); padding: 0 10px; }
-.sidebar-user .who b { color: var(--ink); display: block; font-size: 14px; }
+.app-main { margin-left: var(--sidebar-width); min-height: 100vh; padding-top: 76px; }
 
-.app-main { margin-left: var(--sidebar-width); min-height: 100vh; }
-
-.mobile-topbar { display: none; }
+/* Header (V1 .app-header): identico su desktop e mobile (ricerca + Crea +
+   data), fisso accanto alla sidebar su desktop, pillola flottante sopra
+   il logo circolare su mobile - vedi la media query sotto. */
+.app-header {
+  position: fixed;
+  top: 0;
+  left: var(--sidebar-width);
+  right: 0;
+  height: 76px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 20px;
+  padding: 14px 30px;
+  background: #172131ed;
+  border-bottom: 1px solid #344156;
+  backdrop-filter: blur(16px);
+}
+.header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; width: 100%; }
+.app-header-search {
+  width: min(640px, 48vw);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 13px;
+  border: 1px solid #334155;
+  border-radius: 11px;
+  background: #172033;
+  color: var(--muted);
+}
+.app-header-search input { flex: 1; min-height: 42px; padding: 8px 0; background: transparent; border: 0; font-size: 14px; color: var(--ink); }
+.app-header-search input:focus { outline: none; }
+.app-header-search input::placeholder { color: #6b7688; }
+.header-new { gap: 7px; flex: none; }
+.app-header-date {
+  min-width: 104px;
+  padding: 6px 10px;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  text-align: center;
+  font-weight: 700;
+  background: #172033;
+  white-space: nowrap;
+}
+.app-header-date small { display: block; color: #94a3b8; font-size: 10px; text-transform: capitalize; font-weight: 600; }
 
 .bottom-nav, .more-backdrop, .more-menu { display: none; }
 
-@media (max-width: 900px) {
-  .sidebar { display: none; }
-  .app-main { margin-left: 0; padding-bottom: 92px; }
+/* Sheet di creazione rapida (V1 .create-sheet): non e' scoped al mobile -
+   in V1 e' raggiungibile anche dal bottone "Crea" dell'header desktop,
+   e resta sempre un foglio flottante ancorato in basso al centro dello
+   schermo (non riposizionato accanto all'header quando aperto da li). */
+.create-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 96;
+  background: #020617aa;
+}
+.create-sheet {
+  position: fixed;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  left: 50%;
+  bottom: calc(82px + var(--safe-bottom));
+  transform: translateX(-50%);
+  z-index: 97;
+  width: min(390px, calc(100% - 24px));
+  padding: 10px;
+  border: 1px solid #7f1d2d;
+  border-radius: 16px;
+  background: #172131;
+  box-shadow: 0 20px 55px #0009;
+}
+.create-sheet a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 9px 10px;
+  border-radius: 11px;
+  background: linear-gradient(135deg, #fb4c67, #d9284c);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 750;
+  text-align: center;
+  text-decoration: none;
+}
+.create-sheet svg { width: 18px; height: 18px; color: #fff; }
+.create-sheet button[disabled] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 11px;
+  background: #2a3444;
+  color: #7c889b;
+  font-size: 12px;
+  font-weight: 750;
+  text-align: center;
+  cursor: not-allowed;
+}
+.create-sheet button[disabled] svg { color: #7c889b; }
 
-  .mobile-topbar {
+@media (max-width: 900px) {
+  body { padding-bottom: calc(82px + var(--safe-bottom)); }
+  .app-main { margin-left: 0; padding-top: 0; padding-bottom: 0; }
+
+  /* La sidebar non sparisce: collassa nel bottoncino circolare col solo
+     logo (stesso comportamento reale di V1: .top si riduce a 60x60, .nav
+     si nasconde del tutto, sostituita dalla bottom-nav). */
+  .top {
+    position: fixed;
+    left: calc(10px + var(--safe-left));
+    top: var(--safe-top);
+    width: 60px;
+    height: 60px;
+    min-height: 0;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    z-index: 41;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 14px 16px;
-    background: #111827e8;
-    border-bottom: 1px solid var(--line);
-    backdrop-filter: blur(16px);
-    position: sticky;
-    top: 0;
-    z-index: 40;
+    justify-content: center;
   }
-  .mobile-topbar .brand { font-weight: 700; color: var(--ink); font-size: 15px; }
-  .mobile-topbar .who { font-size: 13px; color: var(--muted); }
+  .top .nav { display: none; }
+  .top .brand { padding: 0; gap: 0; }
+  .top .brand-copy { display: none; }
+  .brand-logo {
+    width: 44px;
+    height: 44px;
+    padding: 7px;
+    box-sizing: border-box;
+    border-radius: 50%;
+    object-fit: contain;
+    background: linear-gradient(160deg, #1c2635, #121a27);
+    border: 1px solid #2b3849;
+    box-shadow: 0 8px 20px #05070f55;
+  }
+
+  .app-header {
+    position: fixed;
+    left: calc(10px + var(--safe-left));
+    right: calc(10px + var(--safe-right));
+    top: var(--safe-top);
+    width: auto;
+    height: 60px;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    padding: 0 8px 0 60px;
+    border: 1px solid #2b3849;
+    border-radius: 26px;
+    background: linear-gradient(160deg, #1c2635f5, #121a27f5);
+    box-shadow: 0 16px 38px #05070f66;
+    backdrop-filter: blur(20px);
+  }
+  .header-actions { gap: 8px; }
+  .app-header-search {
+    flex: 1;
+    min-width: 0;
+    height: 44px;
+    padding: 0 15px;
+    border-radius: 22px;
+    background: #0e1622;
+    border: 1px solid #263246;
+  }
+  .app-header-search input { min-height: 40px; height: 40px; font-size: 16px; }
+  .header-new, .app-header .btn.header-new {
+    flex: 0 0 auto;
+    width: 42px;
+    height: 42px;
+    min-height: 0;
+    padding: 0;
+    border-radius: 21px;
+    box-shadow: 0 8px 20px #ef405f55;
+  }
+  .app-header-date, .header-new span { display: none; }
 
   .bottom-nav {
     position: fixed;
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    left: 14px;
-    right: 14px;
-    bottom: 14px;
-    height: 68px;
+    grid-template-columns: 87fr 87fr 72fr 87fr 87fr;
+    grid-template-rows: 72px;
+    align-items: end;
+    left: calc(20px + var(--safe-left));
+    right: calc(20px + var(--safe-right));
+    bottom: calc(10px + var(--safe-bottom));
     z-index: 90;
-    border-radius: var(--radius-pill);
+    height: 72px;
+    padding: 0;
+    border-radius: 28px;
     background: #1a1f2b;
     border: 1px solid #2a2f3b;
     box-shadow: 0 -8px 20px rgba(0, 0, 0, 0.4);
     backdrop-filter: blur(20px);
   }
+  /* Intaglio a "scallop" dietro il FAB centrale, stesso clip-path di V1. */
+  .bottom-nav:before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 90px;
+    height: 44px;
+    transform: translateX(-50%);
+    background: #1a1f2b;
+    z-index: 1;
+    clip-path: path("M6.63,0 A12.8,12.8 0 0 1 19.42,13.33 A25.6,25.6 0 0 0 45,40 A25.6,25.6 0 0 0 70.58,13.33 A12.8,12.8 0 0 1 83.37,0 Z");
+  }
   .bottom-nav a, .bottom-nav button {
+    position: relative;
+    z-index: 2;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 5px;
+    gap: 6px;
     border: 0;
     background: transparent;
     color: #a1a7b3;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
-    padding: 0;
+    padding: 19px 0;
   }
-  .bottom-nav a.active, .bottom-nav a.active svg { color: var(--brand2); }
+  .bottom-nav svg { width: 24px; height: 24px; }
+  .bottom-nav a.active { color: #ff4d6d; }
+  .bottom-nav a.active svg { color: #ff4d6d; }
+  .bottom-nav a.active:after {
+    content: "";
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 24px;
+    height: 3px;
+    border-radius: 99px;
+    background: #ff4d6d;
+  }
+
+  /* FAB centrale "Crea" - stessi valori reali del bottone V1 (.bottom-new):
+     cerchio 51.2px, sollevato sopra la barra tramite margin-bottom
+     invece che centrato con essa, sopra l'intaglio a scallop. */
+  .bottom-nav-fab {
+    position: relative;
+    align-self: end;
+    z-index: 3;
+    width: 51.2px;
+    height: 51.2px;
+    margin: 0 auto 32px;
+    border-radius: 50%;
+    background: #ff4d6d;
+    color: #fff;
+    box-shadow: 0 8px 24px rgba(255, 77, 109, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .bottom-nav-fab svg { width: 22px; height: 22px; }
 
   .more-backdrop {
     display: block;
     position: fixed;
     inset: 0;
-    z-index: 95;
+    z-index: 94;
     background: #020617cc;
   }
   .more-menu {
@@ -165,23 +420,81 @@ label { font-weight: 650; font-size: 13px; }
     flex-direction: column;
     gap: 4px;
     position: fixed;
-    left: 14px;
-    right: 14px;
-    bottom: 92px;
-    max-height: 65vh;
+    left: calc(10px + var(--safe-left));
+    right: calc(10px + var(--safe-right));
+    bottom: calc(88px + var(--safe-bottom));
+    max-height: 76dvh;
     overflow-y: auto;
-    z-index: 96;
-    padding: 14px;
-    border-radius: 22px;
+    z-index: 95;
+    padding: 20px 16px;
+    border-radius: 30px;
     background: linear-gradient(165deg, #171f2ef2, #0e141ff5);
     border: 1px solid #ffffff1a;
     box-shadow: 0 30px 90px #000a, inset 0 0 0 1px #ffffff0d;
     backdrop-filter: blur(24px);
   }
-  .more-menu-title { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px 10px; }
-  .more-menu-title span { font-weight: 700; color: var(--ink); }
-  .more-menu-close { width: 32px; height: 32px; padding: 0; border-radius: 50%; background: #ffffff12; border: 1px solid #ffffff1f; color: #e2e8f0; display: grid; place-items: center; }
-  .more-menu a, .more-menu .logout-row button {
+  /* V1 (.more-title, app.py:1506+): titolo "Menu" + sottotitolo fisso,
+     bottone di chiusura rotondo a destra - non un semplice header a riga
+     singola. */
+  .more-title { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; padding: 0 4px; }
+  .more-title b { display: block; font-size: 23px; font-weight: 800; letter-spacing: -0.01em; }
+  .more-title small { display: block; margin-top: 3px; color: #9ca7b8; font-size: 13px; }
+  .more-close-btn {
+    flex: 0 0 auto;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    border: 1px solid #ffffff1f;
+    background: #ffffff12;
+    color: #e2e8f0;
+    font-size: 18px;
+    line-height: 1;
+    display: grid;
+    place-items: center;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 6px 16px #0007;
+  }
+
+  /* V1 (.more-card, app.py:1506+): ogni voce e' una card con gradiente
+     leggermente colorato dall'accento della sezione (--accent, uno dei
+     colori reali di MENU_ACCENT_COLORS), non una riga di link piatta. */
+  .more-card-list { display: flex; flex-direction: column; gap: 10px; }
+  .more-card {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    min-height: 64px;
+    padding: 12px 14px;
+    border: 1px solid #ffffff14;
+    border-radius: 23px;
+    background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 7%, #161e2c) 0%, #161e2c 65%);
+    box-shadow: 0 8px 22px #05070f40;
+    color: #e2e8f0;
+    overflow: hidden;
+    text-decoration: none;
+  }
+  .more-card-icon {
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    display: grid;
+    place-items: center;
+    background: color-mix(in srgb, var(--accent) 16%, #161e2c);
+    border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+    color: var(--accent);
+    box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  .more-card-icon svg { width: 20px; height: 20px; }
+  .more-card-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .more-card-copy b { font-size: 14.5px; font-weight: 700; }
+  .more-card-copy small { color: #9ca7b8; font-size: 12.5px; }
+  .more-card-chevron { flex: 0 0 auto; color: #7c8aa0; }
+  .more-card-chevron svg { width: 18px; height: 18px; }
+
+  .more-menu .logout-row { border-top: 1px solid #ffffff1a; margin-top: 6px; padding-top: 10px; }
+  .more-menu .logout-row button {
     display: flex;
     align-items: center;
     gap: 12px;
@@ -189,56 +502,184 @@ label { font-weight: 650; font-size: 13px; }
     padding: 11px 10px;
     border-radius: 12px;
     background: transparent;
+    border: 0;
     color: var(--ink);
-    text-decoration: none;
     font-size: 14px;
     font-weight: 600;
-    box-shadow: none;
   }
-  .more-menu a:hover, .more-menu .logout-row button:hover { background: #ffffff0d; }
-  .more-menu .logout-row { border-top: 1px solid #ffffff1a; margin-top: 6px; padding-top: 10px; }
+  .more-menu .logout-row button:hover { background: #ffffff0d; }
+}
+
+@media (max-width: 390px) {
+  .app-header { padding-left: 52px; }
+  .header-actions { gap: 6px; }
+  .app-header-search { padding: 0 11px; }
+  .header-new, .app-header .btn.header-new { width: 38px; height: 38px; border-radius: 19px; }
+  .top { width: 52px; height: 52px; }
+  .top .brand-logo { width: 40px; height: 40px; }
 }
 
 /* ===== Content wrapper / page structure ===== */
 
-.wrap { max-width: 1000px; margin: 0 auto; padding: 28px; }
-@media (max-width: 900px) { .wrap { padding: 16px; } }
+/* V1 (.wrap, cascata reale): max-width 1600px, padding 30px orizzontale
+   (il padding-top di V1 include l'offset di header/sidebar che in V2 e'
+   gia' applicato separatamente da .app-main, quindi non riportato qui). */
+.wrap { max-width: 1600px; margin: 0 auto; padding: 30px; }
+/* V1 (.wrap sotto i 900px): padding-top maggiorato per non finire sotto
+   l'header fisso (.app-header, position:fixed, 60px + safe-top - non
+   riserva spazio nel flusso normale). Senza questo, il contenuto di ogni
+   pagina (h1 compreso) parte a 16px e viene coperto dall'header fino a
+   60px - bug reale confermato dal vivo (h1 sovrapposto all'header per i
+   suoi primi ~44px), non solo teorico. */
+@media (max-width: 900px) { .wrap { padding: 16px; padding-top: calc(86px + var(--safe-top)); } }
 
-.titlebar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+.titlebar { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 22px; flex-wrap: wrap; }
 .titlebar h1 { margin: 0; }
 
 /* ===== Cards / sections ===== */
 
 .card, .section {
   position: relative;
-  background: linear-gradient(145deg, #131a26, #0f151f);
-  border: 1px solid var(--line);
+  background: linear-gradient(145deg, #202c3d, #1b2636);
+  border: 1px solid #38475c;
   border-radius: var(--radius-lg);
   padding: 20px;
-  box-shadow: var(--shadow-card);
+  box-shadow: 0 12px 34px #080d162b;
 }
-.card { display: flex; flex-direction: column; gap: 14px; max-width: 520px; }
+/* V1 (.fields{grid-template-columns:repeat(2,1fr)}, dentro .section senza
+   max-width proprio): i form semplici (Cliente/Veterinario/Sede/Urna/
+   Riconsegna/Ciclo) occupano la larghezza della sezione come in V1, non
+   una colonna stretta - .field-row (2 <label> affiancate) approssima con
+   flexbox lo stesso layout a 2 colonne, senza il cap artificiale che
+   teneva questi form ristretti a 520px indipendentemente da quanto
+   fosse largo lo schermo. */
+.card { display: flex; flex-direction: column; gap: 14px; }
 .section + .section, .card + .card { margin-top: 16px; }
 
-.card label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--muted); flex: 1; }
+.card label, .section label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--muted); flex: 1; }
+
+/* V1 (.tablebox, app.py:1389/1725): stesso box arrotondato/scrollabile
+   che contiene ogni <table> di lista - .section/.card gia' hanno lo
+   stesso gradiente/bordo/ombra, qui solo le differenze reali: sfondo
+   piatto (non gradiente, l'ultima dichiarazione in cascata vince per
+   .tablebox) + altezza massima con scroll interno. */
+.tablebox {
+  background: #1b2636;
+  border: 1px solid #38475c;
+  border-radius: var(--radius-lg);
+  max-height: min(65vh, 620px);
+  overflow: auto;
+}
+.tablebox table { margin: 0; }
+/* V1 (.tablebox.fatture-tablebox, app.py:1396): la pagina Fatture deve
+   scrollare con la finestra (non dentro il box) - stesso motivo gia'
+   documentato in InvoiceListPage.tsx. */
+.tablebox.fatture-tablebox { max-height: none; }
+
+/* V1 (.modern-check, app.py:1692): checkbox-riga usata per "chiuso" negli
+   orari veterinario (e altrove) - riquadro cliccabile, non solo la
+   checkbox nuda. */
+.modern-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 10px 13px;
+  border: 1px solid #3b4658;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #182130, #111925);
+  color: #e8edf5;
+  cursor: pointer;
+  transition: border-color 0.16s, transform 0.16s, box-shadow 0.16s;
+}
+.modern-check:hover { transform: translateY(-1px); border-color: #fb7185; box-shadow: 0 8px 22px #02061745; }
+.modern-check input[type="checkbox"] { width: 20px; height: 20px; margin: 0; accent-color: #ef405f; }
+
+/* V1 (.quantity-stepper, app.py:1727/1728): stepper +/- riusato da Ordini
+   e dal form Urne (.urn-quantity-stepper e' lo stesso hook, nessuna
+   regola distinta in V1 stesso). */
+.quantity-stepper {
+  display: grid;
+  grid-template-columns: 64px minmax(100px, 160px) 64px;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+}
+.quantity-stepper button { width: 64px; height: 64px; border-radius: 18px; font-size: 32px; }
+.quantity-stepper input { height: 76px; text-align: center; font-size: 34px; font-weight: 650; padding: 8px; }
+@media (max-width: 620px) {
+  .quantity-stepper { grid-template-columns: 58px minmax(86px, 130px) 58px; gap: 8px; }
+  .quantity-stepper button { width: 58px; height: 58px; }
+  .quantity-stepper input { height: 68px; font-size: 30px; }
+}
+
+/* V1 (.trash-note, app.py:1389 base + 1415 valori dark-theme finali). */
+.trash-note { background: #302412; border: 1px solid #624c23; color: #f6d58e; border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; }
+
+/* V1 (app.py:1389/1415): .signature-pad - sempre sfondo bianco (serve
+   contrasto per la firma con inchiostro scuro, indipendente dal tema
+   dark/light dell'app). */
+.signature-pad { width: 100%; height: 260px; border: 2px dashed var(--line); border-radius: 14px; background: #fff; touch-action: none; display: block; }
+
+/* V1 (dettaglio pratica): layout a 2 colonne (contenuto 2fr / cronologia
+   1fr), a 1 colonna sotto i 700px - stesso breakpoint reale V1. */
+.practice-layout { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; align-items: start; }
+@media (max-width: 700px) {
+  /* V1 usa qui !important (stesso identico selettore) proprio perche' lo
+     stesso elemento porta anche la classe .grid (display:grid, senza
+     override mobile): senza !important .grid vincerebbe a parita' di
+     specificita' per essere dichiarata dopo nel foglio di stile. */
+  .practice-layout { display: block !important; }
+  .practice-layout > aside { margin-top: 16px; }
+}
+.section.danger { background: #291318; border-color: #6b2734; }
+.danger-note { color: var(--red-ink); font-size: 14px; }
+.danger-btn { background: linear-gradient(135deg, #ef4444, #b91c1c); }
+
+/* Modale condiviso (V1: .payment-popover/.payment-dialog) - stesso
+   overlay/pannello per registrazione pagamento, storno, eliminazioni e
+   conferme importanti (Modal/ConfirmModal in shared/ui). */
+.payment-popover { position: fixed; inset: 0; z-index: 180; display: grid; place-items: center; padding: 18px; background: #020617b8; }
+.payment-dialog { width: min(620px, 100%); max-height: 90dvh; overflow: auto; padding: 20px; border: 1px solid #475569; border-radius: 16px; background: #172033; box-shadow: 0 28px 90px #000c; }
+.payment-dialog h2 { margin-bottom: 6px; }
 
 /* ===== Form controls ===== */
 
 input, select, textarea {
   padding: 10px 12px;
-  border: 1px solid var(--line);
+  border: 1px solid #323c4b;
   border-radius: var(--radius-sm);
-  background: #171e2a;
-  color: var(--ink);
+  background: #0c121b;
+  color: #f3f5f8;
   font-size: 15px;
   font-family: inherit;
 }
 input::placeholder, textarea::placeholder { color: #6b7688; }
-input:focus, select:focus, textarea:focus { outline: none; border-color: var(--brand); }
+input:focus, select:focus, textarea:focus { outline: 3px solid #e9475b22; border-color: #e9475b; }
 
 .field-row { display: flex; gap: 14px; flex-wrap: wrap; }
-.field { display: flex; flex-direction: column; gap: 4px; }
+
+/* V1 (collapse_advanced_search): filtri con 2+ controlli, collassati in
+   un <details> - stesso indicatore +/- via ::after, nessun JS. */
+.advanced-search { margin: 16px 0 24px; border: 1px solid var(--line); border-radius: 14px; background: #202c3d; overflow: hidden; }
+.advanced-search summary { display: flex; align-items: center; justify-content: space-between; min-height: 48px; padding: 12px 16px; cursor: pointer; font-weight: 600; list-style: none; }
+.advanced-search summary::-webkit-details-marker { display: none; }
+.advanced-search summary:after { content: "+"; font-size: 22px; line-height: 1; }
+.advanced-search[open] summary:after { content: "−"; }
+.advanced-search-form { margin: 0; padding: 16px; border-top: 1px solid var(--line); }
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .field.full { width: 100%; }
+
+/* V1 (.fields, app.py:1350 - "form-grid" nella dichiarazione app.py:1350):
+   griglia reale a 2 colonne che contiene ogni gruppo di campi form
+   (Cliente/Veterinario/Pratica/Ritiro/ecc.) - non esisteva affatto in V2
+   (ogni pagina che gia' usava className="fields" si impilava senza
+   nessuna griglia, priva di regola). V1 non la collassa a 1 colonna su
+   mobile (verificato: nessuna regola generica in tal senso, solo un caso
+   specifico per .balance-filters) - stessa identica scelta qui, anche se
+   su schermi stretti le colonne restano strette. */
+.fields { display: grid; grid-template-columns: repeat(2, 1fr); gap: 13px; }
+.fields .field.full { grid-column: 1 / -1; width: auto; }
 
 .hours-grid { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px; display: grid; gap: 8px; background: #0f151f; }
 .hours-grid legend { color: var(--muted); font-size: 13px; padding: 0 4px; }
@@ -275,12 +716,39 @@ button:disabled { opacity: 0.5; cursor: default; box-shadow: none; }
   box-shadow: var(--shadow-btn);
 }
 .btn-ghost {
+  /* Trovato durante la revisione visiva: .btn-ghost era pensata come
+     modificatore da combinare con .btn (per ereditarne display/padding/
+     border-radius/font-weight), ma in tutto il progetto (47 punti,
+     verificato) viene sempre usata da sola - risultato: senza queste
+     proprieta' proprie, un <a className="btn-ghost"> renderizzava alto
+     circa 24px invece dei ~44-46px di ogni altro pulsante (bersaglio
+     touch troppo piccolo su mobile). Corretta qui, in un solo punto,
+     invece di toccare i 47 call site. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 11px 16px;
+  border-radius: var(--radius-md);
+  font-weight: 700;
+  text-decoration: none;
   background: #171e2a;
   color: #e9edf3;
   border: 1px solid #303948;
   box-shadow: none;
 }
 .btn-ghost:hover { background: #202938; }
+
+/* V1 (.icon-btn/.phone-action-btn, app.py:1426): pulsanti icona per
+   chiamare/aprire WhatsApp accanto al numero di telefono (Riepilogo
+   pratica, Dettaglio Cliente/Veterinario). */
+.icon-btn { display: inline-grid; place-items: center; width: 42px; height: 42px; padding: 0; border: 1px solid #334155; border-radius: 11px; background: #172033; color: #cbd5e1; cursor: pointer; }
+.icon-btn:hover { color: #fff; border-color: #ef405f; }
+.phone-action-btn { width: 30px; height: 30px; border-radius: 9px; vertical-align: middle; }
+.phone-action-btn svg { width: 15px; height: 15px; }
+.phone-action-btn.call-btn { background: linear-gradient(135deg, #fb4c67, #d9284c); color: #fff; border-color: transparent; }
+.phone-action-btn.call-btn:hover { color: #fff; border-color: transparent; filter: brightness(1.1); }
+.phone-action-btn.whatsapp-btn { background: linear-gradient(135deg, #22c55e, #15803d); color: #fff; border-color: transparent; }
+.phone-action-btn.whatsapp-btn:hover { color: #fff; border-color: transparent; filter: brightness(1.1); }
 
 @media (max-width: 900px) {
   .actions .btn, .actions .btn-ghost, .actions button { flex: 1 1 auto; min-height: 46px; }
@@ -303,18 +771,53 @@ button:disabled { opacity: 0.5; cursor: default; box-shadow: none; }
 .data-table {
   width: 100%;
   border-collapse: collapse;
-  background: #111722;
-  border: 1px solid var(--line);
+  background: #1b2636;
+  border: 1px solid #38475c;
   border-radius: var(--radius-lg);
   overflow: hidden;
   display: block;
   overflow-x: auto;
   white-space: nowrap;
 }
-.data-table th, .data-table td { text-align: left; padding: 14px; border-bottom: 1px solid var(--line); }
-.data-table th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; background: #101620; }
-.data-table tr:hover td { background: #171f2b; }
+.data-table th, .data-table td { text-align: left; padding: 14px; border-bottom: 1px solid #252d39; }
+.data-table th { color: #8f9bad; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; background: #101620; }
+.data-table tr:hover td { background: #253247; }
 .data-table tr:last-child td { border-bottom: 0; }
+
+/* V1 (.practice-list-table): righe "a pillola" separate (border-spacing
+   verticale) con effetto di sollevamento all'hover - stile reale e
+   distinto usato solo per l'elenco Pratiche, non per le altre liste
+   (che restano il .data-table generico sopra, gia' fedele al pattern
+   V1 .tablebox/table condiviso da tutti gli altri domini). */
+.practice-list-table { min-width: 1500px; border-collapse: separate; border-spacing: 0 10px; background: transparent; border: 0; box-shadow: none; }
+.practice-list-table thead th { background: transparent; border-bottom: 0; }
+.practice-list-table th:first-child, .practice-list-table td:first-child { position: sticky; left: 0; z-index: 3; min-width: 215px; background: #101620; box-shadow: 8px 0 14px #02061735; }
+.practice-list-table th:first-child { z-index: 4; }
+.practice-list-table tbody tr { background: #1f2937; transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.practice-list-table tbody tr:hover { transform: translateY(-1px); box-shadow: 0 10px 26px #03071240; }
+.practice-list-table tbody tr:hover td { background: #242f3f; }
+.practice-list-table tbody td { border-top: 1px solid #334155; border-bottom: 1px solid #334155; }
+.practice-list-table tbody td:first-child { border-left: 1px solid #334155; border-top-left-radius: 14px; border-bottom-left-radius: 14px; }
+.practice-list-table tbody td:last-child { border-right: 1px solid #334155; border-top-right-radius: 14px; border-bottom-right-radius: 14px; }
+.practice-list-table-scroll { overflow-x: auto; }
+
+/* V1 (species_avatar/practice_rows): avatarino colorato per specie +
+   bordo sinistro della riga dello stesso colore - non un'icona generica. */
+.practice-row-avatar { display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 36px; border-radius: 11px; font-size: 18px; }
+.avatar-dog { background: #172554; box-shadow: 0 0 0 1px #2563eb40 inset; }
+.avatar-cat { background: #052e2b; box-shadow: 0 0 0 1px #16a34a40 inset; }
+.avatar-other { background: #292130; box-shadow: 0 0 0 1px #7c3aed40 inset; }
+.practice-list-table tr.avatar-dog td:first-child { border-left: 3px solid #60a5fa; }
+.practice-list-table tr.avatar-cat td:first-child { border-left: 3px solid #4ade80; }
+.practice-list-table tr.avatar-other td:first-child { border-left: 3px solid #c084fc; }
+.practice-row-animal { display: flex; align-items: center; gap: 11px; }
+
+/* V1 (archivio Pratiche): raggruppamento per mese, sezioni collassabili. */
+.month-block { margin-bottom: 18px; }
+.month-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; cursor: pointer; }
+.month-heading { display: flex; align-items: center; gap: 10px; }
+.month-heading h2 { margin: 0; }
+.month-toggle { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--brand); font-size: 22px; font-weight: 800; line-height: 1; box-shadow: none; cursor: pointer; }
 
 .pagination { display: flex; gap: 10px; margin-top: 16px; }
 
@@ -331,9 +834,25 @@ button:disabled { opacity: 0.5; cursor: default; box-shadow: none; }
 
 /* ===== Login ===== */
 
-.login-page { display: grid; place-items: center; min-height: 100vh; }
-.login-page .card { width: 340px; }
-.login-page h1 { font-size: 22px; margin-bottom: 4px; }
+/* V1 (.login, app.py:1389/1412/1415/1725, valori reali che vincono nella
+   cascata): non centrata con flex/grid a tutto schermo come prima, ma
+   spinta in basso da un margine verticale (10vh auto, centrata in
+   orizzontale) - 410px, non 340px; stesso sfondo/bordo/ombra di
+   .section/.card (blocco finale "Cleaner dark theme"), non un .card
+   generico riusato as-is. Nessun flex/gap: V1 non lo dichiara, i figli
+   (h1/p.sub/div.field/button) si impilano in block-flow normale. */
+.login-page { min-height: 100vh; }
+.login-page .login {
+  max-width: 410px;
+  margin: 10vh auto;
+  padding: 34px;
+  border-radius: 18px;
+  background: linear-gradient(145deg, #202c3d, #1b2636);
+  border: 1px solid #38475c;
+  box-shadow: 0 12px 34px #080d162b;
+}
+.login-page h1 { font-size: 24px; margin: 0; }
+.login-page .sub { margin: 6px 0 0; }
 
 /* ===== Fase 8 (doc12) - classi condivise dai domini: badge di stato, box
    di avviso, riepiloghi chiave-valore, testo secondario, cronologia
@@ -367,23 +886,696 @@ button:disabled { opacity: 0.5; cursor: default; box-shadow: none; }
 /* Stato terminale negativo / richiede intervento */
 .badge.status-annullato, .badge.status-sovrapagata { background: var(--red-bg); color: var(--red-ink); }
 
-.kvs { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 14px; margin: 10px 0; }
-.kv { display: flex; flex-direction: column; gap: 2px; }
-.kv small { color: var(--muted); font-size: 12px; }
+/* V1 (status_badges): badge di stato pagamento sulla riga Lista Pratiche
+   ("Stati" - due badge affiancati, stato pratica + stato pagamento) -
+   valori reali che vincono nella cascata V1 (non la dichiarazione base:
+   un layer intermedio dark-theme ridefinisce solo .pay-yellow, mentre
+   .pay-blue/.pay-green restano quelli originali, mai toccati dal blocco
+   finale "Cleaner dark theme" che ridefinisce solo i .tag-* senza pay-). */
+.badge.pay-yellow { background: #5a4610; color: #ffe28a; border: 2px solid #eab308; }
+.badge.pay-blue { background: #1e88e5; color: #fff; border: 2px solid #3b82f6; }
+.badge.pay-green { background: #43a047; color: #fff; border: 2px solid #22c55e; }
+.inline-statuses { display: grid; gap: 8px; min-width: 170px; }
+
+/* V1 (CREMATION_STATUS_LABELS, app.py:7266-7269): badge di stato ciclo di
+   cremazione con classi/colori dedicati, MAI la palette generica
+   .badge.status-* (che per "pianificato"/"completato" darebbe colori
+   diversi da questi reali - verificato: pianificato qui e' blu, non
+   grigio neutro; completato qui e' grigio, non verde). */
+.badge.cremation-status-planned { background: #172554; color: #93c5fd; }
+.badge.cremation-status-waiting { background: #431407; color: #fb923c; }
+.badge.cremation-status-done { background: #1e293b; color: #94a3b8; }
+/* V1 (app.py, stesse dichiarazioni "nude", senza .badge davanti): usate
+   anche da .cremation-status-badge/.cremation-cycle-number nella board
+   giornaliera - non scoperte da .badge.cremation-status-*, che e' un
+   selettore composto diverso. */
+.cremation-status-planned { background: #172554; color: #93c5fd; }
+.cremation-status-waiting { background: #431407; color: #fb923c; }
+.cremation-status-done { background: #1e293b; color: #94a3b8; }
+
+/* V1 (cremation_schedule, app.py:11964+): board giornaliera reale -
+   header data-nav, card statistiche, lista "in attesa" e timeline cicli -
+   non una tabella piatta. Valori CSS reali (app.py, blocco .cremation-*). */
+.cremation-date-nav { display: flex; align-items: center; gap: 10px; width: 100%; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; }
+.cremation-nav-btn { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #334155; border-radius: 10px; background: #1f2937; color: #e2e8f0; font-size: 16px; }
+.cremation-date-label { display: flex; align-items: center; gap: 8px; padding: 7px 14px; border: 1px solid #334155; border-radius: 10px; background: #1f2937; font-weight: 600; font-size: 14px; white-space: nowrap; }
+.cremation-date-label svg { width: 16px; height: 16px; }
+.cremation-today-btn { padding: 8px 16px; border-radius: 10px; background: linear-gradient(135deg, #fb4c67, #d9284c); color: #fff; font-weight: 700; font-size: 13px; white-space: nowrap; }
+.cremation-today-btn.active { box-shadow: 0 0 0 2px #ffffff40 inset; }
+
+.cremation-summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
+@media (max-width: 700px) { .cremation-summary-grid { grid-template-columns: repeat(2, 1fr); } }
+
+.cremation-waiting-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+.cremation-waiting-card { position: relative; display: flex; gap: 10px; padding: 12px 14px; border-radius: 12px; background: #161f2b; border: 1px solid #334155; border-left: 4px solid var(--accent, #475569); }
+.cremation-waiting-card.avatar-dog { --accent: #60a5fa; }
+.cremation-waiting-card.avatar-cat { --accent: #4ade80; }
+.cremation-waiting-card.avatar-other { --accent: #c084fc; }
+.cremation-waiting-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.cremation-quick-insert-btn { display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%; padding: 7px 10px; border-radius: 9px; border: 1.5px solid #fb718550; color: #fb7185; background: transparent; font-size: 11px; font-weight: 700; cursor: pointer; margin-top: 6px; }
+.cremation-quick-insert-btn svg { width: 14px; height: 14px; }
+.cremation-quick-menu-wrap { position: relative; display: block; width: 100%; }
+.cremation-quick-menu-popover { position: absolute; left: 0; top: calc(100% + 6px); z-index: 30; min-width: 190px; max-width: 250px; max-height: 260px; overflow-y: auto; padding: 6px; border: 1px solid #334155; border-radius: 10px; background: #172033; box-shadow: 0 14px 34px #000a; display: flex; flex-direction: column; gap: 2px; }
+.cremation-quick-menu-popover button { display: flex; align-items: center; gap: 6px; width: 100%; padding: 8px 10px; border-radius: 8px; background: transparent; color: var(--ink); font-size: 12.5px; font-weight: 600; text-align: left; box-shadow: none; }
+.cremation-quick-menu-popover button:hover { background: #ffffff0d; }
+
+.cremation-timeline { display: flex; flex-direction: column; gap: 14px; }
+.cremation-timeline-item { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 14px; position: relative; }
+.cremation-timeline-rail { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; padding-top: 14px; }
+.cremation-timeline-time { font-size: 11px; color: #94a3b8; font-weight: 600; white-space: nowrap; position: relative; z-index: 1; }
+.cremation-timeline-dot { width: 12px; height: 12px; border-radius: 50%; background: #475569; border: 2px solid #0f172a; position: relative; z-index: 1; }
+.cremation-dot-waiting { background: #fb923c; }
+.cremation-dot-done { background: #64748b; }
+.cremation-dot-planned { background: #60a5fa; }
+
+.cremation-cycle-card { background: #1f2937; border: 1px solid #334155; border-left: 4px solid #475569; border-radius: 14px; padding: 16px; min-width: 0; cursor: pointer; text-decoration: none; color: inherit; display: block; }
+.cremation-cycle-card.cremation-cycle-in_attesa { background: rgba(251, 146, 60, 0.08); border-color: rgba(251, 146, 60, 0.35); border-left-color: #fb923c; box-shadow: 0 0 14px rgba(251, 146, 60, 0.12); }
+.cremation-cycle-card.cremation-cycle-completato { background: rgba(74, 222, 128, 0.08); border-color: rgba(74, 222, 128, 0.35); border-left-color: #4ade80; box-shadow: 0 0 14px rgba(74, 222, 128, 0.12); }
+.cremation-cycle-card.cremation-cycle-pianificato { background: rgba(96, 165, 250, 0.05); border-left-color: #60a5fa; }
+.cremation-cycle-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.cremation-cycle-number { font-weight: 800; font-size: 14px; }
+.cremation-cycle-time { color: #94a3b8; font-size: 13px; }
+.cremation-status-badge { font-size: 11px; font-weight: 700; letter-spacing: 0.03em; padding: 4px 12px; border-radius: 99px; white-space: nowrap; }
+.cremation-cycle-chevron { display: flex; align-items: center; color: #64748b; flex: 0 0 auto; margin-left: auto; }
+.cremation-cycle-chevron svg { width: 18px; height: 18px; }
+.cremation-week-cycle-animals { display: flex; flex-direction: column; gap: 2px; min-width: 0; width: 100%; }
+.cremation-week-animal-line { font-size: 12.5px; color: #cbd5e1; }
+.cremation-dash { color: #475569; }
+
+/* V1 (app.py:2168-2170/12290+): header/progress-bar/stat-clickable/
+   waiting-panel/add-cycle-btn del Programma Cremazioni - mancavano del
+   tutto (la board V2 non aveva ne' l'header reale ne' la barra di
+   avanzamento ne' il pannello "In attesa" apri/chiudi). */
+.cremation-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 18px; }
+.cremation-header-nav { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.cremation-title-icon { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 9px; background: #881337; color: #fb7185; vertical-align: middle; margin-left: 8px; }
+.cremation-progress { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; flex-wrap: wrap; }
+.cremation-progress-time { font-size: 12px; color: #94a3b8; font-weight: 600; flex: 0 0 auto; }
+.cremation-progress-track { position: relative; flex: 1; display: flex; align-items: center; justify-content: center; min-width: 0; }
+.cremation-progress-segments { display: flex; gap: 4px; width: 100%; }
+.cremation-progress-segments span { flex: 1; height: 8px; border-radius: 99px; background: #1f2937; border: 1px solid #334155; }
+.cremation-progress-segments span.filled { background: linear-gradient(90deg, #22c55e, #4ade80); border-color: #22c55e; }
+.cremation-progress-label { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); background: #0f172a; padding: 3px 12px; border-radius: 8px; font-size: 12px; color: #e2e8f0; white-space: nowrap; border: 1px solid #334155; }
+.cremation-stat-clickable { cursor: pointer; padding-right: 34px; }
+.cremation-stat-chevron { position: absolute; right: 14px; top: 14px; color: #94a3b8; display: flex; z-index: 1; }
+.cremation-waiting-panel-inner { padding: 4px 0 4px; }
+.cremation-planning-column { min-width: 0; }
+.cremation-add-cycle-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-top: 18px; padding: 14px; border: 2px dashed #fb718550; border-radius: 14px; background: transparent; color: #fb7185; font-weight: 700; font-size: 13px; cursor: pointer; text-decoration: none; }
+@media (max-width: 620px) {
+  .cremation-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cremation-header { flex-direction: column; }
+  .cremation-header-nav { align-items: flex-start; width: 100%; }
+  .cremation-date-nav { width: 100%; justify-content: space-between; }
+  .cremation-progress { flex-wrap: wrap; }
+}
+
+/* V1 (DEFAULT_CALENDAR_TYPE_COLORS, app.py:85): stessi colori reali usati
+   per colorare gli eventi Ritiro in Calendario - il Ritiro come entita'
+   propria e' un dominio V2 (in V1 e' solo un evento calendario), ma le
+   parole di stato sono le stesse ("Da confermare"/"Da ritirare"/
+   "Ritirato"/"Annullato") e V1 le colora sempre cosi', mai con la
+   palette generica .badge.status-* (che darebbe colori diversi/sbagliati:
+   qui "Ritirato" e' verde, non grigio; "Da confermare" e' giallo, non
+   grigio; "Da ritirare" e' rosa/rosso, non ambra; "Annullato" e' grigio,
+   non rosso). */
+/* V1 (.calendar-appt-status, app.py CSS): solo forma - i colori sono
+   inline (background:{hex}22;color:{hex}) via pickupStatusStyle(), non
+   una palette CSS statica per stato (vedi shared/pickupStatusColor.ts). */
+.calendar-appt-status { font-size: 10.5px; font-weight: 800; padding: 4px 10px; border-radius: 99px; letter-spacing: 0.02em; }
+.calendar-appt-bottom { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
+
+/* V1 (practice_status_class(), stato pratica nella riga Lista Pratiche):
+   uno stile a "pillola" con solo bordo colorato (sfondo trasparente), MAI
+   la palette generica .badge.status-* a sfondo pieno - e i colori reali
+   non coincidono con quelli generici: qui Ritirato/Da consegnare sono
+   entrambi GIALLI (non grigio/blu), Cremato e' blu, In programma e'
+   rosso, Consegnato e' verde. "Smaltito" non ha un colore reale in V1
+   (stato raro, mai apparso in questa mappa): lasciato grigio neutro,
+   nessun valore inventato. */
+.badge.practice-status-ritirato, .badge.practice-status-da_consegnare {
+  background: transparent; color: #fde047; border: 2px solid #eab308;
+}
+.badge.practice-status-in_programma { background: transparent; color: #fb7185; border: 2px solid #ef4444; }
+.badge.practice-status-cremato { background: transparent; color: #60a5fa; border: 2px solid #3b82f6; }
+.badge.practice-status-consegnato { background: transparent; color: #4ade80; border: 2px solid #22c55e; }
+.badge.practice-status-smaltito { background: transparent; color: #94a3b8; border: 2px solid #475569; }
+
+/* V1 (.inline-state-select, app.py:1704): il <select> di cambio stato
+   inline nella cella Stato del Riepilogo pratica - stessa forma/peso,
+   colore ereditato dalle classi .badge.practice-status-* sopra. */
+select.inline-state-select {
+  appearance: none;
+  min-height: 38px;
+  padding: 7px 32px 7px 14px;
+  border-width: 2px;
+  border-radius: 9px;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  text-align: center;
+  background-image: none;
+}
+
+/* V1 (.premium-table/.premium-avatar): righe "a pillola" per liste di
+   entita' senza icona di specie propria (Clienti, Collaboratori) - stesso
+   pattern di .practice-list-table ma con un cerchietto iniziale al posto
+   dell'avatar specie. */
+.premium-table { border-collapse: separate; border-spacing: 0 10px; width: 100%; background: transparent; border: 0; box-shadow: none; }
+.premium-table thead th { background: transparent; border-bottom: 0; }
+.premium-table tbody tr { background: #1f2937; transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.premium-table tbody tr:hover { transform: translateY(-1px); box-shadow: 0 10px 26px #03071240; }
+.premium-table tbody tr:hover td { background: #242f3f; }
+.premium-table tbody td { border-top: 1px solid #334155; border-bottom: 1px solid #334155; }
+.premium-table tbody td:first-child { border-left: 1px solid #334155; border-top-left-radius: 14px; border-bottom-left-radius: 14px; }
+.premium-table tbody td:last-child { border-right: 1px solid #334155; border-top-right-radius: 14px; border-bottom-right-radius: 14px; }
+.premium-row-lead { display: flex; align-items: center; gap: 12px; }
+.premium-avatar { flex: 0 0 34px; width: 34px; height: 34px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; background: #1e293b; color: #93c5fd; }
+@media (max-width: 620px) { .premium-table { display: block; overflow-x: auto; } }
+
+.kvs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 10px 0; }
+@media (max-width: 700px) { .kvs { grid-template-columns: 1fr; } }
+.kv { display: flex; flex-direction: column; gap: 2px; background: #0c121b; border: 1px solid #252e3b; border-radius: 10px; padding: 12px; }
+.kv small { display: block; color: var(--muted); font-size: 12px; }
 .kv b { font-size: 16px; color: var(--ink); }
+
+/* ===== Dashboard (Fase 10G+): stesse card/griglia/badge di sopra, solo
+   una variante compatta "valore grande + etichetta" per i contatori
+   rapidi - nessun nuovo colore, riusa gli stessi accenti amber/green/
+   blue/red gia' assegnati agli stati equivalenti nei .badge sopra. ===== */
+
+.dashboard-wrap { max-width: 1500px; }
+.welcome { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+.welcome h1 { font-size: 30px; }
+.welcome p { margin: 7px 0 0; color: #94a3b8; }
+
+.dashboard-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 24px 0 12px; flex-wrap: wrap; }
+.dashboard-section-head:first-of-type { margin-top: 8px; }
+.dashboard-section-head h2 { margin: 0; font-size: 15px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* V1 (dash_stat_card + state_specs/payment_specs, app.py:8564-8720):
+   card statistica reale - badge icona colorata, alone diagonale
+   (--card-glow), icona di sfondo semi-trasparente, chevron, valore
+   grande - non la card generica .dashboard-stat-card usata prima. */
+.dashboard-states, .dashboard-payments { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+
+.dash-stat-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-height: 108px;
+  padding: 16px 18px;
+  border: 1px solid #334155;
+  border-left: 3px solid var(--icon-color);
+  border-radius: 14px;
+  background: #1f2937;
+  overflow: hidden;
+  box-shadow: 0 12px 30px #03071230;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.dash-stat-card:before { content: ""; position: absolute; inset: 0; background: linear-gradient(120deg, var(--card-glow), transparent 62%); pointer-events: none; }
+a.dash-stat-card:hover { transform: translateY(-3px); box-shadow: 0 18px 40px #03071255; }
+.dash-stat-head { position: relative; z-index: 1; display: flex; align-items: center; gap: 10px; }
+.dash-stat-icon { position: relative; z-index: 1; display: grid; place-items: center; width: 32px; height: 32px; flex: 0 0 32px; border-radius: 10px; background: var(--icon-bg); color: var(--icon-color); }
+.dash-stat-bgicon { position: absolute; z-index: 0; right: -10px; bottom: -14px; width: 62%; height: 62%; color: var(--icon-color); opacity: 0.07; pointer-events: none; }
+.dash-stat-bgicon svg { width: 100%; height: 100%; }
+.dash-stat-bgicon-char { display: flex; align-items: flex-end; justify-content: flex-end; font-size: 76px; font-weight: 800; line-height: 1; }
+.dash-stat-title { position: relative; z-index: 1; font-size: 13px; font-weight: 650; color: #e2e8f0; }
+.dash-stat-value { position: relative; z-index: 1; font-size: 27px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.05; }
+.dash-stat-desc { position: relative; z-index: 1; color: #94a3b8; font-size: 12px; }
+.dash-stat-chevron { position: absolute; z-index: 1; right: 16px; top: 16px; color: #94a3b8; font-size: 18px; line-height: 1; }
+
+.state-yellow { --card-glow: #713f124f; --icon-bg: #573713; --icon-color: #fde047; }
+.state-red { --card-glow: #83184375; --icon-bg: #881337; --icon-color: #fb7185; }
+.state-purple { --card-glow: #3b076480; --icon-bg: #3b0764; --icon-color: #c084fc; }
+.state-green { --card-glow: #052e2b85; --icon-bg: #064e3b; --icon-color: #4ade80; }
+.payment-due { --card-glow: #713f123d; --icon-bg: #573713; --icon-color: #fbbf24; }
+.payment-deposit { --card-glow: #17255465; --icon-bg: #172554; --icon-color: #60a5fa; }
+.payment-paid { --card-glow: #052e2b75; --icon-bg: #064e3b; --icon-color: #4ade80; }
+.payment-total { --card-glow: #3b076480; --icon-bg: #3b0764; --icon-color: #c084fc; }
+
+@media (max-width: 620px) {
+  .dashboard-states, .dashboard-payments { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+  .dash-stat-card { min-height: 78px; padding: 11px 12px; gap: 4px; border-left-width: 2px; }
+  .dash-stat-icon { width: 26px; height: 26px; flex: 0 0 26px; border-radius: 8px; }
+  .dash-stat-title { font-size: 11px; }
+  .dash-stat-value { font-size: 19px; }
+  .dash-stat-desc { font-size: 10px; }
+  .dash-stat-chevron { right: 10px; top: 10px; font-size: 15px; }
+}
+
+.period-selector { display: inline-flex; gap: 4px; background: #131a26; border: 1px solid var(--line); border-radius: var(--radius-pill); padding: 3px; }
+.period-selector button { border: none; background: transparent; box-shadow: none; padding: 6px 14px; border-radius: var(--radius-pill); font-size: 13px; color: var(--muted); }
+.period-selector button.active { background: var(--brand); color: #fff; }
+
+/* V1 (dashboard(): sezione ANALYTICS, app.py:8759-8830) - grafico incassi
+   ultimi 7 giorni + donut pratiche per stato, poi riga quick-stats a 4
+   mini-card. Stessa gerarchia/classi reali, nessuna reinterpretazione. */
+.dashboard-analytics { margin-top: 24px; }
+.dashboard-analytics-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(260px, 1fr); gap: 14px; align-items: stretch; }
+.analytics-panel { min-height: 350px; padding: 18px 20px; border: 1px solid #334155; border-radius: 15px; background: #1f2937; box-shadow: 0 18px 48px #03071235; }
+.analytics-panel-title { margin: 0 0 10px; font-size: 12.5px; font-weight: 700; letter-spacing: 0.03em; color: #94a3b8; text-transform: uppercase; }
+.analytics-linechart-value { font-size: 26px; font-weight: 800; display: flex; align-items: baseline; gap: 8px; }
+.analytics-linechart-value small { font-size: 12px; font-weight: 600; color: #94a3b8; }
+.analytics-delta-badge { display: inline-flex; align-items: center; gap: 5px; margin: 8px 0 4px; padding: 4px 10px; border-radius: 99px; font-size: 12px; font-weight: 700; }
+.analytics-delta-badge small { font-weight: 500; color: inherit; opacity: 0.8; margin-left: 2px; }
+.analytics-delta-up { background: #052e2b75; color: #4ade80; }
+.analytics-delta-down { background: #4c051975; color: #fb7185; }
+.analytics-delta-flat { background: #1f293780; color: #94a3b8; }
+.dashboard-linechart-svg { width: 100%; height: 140px; margin-top: 8px; }
+.dashboard-linechart-area { fill: #ef405f22; }
+.dashboard-linechart-line { fill: none; stroke: #fb7185; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.dashboard-linechart-dot { fill: #fb7185; stroke: #1f2937; stroke-width: 2; }
+.analytics-linechart-labels { display: flex; justify-content: space-between; margin-top: 6px; color: #94a3b8; font-size: 11px; }
+.analytics-donut-row { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.dashboard-donut-svg { width: 150px; height: 150px; flex: 0 0 150px; }
+.dashboard-donut-arc { transition: stroke-dasharray 0.3s ease; }
+.dashboard-donut-total { font-size: 30px; font-weight: 800; fill: #f5f7fb; }
+.dashboard-donut-total-label { font-size: 11px; fill: #94a3b8; }
+.dashboard-donut-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; flex: 1; min-width: 140px; }
+.dashboard-donut-legend li { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #cbd5e1; }
+.dashboard-donut-legend b { margin-left: auto; color: #f5f7fb; font-weight: 700; }
+.dashboard-donut-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 9px; }
+
+.dashboard-quickstats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }
+.quick-stat-card { position: relative; display: flex; gap: 12px; padding: 14px 16px; border: 1px solid #334155; border-radius: 14px; background: #1f2937; }
+.quick-stat-icon { flex: 0 0 38px; width: 38px; height: 38px; align-self: flex-start; display: grid; place-items: center; border-radius: 11px; background: var(--icon-bg); color: var(--icon-color); }
+.quick-stat-right { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.quick-stat-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.quick-stat-body b { font-size: 19px; font-weight: 800; }
+.quick-stat-body small { color: #94a3b8; font-size: 11.5px; }
+.quick-stat-spark { width: 100%; height: 18px; }
+.quick-stat-spark polyline { fill: none; stroke: var(--icon-color); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; opacity: 0.8; }
+.quick-stat-delta { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 700; }
+.quick-stat-delta small { color: #94a3b8; font-weight: 500; margin-left: 2px; }
+.quick-stat-delta-up { color: #4ade80; }
+.quick-stat-delta-down { color: #fb7185; }
+.quick-stat-delta-flat { color: #94a3b8; }
+
+@media (max-width: 1100px) {
+  .dashboard-quickstats { grid-template-columns: repeat(2, 1fr); }
+  .dashboard-analytics-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 620px) {
+  /* V1 (app.py:1497): verificato dal vivo sul server V1 a 375px - anche
+     se .dashboard-states/.dashboard-payments usano 2 colonne allo stesso
+     breakpoint, .dashboard-quickstats in V1 stesso resta 1 colonna (4 card
+     impilate a piena larghezza). Non un bug da correggere: e' il
+     comportamento reale di V1, qui riprodotto 1:1 anche se asimmetrico. */
+  .dashboard-quickstats { grid-template-columns: 1fr; }
+  .analytics-donut-row { flex-direction: column; align-items: flex-start; }
+}
+
+/* V1 (dashboard_sections["recent_practices"] + recent_practice_cards_html,
+   app.py:8834/14276-14324): lista card con avatar specie e bordo colorato,
+   non un elenco testuale generico. */
+.dashboard-recent { margin-top: 26px; }
+.dashboard-recent .titlebar { margin-bottom: 12px; }
+.dashboard-recent .titlebar a { color: #fb7185; display: inline-flex; align-items: center; gap: 2px; }
+.recent-practice-list { display: flex; flex-direction: column; gap: 8px; }
+.recent-practice-card { display: grid; grid-template-columns: 30fr 30fr 32fr 8fr; align-items: center; gap: 8px; min-height: 88px; padding: 16px; border-radius: 16px; border: 1px solid #334155; border-left: 4px solid #64748b; background: #1f2937; text-decoration: none; color: inherit; transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease; }
+.recent-practice-card:hover { transform: translateY(-1px); box-shadow: 0 10px 26px #03071240; }
+.recent-practice-card.avatar-dog { border-left-color: #60a5fa; }
+.recent-practice-card.avatar-cat { border-left-color: #4ade80; }
+.recent-practice-card.avatar-other { border-left-color: #c084fc; }
+.recent-practice-animal { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.recent-practice-avatar { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 19px; flex: 0 0 38px; }
+.recent-practice-animal-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.recent-practice-name { font-size: 18px; font-weight: 700; color: #f8fafc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recent-practice-meta { font-size: 15px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recent-practice-date { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.recent-practice-date-value { display: flex; align-items: center; gap: 6px; font-size: 16px; font-weight: 600; color: #e2e8f0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recent-practice-owner { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.recent-practice-owner-name { font-size: 15px; font-weight: 600; color: #e2e8f0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.recent-practice-chevron { display: flex; align-items: center; justify-content: center; color: #64748b; }
+@media (max-width: 620px) {
+  .recent-practice-card { grid-template-columns: 32fr 28fr 32fr 8fr; padding: 14px; gap: 6px; min-height: 90px; }
+  .recent-practice-name { font-size: 17px; }
+  .recent-practice-avatar { width: 34px; height: 34px; flex: 0 0 34px; font-size: 17px; }
+}
 
 .timeline { display: flex; flex-direction: column; gap: 10px; }
 .timeline .event { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #131a26; }
 
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+/* V1 (.grid{display:grid;gap:16px}): nessun grid-template-columns
+   proprio - un auto-fill qui era un'aggiunta V2 che non esiste in V1 e
+   che entrava in conflitto quando .grid e .practice-layout stavano sulla
+   stessa sezione (dettaglio pratica): .grid vinceva nella cascata e
+   sovrascriveva le 2 colonne 2fr/1fr con 4 colonne uguali. */
+.grid { display: grid; gap: 16px; }
+
+.article-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.article-card { display: flex; flex-direction: column; gap: 16px; min-height: 170px; padding: 20px; border: 1px solid #334155; border-radius: 15px; background: #1f2937; }
+.article-card h2 { margin: 0; font-size: 18px; }
+.article-card p { margin: 0; color: #94a3b8; }
+.article-card .btn { width: 100%; margin-top: auto; }
+@media (max-width: 900px) { .article-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 620px) { .article-grid { grid-template-columns: 1fr; } }
+
+.urn-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
+/* V1 (blocco finale "Cleaner dark theme", app.py:1725):
+   .dashboard-panel,.metric-card,.payment-card,.conversation-card,
+   .article-card,.urn-stat,.urn-card condividono questi valori - non i
+   valori generici della dichiarazione precedente. */
+.urn-stat, .urn-card { padding: 17px; border: 1px solid #3a495e; border-radius: 14px; background: #202c3d; box-shadow: 0 12px 32px #080d1626; }
+.urn-stat small, .urn-meta { color: #94a3b8; }
+.urn-stat strong { display: block; margin-top: 5px; font-size: 24px; }
+.urn-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 15px; }
+.urn-card { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.urn-card img, .urn-placeholder { width: 100%; aspect-ratio: 4 / 3; border-radius: 10px; object-fit: cover; background: #111827; }
+.urn-placeholder { display: grid; place-items: center; color: #64748b; font-weight: 700; }
+.urn-card h2 { margin: 0; }
+.urn-card .actions { margin-top: auto; }
+.stock-good { color: #86efac; }
+.stock-low { color: #fdba74; }
+.stock-out { color: #fca5a5; }
+@media (max-width: 900px) { .urn-stats { grid-template-columns: repeat(2, 1fr); } .urn-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 620px) { .urn-grid { grid-template-columns: 1fr; } .urn-stats { grid-template-columns: 1fr 1fr; } }
 
 .reminders-todo-list { list-style: none; margin: 6px 0 0; padding: 0; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; }
 .reminders-todo-list li + li { border-top: 1px solid var(--line); }
 .reminders-todo-row { display: block; width: 100%; text-align: left; background: #131a26; color: var(--ink); border-radius: 0; padding: 10px 12px; text-decoration: none; box-shadow: none; }
 .reminders-todo-row:hover { background: #171f2b; }
 
+/* V1 (.reminders-card e famiglia, app.py:1350/1354-1385): card promemoria
+   in cima alla Dashboard, subito dopo il saluto. */
+.metric-icon { position: relative; display: grid; place-items: center; width: 46px; height: 46px; border-radius: 12px; background: var(--icon-bg); color: var(--icon-color); }
+.reminders-card { background: #1f2937; border: 1px solid #334155; border-radius: 15px; margin-bottom: 20px; box-shadow: 0 14px 36px #03071235; overflow: hidden; }
+.reminders-carousel-row { display: flex; align-items: stretch; gap: 8px; padding: 14px; }
+.reminders-carousel { flex: 1; min-width: 0; height: 88px; overflow-y: auto; overflow-x: hidden; scroll-snap-type: y mandatory; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.reminders-slide { position: relative; height: 88px; scroll-snap-align: start; scroll-snap-stop: always; overflow: hidden; border-radius: 12px; }
+.reminders-slide + .reminders-slide { margin-top: 6px; }
+.reminders-slide-front { position: relative; z-index: 2; display: flex; align-items: center; gap: 12px; height: 100%; padding: 0 14px; background: #1f2937; border-radius: 12px; touch-action: pan-y; color: inherit; text-decoration: none; }
+.reminders-slide-icon { width: 38px; height: 38px; flex: 0 0 38px; border-radius: 12px; }
+.reminders-slide-icon svg { width: 17px; height: 17px; }
+.reminders-slide-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.reminders-slide-copy b { font-size: 13.5px; font-weight: 700; color: #f5f7fb; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+.reminders-slide-copy small { font-size: 11.5px; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reminders-side-col { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.reminders-dots { flex: 1; max-height: 88px; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; width: 10px; }
+.reminders-dot { width: 5px; height: 5px; border-radius: 50%; background: #334155; transition: background 0.2s ease, transform 0.2s ease, opacity 0.15s ease; }
+.reminders-dot.active { background: #ff4d6d; transform: scale(1.6); }
+.reminders-mini-add-btn { display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: #ff4d6d; color: #fff; cursor: pointer; flex: 0 0 auto; }
+
 .calendar-tabs { display: flex; gap: 8px; margin: 14px 0; border-bottom: 1px solid var(--line); }
 .calendar-tabs a { padding: 8px 4px; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; }
 .calendar-tabs a.active { color: var(--brand2); border-bottom-color: var(--brand2); font-weight: 600; }
 
 .tag-outline-orange { display: inline-flex; padding: 3px 9px; border-radius: var(--radius-pill); font-size: 12px; font-weight: 600; border: 1px solid #f97316; color: #fdba74; background: #3b1d0c; }
+
+/* ===== Calendario (V1: daybar+agenda condivisa tra vista Giorno/Settimana,
+   griglia mese a parte) - valori CSS trasferiti 1:1 da app.py. ===== */
+
+.calendar-wrap { max-width: 1180px; }
+
+.calendar-view-switch { display: flex; gap: 9px; padding: 4px; border: 1px solid #3b4a5f; border-radius: 13px; background: #182334; width: max-content; }
+.calendar-view-switch button { min-height: 40px; padding: 9px 12px; border-radius: 9px; color: #aeb9c8; background: transparent; box-shadow: none; font-size: 13px; }
+.calendar-view-switch button.active { background: #ef405f; color: #fff; }
+
+.calendar-daybar-wrap { display: flex; align-items: center; gap: 4px; margin: 16px 0 14px; }
+.calendar-daybar-nav { flex: 0 0 auto; width: 26px; height: 26px; border: 0; border-radius: 8px; background: transparent; box-shadow: none; color: #8a96a8; font-size: 19px; line-height: 1; cursor: pointer; display: grid; place-items: center; }
+.calendar-daybar-nav:hover { color: #e2e8f0; background: #1a2332; }
+.calendar-daybar { position: relative; display: flex; justify-content: flex-start; gap: 9px; flex: 1 1 auto; min-width: 0; overflow-x: auto; scroll-behavior: smooth; padding: 4px 2px 10px; scrollbar-width: none; }
+.calendar-daybar::-webkit-scrollbar { display: none; }
+.calendar-daybar-card { flex: 0 0 auto; min-width: 62px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 8px; border: 1px solid #334155; border-radius: 16px; background: #1a2332; box-shadow: 0 6px 16px #0307122e; cursor: pointer; transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, border-color 0.18s ease; }
+.calendar-daybar-card:hover { border-color: #465065; }
+.calendar-daybar-dow { font-size: 11px; font-weight: 700; color: #9ca7b8; letter-spacing: 0.04em; }
+.calendar-daybar-num { font-size: 20px; font-weight: 800; color: #f5f7fb; line-height: 1.1; }
+.calendar-daybar-count { font-size: 10px; color: #8a96a8; white-space: nowrap; }
+/* V1 (app.py, CSS reale): .is-today e' dichiarata DOPO .active nel foglio
+   di stile - a parita' di specificita' (una sola classe ciascuna) vince
+   l'ultima in ordine di sorgente, quindi quando un giorno e' SIA oggi SIA
+   selezionato vince il rosso di .is-today, non il blu di .active. Un
+   `:not(.active)` qui invertirebbe quella cascata e produrrebbe blu nel
+   caso piu' comune (si apre il calendario e oggi e' gia' selezionato) -
+   e' esattamente il bug segnalato, non un colore "simile" da scegliere. */
+.calendar-daybar-card.active { background: linear-gradient(135deg, #3b82f6, #1d4ed8); border-color: #3b82f6; box-shadow: 0 10px 26px #3b82f64d; transform: translateY(-2px); }
+.calendar-daybar-card.is-today { background: linear-gradient(135deg, #fb4c67, #d9284c); border-color: #fb4c67; box-shadow: 0 10px 26px #ef405f4d; transform: translateY(-2px); }
+.calendar-daybar-card.active .calendar-daybar-dow, .calendar-daybar-card.active .calendar-daybar-num, .calendar-daybar-card.active .calendar-daybar-count,
+.calendar-daybar-card.is-today .calendar-daybar-dow, .calendar-daybar-card.is-today .calendar-daybar-num, .calendar-daybar-card.is-today .calendar-daybar-count { color: #fff; }
+
+.calendar-appt-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+/* V1 (app.py:1832, selettore composto .calendar-appt-stats.calendar-appt-
+   stats-2col): la card giorno ha SOLO Da effettuare/Completati (2 celle),
+   non un terzo "Totale" inventato - stesso identico markup. */
+.calendar-appt-stats.calendar-appt-stats-2col { grid-template-columns: repeat(2, 1fr); }
+.calendar-appt-stat { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px 6px; border-radius: 14px; background: #1a2332; border: 1px solid #334155; }
+.calendar-appt-stat b { font-size: 20px; }
+.calendar-appt-stat small { color: #8a96a8; font-size: 11px; }
+.calendar-appt-stat-icon { color: #8a96a8; margin-bottom: 2px; }
+.calendar-appt-stat-icon svg { width: 16px; height: 16px; }
+.calendar-appt-stat-pending { border-color: #fb923c66; }
+.calendar-appt-stat-pending .calendar-appt-stat-icon { color: #fb923c; }
+.calendar-appt-stat-done { border-color: #4ade8066; }
+.calendar-appt-stat-done .calendar-appt-stat-icon { color: #4ade80; }
+
+/* V1 (.calendar-day-pages/.calendar-day-page, app.py:1828-1830): swipe
+   nativo via CSS scroll-snap, non un gesto ricostruito a mano in JS -
+   e' per questo che su Safari/iOS ha inerzia/momentum reali. */
+.calendar-day-pages { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.calendar-day-pages::-webkit-scrollbar { display: none; }
+.calendar-day-page { flex: 0 0 100%; scroll-snap-align: start; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+
+.calendar-appt-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 14px; }
+.calendar-appt-empty { text-align: center; padding: 24px; color: #9ca7b8; }
+/* V1 (calendar_appt_card_html, app.py:9840-9852 + CSS): struttura reale
+   time-col (pallino colorato + ora) / main (tipo+stato in alto, titolo
+   MAIUSCOLO, nome, proprietario, luogo, pagamento inline, note, riga
+   finale stato+azioni) - non la card piatta a 2 colonne di prima. */
+.calendar-appt-card { display: flex; gap: 12px; padding: 14px 16px; border: 1px solid #334155; border-left: 4px solid #475569; border-radius: 15px; background: linear-gradient(145deg, #1a2332, #151d29); box-shadow: 0 10px 28px #0307122e; text-decoration: none; color: inherit; cursor: pointer; }
+.calendar-appt-card.calendar-appt-type-delivery { border-left-color: #60a5fa; }
+.calendar-appt-time-col { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 0 0 58px; padding-top: 2px; }
+.calendar-appt-time-dot { width: 9px; height: 9px; border-radius: 50%; margin-bottom: 2px; }
+.calendar-appt-time { font-size: 12px; font-weight: 700; color: #e2e8f0; white-space: nowrap; }
+.calendar-appt-time-end { font-size: 10px; font-weight: 600; color: #94a3b8; white-space: nowrap; }
+.calendar-appt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.calendar-appt-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.calendar-appt-type-label { display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: 0.06em; }
+.calendar-appt-type-pickup .calendar-appt-type-label { color: #4ade80; }
+.calendar-appt-type-delivery .calendar-appt-type-label { color: #60a5fa; }
+.calendar-appt-title { font-size: 15px; font-weight: 800; color: #f5f7fb; text-transform: uppercase; margin: 0; }
+.calendar-appt-name { font-size: 12.5px; font-weight: 600; color: #9ca7b8; }
+.calendar-appt-owner { font-size: 13px; color: #dfe4eb; }
+.calendar-appt-location { font-size: 12.5px; color: #9ca7b8; }
+.calendar-appt-payment { display: flex; align-items: flex-start; gap: 5px; margin-top: 2px; font-size: 12px; font-weight: 600; color: #ef405f; }
+.calendar-appt-payment-paid { color: #22c55e; }
+.calendar-appt-payment-due { color: #fbbf24; }
+.calendar-appt-payment svg { width: 14px; height: 14px; flex: none; }
+.calendar-appt-notes { display: flex; align-items: flex-start; gap: 5px; margin-top: 2px; font-size: 12px; font-style: italic; color: #c9ae5c; }
+.calendar-appt-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.calendar-appt-action { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #131a26; border: 1px solid #334155; color: #9ca7b8; }
+.calendar-appt-action:hover { border-color: #465065; color: #e2e8f0; }
+.calendar-appt-action svg { width: 16px; height: 16px; }
+.calendar-appt-card h3 { margin: 0 0 4px; font-size: 15px; }
+.calendar-appt-card p { margin: 2px 0; color: #aeb9c8; font-size: 12px; }
+
+.calendar-add-appt-btn { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px; border: 2px dashed #fb718550; border-radius: 14px; background: transparent; color: #fb7185; font-weight: 700; font-size: 13px; text-decoration: none; }
+
+.calendar-month-v2-dow-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); margin-bottom: 4px; }
+.calendar-month-v2-dow { padding: 4px 6px; color: #94a3b8; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; text-align: center; }
+.calendar-month-v2-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0; border-top: 1px solid #293648; border-left: 1px solid #293648; border-radius: 11px; overflow: hidden; }
+.calendar-month-v2-cell { min-height: 88px; padding: 5px; border-right: 1px solid #293648; border-bottom: 1px solid #293648; background: #0f1723; text-align: left; color: inherit; cursor: pointer; }
+.calendar-month-v2-cell.is-other-month { background: #0b121b; opacity: 0.55; }
+.calendar-month-v2-cell.is-today { box-shadow: inset 0 0 0 2px #ef405f; }
+.calendar-month-v2-cell.selected { box-shadow: inset 0 0 0 2px #ef405f; }
+.calendar-month-v2-num { display: inline-block; min-width: 20px; margin-bottom: 3px; color: #cbd5e1; font-size: 12px; font-weight: 700; text-align: center; }
+.calendar-month-v2-cell.is-today .calendar-month-v2-num { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #ef405f; color: #fff; }
+.calendar-month-v2-counts { display: flex; flex-direction: column; gap: 2px; align-items: center; }
+.calendar-month-v2-count { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 800; padding: 0 5px; border-radius: 99px; line-height: 1.5; }
+.calendar-month-v2-count:before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.calendar-month-v2-count-pickup { background: #052e16; color: #4ade80; }
+.calendar-month-v2-count-delivery { background: #172554; color: #60a5fa; }
+.calendar-month-v2-legend { display: flex; gap: 16px; justify-content: center; margin-top: 10px; font-size: 12px; color: #94a3b8; }
+.calendar-month-v2-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.calendar-month-v2-legend .calendar-month-v2-count { padding: 0; background: none; font-size: 0; width: 9px; height: 9px; }
+.calendar-month-v2-legend .calendar-month-v2-count:before { width: 9px; height: 9px; }
+
+.calendar-month-composition { display: grid; gap: 10px; }
+.calendar-month-daycard { padding: 18px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: linear-gradient(145deg, #131a26, #0f151f); }
+.calendar-month-daycard header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.calendar-month-daycard header h2 { margin: 0; font-size: 17px; }
+.calendar-month-daycard-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+
+@media (max-width: 620px) { .calendar-month-v2-cell { min-height: 64px; padding: 3px; } .calendar-month-v2-dow { font-size: 9px; padding: 3px 2px; } }
+@media (max-width: 900px) {
+  .calendar-view-switch { width: 100%; display: grid; grid-template-columns: repeat(3, 1fr); }
+  .calendar-appt-stats { grid-template-columns: repeat(3, 1fr); }
+  .calendar-appt-card { padding: 12px; }
+}
+
+/* "Nuovo evento" (V1 calendar_event_form, classe reale "calendar-form-v2"
+   sul <main>, app.py:10884-10988): type-picker a 5 card compatte. Valori
+   presi 1:1 dal set di regole realmente vincente (quelle sotto
+   .calendar-form-v2, che vincono sempre con !important sulle regole base
+   piu' vecchie) - qui non serve preservare la variante base perche' V2 ha
+   una sola pagina che usa queste classi. */
+.calendar-type-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
+.calendar-type-option { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-height: 80px; min-width: 0; padding: 6px 5px; border: 1px solid #ffffff14; border-radius: 12px; background: linear-gradient(160deg, #1c2635d9, #141b27d9); backdrop-filter: blur(16px); box-shadow: 0 10px 26px #05070f3d; cursor: pointer; transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.15s cubic-bezier(0.34, 1.4, 0.64, 1); }
+.calendar-type-option:hover { border-color: #3a4a60; }
+.calendar-type-option:active { transform: scale(0.985); }
+.calendar-type-option input { position: absolute; opacity: 0; width: 0; height: 0; overflow: hidden; }
+.calendar-event-type-icon { flex: 0 0 22px; width: 22px; height: 22px; border-radius: 7px; background: #202c3d; color: #9ca7b8; display: grid; place-items: center; }
+.calendar-event-type-icon svg { width: 12px; height: 12px; }
+.calendar-icon-pink { background: linear-gradient(135deg, #fb4c67, #d9284c); color: #fff; box-shadow: 0 0 16px #ef405f38; }
+.calendar-icon-blue { background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: #fff; box-shadow: 0 0 16px #3b82f638; }
+.calendar-icon-green { background: linear-gradient(135deg, #22c55e, #15803d); color: #fff; box-shadow: 0 0 16px #22c55e38; }
+.calendar-icon-orange { background: linear-gradient(135deg, #f59e0b, #b45309); color: #fff; box-shadow: 0 0 16px #f59e0b38; }
+.calendar-icon-purple { background: linear-gradient(135deg, #8b5cf6, #6d28d9); color: #fff; box-shadow: 0 0 16px #8b5cf638; }
+.calendar-type-option:has(.calendar-icon-pink) { border-color: #ef405f4d; }
+.calendar-type-option:has(.calendar-icon-blue) { border-color: #3b82f64d; }
+.calendar-type-option:has(.calendar-icon-green) { border-color: #22c55e4d; }
+.calendar-type-option:has(.calendar-icon-orange) { border-color: #f59e0b4d; }
+.calendar-type-option:has(.calendar-icon-purple) { border-color: #8b5cf64d; }
+/* !important: a parita'/superiorita' di specificita' calcolata, alcuni
+   motori non fanno vincere in modo affidabile un :has():has() incatenato
+   sul :has() singolo delle righe sopra - forzato esplicitamente cosi' lo
+   stato "selezionato" e' sempre quello davvero mostrato, come in V1. */
+.calendar-type-option:has(input:checked):has(.calendar-icon-pink) { border-color: #ef405f !important; box-shadow: 0 0 0 2px #ef405f40, 0 0 22px #ef405f38 !important; }
+.calendar-type-option:has(input:checked):has(.calendar-icon-blue) { border-color: #3b82f6 !important; box-shadow: 0 0 0 2px #3b82f640, 0 0 22px #3b82f638 !important; }
+.calendar-type-option:has(input:checked):has(.calendar-icon-green) { border-color: #22c55e !important; box-shadow: 0 0 0 2px #22c55e40, 0 0 22px #22c55e38 !important; }
+.calendar-type-option:has(input:checked):has(.calendar-icon-orange) { border-color: #f59e0b !important; box-shadow: 0 0 0 2px #f59e0b40, 0 0 22px #f59e0b38 !important; }
+.calendar-type-option:has(input:checked):has(.calendar-icon-purple) { border-color: #8b5cf6 !important; box-shadow: 0 0 0 2px #8b5cf640, 0 0 22px #8b5cf638 !important; }
+.calendar-type-option b { display: -webkit-box; margin: 0; font-size: 9px; font-weight: 800; letter-spacing: 0; line-height: 1.15; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.calendar-type-option small.sub { display: -webkit-box; margin: 2px 0 0; font-size: 7.5px; line-height: 1.2; color: #9ca7b8; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.calendar-v2-topbar { display: flex; flex-direction: row; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.calendar-v2-close { flex: 0 0 auto; width: 38px; height: 38px; padding: 0; display: grid; place-items: center; border-radius: 50%; font-size: 18px; line-height: 1; }
+@media (max-width: 640px) { .calendar-type-option { min-height: 72px; } }
+
+/* "Nuovo evento": resto del codice grafico V1 (app.py:1866-1971 sotto
+   .calendar-form-v2, valori v2 gia' vincenti) - card vetro, chip icona +
+   campo (.calendar-tap-card), tessere di scelta luogo, sezioni apri/chiudi
+   colorate, azioni impilate. Scoped sotto .calendar-form-v2 come in V1
+   (unica pagina V2 che porta questa classe sul <main>). */
+.calendar-form-v2 .calendar-v2-card,
+.calendar-form-v2 .calendar-subblock {
+  margin: 0 0 12px;
+  padding: 9px;
+  border: 1px solid #ffffff14;
+  border-radius: 14px;
+  background: linear-gradient(160deg, #1c2635d9, #141b27d9);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 10px 26px #05070f3d;
+}
+.calendar-form-v2 .calendar-v2-eyebrow,
+.calendar-form-v2 .calendar-subblock > h3 {
+  margin: 0 0 5px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9ca7b8;
+}
+.calendar-form-v2 .calendar-v2-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 5px; }
+.calendar-form-v2 .calendar-v2-row2 > * { min-width: 0; }
+.calendar-form-v2 .calendar-v2-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.calendar-form-v2 .calendar-v2-actions .btn,
+.calendar-form-v2 .calendar-v2-actions .btn-ghost { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; font-size: 14px; }
+
+.calendar-form-v2 .calendar-tap-card {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 11px;
+  border: 1px solid #ffffff12;
+  border-radius: 14px;
+  background: linear-gradient(160deg, #1c2635d9, #141b27d9);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 8px 20px #05070f33;
+  text-align: left;
+  color: inherit;
+  transition: border-color 0.18s ease;
+}
+.calendar-form-v2 .calendar-tap-card:hover { border-color: #ffffff26; }
+.calendar-form-v2 .calendar-tap-card:focus-within { border-color: #ffffff26; box-shadow: 0 8px 20px #05070f33, 0 0 0 1px #ef405f2e; }
+.calendar-form-v2 .calendar-tap-card + .calendar-tap-card { margin-top: 8px; }
+.calendar-form-v2 .calendar-tap-card-icon { flex: 0 0 26px; width: 26px; height: 26px; border-radius: 9px; background: #202c3d; color: #9ca7b8; display: grid; place-items: center; }
+.calendar-form-v2 .calendar-tap-card-icon svg { width: 14px; height: 14px; }
+/* Stessa specificita' della regola sopra (2 classi): serve un selettore
+   combinato dedicato (come in V1, app.py:2491-2497) perche' altrimenti
+   .calendar-icon-* (1 classe, definita per la griglia tipo-evento) perde
+   sempre contro .calendar-form-v2 .calendar-tap-card-icon a parita' di
+   specificita' per ordine di dichiarazione nel foglio di stile. */
+.calendar-form-v2 .calendar-tap-card-icon.calendar-icon-pink { background: linear-gradient(135deg, #fb4c67, #d9284c); color: #fff; box-shadow: 0 0 16px #ef405f38; }
+.calendar-form-v2 .calendar-tap-card-icon.calendar-icon-blue { background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: #fff; box-shadow: 0 0 16px #3b82f638; }
+.calendar-form-v2 .calendar-tap-card-icon.calendar-icon-green { background: linear-gradient(135deg, #22c55e, #15803d); color: #fff; box-shadow: 0 0 16px #22c55e38; }
+.calendar-form-v2 .calendar-tap-card-icon.calendar-icon-orange { background: linear-gradient(135deg, #f59e0b, #b45309); color: #fff; box-shadow: 0 0 16px #f59e0b38; }
+.calendar-form-v2 .calendar-tap-card-icon.calendar-icon-purple { background: linear-gradient(135deg, #8b5cf6, #6d28d9); color: #fff; box-shadow: 0 0 16px #8b5cf638; }
+.calendar-form-v2 .calendar-tap-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.calendar-form-v2 .calendar-tap-card-body > small { margin: 0; color: #9ca7b8; font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; }
+.calendar-form-v2 .calendar-tap-card-body input,
+.calendar-form-v2 .calendar-tap-card-body select,
+.calendar-form-v2 .calendar-tap-card-body textarea {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #f5f7fb;
+  min-height: 0;
+  width: 100%;
+}
+.calendar-form-v2 .calendar-tap-card-body input::placeholder { color: #8a96a8; font-weight: 500; }
+.calendar-form-v2 .calendar-tap-card-body textarea { min-height: 60px; font-weight: 500; resize: vertical; }
+
+.calendar-form-v2 .calendar-location-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; }
+.calendar-form-v2 .calendar-location-tile {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 10px 4px;
+  border: 1.5px solid #ffffff1f;
+  border-radius: 16px;
+  background: linear-gradient(160deg, #1c2635d9, #141b27d9);
+  color: #9ca7b8;
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+}
+.calendar-form-v2 .calendar-location-tile svg { width: 16px; height: 16px; }
+.calendar-form-v2 .calendar-location-tile.active,
+.calendar-form-v2 .calendar-location-tile[aria-pressed="true"] { border-color: #e9475b; color: #e9475b; box-shadow: 0 0 0 1px #e9475b35; }
+
+.calendar-form-v2 section.collapsible {
+  margin-bottom: 5px;
+  padding: 0;
+  border: 1px solid #ffffff14;
+  border-radius: 14px;
+  background: linear-gradient(160deg, #1c2635d9, #141b27d9);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 10px 26px #05070f3d;
+  overflow: hidden;
+}
+.calendar-form-v2 section.collapsible > h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 7px 10px;
+  font-size: 11.5px;
+  cursor: pointer;
+  user-select: none;
+}
+.calendar-form-v2 section.collapsible > h2::after { content: "▾"; margin-left: auto; font-size: 14px; color: #9ca7b8; transition: transform 0.2s ease; }
+.calendar-form-v2 section.collapsible > *:not(h2) { padding: 0 12px 12px; }
+.calendar-form-v2 section.collapsible.collapsed > h2::after { transform: rotate(-90deg); }
+.calendar-form-v2 section.collapsible.collapsed > *:not(h2) { display: none; }
+.calendar-form-v2 section.collapsible .calendar-tap-card-icon { flex: 0 0 20px; width: 20px; height: 20px; border-radius: 7px; }
+.calendar-form-v2 section.collapsible .calendar-tap-card-icon svg { width: 11px; height: 11px; }
+.calendar-form-v2 section.collapsible.tone-purple > h2 { color: #c4b5fd; }
+.calendar-form-v2 section.collapsible.tone-orange > h2 { color: #fdba74; }
+.calendar-form-v2 section.collapsible.tone-blue > h2 { color: #93c5fd; }
+.calendar-form-v2 section.collapsible.tone-gray > h2 { color: #e2e8f0; }
+.calendar-form-v2 section.collapsible textarea { width: 100%; min-height: 70px; }
+
+/* V1 (app.py:2012, non scoped a .calendar-form-v2 - riusata anche altrove):
+   bottone tratteggiato "+ Aggiungi ..." dei repeat-list del calendario. */
+.calendar-add-appt-btn { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px; border: 2px dashed #fb718550; border-radius: 14px; background: transparent; color: #fb7185; font-weight: 700; font-size: 13px; text-decoration: none; cursor: pointer; width: 100%; }
+.calendar-add-appt-btn:hover { background: #fb71851a; }
+.calendar-add-appt-btn svg { width: 16px; height: 16px; }

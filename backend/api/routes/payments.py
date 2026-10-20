@@ -11,6 +11,7 @@ from schemas.payment import (
     PaymentCreate,
     PaymentDeletionRead,
     PaymentRead,
+    PracticePaymentsSummaryRead,
     PracticeReconciliationRead,
     ReversePaymentRequest,
 )
@@ -34,6 +35,19 @@ async def list_payments(
     _: User = Depends(get_current_user),
 ):
     return await PaymentRepository(db).list_for_practice(practice_id)
+
+
+@router.get("/practice-summary", response_model=list[PracticePaymentsSummaryRead])
+async def get_practices_payments_summary(
+    practice_ids: list[int] = Query(...),
+    db: AsyncSession = Depends(get_session),
+    _: User = Depends(get_current_user),
+):
+    """Bulk, sola lettura, per liste (V2 parita' visiva - Lista Pratiche):
+    2 query totali per l'intera pagina invece di N chiamate alla
+    riconciliazione per-pratica. Non sostituisce
+    /practice/{id}/riconciliazione, che resta la fonte per il dettaglio."""
+    return await payment_service.get_practices_payments_summary(db, practice_ids)
 
 
 @router.get("/practice/{practice_id}/riconciliazione", response_model=PracticeReconciliationRead)

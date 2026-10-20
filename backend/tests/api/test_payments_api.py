@@ -130,6 +130,74 @@ async def test_practice_reconciliation_endpoint(authed_client: AsyncClient, samp
     assert body["status"] == "pagata"
 
 
+async def test_practices_payments_summary_bulk_endpoint(authed_client: AsyncClient, sample_client, sample_location):
+    """V2 parita' visiva (Lista Pratiche): stessa formula "Entrata attiva,
+    non stornata" gia' usata dalla riconciliazione per-pratica, qui in
+    una sola chiamata per piu' pratiche - uno storno non deve contribuire
+    al totale, esattamente come nella riconciliazione singola."""
+    practice_a = await _create_practice(authed_client, sample_client, sample_location)
+    practice_b = await _create_practice(authed_client, sample_client, sample_location)
+
+    await authed_client.post("/api/payments", json=_payment_payload(practice_a["id"], amount_cents=10000))
+    reversed_payment = (
+        await authed_client.post("/api/payments", json=_payment_payload(practice_a["id"], amount_cents=5000, movement_type="Saldo"))
+    ).json()
+    await authed_client.post(f"/api/payments/{reversed_payment['id']}/storna", json={"reason": "test"})
+    await authed_client.post("/api/payments", json=_payment_payload(practice_b["id"], amount_cents=7000))
+
+    response = await authed_client.get(
+        "/api/payments/practice-summary", params={"practice_ids": [practice_a["id"], practice_b["id"]]}
+    )
+    assert response.status_code == 200
+    by_id = {row["practice_id"]: row for row in response.json()}
+
+    assert by_id[practice_a["id"]]["paid_total_cents"] == 10000, "il movimento stornato non deve contribuire al totale"
+    assert by_id[practice_b["id"]]["paid_total_cents"] == 7000
+
+
+async def test_practices_payments_summary_acconto_excludes_saldo_and_reversed(
+    authed_client: AsyncClient, sample_client, sample_location
+):
+    """V1 (Lista Pratiche, colonna 'Acconto' - channel_deposit()): mostra
+    solo l'acconto, mai il saldo - e uno storno non deve contribuire, come
+    per paid_total_cents."""
+    practice = await _create_practice(authed_client, sample_client, sample_location)
+
+    await authed_client.post("/api/payments", json=_payment_payload(practice["id"], amount_cents=10000))
+    reversed_acconto = (
+        await authed_client.post("/api/payments", json=_payment_payload(practice["id"], amount_cents=3000))
+    ).json()
+    await authed_client.post(f"/api/payments/{reversed_acconto['id']}/storna", json={"reason": "test"})
+    await authed_client.post(
+        "/api/payments", json=_payment_payload(practice["id"], amount_cents=41000, movement_type="Saldo")
+    )
+
+    response = await authed_client.get("/api/payments/practice-summary", params={"practice_ids": [practice["id"]]})
+    assert response.status_code == 200
+    body = response.json()[0]
+    assert body["acconto_total_cents"] == 10000, "solo l'Acconto attivo, ne' il Saldo ne' quello stornato"
+    assert body["paid_total_cents"] == 51000, "paid_total_cents invece somma tutto (Acconto + Saldo attivi)"
+
+
+async def test_practices_payments_summary_includes_invoices(authed_client: AsyncClient, sample_client, sample_location):
+    practice = await _create_practice(authed_client, sample_client, sample_location)
+    invoice = await authed_client.post(
+        "/api/invoices",
+        json={"practice_id": practice["id"], "invoice_number": "FT-SUMMARY-001", "total_amount_cents": 34000, "channel": "W"},
+    )
+    assert invoice.status_code == 201
+
+    response = await authed_client.get("/api/payments/practice-summary", params={"practice_ids": [practice["id"]]})
+    assert response.status_code == 200
+    body = response.json()[0]
+    assert body["invoices"] == [{"invoice_number": "FT-SUMMARY-001", "total_amount_cents": 34000, "channel": "W"}]
+
+
+async def test_practices_payments_summary_requires_authentication(client: AsyncClient):
+    response = await client.get("/api/payments/practice-summary", params={"practice_ids": [1]})
+    assert response.status_code == 401
+
+
 async def test_list_payments_for_practice(authed_client: AsyncClient, sample_client, sample_location):
     practice = await _create_practice(authed_client, sample_client, sample_location)
     await authed_client.post("/api/payments", json=_payment_payload(practice["id"], amount_cents=5000))

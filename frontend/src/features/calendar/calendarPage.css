@@ -1,0 +1,82 @@
+/* V1 (app.py CSS, righe 1729-1749/1858+): classi reali della vista
+   Calendario operativo non ancora presenti in styles.css - portate qui
+   (regola 8 delle istruzioni di questa passata) invece che nel foglio
+   condiviso, per non entrare in conflitto con altri batch che lo stanno
+   modificando in parallelo. I valori sono presi dall'ULTIMA dichiarazione
+   vincente nella cascata reale di app.py (la classe e' ridefinita piu'
+   volte da redesign successivi: qui e' gia' risolto il valore finale
+   effettivamente visibile in V1, non le versioni superate). */
+
+.calendar-main-title { margin-bottom: 4px; }
+.calendar-main-title h1 { font-size: 22px; }
+.calendar-main-title .sub { margin: 2px 0 0; font-size: 12px; }
+.calendar-back-btn { display: inline-block; margin-bottom: 8px; }
+
+.calendar-toolbar { display: block; margin: 0 0 12px; }
+
+.calendar-date-nav {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  gap: 8px;
+  width: min(560px, 100%);
+  margin: 0 auto 8px;
+}
+.calendar-date-nav .btn {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  font-size: 19px;
+}
+.calendar-date-nav .calendar-date-title {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 38px;
+  border: 0;
+  border-radius: 13px;
+  background: transparent;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+}
+.calendar-date-title input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+/* V1 (app.py:1734, ".calendar-today{display:none}"): il pulsante OGGI resta
+   nel markup (accessibile da tastiera/screen reader, ed e' quello che i
+   test qui verificano) ma non e' mai visibile nella UI reale - nessuna
+   dichiarazione successiva della cascata lo riporta visibile. */
+.calendar-today { display: none; }
+
+.calendar-appt-filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.calendar-filter-pill {
+  border: 1px solid #334155;
+  background: #131a26;
+  color: #9ca7b8;
+  border-radius: 999px;
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.calendar-filter-pill:hover { border-color: #465065; }
+.calendar-filter-pill.active { background: #e9475b; border-color: #e9475b; color: #fff; }
+.light-theme .calendar-filter-pill { background: #fff; color: #526174; border-color: #cbd5e1; }
+.light-theme .calendar-filter-pill.active { background: #e9475b; border-color: #e9475b; color: #fff; }
+
+.calendar-month-new-btn,
+.calendar-month-detail-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+}
+
+@media (max-width: 900px) {
+  .calendar-toolbar { margin-bottom: 7px; }
+  .calendar-main-title { display: flex; margin: 0 2px 2px; }
+  .calendar-main-title h1 { font-size: 18px; }
+  .calendar-main-title .sub { display: none; }
+}

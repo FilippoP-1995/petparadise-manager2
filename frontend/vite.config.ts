@@ -8,6 +8,7 @@ export default defineConfig({
     alias: { "@": "/src" },
   },
   server: {
+    host: true, // ascolta anche sulla rete locale (0.0.0.0), non solo localhost - richiesto per raggiungere il dev server da iPhone in LAN
     port: 5173,
     proxy: {
       "/api": "http://127.0.0.1:8001",

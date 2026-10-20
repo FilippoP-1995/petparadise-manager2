@@ -1,0 +1,86 @@
+/* Correzioni/aggiunte al linguaggio grafico reale V1 (app.py, blocco
+   .cremation-*, righe ~2147-2297) per le pagine Cremazioni. Scoped a
+   questa feature: styles.css e' condiviso con altri agenti che
+   lavorano in parallelo su altre pagine, quindi qui SOLO override
+   mirati o classi mancanti (mai duplicati di regole gia' corrette in
+   styles.css). L'ordine di import (dopo styles.css) fa vincere queste
+   regole a parita' di specificita'. */
+
+/* V1 (app.py:2149): il titolo e' un flex-row icona+testo con gap:10px -
+   styles.css compensa invece con .cremation-title-icon{margin-left:8px;
+   vertical-align:middle}, che raddoppierebbe lo spazio se applicato
+   sopra un h1 flex. Qui ripristiniamo il vero layout e puliamo l'icona
+   dai margini extra. */
+.cremation-header-title h1 { display: flex; align-items: center; gap: 10px; font-size: 26px; margin: 0; }
+.cremation-header-title .cremation-title-icon { margin-left: 0; vertical-align: initial; }
+.cremation-header-title .cremation-title-icon svg { width: 16px; height: 16px; }
+
+/* V1 (app.py:2154): riga compatta gap:10px, senza il width:100%/
+   justify-content/margin-bottom aggiunti in styles.css. */
+.cremation-date-nav { width: auto; justify-content: flex-start; margin-bottom: 0; }
+
+/* V1 (app.py:2164): griglia a 6 colonne (5 stat card reali + uno slot
+   vuoto) - styles.css ha repeat(4,1fr), sbagliato. */
+.cremation-summary-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 900px) { .cremation-summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 620px) { .cremation-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* V1 (app.py:2176-2177): la chevron della stat "In attesa" e' l'icona
+   lucide chevron-right che ruota in base ad aria-expanded, non un
+   semplice carattere "›" statico. */
+.cremation-stat-chevron svg { width: 16px; height: 16px; transition: transform 0.25s ease; transform: rotate(90deg); }
+.cremation-stat-clickable[aria-expanded="true"] .cremation-stat-chevron svg { transform: rotate(270deg); }
+
+/* V1 (app.py:12234): stessa icona reale (chevron-right) anche sulla
+   card ciclo, non un carattere statico. */
+.cremation-cycle-chevron svg { width: 16px; height: 16px; }
+
+/* V1 (app.py:2239-2241/2244-2246): "CICLO N" e' colorato in base allo
+   stato ma SENZA pillola di sfondo (solo testo) - styles.css applica
+   invece la stessa regola .cremation-status-planned/waiting/done usata
+   per il badge (che ha anche background), quindi il numero ciclo
+   erediterebbe erroneamente la pillola colorata del badge. */
+.cremation-cycle-number.cremation-status-planned,
+.cremation-cycle-number.cremation-status-waiting,
+.cremation-cycle-number.cremation-status-done { background: none; padding: 0; border-radius: 0; }
+.cremation-cycle-number.cremation-status-planned { color: #93c5fd; }
+.cremation-cycle-number.cremation-status-waiting { color: #fb923c; }
+.cremation-cycle-number.cremation-status-done { color: #94a3b8; }
+
+/* V1 (app.py:2247/2250-2257): bottoni azione reali del ciclo ("Termina
+   ciclo" / "Annulla completamento") - assenti da styles.css finora,
+   quindi renderizzati senza alcuno stile. margin-left:auto omesso
+   rispetto a V1: qui il blocco azioni sta sotto la lista animali (non
+   dentro la riga flex della testata come nell'accordion V1). */
+.cremation-cycle-action { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+.cremation-action-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 10px; font-size: 12px; font-weight: 700; border: 1.5px solid; background: transparent; cursor: pointer; white-space: nowrap; }
+.cremation-action-btn svg { width: 14px; height: 14px; }
+.cremation-action-active { border-color: #4ade80; color: #4ade80; background: #4ade8014; font-weight: 800; }
+.cremation-action-active:hover { background: #4ade8026; }
+.cremation-action-planned { border-color: #60a5fa; color: #60a5fa; }
+.cremation-action-planned:hover { background: #60a5fa1a; }
+
+/* --- Dettaglio ciclo (pagina dedicata in V2; in V1 e' l'accordion
+   inline della board - vedi commento nel componente). Stesso
+   linguaggio grafico reale delle righe animale (app.py:2261-2297),
+   applicato qui a un elenco a se' invece che dentro la card
+   espandibile. Solo 2 colonne (identita' animale + azioni): provenienza
+   /etichette/urna non renderizzate perche' CycleAnimalRead non le
+   espone. */
+.cremation-detail-animals { display: flex; flex-direction: column; }
+.cremation-detail-animals .cremation-animal-row { display: grid; grid-template-columns: minmax(0, 1.6fr) auto; align-items: center; gap: 16px; padding: 12px 0; border-top: 1px solid #263246; }
+.cremation-detail-animals .cremation-animal-row:first-child { border-top: none; padding-top: 6px; }
+.cremation-animal-id { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.cremation-animal-avatar { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 17px; flex: 0 0 34px; background: #0f172a; }
+.cremation-animal-avatar.avatar-dog { background: #172554; }
+.cremation-animal-avatar.avatar-cat { background: #052e2b; }
+.cremation-animal-avatar.avatar-other { background: #2e1065; }
+.cremation-animal-name-wrap { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cremation-animal-name { font-weight: 800; font-size: 16px; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cremation-animal-weight { font-size: 12px; color: #94a3b8; }
+.cremation-animal-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.cremation-animal-open { display: flex; align-items: center; gap: 3px; color: #fb7185; font-size: 12px; font-weight: 700; white-space: nowrap; text-decoration: none; }
+.cremation-animal-open svg { width: 14px; height: 14px; }
+.cremation-animal-remove { width: 24px; height: 24px; flex: 0 0 24px; display: flex; align-items: center; justify-content: center; border-radius: 7px; border: 1px solid #334155; background: transparent; color: #94a3b8; cursor: pointer; }
+.cremation-animal-remove:hover { border-color: #fb7185; color: #fb7185; }
+.cremation-animal-remove svg { width: 13px; height: 13px; }

@@ -106,21 +106,22 @@ export function InvoiceDetailPage() {
         {recon && <span className={`badge status-${recon.status}`}>{STATUS_LABELS[recon.status]}</span>}
       </div>
 
-      <div className="card">
+      <div className="section">
         <p>
           <strong>Pratica:</strong>{" "}
           {invoice.practice_id ? <Link to={`/pratiche/${invoice.practice_id}`}>{invoice.practice_number_snapshot}</Link> : invoice.practice_number_snapshot || "-"}
         </p>
         <p>
-          <strong>Data fattura:</strong> {invoice.invoice_date ?? "-"}
+          <strong>Data fattura:</strong>{" "}
+          {invoice.invoice_date ? new Date(`${invoice.invoice_date}T00:00:00`).toLocaleDateString("it-IT") : "-"}
         </p>
         <p>
-          <strong>Canale:</strong> {invoice.channel}
+          <strong>Circuito:</strong> {invoice.channel}
         </p>
       </div>
 
       {recon && (
-        <div className="card">
+        <div className="section">
           <h2>Riconciliazione</h2>
           <p className="sub">
             Il totale della fattura (documento fiscale) e il totale pagato (ledger) sono due cifre distinte - non

@@ -62,6 +62,7 @@ from calendar_service import (
     route_eligible_events,
 )
 import route_service
+import ai_assistant
 from backup_service import run_database_backup
 from shift_service import (
     SHIFT_BRANCHES,
@@ -716,6 +717,8 @@ def init_db():
             "tag_possibile_calco_nose": "TEXT",
             "tag_avvisare": "TEXT",
             "tag_da_richiamare": "TEXT",
+            "tag_pelo": "TEXT",
+            "tag_no_pelo": "TEXT",
             "price_paw_cast_2": "TEXT",
             "price_nose_cast_2": "TEXT",
             "price_nose_cast_3": "TEXT", "price_nose_cast_4": "TEXT",
@@ -1296,6 +1299,27 @@ def parse_preference_list(value, max_len=40):
     return [str(item) for item in data[:max_len] if isinstance(item, (str, int, float))]
 
 
+def toggle_collapsed_preference(c, user_id, pref_key, section_key, collapsed):
+    """Stesso meccanismo gia' usato da save_archive_month_state per
+    ricordare quali sezioni collassabili l'utente ha chiuso (persistenza
+    per-utente su user_preferences, sopravvive a qualunque ricarica o
+    modalita' di navigazione indietro - tasto/gesture/browser, perche' non
+    dipende dall'URL ne' dalla bfcache). Generalizzato qui per riuso da
+    altre pagine con lo stesso identico bisogno (Smaltimenti,
+    Riepilogo mensile Collaboratori), invece di duplicare la stessa
+    logica una terza/quarta volta."""
+    row = c.execute("SELECT value FROM user_preferences WHERE user_id=? AND key=?", (user_id, pref_key)).fetchone()
+    keys = set(parse_preference_list(row["value"] if row else ""))
+    if collapsed:
+        keys.add(section_key)
+    else:
+        keys.discard(section_key)
+    c.execute(
+        "INSERT INTO user_preferences(user_id,key,value) VALUES(?,?,?) ON CONFLICT(user_id,key) DO UPDATE SET value=excluded.value",
+        (user_id, pref_key, json.dumps(sorted(keys), ensure_ascii=False)),
+    )
+
+
 def reorder_by_saved(default_items, saved_keys, key_fn):
     keys_present = {key_fn(item) for item in default_items}
     ordered_keys = [k for k in saved_keys if k in keys_present]
@@ -1499,7 +1523,7 @@ body{background:#111827;color:#f8fafc}.icon{width:20px;height:20px;flex:0 0 20px
 .activity-list{display:flex;flex-direction:column;margin-top:14px}.activity-item{display:grid;grid-template-columns:42px minmax(0,1fr) auto;align-items:center;gap:11px;padding:12px 0;border-bottom:1px solid #334155}.activity-item:last-child{border-bottom:0}.activity-item b,.activity-item small{display:block}.activity-item b{font-size:13px}.activity-item small{margin-top:3px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.activity-item time{color:#94a3b8;font-size:11px}.activity-icon{width:38px;height:38px;--icon-bg:#243244;--icon-color:#5eead4;--icon-shadow:transparent}.activity-1 .activity-icon{--icon-bg:#422006;--icon-color:#fbbf24}.activity-2 .activity-icon{--icon-bg:#3b0764;--icon-color:#c084fc}.activity-3 .activity-icon{--icon-bg:#4c0519;--icon-color:#fb7185}.activity-empty{padding:40px 10px;color:#94a3b8;text-align:center}
 .bottom-nav,.more-menu,.more-backdrop{display:none}.tag-red{background:#7f1d2d;color:#fecdd3}.tag-orange{background:#7c2d12;color:#fed7aa}.tag-outline-orange{background:#3b1d0c;color:#fdba74;border-color:#f97316}.tag-purple{background:#4c1d95;color:#e9d5ff}.tag-yellow{background:#713f12;color:#fef08a}.tag-pink{background:#831843;color:#fbcfe8}.tag-blue{background:#1e3a8a;color:#bfdbfe}.tag-green{background:#14532d;color:#bbf7d0}
 .search-after-results{margin-top:32px}.search-after-results>h2{display:none}.search-after-results .section{box-shadow:0 12px 34px #0307122e}.advanced-search{margin:16px 0 24px;border:1px solid var(--line);border-radius:14px;background:#202c3d;overflow:hidden}.advanced-search summary{display:flex;align-items:center;justify-content:space-between;min-height:48px;padding:12px 16px;cursor:pointer;font-weight:600;list-style:none}.advanced-search summary::-webkit-details-marker{display:none}.advanced-search summary:after{content:'+';font-size:22px;line-height:1}.advanced-search[open] summary:after{content:'−'}.advanced-search form{margin:0;border:0;border-top:1px solid var(--line);border-radius:0;box-shadow:none!important}.light-theme .advanced-search{background:#fff}
-.dashboard-recent{margin-top:26px}.dashboard-recent .titlebar{margin-bottom:12px}.dashboard-recent .titlebar a{color:#fb7185;display:inline-flex;align-items:center;gap:2px}.recent-practice-archive-arrow{font-size:16px}.recent-practice-list{display:flex;flex-direction:column;gap:8px}.recent-practice-card{display:grid;grid-template-columns:30fr 30fr 32fr 8fr;align-items:center;gap:8px;min-height:88px;padding:16px;border-radius:16px;border:1px solid #334155;border-left:4px solid #64748b;background:#1f2937;cursor:pointer;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}.recent-practice-card:hover{transform:translateY(-1px);box-shadow:0 10px 26px #03071240}.recent-practice-card.row-selected{border-color:#ef405f80}.light-theme .recent-practice-card.row-selected{border-color:#ef405f66}.recent-practice-card[data-species="avatar-dog"]{border-left-color:#60a5fa}.recent-practice-card[data-species="avatar-cat"]{border-left-color:#4ade80}.recent-practice-card[data-species="avatar-other"]{border-left-color:#c084fc}.recent-practice-animal{display:flex;align-items:center;gap:10px;min-width:0}.recent-practice-avatar{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:19px;flex:0 0 38px}.recent-practice-animal-copy{display:flex;flex-direction:column;gap:2px;min-width:0}.recent-practice-name{font-size:18px;font-weight:700;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.recent-practice-meta{font-size:15px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.recent-practice-date{display:flex;flex-direction:column;gap:2px;min-width:0}.recent-practice-date-value{display:flex;align-items:center;gap:6px;font-size:16px;font-weight:600;color:#e2e8f0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.recent-practice-date-value .icon{width:14px;height:14px;flex:0 0 14px;color:#64748b}.recent-practice-owner{display:flex;flex-direction:column;gap:2px;min-width:0}.recent-practice-owner-name{font-size:15px;font-weight:600;color:#e2e8f0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.recent-practice-chevron{display:flex;align-items:center;justify-content:center;color:#64748b}.recent-practice-chevron .icon{width:20px;height:20px}.light-theme .recent-practice-card{background:#fff;border-color:#e2e8f0}.light-theme .recent-practice-name,.light-theme .recent-practice-date-value,.light-theme .recent-practice-owner-name{color:#111827}.light-theme .recent-practice-meta{color:#64748b}.light-theme .recent-practice-chevron{color:#94a3b8}@media(max-width:620px){.recent-practice-card{grid-template-columns:32fr 28fr 32fr 8fr;padding:14px;gap:6px;min-height:90px}.recent-practice-name{font-size:17px}.recent-practice-avatar{width:34px;height:34px;flex:0 0 34px;font-size:17px}}.load-previous-month{display:flex;justify-content:center;padding:8px 0 24px}.load-previous-month .btn{width:auto;min-width:240px}.budget-add{align-self:end;width:auto!important;min-height:42px;margin-top:auto}.budget-layout{display:block}.budget-workspace{display:grid;gap:12px}.budget-row{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(270px,.75fr);gap:16px;padding:12px;border:1px solid #334155;border-radius:13px;background:#11192566}.budget-cell{display:grid;align-content:start;gap:10px;min-width:0}.budget-cell-right .modern-check{min-height:42px}.budget-cell-right .field{min-width:0}.budget-cell:empty{display:none}.economic-estimate{margin-top:20px;padding-top:18px;border-top:1px solid #3b4658}.economic-estimate h3{margin:0 0 12px;font-size:15px}.catalog-summary-form{display:grid;gap:8px;margin-top:9px}.catalog-summary-form .modern-check{min-height:40px;padding:8px 10px}.light-theme .budget-row{border-color:#cbd5e1;background:#f8fafc}.light-theme .economic-estimate{border-color:#cbd5e1}
+.dashboard-recent{margin-top:26px}.dashboard-recent .titlebar{margin-bottom:12px}.dashboard-recent .titlebar a{color:#fb7185;display:inline-flex;align-items:center;gap:2px}.recent-practice-archive-arrow{font-size:16px}.recent-practice-list{display:flex;flex-direction:column;gap:8px}.recent-practice-card{display:grid;grid-template-columns:30fr 30fr 32fr 8fr;align-items:center;gap:8px;min-height:88px;padding:16px;border-radius:16px;border:1px solid #334155;border-left:4px solid #64748b;background:#1f2937;cursor:pointer;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}.recent-practice-card:hover{transform:translateY(-1px);box-shadow:0 10px 26px #03071240}.recent-practice-card[data-species="avatar-dog"]{border-left-color:#60a5fa}.recent-practice-card[data-species="avatar-cat"]{border-left-color:#4ade80}.recent-practice-card[data-species="avatar-other"]{border-left-color:#c084fc}.recent-practice-animal{display:flex;align-items:center;gap:10px;min-width:0}.recent-practice-avatar{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:19px;flex:0 0 38px}.recent-practice-animal-copy{display:flex;flex-direction:column;gap:2px;min-width:0}.recent-practice-name{font-size:18px;font-weight:700;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.recent-practice-meta{font-size:15px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.recent-practice-date{display:flex;flex-direction:column;gap:2px;min-width:0}.recent-practice-date-value{display:flex;align-items:center;gap:6px;font-size:16px;font-weight:600;color:#e2e8f0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.recent-practice-date-value .icon{width:14px;height:14px;flex:0 0 14px;color:#64748b}.recent-practice-owner{display:flex;flex-direction:column;gap:2px;min-width:0}.recent-practice-owner-name{font-size:15px;font-weight:600;color:#e2e8f0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.recent-practice-chevron{display:flex;align-items:center;justify-content:center;color:#64748b}.recent-practice-chevron .icon{width:20px;height:20px}.light-theme .recent-practice-card{background:#fff;border-color:#e2e8f0}.light-theme .recent-practice-name,.light-theme .recent-practice-date-value,.light-theme .recent-practice-owner-name{color:#111827}.light-theme .recent-practice-meta{color:#64748b}.light-theme .recent-practice-chevron{color:#94a3b8}@media(max-width:620px){.recent-practice-card{grid-template-columns:32fr 28fr 32fr 8fr;padding:14px;gap:6px;min-height:90px}.recent-practice-name{font-size:17px}.recent-practice-avatar{width:34px;height:34px;flex:0 0 34px;font-size:17px}}.load-previous-month{display:flex;justify-content:center;padding:8px 0 24px}.load-previous-month .btn{width:auto;min-width:240px}.budget-add{align-self:end;width:auto!important;min-height:42px;margin-top:auto}.budget-layout{display:block}.budget-workspace{display:grid;gap:12px}.budget-row{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(270px,.75fr);gap:16px;padding:12px;border:1px solid #334155;border-radius:13px;background:#11192566}.budget-cell{display:grid;align-content:start;gap:10px;min-width:0}.budget-cell-right .modern-check{min-height:42px}.budget-cell-right .field{min-width:0}.budget-cell:empty{display:none}.economic-estimate{margin-top:20px;padding-top:18px;border-top:1px solid #3b4658}.economic-estimate h3{margin:0 0 12px;font-size:15px}.catalog-summary-form{display:grid;gap:8px;margin-top:9px}.catalog-summary-form .modern-check{min-height:40px;padding:8px 10px}.light-theme .budget-row{border-color:#cbd5e1;background:#f8fafc}.light-theme .economic-estimate{border-color:#cbd5e1}
 *:focus-visible{outline:3px solid #fb7185!important;outline-offset:3px}.light-theme{background:#eef2f7;color:#111827}.light-theme .app-header,.light-theme .top{background:#fff;color:#111827}.light-theme .dashboard-panel,.light-theme .metric-card,.light-theme .payment-card,.light-theme .section,.light-theme .tablebox{background:#fff;color:#111827}.light-theme .header-search,.light-theme .icon-btn,.light-theme .header-actions time{background:#f8fafc;color:#111827}.light-theme .welcome p,.light-theme .metric-card em,.light-theme .payment-card em,.light-theme .activity-item small,.light-theme .activity-item time{color:#64748b}
 @media(max-width:1100px){.dashboard-states,.dashboard-payments{grid-template-columns:repeat(2,1fr)}.header-actions time{display:none}}
 @media(max-width:900px){body{min-height:100dvh;padding-bottom:calc(82px + var(--safe-bottom))}#main-content{min-height:100dvh;padding-left:var(--safe-left);padding-right:var(--safe-right)}.top{position:fixed;left:calc(10px + var(--safe-left));top:var(--safe-top);width:60px;height:60px;min-height:0;padding:0;margin:0;border:0;box-shadow:none;z-index:41;display:flex;align-items:center;justify-content:center}body .top{background:transparent}.top .nav{display:none}.top .brand{padding:0;gap:0}.brand-copy{display:inline}.brand-logo{width:44px;height:44px;padding:7px;box-sizing:border-box;border-radius:50%;object-fit:contain;background:linear-gradient(160deg,#1c2635,#121a27);border:1px solid #2b3849;box-shadow:0 8px 20px #05070f55}.app-header{position:fixed;left:calc(10px + var(--safe-left));right:calc(10px + var(--safe-right));top:var(--safe-top);width:auto;height:60px;z-index:40;display:flex;align-items:center;padding:0 8px 0 60px;border:1px solid #2b3849;border-radius:26px;box-shadow:0 16px 38px #05070f66;backdrop-filter:blur(20px)}body .app-header{background:linear-gradient(160deg,#1c2635f5,#121a27f5);border-color:#2b3849}.app-header .header-actions{display:flex;align-items:center;gap:8px;width:100%}.header-actions time,.header-new span{display:none}.app-header .header-search{position:static;display:flex;flex:1;min-width:0;align-items:center;gap:9px;height:44px;padding:0 15px;border-radius:22px;background:#0e1622;border:1px solid #263246;transition:border-color .2s ease,background-color .2s ease}.app-header .header-search:focus-within{border-color:#ef405f70;background:#111b28}.app-header .header-search .icon{width:17px;height:17px;flex:0 0 17px;color:#7c8aa0}.app-header .header-search input{flex:1;min-width:0;padding:0;background:transparent;border:0;color:#e7ecf3;font-size:16px}.app-header .header-search input::placeholder{color:#69788f}.app-header .icon-btn,.app-header .header-new{flex:0 0 auto;width:42px;height:42px;min-height:0;padding:0;border-radius:21px;border:1px solid #263246;background:#0e1622;box-shadow:0 6px 16px #05070f40;color:#8592a6;transition:transform .15s cubic-bezier(.34,1.4,.64,1),border-color .2s ease,color .2s ease}.app-header .icon-btn:hover{color:#e7ecf3;border-color:#3a4a60}.app-header .icon-btn:active,.app-header .header-new:active{transform:scale(.92)}.app-header .header-new{background:linear-gradient(135deg,#fb4c67,#d9284c);border-color:transparent;color:#fff;box-shadow:0 8px 20px #ef405f55}.app-header .icon-btn .notification-badge{min-width:16px;height:16px;padding:0 4px;font-size:9.5px;transform:translate(11px,-11px);box-shadow:0 0 0 2px #0e1622}.wrap{margin-left:0;padding:calc(86px + var(--safe-top)) 14px calc(96px + var(--safe-bottom))}.bottom-nav{position:fixed;display:grid;grid-template-columns:87fr 87fr 72fr 87fr 87fr;grid-template-rows:72px;align-items:end;left:calc(20px + var(--safe-left));right:calc(20px + var(--safe-right));bottom:calc(10px + var(--safe-bottom));z-index:90;height:72px;padding:0;border-radius:28px;background:#1a1f2b;border:1px solid #2a2f3b;box-shadow:0 -8px 20px rgba(0,0,0,.4);backdrop-filter:blur(20px)}.bottom-nav:before{content:'';position:absolute;top:0;left:50%;width:90px;height:44px;transform:translateX(-50%);background:#1a1f2b;z-index:1;clip-path:path('M6.63,0 A12.8,12.8 0 0 1 19.42,13.33 A25.6,25.6 0 0 0 45,40 A25.6,25.6 0 0 0 70.58,13.33 A12.8,12.8 0 0 1 83.37,0 Z')}.light-theme .bottom-nav:before{background:#eef2f7}.bottom-nav a,.bottom-nav button{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:0;background:transparent;color:#a1a7b3;font-size:12px;font-weight:600;padding:19px 0;transition:color .25s ease,transform .15s cubic-bezier(.34,1.4,.64,1)}.bottom-nav a:active,.bottom-nav button:active{transform:scale(.92)}.bottom-nav .icon{width:24px;height:24px;transition:transform .15s ease}.bottom-nav a.nav-active{color:#ff4d6d}
@@ -2327,6 +2351,8 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-week-animal-tag .badge{font-size:10px;padding:2px 8px;white-space:nowrap}
 .cremation-week-animal-urn{display:flex;align-items:center;gap:4px;color:#cbd5e1;font-size:11px;white-space:nowrap}.cremation-week-notify-badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:800;white-space:nowrap}
 .cremation-week-animal-urn .icon{width:12px;height:12px;flex:0 0 12px}
+.cremation-week-animal-notes{display:flex;align-items:flex-start;gap:4px;flex-basis:100%;color:#94a3b8;font-size:11px;font-style:italic}
+.cremation-week-animal-notes .icon{width:12px;height:12px;flex:0 0 12px;margin-top:1px}
 .cremation-week-status-icon{display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;flex:0 0 26px}
 .cremation-week-status-icon .icon{width:14px;height:14px}
 .cremation-week-status-icon.cremation-status-planned{background:#172554;color:#93c5fd}
@@ -2340,6 +2366,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .light-theme .cremation-daybar-nav:hover{background:#f1f5f9;color:#111827}
 .light-theme .cremation-week-cycle-card{background:#fff;border-color:#e2e8f0}
 .light-theme .cremation-week-animal-line{color:#111827}
+.light-theme .cremation-week-animal-notes{color:#64748b}
 @media(max-width:620px){.cremation-week-cycle-main{flex-basis:100%}.cremation-week-status-icon{margin-left:auto}}
 .cremation-quick-menu-wrap{position:relative;display:inline-block}
 .cremation-waiting-main .cremation-quick-menu-wrap{display:block;width:100%;margin-top:6px}
@@ -2706,6 +2733,36 @@ body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY
 .route-quick-field{margin-bottom:14px}
 .route-quick-field label{display:block;margin-bottom:6px;font-size:12px;color:#8592a6;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
 .route-quick-field select{width:100%;padding:11px 12px;border-radius:11px;border:1px solid #263246;background:#0e1622;color:#f5f7fb;font-size:14.5px}
+/* Assistente AI flottante (richiesta esplicita dell'utente): icona
+   trascinabile con posizione ancorata in percentuale di viewport - mai
+   coordinate assolute, cosi' resta valida cambiando schermo/dispositivo -
+   e mini chat in overlay SULLA pagina corrente, mai una pagina/route
+   separata. z-index piu' alto di qualunque altro overlay esistente cosi'
+   resta sempre raggiungibile da ogni schermata. */
+.ai-chat-fab{position:fixed;z-index:250;width:56px;height:56px;border-radius:50%;border:0;display:grid;place-items:center;background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;box-shadow:0 10px 26px #ef405f66,0 0 0 4px #ef405f1f;cursor:grab;touch-action:none;transition:box-shadow .15s ease}
+.ai-chat-fab:active{cursor:grabbing}
+.ai-chat-fab.dragging{transition:none;box-shadow:0 16px 36px #ef405f80}
+.ai-chat-fab svg{width:24px;height:24px}
+#aiChatRoot[hidden]{display:none}
+.ai-chat-backdrop{position:fixed;inset:0;z-index:255;background:#020617aa}
+.ai-chat-panel{position:fixed;z-index:256;left:50%;bottom:calc(16px + var(--safe-bottom));transform:translateX(-50%);width:min(420px,calc(100vw - 24px));max-height:min(72vh,620px);display:flex;flex-direction:column;background:#141b28;border:1px solid #263246;border-radius:20px;box-shadow:0 30px 80px #000c;overflow:hidden}
+.ai-chat-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #1d2636;font-weight:800}
+.ai-chat-head span{display:flex;align-items:center;gap:8px}
+.ai-chat-head svg{width:18px;height:18px}
+.ai-chat-body{flex:1;min-height:120px;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 16px;display:flex;flex-direction:column;gap:8px;background:#0d121b}
+.ai-chat-empty{color:#8592a6;font-size:13px;text-align:center;margin:auto}
+.ai-chat-pending{align-self:flex-start;color:#8592a6;font-size:12.5px;font-style:italic}
+.ai-chat-error .wa-bubble{background:#3a1a1f;color:#fca5a5}
+.ai-chat-input-row{display:flex;gap:8px;align-items:flex-end;padding:10px 12px;border-top:1px solid #1d2636;background:#141b28}
+.ai-chat-input-row textarea{flex:1;resize:none;max-height:120px;padding:10px 12px;border-radius:12px;border:1px solid #263246;background:#0e1622;color:#f5f7fb;font:inherit;font-size:14px}
+.ai-chat-input-row button{flex:0 0 auto;width:40px;height:40px;border-radius:50%;border:0;background:linear-gradient(135deg,#fb4c67,#d9284c);color:#fff;display:grid;place-items:center;cursor:pointer}
+.ai-chat-input-row button svg{width:18px;height:18px}
+.light-theme .ai-chat-panel{background:#fff;border-color:#e2e8f0}
+.light-theme .ai-chat-head{border-color:#eef1f5}
+.light-theme .ai-chat-body{background:#f8fafc}
+.light-theme .ai-chat-input-row{background:#fff;border-color:#eef1f5}
+.light-theme .ai-chat-input-row textarea{background:#f8fafc;color:#24312c;border-color:#e2e8f0}
+@media(max-width:480px){.ai-chat-panel{bottom:0;left:0;right:0;transform:none;width:100%;border-radius:20px 20px 0 0;max-height:min(80vh,620px)}}
 .route-quick-field-select{display:block;width:100%;margin:-6px 0 14px;padding:11px 12px;border-radius:11px;border:1px solid #263246;background:#0e1622;color:#f5f7fb;font-size:14.5px}
 .route-quick-stops{list-style:none;margin:0 0 16px;padding:0;max-height:180px;overflow-y:auto;border:1px solid #263246;border-radius:12px}
 .route-quick-stops li{padding:9px 12px;border-bottom:1px solid #263246;font-size:13.5px}
@@ -2836,7 +2893,7 @@ body.route-quick-open .route-quick-popup{opacity:1;transform:scale(1) translateY
 .shift-month-cell{position:relative;display:flex;flex-direction:column;height:120px;padding:6px 5px;border:1px solid var(--line);border-radius:12px;background:#182334;color:var(--ink);overflow:hidden}
 .light-theme .shift-month-cell{background:#f8fafc}
 .shift-month-cell b{font-size:12px;font-weight:700;flex:0 0 auto}
-.shift-month-cell.is-today{border-color:var(--brand2)}
+.shift-month-cell.is-today{border-color:var(--brand2);box-shadow:inset 0 0 0 2px var(--brand2)}
 .shift-month-cell.is-other-month{opacity:.4}
 .shift-month-cell-branch{margin-top:4px;min-width:0;flex:0 0 auto}
 .shift-month-cell-branch.branch-livorno{color:var(--brand)}
@@ -3770,12 +3827,32 @@ function setupTableTouchScroll(){
   });
 }
 document.addEventListener('DOMContentLoaded', setupTableTouchScroll);
+// Sistema unico di ripristino stato di navigazione (scroll, ricerca/
+// filtri, riga evidenziata, elemento espanso) per ogni pagina lista/
+// vista che porta a un dettaglio e poi torna indietro. Consolida in un
+// solo posto quello che prima erano 3 implementazioni quasi identiche
+// (questa versione generica + una copia in Fatture + una copia in
+// Archivio pratiche): stessa logica di rilevamento "sto tornando da un
+// dettaglio" (referrer che combacia con `detail`, oppure vera
+// navigazione back/forward del browser, con un flag di sessionStorage
+// che sopravvive anche a un redirect intermedio quando la ricerca
+// salvata differisce da quella corrente), stesso salvataggio scroll con
+// debounce, estesa con le funzionalita' che Fatture/Archivio avevano
+// solo loro (rivelazione lista dopo il ripristino per evitare il flash,
+// evidenziazione della riga da cui si e' tornati, chiave per-utente) e
+// una nuova (skipScrollWhenParam, usata da Cremazioni per non litigare
+// con cremationOpenPendingCycle quando c'e' un ciclo da riespandere).
 const PPM_LIST_PAGES={
-  '/calendario':{detail:/^\/calendario\/\d+/,calendar:true},
+  '/calendario':{detail:/^\/calendario\/(\d+|nuovo)/,calendar:true},
   '/clienti':{detail:/^\/clienti\/\d+/},
   '/veterinari':{detail:/^\/veterinari\/\d+/},
+  '/collaboratori':{detail:/^\/collaboratori\/\d+/},
   '/catalogo-urne':{detail:/^\/catalogo-urne\/\d+/,extraInputs:['urnCatalogSearch']},
   '/ordini/storico':{detail:/^\/ordini\/\d+/},
+  '/smaltimenti':{detail:/^\/(pratiche|smaltimenti\/storico)\/\d+/},
+  '/programma-cremazioni':{detail:/^\/pratiche\/\d+/,skipScrollWhenParam:'open_cycle'},
+  '/fatture':{detail:/^\/pratiche\/\d+/,perUser:true,revealId:'fattureLists',rowHighlight:{className:'row-selected'},saveOnClick:'.tablebox .practice-row-link'},
+  '/archivio/pratiche':{detail:/^\/pratiche\/\d+/,perUser:true,revealId:'archiveList',rowHighlight:{className:'archive-row-highlight',fadeClassName:'archive-row-fade',removeDelayMs:2600}},
 };
 function ppmListScrollTarget(cfg){
   if(cfg.calendar){
@@ -3796,7 +3873,8 @@ function setupListStateRestore(){
   const path=location.pathname;
   const cfg=PPM_LIST_PAGES[path];
   if(!cfg) return;
-  const key='ppm_list_state:'+path;
+  const userId=document.body?document.body.dataset.userId:'';
+  const key='ppm_list_state:'+path+(cfg.perUser&&userId?':'+userId:'');
   const flagKey=key+':returning';
   let refPath='';
   try{ refPath=document.referrer?new URL(document.referrer).pathname:''; }catch(e){}
@@ -3804,36 +3882,57 @@ function setupListStateRestore(){
   const freshBack=(navEntry&&navEntry.type==='back_forward')||(cfg.detail&&cfg.detail.test(refPath));
   const pendingReturn=sessionStorage.getItem(flagKey)==='1';
   const isBack=freshBack||pendingReturn;
-  let redirecting=false;
-  if(isBack){
+  const revealEl=cfg.revealId?document.getElementById(cfg.revealId):null;
+  function reveal(){ if(revealEl) revealEl.style.visibility='visible'; }
+  // Quando l'URL porta gia' il parametro di cfg.skipScrollWhenParam (es.
+  // open_cycle per Cremazioni), c'e' gia' un meccanismo dedicato che sa
+  // esattamente cosa ripristinare (cremationOpenPendingCycle): il
+  // ripristino generico deve stare completamente fuori, altrimenti il
+  // confronto search-salvata-vs-corrente lo troverebbe "diverso" (la
+  // ricerca salvata non conosce open_cycle) e farebbe un location.replace
+  // che lo cancella prima ancora che l'altro meccanismo possa leggerlo.
+  const skipGenericRestore=cfg.skipScrollWhenParam && new URLSearchParams(location.search).has(cfg.skipScrollWhenParam);
+  if(isBack && !skipGenericRestore){
     if(freshBack){ try{ sessionStorage.setItem(flagKey,'1'); }catch(e){} }
     let state=null;
     try{ state=JSON.parse(sessionStorage.getItem(key)||'null'); }catch(e){}
     if(state){
       if(typeof state.search==='string' && state.search!==location.search){
-        redirecting=true;
         location.replace(location.pathname+state.search);
-      }else{
-        try{ sessionStorage.removeItem(flagKey); }catch(e){}
-        if(cfg.extraInputs){
-          cfg.extraInputs.forEach(id=>{
-            const el=document.getElementById(id);
-            if(el && state.extra && state.extra[id]!==undefined && el.value!==state.extra[id]){
-              el.value=state.extra[id];
-              el.dispatchEvent(new Event('input',{bubbles:true}));
+        return;
+      }
+      try{ sessionStorage.removeItem(flagKey); }catch(e){}
+      if(cfg.extraInputs){
+        cfg.extraInputs.forEach(id=>{
+          const el=document.getElementById(id);
+          if(el && state.extra && state.extra[id]!==undefined && el.value!==state.extra[id]){
+            el.value=state.extra[id];
+            el.dispatchEvent(new Event('input',{bubbles:true}));
+          }
+        });
+      }
+      if(typeof state.scrollY==='number'){
+        setTimeout(()=>{ ppmListScrollTo(ppmListScrollTarget(cfg),state.scrollY); },0);
+      }
+      if(cfg.rowHighlight){
+        const match=refPath.match(/^\/pratiche\/(\d+)/);
+        if(match){
+          const row=document.querySelector('[data-practice-id="'+match[1]+'"]');
+          if(row){
+            row.classList.add(cfg.rowHighlight.className);
+            if(cfg.rowHighlight.fadeClassName){
+              setTimeout(()=>{ row.classList.add(cfg.rowHighlight.fadeClassName); },300);
+              setTimeout(()=>{ row.classList.remove(cfg.rowHighlight.className,cfg.rowHighlight.fadeClassName); },cfg.rowHighlight.removeDelayMs||2600);
             }
-          });
-        }
-        if(typeof state.scrollY==='number'){
-          setTimeout(()=>{ ppmListScrollTo(ppmListScrollTarget(cfg),state.scrollY); },0);
+          }
         }
       }
     }else{
       try{ sessionStorage.removeItem(flagKey); }catch(e){}
     }
   }
-  if(redirecting) return;
-  const save=ppmDebounce(()=>{
+  reveal();
+  const saveNow=()=>{
     const target=ppmListScrollTarget(cfg);
     const state={search:location.search,scrollY:ppmListScrollValue(target)};
     if(cfg.extraInputs){
@@ -3841,12 +3940,16 @@ function setupListStateRestore(){
       cfg.extraInputs.forEach(id=>{ const el=document.getElementById(id); if(el) state.extra[id]=el.value; });
     }
     try{ sessionStorage.setItem(key,JSON.stringify(state)); }catch(e){}
-  },200);
+  };
+  const save=ppmDebounce(saveNow,200);
   window.addEventListener('scroll',save,{passive:true});
   const scrollTarget=ppmListScrollTarget(cfg);
   if(scrollTarget!==window) scrollTarget.addEventListener('scroll',save,{passive:true});
   if(cfg.extraInputs){
     cfg.extraInputs.forEach(id=>{ const el=document.getElementById(id); if(el) el.addEventListener('input',save); });
+  }
+  if(cfg.saveOnClick){
+    document.addEventListener('click',function(e){ if(e.target.closest(cfg.saveOnClick))saveNow(); });
   }
   save();
 }
@@ -5080,6 +5183,18 @@ function balanceToggleDetails(summaryEl){
   const collapsed=list.classList.toggle('collapsed');
   summaryEl.classList.toggle('collapsed',collapsed);
   summaryEl.setAttribute('aria-expanded',collapsed?'false':'true');
+  // Sincronizza l'URL reale con lo stato appena scelto (richiesta
+  // esplicita dell'utente: tornare indietro - tasto del gestionale,
+  // gesture/tasto del telefono o tasto del browser, indifferentemente -
+  // deve ritrovare la sezione esattamente com'era stata lasciata), stesso
+  // pattern history.replaceState gia' usato da Calendario/Cremazioni.
+  const detailsSection=document.getElementById('balanceDetails');
+  const sectionKey=detailsSection?detailsSection.dataset.selectedBalanceSection:'';
+  if(sectionKey){
+    const url=new URL(location.href);
+    if(collapsed)url.searchParams.delete('view');else url.searchParams.set('view',sectionKey);
+    history.replaceState(null,'',url);
+  }
 }
 document.addEventListener('click',function(e){
   const section=e.target.closest('.section.collapsible');
@@ -5246,6 +5361,18 @@ function toggleCollapsibleSection(button){
   body.hidden=collapsed;
   button.textContent=collapsed?'+':'−';
   button.setAttribute('aria-expanded',String(!collapsed));
+  // Persistenza opzionale per-utente (stesso meccanismo gia' usato da
+  // toggleArchiveMonth): se il bottone porta data-persist-*, lo stato
+  // aperto/chiuso sopravvive a un ritorno da un dettaglio collegato,
+  // qualunque sia la modalita' di navigazione indietro usata (tasto del
+  // gestionale, gesture/tasto del telefono, tasto del browser).
+  const persistKey=button.dataset.persistKey,persistEndpoint=button.dataset.persistEndpoint;
+  if(persistKey&&persistEndpoint){
+    const payload=new URLSearchParams();
+    payload.set(button.dataset.persistField||'sezione',persistKey);
+    payload.set('chiuso',collapsed?'1':'0');
+    fetch(persistEndpoint,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:payload.toString()}).catch(function(){});
+  }
 }
 function practiceRowSelect(row,event,url){
   if(event.target.closest('a,button,input,select,textarea,label,form'))return;
@@ -5344,18 +5471,56 @@ function cremationOpenPendingCycle(){
   const params=new URLSearchParams(location.search);
   const cycleId=params.get('open_cycle');
   if(!cycleId)return;
-  params.delete('open_cycle');
-  const cleanQuery=params.toString();
-  history.replaceState(null,'',location.pathname+(cleanQuery?'?'+cleanQuery:'')+location.hash);
   const card=document.querySelector('[data-cycle-id="'+cycleId+'"]');
   if(!card)return;
   const page=card.closest('.cremation-day-page');
   if(page)cremationSelectDay(Number(page.dataset.dayIndex),{instant:true});
   if(!card.classList.contains('expanded')){
     const cardHead=card.querySelector('.cremation-cycle-head,.cremation-week-cycle-head');
+    // cremationToggleCycleCard sincronizza gia' da sola open_cycle nell'URL
+    // (vedi sotto): non serve piu' ripulire qui a mano, la lascia scritta
+    // cosi' un vero "indietro" del browser (gesture nativa, non il link
+    // costruito da noi) la trova comunque nella history reale.
     if(cardHead)cremationToggleCycleCard(cardHead);
   }
   requestAnimationFrame(function(){card.scrollIntoView({behavior:'smooth',block:'center'});});
+}
+// Stesso meccanismo di calendarSyncUrlToDay: senza questo l'URL reale della
+// pagina Cremazioni non riflette mai il giorno effettivamente visibile
+// durante lo swipe (solo cremationSetActiveDaybarCard, puramente visivo) -
+// una vera navigazione "indietro" del browser (gesture nativa iOS, non un
+// nostro link) torna quindi alla history reale, che aveva ancora il giorno
+// con cui la pagina era stata caricata la prima volta, non quello su cui
+// l'utente si trovava. Bug segnalato dall'utente, identico a quello gia'
+// risolto in Calendario.
+function cremationSyncUrlToDay(idx){
+  // A differenza della daybar di Calendario (data-date), qui l'attributo
+  // reale e' data-cremation-day (vedi app.py, daybar_cards.append):
+  // verificato nel markup, non per analogia - usare data-date qui non
+  // avrebbe mai funzionato (dataset.date sempre undefined).
+  const card=document.querySelector('.cremation-daybar-card[data-day-index="'+idx+'"]');
+  if(!card||!card.dataset.cremationDay)return;
+  const url=new URL(location.href);
+  url.searchParams.set('data',card.dataset.cremationDay);
+  history.replaceState(null,'',url);
+}
+// Stesso principio di cremationSyncUrlToDay, ma per l'espansione di un
+// ciclo: senza questo open_cycle esiste solo dentro il return_to del link
+// "Apri pratica" (letto da practice_url), mai nella history reale della
+// pagina Cremazioni stessa - un vero "indietro" del browser (gesture
+// nativa) ignora quel link e torna alla voce di history reale, che non ha
+// mai avuto open_cycle scritto dentro. Chiamata da cremationToggleCycleCard
+// ad ogni espandi/collassa, cosi' la history reale resta sempre coerente
+// con cosa e' effettivamente visibile, sia via click sia via gesture.
+function cremationSyncUrlToExpanded(){
+  const expanded=document.querySelector('[data-cycle-card].expanded');
+  const url=new URL(location.href);
+  if(expanded&&expanded.dataset.cycleId){
+    url.searchParams.set('open_cycle',expanded.dataset.cycleId);
+  }else{
+    url.searchParams.delete('open_cycle');
+  }
+  history.replaceState(null,'',url);
 }
 function cremationSelectDay(idx,opts){
   opts=opts||{};
@@ -5367,6 +5532,7 @@ function cremationSelectDay(idx,opts){
   const page=pages.querySelector('[data-day-index="'+idx+'"]');
   if(page)pages.scrollTo({left:page.offsetLeft,behavior:opts.instant?'auto':'smooth'});
   cremationSetActiveDaybarCard(idx,opts.instant);
+  if(!opts.instant)cremationSyncUrlToDay(idx);
 }
 function cremationSetActiveDaybarCard(idx,instant){
   document.querySelectorAll('.cremation-daybar-card').forEach(function(c){
@@ -5423,7 +5589,13 @@ function cremationInitDayPages(){
           location.href=entry.target.dataset.href;
           return;
         }
-        cremationSetActiveDaybarCard(Number(entry.target.dataset.dayIndex),false);
+        // solo evidenziazione barra + sync URL: MAI ri-scrollare qui
+        // #cremationDayPages, altrimenti si combatte con lo swipe che
+        // l'utente sta ancora facendo con il dito (stesso motivo gia'
+        // documentato in Calendario).
+        const dIdx=Number(entry.target.dataset.dayIndex);
+        cremationSetActiveDaybarCard(dIdx,false);
+        cremationSyncUrlToDay(dIdx);
       });
     },{root:pages,threshold:[0.6]});
     items.forEach(function(item){cremationDayObserver.observe(item);});
@@ -6084,6 +6256,7 @@ function cremationToggleCycleCard(headerEl){
     card.classList.remove('expanded');
     cremationCollapseBody(body);
   }
+  cremationSyncUrlToExpanded();
 }
 function reminderDismiss(event,reminderId,btn){
   // Completa/elimina un promemoria dal widget carosello: nessun badge o
@@ -6407,7 +6580,23 @@ document.addEventListener('DOMContentLoaded',function(){
 });
 let calendarWizardAllowExit=false;
 function calendarAutoTitle(force=false){const form=document.getElementById('calendarEventForm');if(!form)return;const type=form.event_type?.value||'';const zone=(form.zone?.value||'').trim().toUpperCase();const site=(form.destination_site?.value||'').trim().toUpperCase();const animal=(form.animal_name?.value||form.querySelector('[data-calendar-list="animal"] [data-key="name"]')?.value||'').trim().toUpperCase();const field=form.title;if(!field)return;if(type==='Appuntamento'){return;}let title='';if(type==='Ritiro')title=`RITIRO ${zone}`;if(type==='Ritiro in sede')title=`RITIRO IN SEDE ${site}`;if(type==='Riconsegna')title=['RICONSEGNA',animal,zone].filter(Boolean).join(' ');if(type==='Riconsegna in sede')title=`RICONSEGNA ${animal} IN SEDE ${site}`;if(force||!field.dataset.manual)field.value=title.trim();}
-function calendarTypeChanged(){const form=document.getElementById('calendarEventForm');if(!form)return;const type=form.event_type.value;form.querySelectorAll('[data-calendar-types]').forEach(el=>{const hide=!el.dataset.calendarTypes.split('|').includes(type);el.hidden=hide;el.querySelectorAll('input,select,textarea').forEach(input=>input.disabled=hide);});const details=document.getElementById('calendarDetailsSection');if(details)details.hidden=!type;if(form.zone)form.zone.required=type==='Ritiro';if(form.destination_site)form.destination_site.required=['Ritiro in sede','Riconsegna in sede'].includes(type);if(form.animal_name)form.animal_name.required=['Riconsegna','Riconsegna in sede'].includes(type);const title=form.title;if(title&&type==='Appuntamento'){title.dataset.manual='1';if(!title.value||/^PROMEMORIA/i.test(title.value))title.value='';}else if(title){delete title.dataset.manual;}calendarAutoTitle(true);}
+function calendarTypeChanged(){const form=document.getElementById('calendarEventForm');if(!form)return;const type=form.event_type.value;form.querySelectorAll('[data-calendar-types]').forEach(el=>{const hide=!el.dataset.calendarTypes.split('|').includes(type);el.hidden=hide;el.querySelectorAll('input,select,textarea').forEach(input=>input.disabled=hide);});const details=document.getElementById('calendarDetailsSection');if(details)details.hidden=!type;if(form.zone)form.zone.required=type==='Ritiro';if(form.destination_site)form.destination_site.required=['Ritiro in sede','Riconsegna in sede'].includes(type);if(form.animal_name)form.animal_name.required=['Riconsegna','Riconsegna in sede'].includes(type);const title=form.title;if(title&&type==='Appuntamento'){title.dataset.manual='1';if(!title.value||/^PROMEMORIA/i.test(title.value))title.value='';}else if(title){delete title.dataset.manual;}
+  // Riconsegna in sede: ANIMALE prima di SEDE (richiesta esplicita
+  // dell'utente), tutte le altre combinazioni restano nell'ordine
+  // originale (Sede prima, quando presente). Idempotente e rieseguito
+  // a ogni cambio tipo: si autocorregge in entrambe le direzioni anche
+  // passando piu' volte da un tipo all'altro prima di salvare.
+  const sedeCard=form.querySelector('[data-calendar-types="Ritiro in sede|Riconsegna in sede"]');
+  const animaleCard=form.querySelector('[data-calendar-types="Riconsegna|Riconsegna in sede"]');
+  if(sedeCard&&animaleCard&&sedeCard.parentNode===animaleCard.parentNode){
+    if(type==='Riconsegna in sede'){
+      if(animaleCard.nextElementSibling!==sedeCard)sedeCard.parentNode.insertBefore(animaleCard,sedeCard);
+    }else if(sedeCard.nextElementSibling!==animaleCard){
+      sedeCard.parentNode.insertBefore(sedeCard,animaleCard);
+    }
+  }
+  calendarAutoTitle(true);
+}
 function calendarTypeSelected(input){const form=input.form,error=form.querySelector('[data-operator-error]');if(error)error.textContent='';calendarTypeChanged();}
 function calendarAllDayChanged(box){const form=box.form;form.querySelectorAll('[data-calendar-time]').forEach(el=>{el.hidden=box.checked;el.querySelectorAll('input').forEach(input=>input.required=!box.checked&&input.name==='start_time');});form.querySelectorAll('[data-time-wheel]').forEach(wheel=>wheel.hidden=true);}
 function calendarHtml(value){return String(value||'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));}
@@ -6637,7 +6826,18 @@ async function calendarDeliveryAnimalLookup(input,results){
     const items=data.results||[];
     results.innerHTML=items.map((item,index)=>`<button type="button" class="lookup-item" data-delivery-animal-index="${index}"><span><b>${calendarHtml(item.animal_name||'Animale senza nome')}</b><small>${calendarHtml([item.owner_name,item.species,item.pickup_date?`recupero ${calendarDateIt(item.pickup_date)}`:'',item.practice_number].filter(Boolean).join(' · '))}</small><small>${calendarHtml(item.payment_summary||'')}</small></span></button>`).join('')||'<div class="lookup-state">Nessun animale o proprietario trovato.</div>';
     ppmOpenLookupPanel(results);
-    results.onclick=e=>{const button=e.target.closest('[data-delivery-animal-index]');if(!button)return;const item=items[Number(button.dataset.deliveryAnimalIndex)],form=input.form;input.value=item.animal_name||'';form.linked_practice_id.value=item.practice_id||'';form.payment_status.value=item.calendar_payment_status||'Da pagare';form.payment_amount.value=Number(item.calendar_payment_amount||0).toFixed(2).replace('.',',');if(form.delivery_address){form.dataset.deliveryOwnerAddress=item.owner_address||'';if(form.dataset.deliveryAddressMode==='domicilio')form.delivery_address.value=item.owner_address||'';}const detail=form.querySelector('[data-delivery-payment-detail]');if(detail)detail.value=item.payment_summary||'';const money=v=>`€ ${Number(v||0).toFixed(2).replace('.',',')}`;const summary=form.querySelector('[data-delivery-practice-summary]');if(summary){summary.hidden=false;const set=(sel,val)=>{const el=summary.querySelector(sel);if(el)el.textContent=val;};set('[data-delivery-total]',money(item.total));set('[data-delivery-deposit]',money(item.deposit));set('[data-delivery-remaining]',money(item.remaining));set('[data-delivery-service]',item.service_type||'—');set('[data-delivery-urn]',item.urn_summary||'—');const channelRow=summary.querySelector('[data-delivery-channel-row]');if(channelRow){const stillDue=Number(item.remaining||0)>0;channelRow.hidden=!stillDue;if(stillDue)set('[data-delivery-channel]',item.payment_channel||'—');}}calendarAutoTitle(true);ppmCloseLookupPanel(results);results.onclick=null;};
+    results.onclick=e=>{const button=e.target.closest('[data-delivery-animal-index]');if(!button)return;const item=items[Number(button.dataset.deliveryAnimalIndex)],form=input.form;input.value=item.animal_name||'';form.linked_practice_id.value=item.practice_id||'';form.payment_status.value=item.calendar_payment_status||'Da pagare';form.payment_amount.value=Number(item.calendar_payment_amount||0).toFixed(2).replace('.',',');
+      // Preimposta la Sede in base alla Provenienza della pratica
+      // (Luogo di origine -> Provenienza: L=Livorno, E=Empoli - richiesta
+      // esplicita dell'utente). Vale SOLO per Livorno/Empoli: nessun'altra
+      // provenienza (V/F/P/vuota) inventa una sede. E' solo un default: se
+      // l'utente ha gia' toccato manualmente la Sede (dataset.manual, gia'
+      // impostato dal suo stesso onchange) non viene piu' sovrascritta.
+      if(form.destination_site&&!form.destination_site.dataset.manual){
+        const provenanceSede=item.provenance==='L'?'Livorno':item.provenance==='E'?'Empoli':'';
+        if(provenanceSede)form.destination_site.value=provenanceSede;
+      }
+      if(form.delivery_address){form.dataset.deliveryOwnerAddress=item.owner_address||'';if(form.dataset.deliveryAddressMode==='domicilio')form.delivery_address.value=item.owner_address||'';}const detail=form.querySelector('[data-delivery-payment-detail]');if(detail)detail.value=item.payment_summary||'';const money=v=>`€ ${Number(v||0).toFixed(2).replace('.',',')}`;const summary=form.querySelector('[data-delivery-practice-summary]');if(summary){summary.hidden=false;const set=(sel,val)=>{const el=summary.querySelector(sel);if(el)el.textContent=val;};set('[data-delivery-total]',money(item.total));set('[data-delivery-deposit]',money(item.deposit));set('[data-delivery-remaining]',money(item.remaining));set('[data-delivery-service]',item.service_type||'—');set('[data-delivery-urn]',item.urn_summary||'—');const channelRow=summary.querySelector('[data-delivery-channel-row]');if(channelRow){const stillDue=Number(item.remaining||0)>0;channelRow.hidden=!stillDue;if(stillDue)set('[data-delivery-channel]',item.payment_channel||'—');}}calendarAutoTitle(true);ppmCloseLookupPanel(results);results.onclick=null;};
   }catch(error){
     if(error.name==='AbortError'||fetcher.stale(token))return;
     results.innerHTML='<div class="lookup-state">Ricerca temporaneamente non disponibile.</div>';ppmOpenLookupPanel(results);
@@ -6701,8 +6901,43 @@ function calendarWizardDirty(form){return form.dataset.dirty==='1'||[...form.ele
 let calendarExitHref='';
 function calendarConfirmExit(event,href){const form=document.getElementById('calendarEventForm');const backdrop=document.getElementById('calendarExitBackdrop');if(form&&backdrop&&calendarWizardDirty(form)){event?.preventDefault();calendarExitHref=href||'';backdrop.hidden=false;return false;}calendarWizardAllowExit=true;if(href){event?.preventDefault();location.href=href;}return true;}
 function calendarExitCancel(){const backdrop=document.getElementById('calendarExitBackdrop');if(backdrop)backdrop.hidden=true;}
-function calendarExitKeepDraft(){calendarWizardAllowExit=true;calendarExitCancel();if(calendarExitHref)location.href=calendarExitHref;}
+function calendarExitKeepDraft(){
+  // Per un evento nuovo non c'e' piu' autosave continuo (vedi
+  // setupCalendarDraftAutosave): il salvataggio vero e proprio avviene
+  // qui, solo ora che l'utente ha scelto esplicitamente "Salva bozza".
+  // In modifica di un evento gia' reale l'autosave continuo ha gia'
+  // salvato tutto (comportamento preesistente, invariato) - niente da
+  // fare in piu' qui.
+  const key=document.getElementById('calendarEventForm')?.dataset.draftKey;
+  if(key==='ppm_calendar_draft_new')calendarSaveDraftNow();
+  calendarWizardAllowExit=true;calendarExitCancel();if(calendarExitHref)location.href=calendarExitHref;
+}
 function calendarExitDiscardDraft(){const form=document.getElementById('calendarEventForm');const key=form?.dataset.draftKey;if(key){try{localStorage.removeItem(key);}catch(error){}}calendarWizardAllowExit=true;calendarExitCancel();if(calendarExitHref)location.href=calendarExitHref;}
+// Richiesta esplicita dell'utente: l'uscita da un evento non ancora
+// salvato deve chiedere conferma con QUALUNQUE modo con cui la si
+// tenta, non solo il tasto "×"/Annulla (gia' collegati a
+// calendarConfirmExit direttamente). Invece di ricollegare uno per uno
+// tutti i link del menu/bottom-nav/quick-action gia' esistenti (rischio
+// di dimenticarne qualcuno, e un secondo posto da tenere aggiornato),
+// un solo listener delegato su document intercetta QUALUNQUE click su
+// un link mentre il wizard e' in pagina e passa dallo stesso identico
+// calendarConfirmExit gia' usato da "×"/Annulla - nessun sistema
+// parallelo, nessuna modifica al markup dei link esistenti. Il tasto
+// "×"/Annulla restano com'erano (la doppia chiamata a
+// calendarConfirmExit che ne risulta e' innocua: idempotente, mostra lo
+// stesso identico modal). Restano fuori i link che non navigano
+// davvero via allontanandosi dalla pagina (target="_blank", tel:,
+// mailto:, "#").
+document.addEventListener('click',function(e){
+  const form=document.getElementById('calendarEventForm');
+  if(!form)return;
+  const link=e.target.closest('a[href]');
+  if(!link||link.target==='_blank')return;
+  const href=link.getAttribute('href')||'';
+  if(!href||href==='#'||href.startsWith('tel:')||href.startsWith('mailto:'))return;
+  if(!calendarWizardDirty(form))return;
+  calendarConfirmExit(e,link.href);
+});
 function renderCalendarDraftsBanner(){
   const box=document.getElementById('calendarDraftsBanner');if(!box)return;
   const drafts=[];
@@ -6712,7 +6947,11 @@ function renderCalendarDraftsBanner(){
     let data;try{data=JSON.parse(localStorage.getItem(key));}catch(error){continue;}
     if(!data||typeof data!=='object')continue;
     const isEdit=key.startsWith('ppm_calendar_draft_edit_');
-    drafts.push({key,href:isEdit?`/calendario/${key.slice('ppm_calendar_draft_edit_'.length)}/modifica`:'/calendario/nuovo',title:data.title||data.event_type||'Bozza senza titolo',savedAt:data._savedAt||0});
+    // ?bozza=1: unico modo per cui "Nuovo evento" carica automaticamente
+    // dati precedenti (vedi setupCalendarDraftAutosave) - un normale
+    // click su "Nuovo evento" da qualunque altro punto del gestionale non
+    // lo porta mai, quindi parte sempre pulito anche se questa bozza esiste.
+    drafts.push({key,href:isEdit?`/calendario/${key.slice('ppm_calendar_draft_edit_'.length)}/modifica`:'/calendario/nuovo?bozza=1',title:data.title||data.event_type||'Bozza senza titolo',savedAt:data._savedAt||0});
   }
   box.innerHTML='';
   if(!drafts.length){box.hidden=true;return;}
@@ -6797,15 +7036,21 @@ function calendarInitDateTimeSync(){
   form.start_date.addEventListener('change',sync);
   if(form.start_time)form.start_time.addEventListener('change',sync);
 }
+function calendarDraftSkipField(form,name){const input=form.elements.namedItem(name);return !input||input.type==='password'||/token|session/i.test(name);}
+function calendarDraftFieldValue(input){return input.type==='checkbox'?(input.checked?input.value:''):input.value;}
+function calendarSerializeDraft(form){const data={};[...form.elements].forEach(el=>{if(!el.name||el.disabled||calendarDraftSkipField(form,el.name))return;if(el.type==='radio'){if(el.checked)data[el.name]=el.value;return;}data[el.name]=calendarDraftFieldValue(el);});return data;}
+function calendarSaveDraftNow(){
+  const form=document.getElementById('calendarEventForm');
+  const key=form?.dataset.draftKey;
+  if(!form||!key)return;
+  try{const data=calendarSerializeDraft(form);data._savedAt=Date.now();localStorage.setItem(key,JSON.stringify(data));}catch(error){}
+}
 function setupCalendarDraftAutosave(form){
   if(!form)return;
   const key=form.dataset.draftKey;
   if(!key)return;
   const status=document.getElementById('calendarDraftStatus'),label=status?.querySelector('[data-draft-label]');
   const show=(state,text)=>{if(!status)return;status.hidden=false;status.dataset.state=state;if(label)label.textContent=text;};
-  const skipField=name=>{const input=form.elements.namedItem(name);return !input||input.type==='password'||/token|session/i.test(name);};
-  const fieldValue=input=>input.type==='checkbox'?(input.checked?input.value:''):input.value;
-  const serialize=()=>{const data={};[...form.elements].forEach(el=>{if(!el.name||el.disabled||skipField(el.name))return;if(el.type==='radio'){if(el.checked)data[el.name]=el.value;return;}data[el.name]=fieldValue(el);});return data;};
   const restore=()=>{
     let raw;try{raw=localStorage.getItem(key);}catch(error){return;}
     if(!raw)return;
@@ -6827,27 +7072,50 @@ function setupCalendarDraftAutosave(form){
     calendarTypeChanged();calendarSerialize();
     show('saved','Bozza ripristinata');
   };
-  const save=ppmDebounce(()=>{
-    try{const data=serialize();data._savedAt=Date.now();localStorage.setItem(key,JSON.stringify(data));}catch(error){return;}
-    show('saved','Bozza salvata');
-  },1800);
+  // Richiesta esplicita dell'utente: un evento NUOVO (mai salvato prima,
+  // chiave fissa "ppm_calendar_draft_new" condivisa da ogni tentativo) non
+  // deve piu' autosalvarsi in bozza ad ogni digitazione senza consenso, ne'
+  // ripresentare automaticamente dati di un tentativo precedente abbandonato
+  // quando si riapre "Nuovo evento". Il salvataggio avviene SOLO alla scelta
+  // esplicita "Salva bozza ed esci" (calendarExitKeepDraft, sotto). Il
+  // recupero di una bozza gia' salvata esplicitamente resta possibile SOLO
+  // passando da qui con ?bozza=1 in URL - link aggiunto apposta da
+  // renderCalendarDraftsBanner, mai presente su un normale "Nuovo evento".
+  // In modifica di un evento GIA' REALE (chiave "ppm_calendar_draft_edit_
+  // <id>", univoca per quell'evento) il comportamento resta quello
+  // preesistente, invariato: autosave continuo di convenienza, non e'
+  // "abbandono di una creazione", e' un salvataggio in corso di un dato
+  // gia' esistente.
+  if(key==='ppm_calendar_draft_new'){
+    if(new URLSearchParams(location.search).get('bozza')==='1')restore();
+    return;
+  }
+  const save=ppmDebounce(()=>{calendarSaveDraftNow();show('saved','Bozza salvata');},1800);
   form.addEventListener('input',()=>{show('saving','Salvataggio…');save();});
   form.addEventListener('change',()=>{show('saving','Salvataggio…');save();});
   form.addEventListener('submit',()=>{try{localStorage.removeItem(key);}catch(error){}});
   restore();
 }
+// Stesso principio di calendarSyncUrlToDay/cremationSyncUrlToDay: senza
+// questo, tornando indietro (con qualunque modalita' di navigazione) da
+// un mese raggiunto solo con lo swipe libero (senza ricaricare, vedi
+// shiftInitMonthPages) si perderebbe quale mese esatto restaurare.
+function shiftSyncUrlToMonth(monthKey){
+  const url=new URL(location.href);
+  url.searchParams.set('data',monthKey);
+  history.replaceState(null,'',url);
+}
+var shiftMonthObserver=null;
 function shiftInitMonthPages(){
-  // Lo swipe verso il mese adiacente ricarica la pagina (nessuna
-  // paginazione infinita): senza questo la pagina "torna su" ogni volta,
-  // perdendo la posizione di scroll verticale — richiesta esplicita
-  // dell'utente di non farlo succedere.
-  try{
-    const savedScroll=sessionStorage.getItem('ppmTurniScrollY');
-    if(savedScroll!==null){
-      sessionStorage.removeItem('ppmTurniScrollY');
-      window.scrollTo(0,Number(savedScroll));
-    }
-  }catch(error){}
+  // Richiesta esplicita dell'utente: stessa identica tecnica gia' usata
+  // per lo swipe giorni di Calendario/Cremazioni (calendarInitDayPages/
+  // cremationInitDayPages) - i 3 mesi reali si scorrono liberamente senza
+  // mai ricaricare la pagina, solo le sentinelle ai bordi (nessun
+  // data-month-key, solo data-href) ricaricano quando lo swipe le
+  // raggiunge davvero. Il ripristino dello scroll verticale passa dal
+  // meccanismo condiviso ppmSaveScrollForNextLoad/ppmRestoreScrollIfPending
+  // (gia' invocato globalmente al DOMContentLoaded), non piu' da una
+  // chiave sessionStorage propria e separata.
   const pages=document.getElementById('shiftMonthPages');
   if(!pages)return;
   const items=[...pages.querySelectorAll('.calendar-day-page')];
@@ -6856,18 +7124,21 @@ function shiftInitMonthPages(){
   const initial=items[mid];
   if(initial)pages.scrollLeft=initial.offsetLeft;
   if('IntersectionObserver' in window){
-    let navigated=false;
-    const observer=new IntersectionObserver(entries=>{
+    let navigatedToAdjacentMonth=false;
+    shiftMonthObserver=new IntersectionObserver(entries=>{
       entries.forEach(entry=>{
-        if(navigated||!entry.isIntersecting||entry.intersectionRatio<0.6)return;
-        const idx=Number(entry.target.dataset.pageIndex);
-        if(idx===mid)return;
-        navigated=true;
-        try{sessionStorage.setItem('ppmTurniScrollY',String(window.scrollY));}catch(error){}
-        location.href=entry.target.dataset.href;
+        if(!entry.isIntersecting||entry.intersectionRatio<0.6)return;
+        if(entry.target.dataset.href){
+          if(navigatedToAdjacentMonth)return;
+          navigatedToAdjacentMonth=true;
+          ppmSaveScrollForNextLoad();
+          location.href=entry.target.dataset.href;
+          return;
+        }
+        if(entry.target.dataset.monthKey)shiftSyncUrlToMonth(entry.target.dataset.monthKey);
       });
     },{root:pages,threshold:[0.6]});
-    items.forEach(item=>observer.observe(item));
+    items.forEach(item=>shiftMonthObserver.observe(item));
   }
 }
 document.addEventListener('DOMContentLoaded',()=>{calendarInitLookups();calendarWizardSwipe();calendarSerialize();setupPracticeAutosave();calendarInitDateTimeSync();setupCalendarDraftAutosave(document.getElementById('calendarEventForm'));shiftInitMonthPages();renderCalendarDraftsBanner();document.addEventListener('pointerdown',event=>{if(!event.target.closest('.calendar-datetime-row')&&!event.target.closest('#cremationEditOverlay'))document.querySelectorAll('[data-time-wheel]').forEach(wheel=>wheel.hidden=true);});});
@@ -6988,6 +7259,169 @@ async function schedulePushTest(){
   try{const response=await fetch('/api/push/test',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:'{}'});const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||'Test non programmato.');pushDiagnostic('backend',data.message);alert(data.message);}
   catch(error){alert(pushError(error));}
 }
+// Assistente AI flottante (richiesta esplicita dell'utente): icona
+// trascinabile + mini chat in overlay SULLA pagina corrente. Nessun cambio
+// di route/reload: apertura/chiusura toggla solo l'attributo hidden dello
+// stesso elemento gia' presente nel DOM (stesso idioma gia' usato da
+// cremationOpenEditModal/turniOpenCellEditor), quindi lo stato della
+// pagina sottostante (scroll, filtri, giorno/settimana visualizzati) non
+// viene mai toccato. La cronologia della conversazione vive solo in una
+// variabile JS di pagina: si perde su un reload/cambio pagina, MAI salvata
+// lato server (richiesta esplicita di non accumulare dati sensibili).
+var aiChatHistory=[];
+var aiChatBusy=false;
+function aiChatToggle(){
+  const root=document.getElementById('aiChatRoot');
+  if(!root)return;
+  if(root.hidden)aiChatOpen();else aiChatClose();
+}
+function aiChatOpen(){
+  const root=document.getElementById('aiChatRoot');
+  if(!root)return;
+  root.hidden=false;
+  aiChatReposition();
+  const input=document.getElementById('aiChatInput');
+  if(input)setTimeout(()=>input.focus(),50);
+}
+function aiChatClose(){
+  const root=document.getElementById('aiChatRoot');
+  if(root)root.hidden=true;
+}
+function aiChatFabClick(){
+  // Un trascinamento appena concluso non deve anche aprire la chat
+  // (altrimenti ogni spostamento dell'icona la riaprirebbe per sbaglio).
+  if(aiChatFab&&aiChatFab._dragged){aiChatFab._dragged=false;return;}
+  aiChatToggle();
+}
+function aiChatReposition(){
+  // Su iOS Safari con tastiera aperta window.innerHeight non si riduce
+  // (solo visualViewport.height lo fa, stesso problema gia' risolto per i
+  // pannelli di ricerca — vedi ppmPositionLookupPanel): si sposta il
+  // pannello sopra la tastiera invece di lasciarlo coperto.
+  const panel=document.querySelector('.ai-chat-panel');
+  if(!panel||!window.visualViewport)return;
+  const keyboard=window.innerHeight-window.visualViewport.height-window.visualViewport.offsetTop;
+  panel.style.bottom=Math.max(0,keyboard)+'px';
+}
+if(window.visualViewport)window.visualViewport.addEventListener('resize',aiChatReposition);
+function aiChatInputKeydown(event){
+  if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();event.target.closest('form').requestSubmit();}
+}
+function aiChatAppendBubble(role,text,isError){
+  const body=document.getElementById('aiChatBody');
+  if(!body)return null;
+  const empty=body.querySelector('.ai-chat-empty');
+  if(empty)empty.remove();
+  const row=document.createElement('div');
+  row.className='wa-bubble-row '+(role==='user'?'wa-bubble-row-sent':'wa-bubble-row-received')+(isError?' ai-chat-error':'');
+  const bubble=document.createElement('div');
+  bubble.className='wa-bubble '+(role==='user'?'wa-bubble-sent':'wa-bubble-received');
+  const textEl=document.createElement('div');
+  textEl.className='wa-bubble-text';
+  textEl.textContent=text;
+  bubble.appendChild(textEl);
+  row.appendChild(bubble);
+  body.appendChild(row);
+  body.scrollTop=body.scrollHeight;
+  return row;
+}
+async function aiChatSend(event){
+  event.preventDefault();
+  if(aiChatBusy)return false;
+  const input=document.getElementById('aiChatInput');
+  const text=(input.value||'').trim();
+  if(!text)return false;
+  input.value='';
+  input.style.height='auto';
+  aiChatAppendBubble('user',text);
+  aiChatBusy=true;
+  const body=document.getElementById('aiChatBody');
+  const pending=document.createElement('div');
+  pending.className='ai-chat-pending';
+  pending.textContent='Sto verificando i dati…';
+  body.appendChild(pending);
+  body.scrollTop=body.scrollHeight;
+  try{
+    const res=await fetch('/api/assistente/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messaggio:text,cronologia:aiChatHistory})});
+    const data=await res.json();
+    pending.remove();
+    if(data.ok){
+      aiChatHistory=data.cronologia||[];
+      aiChatAppendBubble('assistant',data.risposta||'');
+    }else{
+      aiChatAppendBubble('assistant',data.error||'Si è verificato un errore.',true);
+    }
+  }catch(error){
+    pending.remove();
+    aiChatAppendBubble('assistant',"Impossibile contattare l'assistente. Riprova.",true);
+  }
+  aiChatBusy=false;
+  body.scrollTop=body.scrollHeight;
+  return false;
+}
+// Trascinamento libero dell'icona: posizione mantenuta come frazione 0..1
+// della viewport (mai coordinate assolute), cosi' resta valida passando da
+// desktop a mobile — richiesta esplicita dell'utente. Salvata per utente
+// (debounced) su /api/assistente/posizione, che scrive su user_preferences
+// esattamente come le altre preferenze gia' persistite li'.
+var aiChatFab=null;
+var aiChatSaveTimer=null;
+function aiChatClampPct(v){return Math.min(0.97,Math.max(0.03,v));}
+function aiChatSafeInset(name){return parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name))||0;}
+function aiChatApplyPos(xPct,yPct){
+  // Se la finestra ha ancora dimensioni 0 (layout non pronto, tab in
+  // background in alcuni contesti embedded) i calcoli sotto darebbero un
+  // risultato negativo che spinge l'icona fuori schermo: meglio non
+  // riposizionare affatto finche' non c'e' una viewport reale.
+  if(!aiChatFab||!window.innerWidth||!window.innerHeight)return;
+  const size=56,margin=8;
+  const minX=margin+size/2,maxX=window.innerWidth-margin-size/2;
+  const minY=margin+aiChatSafeInset('--safe-top')+size/2,maxY=window.innerHeight-margin-aiChatSafeInset('--safe-bottom')-size/2;
+  const x=Math.min(maxX,Math.max(minX,xPct*window.innerWidth));
+  const y=Math.min(maxY,Math.max(minY,yPct*window.innerHeight));
+  aiChatFab.style.left=x+'px';aiChatFab.style.top=y+'px';aiChatFab.style.right='auto';aiChatFab.style.bottom='auto';
+}
+function aiChatSavePos(xPct,yPct){
+  clearTimeout(aiChatSaveTimer);
+  aiChatSaveTimer=setTimeout(()=>{
+    fetch('/api/assistente/posizione',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({x_pct:xPct,y_pct:yPct})}).catch(()=>{});
+  },400);
+}
+function aiChatInit(){
+  aiChatFab=document.getElementById('aiChatFab');
+  if(!aiChatFab)return;
+  let xPct=parseFloat(aiChatFab.dataset.xPct)||0.92;
+  let yPct=parseFloat(aiChatFab.dataset.yPct)||0.86;
+  aiChatApplyPos(xPct,yPct);
+  window.addEventListener('resize',()=>aiChatApplyPos(xPct,yPct));
+  let dragging=false,startX=0,startY=0,moved=false;
+  aiChatFab.addEventListener('pointerdown',event=>{
+    dragging=true;moved=false;aiChatFab._dragged=false;
+    startX=event.clientX;startY=event.clientY;
+    aiChatFab.classList.add('dragging');
+    aiChatFab.setPointerCapture(event.pointerId);
+  });
+  aiChatFab.addEventListener('pointermove',event=>{
+    if(!dragging)return;
+    const dx=event.clientX-startX,dy=event.clientY-startY;
+    if(Math.abs(dx)>4||Math.abs(dy)>4)moved=true;
+    if(!moved)return;
+    const rect=aiChatFab.getBoundingClientRect();
+    xPct=aiChatClampPct((rect.left+rect.width/2+dx)/window.innerWidth);
+    yPct=aiChatClampPct((rect.top+rect.height/2+dy)/window.innerHeight);
+    aiChatApplyPos(xPct,yPct);
+    startX=event.clientX;startY=event.clientY;
+  });
+  const aiChatEndDrag=()=>{
+    if(!dragging)return;
+    dragging=false;
+    aiChatFab.classList.remove('dragging');
+    if(moved){aiChatFab._dragged=true;aiChatSavePos(xPct,yPct);}
+  };
+  aiChatFab.addEventListener('pointerup',aiChatEndDrag);
+  aiChatFab.addEventListener('pointercancel',aiChatEndDrag);
+}
+document.addEventListener('DOMContentLoaded',aiChatInit);
 </script>
 """
 
@@ -7038,6 +7472,8 @@ LUCIDE_PATHS = {
     "repeat": '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
     "map-pin": '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
     "gift": '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/>',
+    "sparkles": '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .962L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>',
+    "send": '<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/>',
 }
 
 
@@ -7466,6 +7902,112 @@ def calculated_service_total(practice):
         with db() as c:
             total+=practice_items_total(c,practice["id"])
     return total
+
+
+# Ricavi per voce del preventivo (richiesta esplicita dell'utente): le
+# STESSE 9 voci economiche reali gia' sommate da calculated_service_total
+# sopra, qui pero' tenute separate invece che collassate in un unico
+# numero - i 6 campi prezzo piatti su practices + le 3 categorie reali
+# di practice_items (vedi PRACTICE_ITEM_CATEGORIES). Nessuna stima: solo
+# le vere voci gia' presenti nel preventivo di ogni pratica.
+REVENUE_QUOTE_CATEGORY_FIELDS = (
+    ("price_cremation", "Cremazione"),
+    ("price_pickup", "Ritiro"),
+    ("price_delivery", "Riconsegna"),
+    ("price_evening", "Serale"),
+    ("price_night", "Notturno"),
+    ("price_holiday", "Festivo"),
+)
+REVENUE_QUOTE_ITEM_CATEGORY_LABELS = {"urna": "Urne", "calco": "Calchi", "accessorio": "Accessori"}
+
+
+def revenue_by_quote_category(c, date_from, date_to):
+    """Ricavi aggregati per voce del preventivo nel periodo [date_from,date_to]
+    (stringhe ISO, entrambe opzionali = nessun limite su quel lato). Base
+    dati = preventivo/fatturazione (le vere voci economiche delle pratiche),
+    non i movimenti di cassa: balance_movements non registra a quale voce
+    del preventivo appartiene un incasso, solo l'importo totale per
+    circuito W/D (vedi commit/analisi). La data di riferimento per pratica
+    e' la stessa convenzione gia' usata altrove nel codice per il "giorno
+    reale" di una pratica: pickup_date se presente, altrimenti created_at.
+    """
+    where = ["(deleted_at IS NULL OR deleted_at='')"]
+    args = []
+    if date_from:
+        where.append("date(COALESCE(NULLIF(pickup_date,''),created_at))>=date(?)")
+        args.append(date_from)
+    if date_to:
+        where.append("date(COALESCE(NULLIF(pickup_date,''),created_at))<=date(?)")
+        args.append(date_to)
+    cols = ",".join(key for key, _ in REVENUE_QUOTE_CATEGORY_FIELDS)
+    practices = c.execute(
+        f"SELECT id,{cols} FROM practices WHERE {' AND '.join(where)}", args
+    ).fetchall()
+    totals = {label: 0.0 for _, label in REVENUE_QUOTE_CATEGORY_FIELDS}
+    for label in REVENUE_QUOTE_ITEM_CATEGORY_LABELS.values():
+        totals[label] = 0.0
+    for row in practices:
+        for key, label in REVENUE_QUOTE_CATEGORY_FIELDS:
+            totals[label] += money_value(row[key])
+    practice_ids = [row["id"] for row in practices]
+    if practice_ids:
+        marks = ",".join("?" for _ in practice_ids)
+        for irow in c.execute(
+            f"SELECT category,price FROM practice_items WHERE practice_id IN ({marks})",
+            practice_ids,
+        ):
+            label = REVENUE_QUOTE_ITEM_CATEGORY_LABELS.get(irow["category"])
+            if label:
+                totals[label] += money_value(irow["price"])
+    order = [label for _, label in REVENUE_QUOTE_CATEGORY_FIELDS] + list(REVENUE_QUOTE_ITEM_CATEGORY_LABELS.values())
+    return [(label, totals[label]) for label in order]
+
+
+def map_calendar_estimates_to_practice_prefill(estimates):
+    """Trasferisce voce per voce il preventivo di un evento calendario
+    (calendar_event_estimate_items: description+amount) nei corrispondenti
+    campi del preventivo di una pratica creata da quell'evento (richiesta
+    esplicita dell'utente - mai solo il totale). Riusa la STESSA
+    corrispondenza voce-economica/nome gia' usata da
+    revenue_by_quote_category (REVENUE_QUOTE_CATEGORY_FIELDS/
+    REVENUE_QUOTE_ITEM_CATEGORY_LABELS), cosi' le due funzioni non possono
+    mai disallinearsi sul significato di ciascuna voce.
+
+    Una voce non compilata nell'evento (senza importo, o col nome preset
+    di default mai toccato) non deve valorizzare il campo corrispondente
+    nella pratica - viene scartata qui, non solo lasciata a "0".
+
+    Una voce con un nome non riconosciuto (es. "Altro" con descrizione
+    libera, tipicamente digitata per un ritiro fuori dalle 6 voci a campo
+    piatto/3 categorie standard) non va persa: finisce come voce
+    Accessori con la sua vera descrizione originale (la categoria
+    generica gia' esistente piu' vicina a un "importo extra con etichetta
+    libera" - nessuna nuova struttura dati).
+
+    Ritorna (flat_prefill, items_by_category): flat_prefill e' un dict
+    {colonna_practices: "importo.2f"} da unire al prefill del form;
+    items_by_category e' {categoria: [righe practice_items-shaped]} da
+    usare per precompilare Urne/Calchi/Accessori.
+    """
+    flat_by_label = {label.lower(): field for field, label in REVENUE_QUOTE_CATEGORY_FIELDS}
+    item_by_label = {label.lower(): cat for cat, label in REVENUE_QUOTE_ITEM_CATEGORY_LABELS.items()}
+    item_by_label.update({"urna": "urna", "calco": "calco", "accessorio": "accessorio"})
+    flat_totals = {}
+    items_by_category = {cat: [] for cat in PRACTICE_ITEM_CATEGORIES}
+    for row in estimates:
+        description = (row["description"] or "").strip()
+        amount = money_value(row["amount"])
+        if amount <= 0 or not description:
+            continue
+        key = description.lower()
+        if key in flat_by_label:
+            field = flat_by_label[key]
+            flat_totals[field] = flat_totals.get(field, 0.0) + amount
+        else:
+            category = item_by_label.get(key, "accessorio")
+            items_by_category[category].append({"subtype": "", "urn_catalog_id": None, "label": description, "price": f"{amount:.2f}"})
+    flat_prefill = {field: f"{total:.2f}" for field, total in flat_totals.items()}
+    return flat_prefill, items_by_category
 
 
 def uses_total_d(practice):
@@ -8029,7 +8571,7 @@ def layout(title, body, user=None):
         reminder_badge=f'<span class="notification-badge">{open_reminders_count if open_reminders_count < 100 else "99+"}</span>' if open_reminders_count else ''
         prefs=load_preferences(user["id"])
         if prefs.get("theme")=="light": body_class=" light-theme"
-        body_attrs=f' data-has-session="1"{" data-server-theme=\"1\"" if "theme" in prefs else ""}'
+        body_attrs=f' data-has-session="1" data-user-id="{user["id"]}"{" data-server-theme=\"1\"" if "theme" in prefs else ""}'
         links=list(SIDEBAR_LINKS)
         sidebar_order=parse_preference_list(prefs.get("sidebar_order",""))
         if sidebar_order:
@@ -8047,8 +8589,36 @@ def layout(title, body, user=None):
         drawer_links=''.join(more_card(href,icon,label) for href,icon,label in links)
         drawer_order_json=esc(json.dumps([label for _,_,label in links],ensure_ascii=False))
         mobile_nav=f'''<nav class="bottom-nav" aria-label="Navigazione mobile"><a href="/">{lucide("home")}<span>Dashboard</span></a><a href="/calendario">{lucide("calendar")}<span>Calendario</span></a><button class="bottom-new" type="button" onclick="toggleCreateMenu()" aria-label="Crea">{lucide("plus")}</button><a href="/programma-cremazioni">{lucide("paw-soft")}<span>Cremazioni</span></a><button type="button" onclick="toggleMoreMenu()">{lucide("more-horizontal")}<span>Altro</span></button></nav><div class="create-sheet-backdrop" onclick="toggleCreateMenu(false)"></div><aside class="create-sheet" aria-label="Crea"><a href="/nuova" data-new-practice-link>{lucide("plus")}<span>Nuova pratica</span></a><a href="/calendario/nuovo" data-calendar-new-event>{lucide("calendar")}<span>Nuovo evento</span></a><a href="/turni/pianifica">{lucide("clock")}<span>Nuovo turno</span></a></aside><div class="more-backdrop" onclick="toggleMoreMenu(false)"></div><aside class="more-menu" aria-label="Altre funzioni"><div class="more-title"><div><b>Menu</b><small>Tutto a portata di mano</small></div><div class="more-title-actions"><button class="more-edit-btn" type="button" onclick="toggleMoreMenuEdit()" aria-label="Riordina le voci del menu"><span class="more-edit-icon more-edit-icon-pencil">{lucide("pencil")}</span><span class="more-edit-icon more-edit-icon-check">{lucide("check")}</span><span class="more-edit-label">Modifica</span></button><button class="more-close-btn" onclick="toggleMoreMenu(false)" aria-label="Chiudi">×</button></div></div><form id="moreMenuOrderForm" data-drag-group action="/il-mio-profilo/salva" method="post"><input type="hidden" name="return_to" value="/il-mio-profilo"><input type="hidden" name="sidebar_order_json" data-drag-order value="{drawer_order_json}"><div class="more-card-list" data-drag-root>{drawer_links}</div></form><button class="btn ghost install-btn" type="button" onclick="installPetParadise()">Installa App</button></aside>'''
+        # Assistente AI flottante (richiesta esplicita dell'utente): renderizzato
+        # qui, dentro il ramo "utente autenticato", cosi' compare automaticamente
+        # su OGNI pagina della V1 senza toccare i ~150 handler di pagina uno per
+        # uno. Nessuna pagina/route dedicata: e' solo un overlay (hidden finche'
+        # non aperto) sopra il contenuto gia' presente. Posizione dell'icona
+        # salvata per singolo utente su user_preferences (ai_chat_fab_pos, stesso
+        # meccanismo gia' usato per altre preferenze), come frazione 0..1 della
+        # viewport cosi' resta valida su schermi di dimensioni diverse.
+        try:
+            fab_pos=json.loads(prefs.get("ai_chat_fab_pos") or "{}")
+        except ValueError:
+            fab_pos={}
+        fab_x=fab_pos.get("x_pct",0.92) if isinstance(fab_pos,dict) else 0.92
+        fab_y=fab_pos.get("y_pct",0.86) if isinstance(fab_pos,dict) else 0.86
+        ai_chat_html=f'''<div id="aiChatRoot" hidden>
+          <div class="ai-chat-backdrop" onclick="if(event.target===this)aiChatClose()"></div>
+          <div class="ai-chat-panel" role="dialog" aria-modal="true" aria-label="Assistente AI">
+            <div class="ai-chat-head"><span>{lucide("sparkles")} Assistente AI</span><button type="button" class="icon-btn" onclick="aiChatClose()" aria-label="Chiudi">{lucide("x")}</button></div>
+            <div class="ai-chat-body" id="aiChatBody"><div class="ai-chat-empty">Chiedimi qualsiasi cosa sui dati del gestionale: pratiche, cremazioni, ritiri, riconsegne, incassi, turni, urne...</div></div>
+            <form class="ai-chat-input-row" onsubmit="return aiChatSend(event)">
+              <textarea id="aiChatInput" placeholder="Scrivi una domanda..." rows="1" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'" onkeydown="aiChatInputKeydown(event)"></textarea>
+              <button type="submit" aria-label="Invia">{lucide("send")}</button>
+            </form>
+          </div>
+        </div>
+        <button type="button" id="aiChatFab" class="ai-chat-fab" aria-label="Assistente AI" data-x-pct="{fab_x}" data-y-pct="{fab_y}" onclick="aiChatFabClick()">{lucide("sparkles")}</button>'''
+    else:
+        ai_chat_html=""
     vapid_public=esc(os.environ.get("VAPID_PUBLIC_KEY",""))
-    return f'''<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#e9475b"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="PP Manager"><meta name="application-name" content="Pet Paradise Manager"><meta name="format-detection" content="telephone=no"><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"><title>{esc(title)} - Pet Paradise Manager</title><style>{CSS}</style></head><body class="{body_class.strip()}"{body_attrs} data-vapid-public-key="{vapid_public}"><a class="skip-link" href="#main-content">Vai al contenuto</a><div class="ppm-pull-refresh" id="ppmPullRefresh" aria-hidden="true"><span class="ppm-pull-refresh-spinner"></span></div><aside class="top"><a class="brand" href="/"><img class="brand-logo brand-logo-dark" src="/assets/company_logo.png" alt="Pet Paradise"><img class="brand-logo brand-logo-light" src="/assets/company_logo_light.png" alt="Pet Paradise"><span class="brand-copy">Pet Paradise <small>MANAGER</small></span></a>{nav}</aside>{app_header}<div id="main-content">{body}</div>{mobile_nav}{APP_JS}</body></html>'''
+    return f'''<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#e9475b"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="PP Manager"><meta name="application-name" content="Pet Paradise Manager"><meta name="format-detection" content="telephone=no"><link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"><title>{esc(title)} - Pet Paradise Manager</title><style>{CSS}</style></head><body class="{body_class.strip()}"{body_attrs} data-vapid-public-key="{vapid_public}"><a class="skip-link" href="#main-content">Vai al contenuto</a><div class="ppm-pull-refresh" id="ppmPullRefresh" aria-hidden="true"><span class="ppm-pull-refresh-spinner"></span></div><aside class="top"><a class="brand" href="/"><img class="brand-logo brand-logo-dark" src="/assets/company_logo.png" alt="Pet Paradise"><img class="brand-logo brand-logo-light" src="/assets/company_logo_light.png" alt="Pet Paradise"><span class="brand-copy">Pet Paradise <small>MANAGER</small></span></a>{nav}</aside>{app_header}<div id="main-content">{body}</div>{mobile_nav}{ai_chat_html}{APP_JS}</body></html>'''
 
 
 class App(BaseHTTPRequestHandler):
@@ -8332,6 +8902,8 @@ class App(BaseHTTPRequestHandler):
         if user["must_change_password"] and path != "/imposta-password" and not path.startswith("/api/"):
             return self.redirect("/imposta-password")
         if path == "/imposta-password": return self.change_password_submit(user)
+        if path == "/api/assistente/chat": return self.api_ai_chat(user)
+        if path == "/api/assistente/posizione": return self.api_ai_chat_position(user)
         if path == "/nuova": return self.create_practice(user)
         if path == "/bilanci/uscite": return self.balance_expense_submit(user)
         if path == "/bilanci/entrate": return self.balance_income_submit(user)
@@ -8342,6 +8914,7 @@ class App(BaseHTTPRequestHandler):
         if match: return self.balance_movement_deletion_restore(user,int(match.group(1)))
         if path == "/calendario/nuovo": return self.save_calendar_event(user)
         if path == "/archivio/mese-stato": return self.save_archive_month_state(user)
+        if path == "/smaltimenti/sezione-stato": return self.save_smaltimenti_section_state(user)
         if path == "/turni/pianifica/cella": return self.save_shift_cell(user)
         if path == "/turni/ferie": return self.save_shift_vacation(user)
         match = re.fullmatch(r"/turni/ferie/(\d+)/elimina",path)
@@ -8401,6 +8974,8 @@ class App(BaseHTTPRequestHandler):
         if match: return self.delete_collaborator(user, int(match.group(1)))
         match = re.fullmatch(r"/collaboratori/(\d+)/fattura-mese/(fatturato|incassato)", path)
         if match: return self.collaborator_mark_month(user, int(match.group(1)), match.group(2))
+        match = re.fullmatch(r"/collaboratori/(\d+)/mese-stato", path)
+        if match: return self.save_collaborator_month_state(user, int(match.group(1)))
         match = re.fullmatch(r"/collaboratori/(\d+)/listino", path)
         if match: return self.save_collaborator_price_tier(user, int(match.group(1)))
         match = re.fullmatch(r"/listino/(\d+)/modifica", path)
@@ -9043,6 +9618,7 @@ class App(BaseHTTPRequestHandler):
                 collaborators=get_balance_collaborators(c)
                 recent_deletions=get_recent_balance_movement_deletions(c,limit=10)
                 deleters={row["id"]:row["display_name"] for row in c.execute("SELECT id,display_name FROM users")}
+                revenue_by_category=revenue_by_quote_category(c,filters.date_from,filters.date_to)
         except sqlite3.Error:
             print("[BILANCI] Errore durante il caricamento\n"+traceback.format_exc(),flush=True)
             return self.error_page(
@@ -9121,10 +9697,19 @@ class App(BaseHTTPRequestHandler):
         current_balance_path=getattr(self,"path","/bilanci")
         if is_outstanding:
             for row,amount_cents in page_pairs:
-                url=f"/pratiche/{row.practice_id}?return_to={quote(current_balance_path,safe='')}"
+                # return_to calcolato dal vivo (location.pathname+search), non
+                # dal path statico letto al render: la sezione Entrate/Da
+                # riscuotere puo' essere stata espansa via
+                # balanceToggleDetails DOPO il caricamento della pagina
+                # (nessun reload), che sincronizza gia' l'URL reale con
+                # history.replaceState - un return_to congelato al render
+                # perderebbe quella sincronizzazione per il tasto "Torna
+                # alla pagina precedente" della pratica (stesso principio
+                # gia' usato per Calendario/Cremazioni).
+                url=f"/pratiche/{row.practice_id}"
                 animal=" - ".join(x for x in (row.species,row.animal_name) if x) or "-"
                 accent_cls,type_label,icon=outstanding_card_style(row.category)
-                row_attrs=f'''class="balance-clickable-row" tabindex="0" onclick="location.href='{url}'" onkeydown="if(event.key==='Enter')location.href='{url}'"'''
+                row_attrs=f'''class="balance-clickable-row" tabindex="0" onclick="location.href='{url}?return_to='+encodeURIComponent(location.pathname+location.search)" onkeydown="if(event.key==='Enter')location.href='{url}?return_to='+encodeURIComponent(location.pathname+location.search)"'''
                 detail_rows.append(render_balance_move_card(
                     accent_cls=accent_cls,icon=icon,type_label=type_label,
                     practice_number=row.practice_number,animal=animal,
@@ -9138,8 +9723,7 @@ class App(BaseHTTPRequestHandler):
                 practice_number=row.practice_number_snapshot or "-"
                 meta=practice_meta.get(int(row.practice_id)) if row.practice_id else None
                 practice_url=(
-                    f"/pratiche/{row.practice_id}?return_to="
-                    f"{quote(current_balance_path,safe='')}"
+                    f"/pratiche/{row.practice_id}"
                     if row.practice_id else ""
                 )
                 animal=(
@@ -9173,7 +9757,7 @@ class App(BaseHTTPRequestHandler):
                     else "-"
                 )
                 row_attrs=(
-                    f'''class="balance-clickable-row" tabindex="0" onclick="location.href='{practice_url}'" onkeydown="if(event.key==='Enter')location.href='{practice_url}'"'''
+                    f'''class="balance-clickable-row" tabindex="0" onclick="location.href='{practice_url}?return_to='+encodeURIComponent(location.pathname+location.search)" onkeydown="if(event.key==='Enter')location.href='{practice_url}?return_to='+encodeURIComponent(location.pathname+location.search)"'''
                     if practice_url else 'class="balance-clickable-row balance-move-static"'
                 )
                 accent_cls,type_label,icon=movement_card_style(row.category,row.ledger_section)
@@ -9324,6 +9908,27 @@ class App(BaseHTTPRequestHandler):
           <button class="btn balance-quick-btn balance-quick-income" type="button" onclick="const p=document.getElementById('balanceManualIncome');p.open=true;p.scrollIntoView({{behavior:'smooth',block:'start'}})">{lucide("arrow-down")}<span>Registra entrata</span></button>
           <button class="btn balance-quick-btn balance-quick-expense" type="button" onclick="const p=document.getElementById('balanceManualExpense');p.open=true;p.scrollIntoView({{behavior:'smooth',block:'start'}})">{lucide("arrow-up")}<span>Registra uscita</span></button>
         </div>'''
+        # Ricavi per voce del preventivo (richiesta esplicita dell'utente):
+        # stesso periodo gia' selezionato sopra dai filtri Bilanci, nessun
+        # nuovo selettore data. Base preventivo/fatturazione, non cassa -
+        # vedi commento su revenue_by_quote_category per il perche' (i
+        # movimenti di balance_movements non sanno a quale voce del
+        # preventivo appartiene un incasso).
+        revenue_total=sum(amount for _,amount in revenue_by_category)
+        # Niente <table>: Bilanci non ne usa mai (movimenti sempre come
+        # card colorate, non righe di tabella - vedi
+        # test_balances_movements_render_as_color_coded_cards_not_a_table
+        # e affini), stessa convenzione .kvs/.kv gia' usata altrove
+        # nell'app per elenchi chiave/valore compatti.
+        revenue_rows_html=''.join(
+            f'<div class="kv"><small>{esc(label)}</small><b>{money_it(amount)}</b></div>'
+            for label,amount in revenue_by_category
+        )
+        revenue_by_category_html=f'''<details class="section balance-expense" id="balanceRevenueByCategory">
+          <summary>Ricavi per voce del preventivo ({money_it(revenue_total)})</summary>
+          <p class="balance-filter-note" style="margin-top:0">{lucide("settings")}<span>Calcolati dalle voci reali del preventivo (Cremazione, Ritiro, Riconsegna, Serale, Notturno, Festivo, Urne, Calchi, Accessori) delle pratiche nel periodo filtrato sopra — non dai movimenti di cassa.</span></p>
+          <div class="kvs">{revenue_rows_html}<div class="kv"><small>Totale</small><b>{money_it(revenue_total)}</b></div></div>
+        </details>'''
         if recent_deletions:
             deletion_action=lambda row:(
                 f'<span class="badge">Ripristinato {esc(date_it(row["restored_at"][:10]))}</span>'
@@ -9345,7 +9950,7 @@ class App(BaseHTTPRequestHandler):
         primary_content=(details_html+cards_html) if explicit_view else (cards_html+details_html)
         body=f'''<main class="wrap balance-wrap">
           <div class="titlebar"><div><h1>Bilanci</h1><p class="sub">Movimenti reali e situazione delle somme ancora aperte.</p></div></div>
-          {notice}{manual_toolbar}{primary_content}{manual_html}{deletions_html}{filters_html}
+          {notice}{manual_toolbar}{primary_content}{revenue_by_category_html}{manual_html}{deletions_html}{filters_html}
         </main>'''
         self.send_html(layout("Bilanci",body,user))
 
@@ -9826,7 +10431,7 @@ class App(BaseHTTPRequestHandler):
         menu_btn=f'''<div class="calendar-appt-menu-wrap" onclick="event.stopPropagation()">
           <button type="button" class="calendar-appt-action" aria-label="Altre azioni" onclick="calendarToggleApptMenu(this)">{lucide("more-vertical")}</button>
           <div class="calendar-appt-menu-popover" hidden>
-            <a href="/calendario/{row['id']}">Apri dettaglio</a>
+            <a href="/calendario/{row['id']}" onclick="event.preventDefault();location.href=this.getAttribute('href')+'?return_to='+encodeURIComponent(location.pathname+location.search)">Apri dettaglio</a>
             <a href="/calendario/{row['id']}/modifica">Modifica</a>
             <form method="post" action="/calendario/{row['id']}/elimina" onsubmit="return confirm('Eliminare questo evento?')"><button type="submit">Elimina</button></form>
           </div>
@@ -9837,7 +10442,7 @@ class App(BaseHTTPRequestHandler):
         if self.calendar_appointment_done(row):filter_keys.append("done")
         if not row["assigned_user_id"]:filter_keys.append("unassigned")
         operator_attr=esc((operator_name or "").lower())
-        return f'''<article class="calendar-appt-card" data-event-id="{row['id']}" data-filter="{esc(' '.join(filter_keys))}" data-operator="{operator_attr}" style="border-left-color:{hex_}" onclick="location.href='/calendario/{row['id']}'">
+        return f'''<article class="calendar-appt-card" data-event-id="{row['id']}" data-filter="{esc(' '.join(filter_keys))}" data-operator="{operator_attr}" style="border-left-color:{hex_}" onclick="location.href='/calendario/{row['id']}?return_to='+encodeURIComponent(location.pathname+location.search)">
           <div class="calendar-appt-time-col"><span class="calendar-appt-time-dot" style="background:{hex_}"></span><span class="calendar-appt-time">{esc(time_text)}</span>{f'<span class="calendar-appt-time-end">→ {esc(end_time_text)}</span>' if show_time_range else ''}</div>
           <div class="calendar-appt-main">
             <div class="calendar-appt-top"><span class="calendar-appt-type {type_cls}">{type_label}</span>{avatar}</div>
@@ -10063,7 +10668,7 @@ class App(BaseHTTPRequestHandler):
             day_pages.append(f'''<div class="calendar-day-page" data-day-index="{i}" data-date="{day.isoformat()}">
               {stats_html}
               <div class="calendar-appt-list">{list_html}</div>
-              <a class="calendar-add-appt-btn" href="/calendario/nuovo?data={day.isoformat()}">{lucide("plus")}<span>Aggiungi ritiro / riconsegna</span></a>
+              <a class="calendar-add-appt-btn" href="/calendario/nuovo?data={day.isoformat()}" onclick="event.preventDefault();location.href=this.getAttribute('href')+'&return_to='+encodeURIComponent(location.pathname+location.search)">{lucide("plus")}<span>Aggiungi ritiro / riconsegna</span></a>
             </div>''')
         day_pages.append(f'<div class="calendar-day-page calendar-day-page-edge" data-href="{view_url(start+timedelta(days=7),view)}"></div>')
         daybar_html=f'''<div id="calendarDayboard">
@@ -10190,6 +10795,11 @@ class App(BaseHTTPRequestHandler):
         q=parse_qs(urlparse(self.path).query)
         view=(q.get("vista") or ["mese"])[0]
         if view not in ("giorno","mese"):view="mese"
+        # "da=mese" arriva dal tap su una cella della vista Mese (stesso
+        # meccanismo di Calendario/back_view): mostra "Torna a Mese" solo in
+        # quel caso, non quando si e' arrivati alla vista Giorno altrimenti
+        # (es. cambio vista diretto, swipe, o "Oggi").
+        back_from_month=(q.get("da") or [""])[0]=="mese"
         selected=(q.get("data") or [rome_now().date().isoformat()])[0]
         try:date.fromisoformat(selected)
         except ValueError:selected=rome_now().date().isoformat()
@@ -10261,10 +10871,11 @@ class App(BaseHTTPRequestHandler):
                   <span class="calendar-daybar-count">{day_total} turni</span>
                 </button>''')
             daybar_html=f'''<div class="calendar-daybar-wrap">
-              <button type="button" class="calendar-daybar-nav" onclick="location.href='/turni?vista=giorno&data={(monday-timedelta(days=7)).isoformat()}'" aria-label="Settimana precedente">‹</button>
+              <button type="button" class="calendar-daybar-nav" onclick="calendarDaybarNav(-1)" aria-label="Barra giorni precedente">‹</button>
               <div class="calendar-daybar" id="calendarDaybar">{''.join(daybar_cards)}</div>
-              <button type="button" class="calendar-daybar-nav" onclick="location.href='/turni?vista=giorno&data={(monday+timedelta(days=7)).isoformat()}'" aria-label="Settimana successiva">›</button>
-            </div>'''
+              <button type="button" class="calendar-daybar-nav" onclick="calendarDaybarNav(1)" aria-label="Barra giorni successiva">›</button>
+            </div>
+            <div class="shift-month-nav-today"><a class="btn ghost" href="/turni?vista=giorno">{lucide("calendar")} Oggi</a></div>'''
             def sede_card_html(day,branch):
                 day_shifts=shifts_by_day.get(day.isoformat(),{}).get(branch,[])
                 branch_cls="branch-livorno" if branch=="Livorno" else "branch-empoli"
@@ -10304,7 +10915,7 @@ class App(BaseHTTPRequestHandler):
                 return f'''<section class="section shift-sede-card {branch_cls}">
                   <div class="shift-sede-head">
                     <span class="shift-sede-title {branch_cls}">{lucide("map-pin")} {esc(branch.upper())}</span>
-                    <a class="shift-add-btn {branch_cls}" href="{add_href}">{lucide("plus")} Aggiungi operatore</a>
+                    <a class="shift-add-btn {branch_cls}" href="{add_href}" onclick="ppmSaveScrollForNextLoad()">{lucide("plus")} Aggiungi operatore</a>
                   </div>
                   {body_html}
                 </section>'''
@@ -10370,7 +10981,7 @@ class App(BaseHTTPRequestHandler):
                         else:
                             names_html=f"<div>{len(branch_rows)} operatori</div>"
                         blocks.append(f'<div class="shift-month-cell-branch {branch_cls}"><div class="shift-month-cell-branch-label"><span class="shift-month-cell-dot"></span>{esc(branch[:3].upper())}</div><div class="shift-month-cell-names">{names_html}</div></div>')
-                href=f"/turni?vista=giorno&data={day_iso}"
+                href=f"/turni?vista=giorno&data={day_iso}&da=mese"
                 return f'<a class="{" ".join(classes)}" href="{href}"><b>{day.day}</b>{"".join(blocks)}</a>'
             dow_row='<div class="shift-month-dow-row">'+''.join(f'<div class="shift-month-dow">{n}</div>' for n in day_names)+'</div>'
             def vacation_bars_html(anchor_grid_start):
@@ -10410,19 +11021,27 @@ class App(BaseHTTPRequestHandler):
                 cells_html=''.join(month_cell_html(anchor_grid_start+timedelta(days=i),anchor) for i in range(42))
                 bars_html=vacation_bars_html(anchor_grid_start)
                 return f'<div class="shift-month-grid-wrap"><div class="shift-month-grid">{cells_html}</div><div class="shift-month-overlay">{bars_html}</div></div>'
-            # Carosello fluido a swipe nativo (scroll-snap) tra mese
-            # precedente/corrente/successivo, stessa tecnica dello swipe
-            # giorni: si preferisce ricaricare la pagina quando lo swipe si
-            # ferma su un mese adiacente (nessuna paginazione infinita) —
-            # il gesto di trascinamento resta comunque nativo e fluido.
-            month_pages=''.join(
-                f'<div class="calendar-day-page" data-page-index="{i}" data-href="/turni?vista=mese&data={anchor.isoformat()}">{month_grid_html(anchor,gstart)}</div>'
+            # Carosello a swipe libero tra mese precedente/corrente/
+            # successivo (richiesta esplicita dell'utente: stessa identica
+            # tecnica gia' usata per lo swipe giorni di Calendario/
+            # Cremazioni) - i 3 mesi reali si scorrono SENZA mai ricaricare
+            # la pagina; solo le due sentinelle invisibili oltre il mese
+            # precedente/successivo (nessun data-month-key, solo data-href,
+            # stesso pattern di calendar-day-page-edge) ricaricano quando
+            # lo swipe le raggiunge davvero. Prima invece OGNI mese
+            # (compreso quello corrente) portava un data-href e ricaricava
+            # al primo pixel di swipe - da qui la scattosita' segnalata.
+            month_pages_list=[f'<div class="calendar-day-page calendar-day-page-edge" data-href="/turni?vista=mese&data={add_months(current_month_start,-2).isoformat()}"></div>']
+            month_pages_list+=[
+                f'<div class="calendar-day-page" data-page-index="{i}" data-month-key="{anchor.isoformat()}">{month_grid_html(anchor,gstart)}</div>'
                 for i,(anchor,gstart) in enumerate((
                     (prev_month_start,prev_grid_start),
                     (current_month_start,grid_start),
                     (next_month_start,next_grid_start),
-                ))
-            )
+                ),start=1)
+            ]
+            month_pages_list.append(f'<div class="calendar-day-page calendar-day-page-edge" data-href="/turni?vista=mese&data={add_months(current_month_start,2).isoformat()}"></div>')
+            month_pages=''.join(month_pages_list)
             grid=f'<div class="calendar-day-pages" id="shiftMonthPages">{month_pages}</div>'
             legend_html=f'''<div class="shift-month-legend">
               <span><span class="dot" style="background:var(--brand)"></span>Livorno</span>
@@ -10445,8 +11064,9 @@ class App(BaseHTTPRequestHandler):
         # Sia la vista giorno che quella mese usano un carosello a
         # scroll-snap (swipe nativo e fluido, gestito dal browser) per
         # cambiare periodo: nessuno swipe custom via JS resta necessario.
+        back_button=f'<a class="btn ghost calendar-back-btn" href="/turni?vista=mese&data={selected}">← Torna a Mese</a>' if view=="giorno" and back_from_month else ''
         body=f'''<main class="wrap calendar-wrap">
-          <div class="titlebar calendar-main-title"><div><h1>Orari</h1><p class="sub">Pianificazione e reperibilità</p></div></div>
+          <div class="titlebar calendar-main-title"><div>{back_button}<h1>Orari</h1><p class="sub">Pianificazione e reperibilità</p></div></div>
           {oncall_banner_html}
           {switch_html}
           {content}
@@ -10866,6 +11486,13 @@ class App(BaseHTTPRequestHandler):
             # ripresi dalla pratica ma tutto restando modificabile — stessa
             # logica pagamento gia' usata da api_calendar_animals_search.
             payment_status,payment_amount=delivery_payment_prefill(practice_prefill)
+            # Preimposta la Sede in base alla Provenienza della pratica
+            # (Luogo di origine -> Provenienza: L=Livorno, E=Empoli,
+            # richiesta esplicita dell'utente) - solo per Livorno/Empoli,
+            # nessun'altra provenienza inventa una sede. E' solo un
+            # default: il campo Sede nel form resta un <select> libero,
+            # l'utente puo' sempre cambiarlo prima di salvare.
+            provenance_sede={"L":"Livorno","E":"Empoli"}.get((practice_prefill["provenance"] or "").strip().upper(),"")
             event={
                 "event_type":(q.get("event_type") or ["Riconsegna in sede"])[0],
                 "linked_practice_id":str(practice_prefill["id"]),
@@ -10875,6 +11502,7 @@ class App(BaseHTTPRequestHandler):
                 "client_phone":practice_prefill["owner_phone"] or "",
                 "payment_status":payment_status,
                 "payment_amount":f"{payment_amount:.2f}",
+                "destination_site":provenance_sede,
             }
         if not animals and not event_id:animals=[{}]
         val=lambda key,default="":esc(event[key] if event and key in event.keys() and event[key] not in (None,"") else default)
@@ -10923,9 +11551,9 @@ class App(BaseHTTPRequestHandler):
         if event_type in ("Ritiro","Riconsegna"):
             location_card=f'''<div class="calendar-tap-card calendar-zone-field lookup" data-calendar-types="Ritiro|Riconsegna" {"" if event_type in ("Ritiro","Riconsegna") else "hidden"}><span class="calendar-tap-card-icon calendar-icon-green">{lucide("map-pin")}</span><div class="calendar-tap-card-body"><small>Zona{' *' if event_type=='Ritiro' else ''}</small><input name="zone" value="{val('zone')}" autocomplete="off" oninput="calendarZoneInput(this)" onfocus="calendarZoneInput(this)" onblur="calendarZoneOffer(this)" placeholder="Scrivi per cercare una zona"><div class="calendar-zone-results" hidden></div><label class="calendar-tap-card-check"><input type="checkbox" name="save_zone" value="1"> Salva nei suggerimenti</label></div></div>'''
         elif event_type in ("Ritiro in sede","Riconsegna in sede"):
-            location_card=f'''<div class="calendar-tap-card" data-calendar-types="Ritiro in sede|Riconsegna in sede" {"" if event_type in ("Ritiro in sede","Riconsegna in sede") else "hidden"}><span class="calendar-tap-card-icon calendar-icon-blue">{lucide("home")}</span><div class="calendar-tap-card-body"><small>Sede *</small><select name="destination_site" onchange="calendarAutoTitle()"><option value="">Seleziona</option><option {"selected" if raw("destination_site")=="Livorno" else ""}>Livorno</option><option {"selected" if raw("destination_site")=="Empoli" else ""}>Empoli</option></select></div></div>'''
+            location_card=f'''<div class="calendar-tap-card" data-calendar-types="Ritiro in sede|Riconsegna in sede" {"" if event_type in ("Ritiro in sede","Riconsegna in sede") else "hidden"}><span class="calendar-tap-card-icon calendar-icon-blue">{lucide("home")}</span><div class="calendar-tap-card-body"><small>Sede *</small><select name="destination_site" onchange="this.dataset.manual='1';calendarAutoTitle()"><option value="">Seleziona</option><option {"selected" if raw("destination_site")=="Livorno" else ""}>Livorno</option><option {"selected" if raw("destination_site")=="Empoli" else ""}>Empoli</option></select></div></div>'''
         else:
-            location_card=f'''<div class="calendar-tap-card calendar-zone-field lookup" data-calendar-types="Ritiro|Riconsegna" hidden><span class="calendar-tap-card-icon calendar-icon-green">{lucide("map-pin")}</span><div class="calendar-tap-card-body"><small>Zona</small><input name="zone" value="{val('zone')}" autocomplete="off" oninput="calendarZoneInput(this)" onfocus="calendarZoneInput(this)" onblur="calendarZoneOffer(this)" placeholder="Scrivi per cercare una zona"><div class="calendar-zone-results" hidden></div><label class="calendar-tap-card-check"><input type="checkbox" name="save_zone" value="1"> Salva nei suggerimenti</label></div></div><div class="calendar-tap-card" data-calendar-types="Ritiro in sede|Riconsegna in sede" hidden><span class="calendar-tap-card-icon calendar-icon-blue">{lucide("home")}</span><div class="calendar-tap-card-body"><small>Sede</small><select name="destination_site" onchange="calendarAutoTitle()"><option value="">Seleziona</option><option>Livorno</option><option>Empoli</option></select></div></div>'''
+            location_card=f'''<div class="calendar-tap-card calendar-zone-field lookup" data-calendar-types="Ritiro|Riconsegna" hidden><span class="calendar-tap-card-icon calendar-icon-green">{lucide("map-pin")}</span><div class="calendar-tap-card-body"><small>Zona</small><input name="zone" value="{val('zone')}" autocomplete="off" oninput="calendarZoneInput(this)" onfocus="calendarZoneInput(this)" onblur="calendarZoneOffer(this)" placeholder="Scrivi per cercare una zona"><div class="calendar-zone-results" hidden></div><label class="calendar-tap-card-check"><input type="checkbox" name="save_zone" value="1"> Salva nei suggerimenti</label></div></div><div class="calendar-tap-card" data-calendar-types="Ritiro in sede|Riconsegna in sede" hidden><span class="calendar-tap-card-icon calendar-icon-blue">{lucide("home")}</span><div class="calendar-tap-card-body"><small>Sede</small><select name="destination_site" onchange="this.dataset.manual='1';calendarAutoTitle()"><option value="">Seleziona</option><option>Livorno</option><option>Empoli</option></select></div></div>'''
         delivery_animal_card=f'''<div class="calendar-tap-card lookup" data-calendar-types="Riconsegna|Riconsegna in sede" {"" if event_type in ("Riconsegna","Riconsegna in sede") else "hidden"}><span class="calendar-tap-card-icon calendar-icon-green">{lucide("paw")}</span><div class="calendar-tap-card-body"><small>Animale *</small><input id="calendarDeliveryAnimalSearch" name="animal_name" value="{val('animal_name')}" placeholder="Cerca pratica, animale o cliente" autocomplete="off" oninput="calendarAutoTitle()"><div id="calendarDeliveryAnimalResults" class="lookup-results hidden"></div><input type="hidden" name="linked_practice_id" value="{val('linked_practice_id')}"></div></div>'''
         operator_card=f'''<div class="calendar-tap-card"><span class="calendar-tap-card-icon calendar-icon-orange">{lucide("user")}</span><div class="calendar-tap-card-body">{operator_field}</div></div>'''
         # Per Ritiro/Ritiro in sede/Riconsegna/Riconsegna in sede il titolo
@@ -11267,8 +11895,35 @@ class App(BaseHTTPRequestHandler):
             cliente_form=f'''<form method="post" action="/calendario/{event_id}/cliente"><input name="client_first_name" placeholder="Nome" value="{esc(event['client_first_name'] or '')}"><input name="client_last_name" placeholder="Cognome" value="{esc(event['client_last_name'] or '')}"><input name="client_phone" placeholder="Telefono" value="{esc(event['client_phone'] or '')}"><button class="btn ghost" type="submit" style="margin-top:10px">Salva cliente</button></form>'''
             hero_rows.append(hero_row("user","blue","Cliente",esc(client_display or '-'),cliente_form))
             estimate_total_all=sum(float(i["amount"] or 0) for i in estimates)
-            estimate_form=f'''<form method="post" action="/calendario/{event_id}/preventivo"><input inputmode="decimal" name="amount" value="{f'{estimate_total_all:g}' if estimate_total_all else ''}" placeholder="Importo €"><button class="btn ghost" type="submit" style="margin-top:10px">Salva preventivo</button></form>'''
-            hero_rows.append(hero_row("receipt","pink","Preventivo",money_it(estimate_total_all),estimate_form))
+            if estimates:
+                # Richiesta esplicita dell'utente: il riepilogo deve mostrare
+                # le VERE singole voci compilate durante la creazione
+                # (calendar_event_estimate_items), non solo il totale - mai
+                # ricostruite ne' stimate. Riusa esattamente lo stesso
+                # markup/CSS gia' presente nella scheda "Preventivo" di
+                # questa stessa pagina (calendar-card-list/
+                # calendar-estimate-row-v2), nessuna grafica nuova. Diventa
+                # di sola lettura (nessun form_inner): il quick-edit a
+                # importo unico sotto distruggerebbe le voci reali con un
+                # DELETE+INSERT di una riga sola (vedi calendar_event_action,
+                # action=="preventivo") - la modifica di voci multiple resta
+                # possibile da "Modifica evento", che usa il vero editor a
+                # righe multiple (stesso identico meccanismo della creazione,
+                # nessuna seconda fonte dati parallela).
+                estimate_rows_html=''.join(f'<div class="calendar-estimate-row-v2"><span class="calendar-estimate-preset">{esc(i["description"] or "Voce")}</span><span style="margin-left:auto;font-weight:700">{money_it(i["amount"])}</span></div>' for i in estimates)
+                hero_rows.append(f'''<div class="calendar-detail-hero-meta-item">
+                  <span class="calendar-detail-hero-meta-icon calendar-icon-pink">{lucide("receipt")}</span>
+                  <div style="min-width:0;flex:1">
+                    <b>Preventivo — {money_it(estimate_total_all)}</b>
+                    <div class="calendar-card-list" style="margin-top:6px">{estimate_rows_html}</div>
+                  </div>
+                </div>''')
+            else:
+                # Nessuna voce ancora presente: il quick-add di un importo
+                # unico resta disponibile (non c'e' nulla di reale da
+                # distruggere in questo caso).
+                estimate_form=f'''<form method="post" action="/calendario/{event_id}/preventivo"><input inputmode="decimal" name="amount" value="" placeholder="Importo €"><button class="btn ghost" type="submit" style="margin-top:10px">Salva preventivo</button></form>'''
+                hero_rows.append(hero_row("receipt","pink","Preventivo",money_it(estimate_total_all),estimate_form))
             if event['payment_status']:
                 # Stato/importo salvati sull'evento sono uno scatto preso al
                 # momento della creazione/prefill: se in seguito viene
@@ -11437,6 +12092,17 @@ class App(BaseHTTPRequestHandler):
                 c.execute("UPDATE calendar_events SET updated_at=?,updated_by=? WHERE id=?",(stamp,user["id"],event_id))
                 calendar_add_history(c,event_id,user["id"],"Modifica animali",old_summary,calendar_animals_summary_text(animals),stamp)
             elif action=="preventivo":
+                # Questo endpoint accetta un SOLO importo complessivo: va bene
+                # per aggiungere un primo preventivo generico (0 voci), ma
+                # sovrascriverebbe con un'unica riga generica un preventivo
+                # gia' composto da piu' voci reali (bug segnalato
+                # dall'utente - perdita di dati). Con piu' di una voce gia'
+                # presente, va rifiutato: la modifica di voci multiple passa
+                # da "Modifica evento", il vero editor a righe multiple
+                # (stessa tabella, nessuna seconda fonte dati).
+                existing_estimate_items=c.execute("SELECT id FROM calendar_event_estimate_items WHERE event_id=?",(event_id,)).fetchall()
+                if len(existing_estimate_items)>1:
+                    return self.calendar_event_detail(user,event_id,error='Il preventivo ha già più voci: modificale da "Modifica evento".')
                 try:amount=max(0.0,float(str(form.get("amount") or "0").replace(",",".")))
                 except ValueError:return self.calendar_event_detail(user,event_id,error="Importo non valido.")
                 old_total=sum(float(i["amount"] or 0) for i in c.execute("SELECT amount FROM calendar_event_estimate_items WHERE event_id=?",(event_id,)).fetchall())
@@ -12090,15 +12756,35 @@ class App(BaseHTTPRequestHandler):
             if assisted_cremation_label(row):
                 notified=("owner_notified_status" in row.keys() and row["owner_notified_status"]=="avvisato")
                 notify_badge=f'<span class="cremation-week-notify-badge {"cremation-notify-green" if notified else "cremation-notify-red"}">{"🟢 AVVISATO" if notified else "🔴 DA AVVISARE"}</span>'
+            # Nota della pratica visibile anche nella card compatta del
+            # ciclo, senza doverlo espandere (richiesta esplicita
+            # dell'utente): stessa fonte dati gia' usata nel corpo espanso
+            # (row["notes"], gia' selezionata da SELECT *), solo troncata
+            # piu' corta perche' qui occupa spazio sempre visibile.
+            notes_text_compact=re.sub(r"\s+"," ",str(row["notes"] or "")).strip()
+            notes_preview_compact=notes_text_compact if len(notes_text_compact)<=80 else notes_text_compact[:79].rstrip()+"…"
+            notes_line_html=f'<span class="cremation-week-animal-notes">{lucide("clipboard")}<span>{esc(notes_preview_compact)}</span></span>' if notes_preview_compact else ''
             return f'''<div class="cremation-week-animal-line" data-practice-id="{row['id']}">
               <span class="cremation-week-animal-name-group"><span class="cremation-week-animal-name">{avatar_emoji} {animal_name_html(row)}{weight_txt}</span>{provenance_html}</span>
               {notify_badge}
               {tags_line_html}
               {urn_line_html}
+              {notes_line_html}
             </div>'''
 
-        def practice_url(row):
-            return f'/pratiche/{row["id"]}?return_to={quote(getattr(self,"path",""),safe="")}'
+        def practice_url(row,cycle_id=None):
+            # open_cycle riusa lo stesso meccanismo gia' esistente di
+            # cremationOpenPendingCycle (nato per "torna al ciclo appena
+            # creato"): qui lo stesso parametro fa si' che, tornando dalla
+            # pratica, il ciclo da cui si era partiti si riespanda e si
+            # riporti in vista da solo - nessuna logica nuova, solo lo
+            # stesso ingresso gia' collaudato. Va dentro il valore di
+            # return_to (fa parte dell'URL a cui si torna), non come
+            # parametro sorella di /pratiche/{id} che non lo userebbe mai.
+            own_path=getattr(self,"path","")
+            if cycle_id:
+                own_path=own_path+('&' if '?' in own_path else '?')+f'open_cycle={cycle_id}'
+            return f'/pratiche/{row["id"]}?return_to={quote(own_path,safe="")}'
 
         def quick_insert_menu_html(row):
             items=[f'<button type="button" onclick="cremationQuickAssign(this,{row["id"]},{cid})">Inserisci nel Ciclo {n}</button>' for n,cid in insertable_cycles]
@@ -12135,7 +12821,7 @@ class App(BaseHTTPRequestHandler):
               </div>
             </div>'''
 
-        def animal_row_html(row,removable=False):
+        def animal_row_html(row,removable=False,cycle_id=None):
             collab_code=collaborator_codes.get(int(row["collaborator_id"])) if "collaborator_id" in row.keys() and row["collaborator_id"] else ""
             prefix=f'{esc(collab_code)} ' if collab_code else ""
             avatar_emoji,avatar_cls=species_avatar(row["species"] if "species" in row.keys() else "")
@@ -12143,7 +12829,7 @@ class App(BaseHTTPRequestHandler):
             weight_html=f'{esc(weight)} kg' if weight else '<span class="cremation-dash">—</span>'
             code=(row["provenance"] or "").strip().upper()
             provenance_html=f'<span class="cremation-provenance-chip {provenance_color_class(code)}">{esc(code)}</span>' if code else '<span class="cremation-dash">—</span>'
-            url=practice_url(row)
+            url=practice_url(row,cycle_id)
             remove_html=f'<button type="button" class="cremation-animal-remove" onclick="event.stopPropagation();cremationRemoveFromCycle(this,{row["id"]})" aria-label="Rimuovi dal ciclo" title="Rimuovi dal ciclo">{lucide("x")}</button>' if removable else ""
             swap_html=f'<button type="button" class="cremation-animal-swap" onclick="event.stopPropagation();cremationOpenSwapModal({row["id"]},{esc(json.dumps(row["animal_name"] or "Animale"))},{esc(json.dumps(weight))})" aria-label="Scambia animale" title="Scambia con un altro animale">{lucide("repeat")}</button>' if removable else ""
             notifier_id=row["owner_notified_by"] if "owner_notified_by" in row.keys() and row["owner_notified_by"] else None
@@ -12185,7 +12871,7 @@ class App(BaseHTTPRequestHandler):
         for idx,cycle in enumerate(cycles):
             animals=cycle_practices.get(cycle["id"],[])
             status=cycle["status"]
-            animals_html=''.join(animal_row_html(row,removable=True) for row in animals) or '<p class="cremation-dash" style="padding:10px 0">Nessun animale assegnato.</p>'
+            animals_html=''.join(animal_row_html(row,removable=True,cycle_id=cycle["id"]) for row in animals) or '<p class="cremation-dash" style="padding:10px 0">Nessun animale assegnato.</p>'
             status_label,status_cls=CREMATION_STATUS_LABELS.get(status,(status.upper(),""))
             names_html=''.join(cycle_animal_preview_line(row) for row in animals) or '<div class="cremation-week-animal-line cremation-dash">Nessun animale</div>'
             remaining_html=""
@@ -12203,10 +12889,16 @@ class App(BaseHTTPRequestHandler):
                 for animal_row in animals:
                     delivery_label=f' {esc(animal_row["animal_name"])}' if len(animals)>1 and animal_row["animal_name"] else ""
                     existing_delivery_id=delivery_event_by_practice.get(animal_row["id"])
+                    # open_cycle va dentro il return_to (fa parte dell'URL a
+                    # cui si torna, non di /calendario che non lo conosce):
+                    # stesso meccanismo gia' esistente di
+                    # cremationOpenPendingCycle, riusato per riespandere il
+                    # ciclo di provenienza anche tornando da qui.
+                    cycle_return_to=quote(self.path+('&' if '?' in self.path else '?')+f'open_cycle={cycle["id"]}',safe="")
                     if existing_delivery_id:
-                        actions.append(f'<a class="cremation-action-btn cremation-action-active" href="/calendario/{existing_delivery_id}?return_to={quote(self.path,safe="")}">{lucide("truck")}<span>Vedi riconsegna{delivery_label}</span></a>')
+                        actions.append(f'<a class="cremation-action-btn cremation-action-active" href="/calendario/{existing_delivery_id}?return_to={cycle_return_to}">{lucide("truck")}<span>Vedi riconsegna{delivery_label}</span></a>')
                     else:
-                        actions.append(f'<a class="cremation-action-btn cremation-action-planned" href="/calendario/nuovo?linked_practice_id={animal_row["id"]}&return_to={quote(self.path,safe="")}">{lucide("truck")}<span>Fissa riconsegna{delivery_label}</span></a>')
+                        actions.append(f'<a class="cremation-action-btn cremation-action-planned" href="/calendario/nuovo?linked_practice_id={animal_row["id"]}&return_to={cycle_return_to}">{lucide("truck")}<span>Fissa riconsegna{delivery_label}</span></a>')
                 actions.append(f'<button type="button" class="cremation-action-btn cremation-action-planned" onclick="cremationRevertComplete({cycle["id"]})">{lucide("undo-2")}<span>Annulla completamento</span></button>')
                 actions.append(f'<button type="button" class="cremation-action-btn cremation-action-delete" onclick="cremationDeleteCycle({cycle["id"]})">{lucide("x")}<span>Elimina ciclo</span></button>')
             else:
@@ -12485,7 +13177,13 @@ class App(BaseHTTPRequestHandler):
             cycles_by_date[cyc["cycle_date"]].append(cyc)
 
         today_iso=today_date.isoformat()
-        board_date=today_iso if today_iso in week_dates else monday.isoformat()
+        requested_iso=view_date.isoformat()
+        # Il giorno da evidenziare all'apertura deve essere quello
+        # effettivamente richiesto (parametro "data"), non sempre "oggi":
+        # altrimenti, tornando da una settimana adiacente dopo uno swipe
+        # (vedi sentinella sotto), si perderebbe il giorno esatto da cui
+        # si era partiti e si ricadrebbe sempre su oggi/lunedi'.
+        board_date=requested_iso if requested_iso in week_dates else (today_iso if today_iso in week_dates else monday.isoformat())
         insertable_cycles_week=[]
         for d in week_dates:
             day_date_iter=date.fromisoformat(d)
@@ -12535,8 +13233,15 @@ class App(BaseHTTPRequestHandler):
                 name+=f' <small class="cremation-owner-hint">({esc(surname)})</small>'
             return name
 
-        def practice_url(row):
-            return f'/pratiche/{row["id"]}?return_to={quote(getattr(self,"path",""),safe="")}'
+        def practice_url(row,cycle_id=None):
+            # Stesso meccanismo della vista giorno (vedi commento li'):
+            # open_cycle dentro return_to riespande il ciclo di provenienza
+            # tornando dalla pratica, riusando cremationOpenPendingCycle
+            # gia' esistente.
+            own_path=getattr(self,"path","")
+            if cycle_id:
+                own_path=own_path+('&' if '?' in own_path else '?')+f'open_cycle={cycle_id}'
+            return f'/pratiche/{row["id"]}?return_to={quote(own_path,safe="")}'
 
         def owner_label(row):
             owner=((row["owner_first_name"] or "")+" "+(row["owner_last_name"] or "")).strip() or row["owner_company"] or ""
@@ -12547,7 +13252,7 @@ class App(BaseHTTPRequestHandler):
         def add_animal_button_html(cycle_id):
             return f'<button type="button" class="cremation-action-btn cremation-action-add" onclick="event.stopPropagation();cremationOpenAddAnimalModal({cycle_id})">{lucide("plus")}<span>Aggiungi animale</span></button>'
 
-        def animal_row_html(row,removable=False):
+        def animal_row_html(row,removable=False,cycle_id=None):
             collab_code=collaborator_codes.get(int(row["collaborator_id"])) if "collaborator_id" in row.keys() and row["collaborator_id"] else ""
             prefix=f'{esc(collab_code)} ' if collab_code else ""
             avatar_emoji,avatar_cls=species_avatar(row["species"] if "species" in row.keys() else "")
@@ -12555,7 +13260,7 @@ class App(BaseHTTPRequestHandler):
             weight_html=f'{esc(weight)} kg' if weight else '<span class="cremation-dash">—</span>'
             code=(row["provenance"] or "").strip().upper()
             provenance_html=f'<span class="cremation-provenance-chip {provenance_color_class(code)}">{esc(code)}</span>' if code else '<span class="cremation-dash">—</span>'
-            url=practice_url(row)
+            url=practice_url(row,cycle_id)
             remove_html=f'<button type="button" class="cremation-animal-remove" onclick="event.stopPropagation();cremationRemoveFromCycle(this,{row["id"]})" aria-label="Rimuovi dal ciclo" title="Rimuovi dal ciclo">{lucide("x")}</button>' if removable else ""
             swap_html=f'<button type="button" class="cremation-animal-swap" onclick="event.stopPropagation();cremationOpenSwapModal({row["id"]},{esc(json.dumps(row["animal_name"] or "Animale"))},{esc(json.dumps(weight))})" aria-label="Scambia animale" title="Scambia con un altro animale">{lucide("repeat")}</button>' if removable else ""
             notifier_id=row["owner_notified_by"] if "owner_notified_by" in row.keys() and row["owner_notified_by"] else None
@@ -12594,11 +13299,20 @@ class App(BaseHTTPRequestHandler):
             if assisted_cremation_label(row):
                 notified=("owner_notified_status" in row.keys() and row["owner_notified_status"]=="avvisato")
                 notify_badge=f'<span class="cremation-week-notify-badge {"cremation-notify-green" if notified else "cremation-notify-red"}">{"🟢 AVVISATO" if notified else "🔴 DA AVVISARE"}</span>'
+            # Nota della pratica visibile anche nella card compatta del
+            # ciclo, senza doverlo espandere (richiesta esplicita
+            # dell'utente): stessa fonte dati gia' usata nel corpo espanso
+            # (row["notes"], gia' selezionata da SELECT *), solo troncata
+            # piu' corta perche' qui occupa spazio sempre visibile.
+            notes_text_compact=re.sub(r"\s+"," ",str(row["notes"] or "")).strip()
+            notes_preview_compact=notes_text_compact if len(notes_text_compact)<=80 else notes_text_compact[:79].rstrip()+"…"
+            notes_line_html=f'<span class="cremation-week-animal-notes">{lucide("clipboard")}<span>{esc(notes_preview_compact)}</span></span>' if notes_preview_compact else ''
             return f'''<div class="cremation-week-animal-line" data-practice-id="{row['id']}">
               <span class="cremation-week-animal-name-group"><span class="cremation-week-animal-name">{avatar_emoji} {animal_name_html(row)}{weight_txt}</span>{provenance_html}</span>
               {notify_badge}
               {tags_html}
               {urn_html}
+              {notes_line_html}
             </div>'''
 
         def animali_quick_insert_menu_html(row):
@@ -12693,7 +13407,14 @@ class App(BaseHTTPRequestHandler):
         # perche' non esisteva una pagina successiva su cui "agganciarsi"
         # (bug segnalato dall'utente, identico a quello gia' risolto in
         # Calendario dato che la logica del carosello e' la stessa).
-        day_pages.append(f'<div class="cremation-day-page cremation-day-page-edge" data-href="/programma-cremazioni?vista=settimana&data={prev_week}"></div>')
+        # La sentinella iniziale punta al giorno IMMEDIATAMENTE precedente
+        # (domenica della settimana prima), non al lunedi' di quella
+        # settimana (differenza voluta rispetto a "prev_week", usato invece
+        # dal bottone esplicito ‹ piu' sotto): solo cosi' lo swipe indietro
+        # attraverso il confine settimanale riporta esattamente al giorno
+        # da cui si era partiti (stesso pattern di Calendario, che usa
+        # start-1 giorno e non start-7 giorni per la stessa sentinella).
+        day_pages.append(f'<div class="cremation-day-page cremation-day-page-edge" data-href="/programma-cremazioni?vista=settimana&data={(monday-timedelta(days=1)).isoformat()}"></div>')
         for i,d in enumerate(week_dates):
             day_cycles=cycles_by_date[d]
             day_date=date.fromisoformat(d)
@@ -12704,7 +13425,7 @@ class App(BaseHTTPRequestHandler):
                 cycle_position[cycle["id"]]=(idx+1,day_date)
                 status_label,status_cls=CREMATION_STATUS_LABELS.get(status,(status.upper(),""))
                 lines_html=''.join(week_animal_line(row) for row in animals) or '<div class="cremation-week-animal-line cremation-dash">Nessun animale</div>'
-                animals_html=''.join(animal_row_html(row,removable=True) for row in animals) or '<p class="cremation-dash" style="padding:10px 0">Nessun animale assegnato.</p>'
+                animals_html=''.join(animal_row_html(row,removable=True,cycle_id=cycle["id"]) for row in animals) or '<p class="cremation-dash" style="padding:10px 0">Nessun animale assegnato.</p>'
                 remaining_html=""
                 if len(animals)==1:
                     animal_w=(animals[0]["estimated_weight"] or "").strip()
@@ -12720,10 +13441,11 @@ class App(BaseHTTPRequestHandler):
                     for animal_row in animals:
                         delivery_label=f' {esc(animal_row["animal_name"])}' if len(animals)>1 and animal_row["animal_name"] else ""
                         existing_delivery_id=delivery_event_by_practice.get(animal_row["id"])
+                        cycle_return_to=quote(self.path+('&' if '?' in self.path else '?')+f'open_cycle={cycle["id"]}',safe="")
                         if existing_delivery_id:
-                            actions.append(f'<a class="cremation-action-btn cremation-action-active" href="/calendario/{existing_delivery_id}?return_to={quote(self.path,safe="")}">{lucide("truck")}<span>Vedi riconsegna{delivery_label}</span></a>')
+                            actions.append(f'<a class="cremation-action-btn cremation-action-active" href="/calendario/{existing_delivery_id}?return_to={cycle_return_to}">{lucide("truck")}<span>Vedi riconsegna{delivery_label}</span></a>')
                         else:
-                            actions.append(f'<a class="cremation-action-btn cremation-action-planned" href="/calendario/nuovo?linked_practice_id={animal_row["id"]}&return_to={quote(self.path,safe="")}">{lucide("truck")}<span>Fissa riconsegna{delivery_label}</span></a>')
+                            actions.append(f'<a class="cremation-action-btn cremation-action-planned" href="/calendario/nuovo?linked_practice_id={animal_row["id"]}&return_to={cycle_return_to}">{lucide("truck")}<span>Fissa riconsegna{delivery_label}</span></a>')
                     actions.append(f'<button type="button" class="cremation-action-btn cremation-action-planned" onclick="cremationRevertComplete({cycle["id"]})">{lucide("undo-2")}<span>Annulla completamento</span></button>')
                     actions.append(f'<button type="button" class="cremation-action-btn cremation-action-delete" onclick="cremationDeleteCycle({cycle["id"]})">{lucide("x")}<span>Elimina ciclo</span></button>')
                 else:
@@ -13336,6 +14058,7 @@ class App(BaseHTTPRequestHandler):
 
     def disposal_page(self,user,error=""):
         q=parse_qs(urlparse(self.path).query)
+        collapsed_sections=set(parse_preference_list(load_preferences(user["id"]).get("smaltimenti_collapsed_sections","")))
         today=rome_now().date(); default_from=today-timedelta(days=28)
         date_from=(q.get("dal") or [default_from.isoformat()])[0].strip()
         date_to=(q.get("al") or [today.isoformat()])[0].strip()
@@ -13375,7 +14098,13 @@ class App(BaseHTTPRequestHandler):
             group_total=len(data["pending"])+len(data["done"])
             group_kg=sum(money_value(r["estimated_weight"]) for r in data["pending"]+data["done"] if r["estimated_weight"])
             total_row=f'<tr class="disposal-group-total"><td><b>Totale</b></td><td><b>{kg_it(group_kg)}</b></td><td colspan="4"></td></tr>'
-            group_sections.append(f'''<section class="tablebox disposal-group"><div class="section-collapse-head"><h2>{esc(branch)} · Circuito {esc(channel)}</h2><span class="badge">{group_total} animali</span><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><table><thead><tr><th>Animale</th><th>Peso</th><th>Proprietario/Veterinario</th><th>Data recupero</th><th>Pratica</th><th>Stato</th></tr></thead><tbody>{rows_html}{total_row}</tbody></table></div></section>''')
+            # Stato aperto/chiuso ricordato per utente (stesso meccanismo
+            # di Archivio/mesi): senza questo, tornando da una pratica
+            # collegata il gruppo appena chiuso si riapriva da solo,
+            # qualunque fosse il metodo di navigazione indietro usato.
+            section_key=f"{branch}·{channel}"
+            section_closed=section_key in collapsed_sections
+            group_sections.append(f'''<section class="tablebox disposal-group"><div class="section-collapse-head"><h2>{esc(branch)} · Circuito {esc(channel)}</h2><span class="badge">{group_total} animali</span><button type="button" class="collapse-toggle" aria-expanded="{"false" if section_closed else "true"}" data-persist-key="{esc(section_key)}" data-persist-endpoint="/smaltimenti/sezione-stato" onclick="toggleCollapsibleSection(this)">{"+" if section_closed else "−"}</button></div><div class="collapsible-body"{" hidden" if section_closed else ""}><table><thead><tr><th>Animale</th><th>Peso</th><th>Proprietario/Veterinario</th><th>Data recupero</th><th>Pratica</th><th>Stato</th></tr></thead><tbody>{rows_html}{total_row}</tbody></table></div></section>''')
         filter_note='<p class="sub">Nessuna pratica corrisponde al filtro di stato selezionato per questo periodo.</p>' if not display_groups and full_groups else ''
         total_count=len(eligible)
         total_already=len(already_done)
@@ -13387,9 +14116,10 @@ class App(BaseHTTPRequestHandler):
             confirm_form='<p class="sub">Nessuna pratica da confermare nel periodo selezionato: quelle elencate sopra risultano già smaltite.</p>'
         else:
             confirm_form='<p class="sub">Nessuna pratica di cremazione collettiva da smaltire nel periodo selezionato.</p>'
-        history_rows=''.join(f'''<tr><td>{esc(date_it(b["confirmed_at"]))}</td><td>{esc(date_it(b["period_from"]))} → {esc(date_it(b["period_to"]))}</td><td><b>{b["total_count"]}</b></td><td>{esc(b["display_name"] or "-")}</td><td><a class="btn ghost" href="/smaltimenti/storico/{b["id"]}">Apri</a></td></tr>''' for b in history) or '<tr><td colspan="5" class="sub">Nessuno scarico registrato.</td></tr>'
+        history_rows=''.join(f'''<tr><td>{esc(date_it(b["confirmed_at"]))}</td><td>{esc(date_it(b["period_from"]))} → {esc(date_it(b["period_to"]))}</td><td><b>{b["total_count"]}</b></td><td>{esc(b["display_name"] or "-")}</td><td><a class="btn ghost" href="/smaltimenti/storico/{b["id"]}?return_to={quote(getattr(self,"path",""),safe="")}">Apri</a></td></tr>''' for b in history) or '<tr><td colspan="5" class="sub">Nessuno scarico registrato.</td></tr>'
         stato_options=''.join(f'<option value="{esc(value)}"{" selected" if stato_filter==value else ""}>{esc(label)}</option>' for value,label in (("","Tutte"),("da_confermare","Da confermare"),("smaltito","Già smaltite")))
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Smaltimenti</h1><p class="sub">Conferimenti periodici delle cremazioni collettive alla ditta esterna di smaltimento.</p></div></div>{error_html}<section class="section"><h2>Periodo</h2><form method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Stato pratica</label><select name="stato">{stato_options}</select></div></div><button class="btn" style="margin-top:12px">Applica periodo</button></form></section><section class="section"><h2>Riepilogo periodo {esc(date_it(date_from))} - {esc(date_it(date_to))}</h2><div class="kvs">{breakdown_summary or '<span class="sub">Nessun dato per il periodo selezionato.</span>'}<div class="kv"><small>Totale generale</small><b>{total_count+total_already}</b><small>{total_count} da confermare · {total_already} già smaltite</small></div></div><div class="actions" style="margin-top:14px">{confirm_form}</div></section>{filter_note}{''.join(group_sections)}<section class="tablebox"><div class="section-collapse-head"><h2>Storico scarichi</h2><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><table><thead><tr><th>Data conferma</th><th>Periodo</th><th>Totale animali</th><th>Confermato da</th><th></th></tr></thead><tbody>{history_rows}</tbody></table></div></section></main>'''
+        history_closed="storico" in collapsed_sections
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Smaltimenti</h1><p class="sub">Conferimenti periodici delle cremazioni collettive alla ditta esterna di smaltimento.</p></div></div>{error_html}<section class="section"><h2>Periodo</h2><form method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Stato pratica</label><select name="stato">{stato_options}</select></div></div><button class="btn" style="margin-top:12px">Applica periodo</button></form></section><section class="section"><h2>Riepilogo periodo {esc(date_it(date_from))} - {esc(date_it(date_to))}</h2><div class="kvs">{breakdown_summary or '<span class="sub">Nessun dato per il periodo selezionato.</span>'}<div class="kv"><small>Totale generale</small><b>{total_count+total_already}</b><small>{total_count} da confermare · {total_already} già smaltite</small></div></div><div class="actions" style="margin-top:14px">{confirm_form}</div></section>{filter_note}{''.join(group_sections)}<section class="tablebox"><div class="section-collapse-head"><h2>Storico scarichi</h2><button type="button" class="collapse-toggle" aria-expanded="{"false" if history_closed else "true"}" data-persist-key="storico" data-persist-endpoint="/smaltimenti/sezione-stato" onclick="toggleCollapsibleSection(this)">{"+" if history_closed else "−"}</button></div><div class="collapsible-body"{" hidden" if history_closed else ""}><table><thead><tr><th>Data conferma</th><th>Periodo</th><th>Totale animali</th><th>Confermato da</th><th></th></tr></thead><tbody>{history_rows}</tbody></table></div></section></main>'''
         self.send_html(layout("Smaltimenti",body,user))
 
     def disposal_confirm(self,user):
@@ -13419,6 +14149,8 @@ class App(BaseHTTPRequestHandler):
         self.redirect(f"/smaltimenti/storico/{batch_id}")
 
     def disposal_batch_detail(self,user,batch_id):
+        q=parse_qs(urlparse(getattr(self,"path","")).query)
+        back_url=safe_return_path((q.get("return_to") or [""])[0],"/smaltimenti")
         with db() as c:
             batch=c.execute("SELECT b.*,u.display_name FROM disposal_batches b LEFT JOIN users u ON u.id=b.confirmed_by WHERE b.id=?",(batch_id,)).fetchone()
             if not batch:return self.send_error(404)
@@ -13449,7 +14181,7 @@ class App(BaseHTTPRequestHandler):
         if practices:
             row_parts.append(f'<tr class="disposal-grand-total"><td colspan="2"><b>Totale generale</b></td><td><b>{kg_it(grand_kg)}</b></td><td colspan="3"></td></tr>')
         rows_html=''.join(row_parts) or '<tr><td colspan="6" class="sub">Nessuna pratica collegata.</td></tr>'
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Scarico del {esc(date_it(batch["confirmed_at"]))}</h1><p class="sub">Periodo {esc(date_it(batch["period_from"]))} → {esc(date_it(batch["period_to"]))} · confermato da {esc(batch["display_name"] or "-")}</p></div><a class="btn ghost" href="/smaltimenti">Torna a Smaltimenti</a></div><section class="section"><h2>Riepilogo</h2><div class="kvs">{breakdown_html}<div class="kv"><small>Totale generale</small><b>{batch["total_count"]}</b></div></div></section><section class="tablebox"><table><thead><tr><th>Sede</th><th>Animale</th><th>Peso</th><th>Proprietario/Veterinario</th><th>Data recupero</th><th>Pratica</th></tr></thead><tbody>{rows_html}</tbody></table></section></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Scarico del {esc(date_it(batch["confirmed_at"]))}</h1><p class="sub">Periodo {esc(date_it(batch["period_from"]))} → {esc(date_it(batch["period_to"]))} · confermato da {esc(batch["display_name"] or "-")}</p></div><a class="btn ghost" href="{esc(back_url)}">Torna a Smaltimenti</a></div><section class="section"><h2>Riepilogo</h2><div class="kvs">{breakdown_html}<div class="kv"><small>Totale generale</small><b>{batch["total_count"]}</b></div></div></section><section class="tablebox"><table><thead><tr><th>Sede</th><th>Animale</th><th>Peso</th><th>Proprietario/Veterinario</th><th>Data recupero</th><th>Pratica</th></tr></thead><tbody>{rows_html}</tbody></table></section></main>'''
         self.send_html(layout("Dettaglio scarico",body,user))
 
     def payment_overview_legacy(self,user,kind):
@@ -13761,6 +14493,29 @@ class App(BaseHTTPRequestHandler):
             entries.append({"sort_key":mrow["invoice_date"] or mrow["created_at"] or "","number":mrow["invoice_number"],"date":mrow["invoice_date"],"practice_number":mrow["practice_number"],"owner":owner,"animal":mrow["animal_name"] or "","total":money_value(mrow["invoice_total"]),"channel":mrow["payment_channel"] or "-","pid":mrow["practice_id"],"url":f'/pratiche/{mrow["practice_id"]}?return_to={quote(getattr(self,"path",""),safe="")}'})
         entries.sort(key=lambda e:e["sort_key"],reverse=True)
         table=[f'''<tr class="practice-row-link" data-practice-id="{e["pid"]}" {row_open_attrs(e["url"],f'Apri pratica {e["practice_number"]}')}><td><b>{esc(e["number"])}</b></td><td>{esc(date_it(e["date"]))}</td><td><a href="{e["url"]}">{esc(e["practice_number"])}</a></td><td>{esc(e["owner"])}</td><td>{esc(e["animal"])}</td><td>{esc(e["channel"])}</td><td>{money_it(e["total"])}</td><td><a class="btn ghost" href="{e["url"]}">Apri</a></td></tr>''' for e in entries]
+        # Fatture condivise tra più pratiche (es. un collaboratore fatturato
+        # una sola volta per più animali/pratiche, richiesta esplicita
+        # dell'utente): raggruppamento per numero fattura normalizzato
+        # (stesso confronto lower/trim gia' usato da
+        # practices_sharing_invoice_number), calcolato sugli stessi
+        # "entries" gia' costruiti sopra - nessuna nuova query, nessun
+        # doppio conteggio: il totale combinato è la somma degli importi
+        # gia' individuali di ciascuna pratica, mai un valore inventato.
+        # Una pratica con acconto/saldo fatturati separatamente (2 righe,
+        # stesso pid, numeri diversi) NON conta come "condivisa": lo e'
+        # solo un numero usato da piu' pratiche DIVERSE.
+        invoice_groups={}
+        for e in entries:
+            key=(e["number"] or "").strip().lower()
+            if key:invoice_groups.setdefault(key,[]).append(e)
+        shared_groups=[group for group in invoice_groups.values() if len({g["pid"] for g in group})>1]
+        shared_groups.sort(key=lambda group:max(g["sort_key"] for g in group),reverse=True)
+        shared_rows=[]
+        for group in shared_groups:
+            combined_total=sum(g["total"] for g in group)
+            practices_html=", ".join(f'<a href="{g["url"]}">{esc(g["practice_number"])}</a> ({money_it(g["total"])})' for g in sorted(group,key=lambda g:g["practice_number"] or ""))
+            shared_rows.append(f'''<tr><td><b>{esc(group[0]["number"])}</b></td><td>{len(group)} pratiche</td><td>{practices_html}</td><td>{money_it(combined_total)}</td></tr>''')
+        shared_section=f'''<section class="tablebox fatture-tablebox" style="margin-top:20px"><h2>Fatture condivise tra più pratiche</h2><p class="sub">Stesso numero fattura assegnato a più pratiche diverse: ogni pratica mantiene il proprio importo, qui il totale è la somma delle pratiche collegate.</p><table><thead><tr><th>Fattura</th><th>Pratiche</th><th>Dettaglio</th><th>Totale combinato</th></tr></thead><tbody>{''.join(shared_rows)}</tbody></table></section>''' if shared_rows else ''
         # Solo circuito W: il circuito D non deve comparire in "Da fatturare"
         # (richiesta esplicita). Escludi inoltre le pratiche di provenienza
         # Veterinario che hanno usufruito di un buono maturato e il cui
@@ -13785,55 +14540,15 @@ class App(BaseHTTPRequestHandler):
         # Stessa tecnica gia' usata da .archive-tablebox per lo stesso motivo.
         fatturate_section=f'''<section class="tablebox fatture-tablebox"><h2>Fatture emesse</h2><table><thead><tr><th>Fattura</th><th>Data</th><th>Pratica</th><th>Cliente</th><th>Animale</th><th>Circuito</th><th>Totale</th><th></th></tr></thead><tbody>{''.join(table) or empty}</tbody></table></section>''' if show_fatturate else ''
         da_fatturare_section=f'''<section class="tablebox fatture-tablebox" style="margin-top:20px"><h2>Da fatturare</h2><table><thead><tr><th>Pratica</th><th>Creazione</th><th>Cliente</th><th>Animale</th><th>Totale</th><th></th></tr></thead><tbody>{''.join(reminder_table) or reminder_empty}</tbody></table></section>''' if show_da_fatturare else ''
-        # Stesso pattern gia' collaudato in Archivio (archive_restore_js
-        # sopra, in archive_page): la lista parte nascosta via CSS
-        # (#fattureLists{{visibility:hidden}}) e viene rivelata SOLO dopo che
-        # lo scroll e' stato eventualmente riposizionato - senza questo, il
-        # browser dipinge comunque la pagina in cima per un istante prima
-        # che il JS scrolli, ed e' quel lampo a dare la sensazione di
-        # "refresh" segnalata, anche quando il ripristino poi funziona.
-        # Rilevare il ritorno da una pratica via document.referrer (non un
-        # semplice flag one-shot) evita falsi ripristini se si arriva sulla
-        # pagina da un altro punto dell'app.
-        fatture_restore_js='''<script>(function(){
-  var userKey='ppm_fatture_state:'''+str(user["id"])+'''';
-  var refPath='';
-  try{ refPath=document.referrer?new URL(document.referrer).pathname:''; }catch(e){}
-  var navEntry=(performance.getEntriesByType&&performance.getEntriesByType('navigation')[0])||null;
-  var isBack=(navEntry&&navEntry.type==='back_forward')||/^\\/pratiche\\/\\d+/.test(refPath);
-  var wrap=document.getElementById('fattureLists');
-  function reveal(){ if(wrap) wrap.style.visibility='visible'; }
-  if(isBack){
-    var state=null;
-    try{ state=JSON.parse(sessionStorage.getItem(userKey)||'null'); }catch(e){}
-    if(state && typeof state.search==='string' && state.search!==location.search){
-      location.replace(location.pathname+state.search);
-      return;
-    }
-    if(state && typeof state.scrollY==='number'){
-      window.scrollTo(0,state.scrollY);
-    }
-    var match=refPath.match(/^\\/pratiche\\/(\\d+)/);
-    if(match){
-      var row=document.querySelector('[data-practice-id="'+match[1]+'"]');
-      if(row)row.classList.add('row-selected');
-    }
-  }
-  reveal();
-  function saveNow(){
-    try{ sessionStorage.setItem(userKey,JSON.stringify({search:location.search,scrollY:window.scrollY||document.documentElement.scrollTop||0})); }catch(e){}
-  }
-  var saveTimer=null;
-  function save(){ clearTimeout(saveTimer); saveTimer=setTimeout(saveNow,200); }
-  window.addEventListener('scroll',save,{passive:true});
-  // Il salvataggio su scroll e' debounced (200ms) per non scrivere ad ogni
-  // frame - ma un click su una riga puo' arrivare prima che il debounce
-  // scatti, perdendo la posizione appena raggiunta. Qui si scrive subito,
-  // in modo sincrono, prima che la navigazione parta.
-  document.addEventListener('click',function(e){ if(e.target.closest('.tablebox .practice-row-link'))saveNow(); });
-  save();
-})();</script>'''
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Fatture</h1><p class="sub">Ogni fattura identifica e apre la pratica collegata. Una pratica con acconto e saldo fatturati separatamente compare come due righe distinte.</p></div></div><form class="section" method="get"><div class="fields"><div class="field full"><label>Numero fattura o pratica</label><input name="q" value="{esc(term)}" placeholder="Cerca per fattura, pratica, cliente o animale"></div><div class="field"><label>Tipo</label><select name="tipo">{tipo_options}</select></div><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div></div><button class="btn" style="margin-top:12px">Cerca</button></form><div id="fattureLists">{fatturate_section}{da_fatturare_section}</div></main>{fatture_restore_js}'''
+        # Ripristino scroll/ricerca/riga evidenziata al ritorno da una
+        # pratica: gestito dal sistema unico PPM_LIST_PAGES/
+        # setupListStateRestore (script condiviso, vedi APP_JS), registrato
+        # per "/fatture" con revealId:'fattureLists' (stessa tecnica anti-
+        # flash di prima: la lista parte nascosta via CSS e viene rivelata
+        # solo dopo l'eventuale ripristino) e rowHighlight/saveOnClick per
+        # preservare esattamente lo stesso comportamento che prima viveva
+        # solo qui, duplicato quasi identico anche in Archivio.
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Fatture</h1><p class="sub">Ogni fattura identifica e apre la pratica collegata. Una pratica con acconto e saldo fatturati separatamente compare come due righe distinte. Più pratiche possono condividere lo stesso numero fattura.</p></div></div><form class="section" method="get"><div class="fields"><div class="field full"><label>Numero fattura o pratica</label><input name="q" value="{esc(term)}" placeholder="Cerca per fattura, pratica, cliente o animale"></div><div class="field"><label>Tipo</label><select name="tipo">{tipo_options}</select></div><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div></div><button class="btn" style="margin-top:12px">Cerca</button></form><div id="fattureLists">{fatturate_section}{shared_section}{da_fatturare_section}</div></main>'''
         self.send_html(layout("Fatture",body,user))
 
     def urn_catalog_page(self,user):
@@ -14515,6 +15230,69 @@ class App(BaseHTTPRequestHandler):
         size=min(int(self.headers.get("Content-Length",0)),64_000)
         return json.loads(self.rfile.read(size).decode("utf-8") or "{}")
 
+    def api_ai_chat(self,user):
+        # Livello controllato AI -> strumento autorizzato -> database reale
+        # (mai AI -> accesso libero al database): vedi ai_assistant.py. La
+        # cronologia della conversazione viaggia solo tra client e server ad
+        # ogni richiesta (il client la rimanda per intero), non viene MAI
+        # salvata su disco/DB - richiesta esplicita dell'utente di non
+        # accumulare inutilmente dati sensibili nei log/conversazioni.
+        try:
+            body=self.json_body()
+        except PermissionError as exc:
+            return self.send_json({"ok":False,"error":str(exc)},403)
+        except (ValueError,TypeError):
+            return self.send_json({"ok":False,"error":"Richiesta non valida."},400)
+        message=(body.get("messaggio") or "").strip()
+        if not message:
+            return self.send_json({"ok":False,"error":"Scrivi una domanda."},400)
+        if len(message)>2000:
+            return self.send_json({"ok":False,"error":"Domanda troppo lunga (massimo 2000 caratteri)."},400)
+        history_in=body.get("cronologia") or []
+        if not isinstance(history_in,list) or len(history_in)>60:
+            return self.send_json({"ok":False,"error":"Cronologia della conversazione non valida."},400)
+        if not os.environ.get("ANTHROPIC_API_KEY","").strip():
+            return self.send_json({"ok":False,"error":"Assistente AI non configurato sul server: manca la variabile d'ambiente ANTHROPIC_API_KEY."},503)
+        now=rome_now()
+        def log(event,name,params,extra=None):
+            # Solo nome strumento/parametri/esito, mai il testo libero della
+            # domanda ne' i risultati con eventuali dati di clienti/animali.
+            print(f"[AI_ASSISTANT] {event} user={user['id']} tool={name} params={params!r} {extra or ''}",flush=True)
+        try:
+            with db() as c:
+                reply,new_history=ai_assistant.run_chat(c,user,now,history_in,message,log=log)
+        except ai_assistant.AssistantConfigError as exc:
+            return self.send_json({"ok":False,"error":str(exc)},503)
+        except Exception:
+            print("[AI_ASSISTANT] errore imprevisto",flush=True)
+            print(traceback.format_exc(),flush=True)
+            return self.send_json({"ok":False,"error":"Errore tecnico durante l'elaborazione della domanda. Riprova."},500)
+        return self.send_json({"ok":True,"risposta":reply,"cronologia":new_history[-60:]})
+
+    def api_ai_chat_position(self,user):
+        # Posizione dell'icona flottante salvata per singolo utente (stesso
+        # meccanismo user_preferences gia' usato per altre preferenze),
+        # come frazione 0..1 della viewport - MAI coordinate assolute, cosi'
+        # resta valida passando da desktop a mobile (richiesta esplicita
+        # dell'utente).
+        try:
+            body=self.json_body()
+        except PermissionError as exc:
+            return self.send_json({"ok":False,"error":str(exc)},403)
+        except (ValueError,TypeError):
+            return self.send_json({"ok":False,"error":"Richiesta non valida."},400)
+        try:
+            x_pct=max(0.0,min(1.0,float(body.get("x_pct"))))
+            y_pct=max(0.0,min(1.0,float(body.get("y_pct"))))
+        except (TypeError,ValueError):
+            return self.send_json({"ok":False,"error":"Posizione non valida."},400)
+        with db() as c:
+            c.execute(
+                "INSERT INTO user_preferences(user_id,key,value) VALUES(?,?,?) ON CONFLICT(user_id,key) DO UPDATE SET value=excluded.value",
+                (user["id"],"ai_chat_fab_pos",json.dumps({"x_pct":x_pct,"y_pct":y_pct})),
+            )
+        return self.send_json({"ok":True})
+
     def notification_status(self,user):
         with db() as c:
             unread=c.execute("SELECT count(*) n FROM notifications WHERE user_id=? AND is_read=0",(user["id"],)).fetchone()["n"]
@@ -14610,6 +15388,8 @@ class App(BaseHTTPRequestHandler):
             ("tag_possibile_calco_nose", "POSSIBILE CALCO NASO", "tag-yellow"),
             ("tag_avvisare", "AVVISARE", "tag-pink"),
             ("tag_da_richiamare", "DA RICHIAMARE", "tag-blue"),
+            ("tag_pelo", "PELO", "tag-green"),
+            ("tag_no_pelo", "NO PELO", "tag-outline-green"),
             ("send_catalog", "INVIARE CATALOGO", "tag-outline-orange"),
             ("catalog_sent", "CATALOGO INVIATO", "tag-outline-green"),
             ("send_estremi", "INVIARE ESTREMI", "tag-outline-orange"),
@@ -14633,6 +15413,8 @@ class App(BaseHTTPRequestHandler):
             ("tag_possibile_calco_nose", "POSSIBILE CALCO NASO", "tag-yellow"),
             ("tag_avvisare", "AVVISARE", "tag-pink"),
             ("tag_da_richiamare", "DA RICHIAMARE", "tag-blue"),
+            ("tag_pelo", "PELO", "tag-green"),
+            ("tag_no_pelo", "NO PELO", "tag-outline-green"),
         ]
         badges_html = ''.join(f'<span class="badge {cls}">{label}</span> ' for key,label,cls in other_tags if key in r.keys() and r[key])
         catalog_state = "sent" if ("catalog_sent" in r.keys() and r["catalog_sent"]=="Si") else "send" if ("send_catalog" in r.keys() and r["send_catalog"]=="Si") else ""
@@ -14819,7 +15601,16 @@ class App(BaseHTTPRequestHandler):
             code=str(r["practice_number"] or "")
             url=f'/pratiche/{r["id"]}?return_to={quote(self.path,safe="")}'
             time_html=f'<span class="recent-practice-meta">ore {esc(pickup_time)}</span>' if pickup_time else ''
-            cards.append(f'''<div class="recent-practice-card" data-species="{avatar_cls}" {row_open_attrs(url,f"Apri pratica {code}")}>
+            # Apertura con un solo click (richiesta esplicita dell'utente),
+            # a differenza di row_open_attrs() usato altrove nel gestionale
+            # (es. Archivio, Fatture) dove il primo click seleziona la riga
+            # e solo il secondo apre — utile li' per non aprire per sbaglio
+            # una pratica mentre si modifica un campo inline nella riga
+            # (etichetta, numero fattura, ecc). Qui la card non contiene
+            # alcun controllo inline modificabile, quindi non serve quella
+            # protezione e un click diretto e' il comportamento corretto.
+            open_attrs=f'''tabindex="0" role="link" aria-label="Apri pratica {esc(code)}" onclick="practiceRowOpen('{url}')" onkeydown="if(event.key==='Enter'||event.key===' '){{event.preventDefault();practiceRowOpen('{url}')}}"'''
+            cards.append(f'''<div class="recent-practice-card" data-species="{avatar_cls}" {open_attrs}>
               <div class="recent-practice-animal">
                 <span class="recent-practice-avatar {avatar_cls}" aria-hidden="true">{avatar_emoji}</span>
                 <div class="recent-practice-animal-copy">
@@ -14975,7 +15766,13 @@ class App(BaseHTTPRequestHandler):
                 service_type=row["service_type"] or ""
                 service_label={"Cremazione singola":"Singola","Cremazione collettiva":"Collettiva"}.get(service_type,service_type)
                 urn_summary=", ".join(urn_labels_by_practice.get(row["id"],[])) or "Nessuna urna scelta"
-                results.append({"practice_id":row["id"],"practice_number":row["practice_number"] or "","animal_name":row["animal_name"] or "","species":row["species"] or "","owner_name":owner,"owner_address":owner_address,"pickup_date":date_it(row["pickup_date"] or ""),"payment_channel":channel,"payment_status":base_status,"total":total,"deposit":deposit,"remaining":remaining,"calendar_payment_status":calendar_status,"calendar_payment_amount":calendar_amount,"payment_summary":detail,"payment_method":row["payment_method"] or "","service_type":service_label,"destination_branch":row["destination_branch"] or "","urn_summary":urn_summary})
+                results.append({"practice_id":row["id"],"practice_number":row["practice_number"] or "","animal_name":row["animal_name"] or "","species":row["species"] or "","owner_name":owner,"owner_address":owner_address,"pickup_date":date_it(row["pickup_date"] or ""),"payment_channel":channel,"payment_status":base_status,"total":total,"deposit":deposit,"remaining":remaining,"calendar_payment_status":calendar_status,"calendar_payment_amount":calendar_amount,"payment_summary":detail,"payment_method":row["payment_method"] or "","service_type":service_label,"destination_branch":row["destination_branch"] or "","urn_summary":urn_summary,
+                    # Provenienza della pratica (Luogo di origine ->
+                    # Provenienza, colonna "provenance": codice L/E/V/F/P) -
+                    # riusata dal wizard Riconsegna in sede per preimpostare
+                    # la Sede, nessuna nuova query: la riga e' gia' stata
+                    # letta con SELECT *.
+                    "provenance":row["provenance"] or ""})
             return self.send_json({"ok":True,"query":q,"results":results})
         except Exception as exc:
             print(f"[CALENDAR_ANIMAL_SEARCH] {type(exc).__name__}: {exc}",flush=True)
@@ -15071,6 +15868,15 @@ class App(BaseHTTPRequestHandler):
             else:
                 months.discard(month_key)
             c.execute("INSERT INTO user_preferences(user_id,key,value) VALUES(?,?,?) ON CONFLICT(user_id,key) DO UPDATE SET value=excluded.value",(user["id"],"archive_collapsed_months",json.dumps(sorted(months),ensure_ascii=False)))
+        return self.send_json({"ok":True})
+
+    def save_smaltimenti_section_state(self,user):
+        form=self.form()
+        section_key=(form.get("sezione") or "").strip()[:80]
+        if not section_key:
+            return self.send_json({"ok":False,"error":"Sezione non valida."},400)
+        with db() as c:
+            toggle_collapsed_preference(c,user["id"],"smaltimenti_collapsed_sections",section_key,form.get("chiuso")=="1")
         return self.send_json({"ok":True})
 
     def archive(self,user):
@@ -15187,48 +15993,13 @@ class App(BaseHTTPRequestHandler):
             blocks.append(f'''<section class="month-block"><div class="month-title"><div class="month-heading"><button class="month-toggle" type="button" data-month-key="{esc(key)}" aria-expanded="{expanded_attr}" aria-label="{esc(toggle_label)}" onclick="toggleArchiveMonth(this)">{toggle_symbol}</button><h2>{esc(title)}</h2></div><span class="badge">{len(items)} pratiche</span></div><div class="month-content"{content_hidden}><div class="tablebox dashboard-table-scroll archive-tablebox"><table class="practice-list-table"><thead><tr><th>Animale</th><th>Età</th><th>Proprietario</th><th>Data recupero</th><th>Codice pratica</th><th>Veterinario</th><th>Sede</th><th>Etichetta</th><th>Note</th><th>Urna</th><th>Totale pagato</th><th>Fattura</th>{archive_financial_headers}<th>Stati</th><th>Azione</th></tr></thead><tbody>{self.practice_rows(items,True)}</tbody></table></div></div></section>''')
         results_html='<div id="archiveList">'+(''.join(blocks) if blocks else '<section class="section"><p class="sub">Nessuna pratica trovata.</p></section>')+'</div>'
         filters_html=f'''<section class="search-after-results"><h2>Ricerca e filtri</h2><form class="section" method="get"><div class="fields"><div class="field"><label>Ricerca generale</label><input name="q" value="{esc(term)}" placeholder="Proprietario, telefono, microchip, pratica, DDT"></div><div class="field"><label>Nome animale</label><input name="animale" value="{esc(animal)}"></div><div class="field"><label>Tipo cremazione</label><select name="servizio">{service_opts}</select></div><div class="field"><label>Veterinario</label><input name="veterinario" value="{esc(vet)}" placeholder="Clinica o medico"></div><div class="field"><label>Collaboratore</label><input name="collaboratore" value="{esc(collaborator)}"></div><div class="field"><label>Spesa minima</label><input type="number" min="0" step="0.01" name="spesa_min" value="{esc(spesa_min)}" inputmode="decimal" placeholder="Es. 100"></div><div class="field"><label>Spesa massima</label><input type="number" min="0" step="0.01" name="spesa_max" value="{esc(spesa_max)}" inputmode="decimal" placeholder="Es. 350"></div><div class="field"><label>Periodo dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Periodo al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Stato pratica</label><select name="stato">{opts}</select></div><div class="field"><label>Pagamento</label><select name="pagamento">{pay_opts}</select></div><div class="field"><label>Circuito</label><select name="circuito">{circuit_opts}</select></div><div class="field"><label><input type="checkbox" name="senza_fattura" value="1" {"checked" if no_invoice else ""}> Senza fattura</label></div></div><button class="btn" style="margin-top:12px">Cerca</button><a class="btn ghost" style="margin-top:12px" href="/archivio/pratiche">Pulisci filtri</a></form></section>'''
-        archive_restore_js=r'''
-(function(){
-  const userKey='ppm_archive_state:__USER_ID__';
-  let refPath='';
-  try{ refPath=document.referrer?new URL(document.referrer).pathname:''; }catch(e){}
-  const navEntry=(performance.getEntriesByType&&performance.getEntriesByType('navigation')[0])||null;
-  const isBack=(navEntry&&navEntry.type==='back_forward')||/^\/pratiche\/\d+/.test(refPath);
-  const list=document.getElementById('archiveList');
-  function reveal(){ if(list) list.style.visibility='visible'; }
-  if(isBack){
-    let state=null;
-    try{ state=JSON.parse(sessionStorage.getItem(userKey)||'null'); }catch(e){}
-    if(state && typeof state.search==='string' && state.search!==location.search){
-      location.replace(location.pathname+state.search);
-      return;
-    }
-    if(state && typeof state.scrollY==='number'){
-      window.scrollTo(0,state.scrollY);
-    }
-    const match=refPath.match(/^\/pratiche\/(\d+)/);
-    if(match){
-      const row=document.querySelector('[data-practice-id="'+match[1]+'"]');
-      if(row){
-        row.classList.add('archive-row-highlight');
-        setTimeout(function(){ row.classList.add('archive-row-fade'); },300);
-        setTimeout(function(){ row.classList.remove('archive-row-highlight','archive-row-fade'); },2600);
-      }
-    }
-  }
-  reveal();
-  let saveTimer=null;
-  function save(){
-    clearTimeout(saveTimer);
-    saveTimer=setTimeout(function(){
-      try{ sessionStorage.setItem(userKey,JSON.stringify({search:location.search,scrollY:window.scrollY||document.documentElement.scrollTop||0})); }catch(e){}
-    },200);
-  }
-  window.addEventListener('scroll',save,{passive:true});
-  save();
-})();
-'''.replace('__USER_ID__',str(user["id"]))
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>ARCHIVIO</h1><div class="sub">{len(rows)} pratiche trovate{promemoria_label}</div></div></div>{results_html}{filters_html}<script>function toggleArchiveMonth(button){{const content=button.closest('.month-block').querySelector('.month-content');const closing=button.getAttribute('aria-expanded')==='true';button.setAttribute('aria-expanded',String(!closing));button.textContent=closing?'+':'-';button.setAttribute('aria-label',(closing?'Apri ':'Chiudi ')+button.closest('.month-heading').querySelector('h2').textContent);content.hidden=closing;const monthKey=button.dataset.monthKey;if(monthKey){{const payload=new URLSearchParams();payload.set('mese',monthKey);payload.set('chiuso',closing?'1':'0');fetch('/archivio/mese-stato',{{method:'POST',headers:{{'Content-Type':'application/x-www-form-urlencoded'}},body:payload.toString()}}).catch(function(){{}});}}}}{archive_restore_js}</script></main>'''
+        # Ripristino scroll/ricerca/riga evidenziata al ritorno da una
+        # pratica: gestito dal sistema unico PPM_LIST_PAGES/
+        # setupListStateRestore (script condiviso, vedi APP_JS), registrato
+        # per "/archivio/pratiche" con revealId:'archiveList' (stessa
+        # tecnica anti-flash di prima) e rowHighlight (evidenzia+dissolve
+        # la riga da cui si torna, stesso comportamento di prima).
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>ARCHIVIO</h1><div class="sub">{len(rows)} pratiche trovate{promemoria_label}</div></div></div>{results_html}{filters_html}<script>function toggleArchiveMonth(button){{const content=button.closest('.month-block').querySelector('.month-content');const closing=button.getAttribute('aria-expanded')==='true';button.setAttribute('aria-expanded',String(!closing));button.textContent=closing?'+':'-';button.setAttribute('aria-label',(closing?'Apri ':'Chiudi ')+button.closest('.month-heading').querySelector('h2').textContent);content.hidden=closing;const monthKey=button.dataset.monthKey;if(monthKey){{const payload=new URLSearchParams();payload.set('mese',monthKey);payload.set('chiuso',closing?'1':'0');fetch('/archivio/mese-stato',{{method:'POST',headers:{{'Content-Type':'application/x-www-form-urlencoded'}},body:payload.toString()}}).catch(function(){{}});}}}}</script></main>'''
         body=body.replace('<label>Servizio</label><select name="servizio">','<label>Tipo cremazione</label><select name="servizio">')
         self.send_html(layout("Archivio",body,user))
 
@@ -15467,6 +16238,7 @@ class App(BaseHTTPRequestHandler):
                 year,month=key.split("-");return f"{MONTH_NAMES_IT[int(month)-1]} {year}"
             except (ValueError,IndexError):return "Data non indicata"
         billing_badge_cls={"Da fatturare":"pay-yellow","Fatturato":"pay-blue","Incassato":"pay-green"}
+        collapsed_months=set(parse_preference_list(load_preferences(user["id"]).get(f"collaboratore_{collaborator_id}_collapsed_months","")))
         month_sections=[]
         for month_key in sorted(months.keys(),reverse=True):
             month_practices=months[month_key]
@@ -15480,7 +16252,12 @@ class App(BaseHTTPRequestHandler):
             if invoiced:
                 actions.append(f'<form method="post" action="/collaboratori/{collaborator_id}/fattura-mese/incassato" onsubmit="return confirm(\'Confermi di aver incassato la fattura per questo mese?\')"><input type="hidden" name="mese" value="{month_key}"><button class="btn ghost" type="submit">Segna mese come incassato ({invoiced})</button></form>')
             actions_html=''.join(actions) or '<span class="sub">Mese completamente incassato.</span>'
-            month_sections.append(f'''<section class="section collaborator-month"><div class="section-collapse-head"><h2>{esc(month_label(month_key))}</h2><span class="badge">{money_it(month_total)}</span><button type="button" class="collapse-toggle" aria-expanded="true" onclick="toggleCollapsibleSection(this)">−</button></div><div class="collapsible-body"><table class="premium-table"><thead><tr><th>Animale</th><th>Data</th><th>Importo</th><th>Stato fatturazione</th><th>Pratica</th></tr></thead><tbody>{animal_rows}</tbody></table><div class="actions" style="margin-top:12px">{actions_html}</div></div></section>''')
+            # Stato aperto/chiuso ricordato per utente (stesso meccanismo
+            # di Archivio/mesi e Smaltimenti): senza questo, tornando da
+            # una pratica collegata il mese appena chiuso si riapriva da
+            # solo, qualunque fosse il metodo di navigazione indietro usato.
+            month_closed=month_key in collapsed_months
+            month_sections.append(f'''<section class="section collaborator-month"><div class="section-collapse-head"><h2>{esc(month_label(month_key))}</h2><span class="badge">{money_it(month_total)}</span><button type="button" class="collapse-toggle" aria-expanded="{"false" if month_closed else "true"}" data-persist-key="{esc(month_key)}" data-persist-endpoint="/collaboratori/{collaborator_id}/mese-stato" data-persist-field="mese" onclick="toggleCollapsibleSection(this)">{"+" if month_closed else "−"}</button></div><div class="collapsible-body"{" hidden" if month_closed else ""}><table class="premium-table"><thead><tr><th>Animale</th><th>Data</th><th>Importo</th><th>Stato fatturazione</th><th>Pratica</th></tr></thead><tbody>{animal_rows}</tbody></table><div class="actions" style="margin-top:12px">{actions_html}</div></div></section>''')
         months_html=''.join(month_sections) or '<section class="section empty-state"><p>Nessuna pratica collegata a questo collaboratore.</p></section>'
         tier_rows=''.join(f'''<tr><form method="post" action="/listino/{t['id']}/modifica"><td><input name="weight_min" value="{esc(t['weight_min'])}" inputmode="decimal" style="width:80px" required></td><td><input name="weight_max" value="{esc(t['weight_max'] or '')}" inputmode="decimal" placeholder="senza limite" style="width:100px"></td><td><input name="price" value="{esc(t['price'])}" inputmode="decimal" style="width:100px" required></td><td><button class="btn ghost">Salva</button></form><form method="post" action="/listino/{t['id']}/elimina" onsubmit="return confirm('Eliminare questa fascia di peso?')"><button class="btn ghost">Elimina</button></form></td></tr>''' for t in tiers) or '<tr><td colspan="4" class="sub">Nessuna fascia di peso inserita.</td></tr>'
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>{esc(co['name'])}</h1><div class="sub">Anagrafica collaboratore</div></div><a class="btn ghost" href="/collaboratori">Torna alla lista</a></div><section class="section"><h2>Anagrafica</h2><form method="post" action="/collaboratori"><input type="hidden" name="id" value="{co['id']}"><div class="fields"><div class="field full"><label>Nome</label><input name="name" value="{esc(co['name'])}" required></div><div class="field"><label>Sigla</label><input name="code" value="{esc(co['code']) if 'code' in co.keys() else ''}" maxlength="8" placeholder="Es. CV" style="text-transform:uppercase"></div><div class="field full"><label>Indirizzo</label><input name="address" value="{esc(co['address'])}"></div><div class="field"><label>Comune</label><input name="city" value="{esc(co['city'])}"></div><div class="field"><label>Provincia</label><input name="province" value="{esc(co['province'])}" maxlength="2"></div><div class="field"><label>CAP</label><input name="zip" value="{esc(co['zip'])}"></div><div class="field"><label>Codice fiscale</label><input name="tax_code" value="{esc(co['tax_code'])}"></div><div class="field"><label>Partita IVA</label><input name="vat_number" value="{esc(co['vat_number'])}"></div><div class="field"><label>Codice SDI</label><input name="sdi_code" value="{esc(co['sdi_code'])}"></div><div class="field"><label>Telefono</label><input name="phone" value="{esc(co['phone'])}"></div><div class="field"><label>Email</label><input type="email" name="email" value="{esc(co['email'])}"></div><div class="field full"><label>Note</label><input name="notes" value="{esc(co['notes'])}"></div></div><button class="btn" style="margin-top:12px">Salva anagrafica</button></form><form method="post" action="/collaboratori/{co['id']}/elimina" onsubmit="return confirm('Eliminare questo collaboratore dalla lista?')"><button class="btn ghost" style="margin-top:12px">Elimina collaboratore</button></form></section><div style="height:14px"></div><section class="section"><h2>Listino dedicato</h2><p class="sub">Fasce di peso e prezzo: inserendo il peso dell'animale durante la creazione della pratica, il campo Cremazione del preventivo si compila automaticamente con il prezzo della fascia corrispondente. Lascia "A (kg)" vuoto per l'ultima fascia senza limite superiore.</p><div class="tablebox"><table class="premium-table"><thead><tr><th>Da (kg)</th><th>A (kg)</th><th>Prezzo €</th><th>Azione</th></tr></thead><tbody>{tier_rows}</tbody></table></div><form method="post" action="/collaboratori/{co['id']}/listino" style="margin-top:14px"><div class="fields"><div class="field"><label>Da (kg)</label><input name="weight_min" required inputmode="decimal" placeholder="Es. 0"></div><div class="field"><label>A (kg)</label><input name="weight_max" inputmode="decimal" placeholder="Vuoto = senza limite"></div><div class="field"><label>Prezzo €</label><input name="price" required inputmode="decimal" placeholder="Es. 150,00"></div></div><button class="btn" style="margin-top:12px">Aggiungi fascia</button></form></section><div style="height:14px"></div><section class="titlebar"><h2>Riepilogo mensile</h2><p class="sub">Animali portati da questo collaboratore, raggruppati per mese di recupero, con stato di fatturazione.</p></section>{months_html}</main>'''
@@ -15504,6 +16281,15 @@ class App(BaseHTTPRequestHandler):
                 c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,note,user_id,created_at) VALUES(?,?,?,?,?,?,?)",
                           (row["id"],"Fatturazione collaboratore",from_status,to_status,f"Mese {month}",user["id"],stamp))
         self.redirect(f"/collaboratori/{collaborator_id}")
+
+    def save_collaborator_month_state(self,user,collaborator_id):
+        form=self.form()
+        month_key=(form.get("mese") or "").strip()[:20]
+        if not re.fullmatch(r"\d{4}-\d{2}",month_key):
+            return self.send_json({"ok":False,"error":"Mese non valido."},400)
+        with db() as c:
+            toggle_collapsed_preference(c,user["id"],f"collaboratore_{collaborator_id}_collapsed_months",month_key,form.get("chiuso")=="1")
+        return self.send_json({"ok":True})
 
     def save_collaborator(self,user):
         f=self.form(); stamp=now()
@@ -15627,6 +16413,15 @@ class App(BaseHTTPRequestHandler):
                         "SELECT invoice_number,invoice_date,invoice_total FROM movement_invoices WHERE practice_id=? ORDER BY id DESC LIMIT 1",
                         (p["id"],),
                     ).fetchone()
+            elif p and "_prefill_items" in p.keys():
+                # Pratica non ancora esistente (form di creazione), ma con
+                # voci Urne/Calchi/Accessori trasferite dal preventivo di
+                # un evento calendario (vedi new_page/
+                # map_calendar_estimates_to_practice_prefill) - stessa
+                # forma delle righe lette sopra da practice_items, cosi'
+                # practiceAddRow le mostra identiche a righe gia' salvate.
+                for cat in PRACTICE_ITEM_CATEGORIES:
+                    practice_items_bootstrap[cat]=list(p["_prefill_items"].get(cat,[]))
         vet_option=lambda v, selected_id: f'<option value="{v["id"]}" data-shortname="{esc(v["short_name"] or v["clinic_name"])}" data-fullname="{esc(v["clinic_name"])}" data-address="{esc(v["address"])}" data-city="{esc(v["city"])}" data-phone="{esc(v["phone"])}" data-provenance="{veterinarian_provenance(v["short_name"],v["clinic_name"])}" {"selected" if str(selected_id)==str(v["id"]) else ""}>{esc(v["short_name"] or v["clinic_name"])}{(" - "+esc(v["clinic_name"])) if v["short_name"] else ""}</option>'
         vet_options='<option value="">Nessun veterinario selezionato</option>'+''.join(vet_option(v, raw("veterinarian_id")) for v in vets)
         owner_vet_options='<option value="">Compilazione manuale</option>'+''.join(vet_option(v, raw("owner_veterinarian_id")) for v in vets)
@@ -15717,7 +16512,7 @@ class App(BaseHTTPRequestHandler):
         <section class="section"><h2>Preventivo</h2><div class="fields"><div class="field"><label>Cremazione €</label><input name="price_cremation" value="{val('price_cremation')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Ritiro €</label><input name="price_pickup" value="{val('price_pickup')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label><input type="checkbox" name="send_catalog" value="Si" {catalog_checked} style="width:auto"> INVIARE CATALOGO</label></div><div class="field"><label>Riconsegna €</label><input name="price_delivery" value="{val('price_delivery')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label><input type="checkbox" name="delivery_at_clinic" value="Si" {delivery_clinic_checked} style="width:auto"> IN AMBULATORIO</label></div><div class="field"><label><input type="checkbox" name="delivery_at_home" value="Si" {delivery_home_checked} style="width:auto"> A CASA</label></div><div class="field full"><label>Urne</label><div class="practice-repeat-list" data-practice-list="urna"></div><input type="hidden" name="urna_items_json"><button class="btn ghost" type="button" onclick="practiceAddRow('urna')">+ Aggiungi urna</button></div><div class="field full"><label>Calco</label><div class="practice-repeat-list" data-practice-list="calco"></div><input type="hidden" name="calco_items_json"><button class="btn ghost" type="button" onclick="practiceAddRow('calco')">+ Aggiungi calco</button></div><div class="field full"><label>Accessori</label><div class="practice-repeat-list" data-practice-list="accessorio"></div><input type="hidden" name="accessorio_items_json"><button class="btn ghost" type="button" onclick="practiceAddRow('accessorio')">+ Aggiungi accessorio</button></div><div class="field"><label>Serale €</label><input name="price_evening" value="{val('price_evening')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Notturno €</label><input name="price_night" value="{val('price_night')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Festivo €</label><input name="price_holiday" value="{val('price_holiday')}" data-preventivo-sum="1" placeholder="Numero o testo libero"></div><div class="field"><label>Totale servizio €</label><input name="total_service" value="{val('total_service')}"></div><input type="hidden" name="total_service_manual" value="{'Si' if raw('total_service_manual')=='Si' else ''}"><div class="field"><label>Acconto €</label><input name="deposit" value="{val('deposit')}" placeholder="Numero o testo libero"></div><div class="field"><label>Rimanenza €</label><input name="remaining_balance" value="{val('remaining_balance')}" readonly></div><div class="field full"><label>TOTALE D</label><textarea name="total_text" placeholder="Testo libero per note sul totale">{val('total_text')}</textarea></div><div class="field"><label>Acconto D €</label><input name="deposit_final" value="{val('deposit_final')}" placeholder="Numero o testo libero"></div><div class="field"><label>Rimanenza D €</label><input name="remaining_final" value="{val('remaining_final')}" readonly></div><div class="field"><label><input type="checkbox" name="send_estremi" value="Si" {estremi_checked} style="width:auto"> INVIARE ESTREMI</label></div><div class="field"><label><input type="checkbox" name="use_voucher" value="Si" {use_voucher_checked} style="width:auto"> USA BUONO</label><div id="useVoucherBox" class="selected-box hidden"><span id="useVoucherStatus">Seleziona il veterinario e spunta USA BUONO.</span><select name="used_voucher_id" data-current="{val('used_voucher_id')}" class="hidden"><option value="">Seleziona buono</option></select></div></div></div></section>
         {creation_payment_fields}
         <section class="section"><h2>Note</h2><div class="fields"><div class="field full"><label>NOTE</label><textarea name="notes">{val('notes')}</textarea></div></div></section>
-        <section class="section"><h2>Etichette operative</h2><div class="fields">{tag_select('tag_assistita','ASSISTITA','tag-red')}{tag_select('tag_possibile_assistita','POSSIBILE ASSISTITA','tag-red')}{tag_select('tag_assistita_streaming','ASSISTITA STREAMING','tag-orange')}{tag_select('tag_possibile_assistita_streaming','POSSIBILE ASSISTITA STREAMING','tag-orange')}{tag_select('tag_saluto','SALUTO','tag-purple')}{tag_select('tag_calco','CALCO','tag-yellow')}{tag_select('tag_possibile_calco','POSSIBILE CALCO','tag-yellow')}{tag_select('tag_calco_urna','CALCO PER URNA','tag-yellow')}{tag_select('tag_calco_paw','CALCO POLPASTRELLO','tag-yellow')}{tag_select('tag_possibile_calco_paw','POSSIBILE CALCO POLPASTRELLO','tag-yellow')}{tag_select('tag_calco_nose','CALCO NASO','tag-yellow')}{tag_select('tag_possibile_calco_nose','POSSIBILE CALCO NASO','tag-yellow')}{tag_select('tag_avvisare','AVVISARE','tag-pink')}{tag_select('tag_da_richiamare','DA RICHIAMARE','tag-blue')}</div></section>
+        <section class="section"><h2>Etichette operative</h2><div class="fields">{tag_select('tag_assistita','ASSISTITA','tag-red')}{tag_select('tag_possibile_assistita','POSSIBILE ASSISTITA','tag-red')}{tag_select('tag_assistita_streaming','ASSISTITA STREAMING','tag-orange')}{tag_select('tag_possibile_assistita_streaming','POSSIBILE ASSISTITA STREAMING','tag-orange')}{tag_select('tag_saluto','SALUTO','tag-purple')}{tag_select('tag_calco','CALCO','tag-yellow')}{tag_select('tag_possibile_calco','POSSIBILE CALCO','tag-yellow')}{tag_select('tag_calco_urna','CALCO PER URNA','tag-yellow')}{tag_select('tag_calco_paw','CALCO POLPASTRELLO','tag-yellow')}{tag_select('tag_possibile_calco_paw','POSSIBILE CALCO POLPASTRELLO','tag-yellow')}{tag_select('tag_calco_nose','CALCO NASO','tag-yellow')}{tag_select('tag_possibile_calco_nose','POSSIBILE CALCO NASO','tag-yellow')}{tag_select('tag_avvisare','AVVISARE','tag-pink')}{tag_select('tag_da_richiamare','DA RICHIAMARE','tag-blue')}{tag_select('tag_pelo','PELO','tag-green')}{tag_select('tag_no_pelo','NO PELO','tag-outline-green')}</div></section>
         <section class="section"><h2>Firma proprietario</h2><p class="sub">Facoltativa: verrà inserita nel PDF DDT. Usa "Apri area firma": mostra solo il riquadro per firmare a schermo intero, senza gli altri dati della pratica, prima di passare il telefono o il tablet al cliente.</p><p class="sub" id="ppmSignatureStatus">{'Firma salvata.' if val('signature_data') else 'Nessuna firma.'}</p><input type="hidden" name="signature_data" id="ppmSignatureDataInput" value="{val('signature_data')}"><div class="actions" style="margin-top:12px"><button class="btn" type="button" id="ppmOpenSignaturePad">Apri area firma</button><button class="btn ghost" type="button" id="ppmRemoveSignature" {'hidden' if not val('signature_data') else ''}>Rimuovi firma</button></div>
         <div class="payment-popover" id="ppmSignatureOverlay" hidden><div class="payment-dialog" style="max-width:900px"><div class="titlebar"><div><h2>Firma proprietario</h2><p class="sub">Fai firmare qui con il dito.</p></div><button class="btn ghost" type="button" id="ppmCloseSignaturePad">Chiudi</button></div><canvas class="signature-pad" id="ppmSignaturePad" style="height:55vh"></canvas><div class="actions" style="margin-top:12px"><button class="btn" type="button" id="ppmSaveSignaturePad">Salva firma</button><button class="btn ghost" type="button" id="ppmClearSignaturePad">Cancella</button></div></div></div>
         </section>
@@ -15731,6 +16526,7 @@ class App(BaseHTTPRequestHandler):
             with db() as c:
                 event=c.execute("SELECT * FROM calendar_events WHERE id=? AND deleted_at IS NULL",(int(calendar_event_id),)).fetchone()
                 animal=c.execute("SELECT * FROM calendar_event_animals WHERE event_id=? ORDER BY id LIMIT 1",(int(calendar_event_id),)).fetchone()
+                estimates=c.execute("SELECT description,amount FROM calendar_event_estimate_items WHERE event_id=? ORDER BY sort_order,id",(int(calendar_event_id),)).fetchall()
             if event:
                 if event["linked_practice_id"]:return self.redirect(f'/pratiche/{event["linked_practice_id"]}')
                 client=None
@@ -15748,6 +16544,16 @@ class App(BaseHTTPRequestHandler):
                 if event["location_type"]=="Privato" and event["address"]:
                     prefill["origin_mode"]="Testo libero"
                     prefill["origin_text"]=event["address"]
+                # Trasferimento voce per voce del preventivo dell'evento
+                # nel preventivo della pratica (richiesta esplicita
+                # dell'utente, coerente col riepilogo evento che mostra
+                # le stesse voci) - mai solo il totale. Il form resta
+                # comunque modificabile prima del salvataggio, come ogni
+                # altro campo precompilato qui sopra.
+                flat_prefill,event_items_by_category=map_calendar_estimates_to_practice_prefill(estimates)
+                prefill.update(flat_prefill)
+                if any(event_items_by_category.values()):
+                    prefill["_prefill_items"]=event_items_by_category
         if draft is not None:prefill=draft
         hidden=(f'<input type="hidden" name="calendar_event_id" value="{calendar_event_id}"><input type="hidden" name="pickup_time" value="{event["start_at"][11:16]}">' if calendar_event_id.isdigit() and event else '')
         hidden+=f'<input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(24)}">'
@@ -15765,7 +16571,7 @@ class App(BaseHTTPRequestHandler):
         self.send_html(layout("Nuova pratica",body,user))
 
     def normalized_fields(self,f,items_total=0.0,has_frame_urn=False,has_urn_item=False):
-        keys=["client_id","owner_veterinarian_id","origin_veterinarian_id","operator_name","request_origin","collaborator_name","collaborator_id","destination_branch","owner_first_name","owner_last_name","owner_company","owner_phone","owner_phone_2","owner_phone_note","owner_email","owner_tax_code","owner_vat","owner_sdi","owner_notes","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","origin_first_name","origin_last_name","provenance","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","use_voucher","used_voucher_id","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_possibile_assistita_streaming","tag_saluto","tag_calco","tag_possibile_calco","tag_calco_urna","tag_calco_paw","tag_possibile_calco_paw","tag_calco_nose","tag_possibile_calco_nose","tag_avvisare","tag_da_richiamare","payment_status","payment_method","price_cremation","price_pickup","price_evening","price_urn","send_catalog","catalog_sent","send_estremi","estremi_sent","price_delivery","delivery_at_clinic","delivery_at_home","price_night","price_cast","price_paw_cast","price_nose_cast","price_holiday","price_accessories","deposit","deposit_final","remaining_balance","remaining_final","total_service","total_service_manual","total_text","invoice_number","invoice_date","invoice_total","invoice_total_manual","make_invoice","identity_document_number","identity_document_date","signing_place","signature_data"]
+        keys=["client_id","owner_veterinarian_id","origin_veterinarian_id","operator_name","request_origin","collaborator_name","collaborator_id","destination_branch","owner_first_name","owner_last_name","owner_company","owner_phone","owner_phone_2","owner_phone_note","owner_email","owner_tax_code","owner_vat","owner_sdi","owner_notes","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","origin_first_name","origin_last_name","provenance","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","use_voucher","used_voucher_id","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_possibile_assistita_streaming","tag_saluto","tag_calco","tag_possibile_calco","tag_calco_urna","tag_calco_paw","tag_possibile_calco_paw","tag_calco_nose","tag_possibile_calco_nose","tag_avvisare","tag_da_richiamare","tag_pelo","tag_no_pelo","payment_status","payment_method","price_cremation","price_pickup","price_evening","price_urn","send_catalog","catalog_sent","send_estremi","estremi_sent","price_delivery","delivery_at_clinic","delivery_at_home","price_night","price_cast","price_paw_cast","price_nose_cast","price_holiday","price_accessories","deposit","deposit_final","remaining_balance","remaining_final","total_service","total_service_manual","total_text","invoice_number","invoice_date","invoice_total","invoice_total_manual","make_invoice","identity_document_number","identity_document_date","signing_place","signature_data"]
         data = {k:f.get(k,"").strip() for k in keys}
         data["pickup_time"] = f.get("pickup_time","").strip()
         for key in MONEY_FIELDS:
@@ -15793,7 +16599,7 @@ class App(BaseHTTPRequestHandler):
         data["delivery_at_clinic"] = "Si" if data["delivery_at_clinic"] == "Si" else ""
         data["delivery_at_home"] = "Si" if data["delivery_at_home"] == "Si" else ""
         data["used_voucher_id"] = data["used_voucher_id"] or None
-        for key in ("tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_possibile_assistita_streaming","tag_saluto","tag_calco","tag_possibile_calco","tag_calco_urna","tag_calco_paw","tag_possibile_calco_paw","tag_calco_nose","tag_possibile_calco_nose","tag_avvisare","tag_da_richiamare"):
+        for key in ("tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_possibile_assistita_streaming","tag_saluto","tag_calco","tag_possibile_calco","tag_calco_urna","tag_calco_paw","tag_possibile_calco_paw","tag_calco_nose","tag_possibile_calco_nose","tag_avvisare","tag_da_richiamare","tag_pelo","tag_no_pelo"):
             data[key] = "Si" if data[key] == "Si" else ""
         if has_frame_urn:data["tag_calco_urna"]="Si"
         data["voucher_requested"] = "Si" if data["voucher_requested"] == "Si" else ""
@@ -16924,20 +17730,42 @@ class App(BaseHTTPRequestHandler):
         return cur.lastrowid
 
     def invoice_conflict(self,c,invoice_number,exclude_id=None,exclude_movement_invoice_id=None):
+        # Un numero fattura puo' legittimamente comparire su piu' pratiche
+        # diverse (es. un collaboratore che porta piu' animali, fatturati
+        # tutti insieme a fine mese con un'unica fattura: richiesta
+        # esplicita dell'utente). Il numero fattura non e' quindi piu'
+        # trattato come identificatore univoco della pratica e questo
+        # controllo non blocca piu' il salvataggio nei 9 punti che lo
+        # chiamano (create_practice, edit_submit, quick_invoice,
+        # change_state, apply_payment_macroarea, ecc. - tutti seguono lo
+        # stesso pattern "if conflict: blocca"). L'identificatore univoco
+        # della pratica resta invariato: practice_number (colonna UNIQUE
+        # NOT NULL). Per trovare le altre pratiche che condividono lo
+        # stesso numero fattura (usato dalla vista raggruppata in
+        # /fatture) vedi practices_sharing_invoice_number().
+        return None
+
+    def practices_sharing_invoice_number(self,c,invoice_number,exclude_id=None):
+        # Stessa query che invoice_conflict() usava per bloccare il riuso,
+        # ora riusata per il caso opposto: elencare (non bloccare) tutte le
+        # pratiche che condividono davvero lo stesso numero fattura, per
+        # la vista raggruppata di /fatture.
         number=(invoice_number or "").strip()
-        if not number:return None
+        if not number:return []
         sql="SELECT id,practice_number FROM practices WHERE lower(trim(invoice_number))=lower(trim(?))"
         args=[number]
         if exclude_id is not None:sql+=" AND id<>?";args.append(exclude_id)
-        row=c.execute(sql,args).fetchone()
-        if row:return row
-        sql2="""SELECT mi.id,p.practice_number FROM movement_invoices mi
+        rows=list(c.execute(sql,args).fetchall())
+        sql2="""SELECT DISTINCT p.id,p.practice_number FROM movement_invoices mi
                 JOIN practices p ON p.id=mi.practice_id
                 WHERE lower(trim(mi.invoice_number))=lower(trim(?))"""
         args2=[number]
-        if exclude_id is not None:sql2+=" AND mi.practice_id<>?";args2.append(exclude_id)
-        if exclude_movement_invoice_id is not None:sql2+=" AND mi.id<>?";args2.append(exclude_movement_invoice_id)
-        return c.execute(sql2,args2).fetchone()
+        if exclude_id is not None:sql2+=" AND p.id<>?";args2.append(exclude_id)
+        seen={row["id"] for row in rows}
+        for row in c.execute(sql2,args2).fetchall():
+            if row["id"] not in seen:
+                rows.append(row);seen.add(row["id"])
+        return rows
 
     def duplicate_client_page(self,user,d,duplicates):
         rows=''.join(f'''<tr><td>{esc(((r["first_name"] or "")+" "+(r["last_name"] or "")).strip() or r["company_name"])}</td><td>{esc(r["phone"])}</td><td>{esc(r["email"])}</td><td>{esc(r["tax_code"] or r["vat_number"])}</td><td>{esc(r["city"] or r["address"])}</td><td>ID {r["id"]}</td></tr>''' for r in duplicates)
@@ -18494,6 +19322,17 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         self.send_header("Content-Disposition",f'{disposition}; filename="{filename or path.name}"')
         self.send_header("Content-Length",str(len(payload))); self.end_headers(); self.wfile.write(payload)
 
+
+ai_assistant.configure(ai_assistant.Deps(
+    money_value=money_value,
+    effective_total=effective_total,
+    channel_paid_amount=channel_paid_amount,
+    channel_remaining=channel_remaining,
+    revenue_by_quote_category=revenue_by_quote_category,
+    states=tuple(STATES),
+    shift_operators=SHIFT_OPERATORS,
+    month_names_it=MONTH_NAMES_IT,
+))
 
 if __name__ == "__main__":
     init_db()

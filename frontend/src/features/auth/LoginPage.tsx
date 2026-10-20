@@ -27,20 +27,24 @@ export function LoginPage() {
     }
   }
 
+  // V1 (login_page, app.py:8490): <main class="login"><h1>Pet Paradise
+  // Manager</h1><p class="sub">...</p>{flash warning}<form>{field Utente}
+  // {field Password}<button class="btn" style="width:100%">.
   return (
     <main className="login-page">
-      <form className="card" onSubmit={handleSubmit}>
-        <h1>Pet Paradise Manager V2</h1>
-        <label>
-          Utente
-          <input value={username} onChange={(e) => setUsername(e.target.value)} autoFocus required />
-        </label>
-        <label>
-          Password
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-        </label>
-        {error && <p className="error-banner">{error}</p>}
-        <button type="submit" disabled={submitting}>
+      <form className="login" onSubmit={handleSubmit}>
+        <h1>Pet Paradise Manager</h1>
+        <p className="sub">Accedi alla gestione operativa.</p>
+        {error && <div className="flash warning">{error}</div>}
+        <div className="field">
+          <label htmlFor="login-username">Utente</label>
+          <input id="login-username" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus required />
+        </div>
+        <div className="field" style={{ marginTop: 12 }}>
+          <label htmlFor="login-password">Password</label>
+          <input id="login-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        </div>
+        <button className="btn" style={{ width: "100%", marginTop: 20 }} type="submit" disabled={submitting}>
           {submitting ? "Accesso..." : "Accedi"}
         </button>
       </form>

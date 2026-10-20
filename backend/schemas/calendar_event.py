@@ -54,6 +54,8 @@ class PickupRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     animals: list[AnimalRead]
+    client_name: str | None = None
+    client_phone: str | None = None
 
 
 class TransitionPickupRequest(BaseModel):
@@ -135,6 +137,8 @@ class DeliveryRead(BaseModel):
     deleted_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    client_name: str | None = None
+    client_phone: str | None = None
 
 
 class LinkDeliveryToPracticeRequest(BaseModel):

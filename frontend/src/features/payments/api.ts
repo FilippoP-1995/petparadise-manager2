@@ -7,6 +7,26 @@ export type Payment = components["schemas"]["PaymentRead"];
 export type PaymentCreateInput = components["schemas"]["PaymentCreate"];
 export type PaymentDeletion = components["schemas"]["PaymentDeletionRead"];
 export type PracticeReconciliation = components["schemas"]["PracticeReconciliationRead"];
+export type PracticePaymentsSummary = components["schemas"]["PracticePaymentsSummaryRead"];
+
+// V1 (Lista Pratiche, colonne "Totale pagato"/"Fattura"): riepilogo bulk
+// per l'intera pagina di risultati, 2 query sul backend invece di N per
+// riga (vedi payment_service.get_practices_payments_summary) - non e' la
+// riconciliazione (quella resta usePracticeReconciliation, per il
+// dettaglio di una singola pratica).
+export function usePracticesPaymentsSummary(practiceIds: number[]) {
+  return useQuery({
+    queryKey: ["payments", "practice-summary", practiceIds],
+    queryFn: async () => {
+      const { data, error } = await apiClient.GET("/api/payments/practice-summary", {
+        params: { query: { practice_ids: practiceIds } },
+      });
+      if (error) throw new Error("Impossibile caricare il riepilogo pagamenti");
+      return data;
+    },
+    enabled: practiceIds.length > 0,
+  });
+}
 
 export function usePaymentsForPractice(practiceId: number) {
   return useQuery({

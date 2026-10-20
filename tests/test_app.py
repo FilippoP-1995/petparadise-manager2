@@ -9,7 +9,7 @@ import unittest
 from contextlib import redirect_stderr
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from urllib.parse import quote
 
 import app
@@ -398,7 +398,12 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.orders_page(admin);page=rendered[-1]
         for text in ("Ordina boccioni d’acqua","Seleziona la quantità","Ordina adesso","3 boccioni","5 boccioni","10 boccioni","Modifica impostazioni","Vedi tutti gli ordini","Ultimi ordini"):
             self.assertIn(text,page)
-        self.assertNotIn('name="order_recipient_email"',page);self.assertNotIn('name="order_email_subject"',page);self.assertNotIn('<textarea',page)
+        # Verifica che il form impostazioni (email destinatario/oggetto/testo)
+        # non sia inlineato nella pagina principale ordini - controllo sui nomi
+        # specifici dei campi, non su "<textarea" in generale: quel tag compare
+        # ormai anche nel widget Assistente AI condiviso da ogni pagina tramite
+        # layout(), quindi un controllo generico darebbe un falso positivo.
+        self.assertNotIn('name="order_recipient_email"',page);self.assertNotIn('name="order_email_subject"',page);self.assertNotIn('name="order_email_template"',page)
         self.assertIn("openOrderConfirmation(this,event)",page);self.assertIn("Conferma e invia",page);self.assertIn("closeOrderConfirmation()",page)
         for token in (".water-order-card",".quantity-stepper","@media(max-width:620px)","var(--safe-bottom)","min-height:44px"):
             self.assertIn(token,app.CSS)
@@ -1075,13 +1080,57 @@ class PetParadiseTests(unittest.TestCase):
         invalid=self.handler.normalized_fields({"tag_da_richiamare":"Si","price_cremation":"non numerico"})
         self.assertIn("solo numeri",self.handler.validation_error(invalid))
 
+    def test_pelo_no_pelo_tags_use_the_same_operational_tag_mechanism(self):
+        # Nuove etichette operative PELO/NO PELO (richiesta esplicita
+        # dell'utente): devono comportarsi esattamente come le altre
+        # etichette gia' esistenti - stesso meccanismo, nessun sistema
+        # parallelo. Copre: normalizzazione al salvataggio, persistenza,
+        # visualizzazione (tag_badges/tag_controls), presenza nel form.
+        data=self.handler.normalized_fields({"tag_pelo":"Si","tag_no_pelo":"bogus"})
+        self.assertEqual(data["tag_pelo"],"Si")
+        self.assertEqual(data["tag_no_pelo"],"")
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,tag_pelo,tag_no_pelo)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                                ("CR-PELOTAG","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Fido","Cremazione singola","Si","")).lastrowid
+            row=conn.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+        badges=self.handler.tag_badges(row)
+        self.assertIn('<span class="badge tag-green">PELO</span>',badges)
+        self.assertNotIn("NO PELO",badges)
+        controls=self.handler.tag_controls(row)
+        self.assertIn("PELO",controls)
+        # Modifica: passare da PELO a NO PELO deve funzionare come per
+        # qualunque altra etichetta (stesso ciclo salva/rileggi).
+        with app.db() as conn:
+            conn.execute("UPDATE practices SET tag_pelo='',tag_no_pelo='Si' WHERE id=?",(pid,))
+            row2=conn.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
+        badges2=self.handler.tag_badges(row2)
+        self.assertIn('<span class="badge tag-outline-green">NO PELO</span>',badges2)
+        self.assertNotIn('<span class="badge tag-green">PELO</span>',badges2)
+        rendered=[];self.handler.send_html=lambda content,*a:rendered.append(content)
+        self.handler.path=f"/pratiche/{pid}"
+        self.handler.practice(admin,pid)
+        page=rendered[-1]
+        self.assertIn("NO PELO",page)
+        rendered.clear()
+        self.handler.path="/nuova"
+        self.handler.new_page(admin)
+        form_page=rendered[-1]
+        self.assertIn('name="tag_pelo"',form_page)
+        self.assertIn('name="tag_no_pelo"',form_page)
+
     def test_invoice_page_search_and_unique_code(self):
         with app.db() as conn:
             user=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             pid=conn.execute("""INSERT INTO practices(practice_number,invoice_number,invoice_date,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,owner_first_name)
                               VALUES(?,?,?,?,?,?,?,?,?,?,?)""",("CR-000001","FT-77","2026-07-14","Privato","Livorno","Ritirato",stamp,stamp,user["id"],"Luna","Mario")).lastrowid
-            conflict=self.handler.invoice_conflict(conn,"ft-77")
-            self.assertEqual(conflict["id"],pid)
+            # Cambio intenzionale: il numero fattura non e' piu' trattato
+            # come identificatore univoco della pratica (richiesta esplicita
+            # dell'utente - un numero puo' essere condiviso da piu'
+            # pratiche), quindi invoice_conflict() non segnala piu' nulla.
+            self.assertIsNone(self.handler.invoice_conflict(conn,"ft-77"))
         rendered=[];self.handler.send_html=lambda content:rendered.append(content);self.handler.path="/fatture?q=FT-77"
         self.handler.invoices_page(user)
         self.assertIn("FT-77",rendered[-1])
@@ -1127,11 +1176,15 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(f'action="/pratiche/{pid}/fatture-movimenti"',page)
 
     def test_invoice_conflict_does_not_flag_practices_own_movement_invoice(self):
-        # bug reale segnalato dall'utente: una fattura registrata dal
-        # popover Pagamento finisce in movement_invoices, non nella colonna
-        # legacy practices.invoice_number — senza esclusione per pratica,
-        # il controllo duplicati bloccava anche il reinserimento dello
-        # stesso numero gia' posseduto dalla STESSA pratica.
+        # Storicamente questo test verificava che invoice_conflict()
+        # bloccasse il riuso di un numero fattura da parte di una pratica
+        # DIVERSA, escludendo pero' la pratica proprietaria. Cambio
+        # intenzionale (richiesta esplicita dell'utente): il numero fattura
+        # non e' piu' un identificatore univoco della pratica - puo' essere
+        # condiviso da piu' pratiche diverse (es. un collaboratore
+        # fatturato una sola volta per piu' animali). invoice_conflict()
+        # non segnala quindi piu' nulla in nessun caso, ne' per la stessa
+        # pratica ne' per pratiche diverse.
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
@@ -1142,8 +1195,29 @@ class PetParadiseTests(unittest.TestCase):
             self.assertIsNone(self.handler.invoice_conflict(conn,"FT-SELF",exclude_id=pid))
             other_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,owner_first_name)
                                 VALUES(?,?,?,?,?,?,?,?)""",("CR-OTHERPRACTICE","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Bea")).lastrowid
-            conflict=self.handler.invoice_conflict(conn,"FT-SELF",exclude_id=other_pid)
-            self.assertEqual(conflict["practice_number"],"CR-SELFCONFLICT")
+            self.assertIsNone(self.handler.invoice_conflict(conn,"FT-SELF",exclude_id=other_pid))
+            self.assertIsNone(self.handler.invoice_conflict(conn,"FT-SELF"))
+
+    def test_practices_sharing_invoice_number_lists_every_practice_with_the_number(self):
+        # Sostituisce la vecchia funzione di blocco: usata per la vista
+        # raggruppata di /fatture, deve elencare (non bloccare) tutte le
+        # pratiche - sia dalla colonna legacy sia da movement_invoices -
+        # che condividono davvero lo stesso numero fattura.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid_a=conn.execute("""INSERT INTO practices(practice_number,invoice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,owner_first_name)
+                                VALUES(?,?,?,?,?,?,?,?,?)""",("CR-SHARE-A","FT-125/2026","Collaboratore","Livorno","Ritirato",stamp,stamp,admin["id"],"Nessuno")).lastrowid
+            pid_b=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,owner_first_name)
+                                VALUES(?,?,?,?,?,?,?,?)""",("CR-SHARE-B","Collaboratore","Livorno","Ritirato",stamp,stamp,admin["id"],"Nessuno")).lastrowid
+            conn.execute("INSERT INTO movement_invoices(practice_id,invoice_number,invoice_date,invoice_total,payment_method,payment_channel,created_at,created_by) VALUES(?,?,?,?,?,?,?,?)",
+                         (pid_b,"ft-125/2026","2026-07-02","200.00","Pos","W",stamp,admin["id"]))
+            pid_c=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,owner_first_name)
+                                VALUES(?,?,?,?,?,?,?,?)""",("CR-SHARE-C","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Altro")).lastrowid
+            sharing=self.handler.practices_sharing_invoice_number(conn,"FT-125/2026")
+            self.assertEqual({row["id"] for row in sharing},{pid_a,pid_b})
+            self.assertNotIn(pid_c,{row["id"] for row in sharing})
+            excluded=self.handler.practices_sharing_invoice_number(conn,"FT-125/2026",exclude_id=pid_a)
+            self.assertEqual({row["id"] for row in excluded},{pid_b})
 
     def test_save_invoice_accepts_number_already_registered_via_movement_invoice_same_practice(self):
         with app.db() as conn:
@@ -1286,16 +1360,17 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.path="/fatture"
         self.handler.invoices_page(admin)
         page=rendered[-1]
-        own_script=page.split('ppm_fatture_state:')[1]
-        # Stesso pattern gia' collaudato in Archivio: rileva il ritorno da
-        # una pratica via document.referrer (non un flag one-shot), scrive
-        # subito (non solo su debounce) al click di una riga, e nasconde la
-        # lista via CSS finche' lo scroll non e' stato riposizionato - senza
-        # questo la pagina si vede comunque "saltare" dalla cima, che e'
-        # esattamente la sensazione di refresh segnalata.
-        self.assertIn("document.referrer",own_script)
-        self.assertIn("saveNow",own_script)
-        self.assertIn("classList.add('row-selected')",own_script)
+        # Il ripristino scroll/ricerca/riga evidenziata non vive più in uno
+        # script dedicato a questa pagina: è stato consolidato nel sistema
+        # unico PPM_LIST_PAGES/setupListStateRestore (condiviso, in
+        # app.APP_JS, incluso in ogni pagina via layout()) - stessa identica
+        # logica di prima (referrer, salvataggio immediato al click riga,
+        # lista nascosta finché lo scroll non è ripristinato), solo non più
+        # duplicata. Qui si verifica che "/fatture" sia configurata con
+        # tutte le opzioni che prima erano scritte a mano solo qui.
+        self.assertIn("'/fatture':{detail:/^\\/pratiche\\/\\d+/,perUser:true,revealId:'fattureLists',rowHighlight:{className:'row-selected'},saveOnClick:'.tablebox .practice-row-link'}",app.APP_JS)
+        self.assertIn("document.referrer",app.APP_JS)
+        self.assertIn("saveNow",app.APP_JS)
         self.assertIn("fattureLists",page)
         self.assertIn('id="fattureLists"',page)
         # Ogni riga deve portare l'id pratica, necessario per ritrovarla al
@@ -2025,19 +2100,26 @@ class PetParadiseTests(unittest.TestCase):
         self.assertNotIn(already_linked, ids)
 
     def test_cremation_schedule_shows_future_pickup_cards_non_actionable(self):
+        # Le date devono restare relative a "oggi" (rome_now) e non fisse:
+        # future_pickup_singola_rows() filtra sempre contro la data reale
+        # corrente (app.py:11983/11998), quindi date hardcoded nel passato
+        # smettono di essere "future" con il solo passare del tempo,
+        # facendo fallire il test senza nessuna regressione reale.
+        view_date = app.rome_now().date()
+        future_date = view_date + timedelta(days=1)
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
             event_id = conn.execute(
                 """INSERT INTO calendar_events(event_type,title,client_first_name,client_last_name,created_by,created_at,updated_at,event_status,start_at,end_at)
                    VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                ("Ritiro", "Ritiro futuro test", "Mario", "Bianchi", admin["id"], stamp, stamp, "Da confermare", "2026-08-05T10:30:00", "2026-08-05T11:00:00"),
+                ("Ritiro", "Ritiro futuro test", "Mario", "Bianchi", admin["id"], stamp, stamp, "Da confermare", f"{future_date.isoformat()}T10:30:00", f"{future_date.isoformat()}T11:00:00"),
             ).lastrowid
             conn.execute(
                 "INSERT INTO calendar_event_animals(event_id,name,species,weight,cremation_type,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
                 (event_id, "Rocky", "Cane", "40", "Singola", stamp, stamp),
             )
         rendered = []
-        self.handler.path = "/programma-cremazioni?data=2026-08-04"
+        self.handler.path = f"/programma-cremazioni?data={view_date.isoformat()}"
         self.handler.send_html = lambda content, *args: rendered.append(content)
         self.handler.cremation_schedule(admin)
         page = rendered[-1]
@@ -2045,7 +2127,7 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("40 kg", page)
         self.assertIn("Mario Bianchi", page)
         self.assertIn("Non ancora affidato", page)
-        self.assertIn("RITIRO 05/08", page)
+        self.assertIn(f"RITIRO {future_date.strftime('%d/%m')}", page)
         self.assertIn('class="cremation-add-animal-card cremation-future-pickup-card"', page)
         # nessun collegamento reale: mai un onclick di assegnazione per una
         # card "in arrivo" (non esiste una pratica da poter assegnare) —
@@ -2054,7 +2136,7 @@ class PetParadiseTests(unittest.TestCase):
         # stessa card compare due volte in pagina: nel pannello Animali e
         # nel popup Aggiungi animale).
         with app.db() as conn:
-            future_row = app.future_pickup_singola_rows(conn, "2026-08-04")[0]
+            future_row = app.future_pickup_singola_rows(conn, view_date.isoformat())[0]
         card_html = app.future_pickup_card_html(future_row)
         self.assertNotIn("onclick", card_html)
         self.assertNotIn("cremationAddAnimalConfirm", card_html)
@@ -2063,19 +2145,21 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(page.count(card_html), 2)
 
     def test_cremation_schedule_week_shows_future_pickup_row(self):
+        view_date = app.rome_now().date()
+        future_date = view_date + timedelta(days=2)
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
             event_id = conn.execute(
                 """INSERT INTO calendar_events(event_type,title,person_company,created_by,created_at,updated_at,event_status,start_at,end_at)
                    VALUES(?,?,?,?,?,?,?,?,?)""",
-                ("Ritiro in sede", "Ritiro futuro settimana", "Clinica Veterinaria Test", admin["id"], stamp, stamp, "Da ritirare", "2026-08-06T09:00:00", "2026-08-06T09:30:00"),
+                ("Ritiro in sede", "Ritiro futuro settimana", "Clinica Veterinaria Test", admin["id"], stamp, stamp, "Da ritirare", f"{future_date.isoformat()}T09:00:00", f"{future_date.isoformat()}T09:30:00"),
             ).lastrowid
             conn.execute(
                 "INSERT INTO calendar_event_animals(event_id,name,species,weight,cremation_type,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
                 (event_id, "Micia", "Gatto", "4", "Singola", stamp, stamp),
             )
         rendered = []
-        self.handler.path = "/programma-cremazioni?data=2026-08-04&vista=settimana"
+        self.handler.path = f"/programma-cremazioni?data={view_date.isoformat()}&vista=settimana"
         self.handler.send_html = lambda content, *args: rendered.append(content)
         self.handler.cremation_schedule(admin)
         page = rendered[-1]
@@ -2085,6 +2169,8 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("cremation-future-pickup-row", page)
 
     def test_api_cremation_swap_candidates_includes_future_pickups_as_non_selectable(self):
+        cycle_date = app.rome_now().date()
+        future_date = cycle_date + timedelta(days=1)
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
             pid = conn.execute(
@@ -2094,13 +2180,13 @@ class PetParadiseTests(unittest.TestCase):
             ).lastrowid
             cycle_id = conn.execute(
                 "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
-                ("2026-08-04", "in_attesa", "09:00", "10:30", stamp, stamp),
+                (cycle_date.isoformat(), "in_attesa", "09:00", "10:30", stamp, stamp),
             ).lastrowid
             conn.execute("UPDATE practices SET cremation_cycle_id=? WHERE id=?", (cycle_id, pid))
             event_id = conn.execute(
                 """INSERT INTO calendar_events(event_type,title,client_first_name,created_by,created_at,updated_at,event_status,start_at,end_at)
                    VALUES(?,?,?,?,?,?,?,?,?)""",
-                ("Ritiro", "Ritiro futuro swap", "Elena", admin["id"], stamp, stamp, "Da confermare", "2026-08-05T09:00:00", "2026-08-05T09:30:00"),
+                ("Ritiro", "Ritiro futuro swap", "Elena", admin["id"], stamp, stamp, "Da confermare", f"{future_date.isoformat()}T09:00:00", f"{future_date.isoformat()}T09:30:00"),
             ).lastrowid
             conn.execute(
                 "INSERT INTO calendar_event_animals(event_id,name,species,weight,cremation_type,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
@@ -2747,7 +2833,10 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.send_html = lambda content, *args: rendered.append(content)
         self.handler.cremation_schedule(admin)
         page = rendered[-1]
-        self.assertIn(f'href="/calendario/nuovo?linked_practice_id={pid}&return_to={quote(self.handler.path,safe="")}"', page)
+        # return_to porta anche open_cycle: tornando dalla pratica il ciclo
+        # di provenienza si riespande da solo (riusa cremationOpenPendingCycle,
+        # gia' esistente per "torna al ciclo appena creato").
+        self.assertIn(f'href="/calendario/nuovo?linked_practice_id={pid}&return_to={quote(self.handler.path+f"&open_cycle={cycle_id}",safe="")}"', page)
         self.assertIn('>Fissa riconsegna</span>', page)
         self.assertNotIn('>Fissa riconsegna Sam</span>', page)
 
@@ -2774,10 +2863,69 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.send_html = lambda content, *args: rendered.append(content)
         self.handler.cremation_schedule(admin)
         page = rendered[-1]
-        self.assertIn(f'href="/calendario/{event_id}?return_to={quote(self.handler.path,safe="")}"', page)
+        self.assertIn(f'href="/calendario/{event_id}?return_to={quote(self.handler.path+f"&open_cycle={cycle_id}",safe="")}"', page)
         self.assertIn('>Vedi riconsegna</span>', page)
         self.assertNotIn(f'href="/calendario/nuovo?linked_practice_id={pid}&return_to=', page)
         self.assertNotIn('>Fissa riconsegna</span>', page)
+
+    def test_cremation_day_view_shows_practice_note_in_compact_card_without_expanding(self):
+        # Richiesta esplicita dell'utente: la nota della pratica deve
+        # essere visibile subito nella card compatta del ciclo, senza
+        # doverlo espandere. cremation-week-animal-notes (nuova, nella
+        # riga sempre visibile) e' diversa da cremation-animal-notes
+        # (gia' esistente, solo nel corpo espanso) - verifichiamo la
+        # prima, non solo che il testo compaia da qualche parte in pagina.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,actual_end,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                ("2026-07-20", "completato", "08:00", "09:30", stamp, stamp, stamp),
+            ).lastrowid
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id,notes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-NOTECOMPACT", "Privato", "Livorno", "Da consegnare", "Cremazione singola", "2026-07-20", stamp, stamp,
+                 admin["id"], "Birba", cycle_id, "Attenzione: proprietario molto ansioso, chiamare prima di consegnare"),
+            )
+        rendered = []
+        self.handler.path = "/programma-cremazioni?data=2026-07-20"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn('class="cremation-week-animal-notes"', page)
+        self.assertIn("Attenzione: proprietario molto ansioso, chiamare prima di consegnare", page)
+
+    def test_cremation_week_view_shows_practice_note_in_compact_card_and_truncates_long_notes(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            cycle_id = conn.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,actual_end,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                ("2026-07-20", "completato", "08:00", "09:30", stamp, stamp, stamp),
+            ).lastrowid
+            long_note = "Nota molto lunga " * 10
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   pickup_date,created_at,updated_at,created_by,animal_name,cremation_cycle_id,notes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-NOTEWEEK", "Privato", "Livorno", "Da consegnare", "Cremazione singola", "2026-07-20", stamp, stamp,
+                 admin["id"], "Birba", cycle_id, long_note),
+            ).lastrowid
+        rendered = []
+        self.handler.path = "/programma-cremazioni?vista=settimana&data=2026-07-20"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn('class="cremation-week-animal-notes"', page)
+        self.assertIn("…", page)
+        self.assertNotIn(long_note.strip(), page)
+        # La nota deve riflettersi aggiornata se cambiata dalla pratica
+        # (stessa fonte dati, nessuna copia nel database).
+        with app.db() as conn:
+            conn.execute("UPDATE practices SET notes=? WHERE id=?", ("Nota aggiornata", pid))
+        rendered.clear()
+        self.handler.cremation_schedule(admin)
+        page2 = rendered[-1]
+        self.assertIn("Nota aggiornata", page2)
+        self.assertNotIn(long_note.strip(), page2)
 
     def test_cremation_week_view_shows_one_fissa_riconsegna_button_per_animal_in_combo_cycle(self):
         with app.db() as conn:
@@ -2803,8 +2951,8 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.send_html = lambda content, *args: rendered.append(content)
         self.handler.cremation_schedule(admin)
         page = rendered[-1]
-        self.assertIn(f'href="/calendario/nuovo?linked_practice_id={pid1}&return_to={quote(self.handler.path,safe="")}"', page)
-        self.assertIn(f'href="/calendario/nuovo?linked_practice_id={pid2}&return_to={quote(self.handler.path,safe="")}"', page)
+        self.assertIn(f'href="/calendario/nuovo?linked_practice_id={pid1}&return_to={quote(self.handler.path+f"&open_cycle={cycle_id}",safe="")}"', page)
+        self.assertIn(f'href="/calendario/nuovo?linked_practice_id={pid2}&return_to={quote(self.handler.path+f"&open_cycle={cycle_id}",safe="")}"', page)
         self.assertIn('>Fissa riconsegna Sam</span>', page)
         self.assertIn('>Fissa riconsegna Luna</span>', page)
 
@@ -3469,6 +3617,141 @@ class PetParadiseTests(unittest.TestCase):
         # devono restare due stati CSS distinti, non lo stesso colore riusato
         self.assertIn('.cremation-daybar-card.active{background:linear-gradient(135deg,#3b82f6,#1d4ed8)', app.CSS)
         self.assertIn('.cremation-daybar-card.today{background:linear-gradient(135deg,#fb4c67,#d9284c)', app.CSS)
+
+    def test_shifts_month_view_swipes_freely_between_three_months_like_calendar(self):
+        # richiesta utente: lo swipe tra mesi in Orari deve usare la stessa
+        # tecnica "sentinella + swipe libero" di Calendario/Cremazioni -
+        # prima invece OGNI mese (anche quello corrente) portava un
+        # data-href e ricaricava la pagina al primo pixel di swipe.
+        def add_months(d, n):
+            total = (d.month - 1) + n
+            year = d.year + total // 12
+            month = total % 12 + 1
+            return date(year, month, 1)
+        selected = date.today().replace(day=15)
+        current_month_start = selected.replace(day=1)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.path = f"/turni?vista=mese&data={selected.isoformat()}"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.shifts_page(admin)
+        page = rendered[-1]
+        self.assertEqual(page.count('id="shiftMonthPages"'), 1)
+        # 2 sentinelle invisibili (solo data-href) + 3 mesi reali swipeabili
+        # senza reload (data-month-key, nessun data-href)
+        self.assertEqual(page.count('calendar-day-page-edge'), 2)
+        self.assertIn(f'data-href="/turni?vista=mese&data={add_months(current_month_start,-2).isoformat()}"', page)
+        self.assertIn(f'data-href="/turni?vista=mese&data={add_months(current_month_start,2).isoformat()}"', page)
+        for offset in (-1, 0, 1):
+            month_key = add_months(current_month_start, offset).isoformat()
+            self.assertIn(f'data-month-key="{month_key}"', page)
+        self.assertEqual(page.count('data-month-key='), 3)
+
+    def test_shifts_month_view_syncs_url_via_replacestate_never_reloads_real_pages(self):
+        js = app.APP_JS
+        self.assertIn("function shiftSyncUrlToMonth(monthKey){", js)
+        self.assertIn("url.searchParams.set('data',monthKey);", js)
+        self.assertIn("history.replaceState(null,'',url);", js)
+        month_block = js[js.index("function shiftInitMonthPages(){"):]
+        month_block = month_block[:month_block.index("\nfunction ", 10)]
+        # solo le sentinelle (data-href) ricaricano la pagina; i mesi reali
+        # (data-month-key) restano sullo swipe senza mai ricaricare
+        self.assertIn("ppmSaveScrollForNextLoad();\n          location.href=entry.target.dataset.href;", month_block)
+        self.assertIn("if(entry.target.dataset.monthKey)shiftSyncUrlToMonth(entry.target.dataset.monthKey);", month_block)
+        self.assertNotIn("ppmTurniScrollY", js)
+
+    def test_shifts_day_view_reuses_calendar_daybar_card_for_today_red_and_active_blue(self):
+        # stessa richiesta di sempre: card rossa sul giorno corrente, blu
+        # sugli altri giorni selezionati - Orari riusa .calendar-daybar-card
+        # cosi' com'e' (stesso CSS di Calendario), nessuna classe duplicata.
+        today = date.today()
+        other_monday = today - timedelta(days=today.weekday()) + timedelta(weeks=6)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.path = f"/turni?vista=giorno&data={other_monday.isoformat()}"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.shifts_page(admin)
+        page = rendered[-1]
+        self.assertNotIn(' is-today"', page)
+        self.assertIn(f'class="calendar-daybar-card active" data-day-index="0" data-date="{other_monday.isoformat()}"', page)
+        # settimana che include oggi: la card del giorno odierno porta is-today
+        rendered2 = []
+        self.handler.path = "/turni?vista=giorno"
+        self.handler.send_html = lambda content, *args: rendered2.append(content)
+        self.handler.shifts_page(admin)
+        page2 = rendered2[-1]
+        self.assertIn(' is-today"', page2)
+        self.assertIn('active is-today', page2)
+
+    def test_shifts_day_view_daybar_arrows_scroll_locally_not_reload_week(self):
+        # come Calendario/Cremazioni: le frecce ‹/› della barra giorni
+        # scorrono solo la striscia visibile (calendarDaybarNav), non
+        # cambiano piu' settimana con un reload completo della pagina.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.path = "/turni?vista=giorno"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.shifts_page(admin)
+        page = rendered[-1]
+        self.assertIn('onclick="calendarDaybarNav(-1)"', page)
+        self.assertIn('onclick="calendarDaybarNav(1)"', page)
+        self.assertNotIn("Settimana precedente", page)
+        self.assertNotIn("Settimana successiva", page)
+
+    def test_shifts_day_view_has_oggi_button_like_month_view(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.path = "/turni?vista=giorno&data=2026-01-05"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.shifts_page(admin)
+        page = rendered[-1]
+        self.assertIn('<div class="shift-month-nav-today"><a class="btn ghost" href="/turni?vista=giorno">', page)
+        self.assertIn('Oggi</a>', page)
+
+    def test_shifts_day_view_shows_back_to_month_button_only_when_arriving_from_month(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.path = "/turni?vista=giorno&data=2026-01-05&da=mese"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.shifts_page(admin)
+        page = rendered[-1]
+        self.assertIn('<a class="btn ghost calendar-back-btn" href="/turni?vista=mese&data=2026-01-05">← Torna a Mese</a>', page)
+        rendered2 = []
+        self.handler.path = "/turni?vista=giorno&data=2026-01-05"
+        self.handler.send_html = lambda content, *args: rendered2.append(content)
+        self.handler.shifts_page(admin)
+        page2 = rendered2[-1]
+        self.assertNotIn("Torna a Mese", page2)
+
+    def test_shifts_month_cell_click_carries_da_mese_for_the_back_button(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.path = "/turni?vista=mese&data=2026-01-05"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.shifts_page(admin)
+        page = rendered[-1]
+        self.assertIn('href="/turni?vista=giorno&data=2026-01-05&da=mese"', page)
+
+    def test_shifts_add_operator_link_saves_scroll_before_navigating_to_pianifica(self):
+        # stesso meccanismo condiviso di Calendario/Cremazioni per tornare
+        # allo stesso punto di scroll dopo /turni/pianifica e ritorno.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []
+        self.handler.path = "/turni?vista=giorno&data=2026-01-05"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.shifts_page(admin)
+        page = rendered[-1]
+        self.assertIn('onclick="ppmSaveScrollForNextLoad()">' + app.lucide("plus") + ' Aggiungi operatore</a>', page)
+
+    def test_shift_month_cell_today_gets_reinforced_red_ring_matching_calendar_grid(self):
+        self.assertIn('.shift-month-cell.is-today{border-color:var(--brand2);box-shadow:inset 0 0 0 2px var(--brand2)}', app.CSS)
 
     def test_day_view_collapsed_cycle_shows_the_same_animal_details_as_week_view(self):
         with app.db() as conn:
@@ -5300,6 +5583,176 @@ class PetParadiseTests(unittest.TestCase):
         # clamp di sicurezza: end_date non deve mai precedere start_date
         self.assertIn("form.end_date.value<form.start_date.value)form.end_date.value=form.start_date.value", fn)
 
+    def test_calendar_new_event_draft_has_no_continuous_autosave(self):
+        # Richiesta esplicita dell'utente: un evento NUOVO (mai salvato)
+        # non deve piu' autosalvarsi in bozza ad ogni digitazione senza
+        # consenso - solo alla scelta esplicita "Salva bozza". Il ramo
+        # "ppm_calendar_draft_new" deve uscire (return) PRIMA di
+        # registrare qualunque listener input/change che scriverebbe in
+        # localStorage.
+        js = app.APP_JS
+        fn_start = js.index("function setupCalendarDraftAutosave(form){")
+        fn_end = js.index("\n}", fn_start) + 2
+        fn = js[fn_start:fn_end]
+        self.assertIn("if(key==='ppm_calendar_draft_new'){", fn)
+        gate_start = fn.index("if(key==='ppm_calendar_draft_new'){")
+        gate_end = fn.index("}", gate_start) + 1
+        gate_body = fn[gate_start:gate_end]
+        self.assertIn("return;", gate_body)
+        # dopo il return della bozza nuova, la registrazione dell'autosave
+        # continuo (input/change/submit) deve restare SOLO per la modifica
+        # di un evento gia' reale (comportamento preesistente, invariato)
+        after_gate = fn[gate_end:]
+        self.assertIn("form.addEventListener('input',()=>{show('saving','Salvataggio…');save();});", after_gate)
+        self.assertIn("form.addEventListener('change',()=>{show('saving','Salvataggio…');save();});", after_gate)
+        self.assertIn("restore();", after_gate)
+
+    def test_calendar_new_event_draft_restores_only_with_explicit_marker(self):
+        # "NUOVO EVENTO" deve sempre partire pulito, anche se esiste una
+        # bozza precedente - il recupero automatico avviene SOLO passando
+        # da qui con ?bozza=1 (link dedicato nella lista bozze).
+        js = app.APP_JS
+        fn_start = js.index("function setupCalendarDraftAutosave(form){")
+        gate_start = js.index("if(key==='ppm_calendar_draft_new'){", fn_start)
+        gate_end = js.index("}", gate_start) + 1
+        gate_body = js[gate_start:gate_end]
+        self.assertIn("new URLSearchParams(location.search).get('bozza')==='1'", gate_body)
+        self.assertIn("restore();", gate_body)
+
+    def test_calendar_exit_keep_draft_saves_explicitly_only_for_new_event(self):
+        # "Salva bozza ed esci" deve essere il momento in cui, per un
+        # evento nuovo, la bozza viene VERAMENTE scritta (non prima, non
+        # per abbandono silenzioso). In modifica di un evento gia' reale
+        # l'autosave continuo ha gia' salvato tutto - nessun doppio lavoro.
+        js = app.APP_JS
+        fn_start = js.index("function calendarExitKeepDraft(){")
+        fn_end = js.index("\n}", fn_start) + 2
+        fn = js[fn_start:fn_end]
+        self.assertIn("if(key==='ppm_calendar_draft_new')calendarSaveDraftNow();", fn)
+
+    def test_calendar_exit_discard_draft_still_removes_localstorage_entry(self):
+        # "Non salvare / Esci" deve continuare a eliminare davvero
+        # l'eventuale voce (comportamento preesistente, non toccato).
+        self.assertIn(
+            "function calendarExitDiscardDraft(){const form=document.getElementById('calendarEventForm');const key=form?.dataset.draftKey;if(key){try{localStorage.removeItem(key);}catch(error){}}calendarWizardAllowExit=true;calendarExitCancel();if(calendarExitHref)location.href=calendarExitHref;}",
+            app.APP_JS,
+        )
+
+    def test_calendar_drafts_banner_links_new_event_draft_with_explicit_marker(self):
+        # Il link della bozza nella lista "N bozze salvate" e' l'UNICO modo
+        # per cui "Nuovo evento" carica automaticamente dati precedenti.
+        js = app.APP_JS
+        self.assertIn("isEdit?`/calendario/${key.slice('ppm_calendar_draft_edit_'.length)}/modifica`:'/calendario/nuovo?bozza=1'", js)
+
+    def test_calendar_global_click_listener_intercepts_dirty_exits_from_any_link(self):
+        # Richiesta esplicita dell'utente: l'uscita da un evento non
+        # ancora salvato deve essere gestita con QUALUNQUE modo la si
+        # tenti, non solo "×"/Annulla - un listener delegato su TUTTI i
+        # link (menu, bottom-nav, "Crea", link "Pratica" nel wizard, ecc.)
+        # passa dallo stesso calendarConfirmExit gia' usato da quei due.
+        js = app.APP_JS
+        self.assertIn("document.addEventListener('click',function(e){", js)
+        listener_start = js.index("document.addEventListener('click',function(e){\n  const form=document.getElementById('calendarEventForm');")
+        listener_end = js.index("});", listener_start) + 3
+        listener = js[listener_start:listener_end]
+        self.assertIn("if(!form)return;", listener)
+        self.assertIn("e.target.closest('a[href]')", listener)
+        self.assertIn("link.target==='_blank'", listener)
+        self.assertIn("href.startsWith('tel:')", listener)
+        self.assertIn("href.startsWith('mailto:')", listener)
+        self.assertIn("calendarWizardDirty(form)", listener)
+        self.assertIn("calendarConfirmExit(e,link.href);", listener)
+
+    def test_calendar_type_changed_reorders_animal_before_sede_only_for_riconsegna_in_sede(self):
+        # Richiesta esplicita dell'utente: ordine ANIMALE poi SEDE per
+        # "Riconsegna in sede" - tutte le altre combinazioni (incluso
+        # "Ritiro in sede", che non ha alcun campo Animale) restano
+        # nell'ordine originale.
+        js = app.APP_JS
+        fn_start = js.index("function calendarTypeChanged(){")
+        fn_end = js.index("\n}", fn_start) + 2
+        fn = js[fn_start:fn_end]
+        self.assertIn('data-calendar-types="Ritiro in sede|Riconsegna in sede"', fn)
+        self.assertIn('data-calendar-types="Riconsegna|Riconsegna in sede"', fn)
+        self.assertIn("if(type==='Riconsegna in sede'){", fn)
+        self.assertIn("sedeCard.parentNode.insertBefore(animaleCard,sedeCard);", fn)
+        self.assertIn("sedeCard.parentNode.insertBefore(sedeCard,animaleCard);", fn)
+        # nessun carattere di controllo residuo nella regex PROMEMORIA
+        # (corruzione preesistente trovata e corretta incidentalmente
+        # modificando questa stessa funzione)
+        self.assertIn("/^PROMEMORIA/i.test(title.value)", fn)
+        self.assertNotIn("\x08", app.APP_JS)
+
+    def test_calendar_destination_site_select_tracks_manual_edit(self):
+        # La preimpostazione della Sede deve restare SEMPRE modificabile:
+        # appena l'utente la tocca a mano, dataset.manual impedisce a
+        # future selezioni animale di sovrascriverla di nuovo.
+        self.assertEqual(app.APP_JS.count("this.dataset.manual='1';calendarAutoTitle()") , 0)  # non e' nell'APP_JS, e' nel markup HTML
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []; self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = "/calendario/nuovo?event_type=Riconsegna in sede"
+        self.handler.calendar_event_form(admin)
+        page = rendered[-1]
+        self.assertEqual(page.count('''<select name="destination_site" onchange="this.dataset.manual='1';calendarAutoTitle()">'''), 1)
+
+    def test_calendar_delivery_animal_lookup_presets_sede_from_provenance(self):
+        # L -> Livorno, E -> Empoli, qualunque altro valore -> nessuna
+        # preimpostazione (non deve inventare una sede). Solo se la Sede
+        # non e' gia' stata toccata manualmente dall'utente.
+        js = app.APP_JS
+        fn_start = js.index("results.onclick=e=>{const button=e.target.closest('[data-delivery-animal-index]')")
+        fn_end = js.index("};", fn_start) + 2
+        fn = js[fn_start:fn_end]
+        self.assertIn("!form.destination_site.dataset.manual", fn)
+        self.assertIn("item.provenance==='L'?'Livorno':item.provenance==='E'?'Empoli':''", fn)
+        self.assertIn("if(provenanceSede)form.destination_site.value=provenanceSede;", fn)
+
+    def test_calendar_animals_search_api_returns_provenance_code(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            for number, provenance in (("CR-PROVL", "L"), ("CR-PROVE", "E"), ("CR-PROVV", "V"), ("CR-PROVNONE", "")):
+                conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,provenance)
+                                VALUES(?,?,?,?,?,?,?,?,?)""",
+                             (number, "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], f"AnimaleProv{provenance or 'X'}", provenance))
+        responses = []; self.handler.send_json = lambda payload, status=200: responses.append(payload)
+        self.handler.path = "/api/calendario/animali/search?q=AnimaleProv"
+        self.handler.api_calendar_animals_search(admin)
+        results = {r["practice_number"]: r["provenance"] for r in responses[-1]["results"]}
+        self.assertEqual(results["CR-PROVL"], "L")
+        self.assertEqual(results["CR-PROVE"], "E")
+        self.assertEqual(results["CR-PROVV"], "V")
+        self.assertEqual(results["CR-PROVNONE"], "")
+
+    def test_calendar_new_event_from_fissa_riconsegna_presets_sede_from_provenance(self):
+        # Bug reale trovato con verifica dal vivo nel browser: il flusso
+        # "Fissa riconsegna" (da Cremazioni o dal riepilogo pratica,
+        # /calendario/nuovo?linked_practice_id=X) e' il modo piu' comune
+        # per creare una Riconsegna in sede, ma la pratica arriva gia'
+        # collegata al caricamento della pagina - non passa mai dalla
+        # ricerca-animale interattiva (calendarDeliveryAnimalLookup), che
+        # da sola non basta a coprire la preimpostazione della Sede.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            pid_l = conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,provenance)
+                            VALUES(?,?,?,?,?,?,?,?,?)""",
+                            ("CR-FISSA-L", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Birba", "L")).lastrowid
+            pid_v = conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,animal_name,provenance)
+                            VALUES(?,?,?,?,?,?,?,?,?)""",
+                            ("CR-FISSA-V", "Privato", "Livorno", "Ritirato", stamp, stamp, admin["id"], "Birba2", "V")).lastrowid
+        rendered = []; self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/nuovo?linked_practice_id={pid_l}"
+        self.handler.calendar_event_form(admin)
+        page_l = rendered[-1]
+        self.assertIn('<option selected>Livorno</option>', page_l)
+        rendered.clear()
+        self.handler.path = f"/calendario/nuovo?linked_practice_id={pid_v}"
+        self.handler.calendar_event_form(admin)
+        page_v = rendered[-1]
+        # provenienza diversa da Livorno/Empoli: nessuna sede preimpostata
+        self.assertNotIn('<option selected>Livorno</option>', page_v)
+        self.assertNotIn('<option selected>Empoli</option>', page_v)
+
     def test_day_view_swipe_navigation_removed(self):
         rendered = []
         self.handler.send_html = lambda html, status=200: rendered.append(html)
@@ -5534,6 +5987,124 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.save_archive_month_state(admin)
         self.assertEqual(responses[-1],({"ok":False,"error":"Mese non valido."},400))
 
+    def test_smaltimenti_section_collapse_state_persists_per_user(self):
+        # Richiesta esplicita dell'utente: il ritorno indietro (con
+        # qualunque modalita' di navigazione) deve ritrovare la pagina
+        # esattamente come l'avevo lasciata. Gruppo/Storico di Smaltimenti
+        # si riaprivano da soli tornando da una pratica collegata - stesso
+        # meccanismo di persistenza gia' usato da Archivio/mesi.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
+                            created_at,updated_at,created_by,service_type)
+                            VALUES(?,?,?,?,?,?,?,?,?)""",
+                         ("PP-DISP-COLLAPSE","Privato","Livorno","Ritirato","2026-07-15",stamp,stamp,admin["id"],"Cremazione collettiva"))
+        rendered=[];self.handler.send_html=lambda content,*a:rendered.append(content)
+        self.handler.path="/smaltimenti?dal=2026-07-01&al=2026-07-31"
+        self.handler.disposal_page(admin)
+        page=rendered[-1]
+        # senza preferenza salvata, tutto parte aperto (comportamento invariato)
+        self.assertIn('data-persist-key="Livorno·W" data-persist-endpoint="/smaltimenti/sezione-stato" onclick="toggleCollapsibleSection(this)">−</button>',page)
+        self.assertIn('data-persist-key="storico" data-persist-endpoint="/smaltimenti/sezione-stato"',page)
+        self.assertNotIn(' hidden><table><thead><tr><th>Animale</th><th>Peso</th>',page)
+
+        responses=[];self.handler.send_json=lambda payload,status=200:responses.append((payload,status))
+        self.handler.form=lambda:{"sezione":"Livorno·W","chiuso":"1"}
+        self.handler.save_smaltimenti_section_state(admin)
+        self.assertEqual(responses[-1],({"ok":True},200))
+
+        rendered.clear()
+        self.handler.disposal_page(admin)
+        page=rendered[-1]
+        self.assertIn('data-persist-key="Livorno·W" data-persist-endpoint="/smaltimenti/sezione-stato" onclick="toggleCollapsibleSection(this)">+</button>',page)
+        # lo storico, non toccato, resta aperto
+        self.assertIn('data-persist-key="storico" data-persist-endpoint="/smaltimenti/sezione-stato" onclick="toggleCollapsibleSection(this)">−</button>',page)
+
+    def test_smaltimenti_section_state_rejects_empty_key(self):
+        responses=[];self.handler.send_json=lambda payload,status=200:responses.append((payload,status))
+        self.handler.form=lambda:{"sezione":"","chiuso":"1"}
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.save_smaltimenti_section_state(admin)
+        self.assertEqual(responses[-1],({"ok":False,"error":"Sezione non valida."},400))
+
+    def test_collaborator_month_collapse_state_persists_per_user(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            collaborator_id=conn.execute("INSERT INTO collaborators(name,active,created_at,updated_at) VALUES(?,?,?,?)",("Collab Test",1,stamp,stamp)).lastrowid
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,collaborator_id,pickup_date,created_at,updated_at,created_by,animal_name)
+                          VALUES(?,?,?,?,?,?,?,?,?,?)""",("CR-COLLABMONTH","Collaboratore","Livorno","Ritirato",collaborator_id,"2026-07-10",stamp,stamp,admin["id"],"Fido"))
+        rendered=[];self.handler.send_html=lambda content,*a:rendered.append(content)
+        self.handler.path=f"/collaboratori/{collaborator_id}"
+        self.handler.collaborator_detail(admin,collaborator_id)
+        page=rendered[-1]
+        self.assertIn(f'data-persist-key="2026-07" data-persist-endpoint="/collaboratori/{collaborator_id}/mese-stato" data-persist-field="mese" onclick="toggleCollapsibleSection(this)">−</button>',page)
+
+        responses=[];self.handler.send_json=lambda payload,status=200:responses.append((payload,status))
+        self.handler.form=lambda:{"mese":"2026-07","chiuso":"1"}
+        self.handler.save_collaborator_month_state(admin,collaborator_id)
+        self.assertEqual(responses[-1],({"ok":True},200))
+
+        rendered.clear()
+        self.handler.collaborator_detail(admin,collaborator_id)
+        page=rendered[-1]
+        self.assertIn(f'data-persist-key="2026-07" data-persist-endpoint="/collaboratori/{collaborator_id}/mese-stato" data-persist-field="mese" onclick="toggleCollapsibleSection(this)">+</button>',page)
+
+        # riaprire il mese lo rimuove dalla lista salvata (nessuna interferenza tra collaboratori diversi)
+        with app.db() as conn:
+            other_id=conn.execute("INSERT INTO collaborators(name,active,created_at,updated_at) VALUES(?,?,?,?)",("Altro Collab",1,stamp,stamp)).lastrowid
+        with app.db() as conn:
+            value=conn.execute("SELECT value FROM user_preferences WHERE user_id=? AND key=?",(admin["id"],f"collaboratore_{other_id}_collapsed_months")).fetchone()
+        self.assertIsNone(value)
+
+    def test_collaborator_month_state_rejects_invalid_month(self):
+        responses=[];self.handler.send_json=lambda payload,status=200:responses.append((payload,status))
+        self.handler.form=lambda:{"mese":"nope","chiuso":"1"}
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            collaborator_id=conn.execute("INSERT INTO collaborators(name,active,created_at,updated_at) VALUES(?,?,?,?)",("Collab Invalid",1,app.now(),app.now())).lastrowid
+        self.handler.save_collaborator_month_state(admin,collaborator_id)
+        self.assertEqual(responses[-1],({"ok":False,"error":"Mese non valido."},400))
+
+    def test_balance_toggle_details_syncs_expanded_section_into_real_url(self):
+        # Richiesta esplicita dell'utente: il ritorno indietro (con
+        # qualunque modalita' - tasto del gestionale, gesture/tasto del
+        # telefono, tasto del browser) deve ritrovare Bilanci con la
+        # sezione ancora espansa, non ricollassata. Stesso pattern
+        # history.replaceState gia' usato da Calendario/Cremazioni.
+        self.assertIn("function balanceToggleDetails(summaryEl){",app.APP_JS)
+        self.assertIn("detailsSection.dataset.selectedBalanceSection",app.APP_JS)
+        self.assertIn("if(collapsed)url.searchParams.delete('view');else url.searchParams.set('view',sectionKey);",app.APP_JS)
+        self.assertIn("history.replaceState(null,'',url);",app.APP_JS)
+
+    def test_balance_practice_rows_build_return_to_dynamically_from_current_url(self):
+        # Il return_to non deve piu' essere congelato al path/query letti
+        # al render (che non conoscerebbero un'espansione fatta via JS
+        # dopo il caricamento, senza reload): va ricalcolato al click
+        # dalla URL reale corrente, gia' sincronizzata da
+        # balanceToggleDetails.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,total_service)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                ("CR-BILROWDYN","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Gino","Cremazione singola","Pagato","100","100")).lastrowid
+            app.create_balance_movement(conn,amount_cents=10000,movement_date=datetime.now().date().isoformat(),category="W",ledger_section="Entrata",
+                                         movement_type="Incasso completo",payment_method="Pos",description="test",source="test",
+                                         practice_id=pid,idempotency_key="test-bilanci-dyn-1",created_by=admin["id"])
+        rendered=[];self.handler.send_html=lambda content,*a:rendered.append(content)
+        self.handler.path="/bilanci?view=entrate-w&periodo=tutto"
+        self.handler.balances_page(admin)
+        page=rendered[-1]
+        self.assertIn(f"onclick=\"location.href='/pratiche/{pid}?return_to='+encodeURIComponent(location.pathname+location.search)\"",page)
+        # la riga cliccabile stessa non deve piu' portare un return_to
+        # congelato al render (resta invece invariato per "Elimina", che
+        # e' un'azione immediata sulla stessa pagina, non un round trip
+        # lista->dettaglio->indietro).
+        row_start=page.index("balance-clickable-row")
+        row_snippet=page[row_start:row_start+400]
+        self.assertNotIn("return_to=%2Fbilanci",row_snippet)
+
     def test_archive_rows_carry_practice_id_and_flash_free_restore_script(self):
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
@@ -5545,24 +6116,248 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(f'data-practice-id="{pid}"',page)
         self.assertIn('<div id="archiveList">',page)
         self.assertIn("visibility:hidden",app.CSS)
-        self.assertIn(f"ppm_archive_state:{admin['id']}",page)
-        self.assertIn("isBack",page)
-        self.assertIn("archive-row-highlight",page)
+        # Il ripristino scroll/ricerca/riga evidenziata è consolidato nel
+        # sistema unico PPM_LIST_PAGES/setupListStateRestore (condiviso, in
+        # app.APP_JS) - non più uno script dedicato scritto qui: la chiave
+        # per-utente e l'evidenziazione riga sono ora opzioni di config.
+        self.assertIn("'/archivio/pratiche':{detail:/^\\/pratiche\\/\\d+/,perUser:true,revealId:'archiveList',rowHighlight:{className:'archive-row-highlight',fadeClassName:'archive-row-fade',removeDelayMs:2600}}",app.APP_JS)
+        self.assertIn("isBack",app.APP_JS)
+        self.assertIn("archive-row-highlight",app.APP_JS)
         self.assertIn("fetch('/archivio/mese-stato'",page)
         import inspect
         self.assertIn('if path == "/archivio/mese-stato": return self.save_archive_month_state(user)',inspect.getsource(app.App._route_post))
 
     def test_list_scroll_and_filter_state_restore_is_wired_for_all_target_pages(self):
-        for path in ("/calendario", "/clienti", "/veterinari", "/catalogo-urne", "/ordini/storico"):
+        # Sistema unico consolidato (era 3 implementazioni quasi identiche:
+        # questa generica + una copia in Fatture + una in Archivio): tutte
+        # le pagine lista/vista che portano a un dettaglio e poi tornano
+        # indietro sono ora registrate in un solo posto, Archivio e Fatture
+        # incluse.
+        for path in ("/calendario", "/clienti", "/veterinari", "/collaboratori", "/catalogo-urne",
+                     "/ordini/storico", "/smaltimenti", "/programma-cremazioni", "/fatture", "/archivio/pratiche"):
             self.assertIn(f"'{path}':", app.APP_JS)
-        # Archivio ha una propria implementazione dedicata (vedi test_archive_*
-        # sotto), non usa più il sistema condiviso PPM_LIST_PAGES.
-        self.assertNotIn("'/archivio/pratiche':", app.APP_JS)
         self.assertIn("extraInputs:['urnCatalogSearch']", app.APP_JS)
+        self.assertIn("skipScrollWhenParam:'open_cycle'", app.APP_JS)
+        self.assertIn("perUser:true", app.APP_JS)
         self.assertIn("function setupListStateRestore(){", app.APP_JS)
         self.assertIn("document.addEventListener('DOMContentLoaded', setupListStateRestore);", app.APP_JS)
         self.assertIn("sessionStorage.setItem(key,JSON.stringify(state));", app.APP_JS)
         self.assertIn("location.replace(location.pathname+state.search);", app.APP_JS)
+        # open_cycle e' l'unico URL param usato per lo skip generico: se il
+        # generico non si fermasse davanti a lui, il primo confronto
+        # search-salvata-vs-corrente lo cancellerebbe con un location.replace
+        # prima che cremationOpenPendingCycle possa leggerlo (bug reale
+        # trovato e corretto durante la verifica dal vivo di questa modifica).
+        self.assertIn("const skipGenericRestore=cfg.skipScrollWhenParam && new URLSearchParams(location.search).has(cfg.skipScrollWhenParam);", app.APP_JS)
+        self.assertIn("if(isBack && !skipGenericRestore){", app.APP_JS)
+
+    def test_layout_renders_user_id_on_body_for_per_user_state_keys(self):
+        # data-user-id sul <body> e' quello che permette a perUser:true
+        # (Fatture/Archivio) di costruire una chiave sessionStorage separata
+        # per utente, letta lato client da document.body.dataset.userId.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        page = app.layout("Test", "<main></main>", admin)
+        self.assertIn(f'data-user-id="{admin["id"]}"', page)
+
+    def test_calendar_appointment_card_and_add_button_carry_dynamic_return_to(self):
+        # Prima di questa modifica nessuno dei due passava mai return_to:
+        # tornando dal dettaglio evento o annullando il wizard "Nuovo evento"
+        # si ricadeva sempre su "oggi", perdendo il giorno/settimana da cui
+        # si era partiti. return_to e' calcolato lato client (non nel markup
+        # server-side) per riflettere anche uno swipe fatto senza reload
+        # (calendarSyncUrlToDay aggiorna solo l'URL via replaceState).
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute(
+                """INSERT INTO calendar_events(event_type,title,animal_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO TEST","Fido","2026-07-20T10:00:00","2026-07-20T10:30:00","Da confermare",admin["id"],stamp,stamp),
+            ).lastrowid
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/calendario?data=2026-07-20"
+        self.handler.calendar_page(admin)
+        page = rendered[-1]
+        self.assertIn(
+            f"onclick=\"location.href='/calendario/{event_id}?return_to='+encodeURIComponent(location.pathname+location.search)\"",
+            page,
+        )
+        self.assertIn(
+            f"onclick=\"event.preventDefault();location.href=this.getAttribute('href')+'?return_to='+encodeURIComponent(location.pathname+location.search)\">Apri dettaglio</a>",
+            page,
+        )
+        self.assertIn(
+            "onclick=\"event.preventDefault();location.href=this.getAttribute('href')+'&return_to='+encodeURIComponent(location.pathname+location.search)\">"
+            + app.lucide("plus") + "<span>Aggiungi ritiro / riconsegna</span></a>",
+            page,
+        )
+
+    def test_calendar_week_sentinel_navigation_is_reversible(self):
+        # Caso esplicito segnalato dall'utente: oggi giovedi', sono sulla
+        # card di domenica, swipe avanti attraversa il confine settimana
+        # (arrivo a lunedi' della settimana successiva), swipe indietro deve
+        # riportare ESATTAMENTE alla domenica di partenza, non al giorno
+        # corrente. Lo swipe stesso e' puro client-side (mai toccato da
+        # questa modifica) - qui si blinda che la matematica server-side
+        # delle sentinelle (view_url) che lo swipe attraversa resta
+        # simmetrica: avanti-poi-indietro riporta al giorno esatto.
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        self.handler.path = "/calendario?data=2026-09-13"
+        self.handler.calendar_page(admin)
+        page = rendered[-1]
+        self.assertIn('data-href="/calendario?vista=giorno&data=2026-09-14"', page)
+        rendered.clear()
+        self.handler.path = "/calendario?vista=giorno&data=2026-09-14"
+        self.handler.calendar_page(admin)
+        page = rendered[-1]
+        self.assertIn('data-href="/calendario?vista=giorno&data=2026-09-13"', page)
+
+    def test_cremation_url_sync_uses_real_daybar_attribute_not_calendar_date(self):
+        # Bug reale trovato durante la verifica dal vivo: cremationSyncUrlToDay
+        # era stata scritta per analogia con calendarSyncUrlToDay usando
+        # dataset.date, ma la daybar di Cremazioni porta realmente
+        # data-cremation-day (vedi daybar_cards.append), MAI data-date - con
+        # l'attributo sbagliato la funzione usciva sempre in silenzio
+        # (dataset.date sempre undefined) e l'URL non veniva mai sincronizzato,
+        # quindi un vero "indietro" del browser (gesture nativa, non i nostri
+        # link) tornava sempre al giorno con cui la pagina era stata caricata
+        # la prima volta, mai a quello su cui l'utente si trovava dopo lo swipe.
+        sync_fn_src = app.APP_JS.split("function cremationSyncUrlToDay(idx){", 1)[1].split("\n}", 1)[0]
+        self.assertIn("card.dataset.cremationDay", sync_fn_src)
+        self.assertNotIn("card.dataset.date", sync_fn_src)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/programma-cremazioni?vista=settimana&data=2026-09-07"
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn('data-cremation-day="2026-09-07"', page)
+
+    def test_cremation_day_swipe_and_cycle_expand_sync_real_url_for_native_back_gesture(self):
+        # I due bug segnalati dall'utente dopo il primo giro di correzioni:
+        # il bottone "Indietro" funzionava ma il gesture nativo iOS no (va
+        # alla history REALE del browser, non a un nostro link costruito ad
+        # hoc), e lo swipe fra i giorni di Cremazioni non aveva alcun
+        # equivalente di calendarSyncUrlToDay - l'URL reale della pagina non
+        # rifletteva mai il giorno/ciclo effettivamente visibile. Qui si
+        # blinda che entrambe le funzioni di sincronizzazione esistono e sono
+        # cablate nei punti giusti (non solo che esistono da qualche parte).
+        self.assertIn("function cremationSyncUrlToDay(idx){", app.APP_JS)
+        self.assertIn("function cremationSyncUrlToExpanded(){", app.APP_JS)
+        # cremationSelectDay deve sincronizzare solo quando NON instant (lo
+        # stesso esatto pattern di calendarSelectDay/calendarSyncUrlToDay -
+        # instant e' usato solo al caricamento iniziale, dove sincronizzare
+        # sarebbe un no-op ma comunque una scrittura history superflua).
+        self.assertIn("if(!opts.instant)cremationSyncUrlToDay(idx);", app.APP_JS)
+        # L'IntersectionObserver dello swipe deve chiamarla ad ogni giorno che
+        # diventa visibile (non solo l'evidenziazione della daybar).
+        self.assertIn("cremationSetActiveDaybarCard(dIdx,false);\n        cremationSyncUrlToDay(dIdx);", app.APP_JS)
+        # cremationToggleCycleCard deve sincronizzare open_cycle nell'URL reale
+        # ad ogni espandi/collassa, non solo scriverlo dentro un return_to.
+        self.assertIn("cremationSyncUrlToExpanded();\n}", app.APP_JS)
+        # cremationOpenPendingCycle non deve piu' ripulire subito open_cycle
+        # dall'URL (lo faceva prima con un replaceState manuale): ora la
+        # pulizia/scrittura e' delegata interamente a cremationSyncUrlToExpanded
+        # chiamata dal toggle, cosi' l'URL resta sempre coerente con lo stato
+        # realmente visibile, utile anche per un vero "indietro" successivo.
+        self.assertNotIn("params.delete('open_cycle');\n  const cleanQuery=params.toString();", app.APP_JS)
+
+    def test_cremation_week_sentinel_navigation_is_reversible(self):
+        # Bug reale segnalato dall'utente dopo il round precedente: da
+        # domenica, swipe avanti (attraversa il confine settimana, arriva
+        # a lunedi' della settimana successiva) poi swipe indietro doveva
+        # riportare ESATTAMENTE alla domenica di partenza, ma riportava
+        # sempre al giorno corrente. Causa doppia: (1) la sentinella
+        # iniziale puntava a "data=lunedi' della settimana precedente"
+        # invece che al giorno immediatamente precedente (la domenica),
+        # perdendo quale giorno esatto restaurare; (2) anche quando l'URL
+        # portava la domenica giusta, il giorno evidenziato all'apertura
+        # (board_date) ignorava sempre il parametro "data" e sceglieva
+        # "oggi" ogni volta che oggi cadeva in quella settimana - come nel
+        # caso di questo test, dove "oggi" (2026-09-10, giovedi') cade
+        # proprio nella settimana 07-13 settembre.
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        # Settimana 07-13 settembre 2026 (domenica = 13), avanti attraversa
+        # a lunedi' 14 settembre (settimana successiva).
+        self.handler.path = "/programma-cremazioni?vista=settimana&data=2026-09-13"
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn('data-href="/programma-cremazioni?vista=settimana&data=2026-09-14"', page)
+        # La domenica (indice 6 della settimana Lun-Dom) deve essere il
+        # giorno iniziale, dato che e' esattamente quella richiesta.
+        self.assertIn('data-initial-day-index="6"', page)
+        rendered.clear()
+        # Dalla settimana successiva, la sentinella indietro deve puntare
+        # esattamente alla domenica di partenza (13), non al lunedi' di
+        # quella stessa settimana precedente (07, il vecchio bug).
+        self.handler.path = "/programma-cremazioni?vista=settimana&data=2026-09-14"
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn('data-href="/programma-cremazioni?vista=settimana&data=2026-09-13"', page)
+        self.assertNotIn('data-href="/programma-cremazioni?vista=settimana&data=2026-09-07"', page)
+        rendered.clear()
+        # Ricaricando esattamente l'URL a cui la sentinella indietro punta,
+        # il giorno evidenziato deve essere la domenica (indice 6), non
+        # oggi (giovedi', indice 3 in questa stessa settimana).
+        self.handler.path = "/programma-cremazioni?vista=settimana&data=2026-09-13"
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn('data-initial-day-index="6"', page)
+        self.assertNotIn('data-initial-day-index="3"', page)
+
+    def test_cremation_animal_row_open_cycle_only_when_assigned_to_a_cycle(self):
+        # waiting_card_html (animali in attesa, non ancora in un ciclo) non
+        # deve mai portare open_cycle - non c'e' nessun ciclo da riespandere.
+        # animal_row_html (dentro un ciclo) invece si', sia in vista giorno
+        # che settimana (stesso practice_url, duplicato identico nelle due
+        # funzioni).
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            waiting_pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,
+                   created_at,updated_at,created_by,animal_name) VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("CR-WAIT1", "Privato", "Livorno", "Ritirato", "Cremazione singola", stamp, stamp, admin["id"], "Birba"),
+            ).lastrowid
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/programma-cremazioni"
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn(f'/pratiche/{waiting_pid}?return_to=', page)
+        self.assertNotIn(f'/pratiche/{waiting_pid}?return_to=%2Fprogramma-cremazioni%3Fopen_cycle', page)
+
+    def test_disposal_batch_detail_and_history_link_preserve_period_filters(self):
+        # Prima di questa modifica "Torna a Smaltimenti" e il link "Apri"
+        # dello storico erano entrambi statici: tornando allo storico si
+        # perdevano i filtri periodo (dal/al/stato) applicati prima.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,pickup_date,
+                   created_at,updated_at,created_by,service_type) VALUES(?,?,?,?,?,?,?,?,?)""",
+                ("PP-BATCHRT", "Privato", "Livorno", "Ritirato", "2026-07-15", stamp, stamp, admin["id"], "Cremazione collettiva"),
+            )
+        redirects = []; self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.path = "/smaltimenti?dal=2026-07-01&al=2026-07-31"
+        self.handler.form = lambda: {"dal": "2026-07-01", "al": "2026-07-31"}
+        self.handler.disposal_confirm(admin)
+        batch_id = int(redirects[-1].rsplit("/", 1)[-1])
+        rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
+        self.handler.path = "/smaltimenti?dal=2026-07-01&al=2026-07-31&stato=smaltito"
+        self.handler.disposal_page(admin)
+        page = rendered[-1]
+        self.assertIn(
+            f'href="/smaltimenti/storico/{batch_id}?return_to={quote(self.handler.path,safe="")}">Apri</a>',
+            page,
+        )
+        rendered.clear()
+        self.handler.path = f"/smaltimenti/storico/{batch_id}?return_to={quote('/smaltimenti?dal=2026-07-01&al=2026-07-31&stato=smaltito',safe='')}"
+        self.handler.disposal_batch_detail(admin, batch_id)
+        page = rendered[-1]
+        self.assertIn('href="/smaltimenti?dal=2026-07-01&amp;al=2026-07-31&amp;stato=smaltito">Torna a Smaltimenti</a>', page)
 
     def test_pdf_urn_inventory_is_imported_once_with_exact_totals(self):
         with app.db() as conn:
@@ -6228,16 +7023,27 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn(".practice-row-link.row-selected td:first-child{background:#502d40!important}",app.CSS)
         self.assertIn(".light-theme .practice-row-link.row-selected td:first-child{background:#fde3e7!important}",app.CSS)
 
-    def test_recent_practice_card_shows_light_border_highlight_when_selected(self):
-        # bug segnalato dall'utente: la card "Ultime pratiche" della Dashboard
-        # usa lo stesso meccanismo click-per-selezionare/doppio click-per-aprire
-        # delle righe tabella, ma non aveva nessuno stile per il primo click,
-        # quindi sembrava che il click non facesse nulla. La riga tabella usa
-        # un outline pesante + sfondo tinto: qui la richiesta esplicita e' un
-        # bordo leggero, non pesante.
-        self.assertIn(".recent-practice-card.row-selected{border-color:#ef405f80}",app.CSS)
-        self.assertIn(".light-theme .recent-practice-card.row-selected{border-color:#ef405f66}",app.CSS)
-        self.assertIn("document.querySelectorAll('.row-selected').forEach(other=>other.classList.remove('row-selected'));",app.APP_JS)
+    def test_recent_practice_card_opens_practice_on_a_single_click(self):
+        # Cambio intenzionale (richiesta esplicita dell'utente): le pratiche
+        # nella card "Ultime 10 pratiche" della Dashboard devono aprirsi con
+        # UN click, non con il meccanismo condiviso click-per-selezionare/
+        # secondo-click-per-aprire (row_open_attrs/practiceRowSelect) usato
+        # altrove nel gestionale (Archivio, Fatture) dove serve a non aprire
+        # per sbaglio una pratica mentre si modifica un campo inline nella
+        # riga. Questa card non ha campi inline modificabili, quindi non
+        # serve quella protezione. row_open_attrs() resta invariato per
+        # tutte le altre liste - qui si usa direttamente practiceRowOpen().
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,animal_name,species) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                                ("CR-DASHCLICK","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Gino","Fido","Cane")).lastrowid
+        rendered=[];self.handler.send_html=lambda content,*a:rendered.append(content)
+        self.handler.path="/"
+        self.handler.dashboard(admin)
+        page=rendered[-1]
+        self.assertIn(f'''onclick="practiceRowOpen('/pratiche/{pid}?return_to=''',page)
+        self.assertNotIn(f'''onclick="practiceRowSelect(this,event,'/pratiche/{pid}''',page)
 
     def test_archive_page_always_shows_financial_columns(self):
         with app.db() as conn:
@@ -6278,9 +7084,15 @@ class PetParadiseTests(unittest.TestCase):
             self.assertEqual((row["invoice_number"],row["make_invoice"]),("FT-INLINE-1","Si"))
             other_pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
                          invoice_number) VALUES(?,?,?,?,?,?,?,?)""",("CR-OTHERINV","Privato","Livorno","Ritirato",app.now(),app.now(),admin["id"],"FT-INLINE-1")).lastrowid
+        # Cambio intenzionale: un numero fattura puo' essere condiviso da
+        # piu' pratiche diverse (richiesta esplicita dell'utente), quindi
+        # il salvataggio con un numero gia' usato da un'altra pratica ora
+        # deve riuscire, non essere rifiutato.
         self.handler.form=lambda:{"invoice_number":"FT-INLINE-1","ajax":"1"};self.handler.quick_invoice(admin,other_pid)
-        self.assertEqual(responses[-1][1],400)
-        self.assertIn("già usato",responses[-1][0]["error"])
+        self.assertEqual(responses[-1],({"ok":True,"invoice_number":"FT-INLINE-1","make_invoice":"Si"},200))
+        with app.db() as conn:
+            row=conn.execute("SELECT invoice_number FROM practices WHERE id=?",(other_pid,)).fetchone()
+            self.assertEqual(row["invoice_number"],"FT-INLINE-1")
 
     def test_cremated_status_colors_only_label_and_ritirato_is_yellow(self):
         self.assertIn("Cremato",app.STATES)
@@ -7046,7 +7858,15 @@ class PetParadiseTests(unittest.TestCase):
             links=conn.execute("SELECT count(*) n FROM movement_invoice_links WHERE invoice_id=?",(invoice["id"],)).fetchone()["n"]
             self.assertEqual(links,2)
 
-    def test_invoice_conflict_blocks_duplicate_movement_invoice_number(self):
+    def test_multiple_practices_can_share_the_same_invoice_number_and_are_grouped_in_fatture(self):
+        # Cambio intenzionale (richiesta esplicita dell'utente): un numero
+        # fattura DEVE poter essere assegnato a piu' pratiche diverse (caso
+        # reale - un collaboratore porta piu' animali durante il mese,
+        # fatturati tutti insieme a fine mese con un'unica fattura).
+        # Storicamente questo salvataggio veniva rifiutato con "gia' usato";
+        # ora deve riuscire per entrambe le pratiche, ognuna mantenendo il
+        # proprio importo, e /fatture deve mostrarle raggruppate con un
+        # totale combinato pari alla SOMMA dei due importi (mai duplicato).
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             pid1=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
@@ -7054,19 +7874,29 @@ class PetParadiseTests(unittest.TestCase):
                                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-DUPINV1","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Sara","Cremazione singola","Da saldare","100","100")).lastrowid
             pid2=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
                                 owner_first_name,service_type,payment_status,price_cremation,total_service)
-                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-DUPINV2","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Piero","Cremazione singola","Da saldare","100","100")).lastrowid
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",("CR-DUPINV2","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Piero","Cremazione singola","Da saldare","150","150")).lastrowid
         responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
         self.handler.form=lambda:{"payment_status":"Pagato","payment_method":"Pos","payment_amount":"100,00","payment_channel":"W","economic_at":"2026-07-19","saldo_invoice_number":"FT-DUP","saldo_invoice_total":"100,00","ajax":"1"}
         self.handler.quick_payment(admin,pid1)
         self.assertTrue(responses[-1][0]["ok"])
-        self.handler.form=lambda:{"payment_status":"Pagato","payment_method":"Pos","payment_amount":"100,00","payment_channel":"W","economic_at":"2026-07-20","saldo_invoice_number":"FT-DUP","saldo_invoice_total":"100,00","ajax":"1"}
+        self.handler.form=lambda:{"payment_status":"Pagato","payment_method":"Pos","payment_amount":"150,00","payment_channel":"W","economic_at":"2026-07-20","saldo_invoice_number":"FT-DUP","saldo_invoice_total":"150,00","ajax":"1"}
         self.handler.quick_payment(admin,pid2)
-        self.assertFalse(responses[-1][0]["ok"])
-        self.assertIn("già usato",responses[-1][0]["error"])
-        # Re-saving pid1's own saldo with the same number must still succeed (no false self-conflict)
-        self.handler.form=lambda:{"payment_status":"Pagato","payment_method":"Pos","payment_amount":"100,00","payment_channel":"W","economic_at":"2026-07-21","saldo_invoice_number":"FT-DUP","saldo_invoice_total":"100,00","ajax":"1"}
-        self.handler.quick_payment(admin,pid1)
         self.assertTrue(responses[-1][0]["ok"])
+        # Ogni pratica mantiene il proprio importo indipendente (nessuna
+        # somma erronea sui pagamenti delle singole pratiche).
+        with app.db() as conn:
+            inv1=conn.execute("SELECT invoice_total FROM movement_invoices WHERE practice_id=?",(pid1,)).fetchone()
+            inv2=conn.execute("SELECT invoice_total FROM movement_invoices WHERE practice_id=?",(pid2,)).fetchone()
+            self.assertEqual(inv1["invoice_total"],"100.00")
+            self.assertEqual(inv2["invoice_total"],"150.00")
+        rendered=[];self.handler.send_html=lambda content,*a:rendered.append(content);self.handler.path="/fatture"
+        self.handler.invoices_page(admin)
+        page=rendered[-1]
+        self.assertIn("Fatture condivise tra più pratiche",page)
+        self.assertIn("CR-DUPINV1",page)
+        self.assertIn("CR-DUPINV2",page)
+        # Totale combinato = 100+150 = 250,00 — mai 300 (niente duplicazione).
+        self.assertIn("250,00",page)
 
     def test_practice_summary_shows_editable_metodo_dropdown_saved_via_ajax(self):
         with app.db() as conn:
@@ -7871,18 +8701,42 @@ class PetParadiseTests(unittest.TestCase):
         # on CR-000063: a settlement's ledger movement_type is derived live
         # from has_acconto_row ("Incasso completo" with no acconto on file,
         # "Saldo" once one exists). Registering the acconto *after* the
-        # settlement already exists flips that label, so the next
-        # correction pass can no longer find the existing ledger row by its
-        # (now different) expected movement_type and falls into the
-        # "bootstrap" branch — which used a completely fixed idempotency_key
-        # with no amount/date component, guaranteed to collide the moment a
-        # second such bootstrap ever fired with a different amount.
+        # settlement already exists flips that label. This used to make
+        # correct_balance_movement_date's lookup miss the existing ledger
+        # row and fall into a "bootstrap" branch that created a genuine
+        # SECOND active row under the new label — the same defect later
+        # found for real on practice #213 (its ledger ended up with both
+        # an active "Saldo" and an active "Incasso completo" row for the
+        # same payment, doubling its recorded total). The bootstrap's
+        # idempotency_key was later made to vary by amount/date so at
+        # least a second bootstrap wouldn't collide/raise — but the
+        # duplicate row itself was still created every time.
+        #
+        # find_active_receipt_movement (Fase 10C) now treats "Saldo" and
+        # "Incasso completo" as the same phase when SEARCHING for the
+        # existing row, so the label flip no longer creates a duplicate at
+        # all: resubmitting the same settlement finds and reuses the
+        # original row instead of bootstrapping a new one under the new
+        # label — this test now verifies that root-cause behaviour
+        # directly, instead of only the since-superseded key-collision
+        # mitigation.
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
             pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
                                 owner_first_name,service_type,payment_status,total_text)
                                 VALUES(?,?,?,?,?,?,?,?,?,?,?)""",("CR-DRIFT","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Vera","Cremazione singola","Da saldare","320")).lastrowid
         responses=[];self.handler.send_json=lambda obj,status=200:responses.append((obj,status))
+
+        def active_settlement_rows():
+            with app.db() as conn:
+                return conn.execute(
+                    """SELECT movement_type,amount_cents,idempotency_key FROM balance_movements b
+                       WHERE b.practice_id=? AND b.ledger_section='Entrata' AND b.amount_cents>0
+                         AND b.movement_type IN ('Saldo','Incasso completo')
+                         AND NOT EXISTS(SELECT 1 FROM balance_movements r WHERE r.related_movement_id=b.id AND r.movement_type='Storno')""",
+                    (pid,),
+                ).fetchall()
+
         # settlement registered first, with no acconto on file yet -> ledger
         # row is labeled "Incasso completo"
         self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-21","saldo_totale":"320,00","saldo_circuito":"D","ajax":"1"}
@@ -7892,19 +8746,33 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.form=lambda:{"macroarea":"acconto","acconto_data":"2026-07-21","acconto_totale":"100,00","acconto_circuito":"D","ajax":"1"}
         self.handler.save_payment_macroarea(admin,pid)
         self.assertTrue(responses[-1][0]["ok"],responses[-1])
-        # resubmitting the unchanged saldo now expects a "Saldo"-labeled
-        # ledger row, finds none (only "Incasso completo" exists) and must
-        # bootstrap one instead of raising
+        # resubmitting the unchanged saldo now recomputes the label as
+        # "Saldo", but must find and reuse the existing "Incasso completo"
+        # row — not bootstrap a duplicate under the new label.
         self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-21","saldo_totale":"320,00","saldo_circuito":"D","ajax":"1"}
         self.handler.save_payment_macroarea(admin,pid)
         self.assertTrue(responses[-1][0]["ok"],responses[-1])
-        with app.db() as conn:
-            bootstrapped=conn.execute("SELECT idempotency_key FROM balance_movements WHERE practice_id=? AND movement_type='Saldo' AND amount_cents>0",(pid,)).fetchone()
-        self.assertIsNotNone(bootstrapped)
-        # the key must vary with amount and date, not be a fixed string —
-        # otherwise a second bootstrap with a different amount collides
-        self.assertIn("32000",bootstrapped["idempotency_key"])
-        self.assertIn("2026-07-21",bootstrapped["idempotency_key"])
+        rows=active_settlement_rows()
+        self.assertEqual(len(rows),1,rows)
+        self.assertEqual((rows[0]["movement_type"],rows[0]["amount_cents"]),("Incasso completo",32000))
+
+        # A settlement correction that genuinely changes amount AND date
+        # still goes through the normal append-only correction path
+        # (reversal + replacement for the date, then again for the
+        # amount) — still exactly one active row afterwards, and the
+        # correction keys (unrelated to the removed bootstrap path) still
+        # vary by date/amount by construction.
+        self.handler.form=lambda:{"macroarea":"saldo","saldo_data":"2026-07-22","saldo_totale":"325,00","saldo_circuito":"D","ajax":"1"}
+        self.handler.save_payment_macroarea(admin,pid)
+        self.assertTrue(responses[-1][0]["ok"],responses[-1])
+        rows=active_settlement_rows()
+        self.assertEqual(len(rows),1,rows)
+        self.assertEqual((rows[0]["movement_type"],rows[0]["amount_cents"]),("Incasso completo",32500))
+        # Key derived from the actual amounts involved (via
+        # correct_balance_movement_amount, reached after the date
+        # correction above) — not a fixed string, so a later correction
+        # with yet another amount cannot collide with this one.
+        self.assertIn("32500",rows[0]["idempotency_key"])
 
     def test_channel_paid_amount_ignores_legacy_payment_movements_uses_real_ledger(self):
         # CR-000063 production reality: payment_movements had accumulated
@@ -8581,7 +9449,11 @@ class PetParadiseTests(unittest.TestCase):
         page=rendered[-1]
         recent_start=page.index('<section class="dashboard-recent">')
         recent_section=page[recent_start:page.index('</section>',recent_start)]
-        self.assertIn(f"practiceRowSelect(this,event,'/pratiche/{pid}?return_to=%2F')",recent_section)
+        # Cambio intenzionale (richiesta esplicita dell'utente): apertura
+        # con un solo click, non piu' click-per-selezionare/secondo-click-
+        # per-aprire (vedi test_recent_practice_card_opens_practice_on_a_single_click).
+        self.assertIn(f"practiceRowOpen('/pratiche/{pid}?return_to=%2F')",recent_section)
+        self.assertNotIn("practiceRowSelect",recent_section)
         self.assertIn('class="recent-practice-chevron"',recent_section)
 
     def test_practice_list_table_css_uses_rounded_spaced_premium_rows(self):
@@ -8884,6 +9756,76 @@ class PetParadiseTests(unittest.TestCase):
         # overflowed the filters card by ~12px even with min-width:0 and
         # flex-wrap - only forcing them to stack vertically fixed it.
         self.assertIn(".balance-date-range{flex-direction:column;align-items:stretch}.balance-date-range input{width:100%}",app.CSS)
+
+    def test_revenue_by_quote_category_aggregates_real_quote_line_items_no_duplication(self):
+        # Ricavi per voce del preventivo: le vere voci economiche (6 campi
+        # prezzo piatti su practices + le 3 categorie reali di
+        # practice_items), mai stime. Il totale per categoria deve
+        # sommare esattamente a zero duplicazione (somma delle voci =
+        # somma dei singoli importi inseriti).
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            pid=conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                                owner_first_name,service_type,payment_status,price_cremation,price_pickup,price_night,pickup_date)
+                                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                ("CR-REVCAT1","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"Rino","Cremazione singola","Da saldare","100","20","15","2026-06-15")).lastrowid
+            conn.execute("INSERT INTO practice_items(practice_id,category,label,price,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",(pid,"urna","Urna base","50","0",stamp,stamp))
+            conn.execute("INSERT INTO practice_items(practice_id,category,label,price,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",(pid,"accessorio","Ciondolo","10","0",stamp,stamp))
+            totals=dict(app.revenue_by_quote_category(conn,"2026-06-01","2026-06-30"))
+        self.assertEqual(totals["Cremazione"],100.0)
+        self.assertEqual(totals["Ritiro"],20.0)
+        self.assertEqual(totals["Notturno"],15.0)
+        self.assertEqual(totals["Urne"],50.0)
+        self.assertEqual(totals["Accessori"],10.0)
+        self.assertEqual(totals["Calchi"],0.0)
+        self.assertEqual(sum(totals.values()),195.0)
+
+    def test_revenue_by_quote_category_sums_multiple_practices_and_respects_period(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                            owner_first_name,service_type,payment_status,price_cremation,pickup_date)
+                            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            ("CR-REVCAT-IN1","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"A","Cremazione singola","Da saldare","100","2026-06-05"))
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                            owner_first_name,service_type,payment_status,price_cremation,pickup_date)
+                            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            ("CR-REVCAT-IN2","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"B","Cremazione singola","Da saldare","50","2026-06-20"))
+            # Fuori periodo: non deve contribuire al totale.
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                            owner_first_name,service_type,payment_status,price_cremation,pickup_date)
+                            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            ("CR-REVCAT-OUT","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"C","Cremazione singola","Da saldare","999","2026-07-05"))
+            totals=dict(app.revenue_by_quote_category(conn,"2026-06-01","2026-06-30"))
+        self.assertEqual(totals["Cremazione"],150.0)
+
+    def test_revenue_by_quote_category_uses_created_at_fallback_for_historical_practices(self):
+        # Dati storici: una pratica senza pickup_date (creata prima che il
+        # campo esistesse, o mai valorizzato) deve comunque essere
+        # conteggiata usando created_at, non persa dall'aggregazione.
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                            owner_first_name,service_type,payment_status,price_cremation,pickup_date)
+                            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            ("CR-REVCAT-HIST","Privato","Livorno","Ritirato","2026-05-10T09:00:00","2026-05-10T09:00:00",admin["id"],"D","Cremazione singola","Da saldare","75",""))
+            totals=dict(app.revenue_by_quote_category(conn,"2026-05-01","2026-05-31"))
+        self.assertEqual(totals["Cremazione"],75.0)
+
+    def test_bilanci_page_shows_revenue_by_quote_category_section(self):
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone();stamp=app.now()
+            conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                            owner_first_name,service_type,payment_status,price_cremation,pickup_date)
+                            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            ("CR-REVCAT-PAGE","Privato","Livorno","Ritirato",stamp,stamp,admin["id"],"E","Cremazione singola","Da saldare","240","2026-06-12"))
+        rendered=[];self.handler.send_html=lambda content,*a:rendered.append(content)
+        self.handler.path="/bilanci?data_iniziale=2026-06-01&data_finale=2026-06-30"
+        self.handler.balances_page(admin)
+        page=rendered[-1]
+        self.assertIn("Ricavi per voce del preventivo",page)
+        self.assertIn("Cremazione",page)
+        self.assertIn("240,00",page)
 
     def test_bilanci_elimina_button_really_deletes_legacy_synthesized_rows(self):
         # Practices created before the balance_movements ledger existed only
@@ -10854,6 +11796,277 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn('calendar-icon-amber', page)
         self.assertIn('09:00 → 09:30', page)
 
+    def test_calendar_detail_riepilogo_shows_every_real_preventivo_voice_not_just_total(self):
+        # Richiesta esplicita dell'utente: il riepilogo evento (tab
+        # dettagli) deve mostrare le SINGOLE VOCI reali del preventivo
+        # compilate in creazione, non solo il totale. Scenario esatto
+        # dell'esempio fornito: Cremazione 150, Urna 80, Accessorio 25,
+        # Ritiro 30, Notturno 50 -> totale 335, nessuna voce inventata,
+        # nessuna ricostruita dal totale, nessuna duplicazione.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO VOCI TEST","Livorno","Filippo","2026-07-30T09:00:00","2026-07-30T09:30:00","Da ritirare",admin["id"],stamp,stamp)).lastrowid
+            voci = [("Cremazione","150"),("Urna","80"),("Accessorio","25"),("Ritiro","30"),("Notturno","50")]
+            for i,(desc,amount) in enumerate(voci):
+                conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                             (event_id,desc,amount,i,stamp,stamp))
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(admin, event_id)
+        page = rendered[-1]
+        for desc, amount_it in (("Cremazione","150,00"),("Urna","80,00"),("Accessorio","25,00"),("Ritiro","30,00"),("Notturno","50,00")):
+            self.assertIn(f'<span class="calendar-estimate-preset">{desc}</span><span style="margin-left:auto;font-weight:700">', page)
+            self.assertIn(amount_it, page)
+        self.assertEqual(page.count('class="calendar-estimate-row-v2"'), 5)  # nessuna duplicazione
+        self.assertIn("335,00", page)  # totale = somma reale delle voci
+        # il quick-edit a importo unico non deve piu' essere presente
+        # quando ci sono gia' voci reali (distruggerebbe i dati)
+        self.assertNotIn(f'action="/calendario/{event_id}/preventivo"', page)
+
+    def test_calendar_detail_riepilogo_preventivo_single_voice(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO UNA VOCE TEST","Livorno","Filippo","2026-07-30T09:00:00","2026-07-30T09:30:00","Da ritirare",admin["id"],stamp,stamp)).lastrowid
+            conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                         (event_id,"Cremazione","150",0,stamp,stamp))
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(admin, event_id)
+        page = rendered[-1]
+        self.assertEqual(page.count('class="calendar-estimate-row-v2"'), 1)
+        self.assertIn("Cremazione", page)
+        self.assertIn("150,00", page)
+
+    def test_calendar_detail_riepilogo_preventivo_custom_voice_shows_free_description(self):
+        # Voce personalizzata ("Altro" nel wizard): deve comparire con la
+        # sua vera descrizione libera, mai sostituita da una categoria
+        # generica.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO VOCE PERSONALIZZATA TEST","Livorno","Filippo","2026-07-30T09:00:00","2026-07-30T09:30:00","Da ritirare",admin["id"],stamp,stamp)).lastrowid
+            conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                         (event_id,"Trasporto extra fuori zona","45",0,stamp,stamp))
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(admin, event_id)
+        page = rendered[-1]
+        self.assertIn("Trasporto extra fuori zona", page)
+        self.assertIn("45,00", page)
+
+    def test_calendar_detail_riepilogo_preventivo_empty_keeps_quick_add_form(self):
+        # Nessuna voce ancora presente: il quick-add di un importo unico
+        # resta disponibile (non c'e' nulla di reale da distruggere).
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO SENZA PREVENTIVO TEST","Livorno","Filippo","2026-07-30T09:00:00","2026-07-30T09:30:00","Da ritirare",admin["id"],stamp,stamp)).lastrowid
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(admin, event_id)
+        page = rendered[-1]
+        self.assertIn(f'action="/calendario/{event_id}/preventivo"', page)
+        self.assertNotIn('class="calendar-estimate-row-v2"', page)
+
+    def test_calendar_detail_riepilogo_preventivo_reopens_correctly_after_edit_elsewhere(self):
+        # Apertura dopo salvataggio, chiusura/riapertura, modifica di
+        # un'altra parte dell'evento (operatore) e riapertura del
+        # riepilogo: le voci del preventivo devono restare identiche e
+        # correttamente recuperate ogni volta dalla stessa fonte dati.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO RIAPERTURA TEST","Livorno","Filippo","2026-07-30T09:00:00","2026-07-30T09:30:00","Da ritirare",admin["id"],stamp,stamp)).lastrowid
+            conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                         (event_id,"Cremazione","150",0,stamp,stamp))
+            conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                         (event_id,"Urna","80",1,stamp,stamp))
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(admin, event_id)
+        first_open = rendered[-1]
+        self.assertIn("Cremazione", first_open)
+        self.assertIn("Urna", first_open)
+        # modifica di un'altra parte dell'evento (non correlata al preventivo)
+        redirects = []
+        self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.headers = {"Referer": f"/calendario/{event_id}?tab=dettagli"}
+        self.handler.form = lambda: {"operator_name": "Serena"}
+        self.handler.calendar_event_action(admin, event_id, "operatore")
+        rendered.clear()
+        self.handler.calendar_event_detail(admin, event_id)
+        reopened = rendered[-1]
+        self.assertEqual(reopened.count('class="calendar-estimate-row-v2"'), 2)
+        self.assertIn("Cremazione", reopened)
+        self.assertIn("Urna", reopened)
+        self.assertIn("230,00", reopened)
+
+    def _create_event_with_estimates(self, admin, title, voci):
+        with app.db() as conn:
+            stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro",title,"Livorno","Filippo","2026-07-30T09:00:00","2026-07-30T09:30:00","Ritirato",admin["id"],stamp,stamp)).lastrowid
+            for i, (desc, amount) in enumerate(voci):
+                conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                             (event_id, desc, amount, i, stamp, stamp))
+        return event_id
+
+    def test_map_calendar_estimates_to_practice_prefill_maps_every_voice_to_its_field(self):
+        # Richiesta esplicita dell'utente: mapping deterministico voce per
+        # voce (mai solo il totale). Scenario esatto dell'esempio fornito:
+        # Cremazione 150, Urna 80, Accessori 25, Ritiro 30, Notturno 50.
+        estimates = [
+            {"description": "Cremazione", "amount": 150},
+            {"description": "Urna", "amount": 80},
+            {"description": "Accessori", "amount": 25},
+            {"description": "Ritiro", "amount": 30},
+            {"description": "Notturno", "amount": 50},
+        ]
+        flat, items = app.map_calendar_estimates_to_practice_prefill(estimates)
+        self.assertEqual(flat, {"price_cremation": "150.00", "price_pickup": "30.00", "price_night": "50.00"})
+        self.assertEqual(items["urna"], [{"subtype": "", "urn_catalog_id": None, "label": "Urna", "price": "80.00"}])
+        self.assertEqual(items["accessorio"], [{"subtype": "", "urn_catalog_id": None, "label": "Accessori", "price": "25.00"}])
+        self.assertEqual(items["calco"], [])
+
+    def test_map_calendar_estimates_to_practice_prefill_skips_uncompiled_zero_amount_voices(self):
+        # Le 4 voci preimpostate di default nel wizard (Cremazione, Ritiro,
+        # Riconsegna, Urna) vengono salvate anche se l'utente non le tocca
+        # (importo 0) - non devono valorizzare il campo corrispondente
+        # nella pratica.
+        estimates = [
+            {"description": "Cremazione", "amount": 150},
+            {"description": "Ritiro", "amount": 0},
+            {"description": "Riconsegna", "amount": 0},
+            {"description": "Urna", "amount": 0},
+        ]
+        flat, items = app.map_calendar_estimates_to_practice_prefill(estimates)
+        self.assertEqual(flat, {"price_cremation": "150.00"})
+        self.assertEqual(items["urna"], [])
+
+    def test_map_calendar_estimates_to_practice_prefill_keeps_custom_voice_as_accessorio(self):
+        # Voce personalizzata (tipicamente "Altro" col wizard, descrizione
+        # libera): non deve essere persa - finisce come Accessori con la
+        # sua vera descrizione originale.
+        estimates = [{"description": "Trasporto extra fuori zona", "amount": 45}]
+        flat, items = app.map_calendar_estimates_to_practice_prefill(estimates)
+        self.assertEqual(flat, {})
+        self.assertEqual(items["accessorio"], [{"subtype": "", "urn_catalog_id": None, "label": "Trasporto extra fuori zona", "price": "45.00"}])
+
+    def test_nuova_pratica_form_is_prefilled_with_every_event_preventivo_voice(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        event_id = self._create_event_with_estimates(admin, "RITIRO PREFILL TEST", [
+            ("Cremazione", "150"), ("Urna", "80"), ("Accessorio", "25"), ("Ritiro", "30"), ("Notturno", "50"),
+        ])
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/nuova?calendar_event_id={event_id}"
+        self.handler.new_page(admin)
+        page = rendered[-1]
+        self.assertIn('name="price_cremation" value="150.00"', page)
+        self.assertIn('name="price_pickup" value="30.00"', page)
+        self.assertIn('name="price_night" value="50.00"', page)
+        self.assertIn('name="price_delivery" value=""', page)
+        self.assertIn('name="price_evening" value=""', page)
+        self.assertIn('name="price_holiday" value=""', page)
+        self.assertIn('"urna": [{"subtype": "", "urn_catalog_id": null, "label": "Urna", "price": "80.00"}]', page)
+        self.assertIn('"accessorio": [{"subtype": "", "urn_catalog_id": null, "label": "Accessorio", "price": "25.00"}]', page)
+
+    def test_practice_created_from_event_keeps_each_voice_in_its_own_field_no_duplication(self):
+        # Criterio di completamento esplicito dell'utente: ogni voce
+        # dell'evento deve ritrovarsi nel CORRISPONDENTE campo della
+        # pratica generata, non solo un totale corretto.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        event_id = self._create_event_with_estimates(admin, "RITIRO E2E TEST", [
+            ("Cremazione", "150"), ("Urna", "80"), ("Accessorio", "25"), ("Ritiro", "30"), ("Notturno", "50"),
+        ])
+        redirects = []
+        self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.form = lambda: {
+            "calendar_event_id": str(event_id),
+            "operator_name": "FILIPPO", "request_origin": "Collaboratore", "collaborator_name": "COLLAB TEST",
+            "destination_branch": "Livorno", "animal_name": "Fido", "service_type": "Cremazione singola",
+            "price_cremation": "150.00", "price_pickup": "30.00", "price_night": "50.00",
+            "urna_items_json": json.dumps([{"subtype": "", "urn_catalog_id": "", "label": "Urna", "price": "80.00"}]),
+            "accessorio_items_json": json.dumps([{"subtype": "", "urn_catalog_id": "", "label": "Accessorio", "price": "25.00"}]),
+            "calco_items_json": "[]",
+            "balance_idempotency_key": "evt-transfer-test-1",
+        }
+        self.handler.create_practice(admin)
+        self.assertTrue(redirects, "creazione pratica fallita")
+        pid = int(redirects[-1].split("/pratiche/")[1])
+        with app.db() as conn:
+            p = conn.execute("SELECT * FROM practices WHERE id=?", (pid,)).fetchone()
+            items = {row["category"]: (row["label"], row["price"]) for row in conn.execute("SELECT category,label,price FROM practice_items WHERE practice_id=?", (pid,)).fetchall()}
+            ev = conn.execute("SELECT linked_practice_id FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+        # ogni voce nel campo corrispondente, non solo il totale
+        self.assertEqual(p["price_cremation"], "150.00")
+        self.assertEqual(p["price_pickup"], "30.00")
+        self.assertEqual(p["price_night"], "50.00")
+        self.assertEqual(p["price_delivery"], "")  # non compilata nell'evento -> vuota
+        self.assertEqual(p["price_evening"], "")
+        self.assertEqual(p["price_holiday"], "")
+        self.assertEqual(items["urna"], ("Urna", "80.00"))
+        self.assertEqual(items["accessorio"], ("Accessorio", "25.00"))
+        self.assertNotIn("calco", items)
+        # totale corretto, nessuna duplicazione
+        self.assertEqual(app.effective_total(p), 335.0)
+        self.assertEqual(ev["linked_practice_id"], pid)
+        # coerenza con i ricavi per voce gia' implementati: stessa fonte
+        # dati (practices/practice_items), nessuna sovrapposizione o
+        # duplicazione con calendar_event_estimate_items.
+        with app.db() as conn:
+            totals = dict(app.revenue_by_quote_category(conn, "2020-01-01", "2030-12-31"))
+        self.assertEqual(totals["Cremazione"], 150.0)
+        self.assertEqual(totals["Urne"], 80.0)
+        self.assertEqual(totals["Accessori"], 25.0)
+        self.assertEqual(totals["Ritiro"], 30.0)
+        self.assertEqual(totals["Notturno"], 50.0)
+        # chiusura e riapertura della pratica: le voci restano identiche
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.practice(admin, pid)
+        reopened = rendered[-1]
+        self.assertIn("150", reopened)
+
+    def test_practice_created_from_event_with_only_one_voice_leaves_others_empty(self):
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        event_id = self._create_event_with_estimates(admin, "RITIRO SOLO CREMAZIONE TEST", [("Cremazione", "150")])
+        redirects = []
+        self.handler.redirect = lambda path: redirects.append(path)
+        self.handler.form = lambda: {
+            "calendar_event_id": str(event_id),
+            "operator_name": "FILIPPO", "request_origin": "Collaboratore", "collaborator_name": "COLLAB TEST",
+            "destination_branch": "Livorno", "animal_name": "Fido", "service_type": "Cremazione singola",
+            "price_cremation": "150.00",
+            "balance_idempotency_key": "evt-transfer-test-2",
+        }
+        self.handler.create_practice(admin)
+        pid = int(redirects[-1].split("/pratiche/")[1])
+        with app.db() as conn:
+            p = conn.execute("SELECT * FROM practices WHERE id=?", (pid,)).fetchone()
+            items_count = conn.execute("SELECT count(*) n FROM practice_items WHERE practice_id=?", (pid,)).fetchone()["n"]
+        self.assertEqual(p["price_cremation"], "150.00")
+        for field in ("price_pickup", "price_delivery", "price_evening", "price_night", "price_holiday"):
+            self.assertEqual(p[field], "")
+        self.assertEqual(items_count, 0)
+        self.assertEqual(app.effective_total(p), 150.0)
+
     def test_calendar_created_celebration_uses_premium_particles_not_confetti(self):
         # richiesta esplicita dell'utente: sostituire l'animazione coriandoli
         # con particelle luminose eleganti che convergono a formare la
@@ -11172,19 +12385,19 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.calendar_event_action(admin, event_id, "data-ora")
         self.assertIn("non pu", rendered[-1])
 
-    def test_calendar_detail_quick_edit_preventivo_replaces_items_with_single_total(self):
-        # richiesta utente: anche il preventivo deve potersi salvare subito
-        # dal riepilogo con un unico importo, senza toccare la logica a voci
-        # multiple gia' usata dal wizard (parse_items/sync_children).
+    def test_calendar_detail_quick_edit_preventivo_replaces_single_total(self):
+        # Il quick-edit a importo unico dal riepilogo resta valido SOLO
+        # quando il preventivo e' gia' composto da al massimo una voce
+        # generica (caso "nessun preventivo ancora" o "un unico importo
+        # gia' inserito cosi'") - non tocca la logica a voci multiple del
+        # wizard (parse_items/sync_children).
         with app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
             event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,location_type,address,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
                 ("Ritiro","RITIRO PREVENTIVO TEST","Livorno","Veterinario","Via Roma 45","Filippo","2026-07-29T09:30:00","2026-07-29T18:00:00","Da ritirare",admin["id"],stamp,stamp)).lastrowid
             conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",
-                         (event_id,"Cremazione","80",0,stamp,stamp))
-            conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",
-                         (event_id,"Urna","40",1,stamp,stamp))
+                         (event_id,"Preventivo","80",0,stamp,stamp))
         redirects = []
         self.handler.redirect = lambda path: redirects.append(path)
         self.handler.headers = {"Referer": f"/calendario/{event_id}?tab=dettagli"}
@@ -11196,6 +12409,36 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(rows[0]["description"], "Preventivo")
         self.assertEqual(float(rows[0]["amount"]), 150.0)
         self.assertIn("saved=preventivo", redirects[-1])
+
+    def test_calendar_detail_quick_edit_preventivo_refuses_to_overwrite_multiple_real_items(self):
+        # Cambio intenzionale (bug reale segnalato dall'utente): con piu' di
+        # una voce reale gia' presente (es. Cremazione + Urna), il
+        # quick-edit a importo unico NON deve piu' cancellarle e
+        # sostituirle con un'unica riga generica - perdita di dati. Deve
+        # rifiutare il salvataggio e lasciare le voci intatte; la modifica
+        # di un preventivo a voci multiple passa da "Modifica evento".
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute("""INSERT INTO calendar_events(event_type,title,zone,location_type,address,operator_name,start_at,end_at,event_status,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro","RITIRO PREVENTIVO MULTI TEST","Livorno","Veterinario","Via Roma 45","Filippo","2026-07-29T09:30:00","2026-07-29T18:00:00","Da ritirare",admin["id"],stamp,stamp)).lastrowid
+            conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                         (event_id,"Cremazione","80",0,stamp,stamp))
+            conn.execute("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                         (event_id,"Urna","40",1,stamp,stamp))
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.form = lambda: {"amount": "150"}
+        self.handler.calendar_event_action(admin, event_id, "preventivo")
+        with app.db() as conn:
+            rows = conn.execute("SELECT description,amount FROM calendar_event_estimate_items WHERE event_id=? ORDER BY sort_order", (event_id,)).fetchall()
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["description"], "Cremazione")
+        self.assertEqual(float(rows[0]["amount"]), 80.0)
+        self.assertEqual(rows[1]["description"], "Urna")
+        self.assertEqual(float(rows[1]["amount"]), 40.0)
+        self.assertIn("Modifica evento", rendered[-1])
 
     def test_calendar_detail_quick_edit_tipo_evento_reuses_normalize_event(self):
         # richiesta utente: anche Tipo evento deve modificarsi rapidamente
@@ -13705,6 +14948,400 @@ class PetParadiseTests(unittest.TestCase):
             note = conn.execute("SELECT title,text FROM notifications WHERE type='system_error' ORDER BY id DESC LIMIT 1").fetchone()
         self.assertIsNotNone(note)
         self.assertIn("rete non disponibile", note["text"])
+
+
+class AIAssistantTests(unittest.TestCase):
+    """Assistente AI del gestionale: livello di strumenti (mai un numero
+    inventato - ogni tool esegue una query reale sulla stessa base dati/
+    logica del resto della V1) + l'endpoint di chat (LLM sempre mockato nei
+    test: non deve mai partire una vera chiamata di rete) + il widget
+    flottante (icona trascinabile, posizione per utente, overlay sulla
+    pagina corrente - mai una pagina separata)."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.old = (app.DATA, app.DB_PATH, app.DDT_DIR)
+        app.DATA = Path(self.temp.name)
+        app.DB_PATH = app.DATA / "test.db"
+        app.DDT_DIR = app.DATA / "ddt"
+        app.init_db()
+        self.handler = object.__new__(app.App)
+        self.ai = app.ai_assistant
+        with app.db() as c:
+            self.admin = c.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+
+    def tearDown(self):
+        app.DATA, app.DB_PATH, app.DDT_DIR = self.old
+        self.temp.cleanup()
+
+    def _insert_practice(self, c, **overrides):
+        stamp = overrides.pop("created_at", "2026-09-10T09:00:00")
+        fields = {
+            "practice_number": overrides.pop("practice_number", f"CR-AI-{overrides.pop('_n', 1)}"),
+            "request_origin": "Privato", "destination_branch": "Livorno", "status": "Ritirato",
+            "animal_name": "Fido", "species": "Cane", "owner_first_name": "Mario", "owner_last_name": "Rossi",
+            "pickup_date": "2026-09-10", "total_service": "250", "total_service_manual": "Si", "total_text": "", "deposit": "100",
+            "remaining_balance": "150", "payment_status": "Acconto", "created_at": stamp, "updated_at": stamp,
+        }
+        fields.update(overrides)
+        cols = ",".join(fields.keys())
+        marks = ",".join("?" for _ in fields)
+        return c.execute(f"INSERT INTO practices({cols}) VALUES({marks})", list(fields.values())).lastrowid
+
+    def test_resolve_period_covers_relative_tokens_in_rome_timezone(self):
+        now = app.rome_now()
+        today = now.date()
+        d_from, d_to, _ = self.ai.resolve_period(now, "oggi")
+        self.assertEqual((d_from, d_to), (today.isoformat(), today.isoformat()))
+        d_from, d_to, _ = self.ai.resolve_period(now, "ieri")
+        self.assertEqual((d_from, d_to), ((today - timedelta(days=1)).isoformat(),) * 2)
+        d_from, d_to, _ = self.ai.resolve_period(now, "domani")
+        self.assertEqual((d_from, d_to), ((today + timedelta(days=1)).isoformat(),) * 2)
+        monday = today - timedelta(days=today.weekday())
+        d_from, d_to, _ = self.ai.resolve_period(now, "questa_settimana")
+        self.assertEqual((d_from, d_to), (monday.isoformat(), (monday + timedelta(days=6)).isoformat()))
+        d_from, d_to, _ = self.ai.resolve_period(now, "ultimi_7_giorni")
+        self.assertEqual((d_from, d_to), ((today - timedelta(days=6)).isoformat(), today.isoformat()))
+        d_from, d_to, label = self.ai.resolve_period(now, data_da="2026-09-10", data_a="2026-09-20")
+        self.assertEqual((d_from, d_to), ("2026-09-10", "2026-09-20"))
+        self.assertIn("2026", label)
+        # optional=True senza alcun periodo -> nessun filtro, non un errore
+        d_from, d_to, label = self.ai.resolve_period(now, optional=True)
+        self.assertIsNone(d_from); self.assertIsNone(d_to); self.assertIsNone(label)
+        # periodo mancante e non opzionale -> errore chiaro, mai un valore indovinato
+        with self.assertRaises(self.ai.ToolInputError):
+            self.ai.resolve_period(now)
+        with self.assertRaises(self.ai.ToolInputError):
+            self.ai.resolve_period(now, "questo_mese_che_non_esiste")
+        with self.assertRaises(self.ai.ToolInputError):
+            self.ai.resolve_period(now, data_da="2026-09-20", data_a="2026-09-10")
+
+    def test_conta_pratiche_and_cerca_pratiche_use_real_data_only(self):
+        with app.db() as c:
+            self._insert_practice(c, _n=1, practice_number="CR-AI-1", destination_branch="Livorno", animal_name="Fido", owner_first_name="Mario", owner_last_name="Rossi", pickup_date="2026-09-05")
+            self._insert_practice(c, _n=2, practice_number="CR-AI-2", destination_branch="Empoli", animal_name="Micio", owner_first_name="Anna", owner_last_name="Bianchi", pickup_date="2026-09-08")
+        tool = next(t for t in self.ai.TOOL_SPECS if t["name"] == "conta_pratiche")["handler"]
+        now = app.rome_now()
+        with app.db() as c:
+            result = tool(c, self.admin, now, {"periodo": "intervallo_personalizzato", "data_da": "2026-09-01", "data_a": "2026-09-30"})
+            self.assertEqual(result["conteggio"], 2)
+            result = tool(c, self.admin, now, {"periodo": "intervallo_personalizzato", "data_da": "2026-09-01", "data_a": "2026-09-30", "sede": "Empoli"})
+            self.assertEqual(result["conteggio"], 1)
+            result = tool(c, self.admin, now, {"periodo": "intervallo_personalizzato", "data_da": "2026-09-01", "data_a": "2026-09-30", "cliente_nome": "Bianchi"})
+            self.assertEqual(result["conteggio"], 1)
+            # una sede inesistente e' un errore esplicito, mai un conteggio a caso
+            with self.assertRaises(self.ai.ToolInputError):
+                tool(c, self.admin, now, {"periodo": "intervallo_personalizzato", "data_da": "2026-09-01", "data_a": "2026-09-30", "sede": "Marte"})
+        search = next(t for t in self.ai.TOOL_SPECS if t["name"] == "cerca_pratiche")["handler"]
+        detail = next(t for t in self.ai.TOOL_SPECS if t["name"] == "dettaglio_pratica")["handler"]
+        with app.db() as c:
+            found = search(c, self.admin, now, {"query": "Micio"})
+            self.assertEqual(found["totale_trovati"], 1)
+            self.assertEqual(found["risultati"][0]["numero_pratica"], "CR-AI-2")
+            d = detail(c, self.admin, now, {"numero_pratica": "CR-AI-1"})
+            self.assertEqual(d["sede"], "Livorno")
+            self.assertEqual(d["circuito_economico"], "W")
+            self.assertAlmostEqual(d["totale"], 250.0)
+            self.assertAlmostEqual(d["rimanenza"], 150.0)
+            with self.assertRaises(self.ai.ToolInputError):
+                detail(c, self.admin, now, {"numero_pratica": "NON-ESISTE"})
+
+    def test_conta_cremazioni_ritiri_riconsegne_filter_by_sede_and_stato(self):
+        with app.db() as c:
+            stamp = "2026-09-10T09:00:00"
+            cid = c.execute(
+                "INSERT INTO cremation_cycles(cycle_date,status,planned_start,planned_end,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("2026-09-12", "completato", "2026-09-12T08:00:00", "2026-09-12T09:00:00", stamp, stamp),
+            ).lastrowid
+            self._insert_practice(c, _n=1, practice_number="CR-AI-CREM", destination_branch="Livorno", cremation_cycle_id=cid, pickup_date="2026-09-10")
+            c.execute(
+                """INSERT INTO calendar_events(event_type,title,zone,start_at,end_at,all_day,event_status,operator_name,animal_name,created_by,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro", "Ritiro Fido", "Empoli", "2026-09-11T10:00:00", "2026-09-11T11:00:00", 0, "Da ritirare", "Serena", "Fido", self.admin["id"], stamp, stamp),
+            )
+            c.execute(
+                """INSERT INTO calendar_events(event_type,title,zone,start_at,end_at,all_day,event_status,operator_name,animal_name,created_by,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("Riconsegna in sede", "Riconsegna Micio", "Livorno", "2026-09-13T15:00:00", "2026-09-13T15:30:00", 0, "In programma", "Alessio", "Micio", self.admin["id"], stamp, stamp),
+            )
+        now = app.rome_now()
+        params = {"periodo": "intervallo_personalizzato", "data_da": "2026-09-01", "data_a": "2026-09-30"}
+        crem = next(t for t in self.ai.TOOL_SPECS if t["name"] == "conta_cremazioni")["handler"]
+        ritiri = next(t for t in self.ai.TOOL_SPECS if t["name"] == "conta_ritiri")["handler"]
+        riconsegne = next(t for t in self.ai.TOOL_SPECS if t["name"] == "conta_riconsegne")["handler"]
+        with app.db() as c:
+            self.assertEqual(crem(c, self.admin, now, params)["conteggio"], 1)
+            self.assertEqual(crem(c, self.admin, now, {**params, "sede": "Livorno"})["conteggio"], 1)
+            self.assertEqual(crem(c, self.admin, now, {**params, "sede": "Empoli"})["conteggio"], 0)
+            self.assertEqual(crem(c, self.admin, now, {**params, "stato": "pianificato"})["conteggio"], 0)
+            self.assertEqual(ritiri(c, self.admin, now, params)["conteggio"], 1)
+            self.assertEqual(ritiri(c, self.admin, now, {**params, "sede": "Empoli"})["conteggio"], 1)
+            self.assertEqual(ritiri(c, self.admin, now, {**params, "sede": "Livorno"})["conteggio"], 0)
+            self.assertEqual(riconsegne(c, self.admin, now, params)["conteggio"], 1)
+            self.assertEqual(riconsegne(c, self.admin, now, {**params, "tipo": "Riconsegna in sede"})["conteggio"], 1)
+            self.assertEqual(riconsegne(c, self.admin, now, {**params, "tipo": "Riconsegna"})["conteggio"], 0)
+
+    def test_ricavi_per_voce_preventivo_reuses_the_existing_bilanci_function(self):
+        with app.db() as c:
+            self._insert_practice(c, _n=1, practice_number="CR-AI-VOCE", price_cremation="120", pickup_date="2026-09-10")
+        tool = next(t for t in self.ai.TOOL_SPECS if t["name"] == "ricavi_per_voce_preventivo")["handler"]
+        now = app.rome_now()
+        with app.db() as c:
+            result = tool(c, self.admin, now, {"periodo": "intervallo_personalizzato", "data_da": "2026-09-01", "data_a": "2026-09-30"})
+            cremazione = next(r for r in result["ricavi"] if r["voce"] == "Cremazione")
+            self.assertAlmostEqual(cremazione["totale"], 120.0)
+            filtered = tool(c, self.admin, now, {"periodo": "intervallo_personalizzato", "data_da": "2026-09-01", "data_a": "2026-09-30", "voce": "Cremazione"})
+            self.assertEqual(len(filtered["ricavi"]), 1)
+            with self.assertRaises(self.ai.ToolInputError):
+                tool(c, self.admin, now, {"voce": "Voce inesistente"})
+
+    def test_vendite_urne_aggregates_practice_items_by_model(self):
+        with app.db() as c:
+            stamp = "2026-09-10T09:00:00"
+            urn_id = c.execute(
+                "INSERT INTO urns(name,price,quantity,created_at,updated_at) VALUES(?,?,?,?,?)",
+                ("Classica Noce", "80", 10, stamp, stamp),
+            ).lastrowid
+            pid = self._insert_practice(c, _n=1, practice_number="CR-AI-URNA", pickup_date="2026-09-10")
+            c.execute(
+                "INSERT INTO practice_items(practice_id,category,urn_catalog_id,label,price,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                (pid, "urna", urn_id, "Classica Noce", "80", stamp, stamp),
+            )
+        tool = next(t for t in self.ai.TOOL_SPECS if t["name"] == "vendite_urne")["handler"]
+        now = app.rome_now()
+        with app.db() as c:
+            result = tool(c, self.admin, now, {"periodo": "intervallo_personalizzato", "data_da": "2026-09-01", "data_a": "2026-09-30"})
+            self.assertEqual(result["totale_unita"], 1)
+            self.assertEqual(result["vendite_per_modello"][0]["modello"], "Classica Noce")
+            self.assertAlmostEqual(result["vendite_per_modello"][0]["ricavo"], 80.0)
+
+    def test_pratiche_saldo_aperto_lists_only_practices_with_a_real_open_balance(self):
+        with app.db() as c:
+            self._insert_practice(c, _n=1, practice_number="CR-AI-APERTO", total_service="300", deposit="0", remaining_balance="300", payment_status="Da saldare", pickup_date="2026-09-10")
+            self._insert_practice(c, _n=2, practice_number="CR-AI-SALDATO", total_service="300", deposit="300", remaining_balance="0", payment_status="Pagato", pickup_date="2026-09-10")
+        tool = next(t for t in self.ai.TOOL_SPECS if t["name"] == "pratiche_saldo_aperto")["handler"]
+        now = app.rome_now()
+        with app.db() as c:
+            result = tool(c, self.admin, now, {"alla_data": "2026-09-30"})
+        numbers = [e["numero_pratica"] for e in result["esempi"]]
+        self.assertIn("CR-AI-APERTO", numbers)
+        self.assertNotIn("CR-AI-SALDATO", numbers)
+
+    def test_turni_ferie_reperibilita_use_the_real_shift_schema(self):
+        today = date.today()
+        monday = today - timedelta(days=today.weekday())
+        with app.db() as c:
+            app.upsert_shift(c, "Serena", monday.isoformat(), "Livorno", "09:00", "13:00", False, self.admin["id"])
+        turni = next(t for t in self.ai.TOOL_SPECS if t["name"] == "turni_operatori")["handler"]
+        now = app.rome_now()
+        with app.db() as c:
+            result = turni(c, self.admin, now, {"data": monday.isoformat()})
+        self.assertTrue(any(t["operatore"] == "Serena" and t["sede"] == "Livorno" for t in result["turni"]))
+        reperibilita = next(t for t in self.ai.TOOL_SPECS if t["name"] == "reperibilita_settimana")["handler"]
+        with app.db() as c:
+            result = reperibilita(c, self.admin, now, {"data": monday.isoformat()})
+        self.assertEqual(result["settimana_dal"], monday.isoformat())
+        self.assertIn(result["operatore_reperibile"], (None,) + app.SHIFT_OPERATORS)
+
+    def test_cerca_cliente_e_pratiche_per_veterinario_e_collaboratore(self):
+        with app.db() as c:
+            stamp = "2026-09-10T09:00:00"
+            client_id = c.execute(
+                "INSERT INTO clients(first_name,last_name,phone,created_at,updated_at) VALUES(?,?,?,?,?)",
+                ("Giulia", "Verdi", "3331112222", stamp, stamp),
+            ).lastrowid
+            self._insert_practice(c, _n=1, practice_number="CR-AI-CLIENTE", client_id=client_id, pickup_date="2026-09-10")
+            vet_id = c.execute(
+                "INSERT INTO veterinarians(clinic_name,active,created_at,updated_at) VALUES(?,?,?,?)",
+                ("Clinica Toscana", 1, stamp, stamp),
+            ).lastrowid
+            self._insert_practice(c, _n=2, practice_number="CR-AI-VET", veterinarian_id=vet_id, pickup_date="2026-09-10")
+            collab_id = c.execute(
+                "INSERT INTO collaborators(name,active,created_at,updated_at) VALUES(?,?,?,?)",
+                ("Onoranze Esempio", 1, stamp, stamp),
+            ).lastrowid
+            self._insert_practice(c, _n=3, practice_number="CR-AI-COLLAB", collaborator_id=collab_id, request_origin="Collaboratore", pickup_date="2026-09-10")
+        now = app.rome_now()
+        cerca_cliente = next(t for t in self.ai.TOOL_SPECS if t["name"] == "cerca_cliente")["handler"]
+        pratiche_vet = next(t for t in self.ai.TOOL_SPECS if t["name"] == "pratiche_per_veterinario")["handler"]
+        pratiche_collab = next(t for t in self.ai.TOOL_SPECS if t["name"] == "pratiche_per_collaboratore")["handler"]
+        with app.db() as c:
+            result = cerca_cliente(c, self.admin, now, {"query": "Verdi"})
+            self.assertEqual(result["clienti"][0]["numero_pratiche"], 1)
+            result = pratiche_vet(c, self.admin, now, {"veterinario_nome": "Toscana"})
+            self.assertEqual(result["risultati"][0]["numero_pratiche"], 1)
+            result = pratiche_collab(c, self.admin, now, {"collaboratore_nome": "Onoranze"})
+            self.assertEqual(result["risultati"][0]["numero_pratiche"], 1)
+
+    def test_chat_endpoint_returns_503_when_anthropic_api_key_is_missing(self):
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": ""}):
+            self.handler.path = "/api/assistente/chat"
+            self.handler.headers = {"Content-Length": "0"}
+            captured = []
+            self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+            self.handler.rfile = io.BytesIO(json.dumps({"messaggio": "Quante pratiche abbiamo?", "cronologia": []}).encode())
+            self.handler.headers = {"Content-Length": str(len(json.dumps({"messaggio": "Quante pratiche abbiamo?", "cronologia": []}).encode()))}
+            self.handler.api_ai_chat(self.admin)
+        self.assertEqual(captured[-1][1], 503)
+        self.assertFalse(captured[-1][0]["ok"])
+        self.assertIn("ANTHROPIC_API_KEY", captured[-1][0]["error"])
+
+    def test_chat_endpoint_rejects_empty_or_oversized_message(self):
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
+            for payload in ({"messaggio": "", "cronologia": []}, {"messaggio": "x" * 2001, "cronologia": []}):
+                body = json.dumps(payload).encode()
+                self.handler.headers = {"Content-Length": str(len(body))}
+                self.handler.rfile = io.BytesIO(body)
+                captured = []
+                self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+                self.handler.api_ai_chat(self.admin)
+                self.assertEqual(captured[-1][1], 400)
+                self.assertFalse(captured[-1][0]["ok"])
+
+    def test_chat_endpoint_calls_a_real_tool_and_grounds_its_answer_never_inventing_a_number(self):
+        # Il modello e' sempre mockato nei test (nessuna vera chiamata di rete):
+        # verifichiamo che l'endpoint esegua davvero lo strumento richiesto
+        # dall'LLM (query reale sul database di test) e restituisca solo il
+        # testo finale del modello - mai un numero calcolato altrove.
+        with app.db() as c:
+            self._insert_practice(c, _n=1, practice_number="CR-AI-CHAT", pickup_date="2026-09-10")
+
+        class FakeBlock:
+            def __init__(self, d):
+                self._d = d
+
+            def model_dump(self):
+                return self._d
+
+        class FakeResponse:
+            def __init__(self, content, stop_reason):
+                self.content = [FakeBlock(b) for b in content]
+                self.stop_reason = stop_reason
+
+        tool_call = FakeResponse(
+            [{"type": "tool_use", "id": "tu1", "name": "conta_pratiche", "input": {}}],
+            "tool_use",
+        )
+        final = FakeResponse([{"type": "text", "text": "Risposta di prova basata sui dati."}], "end_turn")
+        mock_create = MagicMock(side_effect=[tool_call, final])
+        mock_client = MagicMock()
+        mock_client.messages.create = mock_create
+        body = json.dumps({"messaggio": "Quante pratiche abbiamo in totale?", "cronologia": []}).encode()
+        self.handler.headers = {"Content-Length": str(len(body))}
+        self.handler.rfile = io.BytesIO(body)
+        captured = []
+        self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
+            with patch("anthropic.Anthropic", return_value=mock_client):
+                self.handler.api_ai_chat(self.admin)
+        self.assertEqual(captured[-1][1], 200)
+        result = captured[-1][0]
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["risposta"], "Risposta di prova basata sui dati.")
+        # lo strumento e' stato davvero invocato con una query sul DB di test:
+        # il messaggio con il tool_result (indice 2: domanda, tool_use, tool_result,
+        # poi la risposta finale - lo stesso list object continua a crescere dopo
+        # la chiamata mockata, quindi va indicizzato per posizione fissa, non con
+        # -1) deve contenere il conteggio reale (1), mai un numero indovinato.
+        second_call_messages = mock_create.call_args_list[1].kwargs["messages"]
+        tool_result_content = second_call_messages[2]["content"][0]["content"]
+        self.assertIn('"conteggio": 1', tool_result_content)
+        self.assertEqual(len(result["cronologia"]), 4)
+
+    def test_chat_endpoint_tool_input_error_is_reported_not_invented(self):
+        class FakeBlock:
+            def __init__(self, d):
+                self._d = d
+
+            def model_dump(self):
+                return self._d
+
+        class FakeResponse:
+            def __init__(self, content, stop_reason):
+                self.content = [FakeBlock(b) for b in content]
+                self.stop_reason = stop_reason
+
+        bad_call = FakeResponse(
+            [{"type": "tool_use", "id": "tu1", "name": "conta_pratiche", "input": {"sede": "Marte"}}],
+            "tool_use",
+        )
+        final = FakeResponse(
+            [{"type": "text", "text": "Non posso determinare questo dato dai dati attualmente disponibili."}],
+            "end_turn",
+        )
+        mock_client = MagicMock()
+        mock_client.messages.create = MagicMock(side_effect=[bad_call, final])
+        body = json.dumps({"messaggio": "Quante pratiche a Marte?", "cronologia": []}).encode()
+        self.handler.headers = {"Content-Length": str(len(body))}
+        self.handler.rfile = io.BytesIO(body)
+        captured = []
+        self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
+            with patch("anthropic.Anthropic", return_value=mock_client):
+                self.handler.api_ai_chat(self.admin)
+        self.assertIn("Non posso determinare", captured[-1][0]["risposta"])
+
+    def test_chat_position_saves_independently_per_user(self):
+        with app.db() as c:
+            other_id = c.execute(
+                "INSERT INTO users(username,password_hash,display_name,role,active,must_change_password) VALUES(?,?,?,?,?,?)",
+                ("altro_operatore", app.password_hash("x"), "Altro", "operator", 1, 0),
+            ).lastrowid
+            other_user = c.execute("SELECT * FROM users WHERE id=?", (other_id,)).fetchone()
+        for user, x, y in ((self.admin, 0.9, 0.8), (other_user, 0.1, 0.2)):
+            body = json.dumps({"x_pct": x, "y_pct": y}).encode()
+            self.handler.headers = {"Content-Length": str(len(body))}
+            self.handler.rfile = io.BytesIO(body)
+            captured = []
+            self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+            self.handler.api_ai_chat_position(user)
+            self.assertTrue(captured[-1][0]["ok"])
+        admin_pos = json.loads(app.load_preferences(self.admin["id"])["ai_chat_fab_pos"])
+        other_pos = json.loads(app.load_preferences(other_user["id"])["ai_chat_fab_pos"])
+        self.assertAlmostEqual(admin_pos["x_pct"], 0.9)
+        self.assertAlmostEqual(other_pos["x_pct"], 0.1)
+        self.assertNotEqual(admin_pos, other_pos)
+
+    def test_chat_position_clamps_out_of_range_values(self):
+        body = json.dumps({"x_pct": 5, "y_pct": -3}).encode()
+        self.handler.headers = {"Content-Length": str(len(body))}
+        self.handler.rfile = io.BytesIO(body)
+        captured = []
+        self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+        self.handler.api_ai_chat_position(self.admin)
+        pos = json.loads(app.load_preferences(self.admin["id"])["ai_chat_fab_pos"])
+        self.assertEqual(pos["x_pct"], 1.0)
+        self.assertEqual(pos["y_pct"], 0.0)
+
+    def test_floating_widget_renders_identically_on_every_page_never_a_separate_route(self):
+        # Nessuna pagina/route dedicata (richiesta esplicita dell'utente): il
+        # widget e' iniettato una sola volta dentro layout(), quindi compare
+        # automaticamente su pagine di sezioni completamente diverse.
+        html_dashboard = app.layout("Dashboard", '<main class="wrap">Dashboard</main>', self.admin)
+        html_other = app.layout("Bilanci", '<main class="wrap">Bilanci</main>', self.admin)
+        for html in (html_dashboard, html_other):
+            self.assertIn('id="aiChatFab"', html)
+            self.assertIn('id="aiChatRoot" hidden', html)
+            self.assertIn('onclick="aiChatFabClick()"', html)
+        # nessuna route dedicata registrata per una pagina della chat
+        route_source = Path(app.__file__).read_text(encoding="utf-8")
+        self.assertNotIn('"/assistente"', route_source)
+        self.assertNotIn('"/assistente-ai"', route_source)
+        # senza utente autenticato il widget (markup HTML) non deve comparire -
+        # APP_JS resta condiviso su ogni pagina anche da sloggato (contiene le
+        # definizioni delle funzioni aiChat*, innocue senza l'elemento nel DOM),
+        # quindi il controllo e' sul markup dell'elemento, non sulla sottostringa.
+        html_logged_out = app.layout("Login", "<main></main>", None)
+        self.assertNotIn('id="aiChatFab"', html_logged_out)
+        self.assertNotIn('id="aiChatRoot"', html_logged_out)
+
+    def test_floating_widget_js_is_wired_on_every_page_load(self):
+        js = app.APP_JS
+        for fn in ("function aiChatToggle(", "function aiChatOpen(", "function aiChatClose(", "function aiChatApplyPos(", "function aiChatInit(", "function aiChatSend("):
+            self.assertIn(fn, js)
+        self.assertIn("document.addEventListener('DOMContentLoaded',aiChatInit);", js)
+        # riusa lo stesso linguaggio visivo (bolle) gia' usato per WhatsApp
+        self.assertIn("wa-bubble-row", js)
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@ from repositories.invoice_repository import InvoiceRepository
 from repositories.payment_repository import PaymentDeletionRepository, PaymentRepository
 from repositories.practice_repository import PracticeRepository
 from repositories.reference_repositories import CollaboratorRepository
-from schemas.payment import PaymentCreate, PracticeReconciliationRead
+from schemas.payment import PaymentCreate, PracticeInvoiceSummary, PracticePaymentsSummaryRead, PracticeReconciliationRead
 
 ENTITY_TYPE = "payment"
 INVOICE_ENTITY_TYPE = "invoice"
@@ -28,9 +28,30 @@ def _new_idempotency_key() -> str:
 async def register_payment(db: AsyncSession, data: PaymentCreate, *, actor_user_id: int) -> Payment:
     """FACT V1 (create_movement/balance_service.py): un pagamento e' sempre
     un INSERT puro sul ledger append-only - nessuna riga esistente viene
-    letta e poi decisa in base al suo valore, quindi nessun lock necessario
-    qui (a differenza di storno/cancellazione sotto, dove invece serve)."""
+    letta e poi decisa in base al suo valore per essere CORRETTA (quello
+    e' esattamente il pattern che ha causato la duplicazione reale trovata
+    in V1, pratica 213/CR-000148: una ricerca per etichetta mutevole che
+    poteva non trovare la riga giusta e crearne una seconda - qui non
+    esiste alcuna ricerca-e-correggi, ogni correzione e' storno+nuovo
+    inserimento, vedi reverse_payment sotto).
+
+    Idempotenza: se il chiamante fornisce idempotency_key, un retry con la
+    STESSA chiave restituisce il pagamento gia' registrato invece di
+    crearne un secondo - senza questo controllo, un retry di rete o un
+    doppio-click sulla stessa richiesta produce due righe attive per lo
+    stesso incasso reale, lo stesso sintomo della pratica 213 ma per una
+    via diversa (mai una ricerca per etichetta: qui e' un retry esatto
+    della stessa identica richiesta). Se idempotency_key non e' fornita,
+    il comportamento resta quello originale (chiave generata internamente,
+    nessuna deduplicazione per quella chiamata)."""
     ensure_nonzero_amount(data.amount_cents)
+
+    repo = PaymentRepository(db)
+
+    if data.idempotency_key:
+        existing = await repo.get_by_idempotency_key(data.idempotency_key)
+        if existing is not None:
+            return existing
 
     practice_number_snapshot = ""
     if data.practice_id is not None:
@@ -42,7 +63,6 @@ async def register_payment(db: AsyncSession, data: PaymentCreate, *, actor_user_
     if data.collaborator_id is not None and await CollaboratorRepository(db).get_by_id(data.collaborator_id) is None:
         raise NotFoundError(f"Collaboratore {data.collaborator_id} non trovato")
 
-    repo = PaymentRepository(db)
     audit = AuditRepository(db)
 
     payment = Payment(
@@ -56,11 +76,27 @@ async def register_payment(db: AsyncSession, data: PaymentCreate, *, actor_user_
         payment_method=data.payment_method,
         description=data.description,
         collaborator_id=data.collaborator_id,
-        idempotency_key=_new_idempotency_key(),
+        idempotency_key=data.idempotency_key or _new_idempotency_key(),
         created_by=actor_user_id,
     )
     repo.add(payment)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        # Race condition: due richieste concorrenti con la stessa
+        # idempotency_key hanno superato entrambe il controllo "existing
+        # is None" sopra; il vincolo UNIQUE a livello database (sempre
+        # presente, indipendentemente da questo controllo applicativo) fa
+        # fallire la seconda - qui non e' un errore da segnalare
+        # all'utente, e' esattamente il caso da rendere trasparente: si
+        # ritorna la riga che l'altra richiesta ha gia' committato.
+        await db.rollback()
+        if data.idempotency_key:
+            winner = await repo.get_by_idempotency_key(data.idempotency_key)
+            if winner is not None:
+                return winner
+        raise
+
     audit.record(entity_type=ENTITY_TYPE, entity_id=payment.id, action="created", user_id=actor_user_id)
 
     await db.commit()
@@ -265,3 +301,33 @@ async def get_practice_reconciliation(db: AsyncSession, practice_id: int) -> Pra
         residual_cents=total - paid_total,
         status=classify_payment_status(total, paid_total),
     )
+
+
+async def get_practices_payments_summary(db: AsyncSession, practice_ids: list[int]) -> list[PracticePaymentsSummaryRead]:
+    """Fase 'parita' visiva V2' (Lista Pratiche): riepilogo bulk per una
+    pagina di risultati, 2 query totali (una per i pagamenti, una per le
+    fatture) invece di N per pratica. Sola lettura - non e' la
+    riconciliazione (get_practice_reconciliation resta l'unica fonte per
+    il dettaglio di una singola pratica, invariata), non tocca
+    idempotenza/append-only/storno."""
+    if not practice_ids:
+        return []
+    paid_by_practice = await PaymentRepository(db).sum_paid_by_practice_ids(practice_ids)
+    acconto_by_practice = await PaymentRepository(db).sum_acconto_by_practice_ids(practice_ids)
+    invoices = await InvoiceRepository(db).list_for_practice_ids(practice_ids)
+    invoices_by_practice: dict[int, list[PracticeInvoiceSummary]] = {}
+    for invoice in invoices:
+        if invoice.practice_id is None:
+            continue
+        invoices_by_practice.setdefault(invoice.practice_id, []).append(
+            PracticeInvoiceSummary(invoice_number=invoice.invoice_number, total_amount_cents=invoice.total_amount_cents, channel=invoice.channel)
+        )
+    return [
+        PracticePaymentsSummaryRead(
+            practice_id=practice_id,
+            paid_total_cents=paid_by_practice.get(practice_id, 0),
+            acconto_total_cents=acconto_by_practice.get(practice_id, 0),
+            invoices=invoices_by_practice.get(practice_id, []),
+        )
+        for practice_id in practice_ids
+    ]

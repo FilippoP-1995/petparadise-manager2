@@ -10,6 +10,8 @@ import {
 import { useInvoicesForPractice, useLinkPaymentToInvoice } from "@/features/invoices/api";
 import { useAuth } from "@/features/auth/useAuth";
 import { euroStringToCents, formatMoney } from "@/shared/money";
+import { ConfirmModal } from "@/shared/ui/ConfirmModal";
+import { Modal } from "@/shared/ui/Modal";
 
 import { useDeletePayment, usePaymentsForPractice, usePracticeReconciliation, useRegisterPayment, useReversePayment } from "./api";
 import type { PaymentCreateInput } from "./api";
@@ -23,6 +25,18 @@ const STATUS_LABELS: Record<string, string> = {
 
 const COLLAB_LABELS: Record<string, string> = { da_fatturare: "Da fatturare", fatturato: "Fatturato" };
 
+// V1 (registrazione pagamento): un vero popup (.payment-popover/
+// .payment-dialog), non un form sempre visibile in fondo alla pagina.
+// La logica di invio/idempotenza e' identica a prima, solo il
+// contenitore visuale cambia (Modal condiviso).
+function RegisterPaymentModal({ practiceId, open, onClose }: { practiceId: number; open: boolean; onClose: () => void }) {
+  return (
+    <Modal open={open} onClose={onClose} title="Registra pagamento">
+      <RegisterPaymentForm practiceId={practiceId} onDone={onClose} />
+    </Modal>
+  );
+}
+
 function RegisterPaymentForm({ practiceId, onDone }: { practiceId: number; onDone: () => void }) {
   const registerPayment = useRegisterPayment();
   const [amountEuro, setAmountEuro] = useState("");
@@ -30,6 +44,13 @@ function RegisterPaymentForm({ practiceId, onDone }: { practiceId: number; onDon
   const [movementType, setMovementType] = useState("Acconto");
   const [movementDate, setMovementDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [error, setError] = useState<string | null>(null);
+  // Stessa chiave per l'intero tentativo di invio: un doppio-click o un
+  // retry di rete sulla STESSA richiesta arriva al backend con la stessa
+  // idempotency_key e viene riconosciuto come lo stesso pagamento (mai un
+  // secondo movimento attivo per lo stesso incasso - analisi Fase 10G sul
+  // caso pratica 213). Rigenerata solo dopo un invio riuscito, cosi' il
+  // pagamento successivo e' genuinamente un'operazione nuova.
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -47,8 +68,10 @@ function RegisterPaymentForm({ practiceId, onDone }: { practiceId: number; onDon
         ledger_section: "Entrata",
         movement_type: movementType,
         amount_cents: amountCents,
+        idempotency_key: idempotencyKey,
       });
       setAmountEuro("");
+      setIdempotencyKey(crypto.randomUUID());
       onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Operazione non riuscita");
@@ -56,23 +79,30 @@ function RegisterPaymentForm({ practiceId, onDone }: { practiceId: number; onDon
   }
 
   return (
-    <form className="field-row" onSubmit={handleSubmit}>
-      <input inputMode="decimal" placeholder="Importo €" value={amountEuro} onChange={(e) => setAmountEuro(e.target.value)} />
-      <select value={channel} onChange={(e) => setChannel(e.target.value as PaymentCreateInput["channel"])}>
-        <option value="W">W</option>
-        <option value="D">D</option>
-        <option value="Collaboratori">Collaboratori</option>
-      </select>
-      <select value={movementType} onChange={(e) => setMovementType(e.target.value)}>
-        <option value="Acconto">Acconto</option>
-        <option value="Saldo">Saldo</option>
-        <option value="Incasso completo">Incasso completo</option>
-      </select>
-      <input type="date" value={movementDate} onChange={(e) => setMovementDate(e.target.value)} />
-      <button className="btn" type="submit" disabled={registerPayment.isPending}>
-        Registra pagamento
-      </button>
+    <form onSubmit={handleSubmit}>
+      <div className="field-row">
+        <input inputMode="decimal" placeholder="Importo €" value={amountEuro} onChange={(e) => setAmountEuro(e.target.value)} />
+        <select value={channel} onChange={(e) => setChannel(e.target.value as PaymentCreateInput["channel"])}>
+          <option value="W">W</option>
+          <option value="D">D</option>
+          <option value="Collaboratori">Collaboratori</option>
+        </select>
+        <select value={movementType} onChange={(e) => setMovementType(e.target.value)}>
+          <option value="Acconto">Acconto</option>
+          <option value="Saldo">Saldo</option>
+          <option value="Incasso completo">Incasso completo</option>
+        </select>
+        <input type="date" value={movementDate} onChange={(e) => setMovementDate(e.target.value)} />
+      </div>
       {error && <p className="field-error">{error}</p>}
+      <div className="actions" style={{ marginTop: 16, justifyContent: "flex-end" }}>
+        <button type="button" className="btn-ghost" onClick={onDone}>
+          Annulla
+        </button>
+        <button className="btn" type="submit" disabled={registerPayment.isPending}>
+          {registerPayment.isPending ? "Registrazione..." : "Registra pagamento"}
+        </button>
+      </div>
     </form>
   );
 }
@@ -149,6 +179,15 @@ export function PracticePaymentsSection({ practice }: { practice: Practice }) {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
 
+  // V1 (storno/eliminazione pagamento): un vero popup di conferma con
+  // motivo obbligatorio (.payment-popover), non window.prompt nativo del
+  // browser. Stesso identico comportamento/validazione di prima - solo il
+  // contenitore visuale cambia (ConfirmModal condiviso). Il pagamento
+  // target resta selezionato in stato React finche' il modal e' aperto.
+  const [registerOpen, setRegisterOpen] = useState(false);
+  const [reverseTargetId, setReverseTargetId] = useState<number | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
+
   const hasOverride = practice.computed_total_override_cents != null;
 
   async function handleSetOverride(e: FormEvent) {
@@ -168,23 +207,23 @@ export function PracticePaymentsSection({ practice }: { practice: Practice }) {
     }
   }
 
-  async function handleReverse(paymentId: number) {
-    const reason = window.prompt("Motivo dello storno (obbligatorio):");
-    if (!reason) return;
+  async function handleReverseConfirm(reason: string) {
+    if (reverseTargetId == null) return;
     setActionError(null);
     try {
-      await reversePayment.mutateAsync({ paymentId, reason });
+      await reversePayment.mutateAsync({ paymentId: reverseTargetId, reason });
+      setReverseTargetId(null);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Operazione non riuscita");
     }
   }
 
-  async function handleDelete(paymentId: number) {
-    const reason = window.prompt("Motivo della cancellazione (obbligatorio - resta comunque ripristinabile):");
-    if (!reason) return;
+  async function handleDeleteConfirm(reason: string) {
+    if (deleteTargetId == null) return;
     setActionError(null);
     try {
-      await deletePayment.mutateAsync({ paymentId, deletionKind: "errore_inserimento", reason, practiceId: practice.id });
+      await deletePayment.mutateAsync({ paymentId: deleteTargetId, deletionKind: "errore_inserimento", reason, practiceId: practice.id });
+      setDeleteTargetId(null);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Operazione non riuscita");
     }
@@ -192,7 +231,11 @@ export function PracticePaymentsSection({ practice }: { practice: Practice }) {
 
   return (
     <>
-      <div className="card">
+      {/* V1: economic_block/movement_invoice_section sono .section come
+          tutti gli altri blocchi del dettaglio pratica (Riepilogo, Note,
+          ...), non .card (quella e' riservata a card di form strette,
+          max-width 520px - qui serve la larghezza piena della colonna). */}
+      <div className="section">
         <h2>Riconciliazione</h2>
         <p className="sub">
           Totale effettivo (preventivo o importo corretto manualmente) e totale pagato restano sempre due cifre
@@ -284,14 +327,14 @@ export function PracticePaymentsSection({ practice }: { practice: Practice }) {
 
       {actionError && <p className="error-banner">{actionError}</p>}
 
-      <div className="card">
+      <div className="section">
         <h2>Fatture</h2>
         {(!invoices || invoices.length === 0) && <p className="empty-state">Nessuna fattura emessa per questa pratica.</p>}
         {invoices && invoices.length > 0 && (
           <ul className="reminders-todo-list">
             {invoices.map((invoice) => (
               <li key={invoice.id}>
-                <Link to={`/fatture/${invoice.id}`}>
+                <Link className="reminders-todo-row" to={`/fatture/${invoice.id}`}>
                   {invoice.invoice_number} - {formatMoney(invoice.total_amount_cents)} ({invoice.channel})
                 </Link>
               </li>
@@ -303,7 +346,7 @@ export function PracticePaymentsSection({ practice }: { practice: Practice }) {
         </Link>
       </div>
 
-      <div className="card">
+      <div className="section">
         <h2>Pagamenti</h2>
         {(!payments || payments.length === 0) && <p className="empty-state">Nessun pagamento registrato.</p>}
         {payments && payments.length > 0 && (
@@ -320,18 +363,18 @@ export function PracticePaymentsSection({ practice }: { practice: Practice }) {
             <tbody>
               {payments.map((payment) => (
                 <tr key={payment.id}>
-                  <td>{payment.movement_date}</td>
+                  <td>{new Date(`${payment.movement_date}T00:00:00`).toLocaleDateString("it-IT")}</td>
                   <td>{payment.movement_type}</td>
                   <td>{payment.channel}</td>
                   <td>{formatMoney(payment.amount_cents)}</td>
                   <td>
                     {payment.movement_type !== "Storno" && (
                       <>
-                        <button className="btn-ghost" onClick={() => handleReverse(payment.id)}>
+                        <button className="btn-ghost" onClick={() => setReverseTargetId(payment.id)}>
                           Storna
                         </button>
                         {isAdmin && (
-                          <button className="btn-ghost" onClick={() => handleDelete(payment.id)}>
+                          <button className="btn-ghost" onClick={() => setDeleteTargetId(payment.id)}>
                             Elimina
                           </button>
                         )}
@@ -344,8 +387,38 @@ export function PracticePaymentsSection({ practice }: { practice: Practice }) {
             </tbody>
           </table>
         )}
-        <RegisterPaymentForm practiceId={practice.id} onDone={() => {}} />
+        <button type="button" className="btn" onClick={() => setRegisterOpen(true)}>
+          Registra pagamento
+        </button>
       </div>
+
+      <RegisterPaymentModal practiceId={practice.id} open={registerOpen} onClose={() => setRegisterOpen(false)} />
+
+      <ConfirmModal
+        open={reverseTargetId != null}
+        onClose={() => setReverseTargetId(null)}
+        onConfirm={handleReverseConfirm}
+        title="Storna pagamento"
+        description="Lo storno registra un movimento di compensazione (append-only): il pagamento originale resta nel ledger, non viene modificato ne' cancellato."
+        requireReason
+        reasonLabel="Motivo dello storno"
+        confirmLabel="Storna"
+        danger
+        isPending={reversePayment.isPending}
+      />
+
+      <ConfirmModal
+        open={deleteTargetId != null}
+        onClose={() => setDeleteTargetId(null)}
+        onConfirm={handleDeleteConfirm}
+        title="Elimina pagamento"
+        description="Il movimento resta nel ledger come eliminato (append-only) ed e' comunque ripristinabile."
+        requireReason
+        reasonLabel="Motivo della cancellazione"
+        confirmLabel="Elimina"
+        danger
+        isPending={deletePayment.isPending}
+      />
     </>
   );
 }

@@ -326,3 +326,106 @@ async def test_collaborator_billing_stays_independent_of_invoices_and_payments(
     # inventare/alterare nessuna fattura o pagamento esistente
     recon = await invoice_service.get_reconciliation(db_session, invoice.id)
     assert recon.status == "pagata"
+
+
+async def test_settlement_duplication_case_practice_213(db_session, admin_user, sample_client, sample_location):
+    """Regressione strutturale per il caso reale scoperto in V1 (pratica
+    213/CR-000148, Fase 10C-10F): un incasso reale da 410,00 euro finiva
+    rappresentato da DUE movimenti attivi nel ledger (820,00 euro invece
+    di 410,00) a causa di un bug nella logica di correzione V1 (ricerca
+    del movimento esistente per etichetta mutevole Saldo/Incasso completo,
+    che poteva non trovarlo e crearne un secondo). V2 non ha quel pattern
+    di ricerca-e-correggi (ogni correzione e' storno+nuovo inserimento,
+    mai un UPDATE ne' una ricerca per etichetta) - questo test riproduce
+    l'intero scenario end-to-end e verifica che l'invariante economica
+    (pagato == reale, residuo == 0) regga in ogni fase, incluso il retry
+    esatto della stessa richiesta (il gap che l'analisi ha trovato:
+    register_payment generava una idempotency_key casuale ad ogni
+    chiamata, quindi un retry di rete/doppio-click avrebbe potuto
+    produrre lo stesso sintomo della pratica 213 per una via diversa)."""
+    practice = await _create_practice(db_session, admin_user, sample_client, sample_location, total_cents=41000)
+
+    async def active_settlements():
+        from repositories.payment_repository import PaymentRepository
+
+        payments = await PaymentRepository(db_session).list_for_practice(practice.id)
+        reversed_ids = {p.related_payment_id for p in payments if p.movement_type == "Storno"}
+        return [p for p in payments if p.movement_type in ("Saldo", "Incasso completo") and p.amount_cents > 0 and p.id not in reversed_ids]
+
+    async def assert_invariant(expected_paid_cents):
+        recon = await payment_service.get_practice_reconciliation(db_session, practice.id)
+        assert recon.paid_total_cents == expected_paid_cents
+        assert recon.residual_cents == recon.effective_total_cents - recon.paid_total_cents
+        assert recon.paid_total_cents + recon.residual_cents == recon.effective_total_cents
+
+    # 1-2-3: pratica da 410,00 euro, un solo incasso reale registrato come
+    # settlement (in V2 non esiste la coppia payment_movements/
+    # balance_movements di V1: la riga payments E' gia' l'evento reale).
+    settlement_key = "test-settlement-213:first-attempt"
+    first = await payment_service.register_payment(
+        db_session,
+        _payment_data(practice.id, amount_cents=41000, movement_type="Incasso completo", idempotency_key=settlement_key),
+        actor_user_id=admin_user.id,
+    )
+    assert first.amount_cents == 41000
+    active = await active_settlements()
+    assert len(active) == 1
+    await assert_invariant(41000)
+
+    # 4-5: ripetizione ESATTA della stessa richiesta (stessa chiave di
+    # idempotenza) - deve restituire lo STESSO movimento, mai crearne un
+    # secondo. Se questo fallisse, active_settlements() tornerebbe a
+    # contenere 2 righe da 410 = 820 euro attivi: esattamente il sintomo
+    # della pratica 213.
+    retry = await payment_service.register_payment(
+        db_session,
+        _payment_data(practice.id, amount_cents=41000, movement_type="Incasso completo", idempotency_key=settlement_key),
+        actor_user_id=admin_user.id,
+    )
+    assert retry.id == first.id, "un retry con la stessa idempotency_key deve restituire lo stesso movimento, non crearne uno nuovo"
+    active = await active_settlements()
+    assert len(active) == 1, f"atteso un solo settlement attivo dopo il retry, trovati: {[(p.id, p.movement_type, p.amount_cents) for p in active]}"
+    await assert_invariant(41000)
+
+    # 6: "modifica" del pagamento - in V2 non esiste un UPDATE sul ledger
+    # (per design, e' esattamente il pattern che ha causato il bug V1):
+    # la correzione e' sempre storno del movimento sbagliato + nuovo
+    # movimento corretto, mai una ricerca-e-riscrittura in place.
+    await payment_service.reverse_payment(db_session, first.id, "importo da correggere", actor_user_id=admin_user.id)
+    active = await active_settlements()
+    assert len(active) == 0, "dopo lo storno non deve restare nessun settlement attivo"
+    await assert_invariant(0)
+
+    corrected = await payment_service.register_payment(
+        db_session,
+        _payment_data(practice.id, amount_cents=41000, movement_type="Incasso completo", idempotency_key="test-settlement-213:corrected"),
+        actor_user_id=admin_user.id,
+    )
+    active = await active_settlements()
+    assert active == [corrected] or [p.id for p in active] == [corrected.id]
+    await assert_invariant(41000)
+
+    # 7: un secondo storno indipendente (sul movimento corretto) - deve
+    # funzionare esattamente come il primo, nessuna logica parallela.
+    await payment_service.reverse_payment(db_session, corrected.id, "annullamento", actor_user_id=admin_user.id)
+    active = await active_settlements()
+    assert len(active) == 0
+    await assert_invariant(0)
+
+    # 8: un nuovo pagamento reale, genuinamente indipendente.
+    final_payment = await payment_service.register_payment(
+        db_session,
+        _payment_data(practice.id, amount_cents=41000, movement_type="Incasso completo", idempotency_key="test-settlement-213:final"),
+        actor_user_id=admin_user.id,
+    )
+    active = await active_settlements()
+    assert [p.id for p in active] == [final_payment.id]
+
+    # 9-10: verifica finale - esattamente l'invariante richiesta:
+    # 410 reali = 410 attivi = 410 pagati = 0 residui. Il test fallirebbe
+    # se, per qualunque via, risultasse 820 (410 reali + 410 duplicati).
+    recon = await payment_service.get_practice_reconciliation(db_session, practice.id)
+    assert recon.effective_total_cents == 41000
+    assert recon.paid_total_cents == 41000
+    assert recon.residual_cents == 0
+    assert recon.status == "pagata"

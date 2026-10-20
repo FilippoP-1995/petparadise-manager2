@@ -24,6 +24,14 @@ class InvoiceRead(BaseModel):
     practice_id: int | None
     practice_number_snapshot: str
     created_at: datetime
+    # Fase 'parita' visiva V2' (colonne Cliente/Animale, V1: invoices_page):
+    # non colonne del modello Invoice, valorizzate solo dall'endpoint di
+    # lista (list_invoices) leggendo la pratica collegata gia' caricata in
+    # bulk - None per le fatture senza pratica collegata o nel resto delle
+    # route (get/create/correggi-totale), che restituiscono l'Invoice ORM
+    # cosi' com'e' senza questo arricchimento.
+    owner_name: str | None = None
+    animal_names: str | None = None
 
 
 class CorrectInvoiceTotalRequest(BaseModel):

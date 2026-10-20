@@ -29,6 +29,7 @@ export function useClient(clientId: number) {
       if (error) throw new Error("Cliente non trovato");
       return data;
     },
+    enabled: Number.isFinite(clientId),
   });
 }
 
@@ -42,6 +43,24 @@ export function useCreateClient() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["clients"] });
+    },
+  });
+}
+
+export function useUpdateClient() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ clientId, input }: { clientId: number; input: ClientCreateInput }) => {
+      const { data, error } = await apiClient.PUT("/api/clients/{client_id}", {
+        params: { path: { client_id: clientId } },
+        body: input,
+      });
+      if (error) throw new Error((error as { detail?: string }).detail ?? "Dati non validi");
+      return data;
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+      queryClient.invalidateQueries({ queryKey: ["clients", vars.clientId] });
     },
   });
 }

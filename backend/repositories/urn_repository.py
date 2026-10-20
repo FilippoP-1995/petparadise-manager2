@@ -1,4 +1,4 @@
-from sqlalchemy import or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.urn import Urn, UrnCategory, UrnCodeCounter, UrnMovement
@@ -43,6 +43,25 @@ class UrnCatalogRepository:
 
     def add(self, urn: Urn) -> None:
         self._session.add(urn)
+
+    async def category_stats(self, category: UrnCategory) -> dict[str, int]:
+        """V1 (urn_catalog_page: stats={'models':...,'quantity':...,'out':...,
+        'low':...,'value':...}) - stessa esatta formula, qui una sola query
+        aggregata sugli articoli attivi della categoria invece del loop
+        Python su all_urns: 'out' = scorta a 0 o negativa, 'low' = scorta
+        positiva ma sotto/pari alla soglia, mai sovrapposti tra loro."""
+        clamped_quantity = func.greatest(Urn.quantity, 0)
+        stmt = select(
+            func.count().label("models"),
+            func.coalesce(func.sum(clamped_quantity), 0).label("quantity"),
+            func.coalesce(func.sum(case((Urn.quantity <= 0, 1), else_=0)), 0).label("out"),
+            func.coalesce(func.sum(case(((Urn.quantity > 0) & (Urn.quantity <= Urn.low_stock_threshold), 1), else_=0)), 0).label(
+                "low"
+            ),
+            func.coalesce(func.sum(clamped_quantity * Urn.price_cents), 0).label("value_cents"),
+        ).where(Urn.category == category, Urn.active.is_(True))
+        row = (await self._session.execute(stmt)).one()
+        return {"models": row.models, "quantity": row.quantity, "out": row.out, "low": row.low, "value_cents": row.value_cents}
 
     async def next_internal_code(self, category: UrnCategory) -> str:
         """Stesso principio di PracticeRepository.next_practice_number:

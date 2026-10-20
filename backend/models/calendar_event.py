@@ -122,3 +122,19 @@ class CalendarEvent(Base, TimestampMixin):
     animals: Mapped[list["Animal"]] = relationship(
         "Animal", cascade="all, delete-orphan", order_by="Animal.sort_order"
     )
+    # V1 (calendar_appt_card_html, app.py:9791-9793): la card mostra nome e
+    # telefono del cliente collegato all'evento - qui letti dalla stessa FK
+    # client_id gia' presente, nessun nuovo dato inventato. Sola lettura
+    # (nessun cascade): la Pratica resta la fonte di verita' per il Client.
+    client: Mapped["Client | None"] = relationship("Client", viewonly=True)
+
+    @property
+    def client_name(self) -> str | None:
+        if self.client is None:
+            return None
+        name = " ".join(x for x in (self.client.first_name, self.client.last_name) if x).strip()
+        return name or self.client.company_name
+
+    @property
+    def client_phone(self) -> str | None:
+        return self.client.phone if self.client else None

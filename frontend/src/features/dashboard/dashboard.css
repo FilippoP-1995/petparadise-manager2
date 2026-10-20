@@ -1,0 +1,43 @@
+/* V1 (app.py, valori copiati identici): regole reali usate dalla
+   Dashboard ma ancora assenti da app/styles.css al momento di questa
+   verifica - non nuovi valori, solo quelli che il primo passaggio non
+   aveva ancora portato. Vive qui (non in styles.css, in modifica
+   concorrente da altri batch) per non creare conflitti di merge. */
+
+/* app.py: .state-blue{--card-glow:#17255480;--icon-bg:#172554;
+   --icon-color:#60a5fa;--icon-shadow:#2563eb40} - mancava del tutto:
+   senza, le quick-stat-card "Pratiche oggi"/"Nuove pratiche" e lo slide
+   vuoto dei promemoria restano con icona senza sfondo/colore. */
+.state-blue { --card-glow: #17255480; --icon-bg: #172554; --icon-color: #60a5fa; --icon-shadow: #2563eb40; }
+
+/* app.py: .state-red ha anche --icon-shadow:#e11d4840 (styles.css ha gia'
+   card-glow/icon-bg/icon-color, manca solo questa) - serve al box-shadow
+   di .metric-icon qui sotto, usato dal reminders-slide-icon del
+   promemoria attivo. */
+.state-red { --icon-shadow: #e11d4840; }
+
+/* app.py: .metric-icon,.activity-icon{...box-shadow:0 8px 22px
+   var(--icon-shadow)} - styles.css ha gia' la regola base (position/grid/
+   background/color) ma senza l'ombra colorata sotto l'icona del
+   carosello promemoria. */
+.metric-icon { box-shadow: 0 8px 22px var(--icon-shadow); }
+
+/* app.py: .dashboard-heading{margin:24px 0 12px;font-size:15px;
+   color:#dce4ef} + .dashboard-section-head .dashboard-heading{margin:0}
+   (override quando l'h2 e' nella riga col period-selector) - mancava
+   del tutto, l'h2 "Analytics" ereditava solo lo stile h2 generico. */
+.dashboard-heading { margin: 24px 0 12px; font-size: 15px; color: #dce4ef; }
+.dashboard-section-head .dashboard-heading { margin: 0; }
+
+/* app.py: .reminders-slide-empty .reminders-slide-front{cursor:default}
+   - lo slide "Nessun promemoria attivo" non e' un link, cursore non
+   cliccabile. */
+.reminders-slide-empty .reminders-slide-front { cursor: default; }
+
+/* app.py: .dash-stat-desc small{display:block;margin-top:2px} - la
+   didascalia sotto l'importo delle card Pagamenti va su una riga
+   propria sotto l'importo, non concatenata sulla stessa riga. */
+.dash-stat-desc small { display: block; margin-top: 2px; }
+
+/* app.py: .recent-practice-archive-arrow{font-size:16px} */
+.recent-practice-archive-arrow { font-size: 16px; }

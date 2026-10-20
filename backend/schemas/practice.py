@@ -216,3 +216,18 @@ class PracticeRead(BaseModel):
         data["line_items_total_cents"] = sum(li.amount_cents for li in practice.line_items)
         data["effective_total_cents"] = _effective_total_cents(practice)
         return cls(**data)
+
+
+class PracticeHistoryEntry(BaseModel):
+    """V1 (dettaglio pratica: sidebar 'Cronologia modifiche', practice_
+    history) - stessa cronologia, letta qui dall'unico audit_log unificato
+    (doc06) invece che da una tabella practice_history dedicata."""
+
+    id: int
+    action: str
+    field_name: str | None
+    old_value: str | None
+    new_value: str | None
+    reason: str | None
+    actor_display_name: str | None
+    created_at: datetime

@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 from models.calendar_event import CalendarEvent, CalendarEventType
 from models.client import Client
 
-_EAGER_OPTIONS = (selectinload(CalendarEvent.animals),)
+_EAGER_OPTIONS = (selectinload(CalendarEvent.animals), selectinload(CalendarEvent.client))
 
 
 class CalendarEventRepository:

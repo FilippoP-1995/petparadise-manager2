@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from domain.errors import NotFoundError, ValidationDomainError
@@ -8,6 +9,7 @@ from domain.practice.state_machine import validate_correction_transition, valida
 from models.animal import Animal
 from models.calendar_event import PickupStatus
 from models.practice import CollaboratorBillingStatus, OwnerNotifiedStatus, Practice, PracticeLineItem, PracticeStatus
+from models.user import User
 from repositories.audit_repository import AuditRepository
 from repositories.client_repository import ClientRepository
 from repositories.practice_repository import PracticeRepository
@@ -23,6 +25,7 @@ from schemas.practice import (
     CorrectionRequest,
     OverrideTotalRequest,
     PracticeCreate,
+    PracticeHistoryEntry,
     PracticeUpdate,
     TransitionRequest,
 )
@@ -249,7 +252,20 @@ async def update_practice(db: AsyncSession, practice_id: int, data: PracticeUpda
     for field_name in MUTABLE_FIELD_NAMES:
         old_value = getattr(practice, field_name)
         new_value = getattr(data, field_name)
-        if old_value != new_value:
+        # V1 (audit dump pratica, app.py:17533): "mai dump del blob base64
+        # in practice_history" - stessa esclusione qui, il cambio di firma
+        # e' comunque tracciato (action distinta, senza il contenuto).
+        if old_value != new_value and field_name == "signature_data":
+            audit.record(
+                entity_type=ENTITY_TYPE,
+                entity_id=practice.id,
+                action="signature_changed",
+                field_name=field_name,
+                old_value="presente" if old_value else None,
+                new_value="presente" if new_value else None,
+                user_id=actor_user_id,
+            )
+        elif old_value != new_value:
             audit.record(
                 entity_type=ENTITY_TYPE,
                 entity_id=practice.id,
@@ -485,3 +501,28 @@ async def mark_collaborator_billed(db: AsyncSession, practice_id: int, *, actor_
 
     await db.commit()
     return await practice_repo.get_by_id(practice_id)
+
+
+async def get_history(db: AsyncSession, practice_id: int) -> list[PracticeHistoryEntry]:
+    """V1 (dettaglio pratica: sidebar 'Cronologia modifiche') - stessa
+    cronologia, letta dall'audit_log unificato (doc06) invece che da una
+    tabella practice_history dedicata come in V1."""
+    entries = await AuditRepository(db).list_for_entity(entity_type=ENTITY_TYPE, entity_id=practice_id)
+    user_ids = {e.user_id for e in entries if e.user_id is not None}
+    display_name_by_user_id: dict[int, str] = {}
+    if user_ids:
+        rows = (await db.execute(select(User.id, User.display_name).where(User.id.in_(user_ids)))).all()
+        display_name_by_user_id = dict(rows)
+    return [
+        PracticeHistoryEntry(
+            id=e.id,
+            action=e.action,
+            field_name=e.field_name,
+            old_value=e.old_value,
+            new_value=e.new_value,
+            reason=e.reason,
+            actor_display_name=display_name_by_user_id.get(e.user_id) if e.user_id is not None else None,
+            created_at=e.created_at,
+        )
+        for e in entries
+    ]

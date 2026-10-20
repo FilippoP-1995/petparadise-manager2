@@ -1,0 +1,121 @@
+/* Ritiri/Riconsegne - pagine di dettaglio.
+   V1 non ha pagine dedicate: questo e' il markup/CSS reale di
+   calendar_event_detail (app.py:11112+, CSS app.py righe ~2560-2660),
+   la "hero card" usata per il riepilogo di un evento calendario. Qui
+   riportato 1:1 (stesse classi/colori/spaziature) e adattato ai due
+   domini divisi Ritiro/Riconsegna di V2 - niente di questo file e'
+   inventato, solo copiato da app.py e scoperto non ancora presente in
+   styles.css (quella pagina V1 non era stata ancora portata: solo le
+   pagine di CREAZIONE evento calendario lo erano, vedi
+   .calendar-form-v2 in styles.css).
+   File separato (non styles.css) come richiesto: altri agenti stanno
+   editando styles.css in parallelo. */
+
+/* --- topbar (freccia indietro + titolo + menu "Altro") --- */
+.calendar-detail-topbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.calendar-detail-back { display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent; padding: 0; color: #dfe4eb; font-weight: 600; font-size: 14.5px; cursor: pointer; }
+.calendar-detail-back-arrow { display: inline-flex; transform: scaleX(-1); }
+.calendar-detail-back-arrow svg { width: 18px; height: 18px; }
+.calendar-detail-topbar-title { margin: 0; font-size: 15.5px; font-weight: 800; color: #f5f7fb; }
+.calendar-detail-topbar-menu { position: relative; }
+.calendar-detail-topbar-menu-btn { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: #ffffff10; border: 1px solid #ffffff14; color: #dfe4eb; transition: transform 0.15s cubic-bezier(0.34, 1.4, 0.64, 1), background 0.18s ease; cursor: pointer; }
+.calendar-detail-topbar-menu-btn:hover { background: #ffffff1a; }
+.calendar-detail-topbar-menu-btn:active { transform: scale(0.92); }
+.calendar-detail-topbar-menu .calendar-appt-menu-popover { left: auto; right: 0; top: calc(100% + 6px); bottom: auto; }
+.light-theme .calendar-detail-back { color: #334155; }
+.light-theme .calendar-detail-topbar-title { color: #0f172a; }
+.light-theme .calendar-detail-topbar-menu-btn { background: #00000008; border-color: #e2e8f0; color: #334155; }
+
+/* --- menu popover generico (V1 .calendar-appt-menu-*) --- */
+.calendar-appt-menu-wrap { position: relative; }
+.calendar-appt-menu-popover { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 20; min-width: 190px; padding: 6px; border: 1px solid #334155; border-radius: 12px; background: #131a26; box-shadow: 0 18px 45px #000a; display: flex; flex-direction: column; gap: 2px; }
+.calendar-appt-menu-popover a, .calendar-appt-menu-popover button { display: block; width: 100%; padding: 8px 10px; border: 0; background: transparent; color: #e2e8f0; font: inherit; text-align: left; border-radius: 8px; cursor: pointer; }
+.calendar-appt-menu-popover a:hover, .calendar-appt-menu-popover button:hover { background: #1f2937; }
+.light-theme .calendar-appt-menu-popover { background: #fff; border-color: #e2e8f0; }
+.light-theme .calendar-appt-menu-popover a, .light-theme .calendar-appt-menu-popover button { color: #111827; }
+.light-theme .calendar-appt-menu-popover a:hover, .light-theme .calendar-appt-menu-popover button:hover { background: #f1f5f9; }
+
+/* --- hero (icona tipo, eyebrow, titolo, badge stato, righe meta) --- */
+.calendar-detail-hero { position: relative; padding: 18px; border-radius: 26px; margin-bottom: 16px; border: 1px solid #ffffff14; background: linear-gradient(165deg, #1a2130f2, #12161ff2); box-shadow: 0 14px 30px #05070f40; overflow: hidden; transition: box-shadow 0.25s ease; }
+.calendar-detail-hero:hover { box-shadow: 0 16px 36px #05070f4d; }
+.calendar-detail-hero::before { content: ""; position: absolute; inset: 0; opacity: 0.16; pointer-events: none; background: radial-gradient(120% 90% at 8% 0%, var(--hero-glow, #ef405f), transparent 60%); }
+.calendar-hero-pink { --hero-glow: #ef405f; border-color: #ef405f38; }
+.calendar-hero-blue { --hero-glow: #3b82f6; border-color: #3b82f638; }
+.calendar-hero-green { --hero-glow: #22c55e; border-color: #22c55e38; }
+.calendar-hero-orange { --hero-glow: #f59e0b; border-color: #f59e0b38; }
+.calendar-hero-purple { --hero-glow: #8b5cf6; border-color: #8b5cf638; }
+.calendar-detail-hero-top { position: relative; display: flex; align-items: flex-start; gap: 14px; }
+.calendar-detail-header-icon { flex: 0 0 52px; width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; }
+.calendar-detail-header-icon svg { width: 24px; height: 24px; }
+.calendar-detail-hero-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.calendar-detail-hero-eyebrow { font-size: 11.5px; font-weight: 800; letter-spacing: 0.05em; }
+.calendar-hero-text-pink { color: #fb7185; }
+.calendar-hero-text-blue { color: #60a5fa; }
+.calendar-hero-text-green { color: #4ade80; }
+.calendar-hero-text-orange { color: #fbbf24; }
+.calendar-hero-text-purple { color: #c084fc; }
+.calendar-detail-hero-titles h1 { margin: 0; font-size: 21px; line-height: 1.2; }
+.calendar-detail-hero-avatar { flex: 0 0 auto; }
+.calendar-detail-hero-meta { position: relative; display: grid; grid-template-columns: 1fr; gap: 0; margin-top: 16px; padding-top: 4px; border-top: 1px solid #ffffff14; }
+.calendar-detail-hero-meta-item { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 9px 0; border-bottom: 1px solid #ffffff0f; }
+.calendar-detail-hero-meta-item:last-child { border-bottom: 0; }
+.calendar-detail-hero-meta-icon { flex: 0 0 30px; width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; }
+.calendar-detail-hero-meta-icon svg { width: 15px; height: 15px; }
+.calendar-detail-hero-meta-item div { min-width: 0; }
+.calendar-detail-hero-meta-item b { display: block; font-size: 13px; font-weight: 800; color: #f5f7fb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.calendar-detail-hero-meta-item small { display: block; font-size: 11px; color: #8a96a8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.calendar-detail-hero-footer { position: relative; margin: 14px 0 0; }
+.light-theme .calendar-detail-hero { background: linear-gradient(165deg, #ffffff, #f8fafc); border-color: #e2e8f0; }
+.light-theme .calendar-detail-hero-meta { border-color: #e2e8f0; }
+.light-theme .calendar-detail-hero-meta-item { border-color: #e2e8f0; }
+.light-theme .calendar-detail-hero-meta-item b { color: #0f172a; }
+
+/* icone colorate (calendar-icon-pink/blue/green/orange/purple gia' in
+   styles.css per il form di creazione; qui solo le due varianti mancanti
+   usate dalle righe meta del riepilogo). */
+.calendar-icon-teal { background: linear-gradient(135deg, #2dd4bf, #0f766e); color: #fff; box-shadow: 0 0 16px #2dd4bf38; }
+.calendar-icon-amber { background: linear-gradient(135deg, #fbbf24, #b45309); color: #fff; box-shadow: 0 0 16px #fbbf2438; }
+
+/* --- badge di stato cliccabile (solo Ritiri: le Riconsegne non hanno
+   uno stato gestibile dall'utente, stessa decisione di V1) --- */
+.calendar-detail-status-badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 99px; font-weight: 800; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.03em; }
+.calendar-detail-status-badge svg { width: 13px; height: 13px; transition: transform 0.2s ease; }
+.calendar-detail-status-quickedit { display: inline-block; cursor: pointer; }
+.calendar-detail-status-quickedit.expanded .calendar-detail-status-badge svg { transform: rotate(180deg); }
+.calendar-detail-status-quickedit .calendar-quickedit-form { display: none; margin-top: 10px; padding-top: 0; border-top: 0; }
+.calendar-detail-status-quickedit.expanded .calendar-quickedit-form { display: block; }
+.calendar-quickedit-form select { width: 100%; margin-bottom: 8px; }
+
+/* --- quick actions (chiama / whatsapp / naviga / pratica) --- */
+.calendar-detail-quickactions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
+.calendar-detail-qa { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; min-height: 68px; padding: 10px 4px; border: 1px solid #ffffff12; border-radius: 18px; background: linear-gradient(160deg, #1c2635d9, #141b27d9); backdrop-filter: blur(16px); box-shadow: 0 8px 18px #05070f30; color: #e2e8f0; font-size: 11.5px; font-weight: 700; text-align: center; text-decoration: none; transition: transform 0.15s cubic-bezier(0.34, 1.4, 0.64, 1), border-color 0.18s ease; cursor: pointer; }
+.calendar-detail-qa:active { transform: scale(0.94); }
+.calendar-detail-qa-icon { width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; background: #202c3d; color: #9ca7b8; }
+.calendar-detail-qa-icon svg { width: 16px; height: 16px; }
+.calendar-detail-qa:nth-child(1) .calendar-detail-qa-icon { background: linear-gradient(135deg, #fb4c67, #d9284c); color: #fff; box-shadow: 0 0 12px #ef405f38; }
+.calendar-detail-qa:nth-child(2) .calendar-detail-qa-icon { background: linear-gradient(135deg, #22c55e, #15803d); color: #fff; box-shadow: 0 0 12px #22c55e38; }
+.calendar-detail-qa:nth-child(3) .calendar-detail-qa-icon { background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: #fff; box-shadow: 0 0 12px #3b82f638; }
+.calendar-detail-qa:nth-child(4) .calendar-detail-qa-icon { background: linear-gradient(135deg, #8b5cf6, #6d28d9); color: #fff; box-shadow: 0 0 12px #8b5cf638; }
+.calendar-detail-qa-disabled { opacity: 0.4; pointer-events: none; }
+.light-theme .calendar-detail-qa { background: #fff; border-color: #e2e8f0; color: #111827; }
+@media (max-width: 560px) { .calendar-detail-quickactions { grid-template-columns: repeat(4, minmax(0, 1fr)); } .calendar-detail-qa { min-height: 64px; font-size: 10.5px; } }
+
+/* --- card "tap" (collega/crea pratica) e lista card --- */
+.calendar-card-list { display: grid; gap: 9px; }
+.calendar-tap-card { display: flex; align-items: flex-start; gap: 13px; padding: 13px 16px; border: 1px solid #ffffff12; border-radius: 22px; background: linear-gradient(160deg, #1c2635d9, #141b27d9); backdrop-filter: blur(16px); box-shadow: 0 8px 20px #05070f33; text-align: left; color: inherit; font: inherit; width: 100%; transition: border-color 0.18s ease, transform 0.15s cubic-bezier(0.34, 1.4, 0.64, 1); }
+.calendar-tap-card:hover { border-color: #ffffff26; }
+.calendar-tap-card:focus-within { border-color: #ffffff26; box-shadow: 0 8px 20px #05070f33, 0 0 0 1px #ef405f2e; }
+.calendar-tap-card-icon { flex: 0 0 38px; width: 38px; height: 38px; border-radius: 12px; background: #202c3d; color: #9ca7b8; display: grid; place-items: center; }
+.calendar-tap-card-icon svg { width: 19px; height: 19px; }
+.calendar-tap-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.calendar-tap-card-body > small { color: #9ca7b8; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; }
+.calendar-tap-card-body p { color: #f5f7fb; font-weight: 700; margin: 0; }
+.calendar-tap-card.lookup > .calendar-tap-card-body > select,
+.calendar-tap-card.lookup > .calendar-tap-card-body > input { border: 1px solid #263246; background: #0e1622; border-radius: 12px; padding: 10px 12px; font-weight: 600; font-size: 16px; margin-top: 2px; color: #f5f7fb; }
+.calendar-tap-card.lookup > .calendar-tap-card-body > input::placeholder { color: #69788f; font-weight: 500; }
+.light-theme .calendar-tap-card { background: #fff; border-color: #e2e8f0; color: #111827; }
+.light-theme .calendar-tap-card-body p { color: #111827; }
+.light-theme .calendar-tap-card-icon { background: #f1f5f9; }
+.light-theme .calendar-tap-card.lookup > .calendar-tap-card-body > select,
+.light-theme .calendar-tap-card.lookup > .calendar-tap-card-body > input { background: #f8fafc; border-color: #e2e8f0; color: #111827; }
+@media (max-width: 520px) { .calendar-tap-card { padding: 12px 14px; } }

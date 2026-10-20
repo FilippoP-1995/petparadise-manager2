@@ -10,6 +10,7 @@ from api.routes import (
     clients,
     company_locations,
     cremation_cycles,
+    dashboard,
     deliveries,
     invoices,
     payments,
@@ -35,6 +36,7 @@ app.include_router(urns.router)
 app.include_router(articles.router)
 app.include_router(invoices.router)
 app.include_router(payments.router)
+app.include_router(dashboard.router)
 
 
 @app.get("/health")

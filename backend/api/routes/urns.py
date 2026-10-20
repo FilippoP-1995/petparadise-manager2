@@ -7,7 +7,7 @@ from domain.errors import NotFoundError, ValidationDomainError
 from models.urn import UrnCategory
 from models.user import User
 from repositories.urn_repository import UrnCatalogRepository, UrnMovementRepository
-from schemas.urn import UrnCreate, UrnMovementRead, UrnRead, UrnUpdate
+from schemas.urn import UrnCategoryStats, UrnCreate, UrnMovementRead, UrnRead, UrnUpdate
 from services import urn_service
 
 router = APIRouter(prefix="/api/urns", tags=["urns"])
@@ -26,6 +26,18 @@ async def list_urns(
     return await UrnCatalogRepository(db).list_all(
         category=category, active_only=active_only, q=q, limit=limit, offset=offset
     )
+
+
+@router.get("/stats", response_model=UrnCategoryStats)
+async def get_urn_category_stats(
+    category: UrnCategory = Query(...),
+    db: AsyncSession = Depends(get_session),
+    _: User = Depends(get_current_user),
+):
+    """V1 (urn_catalog_page): barra Modelli/Pezzi disponibili/Esaurite/
+    Scorte basse/Valore magazzino sopra la griglia - dichiarata prima di
+    /{urn_id} per non farla intercettare dal path param."""
+    return await UrnCatalogRepository(db).category_stats(category)
 
 
 @router.get("/{urn_id}", response_model=UrnRead)

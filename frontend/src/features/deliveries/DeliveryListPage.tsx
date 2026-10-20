@@ -1,9 +1,21 @@
 import { Link } from "react-router-dom";
 
 import { formatMoney } from "@/shared/money";
+import { AdvancedSearch } from "@/shared/ui/AdvancedSearch";
+import { CalendarApptCard } from "@/shared/ui/CalendarApptCard";
 import { useListQueryParams } from "@/shared/useListQueryParams";
 
 import { useDeliveries } from "./api";
+
+// V1 non ha un delivery_type isolato (e' testo libero nel titolo evento) -
+// qui i valori dell'enum DeliveryType sono mostrati con la stessa etichetta
+// italiana gia' usata da DeliveryFormPage.tsx, non con lo slug grezzo.
+const DELIVERY_TYPE_LABELS: Record<string, string> = {
+  sede_aziendale: "Sede aziendale",
+  domicilio: "Domicilio",
+  ambulatorio: "Ambulatorio",
+  altro: "Altro",
+};
 
 export function DeliveryListPage() {
   const { q, offset, setSearch, setOffset } = useListQueryParams();
@@ -18,43 +30,51 @@ export function DeliveryListPage() {
         </Link>
       </div>
 
-      <input
-        className="search-input"
-        placeholder="Cerca..."
-        defaultValue={q}
-        onChange={(e) => setSearch(e.target.value)}
-      />
+      <AdvancedSearch defaultOpen={Boolean(q)}>
+        <input
+          className="search-input"
+          placeholder="Cerca..."
+          defaultValue={q}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </AdvancedSearch>
 
       {isLoading && <p className="loading">Caricamento...</p>}
       {isError && <p className="error-banner">Errore nel caricamento delle riconsegne.</p>}
       {deliveries && deliveries.length === 0 && <p className="empty-state">Nessuna riconsegna trovata.</p>}
 
       {deliveries && deliveries.length > 0 && (
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Data</th>
-              <th>Modalita'</th>
-              <th>Pagamento preliminare</th>
-              <th>Pratica</th>
-            </tr>
-          </thead>
-          <tbody>
-            {deliveries.map((delivery) => (
-              <tr key={delivery.id}>
-                <td>
-                  <Link to={`/riconsegne/${delivery.id}`}>{new Date(delivery.start_at).toLocaleString("it-IT")}</Link>
-                </td>
-                <td>{delivery.delivery_type}</td>
-                <td>
-                  {delivery.preliminary_payment_status ?? "-"}
-                  {delivery.preliminary_payment_amount != null && ` (${formatMoney(delivery.preliminary_payment_amount)})`}
-                </td>
-                <td>{delivery.linked_practice_id ? `#${delivery.linked_practice_id}` : "-"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="calendar-appt-list">
+          {deliveries.map((delivery) => {
+            // V1 (calendar_appt_card_html, app.py:9805-9809): verde se
+            // "Pagato", giallo per ogni altro stato non vuoto.
+            const paid = delivery.preliminary_payment_status === "Pagato";
+            const paymentText = delivery.preliminary_payment_status
+              ? `${delivery.preliminary_payment_status}${
+                  delivery.preliminary_payment_amount != null ? ` · ${formatMoney(delivery.preliminary_payment_amount)}` : ""
+                }`
+              : null;
+            const ownerLine = delivery.client_name
+              ? `${delivery.client_name}${delivery.client_phone ? " · " + delivery.client_phone : ""}`
+              : undefined;
+            return (
+              <CalendarApptCard
+                key={delivery.id}
+                href={`/riconsegne/${delivery.id}`}
+                kind="delivery"
+                borderColorHex="#60a5fa"
+                timeText={new Date(delivery.start_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}
+                title={DELIVERY_TYPE_LABELS[delivery.delivery_type] ?? delivery.delivery_type}
+                nameLine={delivery.linked_practice_id ? `Pratica #${delivery.linked_practice_id}` : "Nessuna pratica collegata"}
+                ownerLine={ownerLine}
+                locationLine={delivery.delivery_address || undefined}
+                paymentText={paymentText}
+                paymentPaid={paid}
+                address={delivery.delivery_address}
+              />
+            );
+          })}
+        </div>
       )}
 
       <div className="pagination">

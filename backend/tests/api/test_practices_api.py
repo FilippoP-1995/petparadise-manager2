@@ -113,6 +113,34 @@ async def test_admin_can_correct_state_with_reason(authed_client: AsyncClient, s
     assert correction.json()["status"] == "cremato"
 
 
+async def test_practice_history_lists_audit_entries_newest_first(authed_client: AsyncClient, sample_client, sample_location):
+    """V1 (dettaglio pratica: sidebar 'Cronologia modifiche') - qui letta
+    dall'audit_log unificato gia' scritto da practice_service, non da una
+    tabella di storico dedicata."""
+    create = await authed_client.post("/api/practices", json=_payload(sample_client, sample_location))
+    practice_id = create.json()["id"]
+
+    await authed_client.post(
+        f"/api/practices/{practice_id}/correct-state",
+        json={"target_status": "cremato", "reason": "dato storico migrato"},
+    )
+
+    history = await authed_client.get(f"/api/practices/{practice_id}/cronologia")
+    assert history.status_code == 200
+    entries = history.json()
+    actions = [e["action"] for e in entries]
+    assert actions[0] == "state_corrected", "il piu' recente (state_corrected) deve comparire per primo"
+    assert "created" in actions
+    corrected = entries[0]
+    assert corrected["reason"] == "dato storico migrato"
+    assert corrected["actor_display_name"]
+
+
+async def test_practice_history_requires_authentication(client: AsyncClient):
+    response = await client.get("/api/practices/1/cronologia")
+    assert response.status_code == 401
+
+
 async def test_admin_correction_without_reason_returns_422(authed_client: AsyncClient, sample_client, sample_location):
     create = await authed_client.post("/api/practices", json=_payload(sample_client, sample_location))
     practice_id = create.json()["id"]
@@ -138,6 +166,42 @@ async def test_trash_hides_practice_from_list(authed_client: AsyncClient, sample
 
     listing = await authed_client.get("/api/practices")
     assert practice_id not in [p["id"] for p in listing.json()]
+
+
+async def test_trashed_endpoint_lists_only_deleted_practices(
+    authed_client: AsyncClient, sample_client, sample_location
+):
+    """V1 (trash_page, app.py:18309): Cestino - stesso filtro. Verifica
+    anche che /api/practices/trashed non venga inghiottita dalla route
+    dinamica /{practice_id} (deve essere dichiarata prima nel router)."""
+    kept = await authed_client.post("/api/practices", json=_payload(sample_client, sample_location))
+    kept_id = kept.json()["id"]
+    trashed = await authed_client.post("/api/practices", json=_payload(sample_client, sample_location))
+    trashed_id = trashed.json()["id"]
+    await authed_client.post(f"/api/practices/{trashed_id}/trash", json={"reason": "test"})
+
+    response = await authed_client.get("/api/practices/trashed")
+    assert response.status_code == 200
+    ids = [p["id"] for p in response.json()]
+    assert trashed_id in ids
+    assert kept_id not in ids
+
+
+async def test_restore_practice_reappears_in_normal_list_and_not_in_trashed(
+    authed_client: AsyncClient, sample_client, sample_location
+):
+    create = await authed_client.post("/api/practices", json=_payload(sample_client, sample_location))
+    practice_id = create.json()["id"]
+    await authed_client.post(f"/api/practices/{practice_id}/trash", json={"reason": "test"})
+
+    restore = await authed_client.post(f"/api/practices/{practice_id}/restore")
+    assert restore.status_code == 200
+    assert restore.json()["deleted_at"] is None
+
+    listing = await authed_client.get("/api/practices")
+    assert practice_id in [p["id"] for p in listing.json()]
+    trashed_listing = await authed_client.get("/api/practices/trashed")
+    assert practice_id not in [p["id"] for p in trashed_listing.json()]
 
 
 async def test_list_practices_search_by_practice_number(authed_client: AsyncClient, sample_client, sample_location):

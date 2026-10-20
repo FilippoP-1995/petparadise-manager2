@@ -2,6 +2,10 @@ import { useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { useAuth } from "@/features/auth/useAuth";
+import { CheckCircleIcon, ChevronRightIcon, XIcon } from "@/app/icons";
+import { speciesAvatar } from "@/shared/speciesAvatar";
+import { CREMATION_STATUS } from "@/shared/cremationStatus";
+import { ConfirmModal } from "@/shared/ui/ConfirmModal";
 
 import {
   useAssignAnimal,
@@ -13,11 +17,7 @@ import {
   useRevertCycle,
 } from "./api";
 
-const STATUS_LABELS: Record<string, string> = {
-  pianificato: "Pianificato",
-  in_attesa: "In attesa",
-  completato: "Completato",
-};
+import "./cremationCycles.css";
 
 export function CremationCycleDetailPage() {
   const { cycleId } = useParams();
@@ -31,6 +31,9 @@ export function CremationCycleDetailPage() {
   const revertCycle = useRevertCycle();
   const deleteCycle = useDeleteCremationCycle();
   const [actionError, setActionError] = useState<string | null>(null);
+  const [completeModalOpen, setCompleteModalOpen] = useState(false);
+  const [revertModalOpen, setRevertModalOpen] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   // Continuità di navigazione: se l'utente seleziona un animale da
   // assegnare, poi segue il link verso la Pratica di un animale già
   // assegnato e torna con Indietro, la selezione deve essere ancora
@@ -80,28 +83,26 @@ export function CremationCycleDetailPage() {
   }
 
   async function handleComplete() {
-    if (!window.confirm("Confermi il completamento del ciclo? Le pratiche i cui animali sono tutti cremati passeranno a \"cremato\".")) return;
     setActionError(null);
     try {
       await completeCycle.mutateAsync({ cycleId: id });
+      setCompleteModalOpen(false);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Operazione non riuscita");
     }
   }
 
-  async function handleRevert() {
-    const reason = window.prompt("Motivo del ripristino (obbligatorio):");
-    if (!reason) return;
+  async function handleRevert(reason: string) {
     setActionError(null);
     try {
       await revertCycle.mutateAsync({ cycleId: id, reason });
+      setRevertModalOpen(false);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Operazione non riuscita");
     }
   }
 
   async function handleDelete() {
-    if (!window.confirm("Confermi l'eliminazione del ciclo?")) return;
     setActionError(null);
     try {
       await deleteCycle.mutateAsync(id);
@@ -112,15 +113,26 @@ export function CremationCycleDetailPage() {
   }
 
   return (
+    // V1 (cremation_schedule, app.py:12225-12244): qui non esiste una pagina
+    // di dettaglio dedicata - il ciclo si espande inline nella board
+    // (cremationToggleCycleCard) mostrando .cremation-cycle-body con le
+    // stesse righe animale reali (.cremation-animal-row, app.py:2261-2297).
+    // V2 la trasforma in una pagina propria (stessa scelta gia' fatta per
+    // la lista giornaliera) - qui portiamo pero' fedelmente il linguaggio
+    // grafico reale delle righe animale (avatar, nome, azioni), non una
+    // <table> generica come prima. Provenienza/etichette/urna non
+    // renderizzate: CycleAnimalRead espone solo id/name/species/
+    // practice_id, nessun dato in piu' da inventare (vedi anche
+    // CremationCycleListPage.tsx).
     <main className="wrap">
       <div className="titlebar">
-        <h1>Ciclo di cremazione {cycle.cycle_date}</h1>
-        <span className={`badge status-${cycle.status}`}>{STATUS_LABELS[cycle.status]}</span>
+        <h1>Ciclo di cremazione {new Date(`${cycle.cycle_date}T00:00:00`).toLocaleDateString("it-IT")}</h1>
+        <span className={`badge ${CREMATION_STATUS[cycle.status].cls}`}>{CREMATION_STATUS[cycle.status].label}</span>
       </div>
 
-      <div className="card">
+      <div className="section">
         <p>
-          <strong>Orario previsto:</strong> {cycle.planned_start.slice(0, 5)} - {cycle.planned_end.slice(0, 5)}
+          <strong>Orario previsto:</strong> <span className="cremation-cycle-time">{cycle.planned_start.slice(0, 5)} - {cycle.planned_end.slice(0, 5)}</span>
         </p>
         {cycle.completed_at && (
           <p>
@@ -131,36 +143,48 @@ export function CremationCycleDetailPage() {
 
       {actionError && <p className="error-banner">{actionError}</p>}
 
-      <div className="card">
+      <div className="section">
         <h2>Animali ({cycle.animals.length}/2)</h2>
         {cycle.animals.length === 0 && <p className="empty-state">Nessun animale assegnato.</p>}
         {cycle.animals.length > 0 && (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Nome</th>
-                <th>Specie</th>
-                <th>Pratica</th>
-                {!isCompleted && <th></th>}
-              </tr>
-            </thead>
-            <tbody>
-              {cycle.animals.map((animal) => (
-                <tr key={animal.id}>
-                  <td>{animal.name ?? "-"}</td>
-                  <td>{animal.species ?? "-"}</td>
-                  <td>{animal.practice_id ? <Link to={`/pratiche/${animal.practice_id}`}>#{animal.practice_id}</Link> : "-"}</td>
-                  {!isCompleted && (
-                    <td>
-                      <button className="btn-ghost" disabled={removeAnimal.isPending} onClick={() => handleRemove(animal.id)}>
-                        Rimuovi
+          <div className="cremation-detail-animals">
+            {cycle.animals.map((animal) => {
+              const [emoji, avatarCls] = speciesAvatar(animal.species);
+              return (
+                <div className="cremation-animal-row" key={animal.id}>
+                  <div className="cremation-animal-id">
+                    <span className={`cremation-animal-avatar ${avatarCls}`} aria-hidden="true">
+                      {emoji}
+                    </span>
+                    <div className="cremation-animal-name-wrap">
+                      <span className="cremation-animal-name">{animal.name ?? "Da inserire"}</span>
+                      <span className="cremation-animal-weight">{animal.species ?? "-"}</span>
+                    </div>
+                  </div>
+                  <div className="cremation-animal-actions">
+                    {animal.practice_id && (
+                      <Link className="cremation-animal-open" to={`/pratiche/${animal.practice_id}`}>
+                        <span>Apri pratica</span>
+                        <ChevronRightIcon />
+                      </Link>
+                    )}
+                    {!isCompleted && (
+                      <button
+                        type="button"
+                        className="cremation-animal-remove"
+                        disabled={removeAnimal.isPending}
+                        onClick={() => handleRemove(animal.id)}
+                        aria-label="Rimuovi dal ciclo"
+                        title="Rimuovi dal ciclo"
+                      >
+                        <XIcon />
                       </button>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
 
         {canAssign && (
@@ -180,19 +204,33 @@ export function CremationCycleDetailPage() {
         )}
       </div>
 
+      {/* V1 (app.py:12210/12221): stessi bottoni azione reali (classe +
+          etichetta) gia' usati nella board giornaliera - "Termina ciclo" /
+          "Annulla completamento", non testi V2 inventati. */}
       <div className="actions">
         {!isCompleted && cycle.animals.length > 0 && (
-          <button className="btn" disabled={completeCycle.isPending} onClick={handleComplete}>
-            Completa ciclo
+          <button
+            type="button"
+            className="cremation-action-btn cremation-action-active"
+            disabled={completeCycle.isPending}
+            onClick={() => setCompleteModalOpen(true)}
+          >
+            <CheckCircleIcon />
+            <span>Termina ciclo</span>
           </button>
         )}
         {isCompleted && (
-          <button className="btn-ghost" disabled={revertCycle.isPending} onClick={handleRevert}>
-            Ripristina (correzione)
+          <button
+            type="button"
+            className="cremation-action-btn cremation-action-planned"
+            disabled={revertCycle.isPending}
+            onClick={() => setRevertModalOpen(true)}
+          >
+            <span>Annulla completamento</span>
           </button>
         )}
         {canDelete && (
-          <button className="btn-ghost" disabled={deleteCycle.isPending} onClick={handleDelete}>
+          <button className="btn-ghost" disabled={deleteCycle.isPending} onClick={() => setDeleteModalOpen(true)}>
             Elimina ciclo
           </button>
         )}
@@ -200,6 +238,39 @@ export function CremationCycleDetailPage() {
           Torna all'elenco
         </button>
       </div>
+
+      <ConfirmModal
+        open={completeModalOpen}
+        onClose={() => setCompleteModalOpen(false)}
+        onConfirm={handleComplete}
+        title="Completa ciclo"
+        description='Confermi il completamento del ciclo? Le pratiche i cui animali sono tutti cremati passeranno a "cremato".'
+        confirmLabel="Completa"
+        isPending={completeCycle.isPending}
+      />
+
+      <ConfirmModal
+        open={revertModalOpen}
+        onClose={() => setRevertModalOpen(false)}
+        onConfirm={handleRevert}
+        title="Ripristina ciclo"
+        requireReason
+        reasonLabel="Motivo del ripristino"
+        confirmLabel="Ripristina"
+        danger
+        isPending={revertCycle.isPending}
+      />
+
+      <ConfirmModal
+        open={deleteModalOpen}
+        onClose={() => setDeleteModalOpen(false)}
+        onConfirm={handleDelete}
+        title="Elimina ciclo"
+        description="Confermi l'eliminazione del ciclo?"
+        confirmLabel="Elimina"
+        danger
+        isPending={deleteCycle.isPending}
+      />
     </main>
   );
 }

@@ -1,3 +1,4 @@
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.audit_log import AuditLog
@@ -34,3 +35,15 @@ class AuditRepository:
         )
         self._session.add(entry)
         return entry
+
+    async def list_for_entity(self, *, entity_type: str, entity_id: int) -> list[AuditLog]:
+        """V1 (dettaglio pratica: sidebar 'Cronologia modifiche', practice_
+        history) - qui la stessa cronologia letta dall'unico audit_log
+        gia' scritto da ogni service (doc06), non una seconda tabella di
+        storico parallela come in V1."""
+        stmt = (
+            select(AuditLog)
+            .where(AuditLog.entity_type == entity_type, AuditLog.entity_id == entity_id)
+            .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+        )
+        return list((await self._session.execute(stmt)).scalars().all())

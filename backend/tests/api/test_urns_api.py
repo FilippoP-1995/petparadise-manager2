@@ -58,6 +58,32 @@ async def test_update_urn_and_list_movements(authed_client: AsyncClient):
     assert "Rettifica manuale" in types
 
 
+async def test_urn_category_stats(authed_client: AsyncClient):
+    """V1 (urn_catalog_page: barra Modelli/Pezzi disponibili/Esaurite/
+    Scorte basse/Valore magazzino) - qui verificato che la stessa esatta
+    formula (out=scorta<=0, low=scorta positiva ma <=soglia, mai
+    sovrapposti) sia riprodotta dalla query aggregata."""
+    await authed_client.post("/api/urns", json=_payload(name="Disponibile", price_cents=10000, quantity=10, low_stock_threshold=3))
+    await authed_client.post("/api/urns", json=_payload(name="Scorta bassa", price_cents=5000, quantity=2, low_stock_threshold=3))
+    await authed_client.post("/api/urns", json=_payload(name="Esaurita", price_cents=8000, quantity=0, low_stock_threshold=3))
+    inactive = await authed_client.post("/api/urns", json=_payload(name="Disattivata", price_cents=1000, quantity=100))
+    await authed_client.post(f"/api/urns/{inactive.json()['id']}/disattiva")
+
+    response = await authed_client.get("/api/urns/stats", params={"category": "Urna"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["models"] == 3
+    assert body["quantity"] == 12
+    assert body["out"] == 1
+    assert body["low"] == 1
+    assert body["value_cents"] == 10 * 10000 + 2 * 5000
+
+
+async def test_urn_category_stats_requires_authentication(client: AsyncClient):
+    response = await client.get("/api/urns/stats", params={"category": "Urna"})
+    assert response.status_code == 401
+
+
 async def test_deactivate_urn(authed_client: AsyncClient):
     create = await authed_client.post("/api/urns", json=_payload())
     urn_id = create.json()["id"]

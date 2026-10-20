@@ -63,48 +63,58 @@ export function InvoiceFormPage() {
       <div className="titlebar">
         <h1>Nuova fattura</h1>
       </div>
-      <form className="card" onSubmit={handleSubmit(onSubmit)}>
-        <div className="field full">
-          <label>Pratica</label>
-          <PracticePicker selectedPractice={practice} onSelect={setSelectedPractice} />
-        </div>
+      <div className="section">
+        <form onSubmit={handleSubmit(onSubmit)}>
+          <div className="fields">
+            <div className="field full">
+              <label>Pratica</label>
+              <PracticePicker selectedPractice={practice} onSelect={setSelectedPractice} />
+            </div>
 
-        <label>
-          Numero fattura
-          <input {...register("invoice_number")} />
-        </label>
-        {errors.invoice_number && <p className="field-error">{errors.invoice_number.message}</p>}
+            <div className="field">
+              <label>
+                Numero fattura
+                <input {...register("invoice_number")} />
+              </label>
+              {errors.invoice_number && <p className="field-error">{errors.invoice_number.message}</p>}
+            </div>
 
-        <div className="field-row">
-          <label>
-            Data fattura
-            <input type="date" {...register("invoice_date")} />
-          </label>
-          <label>
-            Importo €
-            <input inputMode="decimal" placeholder="340,00" {...register("total_euro")} />
-          </label>
-          <label>
-            Canale
-            <select {...register("channel")}>
-              <option value="W">W</option>
-              <option value="D">D</option>
-            </select>
-          </label>
-        </div>
-        {errors.total_euro && <p className="field-error">{errors.total_euro.message}</p>}
+            <div className="field">
+              <label>
+                Data fattura
+                <input type="date" {...register("invoice_date")} />
+              </label>
+            </div>
+            <div className="field">
+              <label>
+                Importo €
+                <input inputMode="decimal" placeholder="340,00" {...register("total_euro")} />
+              </label>
+              {errors.total_euro && <p className="field-error">{errors.total_euro.message}</p>}
+            </div>
+            <div className="field">
+              <label>
+                Circuito
+                <select {...register("channel")}>
+                  <option value="W">W</option>
+                  <option value="D">D</option>
+                </select>
+              </label>
+            </div>
+          </div>
 
-        {serverError && <p className="error-banner">{serverError}</p>}
+          {serverError && <p className="error-banner">{serverError}</p>}
 
-        <div className="actions">
-          <button type="submit" disabled={isSubmitting || !practice}>
-            {isSubmitting ? "Salvataggio..." : "Salva fattura"}
-          </button>
-          <button type="button" className="btn-ghost" onClick={() => navigate(-1)}>
-            Annulla
-          </button>
-        </div>
-      </form>
+          <div className="actions" style={{ marginTop: 12 }}>
+            <button className="btn" type="submit" disabled={isSubmitting || !practice}>
+              {isSubmitting ? "Salvataggio..." : "Salva fattura"}
+            </button>
+            <button type="button" className="btn-ghost" onClick={() => navigate(-1)}>
+              Annulla
+            </button>
+          </div>
+        </form>
+      </div>
     </main>
   );
 }

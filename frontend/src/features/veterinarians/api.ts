@@ -19,6 +19,38 @@ export function useVeterinarians(params: { q?: string; offset?: number }) {
   });
 }
 
+export function useVeterinarian(veterinarianId: number) {
+  return useQuery({
+    queryKey: ["veterinarians", veterinarianId],
+    queryFn: async () => {
+      const { data, error } = await apiClient.GET("/api/veterinarians/{veterinarian_id}", {
+        params: { path: { veterinarian_id: veterinarianId } },
+      });
+      if (error) throw new Error("Veterinario non trovato");
+      return data;
+    },
+    enabled: Number.isFinite(veterinarianId),
+  });
+}
+
+export function useUpdateVeterinarian() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ veterinarianId, input }: { veterinarianId: number; input: VeterinarianCreateInput }) => {
+      const { data, error } = await apiClient.PUT("/api/veterinarians/{veterinarian_id}", {
+        params: { path: { veterinarian_id: veterinarianId } },
+        body: input,
+      });
+      if (error) throw new Error((error as { detail?: string }).detail ?? "Dati non validi");
+      return data;
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["veterinarians"] });
+      queryClient.invalidateQueries({ queryKey: ["veterinarians", vars.veterinarianId] });
+    },
+  });
+}
+
 export function useCreateVeterinarian() {
   const queryClient = useQueryClient();
   return useMutation({

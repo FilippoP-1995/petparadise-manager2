@@ -1,9 +1,12 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { useAuth } from "@/features/auth/useAuth";
+import { ConfirmModal } from "@/shared/ui/ConfirmModal";
 import { useListQueryParams } from "@/shared/useListQueryParams";
 
-import { useDeactivateVeterinarian, useVeterinarians } from "./api";
+import "../clients/clientsVeterinarians.css";
+import { useDeactivateVeterinarian, useVeterinarians, type Veterinarian } from "./api";
 
 export function VeterinarianListPage() {
   const { q, offset, setSearch, setOffset } = useListQueryParams();
@@ -11,11 +14,19 @@ export function VeterinarianListPage() {
   const deactivate = useDeactivateVeterinarian();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const [deactivateTarget, setDeactivateTarget] = useState<Veterinarian | null>(null);
 
   return (
     <main className="wrap">
       <div className="titlebar">
-        <h1>Veterinari</h1>
+        <div>
+          <h1>Veterinari</h1>
+          <div className="sub">Anagrafiche strutture veterinarie e buoni.</div>
+        </div>
+        {/* V1 (veterinarians_page, app.py:15263) non ha una pagina di
+            creazione separata - "Aggiungi veterinario" e' un form inline
+            in fondo a questa stessa pagina. V2 usa una pagina dedicata
+            (/veterinari/nuovo): stesso form, solo instradato diversamente. */}
         <Link className="btn" to="/veterinari/nuovo">
           + Nuovo veterinario
         </Link>
@@ -32,44 +43,71 @@ export function VeterinarianListPage() {
       {isError && <p className="error-banner">Errore nel caricamento dei veterinari.</p>}
       {veterinarians && veterinarians.length === 0 && <p className="empty-state">Nessun veterinario trovato.</p>}
 
+      {/* V1 (veterinarians_page, app.py:15263): tabella dentro
+          <section class="section"><h2>LISTA VETERINARI</h2>
+          <div class="tablebox"><table> - la <table> di V1 non ha classe
+          propria (regola CSS di base table/th/td, non .premium-table),
+          replicata qui con .vet-table (vedi clientsVeterinarians.css) per
+          restare fedele ai valori reali invece di riusare .data-table
+          (che duplicherebbe sfondo/bordo/raggio gia' dati da .tablebox).
+          La colonna "Buoni" di V1 (badge Maturati/Usati,
+          veterinarian_vouchers) non ha equivalente in V2 - nessun dominio
+          buoni-veterinario nel backend V2 (solo un campo voucher su
+          Practice, non una vera gestione buoni per veterinario) -
+          sostituita con un dato reale gia' disponibile (giorni orario
+          configurati), mai inventata. */}
       {veterinarians && veterinarians.length > 0 && (
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Clinica</th>
-              <th>Medico</th>
-              <th>Telefono</th>
-              <th>Citta'</th>
-              <th>Orari</th>
-              {isAdmin && <th></th>}
-            </tr>
-          </thead>
-          <tbody>
-            {veterinarians.map((vet) => (
-              <tr key={vet.id}>
-                <td>{vet.clinic_name ?? "-"}</td>
-                <td>{vet.doctor_name ?? "-"}</td>
-                <td>{vet.phone ?? "-"}</td>
-                <td>{vet.city ?? "-"}</td>
-                <td>{vet.hours.length} giorni configurati</td>
-                {isAdmin && (
-                  <td>
-                    <button
-                      className="btn-ghost"
-                      onClick={() => {
-                        if (window.confirm(`Disattivare ${vet.clinic_name ?? vet.doctor_name}?`)) {
-                          deactivate.mutate(vet.id);
-                        }
-                      }}
-                    >
-                      Disattiva
-                    </button>
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <section className="section">
+          <h2>LISTA VETERINARI</h2>
+          <div className="tablebox">
+            <table className="vet-table">
+              <thead>
+                <tr>
+                  <th>Veterinario</th>
+                  <th>Indirizzo</th>
+                  <th>Telefono</th>
+                  <th>Orari</th>
+                  {isAdmin && <th></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {veterinarians.map((vet) => (
+                  <tr key={vet.id}>
+                    <td>
+                      <Link to={`/veterinari/${vet.id}`}>
+                        <b>{vet.short_name || vet.clinic_name}</b>
+                      </Link>
+                      {vet.short_name && vet.clinic_name && (
+                        <>
+                          <br />
+                          <small className="sub">{vet.clinic_name}</small>
+                        </>
+                      )}
+                    </td>
+                    <td>
+                      {vet.address ?? "-"}
+                      {vet.city && (
+                        <>
+                          <br />
+                          <small className="sub">{vet.city}</small>
+                        </>
+                      )}
+                    </td>
+                    <td>{vet.phone ?? "-"}</td>
+                    <td>{vet.hours.length} giorni configurati</td>
+                    {isAdmin && (
+                      <td>
+                        <button className="btn-ghost" onClick={() => setDeactivateTarget(vet)}>
+                          Disattiva
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
       )}
 
       <div className="pagination">
@@ -80,6 +118,20 @@ export function VeterinarianListPage() {
           Successivi
         </button>
       </div>
+
+      <ConfirmModal
+        open={deactivateTarget != null}
+        onClose={() => setDeactivateTarget(null)}
+        onConfirm={() => {
+          if (deactivateTarget) deactivate.mutate(deactivateTarget.id);
+          setDeactivateTarget(null);
+        }}
+        title="Disattiva veterinario"
+        description={deactivateTarget ? `Disattivare ${deactivateTarget.clinic_name ?? deactivateTarget.doctor_name}?` : ""}
+        confirmLabel="Disattiva"
+        danger
+        isPending={deactivate.isPending}
+      />
     </main>
   );
 }

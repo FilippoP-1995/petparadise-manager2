@@ -46,57 +46,71 @@ export function CremationCycleFormPage() {
       <div className="titlebar">
         <h1>Nuovo ciclo di cremazione</h1>
       </div>
-      <form className="card" onSubmit={handleSubmit(onSubmit)}>
-        <div className="field-row">
-          <label>
-            Data
-            <input type="date" {...register("cycle_date")} />
-          </label>
-          <label>
-            Inizio previsto
-            <input type="time" {...register("planned_start")} />
-          </label>
-          <label>
-            Fine prevista
-            <input type="time" {...register("planned_end")} />
-          </label>
-        </div>
-        {(errors.cycle_date || errors.planned_start || errors.planned_end) && (
-          <p className="field-error">Data e orari sono obbligatori.</p>
-        )}
+      {/* V1 (cremationCreateEmptyCycle): crea un ciclo tramite modal inline,
+          non una pagina - qui riusa comunque .section/.fields/.field come
+          ogni altro form reale V1, per coerenza visiva. */}
+      <div className="section">
+        <form onSubmit={handleSubmit(onSubmit)}>
+          <div className="fields">
+            <div className="field">
+              <label>
+                Data
+                <input type="date" {...register("cycle_date")} />
+              </label>
+            </div>
+            <div className="field">
+              <label>
+                Inizio previsto
+                <input type="time" {...register("planned_start")} />
+              </label>
+            </div>
+            <div className="field">
+              <label>
+                Fine prevista
+                <input type="time" {...register("planned_end")} />
+              </label>
+            </div>
+            {(errors.cycle_date || errors.planned_start || errors.planned_end) && (
+              <p className="field-error">Data e orari sono obbligatori.</p>
+            )}
 
-        <label>
-          Sede di cremazione
-          <select
-            {...register("cremation_location_id", {
-              // A differenza dei campi condizionali di PickupFormPage (mai
-              // registrati se il ramo non e' visibile, quindi restano
-              // undefined da soli), questo select e' sempre montato: senza
-              // questa conversione "" diventerebbe 0 (Number("")) invece di
-              // restare assente, violando la FK opzionale.
-              setValueAs: (v) => (v === "" ? undefined : Number(v)),
-            })}
-          >
-            <option value="">Seleziona...</option>
-            {locations?.map((loc) => (
-              <option key={loc.id} value={loc.id}>
-                {loc.name}
-              </option>
-            ))}
-          </select>
-        </label>
+            <div className="field">
+              <label>
+                Sede di cremazione
+                <select
+                  {...register("cremation_location_id", {
+                    // A differenza dei campi condizionali di PickupFormPage
+                    // (mai registrati se il ramo non e' visibile, quindi
+                    // restano undefined da soli), questo select e' sempre
+                    // montato: senza questa conversione "" diventerebbe 0
+                    // (Number("")) invece di restare assente, violando la
+                    // FK opzionale.
+                    setValueAs: (v) => (v === "" ? undefined : Number(v)),
+                  })}
+                >
+                  <option value="">Seleziona...</option>
+                  {locations?.map((loc) => (
+                    <option key={loc.id} value={loc.id}>
+                      {loc.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
 
-        {serverError && <p className="error-banner">{serverError}</p>}
+          {serverError && <p className="error-banner">{serverError}</p>}
 
-        <div className="actions">
-          <button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "Salvataggio..." : "Salva ciclo"}
-          </button>
-          <button type="button" className="btn-ghost" onClick={() => navigate("/cicli-cremazione")}>
-            Annulla
-          </button>
-        </div>
-      </form>
+          <div className="actions" style={{ marginTop: 12 }}>
+            <button className="btn" type="submit" disabled={isSubmitting}>
+              {isSubmitting ? "Salvataggio..." : "Salva ciclo"}
+            </button>
+            <button type="button" className="btn-ghost" onClick={() => navigate("/cicli-cremazione")}>
+              Annulla
+            </button>
+          </div>
+        </form>
+      </div>
     </main>
   );
 }

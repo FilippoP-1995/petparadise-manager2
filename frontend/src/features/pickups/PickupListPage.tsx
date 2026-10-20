@@ -1,5 +1,8 @@
 import { Link, useSearchParams } from "react-router-dom";
 
+import { PICKUP_STATUS_HEX, pickupStatusStyle } from "@/shared/pickupStatusColor";
+import { AdvancedSearch } from "@/shared/ui/AdvancedSearch";
+import { CalendarApptCard } from "@/shared/ui/CalendarApptCard";
 import { useListQueryParams } from "@/shared/useListQueryParams";
 
 import { usePickups } from "./api";
@@ -9,6 +12,17 @@ const STATUS_LABELS: Record<string, string> = {
   da_ritirare: "Da ritirare",
   ritirato: "Ritirato",
   annullato: "Annullato",
+};
+
+// V1 non ha un pickup_type isolato (e' testo libero nel titolo evento) -
+// qui i valori dell'enum PickupType sono mostrati con la stessa etichetta
+// italiana gia' usata da PickupFormPage.tsx, non con lo slug grezzo.
+const PICKUP_TYPE_LABELS: Record<string, string> = {
+  sede_aziendale: "Sede aziendale",
+  domicilio: "Domicilio",
+  veterinario: "Veterinario",
+  collaboratore: "Collaboratore",
+  altro: "Altro",
 };
 
 export function PickupListPage() {
@@ -40,7 +54,7 @@ export function PickupListPage() {
         </Link>
       </div>
 
-      <div className="field-row">
+      <AdvancedSearch defaultOpen={Boolean(q || status)}>
         <input
           className="search-input"
           placeholder="Cerca per cliente o note..."
@@ -55,39 +69,37 @@ export function PickupListPage() {
             </option>
           ))}
         </select>
-      </div>
+      </AdvancedSearch>
 
       {isLoading && <p className="loading">Caricamento...</p>}
       {isError && <p className="error-banner">Errore nel caricamento dei ritiri.</p>}
       {pickups && pickups.length === 0 && <p className="empty-state">Nessun ritiro trovato.</p>}
 
       {pickups && pickups.length > 0 && (
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Data</th>
-              <th>Stato</th>
-              <th>Tipo</th>
-              <th>Animali</th>
-              <th>Pratica</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pickups.map((pickup) => (
-              <tr key={pickup.id}>
-                <td>
-                  <Link to={`/ritiri/${pickup.id}`}>{new Date(pickup.start_at).toLocaleString("it-IT")}</Link>
-                </td>
-                <td>
-                  <span className={`badge status-${pickup.pickup_status}`}>{STATUS_LABELS[pickup.pickup_status]}</span>
-                </td>
-                <td>{pickup.pickup_type}</td>
-                <td>{pickup.animals.map((a) => a.name ?? "-").join(", ") || "-"}</td>
-                <td>{pickup.linked_practice_id ? `#${pickup.linked_practice_id}` : "-"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="calendar-appt-list">
+          {pickups.map((pickup) => {
+            const animalNames = pickup.animals.map((a) => a.name ?? "-").join(", ") || "Nessun animale";
+            const ownerLine = pickup.client_name
+              ? `${pickup.client_name}${pickup.client_phone ? " · " + pickup.client_phone : ""}`
+              : undefined;
+            return (
+              <CalendarApptCard
+                key={pickup.id}
+                href={`/ritiri/${pickup.id}`}
+                kind="pickup"
+                borderColorHex={PICKUP_STATUS_HEX[pickup.pickup_status] ?? "#94a3b8"}
+                timeText={new Date(pickup.start_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}
+                title={PICKUP_TYPE_LABELS[pickup.pickup_type] ?? pickup.pickup_type}
+                nameLine={`🐾 ${animalNames} · ${pickup.linked_practice_id ? `Pratica #${pickup.linked_practice_id}` : "Nessuna pratica collegata"}`}
+                ownerLine={ownerLine}
+                locationLine={pickup.pickup_contact_name || pickup.pickup_address || undefined}
+                statusText={STATUS_LABELS[pickup.pickup_status].toUpperCase()}
+                statusStyle={pickupStatusStyle(pickup.pickup_status)}
+                address={pickup.pickup_address}
+              />
+            );
+          })}
+        </div>
       )}
 
       <div className="pagination">

@@ -10,6 +10,7 @@ from schemas.practice import (
     CorrectionRequest,
     OverrideTotalRequest,
     PracticeCreate,
+    PracticeHistoryEntry,
     PracticeRead,
     PracticeUpdate,
     TransitionRequest,
@@ -34,13 +35,25 @@ def _domain_error_to_http(exc: Exception):
 async def list_practices(
     q: str | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
+    client_id: int | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_session),
     _: User = Depends(get_current_user),
 ):
     repo = PracticeRepository(db)
-    practices = await repo.list_active(search=q, status=status_filter, limit=limit, offset=offset)
+    practices = await repo.list_active(search=q, status=status_filter, client_id=client_id, limit=limit, offset=offset)
+    return [PracticeRead.from_practice(p) for p in practices]
+
+
+@router.get("/trashed", response_model=list[PracticeRead])
+async def list_trashed_practices(db: AsyncSession = Depends(get_session), _: User = Depends(get_current_user)):
+    """V1 (trash_page, app.py:18307-18309): Cestino - stesso filtro
+    (deleted_at NOT NULL). Dichiarata prima di /{practice_id} perche' un
+    path statico deve vincere sul segmento dinamico, non per una vera
+    ambiguita' di dati."""
+    repo = PracticeRepository(db)
+    practices = await repo.list_trashed()
     return [PracticeRead.from_practice(p) for p in practices]
 
 
@@ -51,6 +64,12 @@ async def get_practice(practice_id: int, db: AsyncSession = Depends(get_session)
     if practice is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pratica non trovata")
     return PracticeRead.from_practice(practice)
+
+
+@router.get("/{practice_id}/cronologia", response_model=list[PracticeHistoryEntry])
+async def get_practice_history(practice_id: int, db: AsyncSession = Depends(get_session), _: User = Depends(get_current_user)):
+    """V1 (dettaglio pratica: sidebar 'Cronologia modifiche')."""
+    return await practice_service.get_history(db, practice_id)
 
 
 @router.post("", response_model=PracticeRead, status_code=status.HTTP_201_CREATED)

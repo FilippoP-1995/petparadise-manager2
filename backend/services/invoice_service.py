@@ -7,9 +7,45 @@ from models.invoice import Invoice
 from repositories.audit_repository import AuditRepository
 from repositories.invoice_repository import InvoiceRepository
 from repositories.practice_repository import PracticeRepository
-from schemas.invoice import CorrectInvoiceTotalRequest, InvoiceCreate, InvoiceReconciliationRead
+from schemas.invoice import CorrectInvoiceTotalRequest, InvoiceCreate, InvoiceReconciliationRead, InvoiceRead
 
 ENTITY_TYPE = "invoice"
+
+
+def _owner_name(snapshot: dict | None) -> str:
+    # Stessa esatta logica di dashboard_service._owner_name (recent
+    # practices): un solo posto dove si decide come un owner_snapshot
+    # diventa un nome leggibile, qui riusato invece di duplicato.
+    if not snapshot:
+        return ""
+    if snapshot.get("company_name"):
+        return snapshot["company_name"]
+    return " ".join(part for part in (snapshot.get("first_name"), snapshot.get("last_name")) if part).strip()
+
+
+async def list_invoices(
+    db: AsyncSession, *, q: str | None, practice_id: int | None, limit: int, offset: int
+) -> list[InvoiceRead]:
+    """V1 (invoices_page): la tabella 'Fatture emesse' mostra sempre Cliente
+    e Animale insieme al numero fattura - qui ricostruito con una sola
+    query bulk sulle pratiche coinvolte (PracticeRepository.list_by_ids),
+    mai una query per riga. Nessuna fattura senza pratica collegata (FK
+    ON DELETE SET NULL) mostra semplicemente owner_name/animal_names=None."""
+    invoices = await InvoiceRepository(db).list_all(q=q, practice_id=practice_id, limit=limit, offset=offset)
+    practice_ids = [invoice.practice_id for invoice in invoices if invoice.practice_id is not None]
+    practices_by_id = {p.id: p for p in await PracticeRepository(db).list_by_ids(practice_ids)}
+
+    result = []
+    for invoice in invoices:
+        practice = practices_by_id.get(invoice.practice_id) if invoice.practice_id is not None else None
+        owner_name = _owner_name(practice.owner_snapshot) if practice is not None else ""
+        animal_names = ", ".join(a.name for a in practice.animals if a.name) if practice is not None else ""
+        result.append(
+            InvoiceRead.model_validate(invoice).model_copy(
+                update={"owner_name": owner_name or None, "animal_names": animal_names or None}
+            )
+        )
+    return result
 
 
 async def create_invoice(db: AsyncSession, data: InvoiceCreate, *, actor_user_id: int) -> Invoice:

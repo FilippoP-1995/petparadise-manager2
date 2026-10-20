@@ -17,8 +17,8 @@ def _practice_payload(sample_client, sample_location, **overrides):
     return base
 
 
-async def _create_practice(authed_client: AsyncClient, sample_client, sample_location):
-    response = await authed_client.post("/api/practices", json=_practice_payload(sample_client, sample_location))
+async def _create_practice(authed_client: AsyncClient, sample_client, sample_location, **overrides):
+    response = await authed_client.post("/api/practices", json=_practice_payload(sample_client, sample_location, **overrides))
     return response.json()
 
 
@@ -119,6 +119,23 @@ async def test_list_invoices_filters_by_practice(authed_client: AsyncClient, sam
     assert filtered.status_code == 200
     numbers = {i["invoice_number"] for i in filtered.json()}
     assert numbers == {"FT-FILTER-1"}
+
+
+async def test_list_invoices_includes_owner_and_animal_names(authed_client: AsyncClient, sample_client, sample_location):
+    """Fase 'parita' visiva V2' (V1: invoices_page mostra Cliente/Animale
+    accanto al numero fattura) - qui verificato che la lista li ricostruisca
+    dalla pratica collegata (owner_snapshot + animals), senza toccare la
+    logica di fatturazione."""
+    practice = await _create_practice(
+        authed_client, sample_client, sample_location, animals=[{"name": "Fido", "species": "Cane"}]
+    )
+    await authed_client.post("/api/invoices", json=_invoice_payload(practice["id"], invoice_number="FT-NAMES-1"))
+
+    response = await authed_client.get("/api/invoices", params={"practice_id": practice["id"]})
+    assert response.status_code == 200
+    [invoice] = response.json()
+    assert invoice["owner_name"] == "Mario Rossi"
+    assert invoice["animal_names"] == "Fido"
 
 
 # --- doc06 Addendum R: correzione fattura emessa (correct_invoice_total) ---

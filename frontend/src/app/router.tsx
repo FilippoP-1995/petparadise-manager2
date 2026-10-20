@@ -2,12 +2,15 @@ import { createBrowserRouter, ScrollRestoration } from "react-router-dom";
 
 import { LoginPage } from "@/features/auth/LoginPage";
 import { ArticleListPage } from "@/features/articles/ArticleListPage";
+import { CalendarEventFormPage } from "@/features/calendar/CalendarEventFormPage";
 import { CalendarPage } from "@/features/calendar/CalendarPage";
+import { ClientDetailPage } from "@/features/clients/ClientDetailPage";
 import { ClientFormPage } from "@/features/clients/ClientFormPage";
 import { ClientListPage } from "@/features/clients/ClientListPage";
 import { CompanyLocationFormPage } from "@/features/company-locations/CompanyLocationFormPage";
 import { CompanyLocationListPage } from "@/features/company-locations/CompanyLocationListPage";
 import { CremationCycleDetailPage } from "@/features/cremation-cycles/CremationCycleDetailPage";
+import { DashboardPage } from "@/features/dashboard/DashboardPage";
 import { CremationCycleFormPage } from "@/features/cremation-cycles/CremationCycleFormPage";
 import { CremationCycleListPage } from "@/features/cremation-cycles/CremationCycleListPage";
 import { DeliveryDetailPage } from "@/features/deliveries/DeliveryDetailPage";
@@ -17,14 +20,18 @@ import { InvoiceDetailPage } from "@/features/invoices/InvoiceDetailPage";
 import { InvoiceFormPage } from "@/features/invoices/InvoiceFormPage";
 import { InvoiceListPage } from "@/features/invoices/InvoiceListPage";
 import { PracticeDetailPage } from "@/features/practices/PracticeDetailPage";
+import { PracticeEditFormPage } from "@/features/practices/PracticeEditFormPage";
 import { PracticeFormPage } from "@/features/practices/PracticeFormPage";
+import { PracticeSignaturePage } from "@/features/practices/PracticeSignaturePage";
 import { PracticeListPage } from "@/features/practices/PracticeListPage";
+import { PracticeTrashPage } from "@/features/practices/PracticeTrashPage";
 import { PickupDetailPage } from "@/features/pickups/PickupDetailPage";
 import { PickupFormPage } from "@/features/pickups/PickupFormPage";
 import { PickupListPage } from "@/features/pickups/PickupListPage";
 import { UrnDetailPage } from "@/features/urns/UrnDetailPage";
 import { UrnFormPage } from "@/features/urns/UrnFormPage";
 import { UrnListPage } from "@/features/urns/UrnListPage";
+import { VeterinarianDetailPage } from "@/features/veterinarians/VeterinarianDetailPage";
 import { VeterinarianFormPage } from "@/features/veterinarians/VeterinarianFormPage";
 import { VeterinarianListPage } from "@/features/veterinarians/VeterinarianListPage";
 
@@ -54,13 +61,19 @@ export const router = createBrowserRouter([
     ),
     children: [
       { path: "/calendario", element: <CalendarPage /> },
+      { path: "/calendario/nuovo", element: <CalendarEventFormPage /> },
       { path: "/clienti", element: <ClientListPage /> },
       { path: "/clienti/nuovo", element: <ClientFormPage /> },
+      { path: "/clienti/:clientId", element: <ClientDetailPage /> },
       { path: "/veterinari", element: <VeterinarianListPage /> },
       { path: "/veterinari/nuovo", element: <VeterinarianFormPage /> },
+      { path: "/veterinari/:veterinarianId", element: <VeterinarianDetailPage /> },
       { path: "/pratiche", element: <PracticeListPage /> },
+      { path: "/cestino", element: <PracticeTrashPage /> },
       { path: "/pratiche/nuova", element: <PracticeFormPage /> },
       { path: "/pratiche/:practiceId", element: <PracticeDetailPage /> },
+      { path: "/pratiche/:practiceId/modifica", element: <PracticeEditFormPage /> },
+      { path: "/pratiche/:practiceId/firma", element: <PracticeSignaturePage /> },
       { path: "/ritiri", element: <PickupListPage /> },
       { path: "/ritiri/nuovo", element: <PickupFormPage /> },
       { path: "/ritiri/:pickupId", element: <PickupDetailPage /> },
@@ -95,7 +108,7 @@ export const router = createBrowserRouter([
       { path: "/fatture", element: <InvoiceListPage /> },
       { path: "/fatture/nuova", element: <InvoiceFormPage /> },
       { path: "/fatture/:invoiceId", element: <InvoiceDetailPage /> },
-      { path: "/", element: <PracticeListPage /> },
+      { path: "/", element: <DashboardPage /> },
     ],
   },
 ]);

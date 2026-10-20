@@ -1,0 +1,35 @@
+/* V1 (regola di base `table{...}th,td{...}thead th{...}`, app.py:1350):
+   la lista Veterinari usa una <table> "nuda" (nessuna classe propria, a
+   differenza di Clienti/Collaboratori che usano .premium-table) dentro
+   .tablebox, che fornisce gia' sfondo/bordo/raggio - la tabella stessa
+   resta piatta, senza duplicarli, con thead sticky come in V1. La classe
+   ".data-table" usata altrove nel progetto per tabelle "semplici" imposta
+   invece un proprio sfondo/bordo/raggio scuri IN PIU' rispetto a
+   .tablebox (box-dentro-box, bordi doppi non presenti in V1), un hover di
+   riga inventato e un padding diverso da quello reale (16px 14px) - non
+   adatta per questa pagina, quindi qui si usa una classe locale fedele ai
+   valori CSS reali di V1 invece di riusarla. */
+.vet-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: transparent;
+}
+.vet-table th,
+.vet-table td {
+  text-align: left;
+  padding: 16px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.vet-table th {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #101620;
+}
+.vet-table tr:last-child td {
+  border-bottom: 0;
+}

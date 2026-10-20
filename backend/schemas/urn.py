@@ -36,6 +36,17 @@ class UrnRead(BaseModel):
     updated_at: datetime
 
 
+class UrnCategoryStats(BaseModel):
+    """V1 (urn_catalog_page): barra statistiche sopra la griglia, sull'intera
+    categoria attiva (non sulla sola pagina/filtro correnti)."""
+
+    models: int
+    quantity: int
+    out: int
+    low: int
+    value_cents: int
+
+
 class UrnMovementRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

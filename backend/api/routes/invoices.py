@@ -22,7 +22,7 @@ async def list_invoices(
     db: AsyncSession = Depends(get_session),
     _: User = Depends(get_current_user),
 ):
-    return await InvoiceRepository(db).list_all(q=q, practice_id=practice_id, limit=limit, offset=offset)
+    return await invoice_service.list_invoices(db, q=q, practice_id=practice_id, limit=limit, offset=offset)
 
 
 @router.get("/{invoice_id}", response_model=InvoiceRead)

@@ -29,6 +29,16 @@ class InvoiceRepository:
         stmt = stmt.order_by(Invoice.created_at.desc(), Invoice.id.desc()).limit(limit).offset(offset)
         return list((await self._session.execute(stmt)).scalars().all())
 
+    async def list_for_practice_ids(self, practice_ids: list[int]) -> list[Invoice]:
+        """Fase 'parita' visiva V2' (Lista Pratiche, colonna Fattura): una
+        sola query per l'intera pagina di risultati invece di una per
+        riga - stesso filtro di list_all (practice_id), nessuna nuova
+        logica di fatturazione."""
+        if not practice_ids:
+            return []
+        stmt = select(Invoice).where(Invoice.practice_id.in_(practice_ids))
+        return list((await self._session.execute(stmt)).scalars().all())
+
     async def paid_cents_for_invoice(self, invoice_id: int) -> int:
         """doc06 Addendum O: 'totale pagato' e' sempre calcolato live dal
         ledger via invoice_payment_links, mai memorizzato. Stessa esatta

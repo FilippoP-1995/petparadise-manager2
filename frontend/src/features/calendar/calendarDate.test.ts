@@ -1,6 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { addDays, dayBounds, toLocalDateIso, todayIso } from "./calendarDate";
+import {
+  addDays,
+  addMonths,
+  dayBounds,
+  isSameMonth,
+  monthGridDays,
+  monthRangeBounds,
+  toLocalDateIso,
+  todayIso,
+  weekDays,
+  weekRangeBounds,
+  weekStart,
+  weekdayMonFirst,
+} from "./calendarDate";
 
 // Niente @types/node nel progetto (nessuna dipendenza nuova aggiunta solo
 // per questo test): dichiarazione locale minima per il solo accesso a
@@ -104,6 +117,88 @@ describe("todayIso", () => {
   it("e' coerente con il calendario del sistema al momento della chiamata", () => {
     const now = new Date();
     expect(todayIso()).toBe(toLocalDateIso(now));
+  });
+});
+
+describe("weekdayMonFirst / weekStart / weekDays - settimana V1 (lunedi'->domenica)", () => {
+  it("2027-05-10 e' un lunedi'", () => {
+    expect(weekdayMonFirst("2027-05-10")).toBe(0);
+  });
+
+  it("2027-05-16 e' una domenica (indice 6)", () => {
+    expect(weekdayMonFirst("2027-05-16")).toBe(6);
+  });
+
+  it("weekStart riporta al lunedi' della stessa settimana per qualunque giorno al suo interno", () => {
+    for (const day of weekDays("2027-05-13")) {
+      expect(weekStart(day)).toBe("2027-05-10");
+    }
+  });
+
+  it("weekDays produce esattamente 7 giorni consecutivi a partire dal lunedi'", () => {
+    expect(weekDays("2027-05-13")).toEqual([
+      "2027-05-10",
+      "2027-05-11",
+      "2027-05-12",
+      "2027-05-13",
+      "2027-05-14",
+      "2027-05-15",
+      "2027-05-16",
+    ]);
+  });
+
+  it("weekRangeBounds copre esattamente i 7 giorni (168 ore)", () => {
+    withTimeZone("Europe/Rome", () => {
+      const { dateFrom, dateTo } = weekRangeBounds("2027-05-13");
+      const diffMs = new Date(dateTo).getTime() - new Date(dateFrom).getTime();
+      expect(diffMs).toBe(7 * 24 * 60 * 60 * 1000);
+    });
+  });
+});
+
+describe("monthGridDays - griglia 42 celle (6 settimane, lun->dom)", () => {
+  it("produce sempre 42 celle", () => {
+    expect(monthGridDays("2027-05-13")).toHaveLength(42);
+  });
+
+  it("la prima cella e' il lunedi' della settimana che contiene il primo del mese", () => {
+    // 2027-05-01 e' un sabato -> la settimana che lo contiene inizia lunedi' 2027-04-26
+    expect(monthGridDays("2027-05-13")[0]).toBe("2027-04-26");
+  });
+
+  it("contiene tutti i giorni del mese richiesto", () => {
+    const days = monthGridDays("2027-02-10");
+    for (let d = 1; d <= 28; d++) {
+      expect(days).toContain(`2027-02-${String(d).padStart(2, "0")}`);
+    }
+  });
+
+  it("monthRangeBounds copre esattamente le 42 celle (1008 ore)", () => {
+    withTimeZone("Europe/Rome", () => {
+      const { dateFrom, dateTo } = monthRangeBounds("2027-05-13");
+      const diffMs = new Date(dateTo).getTime() - new Date(dateFrom).getTime();
+      expect(diffMs).toBe(42 * 24 * 60 * 60 * 1000);
+    });
+  });
+});
+
+describe("isSameMonth / addMonths", () => {
+  it("isSameMonth riconosce due date nello stesso mese", () => {
+    expect(isSameMonth("2027-05-01", "2027-05-31")).toBe(true);
+    expect(isSameMonth("2027-04-30", "2027-05-01")).toBe(false);
+  });
+
+  it("addMonths avanza mantenendo il giorno quando possibile", () => {
+    expect(addMonths("2027-05-10", 1)).toBe("2027-06-10");
+  });
+
+  it("addMonths con overflow di giorno si adatta all'ultimo giorno del mese target", () => {
+    // 31 gennaio + 1 mese non esiste (febbraio ha 28 giorni nel 2027) -> 28 febbraio
+    expect(addMonths("2027-01-31", 1)).toBe("2027-02-28");
+  });
+
+  it("addMonths puo' tornare indietro", () => {
+    expect(addMonths("2027-05-10", -1)).toBe("2027-04-10");
   });
 });
 

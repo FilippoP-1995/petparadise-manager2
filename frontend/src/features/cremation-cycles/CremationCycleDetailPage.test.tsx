@@ -101,7 +101,7 @@ describe("CremationCycleDetailPage - continuita' di navigazione (selectedAnimalI
     await user.selectOptions(select, "20");
     await waitFor(() => expect(select).toHaveValue("20"));
 
-    await user.click(screen.getByRole("link", { name: "#99" }));
+    await user.click(screen.getByRole("link", { name: "Apri pratica" }));
     await waitFor(() => expect(screen.getByText("Pratica stub")).toBeInTheDocument());
 
     await user.click(screen.getByRole("link", { name: "Indietro" }));

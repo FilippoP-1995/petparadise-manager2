@@ -1,9 +1,11 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { useAuth } from "@/features/auth/useAuth";
+import { ConfirmModal } from "@/shared/ui/ConfirmModal";
 import { useListQueryParams } from "@/shared/useListQueryParams";
 
-import { useClients, useDeactivateClient } from "./api";
+import { useClients, useDeactivateClient, type Client } from "./api";
 
 export function ClientListPage() {
   const { q, offset, setSearch, setOffset } = useListQueryParams();
@@ -11,11 +13,21 @@ export function ClientListPage() {
   const deactivate = useDeactivateClient();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const [deactivateTarget, setDeactivateTarget] = useState<Client | null>(null);
 
   return (
     <main className="wrap">
       <div className="titlebar">
-        <h1>Clienti</h1>
+        <div>
+          <h1>Clienti</h1>
+          <div className="sub">Anagrafica clienti.</div>
+        </div>
+        {/* V1 (clients_page, app.py:15407) non ha una pagina di creazione
+            separata - "Aggiungi cliente" e' un form inline in fondo a
+            questa stessa pagina, che posta su "/clienti". V2 usa una
+            pagina dedicata (ClientFormPage, /clienti/nuovo): stesso form,
+            stessi campi, solo instradato diversamente - gap architetturale
+            disclosed, non un nuovo dominio. */}
         <Link className="btn" to="/clienti/nuovo">
           + Nuovo cliente
         </Link>
@@ -33,40 +45,63 @@ export function ClientListPage() {
 
       {clients && clients.length === 0 && <p className="empty-state">Nessun cliente trovato.</p>}
 
+      {/* V1 (clients_page, app.py:15407): tabella dentro
+          <section class="section"><h2>LISTA CLIENTI</h2><div class="tablebox">
+          - non una <table> nuda nel flusso della pagina. */}
       {clients && clients.length > 0 && (
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Nome</th>
-              <th>Telefono</th>
-              <th>Citta'</th>
-              {isAdmin && <th></th>}
-            </tr>
-          </thead>
-          <tbody>
-            {clients.map((client) => (
-              <tr key={client.id}>
-                <td>{[client.first_name, client.last_name].filter(Boolean).join(" ") || client.company_name}</td>
-                <td>{client.phone ?? "-"}</td>
-                <td>{client.city ?? "-"}</td>
-                {isAdmin && (
-                  <td>
-                    <button
-                      className="btn-ghost"
-                      onClick={() => {
-                        if (window.confirm(`Disattivare ${client.first_name} ${client.last_name}?`)) {
-                          deactivate.mutate(client.id);
-                        }
-                      }}
-                    >
-                      Disattiva
-                    </button>
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <section className="section">
+          <h2>LISTA CLIENTI</h2>
+          <div className="tablebox">
+            <table className="premium-table">
+              <thead>
+                <tr>
+                  <th>Cliente</th>
+                  <th>Telefono</th>
+                  <th>Email</th>
+                  <th>Comune</th>
+                  {isAdmin && <th></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {clients.map((client) => {
+                  const name = [client.first_name, client.last_name].filter(Boolean).join(" ") || client.company_name || "Cliente senza nome";
+                  return (
+                    <tr key={client.id}>
+                      <td>
+                        <div className="premium-row-lead">
+                          <span className="premium-avatar" aria-hidden="true">
+                            {(name.trim()[0] || "?").toUpperCase()}
+                          </span>
+                          <div>
+                            <Link to={`/clienti/${client.id}`}>
+                              <b>{name}</b>
+                            </Link>
+                            {client.company_name && (client.first_name || client.last_name) && (
+                              <>
+                                <br />
+                                <small className="sub">{client.company_name}</small>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td>{client.phone ?? "-"}</td>
+                      <td>{client.email ?? "-"}</td>
+                      <td>{client.city ?? "-"}</td>
+                      {isAdmin && (
+                        <td>
+                          <button className="btn-ghost" onClick={() => setDeactivateTarget(client)}>
+                            Disattiva
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
       )}
 
       <div className="pagination">
@@ -77,6 +112,20 @@ export function ClientListPage() {
           Successivi
         </button>
       </div>
+
+      <ConfirmModal
+        open={deactivateTarget != null}
+        onClose={() => setDeactivateTarget(null)}
+        onConfirm={() => {
+          if (deactivateTarget) deactivate.mutate(deactivateTarget.id);
+          setDeactivateTarget(null);
+        }}
+        title="Disattiva cliente"
+        description={deactivateTarget ? `Disattivare ${deactivateTarget.first_name} ${deactivateTarget.last_name}?` : ""}
+        confirmLabel="Disattiva"
+        danger
+        isPending={deactivate.isPending}
+      />
     </main>
   );
 }

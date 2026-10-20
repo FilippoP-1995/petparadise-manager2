@@ -43,8 +43,18 @@ class PracticeRepository:
             return None
         return practice
 
+    async def list_by_ids(self, practice_ids: list[int]) -> list[Practice]:
+        """Fase 'parita' visiva V2' (Fatture: colonne Cliente/Animale): una
+        sola query per l'intera pagina di risultati invece di una per riga -
+        stesso caricamento eager (owner_snapshot e' gia' sulla riga, animals
+        via selectinload) di get_by_id, nessuna nuova logica di dominio."""
+        if not practice_ids:
+            return []
+        stmt = select(Practice).where(Practice.id.in_(practice_ids)).options(selectinload(Practice.animals))
+        return list((await self._session.execute(stmt)).scalars().all())
+
     async def list_active(
-        self, *, search: str | None, status: str | None, limit: int, offset: int
+        self, *, search: str | None, status: str | None, limit: int, offset: int, client_id: int | None = None
     ) -> list[Practice]:
         stmt = (
             select(Practice)
@@ -64,7 +74,25 @@ class PracticeRepository:
             )
         if status:
             stmt = stmt.where(Practice.status == status)
+        # V1 (client_detail, app.py:15413): tabella "Pratiche collegate" nel
+        # dettaglio cliente - stesso filtro, nessuna nuova business logic.
+        if client_id is not None:
+            stmt = stmt.where(Practice.client_id == client_id)
         stmt = stmt.order_by(Practice.created_at.desc()).limit(limit).offset(offset)
+        return list((await self._session.execute(stmt)).scalars().unique().all())
+
+    # V1 (trash_page, app.py:18309): stesso filtro esatto (deleted_at NOT
+    # NULL), ordinate per data di cestinamento - unica query nuova per
+    # abilitare Cestino/Ripristina, nessuna logica di scrittura nuova
+    # (restore_practice esiste gia' in practice_service.py).
+    async def list_trashed(self, *, limit: int = 200) -> list[Practice]:
+        stmt = (
+            select(Practice)
+            .where(Practice.deleted_at.is_not(None))
+            .options(*_EAGER_OPTIONS)
+            .order_by(Practice.deleted_at.desc(), Practice.id.desc())
+            .limit(limit)
+        )
         return list((await self._session.execute(stmt)).scalars().unique().all())
 
     def add(self, practice: Practice) -> None:

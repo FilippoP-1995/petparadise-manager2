@@ -1,3 +1,5 @@
+from datetime import date
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -23,7 +25,7 @@ class CremationCycleRepository:
         stmt = select(CremationCycle).where(CremationCycle.id == cycle_id).options(*_EAGER_OPTIONS).with_for_update()
         return (await self._session.execute(stmt)).scalar_one_or_none()
 
-    async def list_active(self, *, status: str | None, cycle_date: str | None, limit: int, offset: int) -> list[CremationCycle]:
+    async def list_active(self, *, status: str | None, cycle_date: date | None, limit: int, offset: int) -> list[CremationCycle]:
         stmt = select(CremationCycle).options(*_EAGER_OPTIONS)
         if status:
             stmt = stmt.where(CremationCycle.status == status)

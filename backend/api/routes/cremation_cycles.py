@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,7 +44,7 @@ def _domain_error_to_http(exc: Exception):
 @router.get("", response_model=list[CremationCycleRead])
 async def list_cycles(
     status_filter: str | None = Query(default=None, alias="status"),
-    cycle_date: str | None = Query(default=None),
+    cycle_date: date | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_session),

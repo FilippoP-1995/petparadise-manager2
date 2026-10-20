@@ -7,8 +7,9 @@ export type Urn = components["schemas"]["UrnRead"];
 export type UrnInput = components["schemas"]["UrnCreate"];
 export type UrnCategoryValue = components["schemas"]["UrnCategory"];
 export type UrnMovement = components["schemas"]["UrnMovementRead"];
+export type UrnCategoryStats = components["schemas"]["UrnCategoryStats"];
 
-export function useUrns(params: { category?: UrnCategoryValue; activeOnly?: boolean; q?: string; offset?: number }) {
+export function useUrns(params: { category?: UrnCategoryValue; activeOnly?: boolean; q?: string; offset?: number; limit?: number }) {
   return useQuery({
     queryKey: ["urns", params],
     queryFn: async () => {
@@ -19,10 +20,22 @@ export function useUrns(params: { category?: UrnCategoryValue; activeOnly?: bool
             active_only: params.activeOnly,
             q: params.q || undefined,
             offset: params.offset,
+            limit: params.limit,
           },
         },
       });
       if (error) throw new Error("Impossibile caricare il catalogo urne");
+      return data;
+    },
+  });
+}
+
+export function useUrnCategoryStats(category: UrnCategoryValue) {
+  return useQuery({
+    queryKey: ["urns", "stats", category],
+    queryFn: async () => {
+      const { data, error } = await apiClient.GET("/api/urns/stats", { params: { query: { category } } });
+      if (error) throw new Error("Impossibile caricare le statistiche del catalogo");
       return data;
     },
   });
@@ -60,7 +73,9 @@ export function useCreateUrn() {
       if (error) throw new Error((error as { detail?: string }).detail ?? "Dati non validi");
       return data;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["urns"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["urns"] });
+    },
   });
 }
 
@@ -88,6 +103,8 @@ export function useDeactivateUrn() {
       if (error) throw new Error((error as { detail?: string }).detail ?? "Operazione non consentita");
       return data;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["urns"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["urns"] });
+    },
   });
 }
