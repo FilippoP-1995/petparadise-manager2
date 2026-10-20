@@ -12061,7 +12061,7 @@ class App(BaseHTTPRequestHandler):
             return self.redirect(f"/calendario/{event_id}?nav_error=1")
         self.redirect(f"https://www.google.com/maps/dir/?api=1&destination={quote(destination['maps_destination'])}")
 
-    def calendar_appointment_card(self,row,client_names=None,practice_owner_names=None,color_settings=None,animal_names_by_event=None,cremation_type_by_event=None,animals_by_event=None):
+    def calendar_appointment_card(self,row,client_names=None,practice_owner_names=None,color_settings=None,animal_names_by_event=None,cremation_type_by_event=None,animals_by_event=None,day=None):
         """Card ricca usata sia dalla vista Giorno sia dalla vista Settimana
         (stesso identico markup, per restare fedeli a quanto richiesto:
         'Le card devono essere praticamente identiche alla vista Giorno').
@@ -12081,6 +12081,17 @@ class App(BaseHTTPRequestHandler):
         start_time_text=start[11:16] if start else ""
         end_time_text=end_at[11:16] if end_at else ""
         show_time_range=bool(not row["all_day"] and end_time_text and end_time_text!=start_time_text)
+        if day and not row["all_day"] and start[:10] and end_at[:10] and start[:10]!=end_at[:10]:
+            # Evento su piu' giorni (richiesta esplicita dell'utente, gia'
+            # introdotta il 22/07 e persa col ridisegno del calendario): la
+            # card di ogni giorno mostra l'orario che vale in QUEL giorno,
+            # non lo stesso inizio/fine su tutti — il primo giorno l'inizio
+            # reale fino a 00:00, i giorni intermedi 00:00 → 00:00, l'ultimo
+            # giorno da 00:00 alla fine reale.
+            if day==start[:10]:end_time_text="00:00"
+            elif day==end_at[:10]:start_time_text,end_time_text="00:00",end_time_text
+            else:start_time_text,end_time_text="00:00","00:00"
+            show_time_range=True
         time_text="Tutto il giorno" if row["all_day"] else start_time_text
         title_line=esc(self.calendar_event_display_title(row))
         names=(animal_names_by_event or {}).get(row["id"],"") or row["animal_name"] or ""
@@ -12394,7 +12405,7 @@ class App(BaseHTTPRequestHandler):
               <div class="calendar-appt-stat calendar-appt-stat-done calendar-appt-stat-clickable" data-filter-value="done" onclick="calendarSetFilter(this)"><span class="calendar-appt-stat-icon">{lucide("check-circle")}</span><b>{done}</b><small>Completati</small></div>
             </div>'''
             sorted_rows=sorted(day_rows,key=week_day_sort_key)
-            list_html=''.join(self.calendar_appointment_card(row,client_names=client_names,practice_owner_names=practice_owner_names,color_settings=color_settings,animal_names_by_event=animal_names_by_event,animals_by_event=animals_by_event,cremation_type_by_event=cremation_type_by_event) for row in sorted_rows) or '<p class="calendar-appt-empty">Nessun appuntamento in programma.</p>'
+            list_html=''.join(self.calendar_appointment_card(row,client_names=client_names,practice_owner_names=practice_owner_names,color_settings=color_settings,animal_names_by_event=animal_names_by_event,animals_by_event=animals_by_event,cremation_type_by_event=cremation_type_by_event,day=day.isoformat()) for row in sorted_rows) or '<p class="calendar-appt-empty">Nessun appuntamento in programma.</p>'
             day_pages.append(f'''<div class="calendar-day-page" data-day-index="{i}" data-date="{day.isoformat()}">
               {stats_html}
               <div class="calendar-appt-list">{list_html}</div>
