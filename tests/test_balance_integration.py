@@ -188,7 +188,7 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
 
     def test_create_practice_with_only_acconto_d_registers_d_movement_without_method(self):
         self.handler.form = lambda: {
-            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato", "provenance": "L",
             "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
             "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
             "total_text": "350", "acconto_d_totale": "100", "acconto_d_data": "2026-07-23", "acconto_d_modalita": "",
@@ -216,7 +216,7 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
         # error and — worse — silently wipe the just-typed Acconto D on
         # redisplay (payment_draft() didn't preserve macro fields either).
         self.handler.form = lambda: {
-            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato", "provenance": "L",
             "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
             "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
             "total_text": "350", "acconto_d_totale": "100", "acconto_d_data": "2026-07-23", "acconto_d_modalita": "",
@@ -233,7 +233,7 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
         errors = []
         self.handler.new_page = lambda user, draft=None, error="", error_field="": errors.append((error, error_field))
         self.handler.form = lambda: {
-            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato", "provenance": "L",
             "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
             "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
             "total_text": "350", "saldo_d_totale": "250", "saldo_d_data": "", "saldo_d_totale_touched": "1",
@@ -253,7 +253,7 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
         drafts = []
         self.handler.new_page = lambda user, draft=None, error="", error_field="": drafts.append(draft)
         self.handler.form = lambda: {
-            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato", "provenance": "L",
             "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
             "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
             "total_text": "350", "saldo_d_totale": "250", "saldo_d_data": "", "saldo_d_totale_touched": "1",
@@ -264,7 +264,7 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
 
     def test_create_practice_with_only_saldo_w_requires_payment_method(self):
         self.handler.form = lambda: {
-            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato", "provenance": "L",
             "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
             "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
             "price_cremation": "300", "saldo_w_totale": "300", "saldo_w_data": "2026-07-23", "saldo_w_modalita": "",
@@ -278,7 +278,7 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
 
     def test_create_practice_with_both_acconto_d_and_w_only_registers_d(self):
         self.handler.form = lambda: {
-            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato", "provenance": "L",
             "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
             "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
             "total_text": "350", "price_cremation": "300",
@@ -300,7 +300,7 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
 
     def test_create_practice_with_no_payment_fields_creates_no_movement(self):
         self.handler.form = lambda: {
-            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato", "provenance": "L",
             "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
             "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
             "total_text": "350",
@@ -315,7 +315,7 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
 
     def test_acconto_and_saldo_registered_at_creation_prefill_the_payment_popover(self):
         self.handler.form = lambda: {
-            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato", "provenance": "L",
             "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
             "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
             "price_cremation": "300",
@@ -333,7 +333,7 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
 
     def test_create_practice_with_acconto_w_fattura_fields_creates_a_real_invoice(self):
         self.handler.form = lambda: {
-            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato", "provenance": "L",
             "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
             "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
             "price_cremation": "300",
@@ -362,7 +362,7 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
         # this locks that a D amount alone does not accidentally trigger
         # invoice creation through the shared apply_payment_macroarea path.
         self.handler.form = lambda: {
-            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato", "provenance": "L",
             "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
             "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
             "total_text": "350",
@@ -541,7 +541,7 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
     def test_edit_submit_adds_a_new_saldo_via_macro_fields(self):
         practice_id = self.insert_practice(number="CR-EDIT-NEWSALDO", total_w="300")
         base_form = {
-            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato", "provenance": "L",
             "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
             "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
             "price_cremation": "300", "payment_status": "Da saldare",
@@ -607,7 +607,7 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
     def test_edit_submit_resubmitting_unchanged_macro_fields_does_not_duplicate(self):
         practice_id = self.insert_practice(number="CR-EDIT-NODUP", total_w="300")
         base_form = {
-            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato", "provenance": "L",
             "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
             "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
             "price_cremation": "300", "payment_status": "Da saldare",
@@ -625,7 +625,7 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
     def test_edit_submit_untouched_autofilled_rimanenza_is_silently_skipped(self):
         practice_id = self.insert_practice(number="CR-EDIT-SKIP", total_w="300")
         self.handler.form = lambda: {
-            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato", "provenance": "L",
             "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
             "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
             "price_cremation": "300", "payment_status": "Da saldare",
@@ -641,7 +641,7 @@ class BalancePracticeIntegrationTests(unittest.TestCase):
     def test_edit_submit_acconto_via_macro_fields_updates_payment_status(self):
         practice_id = self.insert_practice(number="CR-EDIT-STATUS", total_w="300")
         self.handler.form = lambda: {
-            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",
+            "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato", "provenance": "L",
             "owner_first_name": "Anna", "owner_last_name": "Bianchi", "owner_phone": "333",
             "owner_tax_code": "X", "owner_street": "Via", "owner_city": "Livorno", "owner_province": "LI", "owner_zip": "57100",
             "price_cremation": "300", "payment_status": "Da saldare",
