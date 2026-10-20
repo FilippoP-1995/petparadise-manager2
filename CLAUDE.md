@@ -92,12 +92,12 @@ Test (unittest; ogni test usa un DB temporaneo, **non toccano mai** `data/` né 
 ```bash
 python -m unittest tests.test_app          # suite principale, ~860 test, ~10-13 minuti: DEVE essere tutta OK (con TZ=Europe/Rome)
 python -m unittest tests.test_partner_portal tests.test_partner_service tests.test_partner_notifications
-python -m unittest tests.test_calendar     # baseline nota: 20 FAIL + 1 ERROR (preesistenti)
+python -m unittest tests.test_calendar     # viste, card e regole del calendario
 python -m unittest tests.test_seed_dev_data   # script dei dati finti
 python -m unittest discover -s tests       # tutti i moduli
 ```
 
-Baseline preesistente dei moduli extra (confrontare sempre con un worktree pulito di `origin/main` prima di dare la colpa a una modifica): `tests/test_balance_integration.py` 11 ERROR + 2 FAIL, `tests/test_shifts.py` 1 FAIL. La suite lunga va lanciata in background con l'output su file e attesa fino alla fine.
+Baseline: dal 2026-10-20 **tutti i moduli sono OK** con `TZ=Europe/Rome` (nessun fallimento noto: i test superati di `test_calendar`, `test_balance_integration` e `test_shifts` sono stati aggiornati). Qualsiasi fallimento e' quindi nuovo: prima di dare la colpa a una modifica confrontare con un worktree pulito di `origin/main`. La suite lunga va lanciata in background con l'output su file e attesa fino alla fine.
 
 ## Variabili d'ambiente
 
