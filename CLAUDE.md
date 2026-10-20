@@ -2,9 +2,13 @@
 
 ## Git / GitHub
 
-L'utente ha autorizzato in modo permanente commit e push diretti su `main` per ogni modifica richiesta in questo repository: non chiedere conferma prima di `git commit` o `git push origin main`.
+**`main` = produzione**: con il deploy automatico di Render ogni commit che arriva su `main` viene pubblicato. Quindi:
 
-Restano esclusi da questa autorizzazione (chiedere sempre conferma esplicita prima di):
+- **Non lavorare mai direttamente su `main`**: ogni modifica va su un ramo separato (es. `claude/<descrizione-breve>`), creato da `origin/main`. Su quel ramo commit e push sono autorizzati senza chiedere conferma.
+- **Unire a `main` (= pubblicare) solo quando l'utente scrive esplicitamente "pubblica"**. Un "ok", "va bene", "fai commit" o simili NON bastano per unire a `main`. Unica eccezione: una richiesta esplicita dell'utente di fare commit su `main` di file precisi.
+- **Prima di unire** a `main`: aggiornare il ramo con l'ultimo `origin/main`, far girare la suite completa dei test con `TZ=Europe/Rome` (vedi "Avvio e test") e riportare all'utente il risultato, **distinguendo i fallimenti gia' noti (baseline) da quelli nuovi**. Con fallimenti nuovi non si unisce: si spiega e si chiede.
+
+Restano esclusi da ogni autorizzazione (chiedere sempre conferma esplicita prima di):
 - `git push --force` o qualsiasi riscrittura della cronologia
 - `git reset --hard`, `git clean`, cancellazione di branch o di commit
 - Operazioni distruttive in generale
@@ -113,8 +117,8 @@ Solo i nomi: **mai** scrivere valori, token o password in chat, commit o documen
 ## Deploy
 
 - Servizio di produzione su Render (`petparadise-manager2.onrender.com`), disco persistente `/var/data` con `pet_paradise.db` e `ddt/`.
-- **Claude non fa mai il deploy**: dopo il push su `main` il deploy lo fa l'utente a mano dal pannello Render (Manual Deploy). Chiudere sempre i report scrivendo che il deploy non è stato fatto e quali commit sono in attesa.
-- `render.yaml` non specifica `autoDeploy` né `branch`: il comportamento reale dipende dalle impostazioni del servizio nel pannello Render (Settings → Build & Deploy).
+- **Deploy automatico dal ramo `main`**: `render.yaml` imposta `branch: main` e `autoDeployTrigger: commit` per il web service e per i 2 cron. Vale pero' quello che c'e' nel pannello Render (Settings → Build & Deploy → Branch e Auto-Deploy) se i servizi non sono collegati a un Blueprint: il nome in `render.yaml` (`pet-paradise-manager`) e' diverso da quello del servizio in produzione (`petparadise-manager2`), quindi probabilmente sono stati creati a mano e `render.yaml` non viene applicato. Verificare nel pannello prima di contare sul deploy automatico.
+- Claude non avvia mai deploy a mano e non tocca il pannello Render: si pubblica solo unendo a `main` dopo "pubblica" (vedi Git / GitHub). Chiudere sempre i report dicendo su quale ramo sono le modifiche e se sono gia' state pubblicate o restano in attesa di "pubblica".
 - Non esiste ancora un ambiente di prova separato dalla produzione: i dati reali stanno solo su Render. Non usare mai dati o credenziali di produzione in sessioni di sviluppo.
 
 ## Regole di lavoro seguite finora
@@ -122,12 +126,13 @@ Solo i nomi: **mai** scrivere valori, token o password in chat, commit o documen
 1. **Processo per ogni modifica non banale a V1**: ANALISI (leggere il codice davvero coinvolto, tracciare UI → endpoint → DB → calcoli derivati) → IMPATTO (altre funzioni che usano gli stessi dati) → CONFERMA (se la richiesta implica modifiche correlate, elencarle nel formato *MODIFICA RICHIESTA / IMPATTO RILEVATO / MODIFICA CORRELATA CONSIGLIATA / CONSEGUENZA SE NON LA FACCIAMO* e attendere il via) → IMPLEMENTAZIONE → VERIFICA → REPORT (cosa è cambiato, funzioni coinvolte, test eseguiti, problemi residui, modifiche correlate non fatte).
 2. Niente refactor non richiesti né interpretazioni creative; se la richiesta è ambigua, chiedere. Pagamenti, saldi, fatture, stati e dati storici: massima cautela, mai modifiche distruttive ai dati reali senza autorizzazione esplicita.
 3. **Completezza**: una modifica è finita solo quando ogni pagina/scenario/esempio nominato dall'utente è implementato **e verificato** (Calendario, Programma Cremazioni, Orari, ecc.), cercando anche le altre implementazioni dello stesso comportamento. Gli esempi dell'utente sono criteri di accettazione da provare esattamente come descritti. Il report mostra criterio / test / risultato.
-4. **Test**: durante lo sviluppo eseguire solo i test dell'area toccata (i moduli pertinenti, oppure in `tests.test_app` i singoli test o le classi dell'area, es. `python -m unittest tests.test_app -k nome`); per ogni comportamento nuovo aggiungere un test. La **suite completa** (`tests.test_app` tutta OK + gli altri moduli confrontati con la baseline) va eseguita **prima di ogni deploy**. Poiche' il deploy lo fa l'utente partendo da `main`, il report finale dice sempre se la suite completa e' stata eseguita sull'ultimo commit di `main`; se no, lo segnala chiaramente come passo da fare prima del deploy.
-5. **Lavorare in un worktree isolato** creato da `origin/main` (`git worktree add ../nome --detach origin/main`), non nella cartella principale se contiene lavoro non committato; push con `git push origin HEAD:main` dopo `git fetch` ed eventuale rebase. Non fare mai rebase, checkout o modifiche in una cartella dove una suite di test è ancora in esecuzione.
+4. **Test**: durante lo sviluppo eseguire solo i test dell'area toccata (i moduli pertinenti, oppure in `tests.test_app` i singoli test o le classi dell'area, es. `python -m unittest tests.test_app -k nome`); per ogni comportamento nuovo aggiungere un test. La **suite completa** (`python -m unittest discover -s tests` con `TZ=Europe/Rome`: `tests.test_app` tutta OK + gli altri moduli confrontati con la baseline) va eseguita **prima di unire a `main`**, cioe' prima di ogni pubblicazione; il risultato va riportato separando fallimenti noti e nuovi.
+5. **Lavorare in un worktree isolato su un ramo nuovo** creato da `origin/main` (`git worktree add -b claude/nome ../nome origin/main`), push del ramo con `git push -u origin claude/nome`. Solo dopo "pubblica": `git fetch`, rebase del ramo su `origin/main`, suite completa, poi `git push origin HEAD:main` (mai `--force`). Non fare mai rebase, checkout o modifiche in una cartella dove una suite di test è ancora in esecuzione.
 6. Messaggi di commit in italiano, descrittivi, con la riga Co-Authored-By.
 7. Dopo ogni modifica V1 aggiungere una riga/sezione in `docs/v2/16-modifiche-v1-da-riportare-v2.md` (cosa, perché, commit, stato verso V2: da riportare / non 1:1 / solo V1).
 8. Interfaccia mobile-first (iPhone/PWA): ogni novità va pensata per il telefono; nei popup lo scroll non deve mai far scorrere la pagina sotto.
 9. Mai segreti nel repository o in chat; mai `git push --force`, `reset --hard`, `clean`, cancellazione di branch senza conferma esplicita.
+10. **Struttura del database**: se una modifica tocca la struttura del database (tabelle, colonne, indici, viste, trigger, vincoli) o aggiunge/cambia una migrazione o una riparazione che all'avvio riscrive dati esistenti, **avvisare l'utente prima di implementarla**: spiegare in parole semplici cosa cambia, cosa succede ai dati gia' presenti al primo avvio dopo la pubblicazione, se si puo' tornare indietro e se serve un backup prima di pubblicare (di regola si': copia di `/var/data/pet_paradise.db`, che l'utente puo' fare dal pannello Render o con il backup S3). Attendere il via.
 
 ## Stato attuale (2026-10-20)
 
@@ -143,6 +148,7 @@ Solo i nomi: **mai** scrivere valori, token o password in chat, commit o documen
 3. Archivio: se con gli anni resta lento, paginare anche le righe dentro i mesi molto grandi.
 4. Anagrafica: valutare con l'utente l'unione dei clienti-veterinario duplicati storici (nessuna operazione sui dati reali senza conferma).
 5. V2: riprendere solo su richiesta esplicita, partendo da `docs/v2/16-modifiche-v1-da-riportare-v2.md`.
+6. **Quando i test oggi falliti saranno sistemati** (`test_calendar`, `test_balance_integration`, `test_shifts`, analisi del 2026-10-20: sono test superati, non bug), **proporre all'utente** un controllo automatico che blocchi il deploy se i test non passano: GitHub Actions che esegue la suite con `TZ=Europe/Rome` a ogni push, e su Render Auto-Deploy "After CI Checks Pass" (`autoDeployTrigger: checksPass`). Non attivarlo prima: con i fallimenti noti bloccherebbe ogni pubblicazione.
 
 ## Note pratiche per le sessioni
 
