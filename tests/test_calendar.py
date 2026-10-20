@@ -1149,15 +1149,17 @@ class OperationalCalendarTests(unittest.TestCase):
         self.handler.path = f"/calendario/{same_day_id}"
         self.handler.calendar_event_detail(self.admin, same_day_id)
         page = rendered[-1]
-        self.assertIn("<small>Data e ora</small>", page)
+        # Scheda ridisegnata (01/08): orario in grassetto in cima, data come
+        # dettaglio piccolo sotto. Stesso giorno: la data compare una volta sola.
         self.assertNotIn("<small>Intervallo</small>", page)
-        # Only one date shown (not repeated), followed by the time range.
-        self.assertIn("<b>22/07/2026 14:00 → 14:30</b>", page)
+        self.assertIn("<b>14:00 → 14:30</b><small>22/07/2026</small>", page)
 
         self.handler.path = f"/calendario/{multi_day_id}"
         self.handler.calendar_event_detail(self.admin, multi_day_id)
         page = rendered[-1]
-        self.assertIn("<b>22/07/2026 11:00 → 23/07/2026 18:00</b>", page)
+        # Evento su piu' giorni: sotto l'orario anche la data di fine, non
+        # solo quella di inizio (sembrerebbe tutto lo stesso giorno).
+        self.assertIn("<b>11:00 → 18:00</b><small>22/07/2026 → 23/07/2026</small>", page)
 
     def test_delivery_clinic_hidden_for_riconsegna_in_sede_but_shown_for_riconsegna(self):
         # Riconsegna (non in sede) ora ha lo stesso selettore Ambulatorio/
