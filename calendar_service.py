@@ -215,6 +215,16 @@ def _clean(value, limit=500):
     return re.sub(r"\s+", " ", str(value or "").strip())[:limit]
 
 
+def format_animal_name(value, limit=100):
+    """Formato unico dei nomi degli animali (richiesta esplicita dell'utente):
+    ogni nome con l'iniziale maiuscola e il resto minuscolo, anche nei nomi
+    doppi e dopo trattino o apostrofo ("MILÙ BELLA" -> "Milù Bella",
+    "mary-jane" -> "Mary-Jane", "d'artagnan" -> "D'Artagnan"). Usato da
+    pratiche, eventi del calendario e richieste del portale."""
+    text = _clean(value, limit).lower()
+    return re.sub(r"(^|[\s\-'’])([^\W\d_])", lambda m: m.group(1) + m.group(2).upper(), text)
+
+
 def automatic_title(event_type, zone="", animal="", site=""):
     zone=_clean(zone).upper();animal=_clean(animal).upper();site=_clean(site).upper()
     if event_type=="Ritiro":return f"RITIRO {zone}".strip()
@@ -367,7 +377,7 @@ def normalize_event(form, current=None):
     if not all_day and (not re.fullmatch(r"\d{2}:\d{2}",start_time) or not re.fullmatch(r"\d{2}:\d{2}",end_time)):raise ValueError("Inserisci un orario valido")
     start_at=f"{start_date}T{start_time}:00";end_at=f"{end_date}T{end_time}:59"
     if end_at<start_at:raise ValueError("La fine dell'evento non può precedere l'inizio")
-    zone=_clean(form.get("zone"),100);site=_clean(form.get("destination_site"),50);animal=_clean(form.get("animal_name"),100)
+    zone=_clean(form.get("zone"),100);site=_clean(form.get("destination_site"),50);animal=format_animal_name(form.get("animal_name"))
     if event_type not in ("Ritiro","Riconsegna"):zone=""
     title=_clean(form.get("title"),200) or automatic_title(event_type,zone,animal,site)
     if not title:raise ValueError("Il titolo è obbligatorio")
@@ -423,7 +433,7 @@ def parse_items(raw, kind):
         if not isinstance(item,dict):continue
         if kind=="animal":
             cremation=_clean(item.get("cremation_type"),30)
-            animal={"name":_clean(item.get("name"),100),"species":_clean(item.get("species"),100),"weight":_clean(item.get("weight"),30),"cremation_type":cremation if cremation in ("Singola","Collettiva") else "","notes":_clean(item.get("notes"),500)}
+            animal={"name":format_animal_name(item.get("name")),"species":_clean(item.get("species"),100),"weight":_clean(item.get("weight"),30),"cremation_type":cremation if cremation in ("Singola","Collettiva") else "","notes":_clean(item.get("notes"),500)}
             if any(animal.values()):cleaned.append(animal)
         else:
             description=_clean(item.get("description"),200)
