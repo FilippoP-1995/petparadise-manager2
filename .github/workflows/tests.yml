@@ -1,0 +1,41 @@
+# Controllo automatico dei test (richiesta esplicita dell'utente, 25/10/2026).
+# Gira a ogni push su main e sui rami di lavoro. Su Render, con Auto-Deploy
+# "After CI Checks Pass", la produzione si aggiorna solo se questi controlli
+# passano tutti. Stesse condizioni della produzione: Python 3.12, fuso
+# Europe/Rome. Nessun segreto: i test usano solo database temporanei.
+name: Test
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Suite principale (test_app)
+            command: python -m unittest tests.test_app
+          - name: Altri moduli
+            command: python -m unittest $(ls tests/test_*.py | grep -v '/test_app.py$' | sed 's#/#.#; s#\.py$##')
+    env:
+      TZ: Europe/Rome
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: ${{ matrix.command }}
