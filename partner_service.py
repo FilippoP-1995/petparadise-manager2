@@ -675,7 +675,7 @@ def create_request(conn, *, clinic_id, user_id, client_request_id, mode, service
     data = {
         "request_code": code, "mode": mode, "service_type": service_type,
         "owner_first_name": first, "owner_last_name": last, "owner_phone": phone,
-        "animal_name": _clean(animal_name, 100), "species": species, "weight_text": weight,
+        "animal_name": cal.format_animal_name(animal_name), "species": species, "weight_text": weight,
         "notes": _clean(notes, 1000), "pickup_address": address if mode == "ritiro_domicilio" else "",
         "destination_site": site if mode == "invio_in_sede" else "",
         "proposed_date": p_date, "proposed_from": p_from, "proposed_to": p_to,

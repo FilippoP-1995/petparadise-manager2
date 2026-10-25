@@ -58,6 +58,7 @@ from calendar_service import (
     add_history as calendar_add_history,
     calendar_push_location_title, calendar_pickup_push_text, calendar_delivery_push_text, calendar_appointment_push_text,
     ensure_calendar_schema, event_color_class, event_type_dot_class, event_type_emoji, normalize_event, overlap_rows,
+    format_animal_name,
     parse_items as calendar_parse_items, period_bounds as calendar_period_bounds,
     schedule_event_notifications, sync_children as calendar_sync_children,
     route_eligible_events,
@@ -1167,6 +1168,8 @@ def init_db():
         ensure_calendar_schema(c)
         ensure_shift_schema(c)
         partner_service.ensure_partner_schema(c)
+        # Dopo gli schemi di calendario e portale: tocca anche le loro tabelle.
+        format_saved_animal_names(c)
 
 
 def esc(value):
@@ -8894,6 +8897,53 @@ def remove_emoji_from_saved_wa_templates(c):
                     item["title"] = wa_strip_emoji(item.get("title")) or item.get("title") or ""
             c.execute("UPDATE settings SET value=? WHERE key=?", (json.dumps(items, ensure_ascii=False), WA_QUICK_SETTING))
     c.execute("INSERT INTO settings(key,value) VALUES('wa_quick_emoji_removed','1')")
+
+
+def format_saved_animal_names(c):
+    """Una tantum (richiesta esplicita dell'utente, 25/10/2026): porta i nomi
+    degli animali gia' salvati al formato unico di format_animal_name
+    ("FIDO" -> "Fido", "milu' bella" -> "Milu' Bella") in pratiche, eventi
+    del calendario e richieste del portale. Cambia solo i nomi scritti in
+    un altro formato; il nome originale resta nello storico della pratica /
+    dell'evento. updated_at non viene toccato (nessuna pratica "modificata"
+    agli occhi degli operatori, nessun conflitto con una scheda aperta).
+    Nessun trigger del portale scatta su questi campi. Flag in settings."""
+    if c.execute("SELECT 1 FROM settings WHERE key='animal_names_formatted'").fetchone():
+        return
+    stamp = now()
+    fmt = lambda value: format_animal_name(value, limit=max(100, len(value)))
+    counts = {"pratiche": 0, "eventi": 0, "richieste": 0}
+    for row in c.execute("SELECT id,animal_name,animal2_name FROM practices").fetchall():
+        for column, label in (("animal_name", "Nome animale"), ("animal2_name", "Nome secondo animale")):
+            old = row[column] or ""
+            new = fmt(old)
+            if old and new != old:
+                c.execute(f"UPDATE practices SET {column}=? WHERE id=?", (new, row["id"]))
+                c.execute("INSERT INTO practice_history(practice_id,event_type,old_value,new_value,note,user_id,created_at) VALUES(?,?,?,?,?,NULL,?)",
+                          (row["id"], "Formato nome animale", old, new, label, stamp))
+                counts["pratiche"] += 1
+    for row in c.execute("SELECT id,animal_name FROM calendar_events").fetchall():
+        old = row["animal_name"] or ""
+        new = fmt(old)
+        if old and new != old:
+            c.execute("UPDATE calendar_events SET animal_name=? WHERE id=?", (new, row["id"]))
+            calendar_add_history(c, row["id"], None, "Formato nome animale", old, new, stamp)
+            counts["eventi"] += 1
+    for row in c.execute("SELECT id,event_id,name FROM calendar_event_animals").fetchall():
+        old = row["name"] or ""
+        new = fmt(old)
+        if old and new != old:
+            c.execute("UPDATE calendar_event_animals SET name=? WHERE id=?", (new, row["id"]))
+            calendar_add_history(c, row["event_id"], None, "Formato nome animale", old, new, stamp)
+            counts["eventi"] += 1
+    for row in c.execute("SELECT id,animal_name FROM partner_requests").fetchall():
+        old = row["animal_name"] or ""
+        new = fmt(old)
+        if old and new != old:
+            c.execute("UPDATE partner_requests SET animal_name=? WHERE id=?", (new, row["id"]))
+            counts["richieste"] += 1
+    c.execute("INSERT INTO settings(key,value) VALUES('animal_names_formatted','1')")
+    if any(counts.values()):print(f"[NOMI ANIMALI] formato unico applicato: {counts['pratiche']} nomi in pratiche, {counts['eventi']} in eventi calendario, {counts['richieste']} in richieste portale", flush=True)
 
 
 def wa_quick_templates(c):
@@ -18955,6 +19005,8 @@ class App(BaseHTTPRequestHandler):
         keys=["client_id","owner_veterinarian_id","origin_veterinarian_id","operator_name","request_origin","collaborator_name","collaborator_id","destination_branch","owner_first_name","owner_last_name","owner_company","owner_phone","owner_phone_2","owner_phone_note","owner_email","owner_tax_code","owner_vat","owner_sdi","owner_notes","owner_address","owner_street","owner_city","owner_province","owner_zip","pickup_address_mode","pickup_address","origin_mode","origin_text","origin_first_name","origin_last_name","provenance","pickup_date","animal_name","species","breed","estimated_weight","age_years","age_months","microchip","animal2_name","animal2_species","animal2_breed","animal2_weight","animal2_microchip","service_type","veterinarian_id","voucher_requested","use_voucher","used_voucher_id","clinic_name","veterinarian_name","notes","transporter_mode","transport_method","vehicle_plate","temperature_mode","package_count","container_id","lot_number","treatment_method","tag_assistita","tag_possibile_assistita","tag_assistita_streaming","tag_possibile_assistita_streaming","tag_saluto","tag_calco","tag_possibile_calco","tag_calco_urna","tag_calco_paw","tag_possibile_calco_paw","tag_calco_nose","tag_possibile_calco_nose","tag_avvisare","tag_da_richiamare","tag_pelo","tag_no_pelo","payment_status","payment_method","price_cremation","price_pickup","price_evening","price_urn","send_catalog","catalog_sent","send_estremi","estremi_sent","price_delivery","delivery_at_clinic","delivery_at_home","price_night","price_cast","price_paw_cast","price_nose_cast","price_holiday","price_accessories","deposit","deposit_final","remaining_balance","remaining_final","total_service","total_service_manual","total_text","invoice_number","invoice_date","invoice_total","invoice_total_manual","make_invoice","identity_document_number","identity_document_date","signing_place","signature_data"]
         data = {k:f.get(k,"").strip() for k in keys}
         data["pickup_time"] = f.get("pickup_time","").strip()
+        data["animal_name"] = format_animal_name(data["animal_name"])
+        data["animal2_name"] = format_animal_name(data["animal2_name"])
         for key in MONEY_FIELDS:
             data[key]=normalize_money_text(data.get(key,""))
         data["invoice_total"]=normalize_money_text(data["invoice_total"])
