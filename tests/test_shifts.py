@@ -204,9 +204,14 @@ class ShiftsModuleTests(unittest.TestCase):
         self.handler.path = "/turni?vista=mese&data=2026-08-10"
         self.handler.shifts_page(self.admin)
         page = rendered[-1]
-        self.assertEqual(page.count('title="Serena"'), 1)
-        bar_start = page.index('title="Serena"')
-        bar_html = page[max(0, bar_start - 250):bar_start + 80]
+        # Si contano solo le barre ferie: nelle settimane in cui la
+        # reperibilita' notturna a rotazione tocca a Serena il suo avatar
+        # (title="Serena") compare anche nel riquadro della reperibilita',
+        # e il vecchio conteggio su tutta la pagina falliva solo in quelle.
+        self.assertEqual(page.count('class="shift-vacation-bar"'), 1)
+        bar_start = page.index('class="shift-vacation-bar"')
+        bar_html = page[bar_start:page.index("</div>", bar_start)]
+        self.assertIn('title="Serena"', bar_html)
         self.assertIn("grid-column:1/4", bar_html)
         self.assertIn(operator_color, bar_html)
         self.assertIn("FERIE SERENA", bar_html)

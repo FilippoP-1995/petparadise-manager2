@@ -4016,6 +4016,12 @@ function setupListStateRestore(){
   // ricerca salvata non conosce open_cycle) e farebbe un location.replace
   // che lo cancella prima ancora che l'altro meccanismo possa leggerlo.
   const skipGenericRestore=cfg.skipScrollWhenParam && new URLSearchParams(location.search).has(cfg.skipScrollWhenParam);
+  // Ritorno gestito dal meccanismo dedicato: il segnale "sto tornando" va
+  // spento anche qui. Bug segnalato dall'utente (Cremazioni): ritornando
+  // alla pagina con un ciclo aperto il segnale restava acceso per sempre e
+  // ogni cambio di settimana veniva riportato (location.replace) al giorno
+  // e al ciclo salvati, "qualsiasi giorno clicchi torna sempre a venerdi'".
+  if(skipGenericRestore){ try{ sessionStorage.removeItem(flagKey); }catch(e){} }
   if(isBack && !skipGenericRestore){
     if(freshBack){ try{ sessionStorage.setItem(flagKey,'1'); }catch(e){} }
     let state=null;
