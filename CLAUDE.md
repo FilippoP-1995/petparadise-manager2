@@ -118,6 +118,7 @@ Solo i nomi: **mai** scrivere valori, token o password in chat, commit o documen
 
 - Servizio di produzione su Render (`petparadise-manager2.onrender.com`), disco persistente `/var/data` con `pet_paradise.db` e `ddt/`.
 - **Deploy automatico dal ramo `main`**: `render.yaml` imposta `branch: main` e `autoDeployTrigger: commit` per il web service e per i 2 cron. Vale pero' quello che c'e' nel pannello Render (Settings → Build & Deploy → Branch e Auto-Deploy) se i servizi non sono collegati a un Blueprint: il nome in `render.yaml` (`pet-paradise-manager`) e' diverso da quello del servizio in produzione (`petparadise-manager2`), quindi probabilmente sono stati creati a mano e `render.yaml` non viene applicato. Verificare nel pannello prima di contare sul deploy automatico.
+- Controllo dei test su GitHub: vedi "Prossimi passi" punto 6. Prima di "pubblica" Claude esegue comunque la suite completa in locale; il controllo su GitHub e' una seconda rete di sicurezza, non la sostituisce.
 - Claude non avvia mai deploy a mano e non tocca il pannello Render: si pubblica solo unendo a `main` dopo "pubblica" (vedi Git / GitHub). Chiudere sempre i report dicendo su quale ramo sono le modifiche e se sono gia' state pubblicate o restano in attesa di "pubblica".
 - Non esiste ancora un ambiente di prova separato dalla produzione: i dati reali stanno solo su Render. Non usare mai dati o credenziali di produzione in sessioni di sviluppo.
 
@@ -148,7 +149,7 @@ Solo i nomi: **mai** scrivere valori, token o password in chat, commit o documen
 3. Archivio: se con gli anni resta lento, paginare anche le righe dentro i mesi molto grandi.
 4. Anagrafica: valutare con l'utente l'unione dei clienti-veterinario duplicati storici (nessuna operazione sui dati reali senza conferma).
 5. V2: riprendere solo su richiesta esplicita, partendo da `docs/v2/16-modifiche-v1-da-riportare-v2.md`.
-6. **Quando i test oggi falliti saranno sistemati** (`test_calendar`, `test_balance_integration`, `test_shifts`, analisi del 2026-10-20: sono test superati, non bug), **proporre all'utente** un controllo automatico che blocchi il deploy se i test non passano: GitHub Actions che esegue la suite con `TZ=Europe/Rome` a ogni push, e su Render Auto-Deploy "After CI Checks Pass" (`autoDeployTrigger: checksPass`). Non attivarlo prima: con i fallimenti noti bloccherebbe ogni pubblicazione.
+6. **Controllo automatico dei test** (`.github/workflows/tests.yml`): GitHub Actions esegue a ogni push su `main` e sui rami `claude/**` la suite in due gruppi paralleli (`tests.test_app` e tutti gli altri moduli) con Python 3.12 e `TZ=Europe/Rome`. Passo successivo, da fare dall'utente nel pannello Render solo dopo aver visto il controllo verde su `main`: Auto-Deploy "After CI Checks Pass" (equivalente in `render.yaml`: `autoDeployTrigger: checksPass`), cosi' un commit con test rossi non arriva in produzione. Attenzione: con "After CI Checks Pass" Render non pubblica nulla se su un commit non trova nessun controllo, quindi non togliere o disattivare il workflow senza rimettere "On Commit".
 
 ## Note pratiche per le sessioni
 
