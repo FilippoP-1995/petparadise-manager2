@@ -7871,7 +7871,8 @@ function calendarInitDateTimeSync(){
   markManual(form.end_time);
   // Editing an existing event: its saved end time was chosen on purpose, so changing
   // the start must never silently overwrite it (the field stays fully editable by hand).
-  if((form.dataset.draftKey||'').includes('_edit_')&&form.end_time&&form.end_time.value){
+  // Same for a copy ("Copia evento"): the copied end time is kept when the date changes.
+  if(((form.dataset.draftKey||'').includes('_edit_')||form.dataset.copyOf)&&form.end_time&&form.end_time.value){
     form.end_time.dataset.manualEdit='1';
   }
   // end_date: quando l'utente lo tocca a mano creando un intervallo di giorni
@@ -12220,6 +12221,7 @@ class App(BaseHTTPRequestHandler):
           <div class="calendar-appt-menu-popover" hidden>
             <a href="/calendario/{row['id']}" onclick="event.preventDefault();location.href=this.getAttribute('href')+'?return_to='+encodeURIComponent(location.pathname+location.search)">Apri dettaglio</a>
             <a href="/calendario/{row['id']}/modifica">Modifica</a>
+            <a href="/calendario/nuovo?copia={row['id']}">Copia evento</a>
             {card_qwa}
             <form method="post" action="/calendario/{row['id']}/elimina" onsubmit="return confirm('Eliminare questo evento?')"><button type="submit">Elimina</button></form>
           </div>
@@ -13289,6 +13291,19 @@ class App(BaseHTTPRequestHandler):
             estimates=[dict(row) for row in c.execute("SELECT description,amount,preset,urn_catalog_id FROM calendar_event_estimate_items WHERE event_id=? ORDER BY sort_order,id",(event_id,))] if event_id else [{"preset":name,"description":name,"amount":""} for name in ("Cremazione","Ritiro","Riconsegna","Urna")]+[{"preset":"Altro","description":"","amount":""}]
             zones=c.execute("SELECT name FROM calendar_zones ORDER BY name").fetchall()
             urn_catalog_json=urn_catalog_payload(c)
+            # "Copia evento" (richiesta esplicita dell'utente): il nuovo
+            # evento parte con tutto cio' che contiene il dettaglio
+            # dell'originale (dati, animali, voci di preventivo con urna da
+            # catalogo, stato, pagamento, note), tutto modificabile prima di
+            # salvare. Non si copiano pratica collegata (scelta dell'utente:
+            # una pratica resta legata a un solo evento), commenti, storico
+            # e richiesta del portale: il salvataggio crea un evento nuovo.
+            copy_source=None
+            if not event_id and draft is None and q.get("copia") and str(q["copia"][0]).isdigit():
+                copy_source=c.execute("SELECT * FROM calendar_events WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(int(q["copia"][0]),)).fetchone()
+                if copy_source:
+                    copy_animals=[dict(row) for row in c.execute("SELECT name,species,weight,cremation_type,notes FROM calendar_event_animals WHERE event_id=? ORDER BY id",(copy_source["id"],))]
+                    copy_estimates=[dict(row) for row in c.execute("SELECT description,amount,preset,urn_catalog_id FROM calendar_event_estimate_items WHERE event_id=? ORDER BY sort_order,id",(copy_source["id"],))]
             practice_prefill=None
             if not event_id and q.get("linked_practice_id") and str(q["linked_practice_id"][0]).isdigit():
                 practice_prefill=c.execute("SELECT * FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(int(q["linked_practice_id"][0]),)).fetchone()
@@ -13302,6 +13317,16 @@ class App(BaseHTTPRequestHandler):
             if linked_practice_channel is None and event_id and event and event["linked_practice_id"]:
                 linked_channel_row=c.execute("SELECT total_service,total_text FROM practices WHERE id=?",(event["linked_practice_id"],)).fetchone()
                 if linked_channel_row:linked_practice_channel=payment_channel(linked_channel_row)
+        if copy_source:
+            draft=self.calendar_event_base_form(copy_source)
+            draft.update({
+                # Il modulo considera "tutto il giorno" qualsiasi valore non
+                # vuoto (anche "0" di calendar_event_base_form).
+                "all_day":"1" if copy_source["all_day"] else "",
+                "delivery_location_type":copy_source["delivery_location_type"] or "",
+                "delivery_address":(copy_source["address"] or "") if copy_source["event_type"] in ("Riconsegna","Riconsegna in sede") else "",
+                "animals_json":json.dumps(copy_animals),"estimate_json":json.dumps(copy_estimates),
+            })
         if draft is not None:
             event=draft
             try:animals=calendar_parse_items(draft.get("animals_json"),"animal")
@@ -13368,6 +13393,8 @@ class App(BaseHTTPRequestHandler):
         action=f'/calendario/{event_id}/modifica' if event_id else '/calendario/nuovo'
         zones_json=json.dumps([row['name'] for row in zones],ensure_ascii=False).replace("</","<\\/")
         error_html=f'<div class="calendar-validation" role="alert">{esc(error)}</div><script>sessionStorage.removeItem("ppm_calendar_created")</script>' if error else ''
+        if copy_source and not error:
+            error_html=f'<div class="flash calendar-copy-note">Copia di «{esc(copy_source["title"] or copy_source["event_type"])}»: controlla e modifica quello che serve, poi salva per creare il nuovo evento. L\'evento originale non cambia.</div>'+error_html
         close_url=f'/calendario/{event_id}' if event_id else safe_return_path((q.get("return_to") or [""])[0],"/calendario")
         wheel_hours=''.join(f'<button class="calendar-wheel-option" type="button" data-time-value="{hour}">{hour:02d}</button>' for hour in range(24))
         wheel_minutes=''.join(f'<button class="calendar-wheel-option" type="button" data-time-value="{minute}">{minute:02d}</button>' for minute in range(0,60,5))
@@ -13441,7 +13468,7 @@ class App(BaseHTTPRequestHandler):
         estimate_section=f'''<section class="section collapsible collapsed tone-blue" data-calendar-types="Ritiro|Ritiro in sede" {"" if event_type in ("Ritiro","Ritiro in sede") else "hidden"}><h2><span class="calendar-tap-card-icon calendar-icon-blue">{lucide("wallet")}</span>Preventivo</h2><p class="sub">Voci previste per questo ritiro.</p><div class="calendar-repeat-list" data-calendar-list="estimate"></div><input type="hidden" name="estimate_json"><div class="calendar-estimate-total-bar">Totale automatico <b data-estimate-total>€ 0,00</b></div></section>'''
         note_card=f'''<section class="section collapsible collapsed tone-gray"><h2><span class="calendar-tap-card-icon">{lucide("clipboard")}</span>Note</h2><textarea name="notes">{val('notes')}</textarea></section>'''
         operator_row_html=f'''<div class="calendar-v2-row3">{operator_card}{pickup_status_card}</div>'''
-        body=f'''<main class="wrap calendar-form calendar-form-v2"><div class="titlebar calendar-v2-topbar"><div><h1>{'Modifica evento' if event_id else 'Nuovo evento'}</h1><p class="sub">Scegli il tipo di evento e compila i dati.</p></div><a class="btn ghost calendar-v2-close" href="{close_url}" onclick="return calendarConfirmExit(event,this.href)" aria-label="Chiudi">×</a></div>{error_html}<div class="calendar-v2-draftrow">{draft_status}</div>{exit_modal_html}<form id="calendarEventForm" data-draft-key="{draft_key}" method="post" action="{action}" onsubmit="return calendarSubmit(this)">
+        body=f'''<main class="wrap calendar-form calendar-form-v2"><div class="titlebar calendar-v2-topbar"><div><h1>{'Modifica evento' if event_id else ('Copia evento' if copy_source else 'Nuovo evento')}</h1><p class="sub">Scegli il tipo di evento e compila i dati.</p></div><a class="btn ghost calendar-v2-close" href="{close_url}" onclick="return calendarConfirmExit(event,this.href)" aria-label="Chiudi">×</a></div>{error_html}<div class="calendar-v2-draftrow">{draft_status}</div>{exit_modal_html}<form id="calendarEventForm" data-draft-key="{draft_key}"{f' data-copy-of="{copy_source["id"]}"' if copy_source else ''} method="post" action="{action}" onsubmit="return calendarSubmit(this)">
         <section class="section"><h2>Che tipo di evento vuoi creare?</h2><p class="sub">Scegli l'operazione da registrare.</p><div class="calendar-type-grid">{types}</div></section>
         <div id="calendarDetailsSection" {'' if event_type else 'hidden'}>
           {operator_row_html}
@@ -13646,6 +13673,7 @@ class App(BaseHTTPRequestHandler):
           <div class="calendar-appt-menu-wrap calendar-detail-qa-menu-wrap">
             <button type="button" class="calendar-detail-qa" onclick="calendarToggleApptMenu(this)"><span class="calendar-detail-qa-icon">{lucide("more-vertical")}</span><span>Altro</span></button>
             <div class="calendar-appt-menu-popover" hidden>
+              <a href="/calendario/nuovo?copia={event_id}">Copia evento</a>
               <form method="post" action="/calendario/{event_id}/elimina" onsubmit="return confirm('Spostare questo evento nel cestino?')"><input type="hidden" name="return_to" value="{esc(back_url)}"><button type="submit">Sposta nel cestino</button></form>
             </div>
           </div>

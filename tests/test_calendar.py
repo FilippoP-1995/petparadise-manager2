@@ -168,6 +168,111 @@ class OperationalCalendarTests(unittest.TestCase):
         self.assertIn("La zona è obbligatoria",rendered[-1][0])
         self.assertIn('name="start_date" value="2026-07-15"',rendered[-1][0])
 
+    # --- Copia evento (richiesta esplicita dell'utente, 26/10/2026): il nuovo
+    # evento parte con tutto il contenuto del dettaglio dell'originale, tutto
+    # modificabile prima di salvare; niente pratica collegata (scelta
+    # dell'utente), commenti e storico restano dell'originale.
+    def copy_source_event(self):
+        with app.db() as conn:
+            urn = conn.execute("SELECT id,name FROM urns WHERE active=1 AND category='Urna' ORDER BY id LIMIT 1").fetchone()
+        form = self.event_form(
+            "Ritiro", operator_name="Alessio", event_status="Da ritirare", location_type="Privato",
+            address="Via delle Prove 3, Livorno", client_first_name="Anna", client_last_name="Bianchi",
+            client_phone="3335551234", notes="Citofonare Rossi",
+            start_date="2026-11-05", start_time="15:00", end_date="2026-11-05", end_time="15:30",
+            animals_json=json.dumps([{"name": "Fido", "species": "Cane", "weight": "12", "cremation_type": "Singola"},
+                                     {"name": "Micia", "species": "Gatto", "weight": "4", "cremation_type": "Collettiva"}]),
+            estimate_json=json.dumps([{"preset": "Cremazione", "description": "Cremazione", "amount": "220"},
+                                      {"preset": "Urna", "description": urn["name"], "amount": "90", "urn_catalog_id": urn["id"]}]),
+        )
+        event_id = self.save(form)
+        with app.db() as conn:
+            pid = conn.execute("""INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at)
+                                  VALUES('CR-COPIA','Privato','Livorno','Ritirato',?,?)""", (app.now(), app.now())).lastrowid
+            conn.execute("UPDATE calendar_events SET linked_practice_id=? WHERE id=?", (pid, event_id))
+        return event_id, urn
+
+    def render_form(self, path):
+        rendered = []
+        self.handler.send_html = lambda html, status=200: rendered.append(html)
+        self.handler.path = path
+        self.handler.calendar_event_form(self.admin)
+        return rendered[-1]
+
+    def test_copy_event_opens_new_event_form_with_everything_from_the_detail(self):
+        event_id, urn = self.copy_source_event()
+        page = self.render_form(f"/calendario/nuovo?copia={event_id}")
+        self.assertIn("<h1>Copia evento</h1>", page)
+        self.assertIn("Copia di «", page)
+        self.assertIn(f'data-copy-of="{event_id}"', page)
+        # Si salva come evento nuovo, non come modifica dell'originale.
+        self.assertIn('method="post" action="/calendario/nuovo"', page)
+        for field, value in (("client_first_name", "Anna"), ("client_last_name", "Bianchi"), ("client_phone", "3335551234"),
+                             ("address", "Via delle Prove 3, Livorno"), ("start_date", "2026-11-05"), ("end_date", "2026-11-05")):
+            self.assertRegex(page, rf'name="{field}"[^>]*value="{re.escape(value)}"', field)
+        self.assertRegex(page, r'name="start_time"[^>]*value="15:00"')
+        self.assertRegex(page, r'name="end_time"[^>]*value="15:30"')
+        self.assertIn('<textarea name="notes">Citofonare Rossi', page)
+        self.assertIn("<option selected>Alessio", page)
+        self.assertIn("<option selected>Da ritirare", page)
+        self.assertNotRegex(page, r'name="all_day" value="1" checked')
+        # Animali e voci di preventivo (con l'urna del catalogo) come nell'originale.
+        self.assertIn('calendarAddRow(\'animal\',{"name": "Fido", "species": "Cane", "weight": "12", "cremation_type": "Singola"', page)
+        self.assertIn('calendarAddRow(\'animal\',{"name": "Micia", "species": "Gatto", "weight": "4", "cremation_type": "Collettiva"', page)
+        self.assertIn('"description": "Cremazione", "amount": 220.0, "preset": "Cremazione"', page)
+        self.assertIn(f'"amount": 90.0, "preset": "Urna", "urn_catalog_id": {urn["id"]}', page)
+        # Nessuna pratica collegata nella copia.
+        self.assertNotRegex(page, r'name="linked_practice_id" value="\d+"')
+
+    def test_saving_a_copy_creates_a_new_event_and_leaves_the_original_untouched(self):
+        event_id, _ = self.copy_source_event()
+        with app.db() as conn:
+            source = conn.execute("SELECT * FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+            source_animals = [tuple(r) for r in conn.execute("SELECT name,species,weight,cremation_type FROM calendar_event_animals WHERE event_id=? ORDER BY id", (event_id,))]
+            source_items = [tuple(r) for r in conn.execute("SELECT description,amount,preset,urn_catalog_id FROM calendar_event_estimate_items WHERE event_id=? ORDER BY sort_order,id", (event_id,))]
+        # Dati come li invia il modulo della copia, con la data cambiata dall'utente.
+        form = self.handler.calendar_event_base_form(source)
+        form.update({"all_day": "", "start_date": "2026-11-12", "end_date": "2026-11-12",
+                     "animals_json": json.dumps([dict(zip(("name", "species", "weight", "cremation_type"), a)) for a in source_animals]),
+                     "estimate_json": json.dumps([dict(zip(("description", "amount", "preset", "urn_catalog_id"), i)) for i in source_items])})
+        new_id = self.save(form)
+        self.assertNotEqual(new_id, event_id)
+        with app.db() as conn:
+            new = conn.execute("SELECT * FROM calendar_events WHERE id=?", (new_id,)).fetchone()
+            original = conn.execute("SELECT * FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+            new_animals = [tuple(r) for r in conn.execute("SELECT name,species,weight,cremation_type FROM calendar_event_animals WHERE event_id=? ORDER BY id", (new_id,))]
+            new_items = [tuple(r) for r in conn.execute("SELECT description,amount,preset,urn_catalog_id FROM calendar_event_estimate_items WHERE event_id=? ORDER BY sort_order,id", (new_id,))]
+        self.assertEqual((new["start_at"], new["end_at"]), ("2026-11-12T15:00:00", "2026-11-12T15:30:59"))
+        for column in ("event_type", "operator_name", "event_status", "client_first_name", "client_last_name", "client_phone", "address", "notes", "location_type"):
+            self.assertEqual(new[column], source[column], column)
+        self.assertEqual(new_animals, source_animals)
+        self.assertEqual(new_items, source_items)
+        self.assertIsNone(new["linked_practice_id"])
+        self.assertEqual(dict(original), dict(source))
+
+    def test_copy_event_is_offered_in_detail_menu_and_card_menu(self):
+        event_id, _ = self.copy_source_event()
+        detail = []
+        self.handler.send_html = lambda html, status=200: detail.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(self.admin, event_id)
+        self.assertIn(f'<a href="/calendario/nuovo?copia={event_id}">Copia evento</a>', detail[-1])
+        card = self.card(self.day_page(self.render_calendar("giorno", "2026-11-05"), "2026-11-05"), event_id)
+        self.assertIn(f'<a href="/calendario/nuovo?copia={event_id}">Copia evento</a>', card)
+
+    def test_copy_of_missing_or_deleted_event_opens_an_ordinary_new_event_form(self):
+        event_id, _ = self.copy_source_event()
+        with app.db() as conn:
+            conn.execute("UPDATE calendar_events SET deleted_at=? WHERE id=?", (app.now(), event_id))
+        for path in (f"/calendario/nuovo?copia={event_id}", "/calendario/nuovo?copia=999999", "/calendario/nuovo?copia=abc"):
+            page = self.render_form(path)
+            self.assertIn("<h1>Nuovo evento</h1>", page, path)
+            self.assertNotIn("data-copy-of=", page, path)
+
+    def test_copy_keeps_the_end_time_when_the_date_is_changed(self):
+        # Come in modifica: cambiando la data della copia l'ora di fine copiata resta.
+        self.assertIn("if(((form.dataset.draftKey||'').includes('_edit_')||form.dataset.copyOf)&&form.end_time&&form.end_time.value){", app.APP_JS)
+
     def test_calendar_contact_search_includes_razzauti_and_first_animal_is_open(self):
         stamp=datetime.now().isoformat(timespec="seconds")
         with app.db() as conn:
