@@ -6982,6 +6982,23 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("const skipGenericRestore=cfg.skipScrollWhenParam && new URLSearchParams(location.search).has(cfg.skipScrollWhenParam);", app.APP_JS)
         self.assertIn("if(isBack && !skipGenericRestore){", app.APP_JS)
 
+    def test_list_restore_flag_is_cleared_when_open_cycle_takes_over(self):
+        # Bug segnalato dall'utente (video, 26/10): in Programma Cremazioni,
+        # dopo essere tornati da una pratica alla pagina con un ciclo aperto
+        # (open_cycle), qualsiasi giorno di un'altra settimana cliccato
+        # riportava sempre al giorno/ciclo di prima. Il segnale "sto tornando"
+        # (sessionStorage ...:returning) veniva acceso dal ritorno generico e
+        # mai spento sulla pagina con open_cycle, quindi ogni navigazione
+        # successiva veniva rimandata indietro con location.replace.
+        js = app.APP_JS
+        start = js.index("function setupListStateRestore(){")
+        body = js[start:js.index("\nfunction ", start + 10)]
+        clear = "if(skipGenericRestore){ try{ sessionStorage.removeItem(flagKey); }catch(e){} }"
+        self.assertIn(clear, body)
+        # va spento prima del ramo che potrebbe fare il location.replace
+        self.assertLess(body.index(clear), body.index("if(isBack && !skipGenericRestore){"))
+        self.assertLess(body.index("const skipGenericRestore="), body.index(clear))
+
     def test_layout_renders_user_id_on_body_for_per_user_state_keys(self):
         # data-user-id sul <body> e' quello che permette a perUser:true
         # (Fatture/Archivio) di costruire una chiave sessionStorage separata
