@@ -44,6 +44,28 @@ class AnimalNameFormatTests(unittest.TestCase):
         for raw, expected in cases.items():
             self.assertEqual(format_animal_name(raw), expected, raw)
 
+    def test_intentional_inner_capitals_are_kept(self):
+        # Richiesta dell'utente (27/10/2026, pratica CR-000371 "MeiMei"):
+        # una maiuscola a meta' parola scritta apposta resta; le parole tutte
+        # maiuscole/minuscole o con maiuscole a caso si sistemano come prima.
+        cases = {
+            "MeiMei": "MeiMei", "McQueen": "McQueen", "BiBi BELLA": "BiBi Bella",
+            "meimei": "Meimei", "MEIMEI": "Meimei", "MeiMEI": "Meimei", "FIdo": "Fido",
+        }
+        for raw, expected in cases.items():
+            self.assertEqual(format_animal_name(raw), expected, raw)
+        pid = self.create_practice(animal_name="Meimei")
+        with app.db() as conn:
+            stamp = conn.execute("SELECT updated_at FROM practices WHERE id=?", (pid,)).fetchone()["updated_at"]
+        captured = []
+        self.handler.send_json = lambda obj, status=200: captured.append((obj, status))
+        self.handler.form = lambda: {"updated_at": stamp, "changes_json": json.dumps({"animal_name": "MeiMei"})}
+        self.handler.practice_autosave(self.admin, pid)
+        self.assertEqual(captured[-1][1], 200, captured[-1])
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT animal_name FROM practices WHERE id=?", (pid,)).fetchone()["animal_name"], "MeiMei")
+        self.assertEqual(app.App.normalized_fields(self.handler, self.practice_form(animal_name="MeiMei"))["animal_name"], "MeiMei")
+
     def practice_form(self, **changes):
         form = {
             "operator_name": "FILIPPO", "service_type": "Cremazione singola", "request_origin": "Privato",

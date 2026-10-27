@@ -220,8 +220,18 @@ def format_animal_name(value, limit=100):
     ogni nome con l'iniziale maiuscola e il resto minuscolo, anche nei nomi
     doppi e dopo trattino o apostrofo ("MILÙ BELLA" -> "Milù Bella",
     "mary-jane" -> "Mary-Jane", "d'artagnan" -> "D'Artagnan"). Usato da
-    pratiche, eventi del calendario e richieste del portale."""
-    text = _clean(value, limit).lower()
+    pratiche, eventi del calendario e richieste del portale.
+    Dal 27/10/2026 (richiesta dell'utente, caso "MeiMei") una maiuscola
+    scritta a meta' parola resta, ma solo nella forma "MeiMei"/"McQueen"
+    (iniziale maiuscola, ogni altra maiuscola subito dopo una minuscola);
+    tutto il resto si riscrive come prima ("MEIMEI", "meimei", "fIDO",
+    "MeiMEI" -> iniziale maiuscola e resto minuscolo)."""
+    def word(match):
+        part = match.group(0)
+        camel = part[:1].isupper() and any(ch.islower() for ch in part) and all(
+            part[i - 1].islower() for i in range(1, len(part)) if part[i].isupper())
+        return part if camel else part.lower()
+    text = re.sub(r"[^\s\-'’]+", word, _clean(value, limit))
     return re.sub(r"(^|[\s\-'’])([^\W\d_])", lambda m: m.group(1) + m.group(2).upper(), text)
 
 
