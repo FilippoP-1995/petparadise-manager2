@@ -1839,7 +1839,9 @@ tr.avatar-other td:first-child{border-left:3px solid #c084fc}
 .pc-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.pc-brand{background:#14b8a6;color:#04332f;font-weight:900;font-size:11px;letter-spacing:.08em;border-radius:6px;padding:3px 9px}
 .pc-urgent{background:#ef4444;color:#fff;font-weight:900;font-size:11px;letter-spacing:.08em;border-radius:6px;padding:3px 9px;animation:pa-pulse 1.3s ease-in-out infinite}
 .pc-age{margin-left:auto;font-weight:700;opacity:.85}.pc-foot{display:flex;justify-content:space-between;gap:8px;margin-top:8px;font-size:13px;opacity:.85}.pc-code{font-family:ui-monospace,Menlo,monospace;letter-spacing:.06em}
-.pc-tag{border:1px solid currentColor;border-radius:6px;padding:1px 7px;margin-left:4px;font-size:12px}.payment-dialog{width:min(620px,100%);max-height:90dvh;overflow:auto;touch-action:pan-y;padding:20px;border:1px solid #475569;border-radius:16px;background:#172033;box-shadow:0 28px 90px #000c}.payment-dialog h2{margin-bottom:6px}.payment-dialog .fields{margin-top:16px}.payment-macroarea{margin-top:20px;padding-top:18px;border-top:1px solid #334155}.payment-macroarea:first-of-type{margin-top:16px;padding-top:0;border-top:0}.payment-macroarea h3{margin:0 0 10px;font-size:16px}.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.payment-macroarea-channel{padding:14px;border:1px solid #334155;border-radius:12px;background:#182334;margin-bottom:16px}.light-theme .payment-macroarea-channel{background:#f8fafc;border-color:#cbd5e1}#paymentTotaleWRow .field label,#paymentTotaleDRow .field label,.payment-macroarea-channel .fields .field:first-child label{font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.03em}.payment-macroarea-channel .fields .field:not(:first-child) label{font-size:11px;font-weight:600;color:var(--muted)}
+.pc-tag{border:1px solid currentColor;border-radius:6px;padding:1px 7px;margin-left:4px;font-size:12px}.payment-dialog{width:min(620px,100%);max-height:90dvh;overflow:auto;touch-action:pan-y;padding:20px;border:1px solid #475569;border-radius:16px;background:#172033;box-shadow:0 28px 90px #000c}.payment-dialog h2{margin-bottom:6px}.payment-dialog .fields{margin-top:16px}.payment-macroarea{margin-top:20px;padding-top:18px;border-top:1px solid #334155}.payment-macroarea:first-of-type{margin-top:16px;padding-top:0;border-top:0}.payment-macroarea h3{margin:0 0 10px;font-size:16px}
+[data-macroarea-agreed-d][hidden]{display:none!important}
+.payment-agreed-d-note{margin:4px 0 0;font-size:12px;line-height:1.35;color:var(--muted)}.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.payment-macroarea-channel{padding:14px;border:1px solid #334155;border-radius:12px;background:#182334;margin-bottom:16px}.light-theme .payment-macroarea-channel{background:#f8fafc;border-color:#cbd5e1}#paymentTotaleWRow .field label,#paymentTotaleDRow .field label,.payment-macroarea-channel .fields .field:first-child label{font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.03em}.payment-macroarea-channel .fields .field:not(:first-child) label{font-size:11px;font-weight:600;color:var(--muted)}
 @media(max-width:520px){.payment-popover{padding:6px}.payment-dialog{padding:12px 10px;max-height:97dvh}.payment-dialog .titlebar{position:sticky;top:-12px;margin:-12px -10px 6px;padding:12px 10px 6px;background:#172033;z-index:1;gap:8px}.payment-dialog h2{font-size:15px;margin-bottom:0}.payment-dialog .sub{display:none}.payment-dialog .fields{gap:6px;margin-top:6px}.payment-dialog .field{gap:2px}.payment-dialog label{font-size:10.5px}.payment-dialog input,.payment-dialog select{padding:7px 8px;font-size:14px}.payment-macroarea{margin-top:8px;padding-top:8px}.payment-macroarea:first-of-type{margin-top:6px}.payment-macroarea h3{margin:0 0 4px;font-size:13px}.payment-macroarea-channel{padding:7px;margin-bottom:7px}.payment-invoice-section{margin-top:7px;padding-top:7px}.payment-dialog .btn{padding:8px 12px;margin-top:6px!important}.payment-dialog .btn.ghost{margin-left:4px!important}}
 .field-error input,.field-error select,.field-error textarea{border-color:#ef4444}.field-error-text{display:block;margin-top:4px;color:#ef4444;font-size:12px;font-weight:600}.payment-invoice-section{margin-top:18px;padding-top:16px;border-top:1px solid #334155}.payment-invoice-section h3{margin:0 0 4px;font-size:14px}.payment-invoice-section .fields{margin-top:10px}.payment-acconto-summary{margin:10px 0 0}.light-theme .payment-dialog{background:#fff;color:#111827}.light-theme .payment-dialog .titlebar{background:#fff}.light-theme .payment-macroarea{border-color:#e2e8f0}.light-theme .payment-invoice-section{border-color:#e2e8f0}
 @media(max-width:620px){.practice-list-table th:first-child,.practice-list-table td:first-child{box-sizing:border-box;width:132px;min-width:132px;max-width:132px;padding-left:12px;padding-right:10px;white-space:normal!important}}
@@ -4638,6 +4640,8 @@ function ppmSyncMacroareaInvoiceSection(select){
   if(modalitaField)modalitaField.hidden=select.value==='D';
   const method=form.querySelector('select[name$="_modalita"]');
   if(method)method.required=select.value!=='D';
+  const agreed=form.querySelector('[data-macroarea-agreed-d]');
+  if(agreed){agreed.hidden=select.value!=='D';const input=agreed.querySelector('input');if(input)input.required=select.value==='D';}
 }
 document.addEventListener('DOMContentLoaded',function(){
   document.querySelectorAll('select[name$="_circuito"]').forEach(ppmSyncMacroareaInvoiceSection);
@@ -17604,6 +17608,9 @@ class App(BaseHTTPRequestHandler):
         payment_deposit_field="deposit_final" if uses_total_d(r) else "deposit"
         payment_deposit_amount=(r[payment_deposit_field] or r["payment_amount"] or "0.00") if payment_deposit_field in r.keys() else "0.00"
         payment_channel_value="D" if uses_total_d(r) else "W"
+        practice_has_total_d=money_value(r["total_text"] if "total_text" in r.keys() else "")>0
+        # Campo/nota "Totale D" solo per un cambio completo di circuito (nessun pagamento su W).
+        offer_total_d=not practice_has_total_d and money_value(r["deposit"] if "deposit" in r.keys() else "")<=0.005
         with db() as c:
             acconto_movement,acconto_invoice=latest_movement_and_invoice(c,r["id"],"acconto")
             saldo_movement,saldo_invoice=latest_movement_and_invoice(c,r["id"],"saldo")
@@ -17627,7 +17634,16 @@ class App(BaseHTTPRequestHandler):
                 if movement else ""
             )
             modalita_hidden="" if channel_value=="W" else "hidden"
-            return f'''<section class="payment-macroarea" data-macroarea="{kind}"><h3>{label}</h3><form method="post" action="/pratiche/{r['id']}/pagamento-movimento" onsubmit="event.stopPropagation()"><input type="hidden" name="return_to" value="{return_to}"><input type="hidden" name="macroarea" value="{kind}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(16)}"><div class="fields"><div class="field"><label>Data {lower}</label><input type="date" name="{kind}_data" value="{esc(date_value)}" required></div><div class="field"><label>Totale {lower} €</label><input name="{kind}_totale" value="{esc(amount_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00" required></div><div class="field"><label>Circuito {lower}</label><select name="{kind}_circuito" onchange="ppmSyncMacroareaInvoiceSection(this)">{channel_options}</select></div><div class="field" data-macroarea-modalita="{kind}" {modalita_hidden}><label>Modalità {lower}</label><select name="{kind}_modalita">{method_options}</select></div></div><div class="payment-invoice-section" data-macroarea-invoice="{kind}" {invoice_hidden}><div class="fields"><div class="field"><label>Importo fattura €</label><input name="{kind}_fattura_totale" value="{esc(invoice_total_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field"><label>Data fattura</label><input type="date" name="{kind}_fattura_data" value="{esc(invoice_date_value)}"></div><div class="field full"><label>Numero fattura</label><input name="{kind}_fattura_numero" value="{esc(invoice_number_value)}"></div></div></div><button class="btn" style="margin-top:12px">Salva pagamento</button></form>{remove_form}</section>'''
+            # Pratica senza TOTALE D: pagando su D l'acconto chiede il prezzo
+            # concordato in D, il saldo avvisa che diventera' il Totale D.
+            agreed_d_html=""
+            if offer_total_d:
+                agreed_hidden="" if channel_value=="D" else "hidden"
+                if kind=="acconto":
+                    agreed_d_html=f'''<div class="field full" data-macroarea-agreed-d {agreed_hidden}><label>Totale D concordato €</label><input name="{kind}_totale_d_concordato" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 330,00" placeholder="es. 330,00" {"required" if channel_value=="D" else ""}><p class="payment-agreed-d-note">La pratica non ha ancora un totale D: indica il prezzo concordato in D. Diventa il TOTALE D della pratica.</p></div>'''
+                else:
+                    agreed_d_html=f'''<div class="field full" data-macroarea-agreed-d {agreed_hidden}><p class="payment-agreed-d-note">La pratica non ha ancora un totale D: salvando, il TOTALE D diventa quanto incassato su D.</p></div>'''
+            return f'''<section class="payment-macroarea" data-macroarea="{kind}"><h3>{label}</h3><form method="post" action="/pratiche/{r['id']}/pagamento-movimento" onsubmit="event.stopPropagation()"><input type="hidden" name="return_to" value="{return_to}"><input type="hidden" name="macroarea" value="{kind}"><input type="hidden" name="balance_idempotency_key" value="{secrets.token_urlsafe(16)}"><div class="fields"><div class="field"><label>Data {lower}</label><input type="date" name="{kind}_data" value="{esc(date_value)}" required></div><div class="field"><label>Totale {lower} €</label><input name="{kind}_totale" value="{esc(amount_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00" required></div><div class="field"><label>Circuito {lower}</label><select name="{kind}_circuito" onchange="ppmSyncMacroareaInvoiceSection(this)">{channel_options}</select></div><div class="field" data-macroarea-modalita="{kind}" {modalita_hidden}><label>Modalità {lower}</label><select name="{kind}_modalita">{method_options}</select></div>{agreed_d_html}</div><div class="payment-invoice-section" data-macroarea-invoice="{kind}" {invoice_hidden}><div class="fields"><div class="field"><label>Importo fattura €</label><input name="{kind}_fattura_totale" value="{esc(invoice_total_value)}" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 120,00"></div><div class="field"><label>Data fattura</label><input type="date" name="{kind}_fattura_data" value="{esc(invoice_date_value)}"></div><div class="field full"><label>Numero fattura</label><input name="{kind}_fattura_numero" value="{esc(invoice_number_value)}"></div></div></div><button class="btn" style="margin-top:12px">Salva pagamento</button></form>{remove_form}</section>'''
         acconto_html=macroarea_section("acconto","Acconto",acconto_movement,acconto_invoice,payment_deposit_amount)
         saldo_html=macroarea_section("saldo","Saldo",saldo_movement,saldo_invoice,payment_remaining_amount)
         due_w=calculated_service_total(r)
@@ -17644,7 +17660,13 @@ class App(BaseHTTPRequestHandler):
             f'<div class="flash warning" style="margin-top:10px">Il totale è aumentato per l\'aggiunta di nuovi elementi. I pagamenti precedenti sono stati mantenuti e resta da pagare {money_it(remaining_d)} (circuito D).</div>'
             if saldo_d_exists and remaining_d>0.005 else ""
         )
-        circuit_summary_html=f'''<div class="kvs" style="grid-template-columns:repeat(2,1fr);margin-bottom:14px"><div class="kv"><small>Circuito W</small><b>Totale {money_it(due_w)}</b><br><small>Già pagato {money_it(paid_w)} · Rimanenza {money_it(remaining_w)}</small></div><div class="kv"><small>Circuito D</small><b>Totale {money_it(due_d)}</b><br><small>Già pagato {money_it(paid_d)} · Rimanenza {money_it(remaining_d)}</small></div></div>{extras_note_w}{extras_note_d}'''
+        # Pratica passata al circuito D (richiesta esplicita dell'utente): il
+        # totale W resta solo come riferimento, senza "Rimanenza" da pagare,
+        # finche' sul circuito W non c'e' alcun pagamento.
+        w_reference_only=practice_has_total_d and paid_w<=0.005
+        circuit_w_html=(f'''<div class="kv"><small>Circuito W · solo riferimento</small><b>Totale {money_it(due_w)}</b><br><small>Non da pagare: la pratica è sul circuito D</small></div>''' if w_reference_only
+                        else f'''<div class="kv"><small>Circuito W</small><b>Totale {money_it(due_w)}</b><br><small>Già pagato {money_it(paid_w)} · Rimanenza {money_it(remaining_w)}</small></div>''')
+        circuit_summary_html=f'''<div class="kvs" style="grid-template-columns:repeat(2,1fr);margin-bottom:14px">{circuit_w_html}<div class="kv"><small>Circuito D</small><b>Totale {money_it(due_d)}</b><br><small>Già pagato {money_it(paid_d)} · Rimanenza {money_it(remaining_d)}</small></div></div>{extras_note_w}{extras_note_d}'''
         extra_html=self.payment_extra_section_html(r["id"],extra_payments,return_to)
         return f'''<div class="inline-statuses" onclick="event.stopPropagation()">
         <form method="post" action="/pratiche/{r['id']}/stato-rapido" onsubmit="return savePracticeState(this,event)"><input type="hidden" name="return_to" value="{return_to}"><select class="inline-state-select practice-status {status_cls}" name="status" aria-label="Stato pratica" data-saved-value="{esc(r['status'])}" onchange="savePracticeState(this.form)">{state_options}</select><span class="inline-save-note" aria-live="polite"></span></form>
@@ -20476,6 +20498,10 @@ class App(BaseHTTPRequestHandler):
                 return {},"Totale fattura non valido.",f"{macroarea}_w_fattura_totale"
             if invoice_date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}",invoice_date):
                 return {},"Data fattura non valida.",f"{macroarea}_w_fattura_data"
+            # Un acconto su D ha bisogno del prezzo concordato in D (vedi
+            # apply_payment_macroarea): qui il campo e' TOTALE D del form.
+            if macroarea=="acconto" and channel=="D" and money_value(d.get("total_text"))<=0 and money_value(d.get("deposit"))<=0.005:
+                return {},"Per un acconto sul circuito D compila il TOTALE D concordato con il cliente.","total_text"
             macro_plan[macroarea]={"channel":channel,"totale_field":totale_field,"data_field":data_field,"method":method,"invoice_number":invoice_number,"invoice_total":invoice_total,"invoice_date":invoice_date}
         return macro_plan,None,None
 
@@ -21256,6 +21282,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 invoice_total=normalize_money_text(form.get(f"{prefix}_fattura_totale","")),
                 invoice_date=form.get(f"{prefix}_fattura_data","").strip(),
                 balance_key=form.get("balance_idempotency_key","").strip(),
+                agreed_total_d=normalize_money_text(form.get(f"{prefix}_totale_d_concordato","")),
                 # "Salva pagamento" corregge sempre l'ultimo movimento della
                 # macroarea: un incasso genuinamente nuovo si registra solo
                 # da "Aggiungi pagamento extra" (save_payment_extra).
@@ -21266,7 +21293,7 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         if ajax:return self.send_json({"ok":True,"payment_status":new_status,"macroarea":macroarea})
         return self.redirect(safe_return_path(form.get("return_to") or self.headers.get("Referer"),"/"))
 
-    def apply_payment_macroarea(self,c,user,pid,practice,macroarea,*,data_field,totale_field,channel,method,invoice_number,invoice_total,invoice_date,balance_key="",force_new=False,is_extra=False):
+    def apply_payment_macroarea(self,c,user,pid,practice,macroarea,*,data_field,totale_field,channel,method,invoice_number,invoice_total,invoice_date,balance_key="",force_new=False,is_extra=False,agreed_total_d=""):
         """Core logic shared by the Pagamento popover (save_payment_macroarea)
         above and practice creation (create_practice): validates and
         persists one acconto/saldo entry for one circuito — the
@@ -21305,6 +21332,24 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             return "Totale fattura non valido."
         if invoice_date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}",invoice_date):
             return "Data fattura non valida."
+        # Cambio di circuito (richiesta esplicita dell'utente): pratica nata con
+        # il solo totale W, il cliente poi paga su D. Se la pratica non ha
+        # ancora un TOTALE D, lo compila il pagamento stesso: per un acconto
+        # e' il prezzo concordato indicato nella finestra Pagamento (il prezzo
+        # in D di solito e' diverso da quello in W), per un saldo e' tutto
+        # l'incassato su D. Un TOTALE D gia' scritto non viene mai toccato; i
+        # pagamenti extra restano esclusi. Solo per un cambio completo di
+        # circuito: con un pagamento gia' registrato su W (pagamento diviso,
+        # es. acconto W con fattura + saldo D) resta tutto come prima, per
+        # scelta esplicita dell'utente.
+        needs_total_d=(channel=="D" and not is_extra and money_value(practice["total_text"])<=0
+                       and channel_paid_amount(c,pid,"W")<=0.005)
+        agreed_d=round(money_value(agreed_total_d),2) if agreed_total_d else 0.0
+        if needs_total_d and macroarea=="acconto":
+            if agreed_d<=0:
+                return "Indica il Totale D concordato con il cliente: la pratica non ha ancora un totale sul circuito D."
+            if agreed_d+0.005<amount:
+                return "Il Totale D concordato non può essere inferiore all'acconto."
         existing_movement,existing_invoice=latest_movement_and_invoice(c,pid,macroarea)
         if invoice_number:
             conflict=self.invoice_conflict(c,invoice_number,exclude_id=pid,exclude_movement_invoice_id=existing_invoice["id"] if existing_invoice else None)
@@ -21383,6 +21428,15 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             movement_id=movement["id"] if movement else None
         if channel=="W" and movement_id:
             self.save_movement_invoice(c,pid,movement_id,invoice_number,invoice_date,invoice_total or f"{amount:.2f}",method,channel,user["id"])
+        if needs_total_d:
+            new_total_d=agreed_d if macroarea=="acconto" else channel_paid_amount(c,pid,"D")
+            c.execute("UPDATE practices SET total_text=? WHERE id=?",(f"{new_total_d:.2f}",pid))
+            c.execute(
+                "INSERT INTO practice_history(practice_id,event_type,old_value,new_value,note,user_id,created_at) VALUES(?,?,?,?,?,?,?)",
+                (pid,"Modifica TOTALE D","",f"{new_total_d:.2f}",
+                 "Impostato dal pagamento: "+("Totale D concordato all'acconto" if macroarea=="acconto" else "incassato sul circuito D"),user["id"],stamp),
+            )
+            practice=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
         old_status=practice["payment_status"] or "Da saldare"
         new_status=derive_payment_status(c,pid,practice)
         deposit,remaining_balance,deposit_final,remaining_final=recompute_practice_channel_balances(c,pid,practice)
