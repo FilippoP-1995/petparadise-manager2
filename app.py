@@ -20977,14 +20977,25 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         if error: return self.edit_page(user,pid,draft=draft_with_date(),error=error,error_field=self.validation_error_field(d))
         macro_plan,macro_error,macro_error_field=self.resolve_payment_macro_plan(form,d)
         if macro_error: return self.edit_page(user,pid,draft=draft_with_date(),error=macro_error,error_field=macro_error_field)
+        # economic_at (campo nascosto) serve solo a correggere la data del
+        # pagamento gia' registrato. Segnalazione dell'utente (27/10/2026,
+        # CR-000042): una pratica in Acconto senza data salvata (pratiche
+        # meno recenti) non si poteva piu' salvare, anche con le date dei
+        # pagamenti compilate. Data vuota, nessuna data salvata e stato di
+        # pagamento invariato -> niente da correggere: si prosegue; data non
+        # valida, data salvata cancellata o cambio di stato senza data ->
+        # errore come prima (controllo sotto, con la pratica).
+        missing_economic_at=False
         if d["payment_status"] in ("Acconto","Pagato"):
             try:
                 date.fromisoformat(economic_at)
             except ValueError:
-                return self.edit_page(
-                    user,pid,draft=draft_with_date(),
-                    error="La data pagamento/acconto è obbligatoria e deve essere valida.",
-                )
+                if economic_at:
+                    return self.edit_page(
+                        user,pid,draft=draft_with_date(),
+                        error="La data pagamento/acconto è obbligatoria e deve essere valida.",
+                    )
+                missing_economic_at=True
         with db() as c:
             previous=c.execute("SELECT * FROM practices WHERE id=?",(pid,)).fetchone()
             if not previous:return self.send_error(404)
@@ -21005,7 +21016,14 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
                 else str(previous["paid_at"] or "")[:10]
                 if d["payment_status"]=="Pagato" else ""
             )
-            if economic_at!=stored_economic_at and d["payment_status"] in ("Acconto","Pagato"):
+            # Solo se la pratica era gia' in quello stato: un passaggio a
+            # Acconto/Pagato senza data resta bloccato come prima.
+            if missing_economic_at and (stored_economic_at or (previous["payment_status"] or "Da saldare")!=d["payment_status"]):
+                return self.edit_page(
+                    user,pid,draft=draft_with_date(),
+                    error="La data pagamento/acconto è obbligatoria e deve essere valida.",
+                )
+            if economic_at!=stored_economic_at and d["payment_status"] in ("Acconto","Pagato") and not missing_economic_at:
                 payment_date_error=self.correct_practice_payment_date(
                     c,previous,d["payment_status"],economic_at,user["id"]
                 )
