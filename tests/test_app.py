@@ -6409,8 +6409,10 @@ class PetParadiseTests(unittest.TestCase):
         # non deve piu' esserci l'azzeramento incondizionato che congelava
         # end_date per qualunque evento aperto in modifica.
         self.assertNotIn("if(form.end_date)form.end_date.dataset.manualEdit='1';", fn)
-        # ma la protezione dell'orario di fine gia' impostato resta invariata
-        self.assertIn("form.end_time&&form.end_time.value", fn)
+        # Dal 27/10/2026 (richiesta esplicita dell'utente) in modifica/copia
+        # l'orario di fine non resta fermo: segue l'inizio mantenendo la
+        # durata (ppmInitEventKeepDuration).
+        self.assertIn("ppmInitEventKeepDuration(form,['change'],f=>{", fn)
         # clamp di sicurezza: end_date non deve mai precedere start_date
         self.assertIn("form.end_date.value<form.start_date.value)form.end_date.value=form.start_date.value", fn)
 
