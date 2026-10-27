@@ -2576,6 +2576,44 @@ class PetParadiseTests(unittest.TestCase):
             )
         return event_id
 
+    def test_unassigned_animal_without_name_shows_owner_in_its_own_color_and_event_tags(self):
+        # Richiesta esplicita dell'utente (27/10/2026, screenshot del ciclo):
+        # al posto di "Da inserire" nome e cognome del proprietario (o la
+        # clinica), con un colore diverso dagli altri animali; resta
+        # l'etichetta NON ANCORA AFFIDATO; le etichette operative scelte
+        # sull'evento compaiono gia' nel ciclo.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        responses = []
+        self.handler.send_json = lambda payload, status=200: responses.append((payload, status))
+        self.handler.form = lambda: {"data": "2026-08-05"}
+        self.handler.cremation_create_cycle(admin)
+        cycle_id = responses[-1][0]["cycle_id"]
+        owner_event = self._create_future_pickup_event(admin, animal_name="")
+        clinic_event = self._create_future_pickup_event(admin, animal_name="", start_at="2026-08-05T10:00:00")
+        with app.db() as conn:
+            conn.execute("UPDATE calendar_events SET operational_tags='tag_calco,tag_pelo' WHERE id=?", (owner_event,))
+            conn.execute("UPDATE calendar_events SET client_first_name='',client_last_name='',veterinarian_name='Clinica Faro' WHERE id=?", (clinic_event,))
+        for event_id in (owner_event, clinic_event):
+            self.handler.form = lambda event_id=event_id: {"calendar_event_id": str(event_id)}
+            self.handler.cremation_reserve_to_cycle(admin, cycle_id)
+            self.assertEqual(responses[-1], ({"ok": True}, 200))
+        rendered = []
+        self.handler.send_html = lambda content, *a: rendered.append(content)
+        for path in ("/programma-cremazioni?data=2026-08-05", "/programma-cremazioni?data=2026-08-05&vista=settimana"):
+            self.handler.path = path
+            self.handler.cremation_schedule(admin)
+            page = rendered[-1]
+            self.assertNotIn("Da inserire", page, path)
+            self.assertIn('<span class="cremation-animal-name cremation-unassigned-name">Mario Bianchi</span>', page, path)
+            self.assertIn('<span class="cremation-animal-name cremation-unassigned-name">Clinica Faro</span>', page, path)
+            self.assertIn('cremation-week-animal-name cremation-unassigned-name">', page, path)
+            self.assertIn("NON ANCORA AFFIDATO", page, path)
+            self.assertIn('<span class="badge tag-yellow">CALCO</span> <span class="badge tag-green">PELO</span>', page, path)
+        self.assertIn(".cremation-week-animal-name.cremation-unassigned-name{color:#fb923c}", app.CSS)
+        self.assertEqual(app.unassigned_animal_label({"animal_name": "", "client_first_name": "", "client_last_name": "", "person_company": "", "veterinarian_name": ""}), "Da inserire")
+        self.assertEqual(app.unassigned_animal_label({"animal_name": "Fido", "client_first_name": "Mario", "client_last_name": "", "person_company": "", "veterinarian_name": ""}), "Fido")
+
     def test_cremation_reserve_to_cycle_creates_reservation_shown_as_not_yet_affidato(self):
         # Richiesta esplicita dell'utente: dev'essere possibile aggiungere
         # al ciclo anche un animale non ancora affidato, riconoscibile come
@@ -2641,7 +2679,8 @@ class PetParadiseTests(unittest.TestCase):
         # la regola desktop (griglia a 6 colonne) resta intatta: la
         # correzione mobile non deve rompere la vista desktop.
         self.assertIn(
-            ".cremation-animal-row.cremation-animal-row-reserved{grid-template-columns:minmax(0,1.6fr) auto auto auto auto auto;cursor:default}",
+            # 7 colonne dal 27/10/2026: aggiunta "Etichette" (etichette operative dell'evento).
+            ".cremation-animal-row.cremation-animal-row-reserved{grid-template-columns:minmax(0,1.6fr) auto auto auto auto auto auto;cursor:default}",
             app.CSS,
         )
 

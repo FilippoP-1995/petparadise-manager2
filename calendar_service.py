@@ -135,6 +135,7 @@ def ensure_calendar_schema(conn):
     }
     for name,definition in delivery_clinic_columns.items():
         if name not in columns:conn.execute(f"ALTER TABLE calendar_events ADD COLUMN {name} {definition}")
+    if "operational_tags" not in columns:conn.execute("ALTER TABLE calendar_events ADD COLUMN operational_tags TEXT NOT NULL DEFAULT ''")
     # Richiesta esplicita dell'utente: la voce Urna del preventivo deve
     # avere ricerca a catalogo con prezzo automatico anche in modifica (non
     # solo alla creazione) - serve una colonna persistita che dica quale
@@ -213,6 +214,37 @@ def route_eligible_events(conn, day):
 
 def _clean(value, limit=500):
     return re.sub(r"\s+", " ", str(value or "").strip())[:limit]
+
+
+# Etichette operative della pratica selezionabili gia' su un Ritiro
+# (richiesta esplicita dell'utente, 27/10/2026): salvate sull'evento in
+# calendar_events.operational_tags (chiavi separate da virgola), riportate
+# nella pratica che nasce dall'evento e mostrate nel Programma Cremazioni.
+EVENT_OPERATIONAL_TAGS = (
+    ("tag_assistita", "ASSISTITA", "tag-red"),
+    ("tag_possibile_assistita", "POSSIBILE ASSISTITA", "tag-red"),
+    ("tag_assistita_streaming", "ASSISTITA STREAMING", "tag-orange"),
+    ("tag_possibile_assistita_streaming", "POSSIBILE ASSISTITA STREAMING", "tag-orange"),
+    ("tag_saluto", "SALUTO", "tag-purple"),
+    ("tag_calco", "CALCO", "tag-yellow"),
+    ("tag_possibile_calco", "POSSIBILE CALCO", "tag-yellow"),
+    ("tag_calco_urna", "CALCO PER URNA", "tag-yellow"),
+    ("tag_calco_paw", "CALCO POLPASTRELLO", "tag-yellow"),
+    ("tag_possibile_calco_paw", "POSSIBILE CALCO POLPASTRELLO", "tag-yellow"),
+    ("tag_calco_nose", "CALCO NASO", "tag-yellow"),
+    ("tag_possibile_calco_nose", "POSSIBILE CALCO NASO", "tag-yellow"),
+    ("tag_avvisare", "AVVISARE", "tag-pink"),
+    ("tag_da_richiamare", "DA RICHIAMARE", "tag-blue"),
+    ("tag_pelo", "PELO", "tag-green"),
+    ("tag_no_pelo", "NO PELO", "tag-outline-green"),
+)
+EVENT_OPERATIONAL_TAG_KEYS = tuple(key for key, _, _ in EVENT_OPERATIONAL_TAGS)
+
+
+def event_operational_tags(value):
+    """Chiavi delle etichette salvate sull'evento, nell'ordine standard."""
+    saved = {part.strip() for part in str(value or "").split(",")}
+    return [key for key in EVENT_OPERATIONAL_TAG_KEYS if key in saved]
 
 
 def format_animal_name(value, limit=100):
@@ -431,6 +463,7 @@ def normalize_event(form, current=None):
       "delivery_clinic_address":_clean(form.get("delivery_clinic_address"),500) if event_type in ("Riconsegna","Riconsegna in sede") else "",
       "delivery_clinic_phone":_clean(form.get("delivery_clinic_phone"),50) if event_type in ("Riconsegna","Riconsegna in sede") else "",
       "delivery_location_type":_clean(form.get("delivery_location_type"),50) if event_type=="Riconsegna" and _clean(form.get("delivery_location_type"),50) in ("Privato","Veterinario") else "",
+      "operational_tags":",".join(key for key in EVENT_OPERATIONAL_TAG_KEYS if form.get(key)=="Si") if event_type in ("Ritiro","Ritiro in sede") else "",
     }
 
 

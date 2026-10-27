@@ -59,6 +59,8 @@ from calendar_service import (
     calendar_push_location_title, calendar_pickup_push_text, calendar_delivery_push_text, calendar_appointment_push_text,
     ensure_calendar_schema, event_color_class, event_type_dot_class, event_type_emoji, normalize_event, overlap_rows,
     format_animal_name,
+    EVENT_OPERATIONAL_TAGS,
+    event_operational_tags,
     parse_items as calendar_parse_items, period_bounds as calendar_period_bounds,
     schedule_event_notifications, sync_children as calendar_sync_children,
     route_eligible_events,
@@ -2393,7 +2395,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .cremation-completed-note .icon{width:14px;height:14px}
 .cremation-cycle-animals{display:flex;flex-direction:column}
 .cremation-animal-row{display:grid;grid-template-columns:minmax(0,1.6fr) auto auto auto auto auto auto auto;align-items:center;gap:16px;padding:12px 0;border-top:1px solid #263246;cursor:pointer}
-.cremation-animal-row.cremation-animal-row-reserved{grid-template-columns:minmax(0,1.6fr) auto auto auto auto auto;cursor:default}
+.cremation-animal-row.cremation-animal-row-reserved{grid-template-columns:minmax(0,1.6fr) auto auto auto auto auto auto;cursor:default}
 .cremation-cycle-animals .cremation-animal-row:first-child{border-top:none;padding-top:6px}
 .cremation-animal-id{display:flex;align-items:center;gap:10px;min-width:0}
 .cremation-animal-avatar{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:17px;flex:0 0 34px;background:#0f172a}
@@ -2594,6 +2596,9 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .light-theme .cremation-modal-search{background:#f8fafc;border-color:#e2e8f0;color:#111827}
 .light-theme .cremation-add-animal-card{background:#fff;border-color:#e2e8f0}
 .light-theme .cremation-animal-name{color:#0f172a}
+.calendar-event-tags .fields{display:flex!important;flex-wrap:wrap;gap:8px}.calendar-event-tags .field{width:auto!important;margin:0}.calendar-event-tags .field label{display:flex;align-items:center;gap:6px;margin:0;cursor:pointer}
+.cremation-unassigned-name,.cremation-animal-name.cremation-unassigned-name,.cremation-week-animal-name.cremation-unassigned-name{color:#fb923c}
+.light-theme .cremation-unassigned-name,.light-theme .cremation-animal-name.cremation-unassigned-name,.light-theme .cremation-week-animal-name.cremation-unassigned-name{color:#c2410c}
 .light-theme .cremation-week-animal-name{color:#0f172a}
 @media(max-width:1100px){.cremation-summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:620px){.cremation-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.cremation-header{flex-direction:column}.cremation-header-nav{align-items:flex-start;width:100%}.cremation-date-nav{width:100%;justify-content:space-between}.cremation-view-tabs{width:100%;justify-content:center}.cremation-progress{flex-wrap:wrap}.cremation-animal-row{grid-template-columns:1fr;gap:6px}.cremation-animal-row.cremation-animal-row-reserved{grid-template-columns:1fr}.cremation-animal-actions{margin-left:0;margin-top:4px}.cremation-timeline-item{grid-template-columns:36px minmax(0,1fr);gap:8px}.cremation-timeline-time{font-size:9px}}
@@ -6667,7 +6672,7 @@ function cremationRenderSwapCandidates(animals){
       metaHtml='<div class="cremation-add-animal-meta">'+calendarHtml(metaBits.join(' · '))+'</div>';
     }
     el.innerHTML='<span class="cremation-animal-avatar" aria-hidden="true">'+calendarHtml(a.avatar||'')+'</span>'
-      +'<div class="cremation-add-animal-info"><div class="cremation-animal-name">'+calendarHtml(a.name||'')+'</div>'+metaHtml+'</div>';
+      +'<div class="cremation-add-animal-info"><div class="cremation-animal-name'+(a.future?' cremation-unassigned-name':'')+'">'+calendarHtml(a.name||'')+'</div>'+metaHtml+'</div>';
     if(!a.future)el.addEventListener('click',function(){cremationSwapPick(a.id,a.name);});
     list.appendChild(el);
   });
@@ -8616,6 +8621,7 @@ LUCIDE_PATHS = {
     "eye": '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
     "repeat": '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
     "map-pin": '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+    "tag": '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>',
     "gift": '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/>',
     "sparkles": '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .962L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>',
     "scroll-text": '<path d="M15 12h-5"/><path d="M15 8h-5"/><path d="M19 17V5a2 2 0 0 0-2-2H4"/><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3"/>',
@@ -9094,6 +9100,14 @@ def future_pickup_owner_label(row):
     return owner or row["person_company"] or row["veterinarian_name"] or ""
 
 
+def unassigned_animal_label(row):
+    """Nome mostrato per un animale 'non ancora affidato' (richiesta
+    esplicita dell'utente, 27/10/2026): il nome dell'animale se c'e',
+    altrimenti nome e cognome del proprietario o la clinica, e solo in
+    mancanza di tutto "Da inserire"."""
+    return (row["animal_name"] or "").strip() or future_pickup_owner_label(row) or "Da inserire"
+
+
 def future_pickup_card_html(row,actionable=False):
     """Card per un animale cremazione singola in arrivo da un ritiro
     futuro/odierno non ancora effettuato. Nella lista generale "Animali in
@@ -9120,7 +9134,7 @@ def future_pickup_card_html(row,actionable=False):
     return f'''<{tag} class="cremation-add-animal-card cremation-future-pickup-card" data-search="{search_key}">
       <span class="cremation-animal-avatar {avatar_cls}" aria-hidden="true">{avatar_emoji}</span>
       <div class="cremation-add-animal-info">
-        <div class="cremation-animal-name">{esc(row["animal_name"] or "Da inserire")}</div>
+        <div class="cremation-animal-name cremation-unassigned-name">{esc(unassigned_animal_label(row))}</div>
         <div class="cremation-add-animal-meta">{' · '.join(meta_bits)}</div>
         <div class="cremation-future-pickup-meta"><span class="cremation-status-badge cremation-status-waiting">RITIRO {pickup_label} · {esc(pickup_time)}</span><small>Non ancora affidato</small></div>
       </div>
@@ -9136,12 +9150,19 @@ def cycle_reservation_rows(c, cycle_ids):
     if not cycle_ids:return []
     marks=','.join('?' for _ in cycle_ids)
     return c.execute(f"""SELECT r.id AS reservation_id,r.cycle_id,e.start_at,e.client_first_name,e.client_last_name,
-            e.person_company,e.veterinarian_name,a.name AS animal_name,a.species,a.weight
+            e.person_company,e.veterinarian_name,e.operational_tags,a.name AS animal_name,a.species,a.weight
         FROM cremation_cycle_reservations r
         JOIN calendar_events e ON e.id=r.calendar_event_id
         JOIN calendar_event_animals a ON a.id=(SELECT id FROM calendar_event_animals WHERE event_id=e.id ORDER BY id LIMIT 1)
         WHERE r.cycle_id IN ({marks})
         ORDER BY r.id ASC""", tuple(cycle_ids)).fetchall()
+
+
+def event_tags_badges_html(value):
+    """Badge delle etichette operative salvate su un evento (stessi colori
+    della pratica, vedi App.tag_badges)."""
+    labels=dict((key,(label,cls)) for key,label,cls in EVENT_OPERATIONAL_TAGS)
+    return ''.join(f'<span class="badge {labels[key][1]}">{labels[key][0]}</span> ' for key in event_operational_tags(value))
 
 
 def reserved_cycle_animal_preview_line(row):
@@ -9153,8 +9174,9 @@ def reserved_cycle_animal_preview_line(row):
     weight=(row["weight"] or "").strip()
     weight_txt=f' ({esc(weight)} kg)' if weight else ''
     return f'''<div class="cremation-week-animal-line" data-reservation-id="{row['reservation_id']}">
-      <span class="cremation-week-animal-name-group"><span class="cremation-week-animal-name">{avatar_emoji} {esc(row["animal_name"] or "Da inserire")}{weight_txt}</span></span>
+      <span class="cremation-week-animal-name-group"><span class="cremation-week-animal-name cremation-unassigned-name">{avatar_emoji} {esc(unassigned_animal_label(row))}{weight_txt}</span></span>
       <span class="cremation-status-badge cremation-status-waiting">NON ANCORA AFFIDATO</span>
+      {f'<span class="cremation-week-animal-tag">{tags}</span>' if (tags:=event_tags_badges_html(row.get("operational_tags"))) else ''}
     </div>'''
 
 
@@ -9179,9 +9201,10 @@ def reserved_cycle_animal_row_html(row):
     return f'''<div class="cremation-animal-row cremation-animal-row-reserved">
       <div class="cremation-animal-id">
         <span class="cremation-animal-avatar {avatar_cls}" aria-hidden="true">{avatar_emoji}</span>
-        <div class="cremation-animal-name-wrap"><span class="cremation-animal-name">{esc(row["animal_name"] or "Da inserire")}</span><span class="cremation-animal-weight">{weight_html}</span></div>
+        <div class="cremation-animal-name-wrap"><span class="cremation-animal-name cremation-unassigned-name">{esc(unassigned_animal_label(row))}</span><span class="cremation-animal-weight">{weight_html}</span></div>
       </div>
       <div class="cremation-animal-col"><small>Stato</small><span class="cremation-status-badge cremation-status-waiting">NON ANCORA AFFIDATO</span></div>
+      <div class="cremation-animal-col"><small>Etichette</small>{event_tags_badges_html(row.get("operational_tags")) or '<span class="cremation-dash">—</span>'}</div>
       <div class="cremation-animal-col"><small>Specie</small>{species_html}</div>
       <div class="cremation-animal-col"><small>Proprietario</small>{owner_html}</div>
       <div class="cremation-animal-col"><small>Ritiro</small>{pickup_html}</div>
@@ -12019,6 +12042,23 @@ class App(BaseHTTPRequestHandler):
         style=f' style="background:{esc(color_hex)}"' if color_hex else ''
         return f'<span class="calendar-avatar calendar-avatar-{size} calendar-avatar-{slug}"{style} title="{esc(operator_name)}">{initial}</span>'
 
+    def sync_event_tags_to_practice(self,c,pid,old_tags,new_tags,user_id,stamp):
+        """Scelta esplicita dell'utente (27/10/2026): cambiando le etichette
+        operative di un Ritiro gia' collegato a una pratica, si aggiorna
+        anche la pratica. Si applica solo la differenza (aggiunte -> "Si",
+        tolte -> ""): le etichette messe solo nella pratica restano."""
+        added=[key for key in new_tags if key not in old_tags];removed=[key for key in old_tags if key not in new_tags]
+        if not added and not removed:return
+        practice=c.execute("SELECT * FROM practices WHERE id=? AND (deleted_at IS NULL OR deleted_at='')",(pid,)).fetchone()
+        if not practice:return
+        changes={key:"Si" for key in added};changes.update({key:"" for key in removed})
+        changes={key:value for key,value in changes.items() if (practice[key] or "")!=value}
+        if not changes:return
+        c.execute(f"UPDATE practices SET {','.join(f'{key}=?' for key in changes)},updated_at=? WHERE id=?",list(changes.values())+[stamp,pid])
+        labels=dict((key,label) for key,label,_ in EVENT_OPERATIONAL_TAGS)
+        summary=", ".join(("+" if value else "-")+labels[key] for key,value in changes.items())
+        c.execute("INSERT INTO practice_history(practice_id,event_type,new_value,user_id,created_at) VALUES(?,?,?,?,?)",(pid,"Etichette dall'evento calendario",summary,user_id,stamp))
+
     def calendar_event_base_form(self,event):
         """Dizionario equivalente ai campi del form del wizard, ricostruito
         dai valori gia' salvati su un evento esistente: permette alle
@@ -12043,6 +12083,7 @@ class App(BaseHTTPRequestHandler):
             "all_day":"1" if event["all_day"] else "0",
             "start_date":(event["start_at"] or "")[:10],"start_time":(event["start_at"] or "")[11:16],
             "end_date":(event["end_at"] or "")[:10],"end_time":(event["end_at"] or "")[11:16],
+            **{key:"Si" for key in event_operational_tags(event["operational_tags"] if "operational_tags" in event.keys() else "")},
         }
 
     def calendar_event_client_name(self,row,client_names=None,practice_owner_names=None):
@@ -13533,6 +13574,9 @@ class App(BaseHTTPRequestHandler):
         client_section=f'''<section class="section collapsible collapsed tone-purple" data-calendar-types="Ritiro|Ritiro in sede" {"" if event_type in ("Ritiro","Ritiro in sede") else "hidden"}><h2><span class="calendar-tap-card-icon calendar-icon-purple">{lucide("user")}</span>Cliente / Proprietario</h2>{client_block}</section>'''
         animals_section=f'''<section class="section collapsible collapsed tone-orange" data-calendar-types="Ritiro|Ritiro in sede" {"" if event_type in ("Ritiro","Ritiro in sede") else "hidden"}><h2><span class="calendar-tap-card-icon calendar-icon-orange">{lucide("paw")}</span>Animali</h2><p class="sub">Aggiungi uno o più animali al ritiro.</p><div class="calendar-repeat-list" data-calendar-list="animal"></div><input type="hidden" name="animals_json"><button class="calendar-add-appt-btn" type="button" onclick="calendarAddRow('animal')">{lucide("plus")}<span>Aggiungi animale</span></button></section>'''
         estimate_section=f'''<section class="section collapsible collapsed tone-blue" data-calendar-types="Ritiro|Ritiro in sede" {"" if event_type in ("Ritiro","Ritiro in sede") else "hidden"}><h2><span class="calendar-tap-card-icon calendar-icon-blue">{lucide("wallet")}</span>Preventivo</h2><p class="sub">Voci previste per questo ritiro.</p><div class="calendar-repeat-list" data-calendar-list="estimate"></div><input type="hidden" name="estimate_json"><div class="calendar-estimate-total-bar">Totale automatico <b data-estimate-total>€ 0,00</b></div></section>'''
+        saved_tags=set(event_operational_tags(raw('operational_tags')))
+        tag_boxes=''.join(f'''<div class="field"><label><input type="checkbox" name="{key}" value="Si" {"checked" if raw(key)=="Si" or key in saved_tags else ""}> <span class="badge {cls}">{label}</span></label></div>''' for key,label,cls in EVENT_OPERATIONAL_TAGS)
+        tags_section=f'''<section class="section collapsible collapsed tone-orange calendar-event-tags" data-calendar-types="Ritiro|Ritiro in sede" {"" if event_type in ("Ritiro","Ritiro in sede") else "hidden"}><h2><span class="calendar-tap-card-icon calendar-icon-orange">{lucide("tag")}</span>Etichette operative</h2><p class="sub">Passano alla pratica e compaiono nel Programma Cremazioni.</p><div class="fields">{tag_boxes}</div></section>'''
         note_card=f'''<section class="section collapsible collapsed tone-gray"><h2><span class="calendar-tap-card-icon">{lucide("clipboard")}</span>Note</h2><textarea name="notes">{val('notes')}</textarea></section>'''
         operator_row_html=f'''<div class="calendar-v2-row3">{operator_card}{pickup_status_card}</div>'''
         body=f'''<main class="wrap calendar-form calendar-form-v2"><div class="titlebar calendar-v2-topbar"><div><h1>{'Modifica evento' if event_id else ('Copia evento' if copy_source else 'Nuovo evento')}</h1><p class="sub">Scegli il tipo di evento e compila i dati.</p></div><a class="btn ghost calendar-v2-close" href="{close_url}" onclick="return calendarConfirmExit(event,this.href)" aria-label="Chiudi">×</a></div>{error_html}<div class="calendar-v2-draftrow">{draft_status}</div>{exit_modal_html}<form id="calendarEventForm" data-draft-key="{draft_key}"{f' data-copy-of="{copy_source["id"]}"' if copy_source else ''} method="post" action="{action}" onsubmit="return calendarSubmit(this)">
@@ -13552,6 +13596,7 @@ class App(BaseHTTPRequestHandler):
           {animals_section}
           {client_section}
           {estimate_section}
+          {tags_section}
           {note_card}
           {quick_actions_wizard}
           <div class="calendar-v2-actions"><button class="btn"{'' if event_id else ' id="calendarSaveBtn" onclick="ppmBtnPress(this)"'}>{lucide("save")}<span>{'Salva modifiche' if event_id else 'Salva evento'}</span></button><a class="btn ghost" href="{close_url}" onclick="return calendarConfirmExit(event,this.href)">Annulla</a></div>
@@ -13598,6 +13643,8 @@ class App(BaseHTTPRequestHandler):
                     c.execute(f"UPDATE calendar_events SET {assignments},updated_at=?,updated_by=? WHERE id=?",tuple(data.values())+(stamp,user["id"],event_id))
                     for key,value in data.items():
                         if str(old[key] if key in old.keys() and old[key] is not None else "")!=str(value if value is not None else ""):calendar_add_history(c,event_id,user["id"],f"Modifica {key}",old[key] if key in old.keys() else "",value,stamp)
+                    if old["linked_practice_id"]:
+                        self.sync_event_tags_to_practice(c,old["linked_practice_id"],event_operational_tags(old["operational_tags"]),event_operational_tags(data["operational_tags"]),user["id"],stamp)
                     old_animals=[dict(row) for row in c.execute("SELECT name,species,weight,cremation_type,notes FROM calendar_event_animals WHERE event_id=? ORDER BY id",(event_id,))]
                     old_estimates=[dict(row) for row in c.execute("SELECT description,amount,preset,urn_catalog_id FROM calendar_event_estimate_items WHERE event_id=? ORDER BY sort_order,id",(event_id,))]
                     calendar_sync_children(c,event_id,animals,estimates,stamp)
@@ -13864,6 +13911,11 @@ class App(BaseHTTPRequestHandler):
             </form>
             <script>window.PPM_URN_CATALOG={urn_catalog_json};document.addEventListener('DOMContentLoaded',function(){{{estimate_bootstrap}}});</script>'''
             hero_rows.append(hero_row("receipt","pink",f"Preventivo — {money_it(estimate_total_all)}",'',estimate_form))
+            if event["event_type"] in ("Ritiro","Ritiro in sede"):
+                tag_labels=dict((key,(label,cls)) for key,label,cls in EVENT_OPERATIONAL_TAGS)
+                event_tags=event_operational_tags(event["operational_tags"])
+                tags_badges=''.join(f'<span class="badge {tag_labels[key][1]}">{tag_labels[key][0]}</span> ' for key in event_tags)
+                hero_rows.append(hero_row("tag","orange","Etichette operative",tags_badges or "Nessuna (si scelgono da Modifica)",''))
             if event['payment_status']:
                 # Stato/importo salvati sull'evento sono uno scatto preso al
                 # momento della creazione/prefill: se in seguito viene
@@ -14669,7 +14721,7 @@ class App(BaseHTTPRequestHandler):
                     cycle_practices[row["cycle_id"]].append({"reservation_id":row["reservation_id"],"start_at":row["start_at"],
                         "client_first_name":row["client_first_name"],"client_last_name":row["client_last_name"],
                         "person_company":row["person_company"],"veterinarian_name":row["veterinarian_name"],
-                        "animal_name":row["animal_name"],"species":row["species"],"weight":row["weight"],
+                        "animal_name":row["animal_name"],"species":row["species"],"weight":row["weight"],"operational_tags":row["operational_tags"],
                         "estimated_weight":row["weight"]})
                 for rows in cycle_practices.values():
                     rows.sort(key=cycle_animal_sort_key)
@@ -15203,7 +15255,7 @@ class App(BaseHTTPRequestHandler):
                     cycle_practices[row["cycle_id"]].append({"reservation_id":row["reservation_id"],"start_at":row["start_at"],
                         "client_first_name":row["client_first_name"],"client_last_name":row["client_last_name"],
                         "person_company":row["person_company"],"veterinarian_name":row["veterinarian_name"],
-                        "animal_name":row["animal_name"],"species":row["species"],"weight":row["weight"],
+                        "animal_name":row["animal_name"],"species":row["species"],"weight":row["weight"],"operational_tags":row["operational_tags"],
                         "estimated_weight":row["weight"]})
                 for rows in cycle_practices.values():
                     rows.sort(key=cycle_animal_sort_key)
@@ -15485,7 +15537,7 @@ class App(BaseHTTPRequestHandler):
               <div class="cremation-animal-col"><small>Stato</small><span class="cremation-status-badge cremation-status-waiting">NON ANCORA AFFIDATO</span></div>
               <div class="cremation-animal-id">
                 <span class="cremation-animal-avatar {avatar_cls}" aria-hidden="true">{avatar_emoji}</span>
-                <div class="cremation-animal-name-wrap"><span class="cremation-animal-name">{esc(row["animal_name"] or "Da inserire")}</span><span class="cremation-animal-weight">{weight_html}</span></div>
+                <div class="cremation-animal-name-wrap"><span class="cremation-animal-name cremation-unassigned-name">{esc(unassigned_animal_label(row))}</span><span class="cremation-animal-weight">{weight_html}</span></div>
               </div>
               <div class="cremation-animal-col"><small>Specie</small><span>{species_html}</span></div>
               <div class="cremation-animal-col"><small>Proprietario</small><span>{owner_html}</span></div>
@@ -15640,7 +15692,7 @@ class App(BaseHTTPRequestHandler):
         if last_cycle:
             last_num,_=cycle_position.get(last_cycle["id"],(None,None))
             last_animals=cycle_practices.get(last_cycle["id"],[])
-            last_animals_txt=', '.join((esc(r["animal_name"] or "Da inserire") if isinstance(r,dict) else animal_name_html(r)) for r in last_animals) or '<span class="cremation-dash">Nessun animale</span>'
+            last_animals_txt=', '.join((f'<span class="cremation-unassigned-name">{esc(unassigned_animal_label(r))}</span>' if isinstance(r,dict) else animal_name_html(r)) for r in last_animals) or '<span class="cremation-dash">Nessun animale</span>'
             try:
                 end_dt=datetime.combine(last_date,datetime.strptime(last_cycle["planned_end"],"%H:%M").time())
                 remaining_min=round((end_dt-now_dt).total_seconds()/60)
@@ -16149,7 +16201,7 @@ class App(BaseHTTPRequestHandler):
                 candidates.append({
                     "id":f'future:{row["event_id"]}',
                     "future":True,
-                    "name":row["animal_name"] or "Da inserire",
+                    "name":unassigned_animal_label(row),
                     "weight":(row["weight"] or "").strip(),
                     "owner":owner,
                     "avatar":avatar_emoji,
@@ -19067,6 +19119,9 @@ class App(BaseHTTPRequestHandler):
                 # a volte lascia i dati in sede in anticipo) - in quel caso
                 # nasce con stato "Da ritirare" invece di "Ritirato", cosi'
                 # resta visibile che il recupero non e' ancora avvenuto.
+                # Etichette operative scelte sull'evento (richiesta esplicita
+                # dell'utente, 27/10/2026): la pratica nasce con le stesse.
+                prefill.update({key:"Si" for key in event_operational_tags(event["operational_tags"])})
                 if event["event_status"]!="Ritirato":
                     prefill["status"]="Da ritirare"
                 # Ritiro a domicilio (location_type "Privato", stessa
