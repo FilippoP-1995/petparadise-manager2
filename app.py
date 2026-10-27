@@ -2142,6 +2142,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .calendar-appt-menu-popover[hidden]{display:none}
 .calendar-appt-menu-popover a,.calendar-appt-menu-popover button{display:block;width:100%;padding:8px 10px;border:0;background:transparent;color:#e2e8f0;font:inherit;text-align:left;border-radius:8px;cursor:pointer}
 .calendar-appt-menu-popover a:hover,.calendar-appt-menu-popover button:hover{background:#1f2937}
+.calendar-appt-menu-popover button:disabled{opacity:.5;cursor:not-allowed;background:transparent}
 .calendar-add-appt-btn{display:flex;align-items:center;justify-content:center;gap:8px;padding:14px;border:2px dashed #fb718550;border-radius:14px;background:transparent;color:#fb7185;font-weight:700;font-size:13px;text-decoration:none}
 .calendar-add-appt-btn:hover{background:#fb71851a}
 .light-theme .calendar-daybar-card{background:#fff;border-color:#e2e8f0}
@@ -7873,18 +7874,56 @@ function toggleCreateMenu(force){
     if(practiceLink)practiceLink.href='/nuova?return_to='+encodeURIComponent(location.pathname+location.search);
   }
 }
+// Evento gia' esistente (riquadro "Data e ora" del dettaglio, Modifica, Copia
+// evento) - richiesta esplicita dell'utente: spostando l'inizio, la fine si
+// sposta della stessa quantita' e la durata resta uguale (15:00-15:30 spostato
+// alle 16:00 -> 16:00-16:30), anche a cavallo della mezzanotte o su piu'
+// giorni. Stesso principio di cremationSyncEndWithStartDuration (delta
+// dall'ultimo inizio noto), qui con data + ora: una fine cambiata a mano
+// resta valida e la durata nuova e' quella che si mantiene da li' in poi.
+function ppmEventMinutes(dateValue,timeValue){
+  const d=/^(\d{4})-(\d{2})-(\d{2})$/.exec(dateValue||''),t=/^(\d{1,2}):(\d{2})$/.exec(timeValue||'');
+  if(!d||!t)return null;
+  return Date.UTC(+d[1],+d[2]-1,+d[3],+t[1],+t[2])/60000;
+}
+function ppmEventDateTimeParts(minutes){
+  const dt=new Date(minutes*60000),pad=n=>String(n).padStart(2,'0');
+  return {date:`${dt.getUTCFullYear()}-${pad(dt.getUTCMonth()+1)}-${pad(dt.getUTCDate())}`,time:`${pad(dt.getUTCHours())}:${pad(dt.getUTCMinutes())}`};
+}
+function ppmInitEventKeepDuration(form,eventTypes,afterShift){
+  if(!form||!form.start_date||!form.start_time||!form.end_date||!form.end_time)return false;
+  let prev=ppmEventMinutes(form.start_date.value,form.start_time.value);
+  const shift=()=>{
+    const start=ppmEventMinutes(form.start_date.value,form.start_time.value);
+    if(start===null)return;
+    const end=ppmEventMinutes(form.end_date.value,form.end_time.value);
+    if(prev!==null&&end!==null&&start!==prev){
+      const next=ppmEventDateTimeParts(end+(start-prev));
+      form.end_date.value=next.date;form.end_time.value=next.time;
+      if(afterShift)afterShift(form);
+    }
+    prev=start;
+  };
+  eventTypes.forEach(type=>{form.start_date.addEventListener(type,shift);form.start_time.addEventListener(type,shift);});
+  return true;
+}
+document.addEventListener('DOMContentLoaded',()=>{
+  document.querySelectorAll('form[data-event-keep-duration]').forEach(form=>ppmInitEventKeepDuration(form,['input','change']));
+});
 function calendarInitDateTimeSync(){
   const form=document.getElementById('calendarEventForm');
   if(!form||!form.start_date||!form.end_date)return;
+  if((form.dataset.draftKey||'').includes('_edit_')||form.dataset.copyOf){
+    // Modifica e Copia: la fine segue l'inizio mantenendo la durata (vedi ppmInitEventKeepDuration).
+    ppmInitEventKeepDuration(form,['change'],f=>{
+      f.end_time.dataset.timeDigits=f.end_time.value.replace(':','');
+      calendarSyncTimeWheel(f.end_time,false);
+    });
+    return;
+  }
   const dayDiff=(startStr,endStr)=>{const start=new Date(startStr+'T00:00:00'),end=new Date(endStr+'T00:00:00');if(isNaN(start)||isNaN(end))return 0;return Math.max(0,Math.round((end-start)/86400000));};
   const markManual=input=>{if(!input)return;const mark=()=>{input.dataset.manualEdit='1';};input.addEventListener('input',mark);input.addEventListener('change',mark);};
   markManual(form.end_time);
-  // Editing an existing event: its saved end time was chosen on purpose, so changing
-  // the start must never silently overwrite it (the field stays fully editable by hand).
-  // Same for a copy ("Copia evento"): the copied end time is kept when the date changes.
-  if(((form.dataset.draftKey||'').includes('_edit_')||form.dataset.copyOf)&&form.end_time&&form.end_time.value){
-    form.end_time.dataset.manualEdit='1';
-  }
   // end_date: quando l'utente lo tocca a mano creando un intervallo di giorni
   // reale (anche gia' presente all'apertura, es. evento su piu' giorni in
   // modifica), quell'intervallo va preservato ai successivi cambi di
@@ -12034,6 +12073,17 @@ class App(BaseHTTPRequestHandler):
     def calendar_appointment_phone(self,row):
         return row["client_phone"] or row["phone"] or row["veterinarian_phone"] or row["delivery_clinic_phone"] or ""
 
+    def calendar_event_message_phone(self,row,client_record_phone="",practice_owner_phone=""):
+        # Richiesta esplicita dell'utente (27/10/2026): i messaggi
+        # preimpostati vanno sempre al cliente (proprietario), mai alla
+        # clinica veterinaria (es. riconsegna presso una clinica). Catena:
+        # telefono cliente dell'evento -> anagrafica cliente -> proprietario
+        # della pratica collegata. Nessun ripiego sui numeri delle cliniche:
+        # senza numero del cliente il pulsante resta disattivato.
+        keys=row.keys()
+        own=(row["client_phone"] if "client_phone" in keys else "") or (row["phone"] if "phone" in keys else "")
+        return (own or client_record_phone or practice_owner_phone or "").strip()
+
     def calendar_appointment_address(self,row):
         return row["address"] or row["veterinarian_address"] or row["delivery_clinic_address"] or row["venue_name"] or ""
 
@@ -12225,7 +12275,9 @@ class App(BaseHTTPRequestHandler):
         # caricamento passivo di questa lista: geocodificare ogni card
         # visibile ad ogni caricamento sarebbe un rallentamento reale.
         nav_btn=f'<a class="calendar-appt-action" href="/calendario/{row["id"]}/naviga" target="_blank" rel="noopener noreferrer" aria-label="Naviga" onclick="event.stopPropagation()">{lucide("navigation")}</a>' if address else ''
-        card_qwa=self.wa_quick_button(phone,self.event_qwa_vars(None,row,(animals_by_event or {}).get(row["id"],[]),client_display=client_display),"menu") if phone else ""
+        message_phone=row["message_phone"] if "message_phone" in row.keys() else self.calendar_event_message_phone(row)
+        card_qwa=(self.wa_quick_button(message_phone,self.event_qwa_vars(None,row,(animals_by_event or {}).get(row["id"],[]),client_display=client_display),"menu") if message_phone else "") or '<button type="button" disabled title="Manca il numero di telefono del cliente">Messaggio WhatsApp · manca il numero del cliente</button>'
+
         menu_btn=f'''<div class="calendar-appt-menu-wrap" onclick="event.stopPropagation()">
           <button type="button" class="calendar-appt-action" aria-label="Altre azioni" onclick="calendarToggleApptMenu(this)">{lucide("more-vertical")}</button>
           <div class="calendar-appt-menu-popover" hidden>
@@ -12359,7 +12411,7 @@ class App(BaseHTTPRequestHandler):
                 for ctype_row in c.execute(f"SELECT event_id,group_concat(DISTINCT cremation_type) ctypes FROM calendar_event_animals WHERE event_id IN ({placeholders}) AND trim(COALESCE(cremation_type,''))<>'' GROUP BY event_id",event_ids):
                     cremation_type_by_event[ctype_row["event_id"]]=ctype_row["ctypes"] or ""
             linked_ids={int(row["linked_practice_id"]) for row in rows if row["linked_practice_id"]}
-            payment_channels={};practice_owner_names={};practice_payment_live={};practice_status_by_id={}
+            payment_channels={};practice_owner_names={};practice_payment_live={};practice_status_by_id={};practice_owner_phones={}
             if linked_ids:
                 linked_marks=','.join('?' for _ in linked_ids)
                 for practice_row in c.execute(f"SELECT * FROM practices WHERE id IN ({linked_marks})",tuple(linked_ids)):
@@ -12367,6 +12419,7 @@ class App(BaseHTTPRequestHandler):
                     if not practice_row["deleted_at"]:practice_status_by_id[practice_row["id"]]=practice_row["status"]  # per "Segna consegnata" sulle riconsegne
                     owner=" ".join(x for x in (practice_row["owner_first_name"],practice_row["owner_last_name"]) if x).strip() or practice_row["owner_company"] or ""
                     if owner:practice_owner_names[practice_row["id"]]=owner
+                    practice_owner_phones[practice_row["id"]]=practice_row["owner_phone"] or ""
                     # Stato/importo salvati sull'evento sono uno scatto preso
                     # al momento della creazione/prefill: se in seguito viene
                     # compilato il Totale D della pratica (che sostituisce
@@ -12377,14 +12430,16 @@ class App(BaseHTTPRequestHandler):
                     # usata per il prefill del wizard.
                     practice_payment_live[practice_row["id"]]=delivery_payment_prefill(practice_row)
             client_ids={int(row["client_id"]) for row in rows if row["client_id"]}
-            client_names={}
+            client_names={};client_phones={}
             if client_ids:
                 client_marks=','.join('?' for _ in client_ids)
-                for client_row in c.execute(f"SELECT id,first_name,last_name,company_name FROM clients WHERE id IN ({client_marks})",tuple(client_ids)):
+                for client_row in c.execute(f"SELECT id,first_name,last_name,company_name,phone FROM clients WHERE id IN ({client_marks})",tuple(client_ids)):
+                    client_phones[client_row["id"]]=client_row["phone"] or ""
                     name=" ".join(x for x in (client_row["first_name"],client_row["last_name"]) if x).strip() or client_row["company_name"] or ""
                     if name:client_names[client_row["id"]]=name
             def _merge_calendar_row(row):
-                merged=dict(row,animal_species=species_by_event.get(row["id"],""),payment_channel=payment_channels.get(row["linked_practice_id"],""),practice_status=practice_status_by_id.get(row["linked_practice_id"],""))
+                merged=dict(row,animal_species=species_by_event.get(row["id"],""),payment_channel=payment_channels.get(row["linked_practice_id"],""),practice_status=practice_status_by_id.get(row["linked_practice_id"],""),
+                  message_phone=self.calendar_event_message_phone(row,client_phones.get(row["client_id"],""),practice_owner_phones.get(row["linked_practice_id"],"")))
                 # Se l'evento e' gia' segnato "Pagato" a mano, resta cosi'
                 # com'e': e' una conferma esplicita dell'operatore, non uno
                 # scatto da correggere. Il ricalcolo dal vivo serve solo
@@ -13615,10 +13670,11 @@ class App(BaseHTTPRequestHandler):
               p.owner_first_name practice_owner_first_name,p.owner_last_name practice_owner_last_name,p.owner_company practice_owner_company
               FROM calendar_events e JOIN users u ON u.id=e.created_by LEFT JOIN users uu ON uu.id=e.updated_by LEFT JOIN users au ON au.id=e.assigned_user_id LEFT JOIN practices p ON p.id=e.linked_practice_id WHERE e.id=?""",(event_id,)).fetchone()
             if not event:return self.send_error(404)
-            client_names={};practice_owner_names={}
+            client_names={};practice_owner_names={};client_record_phone=""
             if event["client_id"]:
-                client_row=c.execute("SELECT first_name,last_name,company_name FROM clients WHERE id=?",(event["client_id"],)).fetchone()
+                client_row=c.execute("SELECT first_name,last_name,company_name,phone FROM clients WHERE id=?",(event["client_id"],)).fetchone()
                 if client_row:
+                    client_record_phone=client_row["phone"] or ""
                     name=" ".join(x for x in (client_row["first_name"],client_row["last_name"]) if x).strip() or client_row["company_name"] or ""
                     if name:client_names[event["client_id"]]=name
             linked_practice=None
@@ -13671,7 +13727,8 @@ class App(BaseHTTPRequestHandler):
         def qa(icon,label,href,extra=""):
             if href:return f'<a class="calendar-detail-qa" href="{href}"{extra}><span class="calendar-detail-qa-icon">{lucide(icon)}</span><span>{label}</span></a>'
             return f'<span class="calendar-detail-qa calendar-detail-qa-disabled"><span class="calendar-detail-qa-icon">{lucide(icon)}</span><span>{label}</span></span>'
-        qwa_html=self.wa_quick_button(phone,self.event_qwa_vars(user,event,animals),"qa") if phone else ""
+        message_phone=self.calendar_event_message_phone(event,client_record_phone,(linked_practice["owner_phone"] if linked_practice else "") or "")
+        qwa_html=self.wa_quick_button(message_phone,self.event_qwa_vars(user,event,animals),"qa") if message_phone else ""
         if not qwa_html:
             qwa_html='<span class="calendar-detail-qa calendar-detail-qa-disabled"><span class="calendar-detail-qa-icon">'+lucide("scroll-text")+'</span><span>Messaggi</span></span>'
         quick_actions=f'''<div class="calendar-detail-quickactions">
@@ -13753,7 +13810,7 @@ class App(BaseHTTPRequestHandler):
         hero_rows=[]
         link_practice_card=''
         if tab=="dettagli":
-            datetime_form=f'''<form method="post" action="/calendario/{event_id}/data-ora">
+            datetime_form=f'''<form method="post" action="/calendario/{event_id}/data-ora" data-event-keep-duration>
               <div class="calendar-quickedit-datetime-grid">
                 <label>Data inizio<input type="date" name="start_date" value="{esc(start_date_part)}"></label>
                 <label>Ora inizio<input type="time" name="start_time" value="{esc(start_time_part)}"></label>

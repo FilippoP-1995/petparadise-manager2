@@ -269,9 +269,123 @@ class OperationalCalendarTests(unittest.TestCase):
             self.assertIn("<h1>Nuovo evento</h1>", page, path)
             self.assertNotIn("data-copy-of=", page, path)
 
-    def test_copy_keeps_the_end_time_when_the_date_is_changed(self):
-        # Come in modifica: cambiando la data della copia l'ora di fine copiata resta.
-        self.assertIn("if(((form.dataset.draftKey||'').includes('_edit_')||form.dataset.copyOf)&&form.end_time&&form.end_time.value){", app.APP_JS)
+    def test_edit_and_copy_move_the_end_keeping_the_duration(self):
+        # Richiesta esplicita dell'utente (27/10/2026): in Modifica, in Copia e
+        # nel riquadro "Data e ora" del dettaglio la fine segue l'inizio
+        # mantenendo la durata (15:00-15:30 spostato alle 16:00 -> 16:00-16:30).
+        js = app.APP_JS
+        self.assertIn("function ppmInitEventKeepDuration(form,eventTypes,afterShift){", js)
+        self.assertIn("if((form.dataset.draftKey||'').includes('_edit_')||form.dataset.copyOf){\n    // Modifica e Copia", js)
+        self.assertIn("document.querySelectorAll('form[data-event-keep-duration]')", js)
+        self.assertNotIn("form.end_time.dataset.manualEdit='1';\n  }", js)
+
+    def test_keep_duration_script_shifts_end_time_and_date(self):
+        import shutil, subprocess
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node non disponibile")
+        js = app.APP_JS
+        start = js.index("function ppmEventMinutes(")
+        end = js.index("document.addEventListener('DOMContentLoaded',()=>{\n  document.querySelectorAll('form[data-event-keep-duration]')")
+        script = js[start:end] + """
+function field(value){const listeners={};return {value,addEventListener(type,fn){(listeners[type]=listeners[type]||[]).push(fn);},fire(type){(listeners[type]||[]).forEach(fn=>fn());}};}
+const out=[];
+function run(sd,st,ed,et,nsd,nst,type){
+  const form={start_date:field(sd),start_time:field(st),end_date:field(ed),end_time:field(et)};
+  ppmInitEventKeepDuration(form,[type]);
+  form.start_date.value=nsd;form.start_date.fire(type);
+  form.start_time.value=nst;form.start_time.fire(type);
+  out.push([form.end_date.value,form.end_time.value]);
+}
+run('2026-10-27','15:00','2026-10-27','15:30','2026-10-27','16:00','change');
+run('2026-10-27','15:00','2026-10-27','15:30','2026-10-27','14:00','input');
+run('2026-10-27','23:30','2026-10-28','00:15','2026-10-27','23:50','change');
+run('2026-10-27','09:00','2026-10-29','18:00','2026-11-02','09:00','change');
+run('2026-03-28','10:00','2026-03-28','11:00','2026-03-29','10:00','change');
+console.log(JSON.stringify(out));
+"""
+        result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), [
+            ["2026-10-27", "16:30"],
+            ["2026-10-27", "14:30"],
+            ["2026-10-28", "00:35"],
+            ["2026-11-04", "18:00"],
+            ["2026-03-29", "11:00"],
+        ])
+
+    def test_detail_datetime_form_keeps_the_duration(self):
+        event_id = self.save(self.event_form("Appuntamento", start_time="15:00", end_time="15:30"))
+        pages = []
+        self.handler.send_html = lambda html, status=200: pages.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(self.admin, event_id)
+        self.assertIn(f'<form method="post" action="/calendario/{event_id}/data-ora" data-event-keep-duration>', pages[-1])
+
+    def detail_page(self, event_id):
+        pages = []
+        self.handler.send_html = lambda html, status=200: pages.append(html)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(self.admin, event_id)
+        return pages[-1]
+
+    @staticmethod
+    def quick_message_phones(html):
+        return [json.loads(app.html.unescape(m))["phone"] for m in re.findall(r'data-qwa="([^"]*)"', html)]
+
+    def test_quick_messages_use_the_client_number_not_the_clinic(self):
+        # Richiesta esplicita dell'utente (27/10/2026): riconsegna presso una
+        # clinica con pratica collegata -> i messaggi preimpostati vanno al
+        # cliente, mai alla clinica.
+        stamp = app.now()
+        with app.db() as conn:
+            vet_id = conn.execute(
+                "INSERT INTO veterinarians(clinic_name,short_name,phone,address,active,created_at,updated_at) VALUES(?,?,?,?,1,?,?)",
+                ("Clinica Faro", "Faro", "0586111111", "Via Faro 1", stamp, stamp)).lastrowid
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by,
+                   animal_name,species,owner_first_name,owner_last_name,owner_phone,payment_status)
+                   VALUES('CR-QWA','Veterinario','Livorno','In programma',?,?,?,'Fido','Cane','Mario','Rossi','3471234567','Da saldare')""",
+                (stamp, stamp, self.admin["id"])).lastrowid
+        event_id = self.save(self.event_form("Riconsegna", start_date="2026-11-05", end_date="2026-11-05",
+                                             delivery_clinic_id=str(vet_id), delivery_clinic_name="Clinica Faro"))
+        with app.db() as conn:
+            conn.execute("UPDATE calendar_events SET linked_practice_id=?,client_phone='',phone='' WHERE id=?", (pid, event_id))
+        # Dalla pratica collegata (l'evento non ha il numero del cliente).
+        self.assertEqual(self.quick_message_phones(self.detail_page(event_id)), ["393471234567"])
+        card = self.card(self.day_page(self.render_calendar("giorno", "2026-11-05"), "2026-11-05"), event_id)
+        self.assertEqual(self.quick_message_phones(card), ["393471234567"])
+        # Il numero del cliente scritto sull'evento ha la precedenza.
+        with app.db() as conn:
+            conn.execute("UPDATE calendar_events SET client_phone='3339998877' WHERE id=?", (event_id,))
+        self.assertEqual(self.quick_message_phones(self.detail_page(event_id)), ["393339998877"])
+
+    def test_quick_messages_fall_back_to_the_client_record_and_are_disabled_without_a_client_number(self):
+        stamp = app.now()
+        with app.db() as conn:
+            vet_id = conn.execute(
+                "INSERT INTO veterinarians(clinic_name,short_name,phone,address,active,created_at,updated_at) VALUES(?,?,?,?,1,?,?)",
+                ("Clinica Faro", "Faro", "0586111111", "Via Faro 1", stamp, stamp)).lastrowid
+            client_id = conn.execute(
+                "INSERT INTO clients(first_name,last_name,phone,created_at,updated_at) VALUES('Anna','Neri','3401112233',?,?)",
+                (stamp, stamp)).lastrowid
+        event_id = self.save(self.event_form("Riconsegna", start_date="2026-11-05", end_date="2026-11-05",
+                                             delivery_clinic_id=str(vet_id), delivery_clinic_name="Clinica Faro"))
+        with app.db() as conn:
+            conn.execute("UPDATE calendar_events SET client_id=?,client_phone='',phone='' WHERE id=?", (client_id, event_id))
+        self.assertEqual(self.quick_message_phones(self.detail_page(event_id)), ["393401112233"])
+        card = self.card(self.day_page(self.render_calendar("giorno", "2026-11-05"), "2026-11-05"), event_id)
+        self.assertEqual(self.quick_message_phones(card), ["393401112233"])
+        # Nessun numero del cliente: pulsante disattivato, mai la clinica.
+        with app.db() as conn:
+            conn.execute("UPDATE calendar_events SET client_id=NULL WHERE id=?", (event_id,))
+        page = self.detail_page(event_id)
+        self.assertEqual(self.quick_message_phones(page), [])
+        self.assertIn('calendar-detail-qa-disabled"><span class="calendar-detail-qa-icon">', page)
+        self.assertIn('href="tel:0586111111"', page)  # Chiama resta com'era
+        card = self.card(self.day_page(self.render_calendar("giorno", "2026-11-05"), "2026-11-05"), event_id)
+        self.assertEqual(self.quick_message_phones(card), [])
+        self.assertIn("<button type=\"button\" disabled title=\"Manca il numero di telefono del cliente\">", card)
 
     def test_calendar_contact_search_includes_razzauti_and_first_animal_is_open(self):
         stamp=datetime.now().isoformat(timespec="seconds")
@@ -1026,11 +1140,13 @@ class OperationalCalendarTests(unittest.TestCase):
         # l'utente cambiava start_date su un evento multi-giorno gia'
         # esistente (bug segnalato dall'utente). Ora lo scarto di giorni
         # viene preservato tramite dataset.dateSpanDays invece di congelare
-        # il campo; l'orario di fine resta invece protetto come prima.
+        # il campo. Dal 27/10/2026 (richiesta esplicita dell'utente) in
+        # modifica la fine non resta ferma: segue l'inizio mantenendo la
+        # durata dell'evento salvato (ppmInitEventKeepDuration).
         js = app.APP_JS
         self.assertIn("(form.dataset.draftKey||'').includes('_edit_')", js)
         self.assertIn("form.dataset.dateSpanDays", js)
-        self.assertIn("form.end_time&&form.end_time.value", js)
+        self.assertIn("ppmInitEventKeepDuration(form,['change'],f=>{", js)
         event_id = self.save(self.event_form("Appuntamento", start_date="2026-07-19", start_time="14:45", end_date="2026-07-19", end_time="16:00"))
         rendered = []
         self.handler.path = f"/calendario/{event_id}/modifica"
