@@ -352,9 +352,15 @@ console.log(JSON.stringify(out));
         with app.db() as conn:
             conn.execute("UPDATE calendar_events SET linked_practice_id=?,client_phone='',phone='' WHERE id=?", (pid, event_id))
         # Dalla pratica collegata (l'evento non ha il numero del cliente).
-        self.assertEqual(self.quick_message_phones(self.detail_page(event_id)), ["393471234567"])
+        page = self.detail_page(event_id)
+        self.assertEqual(self.quick_message_phones(page), ["393471234567"])
+        # Stessa regola per il tasto Chiama (richiesta dell'utente).
+        self.assertIn('href="tel:3471234567"', page)
+        self.assertNotIn("tel:0586111111", page)
         card = self.card(self.day_page(self.render_calendar("giorno", "2026-11-05"), "2026-11-05"), event_id)
         self.assertEqual(self.quick_message_phones(card), ["393471234567"])
+        self.assertIn('href="tel:3471234567"', card)
+        self.assertNotIn("tel:0586111111", card)
         # Il numero del cliente scritto sull'evento ha la precedenza.
         with app.db() as conn:
             conn.execute("UPDATE calendar_events SET client_phone='3339998877' WHERE id=?", (event_id,))
@@ -382,9 +388,11 @@ console.log(JSON.stringify(out));
         page = self.detail_page(event_id)
         self.assertEqual(self.quick_message_phones(page), [])
         self.assertIn('calendar-detail-qa-disabled"><span class="calendar-detail-qa-icon">', page)
-        self.assertIn('href="tel:0586111111"', page)  # Chiama resta com'era
+        self.assertNotIn('href="tel:', page)  # anche Chiama disattivato, mai la clinica
+        self.assertIn('calendar-detail-qa-disabled"><span class="calendar-detail-qa-icon">' + app.lucide("phone"), page)
         card = self.card(self.day_page(self.render_calendar("giorno", "2026-11-05"), "2026-11-05"), event_id)
         self.assertEqual(self.quick_message_phones(card), [])
+        self.assertNotIn('href="tel:', card)
         self.assertIn("<button type=\"button\" disabled title=\"Manca il numero di telefono del cliente\">", card)
 
     def test_calendar_contact_search_includes_razzauti_and_first_animal_is_open(self):

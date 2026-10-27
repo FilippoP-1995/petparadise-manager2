@@ -12262,10 +12262,13 @@ class App(BaseHTTPRequestHandler):
             else:
                 deliver_html=f'<button type="button" class="calendar-appt-deliver" data-practice-id="{row["linked_practice_id"]}" onclick="event.stopPropagation();calendarMarkDelivered(this)">Segna consegnata</button>'
         phone=self.calendar_appointment_phone(row)
-        tel=re.sub(r"[^0-9+]","",phone) if phone else ""
         wa=self.wa_digits(phone) if phone else ""
         address=self.calendar_appointment_address(row)
-        phone_btn=f'<a class="calendar-appt-action" href="tel:{esc(tel)}" aria-label="Chiama" onclick="event.stopPropagation()">{lucide("phone")}</a>' if tel else ''
+        # Chiama e messaggi preimpostati: solo il numero del cliente, mai la
+        # clinica (richiesta esplicita dell'utente, 27/10/2026).
+        message_phone=row["message_phone"] if "message_phone" in row.keys() else self.calendar_event_message_phone(row)
+        call_tel=re.sub(r"[^0-9+]","",message_phone) if message_phone else ""
+        phone_btn=f'<a class="calendar-appt-action" href="tel:{esc(call_tel)}" aria-label="Chiama il cliente" onclick="event.stopPropagation()">{lucide("phone")}</a>' if call_tel else ''
         wa_btn=f'<a class="calendar-appt-action calendar-appt-action-wa" href="https://wa.me/{wa}" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp" onclick="event.stopPropagation()">{lucide("message")}</a>' if wa else ''
         # Richiesta esplicita dell'utente: la destinazione deve essere la
         # piu' accurata possibile (catena evento->pratica/cliente/
@@ -12275,7 +12278,6 @@ class App(BaseHTTPRequestHandler):
         # caricamento passivo di questa lista: geocodificare ogni card
         # visibile ad ogni caricamento sarebbe un rallentamento reale.
         nav_btn=f'<a class="calendar-appt-action" href="/calendario/{row["id"]}/naviga" target="_blank" rel="noopener noreferrer" aria-label="Naviga" onclick="event.stopPropagation()">{lucide("navigation")}</a>' if address else ''
-        message_phone=row["message_phone"] if "message_phone" in row.keys() else self.calendar_event_message_phone(row)
         card_qwa=(self.wa_quick_button(message_phone,self.event_qwa_vars(None,row,(animals_by_event or {}).get(row["id"],[]),client_display=client_display),"menu") if message_phone else "") or '<button type="button" disabled title="Manca il numero di telefono del cliente">Messaggio WhatsApp · manca il numero del cliente</button>'
 
         menu_btn=f'''<div class="calendar-appt-menu-wrap" onclick="event.stopPropagation()">
@@ -13693,8 +13695,7 @@ class App(BaseHTTPRequestHandler):
         # Niente "+" forzato in testa: stesso bug/fix di qa_tel piu' sopra
         # nel form evento — un numero italiano scritto senza prefisso
         # internazionale diventava un numero francese (+33) o comunque
-        # sbagliato per il dialer.
-        tel=re.sub(r"[^0-9+]","",phone) if phone else ""
+        # sbagliato per il dialer (vale per call_tel piu' sotto).
         wa=self.wa_digits(phone) if phone else ""
         address=self.calendar_appointment_address(event)
         display_event_type="Promemoria" if event["event_type"]=="Appuntamento" else event["event_type"]
@@ -13728,11 +13729,12 @@ class App(BaseHTTPRequestHandler):
             if href:return f'<a class="calendar-detail-qa" href="{href}"{extra}><span class="calendar-detail-qa-icon">{lucide(icon)}</span><span>{label}</span></a>'
             return f'<span class="calendar-detail-qa calendar-detail-qa-disabled"><span class="calendar-detail-qa-icon">{lucide(icon)}</span><span>{label}</span></span>'
         message_phone=self.calendar_event_message_phone(event,client_record_phone,(linked_practice["owner_phone"] if linked_practice else "") or "")
+        call_tel=re.sub(r"[^0-9+]","",message_phone) if message_phone else ""
         qwa_html=self.wa_quick_button(message_phone,self.event_qwa_vars(user,event,animals),"qa") if message_phone else ""
         if not qwa_html:
             qwa_html='<span class="calendar-detail-qa calendar-detail-qa-disabled"><span class="calendar-detail-qa-icon">'+lucide("scroll-text")+'</span><span>Messaggi</span></span>'
         quick_actions=f'''<div class="calendar-detail-quickactions">
-          {qa("phone","Chiama",f"tel:{esc(tel)}" if tel else "")}
+          {qa("phone","Chiama",f"tel:{esc(call_tel)}" if call_tel else "")}
           {qa("message","WhatsApp",f"https://wa.me/{wa}" if wa else "", ' target="_blank" rel="noopener noreferrer"' if wa else "")}
           {qwa_html}
           {qa("navigation","Naviga",f"/calendario/{event_id}/naviga" if address else "", ' target="_blank" rel="noopener noreferrer"' if address else "")}
