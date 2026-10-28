@@ -7593,6 +7593,7 @@ function ppmQwaCopy(text,button){
   if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(text).then(done,legacy);else legacy();
 }
 function ppmQwaNeedsPractice(text){return /[{]costo_[a-z_]+[}]/.test(String(text||''));}
+function ppmQwaNeedsCycle(text,vars){return /[{](data|ora)_cremazione[}]/.test(String(text||''))&&!((vars||{}).data_cremazione&&(vars||{}).ora_cremazione);}
 function ppmQwaFill(text,vars){
   // una riga che contiene una voce di costo mancante nella pratica sparisce per intero
   const lines=String(text||'').split('\n').filter(function(line){
@@ -7641,15 +7642,16 @@ function ppmQuickWa(button){
     .then(function(payload){
       list.textContent='';
       (payload.templates||[]).forEach(function(template){
-        const needsPractice=ppmQwaNeedsPractice(template.body)&&!data.practice;
-        const text=needsPractice?'':ppmQwaFill(template.body,data.vars||{});
+        const needsPractice=(ppmQwaNeedsPractice(template.body)||/[{](data|ora)_cremazione[}]/.test(template.body))&&!data.practice;
+        const needsCycle=!needsPractice&&ppmQwaNeedsCycle(template.body,data.vars);
+        const text=(needsPractice||needsCycle)?'':ppmQwaFill(template.body,data.vars||{});
         const item=document.createElement(text?'a':'div');
         item.style.cssText='display:block;padding:12px 14px;border:1px solid #334155;border-radius:14px;text-decoration:none;color:inherit'+(text?'':';opacity:.55');
         const name=document.createElement('b');
         name.textContent=template.title;
         const preview=document.createElement('small');
         preview.style.cssText='display:block;margin-top:4px;opacity:.75;white-space:pre-line;max-height:3.6em;overflow:hidden';
-        preview.textContent=text||(needsPractice?'Disponibile solo con una pratica collegata':'Testo da compilare');
+        preview.textContent=text||(needsPractice?'Disponibile solo con una pratica collegata':needsCycle?"Disponibile quando l'animale è in un ciclo di cremazione":'Testo da compilare');
         item.appendChild(name);item.appendChild(preview);
         if(text){
           item.href='https://wa.me/'+encodeURIComponent(data.phone||'')+'?text='+encodeURIComponent(text);
@@ -8909,6 +8911,12 @@ WA_QUICK_DEFAULTS = (
      "*_IBAN: IT45P0892270400000000839662_*\n"
      "*_Intestato a: Pet Paradise Cremazioni Animali di Piccolo Filippo e C. SNC_*\n"
      "Banca Alta Toscana Società Cooperativa S.C."),
+    # Richiesta esplicita dell'utente (28/10/2026): data e ora sono quelle
+    # del ciclo di cremazione in cui si trova l'animale della pratica.
+    ("avviso_assistita", "Avviso assistita",
+     "Ciao {nome_cliente}, scriviamo dallo staff di Pet Paradise Cremazione Animali per comunicarvi che la cremazione di "
+     "{nome_animale} è in programma per {data_cremazione} alle ore {ora_cremazione}. Vi aspettiamo quindi presso la nostra "
+     "sede di Livorno in Via dei Materassai, 10, grazie"),
 )
 # titoli usati in una versione precedente: se salvati cosi' si passa ai nuovi
 # testi predefiniti precedenti: se e' ancora salvato uno di questi (cioe' mai modificato a mano) si passa al nuovo
@@ -8926,6 +8934,8 @@ WA_QUICK_PLACEHOLDERS = (
     ("costo_totale", "totale del servizio (idem)"),
     ("costo_acconto", "acconto versato (idem)"),
     ("costo_saldo", "saldo ancora da pagare (idem)"),
+    ("data_cremazione", "giorno del ciclo di cremazione dell'animale, es. «Venerdì 30 Ottobre» (senza ciclo il messaggio non è disponibile)"),
+    ("ora_cremazione", "ora di inizio del ciclo, es. «12» oppure «12:30» (idem)"),
 )
 WA_QUICK_MAX_BODY = 1000
 # Le emoji nei messaggi rapidi arrivavano come "�" in WhatsApp sul telefono degli operatori (link wa.me): tolte dai
@@ -19461,8 +19471,24 @@ class App(BaseHTTPRequestHandler):
         solo se c'e' una pratica: senza pratica restano assenti e i messaggi che
         li usano non sono disponibili."""
         out={"nome_cliente":(first or "").strip(),"nome_animale":(animals or "").strip()}
-        if practice is not None:out.update(self.wa_cost_vars(practice))
+        if practice is not None:
+            out.update(self.wa_cost_vars(practice))
+            out.update(self.wa_cycle_vars(practice))
         return out
+
+    def wa_cycle_vars(self,p):
+        """Giorno e ora del ciclo di cremazione in cui si trova l'animale della
+        pratica ("Venerdì 30 Ottobre", "12" o "12:30"); vuoti se la pratica non
+        e' in nessun ciclo, cosi' i messaggi che li usano non sono disponibili."""
+        with db() as c:
+            cycle=c.execute("SELECT cy.cycle_date,cy.planned_start FROM practices p JOIN cremation_cycles cy ON cy.id=p.cremation_cycle_id WHERE p.id=?",(p["id"],)).fetchone()
+        if not cycle:return {"data_cremazione":"","ora_cremazione":""}
+        try:day=date.fromisoformat(cycle["cycle_date"])
+        except (TypeError,ValueError):return {"data_cremazione":"","ora_cremazione":""}
+        weekdays=("Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica")
+        hour,_,minute=str(cycle["planned_start"] or "").partition(":")
+        time_text=(str(int(hour)) if minute in ("","00") else f"{int(hour)}:{minute[:2]}") if hour.isdigit() else ""
+        return {"data_cremazione":f"{weekdays[day.weekday()]} {day.day} {MONTH_NAMES_IT[day.month-1]}","ora_cremazione":time_text}
 
     def wa_cost_vars(self,p):
         """Voci di costo della pratica nel formato dei messaggi (210,00); una voce

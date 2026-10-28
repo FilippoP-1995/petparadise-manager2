@@ -7128,7 +7128,7 @@ class PetParadiseTests(unittest.TestCase):
             operator = conn.execute("SELECT * FROM users WHERE role!='admin' LIMIT 1").fetchone()
             templates = app.wa_quick_templates(conn)
         # "Conferma presa in carico" eliminato; titoli rinominati
-        self.assertEqual([t["title"] for t in templates], ["Presa in carico", "Appuntamento riconsegna", "Riconsegna effettuata in ambulatorio", "Estremi bancari"])
+        self.assertEqual([t["title"] for t in templates], ["Presa in carico", "Appuntamento riconsegna", "Riconsegna effettuata in ambulatorio", "Estremi bancari", "Avviso assistita"])
         by_id = {t["id"]: t for t in templates}
         presa = by_id["mancata_risposta_presa_in_carico"]["body"];riconsegna = by_id["mancata_risposta_riconsegna"]["body"]
         self.assertTrue(presa.startswith("Ciao {nome_cliente}, scriviamo dallo staff di Pet Paradise Cremazione Animali."))
@@ -7178,7 +7178,8 @@ class PetParadiseTests(unittest.TestCase):
             self.assertEqual({x["id"]: x["body"] for x in app.wa_quick_templates(conn)}["estremi_bancari"], "Di nuovo 🐾")
             conn.execute("DELETE FROM settings WHERE key IN (?,?)", (app.WA_QUICK_SETTING, "wa_quick_emoji_removed"))
         self.assertEqual([k for k, _ in app.WA_QUICK_PLACEHOLDERS], ["nome_cliente", "nome_animale", "costo_cremazione", "costo_ritiro",
-                         "costo_riconsegna", "costo_urna", "costo_calchi", "costo_totale", "costo_acconto", "costo_saldo"])
+                         "costo_riconsegna", "costo_urna", "costo_calchi", "costo_totale", "costo_acconto", "costo_saldo",
+                         "data_cremazione", "ora_cremazione"])
         # titoli di una versione precedente salvati: passano ai nuovi
         with app.db() as conn:
             conn.execute("INSERT INTO settings(key,value) VALUES(?,?)", (app.WA_QUICK_SETTING, json.dumps([
@@ -7186,16 +7187,16 @@ class PetParadiseTests(unittest.TestCase):
                 {"id": "presa_in_carico", "title": "Conferma presa in carico", "body": "vecchio"}])))
             migrated = app.wa_quick_templates(conn)
             conn.execute("DELETE FROM settings WHERE key=?", (app.WA_QUICK_SETTING,))
-        self.assertEqual([t["title"] for t in migrated], ["Presa in carico", "Appuntamento riconsegna", "Riconsegna effettuata in ambulatorio", "Estremi bancari"])
+        self.assertEqual([t["title"] for t in migrated], ["Presa in carico", "Appuntamento riconsegna", "Riconsegna effettuata in ambulatorio", "Estremi bancari", "Avviso assistita"])
         self.assertNotIn("vecchio", json.dumps(migrated))
         sent = []
         self.handler.send_json = lambda obj, status=200: sent.append(obj)
         self.handler.wa_quick_templates_api(admin)
-        self.assertEqual(len(sent[-1]["templates"]), 4);self.assertNotIn("admin", sent[-1])
+        self.assertEqual(len(sent[-1]["templates"]), 5);self.assertNotIn("admin", sent[-1])
         self.assertNotIn("operator", sent[-1])
         if operator:
             self.handler.wa_quick_templates_api(operator)
-            self.assertEqual(len(sent[-1]["templates"]), 4)
+            self.assertEqual(len(sent[-1]["templates"]), 5)
         # salvataggio: aperto a tutti gli utenti, segnaposto validati, testo troppo lungo rifiutato
         redirects = [];pages = [];errors = []
         self.handler.redirect = lambda url: redirects.append(url)
@@ -7261,7 +7262,9 @@ class PetParadiseTests(unittest.TestCase):
                 conn.execute("INSERT INTO calendar_event_animals(event_id,name,species,weight,cremation_type,created_at,updated_at) VALUES(?,?,?,?,?,?,?)", (event_id, name, "Cane", "5", "Singola", stamp, stamp))
         rendered = []; self.handler.send_html = lambda content, *a: rendered.append(content)
         only_context = {"nome_cliente", "nome_animale"}
-        cost_keys = {"costo_cremazione", "costo_ritiro", "costo_riconsegna", "costo_urna", "costo_calchi", "costo_totale", "costo_acconto", "costo_saldo"}
+        # Dal 28/10/2026 ("Avviso assistita") con una pratica ci sono anche giorno e ora del suo ciclo di cremazione.
+        cost_keys = {"costo_cremazione", "costo_ritiro", "costo_riconsegna", "costo_urna", "costo_calchi", "costo_totale", "costo_acconto", "costo_saldo",
+                     "data_cremazione", "ora_cremazione"}
         with app.db() as conn:
             conn.execute("UPDATE practices SET price_cremation='1210', price_pickup='60', price_delivery='', deposit='' WHERE id=?", (pid,))
             conn.execute("INSERT INTO practice_items(practice_id,category,subtype,label,price,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)", (pid, "urna", "", "Urna legno", "20", 0, app.now(), app.now()))
