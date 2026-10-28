@@ -91,6 +91,21 @@ class EventOperationalTagsTests(unittest.TestCase):
         self.handler.calendar_event_detail(self.admin, event_id)
         self.assertIn('<b>Etichette operative</b><small><span class="badge tag-purple">SALUTO</span> <span class="badge tag-yellow">CALCO</span> </small>', self.pages[-1])
 
+    def test_tags_section_is_closed_by_default_and_can_be_closed_again(self):
+        # Segnalazione dell'utente (28/10/2026): la sezione non si richiudeva
+        # perche' la regola che affianca le etichette (display:flex!important)
+        # vinceva su quella che nasconde il contenuto delle sezioni chiuse.
+        css = app.CSS
+        self.assertIn(".section.calendar-event-tags:not(.collapsed) .fields{display:flex!important;", css)
+        self.assertNotIn(".calendar-event-tags .fields{display:flex!important", css.replace(".section.calendar-event-tags:not(.collapsed) .fields", ""))
+        self.assertIn(".section.collapsible.collapsed>*:not(h2):not(.section-heading-row){display:none}", css)
+        # Chiusa di nuovo anche quando il browser ripresenta la pagina con "indietro".
+        self.assertIn("if(event.persisted)document.querySelectorAll('.section.calendar-event-tags').forEach(function(section){section.classList.add('collapsed');});", app.APP_JS)
+        event_id = self.save(self.event_form(tag_calco="Si"))
+        self.handler.path = f"/calendario/{event_id}/modifica"
+        self.handler.calendar_event_form(self.admin, event_id)
+        self.assertIn('<section class="section collapsible collapsed tone-orange calendar-event-tags"', self.pages[-1])
+
     def test_copy_keeps_the_tags(self):
         event_id = self.save(self.event_form(tag_calco_paw="Si"))
         self.handler.path = f"/calendario/nuovo?copia={event_id}"
