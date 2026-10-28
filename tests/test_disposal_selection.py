@@ -77,6 +77,32 @@ class DisposalSelectionTests(unittest.TestCase):
         self.handler.disposal_page(self.admin)
         self.assertNotIn('onclick="disposalStartSelection(this)"', self.pages[-1])
 
+    def test_pending_and_disposed_practices_are_in_separate_blocks(self):
+        # Richiesta esplicita dell'utente (28/10/2026): non piu' mescolate
+        # negli stessi riquadri.
+        page = self.page()
+        pending_at = page.index('<h2 class="disposal-block-title">Da smaltire <span class="badge tag-orange">4</span></h2>')
+        done_at = page.index('<h2 class="disposal-block-title disposal-block-title-done">Già smaltite <span class="badge tag-green">1</span></h2>')
+        self.assertLess(pending_at, done_at)
+        pending_block, done_block = page[pending_at:done_at], page[done_at:page.index("Storico scarichi")]
+        for pid in self.ids:
+            self.assertIn(f'class="disposal-pick-input" value="{pid}"', pending_block)
+            self.assertNotIn(f"/pratiche/{pid}?", done_block)
+        self.assertIn(f"/pratiche/{self.done}?", done_block)
+        self.assertNotIn(f"/pratiche/{self.done}?", pending_block)
+        self.assertNotIn("Già smaltita</span>", pending_block)
+        self.assertNotIn("Da confermare</span>", done_block)
+        self.assertIn('class="tablebox disposal-tablebox disposal-group disposal-group-pending"', pending_block)
+        self.assertIn('class="tablebox disposal-tablebox disposal-group disposal-group-done"', done_block)
+        self.assertIn('data-persist-key="Livorno·W"', pending_block)
+        self.assertIn('data-persist-key="smaltite·Livorno·W"', done_block)
+        self.assertIn('<span class="badge">4 animali</span>', pending_block)
+        self.assertIn('<span class="badge">1 animali</span>', done_block)
+        # Con il filtro "Da confermare" il blocco delle smaltite non compare.
+        self.handler.path = "/smaltimenti?dal=2026-10-01&al=2026-10-31&stato=da_confermare"
+        self.handler.disposal_page(self.admin)
+        self.assertNotIn('<h2 class="disposal-block-title disposal-block-title-done">', self.pages[-1])
+
     def test_only_the_selected_practices_are_disposed(self):
         chosen = [self.ids[0], self.ids[2]]
         self.confirm(practice_ids=",".join(str(pid) for pid in chosen))
@@ -112,8 +138,8 @@ class DisposalSelectionTests(unittest.TestCase):
 
     def test_page_scrolls_natively_and_without_heavy_repaints(self):
         page = self.page()
-        # un gruppo (Livorno, stesso circuito) + lo storico degli scarichi
-        self.assertEqual(page.count('<section class="tablebox disposal-tablebox'), 2)
+        # Livorno da smaltire + Livorno gia' smaltite (blocchi separati dal 28/10) + storico
+        self.assertEqual(page.count('<section class="tablebox disposal-tablebox'), 3)
         css = app.CSS
         # Niente riquadro con scorrimento interno ne' ombra sui riquadri molto alti.
         self.assertIn(".tablebox.disposal-tablebox{max-height:none;touch-action:auto;box-shadow:none!important}", css)

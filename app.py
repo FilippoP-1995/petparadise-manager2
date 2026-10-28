@@ -1481,6 +1481,8 @@ body{background:radial-gradient(circle at top left,#fff8f3 0,#f4f1ed 34%,#ece5dd
 .tablebox.archive-tablebox{max-height:none;touch-action:auto}
 .tablebox.fatture-tablebox{max-height:none;touch-action:auto}
 .tablebox.disposal-tablebox{max-height:none;touch-action:auto;box-shadow:none!important}
+.disposal-block-title{display:flex;align-items:center;gap:10px;margin:26px 2px 4px;font-size:20px}
+.disposal-block-title-done{margin-top:34px}
 .disposal-pick{width:46px;text-align:center}
 main:not(.disposal-selecting) .disposal-pick{display:none!important}
 .disposal-pick input{width:22px;height:22px;margin:0;accent-color:#ef405f;cursor:pointer}
@@ -16422,20 +16424,38 @@ class App(BaseHTTPRequestHandler):
             pick_cell=(f'<td class="disposal-pick"><input type="checkbox" class="disposal-pick-input" value="{r["id"]}" data-kg="{weight:g}" aria-label="Seleziona {esc(r["practice_number"])}"></td>'
                        if pending else '<td class="disposal-pick"></td>')
             return f'''<tr class="practice-row-link{' disposal-pending' if pending else ''}" {row_open_attrs(url,f'Apri pratica {r["practice_number"]}')}>{pick_cell}<td>{animal_cell}</td><td>{weight_cell}</td><td>{esc(self.disposal_contact_for(r))}</td><td>{esc(date_it(r["pickup_date"] or r["created_at"]))}</td><td><a href="{url}">{esc(r["practice_number"])}</a></td><td><span class="badge {status_class}">{status_label}</span></td></tr>'''
-        group_sections=[]
-        for (branch,channel),data in sorted(display_groups.items(),key=lambda item:(item[0][0],item[0][1])):
-            rows_html=''.join(disposal_row_html(r,"Da confermare","tag-orange",pending=True) for r in data["pending"])+''.join(disposal_row_html(r,"Già smaltita","tag-green") for r in data["done"])
-            group_total=len(data["pending"])+len(data["done"])
-            group_kg=sum(money_value(r["estimated_weight"]) for r in data["pending"]+data["done"] if r["estimated_weight"])
+        # Richiesta esplicita dell'utente (28/10/2026): pratiche da smaltire e
+        # gia' smaltite in due blocchi separati, ognuno con i suoi riquadri per
+        # sede/circuito, invece che mescolate negli stessi riquadri.
+        def group_section_html(branch,channel,rows,pending):
+            if pending:
+                rows_html=''.join(disposal_row_html(r,"Da confermare","tag-orange",pending=True) for r in rows)
+            else:
+                rows_html=''.join(disposal_row_html(r,"Già smaltita","tag-green") for r in rows)
+            group_kg=sum(money_value(r["estimated_weight"]) for r in rows if r["estimated_weight"])
             total_row=f'<tr class="disposal-group-total"><td class="disposal-pick"></td><td><b>Totale</b></td><td><b>{kg_it(group_kg)}</b></td><td colspan="4"></td></tr>'
             # Stato aperto/chiuso ricordato per utente (stesso meccanismo
             # di Archivio/mesi): senza questo, tornando da una pratica
             # collegata il gruppo appena chiuso si riapriva da solo,
             # qualunque fosse il metodo di navigazione indietro usato.
-            section_key=f"{branch}·{channel}"
+            # Le chiavi dei riquadri "da smaltire" restano quelle di prima.
+            section_key=f"{branch}·{channel}" if pending else f"smaltite·{branch}·{channel}"
             section_closed=section_key in collapsed_sections
-            pick_all=f'<input type="checkbox" class="disposal-pick-all" onchange="disposalPickAll(this)" aria-label="Seleziona tutte le pratiche da smaltire di {esc(branch)} · Circuito {esc(channel)}">' if data["pending"] else ''
-            group_sections.append(f'''<section class="tablebox disposal-tablebox disposal-group"><div class="section-collapse-head"><h2>{esc(branch)} · Circuito {esc(channel)}</h2><span class="badge">{group_total} animali</span><button type="button" class="collapse-toggle" aria-expanded="{"false" if section_closed else "true"}" data-persist-key="{esc(section_key)}" data-persist-endpoint="/smaltimenti/sezione-stato" onclick="toggleCollapsibleSection(this)">{"+" if section_closed else "−"}</button></div><div class="collapsible-body"{" hidden" if section_closed else ""}><table><thead><tr><th class="disposal-pick">{pick_all}</th><th>Animale</th><th>Peso</th><th>Proprietario/Veterinario</th><th>Data recupero</th><th>Pratica</th><th>Stato</th></tr></thead><tbody>{rows_html}{total_row}</tbody></table></div></section>''')
+            pick_all=f'<input type="checkbox" class="disposal-pick-all" onchange="disposalPickAll(this)" aria-label="Seleziona tutte le pratiche da smaltire di {esc(branch)} · Circuito {esc(channel)}">' if pending else ''
+            kind_cls="disposal-group-pending" if pending else "disposal-group-done"
+            return f'''<section class="tablebox disposal-tablebox disposal-group {kind_cls}"><div class="section-collapse-head"><h2>{esc(branch)} · Circuito {esc(channel)}</h2><span class="badge">{len(rows)} animali</span><button type="button" class="collapse-toggle" aria-expanded="{"false" if section_closed else "true"}" data-persist-key="{esc(section_key)}" data-persist-endpoint="/smaltimenti/sezione-stato" onclick="toggleCollapsibleSection(this)">{"+" if section_closed else "−"}</button></div><div class="collapsible-body"{" hidden" if section_closed else ""}><table><thead><tr><th class="disposal-pick">{pick_all}</th><th>Animale</th><th>Peso</th><th>Proprietario/Veterinario</th><th>Data recupero</th><th>Pratica</th><th>Stato</th></tr></thead><tbody>{rows_html}{total_row}</tbody></table></div></section>'''
+        ordered_groups=sorted(display_groups.items(),key=lambda item:(item[0][0],item[0][1]))
+        pending_sections=[group_section_html(branch,channel,data["pending"],True) for (branch,channel),data in ordered_groups if data["pending"]]
+        done_sections=[group_section_html(branch,channel,data["done"],False) for (branch,channel),data in ordered_groups if data["done"]]
+        pending_total=sum(len(data["pending"]) for _,data in ordered_groups)
+        done_total=sum(len(data["done"]) for _,data in ordered_groups)
+        group_sections=[]
+        if pending_sections:
+            group_sections.append(f'<h2 class="disposal-block-title">Da smaltire <span class="badge tag-orange">{pending_total}</span></h2>')
+            group_sections.extend(pending_sections)
+        if done_sections:
+            group_sections.append(f'<h2 class="disposal-block-title disposal-block-title-done">Già smaltite <span class="badge tag-green">{done_total}</span></h2>')
+            group_sections.extend(done_sections)
         filter_note='<p class="sub">Nessuna pratica corrisponde al filtro di stato selezionato per questo periodo.</p>' if not display_groups and full_groups else ''
         total_count=len(eligible)
         total_already=len(already_done)

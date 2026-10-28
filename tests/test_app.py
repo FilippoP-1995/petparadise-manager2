@@ -2230,7 +2230,7 @@ class PetParadiseTests(unittest.TestCase):
         # not a plain .section, so mobile users can swipe right to see the trailing columns.
         # Dal 28/10/2026 "disposal-tablebox": nessun riquadro con scorrimento verticale interno
         # (scorre la pagina, fluido sul telefono); resta lo scorrimento orizzontale.
-        self.assertIn('<section class="tablebox disposal-tablebox disposal-group">', page)
+        self.assertIn('<section class="tablebox disposal-tablebox disposal-group disposal-group-pending">', page)
         self.assertNotIn('<section class="section disposal-group">', page)
 
         redirects = []; self.handler.redirect = lambda path: redirects.append(path)
