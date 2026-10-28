@@ -2224,10 +2224,13 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.disposal_page(admin)
         page = rendered[-1]
         url = f"/pratiche/{pid}?return_to={quote(self.handler.path,safe='')}"
-        self.assertIn(f'''<tr class="practice-row-link" tabindex="0" role="link" aria-label="Apri pratica PP-ROWCLICK" onclick="practiceRowSelect(this,event,'{url}')"''', page)
+        # "disposal-pending": riga ancora da smaltire, selezionabile con "Programma scarico" (28/10/2026).
+        self.assertIn(f'''<tr class="practice-row-link disposal-pending" tabindex="0" role="link" aria-label="Apri pratica PP-ROWCLICK" onclick="practiceRowSelect(this,event,'{url}')"''', page)
         # The disposal group must be a scrollable .tablebox (like every other list in the app),
         # not a plain .section, so mobile users can swipe right to see the trailing columns.
-        self.assertIn('<section class="tablebox disposal-group">', page)
+        # Dal 28/10/2026 "disposal-tablebox": nessun riquadro con scorrimento verticale interno
+        # (scorre la pagina, fluido sul telefono); resta lo scorrimento orizzontale.
+        self.assertIn('<section class="tablebox disposal-tablebox disposal-group">', page)
         self.assertNotIn('<section class="section disposal-group">', page)
 
         redirects = []; self.handler.redirect = lambda path: redirects.append(path)
@@ -6815,7 +6818,8 @@ class PetParadiseTests(unittest.TestCase):
         # condiviso da .tablebox: per Archivio serve scroll nativo di pagina, non un
         # riquadro interno con altezza limitata.
         self.assertIn(".tablebox.archive-tablebox{max-height:none;touch-action:auto}", app.CSS)
-        self.assertIn("document.querySelectorAll('.tablebox:not(.archive-tablebox)').forEach(function(box){", app.APP_JS)
+        # Dal 28/10/2026 escluso anche Smaltimenti (.disposal-tablebox), per lo stesso motivo.
+        self.assertIn("document.querySelectorAll('.tablebox:not(.archive-tablebox):not(.disposal-tablebox)').forEach(function(box){", app.APP_JS)
 
     def test_archive_month_collapse_state_persists_per_user(self):
         with app.db() as conn:

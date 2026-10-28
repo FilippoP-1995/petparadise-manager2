@@ -1480,6 +1480,20 @@ body{background:radial-gradient(circle at top left,#fff8f3 0,#f4f1ed 34%,#ece5dd
 .month-block{margin-bottom:18px}.month-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.month-heading{display:flex;align-items:center;gap:10px}.month-toggle{width:34px;height:34px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--brand);font-size:22px;font-weight:800;line-height:1;cursor:pointer}.month-content[hidden]{display:none}.dashboard-table-scroll{overflow-x:scroll;scrollbar-gutter:stable;padding-bottom:8px;scrollbar-color:var(--brand) #eee7e0;scrollbar-width:auto}.dashboard-table-scroll table{min-width:1650px}.dashboard-table-scroll::-webkit-scrollbar{height:13px}.dashboard-table-scroll::-webkit-scrollbar-track{background:#eee7e0;border-radius:99px}.dashboard-table-scroll::-webkit-scrollbar-thumb{background:var(--brand);border:3px solid #eee7e0;border-radius:99px}
 .tablebox.archive-tablebox{max-height:none;touch-action:auto}
 .tablebox.fatture-tablebox{max-height:none;touch-action:auto}
+.tablebox.disposal-tablebox{max-height:none;touch-action:auto;box-shadow:none!important}
+.disposal-pick{width:46px;text-align:center}
+main:not(.disposal-selecting) .disposal-pick{display:none!important}
+.disposal-pick input{width:22px;height:22px;margin:0;accent-color:#ef405f;cursor:pointer}
+.disposal-selecting tr.disposal-pending{cursor:pointer}
+.disposal-selecting tr.disposal-pending.is-picked td{background:#ef405f1f}
+main.disposal-selecting{padding-bottom:190px}
+.disposal-select-bar{display:none;position:fixed;left:calc(12px + var(--safe-left));right:calc(12px + var(--safe-right));bottom:calc(16px + var(--safe-bottom));z-index:95;max-width:760px;margin:0 auto;padding:12px 14px;border-radius:18px;border:1px solid #ef405f66;background:#1b2636;color:#e7ecf3;box-shadow:0 14px 34px #0008;align-items:center;gap:10px;flex-wrap:wrap}
+.disposal-selecting .disposal-select-bar{display:flex}
+.disposal-select-bar .disposal-select-count{flex:1 1 160px;font-weight:700}
+.disposal-select-bar .disposal-select-count small{display:block;font-weight:400;opacity:.75}
+.disposal-select-bar .btn{width:auto;min-height:44px}
+.light-theme .disposal-select-bar{background:#fff;color:#111827;box-shadow:0 14px 34px #64748b40}
+@media(max-width:900px){.disposal-select-bar{bottom:calc(92px + var(--safe-bottom))}}
 .archive-row-highlight{box-shadow:0 0 0 2px var(--brand) inset,0 0 14px 2px #a7404559;transition:box-shadow 2.2s ease}
 .archive-row-highlight.archive-row-fade{box-shadow:none}
 #archiveList{visibility:hidden}#fattureLists{visibility:hidden}
@@ -1816,11 +1830,17 @@ tr.avatar-other td:first-child{border-left:3px solid #c084fc}
 .partner-alert .pa-body b{display:block;font-size:16px;letter-spacing:.01em}
 .partner-alert .pa-body span{display:block;font-size:13.5px;opacity:.92;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .partner-alert .pa-btn{background:#fff;color:#0f766e;font-weight:800;border-radius:12px;padding:10px 18px;white-space:nowrap}
-.partner-alert.urgent{background:linear-gradient(135deg,#b91c1c,#ef4444);border-color:#fecaca;box-shadow:0 10px 28px rgba(239,68,68,.45);animation:pa-pulse 1.3s ease-in-out infinite}
+.partner-alert.urgent{position:relative;background:linear-gradient(135deg,#b91c1c,#ef4444);border-color:#fecaca;box-shadow:0 10px 28px rgba(239,68,68,.45)}
 .partner-alert.urgent .pa-btn{color:#b91c1c}
 @keyframes pa-pulse{0%,100%{box-shadow:0 10px 28px rgba(239,68,68,.45)}50%{box-shadow:0 0 0 6px rgba(239,68,68,.3),0 10px 34px rgba(239,68,68,.6)}}
 .partner-pill{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(94px + var(--safe-bottom,0px));z-index:70;background:#0f766e;color:#fff;font-weight:800;border-radius:999px;padding:11px 18px;box-shadow:0 8px 24px rgba(0,0,0,.4);border:2px solid #5eead4;white-space:nowrap;font-size:14px}
-.partner-pill.urgent{background:#b91c1c;border-color:#fecaca;animation:pa-pulse 1.3s ease-in-out infinite}
+.partner-pill.urgent{background:#b91c1c;border-color:#fecaca;box-shadow:0 10px 28px rgba(239,68,68,.45)}
+/* Pulsazione degli avvisi urgenti: stessa luce di prima, ma animata con la
+   sola opacita' di un livello a parte. Animare direttamente box-shadow
+   costringeva a ridisegnare la pagina a ogni fotogramma e rendeva lo
+   scorrimento a scatti (misurato su Smaltimenti, 28/10/2026). */
+.partner-alert.urgent::after,.partner-pill.urgent::after{content:'';position:absolute;inset:-2px;border-radius:inherit;box-shadow:0 0 0 6px rgba(239,68,68,.3),0 10px 34px rgba(239,68,68,.6);opacity:0;pointer-events:none;will-change:opacity;animation:pa-pulse-glow 1.3s ease-in-out infinite}
+@keyframes pa-pulse-glow{0%,100%{opacity:0}50%{opacity:1}}
 @media(min-width:901px){.partner-pill{left:calc(50% + 106px);bottom:22px}}
 .partner-toast{position:fixed;top:84px;left:50%;transform:translateX(-50%);z-index:95;background:#0f766e;color:#fff;font-weight:700;border-radius:16px;padding:14px 18px;box-shadow:0 12px 34px rgba(0,0,0,.45);border:2px solid #5eead4;max-width:min(520px,92vw)}
 .notification-item.partner{border-left:6px solid #14b8a6;background:linear-gradient(90deg,rgba(20,184,166,.20),transparent 60%)}
@@ -3850,6 +3870,68 @@ function setupTableTopScrollbars(){
   });
 }
 document.addEventListener('DOMContentLoaded', setupTableTopScrollbars);
+// Smaltimenti, "Programma scarico" (richiesta esplicita dell'utente,
+// 28/10/2026): una casella per ogni pratica da smaltire; la selezione resta
+// tutta nella pagina (nessun ricaricamento, la pagina non si sposta) e solo
+// le pratiche spuntate vengono smaltite, dopo una conferma.
+function disposalSelectionMain(el){return el.closest('main')||document.querySelector('main');}
+function disposalUpdateSelection(main){
+  const picked=[...main.querySelectorAll('tr.disposal-pending .disposal-pick-input:checked')];
+  const kg=picked.reduce(function(sum,input){return sum+(parseFloat(input.dataset.kg||'0')||0);},0);
+  const count=main.querySelector('[data-disposal-count]');
+  if(count)count.textContent=picked.length===1?'1 pratica selezionata':picked.length+' pratiche selezionate';
+  const weight=main.querySelector('[data-disposal-kg]');
+  if(weight)weight.textContent=kg?'Peso stimato '+kg.toLocaleString('it-IT',{maximumFractionDigits:2})+' kg':'';
+  const submit=main.querySelector('[data-disposal-submit]');
+  if(submit)submit.disabled=!picked.length;
+  main.querySelectorAll('.disposal-pick-all').forEach(function(all){
+    const inputs=[...all.closest('table').querySelectorAll('tr.disposal-pending .disposal-pick-input')];
+    const on=inputs.filter(function(input){return input.checked;}).length;
+    all.checked=!!inputs.length&&on===inputs.length;all.indeterminate=on>0&&on<inputs.length;
+  });
+}
+function disposalStartSelection(button){
+  const main=disposalSelectionMain(button);
+  main.classList.add('disposal-selecting');disposalUpdateSelection(main);
+}
+function disposalCancelSelection(button){
+  const main=disposalSelectionMain(button);
+  main.querySelectorAll('.disposal-pick-input,.disposal-pick-all').forEach(function(input){input.checked=false;input.indeterminate=false;});
+  main.querySelectorAll('tr.is-picked').forEach(function(row){row.classList.remove('is-picked');});
+  main.classList.remove('disposal-selecting');disposalUpdateSelection(main);
+}
+function disposalPickAll(all){
+  all.closest('table').querySelectorAll('tr.disposal-pending .disposal-pick-input').forEach(function(input){
+    input.checked=all.checked;input.closest('tr').classList.toggle('is-picked',all.checked);
+  });
+  disposalUpdateSelection(disposalSelectionMain(all));
+}
+function disposalSubmitSelection(button){
+  const main=disposalSelectionMain(button);
+  const ids=[...main.querySelectorAll('tr.disposal-pending .disposal-pick-input:checked')].map(function(input){return input.value;});
+  if(!ids.length)return;
+  const label=ids.length===1?'1 pratica':ids.length+' pratiche';
+  if(!confirm('Sei sicuro? Questa azione cambierà lo stato di '+label+' in Smaltito. Le pratiche non selezionate restano da smaltire.'))return;
+  const form=document.getElementById('disposalSelectionForm');
+  form.querySelector('input[name="practice_ids"]').value=ids.join(',');
+  button.disabled=true;form.submit();
+}
+// In modalita' selezione un tocco sulla riga spunta/toglie la casella invece
+// di aprire la pratica (fase di cattura: arriva prima dei gestori della riga).
+['click','dblclick'].forEach(function(type){
+  document.addEventListener(type,function(event){
+    const main=event.target.closest&&event.target.closest('main.disposal-selecting');
+    if(!main)return;
+    const row=event.target.closest('tr.disposal-pending');
+    if(!row){if(event.target.closest('tr.practice-row-link')){event.preventDefault();event.stopPropagation();}return;}
+    event.stopPropagation();
+    if(type==='dblclick'){event.preventDefault();return;}
+    const input=row.querySelector('.disposal-pick-input');
+    if(event.target!==input){event.preventDefault();input.checked=!input.checked;}
+    row.classList.toggle('is-picked',input.checked);
+    disposalUpdateSelection(main);
+  },true);
+});
 function setupTableTouchScroll(){
   // .tablebox has touch-action:none (see CSS) so the browser never starts
   // its own native pan for it: without that, a diagonal/circular drag lets
@@ -3883,7 +3965,7 @@ function setupTableTouchScroll(){
       window.ppmMomentumStoppers.forEach(function(stop){stop();});
     },{capture:true,passive:true});
   }
-  document.querySelectorAll('.tablebox:not(.archive-tablebox)').forEach(function(box){
+  document.querySelectorAll('.tablebox:not(.archive-tablebox):not(.disposal-tablebox)').forEach(function(box){
     if(box.dataset.touchScrollReady) return;
     box.dataset.touchScrollReady='1';
     let axis=null,phase='table';
@@ -16315,32 +16397,41 @@ class App(BaseHTTPRequestHandler):
         show_pending=stato_filter!="smaltito"
         show_done=stato_filter!="da_confermare"
         display_groups=build_groups(eligible if show_pending else [],already_done if show_done else [])
-        def disposal_row_html(r,status_label,status_class):
+        def disposal_row_html(r,status_label,status_class,pending=False):
             weight=money_value(r["estimated_weight"]) if r["estimated_weight"] else 0.0
             weight_cell=kg_it(weight) if weight else '<span class="sub">-</span>'
             url=f'/pratiche/{r["id"]}?return_to={quote(getattr(self,"path",""),safe="")}'
             animal_cell=esc(r["species"]) if r["species"] else '<span class="sub">-</span>'
-            return f'''<tr class="practice-row-link" {row_open_attrs(url,f'Apri pratica {r["practice_number"]}')}><td>{animal_cell}</td><td>{weight_cell}</td><td>{esc(self.disposal_contact_for(r))}</td><td>{esc(date_it(r["pickup_date"] or r["created_at"]))}</td><td><a href="{url}">{esc(r["practice_number"])}</a></td><td><span class="badge {status_class}">{status_label}</span></td></tr>'''
+            # casella di "Programma scarico": solo le pratiche ancora da smaltire
+            pick_cell=(f'<td class="disposal-pick"><input type="checkbox" class="disposal-pick-input" value="{r["id"]}" data-kg="{weight:g}" aria-label="Seleziona {esc(r["practice_number"])}"></td>'
+                       if pending else '<td class="disposal-pick"></td>')
+            return f'''<tr class="practice-row-link{' disposal-pending' if pending else ''}" {row_open_attrs(url,f'Apri pratica {r["practice_number"]}')}>{pick_cell}<td>{animal_cell}</td><td>{weight_cell}</td><td>{esc(self.disposal_contact_for(r))}</td><td>{esc(date_it(r["pickup_date"] or r["created_at"]))}</td><td><a href="{url}">{esc(r["practice_number"])}</a></td><td><span class="badge {status_class}">{status_label}</span></td></tr>'''
         group_sections=[]
         for (branch,channel),data in sorted(display_groups.items(),key=lambda item:(item[0][0],item[0][1])):
-            rows_html=''.join(disposal_row_html(r,"Da confermare","tag-orange") for r in data["pending"])+''.join(disposal_row_html(r,"Già smaltita","tag-green") for r in data["done"])
+            rows_html=''.join(disposal_row_html(r,"Da confermare","tag-orange",pending=True) for r in data["pending"])+''.join(disposal_row_html(r,"Già smaltita","tag-green") for r in data["done"])
             group_total=len(data["pending"])+len(data["done"])
             group_kg=sum(money_value(r["estimated_weight"]) for r in data["pending"]+data["done"] if r["estimated_weight"])
-            total_row=f'<tr class="disposal-group-total"><td><b>Totale</b></td><td><b>{kg_it(group_kg)}</b></td><td colspan="4"></td></tr>'
+            total_row=f'<tr class="disposal-group-total"><td class="disposal-pick"></td><td><b>Totale</b></td><td><b>{kg_it(group_kg)}</b></td><td colspan="4"></td></tr>'
             # Stato aperto/chiuso ricordato per utente (stesso meccanismo
             # di Archivio/mesi): senza questo, tornando da una pratica
             # collegata il gruppo appena chiuso si riapriva da solo,
             # qualunque fosse il metodo di navigazione indietro usato.
             section_key=f"{branch}·{channel}"
             section_closed=section_key in collapsed_sections
-            group_sections.append(f'''<section class="tablebox disposal-group"><div class="section-collapse-head"><h2>{esc(branch)} · Circuito {esc(channel)}</h2><span class="badge">{group_total} animali</span><button type="button" class="collapse-toggle" aria-expanded="{"false" if section_closed else "true"}" data-persist-key="{esc(section_key)}" data-persist-endpoint="/smaltimenti/sezione-stato" onclick="toggleCollapsibleSection(this)">{"+" if section_closed else "−"}</button></div><div class="collapsible-body"{" hidden" if section_closed else ""}><table><thead><tr><th>Animale</th><th>Peso</th><th>Proprietario/Veterinario</th><th>Data recupero</th><th>Pratica</th><th>Stato</th></tr></thead><tbody>{rows_html}{total_row}</tbody></table></div></section>''')
+            pick_all=f'<input type="checkbox" class="disposal-pick-all" onchange="disposalPickAll(this)" aria-label="Seleziona tutte le pratiche da smaltire di {esc(branch)} · Circuito {esc(channel)}">' if data["pending"] else ''
+            group_sections.append(f'''<section class="tablebox disposal-tablebox disposal-group"><div class="section-collapse-head"><h2>{esc(branch)} · Circuito {esc(channel)}</h2><span class="badge">{group_total} animali</span><button type="button" class="collapse-toggle" aria-expanded="{"false" if section_closed else "true"}" data-persist-key="{esc(section_key)}" data-persist-endpoint="/smaltimenti/sezione-stato" onclick="toggleCollapsibleSection(this)">{"+" if section_closed else "−"}</button></div><div class="collapsible-body"{" hidden" if section_closed else ""}><table><thead><tr><th class="disposal-pick">{pick_all}</th><th>Animale</th><th>Peso</th><th>Proprietario/Veterinario</th><th>Data recupero</th><th>Pratica</th><th>Stato</th></tr></thead><tbody>{rows_html}{total_row}</tbody></table></div></section>''')
         filter_note='<p class="sub">Nessuna pratica corrisponde al filtro di stato selezionato per questo periodo.</p>' if not display_groups and full_groups else ''
         total_count=len(eligible)
         total_already=len(already_done)
+        selection_html=""
         breakdown_summary=''.join(f'<div class="kv"><small>{esc(branch)} · Circuito {esc(channel)}</small><b>{len(data["pending"])+len(data["done"])}</b><small>{len(data["pending"])} da confermare · {len(data["done"])} già smaltite</small></div>' for (branch,channel),data in sorted(full_groups.items(),key=lambda item:(item[0][0],item[0][1])))
         error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
         if total_count:
             confirm_form=f'''<form method="post" action="/smaltimenti/conferma" onsubmit="return confirm('Sei sicuro? Questa azione cambierà lo stato di {total_count} pratiche in Smaltito')"><input type="hidden" name="dal" value="{esc(date_from)}"><input type="hidden" name="al" value="{esc(date_to)}"><button class="btn">Conferma scarico</button></form>'''
+            if show_pending:
+                confirm_form+='<button type="button" class="btn ghost" onclick="disposalStartSelection(this)">Programma scarico</button>'
+                selection_html=f'''<form id="disposalSelectionForm" method="post" action="/smaltimenti/conferma" hidden><input type="hidden" name="dal" value="{esc(date_from)}"><input type="hidden" name="al" value="{esc(date_to)}"><input type="hidden" name="practice_ids" value=""></form>
+            <div class="disposal-select-bar" role="region" aria-label="Programma scarico"><div class="disposal-select-count"><span data-disposal-count>0 pratiche selezionate</span><small data-disposal-kg></small></div><button type="button" class="btn ghost" onclick="disposalCancelSelection(this)">Annulla</button><button type="button" class="btn" data-disposal-submit disabled onclick="disposalSubmitSelection(this)">Smaltisci selezionate</button></div>'''
         elif total_already:
             confirm_form='<p class="sub">Nessuna pratica da confermare nel periodo selezionato: quelle elencate sopra risultano già smaltite.</p>'
         else:
@@ -16348,7 +16439,7 @@ class App(BaseHTTPRequestHandler):
         history_rows=''.join(f'''<tr><td>{esc(date_it(b["confirmed_at"]))}</td><td>{esc(date_it(b["period_from"]))} → {esc(date_it(b["period_to"]))}</td><td><b>{b["total_count"]}</b></td><td>{esc(b["display_name"] or "-")}</td><td><a class="btn ghost" href="/smaltimenti/storico/{b["id"]}?return_to={quote(getattr(self,"path",""),safe="")}">Apri</a></td></tr>''' for b in history) or '<tr><td colspan="5" class="sub">Nessuno scarico registrato.</td></tr>'
         stato_options=''.join(f'<option value="{esc(value)}"{" selected" if stato_filter==value else ""}>{esc(label)}</option>' for value,label in (("","Tutte"),("da_confermare","Da confermare"),("smaltito","Già smaltite")))
         history_closed="storico" in collapsed_sections
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Smaltimenti</h1><p class="sub">Conferimenti periodici delle cremazioni collettive alla ditta esterna di smaltimento.</p></div></div>{error_html}<section class="section"><h2>Periodo</h2><form method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Stato pratica</label><select name="stato">{stato_options}</select></div></div><button class="btn" style="margin-top:12px">Applica periodo</button></form></section><section class="section"><h2>Riepilogo periodo {esc(date_it(date_from))} - {esc(date_it(date_to))}</h2><div class="kvs">{breakdown_summary or '<span class="sub">Nessun dato per il periodo selezionato.</span>'}<div class="kv"><small>Totale generale</small><b>{total_count+total_already}</b><small>{total_count} da confermare · {total_already} già smaltite</small></div></div><div class="actions" style="margin-top:14px">{confirm_form}</div></section>{filter_note}{''.join(group_sections)}<section class="tablebox"><div class="section-collapse-head"><h2>Storico scarichi</h2><button type="button" class="collapse-toggle" aria-expanded="{"false" if history_closed else "true"}" data-persist-key="storico" data-persist-endpoint="/smaltimenti/sezione-stato" onclick="toggleCollapsibleSection(this)">{"+" if history_closed else "−"}</button></div><div class="collapsible-body"{" hidden" if history_closed else ""}><table><thead><tr><th>Data conferma</th><th>Periodo</th><th>Totale animali</th><th>Confermato da</th><th></th></tr></thead><tbody>{history_rows}</tbody></table></div></section></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Smaltimenti</h1><p class="sub">Conferimenti periodici delle cremazioni collettive alla ditta esterna di smaltimento.</p></div></div>{error_html}<section class="section"><h2>Periodo</h2><form method="get"><div class="fields"><div class="field"><label>Dal</label><input type="date" name="dal" value="{esc(date_from)}"></div><div class="field"><label>Al</label><input type="date" name="al" value="{esc(date_to)}"></div><div class="field"><label>Stato pratica</label><select name="stato">{stato_options}</select></div></div><button class="btn" style="margin-top:12px">Applica periodo</button></form></section><section class="section"><h2>Riepilogo periodo {esc(date_it(date_from))} - {esc(date_it(date_to))}</h2><div class="kvs">{breakdown_summary or '<span class="sub">Nessun dato per il periodo selezionato.</span>'}<div class="kv"><small>Totale generale</small><b>{total_count+total_already}</b><small>{total_count} da confermare · {total_already} già smaltite</small></div></div><div class="actions" style="margin-top:14px">{confirm_form}</div></section>{filter_note}{''.join(group_sections)}<section class="tablebox disposal-tablebox"><div class="section-collapse-head"><h2>Storico scarichi</h2><button type="button" class="collapse-toggle" aria-expanded="{"false" if history_closed else "true"}" data-persist-key="storico" data-persist-endpoint="/smaltimenti/sezione-stato" onclick="toggleCollapsibleSection(this)">{"+" if history_closed else "−"}</button></div><div class="collapsible-body"{" hidden" if history_closed else ""}><table><thead><tr><th>Data conferma</th><th>Periodo</th><th>Totale animali</th><th>Confermato da</th><th></th></tr></thead><tbody>{history_rows}</tbody></table></div></section>{selection_html}</main>'''
         self.send_html(layout("Smaltimenti",body,user))
 
     def disposal_confirm(self,user):
@@ -16356,8 +16447,19 @@ class App(BaseHTTPRequestHandler):
         date_from=f.get("dal","").strip(); date_to=f.get("al","").strip()
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_from) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}",date_to):
             return self.disposal_page(user,error="Periodo non valido.")
+        # "Programma scarico": solo le pratiche spuntate (sempre tra quelle
+        # ancora da smaltire nel periodo); senza practice_ids resta lo scarico
+        # di tutto il periodo con "Conferma scarico".
+        selected_raw=f.get("practice_ids")
+        selected_ids={int(part) for part in str(selected_raw or "").split(",") if part.strip().isdigit()}
         with db() as c:
             eligible=self.disposal_eligible_practices(c,date_from,date_to)
+            if selected_raw is not None:
+                if not selected_ids:
+                    return self.disposal_page(user,error="Seleziona almeno una pratica da smaltire.")
+                eligible=[row for row in eligible if row["id"] in selected_ids]
+                if len(eligible)!=len(selected_ids):
+                    return self.disposal_page(user,error="Alcune pratiche selezionate non sono più da smaltire in questo periodo: nessuna modifica fatta. Ricarica la pagina e riprova.")
             if not eligible:
                 return self.disposal_page(user,error="Nessuna pratica di cremazione collettiva da smaltire nel periodo selezionato.")
             breakdown={}
@@ -16410,7 +16512,7 @@ class App(BaseHTTPRequestHandler):
         if practices:
             row_parts.append(f'<tr class="disposal-grand-total"><td colspan="2"><b>Totale generale</b></td><td><b>{kg_it(grand_kg)}</b></td><td colspan="3"></td></tr>')
         rows_html=''.join(row_parts) or '<tr><td colspan="6" class="sub">Nessuna pratica collegata.</td></tr>'
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Scarico del {esc(date_it(batch["confirmed_at"]))}</h1><p class="sub">Periodo {esc(date_it(batch["period_from"]))} → {esc(date_it(batch["period_to"]))} · confermato da {esc(batch["display_name"] or "-")}</p></div><a class="btn ghost" href="{esc(back_url)}">Torna a Smaltimenti</a></div><section class="section"><h2>Riepilogo</h2><div class="kvs">{breakdown_html}<div class="kv"><small>Totale generale</small><b>{batch["total_count"]}</b></div></div></section><section class="tablebox"><table><thead><tr><th>Sede</th><th>Animale</th><th>Peso</th><th>Proprietario/Veterinario</th><th>Data recupero</th><th>Pratica</th></tr></thead><tbody>{rows_html}</tbody></table></section></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Scarico del {esc(date_it(batch["confirmed_at"]))}</h1><p class="sub">Periodo {esc(date_it(batch["period_from"]))} → {esc(date_it(batch["period_to"]))} · confermato da {esc(batch["display_name"] or "-")}</p></div><a class="btn ghost" href="{esc(back_url)}">Torna a Smaltimenti</a></div><section class="section"><h2>Riepilogo</h2><div class="kvs">{breakdown_html}<div class="kv"><small>Totale generale</small><b>{batch["total_count"]}</b></div></div></section><section class="tablebox disposal-tablebox"><table><thead><tr><th>Sede</th><th>Animale</th><th>Peso</th><th>Proprietario/Veterinario</th><th>Data recupero</th><th>Pratica</th></tr></thead><tbody>{rows_html}</tbody></table></section></main>'''
         self.send_html(layout("Dettaglio scarico",body,user))
 
     def payment_overview_legacy(self,user,kind):
