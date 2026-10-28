@@ -2596,7 +2596,7 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .light-theme .cremation-modal-search{background:#f8fafc;border-color:#e2e8f0;color:#111827}
 .light-theme .cremation-add-animal-card{background:#fff;border-color:#e2e8f0}
 .light-theme .cremation-animal-name{color:#0f172a}
-.calendar-event-tags .fields{display:flex!important;flex-wrap:wrap;gap:8px}.calendar-event-tags .field{width:auto!important;margin:0}.calendar-event-tags .field label{display:flex;align-items:center;gap:6px;margin:0;cursor:pointer}
+.section.calendar-event-tags:not(.collapsed) .fields{display:flex!important;flex-wrap:wrap;gap:8px}.calendar-event-tags .field{width:auto!important;margin:0}.calendar-event-tags .field label{display:flex;align-items:center;gap:6px;margin:0;cursor:pointer}
 .cremation-unassigned-name,.cremation-animal-name.cremation-unassigned-name,.cremation-week-animal-name.cremation-unassigned-name{color:#fb923c}
 .light-theme .cremation-unassigned-name,.light-theme .cremation-animal-name.cremation-unassigned-name,.light-theme .cremation-week-animal-name.cremation-unassigned-name{color:#c2410c}
 .light-theme .cremation-week-animal-name{color:#0f172a}
@@ -5471,6 +5471,12 @@ document.addEventListener('click',function(e){
   // la sezione mentre si compila un campo.
   if(section.classList.contains('collapsed')){section.classList.remove('collapsed');return;}
   if(e.target===section)section.classList.add('collapsed');
+});
+// Etichette operative del modulo evento (richiesta esplicita dell'utente,
+// 28/10/2026): sempre chiuse quando si torna sulla pagina, anche se il
+// browser la ripresenta dalla cache con il tasto "indietro".
+window.addEventListener('pageshow',function(event){
+  if(event.persisted)document.querySelectorAll('.section.calendar-event-tags').forEach(function(section){section.classList.add('collapsed');});
 });
 document.addEventListener('click',function(e){
   if(!e.target.closest('.balance-move-menu-wrap')){
