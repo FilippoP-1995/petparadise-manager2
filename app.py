@@ -59,6 +59,8 @@ from calendar_service import (
     calendar_push_location_title, calendar_pickup_push_text, calendar_delivery_push_text, calendar_appointment_push_text,
     ensure_calendar_schema, event_color_class, event_type_dot_class, event_type_emoji, normalize_event, overlap_rows,
     format_animal_name,
+    format_person_name,
+    format_address,
     EVENT_OPERATIONAL_TAGS,
     event_operational_tags,
     parse_items as calendar_parse_items, period_bounds as calendar_period_bounds,
@@ -14180,8 +14182,8 @@ class App(BaseHTTPRequestHandler):
                           (data["location_type"],data["venue_name"],data["address"],data["destination_site"],stamp,user["id"],event_id))
                 calendar_add_history(c,event_id,user["id"],"Modifica luogo",event["address"] or event["venue_name"] or "",data["address"] or data["venue_name"] or "",stamp)
             elif action=="cliente":
-                first=form.get("client_first_name","").strip()[:100]
-                last=form.get("client_last_name","").strip()[:100]
+                first=format_person_name(form.get("client_first_name",""))
+                last=format_person_name(form.get("client_last_name",""))
                 phone=form.get("client_phone","").strip()[:50]
                 old_name=self.calendar_event_client_name(event)
                 c.execute("UPDATE calendar_events SET client_id=NULL,client_first_name=?,client_last_name=?,client_phone=?,updated_at=?,updated_by=? WHERE id=?",
@@ -18908,7 +18910,7 @@ class App(BaseHTTPRequestHandler):
 
     def save_client(self,user):
         f=self.form(); stamp=now()
-        data=(f.get("first_name","").strip(), f.get("last_name","").strip(), f.get("company_name","").strip(), f.get("phone","").strip(), f.get("phone_2","").strip(), f.get("email","").strip(), f.get("tax_code","").strip(), f.get("vat_number","").strip(), f.get("street","").strip(), f.get("city","").strip(), f.get("province","").strip(), f.get("zip","").strip(), f.get("notes","").strip())
+        data=(format_person_name(f.get("first_name","")), format_person_name(f.get("last_name","")), f.get("company_name","").strip(), f.get("phone","").strip(), f.get("phone_2","").strip(), f.get("email","").strip(), f.get("tax_code","").strip(), f.get("vat_number","").strip(), format_address(f.get("street","")), format_address(f.get("city","")), f.get("province","").strip(), f.get("zip","").strip(), f.get("notes","").strip())
         with db() as c:
             if f.get("id"):
                 c.execute("UPDATE clients SET first_name=?,last_name=?,company_name=?,phone=?,phone_2=?,email=?,tax_code=?,vat_number=?,street=?,city=?,province=?,zip=?,notes=?,updated_at=? WHERE id=?",data+(stamp,int(f["id"])))
@@ -19315,6 +19317,13 @@ class App(BaseHTTPRequestHandler):
         data["pickup_time"] = f.get("pickup_time","").strip()
         data["animal_name"] = format_animal_name(data["animal_name"])
         data["animal2_name"] = format_animal_name(data["animal2_name"])
+        # Stesso formato per nome, cognome, via e comune del proprietario
+        # (richiesta esplicita dell'utente, 02/11/2026); provincia, CAP e
+        # ragione sociale restano come scritti.
+        data["owner_first_name"] = format_person_name(data["owner_first_name"])
+        data["owner_last_name"] = format_person_name(data["owner_last_name"])
+        data["owner_street"] = format_address(data["owner_street"])
+        data["owner_city"] = format_address(data["owner_city"])
         for key in MONEY_FIELDS:
             data[key]=normalize_money_text(data.get(key,""))
         data["invoice_total"]=normalize_money_text(data["invoice_total"])

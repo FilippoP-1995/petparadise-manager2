@@ -267,6 +267,50 @@ def format_animal_name(value, limit=100):
     return re.sub(r"(^|[\s\-'’])([^\W\d_])", lambda m: m.group(1) + m.group(2).upper(), text)
 
 
+def format_person_name(value, limit=100):
+    """Nome e cognome del proprietario/cliente (richiesta esplicita
+    dell'utente, 02/11/2026): stessa regola dei nomi degli animali
+    ("MARIO ROSSI" -> "Mario Rossi", "d'angelo" -> "D'Angelo", "McQueen"
+    resta)."""
+    return format_animal_name(value, limit)
+
+
+# Parole brevi che negli indirizzi restano minuscole (tranne in testa):
+# "Via dei Materassai", "Castiglione della Pescaia". Niente articoli soli
+# ("Loc. Le Cascine"), e un'iniziale puntata resta maiuscola ("Via A. Volta").
+ADDRESS_LOWER_WORDS = frozenset((
+    "a", "ad", "al", "allo", "alla", "ai", "agli", "alle", "con", "da", "dal", "dallo", "dalla", "dai", "dagli",
+    "dalle", "di", "del", "dello", "della", "dei", "degli", "delle", "e", "ed", "fra", "in",
+    "nel", "nello", "nella", "nei", "negli", "nelle", "per", "su", "sul", "sullo", "sulla", "sui", "sugli",
+    "sulle", "tra",
+))
+_ADDRESS_ELISION = re.compile(r"^(d|l|dell|dall|nell|sull|all|coll|dell)(['’])(.+)$", re.IGNORECASE)
+
+
+def format_address(value, limit=500):
+    """Via e comune (richiesta esplicita dell'utente, 02/11/2026): iniziale
+    maiuscola come per i nomi, ma le parole brevi restano minuscole ("VIA DEI
+    MATERASSAI, 10" -> "Via dei Materassai, 10"); invariate le parti con
+    numeri ("10/A", "12B") e la sigla della provincia tra parentesi ("(LI)")."""
+    words = _clean(value, limit).split(" ")
+    out = []
+    for index, word in enumerate(words):
+        if not word or any(ch.isdigit() for ch in word) or re.fullmatch(r"\([A-Za-z]{2}\)[,.;:]?", word):
+            out.append(word)
+            continue
+        bare = word.rstrip(",.;:").lower()
+        tail = word[len(word.rstrip(",.;:")):]
+        if index > 0 and bare in ADDRESS_LOWER_WORDS and not word.endswith("."):
+            out.append(bare + tail)
+            continue
+        elision = _ADDRESS_ELISION.match(word)
+        if index > 0 and elision:
+            out.append(elision.group(1).lower() + elision.group(2) + format_animal_name(elision.group(3), limit))
+            continue
+        out.append(format_animal_name(word, limit))
+    return " ".join(out)
+
+
 def automatic_title(event_type, zone="", animal="", site=""):
     zone=_clean(zone).upper();animal=_clean(animal).upper();site=_clean(site).upper()
     if event_type=="Ritiro":return f"RITIRO {zone}".strip()
@@ -446,13 +490,13 @@ def normalize_event(form, current=None):
     except ValueError:raise ValueError("Importo non valido")
     return {
       "event_type":event_type,"title":title,"zone":zone,"location_type":_clean(form.get("location_type"),50),
-      "venue_name":_clean(form.get("venue_name"),200),"address":_clean(form.get("delivery_address") or form.get("address"),500),"phone":_clean(form.get("phone"),50),
+      "venue_name":_clean(form.get("venue_name"),200),"address":format_address(form.get("delivery_address") or form.get("address"),500),"phone":_clean(form.get("phone"),50),
       "veterinarian_id":int(form["veterinarian_id"]) if str(form.get("veterinarian_id") or "").isdigit() else None,
       "veterinarian_name":_clean(form.get("veterinarian_name"),200),"veterinarian_phone":_clean(form.get("veterinarian_phone"),50),
       "veterinarian_address":_clean(form.get("veterinarian_address"),500),"veterinarian_hours":_clean(form.get("veterinarian_hours"),500),
       "veterinarian_contact":_clean(form.get("veterinarian_contact"),200),
       "client_id":int(form["client_id"]) if str(form.get("client_id") or "").isdigit() else None,
-      "client_first_name":_clean(form.get("client_first_name"),100),"client_last_name":_clean(form.get("client_last_name"),100),
+      "client_first_name":format_person_name(form.get("client_first_name"),100),"client_last_name":format_person_name(form.get("client_last_name"),100),
       "client_phone":_clean(form.get("client_phone"),50),"destination_site":site,"animal_name":animal,
       "person_company":"","category":_clean(form.get("category"),100),
       "start_at":start_at,"end_at":end_at,"all_day":1 if all_day else 0,"event_status":status,

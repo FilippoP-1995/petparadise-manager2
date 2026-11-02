@@ -627,7 +627,7 @@ def create_request(conn, *, clinic_id, user_id, client_request_id, mode, service
     if service_type not in SERVICES:
         raise PartnerError("Seleziona il tipo di cremazione (anche \"da decidere\").")
     # Dati del proprietario facoltativi: se il telefono e' scritto deve pero' essere un numero.
-    first, last = _clean(owner_first_name, 100), _clean(owner_last_name, 100)
+    first, last = cal.format_person_name(owner_first_name, 100), cal.format_person_name(owner_last_name, 100)
     phone = _clean(owner_phone, 50)
     if phone and len(re.sub(r"\D", "", phone)) < 6:
         raise PartnerError("Il numero di telefono del proprietario non sembra valido (lascialo vuoto se non lo hai).")
@@ -637,7 +637,7 @@ def create_request(conn, *, clinic_id, user_id, client_request_id, mode, service
     weight = _clean(weight, 30)
     if not weight:
         raise PartnerError("Indica il peso o la taglia dell'animale.")
-    address = _clean(pickup_address, 500)
+    address = cal.format_address(pickup_address, 500)
     if mode == "ritiro_domicilio" and not address:
         raise PartnerError("Indica l'indirizzo del ritiro a domicilio.")
     site = _clean(destination_site, 50)
