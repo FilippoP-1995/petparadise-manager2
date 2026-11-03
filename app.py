@@ -12213,6 +12213,16 @@ class App(BaseHTTPRequestHandler):
         if row["event_type"] in ("Ritiro","Ritiro in sede"):return row["event_status"]=="Ritirato"
         return False
 
+    def calendar_pickup_closed(self,row):
+        """Ritiro gia' chiuso (richiesta esplicita dell'utente, 03/11/2026):
+        segnato Ritirato o Annullato, oppure con la pratica collegata gia'
+        oltre "Da ritirare". Una pratica creata in anticipo (ancora "Da
+        ritirare") non chiude il ritiro."""
+        if row["event_type"] not in ("Ritiro","Ritiro in sede"):return False
+        if row["event_status"] in ("Ritirato","Annullato"):return True
+        practice_status=(row["practice_status"] if "practice_status" in row.keys() else "") or ""
+        return bool(practice_status) and practice_status!="Da ritirare"
+
     def calendar_appointment_phone(self,row):
         return row["client_phone"] or row["phone"] or row["veterinarian_phone"] or row["delivery_clinic_phone"] or ""
 
@@ -12622,7 +12632,11 @@ class App(BaseHTTPRequestHandler):
         switch_active={"mista_settimana":"settimana","mista_mese":"mese","compatto":"mese"}.get(view,view)
         switch=''.join(f'<a data-calendar-view="{key}" class="{"active" if switch_active==key else ""}" href="{view_url(selected_date,key)}">{label}</a>' for key,label in (("giorno","Giorno"),("settimana","Settimana"),("mese","Mese")))
         selected_rows=by_day.get(selected,[])
-        def week_day_sort_key(row):return (0 if row["all_day"] else 1,row["start_at"] or "")
+        # Richiesta esplicita dell'utente (03/11/2026): nella giornata i
+        # ritiri gia' chiusi salgono in cima e quelli ancora da fare
+        # scendono dopo di loro anche se il loro orario era prima, cosi' non
+        # restano indietro mescolati a quelli completati; il resto per orario.
+        def week_day_sort_key(row):return (0 if self.calendar_pickup_closed(row) else 1,0 if row["all_day"] else 1,row["start_at"] or "")
         week_days=[start+timedelta(days=i) for i in range(7)]
         selected_index=next((i for i,d in enumerate(week_days) if d.isoformat()==selected),0)
         # Calendario condiviso: tutti gli utenti (admin e non) vedono di
