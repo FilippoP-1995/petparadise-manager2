@@ -1018,6 +1018,39 @@ console.log(JSON.stringify(out));
             for legend in ('<section class="calendar-legend-section">', '<div class="calendar-operator-legend">', '<div class="calendar-day-legend">'):
                 self.assertNotIn(legend, body)
 
+    def test_closed_pickups_go_first_and_pickups_still_to_do_move_after_them(self):
+        # Richiesta esplicita dell'utente (03/11/2026): i ritiri ancora da
+        # fare non devono restare indietro mescolati a quelli gia' fatti; i
+        # ritiri chiusi (Ritirato, Annullato o con pratica gia' oltre "Da
+        # ritirare") salgono in cima, tutto il resto segue per orario.
+        day = "2026-07-15"
+        def pickup(time, status, practice_status=None):
+            event_id = self.save(self.event_form("Ritiro", start_time=time, end_time=time, event_status=status))
+            if practice_status:
+                stamp = app.now()
+                with app.db() as conn:
+                    pid = conn.execute(
+                        "INSERT INTO practices(practice_number,request_origin,destination_branch,status,created_at,updated_at,created_by) VALUES(?,?,?,?,?,?,?)",
+                        (f"CR-ORD{time}", "Privato", "Livorno", practice_status, stamp, stamp, self.admin["id"])).lastrowid
+                    conn.execute("UPDATE calendar_events SET linked_practice_id=? WHERE id=?", (pid, event_id))
+            return event_id
+        pending_early = pickup("08:30", "Da confermare")
+        picked = pickup("09:00", "Ritirato")
+        with_practice = pickup("10:00", "Da ritirare", practice_status="In programma")
+        practice_early = pickup("10:30", "Da ritirare", practice_status="Da ritirare")
+        cancelled = pickup("11:00", "Annullato")
+        delivery = self.save(self.event_form("Riconsegna", start_time="12:00", end_time="12:30"))
+        reminder = self.save(self.event_form("Appuntamento", start_time="07:00", end_time="07:30"))
+        expected = [picked, with_practice, cancelled, reminder, pending_early, practice_early, delivery]
+        for view in ("giorno", "settimana"):
+            page = self.day_page(self.render_calendar(view, day), day)
+            order = [int(x) for x in re.findall(r'data-event-id="(\d+)"', page)]
+            order = list(dict.fromkeys(order))
+            self.assertEqual(order, expected, view)
+        # I contatori Da effettuare / Completati non cambiano significato.
+        self.assertTrue(self.handler.calendar_pickup_closed({"event_type": "Ritiro", "event_status": "Annullato"}))
+        self.assertFalse(self.handler.calendar_pickup_closed({"event_type": "Riconsegna", "event_status": "Completato"}))
+
     def test_day_view_lists_events_in_chronological_order_without_grid_or_lanes(self):
         self.save(self.event_form("Ritiro", event_status="Da ritirare"))
         self.save(self.event_form("Appuntamento", title="APPUNTAMENTO FORNITORE", end_time="10:00"))
