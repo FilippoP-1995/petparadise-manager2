@@ -12632,11 +12632,23 @@ class App(BaseHTTPRequestHandler):
         switch_active={"mista_settimana":"settimana","mista_mese":"mese","compatto":"mese"}.get(view,view)
         switch=''.join(f'<a data-calendar-view="{key}" class="{"active" if switch_active==key else ""}" href="{view_url(selected_date,key)}">{label}</a>' for key,label in (("giorno","Giorno"),("settimana","Settimana"),("mese","Mese")))
         selected_rows=by_day.get(selected,[])
-        # Richiesta esplicita dell'utente (03/11/2026): nella giornata i
-        # ritiri gia' chiusi salgono in cima e quelli ancora da fare
-        # scendono dopo di loro anche se il loro orario era prima, cosi' non
-        # restano indietro mescolati a quelli completati; il resto per orario.
-        def week_day_sort_key(row):return (0 if self.calendar_pickup_closed(row) else 1,0 if row["all_day"] else 1,row["start_at"] or "")
+        # Giornata in ordine di orario (prima "tutto il giorno"). Richiesta
+        # esplicita dell'utente (03-04/11/2026): un ritiro ancora da fare non
+        # deve restare indietro rispetto ai ritiri gia' effettuati - quelli
+        # con orario precedente all'ultimo ritiro chiuso scendono subito dopo
+        # di lui (nel loro ordine); riconsegne, promemoria, ritiri chiusi e
+        # ritiri da fare con orario successivo restano al loro orario.
+        def week_day_sort_key(row):return (0 if row["all_day"] else 1,row["start_at"] or "")
+        def order_day_rows(day_rows):
+            rows=sorted(day_rows,key=week_day_sort_key)
+            # riferimento: l'ultimo ritiro effettuato (un ritiro annullato
+            # non e' "effettuato": resta al suo orario e non sposta nulla)
+            last_closed=max((i for i,row in enumerate(rows) if self.calendar_pickup_closed(row) and row["event_status"]!="Annullato"),default=-1)
+            if last_closed<0:return rows
+            is_pending=lambda row:row["event_type"] in ("Ritiro","Ritiro in sede") and not self.calendar_pickup_closed(row)
+            late=[row for row in rows[:last_closed] if is_pending(row)]
+            head=[row for row in rows[:last_closed+1] if not is_pending(row)]
+            return head+late+rows[last_closed+1:]
         week_days=[start+timedelta(days=i) for i in range(7)]
         selected_index=next((i for i,d in enumerate(week_days) if d.isoformat()==selected),0)
         # Calendario condiviso: tutti gli utenti (admin e non) vedono di
@@ -12680,7 +12692,7 @@ class App(BaseHTTPRequestHandler):
               <div class="calendar-appt-stat calendar-appt-stat-pending calendar-appt-stat-clickable" data-filter-value="pending" onclick="calendarSetFilter(this)"><span class="calendar-appt-stat-icon">{lucide("clock")}</span><b>{pending}</b><small>Da effettuare</small></div>
               <div class="calendar-appt-stat calendar-appt-stat-done calendar-appt-stat-clickable" data-filter-value="done" onclick="calendarSetFilter(this)"><span class="calendar-appt-stat-icon">{lucide("check-circle")}</span><b>{done}</b><small>Completati</small></div>
             </div>'''
-            sorted_rows=sorted(day_rows,key=week_day_sort_key)
+            sorted_rows=order_day_rows(day_rows)
             list_html=''.join(self.calendar_appointment_card(row,client_names=client_names,practice_owner_names=practice_owner_names,color_settings=color_settings,animal_names_by_event=animal_names_by_event,animals_by_event=animals_by_event,cremation_type_by_event=cremation_type_by_event,day=day.isoformat()) for row in sorted_rows) or '<p class="calendar-appt-empty">Nessun appuntamento in programma.</p>'
             day_pages.append(f'''<div class="calendar-day-page" data-day-index="{i}" data-date="{day.isoformat()}">
               {stats_html}
