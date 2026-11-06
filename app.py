@@ -65,6 +65,7 @@ from calendar_service import (
     event_operational_tags,
     parse_items as calendar_parse_items, period_bounds as calendar_period_bounds,
     schedule_event_notifications, sync_children as calendar_sync_children,
+    EVENT_REMINDER_OPTIONS, EVENT_REMINDER_DEFAULT, event_reminder_offsets,
     route_eligible_events,
 )
 import route_service
@@ -2143,6 +2144,24 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .calendar-appt-type-pickup{background:#052e16;color:#4ade80}
 .calendar-appt-type-delivery{background:#172554;color:#60a5fa}
 .calendar-appt-type-reminder{background:#2e1065;color:#c084fc}
+.calendar-appt-card.calendar-appt-remember{border-top:2px solid #ef4444;border-right:2px solid #ef4444;border-bottom:2px solid #ef4444;box-shadow:0 0 0 1px #ef444455,0 10px 28px #ef44442e}
+.calendar-appt-remind{display:inline-flex;align-items:center;gap:4px;margin-right:auto;padding:3px 9px;border-radius:99px;background:#ef4444;color:#fff;font-size:10.5px;font-weight:900;letter-spacing:.05em}
+.calendar-appt-remind svg{width:12px;height:12px}
+.calendar-remind-card{margin:12px 0;padding:14px;border:2px solid #ef444466;border-radius:16px;background:#2a1215}
+.calendar-remind-card.on{border-color:#ef4444;background:#3b1418;box-shadow:0 0 18px #ef444433}
+.calendar-remind-main{display:flex;align-items:center;gap:12px;cursor:pointer;min-height:44px}
+.calendar-remind-main input{width:26px;height:26px;accent-color:#ef4444;flex:none}
+.calendar-remind-icon{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:12px;background:#ef4444;color:#fff;flex:none}
+.calendar-remind-icon svg{width:20px;height:20px}
+.calendar-remind-text{display:flex;flex-direction:column}
+.calendar-remind-text b{font-size:17px;font-weight:900;color:#fff;letter-spacing:.02em}
+.calendar-remind-text small{font-size:12px;color:#fca5a5}
+.calendar-remind-options{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px}
+.calendar-remind-options[hidden]{display:none}
+.calendar-remind-options>small{width:100%;color:#fca5a5;font-weight:700}
+.calendar-remind-option{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:6px 12px;border:1px solid #ef444477;border-radius:99px;background:#1f0d10;color:#fee2e2;font-weight:700;font-size:14px}
+.calendar-remind-option input{width:20px;height:20px;accent-color:#ef4444}
+.calendar-detail-remind{border:2px solid #ef4444;border-radius:14px;background:#3b1418}
 .calendar-appt-title{font-size:15px;font-weight:800;color:#f5f7fb;text-transform:uppercase}
 .calendar-appt-name{font-size:12.5px;font-weight:600;color:#9ca7b8}
 .calendar-appt-owner{font-size:13px;color:#dfe4eb}
@@ -2182,6 +2201,10 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .light-theme .calendar-filter-pill,.light-theme .calendar-filter-operator{background:#fff;color:#526174;border-color:#cbd5e1}
 .light-theme .calendar-filter-pill.active{background:#e9475b;border-color:#e9475b;color:#fff}
 .light-theme .calendar-appt-card{background:#fff;color:#111827;border-color:#e2e8f0}
+.light-theme .calendar-appt-card.calendar-appt-remember{border-top-color:#ef4444;border-right-color:#ef4444;border-bottom-color:#ef4444}
+.light-theme .calendar-remind-card{background:#fef2f2}.light-theme .calendar-remind-card.on{background:#fee2e2}
+.light-theme .calendar-remind-text b{color:#7f1d1d}.light-theme .calendar-remind-text small,.light-theme .calendar-remind-options>small{color:#b91c1c}
+.light-theme .calendar-remind-option{background:#fff;color:#7f1d1d}.light-theme .calendar-detail-remind{background:#fef2f2}
 .light-theme .calendar-appt-title{color:#111827}
 .light-theme .calendar-appt-name{color:#64748b}
 .light-theme .calendar-appt-owner{color:#334155}
@@ -12449,10 +12472,12 @@ class App(BaseHTTPRequestHandler):
         if self.calendar_appointment_done(row):filter_keys.append("done")
         if not row["assigned_user_id"]:filter_keys.append("unassigned")
         operator_attr=esc((operator_name or "").lower())
-        return f'''<article class="calendar-appt-card" data-event-id="{row['id']}" data-filter="{esc(' '.join(filter_keys))}" data-operator="{operator_attr}" style="border-left-color:{hex_}" onclick="location.href='/calendario/{row['id']}?return_to='+encodeURIComponent(location.pathname+location.search)">
+        remind_on=bool(event_reminder_offsets(row["reminder_offsets"] if "reminder_offsets" in row.keys() else ""))
+        remind_badge=f'<span class="calendar-appt-remind">{lucide("bell")}RICORDA</span>' if remind_on else ''
+        return f'''<article class="calendar-appt-card{" calendar-appt-remember" if remind_on else ""}" data-event-id="{row['id']}" data-filter="{esc(' '.join(filter_keys))}" data-operator="{operator_attr}" style="border-left-color:{hex_}" onclick="location.href='/calendario/{row['id']}?return_to='+encodeURIComponent(location.pathname+location.search)">
           <div class="calendar-appt-time-col"><span class="calendar-appt-time-dot" style="background:{hex_}"></span><span class="calendar-appt-time">{esc(time_text)}</span>{f'<span class="calendar-appt-time-end">→ {esc(end_time_text)}</span>' if show_time_range else ''}</div>
           <div class="calendar-appt-main">
-            <div class="calendar-appt-top"><span class="calendar-appt-type {type_cls}">{type_label}</span>{avatar}</div>
+            <div class="calendar-appt-top"><span class="calendar-appt-type {type_cls}">{type_label}</span>{remind_badge}{avatar}</div>
             <div class="calendar-appt-title">{title_line}</div>
             {f'<div class="calendar-appt-name">{name_line}</div>' if name_line else ''}
             {f'<div class="calendar-appt-owner">{client_line}</div>' if client_line else ''}
@@ -13705,6 +13730,14 @@ class App(BaseHTTPRequestHandler):
         saved_tags=set(event_operational_tags(raw('operational_tags')))
         tag_boxes=''.join(f'''<div class="field"><label><input type="checkbox" name="{key}" value="Si" {"checked" if raw(key)=="Si" or key in saved_tags else ""}> <span class="badge {cls}">{label}</span></label></div>''' for key,label,cls in EVENT_OPERATIONAL_TAGS)
         tags_section=f'''<section class="section collapsible collapsed tone-orange calendar-event-tags" data-calendar-types="Ritiro|Ritiro in sede" {"" if event_type in ("Ritiro","Ritiro in sede") else "hidden"}><h2><span class="calendar-tap-card-icon calendar-icon-orange">{lucide("tag")}</span>Etichette operative</h2><p class="sub">Passano alla pratica e compaiono nel Programma Cremazioni.</p><div class="fields">{tag_boxes}</div></section>'''
+        # Casella "Ricorda" (richiesta esplicita dell'utente, 06/11/2026): ben
+        # visibile, per tutti i tipi di evento; spuntata mostra quando avvisare.
+        if raw("remind")=="Si":remind_chosen={key for key,_ in EVENT_REMINDER_OPTIONS if raw(f"remind_{key}")=="Si"}
+        else:remind_chosen=set(event_reminder_offsets(raw("reminder_offsets")))
+        remind_on=bool(remind_chosen) or raw("remind")=="Si"
+        if not remind_chosen:remind_chosen={EVENT_REMINDER_DEFAULT}
+        remind_options=''.join(f'<label class="calendar-remind-option"><input type="checkbox" name="remind_{key}" value="Si" {"checked" if key in remind_chosen else ""}> <span>{label}</span></label>' for key,label in EVENT_REMINDER_OPTIONS)
+        remind_card=f'''<section class="calendar-remind-card{" on" if remind_on else ""}" data-remind-card><label class="calendar-remind-main"><input type="checkbox" name="remind" value="Si" {"checked" if remind_on else ""} onchange="const card=this.closest('[data-remind-card]');card.classList.toggle('on',this.checked);card.querySelector('[data-remind-options]').hidden=!this.checked"><span class="calendar-remind-icon">{lucide("bell")}</span><span class="calendar-remind-text"><b>Ricorda</b><small>Notifica a tutti anche con le notifiche spente</small></span></label><div class="calendar-remind-options" data-remind-options {"" if remind_on else "hidden"}><small>Avvisa:</small>{remind_options}</div></section>'''
         note_card=f'''<section class="section collapsible collapsed tone-gray"><h2><span class="calendar-tap-card-icon">{lucide("clipboard")}</span>Note</h2><textarea name="notes">{val('notes')}</textarea></section>'''
         operator_row_html=f'''<div class="calendar-v2-row3">{operator_card}{pickup_status_card}</div>'''
         body=f'''<main class="wrap calendar-form calendar-form-v2"><div class="titlebar calendar-v2-topbar"><div><h1>{'Modifica evento' if event_id else ('Copia evento' if copy_source else 'Nuovo evento')}</h1><p class="sub">Scegli il tipo di evento e compila i dati.</p></div><a class="btn ghost calendar-v2-close" href="{close_url}" onclick="return calendarConfirmExit(event,this.href)" aria-label="Chiudi">×</a></div>{error_html}<div class="calendar-v2-draftrow">{draft_status}</div>{exit_modal_html}<form id="calendarEventForm" data-draft-key="{draft_key}"{f' data-copy-of="{copy_source["id"]}"' if copy_source else ''} method="post" action="{action}" onsubmit="return calendarSubmit(this)">
@@ -13719,6 +13752,7 @@ class App(BaseHTTPRequestHandler):
             </div>
             {location_card}{delivery_animal_card}{title_card}
           </section>
+          {remind_card}
           {pickup_location_block}
           {delivery_info_block}
           {animals_section}
@@ -13829,7 +13863,7 @@ class App(BaseHTTPRequestHandler):
                         event_start=datetime.fromisoformat(data["start_at"]).replace(tzinfo=ROME_TZ)
                         current_time=datetime.now(ROME_TZ)
                     except ValueError:event_start=current_time=datetime.now(ROME_TZ)
-                    if event_start>current_time:schedule_event_notifications(c,event_id,data["start_at"],stamp)
+                    if event_start>current_time:schedule_event_notifications(c,event_id,data["start_at"],stamp,data["reminder_offsets"],data["all_day"])
                     else:c.execute("UPDATE calendar_event_notifications SET status='annullato',error='' WHERE event_id=? AND status IN ('programmato','in_invio','fallito')",(event_id,))
         except Exception:
             print("[CALENDAR_SAVE] errore salvataggio evento\n"+traceback.format_exc(),flush=True)
@@ -13985,6 +14019,10 @@ class App(BaseHTTPRequestHandler):
               <div class="calendar-quickedit-form" onclick="event.stopPropagation()">{form_inner}</div>
             </div>'''
         hero_rows=[]
+        remind_keys=event_reminder_offsets(event["reminder_offsets"] if "reminder_offsets" in event.keys() else "")
+        if remind_keys:
+            remind_labels=dict(EVENT_REMINDER_OPTIONS)
+            hero_rows.append(f'<div class="calendar-detail-hero-meta-item calendar-detail-remind"><span class="calendar-detail-hero-meta-icon calendar-icon-pink">{lucide("bell")}</span><div><b>RICORDA</b><small>Avviso {esc(", ".join(remind_labels[key] for key in remind_keys))}</small></div></div>')
         link_practice_card=''
         if tab=="dettagli":
             datetime_form=f'''<form method="post" action="/calendario/{event_id}/data-ora" data-event-keep-duration>
@@ -14182,6 +14220,12 @@ class App(BaseHTTPRequestHandler):
                 c.execute("UPDATE calendar_events SET start_at=?,end_at=?,all_day=?,updated_at=?,updated_by=? WHERE id=?",
                           (data["start_at"],data["end_at"],data["all_day"],stamp,user["id"],event_id))
                 calendar_add_history(c,event_id,user["id"],"Modifica data e ora",f'{event["start_at"]} → {event["end_at"]}',f'{data["start_at"]} → {data["end_at"]}',stamp)
+                # Promemoria (30 minuti e "Ricorda") spostati insieme all'evento.
+                if event["event_status"] not in ("Annullato","Completato"):
+                    try:moved_future=datetime.fromisoformat(data["start_at"]).replace(tzinfo=ROME_TZ)>datetime.now(ROME_TZ)
+                    except ValueError:moved_future=False
+                    if moved_future:schedule_event_notifications(c,event_id,data["start_at"],stamp,event["reminder_offsets"],data["all_day"])
+                    else:c.execute("UPDATE calendar_event_notifications SET status='annullato',error='' WHERE event_id=? AND status IN ('programmato','in_invio','fallito')",(event_id,))
             elif action=="tipo":
                 # Stessa idea di data-ora: si riusa normalize_event cambiando
                 # solo event_type, cosi' la validazione (zona/sede/animale

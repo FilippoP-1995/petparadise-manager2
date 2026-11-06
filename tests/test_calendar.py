@@ -62,10 +62,10 @@ class OperationalCalendarTests(unittest.TestCase):
         data.update(changes)
         return data
 
-    def save(self, form):
+    def save(self, form, event_id=None):
         self.handler.form = lambda: form
         with patch("app.emit_notification", return_value=[]):
-            self.handler.save_calendar_event(self.admin)
+            self.handler.save_calendar_event(self.admin, event_id)
         return int(self.redirected.rsplit("/", 1)[-1])
 
     # --- Calendario ridisegnato (28/07): Giorno e Settimana mostrano la barra
@@ -1652,6 +1652,84 @@ console.log(JSON.stringify(out));
         self.assertEqual(reminder["status"], "inviato")
         self.assertTrue(reminder["sent_at"])
         self.assertEqual((summary_first, summary_second, summaries, summary_users), (0, 0, active_users, active_users))
+
+    def test_ricorda_schedules_chosen_reminders_and_reaches_users_with_notifications_off(self):
+        future_date = (datetime.now() + timedelta(days=3)).date()
+        date_text = future_date.isoformat()
+        event_id = self.save(self.event_form("Ritiro", start_date=date_text, end_date=date_text, start_time="10:00", end_time="11:00",
+                                             remind="Si", remind_1440="Si", remind_60="Si"))
+        with app.db() as conn:
+            saved = conn.execute("SELECT reminder_offsets FROM calendar_events WHERE id=?", (event_id,)).fetchone()["reminder_offsets"]
+            planned = {row["notification_type"]: row["scheduled_at"] for row in conn.execute(
+                "SELECT notification_type,scheduled_at FROM calendar_event_notifications WHERE event_id=?", (event_id,))}
+            # un utente che ha spento tutte le notifiche del calendario
+            users = [row["id"] for row in conn.execute("SELECT id FROM users WHERE active=1")]
+            for kind in ("calendar_reminder_30m", "calendar_remember"):
+                conn.execute("INSERT OR REPLACE INTO notification_preferences(user_id,type,enabled) VALUES(?,?,0)", (users[0], kind))
+        self.assertEqual(saved, "1440,60")
+        previous_day = (future_date - timedelta(days=1)).isoformat()
+        self.assertEqual(planned, {
+            "calendar_reminder_30m": f"{date_text}T09:30:00",
+            "calendar_remember_1440": f"{previous_day}T10:00:00",
+            "calendar_remember_60": f"{date_text}T09:00:00",
+        })
+        with app.db() as conn:
+            day_before = datetime.combine(future_date - timedelta(days=1), datetime.min.time()).replace(hour=10, minute=1)
+            process_calendar_notifications(conn, None, day_before)
+            process_calendar_notifications(conn, None, day_before)
+            rows = conn.execute("SELECT user_id,title,text FROM notifications WHERE type='calendar_remember'").fetchall()
+        self.assertEqual(len(rows), len(users))
+        self.assertIn(users[0], {row["user_id"] for row in rows})
+        self.assertIn("Ricorda · domani", rows[0]["title"])
+        self.assertIn("alle 10:00", rows[0]["text"])
+
+    def test_ricorda_unchecked_or_changed_removes_pending_reminders(self):
+        future_date = (datetime.now() + timedelta(days=3)).date()
+        date_text = future_date.isoformat()
+        base = dict(start_date=date_text, end_date=date_text, start_time="10:00", end_time="11:00")
+        event_id = self.save(self.event_form("Appuntamento", title="Chiamare fornitore", remind="Si", remind_120="Si", **base))
+        self.save(self.event_form("Appuntamento", title="Chiamare fornitore", **base), event_id)
+        with app.db() as conn:
+            kinds = {row["notification_type"] for row in conn.execute("SELECT notification_type FROM calendar_event_notifications WHERE event_id=?", (event_id,))}
+            saved = conn.execute("SELECT reminder_offsets FROM calendar_events WHERE id=?", (event_id,)).fetchone()["reminder_offsets"]
+        self.assertEqual((saved, kinds), ("", {"calendar_reminder_30m"}))
+        # casella spuntata senza scegliere quando: vale "1 giorno prima"
+        self.save(self.event_form("Appuntamento", title="Chiamare fornitore", remind="Si", **base), event_id)
+        with app.db() as conn:
+            saved = conn.execute("SELECT reminder_offsets FROM calendar_events WHERE id=?", (event_id,)).fetchone()["reminder_offsets"]
+        self.assertEqual(saved, "1440")
+        # spostando l'evento dal dettaglio i promemoria seguono il nuovo orario
+        new_date = (future_date + timedelta(days=2)).isoformat()
+        self.handler.form = lambda: {"start_date": new_date, "start_time": "15:00", "end_date": new_date, "end_time": "16:00"}
+        with patch("app.emit_notification", return_value=[]):
+            self.handler.calendar_event_action(self.admin, event_id, "data-ora")
+        with app.db() as conn:
+            planned = {row["notification_type"]: row["scheduled_at"] for row in conn.execute(
+                "SELECT notification_type,scheduled_at FROM calendar_event_notifications WHERE event_id=? AND status='programmato'", (event_id,))}
+        self.assertEqual(planned["calendar_remember_1440"], f"{(future_date + timedelta(days=1)).isoformat()}T15:00:00")
+        self.assertEqual(planned["calendar_reminder_30m"], f"{new_date}T14:30:00")
+
+    def test_ricorda_checkbox_in_form_and_red_card_in_calendar(self):
+        rendered = []
+        self.handler.send_html = lambda html, *args, **kwargs: rendered.append(html)
+        self.handler.path = "/calendario/nuovo"
+        self.handler.calendar_event_form(self.admin)
+        form_page = rendered[-1]
+        self.assertIn('name="remind" value="Si"', form_page)
+        self.assertIn("<b>Ricorda</b>", form_page)
+        for key in ("1440", "120", "60"):
+            self.assertIn(f'name="remind_{key}"', form_page)
+        event_id = self.save(self.event_form("Ritiro", remind="Si", remind_120="Si"))
+        plain_id = self.save(self.event_form("Ritiro"))
+        self.handler.path = "/calendario?data=2026-07-15"
+        self.handler.calendar_page(self.admin)
+        page = rendered[-1]
+        self.assertRegex(page, rf'<article class="calendar-appt-card calendar-appt-remember" data-event-id="{event_id}"')
+        self.assertRegex(page, rf'<article class="calendar-appt-card" data-event-id="{plain_id}"')
+        self.assertIn('class="calendar-appt-remind"', page)
+        self.handler.path = f"/calendario/{event_id}"
+        self.handler.calendar_event_detail(self.admin, event_id)
+        self.assertIn("Avviso 2 ore prima", rendered[-1])
 
     def test_cancelled_and_deleted_events_never_emit_pending_reminders(self):
         future_date = (datetime.now() + timedelta(days=1)).date()

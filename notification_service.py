@@ -12,7 +12,7 @@ from pathlib import Path
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
-from calendar_service import event_type_emoji
+from calendar_service import event_reminder_label, event_type_emoji
 # Riuso dello strumento 'anomalie' di Mau AI (stessi 4 controlli, stessa
 # soglia _ANOMALY_STALE_DAYS, nessuna logica duplicata) per il riepilogo
 # proattivo quotidiano - vedi process_daily_anomalies. Non e' un'importazione
@@ -62,6 +62,7 @@ NOTIFICATION_TYPES = {
     "calendar_event_updated": ("Evento calendario modificato", "MOD"),
     "calendar_event_cancelled": ("Evento calendario annullato", "ANN"),
     "calendar_reminder_30m": ("Evento tra 30 minuti", "30M"),
+    "calendar_remember": ("Eventi da ricordare (Ricorda)", "🔔"),
     "calendar_daily_summary": ("Riepilogo calendario giornaliero", "OGGI"),
     "calendar_comment": ("Nuovo commento calendario", "MSG"),
     "daily_summary": ("Riepilogo del giorno", "☀️"),
@@ -84,6 +85,7 @@ NOTIFICATION_TITLE_SYMBOLS = {
     "calendar_daily_summary": "🔔",
     "appointment_reminder": "🔔",
     "calendar_reminder_30m": "🔔",
+    "calendar_remember": "🔔",
     "practice_updated": "✏️",
     "calendar_event_updated": "✏️",
     "practice_delivered": "📦",
@@ -117,6 +119,7 @@ HIGH_PRIORITY_NOTIFICATION_TYPES = frozenset({
     "whatsapp_cron_error",
     "calendar_event_created",
     "partner_freezer_update",
+    "calendar_remember",
 })
 
 
@@ -130,7 +133,10 @@ CRITICAL_NOTIFICATION_TYPES = frozenset({
     "partner_request_urgent",
     "partner_request_reminder",
 })
-MANDATORY_NOTIFICATION_TYPES = CRITICAL_NOTIFICATION_TYPES | frozenset({"partner_request_cancelled", "partner_freezer_update"})
+# "calendar_remember": l'utente ha spuntato "Ricorda" proprio perche' l'evento
+# non va dimenticato, quindi arriva anche a chi ha spento le notifiche
+# (richiesta esplicita dell'utente, 06/11/2026).
+MANDATORY_NOTIFICATION_TYPES = CRITICAL_NOTIFICATION_TYPES | frozenset({"partner_request_cancelled", "partner_freezer_update", "calendar_remember"})
 
 
 def notification_priority(notification_type: str) -> str:
@@ -166,6 +172,7 @@ NON_GROUPABLE_NOTIFICATION_TYPES = frozenset({
     "calendar_event_updated",
     "calendar_event_cancelled",
     "calendar_reminder_30m",
+    "calendar_remember",
 })
 NOTIFICATION_GROUP_LABELS = {
     "practice_created": ("nuovo ritiro", "nuovi ritiri"),
@@ -489,14 +496,20 @@ def process_calendar_notifications(conn, db_path, current=None) -> int:
     conn.execute("""UPDATE calendar_event_notifications SET status='annullato',error='Evento non piu attivo'
       WHERE status='programmato' AND event_id IN (SELECT id FROM calendar_events
       WHERE deleted_at IS NOT NULL OR COALESCE(event_status,'') IN ('Annullato','Completato'))""")
-    due=conn.execute("""SELECT n.id,e.id event_id,e.title,e.start_at,e.event_type FROM calendar_event_notifications n
+    due=conn.execute("""SELECT n.id,n.notification_type,e.id event_id,e.title,e.start_at,e.all_day,e.event_type FROM calendar_event_notifications n
       JOIN calendar_events e ON e.id=n.event_id WHERE n.status='programmato' AND n.scheduled_at<=?
       AND (e.deleted_at IS NULL OR e.deleted_at='') AND COALESCE(e.event_status,'')!='Annullato' ORDER BY n.scheduled_at LIMIT 100""",(stamp,)).fetchall()
     for row in due:
         changed=conn.execute("UPDATE calendar_event_notifications SET status='in_invio' WHERE id=? AND status='programmato'",(row["id"],)).rowcount
         if not changed:continue
         try:
-            emit_notification(conn,"calendar_reminder_30m",f"{event_type_emoji(row['event_type'])} Evento tra 30 minuti",row["title"],payload={"url":f'/calendario/{row["event_id"]}'},db_path=db_path)
+            if str(row["notification_type"] or "").startswith("calendar_remember_"):
+                minutes=row["notification_type"].rsplit("_",1)[-1]
+                when=(row["start_at"] or "")[11:16]
+                when_text="tutto il giorno" if row["all_day"] else (f"alle {when}" if when else "")
+                emit_notification(conn,"calendar_remember",f"{event_type_emoji(row['event_type'])} Ricorda · {event_reminder_label(minutes)}",push_bullets(row["title"],when_text),payload={"url":f'/calendario/{row["event_id"]}'},db_path=db_path)
+            else:
+                emit_notification(conn,"calendar_reminder_30m",f"{event_type_emoji(row['event_type'])} Evento tra 30 minuti",row["title"],payload={"url":f'/calendario/{row["event_id"]}'},db_path=db_path)
             conn.execute("UPDATE calendar_event_notifications SET status='inviato',sent_at=?,error='' WHERE id=?",(stamp,row["id"]));created+=1
         except Exception as exc:
             conn.execute("UPDATE calendar_event_notifications SET status='fallito',error=? WHERE id=?",(f"{type(exc).__name__}: {exc}"[:500],row["id"]))

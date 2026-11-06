@@ -136,6 +136,10 @@ def ensure_calendar_schema(conn):
     for name,definition in delivery_clinic_columns.items():
         if name not in columns:conn.execute(f"ALTER TABLE calendar_events ADD COLUMN {name} {definition}")
     if "operational_tags" not in columns:conn.execute("ALTER TABLE calendar_events ADD COLUMN operational_tags TEXT NOT NULL DEFAULT ''")
+    # "Ricorda" (richiesta esplicita dell'utente, 06/11/2026): minuti di
+    # anticipo dei promemoria scelti sull'evento, separati da virgola
+    # ("1440,60"); vuoto = casella Ricorda non spuntata.
+    if "reminder_offsets" not in columns:conn.execute("ALTER TABLE calendar_events ADD COLUMN reminder_offsets TEXT NOT NULL DEFAULT ''")
     # Richiesta esplicita dell'utente: la voce Urna del preventivo deve
     # avere ricerca a catalogo con prezzo automatico anche in modifica (non
     # solo alla creazione) - serve una colonna persistita che dica quale
@@ -508,6 +512,7 @@ def normalize_event(form, current=None):
       "delivery_clinic_phone":_clean(form.get("delivery_clinic_phone"),50) if event_type in ("Riconsegna","Riconsegna in sede") else "",
       "delivery_location_type":_clean(form.get("delivery_location_type"),50) if event_type=="Riconsegna" and _clean(form.get("delivery_location_type"),50) in ("Privato","Veterinario") else "",
       "operational_tags":",".join(key for key in EVENT_OPERATIONAL_TAG_KEYS if form.get(key)=="Si") if event_type in ("Ritiro","Ritiro in sede") else "",
+      "reminder_offsets":reminder_offsets_from_form(form),
     }
 
 
@@ -578,8 +583,50 @@ def sync_children(conn,event_id,animals,estimates,stamp):
     conn.executemany("INSERT INTO calendar_event_estimate_items(event_id,description,amount,sort_order,preset,urn_catalog_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",((event_id,i["description"],i["amount"],index,i.get("preset") or None,i.get("urn_catalog_id"),stamp,stamp) for index,i in enumerate(estimates)))
 
 
-def schedule_event_notifications(conn,event_id,start_at,stamp):
+def schedule_event_notifications(conn,event_id,start_at,stamp,reminder_offsets="",all_day=0):
     try:reminder=(datetime.fromisoformat(start_at)-timedelta(minutes=30)).isoformat(timespec="seconds")
     except ValueError:return
     conn.execute("DELETE FROM calendar_event_notifications WHERE event_id=? AND notification_type='calendar_reminder_30m' AND sent_at IS NULL",(event_id,))
     conn.execute("INSERT OR IGNORE INTO calendar_event_notifications(event_id,notification_type,scheduled_at,status) VALUES(?,?,?,'programmato')",(event_id,"calendar_reminder_30m",reminder))
+    schedule_event_remember(conn,event_id,start_at,reminder_offsets,all_day,stamp)
+
+
+# Casella "Ricorda" dell'evento (richiesta esplicita dell'utente, 06/11/2026):
+# promemoria in piu' rispetto a quello standard dei 30 minuti, con anticipo
+# scelto evento per evento. Arrivano a tutto lo staff anche a chi ha spento le
+# notifiche del calendario nelle preferenze (tipo "calendar_remember"
+# obbligatorio in notification_service).
+EVENT_REMINDER_OPTIONS=(("1440","1 giorno prima"),("120","2 ore prima"),("60","1 ora prima"))
+EVENT_REMINDER_KEYS=tuple(key for key,_ in EVENT_REMINDER_OPTIONS)
+EVENT_REMINDER_DEFAULT="1440"
+# Evento "tutto il giorno": non ha un orario, gli anticipi si contano dalle 9:00.
+EVENT_REMINDER_ALL_DAY_HOUR=9
+
+
+def reminder_offsets_from_form(form):
+    if form.get("remind")!="Si":return ""
+    chosen=[key for key in EVENT_REMINDER_KEYS if form.get(f"remind_{key}")=="Si"]
+    return ",".join(chosen or [EVENT_REMINDER_DEFAULT])
+
+
+def event_reminder_offsets(value):
+    chosen=set(str(value or "").split(","))
+    return [key for key in EVENT_REMINDER_KEYS if key in chosen]
+
+
+def event_reminder_label(minutes):
+    return {"1440":"domani","120":"tra 2 ore","60":"tra 1 ora"}.get(str(minutes),"a breve")
+
+
+def schedule_event_remember(conn,event_id,start_at,reminder_offsets,all_day,stamp):
+    """Riprogramma i promemoria "Ricorda" ancora da inviare: quelli gia'
+    inviati restano, quelli non piu' scelti o non piu' validi spariscono."""
+    conn.execute("DELETE FROM calendar_event_notifications WHERE event_id=? AND notification_type LIKE 'calendar_remember_%' AND sent_at IS NULL",(event_id,))
+    try:base=datetime.fromisoformat(start_at)
+    except (TypeError,ValueError):return
+    if all_day:base=base.replace(hour=EVENT_REMINDER_ALL_DAY_HOUR,minute=0,second=0)
+    now_text=_rome_now().replace(tzinfo=None).isoformat(timespec="seconds")
+    for key in event_reminder_offsets(reminder_offsets):
+        when=(base-timedelta(minutes=int(key))).isoformat(timespec="seconds")
+        if when<=now_text:continue
+        conn.execute("INSERT OR IGNORE INTO calendar_event_notifications(event_id,notification_type,scheduled_at,status) VALUES(?,?,?,'programmato')",(event_id,f"calendar_remember_{key}",when))
