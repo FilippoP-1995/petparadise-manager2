@@ -2205,6 +2205,29 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .light-theme .calendar-remind-card{background:#fef2f2}.light-theme .calendar-remind-card.on{background:#fee2e2}
 .light-theme .calendar-remind-text b{color:#7f1d1d}.light-theme .calendar-remind-text small,.light-theme .calendar-remind-options>small{color:#b91c1c}
 .light-theme .calendar-remind-option{background:#fff;color:#7f1d1d}.light-theme .calendar-detail-remind{background:#fef2f2}
+.voucher-summary{display:flex;align-items:center;gap:16px;margin:0 0 14px;padding:16px 18px;border-radius:18px;border:2px solid #334155;background:#151d29}
+.voucher-summary.has-open{border-color:#22c55e;background:linear-gradient(145deg,#0f2a1b,#0b1f15);box-shadow:0 0 18px #22c55e2e}
+.voucher-summary-num{display:inline-flex;align-items:center;justify-content:center;min-width:58px;height:58px;padding:0 10px;border-radius:16px;background:#334155;color:#cbd5e1;font-size:30px;font-weight:900}
+.voucher-summary.has-open .voucher-summary-num{background:#22c55e;color:#052e16}
+.voucher-summary b{display:block;font-size:19px;font-weight:900;color:#f5f7fb}
+.voucher-summary.has-open b{color:#4ade80}
+.voucher-summary small{color:#94a3b8;font-size:13px}
+.voucher-group-title{margin:6px 0 10px;font-size:15px;color:#4ade80}
+.voucher-card{margin:0 0 10px;padding:12px 14px;border-radius:14px;border:1px solid #334155;border-left:5px solid #475569;background:#151d29}
+.voucher-card.voucher-open{border-left-color:#22c55e}
+.voucher-card-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.voucher-status{padding:3px 10px;border-radius:99px;font-size:11px;font-weight:900;letter-spacing:.04em;background:#334155;color:#cbd5e1}
+.voucher-open .voucher-status{background:#22c55e;color:#052e16}
+.voucher-animal{font-size:16px;font-weight:800;color:#f5f7fb;overflow-wrap:anywhere}
+.voucher-used .voucher-animal{color:#94a3b8}
+.voucher-card-sub{margin-top:4px;font-size:13px;color:#94a3b8}
+.voucher-edit{margin-top:8px}.voucher-edit>summary,.voucher-used-group>summary{cursor:pointer;font-weight:700;color:#93c5fd;min-height:32px;display:flex;align-items:center}
+.voucher-used-group{margin-top:12px}.voucher-used-group>summary{font-size:15px;color:#cbd5e1}
+.voucher-used-group[open]>summary{margin-bottom:10px}
+.light-theme .voucher-summary,.light-theme .voucher-card{background:#fff;border-color:#e2e8f0}
+.light-theme .voucher-summary.has-open{background:#f0fdf4;border-color:#22c55e}.light-theme .voucher-summary b,.light-theme .voucher-animal{color:#111827}
+.light-theme .voucher-summary.has-open b,.light-theme .voucher-group-title{color:#15803d}.light-theme .voucher-card.voucher-open{border-left-color:#22c55e}
+.light-theme .voucher-summary-num{background:#e2e8f0;color:#334155}.light-theme .voucher-used .voucher-animal{color:#64748b}
 .light-theme .calendar-appt-title{color:#111827}
 .light-theme .calendar-appt-name{color:#64748b}
 .light-theme .calendar-appt-owner{color:#334155}
@@ -4924,7 +4947,7 @@ async function saveVoucherRow(sourceEl,event){
   const trigger=(event && event.submitter) || sourceEl;
   const form=trigger.form || sourceEl.form || sourceEl;
   if(!form || form.dataset.saving==='1')return false;
-  const row=(trigger.closest && trigger.closest('tr')) || (form.closest && form.closest('tr'));
+  const row=(trigger.closest && trigger.closest('tr,[data-voucher-card]')) || (form.closest && form.closest('tr,[data-voucher-card]'));
   const note=row ? row.querySelector('.inline-save-note') : null;
   const select=row ? row.querySelector('select[name="status"]') : null;
   form.dataset.saving='1';if(select)select.disabled=true;if(note){note.textContent='Salvataggio...';note.classList.remove('error');}
@@ -4933,6 +4956,7 @@ async function saveVoucherRow(sourceEl,event){
     const response=await fetch(form.action,{method:'POST',body:new URLSearchParams(payload),headers:{'Accept':'application/json'},credentials:'same-origin'});
     const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||'Salvataggio non riuscito');
     if(note){note.textContent='Salvato';setTimeout(()=>{note.textContent='';},1400);}
+    if(row && row.matches('[data-voucher-card]')){const open=data.status==='Maturato';row.classList.toggle('voucher-open',open);row.classList.toggle('voucher-used',!open);const badge=row.querySelector('[data-voucher-status]');if(badge)badge.textContent=open?'DA USARE':'USATO';}
   }catch(error){if(note){note.textContent=error.message;note.classList.add('error');}}
   finally{form.dataset.saving='';if(select)select.disabled=false;}
   return false;
@@ -18809,8 +18833,8 @@ class App(BaseHTTPRequestHandler):
         rows=[]
         for v in vets:
             available=int(v["available_vouchers"] or 0); used=int(v["used_vouchers"] or 0)
-            available_badge = f'<span class="badge tag-green">{available} maturati</span>' if available else '<span class="badge tag-blue">0 maturati</span>'
-            rows.append(f'''<tr><td><a href="/veterinari/{v['id']}"><b>{esc(v['short_name'] or v['clinic_name'])}</b></a><br><small>{esc(v['clinic_name'])}</small></td><td>{esc(v['address'])}<br><small>{esc(v['city'])}</small></td><td>{esc(v['phone'])}</td><td>{available_badge} <span class="badge tag-red">{used} usati</span></td><td><a class="btn ghost" href="/veterinari/{v['id']}">Apri</a></td></tr>''')
+            available_badge = f'<span class="badge tag-green voucher-badge-open">{available} da usare</span>' if available else '<span class="badge voucher-badge-none">0 da usare</span>'
+            rows.append(f'''<tr><td><a href="/veterinari/{v['id']}"><b>{esc(v['short_name'] or v['clinic_name'])}</b></a><br><small>{esc(v['clinic_name'])}</small></td><td>{esc(v['address'])}<br><small>{esc(v['city'])}</small></td><td>{esc(v['phone'])}</td><td>{available_badge} <span class="badge tag-blue">{used} usati</span></td><td><a class="btn ghost" href="/veterinari/{v['id']}">Apri</a></td></tr>''')
         rows_html=''.join(rows) or '<tr><td colspan="5" class="sub">Nessun veterinario trovato.</td></tr>'
         filter_opts=''.join(f'<option {"selected" if voucher_filter==x else ""}>{x}</option>' for x in ["","Maturati","Usati","Senza buoni"])
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>Veterinari</h1><div class="sub">Anagrafiche strutture veterinarie e buoni.</div></div>{'<a class="btn ghost" href="/portale-partner">Portale partner</a>' if user["role"]=="admin" else ""}</div><form class="section" method="get"><div class="fields"><div class="field"><label>Ricerca veterinario</label><input name="q" value="{esc(term)}" placeholder="Nome, indirizzo, comune, telefono"></div><div class="field"><label>Filtro buoni</label><select name="buoni">{filter_opts}</select></div></div><button class="btn" style="margin-top:12px">Filtra</button></form><div style="height:14px"></div><section class="section collapsible"><h2>LISTA VETERINARI</h2><div class="tablebox"><table><thead><tr><th>Veterinario</th><th>Indirizzo</th><th>Telefono</th><th>Buoni</th><th>Azione</th></tr></thead><tbody>{rows_html}</tbody></table></div></section><div style="height:14px"></div><section class="section collapsible collapsed"><h2>Aggiungi veterinario</h2><form method="post"><div class="fields"><div class="field"><label>Nome breve</label><input name="short_name" placeholder="Es. DEL PERO"></div><div class="field"><label>Nome completo</label><input name="clinic_name"></div><div class="field full"><label>Indirizzo</label><input name="address"></div><div class="field"><label>Comune</label><input name="city"></div><div class="field"><label>Telefono</label><input name="phone"></div><div class="field"><label>Medico</label><input name="doctor_name"></div><div class="field full"><label>Note</label><input name="notes"></div></div><button class="btn" style="margin-top:12px">Aggiungi veterinario</button></form></section></main>'''
@@ -18822,13 +18846,31 @@ class App(BaseHTTPRequestHandler):
             vouchers=c.execute("SELECT vv.*, p.animal_name, p.species, p.practice_number FROM veterinarian_vouchers vv LEFT JOIN practices p ON p.id=vv.practice_id WHERE vv.veterinarian_id=? ORDER BY vv.created_at DESC",(vet_id,)).fetchall()
             hours_by_day={h["day_of_week"]:h for h in c.execute("SELECT * FROM veterinarian_hours WHERE veterinarian_id=?",(vet_id,)).fetchall()}
         if not v: return self.send_error(404)
-        rows=[]
+        # Buoni leggibili da telefono (richiesta esplicita dell'utente,
+        # 10/11/2026): riepilogo grande "da usare" in cima alla scheda e una
+        # card per buono (prima quelli da usare, poi i gia' usati) al posto
+        # della tabella a 5 colonne, che su iPhone tagliava nomi e stato.
+        voucher_cards={"Maturato":[],"Usato":[]}
         for b in vouchers:
             animal=(b['animal_name'] or (b['note'] or '').replace('Manuale:','').strip()).strip()
             species=b['species'] or ''
             status_opts=''.join(f'<option {"selected" if b["status"]==x else ""}>{x}</option>' for x in ["Maturato","Usato"])
-            rows.append(f'''<tr><form method="post" action="/buoni/{b['id']}/modifica" onsubmit="return saveVoucherRow(this,event)"><td><input type="date" name="created_at" value="{esc((b['created_at'] or '')[:10])}"></td><td><input name="animal_name" value="{esc(animal)}" placeholder="Nome animale"></td><td><input name="species" value="{esc(species)}" placeholder="Specie"></td><td><select name="status" onchange="saveVoucherRow(this)">{status_opts}</select></td><td><button class="btn ghost">Salva</button> <span class="inline-save-note" aria-live="polite"></span></form><form method="post" action="/buoni/{b['id']}/elimina" onsubmit="return confirm('Eliminare questo buono?')"><button class="btn ghost">Elimina</button></form></td></tr>''')
-        voucher_rows=''.join(rows) or '<tr><td colspan="5" class="sub">Nessun buono presente.</td></tr>'
+            is_open=b["status"]=="Maturato"
+            when=date_it((b['created_at'] or '')[:10]) if b['created_at'] else ''
+            used_when=f' · usato il {date_it(b["used_at"][:10])}' if not is_open and b["used_at"] else ''
+            practice=f' · {esc(b["practice_number"])}' if b["practice_number"] else ''
+            voucher_cards["Maturato" if is_open else "Usato"].append(f'''<article class="voucher-card {"voucher-open" if is_open else "voucher-used"}" data-voucher-card>
+              <div class="voucher-card-head"><span class="voucher-status" data-voucher-status>{"DA USARE" if is_open else "USATO"}</span><b class="voucher-animal">{esc(animal) or "Buono"}</b></div>
+              <div class="voucher-card-sub">{esc(species)+" · " if species else ""}maturato il {esc(when) or "—"}{used_when}{practice}</div>
+              <details class="voucher-edit"><summary>Modifica</summary>
+                <form method="post" action="/buoni/{b['id']}/modifica" onsubmit="return saveVoucherRow(this,event)"><div class="fields"><div class="field"><label>Data maturazione</label><input type="date" name="created_at" value="{esc((b['created_at'] or '')[:10])}"></div><div class="field"><label>Nome animale</label><input name="animal_name" value="{esc(animal)}" placeholder="Nome animale"></div><div class="field"><label>Specie</label><input name="species" value="{esc(species)}" placeholder="Specie"></div><div class="field"><label>Stato</label><select name="status" onchange="saveVoucherRow(this)">{status_opts}</select></div></div><div class="actions" style="margin-top:10px"><button class="btn ghost">Salva</button> <span class="inline-save-note" aria-live="polite"></span></div></form>
+                <form method="post" action="/buoni/{b['id']}/elimina" onsubmit="return confirm('Eliminare questo buono?')"><button class="btn ghost" style="margin-top:8px">Elimina</button></form>
+              </details>
+            </article>''')
+        open_count=len(voucher_cards["Maturato"]);used_count=len(voucher_cards["Usato"])
+        voucher_summary=f'''<section class="voucher-summary {"has-open" if open_count else "no-open"}"><span class="voucher-summary-num">{open_count}</span><div><b>{"buono da usare" if open_count==1 else "buoni da usare"}</b><small>{used_count} già {"usato" if used_count==1 else "usati"}</small></div></section>''' if open_count else f'''<section class="voucher-summary no-open"><span class="voucher-summary-num">0</span><div><b>Nessun buono da usare</b><small>{used_count} già {"usato" if used_count==1 else "usati"}</small></div></section>'''
+        voucher_rows=(f'<h3 class="voucher-group-title">Da usare ({open_count})</h3>'+(''.join(voucher_cards["Maturato"]) or '<p class="sub">Nessun buono da usare.</p>')
+                      +(f'<details class="voucher-used-group"><summary>Già usati ({used_count})</summary>{"".join(voucher_cards["Usato"])}</details>' if used_count else ''))
         day_names=("Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica")
         day_blocks=[]
         for i,day_name in enumerate(day_names):
@@ -18841,7 +18883,7 @@ class App(BaseHTTPRequestHandler):
         hours_updated_label=source_labels.get(v["hours_source"],"Orari non ancora configurati: il Percorso giornaliero non applicherà vincoli di orario per questa struttura.")
         google_refresh_html=f'''<form method="post" action="/veterinari/{v['id']}/orari/aggiorna-google" style="margin-top:8px" {"onsubmit=\"return confirm('Gli orari attuali sono stati inseriti manualmente: sovrascriverli con quelli di Google?')\"" if v["hours_source"]=="manuale" else ""}><button class="btn ghost" type="submit">{lucide("navigation")} Aggiorna orari da Google adesso</button></form>''' if v["google_place_id"] else ''
         hours_section=f'''<div style="height:14px"></div><section class="section collapsible collapsed"><h2>Orari di apertura</h2><p class="sub">Usati dal Percorso giornaliero per segnalare arrivi fuori orario. {hours_updated_label}</p><form method="post" action="/veterinari/{v['id']}/orari"><div class="fields"><div class="field"><label>Durata media ritiro (minuti)</label><input type="number" min="1" max="240" name="service_duration_minutes" value="{v['service_duration_minutes'] or ''}" placeholder="10"></div><div class="field full"><label>Google Place ID (facoltativo, per recupero orari automatico)</label><input name="google_place_id" value="{esc(v['google_place_id'])}" placeholder="Es. ChIJ..."></div></div><div style="height:10px"></div>{''.join(day_blocks)}<button class="btn" style="margin-top:4px">Salva orari</button></form>{google_refresh_html}</section>'''
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{esc(v['short_name'] or v['clinic_name'])}</h1><div class="sub">{esc(v['clinic_name'])}</div></div><a class="btn ghost" href="/veterinari">Torna alla lista</a></div><section class="section collapsible collapsed"><h2>Anagrafica</h2><form method="post" action="/veterinari"><input type="hidden" name="id" value="{v['id']}"><div class="fields"><div class="field"><label>Nome breve</label><input name="short_name" value="{esc(v['short_name'])}"></div><div class="field"><label>Nome completo</label><input name="clinic_name" value="{esc(v['clinic_name'])}"></div><div class="field full"><label>Indirizzo</label><input name="address" value="{esc(v['address'])}"></div><div class="field"><label>Comune</label><input name="city" value="{esc(v['city'])}"></div><div class="field"><label>Telefono</label><input name="phone" value="{esc(v['phone'])}"></div><div class="field"><label>Medico veterinario</label><input name="doctor_name" value="{esc(v['doctor_name'])}"></div><div class="field full"><label>Note</label><input name="notes" value="{esc(v['notes'])}"></div></div><button class="btn" style="margin-top:12px">Salva anagrafica</button></form><form method="post" action="/veterinari/{v['id']}/elimina" onsubmit="return confirm('Eliminare questo veterinario dalla lista?')"><button class="btn ghost" style="margin-top:12px">Elimina veterinario</button></form></section>{hours_section}<div style="height:14px"></div><section class="section collapsible collapsed"><h2>Aggiungi buono manuale</h2><form method="post" action="/veterinari/{v['id']}/buoni"><div class="fields"><div class="field"><label>Data maturazione</label><input type="date" name="created_at" value="{rome_now().strftime('%Y-%m-%d')}"></div><div class="field"><label>Nome animale</label><input name="animal_name"></div><div class="field"><label>Specie</label><input name="species"></div><div class="field"><label>Stato</label><select name="status"><option>Maturato</option><option>Usato</option></select></div></div><button class="btn" style="margin-top:12px">Aggiungi buono</button></form></section><div style="height:14px"></div><section class="section collapsible collapsed"><h2>Buoni</h2><div class="tablebox"><table><thead><tr><th>Data</th><th>Animale</th><th>Specie</th><th>Stato</th><th>Azione</th></tr></thead><tbody>{voucher_rows}</tbody></table></div></section></main>'''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>{esc(v['short_name'] or v['clinic_name'])}</h1><div class="sub">{esc(v['clinic_name'])}</div></div><a class="btn ghost" href="/veterinari">Torna alla lista</a></div>{voucher_summary}<section class="section collapsible collapsed"><h2>Anagrafica</h2><form method="post" action="/veterinari"><input type="hidden" name="id" value="{v['id']}"><div class="fields"><div class="field"><label>Nome breve</label><input name="short_name" value="{esc(v['short_name'])}"></div><div class="field"><label>Nome completo</label><input name="clinic_name" value="{esc(v['clinic_name'])}"></div><div class="field full"><label>Indirizzo</label><input name="address" value="{esc(v['address'])}"></div><div class="field"><label>Comune</label><input name="city" value="{esc(v['city'])}"></div><div class="field"><label>Telefono</label><input name="phone" value="{esc(v['phone'])}"></div><div class="field"><label>Medico veterinario</label><input name="doctor_name" value="{esc(v['doctor_name'])}"></div><div class="field full"><label>Note</label><input name="notes" value="{esc(v['notes'])}"></div></div><button class="btn" style="margin-top:12px">Salva anagrafica</button></form><form method="post" action="/veterinari/{v['id']}/elimina" onsubmit="return confirm('Eliminare questo veterinario dalla lista?')"><button class="btn ghost" style="margin-top:12px">Elimina veterinario</button></form></section>{hours_section}<div style="height:14px"></div><section class="section collapsible collapsed"><h2>Aggiungi buono manuale</h2><form method="post" action="/veterinari/{v['id']}/buoni"><div class="fields"><div class="field"><label>Data maturazione</label><input type="date" name="created_at" value="{rome_now().strftime('%Y-%m-%d')}"></div><div class="field"><label>Nome animale</label><input name="animal_name"></div><div class="field"><label>Specie</label><input name="species"></div><div class="field"><label>Stato</label><select name="status"><option>Maturato</option><option>Usato</option></select></div></div><button class="btn" style="margin-top:12px">Aggiungi buono</button></form></section><div style="height:14px"></div><section class="section collapsible"><h2>Buoni</h2>{voucher_rows}</section></main>'''
         self.send_html(layout("Veterinario",body,user))
 
     def save_veterinarian_hours(self,user,vet_id):

@@ -16784,8 +16784,41 @@ class PetParadiseTests(unittest.TestCase):
         self.handler.send_html = lambda html, *a: rendered.append(html)
         self.handler.veterinarian_detail(admin, vet_id)
         page = rendered[-1]
-        self.assertEqual(page.count('<section class="section collapsible collapsed">'), 4)
+        # "Buoni" resta aperta (richiesta dell'utente 10/11/2026: devono
+        # vedersi subito), le altre tre partono chiuse.
+        self.assertEqual(page.count('<section class="section collapsible collapsed">'), 3)
+        self.assertIn('<section class="section collapsible"><h2>Buoni</h2>', page)
         self.assertIn('<h2>Orari di apertura</h2>', page)
+
+    def test_veterinarian_detail_shows_vouchers_to_use_clearly(self):
+        # Richiesta esplicita dell'utente (10/11/2026): dalla scheda del
+        # veterinario deve vedersi subito se ha buoni da usare.
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            vet_id = conn.execute("INSERT INTO veterinarians(clinic_name,active,created_at,updated_at) VALUES('Vet Chiaro',1,?,?)",(stamp,stamp)).lastrowid
+            empty_id = conn.execute("INSERT INTO veterinarians(clinic_name,active,created_at,updated_at) VALUES('Vet Vuoto',1,?,?)",(stamp,stamp)).lastrowid
+            for status, name in (("Maturato", "Achille"), ("Maturato", "Gastone"), ("Usato", "Herrera")):
+                conn.execute("INSERT INTO veterinarian_vouchers(veterinarian_id,practice_id,status,created_at,used_at,note) VALUES(?,?,?,?,?,?)",
+                             (vet_id, None, status, "2026-10-15T10:00:00", "2026-10-20T10:00:00" if status == "Usato" else None, f"Manuale: {name}"))
+            conn.execute("INSERT INTO veterinarian_vouchers(veterinarian_id,practice_id,status,created_at,used_at,note) VALUES(?,?,?,?,?,?)",
+                         (empty_id, None, "Usato", stamp, stamp, "Manuale: Acy"))
+        rendered = []
+        self.handler.send_html = lambda html, *a: rendered.append(html)
+        self.handler.veterinarian_detail(admin, vet_id)
+        page = rendered[-1]
+        self.assertIn('<section class="voucher-summary has-open"><span class="voucher-summary-num">2</span><div><b>buoni da usare</b><small>1 già usato</small>', page)
+        self.assertEqual(page.count('data-voucher-status>DA USARE<'), 2)
+        self.assertEqual(page.count('data-voucher-status>USATO<'), 1)
+        self.assertIn('<b class="voucher-animal">Achille</b>', page)
+        self.assertLess(page.index("Gastone"), page.index("Già usati (1)"))
+        self.assertLess(page.index("Già usati (1)"), page.index("Herrera"))
+        self.assertNotIn("<th>Specie</th>", page)
+        self.handler.veterinarian_detail(admin, empty_id)
+        self.assertIn('<section class="voucher-summary no-open"><span class="voucher-summary-num">0</span><div><b>Nessun buono da usare</b>', rendered[-1])
+        self.handler.path = "/veterinari"
+        self.handler.veterinarians_page(admin)
+        self.assertIn('<span class="badge tag-green voucher-badge-open">2 da usare</span>', rendered[-1])
+        self.assertIn('<span class="badge voucher-badge-none">0 da usare</span>', rendered[-1])
 
     def test_edit_voucher_with_ajax_saves_without_redirect_like_quick_state(self):
         # Bug reale segnalato dall'utente: cambiare lo stato di un buono e
