@@ -15713,7 +15713,10 @@ class PetParadiseTests(unittest.TestCase):
         # la riga salvata in notifications.title (usata dal Centro notifiche
         # in-app) non deve mai portare il simbolo: solo il payload push lo
         # riceve, calcolato a parte da notification_push_title.
-        with app.db() as conn:
+        # Orologio fisso a mezzogiorno: tra le 23:30 e mezzanotte "fra 30
+        # minuti" cadrebbe nel giorno dopo e il test falliva (CI 11/11/2026).
+        noon = notification_service._rome_now().replace(hour=12, minute=0, second=0, microsecond=0)
+        with patch("notification_service._rome_now", return_value=noon), app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()["id"]
             stamp = app.now()
             current = notification_service._rome_now()
@@ -15733,7 +15736,9 @@ class PetParadiseTests(unittest.TestCase):
     def test_pickup_30m_notification_is_terse_and_opens_the_practice(self):
         # mockup "Ritiro programmato": titolo breve, corpo con • e apertura
         # diretta della pratica interessata.
-        with app.db() as conn:
+        # Orologio fisso a mezzogiorno (vedi test precedente).
+        noon = notification_service._rome_now().replace(hour=12, minute=0, second=0, microsecond=0)
+        with patch("notification_service._rome_now", return_value=noon), app.db() as conn:
             admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()["id"]
             stamp = app.now()
             current = notification_service._rome_now()
