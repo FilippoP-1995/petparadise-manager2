@@ -241,6 +241,7 @@ EVENT_OPERATIONAL_TAGS = (
     ("tag_da_richiamare", "DA RICHIAMARE", "tag-blue"),
     ("tag_pelo", "PELO", "tag-green"),
     ("tag_no_pelo", "NO PELO", "tag-outline-green"),
+    ("tag_video", "VIDEO", "tag-purple"),
 )
 EVENT_OPERATIONAL_TAG_KEYS = tuple(key for key, _, _ in EVENT_OPERATIONAL_TAGS)
 

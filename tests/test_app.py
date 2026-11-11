@@ -529,6 +529,19 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(extras["price_paw_cast"], "25.50")
         self.assertEqual(extras["tag_calco_nose"], "Si")
 
+    def test_video_operational_tag_on_practice_and_event(self):
+        # Richiesta esplicita dell'utente (11/11/2026): nuova etichetta
+        # operativa "Video", come le altre (pratica, badge, evento Ritiro).
+        html = self.handler.fields_html()
+        self.assertIn('name="tag_video"', html)
+        self.assertIn("VIDEO", html)
+        self.assertEqual(self.handler.normalized_fields({"tag_video": "Si"})["tag_video"], "Si")
+        self.assertEqual(self.handler.normalized_fields({})["tag_video"], "")
+        with app.db() as conn:
+            self.assertIn("tag_video", {row[1] for row in conn.execute("PRAGMA table_info(practices)")})
+        self.assertIn('<span class="badge tag-purple">VIDEO</span>', self.handler.tag_badges({"tag_video": "Si"}))
+        self.assertIn("tag_video", [key for key, _, _ in app.EVENT_OPERATIONAL_TAGS])
+
     def test_calco_items_are_unlimited_and_possibile_tags_normalize(self):
         html = self.handler.fields_html()
         for expected in (
