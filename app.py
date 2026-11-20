@@ -17958,7 +17958,8 @@ class App(BaseHTTPRequestHandler):
         payment_channel_value="D" if uses_total_d(r) else "W"
         practice_has_total_d=money_value(r["total_text"] if "total_text" in r.keys() else "")>0
         # Campo/nota "Totale D" solo per un cambio completo di circuito (nessun pagamento su W).
-        offer_total_d=not practice_has_total_d and money_value(r["deposit"] if "deposit" in r.keys() else "")<=0.005
+        # Il pagamento della sezione stessa non conta (correzione W -> D).
+        paid_w=money_value(r["deposit"] if "deposit" in r.keys() else "")
         with db() as c:
             acconto_movement,acconto_invoice=latest_movement_and_invoice(c,r["id"],"acconto")
             saldo_movement,saldo_invoice=latest_movement_and_invoice(c,r["id"],"saldo")
@@ -17985,7 +17986,8 @@ class App(BaseHTTPRequestHandler):
             # Pratica senza TOTALE D: pagando su D l'acconto chiede il prezzo
             # concordato in D, il saldo avvisa che diventera' il Totale D.
             agreed_d_html=""
-            if offer_total_d:
+            own_w=money_value(movement["amount"]) if movement and movement["payment_channel"]=="W" else 0.0
+            if not practice_has_total_d and paid_w-own_w<=0.005:
                 agreed_hidden="" if channel_value=="D" else "hidden"
                 if kind=="acconto":
                     agreed_d_html=f'''<div class="field full" data-macroarea-agreed-d {agreed_hidden}><label>Totale D concordato €</label><input name="{kind}_totale_d_concordato" inputmode="decimal" pattern="[0-9]+([,.][0-9]{{1,2}})?" title="Solo numeri, es. 330,00" placeholder="es. 330,00" {"required" if channel_value=="D" else ""}><p class="payment-agreed-d-note">La pratica non ha ancora un totale D: indica il prezzo concordato in D. Diventa il TOTALE D della pratica.</p></div>'''
@@ -21752,15 +21754,22 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
         # circuito: con un pagamento gia' registrato su W (pagamento diviso,
         # es. acconto W con fattura + saldo D) resta tutto come prima, per
         # scelta esplicita dell'utente.
+        # Il pagamento che si sta correggendo (stessa macroarea, senza
+        # force_new) non conta come "gia' pagato su W": spostare un saldo W
+        # gia' registrato su D con un altro importo e' un cambio completo di
+        # circuito (richiesta esplicita dell'utente, 20/11/2026: W 280 -> D 230
+        # deve dare TOTALE D 230, non lasciare il W da riscuotere).
+        existing_movement,existing_invoice=latest_movement_and_invoice(c,pid,macroarea)
+        own_w_amount=(money_value(existing_movement["amount"]) if existing_movement and not force_new and not is_extra
+                      and existing_movement["payment_channel"]=="W" else 0.0)
         needs_total_d=(channel=="D" and not is_extra and money_value(practice["total_text"])<=0
-                       and channel_paid_amount(c,pid,"W")<=0.005)
+                       and channel_paid_amount(c,pid,"W")-own_w_amount<=0.005)
         agreed_d=round(money_value(agreed_total_d),2) if agreed_total_d else 0.0
         if needs_total_d and macroarea=="acconto":
             if agreed_d<=0:
                 return "Indica il Totale D concordato con il cliente: la pratica non ha ancora un totale sul circuito D."
             if agreed_d+0.005<amount:
                 return "Il Totale D concordato non può essere inferiore all'acconto."
-        existing_movement,existing_invoice=latest_movement_and_invoice(c,pid,macroarea)
         if invoice_number:
             conflict=self.invoice_conflict(c,invoice_number,exclude_id=pid,exclude_movement_invoice_id=existing_invoice["id"] if existing_invoice else None)
             if conflict:

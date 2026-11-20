@@ -127,7 +127,9 @@ class PaymentCircuitSwitchTests(unittest.TestCase):
         pid = self.w_practice("CR-SPLIT")
         self.assertEqual(self.pay(pid, "acconto", "100", "W")[1], 200)
         _, page = self.summary(pid)
-        self.assertNotIn('name="acconto_totale_d_concordato"', page)
+        # Il saldo non propone il Totale D (c'e' gia' un pagamento su W).
+        # L'acconto si': spostarlo su D sarebbe un cambio completo di
+        # circuito (vedi test_correcting_*, richiesta del 20/11/2026).
         self.assertNotIn("il TOTALE D diventa quanto incassato su D", page)
         self.assertEqual(self.pay(pid, "saldo", "200", "D")[1], 200)
         practice = self.row(pid)
@@ -135,6 +137,45 @@ class PaymentCircuitSwitchTests(unittest.TestCase):
         self.assertEqual((practice["deposit"], practice["remaining_balance"], practice["deposit_final"], practice["payment_status"]),
                          ("100.00", "300.00", "200.00", "Pagato"))
         self.assertEqual(self.balance(pid), [("W", 10000), ("D", 20000)])
+
+    def w280_practice(self, number):
+        pid = self.w_practice(number)
+        with app.db() as conn:
+            conn.execute("UPDATE practices SET price_cremation='280',total_service='280',remaining_balance='280' WHERE id=?", (pid,))
+        return pid
+
+    def test_correcting_a_w_saldo_into_a_new_amount_on_d_becomes_the_total_d(self):
+        # Esempio dell'utente (20/11/2026): pratica con Totale W 280; dalla
+        # finestra Pagamento del riepilogo l'incasso diventa 230 su D. Vale
+        # come vero incasso 230 D: TOTALE D 230 nella pratica, bilanci D 230,
+        # niente W 280 rimasto da riscuotere.
+        pid = self.w280_practice("CR-W280")
+        self.assertEqual(self.pay(pid, "saldo", "280", "W", token="prima")[1], 200)
+        _, page = self.summary(pid)
+        self.assertIn("il TOTALE D diventa quanto incassato su D", page)
+        self.assertEqual(self.pay(pid, "saldo", "230", "D", token="dopo")[1], 200)
+        practice = self.row(pid)
+        self.assertEqual((practice["total_text"], practice["deposit"], practice["deposit_final"], practice["remaining_final"], practice["payment_status"]),
+                         ("230.00", "0.00", "230.00", "0.00", "Pagato"))
+        self.assertEqual(self.balance(pid), [("W", 28000), ("W", -28000), ("D", 23000)])
+        self.assertEqual(self.summary(pid)[0], ("Totale pagato", "D", "€ 230,00"))
+        from balance_service import BalanceFilters, get_outstanding_balances
+        with app.db() as conn:
+            outstanding = [row for row in get_outstanding_balances(conn, filters=BalanceFilters(date_to="2099-12-31")) if row.practice_id == pid]
+        self.assertEqual(outstanding, [])
+
+    def test_correcting_a_w_acconto_onto_d_asks_the_agreed_total_d(self):
+        pid = self.w280_practice("CR-ACC")
+        self.assertEqual(self.pay(pid, "acconto", "100", "W", token="prima")[1], 200)
+        _, page = self.summary(pid)
+        self.assertIn('name="acconto_totale_d_concordato"', page)
+        response, status = self.pay(pid, "acconto", "100", "D", token="dopo")
+        self.assertEqual(status, 400)
+        self.assertIn("Totale D concordato", response["error"])
+        self.assertEqual(self.pay(pid, "acconto", "100", "D", agreed="230", token="dopo2")[1], 200)
+        practice = self.row(pid)
+        self.assertEqual((practice["total_text"], practice["deposit_final"], practice["remaining_final"], practice["payment_status"]),
+                         ("230.00", "100.00", "130.00", "Acconto"))
 
     def test_extra_payment_on_d_does_not_invent_a_total_d(self):
         pid = self.w_practice()
