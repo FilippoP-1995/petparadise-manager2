@@ -8566,6 +8566,11 @@ class PetParadiseTests(unittest.TestCase):
         # sull'orario di inizio si passa da soli all'orario di fine.
         self.assertIn("function ppmFocusEndTimeAfterStart(input,ev)",app.APP_JS)
         self.assertIn("if(ev)ppmFocusEndTimeAfterStart(input,ev);",app.APP_JS)
+        # 21/11/2026: su iPhone la spunta chiude la tastiera e non si puo'
+        # riaprirla da codice; si passa alla fine con l'ultima cifra
+        # dell'inizio, mentre la tastiera e' ancora aperta.
+        self.assertIn("if(input.name==='start_time'&&input.dataset.timeComplete==='1')",app.APP_JS)
+        self.assertIn("function ppmMoveToEndTime(input)",app.APP_JS)
         with app.db() as conn:
             admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
         rendered=[]

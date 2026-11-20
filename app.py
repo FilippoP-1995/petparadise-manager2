@@ -7350,7 +7350,13 @@ function calendarInitTimeWheel(wheel){if(!wheel||wheel.dataset.ready)return;whee
     if(column.dataset.wheelPart==='minute')wheel.hidden=true;
   },90);},{passive:true}));}
 function calendarTimeRenderDigits(input,digits){digits=String(digits||'').replace(/\D/g,'').slice(0,4);input.dataset.timeDigits=digits;input.dataset.timeEditing='1';input.dataset.timeComplete=digits.length===4?'1':'0';input.value=digits.length<=2?digits:digits.slice(0,2)+':'+digits.slice(2);try{input.setSelectionRange(input.value.length,input.value.length);}catch(_error){}if(digits.length===4){const hour=Number(digits.slice(0,2)),minute=Number(digits.slice(2));if(hour<24&&minute<60)calendarSyncTimeWheel(input,true);}}
-function calendarTimeBeforeInput(input,event){if(!event)return;const type=event.inputType||'';if(type==='deleteContentBackward'){event.preventDefault();let digits=(input.dataset.timeEditing==='1'?input.dataset.timeDigits:input.value.replace(/\D/g,'')).slice(0,-1);calendarTimeRenderDigits(input,digits);return;}if(!type.startsWith('insert')||!event.data)return;const incoming=(event.data.match(/\d/g)||[]).join('');if(!incoming)return;event.preventDefault();const selected=input.selectionStart!==input.selectionEnd;let digits=(input.dataset.timeEditing==='1'&&!selected?input.dataset.timeDigits||'':'');for(const digit of incoming){if(digits.length>=4)digits='';digits+=digit;}calendarTimeRenderDigits(input,digits);}
+function calendarTimeBeforeInput(input,event){if(!event)return;const type=event.inputType||'';if(type==='deleteContentBackward'){event.preventDefault();let digits=(input.dataset.timeEditing==='1'?input.dataset.timeDigits:input.value.replace(/\D/g,'')).slice(0,-1);calendarTimeRenderDigits(input,digits);return;}if(!type.startsWith('insert')||!event.data)return;const incoming=(event.data.match(/\d/g)||[]).join('');if(!incoming)return;event.preventDefault();const selected=input.selectionStart!==input.selectionEnd;let digits=(input.dataset.timeEditing==='1'&&!selected?input.dataset.timeDigits||'':'');for(const digit of incoming){if(digits.length>=4)digits='';digits+=digit;}calendarTimeRenderDigits(input,digits);
+  // Orario di inizio completo (4 cifre valide): si passa subito alla fine
+  // mentre la tastiera e' ancora aperta, cosi' iPhone la lascia aperta sul
+  // nuovo campo (richiesta esplicita dell'utente, 21/11/2026: con la sola
+  // spunta iOS non permette di riaprire la tastiera da codice).
+  if(input.name==='start_time'&&input.dataset.timeComplete==='1'){const h=Number(digits.slice(0,2)),m=Number(digits.slice(2));if(h<24&&m<60)ppmMoveToEndTime(input);}
+}
 function calendarTimeInput(input){if(input.dataset.timeEditing==='1')return;let digits=input.value.replace(/\D/g,'').slice(0,4);input.dataset.timeDigits=digits;input.dataset.timeComplete='0';if(digits.length===4){const hour=Number(digits.slice(0,2)),minute=Number(digits.slice(2));if(hour<24&&minute<60){input.value=`${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}`;input.dataset.timeComplete='1';calendarSyncTimeWheel(input,true);}}}
 function calendarTimeFocus(input){document.querySelectorAll('[data-time-wheel]').forEach(wheel=>{if(!input.closest('.calendar-datetime-row').contains(wheel))wheel.hidden=true;});input.dataset.timeEditing='0';input.dataset.timeDigits=input.value.replace(/\D/g,'').slice(0,4);const wheel=input.closest('.calendar-datetime-row')?.querySelector('[data-time-wheel]');if(wheel){calendarInitTimeWheel(wheel);wheel.hidden=false;calendarSyncTimeWheel(input,false);}}
 // Orario di inizio confermato chiudendo la tastiera (spunta/"Fine" di iOS):
@@ -7360,14 +7366,18 @@ function calendarTimeFocus(input){document.querySelectorAll('[data-time-wheel]')
 // nulla. La fine continua a seguire l'inizio (ppmInitEventKeepDuration),
 // perche' il "change" dell'inizio arriva prima di questo spostamento.
 document.addEventListener('pointerdown',function(e){window.__ppmLastPointerAt=Date.now();},true);
-function ppmFocusEndTimeAfterStart(input,ev){
-  if(!input||input.name!=='start_time'||!input.value||!input.form)return false;
+function ppmEndTimeTarget(input){
+  if(!input||input.name!=='start_time'||!input.form)return null;
   const end=input.form.elements['end_time'];
-  if(!end||end===input||end.disabled||end.closest('[hidden]'))return false;
+  if(!end||end===input||end.disabled||end.closest('[hidden]'))return null;
+  return end;
+}
+function ppmMoveToEndTime(input){const end=ppmEndTimeTarget(input);if(!end)return false;end.focus();try{end.setSelectionRange(0,end.value.length);}catch(_error){}return true;}
+function ppmFocusEndTimeAfterStart(input,ev){
+  if(!input||!input.value||!ppmEndTimeTarget(input))return false;
   if(ev&&ev.relatedTarget)return false;
   if(Date.now()-(window.__ppmLastPointerAt||0)<700)return false;
-  end.focus();
-  return true;
+  return ppmMoveToEndTime(input);
 }
 document.addEventListener('focusout',function(e){const t=e.target;if(t&&t.type==='time'&&t.name==='start_time'&&t.form&&t.form.hasAttribute('data-event-keep-duration'))ppmFocusEndTimeAfterStart(t,e);});
 function calendarTimeBlur(input,ev){
