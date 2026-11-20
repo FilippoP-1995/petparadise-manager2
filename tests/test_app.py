@@ -5342,7 +5342,7 @@ class PetParadiseTests(unittest.TestCase):
         # restare intoccata: un tap sulla sola ora, senza aver mai digitato,
         # non deve chiudere finche' l'utente non sceglie anche il minuto).
         js = app.APP_JS
-        start = js.index("function calendarTimeBlur(input){")
+        start = js.index("function calendarTimeBlur(input,ev){")
         end = js.index("function calendarOpenTimePicker(")
         body = js[start:end]
         self.assertIn("const wasEditingManually=input.dataset.timeEditing==='1';", body)
@@ -6443,8 +6443,8 @@ class PetParadiseTests(unittest.TestCase):
         # listener on start_time could run before (or never see) the final
         # formatted value, breaking "end follows start" for typed times.
         js = app.APP_JS
-        self.assertIn("function calendarTimeBlur(input){", js)
-        blur_start = js.index("function calendarTimeBlur(input){")
+        self.assertIn("function calendarTimeBlur(input,ev){", js)
+        blur_start = js.index("function calendarTimeBlur(input,ev){")
         blur_end = js.index("function calendarOpenTimePicker(")
         blur_body = js[blur_start:blur_end]
         self.assertIn("input.dispatchEvent(new Event('change',{bubbles:true}))", blur_body)
@@ -8534,6 +8534,46 @@ class PetParadiseTests(unittest.TestCase):
         self.assertEqual(automatic["provenance"],"P");self.assertEqual(automatic_origin["provenance"],"P");self.assertEqual(manual["provenance"],"F")
         self.assertIn('data-provenance="P"',self.handler.fields_html())
         self.assertIn("setProvenanceFromVeterinarian",app.APP_JS)
+
+    def test_delivery_zone_next_to_provenance_defaults_to_it_and_is_required(self):
+        # Richiesta esplicita dell'utente (20/11/2026): ZONA RICONSEGNA accanto a
+        # PROVENIENZA, stesse zone + DA DECIDERE, di default uguale alla
+        # Provenienza ma modificabile, obbligatoria.
+        html=self.handler.fields_html()
+        self.assertLess(html.index('id="originProvenanceBox"'),html.index('id="originDeliveryZoneBox"'))
+        self.assertLess(html.index('id="originDeliveryZoneBox"'),html.index('id="originModeBox"'))
+        self.assertIn('<label>Zona riconsegna</label><select name="delivery_zone"',html)
+        for option in ('<option value="L" >L · Livorno</option>','<option value="P" >P · Pisa</option>','<option value="DA DECIDERE" >DA DECIDERE</option>'):
+            self.assertIn(option,html)
+        self.assertEqual(self.handler.normalized_fields({"provenance":"E"})["delivery_zone"],"E")
+        self.assertEqual(self.handler.normalized_fields({"provenance":"E","delivery_zone":"DA DECIDERE"})["delivery_zone"],"DA DECIDERE")
+        self.assertEqual(self.handler.normalized_fields({"provenance":"E","delivery_zone":"F"})["delivery_zone"],"F")
+        self.assertEqual(self.handler.normalized_fields({"provenance":"E","delivery_zone":"X"})["delivery_zone"],"E")
+        self.assertIn("Zona riconsegna",self.handler.validation_error(self.handler.normalized_fields({})))
+        self.assertNotIn("Zona riconsegna",self.handler.validation_error(self.handler.normalized_fields({"provenance":"L"})))
+        # pratica esistente senza zona: il modulo la propone uguale alla provenienza
+        html=self.handler.fields_html({"provenance":"V","delivery_zone":""})
+        self.assertIn('<option value="V" selected>V · Viareggio</option>',html.split('name="delivery_zone"')[1].split("</select>")[0])
+        # zona scelta diversa dalla provenienza: non segue piu' la provenienza
+        html=self.handler.fields_html({"provenance":"V","delivery_zone":"DA DECIDERE"})
+        self.assertIn('name="delivery_zone" onchange="this.dataset.touched=\'1\'" data-touched="1"',html)
+        self.assertIn("function ppmSyncDeliveryZone()",app.APP_JS)
+        with app.db() as conn:
+            self.assertIn("delivery_zone",{row[1] for row in conn.execute("PRAGMA table_info(practices)")})
+
+    def test_event_start_time_moves_to_end_time_when_the_keyboard_closes(self):
+        # Richiesta esplicita dell'utente (20/11/2026): chiusa la tastiera
+        # sull'orario di inizio si passa da soli all'orario di fine.
+        self.assertIn("function ppmFocusEndTimeAfterStart(input,ev)",app.APP_JS)
+        self.assertIn("if(ev)ppmFocusEndTimeAfterStart(input,ev);",app.APP_JS)
+        with app.db() as conn:
+            admin=conn.execute("SELECT * FROM users WHERE username='admin'").fetchone()
+        rendered=[]
+        self.handler.send_html=lambda html,*a:rendered.append(html)
+        self.handler.path="/calendario/nuovo"
+        self.handler.calendar_event_form(admin)
+        self.assertIn('name="start_time" data-time-entry',rendered[-1])
+        self.assertIn('onblur="calendarTimeBlur(this,event)"',rendered[-1])
 
     def test_catalog_flags_are_mutually_exclusive_from_form_and_summary(self):
         with app.db() as conn:
