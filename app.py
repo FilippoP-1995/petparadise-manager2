@@ -13837,25 +13837,7 @@ class App(BaseHTTPRequestHandler):
                     calendar_sync_children(c,event_id,animals,estimates,stamp)
                     if old_animals!=animals:calendar_add_history(c,event_id,user["id"],"Modifica animali",json.dumps(old_animals,ensure_ascii=False),json.dumps(animals,ensure_ascii=False),stamp)
                     if old_estimates!=estimates:calendar_add_history(c,event_id,user["id"],"Modifica preventivo",json.dumps(old_estimates,ensure_ascii=False),json.dumps(estimates,ensure_ascii=False),stamp)
-                    kind="calendar_event_cancelled" if data["event_status"]=="Annullato" and old["event_status"]!="Annullato" else "calendar_event_updated"
-                    # Contenuto del banner ristretto a quanto serve
-                    # all'operatore per capire l'aggiornamento senza aprire
-                    # il gestionale (richiesta esplicita dell'utente): stesso
-                    # formato usato alla creazione, con l'aggiunta del nuovo
-                    # stato quando e' proprio quello che e' cambiato.
-                    if data["event_type"] in ("Ritiro","Ritiro in sede"):
-                        upd_title=calendar_push_location_title(data["event_type"],data["zone"],data["destination_site"])
-                        upd_text=calendar_pickup_push_text(animals,data["start_at"],data["end_at"])
-                        if data["event_status"]!=old["event_status"]:
-                            status_line=f"Stato: {data['event_status'].upper()}"
-                            upd_text=f"{upd_text}\n{status_line}" if upd_text else status_line
-                    elif data["event_type"] in ("Riconsegna","Riconsegna in sede"):
-                        upd_title=calendar_push_location_title(data["event_type"],data["zone"],data["destination_site"])
-                        upd_text=calendar_delivery_push_text(data["animal_name"],data["payment_status"],data["start_at"],data["end_at"])
-                    else:
-                        upd_title=f"{event_type_emoji(data['event_type'])} Evento calendario aggiornato"
-                        upd_text=calendar_appointment_push_text(data["title"],data["start_at"],data["end_at"],data["all_day"])
-                    emit_notification(c,kind,upd_title,upd_text,actor_user_id=user["id"],payload={"url":f"/calendario/{event_id}"},db_path=DB_PATH)
+                    self.calendar_emit_event_updated(c,user,event_id,old["event_status"])
                 else:
                     created_now=True
                     if user["role"]!="admin": data["operator_name"]=user["display_name"]
@@ -13881,15 +13863,7 @@ class App(BaseHTTPRequestHandler):
                     emit_notification(c,"calendar_event_created",new_title,new_text,actor_user_id=user["id"],payload={"url":f"/calendario/{event_id}"},db_path=DB_PATH)
                 if linked_practice_id and data["event_type"] in ("Riconsegna","Riconsegna in sede"):
                     c.execute("UPDATE calendar_events SET linked_practice_id=? WHERE id=?",(linked_practice_id,event_id))
-                if data["event_status"] in ("Annullato","Completato"):
-                    c.execute("UPDATE calendar_event_notifications SET status='annullato',error='' WHERE event_id=? AND status IN ('programmato','in_invio','fallito')",(event_id,))
-                else:
-                    try:
-                        event_start=datetime.fromisoformat(data["start_at"]).replace(tzinfo=ROME_TZ)
-                        current_time=datetime.now(ROME_TZ)
-                    except ValueError:event_start=current_time=datetime.now(ROME_TZ)
-                    if event_start>current_time:schedule_event_notifications(c,event_id,data["start_at"],stamp,data["reminder_offsets"],data["all_day"])
-                    else:c.execute("UPDATE calendar_event_notifications SET status='annullato',error='' WHERE event_id=? AND status IN ('programmato','in_invio','fallito')",(event_id,))
+                self.calendar_reschedule_event_notifications(c,event_id,stamp)
         except Exception:
             print("[CALENDAR_SAVE] errore salvataggio evento\n"+traceback.format_exc(),flush=True)
             return self.calendar_event_form(user,event_id,form,"Non è stato possibile salvare l’evento. Riprova senza chiudere questa schermata.")
@@ -14209,17 +14183,70 @@ class App(BaseHTTPRequestHandler):
         body=f'''{created_animation}<main class="wrap calendar-wrap calendar-detail-v2">{error_html}{saved_html}{header}{quick_actions}<nav class="calendar-tabs">{tabs}</nav><div>{panel}</div></main>'''
         self.send_html(layout(re.sub(r'^APPUNTAMENTO\b','PROMEMORIA',event["title"],flags=re.I) if event["event_type"]=='Appuntamento' else event["title"],body,user))
 
+    def calendar_emit_event_updated(self,c,user,event_id,old_status):
+        """Notifica "evento modificato" (o "annullato"), identica per la
+        modifica completa dell'evento e per le modifiche rapide dal
+        riepilogo (richiesta esplicita dell'utente, 20/11/2026). Contenuto
+        del banner ristretto a quanto serve all'operatore per capire
+        l'aggiornamento senza aprire il gestionale: stesso formato usato alla
+        creazione, con l'aggiunta del nuovo stato quando e' proprio quello
+        che e' cambiato."""
+        ev=c.execute("SELECT * FROM calendar_events WHERE id=?",(event_id,)).fetchone()
+        if not ev:return
+        status=ev["event_status"] or ""
+        kind="calendar_event_cancelled" if status=="Annullato" and old_status!="Annullato" else "calendar_event_updated"
+        if ev["event_type"] in ("Ritiro","Ritiro in sede"):
+            animals=[dict(row) for row in c.execute("SELECT name,species,weight,cremation_type,notes FROM calendar_event_animals WHERE event_id=? ORDER BY id",(event_id,))]
+            title=calendar_push_location_title(ev["event_type"],ev["zone"],ev["destination_site"])
+            text=calendar_pickup_push_text(animals,ev["start_at"],ev["end_at"])
+            if status!=(old_status or ""):
+                status_line=f"Stato: {status.upper()}"
+                text=f"{text}\n{status_line}" if text else status_line
+        elif ev["event_type"] in ("Riconsegna","Riconsegna in sede"):
+            title=calendar_push_location_title(ev["event_type"],ev["zone"],ev["destination_site"])
+            text=calendar_delivery_push_text(ev["animal_name"],ev["payment_status"],ev["start_at"],ev["end_at"])
+        else:
+            title=f"{event_type_emoji(ev['event_type'])} Evento calendario aggiornato"
+            text=calendar_appointment_push_text(ev["title"],ev["start_at"],ev["end_at"],ev["all_day"])
+        emit_notification(c,kind,title,text,actor_user_id=user["id"],payload={"url":f"/calendario/{event_id}"},db_path=DB_PATH)
+
+    def calendar_reschedule_event_notifications(self,c,event_id,stamp):
+        """Promemoria dell'evento (30 minuti e "Ricorda") riallineati a stato
+        e orario attuali: stessa regola per modifica completa e rapida."""
+        ev=c.execute("SELECT * FROM calendar_events WHERE id=?",(event_id,)).fetchone()
+        if not ev:return
+        cancel="UPDATE calendar_event_notifications SET status='annullato',error='' WHERE event_id=? AND status IN ('programmato','in_invio','fallito')"
+        if ev["event_status"] in ("Annullato","Completato"):
+            c.execute(cancel,(event_id,));return
+        try:future=datetime.fromisoformat(ev["start_at"]).replace(tzinfo=ROME_TZ)>datetime.now(ROME_TZ)
+        except (TypeError,ValueError):future=False
+        if future:schedule_event_notifications(c,event_id,ev["start_at"],stamp,ev["reminder_offsets"],ev["all_day"])
+        else:c.execute(cancel,(event_id,))
+
+    def calendar_event_snapshot(self,c,event_id):
+        ev=c.execute("SELECT * FROM calendar_events WHERE id=?",(event_id,)).fetchone()
+        if not ev:return None
+        data={k:ev[k] for k in ev.keys() if k not in ("updated_at","updated_by")}
+        data["_animals"]=[tuple(r) for r in c.execute("SELECT name,species,weight,cremation_type,notes FROM calendar_event_animals WHERE event_id=? ORDER BY id",(event_id,))]
+        data["_estimates"]=[tuple(r) for r in c.execute("SELECT description,amount,preset,urn_catalog_id FROM calendar_event_estimate_items WHERE event_id=? ORDER BY sort_order,id",(event_id,))]
+        return data
+
+    # Modifiche rapide dal riepilogo evento che valgono come una modifica
+    # dell'evento a tutti gli effetti (notifica, promemoria), come "Modifica
+    # evento" (richiesta esplicita dell'utente, 20/11/2026).
+    CALENDAR_QUICK_EDIT_ACTIONS=("stato","zona","operatore","note","data-ora","tipo","luogo","cliente","animali","preventivo-voci","preventivo")
+
     def calendar_event_action(self,user,event_id,action):
         form=self.form();stamp=now()
         with db() as c:
             event=c.execute("SELECT * FROM calendar_events WHERE id=?",(event_id,)).fetchone()
             if not event:return self.send_error(404)
+            before=self.calendar_event_snapshot(c,event_id) if action in self.CALENDAR_QUICK_EDIT_ACTIONS else None
             if action=="stato":
                 allowed=PICKUP_STATUSES if event["event_type"] in ("Ritiro","Ritiro in sede") else DELIVERY_STATUSES if event["event_type"] in ("Riconsegna","Riconsegna in sede") else ()
                 status=form.get("status","")
                 if status not in allowed:return self.calendar_event_detail(user,event_id,error="Stato non valido.")
                 c.execute("UPDATE calendar_events SET event_status=?,updated_at=?,updated_by=? WHERE id=?",(status,stamp,user["id"],event_id));calendar_add_history(c,event_id,user["id"],"Cambio stato",event["event_status"],status,stamp)
-                kind="calendar_event_cancelled" if status=="Annullato" else "calendar_event_updated";emit_notification(c,kind,f"{event_type_emoji(event['event_type'])} Stato evento aggiornato",f'{event["title"]}: {status}',actor_user_id=user["id"],payload={"url":f"/calendario/{event_id}"},db_path=DB_PATH)
             elif action=="zona":
                 zone=form.get("zone","").strip()[:120]
                 c.execute("UPDATE calendar_events SET zone=?,updated_at=?,updated_by=? WHERE id=?",(zone,stamp,user["id"],event_id));calendar_add_history(c,event_id,user["id"],"Modifica zona",event["zone"] or "",zone,stamp)
@@ -14245,12 +14272,6 @@ class App(BaseHTTPRequestHandler):
                 c.execute("UPDATE calendar_events SET start_at=?,end_at=?,all_day=?,updated_at=?,updated_by=? WHERE id=?",
                           (data["start_at"],data["end_at"],data["all_day"],stamp,user["id"],event_id))
                 calendar_add_history(c,event_id,user["id"],"Modifica data e ora",f'{event["start_at"]} → {event["end_at"]}',f'{data["start_at"]} → {data["end_at"]}',stamp)
-                # Promemoria (30 minuti e "Ricorda") spostati insieme all'evento.
-                if event["event_status"] not in ("Annullato","Completato"):
-                    try:moved_future=datetime.fromisoformat(data["start_at"]).replace(tzinfo=ROME_TZ)>datetime.now(ROME_TZ)
-                    except ValueError:moved_future=False
-                    if moved_future:schedule_event_notifications(c,event_id,data["start_at"],stamp,event["reminder_offsets"],data["all_day"])
-                    else:c.execute("UPDATE calendar_event_notifications SET status='annullato',error='' WHERE event_id=? AND status IN ('programmato','in_invio','fallito')",(event_id,))
             elif action=="tipo":
                 # Stessa idea di data-ora: si riusa normalize_event cambiando
                 # solo event_type, cosi' la validazione (zona/sede/animale
@@ -14356,6 +14377,12 @@ class App(BaseHTTPRequestHandler):
                 if form.get("confirm")!="SCOLLEGA":return self.send_error(400,"Conferma mancante")
                 c.execute("UPDATE calendar_events SET linked_practice_id=NULL,updated_at=?,updated_by=? WHERE id=?",(stamp,user["id"],event_id))
                 calendar_add_history(c,event_id,user["id"],"Scollegamento pratica",str(event["linked_practice_id"] or ""),"",stamp)
+            # Modifica rapida = modifica dell'evento a tutti gli effetti
+            # (promemoria riallineati e notifica), solo se qualcosa e'
+            # davvero cambiato.
+            if before is not None and self.calendar_event_snapshot(c,event_id)!=before:
+                self.calendar_reschedule_event_notifications(c,event_id,stamp)
+                self.calendar_emit_event_updated(c,user,event_id,event["event_status"])
         target=safe_return_path(form.get("return_to") or self.headers.get("Referer"),f"/calendario/{event_id}")
         if action in ("stato","zona","operatore","note","data-ora","preventivo","preventivo-voci","tipo","luogo","cliente","animali"):
             target=f"{target}{'&' if '?' in target else '?'}saved={action}"

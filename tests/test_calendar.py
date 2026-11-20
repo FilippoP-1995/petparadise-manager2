@@ -724,6 +724,60 @@ console.log(JSON.stringify(out));
         self.assertEqual(title, "📅 Evento calendario aggiornato")
         self.assertEqual(text, "RIUNIONE FORNITORE\n16/07/2026 14:00")
 
+    def quick(self, event_id, action, form):
+        self.handler.form = lambda: form
+        with patch("app.emit_notification", return_value=[]) as mock_emit:
+            self.handler.calendar_event_action(self.admin, event_id, action)
+        return [(call.args[1], call.args[2], call.args[3]) for call in mock_emit.call_args_list]
+
+    def test_quick_edits_from_the_summary_notify_like_a_full_edit(self):
+        # Richiesta esplicita dell'utente (20/11/2026): una modifica fatta dal
+        # riepilogo evento vale come "Modifica evento" a tutti gli effetti,
+        # con la stessa notifica.
+        self.handler.send_html = lambda *a, **k: None
+        event_id = self.save(self.event_form("Ritiro", event_status="Da ritirare", zone="Livorno",
+            animals_json=json.dumps([{"name": "Nedo", "species": "Gatto", "weight": "4", "cremation_type": "Singola", "notes": ""}])))
+        self.handler.form = lambda: self.event_form("Ritiro", event_status="Da ritirare", zone="Livorno",
+            animals_json=json.dumps([{"name": "Nedo", "species": "Gatto", "weight": "4", "cremation_type": "Singola", "notes": ""}]))
+        with patch("app.emit_notification", return_value=[]) as mock_emit:
+            self.handler.save_calendar_event(self.admin, event_id)
+        full = (mock_emit.call_args.args[1], mock_emit.call_args.args[2], mock_emit.call_args.args[3])
+        self.assertEqual(full[0], "calendar_event_updated")
+        # nota cambiata dal riepilogo: stessa notifica della modifica completa
+        self.assertEqual(self.quick(event_id, "note", {"notes": "Citofono rotto"}), [full])
+        # stessa nota salvata di nuovo: nessun cambiamento, nessuna notifica
+        self.assertEqual(self.quick(event_id, "note", {"notes": "Citofono rotto"}), [])
+        for action, form in (("zona", {"zone": "Empoli"}), ("operatore", {"operator_name": "Alessio"}),
+                             ("cliente", {"client_first_name": "Piero", "client_last_name": "Orlandini", "client_phone": "333"})):
+            sent = self.quick(event_id, action, form)
+            self.assertEqual([kind for kind, _, _ in sent], ["calendar_event_updated"], action)
+        self.assertEqual(self.quick(event_id, "zona", {"zone": "Pisa"})[0][1], "Ritiro Pisa")
+        # orario cambiato: notifica con il nuovo orario e promemoria spostato
+        sent = self.quick(event_id, "data-ora", {"start_date": "2099-07-16", "start_time": "14:00", "end_date": "2099-07-16", "end_time": "15:00"})
+        self.assertIn("16/07/2099 14:00", sent[0][2])
+        with app.db() as conn:
+            planned = conn.execute("SELECT scheduled_at FROM calendar_event_notifications WHERE event_id=? AND notification_type='calendar_reminder_30m' AND status='programmato'", (event_id,)).fetchone()
+        self.assertEqual(planned["scheduled_at"], "2099-07-16T13:30:00")
+        # stato: come la modifica completa (riga "Stato:" e annullamento)
+        sent = self.quick(event_id, "stato", {"status": "Ritirato"})
+        self.assertEqual(sent[0][0], "calendar_event_updated")
+        self.assertTrue(sent[0][2].endswith("Stato: RITIRATO"))
+        sent = self.quick(event_id, "stato", {"status": "Annullato"})
+        self.assertEqual(sent[0][0], "calendar_event_cancelled")
+        with app.db() as conn:
+            self.assertIsNone(conn.execute("SELECT 1 FROM calendar_event_notifications WHERE event_id=? AND status='programmato'", (event_id,)).fetchone())
+
+    def test_quick_edits_on_a_delivery_and_animals_notify_too(self):
+        self.handler.send_html = lambda *a, **k: None
+        event_id = self.save(self.event_form("Riconsegna", animal_name="Nedo", payment_status="Pagato", payment_amount="350"))
+        sent = self.quick(event_id, "note", {"notes": "Chiamare prima"})
+        self.assertEqual([kind for kind, _, _ in sent], ["calendar_event_updated"])
+        self.assertIn("Nedo", sent[0][2])
+        pickup = self.save(self.event_form("Ritiro"))
+        sent = self.quick(pickup, "animali", {"animals_json": json.dumps([{"name": "Milo", "species": "Cane", "weight": "20", "cremation_type": "Singola", "notes": ""}])})
+        self.assertEqual([kind for kind, _, _ in sent], ["calendar_event_updated"])
+        self.assertIn("Cane", sent[0][2])
+
     def test_promemoria_all_day_notification_says_tutto_il_giorno_not_a_fake_time(self):
         self.handler.form = lambda: self.event_form("Appuntamento", title="FERIE", all_day="1", start_date="2026-07-15", end_date="2026-07-15")
         with patch("app.emit_notification", return_value=[]) as mock_emit:
