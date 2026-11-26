@@ -2234,6 +2234,9 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .light-theme .voucher-summary.has-open{background:#f0fdf4;border-color:#22c55e}.light-theme .voucher-summary b,.light-theme .voucher-animal{color:#111827}
 .light-theme .voucher-summary.has-open b,.light-theme .voucher-group-title{color:#15803d}.light-theme .voucher-card.voucher-open{border-left-color:#22c55e}
 .light-theme .voucher-summary-num{background:#e2e8f0;color:#334155}.light-theme .voucher-used .voucher-animal{color:#64748b}
+.cremation-practice-match{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:6px 0 0;padding:6px 10px;border:1px solid #22c55e66;border-radius:12px;background:#052e1680;color:#bbf7d0;font-size:13px}
+.cremation-practice-match b{color:#4ade80}.cremation-practice-match .btn{min-height:34px;padding:4px 14px}
+.light-theme .cremation-practice-match{background:#f0fdf4;color:#166534}.light-theme .cremation-practice-match b{color:#15803d}
 .light-theme .calendar-appt-title{color:#111827}
 .light-theme .calendar-appt-name{color:#64748b}
 .light-theme .calendar-appt-owner{color:#334155}
@@ -9277,7 +9280,7 @@ def future_pickup_singola_rows(c, today_iso):
     animali di Programma Cremazioni, ed elencati anche nel popup "Aggiungi
     animale al ciclo" (richiesta esplicita dell'utente: dev'essere
     possibile inserirli comunque nel ciclo come prenotazione)."""
-    return c.execute("""SELECT e.id AS event_id,e.start_at,e.client_first_name,e.client_last_name,
+    return c.execute("""SELECT e.id AS event_id,e.start_at,e.client_first_name,e.client_last_name,e.client_phone,
             e.person_company,e.veterinarian_name,a.name AS animal_name,a.species,a.weight
         FROM calendar_events e JOIN calendar_event_animals a ON a.event_id=e.id
         WHERE (e.deleted_at IS NULL OR e.deleted_at='') AND e.event_type IN ('Ritiro','Ritiro in sede')
@@ -9300,6 +9303,51 @@ def unassigned_animal_label(row):
     altrimenti nome e cognome del proprietario o la clinica, e solo in
     mancanza di tutto "Da inserire"."""
     return (row["animal_name"] or "").strip() or future_pickup_owner_label(row) or "Da inserire"
+
+
+def _phone_tail(value):
+    digits=re.sub(r"\D","",str(value or ""))
+    return digits[-9:] if len(digits)>=6 else ""
+
+
+def event_matching_practice(row):
+    """Pratica gia' esistente dello stesso proprietario per un ritiro 'non
+    ancora affidato' (richiesta esplicita dell'utente, 26/11/2026: ritiro in
+    calendario creato prima della pratica, poi pratica nata a parte e mai
+    collegata). Stesso nome e cognome oppure stesso telefono, pratica attiva
+    non gia' collegata a un altro evento, nata da 60 giorni prima del
+    ritiro in poi. Solo un suggerimento: il collegamento lo decide
+    l'operatore con il tasto "Collega"."""
+    keys=row.keys()
+    first=(row["client_first_name"] or "").strip().lower();last=(row["client_last_name"] or "").strip().lower()
+    phone=_phone_tail(row["client_phone"] if "client_phone" in keys else "")
+    if not (first and last) and not phone:return None
+    since=(row["start_at"] or "")[:10]
+    try:since=(date.fromisoformat(since)-timedelta(days=60)).isoformat()
+    except ValueError:since="0000-00-00"
+    with db() as c:
+        candidates=c.execute("""SELECT p.id,p.practice_number,p.animal_name,p.owner_first_name,p.owner_last_name,p.owner_phone,p.owner_phone_2
+            FROM practices p WHERE (p.deleted_at IS NULL OR p.deleted_at='') AND substr(p.created_at,1,10)>=?
+              AND NOT EXISTS(SELECT 1 FROM calendar_events e2 WHERE e2.linked_practice_id=p.id AND (e2.deleted_at IS NULL OR e2.deleted_at=''))
+            ORDER BY p.created_at DESC,p.id DESC""",(since,)).fetchall()
+    for p in candidates:
+        same_name=bool(first and last) and (p["owner_first_name"] or "").strip().lower()==first and (p["owner_last_name"] or "").strip().lower()==last
+        same_phone=bool(phone) and phone in (_phone_tail(p["owner_phone"]),_phone_tail(p["owner_phone_2"]))
+        if same_name or same_phone:return p
+    return None
+
+
+def event_practice_link_html(row):
+    """Avviso + tasto "Collega" per un ritiro 'non ancora affidato' che ha
+    gia' una pratica dello stesso proprietario (vedi event_matching_practice):
+    usa l'azione gia' esistente /calendario/<id>/collega-pratica, che collega
+    l'evento, lo toglie dagli 'non ancora affidati' e, se era prenotato in
+    un ciclo, mette la pratica al suo posto."""
+    if "event_id" not in row.keys() or not row["event_id"]:return ""
+    practice=event_matching_practice(row)
+    if not practice:return ""
+    label=f'{practice["practice_number"]}{" · "+practice["animal_name"] if practice["animal_name"] else ""}'
+    return f'''<form class="cremation-practice-match" method="post" action="/calendario/{row["event_id"]}/collega-pratica" onclick="event.stopPropagation()" onsubmit="event.stopPropagation();this.return_to.value=location.pathname+location.search;return confirm('Collegare questo ritiro alla pratica {esc(practice["practice_number"])}? Non comparirà più tra gli animali non ancora affidati.')"><input type="hidden" name="practice_id" value="{practice["id"]}"><input type="hidden" name="return_to" value=""><span>Pratica trovata: <b>{esc(label)}</b></span><button class="btn ghost" type="submit">Collega</button></form>'''
 
 
 def future_pickup_card_html(row,actionable=False):
@@ -9331,6 +9379,7 @@ def future_pickup_card_html(row,actionable=False):
         <div class="cremation-animal-name cremation-unassigned-name">{esc(unassigned_animal_label(row))}</div>
         <div class="cremation-add-animal-meta">{' · '.join(meta_bits)}</div>
         <div class="cremation-future-pickup-meta"><span class="cremation-status-badge cremation-status-waiting">RITIRO {pickup_label} · {esc(pickup_time)}</span><small>Non ancora affidato</small></div>
+        {'' if actionable else event_practice_link_html(row)}
       </div>
       {add_btn}
     </{close_tag}>'''
@@ -9343,7 +9392,7 @@ def cycle_reservation_rows(c, cycle_ids):
     deve restare riconoscibile che non sono ancora stati affidati."""
     if not cycle_ids:return []
     marks=','.join('?' for _ in cycle_ids)
-    return c.execute(f"""SELECT r.id AS reservation_id,r.cycle_id,e.start_at,e.client_first_name,e.client_last_name,
+    return c.execute(f"""SELECT r.id AS reservation_id,r.cycle_id,e.id AS event_id,e.start_at,e.client_first_name,e.client_last_name,e.client_phone,
             e.person_company,e.veterinarian_name,e.operational_tags,a.name AS animal_name,a.species,a.weight
         FROM cremation_cycle_reservations r
         JOIN calendar_events e ON e.id=r.calendar_event_id
@@ -9402,6 +9451,7 @@ def reserved_cycle_animal_row_html(row):
       <div class="cremation-animal-col"><small>Specie</small>{species_html}</div>
       <div class="cremation-animal-col"><small>Proprietario</small>{owner_html}</div>
       <div class="cremation-animal-col"><small>Ritiro</small>{pickup_html}</div>
+      {event_practice_link_html(row)}
       <div class="cremation-animal-actions"><button type="button" class="cremation-animal-remove" onclick="event.stopPropagation();cremationRemoveReservation(this,{row["reservation_id"]})" aria-label="Rimuovi dal ciclo" title="Rimuovi dal ciclo">{lucide("x")}</button></div>
     </div>'''
 
@@ -15810,6 +15860,7 @@ class App(BaseHTTPRequestHandler):
               <div class="cremation-animal-col"><small>Specie</small><span>{species_html}</span></div>
               <div class="cremation-animal-col"><small>Proprietario</small><span>{owner_html}</span></div>
               <div class="cremation-animal-col"><small>Ritiro</small><span>{esc(date_it(pickup_date))} · {esc(pickup_time)}</span></div>
+              {event_practice_link_html(row)}
             </div>'''
 
         animali_panel_rows=[animali_waiting_row_html(row) for row in waiting]

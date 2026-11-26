@@ -2450,6 +2450,57 @@ class PetParadiseTests(unittest.TestCase):
         self.assertIn("NON ANCORA AFFIDATO", page)
         self.assertIn("cremation-future-pickup-row", page)
 
+    def test_unassigned_pickup_with_existing_practice_of_same_owner_offers_collega(self):
+        # Caso reale dell'utente (26/11/2026): ritiro di Giovanna Nenci messo in
+        # calendario prima, pratica CR-000484 (Sally Ninna) creata a parte e
+        # mai collegata -> nel Programma Cremazioni restava "non ancora
+        # affidato". Ora la riga propone la pratica e il tasto "Collega".
+        view_date = app.rome_now().date()
+        future_date = view_date + timedelta(days=6)
+        with app.db() as conn:
+            admin = conn.execute("SELECT * FROM users WHERE username='admin'").fetchone(); stamp = app.now()
+            event_id = conn.execute(
+                """INSERT INTO calendar_events(event_type,title,client_first_name,client_last_name,client_phone,created_by,created_at,updated_at,event_status,start_at,end_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro", "Ritiro Nenci", "Giovanna", "Nenci", "333 111 2222", admin["id"], stamp, stamp, "Da ritirare", f"{future_date.isoformat()}T11:00:00", f"{future_date.isoformat()}T11:30:00"),
+            ).lastrowid
+            conn.execute("INSERT INTO calendar_event_animals(event_id,name,species,weight,cremation_type,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                         (event_id, "", "Gatto", "2", "Singola", stamp, stamp))
+            other_event = conn.execute(
+                """INSERT INTO calendar_events(event_type,title,client_first_name,client_last_name,client_phone,created_by,created_at,updated_at,event_status,start_at,end_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                ("Ritiro", "Ritiro Rossi", "Mario", "Rossi", "", admin["id"], stamp, stamp, "Da ritirare", f"{future_date.isoformat()}T12:00:00", f"{future_date.isoformat()}T12:30:00"),
+            ).lastrowid
+            conn.execute("INSERT INTO calendar_event_animals(event_id,name,species,weight,cremation_type,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                         (other_event, "Fido", "Cane", "20", "Singola", stamp, stamp))
+            pid = conn.execute(
+                """INSERT INTO practices(practice_number,request_origin,destination_branch,status,service_type,pickup_date,created_at,updated_at,created_by,
+                   animal_name,owner_first_name,owner_last_name,owner_phone) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CR-000484", "Privato", "Livorno", "Ritirato", "Cremazione singola", view_date.isoformat(), stamp, stamp, admin["id"], "Sally Ninna", "GIOVANNA", "nenci", "+39 3331112222"),
+            ).lastrowid
+            row = [r for r in app.future_pickup_singola_rows(conn, view_date.isoformat()) if r["event_id"] == event_id][0]
+            other_row = [r for r in app.future_pickup_singola_rows(conn, view_date.isoformat()) if r["event_id"] == other_event][0]
+        self.assertEqual(app.event_matching_practice(row)["id"], pid)
+        self.assertIsNone(app.event_matching_practice(other_row))
+        rendered = []
+        self.handler.path = f"/programma-cremazioni?data={view_date.isoformat()}&vista=settimana"
+        self.handler.send_html = lambda content, *args: rendered.append(content)
+        self.handler.cremation_schedule(admin)
+        page = rendered[-1]
+        self.assertIn(f'action="/calendario/{event_id}/collega-pratica"', page)
+        self.assertIn("Pratica trovata: <b>CR-000484 · Sally Ninna</b>", page)
+        self.assertNotIn(f'action="/calendario/{other_event}/collega-pratica"', page)
+        # "Collega": l'evento viene collegato e sparisce dai non ancora affidati
+        self.handler.form = lambda: {"practice_id": str(pid), "return_to": "/programma-cremazioni"}
+        self.handler.redirect = lambda path: None
+        with patch("app.emit_notification", return_value=[]):
+            self.handler.calendar_event_action(admin, event_id, "collega-pratica")
+        with app.db() as conn:
+            self.assertEqual(conn.execute("SELECT linked_practice_id FROM calendar_events WHERE id=?", (event_id,)).fetchone()[0], pid)
+            self.assertNotIn(event_id, {r["event_id"] for r in app.future_pickup_singola_rows(conn, view_date.isoformat())})
+        # pratica ormai collegata: non viene piu' proposta per altri ritiri
+        self.assertIsNone(app.event_matching_practice(row))
+
     def test_api_cremation_swap_candidates_includes_future_pickups_as_non_selectable(self):
         cycle_date = app.rome_now().date()
         future_date = cycle_date + timedelta(days=1)
