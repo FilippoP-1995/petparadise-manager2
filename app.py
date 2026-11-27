@@ -71,6 +71,7 @@ from calendar_service import (
 import route_service
 import ai_assistant
 from backup_service import run_database_backup
+import backup_service
 from shift_service import (
     SHIFT_BRANCHES,
     ensure_shift_schema, week_monday as shift_week_monday, week_bounds as shift_week_bounds,
@@ -2233,6 +2234,9 @@ body{background:#172131;color:#e7ecf3;font-weight:400}.top{background:#111a29;bo
 .light-theme .voucher-summary,.light-theme .voucher-card{background:#fff;border-color:#e2e8f0}
 .light-theme .voucher-summary.has-open{background:#f0fdf4;border-color:#22c55e}.light-theme .voucher-summary b,.light-theme .voucher-animal{color:#111827}
 .light-theme .voucher-summary.has-open b,.light-theme .voucher-group-title{color:#15803d}.light-theme .voucher-card.voucher-open{border-left-color:#22c55e}
+.backup-result{display:flex;flex-direction:column;gap:6px;margin:0 0 10px;padding:12px 14px;border:1px solid #334155;border-radius:14px;background:#151d29}
+.backup-result-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.backup-result-main{font-size:16px;font-weight:800}
+.backup-result .btn{align-self:flex-start}.light-theme .backup-result{background:#fff;border-color:#e2e8f0}
 .light-theme .voucher-summary-num{background:#e2e8f0;color:#334155}.light-theme .voucher-used .voucher-animal{color:#64748b}
 .cremation-practice-match{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:6px 0 0;padding:6px 10px;border:1px solid #22c55e66;border-radius:12px;background:#052e1680;color:#bbf7d0;font-size:13px}
 .cremation-practice-match b{color:#4ade80}.cremation-practice-match .btn{min-height:34px;padding:4px 14px}
@@ -10761,6 +10765,7 @@ class App(BaseHTTPRequestHandler):
         if path == "/archivio/pratiche": return self.archive(user)
         if path == "/archivio/clienti": return self.clients_archive(user)
         if path == "/cestino": return self.trash_page(user)
+        if path == "/cestino/backup": return self.backup_lookup_page(user)
         if path == "/database-mesi": return self.redirect("/pratiche")
         if path == "/veterinari": return self.veterinarians_page(user)
         if path == "/portale-partner": return self.portal_partner_page(user)
@@ -22483,8 +22488,66 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             content=f'''<div class="trash-note">Le pratiche nel Cestino non compaiono in Dashboard e Archivio. Ripristinale se sono state eliminate per errore.</div><div class="tablebox"><table class="premium-table"><thead><tr><th>Data recupero</th><th>Pratica</th><th>Animale</th><th>Speditore</th><th>Veterinario</th><th>Azioni</th></tr></thead><tbody>{''.join(body_rows)}</tbody></table></div>'''
         else:
             content='<section class="section empty-state">Il Cestino e vuoto.</section>'
-        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Cestino</h1><div class="sub">Pratiche eliminate ma ancora recuperabili.</div></div><a class="btn ghost" href="/archivio">Torna all archivio</a></div>{content}</main>'''
+        backup_link='<section class="section"><p class="sub">Non trovi una pratica nemmeno qui? Potrebbe essere stata eliminata definitivamente: cercala nei backup notturni.</p><a class="btn ghost" href="/cestino/backup">Cerca nei backup</a></section>' if user["role"]=="admin" else ''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Cestino</h1><div class="sub">Pratiche eliminate ma ancora recuperabili.</div></div><a class="btn ghost" href="/archivio">Torna all archivio</a></div>{content}{backup_link}</main>'''
         self.send_html(layout("Cestino", body, user))
+
+    def backup_lookup_page(self,user):
+        """Cerca una pratica dentro un backup notturno (richiesta esplicita
+        dell'utente, 27/11/2026): solo amministratori, solo lettura. Il backup
+        viene scaricato sul server, aperto in sola lettura e mai copiato nel
+        database reale; i dati non escono da Render."""
+        if user["role"]!="admin":return self.send_error(403,"Solo un amministratore può consultare i backup")
+        q=parse_qs(urlparse(self.path).query)
+        key=(q.get("backup") or [""])[0].strip();term=(q.get("q") or [""])[0].strip()
+        practice_id=(q.get("pratica") or [""])[0].strip()
+        config=backup_service.RemoteConfig.from_env()
+        error="";backups=[];results=[];detail=None
+        if config is None:
+            error="Backup esterno non configurato su questo server: mancano le impostazioni dello storage S3."
+        else:
+            try:backups=backup_service.list_remote_backups(config)
+            except Exception as exc:
+                print("[BACKUP_LOOKUP] elenco\n"+traceback.format_exc(),flush=True);error=f"Non riesco a leggere l'elenco dei backup ({type(exc).__name__})."
+        if not error and key and (term or practice_id):
+            try:
+                backup_db=backup_service.fetch_backup_for_lookup(config,key,DATA)
+                if practice_id.isdigit():detail=backup_service.backup_practice_detail(backup_db,int(practice_id))
+                else:results=backup_service.search_backup_practices(backup_db,term)
+            except Exception as exc:
+                print("[BACKUP_LOOKUP] ricerca\n"+traceback.format_exc(),flush=True);error=f"Non riesco ad aprire questo backup ({type(exc).__name__})."
+        def backup_label(item):
+            try:when=item["modified"].astimezone(ROME_TZ).strftime("%d/%m/%Y %H:%M")
+            except Exception:when=str(item["modified"])[:16]
+            return f'{when} · {item["size"]/1048576:.1f} MB'
+        options=''.join(f'<option value="{esc(item["key"])}" {"selected" if item["key"]==key else ""}>{esc(backup_label(item))}</option>' for item in backups)
+        form_html=f'''<form class="section no-advanced-collapse" method="get" action="/cestino/backup"><p class="sub">Ogni backup è una copia completa del gestionale fatta di notte. Per una pratica creata il 17/11 scegli il backup del 18/11 o successivi. Solo lettura: nulla viene modificato.</p><div class="fields"><div class="field"><label>Backup</label><select name="backup" required><option value="">Scegli un backup</option>{options}</select></div><div class="field"><label>Cerca (cognome, nome, animale, telefono, numero pratica)</label><input name="q" value="{esc(term)}" placeholder="es. Celentano Rey" required minlength="2"></div></div><button class="btn" style="margin-top:12px">Cerca nel backup</button></form>'''
+        content=""
+        live_numbers=set()
+        if results or detail:
+            with db() as c:
+                live_numbers={r["practice_number"]:r for r in c.execute("SELECT id,practice_number,deleted_at FROM practices")}
+        def live_state(number):
+            row=live_numbers.get(number) if number else None
+            if not row:return '<span class="badge tag-red">NON PIÙ PRESENTE OGGI</span>'
+            return '<span class="badge tag-orange">NEL CESTINO OGGI</span>' if row["deleted_at"] else f'<a class="badge tag-green" href="/pratiche/{row["id"]}">PRESENTE OGGI · APRI</a>'
+        if detail:
+            p=detail["practice"]
+            fields=''.join(f'<div class="kv"><small>{esc(name)}</small><b>{esc(value)}</b></div>' for name,value in p.items() if value not in (None,""))
+            items=''.join(f'<li>{esc(i.get("label") or i.get("description") or i.get("item_type") or "")} · {esc(i.get("price") or i.get("amount") or "")}</li>' for i in detail["items"])
+            pays=''.join(f'<li>{esc(str(x.get("paid_at") or "")[:10])} · {esc(x.get("payment_type") or "")} · {esc(x.get("payment_channel") or "")} · € {esc(x.get("amount") or "")}</li>' for x in detail["payments"])
+            hist=''.join(f'<li>{esc(str(h.get("created_at") or "")[:16].replace("T"," "))} · {esc(h.get("event_type") or "")}: {esc(h.get("old_value") or "")} → {esc(h.get("new_value") or "")}</li>' for h in detail["history"])
+            back=f'/cestino/backup?backup={quote(key)}&q={quote(term)}'
+            content=f'''<section class="section"><h2>{esc(p.get("practice_number") or "Pratica")} · {esc(p.get("animal_name") or "")} {live_state(p.get("practice_number"))}</h2><p class="sub">Dati come erano nel backup scelto. Per rimetterla nel gestionale dimmelo: il ripristino si fa solo dopo una tua conferma.</p><div class="fields">{fields}</div>{f"<h3>Voci</h3><ul>{items}</ul>" if items else ""}{f"<h3>Pagamenti</h3><ul>{pays}</ul>" if pays else ""}{f"<h3>Storico</h3><ul>{hist}</ul>" if hist else ""}<a class="btn ghost" href="{back}" style="margin-top:12px">Torna ai risultati</a></section>'''
+        elif key and term and not error:
+            if results:
+                cards=''.join(f'''<article class="backup-result"><div class="backup-result-head"><b>{esc(r.get("practice_number") or "Senza numero")}</b>{live_state(r.get("practice_number"))}</div><div class="backup-result-main">{esc(r.get("animal_name") or "Animale non indicato")} <small>{esc(r.get("species") or "")}</small></div><div class="sub">{esc(" ".join(x for x in (r.get("owner_first_name"),r.get("owner_last_name")) if x) or r.get("owner_company") or "")}{" · "+esc(r.get("owner_phone")) if r.get("owner_phone") else ""}</div><div class="sub">Creata il {esc(date_it(str(r.get("created_at") or "")[:10]))} · stato nel backup: {esc(r.get("status") or "-")}{" · era nel Cestino" if r.get("deleted_at") else ""}</div><a class="btn ghost" href="/cestino/backup?backup={quote(key)}&q={quote(term)}&pratica={r["id"]}">Vedi tutti i dati</a></article>''' for r in results)
+                content=f'<section class="section"><h2>{len(results)} pratic{"a trovata" if len(results)==1 else "he trovate"} nel backup</h2>{cards}</section>'
+            else:
+                content='<section class="section empty-state">Nessuna pratica trovata in questo backup. Prova con un backup più recente o con meno lettere (es. solo il cognome).</section>'
+        error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
+        body=f'''<main class="wrap"><div class="titlebar"><div><h1>Cerca nei backup</h1><div class="sub">Ritrova una pratica eliminata definitivamente o mai vista nel gestionale.</div></div><a class="btn ghost" href="/cestino">Torna al Cestino</a></div>{error_html}{form_html}{content}</main>'''
+        self.send_html(layout("Cerca nei backup",body,user))
 
     def sync_sequence_counter(self,c,prefix):
         key="next_cr_number" if prefix=="CR" else "next_sm_number"
