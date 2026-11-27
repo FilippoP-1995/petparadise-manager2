@@ -224,3 +224,103 @@ def run_database_backup(db_path: Path, *, tmp_dir: Path | None = None) -> Backup
         for path in (backup_path, gz_path):
             if path and path.exists():
                 path.unlink()
+
+
+# --- Ricerca nei backup (richiesta esplicita dell'utente, 27/11/2026) ------
+# Una pratica creata il 17/11 non si trovava piu' da nessuna parte (ne' in
+# archivio ne' nel Cestino): per capire se era stata salvata e poi eliminata
+# definitivamente serve guardare dentro un backup. Tutto avviene sul server
+# (i dati non escono mai da Render) e in SOLA LETTURA: il backup scaricato
+# viene aperto con mode=ro e il database reale non viene toccato.
+
+LOOKUP_DIRNAME = "backup_lookup"
+PRACTICE_LOOKUP_FIELDS = (
+    "owner_first_name", "owner_last_name", "owner_company", "owner_phone", "owner_phone_2",
+    "owner_email", "animal_name", "practice_number", "species",
+)
+
+
+def list_remote_backups(config: RemoteConfig) -> list[dict]:
+    """Backup presenti nello storage esterno, dal piu' recente."""
+    client = _s3_client(config)
+    items = []
+    paginator = client.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=config.bucket, Prefix=config.prefix):
+        for obj in page.get("Contents", []):
+            key = obj["Key"]
+            if not key.endswith((".db.gz", ".db")):
+                continue
+            items.append({"key": key, "name": key[len(config.prefix):] if key.startswith(config.prefix) else key,
+                          "size": int(obj.get("Size") or 0), "modified": obj["LastModified"]})
+    items.sort(key=lambda item: item["modified"], reverse=True)
+    return items
+
+
+def fetch_backup_for_lookup(config: RemoteConfig, key: str, data_dir: Path) -> Path:
+    """Scarica (una sola volta) e decomprime un backup in una cartella di
+    lavoro sul disco del server; tiene solo l'ultimo backup consultato."""
+    if not key.startswith(config.prefix) or "/" in key[len(config.prefix):] or ".." in key:
+        raise BackupError("Backup non valido.")
+    work = data_dir / LOOKUP_DIRNAME
+    work.mkdir(parents=True, exist_ok=True)
+    name = key[len(config.prefix):]
+    db_name = name[:-3] if name.endswith(".gz") else name
+    target = work / db_name
+    if target.exists():
+        return target
+    for old in work.iterdir():
+        try:
+            old.unlink()
+        except OSError:
+            pass
+    download = work / (name + ".part")
+    _s3_client(config).download_file(config.bucket, key, str(download))
+    if name.endswith(".gz"):
+        with gzip.open(download, "rb") as source, open(target, "wb") as dest:
+            shutil.copyfileobj(source, dest)
+        download.unlink()
+    else:
+        download.rename(target)
+    verify_backup_integrity(target)
+    return target
+
+
+def search_backup_practices(backup_db: Path, term: str, limit: int = 50) -> list[dict]:
+    """Pratiche del backup che contengono il testo cercato (nome, cognome,
+    ragione sociale, telefono, email, animale, numero pratica, specie)."""
+    term = (term or "").strip()
+    if len(term) < 2:
+        return []
+    conn = sqlite3.connect(f"file:{backup_db}?mode=ro", uri=True, timeout=30)
+    conn.row_factory = sqlite3.Row
+    try:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(practices)")}
+        fields = [name for name in PRACTICE_LOOKUP_FIELDS if name in columns]
+        words = [word for word in term.lower().split() if word]
+        where = " AND ".join("(" + " OR ".join(f"lower(COALESCE({name},'')) LIKE ?" for name in fields) + ")" for _ in words)
+        args = [f"%{word}%" for word in words for _ in fields]
+        rows = conn.execute(f"SELECT * FROM practices WHERE {where} ORDER BY created_at DESC, id DESC LIMIT ?", (*args, limit)).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def backup_practice_detail(backup_db: Path, practice_id: int) -> dict | None:
+    """Tutti i dati di una pratica nel backup, piu' voci, pagamenti e storico."""
+    conn = sqlite3.connect(f"file:{backup_db}?mode=ro", uri=True, timeout=30)
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute("SELECT * FROM practices WHERE id=?", (practice_id,)).fetchone()
+        if not row:
+            return None
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        def rows(sql):
+            return [dict(r) for r in conn.execute(sql, (practice_id,))]
+        return {
+            "practice": dict(row),
+            "items": rows("SELECT * FROM practice_items WHERE practice_id=? ORDER BY id") if "practice_items" in tables else [],
+            "payments": rows("SELECT * FROM payment_movements WHERE practice_id=? ORDER BY id") if "payment_movements" in tables else [],
+            "history": rows("SELECT * FROM practice_history WHERE practice_id=? ORDER BY id") if "practice_history" in tables else [],
+        }
+    finally:
+        conn.close()
