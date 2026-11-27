@@ -70,7 +70,7 @@ from calendar_service import (
 )
 import route_service
 import ai_assistant
-from backup_service import run_database_backup
+from backup_service import run_database_backup, RemoteConfig as BackupRemoteConfig
 import backup_service
 from shift_service import (
     SHIFT_BRANCHES,
@@ -1838,6 +1838,9 @@ tr.avatar-other td:first-child{border-left:3px solid #c084fc}
 .ai-chat-backdrop,.ai-chat-panel,.create-sheet,.create-sheet-backdrop,.cremation-modal-overlay,.more-menu,.more-backdrop,.order-modal,.payment-popover,.payment-dialog,.route-quick-backdrop,.route-sheet,.route-sheet-backdrop,.shift-cell-editor-backdrop,.wa-modal-overlay,.permission-prompt,[role="dialog"],[aria-modal="true"]{overscroll-behavior:contain}
 .field[data-manual-income-method][hidden]{display:none!important}
 .partner-alert{display:flex;align-items:center;gap:14px;margin:0 0 18px;padding:14px 16px;border-radius:18px;color:#fff;background:linear-gradient(135deg,#0f766e,#14b8a6);border:2px solid #5eead4;box-shadow:0 10px 28px rgba(20,184,166,.35)}
+.backup-alert{display:flex;align-items:center;gap:14px;margin:0 0 18px;padding:14px 16px;border-radius:18px;color:#fff;background:linear-gradient(135deg,#991b1b,#dc2626);border:2px solid #fca5a5;box-shadow:0 10px 28px rgba(220,38,38,.35)}
+.backup-alert .pa-ico{font-size:30px;line-height:1}.backup-alert .pa-body{flex:1;min-width:0}.backup-alert .pa-body b{display:block;font-size:16px}.backup-alert .pa-body span{display:block;font-size:13px;opacity:.95;overflow-wrap:anywhere}
+.backup-alert .pa-btn{flex:none;padding:10px 16px;border-radius:12px;background:#fff;color:#991b1b;font-weight:900;text-decoration:none}
 .partner-alert .pa-ico{font-size:30px;line-height:1}.partner-alert .pa-body{flex:1;min-width:0}
 .partner-alert .pa-body b{display:block;font-size:16px;letter-spacing:.01em}
 .partner-alert .pa-body span{display:block;font-size:13.5px;opacity:.92;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -10440,6 +10443,49 @@ def portal_tabs_html(active,pending,is_admin):
     return f'<nav class="portal-tabs" aria-label="Sezioni del portale veterinari">{tabs}</nav>'
 
 
+# Avviso backup notturno (richiesta esplicita dell'utente, 27/11/2026: i
+# backup su S3 non partivano da tempo e nessuno se n'era accorto). Si basa
+# sulla data dell'ultimo backup RIUSCITO, non sulla chiamata notturna: se il
+# cron non arriva proprio al gestionale, l'avviso compare lo stesso.
+BACKUP_MAX_AGE_HOURS = 30
+
+
+def record_backup_outcome(conn, ok, detail):
+    stamp=rome_now().isoformat(timespec="seconds")
+    keys=(("backup_last_ok_at",stamp),("backup_last_ok_name",str(detail or "")[:300])) if ok else (("backup_last_error_at",stamp),("backup_last_error",str(detail or "")[:500]))
+    for key,value in keys:
+        conn.execute("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(key,value))
+
+
+def backup_health_problem(conn, current=None):
+    """Testo del problema da mostrare, o "" se il backup e' a posto. Fuori da
+    Render (sviluppo, test) non segnala nulla finche' non c'e' mai stato un
+    backup: li' il backup notturno non esiste."""
+    saved={row["key"]:row["value"] for row in conn.execute("SELECT key,value FROM settings WHERE key IN ('backup_last_ok_at','backup_last_error_at','backup_last_error')")}
+    if not os.environ.get("RENDER") and not saved.get("backup_last_ok_at"):return ""
+    current=current or rome_now()
+    if BackupRemoteConfig.from_env() is None:
+        return "Backup notturno NON configurato: sul servizio web di Render mancano le impostazioni BACKUP_S3_* dello storage esterno."
+    last_ok=saved.get("backup_last_ok_at")
+    try:age_ok=last_ok and (current.replace(tzinfo=None)-datetime.fromisoformat(last_ok).replace(tzinfo=None))<=timedelta(hours=BACKUP_MAX_AGE_HOURS)
+    except ValueError:age_ok=False
+    if age_ok:return ""
+    when=date_time_it_short(last_ok) if last_ok else "mai"
+    error=saved.get("backup_last_error") or ""
+    reason=f" Ultimo errore: {error}" if error and (saved.get("backup_last_error_at") or "")>=(last_ok or "") else " La chiamata notturna non arriva al gestionale: controlla il cron del backup su Render."
+    return f"Backup notturno NON riuscito. Ultimo backup riuscito: {when}.{reason}"
+
+
+def date_time_it_short(value):
+    try:return datetime.fromisoformat(str(value)).strftime("%d/%m/%Y %H:%M")
+    except ValueError:return str(value or "")[:16]
+
+
+def backup_alert_html(problem):
+    if not problem:return ""
+    return f'<div id="backupAlert" class="backup-alert" role="alert"><div class="pa-ico">⚠️</div><div class="pa-body"><b>BACKUP DEL GESTIONALE</b><span>{esc(problem)}</span></div><a class="pa-btn" href="/cestino/backup">Dettagli</a></div>'
+
+
 def partner_alert_html(summary,items):
     """Banner a tutta larghezza in cima a OGNI pagina del gestionale finche' ci sono
     richieste del Portale Veterinari da confermare (richiesta esplicita: non
@@ -10477,9 +10523,11 @@ def layout(title, body, user=None):
             unread=conn.execute("SELECT count(*) n FROM notifications WHERE user_id=? AND is_read=0",(user["id"],)).fetchone()["n"]
             open_reminders_count=conn.execute("SELECT count(*) n FROM reminders WHERE completed_at IS NULL AND read_at IS NULL AND (snoozed_until IS NULL OR snoozed_until<=?)",(now(),)).fetchone()["n"]
             portal_summary=partner_service.pending_summary(conn)
+            backup_problem=backup_health_problem(conn) if user["role"]=="admin" else ""
             portal_items=partner_service.pending_requests(conn,limit=3) if portal_summary["pending"] else []
         portal_badge=f'<span class="notification-badge partner-badge">{portal_summary["pending"] if portal_summary["pending"]<100 else "99+"}</span>' if portal_summary["pending"] else ''
         body=insert_partner_alert(body,partner_alert_html(portal_summary,portal_items))
+        body=insert_partner_alert(body,backup_alert_html(backup_problem))
         partner_pill=partner_pill_html(portal_summary)
         unread_badge=f'<span class="notification-badge">{unread if unread < 100 else "99+"}</span>' if unread else ''
         reminder_badge=f'<span class="notification-badge">{open_reminders_count if open_reminders_count < 100 else "99+"}</span>' if open_reminders_count else ''
@@ -20418,6 +20466,7 @@ class App(BaseHTTPRequestHandler):
         ok,reason=self.backup_cron_authorized()
         if not ok:
             print(f"[BACKUP_CRON] 403 {reason}", flush=True)
+            with db() as c:record_backup_outcome(c,False,f"Chiamata notturna rifiutata: {reason}")
             return self.send_json({"ok":False,"error":reason},403)
         print(f"[BACKUP_CRON] avviato, autorizzato={reason}", flush=True)
         result=run_database_backup(DB_PATH)
@@ -20425,10 +20474,12 @@ class App(BaseHTTPRequestHandler):
         if result.ok:
             print(f"[BACKUP_CRON] completato {json.dumps(result.to_dict(),ensure_ascii=False)}", flush=True)
             with db() as c:
+                record_backup_outcome(c,True,result.backup_name)
                 emit_notification(c,"backup_completed","Backup completato",f"{result.backup_name} ({result.size_bytes} byte)",db_path=DB_PATH)
         else:
             print(f"[BACKUP_CRON] FALLITO {json.dumps(result.to_dict(),ensure_ascii=False)}", flush=True)
             with db() as c:
+                record_backup_outcome(c,False,result.error)
                 emit_notification(c,"system_error","Backup database fallito",result.error,db_path=DB_PATH)
         return self.send_json(result.to_dict(),status)
 
@@ -22546,6 +22597,10 @@ document.getElementById('signatureForm').onsubmit=()=>{{document.getElementById(
             else:
                 content='<section class="section empty-state">Nessuna pratica trovata in questo backup. Prova con un backup più recente o con meno lettere (es. solo il cognome).</section>'
         error_html=f'<div class="flash warning">{esc(error)}</div>' if error else ''
+        with db() as c:
+            last=dict(c.execute("SELECT key,value FROM settings WHERE key IN ('backup_last_ok_at','backup_last_ok_name')").fetchall())
+        status_html=f'<p class="sub">Ultimo backup riuscito: <b>{esc(date_time_it_short(last["backup_last_ok_at"]))}</b></p>' if last.get("backup_last_ok_at") else '<p class="sub">Nessun backup riuscito registrato dal gestionale finora.</p>'
+        error_html=status_html+error_html
         body=f'''<main class="wrap"><div class="titlebar"><div><h1>Cerca nei backup</h1><div class="sub">Ritrova una pratica eliminata definitivamente o mai vista nel gestionale.</div></div><a class="btn ghost" href="/cestino">Torna al Cestino</a></div>{error_html}{form_html}{content}</main>'''
         self.send_html(layout("Cerca nei backup",body,user))
 
